@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      sdk-version:
+        description: 'SDK version to publish (e.g. v0.1.0, or leave empty to use HEAD)'
+        required: false
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -12,6 +18,7 @@ env:
 
 jobs:
   build:
+    if: github.event_name == 'push'
     name: Build ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     permissions:
@@ -103,6 +110,7 @@ jobs:
             $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
 
   publish-sdk:
+    if: github.event_name == 'workflow_dispatch'
     name: Publish herald-sdk to crates.io
     runs-on: ubuntu-latest
     env:

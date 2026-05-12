@@ -10,6 +10,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { InvoiceFormPage } from '../invoice-form-page'
 import type { InvoiceDetailResponse } from '@/lib/api-generated'
 import { server } from '@/test/mocks/server'
+import { formatInvoiceAmount } from '@/lib/invoice-utils'
+
+const fmtCNY = (cents: number) => formatInvoiceAmount(cents, 'CNY')
 
 // ==================== Router Mock ====================
 
@@ -312,7 +315,7 @@ describe('InvoiceFormPage', () => {
 
       // Wait for subtotal to update in the totals preview (formatted as currency)
       await waitFor(() => {
-        expect(screen.getByTestId('invoice-totals-subtotal')).toHaveTextContent('¥100.00')
+        expect(screen.getByTestId('invoice-totals-subtotal')).toHaveTextContent(fmtCNY(10000))
       })
     })
 
@@ -348,12 +351,12 @@ describe('InvoiceFormPage', () => {
         expect(screen.getByText('Edit Invoice')).toBeInTheDocument()
       })
 
-      // Subtotal from line item: 1 * 99.00 = ¥99.00 (9900 cents)
-      expect(screen.getByTestId('invoice-totals-subtotal')).toHaveTextContent('¥99.00')
+      // Subtotal from line item: 1 * 99.00 = 9900 cents
+      expect(screen.getByTestId('invoice-totals-subtotal')).toHaveTextContent(fmtCNY(9900))
 
       // Discount: 9900 * 10% = 990 cents
       await waitFor(() => {
-        expect(screen.getByTestId('invoice-totals-discount')).toHaveTextContent(/-¥9\.90/)
+        expect(screen.getByTestId('invoice-totals-discount')).toHaveTextContent(`-${fmtCNY(990)}`)
       })
 
       // Discount value input should be enabled and have value 10
@@ -392,12 +395,12 @@ describe('InvoiceFormPage', () => {
         expect(screen.getByText('Edit Invoice')).toBeInTheDocument()
       })
 
-      // Subtotal from line item: 1 * 99.00 = ¥99.00 (9900 cents)
-      expect(screen.getByTestId('invoice-totals-subtotal')).toHaveTextContent('¥99.00')
+      // Subtotal from line item: 1 * 99.00 = 9900 cents
+      expect(screen.getByTestId('invoice-totals-subtotal')).toHaveTextContent(fmtCNY(9900))
 
       // Tax: 9900 * 6% = 594 cents
       await waitFor(() => {
-        expect(screen.getByTestId('invoice-totals-tax')).toHaveTextContent(/\+¥5\.94/)
+        expect(screen.getByTestId('invoice-totals-tax')).toHaveTextContent(`+${fmtCNY(594)}`)
       })
     })
 
@@ -435,12 +438,12 @@ describe('InvoiceFormPage', () => {
 
       // Verify totals preview displays correctly (formatted as currency)
       await waitFor(() => {
-        expect(screen.getByTestId('invoice-totals-subtotal')).toHaveTextContent('¥100.00')
+        expect(screen.getByTestId('invoice-totals-subtotal')).toHaveTextContent(fmtCNY(10000))
       })
-      expect(screen.getByTestId('invoice-totals-discount')).toHaveTextContent(/-¥10\.00/)
-      expect(screen.getByTestId('invoice-totals-tax')).toHaveTextContent(/\+¥4\.50/)
-      expect(screen.getByTestId('invoice-totals-shipping')).toHaveTextContent(/\+¥3\.00/)
-      expect(screen.getByTestId('invoice-totals-total')).toHaveTextContent('¥97.50')
+      expect(screen.getByTestId('invoice-totals-discount')).toHaveTextContent(`-${fmtCNY(1000)}`)
+      expect(screen.getByTestId('invoice-totals-tax')).toHaveTextContent(`+${fmtCNY(450)}`)
+      expect(screen.getByTestId('invoice-totals-shipping')).toHaveTextContent(`+${fmtCNY(300)}`)
+      expect(screen.getByTestId('invoice-totals-total')).toHaveTextContent(fmtCNY(9750))
     })
   })
 
