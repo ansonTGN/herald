@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     }
 
     // Load configuration
-    let config_path = env::var("CAS_CONFIG").unwrap_or("config.toml".to_owned());
+    let config_path = env::var("HERALD_CONFIG").unwrap_or("config.toml".to_owned());
     let config = ApiConfig::load(&config_path)?;
 
     // Initialize tracing with config from file

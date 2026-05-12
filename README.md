@@ -1,29 +1,35 @@
 # Herald
 
-Multi-tenant authentication and authorization system built with Rust and React, developed using Claude Code + GLM model 以及 Codex 混合开发。
+多租户认证与授权系统。Rust 后端 + React 前端，单体部署，Docker 上线。
 
-本项目用于实践 AI编程。
+本项目用于实践 AI 编程，使用 Claude Code + GLM 模型以及 Codex 混合开发。
 
-给人类阅读的在 human/*.md
+## 技术栈
 
-## Prerequisites
+- **后端**：Rust 2024 edition / Axum 0.8 / SeaORM 1.1 / PostgreSQL 16+ / Redis
+- **前端**：React 19 / TypeScript / TanStack Router & Query / Tailwind CSS v4 / Vite
+- **部署**：Docker 多阶段构建 + Caddy TLS 反代
 
-- **Python 3.12+** (use [uv](https://github.com/astral-sh/uv) for version management)
-  ```bash
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-  uv python install 3.12
-  uv python pin 3.12
-  ```
-- Docker (for development/test environments)
-- Cargo (for backend development)
-- npm (for frontend development)
+## 快速开始
 
-## Quick Start
+需要 Python 3.12+（[uv](https://github.com/astral-sh/uv)）、Docker、Cargo、npm。
 
 ```bash
-# Install Python 3.12 (see Prerequisites)
 uv run scripts/dev-start.py
 ```
+
+启动完成后前端在 http://localhost:3000，后端 API 在 http://localhost:8080。
+
+## 文档
+
+完整教程见 [docs/tutorials/](docs/tutorials/)，涵盖本地开发、架构、配置和部署。
+
+- [快速上手](docs/tutorials/getting-started.md)
+- [架构](docs/tutorials/architecture.md)
+- [配置](docs/tutorials/configuration.md)
+- [部署](docs/tutorials/deployment.md)
+
+English version: [README-en.md](README-en.md)
 
 ## License
 

@@ -1,0 +1,159 @@
+# 配置
+
+Herald 通过一个 TOML 文件管理所有运行时配置。应用启动时读取该文件，不支持热加载——修改配置需要重启进程。
+
+## 配置文件加载
+
+启动时按以下顺序决定配置文件路径：
+
+1. 读取环境变量 `HERALD_CONFIG`，如果有值则作为文件路径
+2. 未设置则默认读取工作目录下的 `config.toml`
+
+代码入口在 `backend/app/src/main.rs`：
+
+```rust
+let config_path = env::var("HERALD_CONFIG").unwrap_or("config.toml".to_owned());
+let config = ApiConfig::load(&config_path)?;
+```
+
+路径可以是相对路径或绝对路径。相对路径基于进程工作目录解析，不是二进制文件所在目录。
+
+## 环境变量
+
+| 变量名 | 默认值 | 必填 | 说明 |
+|---|---|---|---|
+| `HERALD_CONFIG` | `config.toml` | 否 | 配置文件路径 |
+| `RUST_LOG` | 由 `server.log_level` 决定 | 否 | tracing 日志级别，优先级高于配置文件中的 `log_level` |
+
+`RUST_LOG` 在应用启动时由 `tracing_subscriber::EnvFilter::try_from_default_env()` 读取。如果设置了该环境变量，它会覆盖配置文件中的 `log_level`。没设置则回退到配置文件的值。
+
+## 配置文件段
+
+完整示例见 `backend/api/config/config.toml`。
+
+### [database]
+
+PostgreSQL 连接池配置。`url` 是唯一必填项，其余都有内置默认值。
+
+| 参数 | 类型 | 默认值 | 必填 | 说明 |
+|---|---|---|---|---|
+| `url` | string | — | 是 | PostgreSQL 连接字符串 |
+| `max_connections` | u32 | 100 | 否 | 连接池最大连接数 |
+| `acquire_timeout_secs` | u64 | 30 | 否 | 从连接池获取连接的超时（秒） |
+| `idle_timeout_secs` | u64 | 600 | 否 | 空闲连接存活时间（秒） |
+| `max_lifetime_secs` | u64 | 1800 | 否 | 单个连接最大生命周期（秒） |
+| `connect_timeout_secs` | u64 | 10 | 否 | 建立 TCP 连接的超时（秒） |
+
+连接字符串格式：`postgresql://用户名:密码@主机:端口/数据库名`
+
+开发环境通常只需要填 `url`：
+
+```toml
+[database]
+url = "postgresql://herald:herald@localhost:5432/herald"
+```
+
+生产环境建议降低 `max_lifetime_secs`（避免连接被数据库侧主动断断），并根据实际并发量调整 `max_connections`。连接池实现基于 SeaORM 的 `ConnectOptions`。
+
+### [redis]
+
+| 参数 | 类型 | 默认值 | 必填 | 说明 |
+|---|---|---|---|---|
+| `url` | string | `redis://127.0.0.1:6379` | 否 | Redis 连接地址 |
+
+Redis 用于权限检查缓存和 session 存储。本地开发不写这个段也可以，会连默认的本地 Redis。
+
+```toml
+[redis]
+url = "redis://localhost:6379"
+```
+
+### [server]
+
+HTTP 服务器和日志配置。
+
+| 参数 | 类型 | 默认值 | 必填 | 说明 |
+|---|---|---|---|---|
+| `bind_address` | string | `0.0.0.0:3000` | 否 | 监听地址，格式为 `ip:port` |
+| `log_level` | string | `info` | 否 | 日志级别（trace/debug/info/warn/error） |
+| `app_env` | string | `development` | 否 | 运行环境标识 |
+
+`app_env` 目前是一个标识字段，代码中不直接用它做分支逻辑。`bind_address` 用 `0.0.0.0` 表示监听所有网卡。
+
+```toml
+[server]
+bind_address = "0.0.0.0:3000"
+log_level = "info"
+app_env = "production"
+```
+
+### [frontend]
+
+前端应用相关的配置，主要影响 CORS 和可选的静态文件托管。
+
+| 参数 | 类型 | 默认值 | 必填 | 说明 |
+|---|---|---|---|---|
+| `url` | string | `http://localhost:5173` | 否 | 前端应用地址，用于 CORS 白名单 |
+| `static_dir` | string | — | 否 | 静态文件目录路径，设置后由后端托管 SPA |
+
+`url` 的默认值 `http://localhost:5173` 是 Vite 开发服务器的地址。生产部署时改成实际前端地址。
+
+`static_dir` 不设置时后端不提供静态文件服务，前端需要单独部署。设置后，后端会从指定目录提供静态文件，适合单体部署场景。
+
+```toml
+[frontend]
+url = "http://localhost:3000"
+static_dir = "/app/frontend/dist"
+```
+
+### [jwt]（可选）
+
+JWT 签名密钥配置。整个段可以不写（`#[serde(default)]` 标记为可选）。
+
+| 参数 | 类型 | 默认值 | 必填 | 说明 |
+|---|---|---|---|---|
+| `_secret` | string | — | 否* | JWT 签名密钥 |
+
+目前字段名带下划线前缀，表示尚未在业务逻辑中正式启用。
+
+### [email]（可选）
+
+邮件发送配置。同上，整个段可选。
+
+| 参数 | 类型 | 默认值 | 必填 | 说明 |
+|---|---|---|---|---|
+| `_api_key` | string | — | 否* | 邮件服务 API Key |
+
+同上，带下划线前缀，尚未正式启用。
+
+## RBAC 配置
+
+RBAC 策略不在主配置文件中，而是通过数据库中的 `role_policies` 表存储。系统初始化时，`RealmInitializationService` 会为每个 realm 创建默认角色和权限。
+
+策略模型定义在 `backend/api/config/rbac_model.conf`：
+
+```ini
+[request_definition]
+r = dom, sub, obj, act
+
+[policy_definition]
+p = dom, sub, obj, act
+
+[role_definition]
+g = _, _, _
+
+[policy_effect]
+e = some(where (p.eft == allow))
+
+[matchers]
+m = (g(r.dom, r.sub, p.sub) || r.sub == p.sub) && (r.dom == p.dom || p.dom == "*") && r.obj == p.obj && r.act == p.act
+```
+
+这个文件定义了 Casbin 风格的 RBAC 模型，四个字段含义：
+
+- **dom** — 域（realm ID），支持多租户隔离
+- **sub** — 主体（用户 ID 或角色 ID）
+- **obj** — 对象（资源标识）
+- **act** — 动作（操作类型）
+
+匹配器中的 `p.dom == "*"` 表示支持跨域通配策略。角色定义 `g = _, _, _` 的三段式格式为 `域, 用户, 角色`，角色本身用 UUID 而非名称标识。
