@@ -351,9 +351,9 @@ describe('InvoiceFormPage', () => {
       // Subtotal from line item: 1 * 99.00 = ¥99.00 (9900 cents)
       expect(screen.getByTestId('invoice-totals-subtotal')).toHaveTextContent('¥99.00')
 
-      // Discount: 9900 * 10% = 990 cents = ¥9.90
+      // Discount: 9900 * 10% = 990 cents
       await waitFor(() => {
-        expect(screen.getByTestId('invoice-totals-discount')).toHaveTextContent('-¥9.90')
+        expect(screen.getByTestId('invoice-totals-discount')).toHaveTextContent(/-¥9\.90/)
       })
 
       // Discount value input should be enabled and have value 10
@@ -395,9 +395,9 @@ describe('InvoiceFormPage', () => {
       // Subtotal from line item: 1 * 99.00 = ¥99.00 (9900 cents)
       expect(screen.getByTestId('invoice-totals-subtotal')).toHaveTextContent('¥99.00')
 
-      // Tax: 9900 * 6% = 594 cents = ¥5.94
+      // Tax: 9900 * 6% = 594 cents
       await waitFor(() => {
-        expect(screen.getByTestId('invoice-totals-tax')).toHaveTextContent('+¥5.94')
+        expect(screen.getByTestId('invoice-totals-tax')).toHaveTextContent(/\+¥5\.94/)
       })
     })
 
@@ -437,9 +437,9 @@ describe('InvoiceFormPage', () => {
       await waitFor(() => {
         expect(screen.getByTestId('invoice-totals-subtotal')).toHaveTextContent('¥100.00')
       })
-      expect(screen.getByTestId('invoice-totals-discount')).toHaveTextContent('-¥10.00')
-      expect(screen.getByTestId('invoice-totals-tax')).toHaveTextContent('+¥4.50')
-      expect(screen.getByTestId('invoice-totals-shipping')).toHaveTextContent('+¥3.00')
+      expect(screen.getByTestId('invoice-totals-discount')).toHaveTextContent(/-¥10\.00/)
+      expect(screen.getByTestId('invoice-totals-tax')).toHaveTextContent(/\+¥4\.50/)
+      expect(screen.getByTestId('invoice-totals-shipping')).toHaveTextContent(/\+¥3\.00/)
       expect(screen.getByTestId('invoice-totals-total')).toHaveTextContent('¥97.50')
     })
   })

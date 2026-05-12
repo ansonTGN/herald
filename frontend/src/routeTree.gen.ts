@@ -87,21 +87,23 @@ const RealmIdManageIndexRoute = RealmIdManageIndexRouteImport.update({
   path: '/',
   getParentRoute: () => RealmIdManageRouteRoute,
 } as any)
-const RealmIdUserSubscriptionHistoryRoute = RealmIdUserSubscriptionHistoryRouteImport.update({
-  id: '/subscription-history',
-  path: '/subscription-history',
-  getParentRoute: () => RealmIdUserRouteRoute,
-} as any)
+const RealmIdUserSubscriptionHistoryRoute =
+  RealmIdUserSubscriptionHistoryRouteImport.update({
+    id: '/subscription-history',
+    path: '/subscription-history',
+    getParentRoute: () => RealmIdUserRouteRoute,
+  } as any)
 const RealmIdUserSecurityRoute = RealmIdUserSecurityRouteImport.update({
   id: '/security',
   path: '/security',
   getParentRoute: () => RealmIdUserRouteRoute,
 } as any)
-const RealmIdUserPurchasePointsRoute = RealmIdUserPurchasePointsRouteImport.update({
-  id: '/purchase-points',
-  path: '/purchase-points',
-  getParentRoute: () => RealmIdUserRouteRoute,
-} as any)
+const RealmIdUserPurchasePointsRoute =
+  RealmIdUserPurchasePointsRouteImport.update({
+    id: '/purchase-points',
+    path: '/purchase-points',
+    getParentRoute: () => RealmIdUserRouteRoute,
+  } as any)
 const RealmIdUserProfileRoute = RealmIdUserProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
@@ -128,16 +130,18 @@ const RealmIdManageUsersRoute = RealmIdManageUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => RealmIdManageRouteRoute,
 } as any)
-const RealmIdManageSubscriptionHistoryRoute = RealmIdManageSubscriptionHistoryRouteImport.update({
-  id: '/subscription-history',
-  path: '/subscription-history',
-  getParentRoute: () => RealmIdManageRouteRoute,
-} as any)
-const RealmIdManageSubscriptionRoute = RealmIdManageSubscriptionRouteImport.update({
-  id: '/subscription',
-  path: '/subscription',
-  getParentRoute: () => RealmIdManageRouteRoute,
-} as any)
+const RealmIdManageSubscriptionHistoryRoute =
+  RealmIdManageSubscriptionHistoryRouteImport.update({
+    id: '/subscription-history',
+    path: '/subscription-history',
+    getParentRoute: () => RealmIdManageRouteRoute,
+  } as any)
+const RealmIdManageSubscriptionRoute =
+  RealmIdManageSubscriptionRouteImport.update({
+    id: '/subscription',
+    path: '/subscription',
+    getParentRoute: () => RealmIdManageRouteRoute,
+  } as any)
 const RealmIdManageSettingsRoute = RealmIdManageSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -158,21 +162,23 @@ const RealmIdManageProductsRoute = RealmIdManageProductsRouteImport.update({
   path: '/products',
   getParentRoute: () => RealmIdManageRouteRoute,
 } as any)
-const RealmIdManagePointsPackagesRoute = RealmIdManagePointsPackagesRouteImport.update({
-  id: '/points-packages',
-  path: '/points-packages',
-  getParentRoute: () => RealmIdManageRouteRoute,
-} as any)
+const RealmIdManagePointsPackagesRoute =
+  RealmIdManagePointsPackagesRouteImport.update({
+    id: '/points-packages',
+    path: '/points-packages',
+    getParentRoute: () => RealmIdManageRouteRoute,
+  } as any)
 const RealmIdManagePointsRoute = RealmIdManagePointsRouteImport.update({
   id: '/points',
   path: '/points',
   getParentRoute: () => RealmIdManageRouteRoute,
 } as any)
-const RealmIdManagePermissionsRoute = RealmIdManagePermissionsRouteImport.update({
-  id: '/permissions',
-  path: '/permissions',
-  getParentRoute: () => RealmIdManageRouteRoute,
-} as any)
+const RealmIdManagePermissionsRoute =
+  RealmIdManagePermissionsRouteImport.update({
+    id: '/permissions',
+    path: '/permissions',
+    getParentRoute: () => RealmIdManageRouteRoute,
+  } as any)
 const RealmIdManageClientAppsRoute = RealmIdManageClientAppsRouteImport.update({
   id: '/client-apps',
   path: '/client-apps',
@@ -198,94 +204,108 @@ const RealmIdAuthLoginRoute = RealmIdAuthLoginRouteImport.update({
   path: '/login',
   getParentRoute: () => RealmIdAuthRouteRoute,
 } as any)
-const RealmIdUserSecurityIndexRoute = RealmIdUserSecurityIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => RealmIdUserSecurityRoute,
-} as any)
-const RealmIdManageClientAppsIndexRoute = RealmIdManageClientAppsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => RealmIdManageClientAppsRoute,
-} as any)
-const RealmIdManageBillingIndexRoute = RealmIdManageBillingIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => RealmIdManageBillingRoute,
-} as any)
-const RealmIdUserSecurityTotpSetupRoute = RealmIdUserSecurityTotpSetupRouteImport.update({
-  id: '/totp-setup',
-  path: '/totp-setup',
-  getParentRoute: () => RealmIdUserSecurityRoute,
-} as any)
+const RealmIdUserSecurityIndexRoute =
+  RealmIdUserSecurityIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => RealmIdUserSecurityRoute,
+  } as any)
+const RealmIdManageClientAppsIndexRoute =
+  RealmIdManageClientAppsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => RealmIdManageClientAppsRoute,
+  } as any)
+const RealmIdManageBillingIndexRoute =
+  RealmIdManageBillingIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => RealmIdManageBillingRoute,
+  } as any)
+const RealmIdUserSecurityTotpSetupRoute =
+  RealmIdUserSecurityTotpSetupRouteImport.update({
+    id: '/totp-setup',
+    path: '/totp-setup',
+    getParentRoute: () => RealmIdUserSecurityRoute,
+  } as any)
 const RealmIdSubscriptionSubscriptionIdHistoryRoute =
   RealmIdSubscriptionSubscriptionIdHistoryRouteImport.update({
     id: '/subscription/$subscriptionId/history',
     path: '/subscription/$subscriptionId/history',
     getParentRoute: () => RealmIdRouteRoute,
   } as any)
-const RealmIdManagePointsRealmConfigRoute = RealmIdManagePointsRealmConfigRouteImport.update({
-  id: '/realm-config',
-  path: '/realm-config',
-  getParentRoute: () => RealmIdManagePointsRoute,
-} as any)
-const RealmIdManagePointsFreeStatsRoute = RealmIdManagePointsFreeStatsRouteImport.update({
-  id: '/free-stats',
-  path: '/free-stats',
-  getParentRoute: () => RealmIdManagePointsRoute,
-} as any)
-const RealmIdManagePointsConfigsRoute = RealmIdManagePointsConfigsRouteImport.update({
-  id: '/configs',
-  path: '/configs',
-  getParentRoute: () => RealmIdManagePointsRoute,
-} as any)
-const RealmIdManagePointsAccountsRoute = RealmIdManagePointsAccountsRouteImport.update({
-  id: '/accounts',
-  path: '/accounts',
-  getParentRoute: () => RealmIdManagePointsRoute,
-} as any)
-const RealmIdManageClientAppsNewRoute = RealmIdManageClientAppsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => RealmIdManageClientAppsRoute,
-} as any)
-const RealmIdManageBillingPlansRoute = RealmIdManageBillingPlansRouteImport.update({
-  id: '/plans',
-  path: '/plans',
-  getParentRoute: () => RealmIdManageBillingRoute,
-} as any)
+const RealmIdManagePointsRealmConfigRoute =
+  RealmIdManagePointsRealmConfigRouteImport.update({
+    id: '/realm-config',
+    path: '/realm-config',
+    getParentRoute: () => RealmIdManagePointsRoute,
+  } as any)
+const RealmIdManagePointsFreeStatsRoute =
+  RealmIdManagePointsFreeStatsRouteImport.update({
+    id: '/free-stats',
+    path: '/free-stats',
+    getParentRoute: () => RealmIdManagePointsRoute,
+  } as any)
+const RealmIdManagePointsConfigsRoute =
+  RealmIdManagePointsConfigsRouteImport.update({
+    id: '/configs',
+    path: '/configs',
+    getParentRoute: () => RealmIdManagePointsRoute,
+  } as any)
+const RealmIdManagePointsAccountsRoute =
+  RealmIdManagePointsAccountsRouteImport.update({
+    id: '/accounts',
+    path: '/accounts',
+    getParentRoute: () => RealmIdManagePointsRoute,
+  } as any)
+const RealmIdManageClientAppsNewRoute =
+  RealmIdManageClientAppsNewRouteImport.update({
+    id: '/new',
+    path: '/new',
+    getParentRoute: () => RealmIdManageClientAppsRoute,
+  } as any)
+const RealmIdManageBillingPlansRoute =
+  RealmIdManageBillingPlansRouteImport.update({
+    id: '/plans',
+    path: '/plans',
+    getParentRoute: () => RealmIdManageBillingRoute,
+  } as any)
 const RealmIdManageBillingPaymentProvidersRoute =
   RealmIdManageBillingPaymentProvidersRouteImport.update({
     id: '/payment-providers',
     path: '/payment-providers',
     getParentRoute: () => RealmIdManageBillingRoute,
   } as any)
-const RealmIdManageBillingInvoicesRoute = RealmIdManageBillingInvoicesRouteImport.update({
-  id: '/invoices',
-  path: '/invoices',
-  getParentRoute: () => RealmIdManageBillingRoute,
-} as any)
-const RealmIdManageBillingInvoicesIndexRoute = RealmIdManageBillingInvoicesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => RealmIdManageBillingInvoicesRoute,
-} as any)
+const RealmIdManageBillingInvoicesRoute =
+  RealmIdManageBillingInvoicesRouteImport.update({
+    id: '/invoices',
+    path: '/invoices',
+    getParentRoute: () => RealmIdManageBillingRoute,
+  } as any)
+const RealmIdManageBillingInvoicesIndexRoute =
+  RealmIdManageBillingInvoicesIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => RealmIdManageBillingInvoicesRoute,
+  } as any)
 const RealmIdManageClientAppsClientAppIdEditRoute =
   RealmIdManageClientAppsClientAppIdEditRouteImport.update({
     id: '/$clientAppId/edit',
     path: '/$clientAppId/edit',
     getParentRoute: () => RealmIdManageClientAppsRoute,
   } as any)
-const RealmIdManageBillingPlansNewRoute = RealmIdManageBillingPlansNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => RealmIdManageBillingPlansRoute,
-} as any)
-const RealmIdManageBillingInvoicesNewRoute = RealmIdManageBillingInvoicesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => RealmIdManageBillingInvoicesRoute,
-} as any)
+const RealmIdManageBillingPlansNewRoute =
+  RealmIdManageBillingPlansNewRouteImport.update({
+    id: '/new',
+    path: '/new',
+    getParentRoute: () => RealmIdManageBillingPlansRoute,
+  } as any)
+const RealmIdManageBillingInvoicesNewRoute =
+  RealmIdManageBillingInvoicesNewRouteImport.update({
+    id: '/new',
+    path: '/new',
+    getParentRoute: () => RealmIdManageBillingInvoicesRoute,
+  } as any)
 const RealmIdManageBillingPlansPlanIdEditRoute =
   RealmIdManageBillingPlansPlanIdEditRouteImport.update({
     id: '/$planId/edit',
@@ -938,9 +958,8 @@ const RealmIdAuthRouteRouteChildren: RealmIdAuthRouteRouteChildren = {
   RealmIdAuthVerifyEmailRoute: RealmIdAuthVerifyEmailRoute,
 }
 
-const RealmIdAuthRouteRouteWithChildren = RealmIdAuthRouteRoute._addFileChildren(
-  RealmIdAuthRouteRouteChildren
-)
+const RealmIdAuthRouteRouteWithChildren =
+  RealmIdAuthRouteRoute._addFileChildren(RealmIdAuthRouteRouteChildren)
 
 interface RealmIdManageBillingInvoicesRouteChildren {
   RealmIdManageBillingInvoicesNewRoute: typeof RealmIdManageBillingInvoicesNewRoute
@@ -948,28 +967,36 @@ interface RealmIdManageBillingInvoicesRouteChildren {
   RealmIdManageBillingInvoicesInvoiceIdEditRoute: typeof RealmIdManageBillingInvoicesInvoiceIdEditRoute
 }
 
-const RealmIdManageBillingInvoicesRouteChildren: RealmIdManageBillingInvoicesRouteChildren = {
-  RealmIdManageBillingInvoicesNewRoute: RealmIdManageBillingInvoicesNewRoute,
-  RealmIdManageBillingInvoicesIndexRoute: RealmIdManageBillingInvoicesIndexRoute,
-  RealmIdManageBillingInvoicesInvoiceIdEditRoute: RealmIdManageBillingInvoicesInvoiceIdEditRoute,
-}
+const RealmIdManageBillingInvoicesRouteChildren: RealmIdManageBillingInvoicesRouteChildren =
+  {
+    RealmIdManageBillingInvoicesNewRoute: RealmIdManageBillingInvoicesNewRoute,
+    RealmIdManageBillingInvoicesIndexRoute:
+      RealmIdManageBillingInvoicesIndexRoute,
+    RealmIdManageBillingInvoicesInvoiceIdEditRoute:
+      RealmIdManageBillingInvoicesInvoiceIdEditRoute,
+  }
 
 const RealmIdManageBillingInvoicesRouteWithChildren =
-  RealmIdManageBillingInvoicesRoute._addFileChildren(RealmIdManageBillingInvoicesRouteChildren)
+  RealmIdManageBillingInvoicesRoute._addFileChildren(
+    RealmIdManageBillingInvoicesRouteChildren,
+  )
 
 interface RealmIdManageBillingPlansRouteChildren {
   RealmIdManageBillingPlansNewRoute: typeof RealmIdManageBillingPlansNewRoute
   RealmIdManageBillingPlansPlanIdEditRoute: typeof RealmIdManageBillingPlansPlanIdEditRoute
 }
 
-const RealmIdManageBillingPlansRouteChildren: RealmIdManageBillingPlansRouteChildren = {
-  RealmIdManageBillingPlansNewRoute: RealmIdManageBillingPlansNewRoute,
-  RealmIdManageBillingPlansPlanIdEditRoute: RealmIdManageBillingPlansPlanIdEditRoute,
-}
+const RealmIdManageBillingPlansRouteChildren: RealmIdManageBillingPlansRouteChildren =
+  {
+    RealmIdManageBillingPlansNewRoute: RealmIdManageBillingPlansNewRoute,
+    RealmIdManageBillingPlansPlanIdEditRoute:
+      RealmIdManageBillingPlansPlanIdEditRoute,
+  }
 
-const RealmIdManageBillingPlansRouteWithChildren = RealmIdManageBillingPlansRoute._addFileChildren(
-  RealmIdManageBillingPlansRouteChildren
-)
+const RealmIdManageBillingPlansRouteWithChildren =
+  RealmIdManageBillingPlansRoute._addFileChildren(
+    RealmIdManageBillingPlansRouteChildren,
+  )
 
 interface RealmIdManageBillingRouteChildren {
   RealmIdManageBillingInvoicesRoute: typeof RealmIdManageBillingInvoicesRouteWithChildren
@@ -979,15 +1006,16 @@ interface RealmIdManageBillingRouteChildren {
 }
 
 const RealmIdManageBillingRouteChildren: RealmIdManageBillingRouteChildren = {
-  RealmIdManageBillingInvoicesRoute: RealmIdManageBillingInvoicesRouteWithChildren,
-  RealmIdManageBillingPaymentProvidersRoute: RealmIdManageBillingPaymentProvidersRoute,
+  RealmIdManageBillingInvoicesRoute:
+    RealmIdManageBillingInvoicesRouteWithChildren,
+  RealmIdManageBillingPaymentProvidersRoute:
+    RealmIdManageBillingPaymentProvidersRoute,
   RealmIdManageBillingPlansRoute: RealmIdManageBillingPlansRouteWithChildren,
   RealmIdManageBillingIndexRoute: RealmIdManageBillingIndexRoute,
 }
 
-const RealmIdManageBillingRouteWithChildren = RealmIdManageBillingRoute._addFileChildren(
-  RealmIdManageBillingRouteChildren
-)
+const RealmIdManageBillingRouteWithChildren =
+  RealmIdManageBillingRoute._addFileChildren(RealmIdManageBillingRouteChildren)
 
 interface RealmIdManageClientAppsRouteChildren {
   RealmIdManageClientAppsNewRoute: typeof RealmIdManageClientAppsNewRoute
@@ -995,15 +1023,18 @@ interface RealmIdManageClientAppsRouteChildren {
   RealmIdManageClientAppsClientAppIdEditRoute: typeof RealmIdManageClientAppsClientAppIdEditRoute
 }
 
-const RealmIdManageClientAppsRouteChildren: RealmIdManageClientAppsRouteChildren = {
-  RealmIdManageClientAppsNewRoute: RealmIdManageClientAppsNewRoute,
-  RealmIdManageClientAppsIndexRoute: RealmIdManageClientAppsIndexRoute,
-  RealmIdManageClientAppsClientAppIdEditRoute: RealmIdManageClientAppsClientAppIdEditRoute,
-}
+const RealmIdManageClientAppsRouteChildren: RealmIdManageClientAppsRouteChildren =
+  {
+    RealmIdManageClientAppsNewRoute: RealmIdManageClientAppsNewRoute,
+    RealmIdManageClientAppsIndexRoute: RealmIdManageClientAppsIndexRoute,
+    RealmIdManageClientAppsClientAppIdEditRoute:
+      RealmIdManageClientAppsClientAppIdEditRoute,
+  }
 
-const RealmIdManageClientAppsRouteWithChildren = RealmIdManageClientAppsRoute._addFileChildren(
-  RealmIdManageClientAppsRouteChildren
-)
+const RealmIdManageClientAppsRouteWithChildren =
+  RealmIdManageClientAppsRoute._addFileChildren(
+    RealmIdManageClientAppsRouteChildren,
+  )
 
 interface RealmIdManagePointsRouteChildren {
   RealmIdManagePointsAccountsRoute: typeof RealmIdManagePointsAccountsRoute
@@ -1019,9 +1050,8 @@ const RealmIdManagePointsRouteChildren: RealmIdManagePointsRouteChildren = {
   RealmIdManagePointsRealmConfigRoute: RealmIdManagePointsRealmConfigRoute,
 }
 
-const RealmIdManagePointsRouteWithChildren = RealmIdManagePointsRoute._addFileChildren(
-  RealmIdManagePointsRouteChildren
-)
+const RealmIdManagePointsRouteWithChildren =
+  RealmIdManagePointsRoute._addFileChildren(RealmIdManagePointsRouteChildren)
 
 interface RealmIdManageRouteRouteChildren {
   RealmIdManageBillingRoute: typeof RealmIdManageBillingRouteWithChildren
@@ -1055,9 +1085,8 @@ const RealmIdManageRouteRouteChildren: RealmIdManageRouteRouteChildren = {
   RealmIdManageIndexRoute: RealmIdManageIndexRoute,
 }
 
-const RealmIdManageRouteRouteWithChildren = RealmIdManageRouteRoute._addFileChildren(
-  RealmIdManageRouteRouteChildren
-)
+const RealmIdManageRouteRouteWithChildren =
+  RealmIdManageRouteRoute._addFileChildren(RealmIdManageRouteRouteChildren)
 
 interface RealmIdUserSecurityRouteChildren {
   RealmIdUserSecurityTotpSetupRoute: typeof RealmIdUserSecurityTotpSetupRoute
@@ -1069,9 +1098,8 @@ const RealmIdUserSecurityRouteChildren: RealmIdUserSecurityRouteChildren = {
   RealmIdUserSecurityIndexRoute: RealmIdUserSecurityIndexRoute,
 }
 
-const RealmIdUserSecurityRouteWithChildren = RealmIdUserSecurityRoute._addFileChildren(
-  RealmIdUserSecurityRouteChildren
-)
+const RealmIdUserSecurityRouteWithChildren =
+  RealmIdUserSecurityRoute._addFileChildren(RealmIdUserSecurityRouteChildren)
 
 interface RealmIdUserRouteRouteChildren {
   RealmIdUserInvoicesRoute: typeof RealmIdUserInvoicesRoute
@@ -1091,9 +1119,8 @@ const RealmIdUserRouteRouteChildren: RealmIdUserRouteRouteChildren = {
   RealmIdUserSubscriptionHistoryRoute: RealmIdUserSubscriptionHistoryRoute,
 }
 
-const RealmIdUserRouteRouteWithChildren = RealmIdUserRouteRoute._addFileChildren(
-  RealmIdUserRouteRouteChildren
-)
+const RealmIdUserRouteRouteWithChildren =
+  RealmIdUserRouteRoute._addFileChildren(RealmIdUserRouteRouteChildren)
 
 interface RealmIdRouteRouteChildren {
   RealmIdAuthRouteRoute: typeof RealmIdAuthRouteRouteWithChildren
@@ -1107,11 +1134,15 @@ const RealmIdRouteRouteChildren: RealmIdRouteRouteChildren = {
   RealmIdAuthRouteRoute: RealmIdAuthRouteRouteWithChildren,
   RealmIdManageRouteRoute: RealmIdManageRouteRouteWithChildren,
   RealmIdUserRouteRoute: RealmIdUserRouteRouteWithChildren,
-  RealmIdSubscriptionMySubscriptionsRoute: RealmIdSubscriptionMySubscriptionsRoute,
-  RealmIdSubscriptionSubscriptionIdHistoryRoute: RealmIdSubscriptionSubscriptionIdHistoryRoute,
+  RealmIdSubscriptionMySubscriptionsRoute:
+    RealmIdSubscriptionMySubscriptionsRoute,
+  RealmIdSubscriptionSubscriptionIdHistoryRoute:
+    RealmIdSubscriptionSubscriptionIdHistoryRoute,
 }
 
-const RealmIdRouteRouteWithChildren = RealmIdRouteRoute._addFileChildren(RealmIdRouteRouteChildren)
+const RealmIdRouteRouteWithChildren = RealmIdRouteRoute._addFileChildren(
+  RealmIdRouteRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
