@@ -4,12 +4,6 @@ on:
   push:
     tags:
       - 'v*.*.*'
-  workflow_dispatch:
-    inputs:
-      sdk-version:
-        description: 'SDK version to publish (e.g. v0.1.0, or leave empty to use HEAD)'
-        required: false
-        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -59,8 +53,8 @@ jobs:
           file: docker/Dockerfile
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.platform }}
-          cache-to: type=gha,scope=${{ matrix.platform }},mode=max
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-cache-${{ env.PLATFORM_PAIR }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-cache-${{ env.PLATFORM_PAIR }},mode=max
 
       - name: Export digest
         run: |
@@ -108,37 +102,6 @@ jobs:
             -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} \
             -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
             $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
-
-  publish-sdk:
-    if: github.event_name == 'workflow_dispatch'
-    name: Publish herald-sdk to crates.io
-    runs-on: ubuntu-latest
-    env:
-      RUSTC_WRAPPER: ""
-      CARGO_BUILD_RUSTC_WRAPPER: ""
-      SCCACHE_DISABLE: "true"
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            backend/target
-          key: ${{ runner.os }}-cargo-sdk-${{ hashFiles('backend/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-sdk-
-
-      - name: Publish herald-sdk
-        working-directory: backend
-        run: cargo publish -p herald-sdk
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
 
   release:
     name: Create GitHub Release
