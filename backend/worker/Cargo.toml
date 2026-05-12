@@ -1,0 +1,17 @@
+[package]
+name = "herald-worker"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "herald_worker"
+path = "src/lib.rs"
+
+[dependencies]
+herald-core = { path = "../core" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+sqlx = { workspace = true }
+sea-orm = { workspace = true }

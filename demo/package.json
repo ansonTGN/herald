@@ -1,0 +1,30 @@
+{
+  "name": "cas-demo-tests",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@playwright/test": "^1.57.0",
+    "@types/node": "^25.2.2",
+    "@types/pg": "^8.16.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.0",
+    "@typescript-eslint/parser": "^8.58.0",
+    "eslint": "^9.18.0",
+    "pg": "^8.18.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "uuid": "^13.0.0"
+  }
+}

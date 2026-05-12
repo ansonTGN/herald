@@ -1,0 +1,225 @@
+/**
+ * Base Page Object
+ *
+ * Provides common functionality for all Page Objects.
+ * Encapsulates page navigation, loading state waiting, and element state helpers.
+ *
+ * @see ../../../spec/demo/e2e-testing.md#page-object-model-pom-规范
+ */
+
+import { Page, Locator, expect } from '@playwright/test'
+import { SELECTORS } from '../selectors'
+import type { UnifiedLogger } from '../helpers/unified-logger'
+
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
+
+/**
+ * Base Page Object class
+ *
+ * All Page Objects should extend this class to inherit common functionality.
+ */
+export class BasePage {
+  protected logger?: UnifiedLogger
+
+  constructor(public readonly page: Page, logger?: UnifiedLogger) {
+    this.logger = logger
+  }
+
+  /**
+   * Navigate to a path and wait for page load
+   *
+   * @param path URL path (e.g., '/admin/users')
+   * @param waitForSelector Optional selector to wait for
+   */
+  async goto(path: string, waitForSelector?: string): Promise<void> {
+    const url = path.startsWith('http') ? path : `${BASE_URL}${path}`
+    await this.page.goto(url)
+
+    if (waitForSelector) {
+      await expect(this.page.locator(waitForSelector)).toBeVisible()
+    }
+  }
+
+  /**
+   * Wait for page load state
+   *
+   * @param state Load state to wait for (default: 'domcontentloaded')
+   */
+  protected async waitForLoad(state: 'load' | 'domcontentloaded' | 'networkidle' = 'domcontentloaded'): Promise<void> {
+    await this.page.waitForLoadState(state)
+  }
+
+  /**
+   * Wait for element to be visible
+   *
+   * @param locator Element locator
+   * @param timeout Timeout in milliseconds (default: 5000)
+   */
+  protected async waitForVisible(locator: Locator, timeout: number = 5000): Promise<void> {
+    await expect(locator).toBeVisible({ timeout })
+  }
+
+  /**
+   * Wait for element to be hidden
+   *
+   * @param locator Element locator
+   * @param timeout Timeout in milliseconds (default: 5000)
+   */
+  protected async waitForHidden(locator: Locator, timeout: number = 5000): Promise<void> {
+    await expect(locator).toBeHidden({ timeout })
+  }
+
+  /**
+   * Smart click - waits for element to be visible before clicking
+   *
+   * @param element Element locator
+   * @param force Whether to force click (default: false)
+   */
+  public async smartClick(element: Locator, force: boolean = false): Promise<void> {
+    await expect(element).toBeVisible()
+    await element.click({ force })
+  }
+
+  /**
+   * Get current page URL
+   */
+  getUrl(): string {
+    return this.page.url()
+  }
+
+  /**
+   * Check if element is visible
+   *
+   * @param locator Element locator
+   */
+  async isVisible(locator: Locator): Promise<boolean> {
+    return await locator.isVisible().catch(() => false)
+  }
+
+  /**
+   * Wait for API response
+   *
+   * ⚠️ 如需验证状态码，请直接使用 `page.waitForResponse(predicate, () => action)`
+   *
+   * @param url API URL pattern
+   * @param method HTTP method (default: 'GET')
+   * @param timeout Timeout in milliseconds (default: 10000)
+   */
+  protected async waitForApiResponse(
+    url: string,
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' = 'GET',
+    timeout: number = 10000
+  ): Promise<void> {
+    await this.page.waitForResponse(
+      response =>
+        response.url().includes(url) &&
+        response.request().method() === method,
+      { timeout }
+    )
+  }
+
+  /**
+   * Fill a form field
+   *
+   * Triggers blur event to ensure TanStack Form validation runs after filling.
+   * This updates the form's canSubmit state and enables the submit button.
+   *
+   * Uses assertion-based waiting (Playwright auto-wait) instead of fixed delays.
+   *
+   * @param locator Element locator
+   * @param value Value to fill
+   * @param waitForValidation Optional - wait for validation state (default: true)
+   */
+  protected async fillField(locator: Locator, value: string, waitForValidation: boolean = true): Promise<void> {
+    await expect(locator).toBeVisible()
+
+    // Select all text and replace with new value
+    // This works correctly with React controlled inputs
+    await locator.selectText()
+    await locator.fill(value)
+
+    // Trigger blur to run field-level validation
+    await locator.blur()
+
+    // Wait for React state update by checking if value is committed
+    if (waitForValidation) {
+      await expect(async () => {
+        const inputValue = await locator.inputValue()
+        expect(inputValue).toBe(value)
+      }).toPass({ timeout: 2000 })
+    }
+  }
+
+  /**
+   * Check/uncheck a checkbox
+   *
+   * Uses click() with explicit wait instead of setChecked() to avoid
+   * "Clicking the checkbox did not change its state" errors with custom
+   * checkbox implementations (e.g., Radix UI).
+   *
+   * Uses assertion-based waiting (Playwright auto-wait) instead of fixed delays.
+   *
+   * @param locator Element locator
+   * @param checked Whether to check (true) or uncheck (false)
+   *
+   * @see .claude/mistakes/demo-repair.md - CHECKBOX_STATE_CHANGE_FAILURE
+   */
+  protected async setCheckbox(locator: Locator, checked: boolean): Promise<void> {
+    // Wait for checkbox to be visible and stable
+    await expect(locator).toBeVisible()
+
+    const isChecked = await locator.isChecked()
+
+    if (isChecked !== checked) {
+      // Use click() instead of setChecked() to avoid state detection issues
+      await locator.click({ force: true })
+
+      // Use assertion-based waiting to wait for state update
+      // This eliminates fixed delay and uses Playwright's intelligent retry mechanism
+      await expect(async () => {
+        const newCheckedState = await locator.isChecked()
+        expect(newCheckedState).toBe(checked)
+      }).toPass({ timeout: 5000 })
+    }
+  }
+
+  /**
+   * Select an option from a select dropdown
+   *
+   * @param locator Element locator
+   * @param value Option value to select
+   */
+  protected async selectOption(locator: Locator, value: string): Promise<void> {
+    await expect(locator).toBeVisible()
+    await locator.selectOption(value)
+  }
+
+  /**
+   * Get text content of an element
+   *
+   * @param locator Element locator
+   */
+  protected async getText(locator: Locator): Promise<string> {
+    await expect(locator).toBeVisible()
+    return await locator.textContent() || ''
+  }
+
+  /**
+   * Get attribute value of an element
+   *
+   * @param locator Element locator
+   * @param attribute Attribute name
+   */
+  protected async getAttribute(locator: Locator, attribute: string): Promise<string | null> {
+    return await locator.getAttribute(attribute)
+  }
+
+  /**
+   * Take screenshot (for debugging)
+   *
+   * @param name Screenshot name
+   */
+  protected async screenshot(name: string): Promise<void> {
+    await this.page.screenshot({ path: `test-results/screenshots/${name}.png` })
+  }
+}

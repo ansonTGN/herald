@@ -1,0 +1,23 @@
+/target
+.idea
+spec-*.md
+# Ignore .claude configs but keep commands (team collaboration)
+nul
+/bak
+.ai
+/log
+tmpclaude-*
+
+# Generated files
+backend/frontend/api.json
+frontend/.jscpd-report/
+scripts/log
+test-results/
+__pycache__/
+*.pyc
+*.log
+skill-eval-workspace/
+.DS_Store
+
+# Playwright test storage
+.storage/*.json

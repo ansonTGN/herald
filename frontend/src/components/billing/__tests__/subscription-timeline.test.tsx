@@ -1,0 +1,295 @@
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, within } from '@testing-library/react'
+import { userEvent } from '@testing-library/user-event'
+import { SubscriptionTimeline } from '../subscription-timeline'
+import type { SubscriptionHistoryEvent } from '@/types/billing'
+import { mockSubscriptionHistoryEvent } from './utils'
+
+describe('SubscriptionTimeline - Time Sorting', () => {
+  const mockEvents: SubscriptionHistoryEvent[] = [
+    {
+      ...mockSubscriptionHistoryEvent({
+        id: '1',
+        timestamp: '2025-01-01T09:00:00Z',
+        eventType: 'created',
+      }),
+    },
+    {
+      ...mockSubscriptionHistoryEvent({
+        id: '2',
+        timestamp: '2025-01-20T10:30:00Z',
+        eventType: 'upgraded',
+      }),
+    },
+    {
+      ...mockSubscriptionHistoryEvent({
+        id: '3',
+        timestamp: '2025-02-15T14:00:00Z',
+        eventType: 'canceled',
+      }),
+    },
+  ]
+
+  it('should display events in the order they are provided (not sorting internally)', () => {
+    render(<SubscriptionTimeline events={mockEvents} />)
+
+    const events = screen.getAllByTestId(/timeline-event-\d+/)
+    expect(events).toHaveLength(3)
+
+    // Verify the events are rendered in the order provided
+    expect(events[0]).toHaveAttribute('data-testid', 'timeline-event-0')
+    expect(events[1]).toHaveAttribute('data-testid', 'timeline-event-1')
+    expect(events[2]).toHaveAttribute('data-testid', 'timeline-event-2')
+  })
+
+  it('should display timestamps in human-readable format', () => {
+    render(<SubscriptionTimeline events={mockEvents} />)
+
+    // Check that timestamps are rendered (formatted by date-fns)
+    // The format includes date and time, so we just check that timestamps are present
+    const timestamps = screen.getAllByText(/2025/i)
+    expect(timestamps.length).toBeGreaterThan(0)
+  })
+})
+
+describe('SubscriptionTimeline - Empty State', () => {
+  it('should display empty state message when no events', () => {
+    render(<SubscriptionTimeline events={[]} />)
+
+    expect(screen.getByTestId('timeline-empty')).toBeInTheDocument()
+    expect(screen.getByText(/no history events found/i)).toBeInTheDocument()
+  })
+
+  it('should hide timeline when loading is true and events is empty', () => {
+    render(<SubscriptionTimeline events={[]} loading={true} />)
+
+    expect(screen.queryByTestId('subscription-timeline')).not.toBeInTheDocument()
+    expect(screen.getByTestId('timeline-loading')).toBeInTheDocument()
+    expect(screen.getByText(/loading history/i)).toBeInTheDocument()
+  })
+
+  it('should display loading state when loading is true', () => {
+    const mockEvents = [
+      mockSubscriptionHistoryEvent({
+        id: '1',
+        eventType: 'upgraded',
+      }),
+    ]
+
+    render(<SubscriptionTimeline events={mockEvents} loading={true} />)
+
+    expect(screen.getByTestId('timeline-loading')).toBeInTheDocument()
+    expect(screen.getByText(/loading history/i)).toBeInTheDocument()
+    // Loading state should not show events
+    expect(screen.queryByTestId('subscription-timeline')).not.toBeInTheDocument()
+  })
+})
+
+describe('SubscriptionTimeline - Event Rendering', () => {
+  const mockEvents: SubscriptionHistoryEvent[] = [
+    {
+      ...mockSubscriptionHistoryEvent({
+        id: '1',
+        eventType: 'upgraded',
+        actor: 'admin@example.com',
+        changes: {
+          changedFields: ['planId', 'tier'],
+          previousPlanId: 'basic-plan',
+          newPlanId: 'pro-plan',
+        },
+      }),
+    },
+  ]
+
+  it('should render event badge with correct type', () => {
+    render(<SubscriptionTimeline events={mockEvents} />)
+
+    expect(screen.getByTestId('event-badge-upgraded')).toBeInTheDocument()
+  })
+
+  it('should display actor information when available', () => {
+    render(<SubscriptionTimeline events={mockEvents} />)
+
+    expect(screen.getByText('admin@example.com')).toBeInTheDocument()
+  })
+
+  it('should display change summary when changes are present', () => {
+    render(<SubscriptionTimeline events={mockEvents} />)
+
+    const eventContainer = screen.getByTestId('timeline-event-0')
+    expect(within(eventContainer).getByText(/plan changed from/i)).toBeInTheDocument()
+    expect(within(eventContainer).getByText('basic-plan')).toBeInTheDocument()
+    expect(within(eventContainer).getByText('pro-plan')).toBeInTheDocument()
+  })
+
+  it('should render view details button for each event', () => {
+    render(<SubscriptionTimeline events={mockEvents} />)
+
+    expect(screen.getByTestId('view-event-details-0')).toBeInTheDocument()
+  })
+})
+
+describe('SubscriptionTimeline - Event Interaction', () => {
+  const mockEvents: SubscriptionHistoryEvent[] = [
+    mockSubscriptionHistoryEvent({
+      id: '1',
+      eventType: 'upgraded',
+    }),
+  ]
+
+  it('should call onEventClick when event details button is clicked', async () => {
+    const onEventClick = vi.fn()
+
+    render(<SubscriptionTimeline events={mockEvents} onEventClick={onEventClick} />)
+
+    const viewButton = screen.getByTestId('view-event-details-0')
+    await userEvent.click(viewButton)
+
+    expect(onEventClick).toHaveBeenCalledTimes(1)
+    expect(onEventClick).toHaveBeenCalledWith(mockEvents[0])
+  })
+
+  it('should open event detail dialog when view details is clicked', async () => {
+    render(<SubscriptionTimeline events={mockEvents} />)
+
+    expect(screen.queryByTestId('event-detail-dialog')).not.toBeInTheDocument()
+
+    const viewButton = screen.getByTestId('view-event-details-0')
+    await userEvent.click(viewButton)
+
+    expect(screen.getByTestId('event-detail-dialog')).toBeInTheDocument()
+  })
+
+  it('should close event detail dialog when close button is clicked', async () => {
+    render(<SubscriptionTimeline events={mockEvents} />)
+
+    const viewButton = screen.getByTestId('view-event-details-0')
+    await userEvent.click(viewButton)
+
+    const closeButton = screen.getByRole('button', { name: /close/i })
+    await userEvent.click(closeButton)
+
+    expect(screen.queryByTestId('event-detail-dialog')).not.toBeInTheDocument()
+  })
+})
+
+describe('SubscriptionTimeline - Event Detail Dialog', () => {
+  const mockEvents: SubscriptionHistoryEvent[] = [
+    {
+      ...mockSubscriptionHistoryEvent({
+        id: 'evt-1',
+        eventType: 'upgraded',
+        actor: 'admin@example.com',
+        previousState: {
+          id: 'sub-1',
+          realmId: 'realm-1',
+          status: 'active',
+          tier: 'basic',
+          planId: 'basic-plan',
+          billingPeriod: 'monthly',
+          cancelAtPeriodEnd: false,
+        },
+        newState: {
+          id: 'sub-1',
+          realmId: 'realm-1',
+          status: 'active',
+          tier: 'pro',
+          planId: 'pro-plan',
+          billingPeriod: 'monthly',
+          cancelAtPeriodEnd: false,
+        },
+      }),
+    },
+  ]
+
+  it('should display event ID in detail dialog', async () => {
+    render(<SubscriptionTimeline events={mockEvents} />)
+
+    const viewButton = screen.getByTestId('view-event-details-0')
+    await userEvent.click(viewButton)
+
+    // Check that dialog contains event ID using a function matcher
+    expect(
+      screen.getByText((content, element) => {
+        return content.includes('evt-1') && element?.tagName.toLowerCase() === 'p'
+      })
+    ).toBeInTheDocument()
+  })
+
+  it('should display previous state in detail dialog', async () => {
+    render(<SubscriptionTimeline events={mockEvents} />)
+
+    const viewButton = screen.getByTestId('view-event-details-0')
+    await userEvent.click(viewButton)
+
+    // Check that dialog contains previous state section
+    expect(screen.getByText(/previous state/i)).toBeInTheDocument()
+    // Check that status and plan are mentioned (using getAllByText since there are multiple)
+    expect(screen.getAllByText('Status:').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Plan:').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('basic-plan').length).toBeGreaterThan(0)
+  })
+
+  it('should display new state in detail dialog', async () => {
+    render(<SubscriptionTimeline events={mockEvents} />)
+
+    const viewButton = screen.getByTestId('view-event-details-0')
+    await userEvent.click(viewButton)
+
+    // Check that dialog contains new state section
+    expect(screen.getByText(/new state/i)).toBeInTheDocument()
+    // Check that status and plan are mentioned (using getAllByText since there are multiple)
+    expect(screen.getAllByText('Status:').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Plan:').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('pro-plan').length).toBeGreaterThan(0)
+  })
+
+  it('should display changes with changed fields when present', async () => {
+    const mockEventsWithChanges: SubscriptionHistoryEvent[] = [
+      {
+        ...mockSubscriptionHistoryEvent({
+          id: '1',
+          eventType: 'upgraded',
+          changes: {
+            changedFields: ['planId', 'tier', 'billingPeriod'],
+          },
+        }),
+      },
+    ]
+
+    render(<SubscriptionTimeline events={mockEventsWithChanges} />)
+
+    const viewButton = screen.getByTestId('view-event-details-0')
+    await userEvent.click(viewButton)
+
+    expect(screen.getByText(/changes/i)).toBeInTheDocument()
+    expect(screen.getByText(/changed fields:/i)).toBeInTheDocument()
+    expect(screen.getByText('planId')).toBeInTheDocument()
+    expect(screen.getByText('tier')).toBeInTheDocument()
+    expect(screen.getByText('billingPeriod')).toBeInTheDocument()
+  })
+})
+
+describe('SubscriptionTimeline - Multiple Events', () => {
+  const mockEvents: SubscriptionHistoryEvent[] = [
+    mockSubscriptionHistoryEvent({ id: '1', eventType: 'created' }),
+    mockSubscriptionHistoryEvent({ id: '2', eventType: 'upgraded' }),
+    mockSubscriptionHistoryEvent({ id: '3', eventType: 'downgraded' }),
+  ]
+
+  it('should render all events', () => {
+    render(<SubscriptionTimeline events={mockEvents} />)
+
+    expect(screen.getByTestId('timeline-event-0')).toBeInTheDocument()
+    expect(screen.getByTestId('timeline-event-1')).toBeInTheDocument()
+    expect(screen.getByTestId('timeline-event-2')).toBeInTheDocument()
+  })
+
+  it('should display different event types with different badges', () => {
+    render(<SubscriptionTimeline events={mockEvents} />)
+
+    expect(screen.getByTestId('event-badge-created')).toBeInTheDocument()
+    expect(screen.getByTestId('event-badge-upgraded')).toBeInTheDocument()
+    expect(screen.getByTestId('event-badge-downgraded')).toBeInTheDocument()
+  })
+})

@@ -1,0 +1,39 @@
+[package]
+name = "herald-domain"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lints.clippy]
+too_many_arguments = "allow"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+bcrypt = { workspace = true }
+totp-lite = { workspace = true }
+aes-gcm = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+url = { workspace = true }
+base32 = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+mockall = { workspace = true }
+utoipa = { workspace = true, features = ["uuid", "chrono"] }
+validator = { workspace = true, features = ["derive"] }
+oauth2 = { workspace = true }
+# Heavy deps for CoreError From impls (no proc-macro usage in domain)
+sea-orm = { workspace = true }
+sqlx = { workspace = true }
+redis = { workspace = true }
+reqwest = { workspace = true }
+axum = { workspace = true }

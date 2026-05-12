@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+docs
+LICENSE
+README.md
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Node
+frontend/node_modules
+frontend/dist
+frontend/.turbo
+
+# Rust
+target
+backend/.cargo
+**/*.rs.bk
+*.pdb
+
+# Environment
+.env
+.env.*
+*.local
+
+# CI/CD
+*.log
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Tests (test files, but allow workspace test crates needed for build)
+**/*_test.go
+**/*test*.ts
+**/*test*.tsx
+**/*spec*.ts
+**/*spec*.tsx
+**/__tests__/**

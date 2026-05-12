@@ -1,0 +1,37 @@
+// Domain layer - business logic and ports
+//
+// This layer contains:
+// - Entities: Core business objects
+// - Value objects: Immutable values
+// - Ports (traits): Repository and service interfaces
+// - Business logic: Domain services
+//
+// IMPORTANT: This layer has ZERO external dependencies
+// - No sea_orm, no redis, no http clients
+// - Only pure Rust and domain types
+
+pub mod audit;
+pub mod authentication;
+pub mod authorization;
+pub mod billing;
+pub mod client;
+pub mod client_api_keys;
+pub mod client_app;
+pub mod common;
+pub mod oauth;
+pub mod payment_attempt;
+pub mod points;
+pub mod points_package;
+pub mod purchase;
+pub mod rbac_init;
+pub mod realm;
+pub mod realm_config;
+pub mod totp_key_management;
+pub mod user;
+pub mod user_totp;
+
+// Re-export commonly used types
+pub use audit::{RbacAction, RbacAuditEvent, RbacAuditLogger, RbacResult, RbacTargetType};
+pub use authentication::Identity;
+pub use payment_attempt::PurchasableTarget;
+pub use totp_key_management::{RealmTotpKeyRepository, RealmTotpKeyService};

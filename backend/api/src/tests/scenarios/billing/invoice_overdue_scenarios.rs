@@ -1,0 +1,621 @@
+// =============================================================================
+// Invoice Overdue Job Scenario Tests
+// =============================================================================
+//
+// Tests for the InvoiceOverdueJob worker: marking past-due issued invoices as
+// overdue, skipping non-eligible invoices, recording history with
+// actor_type = system, batch processing, and idempotency.
+//
+// User Story: docs/user-stories/13-invoice-user-stories.md
+// Covers: US-IV-009 (System marks overdue invoices)
+//
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use crate::tests::schema_test_context::SchemaTestContext;
+    use chrono::{Duration, Utc};
+    use herald_core::domain::billing::invoice::{
+        ActorType, InvoiceEventType, InvoiceRepository, InvoiceSource, InvoiceStatus,
+        InvoiceStatusTransition, NewInvoice, NewLineItem,
+    };
+    use test_context::test_context;
+    use uuid::Uuid;
+
+    use SchemaTestContext as InvoiceTestContext;
+
+    // ---------------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------------
+
+    /// Create a test account row in the current test schema.
+    async fn ensure_test_account(ctx: &InvoiceTestContext, realm_id: &str) -> Uuid {
+        let account_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO account (id, realm_id, email, password, status)
+             VALUES ($1, $2, $3, $4, 1)
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(account_id)
+        .bind(realm_id)
+        .bind(format!("overdue-test-{}@example.com", account_id))
+        .bind("$2a$12$dummy_hash")
+        .execute(&ctx.app_state.pool)
+        .await
+        .unwrap();
+        account_id
+    }
+
+    /// Build a NewInvoice with sensible defaults for overdue testing.
+    fn build_new_invoice(
+        realm_id: &str,
+        account_id: Uuid,
+        due_date: Option<chrono::NaiveDate>,
+    ) -> NewInvoice {
+        NewInvoice {
+            realm_id: realm_id.to_string(),
+            source: InvoiceSource::AdminManual,
+            account_id,
+            applicant_user_id: None,
+            subscription_id: None,
+            payment_attempt_id: None,
+            currency: "USD".to_string(),
+            line_items: vec![NewLineItem {
+                name: "Service Fee".to_string(),
+                description: None,
+                quantity: "1".to_string(),
+                unit_price: 10000,
+            }],
+            billing_name: "Overdue Test Client".to_string(),
+            billing_address: None,
+            billing_email: None,
+            billing_phone: None,
+            seller_name: "Test Seller".to_string(),
+            seller_address: None,
+            seller_email: None,
+            seller_phone: None,
+            discount_mode: None,
+            discount_value: None,
+            tax_mode: None,
+            tax_value: None,
+            shipping_mode: None,
+            shipping_value: None,
+            due_date,
+            payment_terms: None,
+            notes: None,
+        }
+    }
+
+    // =========================================================================
+    // Test 1: Overdue job marks past-due issued invoices as overdue
+    // =========================================================================
+    // User Story: docs/user-stories/13-invoice-user-stories.md
+    // Covers: US-IV-009 Scenario 1
+    //
+    // Given: An issued invoice with a past due_date
+    // When:  The overdue job runs
+    // Then:  The invoice status becomes "overdue"
+
+    #[test_context(InvoiceTestContext)]
+    #[tokio::test]
+    async fn test_overdue_job_marks_past_due_issued_invoices(ctx: &mut InvoiceTestContext) {
+        let realm_id = ctx._realm_id.clone();
+        let account_id = ensure_test_account(ctx, &realm_id).await;
+        let repo = ctx.app_state.invoice_repository.clone();
+
+        // Create and issue an invoice with a past due_date (5 days ago)
+        let past_date = (Utc::now() - Duration::days(5)).date_naive();
+        let input = build_new_invoice(&realm_id, account_id, Some(past_date));
+        let created = repo.create_invoice(input).await.unwrap();
+
+        // Issue the invoice
+        repo.transition_status(InvoiceStatusTransition {
+            realm_id: realm_id.clone(),
+            invoice_id: created.id,
+            target_status: InvoiceStatus::Issued,
+            actor_user_id: None,
+            actor_type: ActorType::User,
+            void_reason: None,
+        })
+        .await
+        .unwrap();
+
+        // Run the overdue job
+        let job = herald_worker::InvoiceOverdueJob::new(repo.clone());
+        let result = job.run().await.unwrap();
+
+        // The job should have found and processed our invoice
+        assert!(
+            result.candidates >= 1,
+            "Expected at least 1 overdue candidate, got {}",
+            result.candidates,
+        );
+        assert!(
+            result.marked >= 1,
+            "Expected at least 1 invoice marked overdue, got {}",
+            result.marked,
+        );
+
+        // Verify the invoice status is now overdue
+        let detail = repo
+            .find_with_items(&realm_id, created.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            detail.invoice.status,
+            InvoiceStatus::Overdue,
+            "Invoice should be overdue after job runs"
+        );
+    }
+
+    // =========================================================================
+    // Test 2: Overdue job skips paid invoices
+    // =========================================================================
+    // User Story: docs/user-stories/13-invoice-user-stories.md
+    // Covers: US-IV-009 Scenario 2
+    //
+    // Given: A paid invoice with a past due_date
+    // When:  The overdue job runs
+    // Then:  The invoice status remains "paid"
+
+    #[test_context(InvoiceTestContext)]
+    #[tokio::test]
+    async fn test_overdue_job_skips_paid_invoices(ctx: &mut InvoiceTestContext) {
+        let realm_id = ctx._realm_id.clone();
+        let account_id = ensure_test_account(ctx, &realm_id).await;
+        let repo = ctx.app_state.invoice_repository.clone();
+
+        // Create, issue, and pay an invoice with a past due_date
+        let past_date = (Utc::now() - Duration::days(5)).date_naive();
+        let input = build_new_invoice(&realm_id, account_id, Some(past_date));
+        let created = repo.create_invoice(input).await.unwrap();
+
+        repo.transition_status(InvoiceStatusTransition {
+            realm_id: realm_id.clone(),
+            invoice_id: created.id,
+            target_status: InvoiceStatus::Issued,
+            actor_user_id: None,
+            actor_type: ActorType::User,
+            void_reason: None,
+        })
+        .await
+        .unwrap();
+
+        repo.transition_status(InvoiceStatusTransition {
+            realm_id: realm_id.clone(),
+            invoice_id: created.id,
+            target_status: InvoiceStatus::Paid,
+            actor_user_id: None,
+            actor_type: ActorType::User,
+            void_reason: None,
+        })
+        .await
+        .unwrap();
+
+        // Run the overdue job
+        let job = herald_worker::InvoiceOverdueJob::new(repo.clone());
+        let _result = job.run().await.unwrap();
+
+        // Verify the invoice is still paid
+        let detail = repo
+            .find_with_items(&realm_id, created.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            detail.invoice.status,
+            InvoiceStatus::Paid,
+            "Paid invoice should not be changed by overdue job"
+        );
+    }
+
+    // =========================================================================
+    // Test 3: Overdue job skips void invoices
+    // =========================================================================
+    // User Story: docs/user-stories/13-invoice-user-stories.md
+    // Covers: US-IV-009 Scenario 2
+    //
+    // Given: A void invoice with a past due_date
+    // When:  The overdue job runs
+    // Then:  The invoice status remains "void"
+
+    #[test_context(InvoiceTestContext)]
+    #[tokio::test]
+    async fn test_overdue_job_skips_void_invoices(ctx: &mut InvoiceTestContext) {
+        let realm_id = ctx._realm_id.clone();
+        let account_id = ensure_test_account(ctx, &realm_id).await;
+        let repo = ctx.app_state.invoice_repository.clone();
+
+        // Create, issue, and void an invoice with a past due_date
+        let past_date = (Utc::now() - Duration::days(5)).date_naive();
+        let input = build_new_invoice(&realm_id, account_id, Some(past_date));
+        let created = repo.create_invoice(input).await.unwrap();
+
+        repo.transition_status(InvoiceStatusTransition {
+            realm_id: realm_id.clone(),
+            invoice_id: created.id,
+            target_status: InvoiceStatus::Issued,
+            actor_user_id: None,
+            actor_type: ActorType::User,
+            void_reason: None,
+        })
+        .await
+        .unwrap();
+
+        repo.transition_status(InvoiceStatusTransition {
+            realm_id: realm_id.clone(),
+            invoice_id: created.id,
+            target_status: InvoiceStatus::Void,
+            actor_user_id: None,
+            actor_type: ActorType::User,
+            void_reason: Some("Cancelled".to_string()),
+        })
+        .await
+        .unwrap();
+
+        // Run the overdue job
+        let job = herald_worker::InvoiceOverdueJob::new(repo.clone());
+        let _result = job.run().await.unwrap();
+
+        // Verify the invoice is still void
+        let detail = repo
+            .find_with_items(&realm_id, created.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            detail.invoice.status,
+            InvoiceStatus::Void,
+            "Void invoice should not be changed by overdue job"
+        );
+    }
+
+    // =========================================================================
+    // Test 4: Overdue job skips draft invoices
+    // =========================================================================
+    // User Story: docs/user-stories/13-invoice-user-stories.md
+    // Covers: US-IV-009 (exclusion: only issued invoices are candidates)
+    //
+    // Given: A draft invoice with a past due_date
+    // When:  The overdue job runs
+    // Then:  The invoice status remains "draft"
+
+    #[test_context(InvoiceTestContext)]
+    #[tokio::test]
+    async fn test_overdue_job_skips_draft_invoices(ctx: &mut InvoiceTestContext) {
+        let realm_id = ctx._realm_id.clone();
+        let account_id = ensure_test_account(ctx, &realm_id).await;
+        let repo = ctx.app_state.invoice_repository.clone();
+
+        // Create a draft invoice with a past due_date (do NOT issue it)
+        let past_date = (Utc::now() - Duration::days(5)).date_naive();
+        let input = build_new_invoice(&realm_id, account_id, Some(past_date));
+        let created = repo.create_invoice(input).await.unwrap();
+
+        assert_eq!(created.status, InvoiceStatus::Draft);
+
+        // Run the overdue job
+        let job = herald_worker::InvoiceOverdueJob::new(repo.clone());
+        let _result = job.run().await.unwrap();
+
+        // Verify the invoice is still draft
+        let detail = repo
+            .find_with_items(&realm_id, created.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            detail.invoice.status,
+            InvoiceStatus::Draft,
+            "Draft invoice should not be changed by overdue job"
+        );
+    }
+
+    // =========================================================================
+    // Test 5: Overdue job skips invoices with future due dates
+    // =========================================================================
+    // User Story: docs/user-stories/13-invoice-user-stories.md
+    // Covers: US-IV-009 (exclusion: only past-due invoices)
+    //
+    // Given: An issued invoice with a future due_date
+    // When:  The overdue job runs
+    // Then:  The invoice status remains "issued"
+
+    #[test_context(InvoiceTestContext)]
+    #[tokio::test]
+    async fn test_overdue_job_skips_future_due_date(ctx: &mut InvoiceTestContext) {
+        let realm_id = ctx._realm_id.clone();
+        let account_id = ensure_test_account(ctx, &realm_id).await;
+        let repo = ctx.app_state.invoice_repository.clone();
+
+        // Create and issue an invoice with a future due_date (30 days from now)
+        let future_date = (Utc::now() + Duration::days(30)).date_naive();
+        let input = build_new_invoice(&realm_id, account_id, Some(future_date));
+        let created = repo.create_invoice(input).await.unwrap();
+
+        repo.transition_status(InvoiceStatusTransition {
+            realm_id: realm_id.clone(),
+            invoice_id: created.id,
+            target_status: InvoiceStatus::Issued,
+            actor_user_id: None,
+            actor_type: ActorType::User,
+            void_reason: None,
+        })
+        .await
+        .unwrap();
+
+        // Run the overdue job
+        let job = herald_worker::InvoiceOverdueJob::new(repo.clone());
+        let _result = job.run().await.unwrap();
+
+        // Verify the invoice is still issued (not overdue)
+        let detail = repo
+            .find_with_items(&realm_id, created.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            detail.invoice.status,
+            InvoiceStatus::Issued,
+            "Invoice with future due_date should not be marked overdue"
+        );
+    }
+
+    // =========================================================================
+    // Test 6: Overdue job records history with actor_type = system
+    // =========================================================================
+    // User Story: docs/user-stories/13-invoice-user-stories.md
+    // Covers: US-IV-009 Scenario 1 (history entry with actor_type = system)
+    //
+    // Given: An issued invoice with a past due_date
+    // When:  The overdue job runs
+    // Then:  A history entry is recorded with event_type = "overdue" and
+    //        actor_type = "system"
+
+    #[test_context(InvoiceTestContext)]
+    #[tokio::test]
+    async fn test_overdue_job_records_history(ctx: &mut InvoiceTestContext) {
+        let realm_id = ctx._realm_id.clone();
+        let account_id = ensure_test_account(ctx, &realm_id).await;
+        let repo = ctx.app_state.invoice_repository.clone();
+
+        // Create and issue an invoice with a past due_date
+        let past_date = (Utc::now() - Duration::days(3)).date_naive();
+        let input = build_new_invoice(&realm_id, account_id, Some(past_date));
+        let created = repo.create_invoice(input).await.unwrap();
+
+        repo.transition_status(InvoiceStatusTransition {
+            realm_id: realm_id.clone(),
+            invoice_id: created.id,
+            target_status: InvoiceStatus::Issued,
+            actor_user_id: None,
+            actor_type: ActorType::User,
+            void_reason: None,
+        })
+        .await
+        .unwrap();
+
+        // Run the overdue job
+        let job = herald_worker::InvoiceOverdueJob::new(repo.clone());
+        let _result = job.run().await.unwrap();
+
+        // Verify history contains an "overdue" event with actor_type = system
+        let detail = repo
+            .find_with_items(&realm_id, created.id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let overdue_event = detail
+            .history
+            .iter()
+            .find(|h| h.event_type == InvoiceEventType::Overdue);
+        assert!(
+            overdue_event.is_some(),
+            "Expected an 'overdue' event in history"
+        );
+
+        let event = overdue_event.unwrap();
+        assert_eq!(
+            event.actor_type,
+            ActorType::System,
+            "Overdue event should have actor_type = System"
+        );
+        assert!(
+            event.actor_user_id.is_none(),
+            "System overdue event should have no actor_user_id"
+        );
+
+        // Verify the changes field records the status transition
+        let changes = &event.changes;
+        assert_eq!(changes["from"], "issued");
+        assert_eq!(changes["to"], "overdue");
+    }
+
+    // =========================================================================
+    // Test 7: Overdue job batch processing
+    // =========================================================================
+    // User Story: docs/user-stories/13-invoice-user-stories.md
+    // Covers: US-IV-009 (batch processing: multiple invoices processed in one run)
+    //
+    // Given: 3 issued invoices with past due_dates and 1 issued with future date
+    // When:  The overdue job runs
+    // Then:  Exactly the 3 past-due invoices are marked overdue;
+    //        the future-dated one remains issued
+
+    #[test_context(InvoiceTestContext)]
+    #[tokio::test]
+    async fn test_overdue_job_batch_processing(ctx: &mut InvoiceTestContext) {
+        let realm_id = ctx._realm_id.clone();
+        let account_id = ensure_test_account(ctx, &realm_id).await;
+        let repo = ctx.app_state.invoice_repository.clone();
+
+        let past_date = (Utc::now() - Duration::days(5)).date_naive();
+        let future_date = (Utc::now() + Duration::days(30)).date_naive();
+
+        let mut past_due_ids: Vec<Uuid> = Vec::new();
+
+        // Create 3 issued invoices with past due_dates
+        for _ in 0..3 {
+            let input = build_new_invoice(&realm_id, account_id, Some(past_date));
+            let created = repo.create_invoice(input).await.unwrap();
+
+            repo.transition_status(InvoiceStatusTransition {
+                realm_id: realm_id.clone(),
+                invoice_id: created.id,
+                target_status: InvoiceStatus::Issued,
+                actor_user_id: None,
+                actor_type: ActorType::User,
+                void_reason: None,
+            })
+            .await
+            .unwrap();
+
+            past_due_ids.push(created.id);
+        }
+
+        // Create 1 issued invoice with a future due_date (should be skipped)
+        let input = build_new_invoice(&realm_id, account_id, Some(future_date));
+        let future_inv = repo.create_invoice(input).await.unwrap();
+
+        repo.transition_status(InvoiceStatusTransition {
+            realm_id: realm_id.clone(),
+            invoice_id: future_inv.id,
+            target_status: InvoiceStatus::Issued,
+            actor_user_id: None,
+            actor_type: ActorType::User,
+            void_reason: None,
+        })
+        .await
+        .unwrap();
+
+        let future_due_id = future_inv.id;
+
+        // Run the overdue job
+        let job = herald_worker::InvoiceOverdueJob::new(repo.clone());
+        let result = job.run().await.unwrap();
+
+        // Verify batch result
+        assert!(
+            result.candidates >= 3,
+            "Expected at least 3 candidates, got {}",
+            result.candidates,
+        );
+        assert!(
+            result.marked >= 3,
+            "Expected at least 3 marked, got {}",
+            result.marked,
+        );
+        assert_eq!(result.errors, 0, "Expected 0 errors in batch processing");
+
+        // Verify each past-due invoice is now overdue
+        for id in &past_due_ids {
+            let detail = repo.find_with_items(&realm_id, *id).await.unwrap().unwrap();
+            assert_eq!(
+                detail.invoice.status,
+                InvoiceStatus::Overdue,
+                "Past-due invoice {} should be overdue",
+                id
+            );
+        }
+
+        // Verify the future-dated invoice is still issued
+        let future_detail = repo
+            .find_with_items(&realm_id, future_due_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            future_detail.invoice.status,
+            InvoiceStatus::Issued,
+            "Future-dated invoice should remain issued"
+        );
+    }
+
+    // =========================================================================
+    // Test 8: Overdue job is idempotent
+    // =========================================================================
+    // User Story: docs/user-stories/13-invoice-user-stories.md
+    // Covers: US-IV-009 (idempotency: running twice does not cause errors or
+    //         double transitions)
+    //
+    // Given: An issued invoice with a past due_date
+    // When:  The overdue job runs twice
+    // Then:  The first run marks it overdue; the second run finds 0 candidates
+    //        for this invoice (it is no longer status=issued)
+
+    #[test_context(InvoiceTestContext)]
+    #[tokio::test]
+    async fn test_overdue_job_idempotent(ctx: &mut InvoiceTestContext) {
+        let realm_id = ctx._realm_id.clone();
+        let account_id = ensure_test_account(ctx, &realm_id).await;
+        let repo = ctx.app_state.invoice_repository.clone();
+
+        // Create and issue an invoice with a past due_date
+        let past_date = (Utc::now() - Duration::days(7)).date_naive();
+        let input = build_new_invoice(&realm_id, account_id, Some(past_date));
+        let created = repo.create_invoice(input).await.unwrap();
+
+        repo.transition_status(InvoiceStatusTransition {
+            realm_id: realm_id.clone(),
+            invoice_id: created.id,
+            target_status: InvoiceStatus::Issued,
+            actor_user_id: None,
+            actor_type: ActorType::User,
+            void_reason: None,
+        })
+        .await
+        .unwrap();
+
+        // First run: should mark the invoice as overdue
+        let job = herald_worker::InvoiceOverdueJob::new(repo.clone());
+        let result1 = job.run().await.unwrap();
+        assert!(
+            result1.marked >= 1,
+            "First run should mark at least 1 invoice"
+        );
+
+        // Verify it is overdue after first run
+        let detail1 = repo
+            .find_with_items(&realm_id, created.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detail1.invoice.status, InvoiceStatus::Overdue);
+
+        // Count overdue history events after first run
+        let overdue_events_after_run1 = detail1
+            .history
+            .iter()
+            .filter(|h| h.event_type == InvoiceEventType::Overdue)
+            .count();
+
+        // Second run: should find 0 candidates for this invoice (already overdue)
+        let result2 = job.run().await.unwrap();
+        // The second run should succeed without errors
+        assert_eq!(result2.errors, 0, "Second run should not produce errors");
+
+        // Verify the invoice is still overdue and no duplicate history entries
+        let detail2 = repo
+            .find_with_items(&realm_id, created.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            detail2.invoice.status,
+            InvoiceStatus::Overdue,
+            "Invoice should still be overdue after second run"
+        );
+
+        let overdue_events_after_run2 = detail2
+            .history
+            .iter()
+            .filter(|h| h.event_type == InvoiceEventType::Overdue)
+            .count();
+        assert_eq!(
+            overdue_events_after_run1, overdue_events_after_run2,
+            "Second run should not add duplicate overdue history entries"
+        );
+    }
+}

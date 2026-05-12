@@ -1,0 +1,139 @@
+import { queryOptions } from '@tanstack/react-query'
+import {
+  listInvoices,
+  getInvoice,
+  listMyInvoices,
+  getMyInvoice,
+  getSellerConfig,
+} from '@/lib/api-generated'
+import type {
+  InvoiceListResponse,
+  InvoiceDetailResponse,
+  SellerConfigResponse,
+} from '@/lib/api-generated'
+import { TIME_CONSTANTS } from '@/lib/constants'
+
+const GC_TIME_5_MIN = TIME_CONSTANTS.FIVE_MINUTES
+const RETRY_COUNT = 1
+const STALE_TIME_2_MIN = TIME_CONSTANTS.TWO_MINUTES
+const STALE_TIME_5_MIN = TIME_CONSTANTS.FIVE_MINUTES
+
+export const invoiceKeys = {
+  all: (realmId: string) => ['invoices', realmId] as const,
+  list: (realmId: string, query?: Record<string, unknown>) =>
+    ['invoices', realmId, 'list', query] as const,
+  detail: (realmId: string, invoiceId: string) =>
+    ['invoices', realmId, 'detail', invoiceId] as const,
+  sellerConfig: (realmId: string) => ['invoices', realmId, 'seller-config'] as const,
+  myAll: (realmId: string) => ['invoices', realmId, 'my'] as const,
+  myList: (realmId: string, query?: Record<string, unknown>) =>
+    ['invoices', realmId, 'my', 'list', query] as const,
+  myDetail: (realmId: string, invoiceId: string) =>
+    ['invoices', realmId, 'my', 'detail', invoiceId] as const,
+}
+
+export function invoiceListQueryOptions(
+  realmId: string,
+  query?: {
+    status?: string
+    source?: string
+    search?: string
+    dateFrom?: string
+    dateTo?: string
+    page?: number
+    pageSize?: number
+  }
+) {
+  return queryOptions({
+    queryKey: invoiceKeys.list(realmId, query),
+    queryFn: async () => {
+      const response = await listInvoices({
+        path: { realmId },
+        query,
+      })
+      if (response.error) throw response.error
+      return response.data as InvoiceListResponse
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+    gcTime: GC_TIME_5_MIN,
+  })
+}
+
+export function invoiceDetailQueryOptions(realmId: string, invoiceId: string) {
+  return queryOptions({
+    queryKey: invoiceKeys.detail(realmId, invoiceId),
+    queryFn: async () => {
+      const response = await getInvoice({
+        path: { realmId, invoiceId },
+      })
+      if (response.error) throw response.error
+      return response.data as InvoiceDetailResponse
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+}
+
+export function sellerConfigQueryOptions(realmId: string) {
+  return queryOptions({
+    queryKey: invoiceKeys.sellerConfig(realmId),
+    queryFn: async () => {
+      const response = await getSellerConfig({
+        path: { realmId },
+      })
+      // 404 is expected when no config exists yet (first-time setup)
+      if (response.error) {
+        const status = (response.error as { status?: number }).status
+        if (status === 404) return null
+        throw response.error
+      }
+      return response.data as SellerConfigResponse
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+}
+
+export function myInvoiceListQueryOptions(
+  realmId: string,
+  query?: {
+    status?: string
+    source?: string
+    search?: string
+    dateFrom?: string
+    dateTo?: string
+    page?: number
+    pageSize?: number
+  }
+) {
+  return queryOptions({
+    queryKey: invoiceKeys.myList(realmId, query),
+    queryFn: async () => {
+      const response = await listMyInvoices({
+        path: { realmId },
+        query,
+      })
+      if (response.error) throw response.error
+      return response.data as InvoiceListResponse
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+    gcTime: GC_TIME_5_MIN,
+  })
+}
+
+export function myInvoiceDetailQueryOptions(realmId: string, invoiceId: string) {
+  return queryOptions({
+    queryKey: invoiceKeys.myDetail(realmId, invoiceId),
+    queryFn: async () => {
+      const response = await getMyInvoice({
+        path: { realmId, invoiceId },
+      })
+      if (response.error) throw response.error
+      return response.data as InvoiceDetailResponse
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+}

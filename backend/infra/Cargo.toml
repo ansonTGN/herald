@@ -1,0 +1,49 @@
+[package]
+name = "herald-infra"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lints.clippy]
+too_many_arguments = "allow"
+
+[dependencies]
+herald-domain = { path = "../domain" }
+herald-entity = { path = "../entity" }
+herald-infra-stripe = { path = "../infra-stripe" }
+herald-infra-wechat = { path = "../infra-wechat" }
+herald-infra-shopify = { path = "../infra-shopify" }
+herald-infra-creem = { path = "../infra-creem" }
+sea-orm = { workspace = true }
+sqlx = { workspace = true }
+redis = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+oauth2 = { workspace = true }
+bcrypt = { workspace = true }
+jsonwebtoken = { workspace = true }
+aes-gcm = { workspace = true }
+base64 = { workspace = true }
+urlencoding = { workspace = true }
+url = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+moka = { workspace = true, features = ["future"] }
+once_cell = { workspace = true }
+dashmap = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+validator = { workspace = true, features = ["derive"] }
+mockall = { workspace = true }
+ironpress = "1"
+
+[dev-dependencies]
+herald-test-db = { path = "../test-db" }
+wiremock = { workspace = true }
+futures = { workspace = true }

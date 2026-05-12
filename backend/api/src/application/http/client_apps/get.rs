@@ -1,0 +1,77 @@
+use axum::{
+    extract::{Extension, Path, State},
+    http::HeaderMap,
+};
+use herald_core::domain::authentication::Identity;
+use uuid::Uuid;
+
+use crate::application::http::client_apps::types::ClientAppItem;
+use crate::application::http::server::api_entities::{ApiError, ApiResult};
+use crate::application::http::state::AppState;
+use herald_core::domain::client::ports::ClientService;
+
+/// Get a specific client app by ID
+///
+/// Retrieves the details of a specific OAuth client application.
+#[utoipa::path(
+    get,
+    path = "/api/client/{realmId}/{clientAppId}",
+    tag = "client",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("clientAppId" = Uuid, Path, description = "client app UUID"),
+    ),
+    responses(
+        (status = 200, description = "ClientApp retrieved", body = ClientAppItem),
+        (status = 404, description = "ClientApp not found", body = crate::application::http::server::api_entities::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::application::http::server::api_entities::ErrorResponse)
+    )
+)]
+pub async fn get_client_app(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path((_realm_id, id)): Path<(String, Uuid)>,
+    _headers: HeaderMap,
+) -> Result<ApiResult<ClientAppItem>, ApiError> {
+    // Extract identity from request extension (injected by inject_identity middleware)
+    let identity_realm_id = identity.realm_id();
+    let current_user_id = identity.user_id();
+
+    tracing::debug!(
+        realm_id = %identity_realm_id,
+        user_id = %current_user_id,
+        "Getting client app"
+    );
+
+    // Call service layer
+    let client_service = state.service.client_service();
+    let client_app = client_service
+        .get_client_app(identity, id)
+        .await
+        .map_err(|e| match e {
+            herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
+                ApiError::not_found("client_app not found")
+            }
+            e => {
+                tracing::error!("Failed to get client app: {}", e);
+                ApiError::internal(format!("Failed to get client app: {e}"))
+            }
+        })?;
+
+    // Convert domain model to API response model
+    let response: ClientAppItem = ClientAppItem {
+        id: client_app.id,
+        realm_id: client_app.realm_id,
+        client_id: client_app.client_id,
+        name: client_app.name,
+        description: client_app.description,
+        redirect_uris: client_app.redirect_uris,
+        enabled: client_app.enabled,
+        icon_url: client_app.icon_url,
+        session_ttl_seconds: client_app.session_ttl_seconds,
+        session_renewal_ttl_seconds: client_app.session_renewal_ttl_seconds,
+        client_secret: None,
+    };
+
+    Ok(ApiResult::ok(response))
+}

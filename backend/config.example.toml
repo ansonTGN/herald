@@ -1,0 +1,21 @@
+# Herald Configuration Example
+
+postgresql_uri = "postgresql://user:password@localhost/herald"
+redis_uri = "redis://localhost:6379"
+public_base_url = "http://localhost:8080"
+
+[permission]
+allowed_ips = []
+
+[resend]
+token = ""
+from = "no-reply@example.com"
+
+[turnstile]
+secret = ""
+
+# Note: OAuth provider configurations are now managed per-realm via API
+# Use the OAuth config management endpoints:
+# - POST /api/{realmId}/oauth/configs
+# - GET /api/{realmId}/oauth/configs
+# - PUT /api/{realmId}/oauth/configs/{providerType}

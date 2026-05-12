@@ -1,0 +1,948 @@
+// Points Service - Business logic for points operations
+
+use std::sync::Arc;
+use uuid::Uuid;
+
+use crate::authentication::Identity;
+use crate::common::entities::app_errors::CoreError;
+use crate::common::policies::ensure_policy;
+use crate::points::{
+    dtos::{ConsumePointsInput, CreatePlanConfigInput, RevokePointsOutput, UpdatePlanConfigInput},
+    entities::{
+        AccountStatus, CreditType, Paginated, PointsAccount, PointsBalance, PointsPlanConfig,
+        PointsTransaction, RechargeType, RevocationType, TransactionType,
+    },
+    errors::PointsErrorExt,
+    policies::PointsPolicy,
+    ports::{AccountFilters, PointsRepository, TransactionFilters},
+};
+
+/// Points Service - Business logic for points management
+///
+/// Includes permission-based authorization checks using PointsPolicy
+pub struct PointsService<R, P>
+where
+    R: PointsRepository,
+    P: PointsPolicy,
+{
+    repository: Arc<R>,
+    policy: Arc<P>,
+}
+
+impl<R, P> PointsService<R, P>
+where
+    R: PointsRepository + Send + Sync,
+    P: PointsPolicy,
+{
+    pub fn new(repository: Arc<R>, policy: Arc<P>) -> Self {
+        Self { repository, policy }
+    }
+
+    // ===== Account Management =====
+
+    /// Get points account for a user
+    pub async fn get_account(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> Result<PointsAccount, CoreError> {
+        // Check view permissions
+        ensure_policy(
+            self.policy
+                .can_view_points(identity.clone(), Some(user_id))
+                .await,
+            "Insufficient permissions to view points account",
+        )?;
+
+        // Check realm boundary
+        if !identity.has_access_to_realm(realm_id) {
+            return Err(CoreError::Forbidden(
+                "Access denied: cannot access points from a different realm".to_string(),
+            ));
+        }
+
+        // Find or create account
+        match self.repository.find_by_user_id(realm_id, user_id).await? {
+            Some(account) => Ok(account),
+            None => {
+                // Auto-create account if it doesn't exist
+                tracing::info!("Auto-creating points account for user {}", user_id);
+                let new_account = self.create_account_internal(realm_id, user_id).await?;
+                Ok(new_account)
+            }
+        }
+    }
+
+    /// Get points balance for a user
+    pub async fn get_balance(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> Result<PointsBalance, CoreError> {
+        let account = self.get_account(identity, realm_id, user_id).await?;
+        Ok(account.into())
+    }
+
+    /// List all accounts in a realm (admin only)
+    pub async fn list_accounts(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        filters: AccountFilters,
+    ) -> Result<Paginated<PointsAccount>, CoreError> {
+        // Check manage permissions
+        ensure_policy(
+            self.policy.can_manage_points(identity.clone()).await,
+            "Insufficient permissions to list accounts",
+        )?;
+
+        // Check realm boundary
+        if !identity.has_access_to_realm(realm_id) {
+            return Err(CoreError::Forbidden(
+                "Access denied: cannot access points from a different realm".to_string(),
+            ));
+        }
+
+        self.repository.list_accounts(realm_id, filters).await
+    }
+
+    // ===== Helper Methods =====
+
+    // ===== Points Consumption =====
+
+    /// Consume points from a user's account using ledger-based consumption
+    ///
+    /// Consumption priority: expiration-based (soonest expiring first, permanent last)
+    /// This is the NEW correct implementation per the design specification.
+    pub async fn consume_points(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        input: ConsumePointsInput,
+    ) -> Result<PointsTransaction, CoreError> {
+        // Check consume permissions
+        ensure_policy(
+            self.policy.can_consume_points(identity.clone()).await,
+            "Insufficient permissions to consume points",
+        )?;
+
+        // Validate input
+        let (user_id, client_app_id, amount, description) = input.try_into()?;
+
+        // Check realm boundary
+        if !identity.has_access_to_realm(realm_id) {
+            return Err(CoreError::Forbidden(
+                "Access denied: cannot consume points from a different realm".to_string(),
+            ));
+        }
+
+        // Get or create account
+        let account = match self.repository.find_by_user_id(realm_id, user_id).await? {
+            Some(account) => account,
+            None => {
+                // Auto-create account
+                self.create_account_internal(realm_id, user_id).await?
+            }
+        };
+
+        // Check account status
+        if account.status != AccountStatus::Active {
+            return Err(CoreError::BadRequest(format!(
+                "Cannot consume points from {} account",
+                account.status.as_str()
+            )));
+        }
+
+        // Check total balance
+        if account.total_balance < amount {
+            return Err(CoreError::insufficient_points(
+                amount,
+                account.total_balance,
+            ));
+        }
+
+        let saved_transaction = self
+            .repository
+            .consume_points_atomic(realm_id, user_id, client_app_id, amount, description)
+            .await?;
+
+        tracing::info!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            amount,
+            balance_after = %saved_transaction.balance_after,
+            "Points consumed successfully (expiration-based priority)"
+        );
+
+        Ok(saved_transaction)
+    }
+
+    // ===== Transaction Management =====
+
+    /// Get a single transaction by ID
+    pub async fn get_transaction(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        transaction_id: Uuid,
+    ) -> Result<PointsTransaction, CoreError> {
+        // Check view permissions
+        ensure_policy(
+            self.policy.can_view_points(identity.clone(), None).await,
+            "Insufficient permissions to view transaction",
+        )?;
+
+        // Check realm boundary
+        if !identity.has_access_to_realm(realm_id) {
+            return Err(CoreError::Forbidden(
+                "Access denied: cannot access transaction from a different realm".to_string(),
+            ));
+        }
+
+        let transaction = self
+            .repository
+            .find_transaction_by_id(realm_id, transaction_id)
+            .await?
+            .ok_or(CoreError::NotFound)?;
+
+        Ok(transaction)
+    }
+
+    /// List transactions with filters
+    pub async fn list_transactions(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        filters: TransactionFilters,
+    ) -> Result<Paginated<PointsTransaction>, CoreError> {
+        // Check view permissions
+        ensure_policy(
+            self.policy
+                .can_view_points(identity.clone(), filters.user_id)
+                .await,
+            "Insufficient permissions to view transactions",
+        )?;
+
+        // Check realm boundary
+        if !identity.has_access_to_realm(realm_id) {
+            return Err(CoreError::Forbidden(
+                "Access denied: cannot access transactions from a different realm".to_string(),
+            ));
+        }
+
+        // Non-admin users can only see their own transactions
+        let can_view_all = self.policy.can_view_points(identity.clone(), None).await;
+        if !can_view_all && let Ok(current_user_id) = identity.user_id().parse::<Uuid>() {
+            // Override filters to only show current user's transactions
+            let mut restricted_filters = filters;
+            restricted_filters.user_id = Some(current_user_id);
+            return self
+                .repository
+                .find_transactions(realm_id, restricted_filters)
+                .await;
+        }
+
+        self.repository.find_transactions(realm_id, filters).await
+    }
+
+    // ===== Plan Config Management =====
+
+    /// List all plan configs in a realm
+    pub async fn list_plan_configs(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+    ) -> Result<Vec<PointsPlanConfig>, CoreError> {
+        // Check view permissions
+        ensure_policy(
+            self.policy.can_view_points_configs(identity.clone()).await,
+            "Insufficient permissions to view plan configs",
+        )?;
+
+        // Check realm boundary
+        if !identity.has_access_to_realm(realm_id) {
+            return Err(CoreError::Forbidden(
+                "Access denied: cannot access plan configs from a different realm".to_string(),
+            ));
+        }
+
+        self.repository.list_plan_configs(realm_id).await
+    }
+
+    /// Create a plan config
+    pub async fn create_plan_config(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        input: CreatePlanConfigInput,
+    ) -> Result<PointsPlanConfig, CoreError> {
+        // Check manage permissions
+        ensure_policy(
+            self.policy
+                .can_manage_points_configs(identity.clone())
+                .await,
+            "Insufficient permissions to manage plan configs",
+        )?;
+
+        // Check realm boundary
+        if !identity.has_access_to_realm(realm_id) {
+            return Err(CoreError::Forbidden(
+                "Access denied: cannot manage plan configs from a different realm".to_string(),
+            ));
+        }
+
+        let (
+            plan_id,
+            grant_period_type,
+            points_per_period,
+            validity_days,
+            grant_on_subscribe,
+            max_periods,
+        ) = input.try_into()?;
+
+        let config = PointsPlanConfig {
+            id: Uuid::now_v7(),
+            realm_id: realm_id.to_string(),
+            plan_id,
+            grant_period_type: grant_period_type.clone(),
+            points_per_period,
+            validity_days,
+            grant_on_subscribe,
+            max_periods,
+            active: true,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let created = self.repository.create_plan_config(config).await?;
+
+        tracing::info!(
+            realm_id = %realm_id,
+            plan_id = %plan_id,
+            grant_period_type = %grant_period_type,
+            points_per_period,
+            validity_days,
+            "Points plan config created"
+        );
+
+        Ok(created)
+    }
+
+    /// Update a plan config
+    pub async fn update_plan_config(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        config_id: Uuid,
+        input: UpdatePlanConfigInput,
+    ) -> Result<PointsPlanConfig, CoreError> {
+        // Check manage permissions
+        ensure_policy(
+            self.policy
+                .can_manage_points_configs(identity.clone())
+                .await,
+            "Insufficient permissions to manage plan configs",
+        )?;
+
+        // Check realm boundary
+        if !identity.has_access_to_realm(realm_id) {
+            return Err(CoreError::Forbidden(
+                "Access denied: cannot manage plan configs from a different realm".to_string(),
+            ));
+        }
+
+        // Get existing config
+        let existing = self
+            .repository
+            .find_plan_config_by_id(config_id)
+            .await?
+            .ok_or_else(|| CoreError::plan_config_not_found(&config_id.to_string()))?;
+
+        // Verify config belongs to realm
+        if existing.realm_id != realm_id {
+            return Err(CoreError::plan_config_not_found(&config_id.to_string()));
+        }
+
+        // Parse input
+        let (grant_period_type, points_per_period, validity_days, grant_on_subscribe, max_periods) =
+            input.try_into()?;
+
+        // Build updated config
+        let updated = PointsPlanConfig {
+            id: existing.id,
+            realm_id: existing.realm_id.clone(),
+            plan_id: existing.plan_id,
+            grant_period_type: grant_period_type.unwrap_or(existing.grant_period_type),
+            points_per_period: points_per_period.unwrap_or(existing.points_per_period),
+            validity_days: validity_days.unwrap_or(existing.validity_days),
+            grant_on_subscribe: grant_on_subscribe.unwrap_or(existing.grant_on_subscribe),
+            max_periods: max_periods.or(existing.max_periods),
+            active: existing.active,
+            created_at: existing.created_at,
+            updated_at: chrono::Utc::now(),
+        };
+
+        let saved = self.repository.update_plan_config(updated).await?;
+
+        tracing::info!(
+            realm_id = %realm_id,
+            config_id = %config_id,
+            "Points plan config updated"
+        );
+
+        Ok(saved)
+    }
+
+    /// Delete a plan config
+    pub async fn delete_plan_config(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        config_id: Uuid,
+    ) -> Result<(), CoreError> {
+        // Check manage permissions
+        ensure_policy(
+            self.policy
+                .can_manage_points_configs(identity.clone())
+                .await,
+            "Insufficient permissions to manage plan configs",
+        )?;
+
+        // Check realm boundary
+        if !identity.has_access_to_realm(realm_id) {
+            return Err(CoreError::Forbidden(
+                "Access denied: cannot manage plan configs from a different realm".to_string(),
+            ));
+        }
+
+        // Verify config exists and belongs to realm
+        let existing = self
+            .repository
+            .find_plan_config_by_id(config_id)
+            .await?
+            .ok_or_else(|| CoreError::plan_config_not_found(&config_id.to_string()))?;
+
+        if existing.realm_id != realm_id {
+            return Err(CoreError::plan_config_not_found(&config_id.to_string()));
+        }
+
+        self.repository.delete_plan_config(config_id).await?;
+
+        tracing::info!(
+            realm_id = %realm_id,
+            config_id = %config_id,
+            "Points plan config deleted"
+        );
+
+        Ok(())
+    }
+
+    // ===== Internal Methods =====
+
+    /// Create a new points account (internal use)
+    async fn create_account_internal(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> Result<PointsAccount, CoreError> {
+        let account = PointsAccount {
+            id: Uuid::now_v7(),
+            user_id,
+            realm_id: realm_id.to_string(),
+            total_balance: 0,
+            topup_balance: 0,
+            subscription_balance: 0,
+            total_topup_granted: 0,
+            total_subscription_granted: 0,
+            total_recharged: 0,
+            total_consumed: 0,
+            status: AccountStatus::Active,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        self.repository.create_account(account).await
+    }
+
+    /// Recharge points for a user (internal method for billing webhooks)
+    pub async fn recharge_points_internal(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        _plan_id: Option<Uuid>,
+        amount: i64,
+        recharge_type: RechargeType,
+        external_ref_id: Option<String>,
+    ) -> Result<PointsTransaction, CoreError> {
+        if amount <= 0 {
+            return Err(CoreError::invalid_amount(
+                "Recharge amount must be positive",
+            ));
+        }
+
+        // Get or create account
+        let account = match self.repository.find_by_user_id(realm_id, user_id).await? {
+            Some(account) => account,
+            None => {
+                // Auto-create account
+                self.create_account_internal(realm_id, user_id).await?
+            }
+        };
+
+        // Check account status
+        if account.status != AccountStatus::Active {
+            return Err(CoreError::BadRequest(format!(
+                "Cannot recharge points to {} account",
+                account.status.as_str()
+            )));
+        }
+
+        // Update balance using the new ledger system
+        // For subscription recharges, update subscription_balance
+        // For other recharges, update topup_balance
+        let (topup_amount, subscription_amount) = match recharge_type {
+            RechargeType::Subscribe => (0, amount),
+            _ => (amount, 0),
+        };
+
+        use crate::points::ports::AccountUpdate;
+        let updated_account = self
+            .repository
+            .update_account(
+                account.id,
+                AccountUpdate::Grant {
+                    topup: topup_amount,
+                    subscription: subscription_amount,
+                },
+            )
+            .await?;
+
+        // Create transaction record
+        let transaction = PointsTransaction {
+            id: Uuid::now_v7(),
+            account_id: updated_account.id,
+            user_id: updated_account.user_id,
+            realm_id: updated_account.realm_id.clone(),
+            transaction_type: TransactionType::Recharge,
+            amount, // Positive for recharge
+            balance_after: updated_account.total_balance,
+            topup_balance_after: Some(updated_account.topup_balance),
+            subscription_balance_after: Some(updated_account.subscription_balance),
+            credit_type: None,
+            description: Some(format!("Points recharge ({})", recharge_type.as_str())),
+            client_app_id: None,   // Recharges come from billing, not client apps
+            subscription_id: None, // Not using subscription_id for internal recharge
+            external_ref_id,
+            created_at: chrono::Utc::now(),
+        };
+
+        let saved_transaction = self.repository.create_transaction(transaction).await?;
+
+        tracing::info!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            amount,
+            recharge_type = %recharge_type.as_str(),
+            balance_after = %updated_account.total_balance,
+            "Points recharged successfully"
+        );
+
+        Ok(saved_transaction)
+    }
+
+    /// Revoke points by credit type (internal method for subscription cancellation and refunds)
+    ///
+    /// Revokes all unused points of a specific credit type for a user.
+    /// This is used for subscription cancellation, refunds, and expiration.
+    ///
+    /// # Arguments
+    /// * `realm_id` - The realm ID
+    /// * `user_id` - The user ID
+    /// * `credit_type` - The type of credit to revoke (topup or subscription)
+    /// * `revocation_type` - The reason for revocation
+    /// * `reason` - Human-readable reason
+    ///
+    /// # Returns
+    /// Revocation output with details of revoked points
+    pub async fn revoke_points_by_credit_type(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        credit_type: CreditType,
+        revocation_type: RevocationType,
+        reason: String,
+    ) -> Result<RevokePointsOutput, CoreError> {
+        let result = self
+            .repository
+            .revoke_points_by_credit_type_atomic(
+                realm_id,
+                user_id,
+                credit_type,
+                revocation_type,
+                reason,
+                None,
+                None,
+            )
+            .await?;
+
+        tracing::info!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            credit_type = %credit_type.as_str(),
+            total_revoked = result.total_revoked,
+            ledger_count = result.ledger_ids.len(),
+            revocation_type = %revocation_type.as_str(),
+            "Points revoked successfully"
+        );
+
+        Ok(result)
+    }
+
+    /// Revoke all daily free credits for a user (used when free user upgrades to paid)
+    ///
+    /// **Idempotency Guarantee**:
+    /// - If idempotency_key is provided, checks if already processed
+    /// - If no active daily credits exist, returns empty result (success)
+    /// - Creates idempotency record even when no credits are revoked
+    ///
+    /// # Arguments
+    /// * `realm_id` - The realm ID
+    /// * `user_id` - The user ID
+    /// * `reason` - Reason for revocation
+    /// * `idempotency_key` - Optional idempotency key for deduplication
+    ///
+    /// # Returns
+    /// Revocation output with details of revoked credits
+    pub async fn revoke_all_daily_credits(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        reason: String,
+        idempotency_key: Option<String>,
+    ) -> Result<RevokePointsOutput, CoreError> {
+        self.repository
+            .revoke_points_by_credit_type_atomic(
+                realm_id,
+                user_id,
+                CreditType::FreePeriodicCredit,
+                RevocationType::UpgradeRevoke,
+                reason,
+                None,
+                idempotency_key,
+            )
+            .await
+    }
+
+    /// Proportionally revoke topup points based on refund ratio
+    ///
+    /// When a topup payment is refunded, we need to revoke the proportionate amount
+    /// of points based on the refund ratio. This ensures users don't keep points they didn't pay for.
+    ///
+    /// # Arguments
+    /// * `realm_id` - The realm ID
+    /// * `user_id` - The user ID
+    /// * `refund_amount` - The amount being refunded (in cents)
+    /// * `original_payment_amount` - The original payment amount (in cents)
+    /// * `refund_id` - The refund ID for reference
+    ///
+    /// # Returns
+    /// Revocation output with details of revoked points
+    pub async fn revoke_topup_proportional(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        refund_amount: i64,
+        original_payment_amount: i64,
+        refund_id: &str,
+    ) -> Result<RevokePointsOutput, CoreError> {
+        if original_payment_amount <= 0 {
+            return Err(CoreError::BadRequest(
+                "Original payment amount must be positive".to_string(),
+            ));
+        }
+
+        if refund_amount <= 0 {
+            return Err(CoreError::BadRequest(
+                "Refund amount must be positive".to_string(),
+            ));
+        }
+
+        if refund_amount > original_payment_amount {
+            return Err(CoreError::BadRequest(
+                "Refund amount cannot exceed original payment".to_string(),
+            ));
+        }
+
+        // Calculate refund ratio
+        let refund_ratio = (refund_amount as f64) / (original_payment_amount as f64);
+
+        // Find all active topup ledgers
+        let ledgers = self
+            .repository
+            .find_active_ledgers_by_credit_type(realm_id, user_id, CreditType::TopupCredit)
+            .await?;
+
+        if ledgers.is_empty() {
+            tracing::info!(
+                realm_id = %realm_id,
+                user_id = %user_id,
+                refund_id = %refund_id,
+                "No active topup ledgers found for proportional revocation"
+            );
+
+            return Ok(RevokePointsOutput {
+                revocation_id: Uuid::now_v7(),
+                ledger_ids: Vec::new(),
+                total_revoked: 0,
+                revoked_at: chrono::Utc::now(),
+            });
+        }
+
+        let mut total_revoked = 0i64;
+        let mut ledger_ids = Vec::new();
+
+        // Revoke proportionate amount from each ledger
+        for ledger in ledgers {
+            if ledger.remaining_amount <= 0 {
+                continue;
+            }
+
+            // Calculate amount to revoke from this ledger
+            let revoke_amount = ((ledger.remaining_amount as f64) * refund_ratio).round() as i64;
+
+            if revoke_amount <= 0 {
+                continue;
+            }
+
+            // Update ledger to revoke points
+            let _updated_ledger = self
+                .repository
+                .update_ledger(
+                    ledger.id,
+                    crate::points::ports::LedgerUpdate::Revocation(revoke_amount),
+                )
+                .await?;
+
+            // Create revocation record
+            let revocation_record = crate::points::entities::PointsRevocationRecord {
+                id: Uuid::now_v7(),
+                ledger_id: ledger.id,
+                user_id,
+                realm_id: realm_id.to_string(),
+                revocation_type: crate::points::entities::RevocationType::RefundRevoke,
+                revoked_amount: revoke_amount,
+                reason: format!("Proportional refund (ratio: {:.2})", refund_ratio),
+                reference_id: Some(refund_id.to_string()),
+                created_at: chrono::Utc::now(),
+            };
+
+            self.repository
+                .create_revocation_record(revocation_record)
+                .await?;
+
+            total_revoked += revoke_amount;
+            ledger_ids.push(ledger.id);
+        }
+
+        // Update account balance
+        if total_revoked > 0 {
+            let account = self
+                .repository
+                .find_by_user_id(realm_id, user_id)
+                .await?
+                .ok_or(CoreError::NotFound)?;
+
+            let _updated_account = self
+                .repository
+                .update_account(
+                    account.id,
+                    crate::points::ports::AccountUpdate::Revocation {
+                        topup: total_revoked,
+                        subscription: 0,
+                    },
+                )
+                .await?;
+
+            tracing::info!(
+                realm_id = %realm_id,
+                user_id = %user_id,
+                refund_id = %refund_id,
+                refund_ratio = refund_ratio,
+                total_revoked,
+                "Proportionally revoked topup points"
+            );
+        }
+
+        Ok(RevokePointsOutput {
+            revocation_id: Uuid::now_v7(),
+            ledger_ids,
+            total_revoked,
+            revoked_at: chrono::Utc::now(),
+        })
+    }
+
+    /// Revoke all unused subscription points
+    ///
+    /// This is a convenience method for refund scenarios where all subscription
+    /// points need to be revoked. It simply calls revoke_points_by_credit_type
+    /// with SubscriptionCredit and RefundRevoke type.
+    ///
+    /// # Arguments
+    /// * `realm_id` - The realm ID
+    /// * `user_id` - The user ID
+    /// * `refund_id` - The refund ID for reference
+    ///
+    /// # Returns
+    /// Revocation output with details of revoked points
+    pub async fn revoke_subscription_unused(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        refund_id: &str,
+    ) -> Result<RevokePointsOutput, CoreError> {
+        self.revoke_points_by_credit_type(
+            realm_id,
+            user_id,
+            CreditType::SubscriptionCredit,
+            crate::points::entities::RevocationType::RefundRevoke,
+            format!("Refund {}", refund_id),
+        )
+        .await
+    }
+
+    /// Refund points from a user's account
+    ///
+    /// Creates a refund transaction to deduct points when a subscription is refunded.
+    /// This is typically called when a payment refund is processed.
+    ///
+    /// # Arguments
+    /// * `realm_id` - The realm ID
+    /// * `user_id` - The user ID
+    /// * `subscription_id` - The subscription ID being refunded
+    /// * `refund_amount` - The amount of points to refund (deduct)
+    /// * `reason` - The reason for the refund
+    ///
+    /// # Returns
+    /// The created refund transaction
+    ///
+    /// # Errors
+    /// - Account not found
+    /// - Invalid amount (must be positive)
+    /// - Database errors
+    pub async fn refund_points(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        subscription_id: String,
+        refund_amount: i64,
+        reason: String,
+    ) -> Result<PointsTransaction, CoreError> {
+        if refund_amount <= 0 {
+            return Err(CoreError::BadRequest(
+                "Refund amount must be positive".to_string(),
+            ));
+        }
+
+        let created_transaction = self
+            .repository
+            .refund_points_atomic(
+                realm_id,
+                user_id,
+                subscription_id.clone(),
+                refund_amount,
+                reason,
+            )
+            .await?;
+
+        tracing::info!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            subscription_id = %subscription_id,
+            refund_amount,
+            new_balance = created_transaction.balance_after,
+            "Points refunded successfully"
+        );
+
+        Ok(created_transaction)
+    }
+
+    // ===== Internal Methods (for Background Services) =====
+
+    /// Internal method to grant points directly to ledger
+    ///
+    /// This is used by background services (registration, scheduler)
+    /// and bypasses the public API layer validation.
+    ///
+    /// # Arguments
+    /// * `realm_id` - The realm ID
+    /// * `user_id` - The user ID
+    /// * `credit_type` - Type of credit to grant
+    /// * `source_type` - Source of the grant
+    /// * `amount` - Amount to grant
+    /// * `expires_at` - Optional expiration time (None = permanent)
+    /// * `source_id` - Optional source ID for traceability
+    ///
+    /// # Returns
+    /// Ok(()) on success
+    ///
+    /// # Errors
+    /// - InvalidAmount if amount <= 0
+    /// - Database errors
+    ///
+    /// # Security
+    /// This is an internal method (NOT an HTTP endpoint) and will only be called
+    /// from trusted internal services (RegistrationService, GrantScheduler).
+    /// No authorization checks are performed.
+    pub async fn grant_points_internal(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        credit_type: CreditType,
+        source_type: crate::points::entities::CreditSourceType,
+        amount: i64,
+        expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        source_id: Option<String>,
+    ) -> Result<(), CoreError> {
+        if amount <= 0 {
+            return Err(CoreError::BadRequest(
+                "Grant amount must be positive".to_string(),
+            ));
+        }
+
+        let _saved_ledger = self
+            .repository
+            .grant_points_atomic(
+                realm_id,
+                user_id,
+                credit_type,
+                source_type,
+                amount,
+                expires_at,
+                source_id,
+            )
+            .await?;
+
+        tracing::info!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            amount,
+            credit_type = ?credit_type,
+            source_type = ?source_type,
+            expires_at = ?expires_at,
+            "Points granted internally"
+        );
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_service_creation() {
+        // This is a placeholder test
+        // Real tests would need mock repository and policy
+    }
+}

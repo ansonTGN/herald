@@ -1,0 +1,631 @@
+use std::future::Future;
+use std::sync::Arc;
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::common::entities::app_errors::CoreError;
+
+/// Represents a NUMERIC(12,4) value as a string to avoid external decimal dependencies
+/// in the domain layer. The string must contain a valid decimal representation.
+pub type DecimalStr = String;
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InvoiceStatus {
+    Draft,
+    Issued,
+    Paid,
+    Void,
+    Overdue,
+}
+
+impl InvoiceStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Issued => "issued",
+            Self::Paid => "paid",
+            Self::Void => "void",
+            Self::Overdue => "overdue",
+        }
+    }
+
+    /// Whether this status is a terminal state (no further transitions allowed).
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::Paid | Self::Void)
+    }
+}
+
+impl std::str::FromStr for InvoiceStatus {
+    type Err = CoreError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "draft" => Ok(Self::Draft),
+            "issued" => Ok(Self::Issued),
+            "paid" => Ok(Self::Paid),
+            "void" => Ok(Self::Void),
+            "overdue" => Ok(Self::Overdue),
+            _ => Err(CoreError::BadRequest(format!(
+                "Invalid invoice status: {}",
+                s
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InvoiceSource {
+    AdminManual,
+    UserApplication,
+}
+
+impl InvoiceSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::AdminManual => "admin_manual",
+            Self::UserApplication => "user_application",
+        }
+    }
+}
+
+impl std::str::FromStr for InvoiceSource {
+    type Err = CoreError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "admin_manual" => Ok(Self::AdminManual),
+            "user_application" => Ok(Self::UserApplication),
+            _ => Err(CoreError::BadRequest(format!(
+                "Invalid invoice source: {}",
+                s
+            ))),
+        }
+    }
+}
+
+/// Mode for discount / tax / shipping adjustments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AdjustmentMode {
+    Fixed,
+    Percent,
+}
+
+impl AdjustmentMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Fixed => "fixed",
+            Self::Percent => "percent",
+        }
+    }
+
+    pub fn from_str_opt(s: &str) -> Option<Self> {
+        match s {
+            "fixed" => Some(Self::Fixed),
+            "percent" => Some(Self::Percent),
+            _ => None,
+        }
+    }
+}
+
+/// Who performed a history event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ActorType {
+    User,
+    System,
+}
+
+impl ActorType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::System => "system",
+        }
+    }
+}
+
+/// Invoice history event type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InvoiceEventType {
+    Created,
+    Updated,
+    Issued,
+    Paid,
+    Voided,
+    Overdue,
+}
+
+impl InvoiceEventType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Created => "created",
+            Self::Updated => "updated",
+            Self::Issued => "issued",
+            Self::Paid => "paid",
+            Self::Voided => "voided",
+            Self::Overdue => "overdue",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Core entities
+// ---------------------------------------------------------------------------
+
+/// Seller configuration at realm level. Auto-fills seller fields on invoice creation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvoiceSellerConfig {
+    pub realm_id: String,
+    pub seller_name: String,
+    pub seller_address: Option<String>,
+    pub seller_email: Option<String>,
+    pub seller_phone: Option<String>,
+    pub default_payment_terms: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Invoice entity — persisted in the `invoice` table.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Invoice {
+    pub id: Uuid,
+    pub realm_id: String,
+    pub invoice_number: String,
+    pub source: InvoiceSource,
+    pub account_id: Uuid,
+    pub applicant_user_id: Option<Uuid>,
+    pub subscription_id: Option<Uuid>,
+    pub payment_attempt_id: Option<Uuid>,
+    pub status: InvoiceStatus,
+    pub currency: String,
+
+    // Dates
+    pub issue_date: Option<chrono::NaiveDate>,
+    pub due_date: Option<chrono::NaiveDate>,
+    pub issued_at: Option<DateTime<Utc>>,
+    pub paid_at: Option<DateTime<Utc>>,
+    pub voided_at: Option<DateTime<Utc>>,
+
+    // Monetary amounts (smallest currency unit)
+    pub subtotal: i64,
+    pub discount_amount: i64,
+    pub tax_amount: i64,
+    pub shipping_amount: i64,
+    pub total: i64,
+
+    // Adjustment mode + raw input value
+    pub discount_mode: Option<AdjustmentMode>,
+    pub discount_value: Option<DecimalStr>,
+    pub tax_mode: Option<AdjustmentMode>,
+    pub tax_value: Option<DecimalStr>,
+    pub shipping_mode: Option<AdjustmentMode>,
+    pub shipping_value: Option<DecimalStr>,
+
+    // Buyer
+    pub billing_name: String,
+    pub billing_address: Option<String>,
+    pub billing_email: Option<String>,
+    pub billing_phone: Option<String>,
+
+    // Seller snapshot
+    pub seller_name: String,
+    pub seller_address: Option<String>,
+    pub seller_email: Option<String>,
+    pub seller_phone: Option<String>,
+
+    // Extra
+    pub notes: Option<String>,
+    pub payment_terms: Option<String>,
+    pub void_reason: Option<String>,
+
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// A single line item within an invoice.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvoiceLineItem {
+    pub id: Uuid,
+    pub invoice_id: Uuid,
+    pub sort_order: i32,
+    pub name: String,
+    pub description: Option<String>,
+    pub quantity: DecimalStr,
+    pub unit_price: i64,
+    pub subtotal: i64,
+}
+
+/// Invoice history / audit event.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvoiceHistory {
+    pub id: Uuid,
+    pub invoice_id: Uuid,
+    pub event_type: InvoiceEventType,
+    pub actor_user_id: Option<Uuid>,
+    pub actor_type: ActorType,
+    pub changes: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Invoice number counter row.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvoiceNumberCounter {
+    pub realm_id: String,
+    pub year: i32,
+    pub next_seq: i64,
+    pub updated_at: DateTime<Utc>,
+}
+
+// ---------------------------------------------------------------------------
+// Composite view types
+// ---------------------------------------------------------------------------
+
+/// Full invoice detail including line items and history, used for detail views and PDF generation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvoiceDetail {
+    pub invoice: Invoice,
+    pub line_items: Vec<InvoiceLineItem>,
+    pub history: Vec<InvoiceHistory>,
+}
+
+/// Summary row for list views (no line items, no history).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvoiceSummary {
+    pub id: Uuid,
+    pub realm_id: String,
+    pub invoice_number: String,
+    pub source: InvoiceSource,
+    pub account_id: Uuid,
+    pub status: InvoiceStatus,
+    pub currency: String,
+    pub total: i64,
+    pub billing_name: String,
+    pub due_date: Option<chrono::NaiveDate>,
+    pub created_at: DateTime<Utc>,
+}
+
+// ---------------------------------------------------------------------------
+// Input / command types
+// ---------------------------------------------------------------------------
+
+/// Input for creating a new invoice (draft).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewInvoice {
+    pub realm_id: String,
+    pub source: InvoiceSource,
+    pub account_id: Uuid,
+    pub applicant_user_id: Option<Uuid>,
+    pub subscription_id: Option<Uuid>,
+    pub payment_attempt_id: Option<Uuid>,
+    pub currency: String,
+
+    pub line_items: Vec<NewLineItem>,
+
+    // Buyer
+    pub billing_name: String,
+    pub billing_address: Option<String>,
+    pub billing_email: Option<String>,
+    pub billing_phone: Option<String>,
+
+    // Seller snapshot (caller should populate from seller config)
+    pub seller_name: String,
+    pub seller_address: Option<String>,
+    pub seller_email: Option<String>,
+    pub seller_phone: Option<String>,
+
+    // Adjustment inputs
+    pub discount_mode: Option<AdjustmentMode>,
+    pub discount_value: Option<DecimalStr>,
+    pub tax_mode: Option<AdjustmentMode>,
+    pub tax_value: Option<DecimalStr>,
+    pub shipping_mode: Option<AdjustmentMode>,
+    pub shipping_value: Option<DecimalStr>,
+
+    pub due_date: Option<chrono::NaiveDate>,
+    pub payment_terms: Option<String>,
+    pub notes: Option<String>,
+}
+
+/// Input for a single line item when creating/updating an invoice.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewLineItem {
+    pub name: String,
+    pub description: Option<String>,
+    pub quantity: DecimalStr,
+    pub unit_price: i64,
+}
+
+/// Input for updating an existing draft invoice.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateInvoiceDraft {
+    pub realm_id: String,
+    pub invoice_id: Uuid,
+
+    // Optional fields — only provided fields are updated.
+    pub billing_name: Option<String>,
+    pub billing_address: Option<String>,
+    pub billing_email: Option<String>,
+    pub billing_phone: Option<String>,
+
+    pub seller_name: Option<String>,
+    pub seller_address: Option<String>,
+    pub seller_email: Option<String>,
+    pub seller_phone: Option<String>,
+
+    pub line_items: Option<Vec<NewLineItem>>,
+
+    pub discount_mode: Option<AdjustmentMode>,
+    pub discount_value: Option<DecimalStr>,
+    pub tax_mode: Option<AdjustmentMode>,
+    pub tax_value: Option<DecimalStr>,
+    pub shipping_mode: Option<AdjustmentMode>,
+    pub shipping_value: Option<DecimalStr>,
+
+    pub due_date: Option<chrono::NaiveDate>,
+    pub payment_terms: Option<String>,
+    pub notes: Option<String>,
+}
+
+/// Command to transition invoice status.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvoiceStatusTransition {
+    pub realm_id: String,
+    pub invoice_id: Uuid,
+    pub target_status: InvoiceStatus,
+    pub actor_user_id: Option<Uuid>,
+    pub actor_type: ActorType,
+    /// Reason required for void transition.
+    pub void_reason: Option<String>,
+}
+
+/// Filters for listing invoices.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct InvoiceListFilters {
+    pub status: Option<InvoiceStatus>,
+    pub source: Option<InvoiceSource>,
+    pub search: Option<String>,
+    pub date_from: Option<chrono::NaiveDate>,
+    pub date_to: Option<chrono::NaiveDate>,
+    pub page: Option<u64>,
+    pub page_size: Option<u64>,
+}
+
+/// Paginated result wrapper for invoice list queries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaginatedInvoices<T> {
+    pub total: u64,
+    pub page: u64,
+    pub page_size: u64,
+    pub data: Vec<T>,
+}
+
+// ---------------------------------------------------------------------------
+// Traits (ports)
+// ---------------------------------------------------------------------------
+
+/// Repository for invoice persistence operations.
+#[allow(clippy::manual_async_fn)]
+pub trait InvoiceRepository: Send + Sync {
+    fn create_invoice(
+        &self,
+        input: NewInvoice,
+    ) -> impl Future<Output = Result<Invoice, CoreError>> + Send;
+
+    fn update_draft(
+        &self,
+        input: UpdateInvoiceDraft,
+    ) -> impl Future<Output = Result<Invoice, CoreError>> + Send;
+
+    fn find_with_items(
+        &self,
+        realm_id: &str,
+        invoice_id: Uuid,
+    ) -> impl Future<Output = Result<Option<InvoiceDetail>, CoreError>> + Send;
+
+    fn list_admin(
+        &self,
+        realm_id: &str,
+        filters: InvoiceListFilters,
+    ) -> impl Future<Output = Result<PaginatedInvoices<InvoiceSummary>, CoreError>> + Send;
+
+    fn list_user(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        filters: InvoiceListFilters,
+    ) -> impl Future<Output = Result<PaginatedInvoices<InvoiceSummary>, CoreError>> + Send;
+
+    fn transition_status(
+        &self,
+        input: InvoiceStatusTransition,
+    ) -> impl Future<Output = Result<Invoice, CoreError>> + Send;
+
+    fn find_seller_config(
+        &self,
+        realm_id: &str,
+    ) -> impl Future<Output = Result<Option<InvoiceSellerConfig>, CoreError>> + Send;
+
+    fn upsert_seller_config(
+        &self,
+        config: InvoiceSellerConfig,
+    ) -> impl Future<Output = Result<InvoiceSellerConfig, CoreError>> + Send;
+
+    fn list_overdue_candidates(
+        &self,
+        now: DateTime<Utc>,
+        limit: i64,
+    ) -> impl Future<Output = Result<Vec<Invoice>, CoreError>> + Send;
+
+    /// Atomically reserve and return the next invoice number for a given realm+year.
+    /// Uses SELECT FOR UPDATE row lock internally.
+    fn next_invoice_number(
+        &self,
+        realm_id: &str,
+        year: i32,
+    ) -> impl Future<Output = Result<String, CoreError>> + Send;
+}
+
+impl<T: InvoiceRepository> InvoiceRepository for Arc<T> {
+    fn create_invoice(
+        &self,
+        input: NewInvoice,
+    ) -> impl Future<Output = Result<Invoice, CoreError>> + Send {
+        (**self).create_invoice(input)
+    }
+
+    fn update_draft(
+        &self,
+        input: UpdateInvoiceDraft,
+    ) -> impl Future<Output = Result<Invoice, CoreError>> + Send {
+        (**self).update_draft(input)
+    }
+
+    fn find_with_items(
+        &self,
+        realm_id: &str,
+        invoice_id: Uuid,
+    ) -> impl Future<Output = Result<Option<InvoiceDetail>, CoreError>> + Send {
+        (**self).find_with_items(realm_id, invoice_id)
+    }
+
+    fn list_admin(
+        &self,
+        realm_id: &str,
+        filters: InvoiceListFilters,
+    ) -> impl Future<Output = Result<PaginatedInvoices<InvoiceSummary>, CoreError>> + Send {
+        (**self).list_admin(realm_id, filters)
+    }
+
+    fn list_user(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        filters: InvoiceListFilters,
+    ) -> impl Future<Output = Result<PaginatedInvoices<InvoiceSummary>, CoreError>> + Send {
+        (**self).list_user(realm_id, user_id, filters)
+    }
+
+    fn transition_status(
+        &self,
+        input: InvoiceStatusTransition,
+    ) -> impl Future<Output = Result<Invoice, CoreError>> + Send {
+        (**self).transition_status(input)
+    }
+
+    fn find_seller_config(
+        &self,
+        realm_id: &str,
+    ) -> impl Future<Output = Result<Option<InvoiceSellerConfig>, CoreError>> + Send {
+        (**self).find_seller_config(realm_id)
+    }
+
+    fn upsert_seller_config(
+        &self,
+        config: InvoiceSellerConfig,
+    ) -> impl Future<Output = Result<InvoiceSellerConfig, CoreError>> + Send {
+        (**self).upsert_seller_config(config)
+    }
+
+    fn list_overdue_candidates(
+        &self,
+        now: DateTime<Utc>,
+        limit: i64,
+    ) -> impl Future<Output = Result<Vec<Invoice>, CoreError>> + Send {
+        (**self).list_overdue_candidates(now, limit)
+    }
+
+    fn next_invoice_number(
+        &self,
+        realm_id: &str,
+        year: i32,
+    ) -> impl Future<Output = Result<String, CoreError>> + Send {
+        (**self).next_invoice_number(realm_id, year)
+    }
+}
+
+/// PDF generator for invoice documents.
+#[allow(clippy::manual_async_fn)]
+pub trait InvoicePdfGenerator: Send + Sync {
+    fn generate(
+        &self,
+        invoice: &InvoiceDetail,
+    ) -> impl Future<Output = Result<Vec<u8>, CoreError>> + Send;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invoice_status_from_str_roundtrip() {
+        for s in ["draft", "issued", "paid", "void", "overdue"] {
+            let status: InvoiceStatus = s.parse().expect(s);
+            assert_eq!(status.as_str(), s);
+        }
+    }
+
+    #[test]
+    fn invoice_status_invalid_returns_error() {
+        let result = "unknown".parse::<InvoiceStatus>();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn invoice_status_terminal_states() {
+        assert!(InvoiceStatus::Paid.is_terminal());
+        assert!(InvoiceStatus::Void.is_terminal());
+        assert!(!InvoiceStatus::Draft.is_terminal());
+        assert!(!InvoiceStatus::Issued.is_terminal());
+        assert!(!InvoiceStatus::Overdue.is_terminal());
+    }
+
+    #[test]
+    fn invoice_source_from_str_roundtrip() {
+        assert_eq!(InvoiceSource::AdminManual.as_str(), "admin_manual");
+        assert_eq!(InvoiceSource::UserApplication.as_str(), "user_application");
+
+        let admin: InvoiceSource = "admin_manual".parse().unwrap();
+        assert_eq!(admin, InvoiceSource::AdminManual);
+
+        let user: InvoiceSource = "user_application".parse().unwrap();
+        assert_eq!(user, InvoiceSource::UserApplication);
+    }
+
+    #[test]
+    fn invoice_source_invalid_returns_error() {
+        let result = "auto".parse::<InvoiceSource>();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn adjustment_mode_as_str() {
+        assert_eq!(AdjustmentMode::Fixed.as_str(), "fixed");
+        assert_eq!(AdjustmentMode::Percent.as_str(), "percent");
+    }
+
+    #[test]
+    fn actor_type_as_str() {
+        assert_eq!(ActorType::User.as_str(), "user");
+        assert_eq!(ActorType::System.as_str(), "system");
+    }
+
+    #[test]
+    fn invoice_event_type_as_str() {
+        assert_eq!(InvoiceEventType::Created.as_str(), "created");
+        assert_eq!(InvoiceEventType::Issued.as_str(), "issued");
+        assert_eq!(InvoiceEventType::Paid.as_str(), "paid");
+        assert_eq!(InvoiceEventType::Voided.as_str(), "voided");
+        assert_eq!(InvoiceEventType::Overdue.as_str(), "overdue");
+        assert_eq!(InvoiceEventType::Updated.as_str(), "updated");
+    }
+}

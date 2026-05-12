@@ -1,0 +1,79 @@
+use crate::common::entities::Entity;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
+pub struct ClientApp {
+    pub id: Uuid,
+    pub realm_id: String,
+    pub client_id: String,
+    pub name: String,
+    pub description: Option<String>,
+
+    // New fields for Client App settings
+    #[schema(example = json!(["https://example.com/callback"]))]
+    pub redirect_uris: Vec<String>,
+    #[schema(example = true)]
+    pub enabled: bool,
+    pub icon_url: Option<String>,
+    #[schema(example = 1800)]
+    pub session_ttl_seconds: i32,
+    pub session_renewal_ttl_seconds: Option<i32>,
+    pub client_secret: Option<String>,
+
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl Entity for ClientApp {
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+
+    fn updated_at(&self) -> DateTime<Utc> {
+        self.updated_at
+    }
+}
+
+// 辅助方法
+impl ClientApp {
+    pub fn id_as_string(&self) -> String {
+        self.id.to_string()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateClientAppConfig {
+    pub realm_id: String,
+    pub client_id: String,
+    pub name: String,
+    pub description: Option<String>,
+
+    // New fields for Client App settings
+    // redirect_uris is optional during creation (can be added later)
+    pub redirect_uris: Option<Vec<String>>,
+    pub enabled: Option<bool>,
+    pub icon_url: Option<String>,
+    pub session_ttl_seconds: Option<i32>,
+    pub session_renewal_ttl_seconds: Option<i32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateClientAppConfig {
+    pub name: Option<String>,
+    pub description: Option<String>,
+
+    // New fields for Client App settings
+    pub redirect_uris: Option<Vec<String>>,
+    pub enabled: Option<bool>,
+    pub icon_url: Option<String>,
+    pub session_ttl_seconds: Option<i32>,
+    pub session_renewal_ttl_seconds: Option<i32>,
+    pub regenerate_secret: bool,
+}

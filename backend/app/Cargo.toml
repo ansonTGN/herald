@@ -1,0 +1,20 @@
+[package]
+name = "herald-app"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "herald-app"
+path = "src/main.rs"
+
+[dependencies]
+herald-api = { path = "../api" }
+herald-core = { path = "../core" }
+herald-worker = { path = "../worker" }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+sea-orm = { workspace = true }
+sqlx = { workspace = true }
+clap = { workspace = true }

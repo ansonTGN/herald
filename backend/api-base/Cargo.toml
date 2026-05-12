@@ -1,0 +1,29 @@
+[package]
+name = "herald-api-base"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+herald-core = { path = "../core" }
+sea-orm = { workspace = true }
+sqlx = { workspace = true }
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+utoipa = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+validator = { workspace = true }
+redis = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+ipnetwork = { workspace = true }
+utoipa-swagger-ui = { workspace = true }

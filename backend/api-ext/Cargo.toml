@@ -1,0 +1,22 @@
+[package]
+name = "herald-api-ext"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+herald-api-base = { path = "../api-base" }
+herald-api-billing = { path = "../api-billing" }
+herald-core = { path = "../core" }
+axum = { workspace = true }
+axum-valid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+utoipa = { workspace = true }
+validator = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+sqlx = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }

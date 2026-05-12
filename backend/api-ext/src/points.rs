@@ -1,0 +1,586 @@
+// Points API for Third-Party Integration
+//
+// Allows third-party apps to query and consume points using API Key authentication.
+
+use axum::{
+    Json,
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use uuid::Uuid;
+
+use herald_api_base::application::http::common::error_codes::ErrorCode;
+use herald_api_base::application::http::rate_limit::{RateLimitConfig, rate_limit};
+use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
+use herald_api_base::application::http::state::AppState;
+use herald_core::domain::authentication::Identity;
+use herald_core::domain::points::dtos::ConsumePointsInput;
+
+/// Create a JSON error response using centralized error codes
+fn json_error(status: StatusCode, error_code: ErrorCode) -> Response {
+    ApiError::with_code(status, error_code.as_u32(), error_code.as_str()).into_response()
+}
+
+/// Balance response (SDK-compatible)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtPointsBalanceResponse {
+    pub user_id: String,
+    pub balance: i64,
+    pub total_recharged: i64,
+    pub total_consumed: i64,
+    pub currency: String,
+    pub updated_at: String,
+}
+
+/// Consume points request (SDK-compatible)
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtConsumePointsRequest {
+    pub user_id: String,
+    pub client_app_id: String,
+    pub amount: i64,
+    pub description: Option<String>,
+    pub idempotency_key: Option<String>,
+}
+
+/// Consume points response (SDK-compatible)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtConsumePointsResponse {
+    pub transaction_id: String,
+    pub account_id: String,
+    pub user_id: String,
+    pub amount: i64,
+    pub balance_after: i64,
+}
+
+/// Get user points balance
+///
+/// Returns the current points balance for a user in the specified realm.
+///
+/// # Authentication
+/// Requires valid API Key via X-API-Key header
+///
+/// # Realm Isolation
+/// The API key must belong to the same realm as the requested realm.
+/// Cross-realm requests will return 403 Forbidden.
+///
+/// # Example
+/// ```bash
+/// curl -X GET \
+///   https://api.example.com/api/ext/points/realm123/balance?userId=user-123 \
+///   -H "X-API-Key: your-api-key"
+/// ```
+#[utoipa::path(
+    get,
+    path = "/api/ext/points/{realmId}/balance",
+    tag = "ext",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("userId" = Option<String>, Query, description = "User ID (optional)")
+    ),
+    responses(
+        (status = 200, description = "Balance retrieved successfully", body = ExtPointsBalanceResponse),
+        (status = 400, description = "Bad request - Invalid user ID format", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - Invalid or missing API Key", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Cross-realm access attempt", body = ErrorResponse),
+        (status = 404, description = "Not found - User or account not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    security(("api_key" = []))
+)]
+pub async fn get_balance_ext(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path(realm_id): Path<String>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    let api_key_realm_id = identity.realm_id();
+
+    tracing::info!(
+        api_key_realm_id = %api_key_realm_id,
+        request_realm_id = %realm_id,
+        "Balance query requested"
+    );
+
+    // 1. Check realm isolation - API key must be for the requested realm
+    if !identity.has_access_to_realm(&realm_id) {
+        tracing::warn!(
+            api_key_realm_id = %api_key_realm_id,
+            request_realm_id = %realm_id,
+            "Cross-realm access attempt blocked"
+        );
+        return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    // 2. Extract user_id from query parameter
+    let user_id = match query.get("userId") {
+        Some(user_id_str) => match user_id_str.parse::<Uuid>() {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                tracing::warn!("Invalid user ID format: {}", user_id_str);
+                return json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidUserIdFormat);
+            }
+        },
+        None => {
+            tracing::warn!("Missing userId parameter");
+            return json_error(StatusCode::BAD_REQUEST, ErrorCode::MissingUserId);
+        }
+    };
+
+    // 3. Query balance
+    let balance = match state
+        .points_service
+        .get_balance(identity, &realm_id, user_id)
+        .await
+    {
+        Ok(balance) => balance,
+        Err(e) => {
+            tracing::error!("Failed to query balance: {}", e);
+            return match e {
+                herald_core::domain::common::entities::app_errors::CoreError::Unauthorized => {
+                    json_error(StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized)
+                }
+                herald_core::domain::common::entities::app_errors::CoreError::Forbidden(_) => {
+                    json_error(StatusCode::FORBIDDEN, ErrorCode::Forbidden)
+                }
+                herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
+                    json_error(StatusCode::NOT_FOUND, ErrorCode::AccountNotFound)
+                }
+                _ => json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError),
+            };
+        }
+    };
+
+    // 4. Build response
+    let response = ExtPointsBalanceResponse {
+        user_id: balance.user_id.to_string(),
+        balance: balance.balance,
+        total_recharged: balance.total_recharged,
+        total_consumed: balance.total_consumed,
+        currency: balance.currency,
+        updated_at: balance.updated_at.to_rfc3339(),
+    };
+
+    tracing::info!(
+        user_id = %balance.user_id,
+        balance = %balance.balance,
+        "Balance retrieved successfully"
+    );
+
+    Json(response).into_response()
+}
+
+/// Consume points from user account
+///
+/// Consumes points from a user's account for paid operations.
+/// Returns transaction details including the new balance.
+///
+/// # Authentication
+/// Requires valid API Key via X-API-Key header
+///
+/// # Realm Isolation
+/// The API key must belong to the same realm as the requested realm.
+/// Cross-realm requests will return 403 Forbidden.
+///
+/// # Example
+/// ```bash
+/// curl -X POST \
+///   https://api.example.com/api/ext/points/realm123/consume \
+///   -H "X-API-Key: your-api-key" \
+///   -H "Content-Type: application/json" \
+///   -d '{
+///     "userId": "user-123",
+///     "clientAppId": "app-abc",
+///     "amount": 100,
+///     "description": "AI API call"
+///   }'
+/// ```
+#[utoipa::path(
+    post,
+    path = "/api/ext/points/{realmId}/consume",
+    tag = "ext",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    request_body = ExtConsumePointsRequest,
+    responses(
+        (status = 200, description = "Points consumed successfully", body = ExtConsumePointsResponse),
+        (status = 400, description = "Bad request (insufficient points, invalid amount, frozen/closed account)", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - Invalid or missing API Key", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Cross-realm access attempt", body = ErrorResponse),
+        (status = 404, description = "Not found - User or account not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    security(("api_key" = []))
+)]
+pub async fn consume_points_ext(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path(realm_id): Path<String>,
+    Json(request): Json<ExtConsumePointsRequest>,
+) -> Response {
+    let api_key_realm_id = identity.realm_id();
+
+    tracing::info!(
+        api_key_realm_id = %api_key_realm_id,
+        request_realm_id = %realm_id,
+        user_id = %request.user_id,
+        amount = request.amount,
+        "Points consumption requested"
+    );
+
+    // 0. Apply rate limiting (parallel checks for better performance)
+    let realm_rate_limit = RateLimitConfig {
+        max_requests: 100,
+        window_secs: 60,
+        enforce_in_dev: true,
+    };
+
+    let user_rate_limit = RateLimitConfig {
+        max_requests: 20,
+        window_secs: 60,
+        enforce_in_dev: true,
+    };
+
+    // Pre-compute rate limit keys to reduce string allocations in hot path
+    const REALM_RATE_LIMIT_PREFIX: &str = "points:realm:";
+    const USER_RATE_LIMIT_PREFIX: &str = "points:user:";
+
+    // Run both rate limit checks in parallel
+    let (realm_result, user_result) = tokio::join!(
+        rate_limit(
+            &state,
+            format!("{}{}", REALM_RATE_LIMIT_PREFIX, realm_id),
+            realm_rate_limit
+        ),
+        rate_limit(
+            &state,
+            format!("{}{}:{}", USER_RATE_LIMIT_PREFIX, realm_id, request.user_id),
+            user_rate_limit
+        )
+    );
+
+    if let Err(e) = realm_result {
+        tracing::warn!(
+            realm_id = %realm_id,
+            error = %e,
+            "Realm-level rate limit exceeded"
+        );
+        return json_error(StatusCode::TOO_MANY_REQUESTS, ErrorCode::RateLimitExceeded);
+    }
+
+    if let Err(e) = user_result {
+        tracing::warn!(
+            realm_id = %realm_id,
+            user_id = %request.user_id,
+            error = %e,
+            "User-level rate limit exceeded"
+        );
+        return json_error(StatusCode::TOO_MANY_REQUESTS, ErrorCode::RateLimitExceeded);
+    }
+
+    // 1. Check realm isolation - API key must be for the requested realm
+    if !identity.has_access_to_realm(&realm_id) {
+        tracing::warn!(
+            api_key_realm_id = %api_key_realm_id,
+            request_realm_id = %realm_id,
+            "Cross-realm access attempt blocked"
+        );
+        return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    // 2. Check idempotency if key is provided
+    if let Some(ref idempotency_key) = request.idempotency_key {
+        let idempotency_service = &state.idempotency_service;
+        let request_data = serde_json::to_string(&request).unwrap_or_else(|_| {
+            tracing::warn!(
+                idempotency_key = %idempotency_key,
+                "Failed to serialize idempotency request data, using empty string"
+            );
+            String::new()
+        });
+
+        match idempotency_service
+            .check_or_create(&realm_id, idempotency_key, &request_data)
+            .await
+        {
+            Ok(herald_core::domain::points::IdempotencyResult::Cached { transaction }) => {
+                // Return cached response
+                let response = ExtConsumePointsResponse {
+                    transaction_id: transaction.id.to_string(),
+                    account_id: transaction.account_id.to_string(),
+                    user_id: transaction.user_id.to_string(),
+                    amount: transaction.amount,
+                    balance_after: transaction.balance_after,
+                };
+
+                tracing::info!(
+                    idempotency_key = %idempotency_key,
+                    transaction_id = %transaction.id,
+                    "Returning cached idempotent response"
+                );
+
+                return Json(response).into_response();
+            }
+            Ok(herald_core::domain::points::IdempotencyResult::New) => {
+                // Proceed with normal processing
+            }
+            Err(e) => {
+                tracing::error!(
+                    idempotency_key = %idempotency_key,
+                    error = %e,
+                    "Idempotency check failed"
+                );
+                return match e {
+                    herald_core::domain::common::entities::app_errors::CoreError::Conflict(_) => {
+                        json_error(StatusCode::CONFLICT, ErrorCode::IdempotencyConflict)
+                    }
+                    _ => json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError),
+                };
+            }
+        }
+    }
+
+    // 3. Validate amount range (1 point to 1,000,000 points)
+    if request.amount <= 0 || request.amount > 1_000_000 {
+        return json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidAmount);
+    }
+
+    // 3. Parse user_id
+    let user_id = match request.user_id.parse::<Uuid>() {
+        Ok(uuid) => uuid,
+        Err(_) => {
+            tracing::warn!("Invalid user ID format: {}", request.user_id);
+            return json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidUserIdFormat);
+        }
+    };
+
+    // 4. Parse client_app_id
+    let client_app_id = match request.client_app_id.parse::<Uuid>() {
+        Ok(uuid) => uuid,
+        Err(_) => {
+            tracing::warn!("Invalid client_app_id format: {}", request.client_app_id);
+            return json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidClientAppIdFormat);
+        }
+    };
+
+    // 5. Create input DTO
+    let input = ConsumePointsInput {
+        user_id: user_id.to_string(),
+        client_app_id: client_app_id.to_string(),
+        amount: request.amount,
+        description: request.description.clone(),
+    };
+
+    // 6. Consume points
+    let transaction = match state
+        .points_service
+        .consume_points(identity, &realm_id, input)
+        .await
+    {
+        Ok(transaction) => transaction,
+        Err(e) => {
+            tracing::error!("Failed to consume points: {}", e);
+            return match e {
+                herald_core::domain::common::entities::app_errors::CoreError::Unauthorized => {
+                    json_error(StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized)
+                }
+                herald_core::domain::common::entities::app_errors::CoreError::Forbidden(_) => {
+                    json_error(StatusCode::FORBIDDEN, ErrorCode::Forbidden)
+                }
+                herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
+                    json_error(StatusCode::NOT_FOUND, ErrorCode::AccountNotFound)
+                }
+                herald_core::domain::common::entities::app_errors::CoreError::BadRequest(msg) => {
+                    if msg.contains("Insufficient points") {
+                        json_error(StatusCode::BAD_REQUEST, ErrorCode::InsufficientPoints)
+                    } else if msg.contains("Cannot consume points from") {
+                        json_error(StatusCode::BAD_REQUEST, ErrorCode::AccountFrozenOrClosed)
+                    } else {
+                        json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidAmount)
+                    }
+                }
+                herald_core::domain::common::entities::app_errors::CoreError::Conflict(_) => {
+                    json_error(StatusCode::CONFLICT, ErrorCode::ConcurrentModification)
+                }
+                _ => json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError),
+            };
+        }
+    };
+
+    // 7. Build response
+    let response = ExtConsumePointsResponse {
+        transaction_id: transaction.id.to_string(),
+        account_id: transaction.account_id.to_string(),
+        user_id: transaction.user_id.to_string(),
+        amount: transaction.amount,
+        balance_after: transaction.balance_after,
+    };
+
+    tracing::info!(
+        transaction_id = %transaction.id,
+        user_id = %transaction.user_id,
+        amount = transaction.amount,
+        balance_after = %transaction.balance_after,
+        "Points consumed successfully"
+    );
+
+    // 8. Save idempotency result if key was provided
+    if let Some(ref idempotency_key) = request.idempotency_key {
+        let idempotency_service = &state.idempotency_service;
+        if let Err(e) = idempotency_service
+            .save_result(&realm_id, idempotency_key, &transaction)
+            .await
+        {
+            tracing::error!(
+                idempotency_key = %idempotency_key,
+                transaction_id = %transaction.id,
+                error = %e,
+                "Failed to save idempotency result"
+            );
+            // Non-critical error, don't fail the request
+        }
+    }
+
+    Json(response).into_response()
+}
+
+/// Transaction response (SDK-compatible)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtTransactionResponse {
+    pub transaction_id: String,
+    pub account_id: String,
+    pub user_id: String,
+    pub transaction_type: String,
+    pub amount: i64,
+    pub balance_after: i64,
+    pub description: Option<String>,
+    pub client_app_id: Option<String>,
+    pub subscription_id: Option<String>,
+    pub external_ref_id: Option<String>,
+    pub created_at: String,
+}
+
+/// Get transaction by ID
+///
+/// Returns details of a specific points transaction.
+///
+/// # Authentication
+/// Requires valid API Key via X-API-Key header
+///
+/// # Realm Isolation
+/// The API key must belong to the same realm as the requested realm.
+/// Cross-realm requests will return 403 Forbidden.
+///
+/// # Example
+/// ```bash
+/// curl -X GET \
+///   https://api.example.com/api/ext/points/realm123/transactions/uuid \
+///   -H "X-API-Key: your-api-key"
+/// ```
+#[utoipa::path(
+    get,
+    path = "/api/ext/points/{realmId}/transactions/{transactionId}",
+    tag = "ext",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("transactionId" = String, Path, description = "Transaction ID")
+    ),
+    responses(
+        (status = 200, description = "Transaction retrieved successfully", body = ExtTransactionResponse),
+        (status = 400, description = "Bad request - Invalid ID format", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - Invalid or missing API Key", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Cross-realm access attempt", body = ErrorResponse),
+        (status = 404, description = "Not found - Transaction not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    security(("api_key" = []))
+)]
+pub async fn get_transaction_ext(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path((realm_id, transaction_id_str)): Path<(String, String)>,
+) -> Response {
+    let api_key_realm_id = identity.realm_id();
+
+    tracing::info!(
+        api_key_realm_id = %api_key_realm_id,
+        request_realm_id = %realm_id,
+        transaction_id = %transaction_id_str,
+        "Transaction query requested"
+    );
+
+    // 1. Check realm isolation - API key must be for the requested realm
+    if !identity.has_access_to_realm(&realm_id) {
+        tracing::warn!(
+            api_key_realm_id = %api_key_realm_id,
+            request_realm_id = %realm_id,
+            "Cross-realm access attempt blocked"
+        );
+        return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    // 2. Parse transaction_id
+    let transaction_id = match transaction_id_str.parse::<Uuid>() {
+        Ok(uuid) => uuid,
+        Err(_) => {
+            tracing::warn!("Invalid transaction ID format: {}", transaction_id_str);
+            return json_error(
+                StatusCode::BAD_REQUEST,
+                ErrorCode::InvalidTransactionIdFormat,
+            );
+        }
+    };
+
+    // 3. Get transaction
+    let transaction = match state
+        .points_service
+        .get_transaction(identity, &realm_id, transaction_id)
+        .await
+    {
+        Ok(transaction) => transaction,
+        Err(e) => {
+            tracing::error!("Failed to get transaction: {}", e);
+            return match e {
+                herald_core::domain::common::entities::app_errors::CoreError::Unauthorized => {
+                    json_error(StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized)
+                }
+                herald_core::domain::common::entities::app_errors::CoreError::Forbidden(_) => {
+                    json_error(StatusCode::FORBIDDEN, ErrorCode::Forbidden)
+                }
+                herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
+                    json_error(StatusCode::NOT_FOUND, ErrorCode::TransactionNotFound)
+                }
+                _ => json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError),
+            };
+        }
+    };
+
+    // 4. Build response
+    let response = ExtTransactionResponse {
+        transaction_id: transaction.id.to_string(),
+        account_id: transaction.account_id.to_string(),
+        user_id: transaction.user_id.to_string(),
+        transaction_type: transaction.transaction_type.to_string(),
+        amount: transaction.amount,
+        balance_after: transaction.balance_after,
+        description: transaction.description,
+        client_app_id: transaction.client_app_id.map(|id| id.to_string()),
+        subscription_id: transaction.subscription_id.map(|id| id.to_string()),
+        external_ref_id: transaction.external_ref_id,
+        created_at: transaction.created_at.to_rfc3339(),
+    };
+
+    tracing::info!(
+        transaction_id = %transaction.id,
+        "Transaction retrieved successfully"
+    );
+
+    Json(response).into_response()
+}

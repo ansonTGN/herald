@@ -1,0 +1,7 @@
+target
+.idea
+
+# Development logs
+/log/
+*.log
+!/log/.gitkeep

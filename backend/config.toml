@@ -1,0 +1,23 @@
+[database]
+url = "postgres://postgres:postgres@localhost/herald?sslmode=disable"
+max_connections = 100
+acquire_timeout_secs = 30
+idle_timeout_secs = 600
+max_lifetime_secs = 1800
+connect_timeout_secs = 10
+
+[redis]
+url = "redis://127.0.0.1:6379/1"
+
+[server]
+bind_address = "0.0.0.0:8080"
+log_level = "info"
+
+[frontend]
+url = "http://localhost:3000"
+
+[creem]
+api_key = "creem_your_api_key_here"
+webhook_secret = "whsec_your_webhook_secret"
+test_mode = true
+timeout = 30

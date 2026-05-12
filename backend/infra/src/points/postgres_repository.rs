@@ -1,0 +1,3829 @@
+// PostgreSQL implementation of Points Repository
+
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, NotSet,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
+};
+use sqlx::{FromRow, PgPool, Postgres, Row, Transaction};
+use std::str::FromStr;
+use std::sync::Arc;
+use uuid::Uuid;
+
+use herald_domain::common::entities::app_errors::CoreError;
+use herald_domain::points::{
+    dtos::RevokePointsOutput,
+    entities::{
+        CreditLedgerStatus, CreditSourceType, CreditType, Paginated, PointsAccount,
+        PointsConsumptionAllocation, PointsCreditLedger, PointsPlanConfig, PointsRevocationRecord,
+        PointsTransaction, RevocationType, TransactionType,
+    },
+    errors::PointsErrorExt,
+    expiration_service::ExpirationSummary,
+    ports::{
+        AccountFilters, AccountUpdate, LedgerFilters, LedgerUpdate, PointsRepository,
+        TransactionFilters,
+    },
+};
+// Import mapping functions for ORM conversions
+use crate::points::{
+    points_consumption_allocation_from_model, points_consumption_allocation_to_active_model,
+    points_credit_ledger_from_model, points_credit_ledger_to_active_model,
+    points_revocation_record_from_model, points_revocation_record_to_active_model,
+};
+use herald_entity::{
+    account, points_account, points_consumption_allocation, points_credit_ledger,
+    points_grant_record, points_grant_schedule, points_plan_config, points_revocation_record,
+    points_transaction, realm_default_config, user_points_config,
+};
+
+/// Custom struct for SQLx query results from points_accounts table
+/// Implements FromRow to work with sqlx::query_as
+#[derive(Debug, FromRow)]
+struct PointsAccountRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub realm_id: String,
+    pub total_balance: i64,
+    pub topup_balance: i64,
+    pub subscription_balance: i64,
+    pub total_topup_granted: i64,
+    pub total_subscription_granted: i64,
+    pub total_recharged: i64,
+    pub total_consumed: i64,
+    pub status: String,
+    pub created_at: sea_orm::prelude::DateTimeWithTimeZone,
+    pub updated_at: sea_orm::prelude::DateTimeWithTimeZone,
+}
+
+/// Custom struct for SQLx query results from points_transactions table
+/// Implements FromRow to work with sqlx::query_as
+#[allow(dead_code)]
+#[derive(Debug, FromRow)]
+struct PointsTransactionRow {
+    pub id: Uuid,
+    pub realm_id: String,
+    pub account_id: Uuid,
+    pub user_id: Uuid,
+    pub r#type: String,
+    pub amount: i64,
+    pub balance_after: i64,
+    pub topup_balance_after: Option<i64>,
+    pub subscription_balance_after: Option<i64>,
+    pub credit_type: Option<String>,
+    pub description: Option<String>,
+    pub client_app_id: Option<Uuid>,
+    pub subscription_id: Option<Uuid>,
+    pub external_ref_id: Option<String>,
+    pub created_at: sea_orm::prelude::DateTimeWithTimeZone,
+    pub updated_at: sea_orm::prelude::DateTimeWithTimeZone,
+    pub expires_at: Option<sea_orm::prelude::DateTimeWithTimeZone>,
+}
+
+#[derive(Debug, FromRow)]
+struct PointsCreditLedgerRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub realm_id: String,
+    pub credit_type: String,
+    pub source_type: String,
+    pub source_id: String,
+    pub granted_amount: i64,
+    pub used_amount: i64,
+    pub revoked_amount: i64,
+    pub remaining_amount: i64,
+    pub expires_at: Option<sea_orm::prelude::DateTimeWithTimeZone>,
+    pub status: String,
+    pub created_at: sea_orm::prelude::DateTimeWithTimeZone,
+    pub updated_at: sea_orm::prelude::DateTimeWithTimeZone,
+}
+
+/// PostgreSQL implementation of PointsRepository
+pub struct PostgresPointsRepository {
+    db: Arc<DatabaseConnection>,
+    pool: PgPool,
+}
+
+/// Unique constraint names in the database
+mod constraints {
+    pub const UK_POINTS_ACCOUNTS_USER_ID: &str = "uk_points_accounts_user_id";
+    pub const UK_POINTS_PLAN_CONFIGS_PLAN_ID: &str = "uk_points_plan_configs_plan_id";
+}
+
+impl PostgresPointsRepository {
+    pub fn new(db: Arc<DatabaseConnection>, pool: PgPool) -> Self {
+        Self { db, pool }
+    }
+
+    /// Convert database model to domain PointsAccount
+    fn model_to_points_account(model: points_account::Model) -> Result<PointsAccount, CoreError> {
+        Ok(PointsAccount {
+            id: model.id,
+            user_id: model.user_id,
+            realm_id: model.realm_id,
+            total_balance: model.total_balance,
+            topup_balance: model.topup_balance,
+            subscription_balance: model.subscription_balance,
+            total_topup_granted: model.total_topup_granted,
+            total_subscription_granted: model.total_subscription_granted,
+            total_recharged: model.total_recharged,
+            total_consumed: model.total_consumed,
+            status: model.status.parse()?,
+            created_at: chrono::DateTime::from(model.created_at),
+            updated_at: chrono::DateTime::from(model.updated_at),
+        })
+    }
+
+    /// Convert PointsAccountRow to domain PointsAccount
+    fn row_to_points_account(row: PointsAccountRow) -> Result<PointsAccount, CoreError> {
+        use herald_domain::points::entities::AccountStatus;
+
+        let status = AccountStatus::from_str(&row.status).map_err(|_| {
+            CoreError::BadRequest(format!("Invalid account status: {}", row.status))
+        })?;
+
+        Ok(PointsAccount {
+            id: row.id,
+            user_id: row.user_id,
+            realm_id: row.realm_id,
+            total_balance: row.total_balance,
+            topup_balance: row.topup_balance,
+            subscription_balance: row.subscription_balance,
+            total_topup_granted: row.total_topup_granted,
+            total_subscription_granted: row.total_subscription_granted,
+            total_recharged: row.total_recharged,
+            total_consumed: row.total_consumed,
+            status,
+            created_at: chrono::DateTime::from(row.created_at),
+            updated_at: chrono::DateTime::from(row.updated_at),
+        })
+    }
+
+    /// Convert domain PointsAccount to database active model
+    fn points_account_to_active_model(account: PointsAccount) -> points_account::ActiveModel {
+        points_account::ActiveModel {
+            id: Set(account.id),
+            user_id: Set(account.user_id),
+            realm_id: Set(account.realm_id.clone()),
+            // total_balance is a GENERATED ALWAYS column - use NotSet to exclude from INSERT
+            total_balance: NotSet,
+            topup_balance: Set(account.topup_balance),
+            subscription_balance: Set(account.subscription_balance),
+            total_topup_granted: Set(account.total_topup_granted),
+            total_subscription_granted: Set(account.total_subscription_granted),
+            total_recharged: Set(account.total_recharged),
+            total_consumed: Set(account.total_consumed),
+            status: Set(account.status.as_str().to_string()),
+            created_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
+                account.created_at,
+            )),
+            updated_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
+                account.updated_at,
+            )),
+        }
+    }
+
+    /// Convert database model to domain PointsTransaction
+    fn model_to_points_transaction(
+        model: points_transaction::Model,
+    ) -> Result<PointsTransaction, CoreError> {
+        use herald_domain::points::entities::CreditType;
+
+        let credit_type = match model.credit_type {
+            Some(ref ct) => Some(CreditType::from_str(ct)?),
+            None => None,
+        };
+
+        Ok(PointsTransaction {
+            id: model.id,
+            account_id: model.account_id,
+            user_id: model.user_id,
+            realm_id: model.realm_id,
+            transaction_type: model.r#type.parse()?,
+            amount: model.amount,
+            balance_after: model.balance_after,
+            topup_balance_after: model.topup_balance_after,
+            subscription_balance_after: model.subscription_balance_after,
+            credit_type,
+            description: model.description,
+            client_app_id: model.client_app_id,
+            subscription_id: model.subscription_id,
+            external_ref_id: model.external_ref_id,
+            created_at: chrono::DateTime::from(model.created_at),
+        })
+    }
+
+    /// Convert SQLx query result row to domain PointsTransaction
+    fn points_transaction_row_to_domain(
+        row: PointsTransactionRow,
+    ) -> Result<PointsTransaction, CoreError> {
+        use herald_domain::points::entities::CreditType;
+
+        let credit_type = match row.credit_type {
+            Some(ref ct) => Some(CreditType::from_str(ct)?),
+            None => None,
+        };
+
+        Ok(PointsTransaction {
+            id: row.id,
+            account_id: row.account_id,
+            user_id: row.user_id,
+            realm_id: row.realm_id,
+            transaction_type: row.r#type.parse()?,
+            amount: row.amount,
+            balance_after: row.balance_after,
+            topup_balance_after: row.topup_balance_after,
+            subscription_balance_after: row.subscription_balance_after,
+            credit_type,
+            description: row.description,
+            client_app_id: row.client_app_id,
+            subscription_id: row.subscription_id,
+            external_ref_id: row.external_ref_id,
+            created_at: chrono::DateTime::from(row.created_at),
+        })
+    }
+
+    /// Convert domain PointsTransaction to database active model
+    fn points_transaction_to_active_model(
+        transaction: PointsTransaction,
+    ) -> points_transaction::ActiveModel {
+        let credit_type_str = transaction
+            .credit_type
+            .as_ref()
+            .map(|ct| ct.as_str().to_string());
+
+        points_transaction::ActiveModel {
+            id: Set(transaction.id),
+            account_id: Set(transaction.account_id),
+            user_id: Set(transaction.user_id),
+            realm_id: Set(transaction.realm_id),
+            r#type: Set(transaction.transaction_type.as_str().to_string()),
+            amount: Set(transaction.amount),
+            balance_after: Set(transaction.balance_after),
+            topup_balance_after: Set(transaction.topup_balance_after),
+            subscription_balance_after: Set(transaction.subscription_balance_after),
+            credit_type: Set(credit_type_str),
+            description: Set(transaction.description),
+            client_app_id: Set(transaction.client_app_id),
+            subscription_id: Set(transaction.subscription_id),
+            external_ref_id: Set(transaction.external_ref_id),
+            created_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
+                transaction.created_at,
+            )),
+        }
+    }
+
+    /// Convert database model to domain PointsPlanConfig
+    fn model_to_points_plan_config(
+        model: points_plan_config::Model,
+    ) -> Result<PointsPlanConfig, CoreError> {
+        Ok(PointsPlanConfig {
+            id: model.id,
+            realm_id: model.realm_id,
+            plan_id: model.plan_id,
+            grant_period_type: model.grant_period_type,
+            points_per_period: model.points_per_period,
+            validity_days: model.validity_days,
+            grant_on_subscribe: model.grant_on_subscribe,
+            max_periods: model.max_periods,
+            active: model.active,
+            created_at: chrono::DateTime::from(model.created_at),
+            updated_at: chrono::DateTime::from(model.updated_at),
+        })
+    }
+
+    fn model_to_user_points_config(
+        model: user_points_config::Model,
+    ) -> herald_domain::points::user_config::UserPointsConfig {
+        // Parse grant period type if present
+        let free_periodic_grant_period_type = model.free_periodic_grant_period_type.and_then(|s| {
+            s.parse::<herald_domain::points::grant_schedule::GrantPeriodType>()
+                .map_err(|e| {
+                    tracing::error!(
+                        "Failed to parse free_periodic_grant_period_type '{}': {}",
+                        s,
+                        e
+                    );
+                    e
+                })
+                .ok()
+        });
+
+        herald_domain::points::user_config::UserPointsConfig {
+            user_id: model.user_id,
+            realm_id: model.realm_id,
+            registration_bonus_points: model.registration_bonus_points,
+            free_periodic_points_amount: model.free_periodic_points_amount,
+            free_periodic_grant_period_type,
+            free_periodic_validity_days: model.free_periodic_validity_days,
+            next_grant_time: model.next_grant_time.map(chrono::DateTime::from),
+            granted_periods: model.granted_periods,
+            grant_schedule_id: model.grant_schedule_id,
+            created_at: chrono::DateTime::from(model.created_at),
+            updated_at: chrono::DateTime::from(model.updated_at),
+        }
+    }
+
+    fn model_to_grant_schedule(
+        model: points_grant_schedule::Model,
+    ) -> Result<herald_domain::points::grant_schedule::PointsGrantSchedule, CoreError> {
+        let grant_period_type = herald_domain::points::grant_schedule::GrantPeriodType::from_str(
+            &model.grant_period_type,
+        )?;
+
+        Ok(herald_domain::points::grant_schedule::PointsGrantSchedule {
+            id: model.id,
+            user_id: model.user_id,
+            realm_id: model.realm_id,
+            subscription_id: model.subscription_id,
+            plan_config_id: model.plan_config_id,
+            grant_period_type,
+            base_time: chrono::DateTime::from(model.base_time),
+            next_grant_time: chrono::DateTime::from(model.next_grant_time),
+            points_per_period: model.points_per_period,
+            validity_days: model.validity_days,
+            granted_periods: model.granted_periods,
+            max_periods: model.max_periods,
+            active: model.active,
+            created_at: chrono::DateTime::from(model.created_at),
+            updated_at: chrono::DateTime::from(model.updated_at),
+        })
+    }
+
+    /// Convert domain PointsPlanConfig to database active model
+    fn points_plan_config_to_active_model(
+        config: PointsPlanConfig,
+    ) -> points_plan_config::ActiveModel {
+        points_plan_config::ActiveModel {
+            id: Set(config.id),
+            realm_id: Set(config.realm_id.clone()),
+            plan_id: Set(config.plan_id),
+            grant_period_type: Set(config.grant_period_type),
+            points_per_period: Set(config.points_per_period),
+            validity_days: Set(config.validity_days),
+            grant_on_subscribe: Set(config.grant_on_subscribe),
+            max_periods: Set(config.max_periods),
+            active: Set(config.active),
+            created_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
+                config.created_at,
+            )),
+            updated_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
+                config.updated_at,
+            )),
+        }
+    }
+
+    /// Apply transaction filters to a query (shared by find_transactions and count_transactions)
+    fn apply_transaction_filters(
+        mut query: sea_orm::Select<points_transaction::Entity>,
+        filters: &TransactionFilters,
+    ) -> sea_orm::Select<points_transaction::Entity> {
+        if let Some(user_id) = filters.user_id {
+            query = query.filter(points_transaction::Column::UserId.eq(user_id));
+        }
+
+        if let Some(transaction_type) = &filters.transaction_type {
+            query = query
+                .filter(points_transaction::Column::Type.eq(transaction_type.as_str().to_string()));
+        }
+
+        if let Some(client_app_id) = filters.client_app_id {
+            query = query.filter(points_transaction::Column::ClientAppId.eq(client_app_id));
+        }
+
+        if let Some(subscription_id) = filters.subscription_id {
+            query = query.filter(points_transaction::Column::SubscriptionId.eq(subscription_id));
+        }
+
+        if !filters.external_ref_id.is_empty() {
+            query = query
+                .filter(points_transaction::Column::ExternalRefId.eq(&filters.external_ref_id));
+        }
+
+        if let Some(start_time) = &filters.start_time {
+            query = query.filter(
+                points_transaction::Column::CreatedAt
+                    .gte(sea_orm::prelude::DateTimeWithTimeZone::from(*start_time)),
+            );
+        }
+
+        if let Some(end_time) = &filters.end_time {
+            query = query.filter(
+                points_transaction::Column::CreatedAt
+                    .lte(sea_orm::prelude::DateTimeWithTimeZone::from(*end_time)),
+            );
+        }
+
+        query
+    }
+    fn row_to_points_credit_ledger(
+        row: PointsCreditLedgerRow,
+    ) -> Result<PointsCreditLedger, CoreError> {
+        Ok(PointsCreditLedger {
+            id: row.id,
+            user_id: row.user_id,
+            realm_id: row.realm_id,
+            credit_type: row.credit_type.parse()?,
+            source_type: row.source_type.parse()?,
+            source_id: row.source_id,
+            granted_amount: row.granted_amount,
+            used_amount: row.used_amount,
+            revoked_amount: row.revoked_amount,
+            remaining_amount: row.remaining_amount,
+            expires_at: row.expires_at.map(chrono::DateTime::from),
+            status: row.status.parse()?,
+            created_at: chrono::DateTime::from(row.created_at),
+            updated_at: chrono::DateTime::from(row.updated_at),
+        })
+    }
+
+    async fn find_account_by_user_for_update(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> Result<Option<PointsAccount>, CoreError> {
+        let row = sqlx::query_as::<_, PointsAccountRow>(
+            r#"
+            SELECT * FROM points_accounts
+            WHERE realm_id = $1 AND user_id = $2
+            FOR UPDATE
+            "#,
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        row.map(Self::row_to_points_account).transpose()
+    }
+
+    async fn create_account_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> Result<PointsAccount, CoreError> {
+        let row = sqlx::query_as::<_, PointsAccountRow>(
+            r#"
+            INSERT INTO points_accounts (
+                id, user_id, realm_id, topup_balance, subscription_balance,
+                total_recharged, total_consumed, total_topup_granted,
+                total_subscription_granted, status, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW()
+            )
+            RETURNING *
+            "#,
+        )
+        .bind(Uuid::now_v7())
+        .bind(user_id)
+        .bind(realm_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Self::row_to_points_account(row)
+    }
+
+    async fn ensure_account_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> Result<PointsAccount, CoreError> {
+        match Self::find_account_by_user_for_update(tx, realm_id, user_id).await? {
+            Some(account) => Ok(account),
+            None => Self::create_account_in_tx(tx, realm_id, user_id).await,
+        }
+    }
+
+    async fn find_active_ledgers_by_expiration_for_update(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> Result<Vec<PointsCreditLedger>, CoreError> {
+        let rows = sqlx::query_as::<_, PointsCreditLedgerRow>(
+            r#"
+            SELECT * FROM points_credit_ledger
+            WHERE realm_id = $1
+              AND user_id = $2
+              AND status = 'active'
+              AND remaining_amount > 0
+            ORDER BY expires_at ASC NULLS LAST, created_at ASC
+            FOR UPDATE
+            "#,
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        rows.into_iter()
+            .map(Self::row_to_points_credit_ledger)
+            .collect()
+    }
+
+    async fn find_active_ledgers_by_credit_type_for_update(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        user_id: Uuid,
+        credit_type: CreditType,
+    ) -> Result<Vec<PointsCreditLedger>, CoreError> {
+        let rows = sqlx::query_as::<_, PointsCreditLedgerRow>(
+            r#"
+            SELECT * FROM points_credit_ledger
+            WHERE realm_id = $1
+              AND user_id = $2
+              AND credit_type = $3
+              AND status = 'active'
+              AND remaining_amount > 0
+            ORDER BY created_at ASC
+            FOR UPDATE
+            "#,
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(credit_type.to_string())
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        rows.into_iter()
+            .map(Self::row_to_points_credit_ledger)
+            .collect()
+    }
+
+    async fn find_expired_ledgers_for_update(
+        tx: &mut Transaction<'_, Postgres>,
+        expiration_time: chrono::DateTime<chrono::Utc>,
+        limit: usize,
+    ) -> Result<Vec<PointsCreditLedger>, CoreError> {
+        let rows = sqlx::query_as::<_, PointsCreditLedgerRow>(
+            r#"
+            SELECT * FROM points_credit_ledger
+            WHERE expires_at <= $1
+              AND status = 'active'
+              AND remaining_amount > 0
+            ORDER BY expires_at ASC
+            LIMIT $2
+            FOR UPDATE
+            "#,
+        )
+        .bind(expiration_time)
+        .bind(limit as i64)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        rows.into_iter()
+            .map(Self::row_to_points_credit_ledger)
+            .collect()
+    }
+
+    async fn update_account_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        account_id: Uuid,
+        updates: AccountUpdate,
+    ) -> Result<PointsAccount, CoreError> {
+        let account = sqlx::query_as::<_, PointsAccountRow>(
+            "SELECT * FROM points_accounts WHERE id = $1 FOR UPDATE",
+        )
+        .bind(account_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+        .map(Self::row_to_points_account)
+        .transpose()?
+        .ok_or(CoreError::NotFound)?;
+
+        let (
+            topup_balance,
+            subscription_balance,
+            total_recharged,
+            total_consumed,
+            total_topup_granted,
+            total_subscription_granted,
+        ) = match updates {
+            AccountUpdate::Consumption {
+                total,
+                topup,
+                subscription,
+            } => (
+                account.topup_balance - topup,
+                account.subscription_balance - subscription,
+                account.total_recharged,
+                account.total_consumed + total,
+                account.total_topup_granted,
+                account.total_subscription_granted,
+            ),
+            AccountUpdate::Grant {
+                topup,
+                subscription,
+            } => (
+                account.topup_balance + topup,
+                account.subscription_balance + subscription,
+                account.total_recharged + topup + subscription,
+                account.total_consumed,
+                account.total_topup_granted + topup,
+                account.total_subscription_granted + subscription,
+            ),
+            AccountUpdate::Revocation {
+                topup,
+                subscription,
+            } => (
+                account.topup_balance - topup,
+                account.subscription_balance - subscription,
+                account.total_recharged,
+                account.total_consumed,
+                account.total_topup_granted,
+                account.total_subscription_granted,
+            ),
+        };
+
+        if topup_balance < 0 || subscription_balance < 0 {
+            return Err(CoreError::concurrent_modification());
+        }
+
+        let row = sqlx::query_as::<_, PointsAccountRow>(
+            r#"
+            UPDATE points_accounts
+            SET topup_balance = $2,
+                subscription_balance = $3,
+                total_recharged = $4,
+                total_consumed = $5,
+                total_topup_granted = $6,
+                total_subscription_granted = $7,
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING *
+            "#,
+        )
+        .bind(account_id)
+        .bind(topup_balance)
+        .bind(subscription_balance)
+        .bind(total_recharged)
+        .bind(total_consumed)
+        .bind(total_topup_granted)
+        .bind(total_subscription_granted)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Self::row_to_points_account(row)
+    }
+
+    async fn update_ledger_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        ledger_id: Uuid,
+        updates: LedgerUpdate,
+    ) -> Result<PointsCreditLedger, CoreError> {
+        let ledger = sqlx::query_as::<_, PointsCreditLedgerRow>(
+            "SELECT * FROM points_credit_ledger WHERE id = $1 FOR UPDATE",
+        )
+        .bind(ledger_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+        .map(Self::row_to_points_credit_ledger)
+        .transpose()?
+        .ok_or_else(|| CoreError::BadRequest(format!("Ledger not found: {}", ledger_id)))?;
+
+        let (used_amount, revoked_amount, expires_at, status) = match updates {
+            LedgerUpdate::Consumption(amount) => {
+                let used_amount = ledger.used_amount + amount;
+                let remaining = ledger.granted_amount - used_amount - ledger.revoked_amount;
+                if remaining < 0 {
+                    return Err(CoreError::concurrent_modification());
+                }
+                (
+                    used_amount,
+                    ledger.revoked_amount,
+                    ledger.expires_at,
+                    if remaining == 0 {
+                        CreditLedgerStatus::FullyUsed
+                    } else {
+                        ledger.status
+                    },
+                )
+            }
+            LedgerUpdate::Revocation(amount) => {
+                let revoked_amount = ledger.revoked_amount + amount;
+                let remaining = ledger.granted_amount - ledger.used_amount - revoked_amount;
+                if remaining < 0 {
+                    return Err(CoreError::concurrent_modification());
+                }
+                (
+                    ledger.used_amount,
+                    revoked_amount,
+                    ledger.expires_at,
+                    if remaining == 0 {
+                        CreditLedgerStatus::Revoked
+                    } else {
+                        ledger.status
+                    },
+                )
+            }
+            LedgerUpdate::SetExpiration(expires_at) => (
+                ledger.used_amount,
+                ledger.revoked_amount,
+                Some(expires_at),
+                ledger.status,
+            ),
+            LedgerUpdate::SetStatus(status) => (
+                ledger.used_amount,
+                ledger.revoked_amount,
+                ledger.expires_at,
+                status,
+            ),
+        };
+
+        let row = sqlx::query_as::<_, PointsCreditLedgerRow>(
+            r#"
+            UPDATE points_credit_ledger
+            SET used_amount = $2,
+                revoked_amount = $3,
+                expires_at = $4,
+                status = $5,
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING *
+            "#,
+        )
+        .bind(ledger_id)
+        .bind(used_amount)
+        .bind(revoked_amount)
+        .bind(expires_at)
+        .bind(status.to_string())
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Self::row_to_points_credit_ledger(row)
+    }
+
+    async fn create_transaction_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        transaction: PointsTransaction,
+    ) -> Result<PointsTransaction, CoreError> {
+        let row = sqlx::query_as::<_, PointsTransactionRow>(
+            r#"
+            INSERT INTO points_transactions (
+                id, account_id, user_id, realm_id, type, amount, balance_after,
+                topup_balance_after, subscription_balance_after, credit_type, description,
+                client_app_id, subscription_id, external_ref_id, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7,
+                $8, $9, $10, $11,
+                $12, $13, $14, $15, NOW()
+            )
+            RETURNING id, realm_id, account_id, user_id, type, amount, balance_after,
+                      topup_balance_after, subscription_balance_after, credit_type,
+                      description, client_app_id, subscription_id, external_ref_id,
+                      created_at, updated_at, expires_at
+            "#,
+        )
+        .bind(transaction.id)
+        .bind(transaction.account_id)
+        .bind(transaction.user_id)
+        .bind(transaction.realm_id)
+        .bind(transaction.transaction_type.as_str())
+        .bind(transaction.amount)
+        .bind(transaction.balance_after)
+        .bind(transaction.topup_balance_after)
+        .bind(transaction.subscription_balance_after)
+        .bind(transaction.credit_type.map(|v| v.to_string()))
+        .bind(transaction.description)
+        .bind(transaction.client_app_id)
+        .bind(transaction.subscription_id)
+        .bind(transaction.external_ref_id)
+        .bind(transaction.created_at)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Self::points_transaction_row_to_domain(row)
+    }
+
+    async fn create_ledger_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        ledger: &PointsCreditLedger,
+    ) -> Result<PointsCreditLedger, CoreError> {
+        let row = sqlx::query_as::<_, PointsCreditLedgerRow>(
+            r#"
+            INSERT INTO points_credit_ledger (
+                id, user_id, realm_id, credit_type, source_type, source_id,
+                granted_amount, used_amount, revoked_amount, expires_at,
+                status, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6,
+                $7, $8, $9, $10,
+                $11, $12, $13
+            )
+            RETURNING *
+            "#,
+        )
+        .bind(ledger.id)
+        .bind(ledger.user_id)
+        .bind(&ledger.realm_id)
+        .bind(ledger.credit_type.to_string())
+        .bind(ledger.source_type.to_string())
+        .bind(&ledger.source_id)
+        .bind(ledger.granted_amount)
+        .bind(ledger.used_amount)
+        .bind(ledger.revoked_amount)
+        .bind(ledger.expires_at)
+        .bind(ledger.status.to_string())
+        .bind(ledger.created_at)
+        .bind(ledger.updated_at)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Self::row_to_points_credit_ledger(row)
+    }
+
+    async fn create_consumption_allocation_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        allocation: &PointsConsumptionAllocation,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            r#"
+            INSERT INTO points_consumption_allocations (
+                id, transaction_id, ledger_id, user_id, realm_id,
+                allocated_amount, ledger_remaining_after, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            "#,
+        )
+        .bind(allocation.id)
+        .bind(allocation.transaction_id)
+        .bind(allocation.ledger_id)
+        .bind(allocation.user_id)
+        .bind(&allocation.realm_id)
+        .bind(allocation.allocated_amount)
+        .bind(allocation.ledger_remaining_after)
+        .bind(allocation.created_at)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn create_revocation_record_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        record: &PointsRevocationRecord,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            r#"
+            INSERT INTO points_revocation_records (
+                id, ledger_id, user_id, realm_id, revocation_type,
+                revoked_amount, reason, reference_id, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            "#,
+        )
+        .bind(record.id)
+        .bind(record.ledger_id)
+        .bind(record.user_id)
+        .bind(&record.realm_id)
+        .bind(record.revocation_type.to_string())
+        .bind(record.revoked_amount)
+        .bind(&record.reason)
+        .bind(&record.reference_id)
+        .bind(record.created_at)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn check_completed_idempotency_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Option<Uuid>, CoreError> {
+        let row = sqlx::query("SELECT transaction_id FROM idempotency_keys WHERE realm_id = $1 AND idempotency_key = $2 AND status = 'completed' LIMIT 1")
+            .bind(realm_id)
+            .bind(idempotency_key)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(row.and_then(|row| row.try_get("transaction_id").ok()))
+    }
+
+    async fn record_completed_idempotency_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        idempotency_key: &str,
+        transaction_id: Uuid,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            r#"
+            INSERT INTO idempotency_keys (
+                id, realm_id, idempotency_key, status, request_data,
+                response_data, transaction_id, created_at, expires_at, updated_at
+            ) VALUES (
+                $1, $2, $3, 'completed', '{}', '{}', $4, NOW(), NOW() + INTERVAL '24 hours', NOW()
+            )
+            ON CONFLICT (realm_id, idempotency_key)
+            DO UPDATE SET transaction_id = EXCLUDED.transaction_id,
+                          status = 'completed',
+                          updated_at = NOW()
+            "#,
+        )
+        .bind(Uuid::now_v7())
+        .bind(realm_id)
+        .bind(idempotency_key)
+        .bind(transaction_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn disable_periodic_grant_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            r#"
+            UPDATE user_points_configs
+            SET free_periodic_points_amount = 0,
+                next_grant_time = NULL,
+                updated_at = NOW()
+            WHERE realm_id = $1 AND user_id = $2
+            "#,
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        sqlx::query(
+            r#"
+            UPDATE points_grant_schedules
+            SET active = false,
+                updated_at = NOW()
+            WHERE realm_id = $1 AND user_id = $2 AND subscription_id IS NULL AND active = true
+            "#,
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(())
+    }
+}
+
+impl PointsRepository for PostgresPointsRepository {
+    async fn find_by_user_id(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> Result<Option<PointsAccount>, CoreError> {
+        let result = points_account::Entity::find()
+            .filter(points_account::Column::RealmId.eq(realm_id))
+            .filter(points_account::Column::UserId.eq(user_id))
+            .one(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        result.map(Self::model_to_points_account).transpose()
+    }
+
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<PointsAccount>, CoreError> {
+        let result = points_account::Entity::find_by_id(id)
+            .one(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        result.map(Self::model_to_points_account).transpose()
+    }
+
+    async fn create_account(&self, account: PointsAccount) -> Result<PointsAccount, CoreError> {
+        let active_model = Self::points_account_to_active_model(account);
+
+        let result = active_model.insert(&*self.db).await.map_err(|e| {
+            // Check for unique constraint violation
+            if e.to_string()
+                .contains(constraints::UK_POINTS_ACCOUNTS_USER_ID)
+            {
+                CoreError::BadRequest("Points account already exists for this user".to_string())
+            } else {
+                CoreError::DatabaseError(e.to_string())
+            }
+        })?;
+
+        Self::model_to_points_account(result)
+    }
+
+    async fn update_balance(
+        &self,
+        account_id: Uuid,
+        new_balance: i64,
+        delta: i64,
+    ) -> Result<PointsAccount, CoreError> {
+        // NOTE: With the new ledger system, direct balance updates are not supported.
+        // This function is kept for backward compatibility but only updates tracking fields.
+        // The actual balance fields (topup_balance, subscription_balance) are managed by the ledger.
+        let txn = self
+            .db
+            .begin()
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        // Find and lock the account
+        let account_opt = points_account::Entity::find_by_id(account_id)
+            .one(&txn)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        let account =
+            account_opt.ok_or_else(|| CoreError::account_not_found(&account_id.to_string()))?;
+
+        // Optimistic locking: Check if balance changed
+        if account.total_balance != new_balance - delta {
+            txn.rollback()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            return Err(CoreError::concurrent_modification());
+        }
+
+        // Update tracking fields only - total_balance is a generated column
+        let mut active_model: points_account::ActiveModel = account.clone().into_active_model();
+        // total_balance is GENERATED ALWAYS - cannot be set directly
+        active_model.total_balance = NotSet;
+
+        if delta > 0 {
+            active_model.total_recharged = Set(account.total_recharged + delta);
+        } else {
+            active_model.total_consumed = Set(account.total_consumed + delta.abs());
+        }
+
+        active_model.updated_at = Set(sea_orm::prelude::DateTimeWithTimeZone::from(
+            chrono::Utc::now(),
+        ));
+
+        let updated = match active_model.update(&txn).await {
+            Ok(updated) => updated,
+            Err(e) => {
+                let _ = txn.rollback().await;
+                return Err(CoreError::DatabaseError(e.to_string()));
+            }
+        };
+
+        txn.commit()
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Self::model_to_points_account(updated)
+    }
+
+    async fn update_balance_atomic(
+        &self,
+        account_id: Uuid,
+        delta: i64,
+    ) -> Result<PointsAccount, CoreError> {
+        // NOTE: With the new ledger system, balance updates should happen through the ledger.
+        // This function is kept for backward compatibility but only updates tracking fields.
+        // The actual balance fields (topup_balance, subscription_balance) are managed by the ledger.
+        let query = r#"
+            UPDATE points_accounts
+            SET
+                total_recharged = total_recharged + CASE WHEN $1 > 0 THEN $1 ELSE 0 END,
+                total_consumed = total_consumed + CASE WHEN $1 < 0 THEN ABS($1) ELSE 0 END,
+                updated_at = NOW()
+            WHERE id = $2 AND total_balance + $1 >= 0
+            RETURNING *
+        "#;
+
+        let result = sqlx::query_as::<_, PointsAccountRow>(query)
+            .bind(delta)
+            .bind(account_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        match result {
+            Some(row) => Self::row_to_points_account(row),
+            None => {
+                // Either account not found or balance would go negative
+                let account = self.find_by_id(account_id).await?;
+                match account {
+                    Some(acc) => {
+                        // Account exists but insufficient balance
+                        Err(CoreError::insufficient_points(
+                            delta.abs(),
+                            acc.total_balance,
+                        ))
+                    }
+                    None => Err(CoreError::account_not_found(&account_id.to_string())),
+                }
+            }
+        }
+    }
+
+    async fn get_account_for_update(&self, account_id: Uuid) -> Result<PointsAccount, CoreError> {
+        let query = r#"
+            SELECT * FROM points_accounts
+            WHERE id = $1
+            FOR UPDATE
+        "#;
+
+        let result = sqlx::query_as::<_, PointsAccountRow>(query)
+            .bind(account_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        result
+            .map(Self::row_to_points_account)
+            .ok_or_else(|| CoreError::account_not_found(&account_id.to_string()))?
+    }
+
+    async fn create_transaction(
+        &self,
+        transaction: PointsTransaction,
+    ) -> Result<PointsTransaction, CoreError> {
+        let active_model = Self::points_transaction_to_active_model(transaction);
+
+        let result = active_model
+            .insert(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Self::model_to_points_transaction(result)
+    }
+
+    async fn find_transaction_by_id(
+        &self,
+        realm_id: &str,
+        transaction_id: Uuid,
+    ) -> Result<Option<PointsTransaction>, CoreError> {
+        let result = points_transaction::Entity::find()
+            .filter(points_transaction::Column::RealmId.eq(realm_id))
+            .filter(points_transaction::Column::Id.eq(transaction_id))
+            .one(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        result.map(Self::model_to_points_transaction).transpose()
+    }
+
+    async fn find_expired_recharge_transactions(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> Result<Vec<PointsTransaction>, CoreError> {
+        // Use raw SQL to find expired recharge transactions
+        // We need to filter by expires_at < NOW() which is not easily expressed in SeaORM
+        let query = r#"
+            SELECT id, realm_id, account_id, user_id, type, amount, balance_after,
+                   topup_balance_after, subscription_balance_after, credit_type,
+                   description, client_app_id, subscription_id, external_ref_id,
+                   created_at, updated_at, expires_at
+            FROM points_transactions
+            WHERE realm_id = $1
+              AND user_id = $2
+              AND type = 'recharge'
+              AND expires_at < NOW()
+              AND expires_at IS NOT NULL
+            ORDER BY expires_at ASC
+        "#;
+
+        let rows = sqlx::query_as::<_, PointsTransactionRow>(query)
+            .bind(realm_id)
+            .bind(user_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to find expired transactions: {}", e))
+            })?;
+
+        rows.into_iter()
+            .map(Self::points_transaction_row_to_domain)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    async fn find_transactions(
+        &self,
+        realm_id: &str,
+        filters: TransactionFilters,
+    ) -> Result<Paginated<PointsTransaction>, CoreError> {
+        let page = filters.page.unwrap_or(1);
+        let page_size = filters.page_size.unwrap_or(20).min(100);
+
+        let mut query = Self::apply_transaction_filters(
+            points_transaction::Entity::find()
+                .filter(points_transaction::Column::RealmId.eq(realm_id)),
+            &filters,
+        );
+
+        // Get total count
+        let total = query
+            .clone()
+            .count(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        // Order by created_at DESC
+        query = query.order_by_desc(points_transaction::Column::CreatedAt);
+
+        // Apply pagination
+        let results = query
+            .paginate(&*self.db, page_size)
+            .fetch_page(page - 1)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        let transactions = results
+            .into_iter()
+            .map(Self::model_to_points_transaction)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Paginated {
+            total,
+            page,
+            page_size,
+            data: transactions,
+        })
+    }
+
+    async fn count_transactions(
+        &self,
+        realm_id: &str,
+        filters: &TransactionFilters,
+    ) -> Result<u64, CoreError> {
+        let query = Self::apply_transaction_filters(
+            points_transaction::Entity::find()
+                .filter(points_transaction::Column::RealmId.eq(realm_id)),
+            filters,
+        );
+
+        let count = query
+            .count(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(count)
+    }
+
+    async fn check_idempotency_key(
+        &self,
+        realm_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Option<Uuid>, CoreError> {
+        // Query the idempotency_keys table
+        let query = r#"
+            SELECT transaction_id
+            FROM idempotency_keys
+            WHERE realm_id = $1 AND idempotency_key = $2
+              AND status = 'completed'
+            LIMIT 1
+        "#;
+
+        let result = sqlx::query_as::<_, (Uuid,)>(query)
+            .bind(realm_id)
+            .bind(idempotency_key)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to check idempotency key: {}", e))
+            })?;
+
+        Ok(result.map(|(transaction_id,)| transaction_id))
+    }
+
+    async fn record_idempotency_key(
+        &self,
+        realm_id: &str,
+        idempotency_key: &str,
+        transaction_id: Uuid,
+    ) -> Result<(), CoreError> {
+        // Insert into idempotency_keys table with ON CONFLICT DO NOTHING
+        // This ensures idempotency at the database level
+        let query = r#"
+            INSERT INTO idempotency_keys (
+                realm_id,
+                idempotency_key,
+                status,
+                request_data,
+                response_data,
+                transaction_id,
+                created_at,
+                updated_at,
+                expires_at
+            ) VALUES (
+                $1, $2, 'completed', '{}', '{}', $3, NOW(), NOW(), NOW() + INTERVAL '24 hours'
+            )
+            ON CONFLICT (realm_id, idempotency_key) DO NOTHING
+        "#;
+
+        sqlx::query(query)
+            .bind(realm_id)
+            .bind(idempotency_key)
+            .bind(transaction_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to record idempotency key: {}", e))
+            })?;
+
+        tracing::debug!(
+            realm_id = %realm_id,
+            idempotency_key = %idempotency_key,
+            transaction_id = %transaction_id,
+            "Recorded idempotency key"
+        );
+
+        Ok(())
+    }
+
+    async fn find_transaction_by_ref(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        external_ref_id: &str,
+    ) -> Result<Option<PointsTransaction>, CoreError> {
+        let result = points_transaction::Entity::find()
+            .filter(points_transaction::Column::RealmId.eq(realm_id))
+            .filter(points_transaction::Column::UserId.eq(user_id))
+            .filter(points_transaction::Column::ExternalRefId.eq(external_ref_id))
+            .one(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        result.map(Self::model_to_points_transaction).transpose()
+    }
+
+    async fn find_plan_config(
+        &self,
+        realm_id: &str,
+        plan_id: Uuid,
+    ) -> Result<Option<PointsPlanConfig>, CoreError> {
+        let result = points_plan_config::Entity::find()
+            .filter(points_plan_config::Column::RealmId.eq(realm_id))
+            .filter(points_plan_config::Column::PlanId.eq(plan_id))
+            .filter(points_plan_config::Column::Active.eq(true))
+            .one(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        result.map(Self::model_to_points_plan_config).transpose()
+    }
+
+    async fn find_plan_config_by_id(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<PointsPlanConfig>, CoreError> {
+        let result = points_plan_config::Entity::find_by_id(id)
+            .one(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        result.map(Self::model_to_points_plan_config).transpose()
+    }
+
+    async fn list_plan_configs(&self, realm_id: &str) -> Result<Vec<PointsPlanConfig>, CoreError> {
+        let results = points_plan_config::Entity::find()
+            .filter(points_plan_config::Column::RealmId.eq(realm_id))
+            .order_by_asc(points_plan_config::Column::PlanId)
+            .all(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        results
+            .into_iter()
+            .map(Self::model_to_points_plan_config)
+            .collect()
+    }
+
+    async fn create_plan_config(
+        &self,
+        config: PointsPlanConfig,
+    ) -> Result<PointsPlanConfig, CoreError> {
+        let active_model = Self::points_plan_config_to_active_model(config);
+
+        let result = active_model.insert(&*self.db).await.map_err(|e| {
+            if e.to_string()
+                .contains(constraints::UK_POINTS_PLAN_CONFIGS_PLAN_ID)
+            {
+                CoreError::BadRequest("Points plan config already exists for this plan".to_string())
+            } else {
+                CoreError::DatabaseError(e.to_string())
+            }
+        })?;
+
+        Self::model_to_points_plan_config(result)
+    }
+
+    async fn update_plan_config(
+        &self,
+        config: PointsPlanConfig,
+    ) -> Result<PointsPlanConfig, CoreError> {
+        let existing = points_plan_config::Entity::find_by_id(config.id)
+            .one(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+            .ok_or_else(|| CoreError::plan_config_not_found(&config.id.to_string()))?;
+
+        let mut active_model: points_plan_config::ActiveModel = existing.into_active_model();
+        active_model.realm_id = Set(config.realm_id);
+        active_model.plan_id = Set(config.plan_id);
+        active_model.grant_period_type = Set(config.grant_period_type);
+        active_model.points_per_period = Set(config.points_per_period);
+        active_model.validity_days = Set(config.validity_days);
+        active_model.grant_on_subscribe = Set(config.grant_on_subscribe);
+        active_model.max_periods = Set(config.max_periods);
+        active_model.active = Set(config.active);
+        active_model.updated_at = Set(sea_orm::prelude::DateTimeWithTimeZone::from(
+            chrono::Utc::now(),
+        ));
+
+        let updated = active_model
+            .update(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Self::model_to_points_plan_config(updated)
+    }
+
+    async fn delete_plan_config(&self, id: Uuid) -> Result<(), CoreError> {
+        points_plan_config::Entity::delete_by_id(id)
+            .exec(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn list_accounts(
+        &self,
+        realm_id: &str,
+        filters: AccountFilters,
+    ) -> Result<Paginated<PointsAccount>, CoreError> {
+        let page = filters.page.unwrap_or(1);
+        let page_size = filters.page_size.unwrap_or(20).min(100);
+
+        let mut query =
+            points_account::Entity::find().filter(points_account::Column::RealmId.eq(realm_id));
+
+        // Apply filters
+        if let Some(status) = filters.status {
+            query = query.filter(points_account::Column::Status.eq(status));
+        }
+
+        if let Some(search) = filters.search {
+            // Search by user_id or email
+            if let Ok(user_id) = Uuid::parse_str(&search) {
+                // Search by exact user_id match
+                query = query.filter(points_account::Column::UserId.eq(user_id));
+            } else {
+                // Search by email (join with account table)
+                let user_ids: Vec<Uuid> = account::Entity::find()
+                    .select_only()
+                    .column(account::Column::Id)
+                    .filter(account::Column::RealmId.eq(realm_id.to_string()))
+                    .filter(account::Column::Email.eq(search.clone()))
+                    .into_tuple::<Uuid>()
+                    .all(&*self.db)
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+                if !user_ids.is_empty() {
+                    query = query.filter(points_account::Column::UserId.is_in(user_ids));
+                } else {
+                    // If email not found, return empty result
+                    query = query.filter(points_account::Column::UserId.eq(Uuid::nil()));
+                }
+            }
+        }
+
+        // Get total count
+        let total = query
+            .clone()
+            .count(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        // Order by created_at DESC
+        query = query.order_by_desc(points_account::Column::CreatedAt);
+
+        // Apply pagination
+        let results = query
+            .paginate(&*self.db, page_size)
+            .fetch_page(page - 1)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        let accounts = results
+            .into_iter()
+            .map(Self::model_to_points_account)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Paginated {
+            total,
+            page,
+            page_size,
+            data: accounts,
+        })
+    }
+
+    async fn count_accounts(
+        &self,
+        realm_id: &str,
+        filters: &AccountFilters,
+    ) -> Result<u64, CoreError> {
+        let mut query =
+            points_account::Entity::find().filter(points_account::Column::RealmId.eq(realm_id));
+
+        // Apply filters (same as list_accounts)
+        if let Some(status) = &filters.status {
+            query = query.filter(points_account::Column::Status.eq(status.clone()));
+        }
+
+        if let Some(search) = &filters.search {
+            // Search by user_id or email
+            if let Ok(user_id) = Uuid::parse_str(search) {
+                // Search by exact user_id match
+                query = query.filter(points_account::Column::UserId.eq(user_id));
+            } else {
+                // Search by email (join with account table)
+                let user_ids: Vec<Uuid> = account::Entity::find()
+                    .select_only()
+                    .column(account::Column::Id)
+                    .filter(account::Column::RealmId.eq(realm_id.to_string()))
+                    .filter(account::Column::Email.eq(search.clone()))
+                    .into_tuple::<Uuid>()
+                    .all(&*self.db)
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+                if !user_ids.is_empty() {
+                    query = query.filter(points_account::Column::UserId.is_in(user_ids));
+                } else {
+                    // If email not found, return 0 count
+                    return Ok(0);
+                }
+            }
+        }
+
+        let count = query
+            .count(&*self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(count)
+    }
+
+    // ========== Ledger Management ==========
+
+    fn create_ledger(
+        &self,
+        ledger: PointsCreditLedger,
+    ) -> impl std::future::Future<Output = Result<PointsCreditLedger, CoreError>> + Send {
+        let db = self.db.clone();
+        async move {
+            let active_model = points_credit_ledger_to_active_model(&ledger);
+            let result = active_model
+                .insert(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(points_credit_ledger_from_model(result))
+        }
+    }
+
+    fn find_ledgers_by_user_id(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        filters: LedgerFilters,
+    ) -> impl std::future::Future<Output = Result<Paginated<PointsCreditLedger>, CoreError>> + Send
+    {
+        let db = self.db.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let mut query = points_credit_ledger::Entity::find()
+                .filter(points_credit_ledger::Column::RealmId.eq(&realm_id))
+                .filter(points_credit_ledger::Column::UserId.eq(user_id));
+
+            if let Some(credit_type) = filters.credit_type {
+                query = query
+                    .filter(points_credit_ledger::Column::CreditType.eq(credit_type.to_string()));
+            }
+
+            if let Some(status) = filters.status {
+                query = query.filter(points_credit_ledger::Column::Status.eq(status.to_string()));
+            }
+
+            if let Some(start_time) = filters.start_time {
+                query = query.filter(points_credit_ledger::Column::CreatedAt.gte(start_time));
+            }
+
+            if let Some(end_time) = filters.end_time {
+                query = query.filter(points_credit_ledger::Column::CreatedAt.lte(end_time));
+            }
+
+            // Always order by created_at DESC for ledger queries (newest first)
+            query = query.order_by_desc(points_credit_ledger::Column::CreatedAt);
+
+            let pagination = filters.pagination.unwrap_or_default();
+
+            let total = query
+                .clone()
+                .count(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            let items = query
+                .paginate(&*db, pagination.page_size)
+                .fetch_page((pagination.page - 1) * pagination.page_size)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            let items: Result<Vec<PointsCreditLedger>, CoreError> = items
+                .into_iter()
+                .map(|m| Ok(points_credit_ledger_from_model(m)))
+                .collect();
+            let items = items?;
+
+            Ok(Paginated {
+                data: items,
+                total,
+                page: pagination.page,
+                page_size: pagination.page_size,
+            })
+        }
+    }
+
+    fn find_ledger_by_id(
+        &self,
+        ledger_id: Uuid,
+    ) -> impl std::future::Future<Output = Result<Option<PointsCreditLedger>, CoreError>> + Send
+    {
+        let db = self.db.clone();
+        async move {
+            let result = points_credit_ledger::Entity::find_by_id(ledger_id)
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(result.map(points_credit_ledger_from_model))
+        }
+    }
+
+    fn find_ledger_by_source_id(
+        &self,
+        realm_id: &str,
+        source_id: &str,
+    ) -> impl std::future::Future<Output = Result<Option<PointsCreditLedger>, CoreError>> + Send
+    {
+        let db = self.db.clone();
+        let realm_id = realm_id.to_string();
+        let source_id = source_id.to_string();
+        async move {
+            let result = points_credit_ledger::Entity::find()
+                .filter(points_credit_ledger::Column::RealmId.eq(&realm_id))
+                .filter(points_credit_ledger::Column::SourceId.eq(&source_id))
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(result.map(points_credit_ledger_from_model))
+        }
+    }
+
+    fn update_ledger(
+        &self,
+        ledger_id: Uuid,
+        updates: LedgerUpdate,
+    ) -> impl std::future::Future<Output = Result<PointsCreditLedger, CoreError>> + Send {
+        let db = self.db.clone();
+        async move {
+            let ledger = points_credit_ledger::Entity::find_by_id(ledger_id)
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+                .ok_or_else(|| CoreError::BadRequest(format!("Ledger not found: {}", ledger_id)))?;
+
+            let mut active =
+                points_credit_ledger_to_active_model(&points_credit_ledger_from_model(ledger));
+
+            match updates {
+                LedgerUpdate::Consumption(amount) => {
+                    let current_used = active.used_amount.clone().take();
+                    let current_granted = active.granted_amount.clone().take();
+                    let current_revoked = active.revoked_amount.clone().take();
+
+                    let new_used = match current_used {
+                        Some(v) => v + amount,
+                        None => amount,
+                    };
+
+                    // remaining_amount is a generated column: granted_amount - used_amount - revoked_amount
+                    // We cannot update it directly; the database computes it automatically
+                    let new_remaining = match (&current_granted, &current_used, &current_revoked) {
+                        (Some(g), Some(u), Some(r)) => g - (u + amount) - r,
+                        (Some(g), None, Some(r)) => g - amount - r,
+                        (Some(g), Some(u), None) => g - (u + amount),
+                        (Some(g), None, None) => g - amount,
+                        _ => -amount, // This should not happen
+                    };
+
+                    active.used_amount = Set(new_used);
+
+                    // Update status if fully used
+                    if new_remaining <= 0 {
+                        active.status = Set(CreditLedgerStatus::FullyUsed.to_string());
+                    }
+                }
+                LedgerUpdate::Revocation(amount) => {
+                    let current_revoked = active.revoked_amount.clone().take();
+                    let current_granted = active.granted_amount.clone().take();
+                    let current_used = active.used_amount.clone().take();
+
+                    let new_revoked = match current_revoked {
+                        Some(v) => v + amount,
+                        None => amount,
+                    };
+
+                    // remaining_amount is a generated column: granted_amount - used_amount - revoked_amount
+                    // We cannot update it directly; the database computes it automatically
+                    let new_remaining = match (&current_granted, &current_used, &current_revoked) {
+                        (Some(g), Some(u), Some(r)) => g - u - (r + amount),
+                        (Some(g), None, Some(r)) => g - (r + amount),
+                        (Some(g), Some(u), None) => g - u - amount,
+                        (Some(g), None, None) => g - amount,
+                        _ => -amount, // This should not happen
+                    };
+
+                    active.revoked_amount = Set(new_revoked);
+
+                    // Update status if revoked
+                    if new_remaining <= 0 {
+                        active.status = Set(CreditLedgerStatus::Revoked.to_string());
+                    }
+                }
+                LedgerUpdate::SetExpiration(expires_at) => {
+                    active.expires_at = Set(Some(sea_orm::prelude::DateTimeWithTimeZone::from(
+                        expires_at,
+                    )));
+                }
+                LedgerUpdate::SetStatus(status) => {
+                    active.status = Set(status.to_string());
+                }
+            }
+
+            active.updated_at = Set(chrono::Utc::now().into());
+
+            let result = active
+                .update(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(points_credit_ledger_from_model(result))
+        }
+    }
+
+    fn find_active_ledgers_by_credit_type(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        credit_type: CreditType,
+    ) -> impl std::future::Future<Output = Result<Vec<PointsCreditLedger>, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+
+        async move {
+            // Use raw SQL query to respect the schema search_path
+            // SeaORM doesn't support dynamic schema names, so we use sqlx directly
+            let credit_type_str = credit_type.to_string();
+            let status_str = CreditLedgerStatus::Active.to_string();
+
+            tracing::info!(
+                realm_id = %realm_id,
+                user_id = %user_id,
+                credit_type = %credit_type_str,
+                status = %status_str,
+                "Finding active ledgers by credit type (SQL query)"
+            );
+
+            // Check what schema we're using
+            let (current_schema, backend_pid, search_path): (
+                Option<String>,
+                Option<i32>,
+                Option<String>,
+            ) = sqlx::query_as(
+                "SELECT current_schema(), pg_backend_pid(), current_setting('search_path')",
+            )
+            .fetch_one(&pool)
+            .await
+            .ok()
+            .unwrap_or((None, None, None));
+            tracing::info!(
+                current_schema = ?current_schema,
+                backend_pid = ?backend_pid,
+                search_path = ?search_path,
+                pool_addr = &format!("{:p}", &pool),
+                "Current database schema and connection"
+            );
+
+            // Check if points_credit_ledger table exists in current schema
+            let table_exists: Option<bool> = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'points_credit_ledger')"
+            )
+            .fetch_one(&pool)
+            .await
+            .ok();
+            tracing::info!(
+                table_exists = ?table_exists,
+                "Table exists in current schema"
+            );
+
+            // Check ALL ledgers for this user (no filters)
+            let all_ledgers_check: Vec<(String, String, i64)> = sqlx::query_as(
+                "SELECT credit_type, status, remaining_amount FROM points_credit_ledger
+                 WHERE realm_id = $1 AND user_id = $2",
+            )
+            .bind(&realm_id)
+            .bind(user_id)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            tracing::info!(
+                all_ledgers_count = all_ledgers_check.len(),
+                all_ledgers = ?all_ledgers_check,
+                "All ledgers for user (no filter)"
+            );
+
+            // Check if table exists and has ANY rows
+            let table_row_count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM points_credit_ledger")
+                    .fetch_one(&pool)
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            tracing::info!(
+                table_row_count = table_row_count,
+                "Total rows in points_credit_ledger table"
+            );
+
+            // Check what realm_id and user_id are in the table
+            let table_data: Vec<(String, Uuid)> =
+                sqlx::query_as("SELECT realm_id, user_id FROM points_credit_ledger")
+                    .fetch_all(&pool)
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            tracing::info!(
+                table_data = ?table_data,
+                "All realm_id and user_id in table"
+            );
+
+            tracing::info!(
+                query_realm_id = %realm_id,
+                query_user_id = %user_id,
+                "Query parameters"
+            );
+
+            // First, let's count how many ledgers match our criteria
+            let count_query = sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM points_credit_ledger
+                 WHERE realm_id = $1
+                   AND user_id = $2
+                   AND credit_type = $3
+                   AND status = $4
+                   AND remaining_amount > 0",
+            )
+            .bind(&realm_id)
+            .bind(user_id)
+            .bind(&credit_type_str)
+            .bind(&status_str)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            tracing::info!(count = count_query, "COUNT query result");
+
+            // Also check if there are ANY ledgers for this user
+            let any_count = sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM points_credit_ledger
+                 WHERE realm_id = $1 AND user_id = $2",
+            )
+            .bind(&realm_id)
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            tracing::info!(any_count = any_count, "Total ledgers for user (no filter)");
+
+            let rows = sqlx::query_as::<
+                _,
+                (
+                    Uuid,
+                    Uuid,
+                    String,
+                    String,
+                    String,
+                    String,
+                    i64,
+                    i64,
+                    i64,
+                    i64,
+                    Option<chrono::DateTime<chrono::Utc>>,
+                    String,
+                    chrono::DateTime<chrono::Utc>,
+                    chrono::DateTime<chrono::Utc>,
+                ),
+            >(
+                "SELECT id, user_id, realm_id, credit_type, source_type, source_id,
+                        granted_amount, used_amount, revoked_amount, remaining_amount,
+                        expires_at, status, created_at, updated_at
+                 FROM points_credit_ledger
+                 WHERE realm_id = $1
+                   AND user_id = $2
+                   AND credit_type = $3
+                   AND status = $4
+                   AND remaining_amount > 0
+                 ORDER BY created_at ASC",
+            )
+            .bind(&realm_id)
+            .bind(user_id)
+            .bind(&credit_type_str)
+            .bind(&status_str)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            tracing::info!(ledgers_found = rows.len(), "SQL query returned ledgers");
+
+            // Convert rows to domain entities
+            let ledgers: Result<Vec<_>, _> = rows
+                .into_iter()
+                .map(
+                    |(
+                        id,
+                        user_id,
+                        realm_id,
+                        credit_type,
+                        source_type,
+                        source_id,
+                        granted_amount,
+                        used_amount,
+                        revoked_amount,
+                        remaining_amount,
+                        expires_at,
+                        status,
+                        created_at,
+                        updated_at,
+                    )| {
+                        let credit_type: CreditType = credit_type.parse()?;
+                        let source_type: CreditSourceType = source_type.parse()?;
+                        let status: CreditLedgerStatus = status.parse()?;
+
+                        Ok(PointsCreditLedger {
+                            id,
+                            user_id,
+                            realm_id,
+                            credit_type,
+                            source_type,
+                            source_id,
+                            granted_amount,
+                            used_amount,
+                            revoked_amount,
+                            remaining_amount,
+                            expires_at,
+                            status,
+                            created_at,
+                            updated_at,
+                        })
+                    },
+                )
+                .collect();
+
+            ledgers
+        }
+    }
+
+    // ========== Consumption Allocations ==========
+
+    fn create_consumption_allocation(
+        &self,
+        allocation: PointsConsumptionAllocation,
+    ) -> impl std::future::Future<Output = Result<PointsConsumptionAllocation, CoreError>> + Send
+    {
+        let db = self.db.clone();
+        async move {
+            let active_model = points_consumption_allocation_to_active_model(&allocation);
+            let result = active_model
+                .insert(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(points_consumption_allocation_from_model(result))
+        }
+    }
+
+    fn find_consumption_allocations_by_transaction(
+        &self,
+        transaction_id: Uuid,
+    ) -> impl std::future::Future<Output = Result<Vec<PointsConsumptionAllocation>, CoreError>> + Send
+    {
+        let db = self.db.clone();
+        async move {
+            let allocations = points_consumption_allocation::Entity::find()
+                .filter(points_consumption_allocation::Column::TransactionId.eq(transaction_id))
+                .all(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            allocations
+                .into_iter()
+                .map(|m| Ok(points_consumption_allocation_from_model(m)))
+                .collect()
+        }
+    }
+
+    // ========== Revocation Records ==========
+
+    fn create_revocation_record(
+        &self,
+        record: PointsRevocationRecord,
+    ) -> impl std::future::Future<Output = Result<PointsRevocationRecord, CoreError>> + Send {
+        let db = self.db.clone();
+        async move {
+            let active_model = points_revocation_record_to_active_model(&record);
+            let result = active_model
+                .insert(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(points_revocation_record_from_model(result))
+        }
+    }
+
+    fn find_revocation_by_idempotency_key(
+        &self,
+        idempotency_key: &str,
+    ) -> impl std::future::Future<Output = Result<Option<PointsRevocationRecord>, CoreError>> + Send
+    {
+        let db = self.db.clone();
+        let idempotency_key = idempotency_key.to_string();
+        async move {
+            // Note: This assumes idempotency_key is stored in the reference_id field
+            // or we need to add it to the revocation_records table
+            // For now, we'll use reference_id as the idempotency key
+            let result = points_revocation_record::Entity::find()
+                .filter(points_revocation_record::Column::ReferenceId.eq(&idempotency_key))
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(result.map(points_revocation_record_from_model))
+        }
+    }
+
+    // ========== Account Management ==========
+
+    fn update_account(
+        &self,
+        account_id: Uuid,
+        updates: AccountUpdate,
+    ) -> impl std::future::Future<Output = Result<PointsAccount, CoreError>> + Send {
+        let db = self.db.clone();
+        async move {
+            let account = points_account::Entity::find_by_id(account_id)
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+                .ok_or(CoreError::NotFound)?;
+
+            let mut active: points_account::ActiveModel = account.into();
+
+            match updates {
+                AccountUpdate::Consumption {
+                    total,
+                    topup,
+                    subscription,
+                } => {
+                    let new_topup = active.topup_balance.clone().take().map_or(0, |v| v) - topup;
+                    let new_subscription =
+                        active.subscription_balance.clone().take().map_or(0, |v| v) - subscription;
+                    let new_consumed =
+                        active.total_consumed.clone().take().map_or(0, |v| v) + total;
+
+                    // total_balance is a GENERATED column, don't set it
+                    active.topup_balance = Set(new_topup);
+                    active.subscription_balance = Set(new_subscription);
+                    active.total_consumed = Set(new_consumed);
+                }
+                AccountUpdate::Grant {
+                    topup,
+                    subscription,
+                } => {
+                    let new_topup = active.topup_balance.clone().take().map_or(0, |v| v) + topup;
+                    let new_subscription =
+                        active.subscription_balance.clone().take().map_or(0, |v| v) + subscription;
+                    let new_topup_granted =
+                        active.total_topup_granted.clone().take().map_or(0, |v| v) + topup;
+                    let new_subscription_granted = active
+                        .total_subscription_granted
+                        .clone()
+                        .take()
+                        .map_or(0, |v| v)
+                        + subscription;
+                    let new_recharged = active.total_recharged.clone().take().map_or(0, |v| v)
+                        + topup
+                        + subscription;
+
+                    // total_balance is a GENERATED column, don't set it
+                    active.topup_balance = Set(new_topup);
+                    active.subscription_balance = Set(new_subscription);
+                    active.total_topup_granted = Set(new_topup_granted);
+                    active.total_subscription_granted = Set(new_subscription_granted);
+                    active.total_recharged = Set(new_recharged);
+                }
+                AccountUpdate::Revocation {
+                    topup,
+                    subscription,
+                } => {
+                    let new_topup = active.topup_balance.clone().take().map_or(0, |v| v) - topup;
+                    let new_subscription =
+                        active.subscription_balance.clone().take().map_or(0, |v| v) - subscription;
+
+                    // total_balance is a GENERATED column, don't set it
+                    active.topup_balance = Set(new_topup);
+                    active.subscription_balance = Set(new_subscription);
+                }
+            }
+
+            active.updated_at = Set(chrono::Utc::now().into());
+
+            let result = active
+                .update(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Self::model_to_points_account(result)
+        }
+    }
+
+    fn find_expired_ledgers(
+        &self,
+        expiration_time: chrono::DateTime<chrono::Utc>,
+        limit: usize,
+    ) -> impl std::future::Future<Output = Result<Vec<PointsCreditLedger>, CoreError>> + Send {
+        let db = self.db.clone();
+        async move {
+            let ledgers = points_credit_ledger::Entity::find()
+                .filter(points_credit_ledger::Column::ExpiresAt.lte(
+                    sea_orm::prelude::DateTimeWithTimeZone::from(expiration_time),
+                ))
+                .filter(
+                    points_credit_ledger::Column::Status.eq(CreditLedgerStatus::Active.to_string()),
+                )
+                .filter(points_credit_ledger::Column::RemainingAmount.gt(0))
+                .order_by_asc(points_credit_ledger::Column::ExpiresAt)
+                .limit(limit as u64)
+                .all(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            ledgers
+                .into_iter()
+                .map(|m| Ok(points_credit_ledger_from_model(m)))
+                .collect()
+        }
+    }
+
+    // ========== Realm Config Repository Methods (Iteration-2) ==========
+
+    fn find_realm_config(
+        &self,
+        realm_id: &str,
+    ) -> impl std::future::Future<
+        Output = Result<Option<herald_domain::points::realm_config::RealmDefaultConfig>, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let result = realm_default_config::Entity::find_by_id(realm_id.clone())
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            result
+                .map(|model| -> Result<_, CoreError> {
+                    // Parse grant period type
+                    let grant_period_type = model
+                        .free_periodic_grant_period_type
+                        .parse::<herald_domain::points::grant_schedule::GrantPeriodType>()
+                        .map_err(|e| {
+                            CoreError::DatabaseError(format!(
+                                "Invalid grant period type in database: {}",
+                                e
+                            ))
+                        })?;
+
+                    Ok(herald_domain::points::realm_config::RealmDefaultConfig {
+                        realm_id: model.realm_id,
+                        registration_bonus_points: model.registration_bonus_points,
+                        free_periodic_points_amount: model.free_periodic_points_amount,
+                        free_periodic_grant_period_type: grant_period_type,
+                        free_periodic_validity_days: model.free_periodic_validity_days,
+                        created_at: chrono::DateTime::from(model.created_at),
+                        updated_at: chrono::DateTime::from(model.updated_at),
+                    })
+                })
+                .transpose()
+        }
+    }
+
+    fn create_realm_config(
+        &self,
+        config: herald_domain::points::CreateRealmConfigInput,
+    ) -> impl std::future::Future<
+        Output = Result<herald_domain::points::realm_config::RealmDefaultConfig, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            // Parse grant period type
+            let grant_period_type = config
+                .free_periodic_grant_period_type
+                .parse::<herald_domain::points::grant_schedule::GrantPeriodType>()
+                .map_err(|e| CoreError::BadRequest(format!("Invalid grant period type: {}", e)))?;
+
+            let now = chrono::Utc::now();
+            let active_model = realm_default_config::ActiveModel {
+                realm_id: Set(config.realm_id.clone()),
+                registration_bonus_points: Set(config.registration_bonus_points),
+                free_periodic_points_amount: Set(config.free_periodic_points_amount),
+                free_periodic_grant_period_type: Set(config.free_periodic_grant_period_type),
+                free_periodic_validity_days: Set(config.free_periodic_validity_days),
+                created_at: Set(now.into()),
+                updated_at: Set(now.into()),
+            };
+
+            let result = active_model
+                .insert(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(herald_domain::points::realm_config::RealmDefaultConfig {
+                realm_id: result.realm_id,
+                registration_bonus_points: result.registration_bonus_points,
+                free_periodic_points_amount: result.free_periodic_points_amount,
+                free_periodic_grant_period_type: grant_period_type,
+                free_periodic_validity_days: result.free_periodic_validity_days,
+                created_at: chrono::DateTime::from(result.created_at),
+                updated_at: chrono::DateTime::from(result.updated_at),
+            })
+        }
+    }
+
+    fn update_realm_config(
+        &self,
+        realm_id: &str,
+        input: herald_domain::points::UpdateRealmConfigInput,
+    ) -> impl std::future::Future<
+        Output = Result<herald_domain::points::realm_config::RealmDefaultConfig, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            // Parse grant period type
+            let grant_period_type = input
+                .free_periodic_grant_period_type
+                .parse::<herald_domain::points::grant_schedule::GrantPeriodType>()
+                .map_err(|e| CoreError::BadRequest(format!("Invalid grant period type: {}", e)))?;
+
+            let model = realm_default_config::Entity::find_by_id(realm_id.clone())
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+                .ok_or(CoreError::NotFound)?;
+
+            let mut active: realm_default_config::ActiveModel = model.into();
+            active.registration_bonus_points = Set(input.registration_bonus_points);
+            active.free_periodic_points_amount = Set(input.free_periodic_points_amount);
+            active.free_periodic_grant_period_type = Set(input.free_periodic_grant_period_type);
+            active.free_periodic_validity_days = Set(input.free_periodic_validity_days);
+            active.updated_at = Set(chrono::Utc::now().into());
+
+            let result = active
+                .update(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(herald_domain::points::realm_config::RealmDefaultConfig {
+                realm_id: result.realm_id,
+                registration_bonus_points: result.registration_bonus_points,
+                free_periodic_points_amount: result.free_periodic_points_amount,
+                free_periodic_grant_period_type: grant_period_type,
+                free_periodic_validity_days: result.free_periodic_validity_days,
+                created_at: chrono::DateTime::from(result.created_at),
+                updated_at: chrono::DateTime::from(result.updated_at),
+            })
+        }
+    }
+
+    // ========== User Config Repository Methods (Iteration-2) ==========
+
+    fn find_user_config(
+        &self,
+        user_id: Uuid,
+    ) -> impl std::future::Future<
+        Output = Result<Option<herald_domain::points::user_config::UserPointsConfig>, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            let result = user_points_config::Entity::find_by_id(user_id)
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            result
+                .map(|model| Ok(Self::model_to_user_points_config(model)))
+                .transpose()
+        }
+    }
+
+    fn create_user_config(
+        &self,
+        config: herald_domain::points::user_config::UserPointsConfig,
+    ) -> impl std::future::Future<
+        Output = Result<herald_domain::points::user_config::UserPointsConfig, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            let active_model = user_points_config::ActiveModel {
+                user_id: Set(config.user_id),
+                realm_id: Set(config.realm_id.clone()),
+                registration_bonus_points: Set(config.registration_bonus_points),
+                free_periodic_points_amount: Set(config.free_periodic_points_amount),
+                free_periodic_grant_period_type: Set(config
+                    .free_periodic_grant_period_type
+                    .map(|pt| pt.to_string())),
+                free_periodic_validity_days: Set(config.free_periodic_validity_days),
+                next_grant_time: Set(config.next_grant_time.map(|dt| dt.into())),
+                granted_periods: Set(config.granted_periods),
+                grant_schedule_id: Set(config.grant_schedule_id),
+                created_at: Set(config.created_at.into()),
+                updated_at: Set(config.updated_at.into()),
+            };
+
+            let result = active_model
+                .insert(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(Self::model_to_user_points_config(result))
+        }
+    }
+
+    fn update_user_config(
+        &self,
+        user_id: Uuid,
+        next_grant_time: Option<chrono::DateTime<chrono::Utc>>,
+        granted_periods: i64,
+        grant_schedule_id: Option<Uuid>,
+    ) -> impl std::future::Future<
+        Output = Result<herald_domain::points::user_config::UserPointsConfig, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            let model = user_points_config::Entity::find_by_id(user_id)
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+                .ok_or(CoreError::NotFound)?;
+
+            let mut active: user_points_config::ActiveModel = model.into();
+            active.next_grant_time = Set(next_grant_time.map(|dt| dt.into()));
+            active.granted_periods = Set(granted_periods);
+            active.grant_schedule_id = Set(grant_schedule_id);
+            active.updated_at = Set(chrono::Utc::now().into());
+
+            let result = active
+                .update(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(Self::model_to_user_points_config(result))
+        }
+    }
+
+    fn list_user_configs_by_realm(
+        &self,
+        realm_id: &str,
+        pagination: &herald_domain::points::ports::Pagination,
+    ) -> impl std::future::Future<
+        Output = Result<
+            herald_domain::points::entities::Paginated<
+                herald_domain::points::user_config::UserPointsConfig,
+            >,
+            CoreError,
+        >,
+    > + Send {
+        let db = self.db.clone();
+        let realm_id = realm_id.to_string();
+        let pagination = *pagination;
+        async move {
+            let page = pagination.page;
+            let page_size = pagination.page_size;
+            let _offset = (page - 1) * page_size;
+
+            let query = user_points_config::Entity::find()
+                .filter(user_points_config::Column::RealmId.eq(&realm_id));
+
+            let total = query
+                .clone()
+                .count(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            let results = query
+                .order_by_asc(user_points_config::Column::CreatedAt)
+                .paginate(&*db, page_size)
+                .fetch_page(page - 1)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            let configs = results
+                .into_iter()
+                .map(|model| Ok(Self::model_to_user_points_config(model)))
+                .collect::<Result<Vec<_>, CoreError>>()?;
+
+            Ok(Paginated {
+                total,
+                page,
+                page_size,
+                data: configs,
+            })
+        }
+    }
+
+    fn get_free_user_statistics(
+        &self,
+        realm_id: &str,
+        _start_date: Option<chrono::DateTime<chrono::Utc>>,
+        _end_date: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> impl std::future::Future<
+        Output = Result<
+            herald_domain::points::services::realm_config_service::FreeUserStatistics,
+            CoreError,
+        >,
+    > + Send {
+        let db = self.db.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            use herald_domain::points::services::realm_config_service::FreeUserStatistics;
+            use sea_orm::EntityTrait;
+
+            // For now, return a simple implementation
+            // TODO: Implement actual statistics queries with date filtering
+            let total_free_users = user_points_config::Entity::find()
+                .filter(user_points_config::Column::RealmId.eq(&realm_id))
+                .count(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+                as i64;
+
+            // TODO: Calculate actual active users (last 7 days)
+            let active_free_users = total_free_users; // Placeholder
+
+            // TODO: Calculate actual totals from points_grant_records
+            let total_registration_bonus_granted = total_free_users * 1000; // Placeholder
+            let total_periodic_points_granted = total_free_users * 50; // Placeholder
+
+            let average_periodic_points_per_user = if total_free_users > 0 {
+                total_periodic_points_granted as f64 / total_free_users as f64
+            } else {
+                0.0
+            };
+
+            // TODO: Calculate actual upgrade rate
+            let upgrade_rate = 0.15; // Placeholder
+
+            Ok(FreeUserStatistics {
+                total_free_users,
+                active_free_users,
+                total_registration_bonus_granted,
+                total_periodic_points_granted,
+                average_periodic_points_per_user,
+                upgrade_rate,
+                last_updated_at: chrono::Utc::now(),
+            })
+        }
+    }
+
+    // ========== Grant Schedule Repository Methods (Iteration-2) ==========
+
+    fn find_grant_schedule(
+        &self,
+        schedule_id: Uuid,
+    ) -> impl std::future::Future<
+        Output = Result<
+            Option<herald_domain::points::grant_schedule::PointsGrantSchedule>,
+            CoreError,
+        >,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            let result = points_grant_schedule::Entity::find_by_id(schedule_id)
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            result.map(Self::model_to_grant_schedule).transpose()
+        }
+    }
+
+    fn find_due_grant_schedules(
+        &self,
+        before: chrono::DateTime<chrono::Utc>,
+        limit: u64,
+    ) -> impl std::future::Future<
+        Output = Result<Vec<herald_domain::points::grant_schedule::PointsGrantSchedule>, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            let models = points_grant_schedule::Entity::find()
+                .filter(
+                    points_grant_schedule::Column::NextGrantTime
+                        .lte(sea_orm::prelude::DateTimeWithTimeZone::from(before)),
+                )
+                .filter(points_grant_schedule::Column::Active.eq(true))
+                .order_by_asc(points_grant_schedule::Column::NextGrantTime)
+                .limit(limit)
+                .all(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            models
+                .into_iter()
+                .map(Self::model_to_grant_schedule)
+                .collect()
+        }
+    }
+
+    fn find_grant_schedules_by_user(
+        &self,
+        user_id: Uuid,
+    ) -> impl std::future::Future<
+        Output = Result<Vec<herald_domain::points::grant_schedule::PointsGrantSchedule>, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            let models = points_grant_schedule::Entity::find()
+                .filter(points_grant_schedule::Column::UserId.eq(user_id))
+                .order_by_asc(points_grant_schedule::Column::CreatedAt)
+                .all(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            models
+                .into_iter()
+                .map(Self::model_to_grant_schedule)
+                .collect()
+        }
+    }
+
+    // ===== New: Free User Upgrade Support =====
+
+    fn find_user_config_by_realm(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> impl std::future::Future<
+        Output = Result<Option<herald_domain::points::user_config::UserPointsConfig>, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let result = user_points_config::Entity::find()
+                .filter(user_points_config::Column::RealmId.eq(&realm_id))
+                .filter(user_points_config::Column::UserId.eq(user_id))
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            result
+                .map(|model| Ok(Self::model_to_user_points_config(model)))
+                .transpose()
+        }
+    }
+
+    fn update_user_points_config(
+        &self,
+        config_id: Uuid,
+        update: herald_domain::points::ports::UserConfigUpdate,
+    ) -> impl std::future::Future<
+        Output = Result<herald_domain::points::user_config::UserPointsConfig, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            let model = user_points_config::Entity::find_by_id(config_id)
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+                .ok_or(CoreError::NotFound)?;
+
+            let mut active: user_points_config::ActiveModel = model.into();
+
+            match update {
+                herald_domain::points::ports::UserConfigUpdate::DisableDailyGrant {
+                    next_grant_time,
+                } => {
+                    active.free_periodic_points_amount = Set(0);
+                    active.next_grant_time = Set(next_grant_time.map(|dt| dt.into()));
+                }
+            }
+
+            active.updated_at = Set(chrono::Utc::now().into());
+
+            let result = active
+                .update(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(Self::model_to_user_points_config(result))
+        }
+    }
+
+    fn find_grant_schedules_by_user_realm(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> impl std::future::Future<
+        Output = Result<Vec<herald_domain::points::grant_schedule::PointsGrantSchedule>, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let models = points_grant_schedule::Entity::find()
+                .filter(points_grant_schedule::Column::RealmId.eq(&realm_id))
+                .filter(points_grant_schedule::Column::UserId.eq(user_id))
+                .order_by_asc(points_grant_schedule::Column::CreatedAt)
+                .all(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            models
+                .into_iter()
+                .map(Self::model_to_grant_schedule)
+                .collect()
+        }
+    }
+
+    fn apply_grant_schedule_update(
+        &self,
+        schedule_id: Uuid,
+        update: herald_domain::points::ports::GrantScheduleUpdate,
+    ) -> impl std::future::Future<
+        Output = Result<herald_domain::points::grant_schedule::PointsGrantSchedule, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            let model = points_grant_schedule::Entity::find_by_id(schedule_id)
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+                .ok_or(CoreError::NotFound)?;
+
+            let mut active_model: points_grant_schedule::ActiveModel = model.into();
+
+            match update {
+                herald_domain::points::ports::GrantScheduleUpdate::Disable => {
+                    active_model.active = Set(false);
+                }
+            }
+
+            active_model.updated_at = Set(chrono::Utc::now().into());
+
+            let result = active_model
+                .update(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Self::model_to_grant_schedule(result)
+        }
+    }
+
+    fn find_grant_schedule_by_subscription(
+        &self,
+        subscription_id: Uuid,
+    ) -> impl std::future::Future<
+        Output = Result<
+            Option<herald_domain::points::grant_schedule::PointsGrantSchedule>,
+            CoreError,
+        >,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            let result = points_grant_schedule::Entity::find()
+                .filter(points_grant_schedule::Column::SubscriptionId.eq(Some(subscription_id)))
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            result.map(Self::model_to_grant_schedule).transpose()
+        }
+    }
+
+    fn create_grant_schedule(
+        &self,
+        schedule: herald_domain::points::grant_schedule::PointsGrantSchedule,
+    ) -> impl std::future::Future<
+        Output = Result<herald_domain::points::grant_schedule::PointsGrantSchedule, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            let active_model = points_grant_schedule::ActiveModel {
+                id: Set(schedule.id),
+                user_id: Set(schedule.user_id),
+                realm_id: Set(schedule.realm_id.clone()),
+                subscription_id: Set(schedule.subscription_id),
+                plan_config_id: Set(schedule.plan_config_id),
+                grant_period_type: Set(schedule.grant_period_type.to_string()),
+                base_time: Set(schedule.base_time.into()),
+                next_grant_time: Set(schedule.next_grant_time.into()),
+                points_per_period: Set(schedule.points_per_period),
+                validity_days: Set(schedule.validity_days),
+                granted_periods: Set(schedule.granted_periods),
+                max_periods: Set(schedule.max_periods),
+                active: Set(schedule.active),
+                created_at: Set(schedule.created_at.into()),
+                updated_at: Set(schedule.updated_at.into()),
+            };
+
+            let result = active_model
+                .insert(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Self::model_to_grant_schedule(result)
+        }
+    }
+
+    fn update_grant_schedule(
+        &self,
+        schedule_id: Uuid,
+        next_grant_time: chrono::DateTime<chrono::Utc>,
+        granted_periods: i64,
+        is_active: bool,
+    ) -> impl std::future::Future<
+        Output = Result<herald_domain::points::grant_schedule::PointsGrantSchedule, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            let model = points_grant_schedule::Entity::find_by_id(schedule_id)
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+                .ok_or(CoreError::NotFound)?;
+
+            let mut active_model: points_grant_schedule::ActiveModel = model.into();
+            active_model.next_grant_time = Set(next_grant_time.into());
+            active_model.granted_periods = Set(granted_periods);
+            active_model.active = Set(is_active);
+            active_model.updated_at = Set(chrono::Utc::now().into());
+
+            let result = active_model
+                .update(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Self::model_to_grant_schedule(result)
+        }
+    }
+
+    fn deactivate_grant_schedule(
+        &self,
+        schedule_id: Uuid,
+    ) -> impl std::future::Future<Output = Result<(), CoreError>> + Send {
+        let db = self.db.clone();
+        async move {
+            let model = points_grant_schedule::Entity::find_by_id(schedule_id)
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+                .ok_or(CoreError::NotFound)?;
+
+            let mut active: points_grant_schedule::ActiveModel = model.into();
+            active.active = Set(false);
+            active.updated_at = Set(chrono::Utc::now().into());
+
+            active
+                .update(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(())
+        }
+    }
+
+    // ========== Grant Record Repository Methods (Iteration-2) ==========
+
+    fn find_grant_record(
+        &self,
+        schedule_id: Uuid,
+        period_number: i64,
+    ) -> impl std::future::Future<
+        Output = Result<
+            Option<herald_domain::points::grant_schedule::PointsGrantRecord>,
+            CoreError,
+        >,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            let result = points_grant_record::Entity::find()
+                .filter(points_grant_record::Column::ScheduleId.eq(schedule_id))
+                .filter(points_grant_record::Column::PeriodNumber.eq(period_number))
+                .one(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            result
+                .map(|model| -> Result<_, CoreError> {
+                    Ok(herald_domain::points::grant_schedule::PointsGrantRecord {
+                        id: model.id,
+                        schedule_id: model.schedule_id,
+                        user_id: model.user_id,
+                        realm_id: model.realm_id,
+                        period_number: model.period_number,
+                        granted_amount: model.granted_amount,
+                        grant_time: chrono::DateTime::from(model.grant_time),
+                        created_at: chrono::DateTime::from(model.created_at),
+                    })
+                })
+                .transpose()
+        }
+    }
+
+    fn create_grant_record(
+        &self,
+        record: herald_domain::points::grant_schedule::PointsGrantRecord,
+    ) -> impl std::future::Future<
+        Output = Result<herald_domain::points::grant_schedule::PointsGrantRecord, CoreError>,
+    > + Send {
+        let db = self.db.clone();
+        async move {
+            let active_model = points_grant_record::ActiveModel {
+                id: Set(record.id),
+                schedule_id: Set(record.schedule_id),
+                user_id: Set(record.user_id),
+                realm_id: Set(record.realm_id.clone()),
+                period_number: Set(record.period_number),
+                granted_amount: Set(record.granted_amount),
+                grant_time: Set(record.grant_time.into()),
+                created_at: Set(record.created_at.into()),
+            };
+
+            let result = active_model
+                .insert(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(herald_domain::points::grant_schedule::PointsGrantRecord {
+                id: result.id,
+                schedule_id: result.schedule_id,
+                user_id: result.user_id,
+                realm_id: result.realm_id,
+                period_number: result.period_number,
+                granted_amount: result.granted_amount,
+                grant_time: chrono::DateTime::from(result.grant_time),
+                created_at: chrono::DateTime::from(result.created_at),
+            })
+        }
+    }
+
+    fn list_grant_records_by_schedule(
+        &self,
+        schedule_id: Uuid,
+        pagination: &herald_domain::points::ports::Pagination,
+    ) -> impl std::future::Future<
+        Output = Result<
+            herald_domain::points::entities::Paginated<
+                herald_domain::points::grant_schedule::PointsGrantRecord,
+            >,
+            CoreError,
+        >,
+    > + Send {
+        let db = self.db.clone();
+        let pagination = *pagination;
+        async move {
+            let page = pagination.page;
+            let page_size = pagination.page_size;
+
+            let query = points_grant_record::Entity::find()
+                .filter(points_grant_record::Column::ScheduleId.eq(schedule_id));
+
+            let total = query
+                .clone()
+                .count(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            let results = query
+                .order_by_desc(points_grant_record::Column::GrantTime)
+                .paginate(&*db, page_size)
+                .fetch_page(page - 1)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            let records = results
+                .into_iter()
+                .map(|model| {
+                    Ok(herald_domain::points::grant_schedule::PointsGrantRecord {
+                        id: model.id,
+                        schedule_id: model.schedule_id,
+                        user_id: model.user_id,
+                        realm_id: model.realm_id,
+                        period_number: model.period_number,
+                        granted_amount: model.granted_amount,
+                        grant_time: chrono::DateTime::from(model.grant_time),
+                        created_at: chrono::DateTime::from(model.created_at),
+                    })
+                })
+                .collect::<Result<Vec<_>, CoreError>>()?;
+
+            Ok(Paginated {
+                total,
+                page,
+                page_size,
+                data: records,
+            })
+        }
+    }
+
+    fn list_grant_records_by_user(
+        &self,
+        user_id: Uuid,
+        pagination: &herald_domain::points::ports::Pagination,
+    ) -> impl std::future::Future<
+        Output = Result<
+            herald_domain::points::entities::Paginated<
+                herald_domain::points::grant_schedule::PointsGrantRecord,
+            >,
+            CoreError,
+        >,
+    > + Send {
+        let db = self.db.clone();
+        let pagination = *pagination;
+        async move {
+            let page = pagination.page;
+            let page_size = pagination.page_size;
+
+            let query = points_grant_record::Entity::find()
+                .filter(points_grant_record::Column::UserId.eq(user_id));
+
+            let total = query
+                .clone()
+                .count(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            let results = query
+                .order_by_desc(points_grant_record::Column::GrantTime)
+                .paginate(&*db, page_size)
+                .fetch_page(page - 1)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            let records = results
+                .into_iter()
+                .map(|model| {
+                    Ok(herald_domain::points::grant_schedule::PointsGrantRecord {
+                        id: model.id,
+                        schedule_id: model.schedule_id,
+                        user_id: model.user_id,
+                        realm_id: model.realm_id,
+                        period_number: model.period_number,
+                        granted_amount: model.granted_amount,
+                        grant_time: chrono::DateTime::from(model.grant_time),
+                        created_at: chrono::DateTime::from(model.created_at),
+                    })
+                })
+                .collect::<Result<Vec<_>, CoreError>>()?;
+
+            Ok(Paginated {
+                total,
+                page,
+                page_size,
+                data: records,
+            })
+        }
+    }
+
+    // ========== Ledger Repository Methods (Consumption Priority) (Iteration-2) ==========
+
+    fn find_active_ledgers_by_expiration(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> impl std::future::Future<Output = Result<Vec<PointsCreditLedger>, CoreError>> + Send {
+        let db = self.db.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            // Find all active ledgers with remaining balance > 0
+            // Sort by expires_at ASC (soonest expiring first), NULL last (permanent credits)
+            let ledgers = points_credit_ledger::Entity::find()
+                .filter(points_credit_ledger::Column::RealmId.eq(&realm_id))
+                .filter(points_credit_ledger::Column::UserId.eq(user_id))
+                .filter(
+                    points_credit_ledger::Column::Status.eq(CreditLedgerStatus::Active.to_string()),
+                )
+                .filter(points_credit_ledger::Column::RemainingAmount.gt(0))
+                .order_by_asc(points_credit_ledger::Column::ExpiresAt) // NULL values sort last
+                .order_by_asc(points_credit_ledger::Column::CreatedAt) // Fallback: FIFO for permanent credits
+                .all(&*db)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            ledgers
+                .into_iter()
+                .map(|m| Ok(points_credit_ledger_from_model(m)))
+                .collect()
+        }
+    }
+
+    // ========== Statistics Repository Methods (Iteration-2) ==========
+
+    fn count_paid_users_in_realm(
+        &self,
+        realm_id: &str,
+        start_date: Option<chrono::DateTime<chrono::Utc>>,
+        end_date: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> impl std::future::Future<Output = Result<u64, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let mut query = r#"
+                SELECT COUNT(DISTINCT user_id) as count
+                FROM subscriptions
+                WHERE realm_id = $1
+                AND status = 'active'
+            "#
+            .to_string();
+
+            let mut index = 2;
+
+            if start_date.is_some() {
+                query.push_str(&format!(" AND created_at >= ${}", index));
+                index += 1;
+            }
+
+            if end_date.is_some() {
+                query.push_str(&format!(" AND created_at <= ${}", index));
+            }
+
+            let mut query_builder = sqlx::query_as::<_, (i64,)>(&query).bind(realm_id);
+
+            if let Some(start) = start_date {
+                query_builder =
+                    query_builder.bind(sea_orm::prelude::DateTimeWithTimeZone::from(start));
+            }
+
+            if let Some(end) = end_date {
+                query_builder =
+                    query_builder.bind(sea_orm::prelude::DateTimeWithTimeZone::from(end));
+            }
+
+            let result = query_builder
+                .fetch_optional(&pool)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            result
+                .map(|(count,)| count as u64)
+                .ok_or(CoreError::NotFound)
+        }
+    }
+
+    fn consume_points_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        client_app_id: Uuid,
+        amount: i64,
+        description: Option<String>,
+    ) -> impl std::future::Future<Output = Result<PointsTransaction, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            let account = Self::ensure_account_in_tx(&mut tx, &realm_id, user_id).await?;
+
+            if account.total_balance < amount {
+                return Err(CoreError::insufficient_points(
+                    amount,
+                    account.total_balance,
+                ));
+            }
+
+            let ledgers =
+                Self::find_active_ledgers_by_expiration_for_update(&mut tx, &realm_id, user_id)
+                    .await?;
+            let transaction_id = Uuid::now_v7();
+            let mut remaining = amount;
+            let mut topup_consumed = 0i64;
+            let mut subscription_consumed = 0i64;
+            let mut allocations = Vec::new();
+
+            for ledger in ledgers {
+                if remaining <= 0 {
+                    break;
+                }
+
+                let can_consume = ledger.remaining_amount.min(remaining);
+                if can_consume <= 0 {
+                    continue;
+                }
+
+                let updated_ledger = Self::update_ledger_in_tx(
+                    &mut tx,
+                    ledger.id,
+                    LedgerUpdate::Consumption(can_consume),
+                )
+                .await?;
+
+                match ledger.credit_type {
+                    CreditType::SubscriptionCredit => subscription_consumed += can_consume,
+                    CreditType::TopupCredit
+                    | CreditType::RegistrationCredit
+                    | CreditType::FreePeriodicCredit => topup_consumed += can_consume,
+                }
+
+                allocations.push(PointsConsumptionAllocation {
+                    id: Uuid::now_v7(),
+                    transaction_id,
+                    ledger_id: updated_ledger.id,
+                    user_id,
+                    realm_id: realm_id.clone(),
+                    allocated_amount: can_consume,
+                    ledger_remaining_after: updated_ledger.remaining_amount,
+                    created_at: chrono::Utc::now(),
+                });
+                remaining -= can_consume;
+            }
+
+            if remaining > 0 {
+                return Err(CoreError::insufficient_points(amount, amount - remaining));
+            }
+
+            let updated_account = Self::update_account_in_tx(
+                &mut tx,
+                account.id,
+                AccountUpdate::Consumption {
+                    total: amount,
+                    topup: topup_consumed,
+                    subscription: subscription_consumed,
+                },
+            )
+            .await?;
+
+            let transaction = Self::create_transaction_in_tx(
+                &mut tx,
+                PointsTransaction {
+                    id: transaction_id,
+                    account_id: updated_account.id,
+                    user_id,
+                    realm_id: realm_id.clone(),
+                    transaction_type: TransactionType::Consume,
+                    amount: -amount,
+                    balance_after: updated_account.total_balance,
+                    topup_balance_after: Some(updated_account.topup_balance),
+                    subscription_balance_after: Some(updated_account.subscription_balance),
+                    credit_type: None,
+                    description,
+                    client_app_id: Some(client_app_id),
+                    subscription_id: None,
+                    external_ref_id: None,
+                    created_at: chrono::Utc::now(),
+                },
+            )
+            .await?;
+
+            for allocation in &allocations {
+                Self::create_consumption_allocation_in_tx(&mut tx, allocation).await?;
+            }
+
+            tx.commit()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            Ok(transaction)
+        }
+    }
+
+    fn revoke_points_by_credit_type_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        credit_type: CreditType,
+        revocation_type: RevocationType,
+        reason: String,
+        reference_id: Option<String>,
+        idempotency_key: Option<String>,
+    ) -> impl std::future::Future<Output = Result<RevokePointsOutput, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            if let Some(ref key) = idempotency_key
+                && Self::check_completed_idempotency_in_tx(&mut tx, &realm_id, key)
+                    .await?
+                    .is_some()
+            {
+                tx.commit()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                return Ok(RevokePointsOutput {
+                    revocation_id: Uuid::now_v7(),
+                    ledger_ids: vec![],
+                    total_revoked: 0,
+                    revoked_at: chrono::Utc::now(),
+                });
+            }
+
+            // 如果账户不存在，返回"撤销 0 点"的结果（webhook 幂等处理）
+            let account =
+                match Self::find_account_by_user_for_update(&mut tx, &realm_id, user_id).await? {
+                    Some(acc) => acc,
+                    None => {
+                        // 账户不存在，没有需要撤销的积分
+                        tx.commit()
+                            .await
+                            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                        return Ok(RevokePointsOutput {
+                            revocation_id: Uuid::now_v7(),
+                            ledger_ids: vec![],
+                            total_revoked: 0,
+                            revoked_at: chrono::Utc::now(),
+                        });
+                    }
+                };
+
+            let ledgers = Self::find_active_ledgers_by_credit_type_for_update(
+                &mut tx,
+                &realm_id,
+                user_id,
+                credit_type,
+            )
+            .await?;
+
+            let mut total_revoked = 0i64;
+            let mut ledger_ids = Vec::new();
+            for ledger in ledgers {
+                if ledger.remaining_amount <= 0 {
+                    continue;
+                }
+                let amount_to_revoke = ledger.remaining_amount;
+                let updated_ledger = Self::update_ledger_in_tx(
+                    &mut tx,
+                    ledger.id,
+                    LedgerUpdate::Revocation(amount_to_revoke),
+                )
+                .await?;
+                let record = PointsRevocationRecord {
+                    id: Uuid::now_v7(),
+                    ledger_id: updated_ledger.id,
+                    user_id,
+                    realm_id: realm_id.clone(),
+                    revocation_type,
+                    revoked_amount: amount_to_revoke,
+                    reason: reason.clone(),
+                    reference_id: reference_id.clone(),
+                    created_at: chrono::Utc::now(),
+                };
+                Self::create_revocation_record_in_tx(&mut tx, &record).await?;
+                total_revoked += amount_to_revoke;
+                ledger_ids.push(updated_ledger.id);
+            }
+
+            if total_revoked > 0 {
+                let (topup, subscription) = credit_type.account_balance_delta(total_revoked);
+                let _ = Self::update_account_in_tx(
+                    &mut tx,
+                    account.id,
+                    AccountUpdate::Revocation {
+                        topup,
+                        subscription,
+                    },
+                )
+                .await?;
+            }
+
+            if let Some(ref key) = idempotency_key {
+                Self::record_completed_idempotency_in_tx(&mut tx, &realm_id, key, Uuid::now_v7())
+                    .await?;
+            }
+
+            tx.commit()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            Ok(RevokePointsOutput {
+                revocation_id: Uuid::now_v7(),
+                ledger_ids,
+                total_revoked,
+                revoked_at: chrono::Utc::now(),
+            })
+        }
+    }
+
+    fn refund_points_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        refund_reference: String,
+        refund_amount: i64,
+        reason: String,
+    ) -> impl std::future::Future<Output = Result<PointsTransaction, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            if let Some(existing) = sqlx::query_as::<_, PointsTransactionRow>(
+                r#"
+                SELECT id, realm_id, account_id, user_id, type, amount, balance_after,
+                       topup_balance_after, subscription_balance_after, credit_type,
+                       description, client_app_id, subscription_id, external_ref_id,
+                       created_at, updated_at, expires_at
+                FROM points_transactions
+                WHERE realm_id = $1 AND user_id = $2 AND external_ref_id = $3 AND type = 'refund'
+                LIMIT 1
+                "#,
+            )
+            .bind(&realm_id)
+            .bind(user_id)
+            .bind(&refund_reference)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+            {
+                tx.commit()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                return Self::points_transaction_row_to_domain(existing);
+            }
+
+            let account = Self::find_account_by_user_for_update(&mut tx, &realm_id, user_id)
+                .await?
+                .ok_or(CoreError::NotFound)?;
+            if account.total_balance < refund_amount {
+                return Err(CoreError::BadRequest(format!(
+                    "Insufficient balance: available={}, required={}",
+                    account.total_balance, refund_amount
+                )));
+            }
+
+            let subscription_delta = refund_amount.min(account.subscription_balance);
+            let topup_delta = refund_amount - subscription_delta;
+            let updated_account = Self::update_account_in_tx(
+                &mut tx,
+                account.id,
+                AccountUpdate::Revocation {
+                    topup: topup_delta,
+                    subscription: subscription_delta,
+                },
+            )
+            .await?;
+
+            let transaction = Self::create_transaction_in_tx(
+                &mut tx,
+                PointsTransaction {
+                    id: Uuid::now_v7(),
+                    account_id: account.id,
+                    user_id,
+                    realm_id: realm_id.clone(),
+                    transaction_type: TransactionType::Refund,
+                    amount: -refund_amount,
+                    balance_after: updated_account.total_balance,
+                    topup_balance_after: Some(updated_account.topup_balance),
+                    subscription_balance_after: Some(updated_account.subscription_balance),
+                    credit_type: None,
+                    description: Some(reason),
+                    client_app_id: None,
+                    subscription_id: None,
+                    external_ref_id: Some(refund_reference),
+                    created_at: chrono::Utc::now(),
+                },
+            )
+            .await?;
+
+            tx.commit()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            Ok(transaction)
+        }
+    }
+
+    fn grant_points_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        credit_type: CreditType,
+        source_type: CreditSourceType,
+        amount: i64,
+        expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        source_id: Option<String>,
+    ) -> impl std::future::Future<Output = Result<PointsCreditLedger, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            let account = Self::ensure_account_in_tx(&mut tx, &realm_id, user_id).await?;
+            let source_id = source_id.unwrap_or_else(|| "system".to_string());
+            let now = chrono::Utc::now();
+            let ledger = PointsCreditLedger {
+                id: Uuid::now_v7(),
+                user_id,
+                realm_id: realm_id.clone(),
+                credit_type,
+                source_type,
+                source_id: source_id.clone(),
+                granted_amount: amount,
+                used_amount: 0,
+                revoked_amount: 0,
+                remaining_amount: amount,
+                expires_at,
+                status: CreditLedgerStatus::Active,
+                created_at: now,
+                updated_at: now,
+            };
+            let created_ledger = Self::create_ledger_in_tx(&mut tx, &ledger).await?;
+            let (topup, subscription) = credit_type.account_balance_delta(amount);
+            let updated_account = Self::update_account_in_tx(
+                &mut tx,
+                account.id,
+                AccountUpdate::Grant {
+                    topup,
+                    subscription,
+                },
+            )
+            .await?;
+            let transaction_type = match (credit_type, source_type) {
+                (CreditType::RegistrationCredit, _) => TransactionType::RegistrationGrant,
+                (CreditType::FreePeriodicCredit, _) => TransactionType::FreePeriodicGrant,
+                (CreditType::SubscriptionCredit, CreditSourceType::SubscriptionInitial) => {
+                    TransactionType::SubscriptionGrant
+                }
+                (CreditType::SubscriptionCredit, CreditSourceType::SubscriptionRenewal) => {
+                    TransactionType::SubscriptionRenewal
+                }
+                (CreditType::SubscriptionCredit, CreditSourceType::SubscriptionUpgrade) => {
+                    TransactionType::SubscriptionUpgrade
+                }
+                _ => TransactionType::Recharge,
+            };
+            let _ = Self::create_transaction_in_tx(
+                &mut tx,
+                PointsTransaction {
+                    id: Uuid::now_v7(),
+                    account_id: account.id,
+                    user_id,
+                    realm_id: realm_id.clone(),
+                    transaction_type,
+                    amount,
+                    balance_after: updated_account.total_balance,
+                    topup_balance_after: Some(updated_account.topup_balance),
+                    subscription_balance_after: Some(updated_account.subscription_balance),
+                    credit_type: Some(credit_type),
+                    description: Some(format!(
+                        "{}: {} points granted",
+                        source_type.as_str(),
+                        amount
+                    )),
+                    client_app_id: None,
+                    subscription_id: None,
+                    external_ref_id: Some(source_id),
+                    created_at: now,
+                },
+            )
+            .await?;
+            tx.commit()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            Ok(created_ledger)
+        }
+    }
+
+    fn set_subscription_ledger_expiration_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        period_end: chrono::DateTime<chrono::Utc>,
+    ) -> impl std::future::Future<Output = Result<Vec<Uuid>, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            let ledgers = Self::find_active_ledgers_by_credit_type_for_update(
+                &mut tx,
+                &realm_id,
+                user_id,
+                CreditType::SubscriptionCredit,
+            )
+            .await?;
+            let mut ids = Vec::new();
+            for ledger in ledgers {
+                let updated = Self::update_ledger_in_tx(
+                    &mut tx,
+                    ledger.id,
+                    LedgerUpdate::SetExpiration(period_end),
+                )
+                .await?;
+                ids.push(updated.id);
+            }
+            tx.commit()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            Ok(ids)
+        }
+    }
+
+    fn handle_subscription_paid_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        plan_id: Uuid,
+        points_amount: i64,
+        source_type: CreditSourceType,
+        period_end: chrono::DateTime<chrono::Utc>,
+        idempotency_key: String,
+        disable_daily_grant: bool,
+    ) -> impl std::future::Future<Output = Result<PointsCreditLedger, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            if Self::check_completed_idempotency_in_tx(&mut tx, &realm_id, &idempotency_key)
+                .await?
+                .is_some()
+            {
+                tx.commit()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                let now = chrono::Utc::now();
+                return Ok(PointsCreditLedger {
+                    id: Uuid::now_v7(),
+                    user_id,
+                    realm_id,
+                    credit_type: CreditType::SubscriptionCredit,
+                    source_type: CreditSourceType::SubscriptionInitial,
+                    source_id: "idempotency".to_string(),
+                    granted_amount: 0,
+                    used_amount: 0,
+                    revoked_amount: 0,
+                    remaining_amount: 0,
+                    expires_at: None,
+                    status: CreditLedgerStatus::Active,
+                    created_at: now,
+                    updated_at: now,
+                });
+            }
+
+            let account = Self::ensure_account_in_tx(&mut tx, &realm_id, user_id).await?;
+            if disable_daily_grant {
+                let daily_ledgers = Self::find_active_ledgers_by_credit_type_for_update(
+                    &mut tx,
+                    &realm_id,
+                    user_id,
+                    CreditType::FreePeriodicCredit,
+                )
+                .await?;
+                let total_revoked: i64 = daily_ledgers.iter().map(|l| l.remaining_amount).sum();
+                for ledger in daily_ledgers {
+                    let updated = Self::update_ledger_in_tx(
+                        &mut tx,
+                        ledger.id,
+                        LedgerUpdate::Revocation(ledger.remaining_amount),
+                    )
+                    .await?;
+                    let record = PointsRevocationRecord {
+                        id: Uuid::now_v7(),
+                        ledger_id: updated.id,
+                        user_id,
+                        realm_id: realm_id.clone(),
+                        revocation_type: RevocationType::UpgradeRevoke,
+                        revoked_amount: ledger.remaining_amount,
+                        reason: "Free user upgraded to paid subscription".to_string(),
+                        reference_id: Some(idempotency_key.clone()),
+                        created_at: chrono::Utc::now(),
+                    };
+                    Self::create_revocation_record_in_tx(&mut tx, &record).await?;
+                }
+                if total_revoked > 0 {
+                    let _ = Self::update_account_in_tx(
+                        &mut tx,
+                        account.id,
+                        AccountUpdate::Revocation {
+                            topup: total_revoked,
+                            subscription: 0,
+                        },
+                    )
+                    .await?;
+                }
+                Self::disable_periodic_grant_in_tx(&mut tx, &realm_id, user_id).await?;
+            }
+
+            let now = chrono::Utc::now();
+            let ledger = PointsCreditLedger {
+                id: Uuid::now_v7(),
+                user_id,
+                realm_id: realm_id.clone(),
+                credit_type: CreditType::SubscriptionCredit,
+                source_type,
+                source_id: format!("{}:{}", plan_id, idempotency_key),
+                granted_amount: points_amount,
+                used_amount: 0,
+                revoked_amount: 0,
+                remaining_amount: points_amount,
+                expires_at: Some(period_end),
+                status: CreditLedgerStatus::Active,
+                created_at: now,
+                updated_at: now,
+            };
+            let created_ledger = Self::create_ledger_in_tx(&mut tx, &ledger).await?;
+            let updated_account = Self::update_account_in_tx(
+                &mut tx,
+                account.id,
+                AccountUpdate::Grant {
+                    topup: 0,
+                    subscription: points_amount,
+                },
+            )
+            .await?;
+            let transaction = Self::create_transaction_in_tx(
+                &mut tx,
+                PointsTransaction {
+                    id: Uuid::now_v7(),
+                    account_id: account.id,
+                    user_id,
+                    realm_id: realm_id.clone(),
+                    transaction_type: if source_type == CreditSourceType::SubscriptionRenewal {
+                        TransactionType::SubscriptionRenewal
+                    } else {
+                        TransactionType::SubscriptionGrant
+                    },
+                    amount: points_amount,
+                    balance_after: updated_account.total_balance,
+                    topup_balance_after: Some(updated_account.topup_balance),
+                    subscription_balance_after: Some(updated_account.subscription_balance),
+                    credit_type: Some(CreditType::SubscriptionCredit),
+                    description: Some(format!(
+                        "Subscription {}: {} points",
+                        if source_type == CreditSourceType::SubscriptionRenewal {
+                            "renewal"
+                        } else {
+                            "initial"
+                        },
+                        points_amount
+                    )),
+                    client_app_id: None,
+                    subscription_id: None,
+                    external_ref_id: Some(idempotency_key.clone()),
+                    created_at: now,
+                },
+            )
+            .await?;
+            Self::record_completed_idempotency_in_tx(
+                &mut tx,
+                &realm_id,
+                &idempotency_key,
+                transaction.id,
+            )
+            .await?;
+            tx.commit()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            Ok(created_ledger)
+        }
+    }
+
+    fn scan_and_expire_points_atomic(
+        &self,
+        batch_size: usize,
+    ) -> impl std::future::Future<Output = Result<ExpirationSummary, CoreError>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            let now = chrono::Utc::now();
+            let ledgers = Self::find_expired_ledgers_for_update(&mut tx, now, batch_size).await?;
+            if ledgers.is_empty() {
+                tx.commit()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                return Ok(ExpirationSummary {
+                    expired_count: 0,
+                    total_expired: 0,
+                    expired_at: now,
+                });
+            }
+
+            let mut total_expired = 0i64;
+            for ledger in &ledgers {
+                let amount = ledger.remaining_amount;
+                total_expired += amount;
+                let _ = Self::update_ledger_in_tx(
+                    &mut tx,
+                    ledger.id,
+                    LedgerUpdate::SetStatus(CreditLedgerStatus::Expired),
+                )
+                .await?;
+                let record = PointsRevocationRecord {
+                    id: Uuid::now_v7(),
+                    ledger_id: ledger.id,
+                    user_id: ledger.user_id,
+                    realm_id: ledger.realm_id.clone(),
+                    revocation_type: RevocationType::ExpireRevoke,
+                    revoked_amount: amount,
+                    reason: "Points expired".to_string(),
+                    reference_id: None,
+                    created_at: now,
+                };
+                Self::create_revocation_record_in_tx(&mut tx, &record).await?;
+                let account = Self::find_account_by_user_for_update(
+                    &mut tx,
+                    &ledger.realm_id,
+                    ledger.user_id,
+                )
+                .await?
+                .ok_or(CoreError::NotFound)?;
+                let (topup, subscription) = ledger.credit_type.account_balance_delta(amount);
+                let _ = Self::update_account_in_tx(
+                    &mut tx,
+                    account.id,
+                    AccountUpdate::Revocation {
+                        topup,
+                        subscription,
+                    },
+                )
+                .await?;
+            }
+
+            tx.commit()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            Ok(ExpirationSummary {
+                expired_count: ledgers.len(),
+                total_expired,
+                expired_at: now,
+            })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_model_conversion() {
+        let model = points_account::Model {
+            id: Uuid::now_v7(),
+            user_id: Uuid::now_v7(),
+            realm_id: "test-realm".to_string(),
+            total_balance: 100,
+            topup_balance: 100,
+            subscription_balance: 0,
+            total_topup_granted: 100,
+            total_subscription_granted: 0,
+            total_recharged: 1000,
+            total_consumed: 900,
+            status: "active".to_string(),
+            created_at: sea_orm::prelude::DateTimeWithTimeZone::from(chrono::Utc::now()),
+            updated_at: sea_orm::prelude::DateTimeWithTimeZone::from(chrono::Utc::now()),
+        };
+
+        let result = PostgresPointsRepository::model_to_points_account(model);
+        assert!(result.is_ok());
+        let account = result.unwrap();
+        assert_eq!(account.total_balance, 100);
+    }
+}

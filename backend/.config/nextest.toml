@@ -1,0 +1,11 @@
+[profile.default]
+# Set test timeout to 60 seconds, terminate after 1 period
+slow-timeout = { period = "300s", terminate-after = 1 }
+# Global timeout for all tests (increased to 60 minutes to prevent cancellations)
+global-timeout = "60m"
+# Default parallel test threads
+test-threads = 8
+# 立即显示失败输出
+failure-output = "immediate"
+# 测试失败后立即停止
+fail-fast = false

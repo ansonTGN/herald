@@ -1,0 +1,1108 @@
+// PostgreSQL implementation for Invoice repository
+//
+// Uses raw sqlx queries because invoice tables do not have SeaORM entity definitions
+// in herald-entity. This follows the same pattern as oauth/config_repository.rs and
+// realm_config/mod.rs in this crate.
+
+use chrono::{DateTime, Datelike, Utc};
+use sea_orm::DatabaseConnection;
+use uuid::Uuid;
+
+use herald_domain::billing::invoice::{
+    ActorType, AdjustmentMode, Invoice, InvoiceDetail, InvoiceEventType, InvoiceHistory,
+    InvoiceLineItem, InvoiceListFilters, InvoiceRepository, InvoiceSellerConfig, InvoiceStatus,
+    InvoiceStatusTransition, InvoiceSummary, NewInvoice, NewLineItem, PaginatedInvoices,
+    UpdateInvoiceDraft,
+};
+use herald_domain::billing::invoice_service::{
+    calculate_invoice_amounts, calculate_line_item_subtotal, format_invoice_number,
+};
+use herald_domain::common::entities::app_errors::CoreError;
+
+pub struct PostgresInvoiceRepository {
+    db: DatabaseConnection,
+}
+
+impl PostgresInvoiceRepository {
+    pub fn new(db: DatabaseConnection) -> Self {
+        Self { db }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Row types for sqlx query_as
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, sqlx::FromRow)]
+struct InvoiceRow {
+    id: Uuid,
+    realm_id: String,
+    invoice_number: String,
+    source: String,
+    account_id: Uuid,
+    applicant_user_id: Option<Uuid>,
+    subscription_id: Option<Uuid>,
+    payment_attempt_id: Option<Uuid>,
+    status: String,
+    currency: String,
+    issue_date: Option<chrono::NaiveDate>,
+    due_date: Option<chrono::NaiveDate>,
+    issued_at: Option<DateTime<Utc>>,
+    paid_at: Option<DateTime<Utc>>,
+    voided_at: Option<DateTime<Utc>>,
+    subtotal: i64,
+    discount_amount: i64,
+    tax_amount: i64,
+    shipping_amount: i64,
+    total: i64,
+    discount_mode: Option<String>,
+    discount_value: Option<String>,
+    tax_mode: Option<String>,
+    tax_value: Option<String>,
+    shipping_mode: Option<String>,
+    shipping_value: Option<String>,
+    billing_name: String,
+    billing_address: Option<String>,
+    billing_email: Option<String>,
+    billing_phone: Option<String>,
+    seller_name: String,
+    seller_address: Option<String>,
+    seller_email: Option<String>,
+    seller_phone: Option<String>,
+    notes: Option<String>,
+    payment_terms: Option<String>,
+    void_reason: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+fn row_to_invoice(row: InvoiceRow) -> Result<Invoice, CoreError> {
+    Ok(Invoice {
+        id: row.id,
+        realm_id: row.realm_id,
+        invoice_number: row.invoice_number,
+        source: row.source.parse()?,
+        account_id: row.account_id,
+        applicant_user_id: row.applicant_user_id,
+        subscription_id: row.subscription_id,
+        payment_attempt_id: row.payment_attempt_id,
+        status: row.status.parse()?,
+        currency: row.currency,
+        issue_date: row.issue_date,
+        due_date: row.due_date,
+        issued_at: row.issued_at,
+        paid_at: row.paid_at,
+        voided_at: row.voided_at,
+        subtotal: row.subtotal,
+        discount_amount: row.discount_amount,
+        tax_amount: row.tax_amount,
+        shipping_amount: row.shipping_amount,
+        total: row.total,
+        discount_mode: row
+            .discount_mode
+            .as_deref()
+            .and_then(AdjustmentMode::from_str_opt),
+        discount_value: row.discount_value,
+        tax_mode: row
+            .tax_mode
+            .as_deref()
+            .and_then(AdjustmentMode::from_str_opt),
+        tax_value: row.tax_value,
+        shipping_mode: row
+            .shipping_mode
+            .as_deref()
+            .and_then(AdjustmentMode::from_str_opt),
+        shipping_value: row.shipping_value,
+        billing_name: row.billing_name,
+        billing_address: row.billing_address,
+        billing_email: row.billing_email,
+        billing_phone: row.billing_phone,
+        seller_name: row.seller_name,
+        seller_address: row.seller_address,
+        seller_email: row.seller_email,
+        seller_phone: row.seller_phone,
+        notes: row.notes,
+        payment_terms: row.payment_terms,
+        void_reason: row.void_reason,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+fn parse_actor_type(s: &str) -> Result<ActorType, CoreError> {
+    match s {
+        "user" => Ok(ActorType::User),
+        "system" => Ok(ActorType::System),
+        _ => Err(CoreError::DatabaseError(format!(
+            "Invalid actor_type: {}",
+            s
+        ))),
+    }
+}
+
+fn parse_event_type(s: &str) -> Result<InvoiceEventType, CoreError> {
+    match s {
+        "created" => Ok(InvoiceEventType::Created),
+        "updated" => Ok(InvoiceEventType::Updated),
+        "issued" => Ok(InvoiceEventType::Issued),
+        "paid" => Ok(InvoiceEventType::Paid),
+        "voided" => Ok(InvoiceEventType::Voided),
+        "overdue" => Ok(InvoiceEventType::Overdue),
+        _ => Err(CoreError::DatabaseError(format!(
+            "Invalid event_type: {}",
+            s
+        ))),
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct LineItemRow {
+    id: Uuid,
+    invoice_id: Uuid,
+    sort_order: i32,
+    name: String,
+    description: Option<String>,
+    quantity: String,
+    unit_price: i64,
+    subtotal: i64,
+}
+
+fn row_to_line_item(row: LineItemRow) -> InvoiceLineItem {
+    InvoiceLineItem {
+        id: row.id,
+        invoice_id: row.invoice_id,
+        sort_order: row.sort_order,
+        name: row.name,
+        description: row.description,
+        quantity: row.quantity,
+        unit_price: row.unit_price,
+        subtotal: row.subtotal,
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct HistoryRow {
+    id: Uuid,
+    invoice_id: Uuid,
+    event_type: String,
+    actor_user_id: Option<Uuid>,
+    actor_type: String,
+    changes: serde_json::Value,
+    created_at: DateTime<Utc>,
+}
+
+fn row_to_history(row: HistoryRow) -> Result<InvoiceHistory, CoreError> {
+    Ok(InvoiceHistory {
+        id: row.id,
+        invoice_id: row.invoice_id,
+        event_type: parse_event_type(&row.event_type)?,
+        actor_user_id: row.actor_user_id,
+        actor_type: parse_actor_type(&row.actor_type)?,
+        changes: row.changes,
+        created_at: row.created_at,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct SellerConfigRow {
+    realm_id: String,
+    seller_name: String,
+    seller_address: Option<String>,
+    seller_email: Option<String>,
+    seller_phone: Option<String>,
+    default_payment_terms: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+fn row_to_seller_config(row: SellerConfigRow) -> InvoiceSellerConfig {
+    InvoiceSellerConfig {
+        realm_id: row.realm_id,
+        seller_name: row.seller_name,
+        seller_address: row.seller_address,
+        seller_email: row.seller_email,
+        seller_phone: row.seller_phone,
+        default_payment_terms: row.default_payment_terms,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct InvoiceSummaryRow {
+    id: Uuid,
+    realm_id: String,
+    invoice_number: String,
+    source: String,
+    account_id: Uuid,
+    status: String,
+    currency: String,
+    total: i64,
+    billing_name: String,
+    due_date: Option<chrono::NaiveDate>,
+    created_at: DateTime<Utc>,
+}
+
+fn row_to_summary(row: InvoiceSummaryRow) -> Result<InvoiceSummary, CoreError> {
+    Ok(InvoiceSummary {
+        id: row.id,
+        realm_id: row.realm_id,
+        invoice_number: row.invoice_number,
+        source: row.source.parse()?,
+        account_id: row.account_id,
+        status: row.status.parse()?,
+        currency: row.currency,
+        total: row.total,
+        billing_name: row.billing_name,
+        due_date: row.due_date,
+        created_at: row.created_at,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct CountRow {
+    count: i64,
+}
+
+// ---------------------------------------------------------------------------
+// SQL helpers
+// ---------------------------------------------------------------------------
+
+const INVOICE_COLUMNS: &str = r#"
+    id, realm_id, invoice_number, source, account_id, applicant_user_id,
+    subscription_id, payment_attempt_id, status, currency,
+    issue_date, due_date, issued_at, paid_at, voided_at,
+    subtotal, discount_amount, tax_amount, shipping_amount, total,
+    discount_mode, discount_value, tax_mode, tax_value, shipping_mode, shipping_value,
+    billing_name, billing_address, billing_email, billing_phone,
+    seller_name, seller_address, seller_email, seller_phone,
+    notes, payment_terms, void_reason, created_at, updated_at
+"#;
+
+/// SELECT / RETURNING column list with NUMERIC columns cast to TEXT for sqlx String binding.
+const INVOICE_COLUMNS_READ: &str = r#"
+    id, realm_id, invoice_number, source, account_id, applicant_user_id,
+    subscription_id, payment_attempt_id, status, currency,
+    issue_date, due_date, issued_at, paid_at, voided_at,
+    subtotal, discount_amount, tax_amount, shipping_amount, total,
+    discount_mode, discount_value::text, tax_mode, tax_value::text, shipping_mode, shipping_value::text,
+    billing_name, billing_address, billing_email, billing_phone,
+    seller_name, seller_address, seller_email, seller_phone,
+    notes, payment_terms, void_reason, created_at, updated_at
+"#;
+
+const SUMMARY_COLUMNS: &str = r#"
+    id, realm_id, invoice_number, source, account_id, status, currency,
+    total, billing_name, due_date, created_at
+"#;
+
+// ---------------------------------------------------------------------------
+// InvoiceRepository implementation
+// ---------------------------------------------------------------------------
+
+impl InvoiceRepository for PostgresInvoiceRepository {
+    async fn create_invoice(&self, input: NewInvoice) -> Result<Invoice, CoreError> {
+        let now = chrono::Utc::now();
+        let id = Uuid::now_v7();
+
+        let amounts = calculate_invoice_amounts(
+            &input.line_items,
+            input.discount_mode,
+            input.discount_value.as_deref(),
+            input.tax_mode,
+            input.tax_value.as_deref(),
+            input.shipping_mode,
+            input.shipping_value.as_deref(),
+        )?;
+
+        let mut tx = self.db.get_postgres_connection_pool().begin().await?;
+
+        let year = now.year();
+        let invoice_number =
+            Self::reserve_invoice_number_tx(&mut tx, &input.realm_id, year).await?;
+
+        let invoice_row = sqlx::query_as::<_, InvoiceRow>(&format!(
+            "INSERT INTO invoice ({insert_cols}) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::numeric,$23,$24::numeric,$25,$26::numeric,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39) RETURNING {read_cols}",
+            insert_cols = INVOICE_COLUMNS,
+            read_cols = INVOICE_COLUMNS_READ
+        ))
+            .bind(id)
+            .bind(&input.realm_id)
+            .bind(&invoice_number)
+            .bind(input.source.as_str())
+            .bind(input.account_id)
+            .bind(input.applicant_user_id)
+            .bind(input.subscription_id)
+            .bind(input.payment_attempt_id)
+            .bind(InvoiceStatus::Draft.as_str())
+            .bind(&input.currency)
+            .bind(None::<chrono::NaiveDate>) // issue_date
+            .bind(input.due_date)
+            .bind(None::<DateTime<Utc>>) // issued_at
+            .bind(None::<DateTime<Utc>>) // paid_at
+            .bind(None::<DateTime<Utc>>) // voided_at
+            .bind(amounts.subtotal)
+            .bind(amounts.discount_amount)
+            .bind(amounts.tax_amount)
+            .bind(amounts.shipping_amount)
+            .bind(amounts.total)
+            .bind(input.discount_mode.map(|m| m.as_str()))
+            .bind(&input.discount_value)
+            .bind(input.tax_mode.map(|m| m.as_str()))
+            .bind(&input.tax_value)
+            .bind(input.shipping_mode.map(|m| m.as_str()))
+            .bind(&input.shipping_value)
+            .bind(&input.billing_name)
+            .bind(&input.billing_address)
+            .bind(&input.billing_email)
+            .bind(&input.billing_phone)
+            .bind(&input.seller_name)
+            .bind(&input.seller_address)
+            .bind(&input.seller_email)
+            .bind(&input.seller_phone)
+            .bind(&input.notes)
+            .bind(&input.payment_terms)
+            .bind(None::<String>) // void_reason
+            .bind(now)
+            .bind(now)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| CoreError::DatabaseError(format!("Failed to insert invoice: {}", e)))?;
+
+        for (i, item) in input.line_items.iter().enumerate() {
+            let item_subtotal = calculate_line_item_subtotal(&item.quantity, item.unit_price)?;
+
+            let item_id = Uuid::now_v7();
+            sqlx::query(
+                "INSERT INTO invoice_line_item (id, invoice_id, sort_order, name, description, quantity, unit_price, subtotal) VALUES ($1,$2,$3,$4,$5,$6::numeric,$7,$8)"
+            )
+                .bind(item_id)
+                .bind(id)
+                .bind(i as i32)
+                .bind(&item.name)
+                .bind(&item.description)
+                .bind(&item.quantity)
+                .bind(item.unit_price)
+                .bind(item_subtotal)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| CoreError::DatabaseError(format!("Failed to insert line item: {}", e)))?;
+        }
+
+        let history_id = Uuid::now_v7();
+        let changes = serde_json::json!({"status": "draft"});
+        sqlx::query(
+            "INSERT INTO invoice_history (id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)"
+        )
+            .bind(history_id)
+            .bind(id)
+            .bind(InvoiceEventType::Created.as_str())
+            .bind(None::<Uuid>) // actor_user_id
+            .bind(ActorType::User.as_str())
+            .bind(&changes)
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| CoreError::DatabaseError(format!("Failed to insert history: {}", e)))?;
+
+        tx.commit().await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to commit create_invoice: {}", e))
+        })?;
+
+        row_to_invoice(invoice_row)
+    }
+
+    async fn update_draft(&self, input: UpdateInvoiceDraft) -> Result<Invoice, CoreError> {
+        let now = chrono::Utc::now();
+        let mut tx = self.db.get_postgres_connection_pool().begin().await?;
+
+        // Lock the invoice row and verify status is draft
+        let existing = sqlx::query_as::<_, InvoiceRow>(&format!(
+            "SELECT {cols} FROM invoice WHERE id = $1 AND realm_id = $2 FOR UPDATE",
+            cols = INVOICE_COLUMNS_READ
+        ))
+        .bind(input.invoice_id)
+        .bind(&input.realm_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to lock invoice: {}", e)))?
+        .ok_or(CoreError::NotFound)?;
+
+        let existing = row_to_invoice(existing)?;
+        if existing.status != InvoiceStatus::Draft {
+            return Err(CoreError::Conflict(format!(
+                "Cannot update invoice in '{}' status",
+                existing.status.as_str()
+            )));
+        }
+
+        let billing_name = input.billing_name.unwrap_or(existing.billing_name);
+        let billing_address = input.billing_address.or(existing.billing_address);
+        let billing_email = input.billing_email.or(existing.billing_email);
+        let billing_phone = input.billing_phone.or(existing.billing_phone);
+        let seller_name = input.seller_name.unwrap_or(existing.seller_name);
+        let seller_address = input.seller_address.or(existing.seller_address);
+        let seller_email = input.seller_email.or(existing.seller_email);
+        let seller_phone = input.seller_phone.or(existing.seller_phone);
+        let due_date = input.due_date.or(existing.due_date);
+        let payment_terms = input.payment_terms.or(existing.payment_terms);
+        let notes = input.notes.or(existing.notes);
+
+        let discount_mode = input.discount_mode.or(existing.discount_mode);
+        let discount_value = input.discount_value.or(existing.discount_value);
+        let tax_mode = input.tax_mode.or(existing.tax_mode);
+        let tax_value = input.tax_value.or(existing.tax_value);
+        let shipping_mode = input.shipping_mode.or(existing.shipping_mode);
+        let shipping_value = input.shipping_value.or(existing.shipping_value);
+
+        let (subtotal, discount_amount, tax_amount, shipping_amount, total) = if let Some(
+            ref items,
+        ) =
+            input.line_items
+        {
+            sqlx::query("DELETE FROM invoice_line_item WHERE invoice_id = $1")
+                .bind(input.invoice_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| {
+                    CoreError::DatabaseError(format!("Failed to delete line items: {}", e))
+                })?;
+
+            for (i, item) in items.iter().enumerate() {
+                let item_subtotal = calculate_invoice_amounts(
+                    std::slice::from_ref(item),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )?
+                .subtotal;
+
+                let item_id = Uuid::now_v7();
+                sqlx::query(
+                        "INSERT INTO invoice_line_item (id, invoice_id, sort_order, name, description, quantity, unit_price, subtotal) VALUES ($1,$2,$3,$4,$5,$6::numeric,$7,$8)"
+                    )
+                        .bind(item_id)
+                        .bind(input.invoice_id)
+                        .bind(i as i32)
+                        .bind(&item.name)
+                        .bind(&item.description)
+                        .bind(&item.quantity)
+                        .bind(item.unit_price)
+                        .bind(item_subtotal)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| CoreError::DatabaseError(format!("Failed to insert line item: {}", e)))?;
+            }
+
+            // Recalculate amounts from new line items
+            let amounts = calculate_invoice_amounts(
+                items,
+                discount_mode,
+                discount_value.as_deref(),
+                tax_mode,
+                tax_value.as_deref(),
+                shipping_mode,
+                shipping_value.as_deref(),
+            )?;
+            (
+                amounts.subtotal,
+                amounts.discount_amount,
+                amounts.tax_amount,
+                amounts.shipping_amount,
+                amounts.total,
+            )
+        } else {
+            // Recalculate amounts from existing line items if adjustment inputs changed
+            let existing_items = sqlx::query_as::<_, LineItemRow>(
+                    "SELECT id, invoice_id, sort_order, name, description, quantity::text, unit_price, subtotal FROM invoice_line_item WHERE invoice_id = $1 ORDER BY sort_order"
+                )
+                    .bind(input.invoice_id)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(format!("Failed to fetch line items: {}", e)))?;
+
+            let new_items: Vec<NewLineItem> = existing_items
+                .iter()
+                .map(|li| NewLineItem {
+                    name: li.name.clone(),
+                    description: li.description.clone(),
+                    quantity: li.quantity.clone(),
+                    unit_price: li.unit_price,
+                })
+                .collect();
+
+            let amounts = calculate_invoice_amounts(
+                &new_items,
+                discount_mode,
+                discount_value.as_deref(),
+                tax_mode,
+                tax_value.as_deref(),
+                shipping_mode,
+                shipping_value.as_deref(),
+            )?;
+            (
+                amounts.subtotal,
+                amounts.discount_amount,
+                amounts.tax_amount,
+                amounts.shipping_amount,
+                amounts.total,
+            )
+        };
+
+        // Update invoice row
+        let updated = sqlx::query_as::<_, InvoiceRow>(&format!(
+            "UPDATE invoice SET
+                billing_name = $1, billing_address = $2, billing_email = $3, billing_phone = $4,
+                seller_name = $5, seller_address = $6, seller_email = $7, seller_phone = $8,
+                due_date = $9, payment_terms = $10, notes = $11,
+                discount_mode = $12, discount_value = $13::numeric,
+                tax_mode = $14, tax_value = $15::numeric,
+                shipping_mode = $16, shipping_value = $17::numeric,
+                subtotal = $18, discount_amount = $19, tax_amount = $20, shipping_amount = $21,
+                total = $22, updated_at = $23
+             WHERE id = $24
+             RETURNING {cols}",
+            cols = INVOICE_COLUMNS_READ
+        ))
+        .bind(&billing_name)
+        .bind(&billing_address)
+        .bind(&billing_email)
+        .bind(&billing_phone)
+        .bind(&seller_name)
+        .bind(&seller_address)
+        .bind(&seller_email)
+        .bind(&seller_phone)
+        .bind(due_date)
+        .bind(&payment_terms)
+        .bind(&notes)
+        .bind(discount_mode.map(|m| m.as_str()))
+        .bind(&discount_value)
+        .bind(tax_mode.map(|m| m.as_str()))
+        .bind(&tax_value)
+        .bind(shipping_mode.map(|m| m.as_str()))
+        .bind(&shipping_value)
+        .bind(subtotal)
+        .bind(discount_amount)
+        .bind(tax_amount)
+        .bind(shipping_amount)
+        .bind(total)
+        .bind(now)
+        .bind(input.invoice_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to update invoice: {}", e)))?;
+
+        // Record history
+        let history_id = Uuid::now_v7();
+        let changes = serde_json::json!({"action": "updated"});
+        sqlx::query(
+            "INSERT INTO invoice_history (id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)"
+        )
+            .bind(history_id)
+            .bind(input.invoice_id)
+            .bind(InvoiceEventType::Updated.as_str())
+            .bind(None::<Uuid>)
+            .bind(ActorType::User.as_str())
+            .bind(&changes)
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| CoreError::DatabaseError(format!("Failed to insert history: {}", e)))?;
+
+        tx.commit().await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to commit update_draft: {}", e))
+        })?;
+
+        row_to_invoice(updated)
+    }
+
+    async fn find_with_items(
+        &self,
+        realm_id: &str,
+        invoice_id: Uuid,
+    ) -> Result<Option<InvoiceDetail>, CoreError> {
+        let pool = self.db.get_postgres_connection_pool();
+
+        let invoice_row = sqlx::query_as::<_, InvoiceRow>(&format!(
+            "SELECT {cols} FROM invoice WHERE id = $1 AND realm_id = $2",
+            cols = INVOICE_COLUMNS_READ
+        ))
+        .bind(invoice_id)
+        .bind(realm_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to find invoice: {}", e)))?;
+
+        let invoice_row = match invoice_row {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+
+        let invoice = row_to_invoice(invoice_row)?;
+
+        let line_item_rows = sqlx::query_as::<_, LineItemRow>(
+            "SELECT id, invoice_id, sort_order, name, description, quantity::text, unit_price, subtotal FROM invoice_line_item WHERE invoice_id = $1 ORDER BY sort_order"
+        )
+            .bind(invoice_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(format!("Failed to find line items: {}", e)))?;
+
+        let line_items: Vec<InvoiceLineItem> =
+            line_item_rows.into_iter().map(row_to_line_item).collect();
+
+        let history_rows = sqlx::query_as::<_, HistoryRow>(
+            "SELECT id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at FROM invoice_history WHERE invoice_id = $1 ORDER BY created_at"
+        )
+            .bind(invoice_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(format!("Failed to find history: {}", e)))?;
+
+        let history: Vec<InvoiceHistory> = history_rows
+            .into_iter()
+            .map(row_to_history)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Some(InvoiceDetail {
+            invoice,
+            line_items,
+            history,
+        }))
+    }
+
+    async fn list_admin(
+        &self,
+        realm_id: &str,
+        filters: InvoiceListFilters,
+    ) -> Result<PaginatedInvoices<InvoiceSummary>, CoreError> {
+        Self::list_invoices(
+            self.db.get_postgres_connection_pool(),
+            realm_id,
+            None,
+            filters,
+        )
+        .await
+    }
+
+    async fn list_user(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        filters: InvoiceListFilters,
+    ) -> Result<PaginatedInvoices<InvoiceSummary>, CoreError> {
+        Self::list_invoices(
+            self.db.get_postgres_connection_pool(),
+            realm_id,
+            Some(user_id),
+            filters,
+        )
+        .await
+    }
+
+    async fn transition_status(
+        &self,
+        input: InvoiceStatusTransition,
+    ) -> Result<Invoice, CoreError> {
+        let now = chrono::Utc::now();
+        let mut tx = self.db.get_postgres_connection_pool().begin().await?;
+
+        let current = sqlx::query_as::<_, InvoiceRow>(&format!(
+            "SELECT {cols} FROM invoice WHERE id = $1 AND realm_id = $2 FOR UPDATE",
+            cols = INVOICE_COLUMNS_READ
+        ))
+        .bind(input.invoice_id)
+        .bind(&input.realm_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to lock invoice: {}", e)))?
+        .ok_or(CoreError::NotFound)?;
+
+        let current = row_to_invoice(current)?;
+
+        let (
+            status_str,
+            issued_at_set,
+            paid_at_set,
+            voided_at_set,
+            issue_date_set,
+            void_reason_set,
+        ) = match input.target_status {
+            InvoiceStatus::Issued => (
+                InvoiceStatus::Issued.as_str(),
+                Some(now),
+                None,
+                None,
+                Some(now.date_naive()),
+                None,
+            ),
+            InvoiceStatus::Paid => (
+                InvoiceStatus::Paid.as_str(),
+                None,
+                Some(now),
+                None,
+                None,
+                None,
+            ),
+            InvoiceStatus::Void => (
+                InvoiceStatus::Void.as_str(),
+                None,
+                None,
+                Some(now),
+                None,
+                input.void_reason,
+            ),
+            InvoiceStatus::Overdue => (
+                InvoiceStatus::Overdue.as_str(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+            InvoiceStatus::Draft => {
+                return Err(CoreError::Conflict(
+                    "Cannot transition to draft".to_string(),
+                ));
+            }
+        };
+
+        let updated = sqlx::query_as::<_, InvoiceRow>(&format!(
+            "UPDATE invoice SET
+                status = $1,
+                issued_at = COALESCE($2, issued_at),
+                paid_at = COALESCE($3, paid_at),
+                voided_at = COALESCE($4, voided_at),
+                issue_date = COALESCE($5, issue_date),
+                void_reason = COALESCE($6, void_reason),
+                updated_at = $7
+             WHERE id = $8
+             RETURNING {cols}",
+            cols = INVOICE_COLUMNS_READ
+        ))
+        .bind(status_str)
+        .bind(issued_at_set)
+        .bind(paid_at_set)
+        .bind(voided_at_set)
+        .bind(issue_date_set)
+        .bind(&void_reason_set)
+        .bind(now)
+        .bind(input.invoice_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to update status: {}", e)))?;
+
+        // Record history event
+        let event_type = match input.target_status {
+            InvoiceStatus::Issued => InvoiceEventType::Issued,
+            InvoiceStatus::Paid => InvoiceEventType::Paid,
+            InvoiceStatus::Void => InvoiceEventType::Voided,
+            InvoiceStatus::Overdue => InvoiceEventType::Overdue,
+            InvoiceStatus::Draft => unreachable!(),
+        };
+
+        let changes = serde_json::json!({
+            "field": "status",
+            "from": current.status.as_str(),
+            "to": input.target_status.as_str()
+        });
+
+        let history_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO invoice_history (id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)"
+        )
+            .bind(history_id)
+            .bind(input.invoice_id)
+            .bind(event_type.as_str())
+            .bind(input.actor_user_id)
+            .bind(input.actor_type.as_str())
+            .bind(&changes)
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| CoreError::DatabaseError(format!("Failed to insert history: {}", e)))?;
+
+        tx.commit().await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to commit transition_status: {}", e))
+        })?;
+
+        row_to_invoice(updated)
+    }
+
+    async fn find_seller_config(
+        &self,
+        realm_id: &str,
+    ) -> Result<Option<InvoiceSellerConfig>, CoreError> {
+        let row = sqlx::query_as::<_, SellerConfigRow>(
+            "SELECT realm_id, seller_name, seller_address, seller_email, seller_phone, default_payment_terms, created_at, updated_at FROM invoice_seller_config WHERE realm_id = $1"
+        )
+            .bind(realm_id)
+            .fetch_optional(self.db.get_postgres_connection_pool())
+            .await
+            .map_err(|e| CoreError::DatabaseError(format!("Failed to find seller config: {}", e)))?;
+
+        Ok(row.map(row_to_seller_config))
+    }
+
+    async fn upsert_seller_config(
+        &self,
+        config: InvoiceSellerConfig,
+    ) -> Result<InvoiceSellerConfig, CoreError> {
+        let now = chrono::Utc::now();
+
+        let row = sqlx::query_as::<_, SellerConfigRow>(
+            "INSERT INTO invoice_seller_config (realm_id, seller_name, seller_address, seller_email, seller_phone, default_payment_terms, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (realm_id) DO UPDATE SET
+                 seller_name = EXCLUDED.seller_name,
+                 seller_address = EXCLUDED.seller_address,
+                 seller_email = EXCLUDED.seller_email,
+                 seller_phone = EXCLUDED.seller_phone,
+                 default_payment_terms = EXCLUDED.default_payment_terms,
+                 updated_at = EXCLUDED.updated_at
+             RETURNING realm_id, seller_name, seller_address, seller_email, seller_phone, default_payment_terms, created_at, updated_at"
+        )
+            .bind(&config.realm_id)
+            .bind(&config.seller_name)
+            .bind(&config.seller_address)
+            .bind(&config.seller_email)
+            .bind(&config.seller_phone)
+            .bind(&config.default_payment_terms)
+            .bind(now)
+            .bind(now)
+            .fetch_one(self.db.get_postgres_connection_pool())
+            .await
+            .map_err(|e| CoreError::DatabaseError(format!("Failed to upsert seller config: {}", e)))?;
+
+        Ok(row_to_seller_config(row))
+    }
+
+    async fn list_overdue_candidates(
+        &self,
+        now: DateTime<Utc>,
+        limit: i64,
+    ) -> Result<Vec<Invoice>, CoreError> {
+        let today = now.date_naive();
+
+        let rows = sqlx::query_as::<_, InvoiceRow>(&format!(
+            "SELECT {cols} FROM invoice
+             WHERE status = 'issued'
+               AND due_date IS NOT NULL
+               AND due_date < $1
+             ORDER BY due_date ASC
+             LIMIT $2",
+            cols = INVOICE_COLUMNS_READ
+        ))
+        .bind(today)
+        .bind(limit)
+        .fetch_all(self.db.get_postgres_connection_pool())
+        .await
+        .map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to list overdue candidates: {}", e))
+        })?;
+
+        rows.into_iter().map(row_to_invoice).collect()
+    }
+
+    async fn next_invoice_number(&self, realm_id: &str, year: i32) -> Result<String, CoreError> {
+        let mut tx = self.db.get_postgres_connection_pool().begin().await?;
+
+        let invoice_number = Self::reserve_invoice_number_tx(&mut tx, realm_id, year).await?;
+
+        tx.commit().await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to commit next_invoice_number: {}", e))
+        })?;
+
+        Ok(invoice_number)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared helper for invoice number counter
+// ---------------------------------------------------------------------------
+
+impl PostgresInvoiceRepository {
+    /// Reserve the next invoice number within an existing transaction.
+    /// Uses SELECT FOR UPDATE for row-level locking to prevent concurrent counter collisions.
+    async fn reserve_invoice_number_tx(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        realm_id: &str,
+        year: i32,
+    ) -> Result<String, CoreError> {
+        // Try to lock existing counter row
+        let existing: Option<(i64,)> = sqlx::query_as(
+            "SELECT next_seq FROM invoice_number_counter WHERE realm_id = $1 AND year = $2 FOR UPDATE"
+        )
+            .bind(realm_id)
+            .bind(year)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| CoreError::DatabaseError(format!("Failed to lock counter: {}", e)))?;
+
+        let seq = match existing {
+            Some((current_seq,)) => {
+                // Update existing counter
+                sqlx::query(
+                    "UPDATE invoice_number_counter SET next_seq = next_seq + 1, updated_at = NOW() WHERE realm_id = $1 AND year = $2"
+                )
+                    .bind(realm_id)
+                    .bind(year)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(format!("Failed to update counter: {}", e)))?;
+                current_seq
+            }
+            None => {
+                // First invoice for this realm+year: insert with next_seq=2, return seq=1
+                sqlx::query(
+                    "INSERT INTO invoice_number_counter (realm_id, year, next_seq, updated_at) VALUES ($1, $2, 2, NOW())"
+                )
+                    .bind(realm_id)
+                    .bind(year)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(format!("Failed to insert counter: {}", e)))?;
+                1
+            }
+        };
+
+        Ok(format_invoice_number(year, seq))
+    }
+
+    /// Shared implementation for list_admin and list_user queries.
+    async fn list_invoices(
+        pool: &sqlx::PgPool,
+        realm_id: &str,
+        user_id: Option<Uuid>,
+        filters: InvoiceListFilters,
+    ) -> Result<PaginatedInvoices<InvoiceSummary>, CoreError> {
+        let page = filters.page.unwrap_or(1).max(1);
+        let page_size = filters.page_size.unwrap_or(20).clamp(1, 100);
+        let offset = (page - 1) * page_size;
+
+        // Build WHERE conditions
+        let mut conditions = vec!["realm_id = $1".to_string()];
+        let mut param_idx = 2u32;
+
+        if let Some(_user_id) = user_id {
+            conditions.push(format!("applicant_user_id = ${}", param_idx));
+            param_idx += 1;
+        }
+
+        if filters.status.is_some() {
+            conditions.push(format!("status = ${}", param_idx));
+            param_idx += 1;
+        }
+
+        if filters.source.is_some() {
+            conditions.push(format!("source = ${}", param_idx));
+            param_idx += 1;
+        }
+
+        if filters.date_from.is_some() {
+            conditions.push(format!("created_at >= ${}", param_idx));
+            param_idx += 1;
+        }
+
+        if filters.date_to.is_some() {
+            conditions.push(format!(
+                "created_at < (${param_idx}::date + interval '1 day')"
+            ));
+            param_idx += 1;
+        }
+
+        if filters.search.is_some() {
+            conditions.push(format!(
+                "(invoice_number ILIKE ${} OR billing_name ILIKE ${})",
+                param_idx, param_idx
+            ));
+            param_idx += 1;
+        }
+
+        let where_clause = conditions.join(" AND ");
+
+        // Count query
+        let count_sql = format!(
+            "SELECT COUNT(*) as count FROM invoice WHERE {}",
+            where_clause
+        );
+        let mut count_query = sqlx::query_as::<_, CountRow>(&count_sql);
+        count_query = count_query.bind(realm_id);
+        if let Some(uid) = user_id {
+            count_query = count_query.bind(uid);
+        }
+        if let Some(ref s) = filters.status {
+            count_query = count_query.bind(s.as_str());
+        }
+        if let Some(ref s) = filters.source {
+            count_query = count_query.bind(s.as_str());
+        }
+        if let Some(d) = filters.date_from {
+            count_query = count_query.bind(d);
+        }
+        if let Some(d) = filters.date_to {
+            count_query = count_query.bind(d);
+        }
+        if let Some(ref s) = filters.search {
+            count_query = count_query.bind(format!("%{}%", s));
+        }
+
+        let total = count_query
+            .fetch_one(pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(format!("Failed to count invoices: {}", e)))?
+            .count as u64;
+
+        // Data query
+        let data_sql = format!(
+            "SELECT {summary_cols} FROM invoice WHERE {where} ORDER BY created_at DESC LIMIT ${limit_idx} OFFSET ${offset_idx}",
+            summary_cols = SUMMARY_COLUMNS,
+            where = where_clause,
+            limit_idx = param_idx,
+            offset_idx = param_idx + 1,
+        );
+
+        let mut data_query = sqlx::query_as::<_, InvoiceSummaryRow>(&data_sql);
+        data_query = data_query.bind(realm_id);
+        if let Some(uid) = user_id {
+            data_query = data_query.bind(uid);
+        }
+        if let Some(ref s) = filters.status {
+            data_query = data_query.bind(s.as_str());
+        }
+        if let Some(ref s) = filters.source {
+            data_query = data_query.bind(s.as_str());
+        }
+        if let Some(d) = filters.date_from {
+            data_query = data_query.bind(d);
+        }
+        if let Some(d) = filters.date_to {
+            data_query = data_query.bind(d);
+        }
+        if let Some(ref s) = filters.search {
+            data_query = data_query.bind(format!("%{}%", s));
+        }
+        data_query = data_query.bind(page_size as i64);
+        data_query = data_query.bind(offset as i64);
+
+        let rows = data_query
+            .fetch_all(pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(format!("Failed to list invoices: {}", e)))?;
+
+        let data: Vec<InvoiceSummary> = rows
+            .into_iter()
+            .map(row_to_summary)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(PaginatedInvoices {
+            total,
+            page,
+            page_size,
+            data,
+        })
+    }
+}

@@ -1,0 +1,412 @@
+/**
+ * 认证辅助函数
+ *
+ * 为 E2E 演示测试提供登录、登出等认证相关功能
+ */
+
+import { Page, expect, type Response } from '@playwright/test'
+
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/**
+ * 默认演示管理员账号
+ *
+ * admin realm 的管理员账户
+ */
+export const DEMO_ADMIN = {
+  email: 'admin@cas.com',
+  password: 'password',
+  realmId: 'admin',
+}
+
+/**
+ * Realm 管理员账户映射
+ */
+export const REALM_ADMINS: Record<string, { email: string; password: string }> = {
+  admin: { email: 'admin@cas.com', password: 'password' },
+  realm1: { email: 'realm1-admin@test.com', password: 'password' },
+  realm2: { email: 'realm2-admin@test.com', password: 'password' },
+}
+
+/**
+ * 演示用户账号
+ */
+export const DEMO_USERS = {
+  user1: {
+    email: 'user1@demo.com',
+    password: 'password123',
+    realmId: 'admin',
+  },
+  user2: {
+    email: 'user2@demo.com',
+    password: 'password123',
+    realmId: 'admin',
+  },
+}
+
+// ============================================================================
+// Login Functions
+// ============================================================================
+
+/**
+ * 使用指定凭证登录到指定 Realm
+ *
+ * @param page Playwright Page 对象
+ * @param options 登录参数
+ */
+export async function loginWithCredentials(
+  page: Page,
+  options: {
+    realmId: string
+    email: string
+    password: string
+    waitNavigation?: boolean
+  }
+): Promise<void> {
+  const { realmId, email, password, waitNavigation = true } = options
+
+  console.log(`[Auth] 使用凭证登录到 realm: ${realmId} (email: ${email})`)
+
+  // 清除 session 数据
+  await clearSessionData(page)
+
+  // 导航到登录页
+  await page.goto(`${BASE_URL}/${realmId}/auth/login`, { waitUntil: 'domcontentloaded' })
+
+  // 检查是否已自动跳转到 dashboard（已有 session）
+  if (isAuthenticatedRealmUrl(page.url(), realmId)) {
+    console.log(`[Auth] 用户已登录到 realm ${realmId}，跳过登录步骤`)
+    return
+  }
+
+  // 提交登录表单
+  await page.waitForSelector('[data-testid="email-input"]', { timeout: 10000 })
+  await page.waitForSelector('[data-testid="password-input"]', { timeout: 10000 })
+  await page.fill('[data-testid="email-input"]', email)
+  await page.fill('[data-testid="password-input"]', password)
+  await page.waitForSelector('[data-testid="login-submit-button"]', { timeout: 5000 })
+  await page.click('[data-testid="login-submit-button"]')
+
+  // 等待登录 API 响应
+  const loginResponse = await waitForLoginResponse(page)
+  if (loginResponse && !loginResponse.ok()) {
+    const errorBody = await loginResponse.text().catch(() => 'Unable to read error body')
+    console.error(`[Auth] Login API failed: ${loginResponse.status()} - ${errorBody}`)
+    throw new Error(`Login failed: API returned ${loginResponse.status()}`)
+  }
+
+  // 验证导航
+  if (waitNavigation) {
+    await verifyPostLoginNavigation(page, { expectedRoute: 'dashboard', realmId })
+  }
+
+  console.log(`[Auth] 登录成功`)
+}
+
+/**
+ * 使用管理员账号登录
+ *
+ * @param page Playwright Page 对象
+ * @param options 可选参数
+ * @returns 如果 getToken 为 true，返回 auth token；否则返回 void
+ */
+export async function loginAsAdmin(
+  page: Page,
+  options: {
+    realmId?: string
+    waitNavigation?: boolean
+    forceRelogin?: boolean
+    totpCode?: string
+    getToken?: boolean
+  } = {}
+): Promise<void | string> {
+  const { realmId = 'admin', waitNavigation = true, forceRelogin = false, totpCode, getToken = false } = options
+
+  console.log(`[Auth] 使用管理员账号登录到 realm: ${realmId}`)
+
+  const credentials = REALM_ADMINS[realmId] || DEMO_ADMIN
+  console.log(`[Auth] 使用凭证: ${credentials.email} (realm: ${realmId})`)
+
+  // 检查当前 session 是否需要重新登录
+  let shouldRelogin = forceRelogin
+
+  if (!shouldRelogin) {
+    const cookies = await page.context().cookies()
+    const xAuthCookie = cookies.find(c => c.name === 'X-Auth')
+
+    if (xAuthCookie && xAuthCookie.value) {
+      const cookieEmail = xAuthCookie.value.split('_')[0]
+      if (cookieEmail !== credentials.email) {
+        console.log(`[Auth] 当前 session 用户与目标用户不匹配，重新登录`)
+        shouldRelogin = true
+      }
+    }
+  }
+
+  // 检查是否已在目标 realm 的 dashboard
+  const currentUrl = page.url()
+  const isOnTargetRealmDashboard = currentUrl.includes(`/${realmId}/manage`)
+
+  if (!shouldRelogin && isOnTargetRealmDashboard) {
+    console.log(`[Auth] 用户已登录到 realm ${realmId}，跳过登录步骤`)
+    return
+  }
+
+  // 清除 session 后重新登录
+  if (shouldRelogin || !isOnTargetRealmDashboard) {
+    await clearSessionData(page)
+  }
+
+  // 导航到登录页
+  await page.goto(`${BASE_URL}/${realmId}/auth/login`, { waitUntil: 'domcontentloaded' })
+
+  // 再次检查是否已自动跳转到 dashboard
+  if (page.url().includes(`/${realmId}/manage`) || page.url() === `/${realmId}`) {
+    console.log(`[Auth] 用户已登录到 realm ${realmId}，跳过登录步骤`)
+    return
+  }
+
+  // 提交登录表单
+  await page.waitForSelector('[data-testid="email-input"]', { timeout: 10000 })
+  await page.waitForSelector('[data-testid="password-input"]', { timeout: 10000 })
+  await page.fill('[data-testid="email-input"]', credentials.email)
+  await page.fill('[data-testid="password-input"]', credentials.password)
+  await page.waitForSelector('[data-testid="login-submit-button"]', { timeout: 5000 })
+  await page.click('[data-testid="login-submit-button"]')
+
+  // 等待登录 API 响应
+  const loginResponse = await waitForLoginResponse(page)
+  if (loginResponse && !loginResponse.ok()) {
+    const errorBody = await loginResponse.text().catch(() => 'Unable to read error body')
+    console.error(`[Auth] Login API failed: ${loginResponse.status()} - ${errorBody}`)
+    throw new Error(`Login failed: API returned ${loginResponse.status()}`)
+  }
+
+  // 检查是否需要 TOTP 验证
+  const totpInput = page.getByTestId('totp-verification-code-input')
+  const requiresTOTP = await totpInput.isVisible({ timeout: 2000 }).catch(() => false)
+
+  if (requiresTOTP) {
+    console.log(`[Auth] 登录需要 TOTP 验证`)
+
+    if (!totpCode) {
+      throw new Error(
+        'Login requires TOTP verification but no TOTP code was provided. ' +
+        'Please provide the totpCode parameter to loginAsAdmin().'
+      )
+    }
+
+    // 输入 TOTP 验证码
+    console.log(`[Auth] 输入 TOTP 验证码`)
+    await expect(totpInput).toBeVisible()
+    await totpInput.fill(totpCode)
+
+    // TOTP 表单会在输入 6 位数字后自动提交
+    // 等待导航到 dashboard
+    console.log(`[Auth] 等待 TOTP 验证完成`)
+  }
+
+  // 验证导航
+  if (waitNavigation) {
+    await verifyPostLoginNavigation(page, { expectedRoute: 'dashboard', realmId })
+  }
+
+  console.log(`[Auth] 登录成功`)
+
+  // 如果需要 token，提取并返回
+  if (getToken) {
+    const token = await extractAuthToken(page)
+    if (token) {
+      console.log(`[Auth] 成功提取 auth token`)
+      return token
+    } else {
+      console.warn(`[Auth] 未能提取 auth token`)
+    }
+  }
+}
+
+/**
+ * 登出当前用户
+ *
+ * @param page Playwright Page 对象
+ */
+export async function logout(page: Page): Promise<void> {
+  console.log('[Auth] 执行登出操作')
+
+  // 尝试通过 UI 点击 logout 按钮
+  try {
+    const userAvatar = page.locator('[data-testid="user-avatar"]').first()
+    if (await userAvatar.isVisible({ timeout: 2000 })) {
+      await userAvatar.click()
+
+      const logoutMenuItem = page.locator('[data-testid="logout-menu-item"]').first()
+      if (await logoutMenuItem.isVisible({ timeout: 2000 })) {
+        await logoutMenuItem.click()
+        // 等待 logout 完成并导航到登录页
+        await page.waitForURL('**/login', { timeout: 5000 })
+        console.log('[Auth] UI 登出成功')
+      }
+    }
+  } catch (error) {
+    console.log('[Auth] 登出过程出错，尝试直接清除会话数据')
+  } finally {
+    // 作为后备方案，清除所有会话数据
+    await clearSessionData(page)
+
+    // 导航到登录页确保干净状态
+    await page.goto(`${BASE_URL}/admin/auth/login`, { waitUntil: 'networkidle' })
+    console.log('[Auth] 已清除所有会话数据')
+  }
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * 清除所有会话数据（cookies 和 storage）
+ */
+async function clearSessionData(page: Page): Promise<void> {
+  await page.context().clearCookies()
+  try {
+    await page.evaluate(() => {
+      localStorage.clear()
+      sessionStorage.clear()
+    })
+  } catch {
+    // localStorage 访问被阻止，忽略错误
+  }
+}
+
+/**
+ * 从页面提取 auth token
+ * 尝试从多个可能的来源提取 token
+ */
+async function extractAuthToken(page: Page): Promise<string | null> {
+  try {
+    // 方法 1: 从 localStorage 获取
+    const localToken = await page.evaluate(() => {
+      return localStorage.getItem('auth_token') ||
+             localStorage.getItem('token') ||
+             localStorage.getItem('accessToken')
+    })
+    if (localToken) {
+      console.log(`[Auth] 从 localStorage 提取 token`)
+      return localToken
+    }
+
+    // 方法 2: 从 cookies 获取
+    const cookies = await page.context().cookies()
+    const authCookie = cookies.find(c =>
+      c.name === 'auth_token' ||
+      c.name === 'token' ||
+      c.name === 'X-Auth' ||
+      c.name === 'session'
+    )
+    if (authCookie && authCookie.value) {
+      console.log(`[Auth] 从 cookie 提取 token: ${authCookie.name}`)
+      return authCookie.value
+    }
+
+    // 方法 3: 从 sessionStorage 获取
+    const sessionToken = await page.evaluate(() => {
+      return sessionStorage.getItem('auth_token') ||
+             sessionStorage.getItem('token')
+    })
+    if (sessionToken) {
+      console.log(`[Auth] 从 sessionStorage 提取 token`)
+      return sessionToken
+    }
+
+    console.warn(`[Auth] 未能从任何来源提取 token`)
+    return null
+  } catch (error) {
+    console.error(`[Auth] 提取 token 时出错:`, error)
+    return null
+  }
+}
+
+/**
+ * 等待登录 API 响应
+ */
+async function waitForLoginResponse(page: Page): Promise<Response | null> {
+  const loginPromise = page
+    .waitForResponse(
+      response => response.url().includes('/login') && response.request().method() === 'POST',
+      { timeout: 10000 }
+    )
+    .catch(() => null)
+
+  const loginResponse = await loginPromise
+  if (loginResponse) {
+    console.log(`[Auth] 登录 API 响应状态: ${loginResponse.status()}`)
+  }
+
+  return loginResponse
+}
+
+/**
+ * 验证登录后导航
+ */
+async function verifyPostLoginNavigation(
+  page: Page,
+  config: { expectedRoute: string; realmId: string; timeout?: number }
+): Promise<void> {
+  const { expectedRoute, realmId, timeout = 10000 } = config
+
+  console.log(`[Auth] Verifying navigation to ${expectedRoute}...`)
+
+  // First, wait for URL to match expected pattern
+  try {
+    await page.waitForURL(`**/${realmId}/${expectedRoute}**`, { timeout })
+  } catch {
+    const currentUrl = page.url()
+    console.log(`[Auth] Current URL after timeout: ${currentUrl}`)
+
+    // Check if we're at least on the correct realm root
+    if (currentUrl.includes(`/${realmId}/`) || currentUrl === `/${realmId}`) {
+      console.log('[Auth] URL matches realm root, continuing...')
+    } else if (currentUrl.includes('/login')) {
+      throw new Error(`Login failed: Still on login page`)
+    }
+  }
+
+  if (expectedRoute === 'dashboard') {
+    const currentUrl = page.url()
+    console.log(`[Auth] Current URL: ${currentUrl}`)
+
+    // 登录后可能落在管理端首页，也可能落在普通用户的 profile / points 页面。
+    if (!isAuthenticatedRealmUrl(currentUrl, realmId)) {
+      throw new Error(`Expected to be on an authenticated realm page, but URL is: ${currentUrl}`)
+    }
+
+    // Quick check if page has loaded (with short timeout to avoid blocking)
+    try {
+      await page.waitForLoadState('domcontentloaded', { timeout: 3000 })
+    } catch {
+      console.log('[Auth] domcontentloaded timeout, but URL is correct, continuing...')
+    }
+
+    console.log('[Auth] Dashboard navigation verified')
+  }
+}
+
+function isAuthenticatedRealmUrl(currentUrl: string, realmId: string): boolean {
+  const normalizedBaseUrl = BASE_URL.replace(/\/$/, '')
+  const rootUrl = `${normalizedBaseUrl}/${realmId}`
+  const allowedPrefixes = [
+    `${rootUrl}/manage`,
+    `${rootUrl}/user`,
+    `${rootUrl}/profile`,
+  ]
+
+  if (currentUrl === rootUrl) {
+    return true
+  }
+
+  return allowedPrefixes.some(prefix => currentUrl.startsWith(prefix))
+}

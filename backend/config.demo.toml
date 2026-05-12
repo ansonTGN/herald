@@ -1,0 +1,17 @@
+# =============================================================================
+# Herald Demo Environment Configuration
+# =============================================================================
+
+[database]
+url = "postgres://postgres:postgres@127.0.0.1:5432/herald_demo?sslmode=disable"
+
+[redis]
+url = "redis://127.0.0.1:6379/0"
+
+[server]
+bind_address = "0.0.0.0:8080"
+log_level = "info"
+app_env = "demo"
+
+[frontend]
+url = "http://localhost:3000"

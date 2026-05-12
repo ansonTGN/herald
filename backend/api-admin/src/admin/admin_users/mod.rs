@@ -1,0 +1,52 @@
+pub mod create;
+pub mod delete;
+pub mod get;
+pub mod list;
+pub mod permissions;
+pub mod reset_password;
+pub mod roles;
+pub mod types;
+pub mod update;
+
+use axum::{
+    Router,
+    routing::{get, post},
+};
+use herald_api_base::application::http::state::AppState;
+
+// Re-export for utoipa
+pub use create::__path_create_user;
+pub use delete::__path_delete_user;
+pub use get::__path_get_user;
+pub use list::__path_list_users;
+pub use reset_password::__path_reset_user_password;
+pub use update::__path_update_user;
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/", get(list::list_users).post(create::create_user))
+        .route(
+            "/{userId}",
+            get(get::get_user)
+                .put(update::update_user)
+                .delete(delete::delete_user),
+        )
+        .route(
+            "/{userId}/reset-password",
+            post(reset_password::reset_user_password),
+        )
+        .route(
+            "/{userId}/roles",
+            get(roles::get_user_roles).put(roles::update_user_roles),
+        )
+        .route(
+            "/{userId}/permissions",
+            get(permissions::get_user_permissions)
+                .post(permissions::assign_user_permission)
+                .delete(permissions::remove_user_permission),
+        )
+        .route(
+            "/{userId}/effective-permissions",
+            get(permissions::get_effective_permissions),
+        )
+}

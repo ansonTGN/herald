@@ -1,0 +1,21 @@
+node_modules
+.DS_Store
+dist
+dist-ssr
+*.local
+.idea
+.tanstack
+
+# Test screenshots
+**/__screenshots__/
+
+# MSW worker file (generated)
+src/mocks/mockServiceWorker.js
+
+# Auto-generated API files (from @hey-api/openapi-ts)
+api.json
+src/lib/api-generated/
+src/lib/api-schemas.ts
+
+# Test coverage
+coverage/

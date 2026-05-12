@@ -1,0 +1,43 @@
+[package]
+name = "herald-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lints.clippy]
+too_many_arguments = "allow"
+
+
+[dependencies]
+herald-entity = { path = "../entity" }
+herald-domain = { path = "../domain" }
+herald-infra = { path = "../infra" }
+# Direct deps used by core facade code
+sea-orm = { workspace = true }
+sqlx = { workspace = true }
+redis = { workspace = true }
+resend-rs = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+bcrypt = { workspace = true }
+toml = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+herald-test-db = { path = "../test-db" }
+testcontainers-modules = { workspace = true, features = ["postgres", "redis"] }
+test-context = {workspace = true}
+testcontainers = {workspace = true}
+tempfile = {workspace = true}
+tower = {workspace = true}
+wiremock = {workspace = true}
+futures = { workspace = true }
+axum = { workspace = true }

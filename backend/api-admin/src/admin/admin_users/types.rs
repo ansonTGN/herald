@@ -1,0 +1,123 @@
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use uuid::Uuid;
+use validator::Validate;
+
+// Re-export API error response type for utoipa documentation
+pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
+
+// ==================== Request/Response Types ====================
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct UserCreateRequest {
+    #[validate(email)]
+    pub email: String,
+    #[validate(length(min = 8, max = 100))]
+    pub password: String,
+    #[validate(length(max = 50))]
+    pub nickname: Option<String>,
+    pub status: Option<i16>,
+    #[validate(length(min = 1))]
+    pub role_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Validate)]
+pub struct UserUpdateRequest {
+    #[validate(email)]
+    pub email: Option<String>,
+    #[validate(length(max = 50))]
+    pub nickname: Option<String>,
+    pub status: Option<i16>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct UserResponse {
+    pub id: Uuid,
+    pub realm_id: String,
+    pub email: String,
+    pub nickname: Option<String>,
+    pub status: i16,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UserDetailResponse {
+    pub id: Uuid,
+    pub realm_id: String,
+    pub email: String,
+    pub nickname: Option<String>,
+    pub status: i16,
+    pub provider_ids: Vec<Uuid>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize, Validate, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListUsersQuery {
+    pub page: Option<i32>,
+    pub page_size: Option<i32>,
+    pub email: Option<String>,
+    pub status: Option<i16>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetPasswordResponse {
+    pub new_password: String,
+}
+
+// ==================== User Role & Permission Types ====================
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+pub struct UserRoleDetail {
+    pub id: Uuid,     // UUID
+    pub name: String, // role name
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct UserRolesResponse {
+    pub roles: Vec<UserRoleDetail>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateUserRolesRequest {
+    #[validate(length(min = 1))]
+    pub role_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct UserPermission {
+    pub resource: String,
+    pub action: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct UserPermissionsResponse {
+    pub permissions: Vec<UserPermission>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Validate)]
+pub struct AssignPermissionRequest {
+    #[validate(length(min = 1))]
+    pub resource: String,
+    #[validate(length(min = 1))]
+    pub action: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct EffectivePermission {
+    pub name: String,
+    pub source: String,              // "role" or "direct"
+    pub source_name: Option<String>, // role name if source is role
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct EffectivePermissionsResponse {
+    pub permissions: Vec<EffectivePermission>,
+}

@@ -1,0 +1,211 @@
+// Payment Attempt domain entities
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::common::entities::app_errors::CoreError;
+
+/// Unified payment attempt for initiator-based payment platforms
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PaymentAttempt {
+    pub id: Uuid,
+    pub realm_id: String,
+    pub user_id: Uuid,
+    pub payment_provider: String, // "wechat", "stripe", "creem"
+    pub target_type: PurchasableTarget,
+    pub target_id: Uuid,
+    pub amount: i64,
+    pub currency: String,
+    pub status: PaymentAttemptStatus,
+    pub provider_reference: Option<String>, // out_trade_no for Wechat, checkout session ID for Stripe/Creem
+    pub provider_status: Option<String>,    // Raw status from provider
+    pub metadata: Option<serde_json::Value>,
+    pub expires_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Type of purchasable target
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PurchasableTarget {
+    SubscriptionPlan,
+    PointsPackage,
+}
+
+impl std::fmt::Display for PurchasableTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SubscriptionPlan => write!(f, "subscription_plan"),
+            Self::PointsPackage => write!(f, "points_package"),
+        }
+    }
+}
+
+impl std::str::FromStr for PurchasableTarget {
+    type Err = CoreError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "subscription_plan" => Ok(Self::SubscriptionPlan),
+            "points_package" => Ok(Self::PointsPackage),
+            _ => Err(CoreError::BadRequest(format!(
+                "Invalid purchasable target: {s}"
+            ))),
+        }
+    }
+}
+
+/// Payment attempt status
+///
+/// # State Transition Matrix
+///
+/// | From \ To   | Pending | RequiresAction | Succeeded | Failed | Cancelled | Expired |
+/// |-------------|---------|----------------|-----------|--------|-----------|---------|
+/// | Pending     | -       | ✅             | ✅        | ✅     | ✅        | ✅      |
+/// | RequiresAction | -   | -              | ✅        | ✅     | ✅        | ✅      |
+/// | Succeeded   | ❌     | ❌             | ✅*       | ❌     | ❌        | ❌      |
+/// | Failed      | ❌     | ❌             | ❌        | ✅*    | ❌        | ❌      |
+/// | Cancelled   | ❌     | ❌             | ❌        | ❌     | ✅*       | ❌      |
+/// | Expired     | ❌     | ❌             | ❌        | ❌     | ❌        | ✅*     |
+///
+/// \* = Idempotent (no-op if already in target state)
+///
+/// # Invalid Transitions (Blocked)
+///
+/// - ❌ `Expired → Succeeded` - Expired payments cannot succeed
+/// - ❌ `Failed → Succeeded` - Failed payments cannot succeed
+/// - ❌ `Succeeded → Pending` - Completed payments cannot revert to pending
+/// - ❌ `Cancelled → Succeeded` - Cancelled payments cannot succeed
+/// - ❌ `Succeeded → Failed` - Success cannot become failure
+/// - ❌ `Succeeded → Cancelled` - Success cannot be cancelled
+/// - ❌ `Succeeded → Expired` - Success cannot expire
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum PaymentAttemptStatus {
+    Pending,
+    RequiresAction,
+    Succeeded,
+    Failed,
+    Cancelled,
+    Expired,
+}
+
+impl PaymentAttemptStatus {
+    /// Check if transition to target status is allowed
+    ///
+    /// # Valid Transitions
+    ///
+    /// From `Pending`:
+    /// - → `RequiresAction` (user action required)
+    /// - → `Succeeded` (payment completed)
+    /// - → `Failed` (payment failed)
+    /// - → `Cancelled` (user cancelled)
+    /// - → `Expired` (timeout)
+    ///
+    /// From `RequiresAction`:
+    /// - → `Succeeded` (payment completed)
+    /// - → `Failed` (payment failed)
+    /// - → `Cancelled` (user cancelled)
+    /// - → `Expired` (timeout)
+    ///
+    /// From `Succeeded`, `Failed`, `Cancelled`, `Expired`:
+    /// - Only idempotent transitions to same state allowed
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// assert!(PaymentAttemptStatus::Pending.can_transition_to(&PaymentAttemptStatus::Succeeded));
+    /// assert!(!PaymentAttemptStatus::Expired.can_transition_to(&PaymentAttemptStatus::Succeeded));
+    /// assert!(PaymentAttemptStatus::Succeeded.can_transition_to(&PaymentAttemptStatus::Succeeded)); // idempotent
+    /// ```
+    pub fn can_transition_to(&self, target: &Self) -> bool {
+        // Idempotent: always allow transition to same state
+        if self == target {
+            return true;
+        }
+
+        // Valid state transitions
+        matches!(
+            (self, target),
+            // Pending can transition to any state
+            (PaymentAttemptStatus::Pending, PaymentAttemptStatus::RequiresAction)
+            | (PaymentAttemptStatus::Pending, PaymentAttemptStatus::Succeeded)
+            | (PaymentAttemptStatus::Pending, PaymentAttemptStatus::Failed)
+            | (PaymentAttemptStatus::Pending, PaymentAttemptStatus::Cancelled)
+            | (PaymentAttemptStatus::Pending, PaymentAttemptStatus::Expired)
+            |
+            // RequiresAction can transition to terminal states
+            (PaymentAttemptStatus::RequiresAction, PaymentAttemptStatus::Succeeded)
+            | (PaymentAttemptStatus::RequiresAction, PaymentAttemptStatus::Failed)
+            | (PaymentAttemptStatus::RequiresAction, PaymentAttemptStatus::Cancelled)
+            | (PaymentAttemptStatus::RequiresAction, PaymentAttemptStatus::Expired)
+        )
+    }
+
+    /// Check if this is a terminal state (cannot transition out)
+    ///
+    /// Terminal states: `Succeeded`, `Failed`, `Cancelled`, `Expired`
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            PaymentAttemptStatus::Succeeded
+                | PaymentAttemptStatus::Failed
+                | PaymentAttemptStatus::Cancelled
+                | PaymentAttemptStatus::Expired
+        )
+    }
+
+    /// Check if this is an active state (can still be completed)
+    ///
+    /// Active states: `Pending`, `RequiresAction`
+    pub fn is_active(&self) -> bool {
+        matches!(
+            self,
+            PaymentAttemptStatus::Pending | PaymentAttemptStatus::RequiresAction
+        )
+    }
+}
+
+impl std::fmt::Display for PaymentAttemptStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pending => write!(f, "Pending"),
+            Self::RequiresAction => write!(f, "RequiresAction"),
+            Self::Succeeded => write!(f, "Succeeded"),
+            Self::Failed => write!(f, "Failed"),
+            Self::Cancelled => write!(f, "Cancelled"),
+            Self::Expired => write!(f, "Expired"),
+        }
+    }
+}
+
+impl std::str::FromStr for PaymentAttemptStatus {
+    type Err = CoreError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Pending" => Ok(Self::Pending),
+            "RequiresAction" => Ok(Self::RequiresAction),
+            "Succeeded" => Ok(Self::Succeeded),
+            "Failed" => Ok(Self::Failed),
+            "Cancelled" => Ok(Self::Cancelled),
+            "Expired" => Ok(Self::Expired),
+            _ => Err(CoreError::BadRequest(format!(
+                "Invalid payment attempt status: {s}"
+            ))),
+        }
+    }
+}
+
+/// Platform-specific payment context for initiating payment
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentContext {
+    pub wechat_code_url: Option<String>,     // QR code URL for Wechat
+    pub stripe_checkout_url: Option<String>, // Checkout URL for Stripe
+    pub creem_checkout_url: Option<String>,  // Checkout URL for Creem
+    pub client_secret: Option<String>,       // For Stripe elements
+}

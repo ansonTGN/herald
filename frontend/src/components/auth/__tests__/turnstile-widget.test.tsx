@@ -1,0 +1,119 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, act } from '@testing-library/react'
+import { TurnstileWidget } from '../turnstile-widget'
+
+// Mock Turnstile component before importing
+vi.mock('@marsidev/react-turnstile', () => ({
+  Turnstile: vi.fn(({ onSuccess, onError, onExpire }) => {
+    // Store callbacks on window for test access
+    if (typeof window !== 'undefined') {
+      ;(window as any)._turnstileCallbacks = { onSuccess, onError, onExpire }
+    }
+    return <div data-testid="turnstile-mock" />
+  }),
+}))
+
+// Type for accessing mock callbacks
+type TurnstileCallbacks = {
+  onSuccess?: (token: string) => void
+  onError?: (error: string) => void
+  onExpire?: () => void
+}
+
+describe('TurnstileWidget', () => {
+  const mockOnTokenChange = vi.fn()
+  const mockOnError = vi.fn()
+  const mockSiteKey = 'test-site-key'
+
+  beforeEach(() => {
+    mockOnTokenChange.mockClear()
+    mockOnError.mockClear()
+    if (typeof window !== 'undefined') {
+      ;(window as any)._turnstileCallbacks = undefined
+    }
+  })
+
+  const renderWidget = async () =>
+    render(
+      <TurnstileWidget
+        siteKey={mockSiteKey}
+        onTokenChange={mockOnTokenChange}
+        onError={mockOnError}
+      />
+    )
+
+  const getCallbacks = (): TurnstileCallbacks =>
+    (window as any)._turnstileCallbacks as TurnstileCallbacks
+
+  describe('rendering', () => {
+    it('GIVEN component renders WHEN mounting THEN displays widget with callbacks', async () => {
+      const screen = await renderWidget()
+      expect(screen.getByTestId('turnstile-mock')).toBeInTheDocument()
+      const callbacks = getCallbacks()
+      expect(callbacks).toBeDefined()
+      expect(callbacks?.onSuccess).toBeDefined()
+      expect(callbacks?.onError).toBeDefined()
+      expect(callbacks?.onExpire).toBeDefined()
+    })
+  })
+
+  describe('success callback', () => {
+    it('GIVEN success callback triggers WHEN token is generated THEN calls onTokenChange and not onError', async () => {
+      await renderWidget()
+      const testToken = 'test-token-123'
+      getCallbacks()?.onSuccess?.(testToken)
+
+      expect(mockOnTokenChange).toHaveBeenCalledWith(testToken)
+      expect(mockOnTokenChange).toHaveBeenCalledTimes(1)
+      expect(mockOnError).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('error callback', () => {
+    it('GIVEN error callback triggers WHEN error occurs THEN calls onError and displays error message', async () => {
+      const screen = await renderWidget()
+      const testError = 'timeout-error'
+
+      await act(() => {
+        getCallbacks()?.onError?.(testError)
+      })
+
+      expect(mockOnError).toHaveBeenCalledWith(testError)
+      expect(mockOnError).toHaveBeenCalledTimes(1)
+      expect(screen.getByText(testError)).toBeInTheDocument()
+    })
+  })
+
+  describe('expiration', () => {
+    it('GIVEN expire callback triggers WHEN token expires THEN calls onTokenChange with null and not onError', async () => {
+      await renderWidget()
+      getCallbacks()?.onExpire?.()
+
+      expect(mockOnTokenChange).toHaveBeenCalledWith(null)
+      expect(mockOnTokenChange).toHaveBeenCalledTimes(1)
+      expect(mockOnError).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('integration', () => {
+    it('GIVEN multiple callbacks WHEN triggered THEN handles them in sequence', async () => {
+      await renderWidget()
+      const callbacks = getCallbacks()
+
+      await act(() => {
+        callbacks?.onSuccess?.('token-1')
+        callbacks?.onError?.('error-1')
+        callbacks?.onSuccess?.('token-2')
+      })
+
+      expect(mockOnTokenChange).toHaveBeenCalled()
+    })
+
+    it('GIVEN component renders WHEN mounted THEN has no side effects', async () => {
+      const initialCallCount = mockOnTokenChange.mock.calls.length
+      await renderWidget()
+
+      expect(mockOnTokenChange.mock.calls.length).toBe(initialCallCount)
+    })
+  })
+})
