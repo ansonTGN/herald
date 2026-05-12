@@ -51,7 +51,7 @@ jobs:
           context: .
           file: docker/Dockerfile
           platforms: ${{ matrix.platform }}
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.platform }}
           cache-to: type=gha,scope=${{ matrix.platform }},mode=max
 
@@ -105,6 +105,10 @@ jobs:
   publish-sdk:
     name: Publish herald-sdk to crates.io
     runs-on: ubuntu-latest
+    env:
+      RUSTC_WRAPPER: ""
+      CARGO_BUILD_RUSTC_WRAPPER: ""
+      SCCACHE_DISABLE: "true"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
