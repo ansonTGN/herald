@@ -1,5 +1,8 @@
+import { config as dotenvConfig } from 'dotenv'
 import { defineConfig, devices } from '@playwright/test'
 // import ShowcaseReporter from './playwright-showcase-reporter' // Unused import
+
+dotenvConfig({ path: '.env.demo' })
 
 /**
  * Playwright Demo Test Configuration

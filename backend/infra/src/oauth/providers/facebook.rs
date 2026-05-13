@@ -3,7 +3,7 @@
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::oauth::{
     entities::ProviderType,
-    http_client::HttpClient,
+    http_client::{HttpClient, HttpClientRequestBuilder, HttpMethod},
     ports::OAuthProviderHandler,
     value_objects::{OAuthConfig, OAuthUserInfo},
 };
@@ -96,17 +96,26 @@ impl OAuthProviderHandler for FacebookOAuthProvider {
                 .await
                 .map_err(|e| CoreError::BadRequest(format!("Token exchange failed: {}", e)))?;
 
-            let _access_token = token_result.access_token().secret();
+            let access_token = token_result.access_token().secret();
 
             // Get user info using the HTTP client abstraction
             let user_info_url = format!("{}?fields=id,email,name,picture", Self::USER_API_URL);
 
-            let response = http_client.get(&user_info_url).await?;
+            let response = http_client
+                .request(
+                    HttpClientRequestBuilder::new(user_info_url, HttpMethod::Get)
+                        .bearer_auth(access_token)
+                        .build(),
+                )
+                .await?;
 
             if !response.is_success() {
-                return Err(CoreError::InternalServerError(
-                    "Failed to get user info from Facebook".to_string(),
-                ));
+                let status_code = response.status_code;
+                let response_body = response.body_as_string().unwrap_or_default();
+                return Err(CoreError::InternalServerError(format!(
+                    "Failed to get user info from Facebook: status={}, body={}",
+                    status_code, response_body
+                )));
             }
 
             let response_body = response.body_as_string()?;

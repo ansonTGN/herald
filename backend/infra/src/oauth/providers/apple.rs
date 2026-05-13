@@ -3,10 +3,11 @@
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::oauth::{
     entities::ProviderType,
-    http_client::HttpClient,
+    http_client::{HttpClient, HttpClientRequestBuilder, HttpMethod},
     ports::OAuthProviderHandler,
     value_objects::{OAuthConfig, OAuthUserInfo},
 };
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use oauth2::{AuthUrl, ClientId, RedirectUrl, Scope, basic::BasicClient};
 use serde::Deserialize;
 use urlencoding::encode;
@@ -22,6 +23,7 @@ pub struct AppleOAuthProvider;
 impl AppleOAuthProvider {
     const AUTH_URL: &'static str = "https://appleid.apple.com/auth/authorize";
     const TOKEN_URL: &'static str = "https://appleid.apple.com/auth/token";
+    const JWKS_URL: &'static str = "https://appleid.apple.com/auth/keys";
 }
 
 // Apple's token response
@@ -47,11 +49,27 @@ struct AppleClientSecretClaims {
 }
 
 // Decoded ID token claims
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct AppleIdTokenClaims {
     sub: String, // Apple's unique user ID
+    iss: String,
+    aud: String,
+    exp: u64,
     email: Option<String>,
     email_verified: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AppleJwks {
+    keys: Vec<AppleJwk>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AppleJwk {
+    kid: String,
+    n: String,
+    e: String,
 }
 
 impl OAuthProviderHandler for AppleOAuthProvider {
@@ -75,6 +93,7 @@ impl OAuthProviderHandler for AppleOAuthProvider {
                 Scope::new("email".to_string()),
             ])
             .set_response_type(&oauth2::ResponseType::new("code id_token".to_string()))
+            .add_extra_param("response_mode", "form_post")
             .url();
 
         Ok(auth_url.to_string())
@@ -96,9 +115,8 @@ impl OAuthProviderHandler for AppleOAuthProvider {
             // to be generated externally using JWT with the private key
 
             // Exchange code for tokens
-            let token_url = format!(
-                "{}?client_id={}&client_secret={}&code={}&grant_type=authorization_code&redirect_uri={}",
-                Self::TOKEN_URL,
+            let token_body = format!(
+                "client_id={}&client_secret={}&code={}&grant_type=authorization_code&redirect_uri={}",
                 encode(&config.client_id),
                 encode(&config.client_secret),
                 encode(&code),
@@ -106,16 +124,23 @@ impl OAuthProviderHandler for AppleOAuthProvider {
             );
 
             let response = http_client
-                .post(&token_url, Vec::new()) // Empty body for URL parameter requests
+                .request(
+                    HttpClientRequestBuilder::new(Self::TOKEN_URL, HttpMethod::Post)
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .header("Accept", "application/json")
+                        .body(token_body.into_bytes())
+                        .build(),
+                )
                 .await?;
 
             if !response.is_success() {
+                let status_code = response.status_code;
                 let error_text = response
                     .body_as_string()
                     .unwrap_or_else(|_| "Unknown error".to_string());
                 return Err(CoreError::BadRequest(format!(
-                    "Token exchange failed: {}",
-                    error_text
+                    "Token exchange failed: status={}, body={}",
+                    status_code, error_text
                 )));
             }
 
@@ -125,20 +150,9 @@ impl OAuthProviderHandler for AppleOAuthProvider {
                     CoreError::InternalServerError(format!("Failed to parse token response: {}", e))
                 })?;
 
-            // Decode the id_token (JWT) to get user info
-            // For production, you should verify the signature using Apple's public keys
-            let id_token_parts: Vec<&str> = token_response.id_token.split('.').collect();
-            if id_token_parts.len() != 3 {
-                return Err(CoreError::InternalServerError(
-                    "Invalid id_token format".to_string(),
-                ));
-            }
-
-            // Decode payload (middle part of JWT)
-            let payload = base64_url_decode(id_token_parts[1]);
-            let claims: AppleIdTokenClaims = serde_json::from_slice(&payload).map_err(|e| {
-                CoreError::InternalServerError(format!("Failed to decode id_token: {}", e))
-            })?;
+            let claims =
+                verify_apple_id_token(&token_response.id_token, &config.client_id, http_client)
+                    .await?;
 
             let email = claims.email.ok_or_else(|| {
                 CoreError::BadRequest(
@@ -162,17 +176,53 @@ impl OAuthProviderHandler for AppleOAuthProvider {
     }
 }
 
-// Helper function for base64 URL decoding
-fn base64_url_decode(input: &str) -> Vec<u8> {
-    use base64::Engine;
+async fn verify_apple_id_token<H>(
+    id_token: &str,
+    client_id: &str,
+    http_client: &H,
+) -> Result<AppleIdTokenClaims, CoreError>
+where
+    H: HttpClient + Send + Sync,
+{
+    let header = decode_header(id_token)
+        .map_err(|e| CoreError::BadRequest(format!("Invalid Apple id_token header: {}", e)))?;
 
-    let mut input = input.replace('-', "+").replace('_', "/");
-    while !input.len().is_multiple_of(4) {
-        input.push('=');
+    let kid = header
+        .kid
+        .ok_or_else(|| CoreError::BadRequest("Apple id_token missing kid".to_string()))?;
+
+    let keys_response = http_client.get(AppleOAuthProvider::JWKS_URL).await?;
+    if !keys_response.is_success() {
+        let status_code = keys_response.status_code;
+        let response_body = keys_response.body_as_string().unwrap_or_default();
+        return Err(CoreError::InternalServerError(format!(
+            "Failed to get Apple public keys: status={}, body={}",
+            status_code, response_body
+        )));
     }
-    base64::engine::general_purpose::STANDARD
-        .decode(&input)
-        .unwrap_or_else(|_| Vec::new())
+
+    let keys_body = keys_response.body_as_string()?;
+    let jwks: AppleJwks = serde_json::from_str(&keys_body).map_err(|e| {
+        CoreError::InternalServerError(format!("Failed to parse Apple public keys: {}", e))
+    })?;
+
+    let jwk = jwks
+        .keys
+        .into_iter()
+        .find(|key| key.kid == kid)
+        .ok_or_else(|| CoreError::BadRequest("No matching Apple public key".to_string()))?;
+
+    let decoding_key = DecodingKey::from_rsa_components(&jwk.n, &jwk.e)
+        .map_err(|e| CoreError::InternalServerError(format!("Invalid Apple public key: {}", e)))?;
+
+    let mut validation = Validation::new(Algorithm::RS256);
+    validation.set_audience(&[client_id]);
+    validation.set_issuer(&["https://appleid.apple.com"]);
+
+    let token_data = decode::<AppleIdTokenClaims>(id_token, &decoding_key, &validation)
+        .map_err(|e| CoreError::BadRequest(format!("Invalid Apple id_token: {}", e)))?;
+
+    Ok(token_data.claims)
 }
 
 // Helper to generate Apple client secret JWT (if needed)

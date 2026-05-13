@@ -601,7 +601,7 @@ async fn test_scenario_oauth_authorization_url_generation(ctx: &mut TestContext)
 /// - Mock server returns a mock authorization code
 ///
 /// **When**:
-/// - OAuth provider redirects callback to /api/{realmId}/oauth/{providerType}/callback
+/// - OAuth provider redirects callback to /api/oauth/{realmId}/{providerType}/callback
 /// - Request includes code and state parameters
 ///
 /// **Then**:

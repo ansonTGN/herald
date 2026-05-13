@@ -1,16 +1,22 @@
 // OAuth callback handler
 
 use axum::{
-    Json,
+    Form, Json,
     extract::{Path, Query, State},
+    http::{HeaderMap, header},
+    response::{IntoResponse, Redirect, Response},
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
 
 use crate::helper::handle_oauth_callback;
+use herald_api_base::application::http::auth::util::{
+    SessionData, build_set_cookie, extract_ip, store_session,
+};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
+use uuid::Uuid;
 
 #[derive(Debug, Deserialize, Serialize, ToSchema, Validate)]
 pub struct OAuthCallbackQuery {
@@ -47,9 +53,29 @@ pub struct OAuthCallbackResponse {
 )]
 pub async fn oauth_callback(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((realm_id, provider)): Path<(String, String)>,
     Query(query): Query<OAuthCallbackQuery>,
-) -> Result<Json<OAuthCallbackResponse>, ApiError> {
+) -> Result<Response, ApiError> {
+    oauth_callback_inner(state, headers, realm_id, provider, query).await
+}
+
+pub async fn oauth_callback_form(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((realm_id, provider)): Path<(String, String)>,
+    Form(query): Form<OAuthCallbackQuery>,
+) -> Result<Response, ApiError> {
+    oauth_callback_inner(state, headers, realm_id, provider, query).await
+}
+
+async fn oauth_callback_inner(
+    state: AppState,
+    headers: HeaderMap,
+    realm_id: String,
+    provider: String,
+    query: OAuthCallbackQuery,
+) -> Result<Response, ApiError> {
     // Validate provider
     let provider_type = provider.to_lowercase();
     if !matches!(
@@ -68,16 +94,57 @@ pub async fn oauth_callback(
         .map_err(|e| ApiError::bad_request(format!("Validation error: {}", e)))?;
 
     // Handle OAuth callback
-    let (user_id, jwt_token) =
-        handle_oauth_callback(&state, realm_id, provider_type, query.code, query.state).await?;
+    let (user_id, jwt_token) = handle_oauth_callback(
+        &state,
+        realm_id.clone(),
+        provider_type,
+        query.code,
+        query.state,
+    )
+    .await?;
+
+    let session_token = Uuid::now_v7().to_string();
+    let session_ttl_seconds = 1800;
+    let session_data = SessionData {
+        realm_id: realm_id.clone(),
+        client_id: "admin-web-console".to_string(),
+        user_id: user_id.to_string(),
+        client_ip: extract_ip(&headers),
+    };
+
+    store_session(&state, &session_token, &session_data, session_ttl_seconds).await?;
+
+    let set_cookie = build_set_cookie(
+        "X-Auth",
+        &session_token,
+        session_ttl_seconds as i64,
+        state.app_env == "production",
+    );
+
+    let wants_json = headers
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|accept| accept.contains("application/json"));
+
+    if !wants_json {
+        return Ok((
+            [(header::SET_COOKIE, set_cookie)],
+            Redirect::temporary(&format!("/{realm_id}")),
+        )
+            .into_response());
+    }
 
     // Return JSON response (for SPA/mobile clients)
     // Note: This is a B-class exception (OAuth protocol callback), so we return Json<T> directly
-    Ok(Json(OAuthCallbackResponse {
-        message: "OAuth login successful".to_string(),
-        user_id: user_id.to_string(),
-        access_token: jwt_token,
-    }))
+    Ok((
+        [(header::SET_COOKIE, set_cookie)],
+        Json(OAuthCallbackResponse {
+            message: "OAuth login successful".to_string(),
+            user_id: user_id.to_string(),
+            access_token: jwt_token,
+        }),
+    )
+        .into_response())
 
     // Alternatively, redirect to frontend with token:
     // Ok(Redirect::to(&format!("{}/oauth/callback?token=...", redirect_uri)))

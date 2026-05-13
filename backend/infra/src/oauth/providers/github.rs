@@ -3,7 +3,7 @@
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::oauth::{
     entities::ProviderType,
-    http_client::HttpClient,
+    http_client::{HttpClient, HttpClientRequest, HttpClientRequestBuilder, HttpMethod},
     ports::OAuthProviderHandler,
     value_objects::{OAuthConfig, OAuthUserInfo},
 };
@@ -20,6 +20,15 @@ impl GitHubOAuthProvider {
     const TOKEN_URL: &'static str = "https://github.com/login/oauth/access_token";
     const USER_API_URL: &'static str = "https://api.github.com/user";
     const USER_EMAILS_URL: &'static str = "https://api.github.com/user/emails";
+    const USER_AGENT: &'static str = "Herald";
+
+    fn authenticated_request(url: &str, access_token: &str) -> HttpClientRequest {
+        HttpClientRequestBuilder::new(url, HttpMethod::Get)
+            .bearer_auth(access_token)
+            .header("User-Agent", Self::USER_AGENT)
+            .header("Accept", "application/vnd.github+json")
+            .build()
+    }
 }
 
 #[allow(dead_code)]
@@ -96,15 +105,22 @@ impl OAuthProviderHandler for GitHubOAuthProvider {
                 .await
                 .map_err(|e| CoreError::BadRequest(format!("Token exchange failed: {}", e)))?;
 
-            let _access_token = token_result.access_token().secret();
+            let access_token = token_result.access_token().secret();
 
-            // Get user info using the HTTP client abstraction
-            let user_response = http_client.get(Self::USER_API_URL).await?;
+            let user_response = http_client
+                .request(Self::authenticated_request(
+                    Self::USER_API_URL,
+                    access_token,
+                ))
+                .await?;
 
             if !user_response.is_success() {
-                return Err(CoreError::InternalServerError(
-                    "Failed to get user info from GitHub".to_string(),
-                ));
+                let status_code = user_response.status_code;
+                let response_body = user_response.body_as_string().unwrap_or_default();
+                return Err(CoreError::InternalServerError(format!(
+                    "Failed to get user info from GitHub: status={}, body={}",
+                    status_code, response_body
+                )));
             }
 
             let response_body = user_response.body_as_string()?;
@@ -117,7 +133,21 @@ impl OAuthProviderHandler for GitHubOAuthProvider {
                 (email, true) // Email from user API is primary email
             } else {
                 // Fetch emails separately
-                let emails_response = http_client.get(Self::USER_EMAILS_URL).await?;
+                let emails_response = http_client
+                    .request(Self::authenticated_request(
+                        Self::USER_EMAILS_URL,
+                        access_token,
+                    ))
+                    .await?;
+
+                if !emails_response.is_success() {
+                    let status_code = emails_response.status_code;
+                    let response_body = emails_response.body_as_string().unwrap_or_default();
+                    return Err(CoreError::InternalServerError(format!(
+                        "Failed to get user emails from GitHub: status={}, body={}",
+                        status_code, response_body
+                    )));
+                }
 
                 let response_body = emails_response.body_as_string()?;
                 let emails: Vec<GitHubEmail> =

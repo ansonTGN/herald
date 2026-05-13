@@ -311,7 +311,7 @@ def start_environment(
     # Step 4: Start backend process
     with logger.step(4, total_steps, "Starting backend"):
         backend_env = dict(os.environ)
-        backend_env["CAS_CONFIG"] = str((REPO_ROOT / "backend" / "config.demo.toml").resolve())
+        backend_env["HERALD_CONFIG"] = str((REPO_ROOT / "backend" / "config.demo.toml").resolve())
         backend_env["TOTP_SECRET_KEY"] = "demo-totp-encryption-key-32-bytes-long"
         backend_env["ADMIN_REALM_ID"] = "admin"
         backend_env["INTERNAL_API_KEY"] = "demo-internal-api-key"

@@ -26,6 +26,8 @@ export default defineConfig({
     include: ['@tanstack/react-query', '@tanstack/react-router'],
   },
   server: {
+    host: true,
+    allowedHosts: ['.ngrok-free.app'],
     proxy: {
       '/api': {
         target: 'http://localhost:8080',

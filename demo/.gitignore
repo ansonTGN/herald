@@ -6,3 +6,6 @@ test-results/unified-logs/
 test-results/artifacts/
 playwright-report/
 reports
+
+# Third-party credentials (real secrets, never commit)
+.env.demo

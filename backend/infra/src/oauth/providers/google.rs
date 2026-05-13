@@ -3,7 +3,7 @@
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::oauth::{
     entities::ProviderType,
-    http_client::HttpClient,
+    http_client::{HttpClient, HttpClientRequestBuilder, HttpMethod},
     ports::OAuthProviderHandler,
     value_objects::{OAuthConfig, OAuthUserInfo},
 };
@@ -90,15 +90,24 @@ impl OAuthProviderHandler for GoogleOAuthProvider {
                 .await
                 .map_err(|e| CoreError::BadRequest(format!("Token exchange failed: {}", e)))?;
 
-            let _access_token = token_result.access_token().secret();
+            let access_token = token_result.access_token().secret();
 
             // Get user info using the HTTP client abstraction
-            let response = http_client.get(Self::USER_INFO_URL).await?;
+            let response = http_client
+                .request(
+                    HttpClientRequestBuilder::new(Self::USER_INFO_URL, HttpMethod::Get)
+                        .bearer_auth(access_token)
+                        .build(),
+                )
+                .await?;
 
             if !response.is_success() {
-                return Err(CoreError::InternalServerError(
-                    "Failed to get user info from Google".to_string(),
-                ));
+                let status_code = response.status_code;
+                let response_body = response.body_as_string().unwrap_or_default();
+                return Err(CoreError::InternalServerError(format!(
+                    "Failed to get user info from Google: status={}, body={}",
+                    status_code, response_body
+                )));
             }
 
             let response_body = response.body_as_string()?;

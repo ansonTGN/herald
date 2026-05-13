@@ -156,7 +156,7 @@ pub async fn generate_oauth_auth_url(
     // Build OAuth config for provider handler
     let redirect_uri_value = redirect_uri.unwrap_or_else(|| {
         format!(
-            "{}/api/{}/oauth/{}/callback",
+            "{}/api/oauth/{}/{}/callback",
             state.public_base_url, realm_id, provider_type
         )
     });
@@ -468,7 +468,7 @@ pub async fn handle_oauth_callback(
     // Build OAuth config
     let redirect_uri = state_data.redirect_uri.unwrap_or_else(|| {
         format!(
-            "{}/api/{}/oauth/{}/callback",
+            "{}/api/oauth/{}/{}/callback",
             state.public_base_url, realm_id, provider_type
         )
     });

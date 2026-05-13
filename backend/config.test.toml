@@ -15,9 +15,3 @@ log_level = "info"
 
 [frontend]
 url = "http://localhost:3000"
-
-[creem]
-api_key = "creem_your_api_key_here"
-webhook_secret = "whsec_your_webhook_secret"
-test_mode = true
-timeout = 30

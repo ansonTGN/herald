@@ -19,8 +19,8 @@ impl CreemClient {
     ///
     /// # Note
     ///
-    /// Always uses the production API endpoint (https://api.creem.io).
-    /// Test mode is no longer supported - all environments use the same endpoint.
+    /// Test keys (`ck_test_*`) automatically route to the test endpoint
+    /// (`https://test-api.creem.io`). All other keys use the production endpoint.
     pub fn new(api_key: String, timeout_seconds: u64) -> Result<Self, CoreError> {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(timeout_seconds))
@@ -29,10 +29,16 @@ impl CreemClient {
                 CoreError::InternalServerError(format!("Failed to create HTTP client: {e}"))
             })?;
 
+        let base_url = if api_key.starts_with("ck_test_") {
+            "https://test-api.creem.io".to_string()
+        } else {
+            "https://api.creem.io".to_string()
+        };
+
         Ok(Self {
             http,
             api_key,
-            base_url: "https://api.creem.io".to_string(),
+            base_url,
         })
     }
 

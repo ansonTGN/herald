@@ -133,7 +133,7 @@ docker run -d \
 
 ### 环境变量
 ```bash
-CAS_CONFIG=/app/config/config.toml  # 配置文件路径
+HERALD_CONFIG=/app/config/config.toml  # 配置文件路径
 DATABASE_URL=postgresql://...        # 数据库连接
 REDIS_URL=redis://...                # Redis 连接
 ```
