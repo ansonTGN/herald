@@ -15,6 +15,9 @@ use herald_api_base::application::http::state::AppState;
 #[derive(Debug, Deserialize, Serialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthLoginRequest {
+    #[serde(alias = "client_id")]
+    pub client_id: Option<String>,
+    #[serde(alias = "redirect_uri")]
     pub redirect_uri: Option<String>,
 }
 
@@ -60,8 +63,17 @@ pub async fn oauth_login(
     }
 
     // Generate OAuth authorization URL and state token
-    let (auth_url, state_token) =
-        generate_oauth_auth_url(&state, realm_id, provider_type, query.redirect_uri).await?;
+    let client_id = query
+        .client_id
+        .unwrap_or_else(|| "admin-web-console".to_string());
+    let (auth_url, state_token) = generate_oauth_auth_url(
+        &state,
+        realm_id,
+        provider_type,
+        client_id,
+        query.redirect_uri,
+    )
+    .await?;
 
     // Return JSON response directly (B-class exception: OAuth protocol)
     Ok(Json(OAuthLoginResponse {

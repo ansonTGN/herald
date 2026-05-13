@@ -161,7 +161,7 @@ pub trait UserService: Send + Sync {
         realm_id: &str,
         email: &str,
         code_type: &str,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+    ) -> impl Future<Output = Result<String, CoreError>> + Send;
 
     fn login(&self, request: LoginRequest) -> impl Future<Output = Result<User, CoreError>> + Send;
 
@@ -196,7 +196,7 @@ pub trait UserService: Send + Sync {
         realm_id: &str,
         email: &str,
         code_type: &str,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+    ) -> impl Future<Output = Result<String, CoreError>> + Send;
 
     fn reset_password_confirm(
         &self,

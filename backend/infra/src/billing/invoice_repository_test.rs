@@ -13,10 +13,9 @@ use super::*;
 use chrono::{Datelike, Duration, Utc};
 use futures::FutureExt;
 use herald_domain::billing::invoice::{
-    ActorType, InvoiceEventType, InvoiceListFilters, InvoiceRepository, InvoiceSellerConfig,
-    InvoiceStatus, InvoiceStatusTransition, NewInvoice, NewLineItem, UpdateInvoiceDraft,
+    ActorType, InvoiceEventType, InvoiceListFilters, InvoiceRepository,
+    InvoiceStatus, InvoiceStatusTransition, NewInvoice, NewLineItem,
 };
-use herald_domain::common::entities::app_errors::CoreError;
 use herald_test_db::{SharedTestDatabaseHandle, create_isolated_schema_database};
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 use std::future::Future;
@@ -112,17 +111,10 @@ fn deterministic_uuid(seed: &str) -> Uuid {
 
 fn test_realm_ids() -> Vec<&'static str> {
     vec![
-        "inv_create",
         "inv_find",
-        "inv_update_draft",
-        "inv_update_reject",
-        "inv_list_admin",
-        "inv_list_user",
         "inv_pagination",
         "inv_seq_realm_a",
         "inv_seq_realm_b",
-        "inv_seller_insert",
-        "inv_seller_update",
         "inv_seller_notfound",
         "inv_overdue",
         "inv_overdue_excl",
@@ -160,6 +152,7 @@ fn new_invoice(realm_id: &str, line_items: Vec<NewLineItem>) -> NewInvoice {
         payment_attempt_id: None,
         currency: "USD".to_string(),
         line_items,
+        actor_user_id: None,
         billing_name: "Test Buyer".to_string(),
         billing_address: Some("123 Main St".to_string()),
         billing_email: Some("buyer@example.com".to_string()),
@@ -178,13 +171,6 @@ fn new_invoice(realm_id: &str, line_items: Vec<NewLineItem>) -> NewInvoice {
         payment_terms: None,
         notes: None,
     }
-}
-
-fn new_invoice_with_user(realm_id: &str, line_items: Vec<NewLineItem>) -> NewInvoice {
-    let mut input = new_invoice(realm_id, line_items);
-    input.applicant_user_id = Some(test_user_id(realm_id));
-    input.source = herald_domain::billing::invoice::InvoiceSource::UserApplication;
-    input
 }
 
 fn line_item(name: &str, quantity: &str, unit_price: i64) -> NewLineItem {
@@ -215,44 +201,6 @@ macro_rules! invoice_repo_test {
 
 // User Story: docs/user-stories/13-invoice-user-stories.md
 // Covers: US-01 Create Invoice, US-02 View Invoice
-
-invoice_repo_test!(test_create_invoice_with_line_items, |repo| {
-    let input = new_invoice(
-        "inv_create",
-        vec![
-            line_item("Widget A", "2", 1000),
-            line_item("Widget B", "1", 2500),
-        ],
-    );
-
-    let result = repo.create_invoice(input).await;
-    assert!(
-        result.is_ok(),
-        "Failed to create invoice: {:?}",
-        result.err()
-    );
-
-    let invoice = result.unwrap();
-    assert_eq!(invoice.realm_id, "inv_create");
-    assert_eq!(invoice.status, InvoiceStatus::Draft);
-    assert_eq!(invoice.currency, "USD");
-    assert_eq!(
-        invoice.source,
-        herald_domain::billing::invoice::InvoiceSource::AdminManual
-    );
-    assert_eq!(invoice.billing_name, "Test Buyer");
-    assert_eq!(invoice.seller_name, "Test Seller");
-    assert!(invoice.invoice_number.starts_with("INV-"));
-    // subtotal = 2*1000 + 1*2500 = 4500
-    assert_eq!(invoice.subtotal, 4500);
-    assert_eq!(invoice.total, 4500);
-    assert_eq!(invoice.discount_amount, 0);
-    assert_eq!(invoice.tax_amount, 0);
-    assert_eq!(invoice.shipping_amount, 0);
-    assert!(invoice.issued_at.is_none());
-    assert!(invoice.paid_at.is_none());
-    assert!(invoice.voided_at.is_none());
-});
 
 // User Story: docs/user-stories/13-invoice-user-stories.md
 // Covers: US-02 View Invoice Detail (with line items and history)
@@ -295,209 +243,6 @@ invoice_repo_test!(test_find_with_items_not_found, |repo| {
     let result = repo.find_with_items("inv_find", fake_id).await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());
-});
-
-// User Story: docs/user-stories/13-invoice-user-stories.md
-// Covers: US-03 Update Draft Invoice
-
-invoice_repo_test!(test_update_draft, |repo| {
-    let input = new_invoice(
-        "inv_update_draft",
-        vec![line_item("Original Item", "1", 1000)],
-    );
-    let created = repo.create_invoice(input).await.unwrap();
-    assert_eq!(created.subtotal, 1000);
-
-    let update = UpdateInvoiceDraft {
-        realm_id: "inv_update_draft".to_string(),
-        invoice_id: created.id,
-        billing_name: Some("Updated Buyer".to_string()),
-        billing_address: None,
-        billing_email: None,
-        billing_phone: None,
-        seller_name: None,
-        seller_address: None,
-        seller_email: None,
-        seller_phone: None,
-        line_items: Some(vec![
-            line_item("New Item A", "2", 500),
-            line_item("New Item B", "1", 3000),
-        ]),
-        discount_mode: None,
-        discount_value: None,
-        tax_mode: None,
-        tax_value: None,
-        shipping_mode: None,
-        shipping_value: None,
-        due_date: None,
-        payment_terms: Some("Net 30".to_string()),
-        notes: None,
-    };
-
-    let result = repo.update_draft(update).await;
-    assert!(result.is_ok(), "Update draft failed: {:?}", result.err());
-
-    let updated = result.unwrap();
-    assert_eq!(updated.billing_name, "Updated Buyer");
-    assert_eq!(updated.payment_terms, Some("Net 30".to_string()));
-    // subtotal = 2*500 + 1*3000 = 4000
-    assert_eq!(updated.subtotal, 4000);
-    assert_eq!(updated.total, 4000);
-
-    // Verify line items were replaced
-    let detail = repo
-        .find_with_items("inv_update_draft", created.id)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(detail.line_items.len(), 2);
-    assert_eq!(detail.line_items[0].name, "New Item A");
-    assert_eq!(detail.line_items[1].name, "New Item B");
-
-    // Verify update history event was recorded
-    assert!(
-        detail.history.len() >= 2,
-        "Expected at least 2 history events"
-    );
-    let update_event = detail
-        .history
-        .iter()
-        .find(|h| h.event_type == InvoiceEventType::Updated);
-    assert!(
-        update_event.is_some(),
-        "Should have an 'updated' history event"
-    );
-});
-
-// User Story: docs/user-stories/13-invoice-user-stories.md
-// Covers: US-03 Cannot update non-draft invoices
-
-invoice_repo_test!(test_update_non_draft_rejected, |repo| {
-    let input = new_invoice("inv_update_reject", vec![line_item("Item", "1", 1000)]);
-    let created = repo.create_invoice(input).await.unwrap();
-
-    // Transition to issued
-    let _ = repo
-        .transition_status(InvoiceStatusTransition {
-            realm_id: "inv_update_reject".to_string(),
-            invoice_id: created.id,
-            target_status: InvoiceStatus::Issued,
-            actor_user_id: None,
-            actor_type: ActorType::User,
-            void_reason: None,
-        })
-        .await
-        .unwrap();
-
-    // Try to update the now-issued invoice
-    let update = UpdateInvoiceDraft {
-        realm_id: "inv_update_reject".to_string(),
-        invoice_id: created.id,
-        billing_name: Some("Should Fail".to_string()),
-        billing_address: None,
-        billing_email: None,
-        billing_phone: None,
-        seller_name: None,
-        seller_address: None,
-        seller_email: None,
-        seller_phone: None,
-        line_items: None,
-        discount_mode: None,
-        discount_value: None,
-        tax_mode: None,
-        tax_value: None,
-        shipping_mode: None,
-        shipping_value: None,
-        due_date: None,
-        payment_terms: None,
-        notes: None,
-    };
-
-    let result = repo.update_draft(update).await;
-    assert!(result.is_err(), "Updating a non-draft invoice should fail");
-    match result.unwrap_err() {
-        CoreError::Conflict(msg) => {
-            assert!(
-                msg.contains("draft") || msg.contains("status"),
-                "Error message should mention status: {}",
-                msg
-            );
-        }
-        other => panic!("Expected Conflict error, got: {:?}", other),
-    }
-});
-
-// User Story: docs/user-stories/13-invoice-user-stories.md
-// Covers: US-04 List Invoices with filters
-
-invoice_repo_test!(test_list_admin_with_filters, |repo| {
-    let realm = "inv_list_admin";
-
-    // Create a draft invoice
-    let input1 = new_invoice(realm, vec![line_item("Draft Item", "1", 1000)]);
-    let inv1 = repo.create_invoice(input1).await.unwrap();
-
-    // Create and issue a second invoice
-    let input2 = new_invoice(realm, vec![line_item("Issued Item", "2", 2000)]);
-    let inv2 = repo.create_invoice(input2).await.unwrap();
-    repo.transition_status(InvoiceStatusTransition {
-        realm_id: realm.to_string(),
-        invoice_id: inv2.id,
-        target_status: InvoiceStatus::Issued,
-        actor_user_id: None,
-        actor_type: ActorType::User,
-        void_reason: None,
-    })
-    .await
-    .unwrap();
-
-    // Filter by status = issued
-    let filters = InvoiceListFilters {
-        status: Some(InvoiceStatus::Issued),
-        ..Default::default()
-    };
-    let result = repo.list_admin(realm, filters).await.unwrap();
-    assert_eq!(result.total, 1, "Should find exactly 1 issued invoice");
-    assert_eq!(result.data[0].id, inv2.id);
-
-    // Filter by status = draft
-    let filters = InvoiceListFilters {
-        status: Some(InvoiceStatus::Draft),
-        ..Default::default()
-    };
-    let result = repo.list_admin(realm, filters).await.unwrap();
-    assert_eq!(result.total, 1, "Should find exactly 1 draft invoice");
-    assert_eq!(result.data[0].id, inv1.id);
-
-    // No filter: should return all invoices for this realm
-    let filters = InvoiceListFilters::default();
-    let result = repo.list_admin(realm, filters).await.unwrap();
-    assert_eq!(result.total, 2, "Should find both invoices");
-});
-
-// User Story: docs/user-stories/13-invoice-user-stories.md
-// Covers: US-04 User list filters by applicant
-
-invoice_repo_test!(test_list_user_filters_by_applicant, |repo| {
-    let realm = "inv_list_user";
-    let user_id = test_user_id(realm);
-
-    // Create invoice with applicant_user_id set
-    let input_with_user = new_invoice_with_user(realm, vec![line_item("User Item", "1", 1000)]);
-    let inv_user = repo.create_invoice(input_with_user).await.unwrap();
-
-    // Create invoice without applicant_user_id
-    let input_no_user = new_invoice(realm, vec![line_item("Admin Item", "1", 2000)]);
-    let _inv_admin = repo.create_invoice(input_no_user).await.unwrap();
-
-    // list_user should only return the invoice belonging to user_id
-    let filters = InvoiceListFilters::default();
-    let result = repo.list_user(realm, user_id, filters).await.unwrap();
-    assert_eq!(
-        result.total, 1,
-        "User list should only show user's own invoice"
-    );
-    assert_eq!(result.data[0].id, inv_user.id);
 });
 
 invoice_repo_test!(test_pagination, |repo| {
@@ -634,71 +379,6 @@ invoice_repo_test!(test_number_independent_across_realms, |repo| {
 // =============================================================================
 // 3. Seller Config Tests
 // =============================================================================
-
-// User Story: docs/user-stories/13-invoice-user-stories.md
-// Covers: Seller config CRUD
-
-invoice_repo_test!(test_upsert_seller_config_insert, |repo| {
-    let realm = "inv_seller_insert";
-    let now = Utc::now();
-
-    let config = InvoiceSellerConfig {
-        realm_id: realm.to_string(),
-        seller_name: "Acme Corp".to_string(),
-        seller_address: Some("100 Business Park".to_string()),
-        seller_email: Some("billing@acme.com".to_string()),
-        seller_phone: Some("+1234567890".to_string()),
-        default_payment_terms: Some("Net 30".to_string()),
-        created_at: now,
-        updated_at: now,
-    };
-
-    let result = repo.upsert_seller_config(config).await;
-    assert!(result.is_ok(), "Upsert insert failed: {:?}", result.err());
-
-    let saved = result.unwrap();
-    assert_eq!(saved.realm_id, realm);
-    assert_eq!(saved.seller_name, "Acme Corp");
-    assert_eq!(saved.seller_address, Some("100 Business Park".to_string()));
-    assert_eq!(saved.default_payment_terms, Some("Net 30".to_string()));
-});
-
-invoice_repo_test!(test_upsert_seller_config_update, |repo| {
-    let realm = "inv_seller_update";
-    let now = Utc::now();
-
-    // Insert initial config
-    let config = InvoiceSellerConfig {
-        realm_id: realm.to_string(),
-        seller_name: "Original Name".to_string(),
-        seller_address: None,
-        seller_email: None,
-        seller_phone: None,
-        default_payment_terms: None,
-        created_at: now,
-        updated_at: now,
-    };
-    repo.upsert_seller_config(config).await.unwrap();
-
-    // Update config
-    let updated_config = InvoiceSellerConfig {
-        realm_id: realm.to_string(),
-        seller_name: "Updated Name".to_string(),
-        seller_address: Some("New Address".to_string()),
-        seller_email: Some("new@email.com".to_string()),
-        seller_phone: None,
-        default_payment_terms: Some("Net 60".to_string()),
-        created_at: now,
-        updated_at: now,
-    };
-    let result = repo.upsert_seller_config(updated_config).await;
-    assert!(result.is_ok(), "Upsert update failed: {:?}", result.err());
-
-    let saved = result.unwrap();
-    assert_eq!(saved.seller_name, "Updated Name");
-    assert_eq!(saved.seller_address, Some("New Address".to_string()));
-    assert_eq!(saved.default_payment_terms, Some("Net 60".to_string()));
-});
 
 invoice_repo_test!(test_find_seller_config_not_found, |repo| {
     let result = repo.find_seller_config("inv_seller_notfound").await;

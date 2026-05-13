@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 use herald_api_base::application::http::auth::util::{
-    epoch_seconds, extract_ip, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
+    extract_ip, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
 };
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
@@ -78,7 +78,7 @@ pub async fn request(
     .await?;
 
     // Use UserService to request password reset
-    state
+    let code = state
         .service
         .user_service()
         .reset_password_request(&realm_id, &email, "reset_password")
@@ -90,7 +90,6 @@ pub async fn request(
 
     // Send email
     if let Some(resend) = &state.resend {
-        let code = format!("{}_{}_{}", realm_id, uuid::Uuid::now_v7(), epoch_seconds());
         let link = format!(
             "{}/api/{}/auth/reset_password/confirm/{}",
             state.public_base_url.trim_end_matches('/'),

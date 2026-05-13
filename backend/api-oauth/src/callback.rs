@@ -94,7 +94,7 @@ async fn oauth_callback_inner(
         .map_err(|e| ApiError::bad_request(format!("Validation error: {}", e)))?;
 
     // Handle OAuth callback
-    let (user_id, jwt_token) = handle_oauth_callback(
+    let (user_id, jwt_token, client_id) = handle_oauth_callback(
         &state,
         realm_id.clone(),
         provider_type,
@@ -104,10 +104,11 @@ async fn oauth_callback_inner(
     .await?;
 
     let session_token = Uuid::now_v7().to_string();
-    let session_ttl_seconds = 1800;
+    let session_ttl_seconds =
+        load_client_session_ttl_seconds(&state, &realm_id, &client_id).await?;
     let session_data = SessionData {
         realm_id: realm_id.clone(),
-        client_id: "admin-web-console".to_string(),
+        client_id,
         user_id: user_id.to_string(),
         client_ip: extract_ip(&headers),
     };
@@ -148,4 +149,36 @@ async fn oauth_callback_inner(
 
     // Alternatively, redirect to frontend with token:
     // Ok(Redirect::to(&format!("{}/oauth/callback?token=...", redirect_uri)))
+}
+
+async fn load_client_session_ttl_seconds(
+    state: &AppState,
+    realm_id: &str,
+    client_id: &str,
+) -> Result<usize, ApiError> {
+    let ttl = sqlx::query_scalar::<_, i32>(
+        "SELECT session_ttl_seconds FROM client_app WHERE realm_id = $1 AND client_id = $2 AND enabled = true",
+    )
+    .bind(realm_id)
+    .bind(client_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(
+            realm_id = %realm_id,
+            client_id = %client_id,
+            error = %e,
+            "Failed to load OAuth client session TTL"
+        );
+        ApiError::internal("Failed to load client session configuration".to_string())
+    })?;
+
+    let Some(ttl) = ttl else {
+        return Err(ApiError::bad_request(
+            "OAuth client app is not enabled".to_string(),
+        ));
+    };
+
+    usize::try_from(ttl)
+        .map_err(|_| ApiError::internal("Client session TTL is invalid".to_string()))
 }

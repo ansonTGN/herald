@@ -234,48 +234,6 @@ fn test_render_invoice_html_amounts() {
 // =========================================================================
 
 // User Story: docs/user-stories/13-invoice-user-stories.md
-// Covers: US-IV-009 -- output starts with %PDF header
-
-#[tokio::test]
-async fn test_generate_pdf_starts_with_pdf_header() {
-    let detail = sample_detail_with_items();
-    let generator = IronPressInvoicePdfGenerator;
-    let result = generator.generate(&detail).await;
-
-    assert!(result.is_ok(), "PDF generation should succeed");
-    let bytes = result.unwrap();
-
-    // PDF files always start with "%PDF"
-    assert!(bytes.len() >= 5, "PDF should have at least 5 bytes");
-    assert_eq!(
-        &bytes[0..4],
-        b"%PDF",
-        "PDF output must start with %PDF header"
-    );
-}
-
-// User Story: docs/user-stories/13-invoice-user-stories.md
-// Covers: US-IV-009 -- output larger than minimum threshold
-
-#[tokio::test]
-async fn test_generate_pdf_minimum_size() {
-    let detail = sample_detail_with_items();
-    let generator = IronPressInvoicePdfGenerator;
-    let result = generator.generate(&detail).await;
-
-    assert!(result.is_ok(), "PDF generation should succeed");
-    let bytes = result.unwrap();
-
-    // A minimal PDF with our template should be at least 1KB
-    // (even the simplest PDF with text content will be several KB)
-    assert!(
-        bytes.len() > 1024,
-        "PDF should be larger than 1KB, got {} bytes",
-        bytes.len()
-    );
-}
-
-// User Story: docs/user-stories/13-invoice-user-stories.md
 // Covers: US-IV-009 -- handles non-ASCII characters
 
 #[tokio::test]

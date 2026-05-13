@@ -3,7 +3,7 @@
 // OAuth configuration constants
 const OAUTH_STATE_TTL_SECONDS: u64 = 300; // 5 minutes
 const STATE_VALIDATION_TIMEOUT_SECONDS: i64 = 300; // 5 minutes
-const JWT_EXPIRATION_SECONDS: i64 = 7 * 24 * 60 * 60; // 7 days
+pub const JWT_EXPIRATION_SECONDS: i64 = 7 * 24 * 60 * 60; // 7 days
 
 use herald_api_base::application::http::auth::error::AuthError;
 use herald_api_base::application::http::state::AppState;
@@ -27,6 +27,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct OAuthStateData {
     realm_id: String,
+    client_id: String,
     provider_type: String,
     redirect_uri: Option<String>,
     created_at: i64,
@@ -108,6 +109,7 @@ pub async fn generate_oauth_auth_url(
     state: &AppState,
     realm_id: String,
     provider_type: String,
+    client_id: String,
     redirect_uri: Option<String>,
 ) -> Result<(String, String), AuthError> {
     // Get provider config from database
@@ -131,6 +133,7 @@ pub async fn generate_oauth_auth_url(
     // Store state data in Redis (5 minutes TTL)
     let state_data = OAuthStateData {
         realm_id: realm_id.clone(),
+        client_id,
         provider_type: provider_type.clone(),
         redirect_uri: redirect_uri.clone(),
         created_at: chrono::Utc::now().timestamp(),
@@ -404,7 +407,7 @@ pub fn generate_jwt_token(
     jwt_secret: &str,
 ) -> Result<String, AuthError> {
     let now = chrono::Utc::now().timestamp();
-    let exp = now + JWT_EXPIRATION_SECONDS;
+    let exp = now + jwt_expiration_seconds()?;
 
     let claims = JwtClaims {
         sub: user_id.to_string(),
@@ -419,6 +422,20 @@ pub fn generate_jwt_token(
         &EncodingKey::from_secret(jwt_secret.as_ref()),
     )
     .map_err(|e| AuthError::InternalServerError(format!("Failed to generate JWT: {}", e)))
+}
+
+pub fn jwt_secret_from_env() -> Result<String, AuthError> {
+    std::env::var("JWT_SECRET")
+        .map_err(|_| AuthError::InternalServerError("JWT_SECRET is not configured".to_string()))
+}
+
+pub fn jwt_expiration_seconds() -> Result<i64, AuthError> {
+    match std::env::var("JWT_EXPIRATION_SECONDS") {
+        Ok(value) => value.parse::<i64>().map_err(|_| {
+            AuthError::InternalServerError("JWT_EXPIRATION_SECONDS must be an integer".to_string())
+        }),
+        Err(_) => Ok(JWT_EXPIRATION_SECONDS),
+    }
 }
 
 /// Handle OAuth callback
@@ -438,7 +455,7 @@ pub async fn handle_oauth_callback(
     provider_type: String,
     code: String,
     state_token: String,
-) -> Result<(Uuid, String), AuthError> {
+) -> Result<(Uuid, String, String), AuthError> {
     // Validate state token
     let state_data = validate_state_token(&state.redis_manager, &state_token).await?;
 
@@ -487,8 +504,8 @@ pub async fn handle_oauth_callback(
     let user_id = find_or_create_user(state, &realm_id, &user_info).await?;
 
     // Generate JWT token
-    let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "default-secret".to_string());
+    let jwt_secret = jwt_secret_from_env()?;
     let jwt_token = generate_jwt_token(&user_id.to_string(), &realm_id, &jwt_secret)?;
 
-    Ok((user_id, jwt_token))
+    Ok((user_id, jwt_token, state_data.client_id))
 }

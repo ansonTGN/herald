@@ -29,6 +29,15 @@ use crate::invoice_types::*;
 // Helper functions
 // ============================================================================
 
+/// Extract the user ID from an Identity, if it represents a user session.
+fn actor_user_id_from_identity(identity: &Identity) -> Option<Uuid> {
+    if identity.is_user() {
+        Uuid::parse_str(&identity.user_id()).ok()
+    } else {
+        None
+    }
+}
+
 /// Helper: load invoice detail and return 404 if not found.
 async fn load_detail(
     state: &AppState,
@@ -264,6 +273,7 @@ pub async fn create_invoice(
         payment_attempt_id: request.payment_attempt_id,
         currency: request.currency,
         line_items,
+        actor_user_id: actor_user_id_from_identity(&identity),
         billing_name: request.billing_name,
         billing_address: request.billing_address,
         billing_email: request.billing_email,
@@ -407,6 +417,7 @@ pub async fn update_invoice(
     let update = UpdateInvoiceDraft {
         realm_id: realm_id.clone(),
         invoice_id,
+        actor_user_id: actor_user_id_from_identity(&identity),
         billing_name: request.billing_name,
         billing_address: request.billing_address,
         billing_email: request.billing_email,
@@ -701,6 +712,7 @@ pub async fn apply_invoice(
         payment_attempt_id: request.payment_attempt_id,
         currency: request.currency,
         line_items: vec![],
+        actor_user_id: Some(applicant_user_id),
         billing_name: request.billing_name,
         billing_address: request.billing_address,
         billing_email: request.billing_email,

@@ -15,6 +15,9 @@ use validator::Validate;
 
 #[derive(Debug, Deserialize, Serialize, ToSchema, Validate)]
 pub struct WeChatAuthUrlRequest {
+    #[serde(alias = "client_id")]
+    pub client_id: Option<String>,
+    #[serde(alias = "redirect_uri")]
     pub redirect_uri: Option<String>,
 }
 
@@ -57,6 +60,9 @@ pub async fn wechat_login(
         &state,
         realm_id_clone,
         "wechat".to_string(),
+        query
+            .client_id
+            .unwrap_or_else(|| "admin-web-console".to_string()),
         query.redirect_uri,
     )
     .await?;
@@ -112,7 +118,7 @@ pub async fn wechat_callback(
 
     // Handle OAuth callback using the helper function
     let realm_id_clone = realm_id.clone();
-    let (user_id, jwt_token) = handle_oauth_callback(
+    let (user_id, jwt_token, _client_id) = handle_oauth_callback(
         &state,
         realm_id_clone,
         "wechat".to_string(),

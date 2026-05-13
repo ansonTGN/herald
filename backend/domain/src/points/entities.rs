@@ -557,7 +557,7 @@ pub struct PointsBalance {
     pub balance: i64,
     pub total_recharged: i64,
     pub total_consumed: i64,
-    pub currency: String,
+    pub unit: String,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -568,7 +568,7 @@ impl From<PointsAccount> for PointsBalance {
             balance: account.total_balance,
             total_recharged: account.total_recharged,
             total_consumed: account.total_consumed,
-            currency: "points".to_string(),
+            unit: "points".to_string(),
             updated_at: account.updated_at,
         }
     }

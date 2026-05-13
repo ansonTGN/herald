@@ -18,7 +18,7 @@ pub struct PointsAccountResponse {
     pub status: String,
     pub created_at: String,
     pub updated_at: String,
-    pub currency: String,
+    pub unit: String,
 }
 
 /// Points balance response
@@ -29,7 +29,7 @@ pub struct PointsBalanceResponse {
     pub balance: i64,
     pub total_recharged: i64,
     pub total_consumed: i64,
-    pub currency: String,
+    pub unit: String,
     pub updated_at: String,
 }
 
@@ -125,6 +125,7 @@ pub struct ListTransactionsQuery {
     pub transaction_type: Option<String>,
     pub client_app_id: Option<String>,
     pub subscription_id: Option<String>,
+    pub external_ref_id: Option<String>,
     pub start_time: Option<String>,
     pub end_time: Option<String>,
     pub page: Option<u64>,
@@ -237,7 +238,7 @@ mod tests {
             status: "active".to_string(),
             created_at: "2024-01-01T00:00:00Z".to_string(),
             updated_at: "2024-01-01T00:00:00Z".to_string(),
-            currency: "points".to_string(),
+            unit: "points".to_string(),
         };
 
         let json = serde_json::to_string(&account).unwrap();
@@ -268,6 +269,7 @@ mod tests {
             json.contains("\"updatedAt\""),
             "Should contain camelCase 'updatedAt'"
         );
+        assert!(json.contains("\"unit\""), "Should contain 'unit'");
 
         // Verify that original snake_case is not present
         assert!(
@@ -294,6 +296,10 @@ mod tests {
             !json.contains("\"updated_at\""),
             "Should not contain snake_case 'updated_at'"
         );
+        assert!(
+            !json.contains("\"currency\""),
+            "Should not expose points balance unit as currency"
+        );
     }
 
     #[test]
@@ -303,7 +309,7 @@ mod tests {
             balance: 50,
             total_recharged: 100,
             total_consumed: 50,
-            currency: "points".to_string(),
+            unit: "points".to_string(),
             updated_at: "2024-01-01T00:00:00Z".to_string(),
         };
 
@@ -327,6 +333,7 @@ mod tests {
             json.contains("\"updatedAt\""),
             "Should contain camelCase 'updatedAt'"
         );
+        assert!(json.contains("\"unit\""), "Should contain 'unit'");
 
         // Verify snake_case is not present
         assert!(
@@ -344,6 +351,10 @@ mod tests {
         assert!(
             !json.contains("\"updated_at\""),
             "Should not contain snake_case 'updated_at'"
+        );
+        assert!(
+            !json.contains("\"currency\""),
+            "Should not expose points balance unit as currency"
         );
     }
 

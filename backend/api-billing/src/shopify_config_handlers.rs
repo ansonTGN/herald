@@ -133,7 +133,8 @@ pub async fn list_payment_providers(
 
     let mut providers = Vec::new();
 
-    if let Some(config) = get_shopify_config_internal(&state.pool, &realm_id).await?
+    if let Some(config) =
+        get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url).await?
         && (is_admin || config.enabled)
     {
         providers.push(PaymentProviderInfo {
@@ -236,7 +237,9 @@ pub async fn create_shopify_config(
         }));
     }
 
-    if let Ok(Some(_)) = get_shopify_config_internal(&state.pool, &realm_id).await {
+    if let Ok(Some(_)) =
+        get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url).await
+    {
         return Err(ApiError::conflict_json(GenericErrorResponse {
             error: "configuration_already_exists".to_string(),
             message: "A Shopify configuration already exists for this realm. Please edit the existing configuration.".to_string(),
@@ -298,7 +301,7 @@ pub async fn get_shopify_config(
 ) -> Result<Json<ShopifyConfigResponse>, ApiError> {
     require_realm_admin(&state, &identity, &realm_id).await?;
 
-    let config = get_shopify_config_internal(&state.pool, &realm_id)
+    let config = get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url)
         .await?
         .ok_or_else(|| ApiError::not_found("Configuration not found"))?;
 
@@ -349,7 +352,7 @@ pub async fn update_shopify_config(
         }));
     }
 
-    let _existing = get_shopify_config_internal(&state.pool, &realm_id)
+    let _existing = get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url)
         .await?
         .ok_or_else(|| ApiError::not_found("Configuration not found"))?;
 
@@ -366,7 +369,7 @@ pub async fn update_shopify_config(
 
     update_shopify_config_internal(&state.pool, &realm_id, &request).await?;
 
-    let config = get_shopify_config_internal(&state.pool, &realm_id)
+    let config = get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url)
         .await?
         .ok_or_else(|| ApiError::internal("Shopify configuration not found after update"))?;
 
@@ -396,7 +399,7 @@ pub async fn delete_shopify_config(
 ) -> Result<StatusCode, ApiError> {
     require_realm_admin(&state, &identity, &realm_id).await?;
 
-    let _existing = get_shopify_config_internal(&state.pool, &realm_id)
+    let _existing = get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url)
         .await?
         .ok_or_else(|| ApiError::not_found("Configuration not found"))?;
 
@@ -482,6 +485,7 @@ pub async fn test_shopify_connection_endpoint(
 async fn get_shopify_config_internal(
     db: &PgPool,
     realm_id: &str,
+    public_base_url: &str,
 ) -> Result<Option<ShopifyConfigResponse>, ApiError> {
     let rows = sqlx::query(
         r#"
@@ -556,7 +560,8 @@ async fn get_shopify_config_internal(
 
     config.webhook_endpoint = format!(
         "{}/api/third/pay/{}/shopify/webhooks",
-        "https://api.example.com", realm_id
+        public_base_url.trim_end_matches('/'),
+        realm_id
     );
     config.created_at = created_at.unwrap_or_else(chrono::Utc::now).to_rfc3339();
     config.last_updated = updated_at.unwrap_or_else(chrono::Utc::now).to_rfc3339();
@@ -747,10 +752,11 @@ fn map_shopify_connection_result(
     }
 }
 
-fn generate_webhook_endpoint(_state: &AppState, realm_id: &str) -> String {
+fn generate_webhook_endpoint(state: &AppState, realm_id: &str) -> String {
     format!(
         "{}/api/third/pay/{}/shopify/webhooks",
-        "https://api.example.com", realm_id
+        state.public_base_url.trim_end_matches('/'),
+        realm_id
     )
 }
 

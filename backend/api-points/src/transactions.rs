@@ -69,7 +69,7 @@ pub async fn list_transactions(
         transaction_type,
         client_app_id,
         subscription_id,
-        external_ref_id: String::new(),
+        external_ref_id: query.external_ref_id.unwrap_or_default(),
         start_time,
         end_time,
         page: query.page,

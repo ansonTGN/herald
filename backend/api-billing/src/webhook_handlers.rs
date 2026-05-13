@@ -362,6 +362,7 @@ fn parse_refund_created_payload(event: &Value) -> Result<CreemRefundCreatedPaylo
 async fn sync_creem_subscription(
     app_state: &AppState,
     realm_id: &str,
+    user_id: Uuid,
     creem_subscription_id: &str,
     client_app_id: Option<Uuid>,
     plan_id: Option<Uuid>,
@@ -378,7 +379,7 @@ async fn sync_creem_subscription(
         SyncSubscriptionInput {
             provider: "creem",
             realm_id: realm_id.to_string(),
-            user_id: None,
+            user_id: Some(user_id),
             external_subscription_id: creem_subscription_id.to_string(),
             external_product_id: creem_product_id,
             client_app_id,
@@ -507,6 +508,7 @@ async fn handle_subscription_paid(
     if let Some((subscription, previous)) = sync_creem_subscription(
         &app_state,
         realm_id,
+        payload.user_id,
         payload.external_subscription_id.as_str(),
         payload.client_app_id,
         Some(payload.plan_id),
@@ -622,6 +624,7 @@ async fn handle_subscription_updated(
     if let Some((subscription, previous)) = sync_creem_subscription(
         &app_state,
         realm_id,
+        payload.user_id,
         payload.external_subscription_id.as_str(),
         payload.client_app_id,
         Some(payload.current_plan_id),
@@ -707,6 +710,7 @@ async fn handle_subscription_canceled(
         && let Some((subscription, previous)) = sync_creem_subscription(
             &app_state,
             realm_id,
+            payload.user_id,
             payload.external_subscription_id.as_str(),
             payload.client_app_id,
             Some(plan_id),

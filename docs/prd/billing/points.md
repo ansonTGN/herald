@@ -140,12 +140,13 @@
 
 ### 5.1 积分账户管理
 
-每个用户拥有独立的积分账户，积分余额以整数形式存储。账户与 User 实体一对一关联，支持 realm 级别隔离。
+每个用户拥有独立的积分账户，积分余额以整数形式存储，余额单位固定为 `points`（积分），不使用法币 `currency` 表示。账户与 User 实体一对一关联，支持 realm 级别隔离。
 
 **功能点**:
 - 用户创建时自动初始化积分账户
 - 积分账户关联 User ID 和 Realm ID，支持多租户隔离
 - 支持查询当前积分余额
+- 积分账户和余额接口返回 `unit = "points"` 表示余额单位
 - 支持账户状态管理（正常/冻结/关闭）
 
 ### 5.2 积分消耗（SDK）
@@ -715,4 +716,3 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - **实施计划**: `.ai/future/credits_plan_split.md` - 积分系统解耦实施计划
 - **规范**: `spec/backend/development.md` - 后端开发规范
 - **规范**: `spec/frontend/development.md` - 前端开发规范
-

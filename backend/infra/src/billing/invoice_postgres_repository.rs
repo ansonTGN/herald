@@ -397,7 +397,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             .bind(history_id)
             .bind(id)
             .bind(InvoiceEventType::Created.as_str())
-            .bind(None::<Uuid>) // actor_user_id
+            .bind(input.actor_user_id)
             .bind(ActorType::User.as_str())
             .bind(&changes)
             .bind(now)
@@ -604,7 +604,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             .bind(history_id)
             .bind(input.invoice_id)
             .bind(InvoiceEventType::Updated.as_str())
-            .bind(None::<Uuid>)
+            .bind(input.actor_user_id)
             .bind(ActorType::User.as_str())
             .bind(&changes)
             .bind(now)

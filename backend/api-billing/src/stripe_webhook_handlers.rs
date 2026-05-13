@@ -27,6 +27,7 @@ use herald_core::domain::purchase::{CompletePaymentAttemptInput, PaymentCompleti
 
 struct StripeCheckoutCompletedPayload {
     event_id: String,
+    user_id: Uuid,
     client_app_id: Uuid,
     plan_id: Uuid,
     billing_period: BillingPeriod,
@@ -196,10 +197,12 @@ fn parse_checkout_completed_payload(
         &event["data"]["object"]["metadata"]["clientAppId"],
         "clientAppId",
     )?;
+    let user_id = parse_uuid_field(&event["data"]["object"]["metadata"]["userId"], "userId")?;
     let plan_id = parse_uuid_field(&event["data"]["object"]["metadata"]["planId"], "planId")?;
 
     Ok(StripeCheckoutCompletedPayload {
         event_id: parse_event_id(event)?,
+        user_id,
         client_app_id,
         plan_id,
         billing_period: parse_billing_period(
@@ -418,6 +421,7 @@ async fn fulfill_payment_attempt(
 async fn sync_stripe_subscription(
     app_state: &AppState,
     realm_id: &str,
+    user_id: Uuid,
     external_subscription_id: &str,
     client_app_id: Option<Uuid>,
     plan_id: Uuid,
@@ -434,7 +438,7 @@ async fn sync_stripe_subscription(
         SyncSubscriptionInput {
             provider: "stripe",
             realm_id: realm_id.to_string(),
-            user_id: None,
+            user_id: Some(user_id),
             external_subscription_id: external_subscription_id.to_string(),
             external_product_id,
             client_app_id,
@@ -527,7 +531,7 @@ async fn handle_checkout_session_completed(
         payment_provider: "stripe".to_string(),
         status,
         tier: SubscriptionTier::Starter,
-        user_id: None,
+        user_id: Some(payload.user_id),
         current_period_start: Some(chrono::Utc::now()),
         current_period_end: None,
         cancel_at_period_end: false,
@@ -617,6 +621,7 @@ async fn handle_subscription_created(
     let (subscription, previous_subscription) = sync_stripe_subscription(
         &app_state,
         realm_id,
+        payload.user_id,
         &payload.stripe_subscription_id,
         payload.client_app_id,
         payload.plan_id,
@@ -707,6 +712,7 @@ async fn handle_subscription_updated(
     let (subscription, previous_subscription) = sync_stripe_subscription(
         &app_state,
         realm_id,
+        payload.user_id,
         &payload.stripe_subscription_id,
         None,
         payload.current_plan_id,
@@ -862,6 +868,7 @@ async fn handle_subscription_deleted(
     let (subscription, previous_subscription) = sync_stripe_subscription(
         &app_state,
         realm_id,
+        payload.user_id,
         &payload.stripe_subscription_id,
         existing_subscription
             .as_ref()
@@ -1013,6 +1020,7 @@ async fn handle_invoice_payment_succeeded(
     let (subscription, previous_subscription) = sync_stripe_subscription(
         &app_state,
         realm_id,
+        payload.user_id,
         &payload.stripe_subscription_id,
         existing_subscription
             .as_ref()

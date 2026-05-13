@@ -115,6 +115,9 @@ pub(crate) async fn sync_subscription(
         subscription.payment_provider = provider.to_string();
         subscription.status = status;
         subscription.tier = tier;
+        if let Some(user_id) = user_id {
+            subscription.user_id = Some(user_id);
+        }
         subscription.current_period_start = current_period_start.or(previous.current_period_start);
         subscription.current_period_end = current_period_end.or(previous.current_period_end);
         subscription.cancel_at_period_end = cancel_at_period_end;

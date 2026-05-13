@@ -311,6 +311,9 @@ pub struct NewInvoice {
 
     pub line_items: Vec<NewLineItem>,
 
+    /// The user performing the create action (for audit history).
+    pub actor_user_id: Option<Uuid>,
+
     // Buyer
     pub billing_name: String,
     pub billing_address: Option<String>,
@@ -350,6 +353,9 @@ pub struct NewLineItem {
 pub struct UpdateInvoiceDraft {
     pub realm_id: String,
     pub invoice_id: Uuid,
+
+    /// The user performing the update action (for audit history).
+    pub actor_user_id: Option<Uuid>,
 
     // Optional fields — only provided fields are updated.
     pub billing_name: Option<String>,

@@ -356,9 +356,11 @@ pub async fn check_permission(
     let rules = match payload.rules {
         Some(rules) if !rules.is_empty() => rules,
         _ => {
+            let user_id = Uuid::parse_str(&sess.user_id)
+                .map_err(|_| ApiError::internal("Session contains invalid user_id".to_string()))?;
             return Ok(ApiResult::ok(PermissionCheckResponse {
                 allowed: true,
-                user_id: None,
+                user_id: Some(user_id),
             }));
         }
     };
@@ -379,9 +381,12 @@ pub async fn check_permission(
         }
     }
 
+    let user_id = Uuid::parse_str(&sess.user_id)
+        .map_err(|_| ApiError::internal("Session contains invalid user_id".to_string()))?;
+
     Ok(ApiResult::ok(PermissionCheckResponse {
         allowed,
-        user_id: None,
+        user_id: Some(user_id),
     }))
 }
 

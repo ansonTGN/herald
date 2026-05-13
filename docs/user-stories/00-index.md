@@ -111,8 +111,13 @@
 | US-IV-010 | 配置销售方信息 | Realm Admin | P0 | [13-invoice](13-invoice-user-stories.md#故事-10配置销售方信息-us-iv-010) |
 | US-IV-011 | 申请发票 | Regular User | P0 | [13-invoice](13-invoice-user-stories.md#故事-11申请发票-us-iv-011) |
 | US-IV-012 | 审核并开具用户申请的发票 | Realm Admin | P0 | [13-invoice](13-invoice-user-stories.md#故事-12审核并开具用户申请的发票-us-iv-012) |
+| US-AU-001 | 查看 Realm 审计日志 | Realm Admin | P0 | [14-audit](14-audit-user-stories.md#故事-1查看-realm-审计日志-us-au-001) |
+| US-AU-002 | 按条件筛选审计日志 | Realm Admin | P0 | [14-audit](14-audit-user-stories.md#故事-2按条件筛选审计日志-us-au-002) |
+| US-AU-003 | 查看审计日志详情 | Realm Admin | P1 | [14-audit](14-audit-user-stories.md#故事-3查看审计日志详情-us-au-003) |
+| US-AU-004 | 查看 Admin Realm 审计日志 | Admin Realm | P0 | [14-audit](14-audit-user-stories.md#故事-4查看-admin-realm-审计日志-us-au-004) |
+| US-AU-005 | 系统自动记录核心操作 | System | P0 | [14-audit](14-audit-user-stories.md#故事-5系统自动记录核心操作-us-au-005) |
 
-**总计**: 108 个用户故事
+**总计**: 113 个用户故事
 
 ---
 
@@ -134,6 +139,7 @@
 | Points Package Admin | [10-points-package-user-stories.md](10-points-package-user-stories.md) | 5 | [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
 | Payment Attempt System | [12-payment-attempt-user-stories.md](12-payment-attempt-user-stories.md) | 4 | [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
 | Invoice User | [13-invoice-user-stories.md](13-invoice-user-stories.md) | 9 | [Invoice PRD](/docs/prd/billing/invoice.md) |
+| Audit User | [14-audit-user-stories.md](14-audit-user-stories.md) | 5 | [Audit PRD](/docs/prd/core/audit.md) |
 
 ## 特殊文档
 

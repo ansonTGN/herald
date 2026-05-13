@@ -5,8 +5,8 @@ use axum::{
 };
 use axum_valid::Valid;
 use herald_api_base::application::http::auth::util::{
-    epoch_seconds, extract_ip, is_email_verification_required, is_registration_enabled,
-    normalize_email, rate_limit_hit, verify_turnstile_for_realm,
+    extract_ip, is_email_verification_required, is_registration_enabled, normalize_email,
+    rate_limit_hit, verify_turnstile_for_realm,
 };
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
@@ -158,7 +158,7 @@ pub async fn register(
 
     // Create and send email verification code ONLY if required
     if verification_required {
-        state
+        let code = state
             .service
             .user_service()
             .verify_email_trigger(&realm_id, &email, "register")
@@ -170,7 +170,6 @@ pub async fn register(
 
         // Send email (best effort only when configured)
         if let Some(resend) = &state.resend {
-            let code = format!("{}_{}_{}", realm_id, uuid::Uuid::now_v7(), epoch_seconds());
             let link = format!(
                 "{}/api/{}/auth/verify_email/confirm/{}",
                 state.public_base_url.trim_end_matches('/'),

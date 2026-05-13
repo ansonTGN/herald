@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 use herald_api_base::application::http::auth::util::{
-    epoch_seconds, extract_ip, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
+    extract_ip, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
 };
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
@@ -73,7 +73,7 @@ pub async fn trigger(
     rate_limit_hit(&state, format!("rl:verify_email:email:{email}"), 5, 60).await?;
 
     // Use UserService to trigger email verification
-    state
+    let code = state
         .service
         .user_service()
         .verify_email_trigger(&realm_id, &email, "verify_email")
@@ -84,7 +84,6 @@ pub async fn trigger(
         })?;
 
     if let Some(resend) = &state.resend {
-        let code = format!("{}_{}_{}", realm_id, uuid::Uuid::now_v7(), epoch_seconds());
         let link = format!(
             "{}/api/{}/auth/verify_email/confirm/{}",
             state.public_base_url.trim_end_matches('/'),

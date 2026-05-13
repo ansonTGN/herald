@@ -119,7 +119,7 @@ pub async fn handle_update_realm_totp_config(
         metadata: None,      // No additional metadata needed
     };
 
-    service
+    let config = service
         .upsert_config(identity.clone(), realm_id.clone(), config_request)
         .await
         .map_err(|e| {
@@ -142,7 +142,7 @@ pub async fn handle_update_realm_totp_config(
         message: "Realm TOTP configuration updated".to_string(),
         enabled: req.enabled,
         force_enabled: req.force_enabled,
-        updated_at: chrono::Utc::now().to_rfc3339(),
+        updated_at: config.updated_at.to_rfc3339(),
     }))
 }
 

@@ -88,5 +88,5 @@ impl std::fmt::Display for ErrorCode {
     }
 }
 
-/// Currency constant for points system
-pub const POINTS_CURRENCY: &str = "points";
+/// Unit constant for points balances
+pub const POINTS_UNIT: &str = "points";

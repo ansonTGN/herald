@@ -100,7 +100,7 @@ pub struct PointsBalanceResponse {
     pub balance: i64,
     pub total_recharged: i64,
     pub total_consumed: i64,
-    pub currency: String,
+    pub unit: String,
     pub updated_at: String,
 }
 

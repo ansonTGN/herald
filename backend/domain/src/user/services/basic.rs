@@ -223,7 +223,7 @@ where
         realm_id: &str,
         email: &str,
         code_type: &str,
-    ) -> Result<(), CoreError> {
+    ) -> Result<String, CoreError> {
         let code = format!(
             "{}_{}_{}",
             realm_id,
@@ -232,7 +232,8 @@ where
         );
         self.verification_repository
             .create_verification_code(email, code_type, &code)
-            .await
+            .await?;
+        Ok(code)
     }
 
     async fn login(&self, request: LoginRequest) -> Result<User, CoreError> {
@@ -394,7 +395,7 @@ where
         realm_id: &str,
         email: &str,
         code_type: &str,
-    ) -> Result<(), CoreError> {
+    ) -> Result<String, CoreError> {
         let code = format!(
             "{}_{}_{}",
             realm_id,
@@ -403,7 +404,8 @@ where
         );
         self.verification_repository
             .create_verification_code(email, code_type, &code)
-            .await
+            .await?;
+        Ok(code)
     }
 
     async fn reset_password_confirm(

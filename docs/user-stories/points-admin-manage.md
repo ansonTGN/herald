@@ -108,9 +108,9 @@ And realm-1 有 100 个用户
 When 我访问积分管理页面
 Then 我看到用户积分账户列表
 And 列表显示每个用户的积分信息：
-  | 用户 ID        | 用户名       | 总余额 | 充值积分 | 会员积分 | 累计消耗 | 状态 |
-  | user-1         | alice@example.com | 5000 | 3000 | 2000 | 5000 | active |
-  | user-2         | bob@example.com   | 8000 | 6000 | 2000 | 4000 | active |
+  | 用户 ID        | 用户名       | 总余额 | 单位   | 充值积分 | 会员积分 | 累计消耗 | 状态 |
+  | user-1         | alice@example.com | 5000 | points | 3000 | 2000 | 5000 | active |
+  | user-2         | bob@example.com   | 8000 | points | 6000 | 2000 | 4000 | active |
 And 我可以按积分类型排序
 And 我可以筛选特定积分类型的用户
 ```
