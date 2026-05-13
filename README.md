@@ -1,36 +1,36 @@
 # Herald
 
-多租户认证与授权系统。Rust 后端 + React 前端，单体部署，Docker 上线。
+Multi-tenant authentication and authorization system. Rust backend + React frontend, single-process deployment, Docker in production.
 
-本项目用于实践 AI 编程，使用 Claude Code + GLM 模型以及 Codex 混合开发。
+[中文版本](README-zh.md)
 
-## 技术栈
+This project practices AI-assisted programming using Claude Code + GLM model and Codex hybrid development.
 
-- **后端**：Rust 2024 edition / Axum 0.8 / SeaORM 1.1 / PostgreSQL 16+ / Redis
-- **前端**：React 19 / TypeScript / TanStack Router & Query / Tailwind CSS v4 / Vite
-- **部署**：Docker 多阶段构建 + Caddy TLS 反代
+## Tech Stack
 
-## 快速开始
+- **Backend**: Rust 2024 edition / Axum 0.8 / SeaORM 1.1 / PostgreSQL 16+ / Redis
+- **Frontend**: React 19 / TypeScript / TanStack Router & Query / Tailwind CSS v4 / Vite
+- **Deployment**: Docker multi-stage build + Caddy TLS reverse proxy
 
-需要 Python 3.12+（[uv](https://github.com/astral-sh/uv)）、Docker、Cargo、npm。
+## Quick Start
+
+Requires Python 3.12+ ([uv](https://github.com/astral-sh/uv)), Docker, Cargo, npm.
 
 ```bash
 uv run scripts/dev-start.py
 ```
 
-启动完成后前端在 http://localhost:3000，后端 API 在 http://localhost:8080。
+Once running: frontend at http://localhost:3000, backend API at http://localhost:8080.
 
-## 文档
+## Documentation
 
-完整教程见 [docs/tutorials/](docs/tutorials/)，涵盖本地开发、架构、配置和部署。
+Full tutorials at [docs/tutorials/](docs/tutorials/), covering local development, architecture, configuration, and deployment.
 
-- [快速上手](docs/tutorials/getting-started.md)
-- [架构](docs/tutorials/architecture.md)
-- [配置](docs/tutorials/configuration.md)
-- [部署](docs/tutorials/deployment.md)
-
-English version: [README-en.md](README-en.md)
+- [Getting Started](docs/tutorials/getting-started-en.md)
+- [Architecture](docs/tutorials/architecture-en.md)
+- [Configuration](docs/tutorials/configuration-en.md)
+- [Deployment](docs/tutorials/deployment-en.md)
 
 ## License
 
-Apache-2.0
+[Apache-2.0](LICENSE)
