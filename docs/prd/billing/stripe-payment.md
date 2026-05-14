@@ -1,7 +1,7 @@
 # Stripe 支付集成产品需求文档 (PRD)
 
 **创建时间**: 2026-03-20
-**状态**: Draft
+**状态**: Partially Implemented
 **优先级**: P1
 
 ---

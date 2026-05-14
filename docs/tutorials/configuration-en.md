@@ -106,26 +106,6 @@ url = "http://localhost:3000"
 static_dir = "/app/frontend/dist"
 ```
 
-### [jwt] (optional)
-
-JWT signing key configuration. The entire section can be omitted (marked `#[serde(default)]`).
-
-| Parameter | Type | Default | Required | Description |
-|---|---|---|---|---|
-| `_secret` | string | — | No* | JWT signing secret |
-
-The leading underscore indicates this field is not yet in active use.
-
-### [email] (optional)
-
-Email sending configuration. The entire section is optional.
-
-| Parameter | Type | Default | Required | Description |
-|---|---|---|---|---|
-| `_api_key` | string | — | No* | Email service API key |
-
-Same as above -- the leading underscore means this is not yet in active use.
-
 ## RBAC Configuration
 
 RBAC policies are not stored in the main config file. They live in the `role_policies` database table. During initialization, `RealmInitializationService` creates default roles and permissions for each realm.

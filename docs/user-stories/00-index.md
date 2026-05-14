@@ -116,8 +116,13 @@
 | US-AU-003 | 查看审计日志详情 | Realm Admin | P1 | [14-audit](14-audit-user-stories.md#故事-3查看审计日志详情-us-au-003) |
 | US-AU-004 | 查看 Admin Realm 审计日志 | Admin Realm | P0 | [14-audit](14-audit-user-stories.md#故事-4查看-admin-realm-审计日志-us-au-004) |
 | US-AU-005 | 系统自动记录核心操作 | System | P0 | [14-audit](14-audit-user-stories.md#故事-5系统自动记录核心操作-us-au-005) |
+| US-DC-001 | CLI 工具发起设备授权 | Third-Party App | P0 | [15-device-code](15-device-code-user-stories.md#故事-1cli-工具发起设备授权-us-dc-001) |
+| US-DC-002 | 用户在验证页面完成授权 | Regular User | P0 | [15-device-code](15-device-code-user-stories.md#故事-2用户在验证页面完成授权-us-dc-002) |
+| US-DC-003 | CLI 工具轮询获取令牌 | Third-Party App | P0 | [15-device-code](15-device-code-user-stories.md#故事-3cli-工具轮询获取令牌-us-dc-003) |
+| US-DC-004 | Realm Admin 配置 Device Code Grant | Realm Admin | P1 | [15-device-code](15-device-code-user-stories.md#故事-4realm-admin-配置-device-code-grant-us-dc-004) |
+| US-DC-005 | 设备验证页面 API | Third-Party App | P1 | [15-device-code](15-device-code-user-stories.md#故事-5设备验证页面-api-us-dc-005) |
 
-**总计**: 113 个用户故事
+**总计**: 118 个用户故事
 
 ---
 
@@ -140,6 +145,7 @@
 | Payment Attempt System | [12-payment-attempt-user-stories.md](12-payment-attempt-user-stories.md) | 4 | [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
 | Invoice User | [13-invoice-user-stories.md](13-invoice-user-stories.md) | 9 | [Invoice PRD](/docs/prd/billing/invoice.md) |
 | Audit User | [14-audit-user-stories.md](14-audit-user-stories.md) | 5 | [Audit PRD](/docs/prd/core/audit.md) |
+| Device Code User | [15-device-code-user-stories.md](15-device-code-user-stories.md) | 5 | [Device Code PRD](/docs/prd/auth/device-code.md) |
 
 ## 特殊文档
 

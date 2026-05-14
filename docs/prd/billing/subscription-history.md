@@ -1,7 +1,7 @@
 # Subscription History 订阅变更历史产品需求文档 (PRD)
 
 **创建时间**: 2026-03-13
-**状态**: 📝 Draft
+**状态**: Implemented
 
 ---
 ## 1. 相关用户故事

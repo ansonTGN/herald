@@ -131,10 +131,11 @@ allowed-tools:
 - 校验用户故事中的角色是否存在于 `_roles.md`
 
 ### 6. 评分计算
-- `PRD Score = 基础章节得分 + 用户故事引用得分 - PRD分层扣分`
-- `User Story Score = 故事结构得分 + INVEST 得分 - 禁止内容扣分 - 质量门禁扣分`
-- `Consistency Score = 用户故事链接有效性 × 5 + 优先级一致性 × 5 + 角色引用正确性 × 5`
-- `Total Score = (PRD Score × 50%) + (User Story Score × 50%) + Consistency Score`
+- `PRD Score = 基础章节得分 + 用户故事引用得分 - PRD分层扣分`（满分 110）
+- `User Story Score = 故事结构得分 + INVEST 得分 - 禁止内容扣分 - 质量门禁扣分`（满分 70）
+- `Consistency Score = 用户故事链接有效性 × 5 + 优先级一致性 × 5 + 角色引用正确性 × 5`（满分 15）
+- `Total Score = (PRD_norm × 40%) + (US_norm × 40%) + (Consistency_norm × 20%)`
+- 其中 `xxx_norm = xxx / xxx_max × 100`，满分 100
 
 ### 7. 问题分级
 

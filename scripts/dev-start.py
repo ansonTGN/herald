@@ -24,7 +24,7 @@ def main() -> int:
             "-e",
             "POSTGRES_PASSWORD=password",
             "-e",
-            "POSTGRES_DB=cas",
+            "POSTGRES_DB=herald",
             "-p",
             "5432:5432",
             "postgres:18-alpine",
@@ -50,7 +50,7 @@ def main() -> int:
 
     spawn_background(
         name="dev-backend",
-        command=[cargo, "run", "--bin", "cas-app"],
+        command=[cargo, "run", "--bin", "herald-app"],
         cwd=REPO_ROOT / "backend",
         stdout_path=backend_log,
     )

@@ -28,9 +28,9 @@ uv run scripts/dev-start.py
 
 这个脚本做了这些事：
 
-1. 启动 PostgreSQL 容器（`postgres:18-alpine`，用户 `postgres`，密码 `password`，数据库 `cas`，映射 5432 端口）
+1. 启动 PostgreSQL 容器（`postgres:18-alpine`，用户 `postgres`，密码 `password`，数据库 `herald`，映射 5432 端口）
 2. 启动 Redis 容器（`redis:8.4-alpine`，映射 6379 端口）
-3. 后台运行 `cargo run --bin herald-app`（工作目录 `backend/`，脚本里写的是 `cas-app`，实际二进制名是 `herald-app`）
+3. 后台运行 `cargo run --bin herald-app`（工作目录 `backend/`）
 4. 后台运行 `npm run dev`（工作目录 `frontend/`，Vite 开发服务器）
 
 启动完成后：
@@ -38,6 +38,8 @@ uv run scripts/dev-start.py
 - 前端：http://localhost:3000
 - 后端 API：http://localhost:8080
 - 日志位置：`log/backend.log` 和 `log/frontend.log`
+
+前端的 `/api` 请求会被 Vite 自动代理到后端 8080 端口（配置在 `frontend/vite.config.js`）。所以开发时直接访问前端 3000 端口就行，API 请求会自动转发。
 
 脚本每次运行会先停掉旧的 `cas-dev-postgres` 和 `cas-dev-redis` 容器再重建，所以数据不会保留。
 
@@ -63,7 +65,7 @@ log_level = "info"
 url = "http://localhost:3000"
 ```
 
-数据库连接字符串里的 `herald` 是数据库名。`dev-start.py` 脚本创建的容器实际库名是 `cas`，所以如果你用脚本启动的 PostgreSQL，需要改成 `cas` 或者自己在容器里建库。
+数据库连接字符串里的 `herald` 是数据库名。`dev-start.py` 脚本创建的容器库名也是 `herald`，所以一键启动的配置和默认配置一致。
 
 Redis 用的是 db 1（`/1`），和生产环境隔离。
 
@@ -106,3 +108,7 @@ curl http://localhost:8080/health
 前端直接浏览器打开 http://localhost:3000，Vite 会热更新。
 
 如果后端启动失败，先检查 PostgreSQL 和 Redis 容器是不是在跑（`docker ps`），再检查 `config.toml` 里的连接字符串。
+
+## 下一步
+
+服务跑起来后，打开 http://localhost:3000 进入前端界面。第一个注册的用户会成为超级管理员，可以创建 realm、邀请用户、配置权限。具体操作见[架构](architecture.md)了解各模块的职责。

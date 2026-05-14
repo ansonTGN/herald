@@ -69,7 +69,7 @@ Handler 不直接写 SQL。它调 Domain Service 的方法，Service 通过 trai
 
 ### entity — 数据库表映射
 
-SeaORM 自动生成的实体定义。39 张表，覆盖用户、角色、权限、订阅、积分、支付、发票等。每个 `.rs` 文件对应一张表，包含列定义、关系、默认值。
+SeaORM 自动生成的实体定义。覆盖用户、角色、权限、订阅、积分、支付、发票等。每个 `.rs` 文件对应一张表，包含列定义、关系、默认值。
 
 这个 crate 没有业务逻辑，纯粹的 ORM 映射层。改表结构时先写迁移 SQL（`backend/app/migrations/`），然后重新生成 entity。
 
@@ -83,6 +83,7 @@ SeaORM 自动生成的实体定义。39 张表，覆盖用户、角色、权限�
 |------|------|
 | `authentication` | 登录、注册、session 管理 |
 | `authorization` | RBAC 权限模型（角色、策略、权限定义） |
+| `audit` | 审计事件模型、事件采集（用户管理、RBAC 变更、认证事件） |
 | `billing` | 套餐管理、订阅生命周期 |
 | `points` | 积分账户、充值、消费、过期、幂等 |
 | `points_package` | 积分包定义 |
@@ -102,9 +103,8 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 - `redis/` — `RedisConnectionManager`，连接池 + 测试隔离
 - `authorization/` — `RedisPermissionChecker`，Casbin 风格的权限缓存
 - `billing/` — 发票 PDF 生成（IronPress）、加密密钥管理
-- `creem/`、`stripe/`、`wechat/`、`shopify/` — 支付渠道客户端
 
-`infra-creem`、`infra-stripe`、`infra-wechat`、`infra-shopify` 是独立 crate，避免主 `infra` 引入不需要的支付 SDK 依赖。
+支付渠道客户端是独立的 crate（`infra-creem`、`infra-stripe`、`infra-wechat`、`infra-shopify`），不放在主 `infra` 里。原因是避免引入不需要的支付 SDK 依赖——如果你只用 Stripe，不会把微信支付的 SDK 也编译进去。
 
 ### core — 组装层
 
@@ -119,7 +119,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 
 | Crate | 职责 | 认证方式 |
 |-------|------|---------|
-| `api` | 主入口：路由注册、中间件编排、Swagger UI、OpenAPI spec 合并 | — |
+| `api` | 主入口：路由注册、中间件编排、Swagger UI、OpenAPI spec 合并、审计日志查询 | — |
 | `api-base` | `AppState` 定义（共享给所有 api 子 crate） | — |
 | `api-auth` | 注册、登录、密码重置、邮箱验证 | session |
 | `api-admin` | 用户 CRUD、角色管理、权限定义管理 | session + inject_identity |
@@ -143,16 +143,19 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 
 ### app — 入口
 
-`main.rs` 做六件事，顺序固定：
+`main.rs` 的启动流程，顺序固定：
 
-1. 加载配置（`HERALD_CONFIG` 环境变量或 `config.toml`）
-2. 连接 PostgreSQL（SeaORM 连接池，参数从配置读取）
-3. 执行数据库迁移（sqlx migrate）
-4. 连接 Redis
-5. 启动 API server（`herald_api::run_with_config`，内部再初始化所有 service 并绑定 Axum 路由）
-6. 启动 Worker（定时任务循环）
+1. 解析命令行参数。`--export-openapi <path>` 可以导出 OpenAPI JSON 然后退出（CI 里前端构建前用到）
+2. 加载配置（`HERALD_CONFIG` 环境变量或 `config.toml`）
+3. 初始化 tracing 日志
+4. 连接 PostgreSQL（SeaORM 连接池，参数从配置读取）
+5. 执行数据库迁移（sqlx migrate）
+6. 连接 Redis 并做 health check
+7. 初始化积分过期服务（points repository + expiration service）
+8. 启动 API server（`herald_api::run_with_config`，内部再初始化所有 service 并绑定 Axum 路由）
+9. 启动 Worker（定时任务循环）
 
-5 和 6 并发运行，`tokio::select!` 等待任意一个结束或收到 shutdown 信号。
+8 和 9 并发运行，`tokio::select!` 等待任意一个结束或收到 shutdown 信号（Ctrl+C 或 SIGTERM）。
 
 ### sdk — Rust SDK
 
@@ -172,7 +175,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 $realmId/
 ├── auth/          # 登录、注册、邮箱验证
 ├── user/          # 用户个人中心（资料、安全、积分、订阅、发票）
-└── manage/        # 管理后台（用户、角色、权限、套餐、计费、积分、Client App、设置）
+└── manage/        # 管理后台（用户、角色、权限、套餐、计费、积分、审计日志、Client App、设置）
 ```
 
 API 调用全部走 `frontend/src/lib/api-generated/` 里自动生成的 client。后端接口变更后，跑 `npm run generate-api`（先导出 OpenAPI JSON，再跑 openapi-ts 生成 TypeScript 类型）重新生成。
@@ -181,14 +184,4 @@ TanStack Query 管理服务端状态，TanStack Form + Zod 处理表单验证，
 
 ### 数据库迁移
 
-按时间戳命名，`backend/app/migrations/` 下 12 个 SQL 文件，对应核心模块的建表顺序：
-
-1. `20260209_core_init` — realm、account、profile
-2. `20260210_auth` — session、email_verification、TOTP
-3. `20260211_billing` — plan、subscription、product
-4. `20260212_payment` — payment_attempt、payment_event
-5. `20260401_shopify` — Shopify 绑定表
-6. `20260408_unified_purchase` — 统一购买（积分包购买记录）
-7. `20260508_invoice` — 发票表
-
-启动时自动执行迁移（`sqlx::migrate!`），不需要手动跑脚本。
+按时间戳命名，放在 `backend/app/migrations/`。启动时自动执行（`sqlx::migrate!`），不需要手动跑脚本。

@@ -45,20 +45,22 @@ docs/
 | [wechat-oauth.md](auth/wechat-oauth.md) | 微信 OAuth 集成 | ✅ Implemented | Realm Admin, Regular User | 2026-03-03 |
 | [totp.md](auth/totp.md) | TOTP 二次认证 | ✅ Implemented | TOTP User, Realm Admin | - |
 | [permissions.md](auth/permissions.md) | 权限管理 | ✅ Implemented | Realm Admin | - |
+| [device-code.md](auth/device-code.md) | Device Code 登录 | 📝 Draft | Third-Party App, Regular User, Realm Admin | 2026-05-14 |
 
 ### Billing 计费与订阅
 
 | PRD 文档 | 标题 | 状态 | 相关角色 | 最后更新 |
 |---------|------|------|---------|---------|
 | [billing.md](billing/billing.md) | Billing 订阅计费 | 🚧 Partially Implemented | Realm Admin, Regular User | - |
-| [product-catalog.md](billing/product-catalog.md) | Product 编目管理 | 📝 Draft | Realm Admin | 2026-03-27 |
-| [subscription-history.md](billing/subscription-history.md) | Subscription History 订阅变更历史 | 📝 Draft | Realm Admin, Regular User | 2026-03-13 |
+| [product-catalog.md](billing/product-catalog.md) | Product 编目管理 | ✅ Implemented | Realm Admin | 2026-03-27 |
+| [subscription-history.md](billing/subscription-history.md) | Subscription History 订阅变更历史 | ✅ Implemented | Realm Admin, Regular User | 2026-03-13 |
 | [points.md](billing/points.md) | Points 积分系统 | ✅ Implemented | Realm Admin, Regular User | 2026-03-31 |
-| [stripe-payment.md](billing/stripe-payment.md) | Stripe 支付集成 | 📝 Draft | Realm Admin | 2026-03-20 |
-| [shopify-pay.md](billing/shopify-pay.md) | Shopify Pay 支付集成 | 📝 Draft | Realm Admin | 2026-04-01 |
-| [wechat-pay.md](billing/wechat-pay.md) | 微信支付集成 | 📝 Draft | Realm Admin, Regular User | 2026-04-04 |
-| [unified-purchase.md](billing/unified-purchase.md) | 统一购买架构 | 📝 Draft | Realm Admin, Regular User | 2026-04-08 |
-| [invoice.md](billing/invoice.md) | Invoice 发票管理 | 📝 Draft | Realm Admin, Regular User | 2026-05-08 |
+| [points-free-user.md](billing/points-free-user.md) | 免费用户积分 | ✅ Implemented | Regular User, Realm Admin | 2026-03-23 |
+| [stripe-payment.md](billing/stripe-payment.md) | Stripe 支付集成 | 🚧 Partially Implemented | Realm Admin | 2026-03-20 |
+| [shopify-pay.md](billing/shopify-pay.md) | Shopify Pay 支付集成 | 🚧 Partially Implemented | Realm Admin | 2026-04-01 |
+| [wechat-pay.md](billing/wechat-pay.md) | 微信支付集成 | 🚧 Partially Implemented | Realm Admin, Regular User | 2026-04-04 |
+| [unified-purchase.md](billing/unified-purchase.md) | 统一购买架构 | 🚧 Partially Implemented | Realm Admin, Regular User | 2026-04-08 |
+| [invoice.md](billing/invoice.md) | Invoice 发票管理 | ✅ Implemented | Realm Admin, Regular User | 2026-05-08 |
 
 ### Integration 集成与扩展
 
@@ -73,7 +75,7 @@ docs/
 |------|------|------|
 | ✅ Implemented | 已完全实现并通过测试 | permissions.md, users.md |
 | 🚧 Partially Implemented | 部分实现（核心功能完成，边缘功能待实现） | billing.md, realm-settings.md |
-| 📝 Draft | 草稿阶段（待评审或实现） | subscription-history.md |
+| 📝 Draft | 草稿阶段（待评审或实现） | device-code.md |
 
 ## 相关文档
 

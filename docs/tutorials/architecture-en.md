@@ -69,7 +69,7 @@ Permission checks follow a separate path: Handler → `RedisPermissionChecker` �
 
 ### entity — Database Table Mappings
 
-Auto-generated SeaORM entity definitions. 39 tables covering users, roles, permissions, subscriptions, points, payments, invoices, and more. Each `.rs` file maps to one table, containing column definitions, relations, and defaults.
+Auto-generated SeaORM entity definitions. Covering users, roles, permissions, subscriptions, points, payments, invoices, and more. Each `.rs` file maps to one table, containing column definitions, relations, and defaults.
 
 No business logic lives here. To change a table schema, write a migration SQL file first (`backend/app/migrations/`), then regenerate the entities.
 
@@ -83,6 +83,7 @@ Key submodules:
 |--------|---------------|
 | `authentication` | Login, registration, session management |
 | `authorization` | RBAC permission model (roles, policies, permission definitions) |
+| `audit` | Audit event model and collection (user management, RBAC changes, auth events) |
 | `billing` | Plan management, subscription lifecycle |
 | `points` | Points accounts, top-up, consumption, expiration, idempotency |
 | `points_package` | Points package definitions |
@@ -102,9 +103,8 @@ Beyond database repositories:
 - `redis/` — `RedisConnectionManager`, connection pool with test isolation
 - `authorization/` — `RedisPermissionChecker`, Casbin-style permission caching
 - `billing/` — invoice PDF generation (IronPress), encryption key management
-- `creem/`, `stripe/`, `wechat/`, `shopify/` — payment channel clients
 
-`infra-creem`, `infra-stripe`, `infra-wechat`, and `infra-shopify` are separate crates so that the main `infra` crate doesn't pull in payment SDKs that aren't needed.
+Payment channel clients live in separate crates (`infra-creem`, `infra-stripe`, `infra-wechat`, `infra-shopify`) rather than inside the main `infra` crate. The reason is to avoid pulling in payment SDKs you don't need — if you only use Stripe, the WeChat Pay SDK won't get compiled.
 
 ### core — Assembly Layer
 
@@ -119,7 +119,7 @@ Seven crates form the API layer:
 
 | Crate | Responsibility | Auth Method |
 |-------|---------------|-------------|
-| `api` | Main entry: route registration, middleware orchestration, Swagger UI, OpenAPI spec merging | — |
+| `api` | Main entry: route registration, middleware orchestration, Swagger UI, OpenAPI spec merging, audit log queries | — |
 | `api-base` | `AppState` definition (shared across all api sub-crates) | — |
 | `api-auth` | Registration, login, password reset, email verification | session |
 | `api-admin` | User CRUD, role management, permission definition management | session + inject_identity |
@@ -143,16 +143,19 @@ Recurring tasks that run in the same process as the API server:
 
 ### app — Entry Point
 
-`main.rs` does six things, in fixed order:
+`main.rs` follows a fixed startup sequence:
 
-1. Load configuration (`HERALD_CONFIG` environment variable or `config.toml`)
-2. Connect to PostgreSQL (SeaORM connection pool, parameters from config)
-3. Run database migrations (sqlx migrate)
-4. Connect to Redis
-5. Start the API server (`herald_api::run_with_config`, which initializes all services and binds Axum routes internally)
-6. Start the Worker (recurring job loop)
+1. Parse CLI arguments. `--export-openapi <path>` exports OpenAPI JSON and exits (used in CI before frontend builds)
+2. Load configuration (`HERALD_CONFIG` environment variable or `config.toml`)
+3. Initialize tracing
+4. Connect to PostgreSQL (SeaORM connection pool, parameters from config)
+5. Run database migrations (sqlx migrate)
+6. Connect to Redis and run a health check
+7. Initialize the points expiration service (points repository + expiration service)
+8. Start the API server (`herald_api::run_with_config`, which initializes all services and binds Axum routes internally)
+9. Start the Worker (recurring job loop)
 
-Steps 5 and 6 run concurrently. `tokio::select!` waits for either one to finish or a shutdown signal.
+Steps 8 and 9 run concurrently. `tokio::select!` waits for either one to finish or a shutdown signal (Ctrl+C or SIGTERM).
 
 ### sdk — Rust SDK
 
@@ -172,7 +175,7 @@ File-based routing via TanStack Router. The route structure mirrors the `fronten
 $realmId/
 ├── auth/          # Login, registration, email verification
 ├── user/          # User profile (settings, security, points, subscriptions, invoices)
-└── manage/        # Admin panel (users, roles, permissions, plans, billing, points, Client Apps, settings)
+└── manage/        # Admin panel (users, roles, permissions, plans, billing, points, audit logs, Client Apps, settings)
 ```
 
 All API calls go through auto-generated clients in `frontend/src/lib/api-generated/`. When backend endpoints change, run `npm run generate-api` (which exports OpenAPI JSON, then runs openapi-ts to generate TypeScript types) to regenerate.
@@ -181,14 +184,4 @@ TanStack Query manages server state. TanStack Form + Zod handles form validation
 
 ### Database Migrations
 
-Timestamped SQL files in `backend/app/migrations/`. Seven migration groups covering the core modules:
-
-1. `20260209_core_init` — realm, account, profile
-2. `20260210_auth` — session, email_verification, TOTP
-3. `20260211_billing` — plan, subscription, product
-4. `20260212_payment` — payment_attempt, payment_event
-5. `20260401_shopify` — Shopify binding table
-6. `20260408_unified_purchase` — unified purchase (points package purchase records)
-7. `20260508_invoice` — invoice tables
-
-Migrations run automatically at startup via `sqlx::migrate!`. No manual scripts needed.
+Timestamped SQL files in `backend/app/migrations/`. Migrations run automatically at startup via `sqlx::migrate!`. No manual scripts needed.

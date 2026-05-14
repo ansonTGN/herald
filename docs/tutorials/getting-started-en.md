@@ -28,7 +28,7 @@ uv run scripts/dev-start.py
 
 The script does the following:
 
-1. Starts a PostgreSQL container (`postgres:18-alpine`, user `postgres`, password `password`, database `cas`, mapped to port 5432)
+1. Starts a PostgreSQL container (`postgres:18-alpine`, user `postgres`, password `password`, database `herald`, mapped to port 5432)
 2. Starts a Redis container (`redis:8.4-alpine`, mapped to port 6379)
 3. Runs `cargo run --bin herald-app` in the background (from `backend/`)
 4. Runs `npm run dev` in the background (from `frontend/`, Vite dev server)
@@ -38,6 +38,8 @@ Once everything is up:
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8080
 - Logs: `log/backend.log` and `log/frontend.log`
+
+Frontend `/api` requests are automatically proxied to the backend on port 8080 by Vite (configured in `frontend/vite.config.js`). During development, just hit the frontend on port 3000 and API calls will be forwarded.
 
 Each run stops and removes the old `cas-dev-postgres` and `cas-dev-redis` containers before recreating them, so data does not persist between runs.
 
@@ -63,7 +65,7 @@ log_level = "info"
 url = "http://localhost:3000"
 ```
 
-The database name in the connection string is `herald`. The `dev-start.py` script creates a database called `cas`, though, so if you started PostgreSQL through the script, change the config to `cas` or create the `herald` database manually inside the container.
+The database name in the connection string is `herald`. The `dev-start.py` script also creates a database named `herald`, so the default config matches the script setup.
 
 Redis uses db 1 (`/1`) to keep dev data separate from production.
 
@@ -106,3 +108,7 @@ curl http://localhost:8080/health
 Open http://localhost:3000 in a browser for the frontend. Vite serves it with hot module replacement.
 
 If the backend fails to start, check that PostgreSQL and Redis containers are running (`docker ps`), then verify the connection strings in `config.toml`.
+
+## Next Steps
+
+Once everything is running, open http://localhost:3000 to access the frontend. The first user to register becomes the super admin, who can create realms, invite users, and configure permissions. See [Architecture](architecture-en.md) for what each module does.

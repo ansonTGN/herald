@@ -106,26 +106,6 @@ url = "http://localhost:3000"
 static_dir = "/app/frontend/dist"
 ```
 
-### [jwt]（可选）
-
-JWT 签名密钥配置。整个段可以不写（`#[serde(default)]` 标记为可选）。
-
-| 参数 | 类型 | 默认值 | 必填 | 说明 |
-|---|---|---|---|---|
-| `_secret` | string | — | 否* | JWT 签名密钥 |
-
-目前字段名带下划线前缀，表示尚未在业务逻辑中正式启用。
-
-### [email]（可选）
-
-邮件发送配置。同上，整个段可选。
-
-| 参数 | 类型 | 默认值 | 必填 | 说明 |
-|---|---|---|---|---|
-| `_api_key` | string | — | 否* | 邮件服务 API Key |
-
-同上，带下划线前缀，尚未正式启用。
-
 ## RBAC 配置
 
 RBAC 策略不在主配置文件中，而是通过数据库中的 `role_policies` 表存储。系统初始化时，`RealmInitializationService` 会为每个 realm 创建默认角色和权限。
