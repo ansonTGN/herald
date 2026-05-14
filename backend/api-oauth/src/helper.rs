@@ -1,15 +1,13 @@
 // OAuth helper functions for login and callback handlers
 
-// OAuth configuration constants
-const OAUTH_STATE_TTL_SECONDS: u64 = 300; // 5 minutes
-const STATE_VALIDATION_TIMEOUT_SECONDS: i64 = 300; // 5 minutes
-pub const JWT_EXPIRATION_SECONDS: i64 = 7 * 24 * 60 * 60; // 7 days
-
 use herald_api_base::application::http::auth::error::AuthError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::oauth::{
     ports::{OAuthProviderHandler, OAuthRepository},
     value_objects::{OAuthConfig, OAuthUserInfo},
+};
+use herald_core::domain::security_constants::{
+    DEFAULT_JWT_EXPIRATION_SECONDS, OAUTH_STATE_TTL_SECONDS, OAUTH_STATE_VALIDATION_TIMEOUT_SECONDS,
 };
 use herald_core::domain::user::{UserRepository, UserService};
 use herald_core::infrastructure::oauth::providers::{
@@ -218,7 +216,7 @@ async fn validate_state_token(
 
     // Check expiration (5 minutes)
     let now = chrono::Utc::now().timestamp();
-    if now - state_data.created_at > STATE_VALIDATION_TIMEOUT_SECONDS {
+    if now - state_data.created_at > OAUTH_STATE_VALIDATION_TIMEOUT_SECONDS {
         return Err(AuthError::BadRequest("State token expired".to_string()));
     }
 
@@ -434,7 +432,7 @@ pub fn jwt_expiration_seconds() -> Result<i64, AuthError> {
         Ok(value) => value.parse::<i64>().map_err(|_| {
             AuthError::InternalServerError("JWT_EXPIRATION_SECONDS must be an integer".to_string())
         }),
-        Err(_) => Ok(JWT_EXPIRATION_SECONDS),
+        Err(_) => Ok(DEFAULT_JWT_EXPIRATION_SECONDS),
     }
 }
 

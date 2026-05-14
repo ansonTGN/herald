@@ -42,10 +42,14 @@ where
         expiration_service: Arc<ExpirationService<PostgresPointsRepository>>,
         invoice_repo: Arc<R>,
     ) -> Self {
+        let expiration_interval_secs = std::env::var("WORKER_EXPIRATION_INTERVAL_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(3600);
         Self {
             expiration_service,
             invoice_repo,
-            expiration_interval_secs: 3600, // 1 hour
+            expiration_interval_secs,
         }
     }
 }

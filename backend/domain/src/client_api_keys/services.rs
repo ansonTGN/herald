@@ -3,7 +3,7 @@
 // This module provides domain services for API key generation and validation.
 // Following six-sided architecture, this layer contains ZERO external dependencies.
 
-use super::constants::{API_KEY_SALT_V1, SHA256_HASH_PREFIX};
+use super::constants::{SHA256_HASH_PREFIX, get_active_api_key_salt};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -88,8 +88,8 @@ impl ClientApiKeyService {
     /// assert!(hash.starts_with("sha256:"));
     /// ```
     pub fn hash_api_key(api_key: &str) -> String {
-        // Deterministic salt enables O(1) database lookups
-        let data = format!("{}:{}", api_key, API_KEY_SALT_V1);
+        let salt = get_active_api_key_salt();
+        let data = format!("{}:{}", api_key, salt);
 
         let mut hasher = Sha256::new();
         hasher.update(data.as_bytes());
@@ -121,13 +121,9 @@ impl ClientApiKeyService {
     /// assert!(!ClientApiKeyService::verify_api_key("wrong-key", &hash));
     /// ```
     pub fn verify_api_key(api_key: &str, hash: &str) -> bool {
-        // SHA-256 format
         if hash.starts_with(SHA256_HASH_PREFIX) {
-            let computed_hash = Self::hash_api_key(api_key);
-            return hash == computed_hash;
+            return hash == Self::hash_api_key(api_key);
         }
-
-        // Unknown format
         false
     }
 }
@@ -191,5 +187,11 @@ mod tests {
         let invalid_hash = "invalid-hash-format";
 
         assert!(!ClientApiKeyService::verify_api_key(api_key, invalid_hash));
+    }
+
+    #[test]
+    fn test_get_active_api_key_salt_returns_string() {
+        let salt = get_active_api_key_salt();
+        assert!(!salt.is_empty(), "Salt should be non-empty");
     }
 }

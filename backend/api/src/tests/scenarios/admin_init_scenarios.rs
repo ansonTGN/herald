@@ -107,7 +107,7 @@ mod tests {
             .get("count");
 
         // 再次运行 init_admin_user
-        init_admin_user(&ctx.app_state.pool)
+        init_admin_user(&ctx.app_state.pool, "test")
             .await
             .expect("Second init should succeed");
 
@@ -191,7 +191,7 @@ mod tests {
             .get("count");
 
         // 再次运行 init_admin_user
-        init_admin_user(&ctx.app_state.pool)
+        init_admin_user(&ctx.app_state.pool, "test")
             .await
             .expect("Init should succeed when users already exist");
 

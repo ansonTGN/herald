@@ -22,6 +22,9 @@ use herald_core::domain::audit::{
 };
 use herald_core::domain::authentication::ports::AuthenticationService;
 use herald_core::domain::client::ports::ClientService;
+use herald_core::domain::security_constants::{
+    DEFAULT_OAUTH_SESSION_TTL_SECONDS, LOGIN_IDENTIFIER_RATE_LIMIT, LOGIN_IP_RATE_LIMIT,
+};
 use herald_core::domain::user::ports::UserService;
 use herald_core::domain::user::value_objects::LoginRequest as DomainLoginRequest;
 use herald_core::domain::user_totp::UserTotpRepository;
@@ -121,18 +124,36 @@ pub async fn login(
     )
     .await?;
 
-    // ip + identifier 限流：每分钟最多 10 次
-    rate_limit_hit(&state, format!("rl:login:ip:{ip}"), 10, 60).await?;
+    // ip + identifier 限流
+    rate_limit_hit(
+        &state,
+        format!("rl:login:ip:{ip}"),
+        LOGIN_IP_RATE_LIMIT.0,
+        LOGIN_IP_RATE_LIMIT.1,
+    )
+    .await?;
 
     // Rate limit by identifier (email or username)
     if let Some(email) = &normalized_email {
-        rate_limit_hit(&state, format!("rl:login:identifier:{}", email), 2, 60).await?;
+        rate_limit_hit(
+            &state,
+            format!("rl:login:identifier:{}", email),
+            LOGIN_IDENTIFIER_RATE_LIMIT.0,
+            LOGIN_IDENTIFIER_RATE_LIMIT.1,
+        )
+        .await?;
     } else if let Some(username) = &normalized_username {
-        rate_limit_hit(&state, format!("rl:login:identifier:{}", username), 2, 60).await?;
+        rate_limit_hit(
+            &state,
+            format!("rl:login:identifier:{}", username),
+            LOGIN_IDENTIFIER_RATE_LIMIT.0,
+            LOGIN_IDENTIFIER_RATE_LIMIT.1,
+        )
+        .await?;
     }
 
     // Verify client exists
-    let _client = state
+    let client_app = state
         .service
         .client_service()
         .get_client_app_by_client_id(&realm_id, &payload.client_id)
@@ -315,7 +336,11 @@ pub async fn login(
         && payload.redirect_uri.is_some()
         && payload.state.is_some();
 
-    let ttl = if is_oauth_flow { 600 } else { 1800 };
+    let ttl = if is_oauth_flow {
+        DEFAULT_OAUTH_SESSION_TTL_SECONDS
+    } else {
+        client_app.session_ttl_seconds as u64
+    };
 
     tracing::debug!(
         "Creating session with user_id: {}, realm_id: {}, client_id: {}",

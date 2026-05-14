@@ -2,6 +2,7 @@ use chrono::{Duration, Utc};
 use std::convert::TryFrom;
 use std::sync::Arc;
 
+use crate::security_constants::DEFAULT_SESSION_TTL_SECONDS;
 use crate::user::value_objects::LoginRequest;
 use crate::{
     authentication::{
@@ -12,8 +13,6 @@ use crate::{
     common::entities::app_errors::CoreError,
     user::ports::UserService,
 };
-
-const SESSION_TTL_SECONDS: u64 = 1800; // 30 minutes
 
 pub struct AuthenticationServiceImpl<U, S>
 where
@@ -68,17 +67,19 @@ where
         // Generate session token
         let token = Self::generate_token(&session_data.realm_id, &session_data.user_id);
         let expires_at = Utc::now()
-            + Duration::seconds(i64::try_from(SESSION_TTL_SECONDS).unwrap_or_else(|_| {
-                tracing::error!(
-                    "SESSION_TTL_SECONDS {} exceeds i64::MAX",
-                    SESSION_TTL_SECONDS
-                );
-                i64::MAX // Use maximum value as fallback
-            }));
+            + Duration::seconds(
+                i64::try_from(DEFAULT_SESSION_TTL_SECONDS).unwrap_or_else(|_| {
+                    tracing::error!(
+                        "DEFAULT_SESSION_TTL_SECONDS {} exceeds i64::MAX",
+                        DEFAULT_SESSION_TTL_SECONDS
+                    );
+                    i64::MAX // Use maximum value as fallback
+                }),
+            );
 
         // Store session
         self.session_repository
-            .store_session(&token, session_data.clone(), SESSION_TTL_SECONDS)
+            .store_session(&token, session_data.clone(), DEFAULT_SESSION_TTL_SECONDS)
             .await?;
 
         // Create session and identity
@@ -165,7 +166,8 @@ where
         let new_token = Self::generate_token(&session_data.realm_id, &session_data.user_id);
         let expires_at = Utc::now()
             + Duration::seconds(
-                i64::try_from(SESSION_TTL_SECONDS).expect("SESSION_TTL_SECONDS exceeds i64::MAX"),
+                i64::try_from(DEFAULT_SESSION_TTL_SECONDS)
+                    .expect("DEFAULT_SESSION_TTL_SECONDS exceeds i64::MAX"),
             );
 
         // Create new session with preserved client_ip
@@ -177,7 +179,11 @@ where
         };
 
         self.session_repository
-            .store_session(&new_token, new_session_data.clone(), SESSION_TTL_SECONDS)
+            .store_session(
+                &new_token,
+                new_session_data.clone(),
+                DEFAULT_SESSION_TTL_SECONDS,
+            )
             .await?;
 
         Ok(Session::new(new_token, new_session_data, expires_at))

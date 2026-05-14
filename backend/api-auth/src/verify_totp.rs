@@ -17,6 +17,10 @@ use herald_api_base::application::http::auth::util::{
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::client::ports::ClientService;
+use herald_core::domain::security_constants::{
+    TOTP_LOCKOUT_SECONDS, TOTP_MAX_FAILURES, TOTP_VERIFY_IP_RATE_LIMIT, TOTP_VERIFY_USER_RATE_LIMIT,
+};
 use herald_core::domain::user_totp::{
     TotpVerificationResultWithBackup, UserTotpRepository, UserTotpService,
 };
@@ -141,15 +145,30 @@ pub async fn handle_verify_totp(
         ApiError::internal("Redis operation error".to_string())
     })?;
 
+    // Look up client app for session TTL
+    let client_app = state
+        .service
+        .client_service()
+        .get_client_app_by_client_id(&temp_session.realm_id, &temp_session.client_id)
+        .await
+        .map_err(|_| ApiError::internal("Client app lookup failed".to_string()))?;
+    let session_ttl = client_app.session_ttl_seconds as usize;
+
     // 2. Check rate limits
     rate_limit_hit(
         &state,
         format!("totp:verify:user:{}", temp_session.user_id),
-        5,
-        60,
+        TOTP_VERIFY_USER_RATE_LIMIT.0,
+        TOTP_VERIFY_USER_RATE_LIMIT.1,
     )
     .await?;
-    rate_limit_hit(&state, format!("totp:verify:ip:{}", client_ip), 10, 60).await?;
+    rate_limit_hit(
+        &state,
+        format!("totp:verify:ip:{}", client_ip),
+        TOTP_VERIFY_IP_RATE_LIMIT.0,
+        TOTP_VERIFY_IP_RATE_LIMIT.1,
+    )
+    .await?;
 
     // 3. Check failure count (Redis)
     let fail_count_key = format!("totp:fail_count:{}", temp_session.user_id);
@@ -159,7 +178,7 @@ pub async fn handle_verify_totp(
     })?;
 
     if let Some(count) = fail_count
-        && count >= 5
+        && count >= TOTP_MAX_FAILURES
     {
         return Err(ApiError::too_many_requests(
             "Too many failed attempts. Please try again in 15 minutes.".to_string(),
@@ -266,7 +285,7 @@ pub async fn handle_verify_totp(
             ApiError::internal("Redis operation error".to_string())
         })?;
         let _: () = conn
-            .expire(&fail_count_key, 900) // 15 minutes
+            .expire(&fail_count_key, TOTP_LOCKOUT_SECONDS as i64)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to set expiry on fail count: {}", e);
@@ -314,17 +333,22 @@ pub async fn handle_verify_totp(
         client_ip,
     };
 
-    store_session(&state, &token, &session_data, 1800).await?;
+    store_session(&state, &token, &session_data, session_ttl).await?;
 
     // 9. Build response with session cookie
-    let cookie_header = build_set_cookie("X-Auth", &token, 1800, state.app_env == "production");
+    let cookie_header = build_set_cookie(
+        "X-Auth",
+        &token,
+        session_ttl as i64,
+        state.app_env == "production",
+    );
     let response = (
         [(SET_COOKIE, cookie_header)],
         Json(VerifyTotpResponse {
             message: "ok".to_string(),
             user_id: temp_session.user_id,
             token,
-            expires_in_seconds: 1800,
+            expires_in_seconds: session_ttl as i64,
         }),
     )
         .into_response();

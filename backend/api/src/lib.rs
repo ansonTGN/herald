@@ -372,7 +372,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to initialize admin realm RBAC: {}", e))?;
 
     // Initialize admin user if database is empty
-    init_admin_user(pg_pool).await?;
+    init_admin_user(pg_pool, &config.server.app_env).await?;
 
     // Create state for API handlers
     let user_repository = Arc::new(PostgresUserRepository::new(db.clone().into()));

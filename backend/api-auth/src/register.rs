@@ -11,6 +11,7 @@ use herald_api_base::application::http::auth::util::{
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::security_constants::{REGISTER_EMAIL_RATE_LIMIT, REGISTER_IP_RATE_LIMIT};
 use herald_core::domain::user::ports::UserService;
 use herald_core::domain::user::value_objects::RegisterRequest as DomainRegisterRequest;
 use serde::{Deserialize, Serialize};
@@ -92,9 +93,21 @@ pub async fn register(
     )
     .await?;
 
-    // ip + email 限流：每分钟最多 5 次
-    rate_limit_hit(&state, format!("rl:register:ip:{ip}"), 5, 60).await?;
-    rate_limit_hit(&state, format!("rl:register:email:{email}"), 5, 60).await?;
+    // ip + email 限流
+    rate_limit_hit(
+        &state,
+        format!("rl:register:ip:{ip}"),
+        REGISTER_IP_RATE_LIMIT.0,
+        REGISTER_IP_RATE_LIMIT.1,
+    )
+    .await?;
+    rate_limit_hit(
+        &state,
+        format!("rl:register:email:{email}"),
+        REGISTER_EMAIL_RATE_LIMIT.0,
+        REGISTER_EMAIL_RATE_LIMIT.1,
+    )
+    .await?;
 
     // Check if email verification is required
     let verification_required = is_email_verification_required(&state, &realm_id).await?;

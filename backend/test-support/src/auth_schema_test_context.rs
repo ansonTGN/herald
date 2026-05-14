@@ -132,7 +132,7 @@ impl AsyncTestContext for AuthSchemaTestContext {
             .expect("Failed to initialize admin realm RBAC");
 
         // 9. 初始化 admin user
-        init_admin_user(&pool_with_schema)
+        init_admin_user(&pool_with_schema, "test")
             .await
             .expect("Failed to initialize admin user");
 

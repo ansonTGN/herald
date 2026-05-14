@@ -8,6 +8,7 @@ use herald_domain::authentication::{
     ports::SessionRepository,
 };
 use herald_domain::common::entities::app_errors::CoreError;
+use herald_domain::security_constants::DEFAULT_SESSION_TTL_SECONDS;
 
 pub struct RedisSessionRepository {
     manager: RedisConnectionManager,
@@ -76,7 +77,7 @@ impl SessionRepository for RedisSessionRepository {
             realm_id: data_internal.realm_id,
             client_id: data_internal.client_id,
             user_id: data_internal.user_id,
-            expires_at: Utc::now() + Duration::seconds(1800), // Approximate
+            expires_at: Utc::now() + Duration::seconds(DEFAULT_SESSION_TTL_SECONDS as i64),
         }))
     }
 

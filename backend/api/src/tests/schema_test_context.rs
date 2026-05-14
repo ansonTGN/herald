@@ -151,7 +151,7 @@ impl AsyncTestContext for SchemaTestContext {
 
         // 10. 初始化测试数据（创建管理员用户）
         //    init_admin_user 会创建 admin 用户并加入已存在的 realm-admin 角色
-        init_admin_user(&pool_with_schema)
+        init_admin_user(&pool_with_schema, "test")
             .await
             .expect("Failed to initialize admin user");
 

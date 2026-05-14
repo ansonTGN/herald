@@ -3,6 +3,9 @@
 pub use herald_domain::oauth::http_client::{
     HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpMethod,
 };
+use herald_domain::security_constants::{
+    DEFAULT_HTTP_CLIENT_CONNECT_TIMEOUT_SECS, DEFAULT_HTTP_CLIENT_TIMEOUT_SECS,
+};
 use std::time::Duration;
 
 /// Reqwest HTTP client implementation
@@ -14,8 +17,10 @@ impl ReqwestHttpClient {
     /// Create a new Reqwest HTTP client with default settings
     pub fn new() -> Result<Self, HttpClientError> {
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(DEFAULT_HTTP_CLIENT_TIMEOUT_SECS))
+            .connect_timeout(Duration::from_secs(
+                DEFAULT_HTTP_CLIENT_CONNECT_TIMEOUT_SECS,
+            ))
             .build()
             .map_err(|e| {
                 HttpClientError::Network(format!("Failed to create HTTP client: {}", e))

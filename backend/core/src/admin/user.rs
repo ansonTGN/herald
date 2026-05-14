@@ -1,3 +1,4 @@
+use herald_domain::security_constants::DEFAULT_BCRYPT_COST;
 use sqlx::{PgPool, Row};
 use std::env;
 use tracing::info;
@@ -44,7 +45,7 @@ async fn get_role_id_by_name(
     Ok(result)
 }
 
-pub async fn init_admin_user(pool: &PgPool) -> anyhow::Result<()> {
+pub async fn init_admin_user(pool: &PgPool, app_env: &str) -> anyhow::Result<()> {
     let count: i64 = sqlx::query("SELECT count(*) as count FROM account limit 1")
         .fetch_one(pool)
         .await?
@@ -53,9 +54,24 @@ pub async fn init_admin_user(pool: &PgPool) -> anyhow::Result<()> {
     if count == 0 {
         info!("No users found, attempting to create admin user.");
         let admin_email = env::var("ADMIN_EMAIL").unwrap_or_else(|_| "admin@cas.com".to_string());
-        let admin_password = env::var("ADMIN_PASSWORD").unwrap_or_else(|_| "password".to_string());
+        let admin_password = match env::var("ADMIN_PASSWORD") {
+            Ok(pw) => pw,
+            Err(_) => {
+                if app_env == "production" {
+                    anyhow::bail!(
+                        "ADMIN_PASSWORD environment variable is required in production. \
+                         Refusing to use default password."
+                    );
+                }
+                tracing::warn!(
+                    "ADMIN_PASSWORD not set, using default password (only allowed in {})",
+                    app_env
+                );
+                "password".to_string()
+            }
+        };
 
-        let hashed_password = bcrypt::hash(&admin_password, 10)?;
+        let hashed_password = bcrypt::hash(&admin_password, DEFAULT_BCRYPT_COST)?;
 
         // Get all required data before starting transaction
         let (realm_id, client_id) = get_admin_root_id(pool).await?;

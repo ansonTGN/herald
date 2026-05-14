@@ -14,6 +14,10 @@ use herald_api_base::application::http::auth::util::{
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::security_constants::{
+    RESET_PASSWORD_CONFIRM_IP_RATE_LIMIT, RESET_PASSWORD_REQUEST_EMAIL_RATE_LIMIT,
+    RESET_PASSWORD_REQUEST_IP_RATE_LIMIT,
+};
 use herald_core::domain::user::ports::UserService;
 
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
@@ -67,13 +71,19 @@ pub async fn request(
     )
     .await?;
 
-    // ip + email 限流：每分钟最多 5 次
-    rate_limit_hit(&state, format!("rl:reset_password:req:ip:{ip}"), 5, 60).await?;
+    // ip + email 限流
+    rate_limit_hit(
+        &state,
+        format!("rl:reset_password:req:ip:{ip}"),
+        RESET_PASSWORD_REQUEST_IP_RATE_LIMIT.0,
+        RESET_PASSWORD_REQUEST_IP_RATE_LIMIT.1,
+    )
+    .await?;
     rate_limit_hit(
         &state,
         format!("rl:reset_password:req:email:{email}"),
-        5,
-        60,
+        RESET_PASSWORD_REQUEST_EMAIL_RATE_LIMIT.0,
+        RESET_PASSWORD_REQUEST_EMAIL_RATE_LIMIT.1,
     )
     .await?;
 
@@ -157,7 +167,13 @@ pub async fn confirm(
     )
     .await?;
 
-    rate_limit_hit(&state, format!("rl:reset_password:confirm:ip:{ip}"), 5, 60).await?;
+    rate_limit_hit(
+        &state,
+        format!("rl:reset_password:confirm:ip:{ip}"),
+        RESET_PASSWORD_CONFIRM_IP_RATE_LIMIT.0,
+        RESET_PASSWORD_CONFIRM_IP_RATE_LIMIT.1,
+    )
+    .await?;
 
     // Use UserService to confirm password reset
     state
