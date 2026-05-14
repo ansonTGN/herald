@@ -28,7 +28,7 @@ type PointsAccountListItem = {
   status: string
   createdAt: string
   updatedAt: string
-  currency: string
+  unit: string
 }
 
 interface PointsAccountsPageProps {

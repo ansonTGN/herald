@@ -67,6 +67,8 @@ export const QUERY_KEYS = {
   PAYMENT_ATTEMPT_STATUS: 'payment-attempt-status',
   REALM_CONFIG: 'realm-config',
   FREE_USER_STATS: 'free-user-stats',
+  AUDIT_EVENTS: 'audit-events',
+  AUDIT_EVENT: 'audit-event',
 } as const
 
 /**

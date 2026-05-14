@@ -40,6 +40,8 @@ import {
   getPaymentAttemptStatus,
   listPaymentProviders,
   listPaymentProviderMappings,
+  listAuditEvents,
+  getAuditEvent,
 } from '@/lib/api-generated'
 import { handleApiResponse } from '@/lib/api-utils'
 import type {
@@ -192,6 +194,10 @@ export const queryKeys = {
     [QUERY_KEYS.POINTS_PACKAGE_PURCHASES, realmId, filters] as const,
   paymentAttemptStatus: (realmId: string, attemptId: string) =>
     [QUERY_KEYS.PAYMENT_ATTEMPT_STATUS, realmId, attemptId] as const,
+  audit: (realmId: string, filters?: Record<string, unknown>) =>
+    [QUERY_KEYS.AUDIT_EVENTS, realmId, filters ?? {}] as const,
+  auditDetail: (realmId: string, eventId: string) =>
+    [QUERY_KEYS.AUDIT_EVENT, realmId, eventId] as const,
 }
 
 function extractNestedArray<T>(response: unknown, key: string): T[] {
@@ -777,7 +783,7 @@ export const pointsAccountsQueryOptions = (
           status: account.status,
           createdAt: account.createdAt,
           updatedAt: account.updatedAt,
-          currency: account.currency,
+          unit: account.currency,
         })),
       }
     },
@@ -805,7 +811,7 @@ export const pointsAccountQueryOptions = (realmId: string, userId: string) =>
         status: string
         createdAt: string
         updatedAt: string
-        currency: string
+        unit: string
       } | null
     },
     retry: RETRY_COUNT,
@@ -1101,6 +1107,49 @@ export const paymentProviderMappingsQueryOptions = (realmId: string, packageId: 
       if (response.error) throw response.error
       return response.data?.mappings ?? []
     },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+
+// ==================== Audit ====================
+
+export const auditListQueryOptions = (
+  realmId: string,
+  filters: {
+    page?: number
+    pageSize?: number
+    category?: string
+    action?: string
+    actorId?: string
+    startTime?: string
+    endTime?: string
+  }
+) =>
+  queryOptions({
+    queryKey: queryKeys.audit(realmId, filters),
+    queryFn: async () =>
+      handleApiResponse(
+        await listAuditEvents({
+          path: { realmId },
+          query: {
+            page: filters.page ?? 0,
+            pageSize: filters.pageSize ?? 20,
+            category: filters.category,
+            action: filters.action,
+            actorId: filters.actorId,
+            startTime: filters.startTime,
+            endTime: filters.endTime,
+          },
+        })
+      ),
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+
+export const auditDetailQueryOptions = (realmId: string, eventId: string) =>
+  queryOptions({
+    queryKey: queryKeys.auditDetail(realmId, eventId),
+    queryFn: async () => handleApiResponse(await getAuditEvent({ path: { realmId, eventId } })),
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_5_MIN,
   })

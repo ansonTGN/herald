@@ -37,10 +37,10 @@ describe('PointsBalanceCard', () => {
       expect(totalConsumed).toHaveTextContent('5,000')
     })
 
-    it('GIVEN account WHEN rendering THEN should display currency', () => {
+    it('GIVEN account WHEN rendering THEN should display unit', () => {
       render(<PointsBalanceCard account={mockPointsAccount} />)
 
-      expect(screen.getByText('USD')).toBeInTheDocument()
+      expect(screen.getByText('points')).toBeInTheDocument()
     })
 
     it('GIVEN account WHEN rendering THEN should display card title', () => {

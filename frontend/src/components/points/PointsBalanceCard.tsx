@@ -63,7 +63,7 @@ export function PointsBalanceCard({ account, loading }: PointsBalanceCardProps) 
           <div className="text-5xl font-bold" data-testid="points-balance">
             {account.balance.toLocaleString()}
           </div>
-          <div className="text-sm text-muted-foreground mt-1">{account.currency}</div>
+          <div className="text-sm text-muted-foreground mt-1">{account.unit}</div>
         </div>
 
         {/* Stats */}

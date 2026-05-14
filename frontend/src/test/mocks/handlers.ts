@@ -9,6 +9,7 @@ import { stripeHandlers } from './handlers/stripe'
 import { pointsHandlers } from './handlers/points'
 import { wechatPayHandlers } from './handlers/wechat'
 import { unifiedPurchaseHandlers } from './handlers/unified-purchase'
+import { auditHandlers } from './handlers/audit'
 
 // Add API handlers here and override with `server.use(...)` in specific tests when needed.
 export const handlers = [
@@ -23,6 +24,9 @@ export const handlers = [
 
   // Unified Purchase handlers
   ...unifiedPurchaseHandlers,
+
+  // Audit handlers
+  ...auditHandlers,
   http.get('/__msw_health__', () => {
     return new Response(null, { status: 204 })
   }),

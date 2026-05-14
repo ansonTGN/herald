@@ -16,6 +16,7 @@ export interface DataTableProps<TData, TValue> {
   loadingMessage?: string
   errorMessage?: string
   emptyMessage?: string
+  onRowClick?: (row: TData) => void
   'data-testid'?: string
 }
 
@@ -29,6 +30,7 @@ export function DataTable<TData, TValue>({
   loadingMessage = 'Loading...',
   errorMessage,
   emptyMessage = 'No results.',
+  onRowClick,
   'data-testid': dataTestId,
 }: DataTableProps<TData, TValue>) {
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table's useReactTable is intentionally used here
@@ -82,7 +84,12 @@ export function DataTable<TData, TValue>({
         </TableHeader>
         <TableBody>
           {table.getRowModel().rows.map((row) => (
-            <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'}>
+            <TableRow
+              key={row.id}
+              data-state={row.getIsSelected() && 'selected'}
+              className={onRowClick ? 'cursor-pointer' : undefined}
+              onClick={() => onRowClick?.(row.original)}
+            >
               {row.getVisibleCells().map((cell) => (
                 <TableCell key={cell.id}>
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}

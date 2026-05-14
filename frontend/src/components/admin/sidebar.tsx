@@ -13,6 +13,7 @@ import {
   History,
   Coins,
   FileText,
+  ScrollText,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { useRealmId } from '@/stores/auth-store'
@@ -61,6 +62,12 @@ export function Sidebar() {
         permission: 'clients.view',
       },
       { name: 'Users', path: `/${realmId}/manage/users`, icon: Users, permission: 'users.view' },
+      {
+        name: 'Audit Log',
+        path: `/${realmId}/manage/audit`,
+        icon: ScrollText,
+        permission: 'users.view',
+      },
       {
         name: 'Authorization',
         icon: Shield,

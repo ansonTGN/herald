@@ -29,8 +29,19 @@ export const clientAppsSearchSchema = z.object({
   pageSize: z.number().int().min(1).max(100).optional(),
 })
 
+export const auditSearchSchema = z.object({
+  page: z.number().int().min(0).optional(),
+  pageSize: z.number().int().min(1).max(100).optional(),
+  category: z.string().optional(),
+  action: z.string().optional(),
+  actorId: z.string().optional(),
+  startTime: z.string().optional(),
+  endTime: z.string().optional(),
+})
+
 export type PaginationParams = z.infer<typeof paginationSchema>
 export type LoginSearchParams = z.infer<typeof loginSearchSchema>
 export type UsersSearchParams = z.infer<typeof usersSearchSchema>
 export type RealmsSearchParams = z.infer<typeof realmsSearchSchema>
 export type ClientAppsSearchParams = z.infer<typeof clientAppsSearchSchema>
+export type AuditSearchParams = z.infer<typeof auditSearchSchema>
