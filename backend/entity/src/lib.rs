@@ -1,4 +1,5 @@
 pub mod account;
+pub mod audit_event;
 pub mod client_api_key;
 pub mod client_app;
 pub mod client_app_plan;
@@ -38,6 +39,7 @@ pub mod user_totp_backup_codes;
 pub mod user_totp_config;
 
 pub use account::Entity as AccountEntity;
+pub use audit_event::Entity as AuditEventEntity;
 pub use client_api_key::Entity as ClientApiKeyEntity;
 pub use client_app::Entity as ClientAppEntity;
 pub use client_app_plan::Entity as ClientAppPlanEntity;

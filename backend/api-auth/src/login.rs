@@ -16,6 +16,10 @@ use herald_api_base::application::http::auth::util::{
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::audit::{
+    ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
+    NewAuditEvent,
+};
 use herald_core::domain::authentication::ports::AuthenticationService;
 use herald_core::domain::client::ports::ClientService;
 use herald_core::domain::user::ports::UserService;
@@ -83,6 +87,10 @@ pub async fn login(
     Valid(Json(payload)): Valid<Json<LoginRequestPayload>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let ip = extract_ip(&headers);
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
 
     // Custom validation: ensure at least username or email is provided
     if payload.email.is_none() && payload.username.is_none() {
@@ -156,12 +164,9 @@ pub async fn login(
     };
 
     // Call UserService for authentication
-    let user = state
-        .service
-        .user_service()
-        .login(login_request)
-        .await
-        .map_err(|e| {
+    let user = match state.service.user_service().login(login_request).await {
+        Ok(u) => u,
+        Err(e) => {
             tracing::debug!(
                 realm_id = %realm_id,
                 email = ?normalized_email,
@@ -169,8 +174,39 @@ pub async fn login(
                 error = %e,
                 "Login failed"
             );
-            // Convert CoreError to ApiError
-            match e {
+
+            // Record login failure audit event
+            let actor_id = normalized_email
+                .as_deref()
+                .or(normalized_username.as_deref())
+                .unwrap_or("unknown")
+                .to_string();
+            if let Err(audit_err) = state
+                .audit_event_repository
+                .create(NewAuditEvent {
+                    realm_id: realm_id.clone(),
+                    category: AuditCategory::Auth,
+                    action: AuditAction::AuthLoginFailed,
+                    actor_id: actor_id.clone(),
+                    actor_type: None,
+                    actor_name: None,
+                    target_type: AuditTargetType::User,
+                    target_id: actor_id,
+                    target_name: None,
+                    result: AuditResult::Failure,
+                    details: Some(
+                        serde_json::json!({"method": "password", "reason": "invalid_credentials"}),
+                    ),
+                    ip_address: Some(ip.clone()),
+                    user_agent: user_agent.clone(),
+                    trace_id: None,
+                })
+                .await
+            {
+                tracing::warn!(error = %audit_err, "Failed to record audit event");
+            }
+
+            return Err(match e {
                 herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
                     ApiError::unauthorized("invalid credentials".to_string())
                 }
@@ -181,8 +217,9 @@ pub async fn login(
                     ApiError::forbidden("email not verified or account not active".to_string())
                 }
                 _ => ApiError::internal("Authentication failed".to_string()),
-            }
-        })?;
+            });
+        }
+    };
 
     tracing::info!(
         user_id = %user.id,
@@ -226,6 +263,30 @@ pub async fn login(
             .set_ex(&temp_key, temp_session_data.to_string(), 300) // 5 minutes
             .await
             .map_err(|_| ApiError::internal("Internal server error".to_string()))?;
+
+        // Record login success audit event (user authenticated, TOTP required for second factor)
+        if let Err(audit_err) = state
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm_id.clone(),
+                category: AuditCategory::Auth,
+                action: AuditAction::AuthLogin,
+                actor_id: user.id.to_string(),
+                actor_type: Some(ActorType::User),
+                actor_name: Some(user.email.clone()),
+                target_type: AuditTargetType::User,
+                target_id: user.id.to_string(),
+                target_name: None,
+                result: AuditResult::Success,
+                details: Some(serde_json::json!({"method": "password", "totp_required": true})),
+                ip_address: Some(ip.clone()),
+                user_agent: user_agent.clone(),
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %audit_err, "Failed to record audit event");
+        }
 
         // Return temp token instead of creating session
         return Ok(Json(LoginResponse {
@@ -280,6 +341,30 @@ pub async fn login(
     let token = session.token.clone();
 
     tracing::debug!("Session created with identity: {}", identity.user_id());
+
+    // Record login success audit event
+    if let Err(audit_err) = state
+        .audit_event_repository
+        .create(NewAuditEvent {
+            realm_id: realm_id.clone(),
+            category: AuditCategory::Auth,
+            action: AuditAction::AuthLogin,
+            actor_id: user.id.to_string(),
+            actor_type: Some(ActorType::User),
+            actor_name: Some(user.email.clone()),
+            target_type: AuditTargetType::User,
+            target_id: user.id.to_string(),
+            target_name: None,
+            result: AuditResult::Success,
+            details: Some(serde_json::json!({"method": "password"})),
+            ip_address: Some(ip.clone()),
+            user_agent: user_agent.clone(),
+            trace_id: None,
+        })
+        .await
+    {
+        tracing::warn!(error = %audit_err, "Failed to record audit event");
+    }
 
     // OAuth flow: redirect with token in URL fragment
     if is_oauth_flow {

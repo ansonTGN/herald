@@ -1,5 +1,6 @@
 // Infrastructure layer - external adapters implementation
 
+pub mod audit;
 pub mod authentication;
 pub mod authorization;
 pub mod billing;
@@ -24,6 +25,7 @@ pub mod wechat;
 pub mod webhook;
 
 // Re-export commonly used types
+pub use audit::PostgresAuditEventRepository;
 pub use user::{
     PostgresAdminUserRepository, PostgresRolePolicyRepository, PostgresUserRepository,
     PostgresUserRoleRepository, PostgresVerificationRepository,

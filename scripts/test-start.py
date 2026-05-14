@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import platform
 import subprocess
 import sys
 import time
@@ -15,6 +16,12 @@ def _ports_free() -> bool:
         return True
     print("ERROR: Occupied test ports:", ", ".join(str(p) for p in occupied))
     return False
+
+
+def _host_gateway_args() -> list[str]:
+    if platform.system() == "Linux":
+        return ["--add-host", "host.docker.internal:host-gateway"]
+    return []
 
 
 def _build_pgdog_bootstrap_command(pgdog_config: str, users_config: str) -> str:
@@ -129,6 +136,7 @@ min_pool_size = 1
             "RUST_LOG=error",  # Reduce pgdog logging to errors only
             "-e",
             "RUST_BACKTRACE=0",  # Disable backtrace
+            *_host_gateway_args(),
             "-p",
             "16432:6432",
             "--entrypoint",
@@ -197,6 +205,7 @@ def main() -> int:
             "POSTGRES_PASSWORD=postgres",
             "-e",
             "POSTGRES_DB=postgres",
+            *_host_gateway_args(),
             "-p",
             "15433:5432",
             "postgres:18-alpine",

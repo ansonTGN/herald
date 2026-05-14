@@ -11,6 +11,7 @@ use crate::domain::{
     user::services::UserServiceImpl,
 };
 use crate::infrastructure::{
+    audit::PostgresAuditEventRepository,
     authentication::RedisSessionRepository,
     authorization::{
         PermissionCheckerAuthorizationRepository, PostgresPermissionRepository,
@@ -71,6 +72,7 @@ pub type RealmServiceType = RealmServiceImpl<
     UserRepo,
     UserServiceType,
     RealmConfigRepo,
+    PostgresAuditEventRepository,
 >;
 pub type RealmConfigServiceType = RealmConfigServiceImpl<
     RealmConfigRepo,

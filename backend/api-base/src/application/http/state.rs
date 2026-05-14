@@ -9,6 +9,7 @@ use herald_core::domain::user::services::admin::{
     AdminUserServiceImpl, PermissionManagementServiceImpl, RoleAssignmentServiceImpl,
     UserPermissionServiceImpl,
 };
+use herald_core::infrastructure::audit::PostgresAuditEventRepository;
 use herald_core::infrastructure::authorization::RedisPermissionChecker;
 use herald_core::infrastructure::authorization::policies::PermissionBasedPointsPolicy;
 use herald_core::infrastructure::billing::{PostgresBillingRepository, PostgresInvoiceRepository};
@@ -68,6 +69,9 @@ pub struct AppState {
 
     /// Invoice repository
     pub invoice_repository: Arc<PostgresInvoiceRepository>,
+
+    /// Audit event repository
+    pub audit_event_repository: Arc<PostgresAuditEventRepository>,
 
     /// Billing service (with policy)
     pub billing_service: Arc<
@@ -156,8 +160,13 @@ pub struct AppState {
     // Admin User Services
     // ============================================================================
     /// Admin user service
-    pub admin_user_service:
-        Arc<AdminUserServiceImpl<PostgresAdminUserRepository, RedisPermissionChecker>>,
+    pub admin_user_service: Arc<
+        AdminUserServiceImpl<
+            PostgresAdminUserRepository,
+            RedisPermissionChecker,
+            PostgresAuditEventRepository,
+        >,
+    >,
 
     /// Role assignment service
     pub role_assignment_service: Arc<

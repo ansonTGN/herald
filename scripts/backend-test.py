@@ -398,6 +398,39 @@ def print_failure_summary(test_result: subprocess.CompletedProcess[str], test_lo
             print(f"    {command}")
 
 
+def run_test_command(test_cmd: list[str], test_log: Path, test_env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    if os.environ.get("BACKEND_TEST_LOG_STDOUT") != "1":
+        with test_log.open("w", encoding="utf-8") as fp:
+            return subprocess.run(
+                test_cmd,
+                cwd=REPO_ROOT / "backend",
+                stdout=fp,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=test_env,
+            )
+
+    with test_log.open("w", encoding="utf-8") as fp:
+        process = subprocess.Popen(
+            test_cmd,
+            cwd=REPO_ROOT / "backend",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=test_env,
+        )
+        assert process.stdout is not None
+        for line in process.stdout:
+            fp.write(line)
+            fp.flush()
+            print_utf8_safe(line.rstrip("\n"))
+        returncode = process.wait()
+
+    return subprocess.CompletedProcess(test_cmd, returncode)
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -427,9 +460,6 @@ def main() -> int:
     test_log = REPO_ROOT / "backend-test-output.log"
     test_cmd = build_nextest_command(nextest_args)
     test_env = os.environ.copy()
-    # Required by billing crypto tests
-    test_env["ENCRYPTION_KEY"] = "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-    test_env["INTERNAL_API_KEY"] = "test-internal-api-key"
     test_env.setdefault("TEST_POSTGRES_HOST", "127.0.0.1")
     test_env.setdefault("TEST_POSTGRES_PORT", "16432")
     test_env.setdefault("TEST_REDIS_URL", "redis://127.0.0.1:6380/0")
@@ -439,15 +469,7 @@ def main() -> int:
         return start_code
 
     try:
-        with test_log.open("w", encoding="utf-8") as fp:
-            test_result = subprocess.run(
-                test_cmd,
-                cwd=REPO_ROOT / "backend",
-                stdout=fp,
-                stderr=subprocess.STDOUT,
-                text=True,
-                env=test_env,
-            )
+        test_result = run_test_command(test_cmd, test_log, test_env)
     finally:
         subprocess.run(
             [sys.executable, str(REPO_ROOT / "scripts" / "test-stop.py")],

@@ -13,8 +13,8 @@ use super::*;
 use chrono::{Datelike, Duration, Utc};
 use futures::FutureExt;
 use herald_domain::billing::invoice::{
-    ActorType, InvoiceEventType, InvoiceListFilters, InvoiceRepository,
-    InvoiceStatus, InvoiceStatusTransition, NewInvoice, NewLineItem,
+    ActorType, InvoiceEventType, InvoiceListFilters, InvoiceRepository, InvoiceStatus,
+    InvoiceStatusTransition, NewInvoice, NewLineItem,
 };
 use herald_test_db::{SharedTestDatabaseHandle, create_isolated_schema_database};
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};

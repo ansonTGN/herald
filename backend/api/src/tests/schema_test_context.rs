@@ -217,6 +217,11 @@ impl AsyncTestContext for SchemaTestContext {
         let admin_user_service = Arc::new(AdminUserServiceImpl::new(
             admin_user_repository.clone(),
             permission_checker.clone(),
+            Arc::new(
+                herald_core::infrastructure::audit::PostgresAuditEventRepository::new(
+                    sea_conn.clone(),
+                ),
+            ),
         ));
         let role_assignment_service = Arc::new(RoleAssignmentServiceImpl::new(
             user_role_repository.clone(),
@@ -287,6 +292,9 @@ impl AsyncTestContext for SchemaTestContext {
             billing_repository,
             invoice_repository: Arc::new(
                 herald_core::infrastructure::billing::PostgresInvoiceRepository::new(sea_conn.clone()),
+            ),
+            audit_event_repository: Arc::new(
+                herald_core::infrastructure::audit::PostgresAuditEventRepository::new(sea_conn.clone()),
             ),
             billing_service,
             product_service,

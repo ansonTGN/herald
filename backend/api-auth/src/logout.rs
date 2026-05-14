@@ -8,11 +8,14 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use herald_api_base::application::http::auth::util::{
-    build_clear_cookie, delete_session, get_cookie,
+    build_clear_cookie, delete_session, extract_ip, get_cookie,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::audit::{
+    AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType, NewAuditEvent,
+};
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct LogoutResponse {
@@ -39,9 +42,41 @@ pub async fn logout(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
-    if let Some(token) = get_cookie(&headers, "X-Auth") {
+    let ip = extract_ip(&headers);
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let token = get_cookie(&headers, "X-Auth");
+
+    if let Some(ref token_val) = token {
         // best effort
-        let _ = delete_session(&state, &token).await;
+        let _ = delete_session(&state, token_val).await;
+    }
+
+    // Record logout audit event
+    let actor_id = token.unwrap_or_else(|| "anonymous".to_string());
+    if let Err(audit_err) = state
+        .audit_event_repository
+        .create(NewAuditEvent {
+            realm_id: _realm_id.clone(),
+            category: AuditCategory::Auth,
+            action: AuditAction::AuthLogout,
+            actor_id: actor_id.clone(),
+            actor_type: None,
+            actor_name: None,
+            target_type: AuditTargetType::User,
+            target_id: actor_id,
+            target_name: None,
+            result: AuditResult::Success,
+            details: None,
+            ip_address: Some(ip),
+            user_agent,
+            trace_id: None,
+        })
+        .await
+    {
+        tracing::warn!(error = %audit_err, "Failed to record audit event");
     }
 
     let is_production = state.app_env == "production";

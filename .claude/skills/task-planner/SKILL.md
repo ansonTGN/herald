@@ -158,13 +158,18 @@ manifest 不得包含完整实现步骤；完整步骤必须写入 item 文件�
 - 跨越超过 2 个领域模块或页面域。
 - 超过 8 个主要步骤。
 - 单个 item 文件预计超过 12KB，且不是验收清单。
+- scope 中包含两个可独立交付、独立验证的主交付物（例如 `A + B`、两个页面、页面 + 弹窗、helper + 场景测试）。
+- 单个 HTTP/API item 同时包含 5 个以上 endpoint、DTO、路由注册和 OpenAPI/schema 更新。
+- 单个 demo item 同时创建复用 helper 并覆盖多个完整用户故事或多个业务状态流。
 
 ## 拆分建议
 - backend dev：数据库/实体、domain、repository、service/use case、HTTP/OpenAPI、外部集成、SDK/API 影响点。
+- backend HTTP/API：DTO 与路由骨架、读模型/list/detail、写操作/create/update、状态操作、配置类接口分别拆分；每个 item 必须能用定向 `cargo check` 或场景测试验证。
 - backend test：domain/unit、repository/integration、API scenario、regression、高风险业务规则。
 - frontend dev：API/type 适配、schema/query/store、页面主流程、状态与错误处理、权限与空态。
+- frontend dev：一个 item 默认只交付一个页面域或一个可复用组件族；seller config、user page、admin page、dialog 等可独立验证的 UI 不应合并。
 - frontend test：schema、query options、store/state machine、数据转换、异常边界。
-- demo dev：fixtures、主流程场景、错误/权限场景、可视化演示流。
+- demo dev：fixtures/helpers、主流程场景、错误/权限场景、可视化演示流分别拆分；不要把 helper 和完整业务流放在同一个 item。
 - accept：design consistency、public API contract、business rules、permission/security、test evidence、demo readiness。
 
 ## Agent Output Contract

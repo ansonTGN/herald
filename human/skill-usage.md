@@ -23,7 +23,7 @@
 
 | 命令 | 功能 | 输出位置 |
 |------|------|----------|
-| `/t-task-check [feature]` | 任务规划质量评分（125分制） | `.ai/quality/` |
+| `/t-task-check [feature]` | 任务规划质量评分（100分制） | `.ai/quality/` |
 | `/t-ddd-check [feature]` | DDD 合规性检查 | `.ai/quality/` |
 
 ### Demo 测试

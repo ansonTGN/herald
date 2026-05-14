@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod client_apps;
 pub mod common;
 pub mod public_config;

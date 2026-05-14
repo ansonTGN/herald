@@ -1,7 +1,10 @@
-// =============================================================================
-// 审计日志模块
-// =============================================================================
+mod entities;
+mod event_types;
+mod ports;
 
-mod rbac_audit;
+pub use entities::{AuditEvent, AuditEventFilters, NewAuditEvent, PaginatedAuditEvents};
+pub use event_types::{ActorType, AuditAction, AuditCategory, AuditResult, AuditTargetType};
+pub use ports::AuditEventRepository;
 
-pub use rbac_audit::{RbacAction, RbacAuditEvent, RbacAuditLogger, RbacResult, RbacTargetType};
+#[cfg(test)]
+pub use ports::MockAuditEventRepository;

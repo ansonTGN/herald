@@ -31,7 +31,10 @@ pub mod user;
 pub mod user_totp;
 
 // Re-export commonly used types
-pub use audit::{RbacAction, RbacAuditEvent, RbacAuditLogger, RbacResult, RbacTargetType};
+pub use audit::{
+    ActorType, AuditAction, AuditCategory, AuditEvent, AuditEventFilters, AuditEventRepository,
+    AuditResult, AuditTargetType, NewAuditEvent, PaginatedAuditEvents,
+};
 pub use authentication::Identity;
 pub use payment_attempt::PurchasableTarget;
 pub use totp_key_management::{RealmTotpKeyRepository, RealmTotpKeyService};

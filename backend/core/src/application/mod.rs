@@ -178,6 +178,9 @@ impl ApplicationServiceBuilder {
             user_repository.clone(),
             user_service.clone(),
             realm_config_repository.clone(),
+            Arc::new(
+                crate::infrastructure::audit::PostgresAuditEventRepository::new((*db).clone()),
+            ),
         ));
 
         let realm_config_service = Arc::new(RealmConfigServiceImpl::new(

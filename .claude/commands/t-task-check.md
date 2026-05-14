@@ -95,6 +95,9 @@ allowed-tools:
    - 必须包含 `id/title/agent/scope/inputs/steps/expected_files/validation/depends_on/handoff_summary/completion_criteria`
    - 不得把完整 slot 内容塞进一个 item
    - 超过拆分阈值必须有合理说明，否则记 P1
+   - scope 中包含两个可独立交付、独立验证的主交付物时，必须拆分，否则记 P1
+   - 单个 HTTP/API item 同时包含 5 个以上 endpoint、DTO、路由注册和 OpenAPI/schema 更新时，必须拆分，否则记 P1
+   - 单个 demo item 同时创建复用 helper 并覆盖多个完整用户故事或多个业务状态流时，必须拆分，否则记 P1
 9. 核对设计文档与任务文档的一致性。
 10. 调用当前阶段对应 agent 进行专业校验：
    - backend: `backend-dev`, `backend-test`, `backend-accept`
@@ -160,6 +163,9 @@ allowed-tools:
 - item 缺少 `scope/inputs/steps/expected_files/validation/handoff_summary/completion_criteria` 任一关键章节。
 - item 超过拆分阈值且没有合理说明。
 - item 职责混杂，导致一次 agent 调用高概率无法完成。
+- item 合并多个可独立交付、独立验证的主交付物。
+- HTTP/API item 同时覆盖 5 个以上 endpoint、DTO、路由注册和 OpenAPI/schema 更新。
+- demo item 同时创建复用 helper 并覆盖多个完整用户故事或多个业务状态流。
 - 下游 item 缺少对上游 handoff 的追溯。
 - backend 阶段缺少 `awaiting_finalize` 收口语义。
 - `finalize.md` 未限制 `/simplify` 目标范围，或未声明全量测试后的修复/重试规则。

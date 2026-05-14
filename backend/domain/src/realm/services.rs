@@ -1,5 +1,9 @@
 use std::sync::Arc;
 
+use crate::audit::{
+    ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
+    NewAuditEvent,
+};
 use crate::authentication::Identity;
 use crate::authorization::{AssignRoleToUserRequest, RoleRepository, UserRoleRepository};
 use crate::client::ports::ClientRepository;
@@ -14,7 +18,7 @@ use crate::realm_config::{ConfigType, RealmConfigRepository, UpsertRealmConfigRe
 use crate::user::ports::{UserRepository, UserService};
 use crate::user::value_objects::CreateUserRequest;
 
-pub struct RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR>
+pub struct RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
 where
     R: RealmRepository,
     P: RealmPolicy,
@@ -25,6 +29,7 @@ where
     U: UserRepository,
     UR2: UserService,
     RCR: RealmConfigRepository,
+    AE: AuditEventRepository + 'static,
 {
     pub(crate) realm_repository: Arc<R>,
     pub(crate) policy: Arc<P>,
@@ -35,9 +40,10 @@ where
     pub(crate) user_repository: Arc<U>,
     pub(crate) user_service: Arc<UR2>,
     pub(crate) realm_config_repository: Arc<RCR>,
+    pub(crate) audit_event_repository: Arc<AE>,
 }
 
-impl<R, P, RB, C, UR, RR, U, UR2, RCR> RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR>
+impl<R, P, RB, C, UR, RR, U, UR2, RCR, AE> RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
 where
     R: RealmRepository,
     P: RealmPolicy,
@@ -48,6 +54,7 @@ where
     U: UserRepository,
     UR2: UserService,
     RCR: RealmConfigRepository,
+    AE: AuditEventRepository + 'static,
 {
     pub fn new(
         realm_repository: Arc<R>,
@@ -59,6 +66,7 @@ where
         user_repository: Arc<U>,
         user_service: Arc<UR2>,
         realm_config_repository: Arc<RCR>,
+        audit_event_repository: Arc<AE>,
     ) -> Self {
         Self {
             realm_repository,
@@ -70,6 +78,7 @@ where
             user_repository,
             user_service,
             realm_config_repository,
+            audit_event_repository,
         }
     }
 
@@ -80,8 +89,8 @@ where
     }
 }
 
-impl<R, P, RB, C, UR, RR, U, UR2, RCR> RealmService
-    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR>
+impl<R, P, RB, C, UR, RR, U, UR2, RCR, AE> RealmService
+    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
 where
     R: RealmRepository,
     P: RealmPolicy,
@@ -92,6 +101,7 @@ where
     U: UserRepository,
     UR2: UserService,
     RCR: RealmConfigRepository,
+    AE: AuditEventRepository + 'static,
 {
     async fn create_realm(
         &self,
@@ -354,15 +364,51 @@ where
         }
 
         // Log audit event for RBAC initialization
-        use crate::audit::RbacAuditLogger;
-        let audit_logger = RbacAuditLogger::default();
-        let user_id = identity.user_id().clone();
-        audit_logger.log_rbac_init(
-            user_id,
-            realm.id.clone(),
-            crate::audit::RbacResult::Success,
-            serde_json::json!({ "status": "initialized" }),
-        );
+        if let Err(e) = self
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm.id.clone(),
+                category: AuditCategory::RealmManagement,
+                action: AuditAction::RealmCreate,
+                actor_id: identity.user_id().to_string(),
+                actor_type: Some(ActorType::Admin),
+                actor_name: identity.as_user().map(|u| u.email.clone()),
+                target_type: AuditTargetType::Realm,
+                target_id: realm.id.clone(),
+                target_name: Some(realm.name.clone()),
+                result: AuditResult::Success,
+                details: Some(serde_json::json!({"status": "created"})),
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record audit event");
+        }
+
+        if let Err(e) = self
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm.id.clone(),
+                category: AuditCategory::RealmManagement,
+                action: AuditAction::RealmRbacInit,
+                actor_id: identity.user_id().to_string(),
+                actor_type: Some(ActorType::System),
+                actor_name: None,
+                target_type: AuditTargetType::Realm,
+                target_id: realm.id.clone(),
+                target_name: Some(realm.name.clone()),
+                result: AuditResult::Success,
+                details: Some(serde_json::json!({"status": "initialized"})),
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record audit event");
+        }
 
         Ok(realm)
     }
@@ -430,8 +476,8 @@ where
     }
 }
 
-impl<R, P, RB, C, UR, RR, U, UR2, RCR> std::fmt::Debug
-    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR>
+impl<R, P, RB, C, UR, RR, U, UR2, RCR, AE> std::fmt::Debug
+    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
 where
     R: RealmRepository,
     P: RealmPolicy,
@@ -442,6 +488,7 @@ where
     U: UserRepository,
     UR2: UserService,
     RCR: RealmConfigRepository,
+    AE: AuditEventRepository + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RealmServiceImpl").finish()

@@ -43,6 +43,46 @@ export type AssignmentsListResponse = {
     assignments: Array<PlanAssignment>;
 };
 
+export type AuditEventDetailResponse = {
+    action: string;
+    actorId: string;
+    actorName?: string | null;
+    actorType?: string | null;
+    category: string;
+    createdAt: string;
+    details?: unknown;
+    id: string;
+    ipAddress?: string | null;
+    result: string;
+    targetId: string;
+    targetName?: string | null;
+    targetType: string;
+    traceId?: string | null;
+    userAgent?: string | null;
+};
+
+export type AuditEventListResponse = {
+    items: Array<AuditEventResponse>;
+    page: number;
+    pageSize: number;
+    total: number;
+};
+
+export type AuditEventResponse = {
+    action: string;
+    actorId: string;
+    actorName?: string | null;
+    actorType?: string | null;
+    category: string;
+    createdAt: string;
+    id: string;
+    ipAddress?: string | null;
+    result: string;
+    targetId: string;
+    targetName?: string | null;
+    targetType: string;
+};
+
 export type AuthorizeQueryParams = {
     clientId: string;
     redirectUri: string;
@@ -531,9 +571,9 @@ export type ExtConsumePointsResponse = {
  */
 export type ExtPointsBalanceResponse = {
     balance: number;
-    currency: string;
     totalConsumed: number;
     totalRecharged: number;
+    unit: string;
     updatedAt: string;
     userId: string;
 };
@@ -826,6 +866,7 @@ export type ListRealmsResponse = {
 export type ListTransactionsQuery = {
     clientAppId?: string | null;
     endTime?: string | null;
+    externalRefId?: string | null;
     page?: number | null;
     pageSize?: number | null;
     startTime?: string | null;
@@ -883,6 +924,7 @@ export type OAuthConfigResponse = {
 };
 
 export type OAuthLoginRequest = {
+    clientId?: string | null;
     redirectUri?: string | null;
 };
 
@@ -979,12 +1021,12 @@ export type PageResponsePointsAccountResponse = {
     items: Array<{
         balance: number;
         createdAt: string;
-        currency: string;
         id: string;
         realmId: string;
         status: string;
         totalConsumed: number;
         totalRecharged: number;
+        unit: string;
         updatedAt: string;
         userId: string;
     }>;
@@ -1268,12 +1310,12 @@ export type PlansListResponse = {
 export type PointsAccountResponse = {
     balance: number;
     createdAt: string;
-    currency: string;
     id: string;
     realmId: string;
     status: string;
     totalConsumed: number;
     totalRecharged: number;
+    unit: string;
     updatedAt: string;
     userId: string;
 };
@@ -1283,9 +1325,9 @@ export type PointsAccountResponse = {
  */
 export type PointsBalanceResponse = {
     balance: number;
-    currency: string;
     totalConsumed: number;
     totalRecharged: number;
+    unit: string;
     updatedAt: string;
     userId: string;
 };
@@ -2161,6 +2203,111 @@ export type WechatOrderStatusResponse = {
     status: string;
     tradeState?: string | null;
 };
+
+export type ListAuditEventsData = {
+    body?: never;
+    path: {
+        /**
+         * Realm ID
+         */
+        realmId: string;
+    };
+    query?: {
+        /**
+         * Filter by audit category (e.g. user_management, rbac, realm_management, auth)
+         */
+        category?: string;
+        /**
+         * Filter by action (e.g. user_create, auth_login)
+         */
+        action?: string;
+        /**
+         * Filter by actor ID
+         */
+        actorId?: string;
+        /**
+         * Start time (ISO 8601 / RFC 3339)
+         */
+        startTime?: string;
+        /**
+         * End time (ISO 8601 / RFC 3339)
+         */
+        endTime?: string;
+        /**
+         * Page number (0-based, default 0)
+         */
+        page?: number;
+        /**
+         * Page size (default 20, max 100)
+         */
+        pageSize?: number;
+    };
+    url: '/api/audit/{realmId}';
+};
+
+export type ListAuditEventsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type ListAuditEventsError = ListAuditEventsErrors[keyof ListAuditEventsErrors];
+
+export type ListAuditEventsResponses = {
+    /**
+     * Paginated list of audit events
+     */
+    200: AuditEventListResponse;
+};
+
+export type ListAuditEventsResponse = ListAuditEventsResponses[keyof ListAuditEventsResponses];
+
+export type GetAuditEventData = {
+    body?: never;
+    path: {
+        /**
+         * Realm ID
+         */
+        realmId: string;
+        /**
+         * Audit event ID
+         */
+        eventId: string;
+    };
+    query?: never;
+    url: '/api/audit/{realmId}/{eventId}';
+};
+
+export type GetAuditEventErrors = {
+    /**
+     * Unauthorized
+     */
+    401: ErrorResponse;
+    /**
+     * Audit event not found
+     */
+    404: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type GetAuditEventError = GetAuditEventErrors[keyof GetAuditEventErrors];
+
+export type GetAuditEventResponses = {
+    /**
+     * Audit event detail
+     */
+    200: AuditEventDetailResponse;
+};
+
+export type GetAuditEventResponse = GetAuditEventResponses[keyof GetAuditEventResponses];
 
 export type ChangeEmailConfirmData = {
     body?: never;

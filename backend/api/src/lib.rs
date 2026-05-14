@@ -43,6 +43,7 @@ use herald_core::domain::user::services::admin::{
     AdminUserServiceImpl, PermissionManagementServiceImpl, RoleAssignmentServiceImpl,
     UserPermissionServiceImpl,
 };
+use herald_core::infrastructure::audit::PostgresAuditEventRepository;
 use herald_core::infrastructure::authorization::{
     RedisCache, RedisPermissionChecker,
     policies::{PermissionBasedBillingPolicy, PermissionBasedPointsPolicy},
@@ -172,6 +173,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
     let user_repository = Arc::new(PostgresUserRepository::new(db.clone().into()));
     let billing_repository = Arc::new(PostgresBillingRepository::new(db.clone()));
     let invoice_repository = Arc::new(PostgresInvoiceRepository::new(db.clone()));
+    let audit_event_repository = Arc::new(PostgresAuditEventRepository::new(db.clone()));
 
     // Create billing service with permission-based policy
     let billing_policy = PermissionBasedBillingPolicy::new(permission_checker.clone());
@@ -230,6 +232,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
     let admin_user_service = Arc::new(AdminUserServiceImpl::new(
         admin_user_repository.clone(),
         permission_checker.clone(),
+        audit_event_repository.clone(),
     ));
     let role_assignment_service = Arc::new(RoleAssignmentServiceImpl::new(
         user_role_repository.clone(),
@@ -309,6 +312,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         resend: None,
         billing_repository: billing_repository.clone(),
         invoice_repository: invoice_repository.clone(),
+        audit_event_repository: audit_event_repository.clone(),
         billing_service: billing_service.clone(),
         product_service: product_service.clone(),
         public_base_url: config.frontend.url.clone(),
@@ -397,6 +401,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         resend: None,
         billing_repository,
         invoice_repository,
+        audit_event_repository,
         billing_service,
         product_service,
         public_base_url: config.frontend.url.clone(),

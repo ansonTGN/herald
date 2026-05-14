@@ -1,3 +1,9 @@
+// Audit log query scenarios
+pub mod audit_scenarios;
+
+// Audit event collection scenarios (verify events are recorded for core operations)
+pub mod audit_collection_scenarios;
+
 // Tests for self-implemented permission system
 pub mod admin_init_scenarios;
 pub mod admin_role_definitions_scenarios;

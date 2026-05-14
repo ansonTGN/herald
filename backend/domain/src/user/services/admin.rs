@@ -5,6 +5,10 @@
 use std::sync::Arc;
 use uuid::Uuid;
 
+use crate::audit::{
+    ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
+    NewAuditEvent,
+};
 use crate::{
     authentication::Identity,
     authorization::permission_service::PermissionService,
@@ -22,24 +26,32 @@ use super::super::{
 // Admin User Service Implementation
 // ============================================================================
 
-pub struct AdminUserServiceImpl<R, P>
+pub struct AdminUserServiceImpl<R, P, AE>
 where
     R: AdminUserRepository,
     P: PermissionService,
+    AE: AuditEventRepository + 'static,
 {
     user_repository: Arc<R>,
     permission_checker: Arc<P>,
+    pub(crate) audit_event_repository: Arc<AE>,
 }
 
-impl<R, P> AdminUserServiceImpl<R, P>
+impl<R, P, AE> AdminUserServiceImpl<R, P, AE>
 where
     R: AdminUserRepository,
     P: PermissionService,
+    AE: AuditEventRepository + 'static,
 {
-    pub fn new(user_repository: Arc<R>, permission_checker: Arc<P>) -> Self {
+    pub fn new(
+        user_repository: Arc<R>,
+        permission_checker: Arc<P>,
+        audit_event_repository: Arc<AE>,
+    ) -> Self {
         Self {
             user_repository,
             permission_checker,
+            audit_event_repository,
         }
     }
 
@@ -49,10 +61,11 @@ where
     }
 }
 
-impl<R, P> AdminUserService for AdminUserServiceImpl<R, P>
+impl<R, P, AE> AdminUserService for AdminUserServiceImpl<R, P, AE>
 where
     R: AdminUserRepository,
     P: PermissionService,
+    AE: AuditEventRepository + 'static,
 {
     async fn create_user_with_roles(
         &self,
@@ -116,14 +129,40 @@ where
                 UserAdminError::InternalError("Failed to fetch created user".to_string())
             })?;
 
-        Ok(AdminUser {
+        let admin_user = AdminUser {
             id: user_entity.id,
-            realm_id: user_entity.realm_id,
-            email: user_entity.email,
+            realm_id: user_entity.realm_id.clone(),
+            email: user_entity.email.clone(),
             nickname: user_entity.nickname,
             status: user_entity.status,
             created_at: user_entity.created_at.to_rfc3339(),
-        })
+        };
+
+        // Record audit event (failure does not fail the operation)
+        if let Err(e) = self
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm_id.to_string(),
+                category: AuditCategory::UserManagement,
+                action: AuditAction::UserCreate,
+                actor_id: identity.user_id().to_string(),
+                actor_type: Some(ActorType::Admin),
+                actor_name: identity.as_user().map(|u| u.email.clone()),
+                target_type: AuditTargetType::User,
+                target_id: admin_user.id.to_string(),
+                target_name: Some(admin_user.email.clone()),
+                result: AuditResult::Success,
+                details: Some(serde_json::json!({"email": admin_user.email})),
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record audit event");
+        }
+
+        Ok(admin_user)
     }
 
     async fn update_user_admin(
@@ -173,14 +212,40 @@ where
             .await?
             .ok_or_else(|| UserAdminError::UserNotFound(user_id.to_string()))?;
 
-        Ok(AdminUser {
+        let admin_user = AdminUser {
             id: user_entity.id,
-            realm_id: user_entity.realm_id,
-            email: user_entity.email,
+            realm_id: user_entity.realm_id.clone(),
+            email: user_entity.email.clone(),
             nickname: user_entity.nickname,
             status: user_entity.status,
             created_at: user_entity.created_at.to_rfc3339(),
-        })
+        };
+
+        // Record audit event (failure does not fail the operation)
+        if let Err(e) = self
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm_id.to_string(),
+                category: AuditCategory::UserManagement,
+                action: AuditAction::UserUpdate,
+                actor_id: identity.user_id().to_string(),
+                actor_type: Some(ActorType::Admin),
+                actor_name: identity.as_user().map(|u| u.email.clone()),
+                target_type: AuditTargetType::User,
+                target_id: admin_user.id.to_string(),
+                target_name: Some(admin_user.email.clone()),
+                result: AuditResult::Success,
+                details: Some(serde_json::json!({"email": admin_user.email})),
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record audit event");
+        }
+
+        Ok(admin_user)
     }
 
     async fn get_user_admin(
@@ -260,6 +325,30 @@ where
 
         if !deleted {
             return Err(UserAdminError::UserNotFound(user_id.to_string()));
+        }
+
+        // Record audit event (failure does not fail the operation)
+        if let Err(e) = self
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm_id.to_string(),
+                category: AuditCategory::UserManagement,
+                action: AuditAction::UserDelete,
+                actor_id: identity.user_id().to_string(),
+                actor_type: Some(ActorType::Admin),
+                actor_name: identity.as_user().map(|u| u.email.clone()),
+                target_type: AuditTargetType::User,
+                target_id: user_id.to_string(),
+                target_name: None,
+                result: AuditResult::Success,
+                details: None,
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record audit event");
         }
 
         Ok(())

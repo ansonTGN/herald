@@ -27,7 +27,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::application::http::auth::identity_middleware::inject_identity;
 use crate::application::http::state::AppState;
 use crate::application::http::{
-    admin, auth, billing, client_apps, oauth, permission, points, public_config, realm,
+    admin, audit, auth, billing, client_apps, oauth, permission, points, public_config, realm,
     realm_config, user, users,
 };
 
@@ -81,6 +81,8 @@ pub struct HealthCheckResponse {
         realm::totp_config::handle_update_realm_totp_config,
         realm::totp_config::handle_get_realm_totp_config,
         public_config::get_public_config,
+        audit::list::list_audit_events,
+        audit::detail::get_audit_event,
         health_check,
     ),
     components(
@@ -124,6 +126,9 @@ pub struct HealthCheckResponse {
             public_config::PublicConfigResponse,
             public_config::RegistrationConfig,
             public_config::OAuthProviderInfo,
+            audit::types::AuditEventResponse,
+            audit::types::AuditEventDetailResponse,
+            audit::types::AuditEventListResponse,
             HealthCheckResponse,
         )
     ),
@@ -138,7 +143,8 @@ pub struct HealthCheckResponse {
         (name = "billing.payment-providers", description = "Payment provider configuration APIs"),
         (name = "points", description = "Points and virtual currency APIs"),
         (name = "ext", description = "External API (API Key authentication)"),
-        (name = "system", description = "System health and monitoring APIs")
+        (name = "system", description = "System health and monitoring APIs"),
+        (name = "audit", description = "Audit log query APIs")
     )
 )]
 pub struct ApiDoc;
@@ -242,6 +248,7 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
     let admin_routes = admin::admin_router_with_middleware((*state).clone());
     let realm_routes = realm::realm_router();
     let billing_routes = billing::billing_routes();
+    let audit_routes = audit::audit_router();
 
     // Test routes - only included in test builds
     #[cfg(test)]
@@ -349,6 +356,11 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
         .nest(
             "/api/realms",
             realm_routes.layer(from_fn_with_state((*state).clone(), inject_identity)),
+        )
+        // Audit log query routes
+        .nest(
+            "/api/audit/{realmId}",
+            audit_routes.layer(from_fn_with_state((*state).clone(), inject_identity)),
         )
         .merge(billing::billing_public_routes())
         .merge(billing_routes.layer(from_fn_with_state((*state).clone(), inject_identity)))

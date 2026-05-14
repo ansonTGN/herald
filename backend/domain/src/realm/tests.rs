@@ -14,6 +14,7 @@
 #[cfg(test)]
 mod realm_admin_tests {
 
+    use crate::audit::MockAuditEventRepository;
     use crate::authentication::Identity;
     use crate::authorization::{MockRoleRepository, MockUserRoleRepository};
     use crate::client::ports::MockClientRepository;
@@ -96,6 +97,32 @@ mod realm_admin_tests {
 
     fn policy_fixture() -> AllowAllRealmPolicy {
         AllowAllRealmPolicy
+    }
+
+    fn mock_audit_repo() -> MockAuditEventRepository {
+        let mut mock = MockAuditEventRepository::new();
+        mock.expect_create().returning(|_| {
+            let event = crate::audit::AuditEvent {
+                id: crate::common::entities::generate_uuid_v7(),
+                realm_id: "test-realm".to_string(),
+                category: crate::audit::AuditCategory::RealmManagement,
+                action: crate::audit::AuditAction::RealmCreate,
+                actor_id: "test".to_string(),
+                actor_type: None,
+                actor_name: None,
+                target_type: crate::audit::AuditTargetType::Realm,
+                target_id: "test-realm".to_string(),
+                target_name: None,
+                result: crate::audit::AuditResult::Success,
+                details: None,
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+                created_at: Utc::now(),
+            };
+            Box::pin(async move { Ok(event) })
+        });
+        mock
     }
 
     #[derive(Clone)]
@@ -205,6 +232,7 @@ mod realm_admin_tests {
             Arc::new(mock_user_repo),
             Arc::new(mock_user_service),
             Arc::new(mock_realm_config_repo),
+            Arc::new(mock_audit_repo()),
         ));
 
         // =====================================================================
@@ -309,6 +337,7 @@ mod realm_admin_tests {
             Arc::new(MockUserRepository::new()),
             Arc::new(mock_user_service),
             Arc::new(mock_realm_config_repo),
+            Arc::new(mock_audit_repo()),
         ));
 
         // =====================================================================
@@ -426,6 +455,7 @@ mod realm_admin_tests {
             Arc::new(mock_user_repo),
             Arc::new(mock_user_service),
             Arc::new(mock_realm_config_repo),
+            Arc::new(mock_audit_repo()),
         ));
 
         // =====================================================================
@@ -475,6 +505,7 @@ mod realm_admin_tests {
             Arc::new(MockUserRepository::new()),
             Arc::new(MockUserService::new()),
             Arc::new(MockRealmConfigRepository::new()),
+            Arc::new(mock_audit_repo()),
         ));
 
         let result = realm_service
@@ -496,6 +527,7 @@ mod realm_admin_tests {
             Arc::new(MockUserRepository::new()),
             Arc::new(MockUserService::new()),
             Arc::new(MockRealmConfigRepository::new()),
+            Arc::new(mock_audit_repo()),
         ));
 
         let result = realm_service
@@ -522,6 +554,7 @@ mod realm_admin_tests {
             Arc::new(MockUserRepository::new()),
             Arc::new(MockUserService::new()),
             Arc::new(MockRealmConfigRepository::new()),
+            Arc::new(mock_audit_repo()),
         ));
 
         let result = realm_service.list_realms(identity_fixture()).await;
