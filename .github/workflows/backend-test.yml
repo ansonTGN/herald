@@ -5,6 +5,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTC_WRAPPER: ""
+  CARGO_BUILD_RUSTC_WRAPPER: ""
 
 jobs:
   nextest:
