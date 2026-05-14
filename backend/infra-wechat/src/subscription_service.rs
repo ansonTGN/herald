@@ -271,19 +271,3 @@ pub struct SubscriptionResult {
     pub points_amount: i32,
     pub expires_at: Option<DateTime<Utc>>,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_subscription_result_structure() {
-        let result = SubscriptionResult {
-            subscription_id: Uuid::now_v7(),
-            points_amount: 100,
-            expires_at: Some(Utc::now()),
-        };
-        assert_eq!(result.points_amount, 100);
-        assert!(result.expires_at.is_some());
-    }
-}

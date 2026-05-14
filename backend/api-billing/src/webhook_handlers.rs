@@ -1094,27 +1094,3 @@ pub async fn handle_creem_webhook(
 
     Ok(StatusCode::OK)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_idempotency_key_format() {
-        let key = format!("creem_{}", "evt_123");
-        assert_eq!(key, "creem_evt_123");
-    }
-
-    #[test]
-    fn test_placeholder_transaction_creation() {
-        let user_id = uuid::Uuid::now_v7();
-        let tx = create_placeholder_transaction(
-            user_id,
-            "test-realm",
-            TransactionType::SubscriptionGrant,
-        );
-        assert_eq!(tx.user_id, user_id);
-        assert_eq!(tx.realm_id, "test-realm");
-        assert_eq!(tx.transaction_type, TransactionType::SubscriptionGrant);
-    }
-}

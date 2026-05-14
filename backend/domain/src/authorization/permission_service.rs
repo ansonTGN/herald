@@ -138,36 +138,3 @@ pub trait PermissionService: Send + Sync {
         user_id: &str,
     ) -> impl std::future::Future<Output = Result<Vec<String>, CoreError>> + Send;
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_policy_creation() {
-        let policy = Policy {
-            resource: "users".to_string(),
-            action: "view".to_string(),
-        };
-
-        assert_eq!(policy.resource, "users");
-        assert_eq!(policy.action, "view");
-    }
-
-    #[test]
-    fn test_policy_serialization() {
-        let policy = Policy {
-            resource: "All".to_string(),
-            action: "allow".to_string(),
-        };
-
-        let serialized = serde_json::to_string(&policy).unwrap();
-        let deserialized: Policy = serde_json::from_str(&serialized).unwrap();
-
-        assert_eq!(deserialized, policy);
-    }
-}

@@ -23,12 +23,24 @@ use uuid::Uuid;
 
 type HmacSha256 = Hmac<Sha256>;
 
+/// Ensure billing encryption has a deterministic test key before handlers encrypt secrets.
+pub fn ensure_billing_test_encryption_key() {
+    unsafe {
+        std::env::set_var(
+            "ENCRYPTION_KEY",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        );
+    }
+}
+
 /// ============================================================================
 /// Billing Test Setup Helpers
 /// ============================================================================
 ///
 /// Setup admin session for billing tests
 pub async fn setup_billing_admin_session(ctx: &mut TestContext, email: &str) -> String {
+    ensure_billing_test_encryption_key();
+
     let (admin_token, user_id) =
         crate::tests::helpers::create_admin_session_with_user(ctx, email, 1800).await;
 
@@ -43,6 +55,8 @@ pub async fn setup_billing_admin_session_with_user(
     ctx: &mut TestContext,
     email: &str,
 ) -> (String, Uuid) {
+    ensure_billing_test_encryption_key();
+
     let (admin_token, user_id) =
         crate::tests::helpers::create_admin_session_with_user(ctx, email, 1800).await;
 

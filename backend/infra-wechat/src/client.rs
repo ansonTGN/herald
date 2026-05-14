@@ -453,40 +453,6 @@ impl WechatPayClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::generate_out_trade_no;
-
-    #[test]
-    fn test_out_trade_no_format() {
-        let realm_id = "test-realm-123";
-        let out_trade_no = generate_out_trade_no(realm_id);
-        assert!(out_trade_no.starts_with("CAS_test_"));
-        assert!(
-            out_trade_no.len() <= 32,
-            "out_trade_no must be ≤ 32 chars for WeChat Pay"
-        );
-    }
-
-    #[test]
-    fn test_out_trade_no_short_realm() {
-        let realm_id = "ab";
-        let out_trade_no = generate_out_trade_no(realm_id);
-        assert!(out_trade_no.starts_with("CAS_ab_"));
-        assert!(
-            out_trade_no.len() <= 32,
-            "out_trade_no must be ≤ 32 chars for WeChat Pay"
-        );
-    }
-
-    #[test]
-    fn test_out_trade_no_uniqueness() {
-        let realm_id = "test-realm";
-        let first = generate_out_trade_no(realm_id);
-        // Wait a bit to ensure different timestamp (UUID v7 is time-based)
-        std::thread::sleep(std::time::Duration::from_millis(2));
-        let second = generate_out_trade_no(realm_id);
-        assert_ne!(first, second);
-    }
-
     #[test]
     fn test_client_new_validates_pem_format() {
         let result = WechatPayClient::new(

@@ -19,6 +19,7 @@ pub struct PointsAccountResponse {
     pub created_at: String,
     pub updated_at: String,
     pub unit: String,
+    pub currency: String,
 }
 
 /// Points balance response
@@ -30,6 +31,7 @@ pub struct PointsBalanceResponse {
     pub total_recharged: i64,
     pub total_consumed: i64,
     pub unit: String,
+    pub currency: String,
     pub updated_at: String,
 }
 
@@ -239,6 +241,7 @@ mod tests {
             created_at: "2024-01-01T00:00:00Z".to_string(),
             updated_at: "2024-01-01T00:00:00Z".to_string(),
             unit: "points".to_string(),
+            currency: "points".to_string(),
         };
 
         let json = serde_json::to_string(&account).unwrap();
@@ -270,6 +273,7 @@ mod tests {
             "Should contain camelCase 'updatedAt'"
         );
         assert!(json.contains("\"unit\""), "Should contain 'unit'");
+        assert!(json.contains("\"currency\""), "Should contain 'currency'");
 
         // Verify that original snake_case is not present
         assert!(
@@ -296,10 +300,6 @@ mod tests {
             !json.contains("\"updated_at\""),
             "Should not contain snake_case 'updated_at'"
         );
-        assert!(
-            !json.contains("\"currency\""),
-            "Should not expose points balance unit as currency"
-        );
     }
 
     #[test]
@@ -310,6 +310,7 @@ mod tests {
             total_recharged: 100,
             total_consumed: 50,
             unit: "points".to_string(),
+            currency: "points".to_string(),
             updated_at: "2024-01-01T00:00:00Z".to_string(),
         };
 
@@ -334,6 +335,7 @@ mod tests {
             "Should contain camelCase 'updatedAt'"
         );
         assert!(json.contains("\"unit\""), "Should contain 'unit'");
+        assert!(json.contains("\"currency\""), "Should contain 'currency'");
 
         // Verify snake_case is not present
         assert!(
@@ -351,10 +353,6 @@ mod tests {
         assert!(
             !json.contains("\"updated_at\""),
             "Should not contain snake_case 'updated_at'"
-        );
-        assert!(
-            !json.contains("\"currency\""),
-            "Should not expose points balance unit as currency"
         );
     }
 

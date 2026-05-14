@@ -33,9 +33,6 @@ pub mod shopify_test_types;
 #[cfg(test)]
 mod handlers_test;
 
-#[cfg(test)]
-mod shopify_webhook_utils_test;
-
 /// OpenAPI specification for billing module
 #[derive(utoipa::OpenApi)]
 #[openapi(

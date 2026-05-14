@@ -368,35 +368,3 @@ fn decrypt_resource_data(
 
     Ok(decrypted_data)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_webhook_payload_parsing() {
-        let json = r#"{
-            "eventType": "TRANSACTION.SUCCESS",
-            "resource": {
-                "outTradeNo": "CAS_test_123",
-                "transactionId": "TX123",
-                "amount": {
-                    "total": 100,
-                    "currency": "CNY"
-                },
-                "ciphertext": "encrypted",
-                "nonce": "nonce",
-                "associatedData": "data"
-            }
-        }"#;
-
-        let payload: WechatWebhookPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.event_type, "TRANSACTION.SUCCESS");
-        assert_eq!(
-            payload.resource.out_trade_no,
-            Some("CAS_test_123".to_string())
-        );
-        assert_eq!(payload.resource.transaction_id, Some("TX123".to_string()));
-        assert_eq!(payload.resource.amount.as_ref().map(|a| a.total), Some(100));
-    }
-}

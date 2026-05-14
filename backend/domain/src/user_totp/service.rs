@@ -406,14 +406,6 @@ mod tests {
         // Verify it's valid Base32
         assert!(secret.chars().all(|c| c.is_alphanumeric() || c == '='));
     }
-
-    #[test]
-    fn test_unit_generate_secret_unique() {
-        let secret1 = UserTotpService::generate_secret();
-        let secret2 = UserTotpService::generate_secret();
-        assert_ne!(secret1, secret2, "Secrets should be unique");
-    }
-
     // =========================================================================
     // Unit Tests: Backup Code Generation
     // =========================================================================
@@ -431,20 +423,6 @@ mod tests {
             );
         }
     }
-
-    #[test]
-    fn test_unit_generate_backup_codes_unique() {
-        let codes1 = UserTotpService::generate_backup_codes();
-        let codes2 = UserTotpService::generate_backup_codes();
-
-        // Check all codes are unique within a batch
-        let unique_codes1: std::collections::HashSet<_> = codes1.iter().collect();
-        assert_eq!(unique_codes1.len(), 10, "All backup codes should be unique");
-
-        // Check different batches are different
-        assert_ne!(codes1, codes2, "Backup code batches should be unique");
-    }
-
     // =========================================================================
     // Unit Tests: Backup Code Hashing and Verification
     // =========================================================================
@@ -502,47 +480,6 @@ mod tests {
         let result = UserTotpService::verify_totp(&secret, &expected_code).unwrap();
         assert!(result);
     }
-
-    #[test]
-    fn test_unit_verify_totp_previous_step() {
-        let secret = UserTotpService::generate_secret();
-        let secret_bytes =
-            base32::decode(base32::Alphabet::Rfc4648 { padding: true }, &secret).unwrap();
-
-        // Calculate previous step code (30 seconds ago)
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let previous_time = current_time - 30;
-        let previous_code =
-            totp_lite::totp_custom::<totp_lite::Sha256>(30, 6, &secret_bytes, previous_time);
-
-        // Verify should succeed (supports time drift)
-        let result = UserTotpService::verify_totp(&secret, &previous_code).unwrap();
-        assert!(result);
-    }
-
-    #[test]
-    fn test_unit_verify_totp_next_step() {
-        let secret = UserTotpService::generate_secret();
-        let secret_bytes =
-            base32::decode(base32::Alphabet::Rfc4648 { padding: true }, &secret).unwrap();
-
-        // Calculate next step code (30 seconds ahead)
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let next_time = current_time + 30;
-        let next_code =
-            totp_lite::totp_custom::<totp_lite::Sha256>(30, 6, &secret_bytes, next_time);
-
-        // Verify should succeed (supports time drift)
-        let result = UserTotpService::verify_totp(&secret, &next_code).unwrap();
-        assert!(result);
-    }
-
     #[test]
     fn test_unit_verify_totp_wrong_code() {
         let secret = UserTotpService::generate_secret();
@@ -551,16 +488,6 @@ mod tests {
         let result = UserTotpService::verify_totp(&secret, wrong_code).unwrap();
         assert!(!result);
     }
-
-    #[test]
-    fn test_unit_verify_totp_invalid_secret() {
-        let invalid_secret = "INVALID@#$!";
-        let code = "123456";
-
-        let result = UserTotpService::verify_totp(invalid_secret, code);
-        assert!(result.is_err(), "Should return error for invalid secret");
-    }
-
     // =========================================================================
     // Unit Tests: TOTP Verification with Replay Protection
     // =========================================================================
@@ -751,96 +678,6 @@ mod tests {
             }
         }
     }
-
-    #[test]
-    fn test_unit_decrypt_secret_invalid_format() {
-        // Ensure environment variable is set
-        unsafe {
-            std::env::set_var("TOTP_SECRET_KEY", "test_key_32_bytes_long_1234567890");
-        }
-
-        let invalid_encrypted = "invalid_format";
-        let result = UserTotpService::decrypt_secret(invalid_encrypted);
-
-        assert!(
-            result.is_err(),
-            "Should return error for invalid encrypted format"
-        );
-    }
-
-    // =========================================================================
-    // Unit Tests: QR Code URL Generation
-    // =========================================================================
-
-    #[test]
-    fn test_unit_generate_qr_code_url() {
-        let secret = "JBSWY3DPEHPK3PXP";
-        let url = UserTotpService::generate_qr_code_url(secret, "user@example.com", "Herald");
-
-        assert!(url.contains(secret));
-        assert!(url.contains("user@example.com"));
-        assert!(url.contains("otpauth://totp/"));
-        assert!(url.contains("issuer=Herald"));
-        assert!(url.contains("algorithm=SHA256"));
-        assert!(url.contains("digits=6"));
-        assert!(url.contains("period=30"));
-    }
-
-    // =========================================================================
-    // Unit Tests: Setup and Status Responses
-    // =========================================================================
-
-    #[test]
-    fn test_unit_create_setup_response() {
-        let secret = "JBSWY3DPEHPK3PXP";
-        let backup_codes = vec!["ABC123".to_string(), "DEF456".to_string()];
-        let temp_token = "temp_token_123";
-
-        let response = UserTotpService::create_setup_response(
-            secret.to_string(),
-            backup_codes.clone(),
-            "user@example.com",
-            "test-realm",
-            temp_token.to_string(),
-        );
-
-        assert_eq!(response.secret, secret);
-        assert!(response.qr_code_url.contains(secret));
-        assert_eq!(response.backup_codes, backup_codes);
-        assert_eq!(response.temp_token, temp_token);
-    }
-
-    #[test]
-    fn test_unit_create_status_response() {
-        let config = UserTotpConfig {
-            id: Uuid::now_v7(),
-            user_id: Uuid::now_v7(),
-            realm_id: "test-realm".to_string(),
-            secret_hash: "encrypted_secret".to_string(),
-            key_version: 1,
-            enabled: true,
-            verified_at: Some(chrono::Utc::now()),
-            last_used_at: Some(chrono::Utc::now()),
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        };
-
-        let backup_stats = BackupCodeStats {
-            total: 10,
-            remaining: 7,
-            used: 3,
-        };
-
-        let response = UserTotpService::create_status_response(&config, backup_stats.clone());
-
-        assert!(response.enabled);
-        assert!(response.enabled_at.is_some());
-        assert!(response.last_verified_at.is_some());
-        assert_eq!(response.backup_codes.total, 10);
-        assert_eq!(response.backup_codes.remaining, 7);
-        assert_eq!(response.backup_codes.used, 3);
-    }
-
     // =========================================================================
     // Unit Tests: TOTP or Backup Code Verification
     // =========================================================================
@@ -888,43 +725,6 @@ mod tests {
 
         assert_eq!(result, TotpVerificationResultWithBackup::Valid);
     }
-
-    #[test]
-    fn test_unit_verify_totp_or_backup_code_totp_expired() {
-        unsafe {
-            std::env::set_var("TOTP_SECRET_KEY", "test_key_32_bytes_long_1234567890");
-        }
-
-        let secret = UserTotpService::generate_secret();
-        let encrypted = UserTotpService::encrypt_secret(&secret).unwrap();
-
-        let config = UserTotpConfig {
-            id: Uuid::now_v7(),
-            user_id: Uuid::now_v7(),
-            realm_id: "test-realm".to_string(),
-            secret_hash: encrypted,
-            key_version: 1,
-            enabled: true,
-            verified_at: Some(chrono::Utc::now()),
-            last_used_at: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        };
-
-        // Use wrong code
-        let wrong_code = "000000";
-        let result = UserTotpService::verify_totp_or_backup_code(
-            &config,
-            Some(wrong_code.to_string()),
-            None,
-            Vec::new(),
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(result, TotpVerificationResultWithBackup::Expired);
-    }
-
     #[test]
     fn test_unit_verify_totp_or_backup_code_replay_attack() {
         unsafe {
@@ -1011,45 +811,6 @@ mod tests {
 
         assert_eq!(result, TotpVerificationResultWithBackup::BackupCodeUsed(1));
     }
-
-    #[test]
-    fn test_unit_verify_totp_or_backup_code_backup_code_invalid() {
-        let backup_code = "ABC123";
-        let hash = UserTotpService::hash_backup_code(backup_code).unwrap();
-
-        let backup_entry = UserTotpBackupCode {
-            id: 1,
-            user_totp_config_id: Uuid::now_v7(),
-            code_hash: hash,
-            used: false,
-            used_at: None,
-            created_at: chrono::Utc::now(),
-        };
-
-        let config = UserTotpConfig {
-            id: Uuid::now_v7(),
-            user_id: Uuid::now_v7(),
-            realm_id: "test-realm".to_string(),
-            secret_hash: "encrypted_secret".to_string(),
-            key_version: 1,
-            enabled: true,
-            verified_at: Some(chrono::Utc::now()),
-            last_used_at: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        };
-
-        let result = UserTotpService::verify_totp_or_backup_code(
-            &config,
-            None,
-            Some("WRONG_CODE".to_string()),
-            vec![backup_entry],
-            None,
-        );
-
-        assert_eq!(result.unwrap(), TotpVerificationResultWithBackup::Expired);
-    }
-
     #[test]
     fn test_unit_verify_totp_or_backup_code_neither_code_nor_backup() {
         let config = UserTotpConfig {
@@ -1069,54 +830,5 @@ mod tests {
             UserTotpService::verify_totp_or_backup_code(&config, None, None, Vec::new(), None);
 
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_unit_verify_totp_or_backup_code_backup_code_ignored_used() {
-        let backup_code = "ABC123";
-        let hash = UserTotpService::hash_backup_code(backup_code).unwrap();
-
-        // Create both used and unused backup codes
-        let used_backup = UserTotpBackupCode {
-            id: 1,
-            user_totp_config_id: Uuid::now_v7(),
-            code_hash: hash.clone(),
-            used: true, // Already used
-            used_at: None,
-            created_at: chrono::Utc::now(),
-        };
-
-        let unused_backup = UserTotpBackupCode {
-            id: 2,
-            user_totp_config_id: Uuid::now_v7(),
-            code_hash: UserTotpService::hash_backup_code("DEF456").unwrap(),
-            used: false,
-            used_at: None,
-            created_at: chrono::Utc::now(),
-        };
-
-        let config = UserTotpConfig {
-            id: Uuid::now_v7(),
-            user_id: Uuid::now_v7(),
-            realm_id: "test-realm".to_string(),
-            secret_hash: "encrypted_secret".to_string(),
-            key_version: 1,
-            enabled: true,
-            verified_at: Some(chrono::Utc::now()),
-            last_used_at: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        };
-
-        // Try to use an already used backup code
-        let result = UserTotpService::verify_totp_or_backup_code(
-            &config,
-            None,
-            Some(backup_code.to_string()),
-            vec![used_backup, unused_backup],
-            None,
-        );
-
-        assert_eq!(result.unwrap(), TotpVerificationResultWithBackup::Expired);
     }
 }

@@ -13,8 +13,5 @@
 pub mod ports;
 pub mod service;
 
-#[cfg(test)]
-mod service_test;
-
 pub use ports::{RealmTotpKeyRepository, RealmTotpKeyService, RealmTotpKeyVersion};
 pub use service::RealmTotpKeyServiceImpl;

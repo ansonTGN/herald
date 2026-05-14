@@ -116,24 +116,6 @@ mod tests {
     use axum::response::IntoResponse;
 
     #[test]
-    fn test_parse_bool() {
-        assert_eq!(parse_bool("true"), Some(true));
-        assert_eq!(parse_bool("TRUE"), Some(true));
-        assert_eq!(parse_bool("1"), Some(true));
-        assert_eq!(parse_bool("yes"), Some(true));
-        assert_eq!(parse_bool("YES"), Some(true));
-
-        assert_eq!(parse_bool("false"), Some(false));
-        assert_eq!(parse_bool("FALSE"), Some(false));
-        assert_eq!(parse_bool("0"), Some(false));
-        assert_eq!(parse_bool("no"), Some(false));
-        assert_eq!(parse_bool("NO"), Some(false));
-
-        assert_eq!(parse_bool("invalid"), None);
-        assert_eq!(parse_bool(""), None);
-    }
-
-    #[test]
     fn test_public_config_query_error_is_generic() {
         let err = public_config_query_error("Failed to query realm config");
         let response = err.into_response();

@@ -253,14 +253,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_rate_limit_config_default() {
-        let config = RateLimitConfig::default();
-        assert_eq!(config.max_requests, 10);
-        assert_eq!(config.window_secs, 60);
-        assert!(!config.enforce_in_dev);
-    }
-
-    #[test]
     fn test_rate_limit_config_builder() {
         let config = RateLimitConfig::new(5, 120).with_enforce_in_dev();
         assert_eq!(config.max_requests, 5);

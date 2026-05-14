@@ -292,32 +292,3 @@ impl ApiKeyCache {
         Ok(deleted_count)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_api_key_cache_value_from_domain_entity() {
-        let api_key = ClientApiKey {
-            id: "test-id".to_string(),
-            name: "Test Key".to_string(),
-            api_key_hash: "hash".to_string(),
-            realm_id: "realm-1".to_string(),
-            client_app_id: None,
-            enabled: true,
-            expires_at: Some(Utc::now()),
-            created_at: Utc::now(),
-            last_used_at: None,
-            usage_count: 0,
-        };
-
-        let cached = ApiKeyCacheValue::from(&api_key);
-
-        assert_eq!(cached.id, "test-id");
-        assert_eq!(cached.name, "Test Key");
-        assert_eq!(cached.realm_id, "realm-1");
-        assert!(cached.enabled);
-        assert!(cached.expires_at.is_some());
-    }
-}

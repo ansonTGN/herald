@@ -225,13 +225,3 @@ impl Drop for LockGuard {
         });
     }
 }
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn test_lock_guard_creation() {
-        // This is a placeholder test
-        // Real tests would require Redis instance
-    }
-}

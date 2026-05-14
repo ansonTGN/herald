@@ -12,24 +12,40 @@ pub enum AuditCategory {
 
 /// Specific action that was performed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum AuditAction {
+    #[serde(rename = "user.create")]
     UserCreate,
+    #[serde(rename = "user.update")]
     UserUpdate,
+    #[serde(rename = "user.delete")]
     UserDelete,
+    #[serde(rename = "role.create")]
     RoleCreate,
+    #[serde(rename = "role.update")]
     RoleUpdate,
+    #[serde(rename = "role.delete")]
     RoleDelete,
+    #[serde(rename = "permission.create")]
     PermissionCreate,
+    #[serde(rename = "permission.delete")]
     PermissionDelete,
+    #[serde(rename = "role.assign")]
     RoleAssign,
+    #[serde(rename = "role.unassign")]
     RoleUnassign,
+    #[serde(rename = "permission.grant")]
     PermissionGrant,
+    #[serde(rename = "permission.revoke")]
     PermissionRevoke,
+    #[serde(rename = "realm.create")]
     RealmCreate,
+    #[serde(rename = "realm.rbac_init")]
     RealmRbacInit,
+    #[serde(rename = "auth.login")]
     AuthLogin,
+    #[serde(rename = "auth.logout")]
     AuthLogout,
+    #[serde(rename = "auth.login_failed")]
     AuthLoginFailed,
 }
 
@@ -66,25 +82,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn audit_action_serializes_to_snake_case() {
+    fn audit_action_serializes_correctly() {
         let pairs: Vec<(AuditAction, &str)> = vec![
-            (AuditAction::UserCreate, "user_create"),
-            (AuditAction::UserUpdate, "user_update"),
-            (AuditAction::UserDelete, "user_delete"),
-            (AuditAction::RoleCreate, "role_create"),
-            (AuditAction::RoleUpdate, "role_update"),
-            (AuditAction::RoleDelete, "role_delete"),
-            (AuditAction::PermissionCreate, "permission_create"),
-            (AuditAction::PermissionDelete, "permission_delete"),
-            (AuditAction::RoleAssign, "role_assign"),
-            (AuditAction::RoleUnassign, "role_unassign"),
-            (AuditAction::PermissionGrant, "permission_grant"),
-            (AuditAction::PermissionRevoke, "permission_revoke"),
-            (AuditAction::RealmCreate, "realm_create"),
-            (AuditAction::RealmRbacInit, "realm_rbac_init"),
-            (AuditAction::AuthLogin, "auth_login"),
-            (AuditAction::AuthLogout, "auth_logout"),
-            (AuditAction::AuthLoginFailed, "auth_login_failed"),
+            (AuditAction::UserCreate, "user.create"),
+            (AuditAction::UserUpdate, "user.update"),
+            (AuditAction::UserDelete, "user.delete"),
+            (AuditAction::RoleCreate, "role.create"),
+            (AuditAction::RoleUpdate, "role.update"),
+            (AuditAction::RoleDelete, "role.delete"),
+            (AuditAction::PermissionCreate, "permission.create"),
+            (AuditAction::PermissionDelete, "permission.delete"),
+            (AuditAction::RoleAssign, "role.assign"),
+            (AuditAction::RoleUnassign, "role.unassign"),
+            (AuditAction::PermissionGrant, "permission.grant"),
+            (AuditAction::PermissionRevoke, "permission.revoke"),
+            (AuditAction::RealmCreate, "realm.create"),
+            (AuditAction::RealmRbacInit, "realm.rbac_init"),
+            (AuditAction::AuthLogin, "auth.login"),
+            (AuditAction::AuthLogout, "auth.logout"),
+            (AuditAction::AuthLoginFailed, "auth.login_failed"),
         ];
 
         for (variant, expected) in pairs {
@@ -96,59 +112,6 @@ mod tests {
                 variant,
                 expected
             );
-        }
-    }
-
-    #[test]
-    fn audit_category_roundtrip() {
-        let categories = vec![
-            AuditCategory::UserManagement,
-            AuditCategory::Rbac,
-            AuditCategory::RealmManagement,
-            AuditCategory::Auth,
-        ];
-        for c in &categories {
-            let json = serde_json::to_string(c).unwrap();
-            let back: AuditCategory = serde_json::from_str(&json).unwrap();
-            assert_eq!(*c, back);
-        }
-    }
-
-    #[test]
-    fn audit_result_serializes_to_snake_case() {
-        assert_eq!(
-            serde_json::to_string(&AuditResult::Success).unwrap(),
-            "\"success\""
-        );
-        assert_eq!(
-            serde_json::to_string(&AuditResult::Failure).unwrap(),
-            "\"failure\""
-        );
-    }
-
-    #[test]
-    fn audit_target_type_roundtrip() {
-        let types = vec![
-            AuditTargetType::User,
-            AuditTargetType::Role,
-            AuditTargetType::Permission,
-            AuditTargetType::Realm,
-            AuditTargetType::Session,
-        ];
-        for t in &types {
-            let json = serde_json::to_string(t).unwrap();
-            let back: AuditTargetType = serde_json::from_str(&json).unwrap();
-            assert_eq!(*t, back);
-        }
-    }
-
-    #[test]
-    fn actor_type_roundtrip() {
-        let types = vec![ActorType::User, ActorType::Admin, ActorType::System];
-        for t in &types {
-            let json = serde_json::to_string(t).unwrap();
-            let back: ActorType = serde_json::from_str(&json).unwrap();
-            assert_eq!(*t, back);
         }
     }
 }

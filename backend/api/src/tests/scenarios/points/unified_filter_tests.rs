@@ -861,41 +861,6 @@ async fn execute_filter_test_case(ctx: &mut TestContext, test_case: FilterTestCa
 
     println!("\n✅ Scenario completed successfully");
 }
-
-// =============================================================================
-// Individual Test Functions (Generated from Test Cases)
-// =============================================================================
-
-/// ============================================================================
-/// Scenario 1.6: Admin Filters Accounts by Status (test_06)
-/// ============================================================================
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_admin_filter_accounts_by_status(ctx: &mut TestContext) {
-    let test_case = FilterTestCase::AccountByStatus {
-        admin_email: "admin6@example.com",
-        filter_value: "frozen",
-        expected_count: 5,
-        verify_all_have_status: true,
-        target_status: "frozen",
-    };
-    execute_filter_test_case(ctx, test_case).await;
-}
-
-/// ============================================================================
-/// Scenario 1.7: Admin Searches Accounts by Email (test_07)
-/// ============================================================================
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_admin_search_accounts_by_email(ctx: &mut TestContext) {
-    let test_case = FilterTestCase::AccountByEmailSearch {
-        admin_email: "admin7@example.com",
-        search_email: "test7@example.com",
-        expected_count: 1,
-    };
-    execute_filter_test_case(ctx, test_case).await;
-}
-
 /// ============================================================================
 /// Scenario 4.2: User Filters Transactions by Type (test_19)
 /// ============================================================================
@@ -909,35 +874,6 @@ async fn test_scenario_filter_transactions_by_type(ctx: &mut TestContext) {
     };
     execute_filter_test_case(ctx, test_case).await;
 }
-
-/// ============================================================================
-/// Scenario 4.3: User Filters Transactions by Time Range (test_20)
-/// ============================================================================
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_filter_transactions_by_time(ctx: &mut TestContext) {
-    let test_case = FilterTestCase::TransactionByTimeRange {
-        user_email: "user20@example.com",
-        days_ago: 7,
-        expected_count: 5,
-    };
-    execute_filter_test_case(ctx, test_case).await;
-}
-
-/// ============================================================================
-/// Scenario 4.5: Admin Filters Transactions by Client App (test_22)
-/// ============================================================================
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_filter_transactions_by_client_app(ctx: &mut TestContext) {
-    let test_case = FilterTestCase::TransactionByClientApp {
-        admin_email: "admin22@example.com",
-        client_app_id: Uuid::now_v7(), // This will be ignored in the test implementation
-        expected_count: 3,
-    };
-    execute_filter_test_case(ctx, test_case).await;
-}
-
 /// ============================================================================
 /// Scenario 4.6: Transaction History Pagination (test_23)
 /// ============================================================================

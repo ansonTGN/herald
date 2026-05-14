@@ -18,7 +18,7 @@ use crate::application::http::state::AppState;
     params(
         ("realmId" = String, Path, description = "Realm ID"),
         ("category" = Option<String>, Query, description = "Filter by audit category (e.g. user_management, rbac, realm_management, auth)"),
-        ("action" = Option<String>, Query, description = "Filter by action (e.g. user_create, auth_login)"),
+        ("action" = Option<String>, Query, description = "Filter by action (e.g. user.create, auth.login)"),
         ("actorId" = Option<String>, Query, description = "Filter by actor ID"),
         ("startTime" = Option<String>, Query, description = "Start time (ISO 8601 / RFC 3339)"),
         ("endTime" = Option<String>, Query, description = "End time (ISO 8601 / RFC 3339)"),
@@ -66,17 +66,18 @@ pub async fn list_audit_events(
         .as_deref()
         .and_then(|s| serde_json::from_str(&format!("\"{s}\"")).ok());
 
-    let start_time = params
-        .start_time
-        .as_deref()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.to_utc());
+    let parse_rfc3339_query_time = |value: Option<&str>| {
+        value
+            .and_then(|s| {
+                DateTime::parse_from_rfc3339(s)
+                    .or_else(|_| DateTime::parse_from_rfc3339(&s.replace(' ', "+")))
+                    .ok()
+            })
+            .map(|dt| dt.to_utc())
+    };
 
-    let end_time = params
-        .end_time
-        .as_deref()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.to_utc());
+    let start_time = parse_rfc3339_query_time(params.start_time.as_deref());
+    let end_time = parse_rfc3339_query_time(params.end_time.as_deref());
 
     let filters = AuditEventFilters {
         category,

@@ -706,22 +706,6 @@ fn cancel_mode_for_shopify_status(status: &str) -> CancelMode {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn test_topic_routing() {
-        let topics = vec![
-            "subscription_contracts/create",
-            "subscription_contracts/update",
-            "subscription_billing_attempts/success",
-            "subscription_billing_attempts/failure",
-            "refunds/create",
-        ];
-
-        for topic in topics {
-            assert!(!topic.is_empty());
-            assert!(topic.contains('/'));
-        }
-    }
-
-    #[test]
     fn test_map_shopify_status() {
         assert_eq!(super::map_shopify_status("ACTIVE"), "active");
         assert_eq!(super::map_shopify_status("cancelled"), "canceled");

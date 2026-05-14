@@ -15,9 +15,6 @@ pub mod verify_totp;
 #[cfg(test)]
 mod util_test;
 
-#[cfg(test)]
-pub mod tests;
-
 use axum::routing::get;
 use axum::{Router, routing::post};
 use herald_api_base::application::http::state::AppState;

@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use crate::billing::{PlanType, test_helpers::*};
 
     // Tests are organized by the type being tested
 
@@ -11,42 +10,6 @@ mod tests {
     // NOTE: Low-value serialization tests removed (test_plan_serialization, test_plan_with_optional_fields)
     // These tests only verified serde standard functionality without custom logic.
     // Serde guarantees are covered by the library itself and integration tests.
-
-    #[test]
-    fn test_plan_complete() {
-        let plan = PlanBuilder::new()
-            .with_realm_id("realm-1")
-            .with_name("enterprise")
-            .with_title("Enterprise Plan")
-            .with_description("Advanced features for large organizations")
-            .with_type(PlanType::Yearly)
-            .with_price(50000)
-            .with_checkout_url("https://app.example.com/billing/checkout?plan_id=enterprise")
-            .with_trial_days(30)
-            .with_sort_order(3)
-            .build();
-
-        assert_plan_price(&plan, 50000);
-        assert_eq!(plan.trial_days, 30);
-        assert_plan_active(&plan, true);
-        assert_eq!(plan.sort_order, 3);
-    }
-
-    #[test]
-    fn test_plan_with_custom_name() {
-        let plan1 = PlanBuilder::new()
-            .with_realm_id("realm-1")
-            .with_name("Plan 1")
-            .build();
-        let plan2 = PlanBuilder::new()
-            .with_realm_id("realm-1")
-            .with_name("Plan 2")
-            .build();
-
-        assert_eq!(plan1.name, "Plan 1");
-        assert_eq!(plan2.name, "Plan 2");
-        assert_ne!(plan1.id, plan2.id);
-    }
 
     // =============================================================================
     // CreatePlanInput & UpdatePlanInput Tests

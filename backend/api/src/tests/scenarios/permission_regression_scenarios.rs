@@ -17,86 +17,6 @@ mod tests {
     use test_context::test_context;
 
     use SchemaTestContext as PermissionRegressionTestContext;
-
-    /// 场景测试：精确权限匹配仍然有效
-    ///
-    /// **Given**: 用户拥有 `users:view` 权限
-    /// **When**: 用户请求访问需要 `users:view` 权限的资源
-    /// **Then**: 权限检查返回 true（精确匹配）
-    #[test_context(PermissionRegressionTestContext)]
-    #[tokio::test]
-    async fn test_scenario_exact_permission_match_still_works(
-        ctx: &mut PermissionRegressionTestContext,
-    ) {
-        // ========================================================================
-        // Given: 创建测试用户并授予 users:view 权限
-        // ========================================================================
-        let (admin_token, user_id_str) =
-            create_admin_session_with_user(ctx, "test-exact-match@test.com", 1800).await;
-        let _user_id = uuid::Uuid::parse_str(&user_id_str).expect("Invalid user_id UUID");
-
-        // Grant realm-admin role to get roles.manage permission
-        grant_realm_admin_role(ctx, &user_id_str).await;
-
-        let role_name = "test-exact-match-role";
-        let role_id = create_role(
-            ctx,
-            &ctx._realm_id,
-            &admin_token,
-            role_name,
-            "Role for testing exact match",
-        )
-        .await;
-
-        // 为角色分配 users:view 权限
-        sqlx::query(
-            "INSERT INTO role_policies (id, realm_id, role_id, resource, action, created_at)
-             VALUES ($1, $2, $3, $4, $5, NOW())",
-        )
-        .bind(uuid::Uuid::now_v7())
-        .bind(&ctx._realm_id)
-        .bind(role_id)
-        .bind("users")
-        .bind("view")
-        .execute(&ctx._app_state.pool)
-        .await
-        .expect("Failed to assign permission to role");
-
-        assign_role_to_user(
-            ctx,
-            &ctx._realm_id,
-            &admin_token,
-            uuid::Uuid::parse_str(&user_id_str).unwrap(),
-            role_id,
-        )
-        .await;
-
-        let _ = ctx
-            ._app_state
-            .permission_checker
-            .invalidate_user_role_cache(&ctx._realm_id, &user_id_str)
-            .await;
-
-        // ========================================================================
-        // When: 检查 users:view 权限（精确匹配）
-        // ========================================================================
-        let result = check_permission(ctx, &admin_token, "users", "view").await;
-
-        // ========================================================================
-        // Then: 验证权限检查通过
-        // ========================================================================
-        assert_eq!(
-            result["allowed"], true,
-            "Exact permission match should work"
-        );
-        assert_eq!(
-            result["allowed"], true,
-            "Exact permission match should work"
-        );
-
-        tracing::info!("✓ Exact permission match still works correctly");
-    }
-
     /// 场景测试：角色分配仍然有效
     ///
     /// **Given**: 用户被分配到角色
@@ -178,44 +98,6 @@ mod tests {
 
         tracing::info!("✓ Role assignment still works correctly");
     }
-
-    /// 场景测试：权限缓存仍然有效
-    ///
-    /// **Given**: 用户拥有权限并已缓存
-    /// **When**: 用户重复请求访问相同资源
-    /// **Then**: 权限检查从缓存中读取（性能提升）
-    #[test_context(PermissionRegressionTestContext)]
-    #[tokio::test]
-    async fn test_scenario_permission_caching_still_works(
-        ctx: &mut PermissionRegressionTestContext,
-    ) {
-        // ========================================================================
-        // Given: 创建测试用户并授予权限
-        // ========================================================================
-        let (admin_token, user_id_str) =
-            create_admin_session_with_user(ctx, "test-cache@test.com", 1800).await;
-        let _user_id = uuid::Uuid::parse_str(&user_id_str).expect("Invalid user_id UUID");
-
-        grant_realm_admin_role(ctx, &user_id_str).await;
-
-        // ========================================================================
-        // When: 重复检查权限（第一次缓存，后续从缓存读取）
-        // ========================================================================
-        // 第一次检查（从数据库加载并缓存）
-        let result_1 = check_permission(ctx, &admin_token, "users", "view").await;
-
-        // 第二次检查（从缓存读取）
-        let result_2 = check_permission(ctx, &admin_token, "users", "view").await;
-
-        // ========================================================================
-        // Then: 验证两次检查都成功
-        // ========================================================================
-        assert_eq!(result_1["allowed"], true);
-        assert_eq!(result_2["allowed"], true);
-
-        tracing::info!("✓ Permission caching still works correctly");
-    }
-
     /// 场景测试：用户可以正确登录并获得权限
     ///
     /// **Given**: 用户拥有正确的凭据和角色

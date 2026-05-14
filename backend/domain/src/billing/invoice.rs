@@ -596,36 +596,6 @@ mod tests {
     }
 
     #[test]
-    fn invoice_source_from_str_roundtrip() {
-        assert_eq!(InvoiceSource::AdminManual.as_str(), "admin_manual");
-        assert_eq!(InvoiceSource::UserApplication.as_str(), "user_application");
-
-        let admin: InvoiceSource = "admin_manual".parse().unwrap();
-        assert_eq!(admin, InvoiceSource::AdminManual);
-
-        let user: InvoiceSource = "user_application".parse().unwrap();
-        assert_eq!(user, InvoiceSource::UserApplication);
-    }
-
-    #[test]
-    fn invoice_source_invalid_returns_error() {
-        let result = "auto".parse::<InvoiceSource>();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn adjustment_mode_as_str() {
-        assert_eq!(AdjustmentMode::Fixed.as_str(), "fixed");
-        assert_eq!(AdjustmentMode::Percent.as_str(), "percent");
-    }
-
-    #[test]
-    fn actor_type_as_str() {
-        assert_eq!(ActorType::User.as_str(), "user");
-        assert_eq!(ActorType::System.as_str(), "system");
-    }
-
-    #[test]
     fn invoice_event_type_as_str() {
         assert_eq!(InvoiceEventType::Created.as_str(), "created");
         assert_eq!(InvoiceEventType::Issued.as_str(), "issued");

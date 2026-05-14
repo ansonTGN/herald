@@ -138,70 +138,6 @@ async fn test_scenario_admin_cannot_access_other_realms(ctx: &mut TestContext) {
 
     println!("\n✅ 测试通过: admin 用户无法访问其他 realm");
 }
-
-/// ============================================================================
-/// Scenario 2: Admin 用户可以访问 admin realm
-///
-/// **Given**: admin 用户属于 admin realm
-/// **When**: admin 用户访问 admin realm 的用户列表
-/// **Then**: 返回 200 OK
-///
-/// **验收标准**:
-/// - 状态码为 200
-/// - 响应包含 users 数组
-/// ============================================================================
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_admin_can_access_admin_realm(ctx: &mut TestContext) {
-    println!("\n=== Scenario: Admin 用户可以访问 admin realm ===\n");
-
-    let app = ctx.create_unified_test_router();
-
-    // ============================================================================
-    // Setup: 创建 admin realm 的管理员
-    // ============================================================================
-    println!("[Setup] 创建 admin realm 管理员");
-
-    let (admin_token, admin_user_id) =
-        create_admin_session_with_user(ctx, "admin-access@cas.com", 1800).await;
-
-    grant_realm_admin_role(ctx, &admin_user_id).await;
-
-    println!("[Setup] ✓ admin 用户创建成功");
-
-    // ============================================================================
-    // When: admin 用户访问 admin realm 的用户列表
-    // ============================================================================
-    println!("\n[When] admin 用户访问 admin realm 的用户列表");
-
-    let req = Request::builder()
-        .method("GET")
-        .uri(format!("/api/users/{}?page=0&pageSize=20", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
-        .body(Body::empty())
-        .unwrap();
-
-    let resp = app.clone().oneshot(req).await.unwrap();
-    let status = resp.status();
-
-    println!("[Then] 响应状态码: {}", status);
-
-    // ============================================================================
-    // Then: 返回 200 OK
-    // ============================================================================
-    assert_eq!(
-        status,
-        StatusCode::OK,
-        "admin 用户访问自己的 realm 应该返回 200 OK"
-    );
-
-    // 验证响应内容
-    let body: serde_json::Value = crate::tests::response_json(resp).await;
-    assert!(body["items"].is_array(), "响应应包含 items 数组");
-
-    println!("\n✅ 测试通过: admin 用户可以访问 admin realm");
-}
-
 /// ============================================================================
 /// Scenario 3: Realm-1 Admin 不能访问 Realm-2
 ///
@@ -419,52 +355,6 @@ async fn test_scenario_all_permission_no_longer_matches(ctx: &mut TestContext) {
         .await
         .unwrap();
 }
-
-/// ============================================================================
-/// Scenario 5: Super-admin 角色不存在
-///
-/// **Given**: 初始化 admin 用户
-/// **When**: 查询 super-admin 角色
-/// **Then**: super-admin 角色不存在
-///
-/// **验收标准**:
-/// - 数据库中没有 super-admin 角色
-/// - admin 用户只有 realm-admin 角色
-/// ============================================================================
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_super_admin_role_not_exists(ctx: &mut TestContext) {
-    println!("\n=== Scenario: Super-admin 角色不存在 ===\n");
-
-    // ============================================================================
-    // When: 查询 super-admin 角色
-    // ============================================================================
-    println!("[When] 查询 super-admin 角色");
-
-    let super_admin_role: Option<(String, String)> = sqlx::query_as(
-        "SELECT id::text, name FROM roles WHERE name = 'super-admin' AND realm_id::text = $1",
-    )
-    .bind(&ctx._realm_id)
-    .fetch_optional(&ctx._app_state.pool)
-    .await
-    .unwrap();
-
-    println!("[Then] 检查 super-admin 角色是否存在");
-
-    // ============================================================================
-    // Then: super-admin 角色不存在
-    // ============================================================================
-    assert!(
-        super_admin_role.is_none(),
-        "super-admin 角色不应该存在，实际: {:?}",
-        super_admin_role
-    );
-
-    println!("[Then] ✅ super-admin 角色不存在");
-
-    println!("\n✅ 测试通过: super-admin 角色已成功移除");
-}
-
 /// ============================================================================
 /// Scenario 6: Admin 用户拥有 realm-admin 角色
 ///

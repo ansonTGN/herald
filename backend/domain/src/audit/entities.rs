@@ -90,55 +90,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn new_audit_event_construction() {
-        let event = NewAuditEvent {
-            realm_id: "test-realm".to_string(),
-            category: AuditCategory::Auth,
-            action: AuditAction::AuthLogin,
-            actor_id: "user-1".to_string(),
-            actor_type: Some(ActorType::User),
-            actor_name: Some("alice".to_string()),
-            target_type: AuditTargetType::Session,
-            target_id: "session-1".to_string(),
-            target_name: None,
-            result: AuditResult::Success,
-            details: Some(serde_json::json!({ "method": "password" })),
-            ip_address: Some("127.0.0.1".to_string()),
-            user_agent: Some("test-agent".to_string()),
-            trace_id: None,
-        };
-
-        assert_eq!(event.realm_id, "test-realm");
-        assert_eq!(event.category, AuditCategory::Auth);
-        assert_eq!(event.action, AuditAction::AuthLogin);
-        assert_eq!(event.result, AuditResult::Success);
-    }
-
-    #[test]
-    fn filters_default_values() {
-        let filters = AuditEventFilters::default();
-        assert!(filters.category.is_none());
-        assert!(filters.action.is_none());
-        assert!(filters.actor_id.is_none());
-        assert!(filters.start_time.is_none());
-        assert!(filters.end_time.is_none());
-        assert_eq!(filters.page, 0);
-        assert_eq!(filters.page_size, 20);
-    }
-
-    #[test]
-    fn paginated_audit_events_construction() {
-        let page = PaginatedAuditEvents {
-            items: vec![],
-            page: 0,
-            page_size: 20,
-            total: 0,
-        };
-        assert!(page.items.is_empty());
-        assert_eq!(page.total, 0);
-    }
-
-    #[test]
     fn audit_event_serialization_roundtrip() {
         let now = Utc::now();
         let id = Uuid::now_v7();

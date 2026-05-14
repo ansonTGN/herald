@@ -5,8 +5,8 @@ mod tests {
 
     use crate::authentication::Identity;
     use crate::billing::{
-        AllowAllBillingPolicy, BillingPeriod, BillingRepository, ClientAppPlan, CreatePlanInput,
-        PaymentEvent, Plan, PlanPaymentProvider, PlanService, PlanType, Product, Subscription,
+        AllowAllBillingPolicy, BillingRepository, ClientAppPlan, CreatePlanInput, PaymentEvent,
+        Plan, PlanPaymentProvider, PlanService, PlanType, Product, Subscription,
         SubscriptionHistoryEvent, SubscriptionHistoryQuery, UpdatePlanInput, test_helpers::*,
     };
     use crate::common::entities::app_errors::CoreError;
@@ -392,68 +392,6 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
-    }
-
-    #[test]
-    fn test_plan_entity_creation() {
-        let plan = test_plan("test-realm", "test_plan");
-        assert_eq!(plan.name, "test_plan");
-        assert_eq!(plan.realm_id, "test-realm");
-        assert_plan_active(&plan, true);
-    }
-
-    #[test]
-    fn test_plan_entity_with_custom_name() {
-        let plan1 = test_plan("realm-1", "Plan 1");
-        let plan2 = test_plan("realm-1", "Plan 2");
-
-        assert_eq!(plan1.name, "Plan 1");
-        assert_eq!(plan2.name, "Plan 2");
-        assert_ne!(plan1.id, plan2.id);
-    }
-
-    #[test]
-    fn test_client_app_plan_entity() {
-        let assignment = ClientAppPlan {
-            id: Uuid::now_v7(),
-            client_app_id: Uuid::now_v7(),
-            plan_id: Uuid::now_v7(),
-            enabled: true,
-            created_at: Utc::now(),
-        };
-
-        assert!(assignment.enabled);
-        assert!(!assignment.id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_billing_period_enum() {
-        assert_eq!(BillingPeriod::Monthly.as_str(), "monthly");
-        assert_eq!(BillingPeriod::Yearly.as_str(), "yearly");
-        assert_eq!(BillingPeriod::Monthly.to_string(), "monthly");
-        assert_eq!(BillingPeriod::Yearly.to_string(), "yearly");
-    }
-
-    #[test]
-    fn test_billing_period_from_string() {
-        let monthly: BillingPeriod = "monthly".into();
-        let yearly: BillingPeriod = "yearly".into();
-        let default: BillingPeriod = "invalid".into();
-
-        assert!(matches!(monthly, BillingPeriod::Monthly));
-        assert!(matches!(yearly, BillingPeriod::Yearly));
-        assert!(matches!(default, BillingPeriod::Monthly));
-    }
-
-    #[test]
-    fn test_create_plan_input_default() {
-        let input = CreatePlanInputBuilder::new()
-            .with_realm_id("test-realm")
-            .with_name("test_plan")
-            .build();
-
-        assert_eq!(input.name, "test_plan");
-        assert_eq!(input.price, 1000);
     }
 
     #[test]

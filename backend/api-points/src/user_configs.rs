@@ -70,13 +70,3 @@ pub async fn get_user_points_config(
         Err(e) => Err(ApiError::from(e)),
     }
 }
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn test_handler_creation() {
-        // Handler functions exist and can be called
-        // Actual testing will be done in integration tests
-    }
-}

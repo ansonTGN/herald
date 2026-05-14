@@ -208,28 +208,4 @@ mod tests {
         };
         assert!(invalid_period.validate().is_err());
     }
-
-    #[test]
-    fn test_create_realm_config_input_validate() {
-        let input = CreateRealmConfigInput {
-            realm_id: "test".to_string(),
-            registration_bonus_points: 1000,
-            free_periodic_points_amount: 50,
-            free_periodic_grant_period_type: "monthly".to_string(),
-            free_periodic_validity_days: 30,
-        };
-        assert!(input.validate().is_ok());
-
-        let invalid_input = CreateRealmConfigInput {
-            free_periodic_validity_days: 0,
-            ..input.clone()
-        };
-        assert!(invalid_input.validate().is_err());
-
-        let invalid_period = CreateRealmConfigInput {
-            free_periodic_grant_period_type: "invalid".to_string(),
-            ..input
-        };
-        assert!(invalid_period.validate().is_err());
-    }
 }

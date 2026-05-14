@@ -95,15 +95,3 @@ pub async fn inject_identity(
 
     Ok(next.run(req).await)
 }
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    #[ignore = "Integration test needed"]
-    fn test_reconstruct_identity_requires_valid_state() {
-        // This test verifies that reconstruct_identity requires proper state
-        // Full integration tests should be in the integration test suite
-        // Ignored until integration test framework is ready
-    }
-}

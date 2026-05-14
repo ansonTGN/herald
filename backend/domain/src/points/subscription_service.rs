@@ -419,15 +419,3 @@ where
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_cancel_mode_equality() {
-        assert_eq!(CancelMode::DefaultCancel, CancelMode::DefaultCancel);
-        assert_eq!(CancelMode::ImmediateCancel, CancelMode::ImmediateCancel);
-        assert_ne!(CancelMode::DefaultCancel, CancelMode::ImmediateCancel);
-    }
-}

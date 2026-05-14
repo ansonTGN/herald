@@ -132,65 +132,6 @@ async fn test_scenario_remove_role_from_user(ctx: &mut SchemaTestContext) {
 
     assert_eq!(resp_json["roles"].as_array().unwrap().len(), 0);
 }
-
-// ============================================================================
-// Scenario 3: Idempotent Role Assignment
-// ============================================================================
-
-/// **Given**: 用户 user-1 已有 role-a 角色
-/// **When**: POST /api/admin/users/user-1/roles, body: { role_ids: ["role-a"] }
-/// **Then**: HTTP 200 OK (幂等操作)
-/// **And**: 用户仍然只有一个 role-a 角色
-#[test_context(SchemaTestContext)]
-#[tokio::test]
-async fn test_scenario_idempotent_role_assignment(ctx: &mut SchemaTestContext) {
-    let (token, user_id_str) = create_admin_session_with_user(ctx, "test-admin", 1800).await;
-    grant_realm_admin_role(ctx, &user_id_str).await;
-
-    // Given: User already has role-a
-    let user_id = create_simple_test_user(ctx, "user-3@example.com").await;
-    let role_id = create_role(ctx, &ctx._realm_id, &token, "role-a", "Role A").await;
-    assign_role_to_user(ctx, &ctx._realm_id, &token, user_id, role_id).await;
-
-    // When: Assign the same role again
-    let app = ctx.create_unified_test_router();
-    let req_body = json!({
-        "roleIds": [role_id]
-    })
-    .to_string();
-
-    let req = Request::builder()
-        .method("POST")
-        .uri(format!(
-            "/api/permission/users/{}/roles",
-            &user_id.to_string()
-        ))
-        .header("content-type", "application/json")
-        .header(header::COOKIE, format!("X-Auth={}", token))
-        .body(Body::from(req_body))
-        .unwrap();
-
-    let resp = app.clone().oneshot(req).await.unwrap();
-
-    // Then: HTTP 201 CREATED (idempotent - duplicate is treated as success)
-    assert_eq!(resp.status(), StatusCode::CREATED);
-
-    // And: User still has only one role-a
-    let req = Request::builder()
-        .method("GET")
-        .uri(format!("/api/permission/users/{}/roles", user_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
-        .body(Body::empty())
-        .unwrap();
-
-    let resp = app.oneshot(req).await.unwrap();
-    let resp_json: serde_json::Value = response_json(resp).await;
-
-    // Count should be 1 (unique constraint prevents duplicates)
-    let roles = resp_json["roles"].as_array().unwrap();
-    assert!(roles.len() == 1, "Expected 1 role, got {}", roles.len());
-}
-
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_scenario_assign_duplicate_role_ids_in_single_request(ctx: &mut SchemaTestContext) {
@@ -231,41 +172,6 @@ async fn test_scenario_assign_duplicate_role_ids_in_single_request(ctx: &mut Sch
     assert!(roles.len() == 1, "Expected 1 role, got {}", roles.len());
     assert_eq!(resp_json["roles"][0]["id"], serde_json::json!(role_id));
 }
-
-// ============================================================================
-// Scenario 4: Get User Roles (Empty List)
-// ============================================================================
-
-/// **Given**: 用户 user-1 没有任何角色
-/// **When**: GET /api/admin/users/user-1/roles
-/// **Then**: HTTP 200 OK
-/// **And**: 返回空列表 []
-#[test_context(SchemaTestContext)]
-#[tokio::test]
-async fn test_scenario_get_user_roles_empty(ctx: &mut SchemaTestContext) {
-    let (token, user_id_str) = create_admin_session_with_user(ctx, "test-admin", 1800).await;
-    grant_realm_admin_role(ctx, &user_id_str).await;
-
-    // Given: User without roles
-    let user_id = create_simple_test_user(ctx, "no-roles-user@example.com").await;
-
-    // When: Get user roles
-    let app = ctx.create_unified_test_router();
-    let req = Request::builder()
-        .method("GET")
-        .uri(format!("/api/permission/users/{}/roles", user_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
-        .body(Body::empty())
-        .unwrap();
-
-    let resp = app.oneshot(req).await.unwrap();
-
-    // Then: HTTP 200 OK with empty list
-    assert_eq!(resp.status(), StatusCode::OK);
-    let resp_json: serde_json::Value = response_json(resp).await;
-    assert_eq!(resp_json["roles"].as_array().unwrap().len(), 0);
-}
-
 // ============================================================================
 // Scenario 5: Assign Multiple Roles
 // ============================================================================

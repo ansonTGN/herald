@@ -24,28 +24,3 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_model_creation() {
-        let model = Model {
-            id: Uuid::now_v7(),
-            realm_id: "test-realm".to_string(),
-            plan_id: Uuid::now_v7(),
-            grant_period_type: "monthly".to_string(),
-            points_per_period: 1000,
-            validity_days: 30,
-            grant_on_subscribe: true,
-            max_periods: None,
-            active: true,
-            created_at: DateTimeWithTimeZone::from(chrono::Utc::now()),
-            updated_at: DateTimeWithTimeZone::from(chrono::Utc::now()),
-        };
-        assert_eq!(model.grant_period_type, "monthly");
-        assert_eq!(model.points_per_period, 1000);
-        assert_eq!(model.validity_days, 30);
-    }
-}

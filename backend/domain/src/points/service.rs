@@ -937,12 +937,3 @@ where
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_service_creation() {
-        // This is a placeholder test
-        // Real tests would need mock repository and policy
-    }
-}

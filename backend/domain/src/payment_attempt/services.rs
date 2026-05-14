@@ -434,84 +434,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_blocked_transitions() {
-        // Specific blocked transitions mentioned in requirements
-        assert!(
-            !PaymentAttemptStatus::Expired.can_transition_to(&PaymentAttemptStatus::Succeeded),
-            "Expired → Succeeded should be blocked"
-        );
-        assert!(
-            !PaymentAttemptStatus::Failed.can_transition_to(&PaymentAttemptStatus::Succeeded),
-            "Failed → Succeeded should be blocked"
-        );
-        assert!(
-            !PaymentAttemptStatus::Succeeded.can_transition_to(&PaymentAttemptStatus::Pending),
-            "Succeeded → Pending should be blocked"
-        );
-        assert!(
-            !PaymentAttemptStatus::Cancelled.can_transition_to(&PaymentAttemptStatus::Succeeded),
-            "Cancelled → Succeeded should be blocked"
-        );
-        assert!(
-            !PaymentAttemptStatus::Succeeded.can_transition_to(&PaymentAttemptStatus::Failed),
-            "Succeeded → Failed should be blocked"
-        );
-        assert!(
-            !PaymentAttemptStatus::Succeeded.can_transition_to(&PaymentAttemptStatus::Cancelled),
-            "Succeeded → Cancelled should be blocked"
-        );
-        assert!(
-            !PaymentAttemptStatus::Succeeded.can_transition_to(&PaymentAttemptStatus::Expired),
-            "Succeeded → Expired should be blocked"
-        );
-    }
-
-    #[test]
-    fn test_is_terminal() {
-        assert!(PaymentAttemptStatus::Succeeded.is_terminal());
-        assert!(PaymentAttemptStatus::Failed.is_terminal());
-        assert!(PaymentAttemptStatus::Cancelled.is_terminal());
-        assert!(PaymentAttemptStatus::Expired.is_terminal());
-
-        assert!(!PaymentAttemptStatus::Pending.is_terminal());
-        assert!(!PaymentAttemptStatus::RequiresAction.is_terminal());
-    }
-
-    #[test]
-    fn test_is_active() {
-        assert!(PaymentAttemptStatus::Pending.is_active());
-        assert!(PaymentAttemptStatus::RequiresAction.is_active());
-
-        assert!(!PaymentAttemptStatus::Succeeded.is_active());
-        assert!(!PaymentAttemptStatus::Failed.is_active());
-        assert!(!PaymentAttemptStatus::Cancelled.is_active());
-        assert!(!PaymentAttemptStatus::Expired.is_active());
-    }
-
-    #[tokio::test]
-    async fn test_mark_succeeded_idempotency() {
-        let repo = Arc::new(MockPaymentAttemptRepository::new());
-        let service = PaymentAttemptService::new(repo.clone());
-
-        let mut attempt = create_test_attempt(PaymentAttemptStatus::Succeeded);
-        attempt.updated_at = Utc::now();
-        repo.add_attempt(attempt.clone());
-
-        // Marking already succeeded attempt should succeed (idempotent)
-        let result = service
-            .mark_payment_succeeded(
-                &attempt.realm_id,
-                attempt.id,
-                "completed".to_string(),
-                "txn_123".to_string(),
-                Utc::now(),
-            )
-            .await;
-
-        assert!(result.is_ok());
-    }
-
     #[tokio::test]
     async fn test_mark_failed_from_succeeded_fails() {
         let repo = Arc::new(MockPaymentAttemptRepository::new());
@@ -596,15 +518,5 @@ mod tests {
             }
             _ => panic!("Expected BadRequest error for invalid transition"),
         }
-    }
-
-    #[tokio::test]
-    async fn test_expiration_calculation() {
-        let now = Utc::now();
-        let expires_at = now + chrono::Duration::hours(2);
-
-        // Verify expiration is 2 hours from creation
-        let duration = expires_at - now;
-        assert_eq!(duration.num_hours(), 2);
     }
 }

@@ -39,28 +39,3 @@ impl Related<super::points_transaction::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_model_creation() {
-        let model = Model {
-            id: Uuid::now_v7(),
-            user_id: Uuid::now_v7(),
-            realm_id: "test-realm".to_string(),
-            total_balance: 100,
-            topup_balance: 100,
-            subscription_balance: 0,
-            total_topup_granted: 100,
-            total_subscription_granted: 0,
-            total_recharged: 1000,
-            total_consumed: 900,
-            status: "active".to_string(),
-            created_at: DateTimeWithTimeZone::from(chrono::Utc::now()),
-            updated_at: DateTimeWithTimeZone::from(chrono::Utc::now()),
-        };
-        assert_eq!(model.total_balance, 100);
-    }
-}

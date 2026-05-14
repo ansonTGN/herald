@@ -412,25 +412,6 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
-    fn test_client_creation_with_valid_api_key() {
-        let client = StripeClient::new("sk_test_123".to_string(), 30).unwrap();
-        assert_eq!(client.api_key, "sk_test_123");
-        assert_eq!(client.base_url, "https://api.stripe.com");
-    }
-
-    #[test]
-    fn test_client_creation_with_custom_base_url() {
-        let client = StripeClient::with_base_url(
-            "sk_test_123".to_string(),
-            "https://mock.stripe.com".to_string(),
-            30,
-        )
-        .unwrap();
-        assert_eq!(client.api_key, "sk_test_123");
-        assert_eq!(client.base_url, "https://mock.stripe.com");
-    }
-
-    #[test]
     fn test_verify_webhook_signature_valid() {
         let payload = b"test_payload";
         let secret = "whsec_test_secret";

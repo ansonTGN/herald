@@ -21,25 +21,3 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_model_creation() {
-        let now = DateTimeWithTimeZone::from(chrono::Utc::now());
-        let model = Model {
-            id: Uuid::now_v7(),
-            schedule_id: Uuid::now_v7(),
-            user_id: Uuid::now_v7(),
-            realm_id: "test-realm".to_string(),
-            period_number: 1,
-            granted_amount: 50,
-            grant_time: now,
-            created_at: now,
-        };
-        assert_eq!(model.period_number, 1);
-        assert_eq!(model.granted_amount, 50);
-    }
-}

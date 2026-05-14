@@ -668,45 +668,6 @@ mod tests {
     }
 
     #[test]
-    fn test_transaction_type_from_str() {
-        assert_eq!(
-            "recharge".parse::<TransactionType>().unwrap(),
-            TransactionType::Recharge
-        );
-        assert_eq!(
-            "consume".parse::<TransactionType>().unwrap(),
-            TransactionType::Consume
-        );
-        assert!("invalid".parse::<TransactionType>().is_err());
-    }
-
-    #[test]
-    fn test_recharge_type_from_str() {
-        assert_eq!(
-            "subscribe".parse::<RechargeType>().unwrap(),
-            RechargeType::Subscribe
-        );
-        assert_eq!(
-            "renewal".parse::<RechargeType>().unwrap(),
-            RechargeType::Renewal
-        );
-        assert!("invalid".parse::<RechargeType>().is_err());
-    }
-
-    #[test]
-    fn test_account_status_display() {
-        assert_eq!(AccountStatus::Active.to_string(), "active");
-        assert_eq!(AccountStatus::Frozen.to_string(), "frozen");
-        assert_eq!(AccountStatus::Closed.to_string(), "closed");
-    }
-
-    #[test]
-    fn test_transaction_type_display() {
-        assert_eq!(TransactionType::Recharge.to_string(), "recharge");
-        assert_eq!(TransactionType::Consume.to_string(), "consume");
-    }
-
-    #[test]
     fn test_idempotency_status_from_str() {
         assert_eq!(
             "pending".parse::<IdempotencyStatus>().unwrap(),
@@ -725,14 +686,6 @@ mod tests {
             IdempotencyStatus::Failed
         );
         assert!("invalid".parse::<IdempotencyStatus>().is_err());
-    }
-
-    #[test]
-    fn test_idempotency_status_display() {
-        assert_eq!(IdempotencyStatus::Pending.as_str(), "pending");
-        assert_eq!(IdempotencyStatus::Processing.as_str(), "processing");
-        assert_eq!(IdempotencyStatus::Completed.as_str(), "completed");
-        assert_eq!(IdempotencyStatus::Failed.as_str(), "failed");
     }
 
     #[test]

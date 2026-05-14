@@ -195,20 +195,3 @@ impl HttpClient for ReqwestHttpClient {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_http_client_creation() {
-        let client = ReqwestHttpClient::new();
-        assert!(client.is_ok());
-    }
-
-    #[test]
-    fn test_http_client_with_custom_timeout() {
-        let client = ReqwestHttpClient::with_timeout(60);
-        assert!(client.is_ok());
-    }
-}

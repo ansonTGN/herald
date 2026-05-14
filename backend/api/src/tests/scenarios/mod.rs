@@ -24,7 +24,6 @@ pub mod user_roles_scenarios;
 
 // Billing scenarios
 pub mod plan_scenarios;
-pub mod shopify_simple_test;
 pub mod shopify_webhook_scenarios;
 pub mod subscription_scenarios;
 

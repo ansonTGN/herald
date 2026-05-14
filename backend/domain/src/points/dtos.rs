@@ -224,19 +224,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_valid_consume_points_input() {
-        let input = ConsumePointsInput {
-            user_id: uuid::Uuid::now_v7().to_string(),
-            client_app_id: uuid::Uuid::now_v7().to_string(),
-            amount: 100,
-            description: Some("Test transaction".to_string()),
-        };
-
-        assert!(input.validate().is_ok());
-        assert!(<(Uuid, Uuid, i64, Option<String>) as std::convert::TryFrom<ConsumePointsInput>>::try_from(input.clone()).is_ok());
-    }
-
-    #[test]
     fn test_invalid_consume_points_amount() {
         let input = ConsumePointsInput {
             user_id: uuid::Uuid::now_v7().to_string(),
@@ -285,29 +272,6 @@ mod tests {
                 CreatePlanConfigInput,
             >>::try_from(input.clone())
             .is_err()
-        );
-    }
-
-    #[test]
-    fn test_valid_update_plan_config_input() {
-        let input = UpdatePlanConfigInput {
-            grant_period_type: Some("weekly".to_string()),
-            points_per_period: Some(500),
-            validity_days: Some(7),
-            grant_on_subscribe: Some(false),
-            max_periods: Some(None),
-        };
-
-        assert!(input.validate().is_ok());
-        assert!(
-            <(
-                Option<String>,
-                Option<i64>,
-                Option<i64>,
-                Option<bool>,
-                Option<i64>
-            ) as std::convert::TryFrom<UpdatePlanConfigInput>>::try_from(input.clone())
-            .is_ok()
         );
     }
 

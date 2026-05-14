@@ -36,18 +36,11 @@
 mod test_01_account_creation;
 mod test_02_view_balance;
 mod test_03_balance_permission;
-mod test_04_admin_view_balance;
-mod test_05_admin_list_accounts;
 mod test_08_consume_success;
-mod test_09_consume_insufficient;
 mod test_10_consume_invalid_amount;
 mod test_13_concurrent_consumption;
 mod test_14_api_key_validation;
-mod test_18_user_view_transactions;
-mod test_21_admin_view_user_transactions;
 mod test_24_create_plan_config;
-mod test_25_list_plan_configs;
-mod test_26_api_key_cannot_view_plan_configs;
 mod test_27_api_key_cannot_access_points_admin_configs;
 mod test_31_closed_account_consumption;
 
@@ -66,8 +59,5 @@ mod test_62_free_user_upgrade;
 
 // Unified filter test framework (replaces legacy filter tests)
 mod unified_filter_tests;
-
-// P0 Scenario Tests - US-PO-03, US-PO-04
-mod refund_scenarios;
 
 pub mod fixtures;

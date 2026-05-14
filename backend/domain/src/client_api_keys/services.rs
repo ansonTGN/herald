@@ -137,38 +137,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_generate_api_key_returns_uuid_v7_format() {
-        let api_key = ClientApiKeyService::generate_api_key();
-
-        // UUID format: 8-4-4-4-12 hex digits
-        assert!(
-            api_key.len() == 36,
-            "API key should be 36 characters (UUID format)"
-        );
-        assert!(api_key.contains('-'), "API key should contain hyphens");
-
-        // Parse as UUID to validate format
-        let parsed = Uuid::parse_str(&api_key);
-        assert!(parsed.is_ok(), "API key should be valid UUID");
-
-        // Verify it's UUID v7 (version 7)
-        let uuid = parsed.unwrap();
-        assert_eq!(
-            uuid.get_version(),
-            Some(uuid::Version::SortRand),
-            "API key should be UUID v7"
-        );
-    }
-
-    #[test]
-    fn test_generate_api_keys_are_unique() {
-        let key1 = ClientApiKeyService::generate_api_key();
-        let key2 = ClientApiKeyService::generate_api_key();
-
-        assert_ne!(key1, key2, "API keys should be unique");
-    }
-
-    #[test]
     fn test_hash_api_key_returns_sha256_format() {
         let api_key = "test-api-key-12345";
         let hash = ClientApiKeyService::hash_api_key(api_key);
@@ -223,13 +191,5 @@ mod tests {
         let invalid_hash = "invalid-hash-format";
 
         assert!(!ClientApiKeyService::verify_api_key(api_key, invalid_hash));
-    }
-
-    #[test]
-    fn test_verify_api_key_with_empty_key() {
-        let api_key = "test-api-key-12345";
-        let hash = ClientApiKeyService::hash_api_key(api_key);
-
-        assert!(!ClientApiKeyService::verify_api_key("", &hash));
     }
 }

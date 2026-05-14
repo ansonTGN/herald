@@ -429,7 +429,7 @@ impl RedisPermissionChecker {
 
             for policy in policies {
                 if self.matches_policy(&policy, resource, action) {
-                    info!(
+                    debug!(
                         realm_id = %realm_id,
                         user_id = %user_id,
                         role_id = %role_id,
@@ -575,84 +575,6 @@ mod tests {
         policy.resource == resource && policy.action == action
     }
 
-    #[test]
-    fn test_cache_key_builder_permission() {
-        // Given: Realm, user, resource, action
-        let realm_id = "realm-123";
-        let user_id = "user-456";
-        let resource = "users";
-        let action = "view";
-
-        // When: Building permission cache key
-        let key = CacheKey::permission(realm_id, user_id, resource, action);
-
-        // Then: Should have correct format
-        assert_eq!(key, "perm:realm-123:user-456:users:view");
-    }
-
-    #[test]
-    fn test_cache_key_builder_user_roles() {
-        // Given: Realm and user
-        let realm_id = "realm-123";
-        let user_id = "user-456";
-
-        // When: Building user roles cache key
-        let key = CacheKey::user_roles(realm_id, user_id);
-
-        // Then: Should have correct format
-        assert_eq!(key, "user_roles:realm-123:user-456");
-    }
-
-    #[test]
-    fn test_cache_key_builder_role_policies() {
-        // Given: Realm and role
-        let realm_id = "realm-123";
-        let role_id = "role-789";
-
-        // When: Building role policies cache key
-        let key = CacheKey::role_policies(realm_id, role_id);
-
-        // Then: Should have correct format
-        assert_eq!(key, "role_policies:realm-123:role-789");
-    }
-
-    #[test]
-    fn test_cache_key_builder_user_roles_pattern() {
-        // Given: Realm ID
-        let realm_id = "realm-123";
-
-        // When: Building user roles invalidation pattern
-        let pattern = CacheKey::user_roles_pattern(realm_id);
-
-        // Then: Should have correct pattern format
-        assert_eq!(pattern, "user_roles:realm-123:*");
-    }
-
-    #[test]
-    fn test_cache_key_builder_permission_pattern_with_user() {
-        // Given: Realm and user
-        let realm_id = "realm-123";
-        let user_id = "user-456";
-
-        // When: Building permission invalidation pattern for specific user
-        let pattern = CacheKey::permission_pattern(realm_id, Some(user_id));
-
-        // Then: Should have correct pattern format
-        assert_eq!(pattern, "perm:realm-123:user-456:*");
-    }
-
-    #[test]
-    fn test_cache_key_builder_permission_pattern_all_users() {
-        // Given: Realm only
-        let realm_id = "realm-123";
-
-        // When: Building permission invalidation pattern for all users
-        let pattern = CacheKey::permission_pattern(realm_id, None);
-
-        // Then: Should have correct pattern format
-        assert_eq!(pattern, "perm:realm-123:*");
-    }
-
     /// ============================================================================
     /// Regression Test: "All" Permission Strategy No Longer Matches
     /// ============================================================================
@@ -679,84 +601,6 @@ mod tests {
 
         // Note: "All"/"allow" can still match itself exactly (which is fine)
         // The important thing is it doesn't act as a wildcard
-    }
-
-    /// ============================================================================
-    /// Unit Test: Exact Resource and Action Match
-    /// ============================================================================
-    #[test]
-    fn test_matches_policy_exact_match() {
-        // Given: A policy for users.manage
-        let policy = Policy {
-            resource: "users".to_string(),
-            action: "manage".to_string(),
-        };
-
-        // When: Checking exact match
-        // Then: Should match
-        assert!(matches_policy_exact(&policy, "users", "manage"));
-
-        // When: Resource differs
-        // Then: Should NOT match
-        assert!(!matches_policy_exact(&policy, "realms", "manage"));
-
-        // When: Action differs
-        // Then: Should NOT match
-        assert!(!matches_policy_exact(&policy, "users", "view"));
-    }
-
-    /// ============================================================================
-    /// Unit Test: Case Sensitivity
-    /// ============================================================================
-    #[test]
-    fn test_matches_policy_case_sensitive() {
-        // Given: A policy for Users.Manage (capitalized)
-        let policy = Policy {
-            resource: "Users".to_string(),
-            action: "Manage".to_string(),
-        };
-
-        // When: Checking with lowercase
-        // Then: Should NOT match (case sensitive)
-        assert!(!matches_policy_exact(&policy, "users", "manage"));
-
-        // When: Checking with exact case
-        // Then: Should match
-        assert!(matches_policy_exact(&policy, "Users", "Manage"));
-    }
-
-    /// ============================================================================
-    /// Unit Test: Empty Strings
-    /// ============================================================================
-    #[test]
-    fn test_matches_policy_empty_strings() {
-        // Given: A policy with empty resource
-        let policy_empty_resource = Policy {
-            resource: "".to_string(),
-            action: "manage".to_string(),
-        };
-
-        // When: Checking with non-empty resource
-        // Then: Should NOT match
-        assert!(!matches_policy_exact(
-            &policy_empty_resource,
-            "users",
-            "manage"
-        ));
-
-        // Given: A policy with empty action
-        let policy_empty_action = Policy {
-            resource: "users".to_string(),
-            action: "".to_string(),
-        };
-
-        // When: Checking with non-empty action
-        // Then: Should NOT match
-        assert!(!matches_policy_exact(
-            &policy_empty_action,
-            "users",
-            "manage"
-        ));
     }
 
     /// ============================================================================

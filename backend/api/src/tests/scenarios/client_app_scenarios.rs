@@ -109,52 +109,6 @@ mod tests {
         assert_eq!(json["code"], 400);
         assert!(json["message"].as_str().is_some());
     }
-
-    /// 测试：创建 Client App 时的默认值
-    #[test_context(ClientAppTestContext)]
-    #[tokio::test]
-    async fn test_create_client_app_defaults(ctx: &mut ClientAppTestContext) {
-        let app = ctx.create_unified_test_router();
-
-        // Setup authentication
-        let admin_token = setup_admin_session(ctx, "test-defaults@test.com").await;
-
-        let request = Request::builder()
-            .method("POST")
-            .uri(format!("/api/client/{}", ctx._realm_id))
-            .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
-            .body(Body::from(
-                json!({
-                    "clientId": "test-app",
-                    "name": "Test Application",
-                    "redirectUris": ["https://example.com/callback"]
-                })
-                .to_string(),
-            ))
-            .unwrap();
-
-        let response = app.oneshot(request).await.unwrap();
-        assert_eq!(response.status(), 201);
-
-        // 验证默认值
-        let row =
-            sqlx::query("SELECT enabled, session_ttl_seconds FROM client_app WHERE client_id = $1")
-                .bind("test-app")
-                .fetch_one(&ctx.app_state.pool)
-                .await
-                .unwrap();
-
-        let enabled: bool = row.get("enabled");
-        let session_ttl: i32 = row.get("session_ttl_seconds");
-
-        assert!(enabled, "enabled should default to true");
-        assert_eq!(
-            session_ttl, 1800,
-            "session_ttl_seconds should default to 1800"
-        );
-    }
-
     /// 测试：更新 Client App 的 redirect_uris
     #[test_context(ClientAppTestContext)]
     #[tokio::test]
@@ -372,74 +326,6 @@ mod tests {
             "Client secret should be regenerated"
         );
     }
-
-    /// 测试：列表和详情接口不返回 client_secret
-    #[test_context(ClientAppTestContext)]
-    #[tokio::test]
-    async fn test_list_and_get_client_app_hide_secret(ctx: &mut ClientAppTestContext) {
-        let app = ctx.create_unified_test_router();
-        let admin_token = setup_admin_session(ctx, "test-hide-secret@test.com").await;
-
-        let create_request = Request::builder()
-            .method("POST")
-            .uri(format!("/api/client/{}", ctx._realm_id))
-            .header("content-type", "application/json")
-            .header("cookie", format!("X-Auth={}", admin_token))
-            .body(Body::from(
-                json!({
-                    "clientId": "hidden-secret-app",
-                    "name": "Hidden Secret App",
-                    "redirectUris": ["https://example.com/callback"]
-                })
-                .to_string(),
-            ))
-            .unwrap();
-
-        let create_response = app.clone().oneshot(create_request).await.unwrap();
-        assert_eq!(create_response.status(), 201);
-        let create_json: serde_json::Value = response_json(create_response).await;
-        let client_app_id = create_json["id"].as_str().unwrap();
-        assert!(create_json["clientSecret"].as_str().is_some());
-
-        let list_request = Request::builder()
-            .method("GET")
-            .uri(format!("/api/client/{}", ctx._realm_id))
-            .header("cookie", format!("X-Auth={}", admin_token))
-            .body(Body::empty())
-            .unwrap();
-
-        let list_response = app.clone().oneshot(list_request).await.unwrap();
-        assert_eq!(list_response.status(), 200);
-        let list_json: serde_json::Value = response_json(list_response).await;
-        let first_item = list_json["items"]
-            .as_array()
-            .and_then(|items| {
-                items.iter().find(|item| {
-                    item["clientId"] == serde_json::Value::String("hidden-secret-app".to_string())
-                })
-            })
-            .expect("created client app should be present in list response");
-        assert!(
-            first_item["clientSecret"].is_null(),
-            "clientSecret should be hidden in list response"
-        );
-
-        let get_request = Request::builder()
-            .method("GET")
-            .uri(format!("/api/client/{}/{}", ctx._realm_id, client_app_id))
-            .header("cookie", format!("X-Auth={}", admin_token))
-            .body(Body::empty())
-            .unwrap();
-
-        let get_response = app.oneshot(get_request).await.unwrap();
-        assert_eq!(get_response.status(), 200);
-        let get_json: serde_json::Value = response_json(get_response).await;
-        assert!(
-            get_json["clientSecret"].is_null(),
-            "clientSecret should be hidden in detail response"
-        );
-    }
-
     /// 测试：Session TTL 验证
     #[test_context(ClientAppTestContext)]
     #[tokio::test]

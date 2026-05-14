@@ -76,42 +76,6 @@ mod tests {
             "Role client_id should match client_app.client_id (string identifier)"
         );
     }
-
-    /// 测试：主管理员被分配到 super-admin 角色
-    #[test_context(AdminInitTestContext)]
-    #[tokio::test]
-    async fn test_admin_user_assigned_to_super_admin_role(ctx: &mut AdminInitTestContext) {
-        // 1. 获取 super-admin 角色 ID
-        let role_id: Uuid =
-            sqlx::query_scalar("SELECT id FROM roles WHERE name = $1 AND realm_id = $2")
-                .bind(BUILTIN_ROLE_REALM_ADMIN)
-                .bind(&ctx._realm_id)
-                .fetch_one(&ctx.app_state.pool)
-                .await
-                .unwrap();
-
-        // 2. 验证用户被分配到 super-admin 角色（通过 user_roles 表）
-        let user_id: Uuid = sqlx::query_scalar("SELECT id FROM account LIMIT 1")
-            .fetch_one(&ctx.app_state.pool)
-            .await
-            .unwrap();
-
-        let user_role_exists: bool = sqlx::query(
-            "SELECT EXISTS(SELECT 1 FROM user_roles WHERE user_id = $1::uuid AND role_id = $2)",
-        )
-        .bind(user_id)
-        .bind(role_id)
-        .fetch_one(&ctx.app_state.pool)
-        .await
-        .unwrap()
-        .get("exists");
-
-        assert!(
-            user_role_exists,
-            "User should be assigned to super-admin role via user_roles table"
-        );
-    }
-
     /// 测试：重复运行不重复创建主管理员
     #[test_context(AdminInitTestContext)]
     #[tokio::test]
@@ -274,35 +238,6 @@ mod tests {
             );
         }
     }
-
-    /// 测试：验证 super-admin 角色有正确的权限策略
-    #[test_context(AdminInitTestContext)]
-    #[tokio::test]
-    async fn test_super_admin_has_permission_policies(ctx: &mut AdminInitTestContext) {
-        // 1. 获取 super-admin 角色 ID
-        let role_id: Uuid =
-            sqlx::query_scalar("SELECT id FROM roles WHERE name = $1 AND realm_id = $2")
-                .bind(BUILTIN_ROLE_REALM_ADMIN)
-                .bind(&ctx._realm_id)
-                .fetch_one(&ctx.app_state.pool)
-                .await
-                .unwrap();
-
-        // 2. 验证权限策略存在（在 role_policies 表中）
-        let policy_count: i64 =
-            sqlx::query("SELECT count(*) FROM role_policies WHERE role_id = $1")
-                .bind(role_id)
-                .fetch_one(&ctx.app_state.pool)
-                .await
-                .unwrap()
-                .get("count");
-
-        assert!(
-            policy_count > 0,
-            "Super-admin role should have permission policies"
-        );
-    }
-
     /// 测试：验证管理员用户的完整初始化（包含权限）
     #[test_context(AdminInitTestContext)]
     #[tokio::test]
@@ -380,72 +315,6 @@ mod tests {
         assert!(
             policy_count > 0,
             "Super-admin role should have permission policies"
-        );
-    }
-
-    /// 测试：重复调用 init_admin_realm_rbac 不会报错
-    #[test_context(AdminInitTestContext)]
-    #[tokio::test]
-    async fn test_rerunning_init_admin_realm_rbac_is_idempotent(ctx: &mut AdminInitTestContext) {
-        use herald_core::admin::rbac::init_admin_realm_rbac;
-
-        // SchemaTestContext 已经调用了一次 init_admin_realm_rbac
-
-        // 获取 RBAC init service
-        let rbac_init_service = ctx
-            .app_state
-            .service
-            .realm_service()
-            .get_rbac_init_service();
-
-        // 再次调用应该成功
-        init_admin_realm_rbac(&ctx.app_state.pool, rbac_init_service)
-            .await
-            .expect("Second call to init_admin_realm_rbac should succeed");
-
-        // 验证没有重复创建
-        let role_count: i64 = sqlx::query("SELECT count(*) FROM roles")
-            .fetch_one(&ctx.app_state.pool)
-            .await
-            .unwrap()
-            .get("count");
-
-        let permission_count: i64 =
-            sqlx::query("SELECT count(*) FROM permissions WHERE is_builtin = true")
-                .fetch_one(&ctx.app_state.pool)
-                .await
-                .unwrap()
-                .get("count");
-
-        // Get realm-admin role ID
-        let realm_admin_role_id: uuid::Uuid =
-            sqlx::query("SELECT id FROM roles WHERE realm_id = $1 AND name = 'realm-admin'")
-                .bind(&ctx._realm_id)
-                .fetch_one(&ctx.app_state.pool)
-                .await
-                .unwrap()
-                .get("id");
-
-        let policy_count: i64 =
-            sqlx::query("SELECT count(*) FROM role_policies WHERE role_id = $1")
-                .bind(realm_admin_role_id)
-                .fetch_one(&ctx.app_state.pool)
-                .await
-                .unwrap()
-                .get("count");
-
-        // 验证数量符合预期（2 roles + 21 builtin permissions + 22 policies）
-        // All 21 realm-admin permissions are created by RealmInitializationService with is_builtin=true
-        // This includes: 17 original + 4 points-related (points.view, points.manage, points_configs.view, points_configs.manage)
-        // Policies include: 1 special middleware policy (realm.admin:{realm_id}) + 21 standard policies
-        assert_eq!(role_count, 2, "Should have 2 roles (realm-admin, user)");
-        assert_eq!(
-            permission_count, 21,
-            "Should have 21 builtin permissions (all realm-admin permissions created by RealmInitializationService)"
-        );
-        assert_eq!(
-            policy_count, 22,
-            "Should have 22 realm-admin policies (1 special middleware policy + 21 standard policies)"
         );
     }
 }

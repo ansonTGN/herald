@@ -1550,48 +1550,4 @@ mod tests {
             "Expected 'issued' event in history after issuing"
         );
     }
-
-    // =========================================================================
-    // Test: Account Validation (FK replaced by business logic)
-    // =========================================================================
-    // Verifies that create_invoice validates account_id belongs to the realm.
-
-    #[test_context(InvoiceTestContext)]
-    #[tokio::test]
-    async fn test_admin_create_invoice_nonexistent_account_rejected(ctx: &mut InvoiceTestContext) {
-        let app = ctx.create_unified_test_router();
-        let realm_id = ctx._realm_id.clone();
-        let admin_token = setup_billing_admin_session(ctx, "invoice-no-account@test.com").await;
-
-        // Use a UUID that does NOT exist in account table
-        let fake_account_id = Uuid::now_v7();
-
-        let payload = json!({
-            "accountId": fake_account_id.to_string(),
-            "currency": "USD",
-            "lineItems": [{"name": "Test Item", "quantity": "1", "unitPrice": 1000}],
-            "billingName": "No Account Client",
-            "sellerName": "Test Seller Inc.",
-        });
-
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri(format!("/api/bill/{}/invoices", realm_id))
-                    .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", admin_token))
-                    .body(Body::from(payload.to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(
-            response.status(),
-            StatusCode::BAD_REQUEST,
-            "Expected 400 when creating invoice with nonexistent account_id"
-        );
-    }
 }

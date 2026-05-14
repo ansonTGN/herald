@@ -49,23 +49,3 @@ where
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::totp_key_management::ports::MockRealmTotpKeyRepository;
-    use std::sync::Arc;
-
-    // =========================================================================
-    // Unit Tests: RealmTotpKeyServiceImpl
-    // =========================================================================
-
-    #[test]
-    fn test_unit_realm_totp_key_service_new() {
-        let _mock_repo = Arc::new(MockRealmTotpKeyRepository::new());
-        let _service = RealmTotpKeyServiceImpl::new(_mock_repo);
-
-        // Service is created successfully
-        // (Can't inspect internal field due to privacy, but we can verify it exists)
-    }
-}

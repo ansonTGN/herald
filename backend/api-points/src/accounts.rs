@@ -68,6 +68,8 @@ pub async fn list_accounts(
                     updated_at: account.updated_at.to_rfc3339(),
                     unit: herald_api_base::application::http::common::error_codes::POINTS_UNIT
                         .to_string(),
+                    currency: herald_api_base::application::http::common::error_codes::POINTS_UNIT
+                        .to_string(),
                 })
                 .collect();
 
@@ -135,6 +137,8 @@ pub async fn get_account(
             created_at: account.created_at.to_rfc3339(),
             updated_at: account.updated_at.to_rfc3339(),
             unit: herald_api_base::application::http::common::error_codes::POINTS_UNIT.to_string(),
+            currency: herald_api_base::application::http::common::error_codes::POINTS_UNIT
+                .to_string(),
         })),
         Err(e) => Err(ApiError::from(e)),
     }

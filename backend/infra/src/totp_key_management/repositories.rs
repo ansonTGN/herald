@@ -115,15 +115,3 @@ impl RealmTotpKeyRepository for PostgresRealmTotpKeyRepository {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    // Note: Integration tests for this repository would require a live PostgreSQL database.
-    // Unit tests are limited to basic instantiation verification.
-
-    #[test]
-    fn test_unit_postgres_realm_totp_key_repository_new() {
-        // This test verifies the repository can be instantiated
-        // Actual database operations require integration tests with a test database
-    }
-}

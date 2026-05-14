@@ -6,8 +6,5 @@
 pub mod cache;
 pub mod postgres_repository;
 
-#[cfg(test)]
-mod cache_test;
-
 pub use cache::{ApiKeyCache, ApiKeyCacheValue};
 pub use postgres_repository::{ClientApiKeyRepository, ClientApiKeyRepositoryError};

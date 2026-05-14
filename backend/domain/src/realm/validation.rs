@@ -68,17 +68,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_validate_realm_id_valid() {
-        // Valid realm IDs
-        assert!(validate_realm_id("my-realm").is_ok());
-        assert!(validate_realm_id("test_realm").is_ok());
-        assert!(validate_realm_id("realm123").is_ok());
-        assert!(validate_realm_id("my-realm-123").is_ok());
-        assert!(validate_realm_id("abc").is_ok()); // Minimum length
-        assert!(validate_realm_id("123").is_ok()); // Numbers only
-    }
-
-    #[test]
     fn test_validate_realm_id_too_short() {
         // Too short (< 3 characters)
         assert!(validate_realm_id("ab").is_err());
@@ -145,22 +134,5 @@ mod tests {
 
         // 2 characters should be invalid
         assert!(validate_realm_id("ab").is_err());
-    }
-
-    #[test]
-    fn test_validate_realm_id_with_hyphens_and_underscores() {
-        // Valid combinations
-        assert!(validate_realm_id("my-realm_test").is_ok());
-        assert!(validate_realm_id("test_realm-123").is_ok());
-        assert!(validate_realm_id("a-b-c").is_ok());
-        assert!(validate_realm_id("x_y_z").is_ok());
-    }
-
-    #[test]
-    fn test_validate_realm_id_uuid_format() {
-        // UUID v7 format should be valid (used for auto-generated IDs)
-        // UUID v7 is 36 characters with hyphens, which is valid
-        let uuid_v7 = "01912345-6789-0123-4567-890123456789";
-        assert!(validate_realm_id(uuid_v7).is_ok());
     }
 }

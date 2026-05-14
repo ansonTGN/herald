@@ -33,6 +33,7 @@ pub struct ExtPointsBalanceResponse {
     pub total_recharged: i64,
     pub total_consumed: i64,
     pub unit: String,
+    pub currency: String,
     pub updated_at: String,
 }
 
@@ -162,7 +163,8 @@ pub async fn get_balance_ext(
         balance: balance.balance,
         total_recharged: balance.total_recharged,
         total_consumed: balance.total_consumed,
-        unit: balance.unit,
+        unit: balance.unit.clone(),
+        currency: balance.unit,
         updated_at: balance.updated_at.to_rfc3339(),
     };
 

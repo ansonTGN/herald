@@ -62,16 +62,3 @@ pub fn points_router() -> Router<AppState> {
             routing::get(get_user_points_config),
         )
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_router_creation() {
-        let _router = points_router();
-
-        // Routers are created successfully
-        // The actual routing will be tested in integration tests
-    }
-}

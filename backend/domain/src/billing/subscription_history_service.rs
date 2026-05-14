@@ -264,18 +264,4 @@ mod tests {
         assert!(event.previous_state.is_some());
         assert!(event.new_state.is_some());
     }
-
-    #[test]
-    fn test_create_subscription_expired_event() {
-        let subscription = create_test_subscription();
-        let actor = "system".to_string();
-        let event = SubscriptionHistoryService::create_subscription_expired_event(
-            &subscription,
-            Some(actor.clone()),
-        );
-
-        assert_eq!(event.subscription_id, subscription.id);
-        assert_eq!(event.event_type, HistoryEventType::Expired);
-        assert_eq!(event.actor, Some(actor));
-    }
 }

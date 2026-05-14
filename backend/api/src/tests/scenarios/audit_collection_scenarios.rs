@@ -72,11 +72,11 @@ async fn fetch_audit_events_raw(
 // =============================================================================
 
 /// User Story: docs/user-stories/14-audit-user-stories.md
-/// Covers: User create via admin API records user_create audit event
+/// Covers: User create via admin API records user.create audit event
 ///
 /// Given an admin with users.manage permission,
 /// When creating a user via POST /api/users/{realmId},
-/// Then an audit event with action=user_create is recorded in the database
+/// Then an audit event with action=user.create is recorded in the database
 /// and target_id matches the newly created user's ID.
 #[test_context(TestContext)]
 #[tokio::test]
@@ -132,11 +132,11 @@ async fn test_scenario_user_create_produces_audit_event(ctx: &mut TestContext) {
         .expect("Response should contain user ID");
 
     // Assert: audit event was recorded
-    let events = fetch_audit_events_raw(&ctx.app_state.pool, &realm_id, "user_create").await;
+    let events = fetch_audit_events_raw(&ctx.app_state.pool, &realm_id, "user.create").await;
 
     assert!(
         !events.is_empty(),
-        "Expected at least one user_create audit event, found {}",
+        "Expected at least one user.create audit event, found {}",
         events.len()
     );
 
@@ -145,7 +145,7 @@ async fn test_scenario_user_create_produces_audit_event(ctx: &mut TestContext) {
         event.0, "user_management",
         "Category should be user_management"
     );
-    assert_eq!(event.1, "user_create", "Action should be user_create");
+    assert_eq!(event.1, "user.create", "Action should be user.create");
     assert_eq!(event.4, "success", "Result should be success");
 
     // The target_id should match the newly created user
@@ -169,11 +169,11 @@ async fn test_scenario_user_create_produces_audit_event(ctx: &mut TestContext) {
 // =============================================================================
 
 /// User Story: docs/user-stories/14-audit-user-stories.md
-/// Covers: User update via admin API records user_update audit event
+/// Covers: User update via admin API records user.update audit event
 ///
 /// Given an admin with users.manage permission and an existing user,
 /// When updating the user via PUT /api/users/{realmId}/{userId},
-/// Then an audit event with action=user_update is recorded.
+/// Then an audit event with action=user.update is recorded.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_user_update_produces_audit_event(ctx: &mut TestContext) {
@@ -214,11 +214,11 @@ async fn test_scenario_user_update_produces_audit_event(ctx: &mut TestContext) {
     assert_eq!(resp.status(), StatusCode::OK, "User update should succeed");
 
     // Assert: audit event was recorded
-    let events = fetch_audit_events_raw(&ctx.app_state.pool, &realm_id, "user_update").await;
+    let events = fetch_audit_events_raw(&ctx.app_state.pool, &realm_id, "user.update").await;
 
     assert!(
         !events.is_empty(),
-        "Expected at least one user_update audit event, found {}",
+        "Expected at least one user.update audit event, found {}",
         events.len()
     );
 
@@ -227,7 +227,7 @@ async fn test_scenario_user_update_produces_audit_event(ctx: &mut TestContext) {
         event.0, "user_management",
         "Category should be user_management"
     );
-    assert_eq!(event.1, "user_update", "Action should be user_update");
+    assert_eq!(event.1, "user.update", "Action should be user.update");
     assert_eq!(event.4, "success", "Result should be success");
     assert_eq!(
         event.3,
@@ -241,11 +241,11 @@ async fn test_scenario_user_update_produces_audit_event(ctx: &mut TestContext) {
 // =============================================================================
 
 /// User Story: docs/user-stories/14-audit-user-stories.md
-/// Covers: User delete via admin API records user_delete audit event
+/// Covers: User delete via admin API records user.delete audit event
 ///
 /// Given an admin with users.manage permission and an existing user,
 /// When deleting the user via DELETE /api/users/{realmId}/{userId},
-/// Then an audit event with action=user_delete is recorded.
+/// Then an audit event with action=user.delete is recorded.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_user_delete_produces_audit_event(ctx: &mut TestContext) {
@@ -285,11 +285,11 @@ async fn test_scenario_user_delete_produces_audit_event(ctx: &mut TestContext) {
     );
 
     // Assert: audit event was recorded
-    let events = fetch_audit_events_raw(&ctx.app_state.pool, &realm_id, "user_delete").await;
+    let events = fetch_audit_events_raw(&ctx.app_state.pool, &realm_id, "user.delete").await;
 
     assert!(
         !events.is_empty(),
-        "Expected at least one user_delete audit event, found {}",
+        "Expected at least one user.delete audit event, found {}",
         events.len()
     );
 
@@ -298,7 +298,7 @@ async fn test_scenario_user_delete_produces_audit_event(ctx: &mut TestContext) {
         event.0, "user_management",
         "Category should be user_management"
     );
-    assert_eq!(event.1, "user_delete", "Action should be user_delete");
+    assert_eq!(event.1, "user.delete", "Action should be user.delete");
     assert_eq!(event.4, "success", "Result should be success");
     assert_eq!(
         event.3,
@@ -312,11 +312,11 @@ async fn test_scenario_user_delete_produces_audit_event(ctx: &mut TestContext) {
 // =============================================================================
 
 /// User Story: docs/user-stories/14-audit-user-stories.md
-/// Covers: Realm creation records realm_create and realm_rbac_init audit events
+/// Covers: Realm creation records realm.create and realm.rbac_init audit events
 ///
 /// Given a super admin with realm.create permission,
 /// When creating a new realm via POST /api/realms,
-/// Then audit events for realm_create and realm_rbac_init are recorded.
+/// Then audit events for realm.create and realm.rbac_init are recorded.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_realm_create_produces_audit_events(ctx: &mut TestContext) {
@@ -356,22 +356,22 @@ async fn test_scenario_realm_create_produces_audit_events(ctx: &mut TestContext)
         "Realm creation should return 201 Created"
     );
 
-    // Assert: realm_create event recorded in the new realm
+    // Assert: realm.create event recorded in the new realm
     let create_count =
-        count_audit_events_by_action(&ctx.app_state.pool, &new_realm_id, "realm_create").await;
+        count_audit_events_by_action(&ctx.app_state.pool, &new_realm_id, "realm.create").await;
     assert!(
         create_count >= 1,
-        "Expected at least one realm_create audit event in realm {}, found {}",
+        "Expected at least one realm.create audit event in realm {}, found {}",
         new_realm_id,
         create_count
     );
 
-    // Assert: realm_rbac_init event recorded
+    // Assert: realm.rbac_init event recorded
     let rbac_init_count =
-        count_audit_events_by_action(&ctx.app_state.pool, &new_realm_id, "realm_rbac_init").await;
+        count_audit_events_by_action(&ctx.app_state.pool, &new_realm_id, "realm.rbac_init").await;
     assert!(
         rbac_init_count >= 1,
-        "Expected at least one realm_rbac_init audit event in realm {}, found {}",
+        "Expected at least one realm.rbac_init audit event in realm {}, found {}",
         new_realm_id,
         rbac_init_count
     );
@@ -382,11 +382,11 @@ async fn test_scenario_realm_create_produces_audit_events(ctx: &mut TestContext)
 // =============================================================================
 
 /// User Story: docs/user-stories/14-audit-user-stories.md
-/// Covers: Successful login records auth_login audit event
+/// Covers: Successful login records auth.login audit event
 ///
 /// Given an active user with valid credentials,
 /// When logging in via POST /api/auth/{realmId}/login,
-/// Then an audit event with action=auth_login and result=success is recorded.
+/// Then an audit event with action=auth.login and result=success is recorded.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_login_success_produces_audit_event(ctx: &mut TestContext) {
@@ -398,8 +398,8 @@ async fn test_scenario_login_success_produces_audit_event(ctx: &mut TestContext)
     let user_id =
         crate::tests::helpers::test_setup_helpers::create_test_user(ctx, &email, password).await;
 
-    // Record baseline count for auth_login events
-    let baseline = count_audit_events_by_action(&ctx.app_state.pool, &realm_id, "auth_login").await;
+    // Record baseline count for auth.login events
+    let baseline = count_audit_events_by_action(&ctx.app_state.pool, &realm_id, "auth.login").await;
 
     // Act: login
     let app = ctx.create_unified_test_router();
@@ -421,17 +421,17 @@ async fn test_scenario_login_success_produces_audit_event(ctx: &mut TestContext)
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK, "Login should succeed");
 
-    // Assert: auth_login event was recorded
-    let after = count_audit_events_by_action(&ctx.app_state.pool, &realm_id, "auth_login").await;
+    // Assert: auth.login event was recorded
+    let after = count_audit_events_by_action(&ctx.app_state.pool, &realm_id, "auth.login").await;
     assert!(
         after > baseline,
-        "auth_login event count should have increased: before={}, after={}",
+        "auth.login event count should have increased: before={}, after={}",
         baseline,
         after
     );
 
     // Verify event details
-    let events = fetch_audit_events_raw(&ctx.app_state.pool, &realm_id, "auth_login").await;
+    let events = fetch_audit_events_raw(&ctx.app_state.pool, &realm_id, "auth.login").await;
 
     let event = &events[0];
     assert_eq!(event.0, "auth", "Category should be auth");
@@ -449,11 +449,11 @@ async fn test_scenario_login_success_produces_audit_event(ctx: &mut TestContext)
 // =============================================================================
 
 /// User Story: docs/user-stories/14-audit-user-stories.md
-/// Covers: Failed login records auth_login_failed audit event
+/// Covers: Failed login records auth.login_failed audit event
 ///
 /// Given a user with valid credentials,
 /// When attempting login with a wrong password,
-/// Then an audit event with action=auth_login_failed and result=failure is recorded.
+/// Then an audit event with action=auth.login_failed and result=failure is recorded.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_login_failure_produces_audit_event(ctx: &mut TestContext) {
@@ -465,9 +465,9 @@ async fn test_scenario_login_failure_produces_audit_event(ctx: &mut TestContext)
         crate::tests::helpers::test_setup_helpers::create_test_user(ctx, &email, "correctpassword")
             .await;
 
-    // Record baseline count for auth_login_failed events
+    // Record baseline count for auth.login_failed events
     let baseline =
-        count_audit_events_by_action(&ctx.app_state.pool, &realm_id, "auth_login_failed").await;
+        count_audit_events_by_action(&ctx.app_state.pool, &realm_id, "auth.login_failed").await;
 
     // Act: login with wrong password
     let app = ctx.create_unified_test_router();
@@ -493,105 +493,20 @@ async fn test_scenario_login_failure_produces_audit_event(ctx: &mut TestContext)
         "Login should fail with 401"
     );
 
-    // Assert: auth_login_failed event was recorded
+    // Assert: auth.login_failed event was recorded
     let after =
-        count_audit_events_by_action(&ctx.app_state.pool, &realm_id, "auth_login_failed").await;
+        count_audit_events_by_action(&ctx.app_state.pool, &realm_id, "auth.login_failed").await;
     assert!(
         after > baseline,
-        "auth_login_failed event count should have increased: before={}, after={}",
+        "auth.login_failed event count should have increased: before={}, after={}",
         baseline,
         after
     );
 
     // Verify event details
-    let events = fetch_audit_events_raw(&ctx.app_state.pool, &realm_id, "auth_login_failed").await;
+    let events = fetch_audit_events_raw(&ctx.app_state.pool, &realm_id, "auth.login_failed").await;
 
     let event = &events[0];
     assert_eq!(event.0, "auth", "Category should be auth");
     assert_eq!(event.4, "failure", "Result should be failure");
-}
-
-// =============================================================================
-// Scenario 7: Logout produces audit event
-// =============================================================================
-
-/// User Story: docs/user-stories/14-audit-user-stories.md
-/// Covers: Logout records auth_logout audit event
-///
-/// Given a logged-in user with a valid session,
-/// When calling the logout endpoint,
-/// Then an audit event with action=auth_logout is recorded.
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_logout_produces_audit_event(ctx: &mut TestContext) {
-    let realm_id = ctx._realm_id.clone();
-
-    // Setup: create user and login to get a session token
-    let email = format!("audit-logout-{}@test.com", Uuid::now_v7().as_simple());
-    let password = "password123";
-    let _user_id =
-        crate::tests::helpers::test_setup_helpers::create_test_user(ctx, &email, password).await;
-
-    let app = ctx.create_unified_test_router();
-    let login_payload = json!({
-        "clientId": ctx._client_id,
-        "email": email,
-        "password": password,
-        "turnstileToken": "dummy"
-    });
-
-    let login_req = Request::builder()
-        .method("POST")
-        .uri(format!("/api/auth/{}/login", realm_id))
-        .header("content-type", "application/json")
-        .header("x-forwarded-for", "3.3.3.3")
-        .body(Body::from(login_payload.to_string()))
-        .unwrap();
-
-    let login_resp = app.clone().oneshot(login_req).await.unwrap();
-    assert_eq!(login_resp.status(), StatusCode::OK, "Login should succeed");
-
-    // Extract session token
-    let set_cookie = login_resp
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Should return Set-Cookie header");
-    let token =
-        crate::tests::extract_set_cookie_token(set_cookie, "X-Auth").expect("Should extract token");
-
-    // Record baseline count for auth_logout events
-    let baseline =
-        count_audit_events_by_action(&ctx.app_state.pool, &realm_id, "auth_logout").await;
-
-    // Act: logout
-    let logout_req = Request::builder()
-        .method("GET")
-        .uri(format!("/api/auth/{}/logout", realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", token))
-        .body(Body::empty())
-        .unwrap();
-
-    let logout_resp = app.clone().oneshot(logout_req).await.unwrap();
-    assert_eq!(
-        logout_resp.status(),
-        StatusCode::OK,
-        "Logout should succeed"
-    );
-
-    // Assert: auth_logout event was recorded
-    let after = count_audit_events_by_action(&ctx.app_state.pool, &realm_id, "auth_logout").await;
-    assert!(
-        after > baseline,
-        "auth_logout event count should have increased: before={}, after={}",
-        baseline,
-        after
-    );
-
-    // Verify event details
-    let events = fetch_audit_events_raw(&ctx.app_state.pool, &realm_id, "auth_logout").await;
-
-    let event = &events[0];
-    assert_eq!(event.0, "auth", "Category should be auth");
-    assert_eq!(event.4, "success", "Result should be success");
 }

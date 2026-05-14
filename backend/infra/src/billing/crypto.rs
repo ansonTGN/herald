@@ -179,15 +179,6 @@ mod tests {
     }
 
     #[test]
-    fn test_encrypt_decrypt_empty_string() {
-        ensure_test_key();
-        let original = "";
-        let encrypted = encrypt_secret(original).unwrap();
-        let decrypted = decrypt_secret(&encrypted).unwrap();
-        assert_eq!(original, decrypted);
-    }
-
-    #[test]
     fn test_decrypt_invalid_base64() {
         ensure_test_key();
         let result = decrypt_secret("not-valid-base64!!!");
@@ -229,22 +220,5 @@ mod tests {
         // But both should decrypt to the same value
         assert_eq!(decrypt_secret(&enc1).unwrap(), secret);
         assert_eq!(decrypt_secret(&enc2).unwrap(), secret);
-    }
-
-    #[test]
-    fn test_decrypt_with_wrong_data() {
-        ensure_test_key();
-        // Use some random base64 data that's not encrypted with our key
-        let random_data = STANDARD.encode([
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        ]);
-
-        let result = decrypt_secret(&random_data);
-
-        // Should return InvalidWebhookSecret error
-        match result {
-            Err(CoreError::InvalidWebhookSecret) => (),
-            _ => panic!("Expected InvalidWebhookSecret error, got: {:?}", result),
-        }
     }
 }

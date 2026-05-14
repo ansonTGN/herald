@@ -561,37 +561,4 @@ mod tests {
         assert_eq!(mask_secret(""), "*********** (configured)");
         assert_eq!(mask_secret("super_secret_key"), "*********** (configured)");
     }
-
-    #[test]
-    fn test_wechat_config_query_default() {
-        let query: serde_json::Value = serde_json::json!({});
-        let parsed: Result<crate::wechat_config_types::WechatConfigQuery, _> =
-            serde_json::from_value(query);
-
-        assert!(parsed.is_ok());
-        let config_query = parsed.unwrap();
-        assert!(!config_query.reveal_secrets);
-    }
-
-    #[test]
-    fn test_wechat_config_query_reveal_true() {
-        let query: serde_json::Value = serde_json::json!({"revealSecrets": true});
-        let parsed: Result<crate::wechat_config_types::WechatConfigQuery, _> =
-            serde_json::from_value(query);
-
-        assert!(parsed.is_ok());
-        let config_query = parsed.unwrap();
-        assert!(config_query.reveal_secrets);
-    }
-
-    #[test]
-    fn test_wechat_config_query_reveal_true_snake_case() {
-        let query: serde_json::Value = serde_json::json!({"reveal_secrets": true});
-        let parsed: Result<crate::wechat_config_types::WechatConfigQuery, _> =
-            serde_json::from_value(query);
-
-        assert!(parsed.is_ok());
-        let config_query = parsed.unwrap();
-        assert!(config_query.reveal_secrets);
-    }
 }

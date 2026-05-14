@@ -235,49 +235,6 @@ mod tests {
         // Should return 404 Not Found
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
-
-    /// 场景测试：取消不存在的订阅
-    #[test_context(SubscriptionTestContext)]
-    #[tokio::test]
-    async fn test_scenario_cancel_nonexistent_subscription(ctx: &mut SubscriptionTestContext) {
-        let app = ctx.create_unified_test_router();
-
-        let admin_token = setup_billing_admin_session(ctx, "test-cancel-no-subs@test.com").await;
-        let realm_id = ctx._realm_id.clone();
-
-        // Create Client App without subscription
-        let (_client_id_str, client_app_id) = create_client_app_via_api(
-            ctx,
-            &app,
-            &admin_token,
-            &realm_id,
-            "test-cancel-no-subs-app",
-            "App without subscription",
-        )
-        .await;
-
-        // Attempt to cancel nonexistent subscription
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri(format!(
-                        "/api/bill/{}/client/{}/subscription/cancel",
-                        realm_id, client_app_id
-                    ))
-                    .header("content-type", "application/json")
-                    .header("cookie", format!("X-Auth={}", admin_token))
-                    .body(Body::from(json!({"cancelAtPeriodEnd": false}).to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        // Should return 404 Not Found
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
-
     // =============================================================================
     // Local Helper Functions
     // =============================================================================

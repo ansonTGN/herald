@@ -284,35 +284,6 @@ pub fn serialize_subscription_state(subscription: &Subscription) -> serde_json::
 mod tests {
     use super::*;
     use crate::billing::entities::{BillingPeriod, SubscriptionStatus, SubscriptionTier};
-    use std::str::FromStr;
-
-    #[test]
-    fn test_history_event_type_serialization() {
-        let event = HistoryEventType::Upgraded;
-        assert_eq!(event.as_str(), "upgraded");
-
-        let serialized = serde_json::to_string(&event).unwrap();
-        assert_eq!(serialized, r#""upgraded""#);
-
-        let deserialized: HistoryEventType = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(deserialized, HistoryEventType::Upgraded);
-    }
-
-    #[test]
-    fn test_history_event_type_from_str() {
-        assert_eq!(
-            HistoryEventType::from_str("created").unwrap(),
-            HistoryEventType::Created
-        );
-        assert_eq!(
-            HistoryEventType::from_str("UPGRADED").unwrap(),
-            HistoryEventType::Upgraded
-        );
-        assert_eq!(
-            HistoryEventType::from_str("Downgraded").unwrap(),
-            HistoryEventType::Downgraded
-        );
-    }
 
     #[test]
     fn test_detect_change_type_upgrade() {

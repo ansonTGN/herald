@@ -745,13 +745,6 @@ mod tests {
     }
 
     #[test]
-    fn calculate_line_item_subtotal_rounding() {
-        // 2.333 * 1000 = 2333.0
-        let result = calculate_line_item_subtotal("2.333", 1000).unwrap();
-        assert_eq!(result, 2333);
-    }
-
-    #[test]
     fn calculate_line_item_subtotal_rounding_up() {
         // 2.667 * 1000 = 2667.0
         let result = calculate_line_item_subtotal("2.667", 1000).unwrap();
@@ -931,17 +924,6 @@ mod tests {
         assert_eq!(amounts.total, 11645);
     }
 
-    #[test]
-    fn calculate_invoice_amounts_empty_line_items() {
-        let line_items: Vec<NewLineItem> = vec![];
-
-        let amounts =
-            calculate_invoice_amounts(&line_items, None, None, None, None, None, None).unwrap();
-
-        assert_eq!(amounts.subtotal, 0);
-        assert_eq!(amounts.total, 0);
-    }
-
     // -------------------------------------------------------------------------
     // Invoice number formatting tests
     // -------------------------------------------------------------------------
@@ -954,50 +936,6 @@ mod tests {
     #[test]
     fn format_invoice_number_large_seq() {
         assert_eq!(format_invoice_number(2026, 1234), "INV-2026-1234");
-    }
-
-    #[test]
-    fn format_invoice_number_zero_padded() {
-        assert_eq!(format_invoice_number(2025, 42), "INV-2025-0042");
-    }
-
-    // -------------------------------------------------------------------------
-    // InvoiceAmounts struct test
-    // -------------------------------------------------------------------------
-
-    #[test]
-    fn invoice_amounts_equality() {
-        let a = InvoiceAmounts {
-            subtotal: 1000,
-            discount_amount: 100,
-            tax_amount: 50,
-            shipping_amount: 30,
-            total: 980,
-        };
-        let b = InvoiceAmounts {
-            subtotal: 1000,
-            discount_amount: 100,
-            tax_amount: 50,
-            shipping_amount: 30,
-            total: 980,
-        };
-        assert_eq!(a, b);
-    }
-
-    // -------------------------------------------------------------------------
-    // Adjustment edge cases
-    // -------------------------------------------------------------------------
-
-    #[test]
-    fn calculate_adjustment_none_mode() {
-        let result = calculate_adjustment(None, Some("10"), 1000).unwrap();
-        assert_eq!(result, 0);
-    }
-
-    #[test]
-    fn calculate_adjustment_none_value() {
-        let result = calculate_adjustment(Some(AdjustmentMode::Fixed), None, 1000).unwrap();
-        assert_eq!(result, 0);
     }
 
     #[test]

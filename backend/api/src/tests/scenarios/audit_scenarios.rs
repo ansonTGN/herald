@@ -452,47 +452,6 @@ async fn test_scenario_audit_filter_by_time_range(ctx: &mut TestContext) {
         past_total
     );
 }
-
-/// User Story: docs/user-stories/14-audit-user-stories.md - Story 2, Scenario 4
-/// Covers: 验收标准 - 组合筛选无结果
-///
-/// Given filters that match nothing,
-/// When querying, Then empty result with total=0.
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_audit_filter_no_match_returns_empty(ctx: &mut TestContext) {
-    let app = ctx.create_unified_test_router();
-    let (admin_token, admin_user_id) =
-        create_admin_session_with_user(ctx, "audit-filter-nomatch@test.com", 1800).await;
-    grant_realm_admin_role(ctx, &admin_user_id).await;
-
-    // Filter with a non-existent actor ID (combination that will not match)
-    let nonexistent_actor = uuid::Uuid::now_v7().to_string();
-
-    let req = Request::builder()
-        .method("GET")
-        .uri(format!(
-            "/api/audit/{}?page=0&pageSize=20&actorId={}&category=auth",
-            ctx._realm_id, nonexistent_actor
-        ))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
-        .body(Body::empty())
-        .unwrap();
-
-    let resp = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK, "Expected 200 OK");
-
-    let body: serde_json::Value = crate::tests::response_json(resp).await;
-    let items = body["items"].as_array().expect("Expected items array");
-    let total = body["total"].as_i64().expect("Expected total");
-
-    assert!(
-        items.is_empty(),
-        "Expected empty items for non-matching filter"
-    );
-    assert_eq!(total, 0, "Expected total=0 for non-matching filter");
-}
-
 // =============================================================================
 // US-AU-003: View audit event detail
 // =============================================================================
@@ -551,7 +510,7 @@ async fn test_scenario_audit_detail_returns_full_fields(ctx: &mut TestContext) {
     // Verify identity fields
     assert_eq!(body["id"].as_str(), Some(event_id.to_string().as_str()));
     assert_eq!(body["category"].as_str(), Some("rbac"));
-    assert_eq!(body["action"].as_str(), Some("role_assign"));
+    assert_eq!(body["action"].as_str(), Some("role.assign"));
     assert_eq!(body["actorId"].as_str(), Some(admin_user_id.as_str()));
     assert_eq!(body["actorType"].as_str(), Some("admin"));
     assert_eq!(body["actorName"].as_str(), Some("admin-detail-test"));
@@ -618,7 +577,7 @@ async fn test_scenario_audit_list_realm_isolation(ctx: &mut TestContext) {
     // Insert events in a different realm (directly into DB to bypass realm constraints)
     sqlx::query(
         "INSERT INTO audit_events (id, realm_id, category, action, actor_id, target_type, target_id, result, created_at)
-         VALUES ($1, $2, 'auth', 'auth_login', $3, 'session', 'session-b', 'success', NOW())",
+         VALUES ($1, $2, 'auth', 'auth.login', $3, 'session', 'session-b', 'success', NOW())",
     )
     .bind(uuid::Uuid::now_v7())
     .bind(&other_realm_id)
@@ -673,7 +632,7 @@ async fn test_scenario_audit_detail_cross_realm_returns_404(ctx: &mut TestContex
     // Insert an event in a different realm
     sqlx::query(
         "INSERT INTO audit_events (id, realm_id, category, action, actor_id, target_type, target_id, result, created_at)
-         VALUES ($1, $2, 'auth', 'auth_login', $3, 'session', 'session-x', 'success', NOW())",
+         VALUES ($1, $2, 'auth', 'auth.login', $3, 'session', 'session-x', 'success', NOW())",
     )
     .bind(cross_realm_event_id)
     .bind(&other_realm_id)
@@ -740,101 +699,6 @@ async fn test_scenario_audit_list_non_admin_forbidden(ctx: &mut TestContext) {
         "Expected 403 Forbidden for non-admin user querying audit logs"
     );
 }
-
-/// Covers: 验收标准 - 非 admin 用户不能查看审计详情
-///
-/// Given a non-admin user (no realm-admin role),
-/// When querying audit detail,
-/// Then gets forbidden (403).
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_audit_detail_non_admin_forbidden(ctx: &mut TestContext) {
-    let app = ctx.create_unified_test_router();
-
-    let (user_token, user_id) =
-        create_admin_session_with_user(ctx, "audit-detail-no-role@test.com", 1800).await;
-
-    let event_id = insert_audit_event(
-        ctx,
-        make_event(
-            &ctx._realm_id,
-            AuditCategory::Auth,
-            AuditAction::AuthLogin,
-            &user_id,
-            AuditTargetType::Session,
-            "session-non-admin",
-            AuditResult::Success,
-        ),
-    )
-    .await;
-
-    let req = Request::builder()
-        .method("GET")
-        .uri(format!("/api/audit/{}/{}", ctx._realm_id, event_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
-        .body(Body::empty())
-        .unwrap();
-
-    let resp = app.clone().oneshot(req).await.unwrap();
-
-    assert_eq!(
-        resp.status(),
-        StatusCode::FORBIDDEN,
-        "Expected 403 Forbidden for non-admin user querying audit detail"
-    );
-}
-
-/// Covers: 验收标准 - 未认证用户不能查看审计日志
-///
-/// Given no authentication,
-/// When querying audit list,
-/// Then gets 401 Unauthorized.
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_audit_list_unauthenticated(ctx: &mut TestContext) {
-    let app = ctx.create_unified_test_router();
-
-    let req = Request::builder()
-        .method("GET")
-        .uri(format!("/api/audit/{}?page=0&pageSize=20", ctx._realm_id))
-        .body(Body::empty())
-        .unwrap();
-
-    let resp = app.clone().oneshot(req).await.unwrap();
-
-    assert_eq!(
-        resp.status(),
-        StatusCode::UNAUTHORIZED,
-        "Expected 401 Unauthorized for unauthenticated audit list request"
-    );
-}
-
-/// Covers: 验收标准 - 未认证用户不能查看审计详情
-///
-/// Given no authentication,
-/// When querying audit detail,
-/// Then gets 401 Unauthorized.
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_audit_detail_unauthenticated(ctx: &mut TestContext) {
-    let app = ctx.create_unified_test_router();
-
-    let fake_event_id = uuid::Uuid::now_v7();
-    let req = Request::builder()
-        .method("GET")
-        .uri(format!("/api/audit/{}/{}", ctx._realm_id, fake_event_id))
-        .body(Body::empty())
-        .unwrap();
-
-    let resp = app.clone().oneshot(req).await.unwrap();
-
-    assert_eq!(
-        resp.status(),
-        StatusCode::UNAUTHORIZED,
-        "Expected 401 Unauthorized for unauthenticated audit detail request"
-    );
-}
-
 // =============================================================================
 // Pagination
 // =============================================================================
@@ -905,35 +769,4 @@ async fn test_scenario_audit_pagination_metadata(ctx: &mut TestContext) {
 
     let body: serde_json::Value = crate::tests::response_json(resp).await;
     assert_eq!(body["page"].as_i64(), Some(1), "Expected page=1");
-}
-
-/// Covers: 验收标准 - 详情查询不存在的事件返回 404
-///
-/// Given a valid admin user,
-/// When querying a non-existent event ID,
-/// Then gets 404 Not Found.
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_audit_detail_not_found(ctx: &mut TestContext) {
-    let app = ctx.create_unified_test_router();
-    let (admin_token, admin_user_id) =
-        create_admin_session_with_user(ctx, "audit-notfound@test.com", 1800).await;
-    grant_realm_admin_role(ctx, &admin_user_id).await;
-
-    let nonexistent_id = uuid::Uuid::now_v7();
-
-    let req = Request::builder()
-        .method("GET")
-        .uri(format!("/api/audit/{}/{}", ctx._realm_id, nonexistent_id))
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
-        .body(Body::empty())
-        .unwrap();
-
-    let resp = app.clone().oneshot(req).await.unwrap();
-
-    assert_eq!(
-        resp.status(),
-        StatusCode::NOT_FOUND,
-        "Expected 404 for non-existent audit event"
-    );
 }

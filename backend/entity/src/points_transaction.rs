@@ -43,30 +43,3 @@ impl Related<super::points_account::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_model_creation() {
-        let model = Model {
-            id: Uuid::now_v7(),
-            account_id: Uuid::now_v7(),
-            user_id: Uuid::now_v7(),
-            realm_id: "test-realm".to_string(),
-            r#type: "consume".to_string(),
-            amount: 10,
-            balance_after: 90,
-            topup_balance_after: Some(90),
-            subscription_balance_after: Some(0),
-            credit_type: Some("topup_credit".to_string()),
-            description: Some("Test transaction".to_string()),
-            client_app_id: Some(Uuid::now_v7()),
-            subscription_id: None,
-            external_ref_id: None,
-            created_at: DateTimeWithTimeZone::from(chrono::Utc::now()),
-        };
-        assert_eq!(model.amount, 10);
-    }
-}
