@@ -1,5 +1,5 @@
 use axum::extract::{Extension, Path, Query, State};
-use chrono::DateTime;
+use chrono::{DateTime, NaiveDate};
 use herald_core::domain::audit::{
     AuditAction, AuditCategory, AuditEventFilters, AuditEventRepository,
 };
@@ -66,7 +66,7 @@ pub async fn list_audit_events(
         .as_deref()
         .and_then(|s| serde_json::from_str(&format!("\"{s}\"")).ok());
 
-    let parse_rfc3339_query_time = |value: Option<&str>| {
+    let parse_query_time = |value: Option<&str>| {
         value
             .and_then(|s| {
                 DateTime::parse_from_rfc3339(s)
@@ -74,10 +74,17 @@ pub async fn list_audit_events(
                     .ok()
             })
             .map(|dt| dt.to_utc())
+            .or_else(|| {
+                value.and_then(|s| {
+                    NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                        .ok()
+                        .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())
+                })
+            })
     };
 
-    let start_time = parse_rfc3339_query_time(params.start_time.as_deref());
-    let end_time = parse_rfc3339_query_time(params.end_time.as_deref());
+    let start_time = parse_query_time(params.start_time.as_deref());
+    let end_time = parse_query_time(params.end_time.as_deref());
 
     let filters = AuditEventFilters {
         category,

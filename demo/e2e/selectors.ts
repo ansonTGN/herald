@@ -50,6 +50,7 @@ export const SELECTORS = {
     menuClientApps: '[data-testid="sidebar-menu-client-apps"]',
     menuAuthorization: '[data-testid="sidebar-menu-authorization"]',
     menuPermissions: '[data-testid="sidebar-menu-permissions"]',
+    menuAuditLog: '[data-testid="sidebar-menu-audit-log"]',
   },
 
   /**
@@ -61,6 +62,32 @@ export const SELECTORS = {
     logoutButton: '[data-testid="logout-menu-item"]',
     userMenu: '[data-testid="user-menu"]',
     userDisplayName: '[data-testid="user-display-name"]',
+  },
+
+  /**
+   * Audit Page Selectors
+   * Route: /{realmId}/manage/audit
+   */
+  audit: {
+    container: '[data-testid="audit-page"]',
+    heading: '[data-testid="audit-heading"]',
+    table: '[data-testid="audit-table"]',
+    filterBar: '[data-testid="audit-filter-bar"]',
+    filterCategory: '[data-testid="audit-category-select"]',
+    filterAction: '[data-testid="audit-action-select"]',
+    filterActorId: '[data-testid="audit-actor-input"]',
+    filterStartDate: '[data-testid="audit-start-date-input"]',
+    filterEndDate: '[data-testid="audit-end-date-input"]',
+    filterClear: '[data-testid="audit-clear-filters-button"]',
+    tableLoading: '[data-testid="audit-table-loading"]',
+    detailSheet: '[data-testid="audit-detail-sheet"]',
+    detailError: '[data-testid="audit-detail-error"]',
+    detailClose: '[data-testid="audit-detail-close-button"]',
+    detailJson: '[data-testid="audit-detail-json"]',
+    detailResult: '[data-testid="audit-detail-result"]',
+    pagination: '[data-testid="audit-pagination"]',
+    paginationPrevious: '[data-testid="audit-pagination-previous"]',
+    paginationNext: '[data-testid="audit-pagination-next"]',
   },
 
   /**

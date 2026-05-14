@@ -35,6 +35,7 @@ mod tests {
     }
 
     /// 测试方法枚举
+    #[allow(dead_code)]
     #[derive(Clone, Copy, Debug)]
     pub enum TestMethod {
         Api,    // 通过 HTTP API 测试

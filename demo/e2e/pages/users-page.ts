@@ -129,6 +129,14 @@ export class UsersPage extends BasePage {
     if (userData.name) {
       await this.fillField(this.nameInput, userData.name)
     }
+
+    // Check the default "User" role checkbox (required by createUserSchema)
+    const roleCheckbox = this.page.locator('[data-testid="user-create-role-checkbox"]')
+    await expect(roleCheckbox).toBeVisible({ timeout: 10000 })
+    const isChecked = await roleCheckbox.isChecked()
+    if (!isChecked) {
+      await roleCheckbox.check()
+    }
   }
 
   /**

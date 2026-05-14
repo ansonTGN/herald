@@ -23,6 +23,7 @@ import { RolesPage } from '../pages/roles-page'
 import { PermissionsPage } from '../pages/permissions-page'
 import { RealmsPage } from '../pages/realms-page'
 import { ClientAppsPage } from '../pages/client-apps-page'
+import { AuditPage } from '../pages/audit-page'
 import { SELECTORS } from '../selectors'
 
 /**
@@ -54,6 +55,7 @@ export const test = base.extend<{
   permissionsPage: PermissionsPage
   realmsPage: RealmsPage
   clientAppsPage: ClientAppsPage
+  auditPage: AuditPage
   testStartTime: number
   page: Page
 }>({
@@ -278,6 +280,33 @@ export const test = base.extend<{
     await clientAppsPage.goto()
 
     await use(clientAppsPage)
+  },
+
+  /**
+   * Fixture: Audit Page
+   *
+   * Automatically:
+   * 1. Verifies environment
+   * 2. Logs in as admin
+   * 3. Navigates to /{realmId}/manage/audit
+   *
+   * Use for:
+   * - Audit log viewing and filtering
+   * - Audit event detail inspection
+   * - Audit log pagination tests
+   */
+  auditPage: async ({ page, demoLogger, testStartTime, loginPage }, use) => {
+    await verifyTestEnvironment(page, {
+      requiredRealms: ['admin'],
+      requiredUsers: ['admin@cas.com'],
+    })
+
+    await loginPage.loginAsAdmin('admin@cas.com', 'password', 'admin')
+
+    const auditPage = new AuditPage(page, demoLogger)
+    await auditPage.goto()
+
+    await use(auditPage)
   },
 })
 

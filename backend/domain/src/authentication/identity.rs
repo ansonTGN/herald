@@ -1,5 +1,4 @@
 // Identity enum - represents authenticated caller (User or Client)
-// Following FerrisKey best practices
 
 use crate::{
     client::entities::ClientApp, client_api_keys::entities::ClientApiKey, user::entities::User,

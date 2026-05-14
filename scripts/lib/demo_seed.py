@@ -112,6 +112,10 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         _info(logger, "Ensuring admin realm default points config...")
         _ensure_admin_realm_points_config(logger)
 
+        # Ensure audit seed data for admin realm (realm_management events)
+        _info(logger, "Ensuring admin realm audit seed data...")
+        _ensure_admin_realm_audit_events(logger)
+
         # Ensure Shopify unclaimed subscription for realm-001 (used by subscription claim tests)
         _info(logger, "Ensuring Shopify unclaimed subscription for realm-001...")
         _ensure_shopify_unclaimed_subscription(logger)
@@ -741,6 +745,38 @@ def _ensure_admin_realm_points_config(logger: "Logger | None") -> None:
         free_periodic_validity_days = EXCLUDED.free_periodic_validity_days;
     """
     _sql_exec(sql)
+
+
+def _ensure_admin_realm_audit_events(logger: "Logger | None") -> None:
+    """Seed realm_management audit events for the admin realm (created during bootstrap, no audit events)."""
+    admin_user_id = _sql_scalar(
+        f"SELECT id::text FROM account WHERE realm_id = '{ADMIN_REALM}' AND email = '{ADMIN_EMAIL}' LIMIT 1;"
+    )
+    if not admin_user_id:
+        _info(logger, "Admin user not found, skipping audit seed")
+        return
+
+    existing = _sql_scalar(
+        f"SELECT COUNT(*)::text FROM audit_events WHERE realm_id = '{ADMIN_REALM}' AND category = 'realm_management';"
+    )
+    if existing and existing != "0":
+        _info(logger, "Admin realm audit events already exist")
+        return
+
+    _info(logger, "Inserting admin realm audit seed events...")
+    sql = f"""
+    DO $$
+    DECLARE
+        v_admin_id UUID := '{admin_user_id}'::uuid;
+    BEGIN
+        INSERT INTO audit_events (id, realm_id, category, action, actor_id, actor_type, actor_name, target_type, target_id, target_name, result, details, created_at)
+        VALUES
+        (uuidv7(), '{ADMIN_REALM}', 'realm_management', 'realm.create', v_admin_id::text, 'admin', '{ADMIN_EMAIL}', 'realm', '{ADMIN_REALM}', 'Admin Realm', 'success', '{{\"status\": \"created\"}}', NOW() - INTERVAL '1 hour'),
+        (uuidv7(), '{ADMIN_REALM}', 'realm_management', 'realm.rbac_init', v_admin_id::text, 'admin', '{ADMIN_EMAIL}', 'realm', '{ADMIN_REALM}', 'Admin Realm', 'success', '{{\"roles\": [\"admin\", \"user\"]}}', NOW() - INTERVAL '59 minutes');
+    END $$;
+    """
+    _sql_exec(sql)
+    _info(logger, "[OK] Admin realm audit seed events ready")
 
 
 def _ensure_subscription_history_demo_data(admin_opener: urllib.request.OpenerDirector, logger: "Logger | None") -> None:

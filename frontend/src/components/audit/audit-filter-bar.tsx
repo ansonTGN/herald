@@ -152,12 +152,8 @@ export function AuditFilterBar({ filters, onFilterChange, onClearFilters }: Audi
     >
       <div className="space-y-1">
         <Label>Category</Label>
-        <Select
-          value={filters.category ?? FILTER_ALL_VALUE}
-          onValueChange={handleCategoryChange}
-          data-testid="audit-category-select"
-        >
-          <SelectTrigger className="w-[180px]">
+        <Select value={filters.category ?? FILTER_ALL_VALUE} onValueChange={handleCategoryChange}>
+          <SelectTrigger className="w-[180px]" data-testid="audit-category-select">
             <SelectValue placeholder="All categories" />
           </SelectTrigger>
           <SelectContent>
@@ -173,12 +169,8 @@ export function AuditFilterBar({ filters, onFilterChange, onClearFilters }: Audi
 
       <div className="space-y-1">
         <Label>Action</Label>
-        <Select
-          value={filters.action ?? FILTER_ALL_VALUE}
-          onValueChange={handleActionChange}
-          data-testid="audit-action-select"
-        >
-          <SelectTrigger className="w-[180px]">
+        <Select value={filters.action ?? FILTER_ALL_VALUE} onValueChange={handleActionChange}>
+          <SelectTrigger className="w-[180px]" data-testid="audit-action-select">
             <SelectValue placeholder="All actions" />
           </SelectTrigger>
           <SelectContent>

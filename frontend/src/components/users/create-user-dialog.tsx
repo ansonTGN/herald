@@ -78,7 +78,7 @@ export function CreateUserDialog({
     defaultValues: {
       email: '',
       password: '',
-      nickname: '',
+      nickname: undefined,
       status: DEFAULT_STATUS,
       roleIds: [],
     },

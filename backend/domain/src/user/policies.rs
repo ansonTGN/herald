@@ -3,7 +3,6 @@
 // =============================================================================
 //
 // 定义用户管理相关的权限检查接口
-// 参考：FerrisKey ferriskey/ferriskey/core/src/domain/user/policies.rs
 //
 // 在 Service 层使用：
 // ```rust

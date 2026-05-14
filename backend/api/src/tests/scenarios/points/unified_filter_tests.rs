@@ -42,6 +42,7 @@ use uuid::Uuid;
 // =============================================================================
 
 /// Represents different types of filter test scenarios
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub enum FilterTestCase {
     /// Filter accounts by status (test_06)
