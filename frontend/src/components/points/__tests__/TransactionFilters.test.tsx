@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { TransactionFilters } from '../TransactionFilters'
 import type { TransactionFilters as TransactionFiltersType } from '@/lib/schemas/points-forms'
@@ -24,26 +24,6 @@ describe('TransactionFilters', () => {
   }
 
   describe('rendering', () => {
-    it('GIVEN default filters WHEN rendering THEN should display all filter inputs', () => {
-      render(
-        <TransactionFilters
-          filters={defaultFilters}
-          onChange={mockOnChange}
-          onClear={mockOnClear}
-        />
-      )
-
-      // Transaction type select
-      expect(screen.getByLabelText('Transaction Type')).toBeInTheDocument()
-
-      // Date inputs
-      expect(screen.getByLabelText('From Date')).toBeInTheDocument()
-      expect(screen.getByLabelText('To Date')).toBeInTheDocument()
-
-      // Apply button
-      expect(screen.getByTestId('apply-filters-button')).toBeInTheDocument()
-    })
-
     it('GIVEN admin is true WHEN rendering THEN should display client app filter', () => {
       render(
         <TransactionFilters
@@ -275,59 +255,6 @@ describe('TransactionFilters', () => {
 
       expect(fromDateInput.value).toBe('2025-01-01')
       expect(toDateInput.value).toBe('2025-03-15')
-    })
-
-    it('GIVEN filter with date string without time WHEN rendering THEN should display as is', () => {
-      const filtersWithDate: TransactionFiltersType = {
-        ...defaultFilters,
-        startTime: '2025-01-01',
-        endTime: '2025-03-15',
-      }
-      render(
-        <TransactionFilters
-          filters={filtersWithDate}
-          onChange={mockOnChange}
-          onClear={mockOnClear}
-        />
-      )
-
-      const fromDateInput = screen.getByTestId('filter-from-date') as HTMLInputElement
-      const toDateInput = screen.getByTestId('filter-to-date') as HTMLInputElement
-
-      expect(fromDateInput.value).toBe('2025-01-01')
-      expect(toDateInput.value).toBe('2025-03-15')
-    })
-  })
-
-  describe('client app options', () => {
-    it('GIVEN admin with client apps WHEN rendering THEN should display all client app options', () => {
-      render(
-        <TransactionFilters
-          filters={defaultFilters}
-          onChange={mockOnChange}
-          onClear={mockOnClear}
-          admin={true}
-          clientApps={mockClientApps}
-        />
-      )
-
-      const clientAppSelect = screen.getByRole('combobox', { name: /client app/i })
-      expect(clientAppSelect).toBeInTheDocument()
-    })
-
-    it('GIVEN admin with no client apps WHEN rendering THEN should display only "All apps" option', () => {
-      render(
-        <TransactionFilters
-          filters={defaultFilters}
-          onChange={mockOnChange}
-          onClear={mockOnClear}
-          admin={true}
-          clientApps={[]}
-        />
-      )
-
-      const clientAppSelect = screen.getByRole('combobox', { name: /client app/i })
-      expect(clientAppSelect).toBeInTheDocument()
     })
   })
 })

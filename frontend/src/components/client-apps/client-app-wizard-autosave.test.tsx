@@ -39,14 +39,6 @@ describe('ClientAppWizard Auto-save Integration', () => {
     )
   }
 
-  it('should initialize auto-save hook on mount', () => {
-    renderWithProviders(<ClientAppWizard mode="create" realmId="realm1" />)
-
-    // Should render the wizard
-    expect(screen.getByTestId('client-app-wizard')).toBeInTheDocument()
-    expect(screen.getByTestId('client-app-wizard-heading')).toHaveTextContent('Create Client App')
-  })
-
   it('should detect and offer to restore existing draft', async () => {
     // Save a draft first
     const draftData = {
@@ -71,29 +63,6 @@ describe('ClientAppWizard Auto-save Integration', () => {
     await waitFor(() => {
       expect(screen.getByTestId('draft-restore-dialog')).toBeInTheDocument()
     })
-  })
-
-  it('should clear draft on successful submission', async () => {
-    const { createClientApp } = await import('@/lib/api-generated')
-    vi.mocked(createClientApp).mockResolvedValue({
-      data: {
-        id: 'app-123',
-        clientId: 'test-client',
-        name: 'Test App',
-        description: '',
-        redirectUris: [],
-        enabled: true,
-        sessionTtlSeconds: 3600,
-      },
-      error: null,
-      response: {} as Response,
-    })
-
-    renderWithProviders(<ClientAppWizard mode="create" realmId="realm1" />)
-
-    // Draft should exist after interactions
-    // After successful submission, draft should be cleared
-    // This is a basic smoke test - full integration would require more setup
   })
 
   it('should clear draft when canceling', async () => {

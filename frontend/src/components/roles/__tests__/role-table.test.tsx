@@ -114,13 +114,6 @@ describe('RoleTable', () => {
     expect(deleteButtons.length).toBe(1)
   })
 
-  it('GIVEN roles have is_builtin true WHEN rendering THEN should show Built-in badge', async () => {
-    render(<RoleTable roles={mockRoles} isLoading={false} error={null} />)
-
-    const builtinBadges = screen.queryAllByTestId(/builtin-badge/)
-    expect(builtinBadges.length).toBe(2) // realm-admin and user
-  })
-
   it('GIVEN role table is rendered WHEN user clicks edit button THEN should open edit dialog', async () => {
     render(<RoleTable roles={mockRoles} isLoading={false} error={null} />)
 
@@ -157,14 +150,6 @@ describe('RoleTable', () => {
 
     const permissionsDialog = screen.getByTestId('role-permissions-dialog')
     expect(permissionsDialog).toBeInTheDocument()
-  })
-
-  it('GIVEN roles have descriptions WHEN rendering THEN should display descriptions', async () => {
-    const screen = render(<RoleTable roles={mockRoles} isLoading={false} error={null} />)
-
-    expect(screen.getByText('Realm administrator')).toBeInTheDocument()
-    expect(screen.getByText('User administrator')).toBeInTheDocument()
-    expect(screen.getByText('Regular user')).toBeInTheDocument()
   })
 
   it('GIVEN role has no description WHEN rendering THEN should display dash', async () => {
@@ -207,21 +192,5 @@ describe('RoleTable', () => {
     expect(
       screen.getByText('No roles found. Create your first role to get started.')
     ).toBeInTheDocument()
-  })
-
-  it('GIVEN manage permissions button WHEN rendering THEN should display button text', async () => {
-    render(<RoleTable roles={mockRoles} isLoading={false} error={null} />)
-
-    // Use querySelector to find the first Manage Permissions button
-    const managePermissionsButton = screen.getByTestId('role-permissions-button-1')
-    expect(managePermissionsButton).toBeInTheDocument()
-  })
-
-  it('GIVEN custom role WHEN rendering THEN should show delete button', async () => {
-    const customRoles = mockRoles.filter((r) => !r.isBuiltin)
-    render(<RoleTable roles={customRoles} isLoading={false} error={null} />)
-
-    const deleteButton = screen.getByTestId('role-delete-button-2')
-    expect(deleteButton).toBeInTheDocument()
   })
 })

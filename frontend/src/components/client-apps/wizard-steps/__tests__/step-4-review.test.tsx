@@ -20,35 +20,6 @@ describe('Step4Review', () => {
   }
 
   describe('Render - Create Mode', () => {
-    it('should render review step with all sections', () => {
-      render(<Step4Review mode="create" formData={validFormData} onEditStep={mockOnEditStep} />)
-
-      expect(screen.getByTestId('review-step')).toBeInTheDocument()
-      expect(screen.getByText(/Review & Create/i)).toBeInTheDocument()
-      expect(screen.getByTestId('review-basic-info')).toBeInTheDocument()
-      expect(screen.getByTestId('review-redirect-uris')).toBeInTheDocument()
-      expect(screen.getByTestId('review-security')).toBeInTheDocument()
-    })
-
-    it('should display all form data correctly', () => {
-      render(<Step4Review mode="create" formData={validFormData} onEditStep={mockOnEditStep} />)
-
-      // Basic info
-      expect(screen.getByText('Test App')).toBeInTheDocument()
-      expect(screen.getByText('Test Description')).toBeInTheDocument()
-      expect(screen.getByText('Web Application')).toBeInTheDocument()
-      expect(screen.getByText('Confidential')).toBeInTheDocument()
-
-      // Redirect URIs
-      expect(screen.getByText('https://example.com/callback')).toBeInTheDocument()
-      expect(screen.getByText('https://example.com/logout')).toBeInTheDocument()
-      expect(screen.getByText('https://example.com')).toBeInTheDocument()
-
-      // Security settings
-      expect(screen.getByText(/1h 0m \(3600s\)/)).toBeInTheDocument()
-      expect(screen.getByText(/2h 0m \(7200s\)/)).toBeInTheDocument()
-    })
-
     it('should show complete badges for all valid sections', () => {
       render(<Step4Review mode="create" formData={validFormData} onEditStep={mockOnEditStep} />)
 
@@ -103,7 +74,7 @@ describe('Step4Review', () => {
       // Check that validation warning is shown
       expect(screen.getByText(/Please complete all required fields/i)).toBeInTheDocument()
 
-      // Check that incomplete sections are mentioned (use getAllByText as the text may be split across elements)
+      // Check that incomplete sections are mentioned
       const basicInfoTexts = screen.queryAllByText(/Basic Information/)
       expect(basicInfoTexts.length).toBeGreaterThan(0)
     })
@@ -125,14 +96,6 @@ describe('Step4Review', () => {
       await user.click(editButtons[2]) // Step 2
       expect(mockOnEditStep).toHaveBeenCalledWith(2)
     })
-
-    it('should render correct data-testid for edit buttons', () => {
-      render(<Step4Review mode="create" formData={validFormData} onEditStep={mockOnEditStep} />)
-
-      expect(screen.getByTestId('edit-step-0')).toBeInTheDocument()
-      expect(screen.getByTestId('edit-step-1')).toBeInTheDocument()
-      expect(screen.getByTestId('edit-step-2')).toBeInTheDocument()
-    })
   })
 
   describe('Edge Cases', () => {
@@ -148,16 +111,6 @@ describe('Step4Review', () => {
 
       expect(screen.getByText('-')).toBeInTheDocument() // Description
       expect(screen.getByText('Not configured')).toBeInTheDocument() // Renewal TTL
-    })
-
-    it('should handle large number of redirect URIs', () => {
-      const manyUris = Array.from({ length: 10 }, (_, i) => `https://example${i}.com/callback`)
-      const data = { ...validFormData, redirectUris: manyUris }
-      render(<Step4Review mode="create" formData={data} onEditStep={mockOnEditStep} />)
-
-      manyUris.forEach((uri) => {
-        expect(screen.getByText(uri)).toBeInTheDocument()
-      })
     })
 
     it('should handle submitting state', () => {

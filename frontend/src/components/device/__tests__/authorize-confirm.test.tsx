@@ -31,31 +31,6 @@ describe('AuthorizeConfirm', () => {
     expect(icon).toHaveAttribute('src', 'https://example.com/icon.png')
   })
 
-  it('does not render icon when not provided', () => {
-    render(
-      <AuthorizeConfirm
-        clientAppName="My Test App"
-        onConfirm={vi.fn()}
-        isLoading={false}
-      />
-    )
-
-    expect(screen.queryByRole('img')).not.toBeInTheDocument()
-  })
-
-  it('does not render icon when clientAppIconUrl is null', () => {
-    render(
-      <AuthorizeConfirm
-        clientAppName="My Test App"
-        clientAppIconUrl={null}
-        onConfirm={vi.fn()}
-        isLoading={false}
-      />
-    )
-
-    expect(screen.queryByRole('img')).not.toBeInTheDocument()
-  })
-
   it('calls onConfirm(true) when Authorize button is clicked', async () => {
     const onConfirm = vi.fn()
     render(

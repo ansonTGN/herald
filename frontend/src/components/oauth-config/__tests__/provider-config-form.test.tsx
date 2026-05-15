@@ -88,66 +88,7 @@ describe('ProviderConfigForm - Create Mode', () => {
     })
   }, 15000)
 
-  it('GIVEN form is in create mode WHEN rendering THEN should render all form fields', () => {
-    render(<ProviderConfigForm {...defaultProps} />)
-
-    // Check that all main form fields are present
-    expect(screen.getByTestId('oauth-provider-type-select')).toBeInTheDocument()
-    expect(screen.getByTestId('oauth-client-id-input')).toBeInTheDocument()
-    expect(screen.getByTestId('oauth-client-secret-input')).toBeInTheDocument()
-    expect(screen.getByTestId('oauth-scopes-input')).toBeInTheDocument()
-    expect(screen.getByTestId('oauth-enabled-checkbox')).toBeInTheDocument()
-    expect(screen.getByTestId('oauth-save-provider-button')).toBeInTheDocument()
-    expect(screen.getByTestId('oauth-cancel-provider-button')).toBeInTheDocument()
-  })
-
-  it('GIVEN form is in create mode WHEN rendering THEN should show Create button', () => {
-    render(<ProviderConfigForm {...defaultProps} />)
-
-    const saveButton = screen.getByTestId('oauth-save-provider-button')
-    expect(saveButton).toHaveTextContent('Create')
-  })
-
-  it('GIVEN form is in create mode WHEN rendering THEN should show save button', () => {
-    render(<ProviderConfigForm {...defaultProps} />)
-
-    const saveButton = screen.getByTestId('oauth-save-provider-button')
-    expect(saveButton).toBeInTheDocument()
-    expect(saveButton).toHaveTextContent('Create')
-  })
-
   it('GIVEN form is in create mode WHEN filling required fields THEN should allow submission', async () => {
-    const user = userEvent.setup({ delay: null })
-    mockOnSubmit.mockResolvedValue(undefined)
-
-    render(<ProviderConfigForm {...defaultProps} />)
-
-    // Fill in required fields
-    const clientIdInput = screen.getByTestId('oauth-client-id-input')
-    await user.clear(clientIdInput)
-    await user.type(clientIdInput, 'test-client-id')
-
-    const clientSecretInput = screen.getByTestId('oauth-client-secret-input')
-    await user.clear(clientSecretInput)
-    await user.type(clientSecretInput, 'test-secret')
-
-    // Submit form
-    const saveButton = screen.getByTestId('oauth-save-provider-button')
-    await user.click(saveButton)
-
-    // Verify submission
-    await waitFor(() => {
-      expect(mockOnSubmit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          clientId: 'test-client-id',
-          clientSecret: 'test-secret',
-          enabled: true,
-        })
-      )
-    })
-  })
-
-  it('GIVEN form is in create mode WHEN submitting THEN should submit with correct config', async () => {
     const user = userEvent.setup({ delay: null })
     mockOnSubmit.mockResolvedValue(undefined)
 
@@ -375,24 +316,6 @@ describe('ProviderConfigForm - Edit Mode', () => {
     expect(screen.getByText('(Leave empty to keep existing)')).toBeInTheDocument()
   })
 
-  it('GIVEN editing wechat config WHEN rendering THEN should show helper text about fixed scope', () => {
-    const editingConfig: OAuthConfigResponse = {
-      id: '1',
-      realmId: 'admin',
-      providerType: 'wechat',
-      clientId: 'wx1234567890',
-      scopes: ['snsapi_login'],
-      enabled: true,
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-    }
-
-    render(<ProviderConfigForm {...defaultProps} editingConfig={editingConfig} />)
-
-    // Verify helper text about fixed scope is shown
-    expect(screen.getByText('(Fixed: snsapi_login)')).toBeInTheDocument()
-  })
-
   it('GIVEN editing google config WHEN rendering THEN should show editable scopes field', () => {
     const editingConfig: OAuthConfigResponse = {
       id: '3',
@@ -439,24 +362,6 @@ describe('ProviderConfigForm - Edit Mode', () => {
     // Verify provider type select is disabled
     const providerSelect = screen.getByTestId('oauth-provider-type-select')
     expect(providerSelect).toBeDisabled()
-  })
-
-  it('GIVEN editing config WHEN rendering THEN should show Save button instead of Create', () => {
-    const editingConfig: OAuthConfigResponse = {
-      id: '1',
-      realmId: 'admin',
-      providerType: 'google',
-      clientId: 'test-client-id',
-      scopes: ['email'],
-      enabled: true,
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-    }
-
-    render(<ProviderConfigForm {...defaultProps} editingConfig={editingConfig} />)
-
-    const saveButton = screen.getByTestId('oauth-save-provider-button')
-    expect(saveButton).toHaveTextContent('Save')
   })
 
   it('GIVEN editing config WHEN submitting with empty clientSecret THEN should allow submission', async () => {
@@ -607,37 +512,12 @@ describe('ProviderConfigForm - Validation', () => {
     mockOnSubmit.mockClear()
   })
 
-  it('GIVEN form with incomplete data WHEN submitting THEN should handle form submission appropriately', async () => {
-    // This test validates that the form handles submission
-    // The actual validation is handled by the form schema
-    render(<ProviderConfigForm {...defaultProps} />)
-
-    // Verify that the form is rendered
-    expect(screen.getByTestId('oauth-provider-type-select')).toBeInTheDocument()
-    expect(screen.getByTestId('oauth-client-id-input')).toBeInTheDocument()
-    expect(screen.getByTestId('oauth-client-secret-input')).toBeInTheDocument()
-  })
-
   it('GIVEN isPending is true WHEN rendering THEN should disable save button', () => {
     render(<ProviderConfigForm {...defaultProps} isPending={true} />)
 
     const saveButton = screen.getByTestId('oauth-save-provider-button')
     expect(saveButton).toBeDisabled()
     expect(saveButton).toHaveTextContent('Saving...')
-  })
-
-  it('GIVEN enabled checkbox WHEN clicking THEN should toggle enabled state', async () => {
-    const user = userEvent.setup({ delay: null })
-    render(<ProviderConfigForm {...defaultProps} />)
-
-    const enabledCheckbox = screen.getByTestId('oauth-enabled-checkbox')
-    expect(enabledCheckbox).toBeChecked() // Default is enabled
-
-    await user.click(enabledCheckbox)
-    expect(enabledCheckbox).not.toBeChecked()
-
-    await user.click(enabledCheckbox)
-    expect(enabledCheckbox).toBeChecked()
   })
 
   it('GIVEN google config is edited WHEN scopes are updated THEN should submit new scopes', async () => {

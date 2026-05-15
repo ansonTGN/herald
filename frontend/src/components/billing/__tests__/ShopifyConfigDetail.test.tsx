@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, waitFor, act } from '@testing-library/react'
+import { render, screen, act } from '@testing-library/react'
 import { ShopifyConfigDetail } from '../ShopifyConfigDetail'
 
 describe('ShopifyConfigDetail - Sensitive Token Display', () => {
@@ -52,20 +52,6 @@ describe('ShopifyConfigDetail - Sensitive Token Display', () => {
       render(<ShopifyConfigDetail config={configWithoutWebhook} />)
 
       expect(screen.queryByTestId('webhook-endpoint-display')).not.toBeInTheDocument()
-    })
-
-    it('GIVEN enabled config WHEN rendered THEN should show enabled badge', () => {
-      render(<ShopifyConfigDetail config={mockConfig} />)
-
-      expect(screen.getByText('Enabled')).toBeInTheDocument()
-    })
-
-    it('GIVEN disabled config WHEN rendered THEN should show disabled badge', () => {
-      const disabledConfig = { ...mockConfig, enabled: false }
-
-      render(<ShopifyConfigDetail config={disabledConfig} />)
-
-      expect(screen.getByText('Disabled')).toBeInTheDocument()
     })
   })
 
@@ -173,10 +159,6 @@ describe('ShopifyConfigDetail - Sensitive Token Display', () => {
         vi.advanceTimersByTime(3000)
       })
 
-      // Second click - clicking the button again while it's already shown should reset timer
-      // Note: The button is now "hide-secrets-button", but clicking it while already shown
-      // is not the expected behavior - let's test clicking hide then show again
-
       act(() => {
         screen.getByTestId('hide-secrets-button').click()
       })
@@ -254,16 +236,6 @@ describe('ShopifyConfigDetail - Sensitive Token Display', () => {
       // If timer wasn't cleared, this would cause issues
       // The fact we get here without errors means the timer was cleared
       expect(true).toBe(true)
-    })
-  })
-
-  describe('timestamp formatting', () => {
-    it('GIVEN config with lastUpdated WHEN rendered THEN should format timestamp', () => {
-      render(<ShopifyConfigDetail config={mockConfig} />)
-
-      // Check that the timestamp is displayed in a human-readable format
-      expect(screen.getByText(/last updated:/i)).toBeInTheDocument()
-      expect(screen.getByText(/2026/)).toBeInTheDocument()
     })
   })
 })

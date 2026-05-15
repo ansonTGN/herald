@@ -124,7 +124,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 | `api-auth` | 注册、登录、密码重置、邮箱验证 | session |
 | `api-admin` | 用户 CRUD、角色管理、权限定义管理 | session + inject_identity |
 | `api-billing` | 套餐、订阅、支付 webhook（Stripe/Creem/微信/Shopify）、发票、积分包购买 | 混合 |
-| `api-oauth` | OAuth 登录（GitHub/Google/微信）、OAuth 配置管理 | 混合 |
+| `api-oauth` | OAuth 登录（GitHub/Google/微信）、Device Code Grant（RFC 8628）、OAuth 配置管理 | 混合 |
 | `api-ext` | 第三方 API：权限检查、订阅查询、积分余额和消费 | API Key |
 | `api-points` | 积分余额、交易历史、消费、充值 | session 或 API Key |
 

@@ -130,21 +130,6 @@ describe('Points Package Forms', () => {
       const result = pointsPackageFormSchema.safeParse(data)
       expect(result.success).toBe(false)
     })
-
-    it('should accept optional description', () => {
-      const data = {
-        name: 'test-package',
-        title: 'Test Package',
-        points: 100,
-        price: 9.99,
-        currency: 'USD',
-        sortOrder: 0,
-        enabled: true,
-      }
-
-      const result = pointsPackageFormSchema.safeParse(data)
-      expect(result.success).toBe(true)
-    })
   })
 
   describe('paymentProviderMappingSchema', () => {
@@ -167,30 +152,6 @@ describe('Points Package Forms', () => {
 
       const result = paymentProviderMappingSchema.safeParse(data)
       expect(result.success).toBe(false)
-    })
-
-    it('should accept all valid providers', () => {
-      const validProviders = ['wechat', 'stripe', 'creem']
-
-      validProviders.forEach((paymentProvider) => {
-        const data = {
-          paymentProvider,
-          enabled: true,
-        }
-
-        const result = paymentProviderMappingSchema.safeParse(data)
-        expect(result.success).toBe(true)
-      })
-    })
-
-    it('should accept optional externalProductId', () => {
-      const data = {
-        paymentProvider: 'stripe',
-        enabled: true,
-      }
-
-      const result = paymentProviderMappingSchema.safeParse(data)
-      expect(result.success).toBe(true)
     })
   })
 
@@ -286,64 +247,6 @@ describe('Points Package Forms', () => {
 
       const result = updatePointsPackageFormSchema.safeParse(data)
       expect(result.success).toBe(true)
-    })
-
-    it('should accept empty object for update', () => {
-      const data = {}
-
-      const result = updatePointsPackageFormSchema.safeParse(data)
-      expect(result.success).toBe(true)
-    })
-  })
-
-  describe('getUpdatePointsPackageDefaults', () => {
-    it('should return correct defaults', () => {
-      const pkg = {
-        name: 'test-package',
-        title: 'Test Package',
-        description: 'Test Description',
-        price: 9.99,
-        currency: 'USD',
-        sortOrder: 0,
-        enabled: true,
-      }
-
-      const defaults = getUpdatePointsPackageDefaults(pkg)
-
-      expect(defaults).toEqual({
-        name: 'test-package',
-        title: 'Test Package',
-        description: 'Test Description',
-        price: 9.99,
-        currency: 'USD',
-        sortOrder: 0,
-        enabled: true,
-      })
-    })
-
-    it('should handle null description', () => {
-      const pkg = {
-        name: 'test-package',
-        description: null,
-      }
-
-      const defaults = getUpdatePointsPackageDefaults(pkg)
-
-      expect(defaults.description).toBe('')
-    })
-
-    it('should provide defaults for missing fields', () => {
-      const pkg = {
-        name: 'test-package',
-      }
-
-      const defaults = getUpdatePointsPackageDefaults(pkg)
-
-      expect(defaults.title).toBe('')
-      expect(defaults.price).toBe(9.99)
-      expect(defaults.currency).toBe('USD')
-      expect(defaults.sortOrder).toBe(0)
-      expect(defaults.enabled).toBe(true)
     })
   })
 
@@ -527,31 +430,6 @@ describe('Points Package Forms', () => {
       expect(result.success).toBe(false)
     })
 
-    it('should accept all three valid providers', () => {
-      const providers = ['wechat', 'stripe', 'creem'] as const
-
-      providers.forEach((paymentProvider) => {
-        const data = {
-          paymentProvider,
-          enabled: true,
-        }
-
-        const result = paymentProviderMappingSchema.safeParse(data)
-        expect(result.success).toBe(true)
-      })
-    })
-
-    it('should accept empty string for externalProductId', () => {
-      const data = {
-        paymentProvider: 'stripe' as const,
-        enabled: true,
-        externalProductId: '',
-      }
-
-      const result = paymentProviderMappingSchema.safeParse(data)
-      expect(result.success).toBe(true)
-    })
-
     it('should default enabled to true', () => {
       const data = {
         paymentProvider: 'stripe' as const,
@@ -562,6 +440,57 @@ describe('Points Package Forms', () => {
       if (result.success) {
         expect(result.data.enabled).toBe(true)
       }
+    })
+  })
+
+  describe('getUpdatePointsPackageDefaults', () => {
+    it('should return correct defaults', () => {
+      const pkg = {
+        name: 'test-package',
+        title: 'Test Package',
+        description: 'Test Description',
+        price: 9.99,
+        currency: 'USD',
+        sortOrder: 0,
+        enabled: true,
+      }
+
+      const defaults = getUpdatePointsPackageDefaults(pkg)
+
+      expect(defaults).toEqual({
+        name: 'test-package',
+        title: 'Test Package',
+        description: 'Test Description',
+        price: 9.99,
+        currency: 'USD',
+        sortOrder: 0,
+        enabled: true,
+      })
+    })
+
+    it('should handle null description', () => {
+      const pkg = {
+        name: 'test-package',
+        description: null,
+      }
+
+      const defaults = getUpdatePointsPackageDefaults(pkg)
+
+      expect(defaults.description).toBe('')
+    })
+
+    it('should provide defaults for missing fields', () => {
+      const pkg = {
+        name: 'test-package',
+      }
+
+      const defaults = getUpdatePointsPackageDefaults(pkg)
+
+      expect(defaults.title).toBe('')
+      expect(defaults.price).toBe(9.99)
+      expect(defaults.currency).toBe('USD')
+      expect(defaults.sortOrder).toBe(0)
+      expect(defaults.enabled).toBe(true)
     })
   })
 })

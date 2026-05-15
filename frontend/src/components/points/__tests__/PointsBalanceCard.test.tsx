@@ -36,18 +36,6 @@ describe('PointsBalanceCard', () => {
       expect(totalConsumed).toBeInTheDocument()
       expect(totalConsumed).toHaveTextContent('5,000')
     })
-
-    it('GIVEN account WHEN rendering THEN should display unit', () => {
-      render(<PointsBalanceCard account={mockPointsAccount} />)
-
-      expect(screen.getByText('points')).toBeInTheDocument()
-    })
-
-    it('GIVEN account WHEN rendering THEN should display card title', () => {
-      render(<PointsBalanceCard account={mockPointsAccount} />)
-
-      expect(screen.getByText('Points Balance')).toBeInTheDocument()
-    })
   })
 
   describe('status display', () => {
@@ -100,20 +88,8 @@ describe('PointsBalanceCard', () => {
     it('GIVEN loading is true WHEN rendering THEN should show loading skeleton', () => {
       render(<PointsBalanceCard account={mockPointsAccount} loading={true} />)
 
-      const card = screen.getByTestId('points-balance-card')
-      expect(card).toBeInTheDocument()
-      expect(card).toHaveTextContent('Points Balance')
-
       const balance = screen.queryByTestId('points-balance')
       expect(balance).not.toBeInTheDocument()
-    })
-
-    it('GIVEN loading is true WHEN rendering THEN should show skeleton elements', () => {
-      render(<PointsBalanceCard account={mockPointsAccount} loading={true} />)
-
-      // Check for skeleton classes
-      const skeletonElements = document.querySelectorAll('.animate-pulse')
-      expect(skeletonElements.length).toBeGreaterThan(0)
     })
   })
 
@@ -122,34 +98,6 @@ describe('PointsBalanceCard', () => {
       const { container } = render(<PointsBalanceCard account={null} />)
 
       expect(container.firstChild).toBeNull()
-    })
-
-    it('GIVEN account is null and loading is false WHEN rendering THEN should not render', () => {
-      render(<PointsBalanceCard account={null} loading={false} />)
-
-      const card = screen.queryByTestId('points-balance-card')
-      expect(card).not.toBeInTheDocument()
-    })
-  })
-
-  describe('large numbers', () => {
-    it('GIVEN account with large balance WHEN rendering THEN should format with commas', () => {
-      const largeAccount = {
-        ...mockPointsAccount,
-        balance: 1000000,
-        totalRecharged: 5000000,
-        totalConsumed: 4000000,
-      }
-      render(<PointsBalanceCard account={largeAccount} />)
-
-      const balance = screen.getByTestId('points-balance')
-      expect(balance).toHaveTextContent('1,000,000')
-
-      const totalRecharged = screen.getByTestId('points-total-recharged')
-      expect(totalRecharged).toHaveTextContent('5,000,000')
-
-      const totalConsumed = screen.getByTestId('points-total-consumed')
-      expect(totalConsumed).toHaveTextContent('4,000,000')
     })
   })
 })

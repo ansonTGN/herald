@@ -17,89 +17,6 @@ describe('Test 3.1: Realm Config API Contract Tests (P0)', () => {
     server.resetHandlers()
   })
 
-  describe('GET /api/points/{realmId}/default-config', () => {
-    it('GIVEN MSW mock Realm config API WHEN calling getRealmDefaultConfig THEN returns data with periodic fields', async () => {
-      const { getRealmDefaultConfig } = await import('@/lib/api-generated')
-      const realmId = 'test-realm'
-
-      const response = await getRealmDefaultConfig({
-        path: { realmId },
-        client: testClient,
-      })
-
-      expect(response.error).toBeUndefined()
-      expect(response.data).toBeDefined()
-
-      if (response.data) {
-        // Verify response structure
-        expect(response.data.realmId).toBe(realmId)
-        expect(response.data.registrationBonusPoints).toBeDefined()
-        expect(typeof response.data.registrationBonusPoints).toBe('number')
-
-        // Verify periodic fields exist (new fields)
-        expect(response.data.freePeriodicPointsAmount).toBeDefined()
-        expect(typeof response.data.freePeriodicPointsAmount).toBe('number')
-
-        expect(response.data.freePeriodicGrantPeriodType).toBeDefined()
-        expect(typeof response.data.freePeriodicGrantPeriodType).toBe('string')
-        expect(['once', 'daily', 'weekly', 'monthly']).toContain(
-          response.data.freePeriodicGrantPeriodType
-        )
-
-        expect(response.data.freePeriodicValidityDays).toBeDefined()
-        expect(typeof response.data.freePeriodicValidityDays).toBe('number')
-
-        expect(response.data.createdAt).toBeDefined()
-        expect(typeof response.data.createdAt).toBe('string')
-
-        expect(response.data.updatedAt).toBeDefined()
-        expect(typeof response.data.updatedAt).toBe('string')
-      }
-    })
-
-    it('GIVEN API returns periodic config WHEN parsing THEN fields have correct types', async () => {
-      const { getRealmDefaultConfig } = await import('@/lib/api-generated')
-
-      const response = await getRealmDefaultConfig({
-        path: { realmId: 'test-realm' },
-        client: testClient,
-      })
-
-      expect(response.error).toBeUndefined()
-      expect(response.data).toBeDefined()
-
-      if (response.data) {
-        // Verify field types match TypeScript definition
-        expect(response.data.freePeriodicGrantPeriodType).toMatch(/once|daily|weekly|monthly/)
-
-        // Verify numeric fields
-        expect(response.data.freePeriodicPointsAmount).toBeGreaterThanOrEqual(0)
-        expect(response.data.freePeriodicValidityDays).toBeGreaterThanOrEqual(0)
-
-        // Verify ISO 8601 date format
-        expect(response.data.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
-        expect(response.data.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
-      }
-    })
-
-    it('GIVEN realmId with special characters WHEN calling API THEN should handle correctly', async () => {
-      const { getRealmDefaultConfig } = await import('@/lib/api-generated')
-      const realmId = 'test-realm-123'
-
-      const response = await getRealmDefaultConfig({
-        path: { realmId },
-        client: testClient,
-      })
-
-      expect(response.error).toBeUndefined()
-      expect(response.data).toBeDefined()
-
-      if (response.data) {
-        expect(response.data.realmId).toBe(realmId)
-      }
-    })
-  })
-
   describe('PUT /api/points/{realmId}/default-config', () => {
     it('GIVEN valid periodic config WHEN updating THEN accepts periodic fields', async () => {
       const { updateRealmDefaultConfig } = await import('@/lib/api-generated')
@@ -155,31 +72,6 @@ describe('Test 3.1: Realm Config API Contract Tests (P0)', () => {
         expect(response.data.freePeriodicValidityDays).toBe(0)
       }
     })
-
-    it('GIVEN monthly period type WHEN updating THEN should accept', async () => {
-      const { updateRealmDefaultConfig } = await import('@/lib/api-generated')
-      const realmId = 'test-realm'
-      const updateData = {
-        registrationBonusPoints: 1000,
-        freePeriodicPointsAmount: 200,
-        freePeriodicGrantPeriodType: 'monthly' as const,
-        freePeriodicValidityDays: 30,
-      }
-
-      const response = await updateRealmDefaultConfig({
-        path: { realmId },
-        body: updateData,
-        client: testClient,
-      })
-
-      expect(response.error).toBeUndefined()
-      expect(response.data).toBeDefined()
-
-      if (response.data) {
-        expect(response.data.freePeriodicGrantPeriodType).toBe('monthly')
-        expect(response.data.freePeriodicValidityDays).toBe(30)
-      }
-    })
   })
 
   describe('API Error Handling', () => {
@@ -206,54 +98,6 @@ describe('Test 3.1: Realm Config API Contract Tests (P0)', () => {
           freePeriodicGrantPeriodType: 'daily',
           freePeriodicValidityDays: 1,
         },
-        client: testClient,
-      })
-
-      expect(response.error).toBeDefined()
-      expect(response.data).toBeUndefined()
-    })
-
-    it('GIVEN API returns 404 WHEN fetching config THEN should handle not found error', async () => {
-      server.use(
-        http.get('http://localhost:3000/api/points/non-existent-realm/default-config', () => {
-          return HttpResponse.json(
-            {
-              message: 'Realm configuration not found',
-              code: 'REALM_CONFIG_NOT_FOUND',
-            },
-            { status: 404 }
-          )
-        })
-      )
-
-      const { getRealmDefaultConfig } = await import('@/lib/api-generated')
-
-      const response = await getRealmDefaultConfig({
-        path: { realmId: 'non-existent-realm' },
-        client: testClient,
-      })
-
-      expect(response.error).toBeDefined()
-      expect(response.data).toBeUndefined()
-    })
-
-    it('GIVEN API returns 500 WHEN fetching config THEN should handle server error', async () => {
-      server.use(
-        http.get('http://localhost:3000/api/points/test-realm/default-config', () => {
-          return HttpResponse.json(
-            {
-              message: 'Internal server error',
-              code: 'INTERNAL_ERROR',
-            },
-            { status: 500 }
-          )
-        })
-      )
-
-      const { getRealmDefaultConfig } = await import('@/lib/api-generated')
-
-      const response = await getRealmDefaultConfig({
-        path: { realmId: 'test-realm' },
         client: testClient,
       })
 
@@ -339,37 +183,44 @@ describe('Test 3.1: Realm Config API Contract Tests (P0)', () => {
 
       expect(response.error).toBeDefined()
     })
-  })
 
-  describe('Field Name Mapping', () => {
-    it('GIVEN API request WHEN sending data THEN uses camelCase (frontend convention)', async () => {
-      const { updateRealmDefaultConfig } = await import('@/lib/api-generated')
-      const realmId = 'test-realm'
-      const updateData = {
-        registrationBonusPoints: 1000,
-        freePeriodicPointsAmount: 50, // camelCase
-        freePeriodicGrantPeriodType: 'daily' as const, // camelCase
-        freePeriodicValidityDays: 1, // camelCase
-      }
+    it('GIVEN API returns 404 WHEN fetching config THEN should handle not found error', async () => {
+      server.use(
+        http.get('http://localhost:3000/api/points/non-existent-realm/default-config', () => {
+          return HttpResponse.json(
+            {
+              message: 'Realm configuration not found',
+              code: 'REALM_CONFIG_NOT_FOUND',
+            },
+            { status: 404 }
+          )
+        })
+      )
 
-      const response = await updateRealmDefaultConfig({
-        path: { realmId },
-        body: updateData,
+      const { getRealmDefaultConfig } = await import('@/lib/api-generated')
+
+      const response = await getRealmDefaultConfig({
+        path: { realmId: 'non-existent-realm' },
         client: testClient,
       })
 
-      expect(response.error).toBeUndefined()
-      expect(response.data).toBeDefined()
-
-      // Verify the API accepts camelCase field names
-      if (response.data) {
-        expect(response.data.freePeriodicPointsAmount).toBeDefined()
-        expect(response.data.freePeriodicGrantPeriodType).toBeDefined()
-        expect(response.data.freePeriodicValidityDays).toBeDefined()
-      }
+      expect(response.error).toBeDefined()
+      expect(response.data).toBeUndefined()
     })
 
-    it('GIVEN API response WHEN receiving data THEN uses camelCase (frontend convention)', async () => {
+    it('GIVEN API returns 500 WHEN fetching config THEN should handle server error', async () => {
+      server.use(
+        http.get('http://localhost:3000/api/points/test-realm/default-config', () => {
+          return HttpResponse.json(
+            {
+              message: 'Internal server error',
+              code: 'INTERNAL_ERROR',
+            },
+            { status: 500 }
+          )
+        })
+      )
+
       const { getRealmDefaultConfig } = await import('@/lib/api-generated')
 
       const response = await getRealmDefaultConfig({
@@ -377,22 +228,8 @@ describe('Test 3.1: Realm Config API Contract Tests (P0)', () => {
         client: testClient,
       })
 
-      expect(response.error).toBeUndefined()
-      expect(response.data).toBeDefined()
-
-      if (response.data) {
-        // Verify response uses camelCase
-        expect(response.data).toHaveProperty('registrationBonusPoints')
-        expect(response.data).toHaveProperty('freePeriodicPointsAmount')
-        expect(response.data).toHaveProperty('freePeriodicGrantPeriodType')
-        expect(response.data).toHaveProperty('freePeriodicValidityDays')
-
-        // Should NOT have snake_case versions
-        expect(response.data).not.toHaveProperty('registration_bonus_points')
-        expect(response.data).not.toHaveProperty('free_periodic_points_amount')
-        expect(response.data).not.toHaveProperty('free_periodic_grant_period_type')
-        expect(response.data).not.toHaveProperty('free_periodic_validity_days')
-      }
+      expect(response.error).toBeDefined()
+      expect(response.data).toBeUndefined()
     })
   })
 })

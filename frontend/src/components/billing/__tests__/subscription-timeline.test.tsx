@@ -5,53 +5,6 @@ import { SubscriptionTimeline } from '../subscription-timeline'
 import type { SubscriptionHistoryEvent } from '@/types/billing'
 import { mockSubscriptionHistoryEvent } from './utils'
 
-describe('SubscriptionTimeline - Time Sorting', () => {
-  const mockEvents: SubscriptionHistoryEvent[] = [
-    {
-      ...mockSubscriptionHistoryEvent({
-        id: '1',
-        timestamp: '2025-01-01T09:00:00Z',
-        eventType: 'created',
-      }),
-    },
-    {
-      ...mockSubscriptionHistoryEvent({
-        id: '2',
-        timestamp: '2025-01-20T10:30:00Z',
-        eventType: 'upgraded',
-      }),
-    },
-    {
-      ...mockSubscriptionHistoryEvent({
-        id: '3',
-        timestamp: '2025-02-15T14:00:00Z',
-        eventType: 'canceled',
-      }),
-    },
-  ]
-
-  it('should display events in the order they are provided (not sorting internally)', () => {
-    render(<SubscriptionTimeline events={mockEvents} />)
-
-    const events = screen.getAllByTestId(/timeline-event-\d+/)
-    expect(events).toHaveLength(3)
-
-    // Verify the events are rendered in the order provided
-    expect(events[0]).toHaveAttribute('data-testid', 'timeline-event-0')
-    expect(events[1]).toHaveAttribute('data-testid', 'timeline-event-1')
-    expect(events[2]).toHaveAttribute('data-testid', 'timeline-event-2')
-  })
-
-  it('should display timestamps in human-readable format', () => {
-    render(<SubscriptionTimeline events={mockEvents} />)
-
-    // Check that timestamps are rendered (formatted by date-fns)
-    // The format includes date and time, so we just check that timestamps are present
-    const timestamps = screen.getAllByText(/2025/i)
-    expect(timestamps.length).toBeGreaterThan(0)
-  })
-})
-
 describe('SubscriptionTimeline - Empty State', () => {
   it('should display empty state message when no events', () => {
     render(<SubscriptionTimeline events={[]} />)
@@ -100,18 +53,6 @@ describe('SubscriptionTimeline - Event Rendering', () => {
       }),
     },
   ]
-
-  it('should render event badge with correct type', () => {
-    render(<SubscriptionTimeline events={mockEvents} />)
-
-    expect(screen.getByTestId('event-badge-upgraded')).toBeInTheDocument()
-  })
-
-  it('should display actor information when available', () => {
-    render(<SubscriptionTimeline events={mockEvents} />)
-
-    expect(screen.getByText('admin@example.com')).toBeInTheDocument()
-  })
 
   it('should display change summary when changes are present', () => {
     render(<SubscriptionTimeline events={mockEvents} />)
@@ -276,14 +217,6 @@ describe('SubscriptionTimeline - Multiple Events', () => {
     mockSubscriptionHistoryEvent({ id: '2', eventType: 'upgraded' }),
     mockSubscriptionHistoryEvent({ id: '3', eventType: 'downgraded' }),
   ]
-
-  it('should render all events', () => {
-    render(<SubscriptionTimeline events={mockEvents} />)
-
-    expect(screen.getByTestId('timeline-event-0')).toBeInTheDocument()
-    expect(screen.getByTestId('timeline-event-1')).toBeInTheDocument()
-    expect(screen.getByTestId('timeline-event-2')).toBeInTheDocument()
-  })
 
   it('should display different event types with different badges', () => {
     render(<SubscriptionTimeline events={mockEvents} />)

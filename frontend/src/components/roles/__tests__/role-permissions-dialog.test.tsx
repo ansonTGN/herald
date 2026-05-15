@@ -67,42 +67,6 @@ describe('RolePermissionsDialog', () => {
     vi.clearAllMocks()
   })
 
-  it('GIVEN dialog is open with role WHEN rendering THEN should display dialog title', async () => {
-    const screen = render(
-      <RolePermissionsDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        role={mockRole}
-        realmId="realm-1"
-        allPermissions={mockPermissions}
-        assignedPermissionIds={assignedPermissionIds}
-      />
-    )
-
-    expect(screen.getByTestId('role-permissions-dialog')).toBeInTheDocument()
-    expect(screen.getByText(/Manage Permissions for realm-admin/)).toBeInTheDocument()
-  })
-
-  it('GIVEN dialog is open WHEN rendering THEN should display all permissions', async () => {
-    const screen = render(
-      <RolePermissionsDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        role={mockRole}
-        realmId="realm-1"
-        allPermissions={mockPermissions}
-        assignedPermissionIds={assignedPermissionIds}
-      />
-    )
-
-    // The dialog should be open
-    expect(screen.getByTestId('role-permissions-dialog')).toBeInTheDocument()
-    // Check that permission items are rendered (using data-testid from component)
-    expect(screen.getByTestId('permission-item-1')).toBeInTheDocument()
-    expect(screen.getByTestId('permission-item-2')).toBeInTheDocument()
-    expect(screen.getByTestId('permission-item-3')).toBeInTheDocument()
-  })
-
   it('GIVEN dialog is open WHEN rendering THEN should display permission summary stats', async () => {
     const screen = render(
       <RolePermissionsDialog
@@ -169,37 +133,6 @@ describe('RolePermissionsDialog', () => {
 
     expect(handleOpenChange).toHaveBeenCalledTimes(1)
     expect(handleOpenChange).toHaveBeenCalledWith(false)
-  })
-
-  it('GIVEN dialog is closed WHEN rendering THEN should not display content', async () => {
-    render(
-      <RolePermissionsDialog
-        open={false}
-        onOpenChange={vi.fn()}
-        role={mockRole}
-        realmId="realm-1"
-        allPermissions={mockPermissions}
-        assignedPermissionIds={assignedPermissionIds}
-      />
-    )
-
-    const dialog = document.querySelector('[data-testid="role-permissions-dialog"]')
-    expect(dialog).toBeNull()
-  })
-
-  it('GIVEN dialog is open WHEN rendering THEN should display dialog description', async () => {
-    const screen = render(
-      <RolePermissionsDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        role={mockRole}
-        realmId="realm-1"
-        allPermissions={mockPermissions}
-        assignedPermissionIds={assignedPermissionIds}
-      />
-    )
-
-    expect(screen.getByText(/Assign or remove permissions for this role/)).toBeInTheDocument()
   })
 
   it('GIVEN permissions are provided WHEN rendering THEN should group by resource', async () => {

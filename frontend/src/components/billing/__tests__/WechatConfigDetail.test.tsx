@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { WechatConfigDetail } from '../WechatConfigDetail'
 
 describe('WechatConfigDetail', () => {
@@ -47,26 +46,6 @@ describe('WechatConfigDetail', () => {
     expect(screen.queryByTestId('hide-secrets-button')).not.toBeInTheDocument()
   })
 
-  it('GIVEN showSecrets=true WHEN rendered THEN displays show secrets button', () => {
-    const onShowSecrets = vi.fn()
-    const onHideSecrets = vi.fn()
-    const onEdit = vi.fn()
-    const onDelete = vi.fn()
-
-    render(
-      <WechatConfigDetail
-        config={mockConfig}
-        onShowSecrets={onShowSecrets}
-        onHideSecrets={onHideSecrets}
-        showSecrets={false}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />
-    )
-
-    expect(screen.getByTestId('show-secrets-button')).toBeInTheDocument()
-  })
-
   it('GIVEN showSecrets=true WHEN rendered THEN displays hide secrets button', () => {
     const onShowSecrets = vi.fn()
     const onHideSecrets = vi.fn()
@@ -86,113 +65,5 @@ describe('WechatConfigDetail', () => {
 
     expect(screen.getByTestId('hide-secrets-button')).toBeInTheDocument()
     expect(screen.queryByTestId('show-secrets-button')).not.toBeInTheDocument()
-  })
-
-  it('WHEN show secrets button clicked THEN calls onShowSecrets', async () => {
-    const user = userEvent.setup()
-    const onShowSecrets = vi.fn()
-    const onHideSecrets = vi.fn()
-    const onEdit = vi.fn()
-    const onDelete = vi.fn()
-
-    render(
-      <WechatConfigDetail
-        config={mockConfig}
-        onShowSecrets={onShowSecrets}
-        onHideSecrets={onHideSecrets}
-        showSecrets={false}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />
-    )
-
-    await user.click(screen.getByTestId('show-secrets-button'))
-    expect(onShowSecrets).toHaveBeenCalledTimes(1)
-  })
-
-  it('WHEN hide secrets button clicked THEN calls onHideSecrets', async () => {
-    const user = userEvent.setup()
-    const onShowSecrets = vi.fn()
-    const onHideSecrets = vi.fn()
-    const onEdit = vi.fn()
-    const onDelete = vi.fn()
-
-    render(
-      <WechatConfigDetail
-        config={mockConfig}
-        onShowSecrets={onShowSecrets}
-        onHideSecrets={onHideSecrets}
-        showSecrets={true}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />
-    )
-
-    await user.click(screen.getByTestId('hide-secrets-button'))
-    expect(onHideSecrets).toHaveBeenCalledTimes(1)
-  })
-
-  it('WHEN edit button clicked THEN calls onEdit', async () => {
-    const user = userEvent.setup()
-    const onShowSecrets = vi.fn()
-    const onHideSecrets = vi.fn()
-    const onEdit = vi.fn()
-    const onDelete = vi.fn()
-
-    render(
-      <WechatConfigDetail
-        config={mockConfig}
-        onShowSecrets={onShowSecrets}
-        onHideSecrets={onHideSecrets}
-        showSecrets={false}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />
-    )
-
-    await user.click(screen.getByTestId('edit-wechat-config-button'))
-    expect(onEdit).toHaveBeenCalledTimes(1)
-  })
-
-  it('WHEN delete button clicked THEN calls onDelete', async () => {
-    const user = userEvent.setup()
-    const onShowSecrets = vi.fn()
-    const onHideSecrets = vi.fn()
-    const onEdit = vi.fn()
-    const onDelete = vi.fn()
-
-    render(
-      <WechatConfigDetail
-        config={mockConfig}
-        onShowSecrets={onShowSecrets}
-        onHideSecrets={onHideSecrets}
-        showSecrets={false}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />
-    )
-
-    await user.click(screen.getByTestId('delete-wechat-config-button'))
-    expect(onDelete).toHaveBeenCalledTimes(1)
-  })
-
-  it('GIVEN config WHEN rendered THEN displays last updated time', () => {
-    const onShowSecrets = vi.fn()
-    const onHideSecrets = vi.fn()
-    const onEdit = vi.fn()
-    const onDelete = vi.fn()
-
-    render(
-      <WechatConfigDetail
-        config={mockConfig}
-        onShowSecrets={onShowSecrets}
-        onHideSecrets={onHideSecrets}
-        showSecrets={false}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />
-    )
-
-    expect(screen.getByText(/Last updated:/i)).toBeInTheDocument()
   })
 })

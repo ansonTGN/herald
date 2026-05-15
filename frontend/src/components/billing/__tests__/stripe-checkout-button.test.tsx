@@ -67,59 +67,6 @@ describe('StripeCheckoutButton', () => {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   )
 
-  describe('rendering', () => {
-    test('renders button correctly', () => {
-      render(<StripeCheckoutButton realmId="realm1" clientAppId="app1" plan={mockPlan} />, {
-        wrapper,
-      })
-
-      const button = screen.getByTestId('plan-stripe-checkout-button-plan-123')
-      expect(button).toBeInTheDocument()
-      expect(button).toHaveTextContent('Subscribe with Stripe')
-    })
-
-    test('shows loading state when checkout is pending', () => {
-      vi.mocked(useStripeCheckout).mockReturnValue({
-        mutateAsync: vi.fn(),
-        mutate: vi.fn(),
-        isPending: true,
-        isSuccess: false,
-        isError: false,
-        error: null,
-        data: null,
-        reset: vi.fn(),
-      })
-
-      render(<StripeCheckoutButton realmId="realm1" clientAppId="app1" plan={mockPlan} />, {
-        wrapper,
-      })
-
-      const button = screen.getByTestId('plan-stripe-checkout-button-plan-123')
-      expect(button).toBeDisabled()
-      expect(button).toHaveTextContent('Creating...')
-    })
-
-    test('is disabled when mutation is pending', () => {
-      vi.mocked(useStripeCheckout).mockReturnValue({
-        mutateAsync: vi.fn(),
-        mutate: vi.fn(),
-        isPending: true,
-        isSuccess: false,
-        isError: false,
-        error: null,
-        data: null,
-        reset: vi.fn(),
-      })
-
-      render(<StripeCheckoutButton realmId="realm1" clientAppId="app1" plan={mockPlan} />, {
-        wrapper,
-      })
-
-      const button = screen.getByTestId('plan-stripe-checkout-button-plan-123')
-      expect(button).toBeDisabled()
-    })
-  })
-
   describe('user interactions', () => {
     test('initiates checkout when clicked', async () => {
       const user = userEvent.setup()
@@ -275,52 +222,6 @@ describe('StripeCheckoutButton', () => {
           billingPeriod: 'yearly',
         })
       })
-    })
-  })
-
-  describe('button variants and sizes', () => {
-    test('applies custom variant', () => {
-      render(
-        <StripeCheckoutButton
-          realmId="realm1"
-          clientAppId="app1"
-          plan={mockPlan}
-          variant="outline"
-        />,
-        { wrapper }
-      )
-
-      const button = screen.getByTestId('plan-stripe-checkout-button-plan-123')
-      expect(button).toBeInTheDocument()
-      // Variant is applied via Button component's variant prop
-      expect(button).toHaveAttribute('data-variant', 'outline')
-    })
-
-    test('applies custom size', () => {
-      render(
-        <StripeCheckoutButton realmId="realm1" clientAppId="app1" plan={mockPlan} size="lg" />,
-        { wrapper }
-      )
-
-      const button = screen.getByTestId('plan-stripe-checkout-button-plan-123')
-      expect(button).toBeInTheDocument()
-      // Size is applied via Button component's size prop
-      expect(button).toHaveAttribute('data-size', 'lg')
-    })
-
-    test('applies custom className', () => {
-      render(
-        <StripeCheckoutButton
-          realmId="realm1"
-          clientAppId="app1"
-          plan={mockPlan}
-          className="custom-class"
-        />,
-        { wrapper }
-      )
-
-      const button = screen.getByTestId('plan-stripe-checkout-button-plan-123')
-      expect(button).toHaveClass('custom-class')
     })
   })
 

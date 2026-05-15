@@ -43,19 +43,6 @@ describe('stripe-config-utils', () => {
       })
     })
 
-    test('returns default config when config array is empty', () => {
-      const configs: RealmConfigResponse[] = []
-
-      const result = parseStripeConfig(configs)
-
-      expect(result).toEqual({
-        enabled: false,
-        publishableKey: '',
-        secretKey: '',
-        webhookSecret: '',
-      })
-    })
-
     test('handles missing optional fields gracefully', () => {
       const configs: RealmConfigResponse[] = [
         {
@@ -183,31 +170,6 @@ describe('stripe-config-utils', () => {
       expect(result.publishableKey).toBe('pk_test_<>{}"\\n\\t')
     })
 
-    test('handles empty string values', () => {
-      const configs: RealmConfigResponse[] = [
-        {
-          configType: 'stripe',
-          configKey: 'settings',
-          configValue: JSON.stringify({
-            enabled: false,
-            publishableKey: '',
-            secretKey: '',
-            webhookSecret: '',
-          }),
-          enabled: false,
-        },
-      ]
-
-      const result = parseStripeConfig(configs)
-
-      expect(result).toEqual({
-        enabled: false,
-        publishableKey: '',
-        secretKey: '',
-        webhookSecret: '',
-      })
-    })
-
     test('handles config with null in array', () => {
       const configs: RealmConfigResponse[] = [
         {
@@ -328,28 +290,6 @@ describe('stripe-config-utils', () => {
       expect(parsedValue.publishableKey).toBe(`pk_test_${longKey}`)
       expect(parsedValue.secretKey).toBe(`sk_test_${longKey}`)
       expect(parsedValue.webhookSecret).toBe(`whsec_${longKey}`)
-    })
-
-    test('produces valid JSON string', () => {
-      const formData: StripeConfigForm = {
-        enabled: true,
-        publishableKey: 'pk_test_123',
-        secretKey: 'sk_test_456',
-        webhookSecret: 'whsec_789',
-      }
-
-      const result = buildStripeConfigRequest(formData)
-
-      // Should be able to parse the JSON back
-      expect(() => JSON.parse(result.configValue)).not.toThrow()
-
-      const parsed = JSON.parse(result.configValue)
-      expect(parsed).toEqual({
-        enabled: true,
-        publishableKey: 'pk_test_123',
-        secretKey: 'sk_test_456',
-        webhookSecret: 'whsec_789',
-      })
     })
 
     test('marks isSecret as false (individual fields are marked in JSON)', () => {

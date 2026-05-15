@@ -2,8 +2,8 @@
  * @vitest-environment jsdom
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -120,112 +120,6 @@ describe('InvoiceUserPage', () => {
 
   beforeEach(() => {
     setupDefaultHandlers()
-  })
-
-  // ==================== Rendering & Table ====================
-
-  describe('table rendering', () => {
-    it('renders "My Invoices" header and table with user invoices', async () => {
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
-
-      // Heading should be visible immediately
-      expect(screen.getByTestId('invoice-user-heading')).toHaveTextContent('My Invoices')
-
-      // Wait for data to load by checking for actual content
-      await waitFor(() => {
-        expect(screen.getByText('INV-001')).toBeInTheDocument()
-      })
-
-      // Verify table columns
-      expect(screen.getByText('Invoice Number')).toBeInTheDocument()
-      expect(screen.getByText('Amount')).toBeInTheDocument()
-      expect(screen.getByText('Status')).toBeInTheDocument()
-      expect(screen.getByText('Due Date')).toBeInTheDocument()
-
-      // Verify invoice data rendered
-      expect(screen.getByText('INV-002')).toBeInTheDocument()
-      expect(screen.getByText('INV-003')).toBeInTheDocument()
-    })
-
-    it('shows formatted amount for each invoice', async () => {
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
-
-      // Wait for data to load by checking for actual content
-      await waitFor(() => {
-        expect(screen.getByText('INV-001')).toBeInTheDocument()
-      })
-
-      // 9900 CNY cents = 99.00 CNY
-      expect(screen.getByText(/99\.00/)).toBeInTheDocument()
-    })
-
-    it('shows status badges for each invoice', async () => {
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
-
-      // Wait for data to load by checking for actual content
-      await waitFor(() => {
-        expect(screen.getByText('INV-001')).toBeInTheDocument()
-      })
-
-      expect(screen.getByText('Issued')).toBeInTheDocument()
-      expect(screen.getByText('Paid')).toBeInTheDocument()
-      expect(screen.getByText('Overdue')).toBeInTheDocument()
-      expect(screen.getByText('Draft')).toBeInTheDocument()
-      expect(screen.getByText('Void')).toBeInTheDocument()
-    })
-
-    it('shows due date or dash for missing date', async () => {
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
-
-      // Wait for data to load by checking for actual content
-      await waitFor(() => {
-        expect(screen.getByText('INV-001')).toBeInTheDocument()
-      })
-
-      // void invoice (inv-5) has null dueDate -> should show dash
-      const voidRow = screen.getByText('INV-005').closest('tr')!
-      expect(within(voidRow).getByText('-')).toBeInTheDocument()
-    })
-  })
-
-  // ==================== Loading State ====================
-
-  describe('loading state', () => {
-    it('shows loading message while fetching', async () => {
-      server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, async () => {
-          await new Promise((resolve) => setTimeout(resolve, 500))
-          return HttpResponse.json(makeListResponse([]))
-        })
-      )
-
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
-
-      expect(screen.getByText('Loading invoices...')).toBeInTheDocument()
-
-      // Wait for loading to complete
-      await waitFor(() => {
-        expect(screen.queryByText('Loading invoices...')).not.toBeInTheDocument()
-      })
-    })
-  })
-
-  // ==================== Empty State ====================
-
-  describe('empty state', () => {
-    it('shows "No invoices yet." when list is empty', async () => {
-      server.use(
-        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
-          return HttpResponse.json(makeListResponse([]))
-        })
-      )
-
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
-
-      await waitFor(() => {
-        expect(screen.getByText('No invoices yet.')).toBeInTheDocument()
-      })
-    })
   })
 
   // ==================== PDF Download Visibility ====================

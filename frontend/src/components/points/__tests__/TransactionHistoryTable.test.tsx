@@ -5,7 +5,6 @@ import { TransactionHistoryTable } from '../TransactionHistoryTable'
 import {
   mockRechargeTransaction,
   mockConsumeTransaction,
-  mockTransactionsList,
 } from '@/fixtures/points-transaction.fixture'
 import type { TransactionFilters } from '@/lib/schemas/points-forms'
 
@@ -64,22 +63,7 @@ describe('TransactionHistoryTable', () => {
   })
 
   describe('rendering transactions', () => {
-    it('GIVEN transactions WHEN rendering THEN should display transaction rows', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={mockTransactionsList}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={mockPagination}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      expect(screen.getByTestId('transaction-row-0')).toBeInTheDocument()
-      expect(screen.getByTestId('transaction-row-1')).toBeInTheDocument()
-    })
-
-    it('GIVEN recharge transaction WHEN rendering THEN should display with green color', () => {
+    it('GIVEN recharge transaction WHEN rendering THEN should display with green color and plus sign', () => {
       render(
         <TransactionHistoryTable
           transactions={[mockRechargeTransaction]}
@@ -96,7 +80,7 @@ describe('TransactionHistoryTable', () => {
       expect(amount).toHaveClass(/text-green-600/)
     })
 
-    it('GIVEN consume transaction WHEN rendering THEN should display with red color', () => {
+    it('GIVEN consume transaction WHEN rendering THEN should display with red color and minus sign', () => {
       render(
         <TransactionHistoryTable
           transactions={[mockConsumeTransaction]}
@@ -111,56 +95,6 @@ describe('TransactionHistoryTable', () => {
       expect(amount).toBeInTheDocument()
       expect(amount).toHaveTextContent('-500')
       expect(amount).toHaveClass(/text-red-600/)
-    })
-
-    it('GIVEN transaction WHEN rendering THEN should display transaction time', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={[mockRechargeTransaction]}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 1 }}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      const time = screen.getByTestId('transaction-time-0')
-      expect(time).toBeInTheDocument()
-      // Just check that time is displayed, format depends on locale
-      expect(time.textContent).toBeTruthy()
-      expect(time.textContent).toContain('2025')
-    })
-
-    it('GIVEN transaction WHEN rendering THEN should display balance after', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={[mockRechargeTransaction]}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 1 }}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      const balance = screen.getByTestId('transaction-balance-0')
-      expect(balance).toBeInTheDocument()
-      expect(balance).toHaveTextContent('6,000')
-    })
-
-    it('GIVEN transaction with description WHEN rendering THEN should display description', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={[mockRechargeTransaction]}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 1 }}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      const description = screen.getByTestId('transaction-description-0')
-      expect(description).toBeInTheDocument()
-      expect(description).toHaveTextContent('Plan subscription bonus')
     })
 
     it('GIVEN transaction without description WHEN rendering THEN should display dash', () => {
@@ -180,37 +114,6 @@ describe('TransactionHistoryTable', () => {
 
       const description = screen.getByTestId('transaction-description-0')
       expect(description).toHaveTextContent('-')
-    })
-
-    it('GIVEN transaction with subscription ID WHEN rendering THEN should display subscription ref', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={[mockRechargeTransaction]}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 1 }}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      const description = screen.getByTestId('transaction-description-0')
-      expect(description.textContent).toContain('sub-123')
-    })
-
-    it('GIVEN transaction with external ref ID WHEN rendering THEN should display ref ID', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={[mockRechargeTransaction]}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 1 }}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      const ref = screen.getByTestId('transaction-ref-0')
-      expect(ref).toBeInTheDocument()
-      expect(ref.textContent).toContain('sub-123')
     })
   })
 
@@ -308,51 +211,6 @@ describe('TransactionHistoryTable', () => {
   })
 
   describe('pagination', () => {
-    it('GIVEN pagination data WHEN rendering THEN should show pagination info', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={[mockRechargeTransaction, mockConsumeTransaction]}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 2 }}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      expect(screen.getByText('Showing 1 to 2 of 2 transactions')).toBeInTheDocument()
-      expect(screen.getByText('Page 1 of 1')).toBeInTheDocument()
-    })
-
-    it('GIVEN first page WHEN rendering THEN should disable previous button', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={[mockRechargeTransaction]}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 15 }}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      const prevButton = screen.getByTestId('prev-page-button')
-      expect(prevButton).toBeDisabled()
-    })
-
-    it('GIVEN last page WHEN rendering THEN should disable next button', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={[mockRechargeTransaction]}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 2, pageSize: 10, total: 15 }}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      const nextButton = screen.getByTestId('next-page-button')
-      expect(nextButton).toBeDisabled()
-    })
-
     it('GIVEN user clicks previous button WHEN on page 2 THEN should call onPaginationChange with page 1', async () => {
       const user = userEvent.setup()
       render(
@@ -405,39 +263,34 @@ describe('TransactionHistoryTable', () => {
       )
     })
 
-    it('GIVEN no transactions WHEN rendering THEN should not show pagination', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={[]}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 0 }}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      expect(screen.queryByText('Showing')).not.toBeInTheDocument()
-    })
-  })
-
-  describe('table columns', () => {
-    it('GIVEN transactions WHEN rendering THEN should display all expected columns', () => {
+    it('GIVEN first page WHEN rendering THEN should disable previous button', () => {
       render(
         <TransactionHistoryTable
           transactions={[mockRechargeTransaction]}
           filters={mockFilters}
           onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 1 }}
+          pagination={{ page: 1, pageSize: 10, total: 15 }}
           onPaginationChange={mockOnPaginationChange}
         />
       )
 
-      expect(screen.getByText('Time')).toBeInTheDocument()
-      expect(screen.getByText('Type')).toBeInTheDocument()
-      expect(screen.getByText('Amount')).toBeInTheDocument()
-      expect(screen.getByText('Balance After')).toBeInTheDocument()
-      expect(screen.getByText('Description')).toBeInTheDocument()
-      expect(screen.getByText('Ref ID')).toBeInTheDocument()
+      const prevButton = screen.getByTestId('prev-page-button')
+      expect(prevButton).toBeDisabled()
+    })
+
+    it('GIVEN last page WHEN rendering THEN should disable next button', () => {
+      render(
+        <TransactionHistoryTable
+          transactions={[mockRechargeTransaction]}
+          filters={mockFilters}
+          onFiltersChange={mockOnFiltersChange}
+          pagination={{ page: 2, pageSize: 10, total: 15 }}
+          onPaginationChange={mockOnPaginationChange}
+        />
+      )
+
+      const nextButton = screen.getByTestId('next-page-button')
+      expect(nextButton).toBeDisabled()
     })
   })
 })

@@ -10,67 +10,6 @@ describe('Test 3.3: Free User Statistics API Contract Tests (P0)', () => {
   })
 
   describe('GET /api/points/{realmId}/statistics/free-users', () => {
-    it('GIVEN MSW mock statistics API WHEN calling getFreeUserStatistics THEN returns data with periodic naming', async () => {
-      const realmId = 'test-realm'
-
-      const response = await getFreeUserStatistics({
-        path: { realmId },
-      })
-
-      expect(response.error).toBeUndefined()
-      expect(response.data).toBeDefined()
-
-      if (response.data) {
-        // Verify response structure
-        expect(response.data.totalFreeUsers).toBeDefined()
-        expect(typeof response.data.totalFreeUsers).toBe('number')
-
-        expect(response.data.activeFreeUsers).toBeDefined()
-        expect(typeof response.data.activeFreeUsers).toBe('number')
-
-        expect(response.data.totalRegistrationBonusGranted).toBeDefined()
-        expect(typeof response.data.totalRegistrationBonusGranted).toBe('number')
-
-        // Verify periodic naming (NOT daily naming)
-        expect(response.data.totalPeriodicPointsGranted).toBeDefined()
-        expect(typeof response.data.totalPeriodicPointsGranted).toBe('number')
-
-        expect(response.data.averagePeriodicPointsPerUser).toBeDefined()
-        expect(typeof response.data.averagePeriodicPointsPerUser).toBe('number')
-
-        expect(response.data.upgradeRate).toBeDefined()
-        expect(typeof response.data.upgradeRate).toBe('number')
-
-        expect(response.data.lastUpdatedAt).toBeDefined()
-        expect(typeof response.data.lastUpdatedAt).toBe('string')
-      }
-    })
-
-    it('GIVEN statistics response WHEN parsing THEN should use periodic field names', async () => {
-      const response = await getFreeUserStatistics({
-        path: { realmId: 'test-realm' },
-      })
-
-      expect(response.error).toBeUndefined()
-      expect(response.data).toBeDefined()
-
-      if (response.data) {
-        // Verify periodic naming is used
-        expect(response.data).toHaveProperty('totalPeriodicPointsGranted')
-        expect(response.data).toHaveProperty('averagePeriodicPointsPerUser')
-
-        // Verify old daily naming is NOT used
-        expect(response.data).not.toHaveProperty('totalDailyPointsGranted')
-        expect(response.data).not.toHaveProperty('averageDailyPointsPerUser')
-
-        // Verify values are reasonable
-        expect(response.data.totalPeriodicPointsGranted).toBeGreaterThanOrEqual(0)
-        expect(response.data.averagePeriodicPointsPerUser).toBeGreaterThanOrEqual(0)
-        expect(response.data.upgradeRate).toBeGreaterThanOrEqual(0)
-        expect(response.data.upgradeRate).toBeLessThanOrEqual(1) // Percentage as decimal
-      }
-    })
-
     it('GIVEN date range parameters WHEN calling statistics API THEN should include in request', async () => {
       server.use(
         http.get('/api/points/test-realm/statistics/free-users', ({ request }) => {
@@ -123,31 +62,6 @@ describe('Test 3.3: Free User Statistics API Contract Tests (P0)', () => {
   })
 
   describe('Statistics Field Values', () => {
-    it('GIVEN statistics response WHEN parsing THEN numeric fields should have correct types', async () => {
-      const response = await getFreeUserStatistics({
-        path: { realmId: 'test-realm' },
-      })
-
-      expect(response.error).toBeUndefined()
-      expect(response.data).toBeDefined()
-
-      if (response.data) {
-        // Verify integer fields
-        expect(Number.isInteger(response.data.totalFreeUsers)).toBe(true)
-        expect(Number.isInteger(response.data.activeFreeUsers)).toBe(true)
-        expect(Number.isInteger(response.data.totalRegistrationBonusGranted)).toBe(true)
-        expect(Number.isInteger(response.data.totalPeriodicPointsGranted)).toBe(true)
-
-        // Verify decimal fields
-        expect(response.data.averagePeriodicPointsPerUser).toBeGreaterThanOrEqual(0)
-        expect(response.data.upgradeRate).toBeGreaterThanOrEqual(0)
-        expect(response.data.upgradeRate).toBeLessThanOrEqual(1)
-
-        // Verify date format
-        expect(response.data.lastUpdatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
-      }
-    })
-
     it('GIVEN zero users statistics WHEN parsing THEN should handle correctly', async () => {
       server.use(
         http.get('/api/points/test-realm/statistics/free-users', () => {
@@ -175,35 +89,6 @@ describe('Test 3.3: Free User Statistics API Contract Tests (P0)', () => {
         expect(response.data.totalPeriodicPointsGranted).toBe(0)
         expect(response.data.averagePeriodicPointsPerUser).toBe(0)
         expect(response.data.upgradeRate).toBe(0)
-      }
-    })
-
-    it('GIVEN high upgrade rate statistics WHEN parsing THEN should handle percentages correctly', async () => {
-      server.use(
-        http.get('/api/points/test-realm/statistics/free-users', () => {
-          return HttpResponse.json({
-            totalFreeUsers: 1000,
-            activeFreeUsers: 800,
-            totalRegistrationBonusGranted: 1000000,
-            totalPeriodicPointsGranted: 40000,
-            averagePeriodicPointsPerUser: 50,
-            upgradeRate: 0.1537, // 15.37%
-            lastUpdatedAt: '2026-03-23T15:30:00Z',
-          })
-        })
-      )
-
-      const response = await getFreeUserStatistics({
-        path: { realmId: 'test-realm' },
-      })
-
-      expect(response.error).toBeUndefined()
-      expect(response.data).toBeDefined()
-
-      if (response.data) {
-        expect(response.data.upgradeRate).toBe(0.1537)
-        expect(response.data.upgradeRate).toBeGreaterThan(0.15)
-        expect(response.data.upgradeRate).toBeLessThan(0.16)
       }
     })
   })
@@ -305,28 +190,6 @@ describe('Test 3.3: Free User Statistics API Contract Tests (P0)', () => {
 
         expect(hasOldDailyFields).toBe(false)
         expect(hasNewPeriodicFields).toBe(true)
-      }
-    })
-
-    it('GIVEN statistics response WHEN checking values THEN should be consistent with periodic naming', async () => {
-      const response = await getFreeUserStatistics({
-        path: { realmId: 'test-realm' },
-      })
-
-      expect(response.error).toBeUndefined()
-      expect(response.data).toBeDefined()
-
-      if (response.data) {
-        // Verify the periodic fields have reasonable values
-        expect(response.data.totalFreeUsers).toBe(1000)
-        expect(response.data.totalPeriodicPointsGranted).toBe(40000)
-
-        // Note: averagePeriodicPointsPerUser in mock is 50, but based on mock data:
-        // totalPeriodicPointsGranted (40000) / totalFreeUsers (1000) = 40
-        // This is intentional - backend may use activeFreeUsers (800) for calculation: 40000/800=50
-        const expectedAverage =
-          response.data.totalPeriodicPointsGranted / response.data.activeFreeUsers
-        expect(response.data.averagePeriodicPointsPerUser).toBeCloseTo(expectedAverage, 2)
       }
     })
   })

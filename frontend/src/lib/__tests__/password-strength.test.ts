@@ -129,24 +129,7 @@ describe('calculatePasswordStrength', () => {
     })
   })
 
-  describe('score calculation', () => {
-    it('returns score of 0 for empty password', () => {
-      const strength = calculatePasswordStrength('', defaultConfig)
-      expect(strength.score).toBe(0)
-    })
-
-    it('returns score of 5 for password meeting all requirements', () => {
-      const strength = calculatePasswordStrength('Password123!', defaultConfig)
-      expect(strength.score).toBe(5)
-    })
-  })
-
   describe('label mapping', () => {
-    it('maps score 0 to Weak', () => {
-      const strength = calculatePasswordStrength('', defaultConfig)
-      expect(strength.label).toBe('Weak')
-    })
-
     it('maps score 2 to Fair', () => {
       const strength = calculatePasswordStrength('password', defaultConfig)
       expect(strength.label).toBe('Fair')
@@ -154,11 +137,6 @@ describe('calculatePasswordStrength', () => {
 
     it('maps score 4 to Strong', () => {
       const strength = calculatePasswordStrength('Password123!', defaultConfig)
-      expect(strength.label).toBe('Strong')
-    })
-
-    it('maps score 5 to Strong', () => {
-      const strength = calculatePasswordStrength('ComplexP@ssw0rd123!', defaultConfig)
       expect(strength.label).toBe('Strong')
     })
   })

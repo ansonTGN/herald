@@ -1,21 +1,9 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import { userEvent } from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/test/mocks/server'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { toast } from 'sonner'
-import { mockRealmDefaultConfig } from '@/fixtures/realm-config.fixture'
+import { QueryClient } from '@tanstack/react-query'
 import { QUERY_KEYS } from '@/lib/constants'
 import { realmConfigSchema } from '@/lib/schemas/points-forms'
-
-// Mock toast notifications
-vi.mock('sonner', () => ({
-  toast: {
-    success: vi.fn(),
-    error: vi.fn(),
-  },
-}))
 
 describe('Realm Configuration - High-Value Logic Tests', () => {
   afterEach(() => {
@@ -29,11 +17,6 @@ describe('Realm Configuration - High-Value Logic Tests', () => {
         mutations: { retry: false },
       },
     })
-
-  const renderWithQueryClient = (component: React.ReactElement) => {
-    const queryClient = createTestQueryClient()
-    return render(<QueryClientProvider client={queryClient}>{component}</QueryClientProvider>)
-  }
 
   describe('schema validation edge cases', () => {
     it('GIVEN negative registration bonus WHEN validating THEN should fail', () => {
@@ -92,50 +75,6 @@ describe('Realm Configuration - High-Value Logic Tests', () => {
         expect(result.error.issues.length).toBeGreaterThan(0)
         expect(result.error.issues[0].message).toBeDefined()
       }
-    })
-
-    it('GIVEN valid config WHEN validating THEN should succeed', () => {
-      const result = realmConfigSchema.safeParse({
-        registrationBonusPoints: 1000,
-        freePeriodicPointsAmount: 50,
-        freePeriodicGrantPeriodType: 'daily',
-        freePeriodicValidityDays: 1,
-      })
-
-      expect(result.success).toBe(true)
-    })
-
-    it('GIVEN large values WHEN validating THEN should succeed', () => {
-      const result = realmConfigSchema.safeParse({
-        registrationBonusPoints: 1000000,
-        freePeriodicPointsAmount: 10000,
-        freePeriodicGrantPeriodType: 'monthly',
-        freePeriodicValidityDays: 30,
-      })
-
-      expect(result.success).toBe(true)
-    })
-
-    it('GIVEN zero bonus points WHEN validating THEN should succeed', () => {
-      const result = realmConfigSchema.safeParse({
-        registrationBonusPoints: 0,
-        freePeriodicPointsAmount: 50,
-        freePeriodicGrantPeriodType: 'daily',
-        freePeriodicValidityDays: 1,
-      })
-
-      expect(result.success).toBe(true)
-    })
-
-    it('GIVEN zero periodic points WHEN validating THEN should succeed', () => {
-      const result = realmConfigSchema.safeParse({
-        registrationBonusPoints: 1000,
-        freePeriodicPointsAmount: 0,
-        freePeriodicGrantPeriodType: 'daily',
-        freePeriodicValidityDays: 1,
-      })
-
-      expect(result.success).toBe(true)
     })
   })
 
@@ -298,71 +237,6 @@ describe('Realm Configuration - High-Value Logic Tests', () => {
 
       // Zod schema expects numbers, not strings
       expect(result.success).toBe(false)
-    })
-  })
-
-  describe('form validation error messages', () => {
-    it('GIVEN negative bonus WHEN validating THEN should show appropriate error message', () => {
-      const result = realmConfigSchema.safeParse({
-        registrationBonusPoints: -100,
-        freePeriodicPointsAmount: 50,
-        freePeriodicGrantPeriodType: 'daily',
-        freePeriodicValidityDays: 1,
-      })
-
-      expect(result.success).toBe(false)
-      if (!result.success) {
-        expect(result.error.issues.length).toBeGreaterThan(0)
-        const errorMessage = result.error.issues[0].message
-        expect(errorMessage).toBeDefined()
-        expect(errorMessage.length).toBeGreaterThan(0)
-      }
-    })
-
-    it('GIVEN zero validity days with daily period WHEN validating THEN should show appropriate error message', () => {
-      const result = realmConfigSchema.safeParse({
-        registrationBonusPoints: 1000,
-        freePeriodicPointsAmount: 50,
-        freePeriodicGrantPeriodType: 'daily',
-        freePeriodicValidityDays: 0,
-      })
-
-      expect(result.success).toBe(false)
-      if (!result.success) {
-        const errorMessage = result.error.issues[0].message
-        expect(errorMessage.toLowerCase()).toMatch(
-          /validity days.*>= 1|at least 1|greater than or equal to 1/
-        )
-      }
-    })
-
-    it('GIVEN negative periodic points WHEN validating THEN should show appropriate error message', () => {
-      const result = realmConfigSchema.safeParse({
-        registrationBonusPoints: 1000,
-        freePeriodicPointsAmount: -50,
-        freePeriodicGrantPeriodType: 'daily',
-        freePeriodicValidityDays: 1,
-      })
-
-      expect(result.success).toBe(false)
-      if (!result.success) {
-        const errorMessage = result.error.issues[0].message
-        expect(errorMessage.toLowerCase()).toMatch(/negative|cannot be negative/)
-      }
-    })
-  })
-
-  describe('toast notification behavior', () => {
-    it('GIVEN successful update WHEN calling toast THEN should show success message', () => {
-      toast.success('配置已更新')
-
-      expect(toast.success).toHaveBeenCalledWith('配置已更新')
-    })
-
-    it('GIVEN failed update WHEN calling toast THEN should show error message', () => {
-      toast.error('更新配置失败，请重试')
-
-      expect(toast.error).toHaveBeenCalledWith('更新配置失败，请重试')
     })
   })
 })

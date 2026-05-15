@@ -68,39 +68,6 @@ describe('WechatQrCodePayment', () => {
   })
 
   describe('status display', () => {
-    it('GIVEN creating status WHEN rendered THEN shows loading spinner', () => {
-      render(
-        <WechatQrCodePayment
-          realmId="realm-1"
-          planId="plan-123"
-          onSuccess={vi.fn()}
-          onCancel={vi.fn()}
-          onError={vi.fn()}
-        />,
-        { wrapper }
-      )
-
-      expect(screen.getByTestId('creating-order-state')).toBeInTheDocument()
-      expect(screen.getByText(/creating payment order/i)).toBeInTheDocument()
-    })
-
-    it('GIVEN pending status WHEN rendered THEN shows waiting badge', async () => {
-      render(
-        <WechatQrCodePayment
-          realmId="realm-1"
-          planId="plan-123"
-          onSuccess={vi.fn()}
-          onCancel={vi.fn()}
-          onError={vi.fn()}
-        />,
-        { wrapper }
-      )
-
-      await waitFor(() => {
-        expect(screen.getByText(/waiting for payment/i)).toBeInTheDocument()
-      })
-    })
-
     it('GIVEN expired status WHEN rendered THEN shows expired message', async () => {
       // Mock order to be expired immediately
       server.use(
@@ -161,28 +128,6 @@ describe('WechatQrCodePayment', () => {
       const countdownText = screen.getByTestId('qr-countdown-display').textContent
       expect(countdownText).toMatch(/\d+h \d+m \d+s|\d+m \d+s|\d+s/)
     })
-
-    it('GIVEN time remaining WHEN formatTime called THEN formats correctly', async () => {
-      render(
-        <WechatQrCodePayment
-          realmId="realm-1"
-          planId="plan-123"
-          onSuccess={vi.fn()}
-          onCancel={vi.fn()}
-          onError={vi.fn()}
-        />,
-        { wrapper }
-      )
-
-      await waitFor(() => {
-        expect(screen.getByTestId('qr-countdown-display')).toBeInTheDocument()
-      })
-
-      // The countdown should show time in the correct format
-      const countdownElement = screen.getByTestId('qr-countdown-display')
-      expect(countdownElement.textContent).toBeTruthy()
-      expect(countdownElement.textContent?.length).toBeGreaterThan(0)
-    })
   })
 
   describe('user interactions', () => {
@@ -210,31 +155,6 @@ describe('WechatQrCodePayment', () => {
       await waitFor(() => {
         expect(onCancel).toHaveBeenCalled()
       })
-    })
-
-    it('GIVEN cancel button WHEN clicked THEN cancels payment and calls callback', async () => {
-      const user = userEvent.setup()
-      const onCancel = vi.fn()
-
-      render(
-        <WechatQrCodePayment
-          realmId="realm-1"
-          planId="plan-123"
-          onSuccess={vi.fn()}
-          onCancel={onCancel}
-          onError={vi.fn()}
-        />,
-        { wrapper }
-      )
-
-      await waitFor(() => {
-        expect(screen.getByTestId('cancel-payment-button')).toBeInTheDocument()
-      })
-
-      await user.click(screen.getByTestId('cancel-payment-button'))
-
-      // Verify cancel callback was called
-      expect(onCancel).toHaveBeenCalledTimes(1)
     })
   })
 

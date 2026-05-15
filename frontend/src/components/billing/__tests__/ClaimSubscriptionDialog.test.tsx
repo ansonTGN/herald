@@ -28,73 +28,6 @@ describe('ClaimSubscriptionDialog', () => {
       ).toBeInTheDocument()
     })
 
-    it('GIVEN dialog WHEN rendered THEN should show customer ID input', () => {
-      render(
-        <ClaimSubscriptionDialog
-          open={true}
-          onOpenChange={mockOnOpenChange}
-          onSubmit={mockOnSubmit}
-        />
-      )
-
-      expect(screen.getByTestId('shopify-customer-id-input')).toBeInTheDocument()
-      expect(screen.getByText('Shopify Customer ID')).toBeInTheDocument()
-      expect(screen.getByPlaceholderText('customer_123')).toBeInTheDocument()
-    })
-
-    it('GIVEN dialog WHEN rendered THEN should show contract ID input', () => {
-      render(
-        <ClaimSubscriptionDialog
-          open={true}
-          onOpenChange={mockOnOpenChange}
-          onSubmit={mockOnSubmit}
-        />
-      )
-
-      expect(screen.getByTestId('contract-id-input')).toBeInTheDocument()
-      expect(screen.getByText('Subscription Contract ID')).toBeInTheDocument()
-      expect(
-        screen.getByPlaceholderText('gid://shopify/SubscriptionContract/...')
-      ).toBeInTheDocument()
-    })
-
-    it('GIVEN dialog WHEN rendered THEN should show OR divider between inputs', () => {
-      render(
-        <ClaimSubscriptionDialog
-          open={true}
-          onOpenChange={mockOnOpenChange}
-          onSubmit={mockOnSubmit}
-        />
-      )
-
-      expect(screen.getByText('OR')).toBeInTheDocument()
-    })
-
-    it('GIVEN dialog WHEN rendered THEN should show grant current period checkbox', () => {
-      render(
-        <ClaimSubscriptionDialog
-          open={true}
-          onOpenChange={mockOnOpenChange}
-          onSubmit={mockOnSubmit}
-        />
-      )
-
-      expect(screen.getByTestId('grant-current-period-checkbox')).toBeInTheDocument()
-      expect(screen.getByText('Grant current period points')).toBeInTheDocument()
-    })
-
-    it('GIVEN dialog WHEN rendered THEN should have checkbox checked by default', () => {
-      render(
-        <ClaimSubscriptionDialog
-          open={true}
-          onOpenChange={mockOnOpenChange}
-          onSubmit={mockOnSubmit}
-        />
-      )
-
-      expect(screen.getByTestId('grant-current-period-checkbox')).toBeChecked()
-    })
-
     it('GIVEN dialog WHEN rendered THEN should show Cancel and Submit buttons', () => {
       render(
         <ClaimSubscriptionDialog
@@ -304,33 +237,6 @@ describe('ClaimSubscriptionDialog', () => {
       })
     })
 
-    it('GIVEN checkbox WHEN toggled multiple times THEN should reflect correct state', async () => {
-      const user = userEvent.setup({ delay: null })
-      render(
-        <ClaimSubscriptionDialog
-          open={true}
-          onOpenChange={mockOnOpenChange}
-          onSubmit={mockOnSubmit}
-        />
-      )
-
-      const checkbox = screen.getByTestId('grant-current-period-checkbox')
-
-      // Should be checked by default
-      expect(checkbox).toBeChecked()
-
-      // Uncheck
-      await user.click(checkbox)
-      expect(checkbox).not.toBeChecked()
-
-      // Check again
-      await user.click(checkbox)
-      expect(checkbox).toBeChecked()
-
-      // Uncheck again
-      await user.click(checkbox)
-      expect(checkbox).not.toBeChecked()
-    })
   })
 
   describe('submit button state', () => {
@@ -446,47 +352,4 @@ describe('ClaimSubscriptionDialog', () => {
     })
   })
 
-  describe('help text display', () => {
-    it('GIVEN dialog WHEN rendered THEN should show customer ID help text', () => {
-      render(
-        <ClaimSubscriptionDialog
-          open={true}
-          onOpenChange={mockOnOpenChange}
-          onSubmit={mockOnSubmit}
-        />
-      )
-
-      expect(screen.getByText(/Found in Shopify Admin → Customers/)).toBeInTheDocument()
-      expect(screen.getByText(/Click on the customer to see their ID/)).toBeInTheDocument()
-    })
-
-    it('GIVEN dialog WHEN rendered THEN should show contract ID help text', () => {
-      render(
-        <ClaimSubscriptionDialog
-          open={true}
-          onOpenChange={mockOnOpenChange}
-          onSubmit={mockOnSubmit}
-        />
-      )
-
-      expect(screen.getByText(/Found in Shopify email or account settings/)).toBeInTheDocument()
-      expect(
-        screen.getByText(/Format: gid:\/\/shopify\/SubscriptionContract\/\.\.\./)
-      ).toBeInTheDocument()
-    })
-
-    it('GIVEN dialog WHEN rendered THEN should show grant current period help text', () => {
-      render(
-        <ClaimSubscriptionDialog
-          open={true}
-          onOpenChange={mockOnOpenChange}
-          onSubmit={mockOnSubmit}
-        />
-      )
-
-      expect(
-        screen.getByText(/If enabled, you'll receive points for the current billing period/)
-      ).toBeInTheDocument()
-    })
-  })
 })

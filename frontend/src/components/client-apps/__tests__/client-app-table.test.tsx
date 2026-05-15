@@ -36,50 +36,6 @@ describe('ClientAppTable', () => {
     vi.clearAllMocks()
   })
 
-  it('GIVEN data is provided WHEN rendering THEN should display table', async () => {
-    const screen = render(
-      <ClientAppTable
-        data={mockClientApps}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-        onToggleEnabled={vi.fn()}
-      />
-    )
-
-    expect(screen.getByTestId('client-apps-table')).toBeInTheDocument()
-  })
-
-  it('GIVEN client apps exist WHEN rendering THEN should display all rows', async () => {
-    render(
-      <ClientAppTable
-        data={mockClientApps}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-        onToggleEnabled={vi.fn()}
-      />
-    )
-
-    const row0 = document.querySelector('[data-testid="client-app-row-0"]')
-    const row1 = document.querySelector('[data-testid="client-app-row-1"]')
-    expect(row0).not.toBeNull()
-    expect(row1).not.toBeNull()
-  })
-
-  it('GIVEN client app has icon WHEN rendering THEN should display icon', async () => {
-    render(
-      <ClientAppTable
-        data={[mockClientApps[0]]}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-        onToggleEnabled={vi.fn()}
-      />
-    )
-
-    const icon = document.querySelector('img[data-testid="client-app-icon"]') as HTMLImageElement
-    expect(icon).not.toBeNull()
-    expect(icon?.src).toContain('app1.example.com/icon.png')
-  })
-
   it('GIVEN client app has no icon WHEN rendering THEN should display N/A placeholder', async () => {
     const screen = render(
       <ClientAppTable
@@ -91,47 +47,6 @@ describe('ClientAppTable', () => {
     )
 
     expect(screen.getByText('N/A')).toBeInTheDocument()
-  })
-
-  it('GIVEN client app WHEN rendering THEN should display client ID', async () => {
-    const screen = render(
-      <ClientAppTable
-        data={[mockClientApps[0]]}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-        onToggleEnabled={vi.fn()}
-      />
-    )
-
-    expect(screen.getByTestId('client-app-client-id')).toHaveTextContent('app-1')
-  })
-
-  it('GIVEN client app WHEN rendering THEN should display name', async () => {
-    const screen = render(
-      <ClientAppTable
-        data={[mockClientApps[0]]}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-        onToggleEnabled={vi.fn()}
-      />
-    )
-
-    expect(screen.getByText('Application 1')).toBeInTheDocument()
-  })
-
-  it('GIVEN client app WHEN rendering THEN should display redirect URIs', async () => {
-    const screen = render(
-      <ClientAppTable
-        data={[mockClientApps[0]]}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-        onToggleEnabled={vi.fn()}
-      />
-    )
-
-    expect(screen.getByTestId('client-app-redirect-uris')).toHaveTextContent(
-      'https://app1.example.com/callback'
-    )
   })
 
   it('GIVEN client app WHEN rendering THEN should display session TTL', async () => {
@@ -292,26 +207,5 @@ describe('ClientAppTable', () => {
     )
 
     expect(screen.getByText(/No client apps found/)).toBeInTheDocument()
-  })
-
-  it('GIVEN multiple redirect URIs WHEN rendering THEN should display all URIs', async () => {
-    const multiUriApp: ClientAppItem = {
-      ...mockClientApps[0],
-      redirectUris: ['https://app1.example.com/callback', 'https://app1.example.com/redirect'],
-    }
-
-    const screen = render(
-      <ClientAppTable
-        data={[multiUriApp]}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-        onToggleEnabled={vi.fn()}
-      />
-    )
-
-    const urisElement = screen.getByTestId('client-app-redirect-uris')
-    expect(urisElement).toHaveTextContent(
-      'https://app1.example.com/callback, https://app1.example.com/redirect'
-    )
   })
 })

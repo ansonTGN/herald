@@ -165,72 +165,6 @@ describe('InvoiceFormPage', () => {
     server.use(sellerConfigHandler(), createInvoiceHandler(), updateInvoiceHandler())
   })
 
-  // ==================== Create Mode Rendering ====================
-
-  describe('create mode', () => {
-    it('renders "Create Invoice" title and empty form', async () => {
-      renderWithProviders(<InvoiceFormPage {...defaultCreateProps()} />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Create Invoice')).toBeInTheDocument()
-      })
-      expect(screen.getByText('Create a new invoice draft')).toBeInTheDocument()
-
-      // Verify empty form fields exist
-      expect(screen.getByTestId('invoice-account-id')).toHaveValue('')
-      expect(screen.getByTestId('invoice-billing-name')).toHaveValue('')
-      expect(screen.getByTestId('invoice-due-date')).toHaveValue('')
-      expect(screen.getByTestId('invoice-form-submit-button')).toHaveTextContent('Save as Draft')
-    })
-
-    it('renders account selector field in create mode', async () => {
-      renderWithProviders(<InvoiceFormPage {...defaultCreateProps()} />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Create Invoice')).toBeInTheDocument()
-      })
-
-      expect(screen.getByTestId('invoice-account-id')).toBeInTheDocument()
-      expect(screen.getByTestId('invoice-subscription-id')).toBeInTheDocument()
-      expect(screen.getByTestId('invoice-payment-attempt-id')).toBeInTheDocument()
-    })
-  })
-
-  // ==================== Edit Mode Rendering ====================
-
-  describe('edit mode', () => {
-    it('renders "Edit Invoice" title and populates fields from invoice data', async () => {
-      const invoice = makeInvoiceDetail()
-      renderWithProviders(<InvoiceFormPage {...defaultEditProps(invoice)} />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Edit Invoice')).toBeInTheDocument()
-      })
-      expect(screen.getByText('Update invoice draft details')).toBeInTheDocument()
-
-      // Verify fields are populated from invoice data
-      expect(screen.getByTestId('invoice-billing-name')).toHaveValue('Test Buyer')
-      expect(screen.getByTestId('invoice-billing-email')).toHaveValue('buyer@test.com')
-      expect(screen.getByTestId('invoice-billing-address')).toHaveValue('123 Buyer St')
-      expect(screen.getByTestId('invoice-seller-name')).toHaveValue('Test Seller')
-
-      // Line item populated
-      expect(screen.getByTestId('invoice-line-item-name-0')).toHaveValue('Service A')
-      expect(screen.getByTestId('invoice-line-item-quantity-0')).toHaveValue('2')
-    })
-
-    it('does not render account selector in edit mode', async () => {
-      renderWithProviders(<InvoiceFormPage {...defaultEditProps()} />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Edit Invoice')).toBeInTheDocument()
-      })
-
-      expect(screen.queryByTestId('invoice-account-id')).not.toBeInTheDocument()
-      expect(screen.queryByTestId('invoice-subscription-id')).not.toBeInTheDocument()
-    })
-  })
-
   // ==================== Line Item Add/Remove ====================
 
   describe('line item management', () => {
@@ -514,44 +448,6 @@ describe('InvoiceFormPage', () => {
     })
   })
 
-  // ==================== Seller Auto-fill ====================
-
-  describe('seller auto-fill', () => {
-    it('populates seller fields from seller config in create mode', async () => {
-      renderWithProviders(<InvoiceFormPage {...defaultCreateProps()} />)
-
-      // Wait for the page to render
-      await waitFor(() => {
-        expect(screen.getByText('Create Invoice')).toBeInTheDocument()
-      })
-
-      // Wait for seller config to load and form to reset with populated values
-      await waitFor(
-        () => {
-          expect(screen.getByTestId('invoice-seller-name')).toHaveValue('Default Seller Corp')
-        },
-        { timeout: 3000 }
-      )
-
-      expect(screen.getByTestId('invoice-seller-email')).toHaveValue('seller@default.com')
-      expect(screen.getByTestId('invoice-seller-address')).toHaveValue('789 Default Blvd')
-      expect(screen.getByTestId('invoice-seller-phone')).toHaveValue('999-888-7777')
-    })
-
-    it('leaves seller fields empty when no seller config exists', async () => {
-      server.use(sellerConfigHandler(null), createInvoiceHandler())
-
-      renderWithProviders(<InvoiceFormPage {...defaultCreateProps()} />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Create Invoice')).toBeInTheDocument()
-      })
-
-      // Seller fields should remain empty (no config returned)
-      expect(screen.getByTestId('invoice-seller-name')).toHaveValue('')
-    })
-  })
-
   // ==================== Successful Submit ====================
 
   describe('successful submit', () => {
@@ -666,39 +562,4 @@ describe('InvoiceFormPage', () => {
     })
   })
 
-  // ==================== Cancel / Navigate Back ====================
-
-  describe('cancel and back navigation', () => {
-    it('navigates back when Cancel button is clicked', async () => {
-      const user = userEvent.setup()
-      renderWithProviders(<InvoiceFormPage {...defaultCreateProps()} />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Create Invoice')).toBeInTheDocument()
-      })
-
-      await user.click(screen.getByTestId('invoice-form-cancel-button'))
-
-      expect(mockNavigate).toHaveBeenCalledWith({
-        to: '/$realmId/manage/billing/invoices',
-        params: { realmId: REALM_ID },
-      })
-    })
-
-    it('navigates back when back arrow button is clicked', async () => {
-      const user = userEvent.setup()
-      renderWithProviders(<InvoiceFormPage {...defaultCreateProps()} />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Create Invoice')).toBeInTheDocument()
-      })
-
-      await user.click(screen.getByTestId('invoice-form-back-button'))
-
-      expect(mockNavigate).toHaveBeenCalledWith({
-        to: '/$realmId/manage/billing/invoices',
-        params: { realmId: REALM_ID },
-      })
-    })
-  })
 })

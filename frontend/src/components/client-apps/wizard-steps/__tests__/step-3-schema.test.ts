@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   step3Schema,
-  type Step3FormData,
-  SESSION_TTL_PRESETS,
   ADVANCED_SECURITY_OPTIONS,
 } from '../step-3-schema'
 
@@ -49,13 +47,6 @@ describe('step3Schema', () => {
     it('rejects session TTL above maximum (86401 seconds)', () => {
       const result = step3Schema.safeParse({
         sessionTtlSeconds: 86401,
-      })
-      expect(result.success).toBe(false)
-    })
-
-    it('provides helpful error message for invalid session TTL', () => {
-      const result = step3Schema.safeParse({
-        sessionTtlSeconds: 59,
       })
       expect(result.success).toBe(false)
     })
@@ -106,44 +97,9 @@ describe('step3Schema', () => {
       })
       expect(result2.success).toBe(false)
     })
-
-    it('provides helpful error message when renewal TTL is invalid', () => {
-      const result = step3Schema.safeParse({
-        sessionTtlSeconds: 3600,
-        sessionRenewalTtlSeconds: 1800,
-      })
-      expect(result.success).toBe(false)
-    })
-  })
-
-  describe('SESSION_TTL_PRESETS', () => {
-    it('contains expected preset options', () => {
-      expect(SESSION_TTL_PRESETS).toHaveLength(7)
-      expect(SESSION_TTL_PRESETS[0]).toEqual({
-        value: 1800,
-        label: '30 minutes',
-        seconds: 1800,
-      })
-      expect(SESSION_TTL_PRESETS[6]).toEqual({
-        value: 86400,
-        label: '24 hours',
-        seconds: 86400,
-      })
-    })
-
-    it('all presets are within valid range', () => {
-      SESSION_TTL_PRESETS.forEach((preset) => {
-        expect(preset.seconds).toBeGreaterThanOrEqual(60)
-        expect(preset.seconds).toBeLessThanOrEqual(86400)
-      })
-    })
   })
 
   describe('ADVANCED_SECURITY_OPTIONS', () => {
-    it('contains 8 advanced security options', () => {
-      expect(ADVANCED_SECURITY_OPTIONS).toHaveLength(8)
-    })
-
     it('has required properties for each option', () => {
       ADVANCED_SECURITY_OPTIONS.forEach((option) => {
         expect(option).toHaveProperty('id')

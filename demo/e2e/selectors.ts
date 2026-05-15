@@ -732,6 +732,21 @@ export const SELECTORS = {
   },
 
   /**
+   * Device Verification Page Selectors
+   * Route: /{realmId}/device, /{realmId}/device/{userCode}
+   */
+  deviceVerification: {
+    card: '[data-testid="device-verification-card"]',
+    title: '[data-testid="device-verification-title"]',
+    error: '[data-testid="device-verification-error"]',
+    result: '[data-testid="device-verification-result"]',
+    codeInput: '[data-testid="device-code-input"]',
+    codeSubmit: '[data-testid="device-code-submit"]',
+    authorizeButton: '[data-testid="device-authorize-button"]',
+    denyButton: '[data-testid="device-deny-button"]',
+  },
+
+  /**
    * Unified Purchase - Purchase History (User)
    * Route: /{realmId}/user/purchase-history
    */

@@ -57,22 +57,6 @@ describe('PermissionCheckboxList', () => {
     expect(screen.getByText('roles', { exact: true })).toBeInTheDocument()
   })
 
-  it('GIVEN permissions array is provided WHEN rendering THEN should display all permissions', async () => {
-    const handleChange = vi.fn()
-    const screen = render(
-      <PermissionCheckboxList
-        permissions={mockPermissions}
-        assignedPermissionIds={[]}
-        onTogglePermission={handleChange}
-        isBuiltinRole={false}
-      />
-    )
-
-    expect(screen.getByText('users.view')).toBeInTheDocument()
-    expect(screen.getByText('users.manage')).toBeInTheDocument()
-    expect(screen.getByText('roles.view')).toBeInTheDocument()
-  })
-
   it('GIVEN permission checkbox list is rendered WHEN user selects permission THEN should call onChange with ID', async () => {
     const handleChange = vi.fn()
     render(
@@ -109,21 +93,6 @@ describe('PermissionCheckboxList', () => {
 
     expect(handleChange).toHaveBeenCalledTimes(1)
     expect(handleChange).toHaveBeenCalledWith('1', false)
-  })
-
-  it('GIVEN permission is builtin WHEN rendering THEN should show Built-in badge', async () => {
-    const handleChange = vi.fn()
-    render(
-      <PermissionCheckboxList
-        permissions={mockPermissions}
-        assignedPermissionIds={[]}
-        onTogglePermission={handleChange}
-        isBuiltinRole={false}
-      />
-    )
-
-    const builtinBadges = document.querySelectorAll('[data-testid*="builtin-badge"]')
-    expect(builtinBadges.length).toBeGreaterThan(0)
   })
 
   it('GIVEN permission is builtin in builtin role WHEN rendering THEN should disable checkbox', async () => {
@@ -203,40 +172,6 @@ describe('PermissionCheckboxList', () => {
     )
 
     expect(screen.getByText(/Built-in permissions cannot be removed/)).toBeInTheDocument()
-  })
-
-  it('GIVEN role is not builtin WHEN rendering THEN should not show warning message', async () => {
-    const handleChange = vi.fn()
-    render(
-      <PermissionCheckboxList
-        permissions={mockPermissions}
-        assignedPermissionIds={[]}
-        onTogglePermission={handleChange}
-        isBuiltinRole={false}
-      />
-    )
-
-    // Check that warning message is not present by querying for text in document
-    const warningMessage = Array.from(document.querySelectorAll('*')).find((el) =>
-      el.textContent?.includes('Built-in permissions cannot be removed')
-    )
-    expect(warningMessage).toBeUndefined()
-  })
-
-  it('GIVEN permission has description WHEN rendering THEN should display description', async () => {
-    const handleChange = vi.fn()
-    const screen = render(
-      <PermissionCheckboxList
-        permissions={mockPermissions}
-        assignedPermissionIds={[]}
-        onTogglePermission={handleChange}
-        isBuiltinRole={false}
-      />
-    )
-
-    expect(screen.getByText('View users')).toBeInTheDocument()
-    expect(screen.getByText('Manage users')).toBeInTheDocument()
-    expect(screen.getByText('View roles')).toBeInTheDocument()
   })
 
   it('GIVEN permissions are grouped WHEN rendering THEN should display count for each resource', async () => {

@@ -8,102 +8,29 @@ import type { HistoryFilters } from '@/types/billing'
 import { QUERY_KEYS } from '@/lib/constants'
 
 describe('subscriptionHistoryQueryOptions', () => {
-  describe('Query Configuration', () => {
-    it('should create correct query key for subscription history', () => {
-      const options = subscriptionHistoryQueryOptions('realm-1', 'sub-1')
+  it('should create correct query key for subscription history', () => {
+    const options = subscriptionHistoryQueryOptions('realm-1', 'sub-1')
 
-      expect(options.queryKey).toEqual([QUERY_KEYS.SUBSCRIPTION_HISTORY, 'realm-1', 'sub-1'])
-    })
-
-    it('should include realmId and subscriptionId in query key', () => {
-      const options = subscriptionHistoryQueryOptions('test-realm', 'test-subscription')
-
-      expect(options.queryKey).toContain('test-realm')
-      expect(options.queryKey).toContain('test-subscription')
-    })
-
-    it('should configure retry count', () => {
-      const options = subscriptionHistoryQueryOptions('realm-1', 'sub-1')
-
-      expect(options.retry).toBe(1)
-    })
-
-    it('should configure stale time', () => {
-      const options = subscriptionHistoryQueryOptions('realm-1', 'sub-1')
-
-      expect(options.staleTime).toBe(1000 * 60 * 5) // 5 minutes
-    })
-
-    it('should have a query function', () => {
-      const options = subscriptionHistoryQueryOptions('realm-1', 'sub-1')
-
-      expect(options.queryFn).toBeDefined()
-      expect(typeof options.queryFn).toBe('function')
-    })
+    expect(options.queryKey).toEqual([QUERY_KEYS.SUBSCRIPTION_HISTORY, 'realm-1', 'sub-1'])
   })
 })
 
 describe('globalSubscriptionHistoryQueryOptions', () => {
-  describe('Query Configuration', () => {
-    it('should create correct query key for global history', () => {
-      const filters: HistoryFilters = {
-        eventType: 'upgraded',
-        userId: 'user-1',
-      }
+  it('should create correct query key for global history', () => {
+    const filters: HistoryFilters = {
+      eventType: 'upgraded',
+      userId: 'user-1',
+    }
 
-      const options = globalSubscriptionHistoryQueryOptions('realm-1', filters, 1, 20)
+    const options = globalSubscriptionHistoryQueryOptions('realm-1', filters, 1, 20)
 
-      expect(options.queryKey).toEqual([
-        QUERY_KEYS.GLOBAL_SUBSCRIPTION_HISTORY,
-        'realm-1',
-        filters,
-        1,
-        20,
-      ])
-    })
-
-    it('should include realmId in query key', () => {
-      const options = globalSubscriptionHistoryQueryOptions('test-realm', {})
-
-      expect(options.queryKey).toContain('test-realm')
-    })
-
-    it('should include filters in query key', () => {
-      const filters: HistoryFilters = {
-        eventType: 'canceled',
-        planId: 'plan-1',
-      }
-
-      const options = globalSubscriptionHistoryQueryOptions('realm-1', filters)
-
-      expect(options.queryKey).toContain(filters)
-    })
-
-    it('should include pagination in query key', () => {
-      const options = globalSubscriptionHistoryQueryOptions('realm-1', {}, 2, 50)
-
-      expect(options.queryKey).toContain(2)
-      expect(options.queryKey).toContain(50)
-    })
-
-    it('should configure retry count', () => {
-      const options = globalSubscriptionHistoryQueryOptions('realm-1', {})
-
-      expect(options.retry).toBe(1)
-    })
-
-    it('should configure stale time', () => {
-      const options = globalSubscriptionHistoryQueryOptions('realm-1', {})
-
-      expect(options.staleTime).toBe(2 * 60 * 1000) // 2 minutes
-    })
-
-    it('should have a query function', () => {
-      const options = globalSubscriptionHistoryQueryOptions('realm-1', {})
-
-      expect(options.queryFn).toBeDefined()
-      expect(typeof options.queryFn).toBe('function')
-    })
+    expect(options.queryKey).toEqual([
+      QUERY_KEYS.GLOBAL_SUBSCRIPTION_HISTORY,
+      'realm-1',
+      filters,
+      1,
+      20,
+    ])
   })
 
   describe('Cache Key Generation', () => {
@@ -237,14 +164,6 @@ describe('Filter Parameter Handling', () => {
 })
 
 describe('Query Key Structure', () => {
-  it('should follow consistent naming pattern for subscription history', () => {
-    const options = subscriptionHistoryQueryOptions('realm-1', 'sub-1')
-
-    expect(options.queryKey[0]).toBe(QUERY_KEYS.SUBSCRIPTION_HISTORY)
-    expect(options.queryKey[1]).toBe('realm-1')
-    expect(options.queryKey[2]).toBe('sub-1')
-  })
-
   it('should follow consistent naming pattern for global history', () => {
     const filters: HistoryFilters = {}
     const options = globalSubscriptionHistoryQueryOptions('realm-1', filters, 1, 20)

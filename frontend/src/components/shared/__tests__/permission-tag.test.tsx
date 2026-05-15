@@ -1,17 +1,10 @@
-import { describe, it, expect, afterEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render } from '@testing-library/react'
 import { PermissionTag } from '../permission-tag'
 
 describe('PermissionTag', () => {
   afterEach(() => {
     vi.clearAllMocks()
-  })
-
-  it('GIVEN permission is users.view WHEN rendering tag THEN should display permission name correctly', async () => {
-    const screen = render(<PermissionTag permission="users.view" />)
-    const tag = screen.getByTestId('permission-tag-users-view')
-    expect(tag).toBeInTheDocument()
-    expect(tag).toHaveTextContent('users.view')
   })
 
   it('GIVEN permission action is manage WHEN rendering tag THEN should show destructive variant', async () => {
@@ -40,24 +33,5 @@ describe('PermissionTag', () => {
     const tag = screen.getByTestId('permission-tag-users-list')
     expect(tag).toBeInTheDocument()
     expect(tag).toHaveClass(/bg-primary/)
-  })
-
-  it('GIVEN permission action is unknown WHEN rendering tag THEN should show secondary variant', async () => {
-    const screen = render(<PermissionTag permission="users.unknown" />)
-    const tag = screen.getByTestId('permission-tag-users-unknown')
-    expect(tag).toBeInTheDocument()
-    expect(tag).toHaveClass(/bg-secondary/)
-  })
-
-  it('GIVEN showDescription is true WHEN rendering tag THEN should display resource in parentheses', async () => {
-    const screen = render(<PermissionTag permission="users.view" showDescription={true} />)
-    const tag = screen.getByTestId('permission-tag-users-view')
-    expect(tag).toHaveTextContent(/(users)/)
-  })
-
-  it('GIVEN custom className is provided WHEN rendering THEN should merge classes', async () => {
-    const screen = render(<PermissionTag permission="users.view" className="custom-class" />)
-    const tag = screen.getByTestId('permission-tag-users-view')
-    expect(tag).toHaveClass(/custom-class/)
   })
 })

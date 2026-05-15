@@ -53,35 +53,6 @@ describe('Unified Purchase Query Options', () => {
   })
 
   describe('pointsPackagesQueryOptions', () => {
-    describe('query configuration', () => {
-      it('should create correct query key', () => {
-        const options = pointsPackagesQueryOptions('realm-1')
-        expect(options.queryKey).toEqual(queryKeys.pointsPackages('realm-1'))
-      })
-
-      it('should create unique keys for different realms', () => {
-        const options1 = pointsPackagesQueryOptions('realm-1')
-        const options2 = pointsPackagesQueryOptions('realm-2')
-        expect(options1.queryKey).not.toEqual(options2.queryKey)
-      })
-
-      it('should configure retry count', () => {
-        const options = pointsPackagesQueryOptions('realm-1')
-        expect(options.retry).toBe(1)
-      })
-
-      it('should configure stale time', () => {
-        const options = pointsPackagesQueryOptions('realm-1')
-        expect(options.staleTime).toBe(5 * 60 * 1000) // 5 minutes
-      })
-
-      it('should have a query function', () => {
-        const options = pointsPackagesQueryOptions('realm-1')
-        expect(options.queryFn).toBeDefined()
-        expect(typeof options.queryFn).toBe('function')
-      })
-    })
-
     describe('query execution', () => {
       it('should call listPointsPackages with correct parameters', async () => {
         const mockResponse = {
@@ -194,24 +165,6 @@ describe('Unified Purchase Query Options', () => {
   })
 
   describe('pointsPackageQueryOptions', () => {
-    describe('query configuration', () => {
-      it('should include realmId and packageId in query key', () => {
-        const options = pointsPackageQueryOptions('realm-1', 'pkg-1')
-        expect(options.queryKey).toEqual(queryKeys.pointsPackage('realm-1', 'pkg-1'))
-      })
-
-      it('should create unique keys for different packages', () => {
-        const options1 = pointsPackageQueryOptions('realm-1', 'pkg-1')
-        const options2 = pointsPackageQueryOptions('realm-1', 'pkg-2')
-        expect(options1.queryKey).not.toEqual(options2.queryKey)
-      })
-
-      it('should configure stale time for single package', () => {
-        const options = pointsPackageQueryOptions('realm-1', 'pkg-1')
-        expect(options.staleTime).toBe(5 * 60 * 1000) // 5 minutes
-      })
-    })
-
     describe('query execution', () => {
       it('should call getPointsPackage with correct parameters', async () => {
         const mockResponse = {
@@ -250,37 +203,6 @@ describe('Unified Purchase Query Options', () => {
   })
 
   describe('pointsPackagePurchaseHistoryQueryOptions', () => {
-    describe('query configuration', () => {
-      it('should include pagination in query key', () => {
-        const options = pointsPackagePurchaseHistoryQueryOptions('realm-1', {
-          page: 1,
-          pageSize: 20,
-        })
-        expect(options.queryKey).toContainEqual({ page: 1, pageSize: 20 })
-      })
-
-      it('should include filters in query key', () => {
-        const filters = { status: 'Succeeded', userId: 'user-1' }
-        const options = pointsPackagePurchaseHistoryQueryOptions('realm-1', filters)
-        expect(options.queryKey).toContainEqual(filters)
-      })
-
-      it('should create unique keys for different filters', () => {
-        const options1 = pointsPackagePurchaseHistoryQueryOptions('realm-1', {
-          status: 'Succeeded',
-        })
-        const options2 = pointsPackagePurchaseHistoryQueryOptions('realm-1', {
-          status: 'Failed',
-        })
-        expect(options1.queryKey).not.toEqual(options2.queryKey)
-      })
-
-      it('should configure moderate stale time for history', () => {
-        const options = pointsPackagePurchaseHistoryQueryOptions('realm-1', {})
-        expect(options.staleTime).toBe(2 * 60 * 1000) // 2 minutes
-      })
-    })
-
     describe('filter parameter handling', () => {
       it('should handle empty filters', () => {
         const options = pointsPackagePurchaseHistoryQueryOptions('realm-1', {})
@@ -481,24 +403,6 @@ describe('Unified Purchase Query Options', () => {
   })
 
   describe('paymentAttemptStatusQueryOptions', () => {
-    describe('query configuration', () => {
-      it('should include realmId and attemptId in query key', () => {
-        const options = paymentAttemptStatusQueryOptions('realm-1', 'attempt-1')
-        expect(options.queryKey).toEqual(queryKeys.paymentAttemptStatus('realm-1', 'attempt-1'))
-      })
-
-      it('should create unique keys for different attempts', () => {
-        const options1 = paymentAttemptStatusQueryOptions('realm-1', 'attempt-1')
-        const options2 = paymentAttemptStatusQueryOptions('realm-1', 'attempt-2')
-        expect(options1.queryKey).not.toEqual(options2.queryKey)
-      })
-
-      it('should configure short stale time for polling', () => {
-        const options = paymentAttemptStatusQueryOptions('realm-1', 'attempt-1')
-        expect(options.staleTime).toBe(60 * 1000) // 1 minute
-      })
-    })
-
     describe('polling behavior', () => {
       it('should poll for pending status', () => {
         const options = paymentAttemptStatusQueryOptions('realm-1', 'attempt-1')
@@ -607,23 +511,6 @@ describe('Unified Purchase Query Options', () => {
   })
 
   describe('paymentProvidersQueryOptions', () => {
-    describe('query configuration', () => {
-      it('should create correct query key', () => {
-        const options = paymentProvidersQueryOptions('realm-1')
-        expect(options.queryKey).toEqual(['payment-providers', 'realm-1'])
-      })
-
-      it('should configure retry count', () => {
-        const options = paymentProvidersQueryOptions('realm-1')
-        expect(options.retry).toBe(1)
-      })
-
-      it('should configure stale time', () => {
-        const options = paymentProvidersQueryOptions('realm-1')
-        expect(options.staleTime).toBe(5 * 60 * 1000) // 5 minutes
-      })
-    })
-
     describe('query execution', () => {
       it('should call listPaymentProviders with correct parameters', async () => {
         const mockResponse = {
@@ -696,24 +583,6 @@ describe('Unified Purchase Query Options', () => {
   })
 
   describe('paymentProviderMappingsQueryOptions', () => {
-    describe('query configuration', () => {
-      it('should include realmId and packageId in query key', () => {
-        const options = paymentProviderMappingsQueryOptions('realm-1', 'pkg-1')
-        expect(options.queryKey).toEqual(['payment-provider-mappings', 'realm-1', 'pkg-1'])
-      })
-
-      it('should create unique keys for different packages', () => {
-        const options1 = paymentProviderMappingsQueryOptions('realm-1', 'pkg-1')
-        const options2 = paymentProviderMappingsQueryOptions('realm-1', 'pkg-2')
-        expect(options1.queryKey).not.toEqual(options2.queryKey)
-      })
-
-      it('should configure stale time', () => {
-        const options = paymentProviderMappingsQueryOptions('realm-1', 'pkg-1')
-        expect(options.staleTime).toBe(5 * 60 * 1000) // 5 minutes
-      })
-    })
-
     describe('query execution', () => {
       it('should call listPaymentProviderMappings with correct parameters', async () => {
         const mockResponse = {

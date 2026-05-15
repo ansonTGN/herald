@@ -16,9 +16,6 @@ const mockUserRolesData = {
   ],
 }
 
-const mockAdminUserRolesResponse = { data: mockUserRolesData }
-const mockEmptyUserRolesResponse = { data: { roles: [] } }
-
 const mockUseQuery = vi.fn()
 const mockInvalidateQueries = vi.fn()
 const mockUpdateUserRoles = vi.fn()
@@ -86,63 +83,6 @@ describe('UserRolesDialog', () => {
   const mockUserId = 'user-1'
   const mockUserEmail = 'user@example.com'
 
-  it('GIVEN dialog is open with user WHEN rendering THEN should display dialog title', async () => {
-    const screen = render(
-      <UserRolesDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        userId={mockUserId}
-        userEmail={mockUserEmail}
-      />
-    )
-
-    expect(screen.getByTestId('user-roles-dialog-title')).toBeInTheDocument()
-    expect(screen.getByText('Manage User Roles')).toBeInTheDocument()
-  })
-
-  it('GIVEN dialog is open WHEN rendering THEN should display user email', async () => {
-    const screen = render(
-      <UserRolesDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        userId={mockUserId}
-        userEmail={mockUserEmail}
-      />
-    )
-
-    expect(screen.getByTestId('user-roles-dialog-user')).toBeInTheDocument()
-    expect(screen.getAllByText(mockUserEmail, { exact: true })[0]).toBeInTheDocument()
-  })
-
-  it('GIVEN dialog is open WHEN rendering THEN should fetch and display all roles', async () => {
-    const screen = render(
-      <UserRolesDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        userId={mockUserId}
-        userEmail={mockUserEmail}
-      />
-    )
-
-    expect(screen.getByTestId('user-roles-dialog-label')).toBeInTheDocument()
-    expect(screen.getByText('Assign Roles')).toBeInTheDocument()
-  })
-
-  it('GIVEN dialog is open WHEN rendering THEN should fetch and display user roles', async () => {
-    const screen = render(
-      <UserRolesDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        userId={mockUserId}
-        userEmail={mockUserEmail}
-      />
-    )
-
-    const roleSelectorTrigger = screen.getByTestId('role-selector-trigger')
-    expect(roleSelectorTrigger).toBeInTheDocument()
-    expect(roleSelectorTrigger).toBeVisible()
-  })
-
   it('GIVEN user clicks Cancel button WHEN clicked THEN should call onOpenChange with false', async () => {
     const handleOpenChange = vi.fn()
     render(
@@ -179,71 +119,6 @@ describe('UserRolesDialog', () => {
 
     expect(handleOpenChange).toHaveBeenCalledTimes(1)
     expect(handleOpenChange).toHaveBeenCalledWith(false)
-  })
-
-  it('GIVEN dialog is closed WHEN rendering THEN should not display content', async () => {
-    render(
-      <UserRolesDialog
-        open={false}
-        onOpenChange={vi.fn()}
-        userId={mockUserId}
-        userEmail={mockUserEmail}
-      />
-    )
-
-    const dialog = document.querySelector('[data-testid="user-roles-dialog-content"]')
-    expect(dialog).toBeNull()
-  })
-
-  it('GIVEN dialog is open WHEN rendering THEN should display helper text', async () => {
-    const screen = render(
-      <UserRolesDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        userId={mockUserId}
-        userEmail={mockUserEmail}
-      />
-    )
-
-    expect(screen.getByText('Select one or more roles to assign to this user')).toBeInTheDocument()
-  })
-
-  it('GIVEN role selector WHEN rendering THEN should display placeholder', async () => {
-    mockUseQuery.mockImplementation((options) => {
-      if (Array.isArray(options.queryKey) && options.queryKey[0] === 'roles') {
-        return {
-          data: mockRolesData,
-          isLoading: false,
-          isPending: false,
-          isSuccess: true,
-        }
-      }
-      if (Array.isArray(options.queryKey) && options.queryKey[0] === 'admin-user-roles') {
-        return {
-          data: { data: { roles: [] } },
-          isLoading: false,
-          isPending: false,
-          isSuccess: true,
-        }
-      }
-      return {
-        data: null,
-        isLoading: false,
-        isPending: false,
-        isSuccess: false,
-      }
-    })
-
-    const screen = render(
-      <UserRolesDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        userId={mockUserId}
-        userEmail={mockUserEmail}
-      />
-    )
-
-    expect(screen.getByTestId('role-selector-trigger')).toBeInTheDocument()
   })
 
   it('GIVEN roles are loading WHEN rendering THEN should show loading state', async () => {

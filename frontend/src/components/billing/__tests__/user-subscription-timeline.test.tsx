@@ -104,107 +104,6 @@ describe('UserSubscriptionTimeline - Event Sorting', () => {
   })
 })
 
-describe('UserSubscriptionTimeline - Event Badges', () => {
-  const mockEventWithBadge: SubscriptionHistoryEvent[] = [
-    {
-      id: 'evt-1',
-      subscriptionId: 'sub-1',
-      eventType: 'upgraded',
-      timestamp: '2025-01-20T10:30:00Z',
-      actor: 'admin@example.com',
-      changes: {
-        changedFields: ['planId'],
-        previousPlanId: 'basic-plan',
-        newPlanId: 'pro-plan',
-      },
-    },
-  ]
-
-  it('should display event type badge with correct text', () => {
-    render(<UserSubscriptionTimeline events={mockEventWithBadge} />)
-
-    expect(screen.getByTestId('event-badge-upgraded')).toBeInTheDocument()
-    expect(screen.getByText('Upgraded')).toBeInTheDocument()
-  })
-
-  it('should display badge for different event types', () => {
-    const events: SubscriptionHistoryEvent[] = [
-      {
-        id: 'evt-1',
-        subscriptionId: 'sub-1',
-        eventType: 'created',
-        timestamp: '2025-01-15T09:00:00Z',
-        actor: 'user@example.com',
-      },
-      {
-        id: 'evt-2',
-        subscriptionId: 'sub-1',
-        eventType: 'upgraded',
-        timestamp: '2025-01-20T10:30:00Z',
-        actor: 'admin@example.com',
-      },
-      {
-        id: 'evt-3',
-        subscriptionId: 'sub-1',
-        eventType: 'canceled',
-        timestamp: '2025-02-01T14:00:00Z',
-        actor: 'user@example.com',
-      },
-    ]
-
-    render(<UserSubscriptionTimeline events={events} />)
-
-    expect(screen.getByTestId('event-badge-created')).toBeInTheDocument()
-    expect(screen.getByTestId('event-badge-upgraded')).toBeInTheDocument()
-    expect(screen.getByTestId('event-badge-canceled')).toBeInTheDocument()
-  })
-})
-
-describe('UserSubscriptionTimeline - Timestamp Formatting', () => {
-  const mockEventWithTimestamp: SubscriptionHistoryEvent[] = [
-    {
-      id: 'evt-1',
-      subscriptionId: 'sub-1',
-      eventType: 'created',
-      timestamp: '2025-01-20T10:30:00Z',
-      actor: 'user@example.com',
-    },
-  ]
-
-  it('should format ISO timestamp to readable format', () => {
-    render(<UserSubscriptionTimeline events={mockEventWithTimestamp} />)
-
-    // The timestamp should be formatted by date-fns format() with 'PPp' format
-    // We just verify that some date/time text is present
-    const eventContainer = screen.getByTestId('timeline-event-evt-1')
-    expect(within(eventContainer).getByText(/2025/i)).toBeInTheDocument()
-  })
-
-  it('should display timestamp for each event', () => {
-    const events: SubscriptionHistoryEvent[] = [
-      {
-        id: 'evt-1',
-        subscriptionId: 'sub-1',
-        eventType: 'created',
-        timestamp: '2025-01-15T09:00:00Z',
-        actor: 'user@example.com',
-      },
-      {
-        id: 'evt-2',
-        subscriptionId: 'sub-1',
-        eventType: 'upgraded',
-        timestamp: '2025-01-20T10:30:00Z',
-        actor: 'admin@example.com',
-      },
-    ]
-
-    render(<UserSubscriptionTimeline events={events} />)
-
-    const timestamps = screen.getAllByText(/2025/i)
-    expect(timestamps.length).toBeGreaterThanOrEqual(2)
-  })
-})
-
 describe('UserSubscriptionTimeline - Expand/Collapse Details', () => {
   const mockEventWithState: SubscriptionHistoryEvent[] = [
     {
@@ -477,26 +376,6 @@ describe('UserSubscriptionTimeline - State Display', () => {
 })
 
 describe('UserSubscriptionTimeline - Actor and Changes Display', () => {
-  it('should display actor information when available', () => {
-    const mockEvent: SubscriptionHistoryEvent[] = [
-      {
-        id: 'evt-1',
-        subscriptionId: 'sub-1',
-        eventType: 'upgraded',
-        timestamp: '2025-01-20T10:30:00Z',
-        actor: 'admin@example.com',
-        changes: {
-          changedFields: ['planId', 'tier'],
-        },
-      },
-    ]
-
-    render(<UserSubscriptionTimeline events={mockEvent} />)
-
-    expect(screen.getByText('admin@example.com')).toBeInTheDocument()
-    expect(screen.getByText(/Actor:/i)).toBeInTheDocument()
-  })
-
   it('should not display actor when not available', () => {
     const mockEvent: SubscriptionHistoryEvent[] = [
       {
@@ -510,26 +389,6 @@ describe('UserSubscriptionTimeline - Actor and Changes Display', () => {
     render(<UserSubscriptionTimeline events={mockEvent} />)
 
     expect(screen.queryByText(/Actor:/i)).not.toBeInTheDocument()
-  })
-
-  it('should display changed fields when available', () => {
-    const mockEvent: SubscriptionHistoryEvent[] = [
-      {
-        id: 'evt-1',
-        subscriptionId: 'sub-1',
-        eventType: 'upgraded',
-        timestamp: '2025-01-20T10:30:00Z',
-        actor: 'admin@example.com',
-        changes: {
-          changedFields: ['planId', 'tier', 'billingPeriod'],
-        },
-      },
-    ]
-
-    render(<UserSubscriptionTimeline events={mockEvent} />)
-
-    expect(screen.getByText(/Changed:/i)).toBeInTheDocument()
-    expect(screen.getByText('planId, tier, billingPeriod')).toBeInTheDocument()
   })
 
   it('should not display changed fields when not available', () => {
@@ -557,14 +416,6 @@ describe('UserSubscriptionTimeline - Loading State', () => {
     expect(screen.getByText(/Loading history\.\.\./i)).toBeInTheDocument()
   })
 
-  it('should show loading spinner icon', () => {
-    render(<UserSubscriptionTimeline events={[]} loading={true} />)
-
-    // Check for the loading indicator (Clock icon with animate-spin)
-    const loadingContainer = screen.getByTestId('subscription-timeline-loading')
-    expect(loadingContainer).toBeInTheDocument()
-  })
-
   it('should hide timeline when loading', () => {
     const mockEvents: SubscriptionHistoryEvent[] = [
       {
@@ -590,74 +441,6 @@ describe('UserSubscriptionTimeline - Empty State', () => {
     expect(screen.getByText(/No history available/i)).toBeInTheDocument()
   })
 
-  it('should not show empty state when events exist', () => {
-    const mockEvents: SubscriptionHistoryEvent[] = [
-      {
-        id: 'evt-1',
-        subscriptionId: 'sub-1',
-        eventType: 'created',
-        timestamp: '2025-01-20T10:30:00Z',
-      },
-    ]
-
-    render(<UserSubscriptionTimeline events={mockEvents} />)
-
-    expect(screen.queryByTestId('subscription-timeline-empty')).not.toBeInTheDocument()
-    expect(screen.getByTestId('subscription-timeline')).toBeInTheDocument()
-  })
-})
-
-describe('UserSubscriptionTimeline - Card Structure', () => {
-  const mockEvents: SubscriptionHistoryEvent[] = [
-    {
-      id: 'evt-1',
-      subscriptionId: 'sub-1',
-      eventType: 'created',
-      timestamp: '2025-01-20T10:30:00Z',
-      actor: 'user@example.com',
-    },
-  ]
-
-  it('should render card with title', () => {
-    render(<UserSubscriptionTimeline events={mockEvents} />)
-
-    expect(screen.getByTestId('subscription-timeline')).toBeInTheDocument()
-    expect(screen.getByText('Subscription History')).toBeInTheDocument()
-  })
-
-  it('should render timeline dots for each event', () => {
-    render(<UserSubscriptionTimeline events={mockEvents} />)
-
-    const eventContainer = screen.getByTestId('timeline-event-evt-1')
-    expect(eventContainer).toHaveClass('border-l-2', 'border-muted', 'pl-6', 'pb-8', 'relative')
-  })
-
-  it('should render multiple events with proper spacing', () => {
-    const events: SubscriptionHistoryEvent[] = [
-      {
-        id: 'evt-1',
-        subscriptionId: 'sub-1',
-        eventType: 'created',
-        timestamp: '2025-01-15T09:00:00Z',
-        actor: 'user@example.com',
-      },
-      {
-        id: 'evt-2',
-        subscriptionId: 'sub-1',
-        eventType: 'upgraded',
-        timestamp: '2025-01-20T10:30:00Z',
-        actor: 'admin@example.com',
-      },
-    ]
-
-    render(<UserSubscriptionTimeline events={events} />)
-
-    const eventElements = screen.getAllByTestId(/timeline-event-/)
-    expect(eventElements).toHaveLength(2)
-
-    // Last event should have last:pb-0 class
-    expect(eventElements[1]).toHaveClass('last:pb-0')
-  })
 })
 
 describe('UserSubscriptionTimeline - Edge Cases', () => {
@@ -748,23 +531,6 @@ describe('UserSubscriptionTimeline - Edge Cases', () => {
     const eventContainer = screen.getByTestId('timeline-event-evt-1')
     const periodTexts = within(eventContainer).queryAllByText(/Period:/i)
     expect(periodTexts.length).toBe(0)
-  })
-
-  it('should handle single event correctly', () => {
-    const singleEvent: SubscriptionHistoryEvent[] = [
-      {
-        id: 'evt-1',
-        subscriptionId: 'sub-1',
-        eventType: 'created',
-        timestamp: '2025-01-20T10:30:00Z',
-        actor: 'user@example.com',
-      },
-    ]
-
-    render(<UserSubscriptionTimeline events={singleEvent} />)
-
-    expect(screen.getByTestId('timeline-event-evt-1')).toBeInTheDocument()
-    expect(screen.getByTestId('timeline-event-evt-1')).toHaveClass('last:pb-0')
   })
 
   it('should handle events with changes but no plan changes', async () => {

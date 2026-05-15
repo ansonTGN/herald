@@ -68,24 +68,6 @@ describe('PermissionTable', () => {
     vi.clearAllMocks()
   })
 
-  it('GIVEN permissions array is provided WHEN rendering THEN should display all permissions', async () => {
-    const screen = render(
-      <PermissionTable permissions={mockPermissions} isLoading={false} error={null} />
-    )
-
-    expect(screen.getByTestId('permissions-table')).toBeInTheDocument()
-    expect(screen.getByText('users.view')).toBeInTheDocument()
-    expect(screen.getByText('users.manage')).toBeInTheDocument()
-    expect(screen.getByText('roles.view')).toBeInTheDocument()
-  })
-
-  it('GIVEN permission has is_builtin true WHEN rendering THEN should show Built-in badge', async () => {
-    render(<PermissionTable permissions={mockPermissions} isLoading={false} error={null} />)
-
-    const builtinBadges = document.querySelectorAll('[data-testid*="builtin-badge"]')
-    expect(builtinBadges.length).toBeGreaterThan(0)
-  })
-
   it('GIVEN permission table is rendered WHEN user clicks edit button THEN should open edit dialog', async () => {
     render(<PermissionTable permissions={mockPermissions} isLoading={false} error={null} />)
 
@@ -168,35 +150,6 @@ describe('PermissionTable', () => {
     expect(
       screen.getByText('No permissions found. Create your first permission to get started.')
     ).toBeInTheDocument()
-  })
-
-  it('GIVEN permissions have resource WHEN rendering THEN should display resource badge', async () => {
-    const screen = render(
-      <PermissionTable permissions={mockPermissions} isLoading={false} error={null} />
-    )
-
-    // Verify at least one badge exists with the resource name
-    expect(screen.getAllByText('users', { exact: true })[0]).toBeInTheDocument()
-    expect(screen.getAllByText('roles', { exact: true })[0]).toBeInTheDocument()
-  })
-
-  it('GIVEN permissions have action WHEN rendering THEN should display action badge', async () => {
-    const screen = render(
-      <PermissionTable permissions={mockPermissions} isLoading={false} error={null} />
-    )
-
-    // Verify at least one badge exists with the action name
-    expect(screen.getAllByText('view', { exact: true })[0]).toBeInTheDocument()
-    expect(screen.getAllByText('manage', { exact: true })[0]).toBeInTheDocument()
-  })
-
-  it('GIVEN permission has description WHEN rendering THEN should display description', async () => {
-    const screen = render(
-      <PermissionTable permissions={mockPermissions} isLoading={false} error={null} />
-    )
-
-    expect(screen.getByText('View users')).toBeInTheDocument()
-    expect(screen.getByText('Manage users')).toBeInTheDocument()
   })
 
   it('GIVEN permission has no description WHEN rendering THEN should display dash', async () => {

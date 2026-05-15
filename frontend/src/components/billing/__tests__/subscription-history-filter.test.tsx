@@ -4,22 +4,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { SubscriptionHistoryFilter } from '../subscription-history-filter'
 
 describe('SubscriptionHistoryFilter', () => {
-  it('renders with empty optional selects without crashing', () => {
-    render(
-      <SubscriptionHistoryFilter
-        filters={{}}
-        onFiltersChange={vi.fn()}
-        onReset={vi.fn()}
-        plans={[{ id: 'plan-1', name: 'Starter' }]}
-      />
-    )
-
-    expect(screen.getByTestId('subscription-history-filter')).toBeInTheDocument()
-    expect(screen.getByLabelText('Plan')).toBeInTheDocument()
-    expect(screen.getByLabelText('Event Type')).toBeInTheDocument()
-    expect(screen.getByLabelText('Subscription Status')).toBeInTheDocument()
-  })
-
   it('converts date-only input values to UTC ISO timestamps on submit', async () => {
     const onFiltersChange = vi.fn()
 

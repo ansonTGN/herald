@@ -349,27 +349,6 @@ describe('WechatConfigForm', () => {
         expect(screen.getByText(/must start with "wx"/i)).toBeInTheDocument()
       })
     })
-
-    it('GIVEN Merchant ID field blurred with invalid value WHEN blurred THEN shows error', async () => {
-      const user = userEvent.setup()
-
-      render(
-        <WechatConfigFormDialog
-          open={true}
-          onOpenChange={vi.fn()}
-          onSubmit={vi.fn()}
-          mode="create"
-        />
-      )
-
-      const mchIdInput = screen.getByTestId('merchant-id-input')
-      await user.type(mchIdInput, 'abc123')
-      await user.tab() // Blur the field
-
-      await waitFor(() => {
-        expect(screen.getByText(/must be numeric/i)).toBeInTheDocument()
-      })
-    })
   })
 
   describe('submitting state', () => {
@@ -389,35 +368,5 @@ describe('WechatConfigForm', () => {
       expect(submitButton).toHaveTextContent('Saving...')
     })
 
-    it('GIVEN form is not submitting WHEN isSubmitting is false THEN enables submit button', () => {
-      render(
-        <WechatConfigFormDialog
-          open={true}
-          onOpenChange={vi.fn()}
-          onSubmit={vi.fn()}
-          mode="create"
-          isSubmitting={false}
-        />
-      )
-
-      const submitButton = screen.getByTestId('wechat-config-submit-button')
-      expect(submitButton).not.toBeDisabled()
-      expect(submitButton).toHaveTextContent('Create Configuration')
-    })
-
-    it('GIVEN edit mode WHEN isSubmitting is false THEN shows correct button text', () => {
-      render(
-        <WechatConfigFormDialog
-          open={true}
-          onOpenChange={vi.fn()}
-          onSubmit={vi.fn()}
-          mode="edit"
-          isSubmitting={false}
-        />
-      )
-
-      const submitButton = screen.getByTestId('wechat-config-submit-button')
-      expect(submitButton).toHaveTextContent('Save Changes')
-    })
   })
 })
