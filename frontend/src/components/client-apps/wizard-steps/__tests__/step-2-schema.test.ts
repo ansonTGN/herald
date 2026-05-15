@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  step2Schema,
-  transformToUriItems,
-  transformFromUriItems,
-} from '../step-2-schema'
+import { step2Schema, transformToUriItems, transformFromUriItems } from '../step-2-schema'
 
 describe('step2Schema', () => {
   describe('valid data', () => {

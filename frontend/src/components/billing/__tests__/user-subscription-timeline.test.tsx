@@ -440,7 +440,6 @@ describe('UserSubscriptionTimeline - Empty State', () => {
     expect(screen.getByTestId('subscription-timeline-empty')).toBeInTheDocument()
     expect(screen.getByText(/No history available/i)).toBeInTheDocument()
   })
-
 })
 
 describe('UserSubscriptionTimeline - Edge Cases', () => {

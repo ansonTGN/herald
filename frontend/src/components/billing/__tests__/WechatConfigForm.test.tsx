@@ -367,6 +367,5 @@ describe('WechatConfigForm', () => {
       expect(submitButton).toBeDisabled()
       expect(submitButton).toHaveTextContent('Saving...')
     })
-
   })
 })

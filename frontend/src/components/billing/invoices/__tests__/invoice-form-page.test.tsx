@@ -561,5 +561,4 @@ describe('InvoiceFormPage', () => {
       })
     })
   })
-
 })

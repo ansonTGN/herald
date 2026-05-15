@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  step3Schema,
-  ADVANCED_SECURITY_OPTIONS,
-} from '../step-3-schema'
+import { step3Schema, ADVANCED_SECURITY_OPTIONS } from '../step-3-schema'
 
 describe('step3Schema', () => {
   describe('valid session TTL', () => {

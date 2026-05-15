@@ -122,17 +122,11 @@ export function DeviceVerificationView({ realmId, initialCode }: DeviceVerificat
             <div className="py-4 text-center" data-testid="device-verification-result">
               {resultCode === 'approved' ? (
                 <div className="space-y-2">
-                  <p className="text-green-600 font-medium">
-                    Authorization successful.
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Please return to your device.
-                  </p>
+                  <p className="text-green-600 font-medium">Authorization successful.</p>
+                  <p className="text-sm text-muted-foreground">Please return to your device.</p>
                 </div>
               ) : (
-                <p className="text-red-600 font-medium">
-                  Authorization denied.
-                </p>
+                <p className="text-red-600 font-medium">Authorization denied.</p>
               )}
             </div>
           )}

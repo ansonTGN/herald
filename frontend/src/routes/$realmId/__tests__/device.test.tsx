@@ -245,10 +245,7 @@ describe('Device verification error display integration', () => {
           >
             Authorize
           </button>
-          <button
-            data-testid="device-deny-button"
-            onClick={() => confirmMutation.mutate(false)}
-          >
+          <button data-testid="device-deny-button" onClick={() => confirmMutation.mutate(false)}>
             Deny
           </button>
         </div>

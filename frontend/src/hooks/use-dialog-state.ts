@@ -14,9 +14,12 @@ export function useDialogManager<T>() {
     setSelectedItem(null)
   }, [])
 
-  const onOpenChange = useCallback((v: boolean) => {
-    if (!v) close()
-  }, [close])
+  const onOpenChange = useCallback(
+    (v: boolean) => {
+      if (!v) close()
+    },
+    [close]
+  )
 
   return { isOpen, selectedItem, open, close, onOpenChange }
 }

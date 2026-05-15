@@ -17,11 +17,7 @@ export function AuthorizeConfirm({
     <div className="space-y-6">
       <div className="flex items-center gap-3 justify-center">
         {clientAppIconUrl && (
-          <img
-            src={clientAppIconUrl}
-            alt={`${clientAppName} icon`}
-            className="w-10 h-10 rounded"
-          />
+          <img src={clientAppIconUrl} alt={`${clientAppName} icon`} className="w-10 h-10 rounded" />
         )}
         <span className="text-lg font-medium">{clientAppName}</span>
       </div>

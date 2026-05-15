@@ -7,7 +7,11 @@ const VALID_CHARS = new Set('BCDFGHJKMNPQRSTVWXYZ')
 function filterAndFormat(value: string): string {
   // Uppercase, keep only valid chars, limit to 8
   const upper = value.toUpperCase()
-  const filtered = upper.split('').filter((c) => VALID_CHARS.has(c)).slice(0, 8).join('')
+  const filtered = upper
+    .split('')
+    .filter((c) => VALID_CHARS.has(c))
+    .slice(0, 8)
+    .join('')
   // Insert hyphen after 4th char
   if (filtered.length <= 4) return filtered
   return filtered.slice(0, 4) + '-' + filtered.slice(4)

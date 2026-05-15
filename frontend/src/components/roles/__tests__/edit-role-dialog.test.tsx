@@ -2,10 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render } from '@testing-library/react'
 import { EditRoleDialog } from '../edit-role-dialog'
 import type { RoleResponse } from '@/lib/api-generated'
-import {
-  assertDisabled,
-  assertHelperText,
-} from '@/test-utils/dialog-test-helpers'
+import { assertDisabled, assertHelperText } from '@/test-utils/dialog-test-helpers'
 
 // Mock API and hooks
 vi.mock('@/lib/api-generated', () => ({

@@ -1,11 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { CreatePermissionDialog } from '../create-permission-dialog'
-import {
-  assertCancelButtonWorks,
-  typeInInput,
-  clickButton,
-} from '@/test-utils/dialog-test-helpers'
+import { assertCancelButtonWorks, typeInInput, clickButton } from '@/test-utils/dialog-test-helpers'
 
 // Mock API and hooks
 vi.mock('@/lib/api-generated', () => ({

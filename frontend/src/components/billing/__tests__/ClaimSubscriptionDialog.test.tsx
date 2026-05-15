@@ -236,7 +236,6 @@ describe('ClaimSubscriptionDialog', () => {
         )
       })
     })
-
   })
 
   describe('submit button state', () => {
@@ -351,5 +350,4 @@ describe('ClaimSubscriptionDialog', () => {
       expect(screen.getByTestId('grant-current-period-checkbox')).toBeChecked()
     })
   })
-
 })

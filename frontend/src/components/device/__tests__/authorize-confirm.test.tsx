@@ -5,13 +5,7 @@ import { AuthorizeConfirm } from '../authorize-confirm'
 
 describe('AuthorizeConfirm', () => {
   it('renders client app name', () => {
-    render(
-      <AuthorizeConfirm
-        clientAppName="My Test App"
-        onConfirm={vi.fn()}
-        isLoading={false}
-      />
-    )
+    render(<AuthorizeConfirm clientAppName="My Test App" onConfirm={vi.fn()} isLoading={false} />)
 
     expect(screen.getByText('My Test App')).toBeInTheDocument()
   })
@@ -33,13 +27,7 @@ describe('AuthorizeConfirm', () => {
 
   it('calls onConfirm(true) when Authorize button is clicked', async () => {
     const onConfirm = vi.fn()
-    render(
-      <AuthorizeConfirm
-        clientAppName="My Test App"
-        onConfirm={onConfirm}
-        isLoading={false}
-      />
-    )
+    render(<AuthorizeConfirm clientAppName="My Test App" onConfirm={onConfirm} isLoading={false} />)
 
     await userEvent.click(screen.getByTestId('device-authorize-button'))
     expect(onConfirm).toHaveBeenCalledWith(true)
@@ -47,39 +35,21 @@ describe('AuthorizeConfirm', () => {
 
   it('calls onConfirm(false) when Deny button is clicked', async () => {
     const onConfirm = vi.fn()
-    render(
-      <AuthorizeConfirm
-        clientAppName="My Test App"
-        onConfirm={onConfirm}
-        isLoading={false}
-      />
-    )
+    render(<AuthorizeConfirm clientAppName="My Test App" onConfirm={onConfirm} isLoading={false} />)
 
     await userEvent.click(screen.getByTestId('device-deny-button'))
     expect(onConfirm).toHaveBeenCalledWith(false)
   })
 
   it('disables both buttons when isLoading is true', () => {
-    render(
-      <AuthorizeConfirm
-        clientAppName="My Test App"
-        onConfirm={vi.fn()}
-        isLoading={true}
-      />
-    )
+    render(<AuthorizeConfirm clientAppName="My Test App" onConfirm={vi.fn()} isLoading={true} />)
 
     expect(screen.getByTestId('device-authorize-button')).toBeDisabled()
     expect(screen.getByTestId('device-deny-button')).toBeDisabled()
   })
 
   it('enables both buttons when isLoading is false', () => {
-    render(
-      <AuthorizeConfirm
-        clientAppName="My Test App"
-        onConfirm={vi.fn()}
-        isLoading={false}
-      />
-    )
+    render(<AuthorizeConfirm clientAppName="My Test App" onConfirm={vi.fn()} isLoading={false} />)
 
     expect(screen.getByTestId('device-authorize-button')).toBeEnabled()
     expect(screen.getByTestId('device-deny-button')).toBeEnabled()

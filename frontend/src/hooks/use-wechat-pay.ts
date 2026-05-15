@@ -123,7 +123,7 @@ export function useWechatPay({
     const update = () => {
       const remaining = Math.max(
         0,
-        Math.floor((new Date(orderData.expiresAt!).getTime() - Date.now()) / 1000),
+        Math.floor((new Date(orderData.expiresAt!).getTime() - Date.now()) / 1000)
       )
       setTimeRemaining(remaining)
       if (remaining === 0) {
