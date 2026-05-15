@@ -12,7 +12,9 @@ export function filterAndFormat(value: string): string {
 }
 
 export function toBackendCode(formatted: string): string {
-  return formatted.replace(/-/g, '')
+  const raw = formatted.replace(/-/g, '')
+  if (raw.length <= 4) return raw
+  return raw.slice(0, 4) + '-' + raw.slice(4)
 }
 
 export function rawLength(formatted: string): number {

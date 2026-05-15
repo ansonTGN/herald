@@ -69,7 +69,7 @@ describe('CodeInput', () => {
     expect(submitButton).toBeEnabled()
   })
 
-  it('calls onSubmit with unformatted code (no hyphen) on valid submit', async () => {
+  it('calls onSubmit with formatted code (XXXX-XXXX) on valid submit', async () => {
     const onSubmit = vi.fn()
     render(<CodeInput onSubmit={onSubmit} />)
 
@@ -79,7 +79,7 @@ describe('CodeInput', () => {
     const submitButton = screen.getByTestId('device-code-submit')
     await userEvent.click(submitButton)
 
-    expect(onSubmit).toHaveBeenCalledWith('BCDFGHJK')
+    expect(onSubmit).toHaveBeenCalledWith('BCDF-GHJK')
   })
 
   it('does not call onSubmit with empty input', async () => {
