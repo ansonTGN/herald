@@ -74,6 +74,7 @@ pub async fn list_client_apps(
             session_ttl_seconds: app.session_ttl_seconds,
             session_renewal_ttl_seconds: app.session_renewal_ttl_seconds,
             client_secret: None,
+            device_code_grant_enabled: app.device_code_grant_enabled,
         })
         .collect();
 

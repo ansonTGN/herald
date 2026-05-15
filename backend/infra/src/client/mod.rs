@@ -36,6 +36,7 @@ impl PostgresClientRepository {
             session_ttl_seconds: model.session_ttl_seconds,
             session_renewal_ttl_seconds: model.session_renewal_ttl_seconds,
             client_secret: model.client_secret.clone(),
+            device_code_grant_enabled: model.device_code_grant_enabled,
             created_at: model.created_at.into(),
             updated_at: model.updated_at.into(),
         }
@@ -73,6 +74,9 @@ impl ClientRepository for PostgresClientRepository {
             session_ttl_seconds: sea_orm::Set(session_ttl_seconds),
             session_renewal_ttl_seconds: sea_orm::Set(request.session_renewal_ttl_seconds),
             client_secret: sea_orm::Set(client_secret),
+            device_code_grant_enabled: sea_orm::Set(
+                request.device_code_grant_enabled.unwrap_or(false),
+            ),
             created_at: sea_orm::Set(now.into()),
             updated_at: sea_orm::Set(now.into()),
         };
@@ -187,6 +191,10 @@ impl ClientRepository for PostgresClientRepository {
         if let Some(session_renewal_ttl_seconds) = request.session_renewal_ttl_seconds {
             active_model.session_renewal_ttl_seconds =
                 sea_orm::Set(Some(session_renewal_ttl_seconds));
+        }
+
+        if let Some(v) = request.device_code_grant_enabled {
+            active_model.device_code_grant_enabled = sea_orm::Set(v);
         }
 
         // Regenerate client secret if requested

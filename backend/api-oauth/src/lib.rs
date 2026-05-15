@@ -4,6 +4,10 @@
 pub mod authorize;
 pub mod callback;
 pub mod config;
+pub mod device_authorize;
+pub mod device_confirm;
+pub mod device_token;
+pub mod device_verify;
 pub mod helper;
 pub mod login;
 pub mod wechat;
@@ -12,6 +16,10 @@ pub mod wechat_miniprogram;
 pub use authorize::*;
 pub use callback::*;
 pub use config::*;
+pub use device_authorize::*;
+pub use device_confirm::*;
+pub use device_token::*;
+pub use device_verify::*;
 pub use login::*;
 pub use wechat::*;
 pub use wechat_miniprogram::*;
@@ -31,6 +39,10 @@ pub use wechat_miniprogram::*;
         crate::wechat::wechat_login,
         crate::wechat::wechat_callback,
         crate::wechat_miniprogram::wechat_miniprogram_login,
+        crate::device_authorize::device_authorize,
+        crate::device_token::device_token,
+        crate::device_verify::device_verify,
+        crate::device_confirm::device_confirm,
     ),
     components(schemas(
         crate::login::OAuthLoginRequest,
@@ -43,6 +55,18 @@ pub use wechat_miniprogram::*;
         crate::wechat::WeChatAuthUrlResponse,
         crate::wechat_miniprogram::WeChatMiniProgramLoginRequest,
         crate::wechat_miniprogram::WeChatMiniProgramLoginResponse,
+        crate::device_authorize::DeviceAuthorizationRequest,
+        crate::device_authorize::DeviceAuthorizationResponse,
+        crate::device_authorize::DeviceAuthorizationErrorResponse,
+        crate::device_token::DeviceTokenRequest,
+        crate::device_token::DeviceTokenResponse,
+        crate::device_token::DeviceTokenErrorResponse,
+        crate::device_verify::DeviceVerifyRequest,
+        crate::device_verify::DeviceVerifyResponse,
+        crate::device_verify::DeviceVerifyErrorResponse,
+        crate::device_confirm::DeviceConfirmRequest,
+        crate::device_confirm::DeviceConfirmResponse,
+        crate::device_confirm::DeviceConfirmErrorResponse,
     ))
 )]
 pub struct ApiDoc;

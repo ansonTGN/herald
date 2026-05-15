@@ -79,6 +79,8 @@ pub struct ClientAppCreateRequest {
     /// Must be greater than session_ttl_seconds if set.
     #[schema(example = "86400")]
     pub session_renewal_ttl_seconds: Option<i32>,
+
+    pub device_code_grant_enabled: Option<bool>,
 }
 
 // Client ID regex: alphanumeric only
@@ -145,6 +147,8 @@ pub struct ClientAppUpdateRequest {
     /// **Store this securely** - it will not be retrievable after this response.
     #[schema(example = "false")]
     pub regenerate_secret: Option<bool>,
+
+    pub device_code_grant_enabled: Option<bool>,
 }
 
 // Database model (used with sqlx::FromRow)
@@ -164,6 +168,7 @@ pub struct ClientAppDbModel {
     pub session_ttl_seconds: i32,
     pub session_renewal_ttl_seconds: Option<i32>,
     pub client_secret: Option<String>,
+    pub device_code_grant_enabled: bool,
 }
 
 // API response model (used for OpenAPI documentation)
@@ -239,6 +244,8 @@ pub struct ClientAppItem {
     /// This field will be null in update and list responses.
     #[schema(example = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")]
     pub client_secret: Option<String>,
+
+    pub device_code_grant_enabled: bool,
 }
 
 // Conversion from DB model to API response model
@@ -256,6 +263,7 @@ impl From<ClientAppDbModel> for ClientAppItem {
             session_ttl_seconds: db_model.session_ttl_seconds,
             session_renewal_ttl_seconds: db_model.session_renewal_ttl_seconds,
             client_secret: db_model.client_secret,
+            device_code_grant_enabled: db_model.device_code_grant_enabled,
         }
     }
 }

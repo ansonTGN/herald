@@ -59,6 +59,7 @@ pub async fn update_client_app(
         session_ttl_seconds: payload.session_ttl_seconds,
         session_renewal_ttl_seconds: payload.session_renewal_ttl_seconds,
         regenerate_secret: payload.regenerate_secret,
+        device_code_grant_enabled: payload.device_code_grant_enabled,
     };
 
     // Call service layer
@@ -96,6 +97,7 @@ pub async fn update_client_app(
             .regenerate_secret
             .filter(|regenerate| *regenerate)
             .and(client_app.client_secret),
+        device_code_grant_enabled: client_app.device_code_grant_enabled,
     };
 
     Ok(ApiResult::ok(response))

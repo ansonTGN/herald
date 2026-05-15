@@ -86,6 +86,7 @@ mod realm_admin_tests {
             icon_url: None,
             session_ttl_seconds: 1800,
             session_renewal_ttl_seconds: Some(300),
+            device_code_grant_enabled: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

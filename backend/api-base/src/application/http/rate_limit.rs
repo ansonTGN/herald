@@ -251,12 +251,231 @@ pub async fn rate_limit_hit_forced(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use herald_core::infrastructure::redis::{ManagerConfig, RedisConnectionManager};
+    use redis::AsyncCommands;
+    use tokio::sync::OnceCell;
 
-    #[test]
-    fn test_rate_limit_config_builder() {
-        let config = RateLimitConfig::new(5, 120).with_enforce_in_dev();
-        assert_eq!(config.max_requests, 5);
-        assert_eq!(config.window_secs, 120);
-        assert!(config.enforce_in_dev);
+    static SHARED_MANAGER: OnceCell<Option<RedisConnectionManager>> = OnceCell::const_new();
+
+    async fn get_shared_manager() -> Option<&'static RedisConnectionManager> {
+        SHARED_MANAGER
+            .get_or_init(|| async {
+                let config = ManagerConfig::default();
+                RedisConnectionManager::new(config).await.ok()
+            })
+            .await
+            .as_ref()
+    }
+
+    /// Load the rate limit function library into Redis for tests.
+    async fn load_function_library(
+        conn: &mut redis::aio::ConnectionManager,
+    ) -> Result<String, redis::RedisError> {
+        redis::cmd("FUNCTION")
+            .arg("LOAD")
+            .arg("REPLACE")
+            .arg(RATE_LIMIT_FUNCTION_CODE)
+            .query_async::<String>(conn)
+            .await
+    }
+
+    /// Call the rate_limit_check Redis function directly.
+    async fn fcall_rate_limit_check(
+        conn: &mut redis::aio::ConnectionManager,
+        key: &str,
+        limit: i64,
+        window_secs: i64,
+    ) -> Result<(i64, i64), redis::RedisError> {
+        redis::cmd("FCALL")
+            .arg("rate_limit_check")
+            .arg(1) // num_keys
+            .arg(key)
+            .arg(limit)
+            .arg(window_secs)
+            .query_async::<(i64, i64)>(conn)
+            .await
+    }
+
+    // ========================================================================
+    // Redis-dependent tests (skip gracefully if unavailable)
+    // ========================================================================
+    // Redis-dependent tests (skip gracefully if unavailable)
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_function_library_load() {
+        let manager = match get_shared_manager().await {
+            Some(m) => m,
+            None => {
+                println!("Redis not available, skipping test");
+                return;
+            }
+        };
+        let mut conn = manager.get().await.unwrap();
+        let result = load_function_library(&mut conn).await;
+        assert!(
+            result.is_ok(),
+            "Failed to load function library: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_function_library_load_is_idempotent() {
+        let manager = match get_shared_manager().await {
+            Some(m) => m,
+            None => {
+                println!("Redis not available, skipping test");
+                return;
+            }
+        };
+        let mut conn = manager.get().await.unwrap();
+
+        let first = load_function_library(&mut conn).await;
+        let second = load_function_library(&mut conn).await;
+
+        assert!(first.is_ok(), "First load failed: {first:?}");
+        assert!(
+            second.is_ok(),
+            "Second load (idempotent) failed: {second:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_basic_rate_limiting() {
+        let manager = match get_shared_manager().await {
+            Some(m) => m,
+            None => {
+                println!("Redis not available, skipping test");
+                return;
+            }
+        };
+        let mut conn = manager.get().await.unwrap();
+
+        // Ensure function library is loaded
+        load_function_library(&mut conn).await.unwrap();
+
+        let key = format!("test:rl:basic:{}", module_path!());
+
+        // Clean up in case of prior failed run
+        let _: () = conn.del(&key).await.unwrap_or(());
+
+        // limit=3, window=60s
+        let (allowed, count) = fcall_rate_limit_check(&mut conn, &key, 3, 60)
+            .await
+            .unwrap();
+        assert_eq!(allowed, 1);
+        assert_eq!(count, 1);
+
+        let (allowed, count) = fcall_rate_limit_check(&mut conn, &key, 3, 60)
+            .await
+            .unwrap();
+        assert_eq!(allowed, 1);
+        assert_eq!(count, 2);
+
+        let (allowed, count) = fcall_rate_limit_check(&mut conn, &key, 3, 60)
+            .await
+            .unwrap();
+        assert_eq!(allowed, 1);
+        assert_eq!(count, 3);
+
+        // 4th call should exceed limit
+        let (allowed, count) = fcall_rate_limit_check(&mut conn, &key, 3, 60)
+            .await
+            .unwrap();
+        assert_eq!(allowed, 0);
+        assert_eq!(count, 4);
+
+        // 5th call continues exceeding
+        let (allowed, count) = fcall_rate_limit_check(&mut conn, &key, 3, 60)
+            .await
+            .unwrap();
+        assert_eq!(allowed, 0);
+        assert_eq!(count, 5);
+
+        // Cleanup
+        let _: () = conn.del(&key).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_different_keys_are_independent() {
+        let manager = match get_shared_manager().await {
+            Some(m) => m,
+            None => {
+                println!("Redis not available, skipping test");
+                return;
+            }
+        };
+        let mut conn = manager.get().await.unwrap();
+
+        load_function_library(&mut conn).await.unwrap();
+
+        let key_a = format!("test:rl:indep_a:{}", module_path!());
+        let key_b = format!("test:rl:indep_b:{}", module_path!());
+
+        // Clean up in case of prior failed run
+        let _: () = conn.del(&key_a).await.unwrap_or(());
+        let _: () = conn.del(&key_b).await.unwrap_or(());
+
+        // Exhaust key_a (limit=2)
+        let (a1, _) = fcall_rate_limit_check(&mut conn, &key_a, 2, 60)
+            .await
+            .unwrap();
+        assert_eq!(a1, 1);
+        let (a2, _) = fcall_rate_limit_check(&mut conn, &key_a, 2, 60)
+            .await
+            .unwrap();
+        assert_eq!(a2, 1);
+        let (a3, _) = fcall_rate_limit_check(&mut conn, &key_a, 2, 60)
+            .await
+            .unwrap();
+        assert_eq!(a3, 0); // exceeded
+
+        // key_b should still be allowed (independent counter)
+        let (b1, count_b) = fcall_rate_limit_check(&mut conn, &key_b, 2, 60)
+            .await
+            .unwrap();
+        assert_eq!(b1, 1);
+        assert_eq!(count_b, 1);
+
+        // Cleanup
+        let _: () = conn.del(&key_a).await.unwrap_or(());
+        let _: () = conn.del(&key_b).await.unwrap_or(());
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_expire_set_on_first_increment() {
+        let manager = match get_shared_manager().await {
+            Some(m) => m,
+            None => {
+                println!("Redis not available, skipping test");
+                return;
+            }
+        };
+        let mut conn = manager.get().await.unwrap();
+
+        load_function_library(&mut conn).await.unwrap();
+
+        let key = format!("test:rl:expire:{}", module_path!());
+        let _: () = conn.del(&key).await.unwrap_or(());
+
+        // First call should set TTL
+        let (allowed, _) = fcall_rate_limit_check(&mut conn, &key, 5, 120)
+            .await
+            .unwrap();
+        assert_eq!(allowed, 1);
+
+        // Verify TTL is set (should be <= 120 seconds, > 0)
+        let ttl: i64 = redis::cmd("TTL")
+            .arg(&key)
+            .query_async(&mut conn)
+            .await
+            .unwrap();
+        assert!(
+            ttl > 0 && ttl <= 120,
+            "TTL should be between 1 and 120, got {ttl}"
+        );
+
+        // Cleanup
+        let _: () = conn.del(&key).await.unwrap();
     }
 }

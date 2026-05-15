@@ -19,6 +19,7 @@ pub struct CreateClientAppRequest {
     pub icon_url: Option<String>,
     pub session_ttl_seconds: Option<i32>,
     pub session_renewal_ttl_seconds: Option<i32>,
+    pub device_code_grant_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema, Validate)]
@@ -33,6 +34,7 @@ pub struct UpdateClientAppRequest {
     pub icon_url: Option<String>,
     pub session_ttl_seconds: Option<i32>,
     pub session_renewal_ttl_seconds: Option<i32>,
+    pub device_code_grant_enabled: Option<bool>,
     pub regenerate_secret: Option<bool>,
 }
 
@@ -51,6 +53,7 @@ pub struct ClientAppResponse {
     pub session_ttl_seconds: i32,
     pub session_renewal_ttl_seconds: Option<i32>,
     pub client_secret: Option<String>,
+    pub device_code_grant_enabled: bool,
 
     pub created_at: String,
     pub updated_at: String,
@@ -70,6 +73,7 @@ impl From<crate::client::entities::ClientApp> for ClientAppResponse {
             session_ttl_seconds: app.session_ttl_seconds,
             session_renewal_ttl_seconds: app.session_renewal_ttl_seconds,
             client_secret: app.client_secret,
+            device_code_grant_enabled: app.device_code_grant_enabled,
             created_at: app.created_at.to_rfc3339(),
             updated_at: app.updated_at.to_rfc3339(),
         }

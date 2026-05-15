@@ -71,6 +71,7 @@ pub async fn get_client_app(
         session_ttl_seconds: client_app.session_ttl_seconds,
         session_renewal_ttl_seconds: client_app.session_renewal_ttl_seconds,
         client_secret: None,
+        device_code_grant_enabled: client_app.device_code_grant_enabled,
     };
 
     Ok(ApiResult::ok(response))

@@ -20,6 +20,7 @@ pub struct Model {
     pub session_ttl_seconds: i32,
     pub session_renewal_ttl_seconds: Option<i32>,
     pub client_secret: Option<String>,
+    pub device_code_grant_enabled: bool,
 
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,

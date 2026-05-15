@@ -7,6 +7,7 @@
 //
 // =============================================================================
 
+use crate::application::http::oauth::device_token::init_device_token_function;
 use crate::application::http::rate_limit::init_rate_limit_function;
 use crate::application::http::state::AppState;
 use crate::tests::shared::SharedContainers;
@@ -26,6 +27,7 @@ const SCHEMA_POOL_MAX_CONNECTIONS: u32 = 3;
 
 /// 确保 Redis Functions 只初始化一次
 static RATE_LIMIT_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
+static DEVICE_TOKEN_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
 
 /// Schema 隔离的测试上下文
 ///
@@ -418,6 +420,14 @@ impl AsyncTestContext for SchemaTestContext {
                 init_rate_limit_function(&app_state)
                     .await
                     .expect("Failed to initialize Redis rate limiting functions");
+            })
+            .await;
+
+        DEVICE_TOKEN_INIT
+            .get_or_init(|| async {
+                init_device_token_function(&app_state)
+                    .await
+                    .expect("Failed to initialize device token Redis Function");
             })
             .await;
 

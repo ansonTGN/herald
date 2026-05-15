@@ -190,6 +190,7 @@ where
                         icon_url: None,
                         session_ttl_seconds: Some(1800),
                         session_renewal_ttl_seconds: Some(300),
+                        device_code_grant_enabled: None,
                     })
                     .await;
 

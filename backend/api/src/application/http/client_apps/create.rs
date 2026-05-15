@@ -55,6 +55,7 @@ pub async fn create_client_app(
         icon_url: payload.icon_url.clone(),
         session_ttl_seconds: payload.session_ttl_seconds,
         session_renewal_ttl_seconds: payload.session_renewal_ttl_seconds,
+        device_code_grant_enabled: payload.device_code_grant_enabled,
     };
 
     // Call service layer
@@ -90,6 +91,7 @@ pub async fn create_client_app(
         session_ttl_seconds: client_app.session_ttl_seconds,
         session_renewal_ttl_seconds: client_app.session_renewal_ttl_seconds,
         client_secret: client_app.client_secret,
+        device_code_grant_enabled: client_app.device_code_grant_enabled,
     };
 
     Ok(ApiResult::created(response))

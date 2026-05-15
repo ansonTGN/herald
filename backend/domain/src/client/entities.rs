@@ -22,6 +22,7 @@ pub struct ClientApp {
     pub session_ttl_seconds: i32,
     pub session_renewal_ttl_seconds: Option<i32>,
     pub client_secret: Option<String>,
+    pub device_code_grant_enabled: bool,
 
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -62,6 +63,7 @@ pub struct CreateClientAppConfig {
     pub icon_url: Option<String>,
     pub session_ttl_seconds: Option<i32>,
     pub session_renewal_ttl_seconds: Option<i32>,
+    pub device_code_grant_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -75,5 +77,6 @@ pub struct UpdateClientAppConfig {
     pub icon_url: Option<String>,
     pub session_ttl_seconds: Option<i32>,
     pub session_renewal_ttl_seconds: Option<i32>,
+    pub device_code_grant_enabled: Option<bool>,
     pub regenerate_secret: bool,
 }

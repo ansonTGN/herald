@@ -144,7 +144,8 @@ pub struct HealthCheckResponse {
         (name = "points", description = "Points and virtual currency APIs"),
         (name = "ext", description = "External API (API Key authentication)"),
         (name = "system", description = "System health and monitoring APIs"),
-        (name = "audit", description = "Audit log query APIs")
+        (name = "audit", description = "Audit log query APIs"),
+        (name = "device", description = "OAuth Device Authorization Grant APIs")
     )
 )]
 pub struct ApiDoc;
@@ -286,6 +287,14 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
             "/api/oauth/{realmId}/wechat-miniprogram/login",
             post(oauth::wechat_miniprogram_login),
         )
+        // Device code authorization
+        .route(
+            "/api/device/{realmId}/authorize",
+            post(oauth::device_authorize),
+        )
+        .route("/api/device/{realmId}/token", post(oauth::device_token))
+        .route("/api/device/{realmId}/verify", post(oauth::device_verify))
+        .route("/api/device/{realmId}/confirm", post(oauth::device_confirm))
         .nest(
             "/api/oauth/{realmId}/configs",
             Router::new()

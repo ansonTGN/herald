@@ -28,6 +28,7 @@ pub use application::http::server::create_api_routes;
 // Re-export auth util for test support
 pub use application::http::auth::util::{SessionData, load_session, store_session};
 
+use application::http::oauth::device_token::init_device_token_function;
 use application::http::rate_limit::init_rate_limit_function;
 use application::http::server;
 use application::http::state::AppState;
@@ -348,6 +349,11 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize Redis Functions: {:?}", e))?;
     info!("Redis Functions initialized");
+
+    init_device_token_function(&temp_state).await.map_err(|e| {
+        anyhow::anyhow!("Failed to initialize device token Redis Function: {:?}", e)
+    })?;
+    info!("Device token Redis Function initialized");
 
     // Build application service
     let application_service = herald_core::application::ApplicationServiceBuilder::new()

@@ -47,6 +47,9 @@ pub mod public_config_scenarios;
 // Unified OAuth scenarios
 pub mod unified_oauth_scenarios;
 
+// Device code authorization scenarios
+pub mod device_code_scenarios;
+
 // Unified permission hierarchy scenarios
 pub mod unified_permission_hierarchy_scenarios;
 
