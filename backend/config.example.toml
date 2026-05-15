@@ -14,6 +14,9 @@ from = "no-reply@example.com"
 [turnstile]
 secret = ""
 
+[jwt]
+secret = "change-me-to-a-secure-random-base64-string"
+
 # Note: OAuth provider configurations are now managed per-realm via API
 # Use the OAuth config management endpoints:
 # - POST /api/{realmId}/oauth/configs

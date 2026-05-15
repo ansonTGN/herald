@@ -8,6 +8,18 @@ use crate::client::{
     validate_redirect_uris, validate_session_config,
     value_objects::{CreateClientAppRequest, UpdateClientAppRequest},
 };
+
+fn is_development_env() -> bool {
+    std::env::var("ENV").unwrap_or_else(|_| "development".to_string()) == "development"
+}
+
+fn validate_redirect_uris_if_needed(redirect_uris: &[String]) -> Result<(), CoreError> {
+    if redirect_uris.is_empty() {
+        return Ok(());
+    }
+    validate_redirect_uris(redirect_uris, is_development_env())
+        .map_err(|e| CoreError::BadRequest(format!("Redirect URI validation failed: {}", e)))
+}
 use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::{ClientPolicy, ensure_policy};
 
@@ -69,11 +81,11 @@ where
 
         // Validate redirect URIs if provided
         if let Some(ref redirect_uris) = request.redirect_uris {
-            let is_development =
-                std::env::var("ENV").unwrap_or_else(|_| "development".to_string()) == "development";
-            validate_redirect_uris(redirect_uris, is_development).map_err(|e| {
-                CoreError::BadRequest(format!("Redirect URI validation failed: {}", e))
-            })?;
+            let skip_empty =
+                request.device_code_grant_enabled.unwrap_or(false) && redirect_uris.is_empty();
+            if !skip_empty {
+                validate_redirect_uris_if_needed(redirect_uris)?;
+            }
         }
 
         // Validate session configuration
@@ -197,11 +209,7 @@ where
 
         // Validate redirect URIs if provided
         if let Some(ref redirect_uris) = request.redirect_uris {
-            let is_development =
-                std::env::var("ENV").unwrap_or_else(|_| "development".to_string()) == "development";
-            validate_redirect_uris(redirect_uris, is_development).map_err(|e| {
-                CoreError::BadRequest(format!("Redirect URI validation failed: {}", e))
-            })?;
+            validate_redirect_uris_if_needed(redirect_uris)?;
         }
 
         // Validate session configuration if provided

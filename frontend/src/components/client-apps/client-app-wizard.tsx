@@ -138,6 +138,7 @@ export function ClientAppWizard({ mode, realmId, initialData }: ClientAppWizardP
   // form.state.values should be stable in TanStack Form, but we'll use a ref to be safe
   const formValuesRef = useRef(form.state.values)
   const submitLockRef = useRef(false)
+  const hasCheckedDraftRef = useRef(false)
 
   // Auto-save hook - only enabled for create mode
   // Pass a function that returns the current form values
@@ -181,6 +182,11 @@ export function ClientAppWizard({ mode, realmId, initialData }: ClientAppWizardP
 
   // Check for draft on component mount
   useEffect(() => {
+    if (hasCheckedDraftRef.current) {
+      return
+    }
+    hasCheckedDraftRef.current = true
+
     console.log('[ClientAppWizard] Draft check effect', {
       mode,
       hasDraft: hasDraft(),
@@ -326,7 +332,11 @@ export function ClientAppWizard({ mode, realmId, initialData }: ClientAppWizardP
     }
 
     // Validate Step 2
-    if (!data.redirectUris || data.redirectUris.length === 0) {
+    if (
+      mode === 'create' &&
+      !data.deviceCodeGrantEnabled &&
+      (!data.redirectUris || data.redirectUris.length === 0)
+    ) {
       toast.error('Please add at least one redirect URI')
       return false
     }

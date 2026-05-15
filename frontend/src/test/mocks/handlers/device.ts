@@ -10,7 +10,7 @@ const DEFAULT_VERIFY_RESPONSE = {
 }
 
 const DEFAULT_CONFIRM_RESPONSE = {
-  status: 'approved',
+  status: 'authorized',
 }
 
 // ===== Verify Handlers =====

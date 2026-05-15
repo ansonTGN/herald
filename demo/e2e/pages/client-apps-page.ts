@@ -184,6 +184,15 @@ export class ClientAppsPage extends BasePage {
    * @param realmId Realm ID
    */
   async gotoCreateWizard(realmId: string = 'admin'): Promise<void> {
+    // Clear any draft data from localStorage to prevent draft restore dialog
+    await this.page.evaluate(() => {
+      const keys = Object.keys(localStorage)
+      keys.forEach((key) => {
+        if (key.includes('draft') || key.includes('client-app-wizard')) {
+          localStorage.removeItem(key)
+        }
+      })
+    })
     const url = `/${realmId}/manage/client-apps/new`
     await this.page.goto(url)
     await this.waitForWizardReady()
@@ -664,7 +673,7 @@ export class ClientAppsPage extends BasePage {
    */
   async clickDiscardDraft(): Promise<void> {
     await expect(this.draftDiscardButton).toBeVisible()
-    await this.smartClick(this.draftDiscardButton)
+    await this.smartClick(this.draftDiscardButton, true)
     this.logger?.testCode.log('✓ Clicked Discard Draft button')
   }
 

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CodeInput } from '@/components/device/code-input'
 import { AuthorizeConfirm } from '@/components/device/authorize-confirm'
 import { getErrorMessage } from '@/lib/error-utils'
+import { filterAndFormat, toBackendCode } from './device-code-utils'
 
 type PageState = 'input' | 'verifying' | 'confirmed' | 'result'
 
@@ -53,7 +54,7 @@ export function DeviceVerificationView({ realmId, initialCode }: DeviceVerificat
     },
     onSuccess: (data) => {
       setError(null)
-      setResultCode(data.status as 'approved' | 'denied')
+      setResultCode(data.status === 'authorized' ? 'approved' : 'denied')
       setPageState('result')
     },
     onError: (err: unknown) => {
@@ -64,7 +65,9 @@ export function DeviceVerificationView({ realmId, initialCode }: DeviceVerificat
   // Auto-submit verify on mount when initialCode is provided
   useEffect(() => {
     if (initialCode) {
-      verifyMutation.mutate(initialCode)
+      const formatted = filterAndFormat(initialCode)
+      setUserCode(formatted)
+      verifyMutation.mutate(toBackendCode(formatted))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCode])

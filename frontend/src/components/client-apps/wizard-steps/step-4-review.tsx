@@ -33,7 +33,10 @@ export function Step4Review({
     mode === 'edit'
       ? Boolean(formData.name)
       : Boolean(formData.name && formData.appType && formData.clientType)
-  const isRedirectUrisValid = Boolean(formData.redirectUris && formData.redirectUris.length > 0)
+  const isRedirectUrisValid =
+    mode === 'edit' ||
+    Boolean(formData.deviceCodeGrantEnabled) ||
+    Boolean(formData.redirectUris && formData.redirectUris.length > 0)
   const isSecurityValid = Boolean(formData.sessionTtlSeconds && formData.sessionTtlSeconds >= 60)
 
   const isFormValid = isBasicInfoValid && isRedirectUrisValid && isSecurityValid

@@ -100,9 +100,8 @@ pub async fn wechat_miniprogram_login(
     let user_id = find_or_create_user(&state, &realm_id, &user_info).await?;
 
     // Generate JWT token
-    let jwt_secret = crate::helper::jwt_secret_from_env()?;
-    let jwt_token =
-        crate::helper::generate_jwt_token(&user_id.to_string(), &realm_id, &jwt_secret)?;
+    let jwt_secret = crate::helper::jwt_secret(&state)?;
+    let jwt_token = crate::helper::generate_jwt_token(&user_id.to_string(), &realm_id, jwt_secret)?;
 
     // Return JSON response directly (B-class exception: OAuth protocol)
     Ok(Json(WeChatMiniProgramLoginResponse {

@@ -15,3 +15,6 @@ app_env = "demo"
 
 [frontend]
 url = "http://localhost:3000"
+
+[jwt]
+secret = "YWJjZGVmZ2hpamtsbW5vcHFydXN0dXZ3eHl6MDEyMzQ1Njc4OTA="

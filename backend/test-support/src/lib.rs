@@ -15,6 +15,8 @@ pub mod mock_oauth_urls;
 pub mod schema_test_context;
 pub mod shared;
 
+pub const TEST_JWT_SECRET: &str = "test-jwt-secret-key-for-integration-tests-32b";
+
 // Re-export common types for convenience
 pub use auth_schema_test_context::AuthSchemaTestContext;
 pub use bare_schema_test_context::BareSchemaTestContext;

@@ -422,9 +422,13 @@ pub fn generate_jwt_token(
     .map_err(|e| AuthError::InternalServerError(format!("Failed to generate JWT: {}", e)))
 }
 
-pub fn jwt_secret_from_env() -> Result<String, AuthError> {
-    std::env::var("JWT_SECRET")
-        .map_err(|_| AuthError::InternalServerError("JWT_SECRET is not configured".to_string()))
+pub fn jwt_secret(state: &AppState) -> Result<&str, AuthError> {
+    if state.jwt_secret.is_empty() {
+        return Err(AuthError::InternalServerError(
+            "JWT secret is not configured".to_string(),
+        ));
+    }
+    Ok(&state.jwt_secret)
 }
 
 pub fn jwt_expiration_seconds() -> Result<i64, AuthError> {
@@ -502,8 +506,8 @@ pub async fn handle_oauth_callback(
     let user_id = find_or_create_user(state, &realm_id, &user_info).await?;
 
     // Generate JWT token
-    let jwt_secret = jwt_secret_from_env()?;
-    let jwt_token = generate_jwt_token(&user_id.to_string(), &realm_id, &jwt_secret)?;
+    let jwt_secret_val = jwt_secret(state)?;
+    let jwt_token = generate_jwt_token(&user_id.to_string(), &realm_id, jwt_secret_val)?;
 
     Ok((user_id, jwt_token, state_data.client_id))
 }

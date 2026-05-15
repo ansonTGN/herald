@@ -106,6 +106,27 @@ url = "http://localhost:3000"
 static_dir = "/app/frontend/dist"
 ```
 
+### [jwt]
+
+JWT secret key configuration, used to generate access tokens in the device code authorization flow (RFC 8628) and third-party OAuth login flows.
+
+| Parameter | Type | Default | Required | Description |
+|---|---|---|---|---|
+| `secret` | string | — | Yes* | JWT signing secret key |
+
+*When unconfigured, device code token polling and OAuth login will return 500 errors. Use a sufficiently long random string in production (32+ bytes, Base64-encoded recommended).
+
+```toml
+[jwt]
+secret = "your-random-base64-secret-key-here"
+```
+
+Example key generation (Linux/macOS):
+
+```bash
+openssl rand -base64 48
+```
+
 ## RBAC Configuration
 
 RBAC policies are not stored in the main config file. They live in the `role_policies` database table. During initialization, `RealmInitializationService` creates default roles and permissions for each realm.

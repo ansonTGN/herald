@@ -357,6 +357,7 @@ impl AsyncTestContext for SchemaTestContext {
             purchase_repository,
             fulfillment_service,
             purchase_service,
+            jwt_secret: crate::TEST_JWT_SECRET.to_string(),
         });
 
         // 13. 初始化 Redis Functions（只运行一次）

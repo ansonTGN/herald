@@ -16,6 +16,7 @@ import { Route as RealmIdUserRouteRouteImport } from './routes/$realmId/user/rou
 import { Route as RealmIdManageRouteRouteImport } from './routes/$realmId/manage/route'
 import { Route as RealmIdAuthRouteRouteImport } from './routes/$realmId/auth/route'
 import { Route as RealmIdManageIndexRouteImport } from './routes/$realmId/manage/index'
+import { Route as RealmIdDeviceIndexRouteImport } from './routes/$realmId/device.index'
 import { Route as RealmIdUserSubscriptionHistoryRouteImport } from './routes/$realmId/user/subscription-history'
 import { Route as RealmIdUserSecurityRouteImport } from './routes/$realmId/user/security'
 import { Route as RealmIdUserPurchasePointsRouteImport } from './routes/$realmId/user/purchase-points'
@@ -94,6 +95,11 @@ const RealmIdManageIndexRoute = RealmIdManageIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => RealmIdManageRouteRoute,
+} as any)
+const RealmIdDeviceIndexRoute = RealmIdDeviceIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RealmIdDeviceRoute,
 } as any)
 const RealmIdUserSubscriptionHistoryRoute =
   RealmIdUserSubscriptionHistoryRouteImport.update({
@@ -367,6 +373,7 @@ export interface FileRoutesByFullPath {
   '/$realmId/user/purchase-points': typeof RealmIdUserPurchasePointsRoute
   '/$realmId/user/security': typeof RealmIdUserSecurityRouteWithChildren
   '/$realmId/user/subscription-history': typeof RealmIdUserSubscriptionHistoryRoute
+  '/$realmId/device/': typeof RealmIdDeviceIndexRoute
   '/$realmId/manage/': typeof RealmIdManageIndexRoute
   '/$realmId/manage/billing/invoices': typeof RealmIdManageBillingInvoicesRouteWithChildren
   '/$realmId/manage/billing/payment-providers': typeof RealmIdManageBillingPaymentProvidersRoute
@@ -394,7 +401,6 @@ export interface FileRoutesByTo {
   '/$realmId': typeof RealmIdRouteRouteWithChildren
   '/$realmId/auth': typeof RealmIdAuthRouteRouteWithChildren
   '/$realmId/user': typeof RealmIdUserRouteRouteWithChildren
-  '/$realmId/device': typeof RealmIdDeviceRouteWithChildren
   '/$realmId/auth/login': typeof RealmIdAuthLoginRoute
   '/$realmId/auth/register': typeof RealmIdAuthRegisterRoute
   '/$realmId/auth/verify-email': typeof RealmIdAuthVerifyEmailRoute
@@ -415,6 +421,7 @@ export interface FileRoutesByTo {
   '/$realmId/user/profile': typeof RealmIdUserProfileRoute
   '/$realmId/user/purchase-points': typeof RealmIdUserPurchasePointsRoute
   '/$realmId/user/subscription-history': typeof RealmIdUserSubscriptionHistoryRoute
+  '/$realmId/device': typeof RealmIdDeviceIndexRoute
   '/$realmId/manage': typeof RealmIdManageIndexRoute
   '/$realmId/manage/billing/payment-providers': typeof RealmIdManageBillingPaymentProvidersRoute
   '/$realmId/manage/billing/plans': typeof RealmIdManageBillingPlansRouteWithChildren
@@ -467,6 +474,7 @@ export interface FileRoutesById {
   '/$realmId/user/purchase-points': typeof RealmIdUserPurchasePointsRoute
   '/$realmId/user/security': typeof RealmIdUserSecurityRouteWithChildren
   '/$realmId/user/subscription-history': typeof RealmIdUserSubscriptionHistoryRoute
+  '/$realmId/device/': typeof RealmIdDeviceIndexRoute
   '/$realmId/manage/': typeof RealmIdManageIndexRoute
   '/$realmId/manage/billing/invoices': typeof RealmIdManageBillingInvoicesRouteWithChildren
   '/$realmId/manage/billing/payment-providers': typeof RealmIdManageBillingPaymentProvidersRoute
@@ -521,6 +529,7 @@ export interface FileRouteTypes {
     | '/$realmId/user/purchase-points'
     | '/$realmId/user/security'
     | '/$realmId/user/subscription-history'
+    | '/$realmId/device/'
     | '/$realmId/manage/'
     | '/$realmId/manage/billing/invoices'
     | '/$realmId/manage/billing/payment-providers'
@@ -548,7 +557,6 @@ export interface FileRouteTypes {
     | '/$realmId'
     | '/$realmId/auth'
     | '/$realmId/user'
-    | '/$realmId/device'
     | '/$realmId/auth/login'
     | '/$realmId/auth/register'
     | '/$realmId/auth/verify-email'
@@ -569,6 +577,7 @@ export interface FileRouteTypes {
     | '/$realmId/user/profile'
     | '/$realmId/user/purchase-points'
     | '/$realmId/user/subscription-history'
+    | '/$realmId/device'
     | '/$realmId/manage'
     | '/$realmId/manage/billing/payment-providers'
     | '/$realmId/manage/billing/plans'
@@ -620,6 +629,7 @@ export interface FileRouteTypes {
     | '/$realmId/user/purchase-points'
     | '/$realmId/user/security'
     | '/$realmId/user/subscription-history'
+    | '/$realmId/device/'
     | '/$realmId/manage/'
     | '/$realmId/manage/billing/invoices'
     | '/$realmId/manage/billing/payment-providers'
@@ -698,6 +708,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/$realmId/manage/'
       preLoaderRoute: typeof RealmIdManageIndexRouteImport
       parentRoute: typeof RealmIdManageRouteRoute
+    }
+    '/$realmId/device/': {
+      id: '/$realmId/device/'
+      path: '/'
+      fullPath: '/$realmId/device/'
+      preLoaderRoute: typeof RealmIdDeviceIndexRouteImport
+      parentRoute: typeof RealmIdDeviceRoute
     }
     '/$realmId/user/subscription-history': {
       id: '/$realmId/user/subscription-history'
@@ -1183,10 +1200,12 @@ const RealmIdUserRouteRouteWithChildren =
 
 interface RealmIdDeviceRouteChildren {
   RealmIdDeviceUserCodeRoute: typeof RealmIdDeviceUserCodeRoute
+  RealmIdDeviceIndexRoute: typeof RealmIdDeviceIndexRoute
 }
 
 const RealmIdDeviceRouteChildren: RealmIdDeviceRouteChildren = {
   RealmIdDeviceUserCodeRoute: RealmIdDeviceUserCodeRoute,
+  RealmIdDeviceIndexRoute: RealmIdDeviceIndexRoute,
 }
 
 const RealmIdDeviceRouteWithChildren = RealmIdDeviceRoute._addFileChildren(

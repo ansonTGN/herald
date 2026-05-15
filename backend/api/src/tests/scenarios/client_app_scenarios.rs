@@ -109,6 +109,42 @@ mod tests {
         assert_eq!(json["code"], 400);
         assert!(json["message"].as_str().is_some());
     }
+
+    /// 测试：启用 Device Code Grant 时允许不配置 redirect_uri
+    #[test_context(ClientAppTestContext)]
+    #[tokio::test]
+    async fn test_create_device_code_client_app_allows_empty_redirect_uri(
+        ctx: &mut ClientAppTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+
+        let admin_token =
+            setup_admin_session(ctx, "test-device-code-empty-redirect@test.com").await;
+
+        let request = Request::builder()
+            .method("POST")
+            .uri(format!("/api/client/{}", ctx._realm_id))
+            .header("content-type", "application/json")
+            .header("cookie", format!("X-Auth={}", admin_token))
+            .body(Body::from(
+                json!({
+                    "clientId": "test-device-code-app",
+                    "name": "Test Device Code Application",
+                    "redirectUris": [],
+                    "deviceCodeGrantEnabled": true
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), 201);
+
+        let json: serde_json::Value = response_json(response).await;
+        assert_eq!(json["deviceCodeGrantEnabled"], true);
+        assert_eq!(json["redirectUris"].as_array().unwrap().len(), 0);
+    }
+
     /// 测试：更新 Client App 的 redirect_uris
     #[test_context(ClientAppTestContext)]
     #[tokio::test]

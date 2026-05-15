@@ -7,7 +7,7 @@ pub struct ApiConfig {
     pub server: ServerConfig,
     pub frontend: FrontendConfig,
     #[serde(default)]
-    _jwt: Option<JwtConfig>,
+    pub jwt: Option<JwtConfig>,
     #[serde(default)]
     _email: Option<EmailConfig>,
 }
@@ -74,7 +74,7 @@ pub struct FrontendConfig {
 
 #[derive(serde::Deserialize, Clone)]
 pub struct JwtConfig {
-    _secret: String,
+    pub secret: String,
 }
 
 #[derive(serde::Deserialize, Clone)]

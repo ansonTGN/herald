@@ -24,6 +24,7 @@ use std::sync::Arc;
 use test_context::AsyncTestContext;
 
 const SCHEMA_POOL_MAX_CONNECTIONS: u32 = 3;
+const TEST_JWT_SECRET: &str = "test-jwt-secret-key-for-integration-tests-32b";
 
 /// 确保 Redis Functions 只初始化一次
 static RATE_LIMIT_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
@@ -412,6 +413,7 @@ impl AsyncTestContext for SchemaTestContext {
             purchase_repository,
             payment_attempt_service,
             purchase_service,
+            jwt_secret: TEST_JWT_SECRET.to_string(),
         });
 
         // 13. 初始化 Redis Functions（只运行一次）

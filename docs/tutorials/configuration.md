@@ -106,6 +106,27 @@ url = "http://localhost:3000"
 static_dir = "/app/frontend/dist"
 ```
 
+### [jwt]
+
+JWT 密钥配置，用于设备码授权（RFC 8628）和第三方 OAuth 登录流程中生成访问令牌。
+
+| 参数 | 类型 | 默认值 | 必填 | 说明 |
+|---|---|---|---|---|
+| `secret` | string | — | 是* | JWT 签名密钥 |
+
+*未配置时设备码令牌轮询和 OAuth 登录将返回 500 错误。生产环境应使用足够长的随机字符串（建议 32 字节以上的 Base64 编码）。
+
+```toml
+[jwt]
+secret = "your-random-base64-secret-key-here"
+```
+
+生成密钥示例（Linux/macOS）：
+
+```bash
+openssl rand -base64 48
+```
+
 ## RBAC 配置
 
 RBAC 策略不在主配置文件中，而是通过数据库中的 `role_policies` 表存储。系统初始化时，`RealmInitializationService` 会为每个 realm 创建默认角色和权限。

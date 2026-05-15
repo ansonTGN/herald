@@ -296,6 +296,16 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
     // No global client needed
     let temp_startup_time = std::time::Instant::now();
 
+    // Extract JWT secret from config
+    let jwt_secret = config
+        .jwt
+        .as_ref()
+        .map(|j| j.secret.clone())
+        .unwrap_or_default();
+    if jwt_secret.is_empty() {
+        tracing::warn!("JWT secret not configured - device code and OAuth flows will fail");
+    }
+
     // Create API key cache and repository
     let temp_api_key_cache = ApiKeyCache::new(redis_manager.clone().into());
     let temp_api_key_repo = Arc::new(ClientApiKeyRepository::new(db.clone().into()));
@@ -343,6 +353,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         fulfillment_service: fulfillment_service.clone(),
         purchase_repository: purchase_repository.clone(),
         purchase_service: purchase_service.clone(),
+        jwt_secret: jwt_secret.clone(),
     };
 
     init_rate_limit_function(&temp_state)
@@ -433,6 +444,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         fulfillment_service,
         purchase_repository,
         purchase_service,
+        jwt_secret,
     });
 
     // Validate frontend URL before creating router

@@ -1,25 +1,7 @@
 import { useState, useCallback } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-
-const VALID_CHARS = new Set('BCDFGHJKMNPQRSTVWXYZ')
-
-function filterAndFormat(value: string): string {
-  // Uppercase, keep only valid chars, limit to 8
-  const upper = value.toUpperCase()
-  const filtered = upper
-    .split('')
-    .filter((c) => VALID_CHARS.has(c))
-    .slice(0, 8)
-    .join('')
-  // Insert hyphen after 4th char
-  if (filtered.length <= 4) return filtered
-  return filtered.slice(0, 4) + '-' + filtered.slice(4)
-}
-
-function extractRawCode(formatted: string): string {
-  return formatted.replace('-', '')
-}
+import { filterAndFormat, toBackendCode, rawLength } from './device-code-utils'
 
 interface CodeInputProps {
   onSubmit: (userCode: string) => void
@@ -31,8 +13,7 @@ export function CodeInput({ onSubmit, defaultValue, isLoading }: CodeInputProps)
   const initialFormatted = defaultValue ? filterAndFormat(defaultValue) : ''
   const [value, setValue] = useState(initialFormatted)
 
-  const rawCode = extractRawCode(value)
-  const isValid = rawCode.length === 8
+  const isValid = rawLength(value) === 8
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = filterAndFormat(e.target.value)
@@ -43,9 +24,9 @@ export function CodeInput({ onSubmit, defaultValue, isLoading }: CodeInputProps)
     (e: React.FormEvent) => {
       e.preventDefault()
       if (!isValid) return
-      onSubmit(rawCode)
+      onSubmit(toBackendCode(value))
     },
-    [isValid, onSubmit, rawCode]
+    [isValid, onSubmit, value]
   )
 
   return (

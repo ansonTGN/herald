@@ -219,4 +219,7 @@ pub struct AppState {
 
     /// Purchase service (routes attempts into fulfillment)
     pub purchase_service: Arc<PurchaseServiceImpl>,
+
+    /// JWT secret key for token generation (device code, OAuth)
+    pub jwt_secret: String,
 }

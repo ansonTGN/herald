@@ -229,8 +229,8 @@ pub async fn device_token(
             }));
         }
 
-        let jwt_secret = crate::helper::jwt_secret_from_env()?;
-        let jwt_token = crate::helper::generate_jwt_token(user_id, stored_realm_id, &jwt_secret)?;
+        let jwt_secret = crate::helper::jwt_secret(&state)?;
+        let jwt_token = crate::helper::generate_jwt_token(user_id, stored_realm_id, jwt_secret)?;
         let expires_in = crate::helper::jwt_expiration_seconds()?;
 
         Ok(Json(DeviceTokenResponse {
