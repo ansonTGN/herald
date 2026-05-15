@@ -5,6 +5,7 @@ export const mockPointsAccount: PointsAccountResponse = {
   userId: 'user-123',
   realmId: 'realm-123',
   balance: 5000,
+  currency: 'points',
   unit: 'points',
   status: 'active',
   totalRecharged: 10000,

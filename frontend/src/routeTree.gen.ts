@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as RealmIdRouteRouteImport } from './routes/$realmId/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as RealmIdDeviceRouteImport } from './routes/$realmId/device'
 import { Route as RealmIdUserRouteRouteImport } from './routes/$realmId/user/route'
 import { Route as RealmIdManageRouteRouteImport } from './routes/$realmId/manage/route'
 import { Route as RealmIdAuthRouteRouteImport } from './routes/$realmId/auth/route'
@@ -34,6 +35,7 @@ import { Route as RealmIdManagePointsRouteImport } from './routes/$realmId/manag
 import { Route as RealmIdManagePermissionsRouteImport } from './routes/$realmId/manage/permissions'
 import { Route as RealmIdManageClientAppsRouteImport } from './routes/$realmId/manage/client-apps'
 import { Route as RealmIdManageBillingRouteImport } from './routes/$realmId/manage/billing'
+import { Route as RealmIdDeviceUserCodeRouteImport } from './routes/$realmId/device.$userCode'
 import { Route as RealmIdAuthVerifyEmailRouteImport } from './routes/$realmId/auth/verify-email'
 import { Route as RealmIdAuthRegisterRouteImport } from './routes/$realmId/auth/register'
 import { Route as RealmIdAuthLoginRouteImport } from './routes/$realmId/auth/login'
@@ -67,6 +69,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const RealmIdDeviceRoute = RealmIdDeviceRouteImport.update({
+  id: '/device',
+  path: '/device',
+  getParentRoute: () => RealmIdRouteRoute,
 } as any)
 const RealmIdUserRouteRoute = RealmIdUserRouteRouteImport.update({
   id: '/user',
@@ -189,6 +196,11 @@ const RealmIdManageBillingRoute = RealmIdManageBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
   getParentRoute: () => RealmIdManageRouteRoute,
+} as any)
+const RealmIdDeviceUserCodeRoute = RealmIdDeviceUserCodeRouteImport.update({
+  id: '/$userCode',
+  path: '/$userCode',
+  getParentRoute: () => RealmIdDeviceRoute,
 } as any)
 const RealmIdAuthVerifyEmailRoute = RealmIdAuthVerifyEmailRouteImport.update({
   id: '/verify-email',
@@ -331,9 +343,11 @@ export interface FileRoutesByFullPath {
   '/$realmId/auth': typeof RealmIdAuthRouteRouteWithChildren
   '/$realmId/manage': typeof RealmIdManageRouteRouteWithChildren
   '/$realmId/user': typeof RealmIdUserRouteRouteWithChildren
+  '/$realmId/device': typeof RealmIdDeviceRouteWithChildren
   '/$realmId/auth/login': typeof RealmIdAuthLoginRoute
   '/$realmId/auth/register': typeof RealmIdAuthRegisterRoute
   '/$realmId/auth/verify-email': typeof RealmIdAuthVerifyEmailRoute
+  '/$realmId/device/$userCode': typeof RealmIdDeviceUserCodeRoute
   '/$realmId/manage/billing': typeof RealmIdManageBillingRouteWithChildren
   '/$realmId/manage/client-apps': typeof RealmIdManageClientAppsRouteWithChildren
   '/$realmId/manage/permissions': typeof RealmIdManagePermissionsRoute
@@ -380,9 +394,11 @@ export interface FileRoutesByTo {
   '/$realmId': typeof RealmIdRouteRouteWithChildren
   '/$realmId/auth': typeof RealmIdAuthRouteRouteWithChildren
   '/$realmId/user': typeof RealmIdUserRouteRouteWithChildren
+  '/$realmId/device': typeof RealmIdDeviceRouteWithChildren
   '/$realmId/auth/login': typeof RealmIdAuthLoginRoute
   '/$realmId/auth/register': typeof RealmIdAuthRegisterRoute
   '/$realmId/auth/verify-email': typeof RealmIdAuthVerifyEmailRoute
+  '/$realmId/device/$userCode': typeof RealmIdDeviceUserCodeRoute
   '/$realmId/manage/permissions': typeof RealmIdManagePermissionsRoute
   '/$realmId/manage/points': typeof RealmIdManagePointsRouteWithChildren
   '/$realmId/manage/points-packages': typeof RealmIdManagePointsPackagesRoute
@@ -427,9 +443,11 @@ export interface FileRoutesById {
   '/$realmId/auth': typeof RealmIdAuthRouteRouteWithChildren
   '/$realmId/manage': typeof RealmIdManageRouteRouteWithChildren
   '/$realmId/user': typeof RealmIdUserRouteRouteWithChildren
+  '/$realmId/device': typeof RealmIdDeviceRouteWithChildren
   '/$realmId/auth/login': typeof RealmIdAuthLoginRoute
   '/$realmId/auth/register': typeof RealmIdAuthRegisterRoute
   '/$realmId/auth/verify-email': typeof RealmIdAuthVerifyEmailRoute
+  '/$realmId/device/$userCode': typeof RealmIdDeviceUserCodeRoute
   '/$realmId/manage/billing': typeof RealmIdManageBillingRouteWithChildren
   '/$realmId/manage/client-apps': typeof RealmIdManageClientAppsRouteWithChildren
   '/$realmId/manage/permissions': typeof RealmIdManagePermissionsRoute
@@ -479,9 +497,11 @@ export interface FileRouteTypes {
     | '/$realmId/auth'
     | '/$realmId/manage'
     | '/$realmId/user'
+    | '/$realmId/device'
     | '/$realmId/auth/login'
     | '/$realmId/auth/register'
     | '/$realmId/auth/verify-email'
+    | '/$realmId/device/$userCode'
     | '/$realmId/manage/billing'
     | '/$realmId/manage/client-apps'
     | '/$realmId/manage/permissions'
@@ -528,9 +548,11 @@ export interface FileRouteTypes {
     | '/$realmId'
     | '/$realmId/auth'
     | '/$realmId/user'
+    | '/$realmId/device'
     | '/$realmId/auth/login'
     | '/$realmId/auth/register'
     | '/$realmId/auth/verify-email'
+    | '/$realmId/device/$userCode'
     | '/$realmId/manage/permissions'
     | '/$realmId/manage/points'
     | '/$realmId/manage/points-packages'
@@ -574,9 +596,11 @@ export interface FileRouteTypes {
     | '/$realmId/auth'
     | '/$realmId/manage'
     | '/$realmId/user'
+    | '/$realmId/device'
     | '/$realmId/auth/login'
     | '/$realmId/auth/register'
     | '/$realmId/auth/verify-email'
+    | '/$realmId/device/$userCode'
     | '/$realmId/manage/billing'
     | '/$realmId/manage/client-apps'
     | '/$realmId/manage/permissions'
@@ -639,6 +663,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/$realmId/device': {
+      id: '/$realmId/device'
+      path: '/device'
+      fullPath: '/$realmId/device'
+      preLoaderRoute: typeof RealmIdDeviceRouteImport
+      parentRoute: typeof RealmIdRouteRoute
     }
     '/$realmId/user': {
       id: '/$realmId/user'
@@ -800,6 +831,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/$realmId/manage/billing'
       preLoaderRoute: typeof RealmIdManageBillingRouteImport
       parentRoute: typeof RealmIdManageRouteRoute
+    }
+    '/$realmId/device/$userCode': {
+      id: '/$realmId/device/$userCode'
+      path: '/$userCode'
+      fullPath: '/$realmId/device/$userCode'
+      preLoaderRoute: typeof RealmIdDeviceUserCodeRouteImport
+      parentRoute: typeof RealmIdDeviceRoute
     }
     '/$realmId/auth/verify-email': {
       id: '/$realmId/auth/verify-email'
@@ -1143,10 +1181,23 @@ const RealmIdUserRouteRouteChildren: RealmIdUserRouteRouteChildren = {
 const RealmIdUserRouteRouteWithChildren =
   RealmIdUserRouteRoute._addFileChildren(RealmIdUserRouteRouteChildren)
 
+interface RealmIdDeviceRouteChildren {
+  RealmIdDeviceUserCodeRoute: typeof RealmIdDeviceUserCodeRoute
+}
+
+const RealmIdDeviceRouteChildren: RealmIdDeviceRouteChildren = {
+  RealmIdDeviceUserCodeRoute: RealmIdDeviceUserCodeRoute,
+}
+
+const RealmIdDeviceRouteWithChildren = RealmIdDeviceRoute._addFileChildren(
+  RealmIdDeviceRouteChildren,
+)
+
 interface RealmIdRouteRouteChildren {
   RealmIdAuthRouteRoute: typeof RealmIdAuthRouteRouteWithChildren
   RealmIdManageRouteRoute: typeof RealmIdManageRouteRouteWithChildren
   RealmIdUserRouteRoute: typeof RealmIdUserRouteRouteWithChildren
+  RealmIdDeviceRoute: typeof RealmIdDeviceRouteWithChildren
   RealmIdSubscriptionMySubscriptionsRoute: typeof RealmIdSubscriptionMySubscriptionsRoute
   RealmIdSubscriptionSubscriptionIdHistoryRoute: typeof RealmIdSubscriptionSubscriptionIdHistoryRoute
 }
@@ -1155,6 +1206,7 @@ const RealmIdRouteRouteChildren: RealmIdRouteRouteChildren = {
   RealmIdAuthRouteRoute: RealmIdAuthRouteRouteWithChildren,
   RealmIdManageRouteRoute: RealmIdManageRouteRouteWithChildren,
   RealmIdUserRouteRoute: RealmIdUserRouteRouteWithChildren,
+  RealmIdDeviceRoute: RealmIdDeviceRouteWithChildren,
   RealmIdSubscriptionMySubscriptionsRoute:
     RealmIdSubscriptionMySubscriptionsRoute,
   RealmIdSubscriptionSubscriptionIdHistoryRoute:

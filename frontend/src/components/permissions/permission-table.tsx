@@ -13,7 +13,7 @@ import { Edit, Trash2 } from 'lucide-react'
 import type { PermissionResponse } from '@/lib/api-generated'
 import { EditPermissionDialog } from './edit-permission-dialog'
 import { DeletePermissionDialog } from './delete-permission-dialog'
-import { useState } from 'react'
+import { useDialogManager } from '@/hooks/use-dialog-state'
 
 interface PermissionTableProps {
   permissions: PermissionResponse[]
@@ -22,22 +22,18 @@ interface PermissionTableProps {
 }
 
 export function PermissionTable({ permissions, isLoading, error }: PermissionTableProps) {
-  const [editingPermission, setEditingPermission] = useState<PermissionResponse | null>(null)
-  const [deletingPermission, setDeletingPermission] = useState<PermissionResponse | null>(null)
-  const [editDialogOpen, setEditDialogOpen] = useState(false)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const editDialog = useDialogManager<PermissionResponse>()
+  const deleteDialog = useDialogManager<PermissionResponse>()
 
   const handleEdit = (permission: PermissionResponse) => {
-    setEditingPermission(permission)
-    setEditDialogOpen(true)
+    editDialog.open(permission)
   }
 
   const handleDelete = (permission: PermissionResponse) => {
     if (permission.isBuiltin) {
-      return // Should not happen due to UI hiding, but defensive check
+      return
     }
-    setDeletingPermission(permission)
-    setDeleteDialogOpen(true)
+    deleteDialog.open(permission)
   }
 
   if (isLoading) {
@@ -175,21 +171,21 @@ export function PermissionTable({ permissions, isLoading, error }: PermissionTab
         </Table>
       </div>
 
-      {editingPermission && (
+      {editDialog.selectedItem && (
         <EditPermissionDialog
-          open={editDialogOpen}
-          onOpenChange={setEditDialogOpen}
-          permission={editingPermission}
-          realmId={editingPermission.realmId}
+          open={editDialog.isOpen}
+          onOpenChange={editDialog.onOpenChange}
+          permission={editDialog.selectedItem}
+          realmId={editDialog.selectedItem.realmId}
         />
       )}
 
-      {deletingPermission && (
+      {deleteDialog.selectedItem && (
         <DeletePermissionDialog
-          open={deleteDialogOpen}
-          onOpenChange={setDeleteDialogOpen}
-          permission={deletingPermission}
-          realmId={deletingPermission.realmId}
+          open={deleteDialog.isOpen}
+          onOpenChange={deleteDialog.onOpenChange}
+          permission={deleteDialog.selectedItem}
+          realmId={deleteDialog.selectedItem.realmId}
         />
       )}
     </>

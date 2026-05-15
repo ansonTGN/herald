@@ -48,6 +48,7 @@ import type {
   OAuthConfigResponse,
   PlanResponse,
   PaymentAttemptStatusResponse,
+  PointsAccountResponse,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -801,18 +802,7 @@ export const pointsAccountQueryOptions = (realmId: string, userId: string) =>
       if (!data || typeof data !== 'object') {
         return null
       }
-      return data as {
-        id: string
-        userId: string
-        realmId: string
-        balance: number
-        totalRecharged: number
-        totalConsumed: number
-        status: string
-        createdAt: string
-        updatedAt: string
-        unit: string
-      } | null
+      return data as PointsAccountResponse | null
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,

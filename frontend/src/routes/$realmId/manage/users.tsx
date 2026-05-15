@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useDialogManager } from '@/hooks/use-dialog-state'
 import { toast } from 'sonner'
 import { queryKeys, usersQueryOptions } from '@/data/query-options'
 import { usersSearchSchema, type UsersSearchParams } from '@/lib/schemas/search-params'
@@ -43,18 +44,15 @@ function UsersPage() {
   const queryClient = useQueryClient()
   const realmId = useRealmId()
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
-  const [isRolesDialogOpen, setIsRolesDialogOpen] = useState(false)
-  const [editingUser, setEditingUser] = useState<UserResponse | null>(null)
-  const [managingRolesUser, setManagingRolesUser] = useState<UserResponse | null>(null)
-  const [deletingUser, setDeletingUser] = useState<UserResponse | null>(null)
-  const [searchEmail, setSearchEmail] = useState<string | undefined>(undefined)
+  const editDialog = useDialogManager<UserResponse>()
+  const deleteDialog = useDialogManager<UserResponse>()
+  const rolesDialog = useDialogManager<UserResponse>()
 
   const { data, isLoading, error } = useQuery(
     usersQueryOptions(realmId, {
       page: search.page,
       pageSize: search.pageSize,
-      email: searchEmail,
+      email: search.email,
     })
   )
 
@@ -64,7 +62,7 @@ function UsersPage() {
         path: { realmId, userId },
       }),
     onSuccess: () => {
-      setDeletingUser(null)
+      deleteDialog.close()
       queryClient.invalidateQueries({ queryKey: queryKeys.usersList(realmId) })
       toast.success('User deleted successfully')
     },
@@ -74,12 +72,11 @@ function UsersPage() {
   })
 
   function handleEdit(user: UserResponse) {
-    setEditingUser(user)
-    setIsEditDialogOpen(true)
+    editDialog.open(user)
   }
 
   function handleDelete(user: UserResponse) {
-    setDeletingUser(user)
+    deleteDialog.open(user)
   }
 
   function handleCreateUser() {
@@ -87,12 +84,11 @@ function UsersPage() {
   }
 
   function handleManageRoles(user: UserResponse) {
-    setManagingRolesUser(user)
-    setIsRolesDialogOpen(true)
+    rolesDialog.open(user)
   }
 
   function handleSearchChange(email: string | undefined) {
-    setSearchEmail(email)
+    navigate({ search: (prev) => ({ ...prev, email, page: 0 }) })
   }
 
   function handlePageChange(page: number) {
@@ -113,7 +109,7 @@ function UsersPage() {
       />
 
       <div className="flex items-center gap-4">
-        <UserSearch email={searchEmail} onSearchChange={handleSearchChange} />
+        <UserSearch email={search.email} onSearchChange={handleSearchChange} />
       </div>
 
       {data && (
@@ -136,36 +132,35 @@ function UsersPage() {
         realmId={realmId}
       />
 
-      {editingUser && (
+      {editDialog.selectedItem && (
         <EditUserDialog
-          open={isEditDialogOpen}
-          onOpenChange={setIsEditDialogOpen}
+          open={editDialog.isOpen}
+          onOpenChange={editDialog.onOpenChange}
           realmId={realmId}
-          user={editingUser}
+          user={editDialog.selectedItem}
         />
       )}
 
-      {managingRolesUser && (
+      {rolesDialog.selectedItem && (
         <UserRolesDialog
-          open={isRolesDialogOpen}
-          onOpenChange={(open) => {
-            setIsRolesDialogOpen(open)
-            if (!open) setManagingRolesUser(null)
+          open={rolesDialog.isOpen}
+          onOpenChange={(v) => {
+            if (!v) rolesDialog.close()
           }}
-          userId={managingRolesUser.id}
-          userEmail={managingRolesUser.email}
+          userId={rolesDialog.selectedItem.id}
+          userEmail={rolesDialog.selectedItem.email}
         />
       )}
 
-      {deletingUser && (
+      {deleteDialog.selectedItem && (
         <ConfirmDeleteDialog
-          open={!!deletingUser}
-          onOpenChange={(open) => {
-            if (!open) setDeletingUser(null)
+          open={deleteDialog.isOpen}
+          onOpenChange={(v) => {
+            if (!v) deleteDialog.close()
           }}
           title="Delete User"
-          description={`Are you sure you want to delete user "${deletingUser.email}"? This action cannot be undone.`}
-          onConfirm={() => deleteMutation.mutate(deletingUser.id)}
+          description={`Are you sure you want to delete user "${deleteDialog.selectedItem.email}"? This action cannot be undone.`}
+          onConfirm={() => deleteMutation.mutate(deleteDialog.selectedItem!.id)}
           isPending={deleteMutation.isPending}
           contentTestId="delete-user-dialog"
           confirmTestId="confirm-delete-user-button"

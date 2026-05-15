@@ -112,21 +112,28 @@ export function useWechatPay({
   const orderData = createOrderMutation.data
   const statusData = statusQuery.data as WechatOrderStatusResponse | null
 
-  // Calculate time remaining directly using Date.now()
-  /* eslint-disable react-hooks/purity -- Date.now() is used here for real-time countdown display, purity is ensured by forced re-renders */
-  const timeRemaining = orderData?.expiresAt
-    ? Math.max(0, Math.floor((new Date(orderData.expiresAt).getTime() - Date.now()) / 1000))
-    : 0
-  /* eslint-enable react-hooks/purity */
+  const [timeRemaining, setTimeRemaining] = useState(0)
 
-  // Force re-render every second when order is active and not paid/failed
-  const [, forceUpdate] = useState({})
   useEffect(() => {
-    if (!orderData?.expiresAt || statusData?.status === 'paid' || statusData?.status === 'closed')
+    if (!orderData?.expiresAt || statusData?.status === 'paid' || statusData?.status === 'closed') {
       return
+    }
 
-    const interval = setInterval(() => forceUpdate({}), 1000)
-    return () => clearInterval(interval)
+    let intervalId: ReturnType<typeof setInterval>
+    const update = () => {
+      const remaining = Math.max(
+        0,
+        Math.floor((new Date(orderData.expiresAt!).getTime() - Date.now()) / 1000),
+      )
+      setTimeRemaining(remaining)
+      if (remaining === 0) {
+        clearInterval(intervalId)
+      }
+    }
+
+    update()
+    intervalId = setInterval(update, 1000)
+    return () => clearInterval(intervalId)
   }, [orderData?.expiresAt, statusData?.status])
 
   // Determine overall status using derived state from React Query

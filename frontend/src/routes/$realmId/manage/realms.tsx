@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useDialogManager } from '@/hooks/use-dialog-state'
 import { realmsQueryOptions } from '@/data/query-options'
 import { realmsSearchSchema, type RealmsSearchParams } from '@/lib/schemas/search-params'
 import { RealmSearch } from '@/components/realms/realm-search'
@@ -21,8 +22,7 @@ function RealmsPage() {
   const search = Route.useSearch() as RealmsSearchParams
   const navigate = Route.useNavigate()
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  const [selectedRealmId, setSelectedRealmId] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState<string | undefined>(undefined)
+  const detailDialog = useDialogManager<string>()
 
   // Get permissions
   const { permissions } = useAuth()
@@ -32,7 +32,7 @@ function RealmsPage() {
     realmsQueryOptions({
       page: search.page,
       pageSize: search.pageSize,
-      search: searchQuery,
+      search: search.search,
       sortBy: search.sortBy,
       sortOrder: search.sortOrder,
     })
@@ -43,15 +43,11 @@ function RealmsPage() {
   }
 
   function handleViewDetail(realm: { id: string }) {
-    setSelectedRealmId(realm.id)
+    detailDialog.open(realm.id)
   }
 
   function handleSearchChange(query: string | undefined) {
-    setSearchQuery(query)
-    // Reset to page 0 when searching
-    if (query !== undefined) {
-      navigate({ search: (prev) => ({ ...prev, page: 0 }) })
-    }
+    navigate({ search: (prev) => ({ ...prev, search: query, page: 0 }) })
   }
 
   function handlePageChange(page: number) {
@@ -77,7 +73,7 @@ function RealmsPage() {
       />
 
       <div className="flex items-center gap-4">
-        <RealmSearch realmId={searchQuery} onSearchChange={handleSearchChange} />
+        <RealmSearch realmId={search.search} onSearchChange={handleSearchChange} />
       </div>
 
       {data && (
@@ -95,9 +91,9 @@ function RealmsPage() {
       <CreateRealmDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
 
       <RealmDetailDialog
-        open={!!selectedRealmId}
-        onOpenChange={(open) => !open && setSelectedRealmId(null)}
-        realmId={selectedRealmId}
+        open={detailDialog.isOpen}
+        onOpenChange={(open) => !open && detailDialog.close()}
+        realmId={detailDialog.selectedItem}
       />
     </div>
   )

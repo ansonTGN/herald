@@ -2,12 +2,12 @@ import { Check, AlertCircle, Edit, Globe, Lock, Clock, Shield } from 'lucide-rea
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { APP_TYPE_OPTIONS, CLIENT_TYPE_OPTIONS } from './step-1-schema'
-import type { Step1FormData, Step2FormData, Step3FormData } from '.'
+import type { WizardFormData } from '../wizard-schema'
 import type { ClientAppWizardMode } from '../client-app-wizard'
 
 interface Step4ReviewProps {
   mode: ClientAppWizardMode
-  formData: Partial<Step1FormData & Step2FormData & Step3FormData>
+  formData: Partial<WizardFormData>
   onEditStep: (stepIndex: number) => void
   isSubmitting?: boolean
 }
@@ -188,6 +188,10 @@ export function Step4Review({
               : 'Not configured'
           }
           icon={<Clock className="w-3 h-3" />}
+        />
+        <ReviewRow
+          label="Device Code Grant"
+          value={formData.deviceCodeGrantEnabled ? 'Enabled' : 'Disabled'}
         />
       </ReviewSection>
 

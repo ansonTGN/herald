@@ -2,12 +2,12 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Step4Review } from '../step-4-review'
-import type { Step1FormData, Step2FormData, Step3FormData } from '..'
+import type { WizardFormData } from '../../wizard-schema'
 
 describe('Step4Review', () => {
   const mockOnEditStep = vi.fn()
 
-  const validFormData: Partial<Step1FormData & Step2FormData & Step3FormData> = {
+  const validFormData: Partial<WizardFormData> = {
     name: 'Test App',
     description: 'Test Description',
     appType: 'WEB',
@@ -93,7 +93,7 @@ describe('Step4Review', () => {
     })
 
     it('should show validation warning with incomplete sections', () => {
-      const incompleteData: Partial<Step1FormData & Step2FormData & Step3FormData> = {
+      const incompleteData: Partial<WizardFormData> = {
         name: '',
         redirectUris: [],
         sessionTtlSeconds: 30, // Less than minimum
@@ -137,7 +137,7 @@ describe('Step4Review', () => {
 
   describe('Edge Cases', () => {
     it('should handle empty optional fields gracefully', () => {
-      const minimalData: Partial<Step1FormData & Step2FormData & Step3FormData> = {
+      const minimalData: Partial<WizardFormData> = {
         name: 'Minimal App',
         appType: 'WEB',
         clientType: 'PUBLIC',

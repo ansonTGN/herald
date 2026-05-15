@@ -36,6 +36,10 @@ interface PointsAccountsPageProps {
 }
 
 export function PointsAccountsPage({ realmId }: PointsAccountsPageProps) {
+  // TODO: Migrate search/pagination/filter state to URL search params via parent route
+  // (/$realmId/manage/points/accounts) for link sharing and refresh restoration.
+  // Requires adding: selectedUserId, searchQuery, accountsPage, transactionsPage,
+  // and transactionFilters to the parent route's validateSearch.
   // UI state
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>('')

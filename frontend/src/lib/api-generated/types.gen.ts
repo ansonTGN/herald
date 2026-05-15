@@ -158,6 +158,7 @@ export type ClientAppCreateRequest = {
      * Optional description explaining the purpose and functionality of the application.
      */
     description?: string | null;
+    deviceCodeGrantEnabled?: boolean | null;
     /**
      * Whether this client application is active
      *
@@ -223,6 +224,7 @@ export type ClientAppItem = {
      * Description explaining the purpose and functionality of the application.
      */
     description?: string | null;
+    deviceCodeGrantEnabled: boolean;
     /**
      * Whether this client is currently enabled
      *
@@ -287,6 +289,7 @@ export type ClientAppUpdateRequest = {
      * Updates the description explaining the purpose of the application.
      */
     description?: string | null;
+    deviceCodeGrantEnabled?: boolean | null;
     /**
      * Whether this client application is active
      *
@@ -518,6 +521,68 @@ export type CreateRealmValidator = {
     name: string;
 };
 
+export type DeviceAuthorizationErrorResponse = {
+    error: string;
+    error_description: string;
+};
+
+export type DeviceAuthorizationRequest = {
+    client_id: string;
+};
+
+export type DeviceAuthorizationResponse = {
+    device_code: string;
+    expires_in: number;
+    interval: number;
+    user_code: string;
+    verification_uri: string;
+    verification_uri_complete: string;
+};
+
+export type DeviceConfirmErrorResponse = {
+    error: string;
+    error_description: string;
+};
+
+export type DeviceConfirmRequest = {
+    approved: boolean;
+    user_code: string;
+};
+
+export type DeviceConfirmResponse = {
+    status: string;
+};
+
+export type DeviceTokenErrorResponse = {
+    error: string;
+    error_description: string;
+};
+
+export type DeviceTokenRequest = {
+    device_code: string;
+    grant_type: string;
+};
+
+export type DeviceTokenResponse = {
+    access_token: string;
+    expires_in: number;
+    token_type: string;
+};
+
+export type DeviceVerifyErrorResponse = {
+    error: string;
+    error_description: string;
+};
+
+export type DeviceVerifyRequest = {
+    user_code: string;
+};
+
+export type DeviceVerifyResponse = {
+    client_app_icon_url?: string | null;
+    client_app_name: string;
+};
+
 export type DisableTotpRequest = {
     password: string;
 };
@@ -571,6 +636,7 @@ export type ExtConsumePointsResponse = {
  */
 export type ExtPointsBalanceResponse = {
     balance: number;
+    currency: string;
     totalConsumed: number;
     totalRecharged: number;
     unit: string;
@@ -961,6 +1027,7 @@ export type PageResponseClientAppItem = {
          * Description explaining the purpose and functionality of the application.
          */
         description?: string | null;
+        deviceCodeGrantEnabled: boolean;
         /**
          * Whether this client is currently enabled
          *
@@ -1021,6 +1088,7 @@ export type PageResponsePointsAccountResponse = {
     items: Array<{
         balance: number;
         createdAt: string;
+        currency: string;
         id: string;
         realmId: string;
         status: string;
@@ -1310,6 +1378,7 @@ export type PlansListResponse = {
 export type PointsAccountResponse = {
     balance: number;
     createdAt: string;
+    currency: string;
     id: string;
     realmId: string;
     status: string;
@@ -1325,6 +1394,7 @@ export type PointsAccountResponse = {
  */
 export type PointsBalanceResponse = {
     balance: number;
+    currency: string;
     totalConsumed: number;
     totalRecharged: number;
     unit: string;
@@ -2218,7 +2288,7 @@ export type ListAuditEventsData = {
          */
         category?: string;
         /**
-         * Filter by action (e.g. user_create, auth_login)
+         * Filter by action (e.g. user.create, auth.login)
          */
         action?: string;
         /**
@@ -2250,6 +2320,10 @@ export type ListAuditEventsErrors = {
      * Unauthorized
      */
     401: ErrorResponse;
+    /**
+     * Forbidden - Insufficient permissions
+     */
+    403: ErrorResponse;
     /**
      * Internal server error
      */
@@ -2288,6 +2362,10 @@ export type GetAuditEventErrors = {
      * Unauthorized
      */
     401: ErrorResponse;
+    /**
+     * Forbidden - Insufficient permissions
+     */
+    403: ErrorResponse;
     /**
      * Audit event not found
      */
@@ -5540,6 +5618,154 @@ export type GetRealmConfigResponses = {
 };
 
 export type GetRealmConfigResponse = GetRealmConfigResponses[keyof GetRealmConfigResponses];
+
+export type DeviceAuthorizeData = {
+    body: DeviceAuthorizationRequest;
+    path: {
+        /**
+         * Realm ID
+         */
+        realmId: string;
+    };
+    query?: never;
+    url: '/api/device/{realmId}/authorize';
+};
+
+export type DeviceAuthorizeErrors = {
+    /**
+     * Bad request
+     */
+    400: DeviceAuthorizationErrorResponse;
+    /**
+     * Invalid client
+     */
+    401: DeviceAuthorizationErrorResponse;
+    /**
+     * Forbidden
+     */
+    403: DeviceAuthorizationErrorResponse;
+};
+
+export type DeviceAuthorizeError = DeviceAuthorizeErrors[keyof DeviceAuthorizeErrors];
+
+export type DeviceAuthorizeResponses = {
+    /**
+     * Device authorization created
+     */
+    200: DeviceAuthorizationResponse;
+};
+
+export type DeviceAuthorizeResponse = DeviceAuthorizeResponses[keyof DeviceAuthorizeResponses];
+
+export type DeviceConfirmData = {
+    body: DeviceConfirmRequest;
+    path: {
+        /**
+         * Realm ID
+         */
+        realmId: string;
+    };
+    query?: never;
+    url: '/api/device/{realmId}/confirm';
+};
+
+export type DeviceConfirmErrors = {
+    /**
+     * Invalid request
+     */
+    400: DeviceConfirmErrorResponse;
+    /**
+     * Not found
+     */
+    404: DeviceConfirmErrorResponse;
+    /**
+     * Conflict
+     */
+    409: DeviceConfirmErrorResponse;
+};
+
+export type DeviceConfirmError = DeviceConfirmErrors[keyof DeviceConfirmErrors];
+
+export type DeviceConfirmResponses = {
+    /**
+     * Device code confirmed
+     */
+    200: DeviceConfirmResponse;
+};
+
+export type DeviceConfirmResponse2 = DeviceConfirmResponses[keyof DeviceConfirmResponses];
+
+export type DeviceTokenData = {
+    body: DeviceTokenRequest;
+    path: {
+        /**
+         * Realm ID
+         */
+        realmId: string;
+    };
+    query?: never;
+    url: '/api/device/{realmId}/token';
+};
+
+export type DeviceTokenErrors = {
+    /**
+     * Bad request / pending / slow_down / expired
+     */
+    400: DeviceTokenErrorResponse;
+    /**
+     * Access denied
+     */
+    403: DeviceTokenErrorResponse;
+};
+
+export type DeviceTokenError = DeviceTokenErrors[keyof DeviceTokenErrors];
+
+export type DeviceTokenResponses = {
+    /**
+     * Access token issued
+     */
+    200: DeviceTokenResponse;
+};
+
+export type DeviceTokenResponse2 = DeviceTokenResponses[keyof DeviceTokenResponses];
+
+export type DeviceVerifyData = {
+    body: DeviceVerifyRequest;
+    path: {
+        /**
+         * Realm ID
+         */
+        realmId: string;
+    };
+    query?: never;
+    url: '/api/device/{realmId}/verify';
+};
+
+export type DeviceVerifyErrors = {
+    /**
+     * Invalid request
+     */
+    400: DeviceVerifyErrorResponse;
+    /**
+     * Not found
+     */
+    404: DeviceVerifyErrorResponse;
+    /**
+     * Conflict
+     */
+    409: DeviceVerifyErrorResponse;
+};
+
+export type DeviceVerifyError = DeviceVerifyErrors[keyof DeviceVerifyErrors];
+
+export type DeviceVerifyResponses = {
+    /**
+     * Device code verified
+     */
+    200: DeviceVerifyResponse;
+};
+
+export type DeviceVerifyResponse2 = DeviceVerifyResponses[keyof DeviceVerifyResponses];
 
 export type ListPlanAssignments2Data = {
     body?: never;

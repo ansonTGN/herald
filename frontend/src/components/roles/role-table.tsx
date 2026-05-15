@@ -13,7 +13,7 @@ import type { RoleResponse, PermissionResponse } from '@/lib/api-generated'
 import { EditRoleDialog } from './edit-role-dialog'
 import { DeleteRoleDialog } from './delete-role-dialog'
 import { RolePermissionsDialog } from './role-permissions-dialog'
-import { useState } from 'react'
+import { useDialogManager } from '@/hooks/use-dialog-state'
 import { useRealmId } from '@/stores/auth-store'
 import { useQueries } from '@tanstack/react-query'
 import { permissionsQueryOptions, rolePermissionsQueryOptions } from '@/data/query-options'
@@ -26,29 +26,23 @@ interface RoleTableProps {
 
 export function RoleTable({ roles, isLoading, error }: RoleTableProps) {
   const realmId = useRealmId()
-  const [editingRole, setEditingRole] = useState<RoleResponse | null>(null)
-  const [deletingRole, setDeletingRole] = useState<RoleResponse | null>(null)
-  const [managingPermissionsRole, setManagingPermissionsRole] = useState<RoleResponse | null>(null)
-  const [editDialogOpen, setEditDialogOpen] = useState(false)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false)
+  const editDialog = useDialogManager<RoleResponse>()
+  const deleteDialog = useDialogManager<RoleResponse>()
+  const permissionsDialog = useDialogManager<RoleResponse>()
 
   const handleEdit = (role: RoleResponse) => {
-    setEditingRole(role)
-    setEditDialogOpen(true)
+    editDialog.open(role)
   }
 
   const handleDelete = (role: RoleResponse) => {
     if (role.isBuiltin) {
-      return // Should not happen due to UI hiding, but defensive check
+      return
     }
-    setDeletingRole(role)
-    setDeleteDialogOpen(true)
+    deleteDialog.open(role)
   }
 
   const handleManagePermissions = async (role: RoleResponse) => {
-    setManagingPermissionsRole(role)
-    setPermissionsDialogOpen(true)
+    permissionsDialog.open(role)
   }
 
   if (isLoading) {
@@ -187,31 +181,31 @@ export function RoleTable({ roles, isLoading, error }: RoleTableProps) {
         </Table>
       </div>
 
-      {editingRole && (
+      {editDialog.selectedItem && (
         <EditRoleDialog
-          open={editDialogOpen}
-          onOpenChange={setEditDialogOpen}
-          role={editingRole}
-          realmId={editingRole.realmId}
+          open={editDialog.isOpen}
+          onOpenChange={editDialog.onOpenChange}
+          role={editDialog.selectedItem}
+          realmId={editDialog.selectedItem.realmId}
         />
       )}
 
-      {deletingRole && (
+      {deleteDialog.selectedItem && (
         <DeleteRoleDialog
-          open={deleteDialogOpen}
-          onOpenChange={setDeleteDialogOpen}
-          role={deletingRole}
-          realmId={deletingRole.realmId}
+          open={deleteDialog.isOpen}
+          onOpenChange={deleteDialog.onOpenChange}
+          role={deleteDialog.selectedItem}
+          realmId={deleteDialog.selectedItem.realmId}
         />
       )}
 
-      {managingPermissionsRole && (
+      {permissionsDialog.selectedItem && (
         <RolePermissionsDataProvider
           realmId={realmId}
-          roleId={managingPermissionsRole.id}
-          open={permissionsDialogOpen}
-          onOpenChange={setPermissionsDialogOpen}
-          role={managingPermissionsRole}
+          roleId={permissionsDialog.selectedItem.id}
+          open={permissionsDialog.isOpen}
+          onOpenChange={permissionsDialog.onOpenChange}
+          role={permissionsDialog.selectedItem}
         />
       )}
     </>

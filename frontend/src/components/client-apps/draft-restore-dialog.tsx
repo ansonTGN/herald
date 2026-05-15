@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useMemo } from 'react'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -35,23 +35,7 @@ export function DraftRestoreDialog<T>({
   onDiscard,
   onClose,
 }: DraftRestoreDialogProps<T>) {
-  // Calculate draft age on render - it's a pure function of draft.timestamp
-  const draftAge = formatDraftAge(draft.timestamp)
-
-  // Dummy state to force re-renders
-  const [, setForceUpdate] = useState(0)
-
-  // Update the component every minute to refresh the age display
-  useEffect(() => {
-    if (!open) return
-
-    // Force a re-render every minute by updating state
-    const interval = setInterval(() => {
-      setForceUpdate((prev) => prev + 1)
-    }, 60000)
-
-    return () => clearInterval(interval)
-  }, [open])
+  const draftAge = useMemo(() => formatDraftAge(draft.timestamp), [draft.timestamp])
 
   const handleRestore = () => {
     onRestore()

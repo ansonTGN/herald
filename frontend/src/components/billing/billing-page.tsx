@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
+import { useDialogManager } from '@/hooks/use-dialog-state'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Plus } from 'lucide-react'
@@ -57,15 +58,13 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
   }
 
   // Dialog states
-  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
-  const [assigningPlan, setAssigningPlan] = useState<PlanResponse | undefined>(undefined)
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const assignDialog = useDialogManager<PlanResponse>()
+  const deleteDialog = useDialogManager<PlanResponse>()
 
-  // Provider mapping dialog states
-  const [providerMappingDialogOpen, setProviderMappingDialogOpen] = useState(false)
-  const [selectedPlanForMapping, setSelectedPlanForMapping] = useState<string | null>(null)
-  const [providerMappingFormOpen, setProviderMappingFormOpen] = useState(false)
-  const [editingMapping, setEditingMapping] = useState<PlanPaymentProviderResponse | null>(null)
+  // Provider mapping dialog states (interleaved parent/child pattern)
+  const [providerMappingOpen, setProviderMappingOpen] = useState(false)
+  const [providerMappingPlanId, setProviderMappingPlanId] = useState<string | null>(null)
+  const mappingFormDialog = useDialogManager<PlanPaymentProviderResponse>()
 
   // Fetch available payment providers for the realm
   const { data: paymentProvidersResponse } = useQuery({
@@ -96,8 +95,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
       })
 
       // 再关闭对话框
-      setDeleteConfirmOpen(false)
-      setAssigningPlan(undefined)
+      deleteDialog.close()
     },
     onError: (error: Error) => {
       toast.error(`Failed to delete plan: ${error.message}`)
@@ -146,8 +144,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
       } else {
         toast.success(`Plan assignment removed from ${removeAssignments.length} app(s)`)
       }
-      setAssignmentDialogOpen(false)
-      setAssigningPlan(undefined)
+      assignDialog.close()
       // Invalidate queries and wait for refetch to complete
       await queryClient.invalidateQueries({ queryKey: ['billing-plans', realmId] })
       await queryClient.invalidateQueries({ queryKey: queryKeys.planAssignmentsList(realmId) })
@@ -219,9 +216,9 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
     await queryClient.invalidateQueries({ queryKey: ['billing-plans', realmId] })
 
     // Also invalidate the specific plan's provider list if we have a selected plan
-    if (selectedPlanForMapping) {
+    if (providerMappingPlanId) {
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.planProviders(realmId, selectedPlanForMapping),
+        queryKey: queryKeys.planProviders(realmId, providerMappingPlanId),
       })
     }
   }
@@ -241,66 +238,60 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
   }
 
   function handleDeletePlan(plan: PlanResponse) {
-    setAssigningPlan(plan)
-    setDeleteConfirmOpen(true)
+    deleteDialog.open(plan)
   }
 
   async function confirmDeletePlan() {
-    if (!assigningPlan) return
-    await deletePlanMutation.mutateAsync(assigningPlan.id)
+    if (!deleteDialog.selectedItem) return
+    await deletePlanMutation.mutateAsync(deleteDialog.selectedItem.id)
   }
 
   function handleAssignPlan(plan: PlanResponse) {
-    setAssigningPlan(plan)
-    setAssignmentDialogOpen(true)
+    assignDialog.open(plan)
   }
 
   function handleAssignSubmit(data: PlanAssignmentSubmitData) {
-    if (!assigningPlan) return
-    assignPlanMutation.mutate({ planId: assigningPlan.id, ...data })
+    if (!assignDialog.selectedItem) return
+    assignPlanMutation.mutate({ planId: assignDialog.selectedItem.id, ...data })
   }
 
   function handleManageProviders(plan: PlanResponse) {
-    setSelectedPlanForMapping(plan.id)
-    setProviderMappingDialogOpen(true)
+    setProviderMappingPlanId(plan.id)
+    setProviderMappingOpen(true)
   }
 
   function handleAddMapping() {
-    setEditingMapping(null)
-    setProviderMappingDialogOpen(false) // Close parent first
-    setProviderMappingFormOpen(true) // Then open child
+    mappingFormDialog.open()
+    setProviderMappingOpen(false)
   }
 
   function handleEditMapping(mapping: PlanPaymentProviderResponse) {
-    setEditingMapping(mapping)
-    setProviderMappingDialogOpen(false) // Close parent first
-    setProviderMappingFormOpen(true) // Then open child
+    mappingFormDialog.open(mapping)
+    setProviderMappingOpen(false)
   }
 
   function closeMappingFormAfterSave() {
-    setProviderMappingFormOpen(false)
-    setProviderMappingDialogOpen(true) // Reopen parent after save
-    setEditingMapping(null)
+    mappingFormDialog.close()
+    setProviderMappingOpen(true)
   }
 
   function cancelMappingForm() {
-    setProviderMappingFormOpen(false)
-    setProviderMappingDialogOpen(true) // Reopen parent after cancel
-    setEditingMapping(null)
+    mappingFormDialog.close()
+    setProviderMappingOpen(true)
   }
 
   async function handleMappingSubmit(data: ProviderMappingFormData) {
-    if (!selectedPlanForMapping) return
+    if (!providerMappingPlanId) return
 
-    if (editingMapping) {
+    if (mappingFormDialog.selectedItem) {
       await updateProviderMappingMutation.mutateAsync({
-        planId: selectedPlanForMapping,
-        mappingId: editingMapping.id,
+        planId: providerMappingPlanId,
+        mappingId: mappingFormDialog.selectedItem.id,
         data,
       })
     } else {
       await createProviderMappingMutation.mutateAsync({
-        planId: selectedPlanForMapping,
+        planId: providerMappingPlanId,
         data,
       })
     }
@@ -348,27 +339,27 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
       {pagination && <PlanPagination pagination={pagination} onPageChange={handlePageChange} />}
 
       <PlanAssignmentDialog
-        plan={assigningPlan}
+        plan={assignDialog.selectedItem ?? undefined}
         realmId={realmId}
-        open={assignmentDialogOpen}
-        onOpenChange={setAssignmentDialogOpen}
+        open={assignDialog.isOpen}
+        onOpenChange={assignDialog.onOpenChange}
         onSubmit={handleAssignSubmit}
         isSubmitting={assignPlanMutation.isPending}
       />
 
       <ConfirmDeleteDialog
-        open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
+        open={deleteDialog.isOpen}
+        onOpenChange={deleteDialog.onOpenChange}
         title="Delete Plan"
-        description={`Are you sure you want to delete plan "${assigningPlan?.title}"?`}
+        description={`Are you sure you want to delete plan "${deleteDialog.selectedItem?.title}"?`}
         onConfirm={confirmDeletePlan}
         isPending={deletePlanMutation.isPending}
         confirmTestId="confirm-delete-button"
       />
 
       {/* Provider Mapping Dialog */}
-      {selectedPlanForMapping && (
-        <Dialog open={providerMappingDialogOpen} onOpenChange={setProviderMappingDialogOpen}>
+      {providerMappingPlanId && (
+        <Dialog open={providerMappingOpen} onOpenChange={setProviderMappingOpen}>
           <DialogContent
             className="max-w-6xl max-h-[80vh] overflow-y-auto"
             data-testid="provider-mapping-dialog"
@@ -378,7 +369,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
               <DialogDescription>Configure payment providers for this plan</DialogDescription>
             </DialogHeader>
             <PlanProviderMappingList
-              planId={selectedPlanForMapping}
+              planId={providerMappingPlanId}
               realmId={realmId}
               onAdd={handleAddMapping}
               onEdit={handleEditMapping}
@@ -388,15 +379,15 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
       )}
 
       {/* Provider Mapping Form Dialog */}
-      {selectedPlanForMapping && (
+      {providerMappingPlanId && (
         <PlanProviderMappingForm
-          open={providerMappingFormOpen}
+          open={mappingFormDialog.isOpen}
           onOpenChange={cancelMappingForm}
           onSubmit={handleMappingSubmit}
           isSubmitting={
             createProviderMappingMutation.isPending || updateProviderMappingMutation.isPending
           }
-          mapping={editingMapping ?? undefined}
+          mapping={mappingFormDialog.selectedItem ?? undefined}
           realmId={realmId}
           availableProviders={availableProviders}
         />

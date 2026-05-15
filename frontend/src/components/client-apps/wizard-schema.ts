@@ -21,6 +21,7 @@ import type { ClientAppItem } from '@/lib/api-generated'
  * Step 3: Security Settings
  * - sessionTtlSeconds (required): Session timeout (60-86400 seconds)
  * - sessionRenewalTtlSeconds (optional): Session renewal window (must exceed session TTL)
+ * - deviceCodeGrantEnabled (optional): Enable Device Authorization Grant (RFC 8628)
  */
 export const wizardSchema = z
   .object({
@@ -126,6 +127,8 @@ export const wizardSchema = z
       .number()
       .max(604800, 'Session renewal TTL must not exceed 604800 seconds (7 days)')
       .optional(),
+
+    deviceCodeGrantEnabled: z.boolean().default(false),
   })
   .refine(
     (data) => {
@@ -180,6 +183,7 @@ export function mapInitialData(data?: ClientAppItem): WizardFormData {
     // Step 3: Security Settings
     sessionTtlSeconds: data?.sessionTtlSeconds ?? 3600, // Default: 1 hour
     sessionRenewalTtlSeconds: data?.sessionRenewalTtlSeconds ?? undefined,
+    deviceCodeGrantEnabled: data?.deviceCodeGrantEnabled ?? false,
   }
 }
 

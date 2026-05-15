@@ -24,6 +24,10 @@ interface UserPointsPageProps {
 }
 
 export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
+  // TODO: Migrate pagination/filter state to URL search params via parent route
+  // (/$realmId/user/points) for link sharing and refresh restoration.
+  // Requires adding: tab, transactionsPage, transactionFilters (type/startTime/endTime),
+  // purchaseHistoryPage to the parent route's validateSearch.
   const [transactionsPage, setTransactionsPage] = useState(1)
   const [transactionFilters, setTransactionFilters] = useState<TransactionFiltersType>({})
   const [purchaseHistoryPage, setPurchaseHistoryPage] = useState(1)

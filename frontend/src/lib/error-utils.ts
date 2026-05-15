@@ -13,6 +13,9 @@ export function getErrorMessage(error: unknown): string {
     if ('detail' in error && typeof error.detail === 'string') {
       return error.detail
     }
+    if ('error_description' in error && typeof error.error_description === 'string') {
+      return error.error_description
+    }
     if ('error' in error && typeof error.error === 'string') {
       return error.error
     }

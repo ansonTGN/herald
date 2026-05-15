@@ -6,7 +6,7 @@ import { DeleteClientAppDialog } from '@/components/client-apps/delete-client-ap
 import { ClientAppTable } from '@/components/client-apps/client-app-table'
 import { ClientAppPagination } from '@/components/client-apps/client-app-pagination'
 import { Plus } from 'lucide-react'
-import { useState } from 'react'
+import { useDialogManager } from '@/hooks/use-dialog-state'
 import { deleteClientApp, updateClientApp } from '@/lib/api-generated'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { usePermission } from '@/hooks/use-permission'
@@ -35,13 +35,7 @@ function ClientAppsPage() {
   const canUpdate = hasPermission('clients.manage')
   const canDelete = hasPermission('clients.manage')
 
-  const [deleteDialog, setDeleteDialog] = useState<{
-    open: boolean
-    clientApp: ClientAppItem | null
-  }>({
-    open: false,
-    clientApp: null,
-  })
+  const deleteDialog = useDialogManager<ClientAppItem>()
 
   const { data, isLoading, error } = useQuery(
     clientAppsQueryOptions(realmId, {
@@ -118,7 +112,7 @@ function ClientAppsPage() {
           })
         }}
         onDelete={(app) => {
-          setDeleteDialog({ open: true, clientApp: app })
+          deleteDialog.open(app)
         }}
         onToggleEnabled={(app) => toggleMutate(app)}
         canUpdate={canUpdate}
@@ -127,17 +121,17 @@ function ClientAppsPage() {
 
       {data && <ClientAppPagination pagination={data} onPageChange={handlePageChange} />}
 
-      {deleteDialog.clientApp && (
+      {deleteDialog.selectedItem && (
         <DeleteClientAppDialog
-          open={deleteDialog.open}
-          onOpenChange={(open) => setDeleteDialog({ ...deleteDialog, open })}
+          open={deleteDialog.isOpen}
+          onOpenChange={deleteDialog.onOpenChange}
           onConfirm={() => {
-            if (deleteDialog.clientApp) {
-              deleteMutate(deleteDialog.clientApp)
-              setDeleteDialog({ open: false, clientApp: null })
+            if (deleteDialog.selectedItem) {
+              deleteMutate(deleteDialog.selectedItem)
+              deleteDialog.close()
             }
           }}
-          clientAppName={deleteDialog.clientApp.name}
+          clientAppName={deleteDialog.selectedItem.name}
         />
       )}
     </div>

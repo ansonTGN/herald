@@ -230,6 +230,8 @@ export function ClientAppWizard({ mode, realmId, initialData }: ClientAppWizardP
         form.setFieldValue('sessionTtlSeconds', draftData.sessionTtlSeconds)
       if (draftData.sessionRenewalTtlSeconds !== undefined)
         form.setFieldValue('sessionRenewalTtlSeconds', draftData.sessionRenewalTtlSeconds)
+      if (draftData.deviceCodeGrantEnabled !== undefined)
+        form.setFieldValue('deviceCodeGrantEnabled', draftData.deviceCodeGrantEnabled)
 
       setHasRestoredDraft(true)
       setShowDraftDialog(false)
@@ -296,6 +298,7 @@ export function ClientAppWizard({ mode, realmId, initialData }: ClientAppWizardP
       redirectUris: data.redirectUris || [],
       sessionTtlSeconds: data.sessionTtlSeconds || 3600,
       sessionRenewalTtlSeconds: data.sessionRenewalTtlSeconds || null,
+      deviceCodeGrantEnabled: data.deviceCodeGrantEnabled ?? false,
       enabled: true,
       iconUrl: null,
     }
@@ -308,6 +311,7 @@ export function ClientAppWizard({ mode, realmId, initialData }: ClientAppWizardP
       redirectUris: data.redirectUris,
       sessionTtlSeconds: data.sessionTtlSeconds,
       sessionRenewalTtlSeconds: data.sessionRenewalTtlSeconds || null,
+      deviceCodeGrantEnabled: data.deviceCodeGrantEnabled ?? false,
     }
   }
 

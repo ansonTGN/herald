@@ -253,6 +253,32 @@ export function Step3Security({ mode }: Step3SecurityProps) {
             )}
           />
 
+          {/* Device Code Grant Toggle */}
+          <form.Field
+            name="deviceCodeGrantEnabled"
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            children={(field: any) => (
+              <div className="mt-6 p-4 bg-background rounded-lg border border-border">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <Label htmlFor="device-code-grant" className="font-medium text-sm">
+                      Device Code Grant
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Allow this client app to use the Device Authorization Grant flow (RFC 8628)
+                    </p>
+                  </div>
+                  <Switch
+                    id="device-code-grant"
+                    data-testid="device-code-grant-switch"
+                    checked={field.state.value ?? false}
+                    onCheckedChange={field.handleChange}
+                  />
+                </div>
+              </div>
+            )}
+          />
+
           {/* Advanced Security Settings - Collapsible */}
           <AdvancedSettingsCollapsible dataTestId="advanced-security-settings">
             <div>
