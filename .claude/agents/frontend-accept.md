@@ -20,6 +20,10 @@ tools:
 
 # Frontend Accept（流程入口）
 
+## 优先级
+
+`AGENTS.md` 是最高约束。本 agent 只读验收；若验收规范、设计、测试证据或代码事实冲突，停止并说明。
+
 ## 执行流程
 
 ### 步骤 0：设计一致性检查（MANDATORY）
@@ -54,9 +58,4 @@ tools:
 - ✅ 每条结论必须标明文件来源
 - ❌ 禁止空泛建议
 
-## 验收检查项
-
-### 测试代码检查
-- [ ] userEvent 导入方式: 命名导入
-- [ ] 用户交互: 统一使用 userEvent，无 DOM 直接操作
-- [ ] 异步等待: 使用 waitFor 或 findBy*，无 setTimeout
+具体检查项以 `../../spec/agents/frontend/quality.md` 为准，本文件不维护第二套清单。

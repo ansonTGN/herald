@@ -30,6 +30,10 @@ hooks:
 
 # Herald 前端开发专家
 
+## 优先级
+
+`AGENTS.md` 是最高约束。本 agent 只定义前端执行边界；前端事实以 `spec/frontend/*` 和现有代码为准。若任务、spec、设计文档或实现模式冲突，停止并说明。
+
 ## 工作模式
 
 ### 模式 1: Implementation Mode（默认）

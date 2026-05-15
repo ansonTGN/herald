@@ -14,6 +14,10 @@ allowed-tools:
 
 # PRD 创建 / 更新
 
+## 优先级
+
+`AGENTS.md` 是最高约束。本 skill 只定义 PRD 维护流程；若与用户当前指令、spec、docs 或代码事实冲突，停止并说明冲突，不要自行折中。
+
 ## 适用范围
 
 这是一个有副作用的任务型 skill，负责先补或修 user story，再创建或更新 PRD 文档。

@@ -20,6 +20,10 @@ tools:
 
 # Demo Accept（流程入口）
 
+## 优先级
+
+`AGENTS.md` 是最高约束。本 agent 只读验收；若验收规范、User Story、测试证据或实现事实冲突，停止并说明。
+
 ## 执行流程
 
 ### 阶段 1：用户故事一致性检查（MANDATORY）

@@ -12,6 +12,10 @@ allowed-tools:
 
 # 任务规划质量检查
 
+## 优先级
+
+`AGENTS.md` 是最高约束。本命令只读检查任务规划；若任务文档、设计文档、spec 或仓库事实冲突，停止并说明，不要把规范冲突伪装成单方错误。
+
 ## 目标
 - 评估任务文档可执行性与一致性。
 - 验证 `phase -> slot -> item` 结构。
@@ -98,6 +102,10 @@ allowed-tools:
    - scope 中包含两个可独立交付、独立验证的主交付物时，必须拆分，否则记 P1
    - 单个 HTTP/API item 同时包含 5 个以上 endpoint、DTO、路由注册和 OpenAPI/schema 更新时，必须拆分，否则记 P1
    - 单个 demo item 同时创建复用 helper 并覆盖多个完整用户故事或多个业务状态流时，必须拆分，否则记 P1
+   - backend/test item 必须声明 `test_item_type: authoring|runner`，缺失直接记 P0，不做 `steps` fallback
+   - `test_item_type: authoring` 必须声明 `uses_skill: none` 或省略 `uses_skill`
+   - `test_item_type: runner` 必须声明 `uses_skill: .claude/skills/backend-test-run/SKILL.md`
+   - backend/test item 的 `steps`、`validation`、`completion_criteria` 必须与显式 `test_item_type` 自洽
 9. 核对设计文档与任务文档的一致性。
 10. 调用当前阶段对应 agent 进行专业校验：
    - backend: `backend-dev`, `backend-test`, `backend-accept`
@@ -156,6 +164,12 @@ allowed-tools:
 - 出现旧结构残留并与新结构混用。
 - 阶段依赖关系错误。
 - 任务文档中的命令、路径、阶段链路经仓库和规范双重验证后，确认会直接导致 `/t-run` 无法执行。
+- backend test item 缺少 `test_item_type: authoring|runner`。
+- backend test item 同时包含“写/新增场景测试”和“运行失败后修生产代码/委派 backend-dev 直到通过”的混合职责。
+- authoring item 的 completion criteria 要求“所有目标测试必须通过”。
+- runner item 缺少对应 authoring item 依赖，却执行新测试。
+- runner item 的 `agent` 写成 `backend-test-run`；`backend-test-run` 是 skill，不是 agent。
+- backend test item 显式字段与 `steps`、`validation` 或 `completion_criteria` 冲突。
 - 最终报告中出现 `confirmed P0` 时，必须拒绝进入 `/t-run`。
 
 ## P1（重要）
@@ -170,6 +184,11 @@ allowed-tools:
 - backend 阶段缺少 `awaiting_finalize` 收口语义。
 - `finalize.md` 未限制 `/simplify` 目标范围，或未声明全量测试后的修复/重试规则。
 - API 路径、业务规则或测试范围与设计文档严重不一致，但不直接阻塞执行。
+- authoring item 缺少 User Story/PRD 输入。
+- authoring item 缺少测试追溯要求：`User Story`、`Covers`。
+- runner item 未声明 `.claude/skills/backend-test-run/SKILL.md`。
+- runner item 未声明 backend-dev 不得修改 `backend/**/tests/scenarios/**` 或任何 `*_scenarios.rs`。
+- accept item 只依赖 authoring item，不依赖 runner item。
 
 ## P2（优化）
 - 代码示例可读性差。
@@ -177,6 +196,27 @@ allowed-tools:
 - 表达不够具体但不影响执行。
 - item 命名可读性不足。
 - 补充示例、说明、顺序提示即可改进。
+- 场景测试模板包含大量 `println!("[Step N]")` 或长分割线注释。
+- 新场景测试文件命名不是 `*_scenarios.rs` 且没有合理说明。
+
+## Backend Test Item 识别规则
+
+- backend/test item 必须通过显式 `test_item_type` 判断 authoring vs runner。
+- 不允许通过 `steps` 内容推断类型来兼容旧 item。
+- `steps` 内容只用于校验显式字段是否自洽。
+- `test_item_type: authoring` 表示只写场景测试、helper 和模块注册，只做编译验证。
+- `test_item_type: runner` 表示加载 `backend-test-run` skill，运行定向测试、诊断、委派 production fix、重测。
+- 同时包含两类动作时按 P0 “混合职责”处理。
+
+## Backend Test Style Checks
+
+新增或修改场景测试时检查：
+- 文件默认命名为 `<feature>_scenarios.rs`。
+- 测试函数默认命名为 `test_scenario_<feature>_<scenario>_<outcome>`。
+- 每个核心测试包含 `User Story` 和 `Covers` 注释。
+- 使用简洁 Given/When/Then 注释。
+- 不写 `println!("[Step 1] ...")` 或长 banner。
+- 优先使用 `backend/api/src/tests/helpers/` 和 `backend/test-support` helper。
 
 ## 报告要求
 报告必须包含：

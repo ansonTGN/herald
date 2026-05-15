@@ -19,6 +19,10 @@ tools:
 
 # 任务规划生成助手
 
+## 优先级
+
+`AGENTS.md` 是最高约束。本 skill 是 `/t-task` 的详细事实源，但任务拆分必须服务于简单、外科式、可验证的执行；若与用户当前指令、设计文档、spec 或代码事实冲突，停止并说明冲突。
+
 ## 概述
 - 作用：把 `.ai/design/[feature].md` 转换为可执行任务目录。
 - 固定模型：`phase -> slot -> item`。
@@ -54,6 +58,7 @@ tools:
 | 传入 `--phase` | 先做前置阶段校验 |
 | 生成 `frontend` 阶段任意任务前 | 必须先执行 `cd frontend && npm run generate-api && cd ../`，失败则终止 |
 | 生成 `frontend/test` | 默认只规划高价值逻辑型 Vitest；页面 happy-path 与完整故事交给 Demo |
+| 生成 `backend/test` | 必须拆成 `test_item_type: authoring` 与 `test_item_type: runner` 两类 item |
 
 ## 状态契约
 `.state.json` 不包含旧状态字段或 `agents` 根字段。
@@ -142,6 +147,8 @@ manifest 不得包含完整实现步骤；完整步骤必须写入 item 文件�
 - `id`
 - `title`
 - `agent`
+- backend/test item 必须额外包含 `test_item_type: authoring|runner`
+- backend/test runner item 必须包含 `uses_skill: .claude/skills/backend-test-run/SKILL.md`；authoring item 必须为 `uses_skill: none` 或省略
 - `scope`
 - `inputs`
 - `steps`
@@ -165,7 +172,7 @@ manifest 不得包含完整实现步骤；完整步骤必须写入 item 文件�
 ## 拆分建议
 - backend dev：数据库/实体、domain、repository、service/use case、HTTP/OpenAPI、外部集成、SDK/API 影响点。
 - backend HTTP/API：DTO 与路由骨架、读模型/list/detail、写操作/create/update、状态操作、配置类接口分别拆分；每个 item 必须能用定向 `cargo check` 或场景测试验证。
-- backend test：domain/unit、repository/integration、API scenario、regression、高风险业务规则。
+- backend test：按场景测试 authoring 与测试执行 runner 拆分；不要把创建场景测试和修复实现直到测试通过放在同一个 item。
 - frontend dev：API/type 适配、schema/query/store、页面主流程、状态与错误处理、权限与空态。
 - frontend dev：一个 item 默认只交付一个页面域或一个可复用组件族；seller config、user page、admin page、dialog 等可独立验证的 UI 不应合并。
 - frontend test：schema、query options、store/state machine、数据转换、异常边界。
@@ -200,6 +207,38 @@ slot agent 输出必须至少包含：
   - 前端 API 生成
   - 失败后从失败步骤恢复
 - `finalize.md` 不拆 item。
+
+## Backend Test Planning Rules
+
+backend/test slot 必须按新契约生成，不做旧格式兼容：
+
+| 类型 | agent | test_item_type | uses_skill | depends_on |
+|---|---|---|---|---|
+| authoring | backend-test | authoring | none | 对应 backend-dev item |
+| runner | backend-test | runner | `.claude/skills/backend-test-run/SKILL.md` | 对应 authoring item |
+
+authoring item：
+- 只创建/修改 `*_scenarios.rs`、测试 helper、模块注册。
+- inputs 必须包含 User Story/PRD 和上游 dev handoff。
+- steps 必须包含测试追溯要求：`User Story`、`Covers`。
+- validation 只能是 `cargo check --tests`、`cargo test --no-run` 或建议 runner 命令。
+- completion criteria 不得要求目标测试全部通过。
+
+runner item：
+- 必须加载 `.claude/skills/backend-test-run/SKILL.md`。
+- 只执行定向测试、分析失败、委派 production-code 修复、重测。
+- 必须声明 backend-dev 不得修改 `backend/**/tests/scenarios/**` 或任何 `*_scenarios.rs`。
+- 测试语义可能错误时，停止并输出诊断报告，由用户决定。
+
+依赖规则：
+- runner item 必须依赖对应 authoring item。
+- accept item 必须依赖 runner item，不能只依赖 authoring item。
+- runner item 的 `agent` 必须仍是 `backend-test`；`backend-test-run` 只作为 `uses_skill`。
+
+禁止：
+- backend test item 同时包含“写场景测试”和“修复生产代码直到通过”。
+- authoring item 的完成标准要求“所有测试通过”。
+- runner item 缺少对应 authoring item 依赖。
 
 ## 错误处理
 | 错误码 | 触发条件 | 用户可见提示 | 恢复动作 | 可重试 |
@@ -236,6 +275,8 @@ slot agent 输出必须至少包含：
 - 用 `index.md` 或 slot manifest 代替 item 文件执行。
 - 一个 agent 一次性返回整阶段可执行正文而不拆 item。
 - 单个 item 超过拆分阈值。
+- 生成缺少 `test_item_type: authoring|runner` 的 backend test item。
+- 生成 `agent: backend-test-run` 的 item。
 
 ## 引用
 - `.claude/commands/t-task.md`
