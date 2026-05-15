@@ -219,8 +219,7 @@ pub fn create_router(
     // println!("{router:?}");
     if let Some(dir) = static_dir {
         tracing::info!("Serving static files from: {}", dir);
-        router.nest_service(
-            "/",
+        router.fallback_service(
             ServeDir::new(&dir)
                 .fallback(ServeDir::new(&dir).append_index_html_on_directories(false)),
         )
