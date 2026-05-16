@@ -103,7 +103,7 @@ test.describe('Live: Creem Payment', () => {
 
       // Create a product (idempotent — will fail gracefully if already exists)
       await createProduct(page, {
-        name: PRODUCT_NAME,
+        code: PRODUCT_NAME,
         title: PRODUCT_NAME,
         description: 'Herald live test product for Creem payment',
       })
@@ -173,7 +173,7 @@ test.describe('Live: Creem Payment', () => {
       await expect(page.getByTestId('products-page')).toBeVisible({ timeout: 10000 })
 
       await createProduct(page, {
-        name: PRODUCT_NAME,
+        code: PRODUCT_NAME,
         title: PRODUCT_NAME,
         description: 'Herald live test product for Creem payment',
       })

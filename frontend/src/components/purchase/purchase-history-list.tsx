@@ -17,13 +17,6 @@ interface PurchaseHistoryListProps {
   purchases: PurchaseHistoryItemDto[]
   isLoading: boolean
   error?: Error
-  pagination?: {
-    page: number
-    pageSize: number
-    total: number
-    totalPages: number
-  }
-  onPageChange?: (page: number) => void
   onDetailsClick: (purchaseId: string) => void
 }
 
@@ -94,8 +87,6 @@ export function PurchaseHistoryList({
   purchases,
   isLoading,
   error,
-  pagination,
-  onPageChange,
   onDetailsClick,
 }: PurchaseHistoryListProps) {
   if (isLoading) {
@@ -138,72 +129,29 @@ export function PurchaseHistoryList({
     )
   }
 
-  const totalPages = pagination?.totalPages || 1
-  const currentPage = pagination?.page || 1
-
   return (
-    <div className="space-y-4">
-      <div data-testid="purchase-history-list" className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Package</TableHead>
-              <TableHead>Points</TableHead>
-              <TableHead>Amount</TableHead>
-              <TableHead>Provider</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {purchases.map((purchase) => (
-              <HistoryTableRow
-                key={purchase.id}
-                purchase={purchase}
-                onDetailsClick={onDetailsClick}
-              />
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-
-      {pagination && totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Page {currentPage} of {totalPages} ({pagination.total} total)
-          </p>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onPageChange?.(currentPage - 1)}
-              disabled={currentPage === 1}
-              className="gap-1"
-            >
-              Previous
-            </Button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-              <Button
-                key={page}
-                variant={page === currentPage ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => onPageChange?.(page)}
-              >
-                {page}
-              </Button>
-            ))}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onPageChange?.(currentPage + 1)}
-              disabled={currentPage === totalPages}
-              className="gap-1"
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
+    <div data-testid="purchase-history-list" className="rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Date</TableHead>
+            <TableHead>Package</TableHead>
+            <TableHead>Points</TableHead>
+            <TableHead>Amount</TableHead>
+            <TableHead>Provider</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {purchases.map((purchase) => (
+            <HistoryTableRow
+              key={purchase.id}
+              purchase={purchase}
+              onDetailsClick={onDetailsClick}
+            />
+          ))}
+        </TableBody>
+      </Table>
     </div>
   )
 }

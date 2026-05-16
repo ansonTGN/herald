@@ -83,7 +83,7 @@ describe('RolePermissionsDialog', () => {
         allPermissions={mockPermissions}
         assignedPermissionIds={assignedPermissionIds}
       />,
-      { wrapper },
+      { wrapper }
     )
 
     expect(result.getByText('2 / 3')).toBeInTheDocument()
@@ -100,7 +100,7 @@ describe('RolePermissionsDialog', () => {
         allPermissions={mockPermissions}
         assignedPermissionIds={assignedPermissionIds}
       />,
-      { wrapper },
+      { wrapper }
     )
 
     expect(result.getAllByText(/Built-in permissions cannot be removed/)[0]).toBeInTheDocument()
@@ -117,7 +117,7 @@ describe('RolePermissionsDialog', () => {
         allPermissions={mockPermissions}
         assignedPermissionIds={assignedPermissionIds}
       />,
-      { wrapper },
+      { wrapper }
     )
 
     expect(screen.queryByTestId('builtin-permission-warning')).not.toBeInTheDocument()
@@ -134,7 +134,7 @@ describe('RolePermissionsDialog', () => {
         allPermissions={mockPermissions}
         assignedPermissionIds={assignedPermissionIds}
       />,
-      { wrapper },
+      { wrapper }
     )
 
     const cancelButton = screen.getByTestId('role-permissions-cancel-button')
@@ -153,7 +153,7 @@ describe('RolePermissionsDialog', () => {
         allPermissions={mockPermissions}
         assignedPermissionIds={assignedPermissionIds}
       />,
-      { wrapper },
+      { wrapper }
     )
 
     expect(result.getAllByText('users', { exact: true })[0]).toBeInTheDocument()
@@ -170,7 +170,7 @@ describe('RolePermissionsDialog', () => {
         allPermissions={mockPermissions}
         assignedPermissionIds={assignedPermissionIds}
       />,
-      { wrapper },
+      { wrapper }
     )
 
     const saveButton = screen.getByTestId('role-permissions-save-button')
@@ -188,7 +188,7 @@ describe('RolePermissionsDialog', () => {
         allPermissions={mockPermissions}
         assignedPermissionIds={['1']}
       />,
-      { wrapper },
+      { wrapper }
     )
 
     // permission 2 is not assigned, click to assign
@@ -210,7 +210,7 @@ describe('RolePermissionsDialog', () => {
         allPermissions={mockPermissions}
         assignedPermissionIds={['1']}
       />,
-      { wrapper },
+      { wrapper }
     )
 
     // Assign permission 2
@@ -224,12 +224,12 @@ describe('RolePermissionsDialog', () => {
     expect(mockAssignPermission).toHaveBeenCalledWith(
       expect.objectContaining({
         body: { permissionId: '2' },
-      }),
+      })
     )
     expect(mockRemovePermission).toHaveBeenCalledWith(
       expect.objectContaining({
         path: expect.objectContaining({ permissionId: '1' }),
-      }),
+      })
     )
   })
 })

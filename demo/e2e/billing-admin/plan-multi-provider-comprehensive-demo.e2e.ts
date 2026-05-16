@@ -64,7 +64,7 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
   }) => {
     const timestamp = testStartTime
     const productTitle = `Test Product ${timestamp}`
-    const productName = `test-product-${timestamp}`
+    const productCode = `test-product-${timestamp}`
     const planName = `test-plan-${timestamp}`
     const planTitle = `Test Plan ${timestamp}`
     const updatedPlanTitle = `Updated Test Plan ${timestamp}`
@@ -81,7 +81,7 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
       await expect(page.getByTestId('products-page')).toBeVisible({ timeout: 10000 })
 
       await createProduct(page, {
-        name: productName,
+        code: productCode,
         title: productTitle,
         description: 'Test product for multi-provider plan demo',
       })

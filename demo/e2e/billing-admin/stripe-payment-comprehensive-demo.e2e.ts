@@ -708,7 +708,7 @@ async function ensureProductForPlan(page: import('@playwright/test').Page, realm
   const existingProduct = page.locator(`tr:has-text("${productTitle}")`)
   if (!(await existingProduct.isVisible({ timeout: 2000 }).catch(() => false))) {
     await createProduct(page, {
-      name: `stripe-product-${productName}`,
+      code: `stripe-product-${productName}`,
       title: productTitle,
       description: 'Auto-created product for Stripe plan tests',
     })

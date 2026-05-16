@@ -6,11 +6,12 @@ import { realmsQueryOptions } from '@/data/query-options'
 import { realmsSearchSchema, type RealmsSearchParams } from '@/lib/schemas/search-params'
 import { RealmSearch } from '@/components/realms/realm-search'
 import { RealmTable } from '@/components/realms/realm-table'
-import { RealmPagination } from '@/components/realms/realm-pagination'
+import { ListPagination } from '@/components/shared'
 import { CreateRealmDialog } from '@/components/realms/create-realm-dialog'
 import { RealmDetailDialog } from '@/components/realms/realm-detail-dialog'
 import { useAuth } from '@/hooks/use-auth'
 import { Plus } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared'
 
 export const Route = createFileRoute('/$realmId/manage/realms')({
@@ -58,7 +59,6 @@ function RealmsPage() {
     <div data-testid="realms-page" className="space-y-6">
       <PageHeader
         title="Realms"
-        description="Manage realms in system"
         headingTestId="realms-heading"
         action={
           canCreateRealm
@@ -72,20 +72,31 @@ function RealmsPage() {
         }
       />
 
-      <div className="flex items-center gap-4">
-        <RealmSearch realmId={search.search} onSearchChange={handleSearchChange} />
-      </div>
+      <Card>
+        <CardContent className="space-y-4 pt-6">
+          <div className="flex items-center gap-4">
+            <RealmSearch realmId={search.search} onSearchChange={handleSearchChange} />
+          </div>
+
+          {data && (
+            <RealmTable
+              data={data.items}
+              isLoading={isLoading}
+              error={error ?? undefined}
+              onViewDetail={handleViewDetail}
+            />
+          )}
+        </CardContent>
+      </Card>
 
       {data && (
-        <>
-          <RealmTable
-            data={data.items}
-            isLoading={isLoading}
-            error={error ?? undefined}
-            onViewDetail={handleViewDetail}
-          />
-          <RealmPagination pagination={data} onPageChange={handlePageChange} />
-        </>
+        <ListPagination
+          page={data.page}
+          pageSize={data.pageSize}
+          total={data.total}
+          onPageChange={handlePageChange}
+          testIdPrefix="realm-pagination"
+        />
       )}
 
       <CreateRealmDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />

@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { History, Search } from 'lucide-react'
 import { PointsBalanceCard } from '../PointsBalanceCard'
@@ -14,7 +13,7 @@ import {
 } from '@/data/query-options'
 import type { TransactionFilters } from '@/lib/schemas/points-forms'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
-import { PageHeader } from '@/components/shared'
+import { PageHeader, ListPagination } from '@/components/shared'
 
 type PointsAccountListItem = {
   id: string
@@ -82,10 +81,7 @@ export function PointsAccountsPage({ realmId }: PointsAccountsPageProps) {
 
   return (
     <div className="space-y-6" data-testid="points-accounts-page">
-      <PageHeader
-        title="User Accounts"
-        description="Manage user points accounts and view transaction history"
-      />
+      <PageHeader title="User Accounts" />
 
       {/* User Accounts List */}
       <Card>
@@ -134,42 +130,22 @@ export function PointsAccountsPage({ realmId }: PointsAccountsPageProps) {
                   </div>
                 </div>
               ))}
-              {/* Pagination */}
-              {accountsData.total && accountsData.total > DEFAULT_PAGE_SIZE && (
-                <div className="flex justify-center gap-2 mt-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAccountsPage((p) => Math.max(1, p - 1))}
-                    disabled={accountsPage === 1}
-                  >
-                    Previous
-                  </Button>
-                  <span className="px-3 py-1">
-                    Page {accountsPage} of {Math.ceil(accountsData.total / DEFAULT_PAGE_SIZE)}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setAccountsPage((p) =>
-                        p < Math.ceil(accountsData.total / DEFAULT_PAGE_SIZE) ? p + 1 : p
-                      )
-                    }
-                    disabled={
-                      accountsPage >= Math.ceil((accountsData.total || 0) / DEFAULT_PAGE_SIZE)
-                    }
-                  >
-                    Next
-                  </Button>
-                </div>
-              )}
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">No points accounts found</div>
           )}
         </CardContent>
       </Card>
+
+      {accountsData && accountsData.total > 0 && (
+        <ListPagination
+          page={accountsPage - 1}
+          pageSize={DEFAULT_PAGE_SIZE}
+          total={accountsData.total}
+          onPageChange={(page) => setAccountsPage(page + 1)}
+          testIdPrefix="accounts-pagination"
+        />
+      )}
 
       {/* Selected User Details */}
       {selectedUserId && (
@@ -180,28 +156,33 @@ export function PointsAccountsPage({ realmId }: PointsAccountsPageProps) {
           </div>
 
           {/* Transaction History */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <History className="h-4 w-4" />
-                Transaction History
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <TransactionHistoryTable
-                transactions={transactionsData?.transactions || []}
-                loading={transactionsLoading}
-                filters={transactionFilters}
-                pagination={{
-                  page: transactionsPage,
-                  pageSize: DEFAULT_PAGE_SIZE,
-                  total: transactionsData?.total || 0,
-                }}
-                onPaginationChange={(pagination) => setTransactionsPage(pagination.page)}
-                admin={true}
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <History className="h-4 w-4" />
+                  Transaction History
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <TransactionHistoryTable
+                  transactions={transactionsData?.transactions || []}
+                  loading={transactionsLoading}
+                  filters={transactionFilters}
+                  admin={true}
+                />
+              </CardContent>
+            </Card>
+            {transactionsData && transactionsData.total > 0 && (
+              <ListPagination
+                page={transactionsPage - 1}
+                pageSize={DEFAULT_PAGE_SIZE}
+                total={transactionsData.total}
+                onPageChange={(page) => setTransactionsPage(page + 1)}
+                testIdPrefix="transaction-pagination"
               />
-            </CardContent>
-          </Card>
+            )}
+          </div>
         </div>
       )}
     </div>

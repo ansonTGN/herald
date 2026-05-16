@@ -4,7 +4,7 @@ import { clientAppsQueryOptions, queryKeys } from '@/data/query-options'
 import { clientAppsSearchSchema } from '@/lib/schemas/search-params'
 import { DeleteClientAppDialog } from '@/components/client-apps/delete-client-app-dialog'
 import { ClientAppTable } from '@/components/client-apps/client-app-table'
-import { ClientAppPagination } from '@/components/client-apps/client-app-pagination'
+import { ListPagination } from '@/components/shared'
 import { Plus } from 'lucide-react'
 import { useDialogManager } from '@/hooks/use-dialog-state'
 import { deleteClientApp, updateClientApp } from '@/lib/api-generated'
@@ -12,6 +12,7 @@ import { useFormMutation } from '@/hooks/use-form-mutation'
 import { usePermission } from '@/hooks/use-permission'
 import type { ClientAppItem } from '@/lib/api-generated'
 import type { ClientAppsSearchParams } from '@/lib/schemas/search-params'
+import { Card, CardContent } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared'
 
 export const Route = createFileRoute('/$realmId/manage/client-apps/')({
@@ -79,16 +80,16 @@ function ClientAppsPage() {
   }
 
   return (
-    <div className="space-y-4" data-testid="client-apps-page">
+    <div className="space-y-6" data-testid="client-apps-page">
       <PageHeader
         title="Client Apps"
-        description="Manage OAuth 2.0 client applications"
         headingTestId="client-apps-heading"
         action={
           canCreate
             ? {
                 label: 'Add Client App',
-                onClick: () => navigate({ to: '/$realmId/manage/client-apps/new', params: { realmId } }),
+                onClick: () =>
+                  navigate({ to: '/$realmId/manage/client-apps/new', params: { realmId } }),
                 testId: 'add-client-app-button',
                 icon: <Plus className="h-4 w-4 mr-2" />,
               }
@@ -96,18 +97,35 @@ function ClientAppsPage() {
         }
       />
 
-      <ClientAppTable
-        data={data?.items ?? []}
-        isLoading={isLoading}
-        error={error}
-        onEdit={(app) => navigate({ to: '/$realmId/manage/client-apps/$clientAppId/edit', params: { realmId, clientAppId: app.id } })}
-        onDelete={(app) => deleteDialog.open(app)}
-        onToggleEnabled={(app) => toggleMutate(app)}
-        canUpdate={canUpdate}
-        canDelete={canDelete}
-      />
+      <Card>
+        <CardContent className="space-y-4 pt-6">
+          <ClientAppTable
+            data={data?.items ?? []}
+            isLoading={isLoading}
+            error={error}
+            onEdit={(app) =>
+              navigate({
+                to: '/$realmId/manage/client-apps/$clientAppId/edit',
+                params: { realmId, clientAppId: app.id },
+              })
+            }
+            onDelete={(app) => deleteDialog.open(app)}
+            onToggleEnabled={(app) => toggleMutate(app)}
+            canUpdate={canUpdate}
+            canDelete={canDelete}
+          />
+        </CardContent>
+      </Card>
 
-      {data && <ClientAppPagination pagination={data} onPageChange={handlePageChange} />}
+      {data && (
+        <ListPagination
+          page={data.page}
+          pageSize={data.pageSize}
+          total={data.total}
+          onPageChange={handlePageChange}
+          testIdPrefix="client-app-pagination"
+        />
+      )}
 
       {deleteDialog.selectedItem && (
         <DeleteClientAppDialog

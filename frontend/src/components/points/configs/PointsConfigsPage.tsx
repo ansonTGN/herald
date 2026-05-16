@@ -171,7 +171,6 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
     <div className="space-y-6" data-testid="points-configs-page">
       <PageHeader
         title="Plan Configurations"
-        description="Manage points plan configurations and distribution rules"
         action={{
           label: 'Create Configuration',
           onClick: handleCreateConfig,

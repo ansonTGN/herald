@@ -2,7 +2,11 @@ import { useMemo } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { type PointsPackageResponse, createPointsPackage, updatePointsPackage } from '@/lib/api-generated'
+import {
+  type PointsPackageResponse,
+  createPointsPackage,
+  updatePointsPackage,
+} from '@/lib/api-generated'
 import {
   pointsPackageFormSchema,
   type PointsPackageFormData,
@@ -24,11 +28,7 @@ interface PointsPackageFormPageProps {
   pkg?: PointsPackageResponse
 }
 
-export function PointsPackageFormPage({
-  mode,
-  realmId,
-  pkg,
-}: PointsPackageFormPageProps) {
+export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormPageProps) {
   const isCreate = mode === 'create'
   const navigate = useNavigate()
 
@@ -106,7 +106,10 @@ export function PointsPackageFormPage({
   })
 
   return (
-    <div className="container max-w-4xl mx-auto py-6 px-6 space-y-6" data-testid="points-package-form-page">
+    <div
+      className="container max-w-4xl mx-auto py-6 px-6 space-y-6"
+      data-testid="points-package-form-page"
+    >
       <div className="flex items-center gap-4">
         <Button
           type="button"
@@ -269,11 +272,7 @@ export function PointsPackageFormPage({
               disabled={isSubmitting}
               data-testid="points-package-submit-button"
             >
-              {isSubmitting
-                ? 'Saving...'
-                : isCreate
-                  ? 'Create Package'
-                  : 'Save Changes'}
+              {isSubmitting ? 'Saving...' : isCreate ? 'Create Package' : 'Save Changes'}
             </Button>
           </div>
         </form>

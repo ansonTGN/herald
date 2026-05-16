@@ -24,6 +24,7 @@ import { useFormMutation } from '@/hooks/use-form-mutation'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 import { TextField } from '@/components/shared/form-fields/text-field'
 import { TextareaField } from '@/components/shared/form-fields/textarea-field'
 
@@ -37,8 +38,7 @@ function GeneralTab({ realmId }: { realmId: string }) {
   const canUpdate = auth.permissions?.includes('settings.manage') ?? true
 
   const { isSubmitting, mutate } = useFormMutation({
-    mutationFn: (data: UpdateRealmFormData) =>
-      updateRealm({ path: { realmId }, body: data }),
+    mutationFn: (data: UpdateRealmFormData) => updateRealm({ path: { realmId }, body: data }),
     getSuccessMessage: () => 'Realm updated successfully',
     invalidateQueries: [queryKeys.realm(realmId)],
   })
@@ -66,54 +66,56 @@ function GeneralTab({ realmId }: { realmId: string }) {
   if (isLoading) return <div>Loading...</div>
 
   return (
-    <div className="space-y-4 max-w-lg">
-      <div className="space-y-2">
-        <Label>Realm ID</Label>
-        <Input value={realmId} disabled data-testid="general-realm-id" />
-      </div>
+    <Card>
+      <CardContent className="space-y-4 max-w-lg pt-6">
+        <div className="space-y-2">
+          <Label>Realm ID</Label>
+          <Input value={realmId} disabled data-testid="general-realm-id" />
+        </div>
 
-      <AppForm>
-        <form
-          id="general-realm-form"
-          onSubmit={async (e) => {
-            e.preventDefault()
-            await form.handleSubmit()
-          }}
-        >
-          <TextField
-            form={form}
-            name="name"
-            label="Realm Name"
-            inputId="general-realm-name"
-            dataTestId="general-realm-name-input"
-            disabled={!canUpdate}
-          />
-          <div className="mt-4">
-            <TextareaField
+        <AppForm>
+          <form
+            id="general-realm-form"
+            onSubmit={async (e) => {
+              e.preventDefault()
+              await form.handleSubmit()
+            }}
+          >
+            <TextField
               form={form}
-              name="description"
-              label="Description"
-              inputId="general-realm-description"
-              dataTestId="general-realm-description-input"
+              name="name"
+              label="Realm Name"
+              inputId="general-realm-name"
+              dataTestId="general-realm-name-input"
               disabled={!canUpdate}
-              rows={3}
             />
-          </div>
-          {canUpdate && (
             <div className="mt-4">
-              <Button
-                type="submit"
-                form="general-realm-form"
-                disabled={isSubmitting}
-                data-testid="general-realm-save"
-              >
-                {isSubmitting ? 'Saving...' : 'Save'}
-              </Button>
+              <TextareaField
+                form={form}
+                name="description"
+                label="Description"
+                inputId="general-realm-description"
+                dataTestId="general-realm-description-input"
+                disabled={!canUpdate}
+                rows={3}
+              />
             </div>
-          )}
-        </form>
-      </AppForm>
-    </div>
+            {canUpdate && (
+              <div className="mt-4">
+                <Button
+                  type="submit"
+                  form="general-realm-form"
+                  disabled={isSubmitting}
+                  data-testid="general-realm-save"
+                >
+                  {isSubmitting ? 'Saving...' : 'Save'}
+                </Button>
+              </div>
+            )}
+          </form>
+        </AppForm>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -186,7 +188,7 @@ function SettingsPage() {
   // Permission check after hooks
   if (!canViewConfig) {
     return (
-      <div className="p-6">
+      <div className="space-y-6">
         <div className="text-destructive">
           Access denied: You do not have permission to view realm configuration
         </div>
@@ -230,8 +232,8 @@ function SettingsPage() {
   }
 
   return (
-    <div className="p-6" data-testid="settings-page">
-      <PageHeader title="Settings" description="Manage realm configuration" className="mb-6" />
+    <div className="space-y-6" data-testid="settings-page">
+      <PageHeader title="Settings" />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>

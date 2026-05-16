@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { useRealmId } from '@/stores/auth-store'
@@ -15,7 +15,7 @@ import { getFieldErrorMessage } from '@/lib/form-utils'
 import { withTimeout, type TotpData } from '@/lib/totp-utils'
 import { QUERY_KEYS } from '@/lib/constants'
 import { z } from 'zod'
-import { Copy, Check, Loader2, ArrowLeft } from 'lucide-react'
+import { Loader2, ArrowLeft } from 'lucide-react'
 import type { EnableTotpResponse, VerifyTotpSetupResponse } from '@/lib/api-generated'
 
 type SetupStep = 'password' | 'qr-code' | 'verify'
@@ -30,8 +30,6 @@ const passwordSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 })
 
-const COPY_FEEDBACK_DURATION_MS = 2000
-
 export function TotpSetupPage() {
   const navigate = useNavigate()
   const realmId = useRealmId()
@@ -41,8 +39,6 @@ export function TotpSetupPage() {
   const [setupData, setSetupData] = useState<TotpData | null>(null)
   const [savedBackupCodes, setSavedBackupCodes] = useState(false)
   const [verificationCode, setVerificationCode] = useState('')
-  const [secretCopied, setSecretCopied] = useState(false)
-  const timeoutRef = useRef<number | null>(null)
 
   // Step 1: Password confirmation to generate TOTP secret
   const generateMutation = useFormMutation<EnableTotpResponse, { password: string }>({
@@ -97,34 +93,6 @@ export function TotpSetupPage() {
     setSavedBackupCodes(checked === true)
   }, [])
 
-  const handleCopySecret = useCallback(async () => {
-    if (!setupData?.secret) return
-    await navigator.clipboard.writeText(setupData.secret)
-    setSecretCopied(true)
-
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
-    }
-
-    timeoutRef.current = setTimeout(() => {
-      setSecretCopied(false)
-      timeoutRef.current = null
-    }, COPY_FEEDBACK_DURATION_MS)
-  }, [setupData])
-
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-      }
-    }
-  }, [])
-
-  // Format secret with spaces every 4 characters for readability
-  const formattedSecret = setupData?.secret
-    ? (setupData.secret.match(/.{1,4}/g)?.join(' ') ?? setupData.secret)
-    : ''
-
   const isVerifyDisabled =
     verificationCode.length !== 6 || !savedBackupCodes || verifyMutation.isSubmitting
 
@@ -176,7 +144,7 @@ export function TotpSetupPage() {
       </div>
 
       {/* Main content area */}
-      <div className="min-h-[400px]" role="region" aria-live="polite" aria-atomic="true">
+      <div role="region" aria-live="polite" aria-atomic="true">
         {/* Step 1: Password Confirmation */}
         {step === 'password' && (
           <div
@@ -251,6 +219,7 @@ export function TotpSetupPage() {
               <div
                 className="inline-flex items-center justify-center p-4 bg-white rounded-xl border-2 border-border shadow-sm"
                 data-testid="totp-qr-code-container"
+                data-secret={setupData.secret}
                 role="img"
                 aria-label="QR code for TOTP setup"
               >
@@ -260,46 +229,6 @@ export function TotpSetupPage() {
                   level="M"
                   data-testid="totp-qr-code"
                 />
-              </div>
-            </div>
-
-            {/* Secret Key with Copy */}
-            <div className="rounded-lg border bg-muted/50 p-4 space-y-2">
-              <Label className="text-sm font-medium" htmlFor="totp-secret-key">
-                Manual Entry Key
-              </Label>
-              <div className="flex items-center gap-2">
-                <code
-                  id="totp-secret-key"
-                  className="flex-1 text-sm font-mono tracking-wider break-all"
-                  data-testid="totp-secret-key"
-                  tabIndex={0}
-                  role="textbox"
-                  aria-readonly="true"
-                  aria-label="TOTP secret key for manual entry"
-                >
-                  {formattedSecret}
-                </code>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopySecret}
-                  data-testid="totp-secret-copy-button"
-                  className="shrink-0"
-                  aria-label="Copy secret key to clipboard"
-                >
-                  {secretCopied ? (
-                    <>
-                      <Check className="h-4 w-4 mr-1" aria-hidden="true" />
-                      Copied
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-4 w-4 mr-1" aria-hidden="true" />
-                      Copy
-                    </>
-                  )}
-                </Button>
               </div>
             </div>
 
@@ -365,7 +294,7 @@ export function TotpSetupPage() {
 
       {/* Footer navigation */}
       <div
-        className="flex justify-between pt-4 border-t"
+        className="flex justify-between pt-4"
         role="navigation"
         aria-label="TOTP setup navigation"
       >

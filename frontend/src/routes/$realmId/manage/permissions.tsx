@@ -4,6 +4,7 @@ import { useRealmId } from '@/stores/auth-store'
 import { permissionsQueryOptions } from '@/data/query-options'
 import { PermissionTable } from '@/components/permissions/permission-table'
 import { CreatePermissionDialog } from '@/components/permissions/create-permission-dialog'
+import { Card, CardContent } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared'
 import { useState } from 'react'
 
@@ -27,7 +28,6 @@ function PermissionsPage() {
     <div className="space-y-6" data-testid="permissions-page">
       <PageHeader
         title="Permissions"
-        description="Manage permission definitions for your realm"
         action={{
           label: 'Add Permission',
           onClick: () => setCreateDialogOpen(true),
@@ -35,7 +35,11 @@ function PermissionsPage() {
         }}
       />
 
-      <PermissionTable permissions={permissions ?? []} isLoading={isLoading} error={error} />
+      <Card>
+        <CardContent className="pt-6">
+          <PermissionTable permissions={permissions ?? []} isLoading={isLoading} error={error} />
+        </CardContent>
+      </Card>
 
       <CreatePermissionDialog
         open={createDialogOpen}

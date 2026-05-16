@@ -13,9 +13,7 @@ export const Route = createFileRoute('/$realmId/manage/')({
 
 function ManageDashboard() {
   const { realmId } = Route.useParams()
-  const { data, isLoading, isError, error, refetch } = useQuery(
-    dashboardStatsQueryOptions(realmId)
-  )
+  const { data, isLoading, isError, error, refetch } = useQuery(dashboardStatsQueryOptions(realmId))
 
   const userStats = data?.userStats
   const authTrend = data?.authTrend ?? []
@@ -24,10 +22,7 @@ function ManageDashboard() {
     <div className="container mx-auto py-6 space-y-6">
       <div className="flex items-center gap-3">
         <LayoutDashboard className="h-8 w-8 text-muted-foreground" />
-        <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">Welcome to the Herald Console</p>
-        </div>
+        <h1 className="text-xl font-semibold">Dashboard</h1>
       </div>
 
       {isError ? (
@@ -89,10 +84,7 @@ function ManageDashboard() {
           {isLoading ? (
             <Skeleton className="h-[350px] rounded-xl" data-testid="dashboard-chart-skeleton" />
           ) : (
-            <AuthTrendChart
-              data={authTrend}
-              testId="dashboard-auth-trend-chart"
-            />
+            <AuthTrendChart data={authTrend} testId="dashboard-auth-trend-chart" />
           )}
 
           {/* Quick Navigation */}

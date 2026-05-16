@@ -32,8 +32,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { DataTable } from '@/components/shared/data-table'
+import { PageHeader } from '@/components/shared'
 import { InvoiceStatusBadge } from '@/components/billing/invoices/invoice-status-badge'
-import { InvoicePagination } from '@/components/billing/invoices/invoice-pagination'
+import { ListPagination } from '@/components/shared'
 import type { InvoiceResponse } from '@/lib/api-generated'
 import { invoiceListQueryOptions } from '@/data/invoice-query-options'
 import {
@@ -364,14 +365,7 @@ export function InvoiceAdminPage({
   return (
     <div className="space-y-6" data-testid="invoice-admin-page">
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="invoice-heading">
-            Invoices
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage invoices, review applications, and track payments
-          </p>
-        </div>
+        <PageHeader title="Invoices" headingTestId="invoice-heading" />
         <div className="flex gap-2">
           {onOpenSellerConfig && (
             <Button
@@ -412,11 +406,12 @@ export function InvoiceAdminPage({
       </Card>
 
       {total > 0 && (
-        <InvoicePagination
+        <ListPagination
           page={page}
           pageSize={INVOICE_PAGE_SIZE}
           total={total}
           onPageChange={setPage}
+          testIdPrefix="invoice-pagination"
         />
       )}
     </div>

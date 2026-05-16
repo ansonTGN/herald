@@ -49,11 +49,7 @@ interface ClientAppFormPageProps {
   clientApp?: ClientAppItem
 }
 
-export function ClientAppFormPage({
-  mode,
-  realmId,
-  clientApp,
-}: ClientAppFormPageProps) {
+export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPageProps) {
   const isCreate = mode === 'create'
   const navigate = useNavigate()
 
@@ -88,7 +84,9 @@ export function ClientAppFormPage({
           duration: 15000,
         })
       } else {
-        toast.success(isCreate ? 'Client App created successfully' : 'Client App updated successfully')
+        toast.success(
+          isCreate ? 'Client App created successfully' : 'Client App updated successfully'
+        )
       }
       navigate({ to: '/$realmId/manage/client-apps', params: { realmId } })
     },
@@ -159,10 +157,18 @@ export function ClientAppFormPage({
         >
           <Tabs defaultValue="basic" className="w-full">
             <TabsList className="w-full">
-              <TabsTrigger value="basic" data-testid="tab-basic">Basic</TabsTrigger>
-              <TabsTrigger value="redirect-uris" data-testid="tab-redirect-uris">Redirect URIs</TabsTrigger>
-              <TabsTrigger value="security" data-testid="tab-security">Security</TabsTrigger>
-              <TabsTrigger value="appearance" data-testid="tab-appearance">Appearance</TabsTrigger>
+              <TabsTrigger value="basic" data-testid="tab-basic">
+                Basic
+              </TabsTrigger>
+              <TabsTrigger value="redirect-uris" data-testid="tab-redirect-uris">
+                Redirect URIs
+              </TabsTrigger>
+              <TabsTrigger value="security" data-testid="tab-security">
+                Security
+              </TabsTrigger>
+              <TabsTrigger value="appearance" data-testid="tab-appearance">
+                Appearance
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="basic" className="space-y-4 mt-4">
@@ -191,7 +197,10 @@ export function ClientAppFormPage({
               ) : (
                 <div className="space-y-2">
                   <Label>Client ID</Label>
-                  <p className="text-sm font-mono bg-muted px-3 py-2 rounded-md" data-testid="client-id-display">
+                  <p
+                    className="text-sm font-mono bg-muted px-3 py-2 rounded-md"
+                    data-testid="client-id-display"
+                  >
                     {clientApp?.clientId}
                   </p>
                 </div>

@@ -3,9 +3,8 @@ import { changePasswordSchema, type ChangePasswordFormData } from '@/lib/schemas
 import { changeUserPassword } from '@/lib/api-generated'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { getFieldErrorMessage } from '@/lib/form-utils'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { TextField } from '@/components/shared/form-fields/text-field'
 import { queryKeys } from '@/data/query-options'
 
 export function ChangePasswordForm() {
@@ -24,7 +23,7 @@ export function ChangePasswordForm() {
   const { isSubmitting, mutate } = useFormMutation({
     mutationFn: (data: ChangePasswordFormData) =>
       changeUserPassword({
-        body: data, // Direct pass - type-safe
+        body: data,
       }),
     getSuccessMessage: () => 'Password changed successfully',
     invalidateQueries: [queryKeys.profile()],
@@ -34,83 +33,52 @@ export function ChangePasswordForm() {
   })
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold">Change Password</h2>
+    <Card>
+      <CardHeader>
+        <CardTitle>Change Password</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <AppForm>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              form.handleSubmit()
+            }}
+            className="max-w-sm space-y-4"
+          >
+            <TextField
+              form={form}
+              name="oldPass"
+              label="Current Password"
+              type="password"
+              dataTestId="change-password-old-input"
+            />
+            <TextField
+              form={form}
+              name="newPass"
+              label="New Password"
+              type="password"
+              dataTestId="change-password-new-input"
+            />
+            <TextField
+              form={form}
+              name="confirmPass"
+              label="Confirm New Password"
+              type="password"
+              dataTestId="change-password-confirm-input"
+            />
 
-      <AppForm>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            form.handleSubmit()
-          }}
-          className="space-y-4"
-        >
-          <form.Field
-            name="oldPass"
-            children={(field) => (
-              <div className="space-y-2">
-                <Label htmlFor="oldPass">Current Password</Label>
-                <Input
-                  id="oldPass"
-                  type="password"
-                  value={field.state.value ?? ''}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  data-testid="change-password-old-input"
-                />
-                {(field.state.meta.isTouched || form.state.isSubmitted) &&
-                  field.state.meta.errors.length > 0 && (
-                    <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
-                  )}
-              </div>
-            )}
-          />
-
-          <form.Field
-            name="newPass"
-            children={(field) => (
-              <div className="space-y-2">
-                <Label htmlFor="newPass">New Password</Label>
-                <Input
-                  id="newPass"
-                  type="password"
-                  value={field.state.value ?? ''}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  data-testid="change-password-new-input"
-                />
-                {(field.state.meta.isTouched || form.state.isSubmitted) &&
-                  field.state.meta.errors.length > 0 && (
-                    <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
-                  )}
-              </div>
-            )}
-          />
-
-          <form.Field
-            name="confirmPass"
-            children={(field) => (
-              <div className="space-y-2">
-                <Label htmlFor="confirmPass">Confirm New Password</Label>
-                <Input
-                  id="confirmPass"
-                  type="password"
-                  value={field.state.value ?? ''}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  data-testid="change-password-confirm-input"
-                />
-                {(field.state.meta.isTouched || form.state.isSubmitted) &&
-                  field.state.meta.errors.length > 0 && (
-                    <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
-                  )}
-              </div>
-            )}
-          />
-
-          <Button type="submit" disabled={isSubmitting} data-testid="change-password-submit-button">
-            {isSubmitting ? 'Changing...' : 'Change Password'}
-          </Button>
-        </form>
-      </AppForm>
-    </div>
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              data-testid="change-password-submit-button"
+            >
+              {isSubmitting ? 'Changing...' : 'Change Password'}
+            </Button>
+          </form>
+        </AppForm>
+      </CardContent>
+    </Card>
   )
 }

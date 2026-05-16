@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { getFieldErrorMessage } from '@/lib/form-utils'
+import { TextField } from '@/components/shared/form-fields/text-field'
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys, turnstileStatusQueryOptions } from '@/data/query-options'
 
@@ -69,15 +70,18 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
         username: data.nickname || null,
         turnstileToken: data.turnstileToken || null,
       }
-      const response = await register({
+      const { data: result, error } = await register({
         path: { realmId },
         body: apiData,
         throwOnError: false,
       })
-      if (!response.data) {
+      if (error) {
+        throw error
+      }
+      if (!result) {
         throw new Error('No data in response')
       }
-      return response.data
+      return result
     },
     getSuccessMessage: (data) => data.message || 'Registration successful',
     invalidateQueries: [queryKeys.usersList(realmId)],
@@ -108,25 +112,21 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
         }}
         className="space-y-4"
       >
-        <form.Field name="email">
-          {(field) => (
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={field.state.value ?? ''}
-                onChange={(e) => field.handleChange(e.target.value)}
-                disabled={isSubmitting}
-                data-testid="register-email-input"
-              />
-              {(field.state.meta.isTouched || form.state.isSubmitted) &&
-                field.state.meta.errors.length > 0 && (
-                  <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
-                )}
-            </div>
-          )}
-        </form.Field>
+        <TextField
+          form={form}
+          name="email"
+          label="Email"
+          type="email"
+          dataTestId="register-email-input"
+          disabled={isSubmitting}
+        />
+        <TextField
+          form={form}
+          name="nickname"
+          label="Nickname (Optional)"
+          dataTestId="register-nickname-input"
+          disabled={isSubmitting}
+        />
 
         <form.Field name="password">
           {(field) => (
@@ -149,45 +149,14 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
           )}
         </form.Field>
 
-        <form.Field name="confirmPassword">
-          {(field) => (
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                value={field.state.value ?? ''}
-                onChange={(e) => field.handleChange(e.target.value)}
-                disabled={isSubmitting}
-                data-testid="register-confirm-password-input"
-              />
-              {(field.state.meta.isTouched || form.state.isSubmitted) &&
-                field.state.meta.errors.length > 0 && (
-                  <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
-                )}
-            </div>
-          )}
-        </form.Field>
-
-        <form.Field name="nickname">
-          {(field) => (
-            <div className="space-y-2">
-              <Label htmlFor="nickname">Nickname (Optional)</Label>
-              <Input
-                id="nickname"
-                type="text"
-                value={field.state.value ?? ''}
-                onChange={(e) => field.handleChange(e.target.value)}
-                disabled={isSubmitting}
-                data-testid="register-nickname-input"
-              />
-              {(field.state.meta.isTouched || form.state.isSubmitted) &&
-                field.state.meta.errors.length > 0 && (
-                  <p className="text-sm text-red-500">{getFieldErrorMessage(field.state.meta)}</p>
-                )}
-            </div>
-          )}
-        </form.Field>
+        <TextField
+          form={form}
+          name="confirmPassword"
+          label="Confirm Password"
+          type="password"
+          dataTestId="register-confirm-password-input"
+          disabled={isSubmitting}
+        />
 
         {!loadingTurnstile && turnstileStatus?.enabled && (
           <form.Field name="turnstileToken">

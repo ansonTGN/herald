@@ -21,7 +21,7 @@ import { TotpVerificationForm } from '@/components/auth/totp-verification-form'
 import { publicConfigQueryOptions } from '@/data/query-options'
 import { Link } from '@tanstack/react-router'
 import { useOAuthLogin } from '@/hooks/use-oauth-login'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 
 interface TotpStep {
@@ -47,11 +47,6 @@ function LoginPage() {
   const [globalError, setGlobalError] = useState<string | null>(null)
 
   const { data: publicConfig, isLoading } = useQuery(publicConfigQueryOptions(realmId))
-
-  useEffect(() => {
-    document.title = publicConfig?.realmName ?? 'Herald'
-    return () => { document.title = 'Herald' }
-  }, [publicConfig?.realmName])
 
   const oauthProviders = publicConfig?.oauthProviders ?? []
   const isRegistrationEnabled = publicConfig?.registration?.allowed === true

@@ -108,23 +108,17 @@ async function disableTOTPThroughUI(page: any, password: string, logger?: any) {
 }
 
 /**
- * Helper function to extract TOTP secret from QR code URL
- * QR code URL format: otpauth://totp/issuer:user?secret=SECRET&issuer=ISSUER
- *
- * The QR code URL is exposed via a code element with data-testid="totp-secret-key"
- * to maintain the UI-only principle while allowing test access to the secret.
+ * Helper function to extract TOTP secret from QR code container
+ * The secret is stored as a data-secret attribute on the QR code container element.
  */
 async function extractSecretFromQRCode(page: any): Promise<string> {
   const secretElement = page.getByTestId(SELECTORS.security.totpSecretKey)
 
-  // Get the text content from the secret key element
-  const secretText = await secretElement.textContent({ timeout: 30000 })
-  if (!secretText) {
+  const secret = await secretElement.getAttribute('data-secret', { timeout: 30000 })
+  if (!secret) {
     throw new Error('TOTP secret key not found')
   }
 
-  // Remove spaces for easier processing (secret is displayed with spaces every 4 chars)
-  const secret = secretText.replace(/\s/g, '')
   console.log(`[Helper] Extracted secret from QR code: ${secret}`)
   return secret
 }

@@ -4,6 +4,7 @@ import { useRealmId } from '@/stores/auth-store'
 import { rolesQueryOptions } from '@/data/query-options'
 import { RoleTable } from '@/components/roles/role-table'
 import { CreateRoleDialog } from '@/components/roles/create-role-dialog'
+import { Card, CardContent } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared'
 import { useState } from 'react'
 
@@ -27,7 +28,6 @@ function RolesPage() {
     <div className="space-y-6" data-testid="roles-page">
       <PageHeader
         title="Roles"
-        description="Manage role definitions for your realm"
         action={{
           label: 'Add Role',
           onClick: () => setCreateDialogOpen(true),
@@ -35,7 +35,11 @@ function RolesPage() {
         }}
       />
 
-      <RoleTable roles={roles ?? []} isLoading={isLoading} error={error} />
+      <Card>
+        <CardContent className="pt-6">
+          <RoleTable roles={roles ?? []} isLoading={isLoading} error={error} />
+        </CardContent>
+      </Card>
 
       <CreateRoleDialog
         open={createDialogOpen}

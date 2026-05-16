@@ -7,35 +7,30 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination'
 
-interface PlanPaginationProps {
-  pagination: {
-    page: number
-    pageSize: number
-    total: number
-  }
+const MAX_VISIBLE_PAGES = 7
+
+export interface PaginationProps {
+  page: number
+  pageSize: number
+  total: number
   onPageChange: (page: number) => void
+  testIdPrefix?: string
 }
 
-export function PlanPagination({ pagination, onPageChange }: PlanPaginationProps) {
-  const { page, pageSize, total } = pagination
+export function ListPagination({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  testIdPrefix = 'pagination',
+}: PaginationProps) {
   const totalPages = pageSize > 0 ? Math.ceil(total / pageSize) : 0
 
-  const handlePageChange = (newPage: number) => {
-    if (newPage >= 0 && newPage < totalPages) {
-      onPageChange(newPage)
-    }
-  }
+  if (total === 0) return null
 
-  // Performance optimization: only render page numbers near current page
-  const getPageNumbers = () => {
-    const maxVisiblePages = 7
-    const startPage = Math.max(0, page - Math.floor(maxVisiblePages / 2))
-    const endPage = Math.min(totalPages, startPage + maxVisiblePages)
-
-    return Array.from({ length: endPage - startPage }, (_, i) => startPage + i)
-  }
-
-  const pageNumbers = getPageNumbers()
+  const start = Math.max(0, page - Math.floor(MAX_VISIBLE_PAGES / 2))
+  const end = Math.min(totalPages, start + MAX_VISIBLE_PAGES)
+  const pageNumbers = Array.from({ length: end - start }, (_, i) => start + i)
 
   return (
     <div className="flex items-center justify-between">
@@ -44,22 +39,22 @@ export function PlanPagination({ pagination, onPageChange }: PlanPaginationProps
         of {total} results
       </div>
 
-      <Pagination data-testid="plan-pagination">
+      <Pagination data-testid={testIdPrefix}>
         <PaginationContent>
           <PaginationItem>
             <PaginationPrevious
-              onClick={() => page > 0 && handlePageChange(page - 1)}
+              onClick={() => page > 0 && onPageChange(page - 1)}
               className={page === 0 ? 'opacity-50 pointer-events-none' : undefined}
-              data-testid="plan-pagination-previous"
+              data-testid={`${testIdPrefix}-previous`}
             />
           </PaginationItem>
 
           {pageNumbers.map((pageNum) => (
             <PaginationItem key={pageNum}>
               <PaginationLink
-                onClick={() => handlePageChange(pageNum)}
+                onClick={() => onPageChange(pageNum)}
                 isActive={page === pageNum}
-                data-testid={`plan-pagination-page-${pageNum}`}
+                data-testid={`${testIdPrefix}-page-${pageNum}`}
               >
                 {pageNum + 1}
               </PaginationLink>
@@ -68,9 +63,9 @@ export function PlanPagination({ pagination, onPageChange }: PlanPaginationProps
 
           <PaginationItem>
             <PaginationNext
-              onClick={() => page < totalPages - 1 && handlePageChange(page + 1)}
+              onClick={() => page < totalPages - 1 && onPageChange(page + 1)}
               className={page >= totalPages - 1 ? 'opacity-50 pointer-events-none' : undefined}
-              data-testid="plan-pagination-next"
+              data-testid={`${testIdPrefix}-next`}
             />
           </PaginationItem>
         </PaginationContent>

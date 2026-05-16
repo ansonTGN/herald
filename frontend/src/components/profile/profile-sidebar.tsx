@@ -19,9 +19,9 @@ export function ProfileSidebar() {
     () => [
       { name: 'Profile', path: `/${realmId}/user/profile`, icon: User },
       { name: 'Security', path: `/${realmId}/user/security`, icon: Shield },
+      { name: 'Points', path: `/${realmId}/user/points`, icon: Coins },
       { name: 'Subscription', path: `/${realmId}/user/subscription-history`, icon: CreditCard },
       { name: 'Invoices', path: `/${realmId}/user/invoices`, icon: FileText },
-      { name: 'Points', path: `/${realmId}/user/points`, icon: Coins },
     ],
     [realmId]
   )

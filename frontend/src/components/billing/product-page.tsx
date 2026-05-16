@@ -120,7 +120,6 @@ export function ProductPage({ realmId }: ProductPageProps) {
     <div className="space-y-6" data-testid="products-page">
       <PageHeader
         title="Products"
-        description="Manage product catalog"
         action={{
           label: 'Create Product',
           onClick: handleCreateProduct,

@@ -431,10 +431,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
 
   return (
     <div className="space-y-6" data-testid="payment-providers-page">
-      <PageHeader
-        title="Payment Providers"
-        description="Manage payment provider configurations for your realm"
-      />
+      <PageHeader title="Payment Providers" />
 
       {!shopifyProvider && !wechatProvider && !stripeProvider ? (
         <Card className="border-dashed">

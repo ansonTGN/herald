@@ -85,27 +85,8 @@ export function Sidebar() {
         ],
       },
       {
-        name: 'Points',
-        icon: Coins,
-        permission: 'points.view',
-        children: [
-          {
-            name: 'User Accounts',
-            path: `/${realmId}/manage/points/accounts`,
-            icon: Users,
-            permission: 'points.view',
-          },
-          {
-            name: 'Plan Configurations',
-            path: `/${realmId}/manage/points/configs`,
-            icon: Settings,
-            permission: 'points.view',
-          },
-        ],
-      },
-      {
-        name: 'Products & Pricing',
-        icon: Briefcase,
+        name: 'Billing',
+        icon: CreditCard,
         permission: 'billing.view',
         children: [
           {
@@ -120,19 +101,6 @@ export function Sidebar() {
             icon: CreditCard,
             permission: 'billing.view',
           },
-          {
-            name: 'Points Packages',
-            path: `/${realmId}/manage/points-packages`,
-            icon: Coins,
-            permission: 'billing.view',
-          },
-        ],
-      },
-      {
-        name: 'Billing',
-        icon: CreditCard,
-        permission: 'billing.view',
-        children: [
           {
             name: 'Invoices',
             path: `/${realmId}/manage/billing/invoices`,
@@ -150,6 +118,31 @@ export function Sidebar() {
             path: `/${realmId}/manage/subscription-history`,
             icon: History,
             permission: 'billing.view',
+          },
+        ],
+      },
+      {
+        name: 'Points',
+        icon: Coins,
+        permission: 'points.view',
+        children: [
+          {
+            name: 'User Accounts',
+            path: `/${realmId}/manage/points/accounts`,
+            icon: Users,
+            permission: 'points.view',
+          },
+          {
+            name: 'Plan Configurations',
+            path: `/${realmId}/manage/points/configs`,
+            icon: Settings,
+            permission: 'points.view',
+          },
+          {
+            name: 'Points Packages',
+            path: `/${realmId}/manage/points-packages`,
+            icon: Coins,
+            permission: 'points.view',
           },
         ],
       },

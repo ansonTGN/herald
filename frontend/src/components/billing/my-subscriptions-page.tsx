@@ -169,10 +169,7 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
 
   return (
     <div className="space-y-6" data-testid="my-subscriptions-page">
-      <PageHeader
-        title="My Subscriptions"
-        description="View your current subscriptions across connected client applications"
-      />
+      <PageHeader title="My Subscriptions" />
 
       {/* Unclaimed Subscription Banner */}
       {showBanner && (

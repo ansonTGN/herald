@@ -85,23 +85,23 @@ function handleApiErrorWithStatus(error: unknown): never {
       // Handle specific HTTP status codes
       switch (status) {
         case 400:
-          throw new Error(`请求参数错误: ${message}`)
+          throw new Error(`Bad request: ${message}`)
         case 401:
-          throw new Error('未授权，请重新登录')
+          throw new Error('Unauthorized, please log in again')
         case 403:
-          throw new Error('权限不足，无法执行此操作')
+          throw new Error('Insufficient permissions')
         case 404:
-          throw new Error('请求的资源不存在')
+          throw new Error('Requested resource not found')
         case 409:
-          throw new Error(`冲突: ${message}`)
+          throw new Error(`Conflict: ${message}`)
         case 422:
-          throw new Error(`数据验证失败: ${message}`)
+          throw new Error(`Validation failed: ${message}`)
         case 429:
-          throw new Error('请求过于频繁，请稍后再试')
+          throw new Error('Too many requests, please try later')
         case 500:
-          throw new Error('服务器错误，请稍后再试')
+          throw new Error('Server error, please try later')
         case 503:
-          throw new Error('服务暂时不可用，请稍后再试')
+          throw new Error('Service temporarily unavailable')
         default:
           throw new Error(message)
       }
@@ -114,7 +114,7 @@ function handleApiErrorWithStatus(error: unknown): never {
   }
 
   // Handle unknown errors
-  throw new Error('发生未知错误，请稍后再试')
+  throw new Error('An unknown error occurred')
 }
 
 const GC_TIME_5_MIN = TIME_CONSTANTS.FIVE_MINUTES
@@ -122,6 +122,23 @@ const GC_TIME_10_MIN = 10 * 60 * 1000
 const RETRY_COUNT = 1
 const STALE_TIME_2_MIN = TIME_CONSTANTS.TWO_MINUTES
 const STALE_TIME_5_MIN = TIME_CONSTANTS.FIVE_MINUTES
+
+const isClientError = (error: unknown): boolean => {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = String(error.message)
+    return (
+      message.includes('Unauthorized') ||
+      message.includes('Insufficient permissions') ||
+      message.includes('Bad request')
+    )
+  }
+  return false
+}
+
+const clientErrorRetry = (failureCount: number, error: unknown): boolean => {
+  if (isClientError(error)) return false
+  return failureCount < RETRY_COUNT
+}
 
 export const queryKeys = {
   publicConfig: (realmId: string) => [QUERY_KEYS.PUBLIC_CONFIG, realmId] as const,
@@ -201,8 +218,7 @@ export const queryKeys = {
     [QUERY_KEYS.AUDIT_EVENTS, realmId, filters ?? {}] as const,
   auditDetail: (realmId: string, eventId: string) =>
     [QUERY_KEYS.AUDIT_EVENT, realmId, eventId] as const,
-  dashboardStats: (realmId: string) =>
-    [QUERY_KEYS.DASHBOARD_STATS, realmId] as const,
+  dashboardStats: (realmId: string) => [QUERY_KEYS.DASHBOARD_STATS, realmId] as const,
 }
 
 function extractNestedArray<T>(response: unknown, key: string): T[] {
@@ -903,20 +919,7 @@ export const realmConfigQueryOptions = (realmId: string) =>
         handleApiErrorWithStatus(error)
       }
     },
-    retry: (failureCount, error) => {
-      // Don't retry on client errors (4xx)
-      if (error && typeof error === 'object' && 'message' in error) {
-        const message = String(error.message)
-        if (
-          message.includes('未授权') ||
-          message.includes('权限不足') ||
-          message.includes('请求参数错误')
-        ) {
-          return false
-        }
-      }
-      return failureCount < RETRY_COUNT
-    },
+    retry: clientErrorRetry,
     staleTime: STALE_TIME_5_MIN,
   })
 
@@ -962,20 +965,7 @@ export const freeUserStatsQueryOptions = (
         handleApiErrorWithStatus(error)
       }
     },
-    retry: (failureCount, error) => {
-      // Don't retry on client errors (4xx)
-      if (error && typeof error === 'object' && 'message' in error) {
-        const message = String(error.message)
-        if (
-          message.includes('未授权') ||
-          message.includes('权限不足') ||
-          message.includes('请求参数错误')
-        ) {
-          return false
-        }
-      }
-      return failureCount < RETRY_COUNT
-    },
+    retry: clientErrorRetry,
     staleTime: STALE_TIME_2_MIN,
     refetchInterval: TIME_CONSTANTS.FIVE_MINUTES,
   })

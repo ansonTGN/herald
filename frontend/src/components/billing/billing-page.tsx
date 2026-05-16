@@ -12,7 +12,7 @@ import { PlanTable } from './plan-table'
 import { PlanAssignmentDialog, type PlanAssignmentSubmitData } from './plan-assignment-dialog'
 import { PlanProviderMappingList } from './plan-provider-mapping-list'
 import { PlanProviderMappingForm } from './plan-provider-mapping-form'
-import { PlanPagination } from './plan-pagination'
+import { ListPagination } from '@/components/shared'
 import {
   addPaymentProviderToPlan,
   updatePlanPaymentProvider,
@@ -300,10 +300,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
   return (
     <div className="space-y-6" data-testid="billing-page">
       <div className="flex items-start justify-between gap-4">
-        <PageHeader
-          title="Billing Plans"
-          description="Manage subscription plans and their assignments"
-        />
+        <PageHeader title="Billing Plans" />
         <div className="flex gap-2">
           <Button onClick={handleCreatePlan} data-testid="add-plan-button">
             <Plus className="mr-2 h-4 w-4" />
@@ -336,7 +333,15 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
         </CardContent>
       </Card>
 
-      {pagination && <PlanPagination pagination={pagination} onPageChange={handlePageChange} />}
+      {pagination && (
+        <ListPagination
+          page={pagination.page}
+          pageSize={pagination.pageSize}
+          total={pagination.total}
+          onPageChange={handlePageChange}
+          testIdPrefix="plan-pagination"
+        />
+      )}
 
       <PlanAssignmentDialog
         plan={assignDialog.selectedItem ?? undefined}

@@ -68,8 +68,6 @@ test.describe('[Points User] Comprehensive Demo Tests', () => {
       await test.step('Verify: Balance card and basic information displayed', async () => {
         await expect(page.locator(SELECTORS.pointsUser.balanceCard)).toBeVisible()
         await expect(page.locator(SELECTORS.pointsUser.balanceAmount)).toBeVisible()
-        await expect(page.locator(SELECTORS.pointsUser.totalRecharged)).toBeVisible()
-        await expect(page.locator(SELECTORS.pointsUser.totalConsumed)).toBeVisible()
         await expect(page.locator(SELECTORS.pointsUser.accountStatus)).toBeVisible()
         demoLogger.testCode.log('[Test] ✓ Balance card and information displayed')
       })
@@ -81,11 +79,6 @@ test.describe('[Points User] Comprehensive Demo Tests', () => {
         demoLogger.testCode.log(`[Test] ✓ Account status: ${statusText}`)
       })
 
-      await test.step('Verify: Points unit description', async () => {
-        await expect(page.locator(SELECTORS.pointsUser.pointsDescription)).toBeVisible()
-        await expect(page.getByText('积分是系统的虚拟货币')).toBeVisible()
-        demoLogger.testCode.log('[Test] ✓ Points unit description displayed')
-      })
 
       await test.step('Document: Real-time balance update behavior', async () => {
         // NOTE: Real-time balance updates require backend SDK API integration
@@ -142,46 +135,32 @@ test.describe('[Points User] Comprehensive Demo Tests', () => {
       })
 
       await test.step('Verify: Pagination controls and behavior (US-PU-02 Scenario 5)', async () => {
-        const pagination = page.locator('[data-testid^="pagination-"]').first()
+        const pagination = page.locator('[data-testid="transaction-pagination"]')
         const isVisible = await pagination.isVisible().catch(() => false)
 
         if (isVisible) {
           demoLogger.testCode.log('[Test] ✓ Pagination controls found')
 
-          // Verify pagination shows total transaction count
-          // Expected: "共 100 条交易" or "Total: 100 transactions"
-          const totalCount = page.locator('[data-testid="pagination-total"]')
-          if (await totalCount.isVisible().catch(() => false)) {
-            const countText = await totalCount.textContent()
-            demoLogger.testCode.log(`[Test] ✓ Total transactions: ${countText}`)
+          // Verify pagination shows result summary text
+          const summaryText = page.getByText(/Showing \d+ to \d+ of \d+ results/)
+          if (await summaryText.isVisible().catch(() => false)) {
+            const text = await summaryText.textContent()
+            demoLogger.testCode.log(`[Test] ✓ Pagination summary: ${text}`)
           }
 
-          // Verify pagination shows current page and total pages
-          // Expected: "第 1 页，共 5 页" or "Page 1 of 5"
-          const pageInfo = page.locator('[data-testid="pagination-info"]')
-          if (await pageInfo.isVisible().catch(() => false)) {
-            const pageText = await pageInfo.textContent()
-            demoLogger.testCode.log(`[Test] ✓ Page info: ${pageText}`)
+          // Verify previous/next buttons exist
+          const prevButton = page.locator('[data-testid="transaction-pagination-previous"]')
+          const nextButton = page.locator('[data-testid="transaction-pagination-next"]')
+          if (await prevButton.isVisible().catch(() => false)) {
+            demoLogger.testCode.log('[Test] ✓ Previous page button found')
           }
-
-          // Verify page size selector (if present)
-          // Expected: Dropdown to select items per page (10, 20, 50)
-          const pageSizeSelector = page.locator('[data-testid="pagination-page-size"]')
-          if (await pageSizeSelector.isVisible().catch(() => false)) {
-            demoLogger.testCode.log('[Test] ✓ Page size selector found')
+          if (await nextButton.isVisible().catch(() => false)) {
+            demoLogger.testCode.log('[Test] ✓ Next page button found')
           }
         } else {
           demoLogger.testCode.info('[Test] ℹ Pagination not needed (fewer than 20 transactions)')
           demoLogger.testCode.info('[Test] ℹ Pagination will appear when transactions exceed 20 items')
         }
-
-        // Document expected pagination behavior per US-PU-02 Scenario 5
-        demoLogger.testCode.info('[Test] ℹ Expected behavior (US-PU-02 Scenario 5):')
-        demoLogger.testCode.info('[Test] ℹ - When user has 100 transactions, display 20 per page')
-        demoLogger.testCode.info('[Test] ℹ - Show "共 100 条交易" (Total: 100 transactions)')
-        demoLogger.testCode.info('[Test] ℹ - Show "第 1 页，共 5 页" (Page 1 of 5)')
-        demoLogger.testCode.info('[Test] ℹ - Support navigation: First, Previous, Next, Last')
-        demoLogger.testCode.info('[Test] ℹ - Optional: Page size selector (10/20/50 items per page)')
       })
 
       await test.step('Verify: Detailed transaction information', async () => {
@@ -338,7 +317,7 @@ test.describe('[Points User] Comprehensive Demo Tests', () => {
         await page.locator(SELECTORS.pointsUser.filterStartTime).fill(futureDateStr)
         await page.locator(SELECTORS.pointsUser.applyFiltersButton).click()
 
-        await expect(page.getByText('没有找到符合条件的交易记录')).toBeVisible()
+        await expect(page.getByText('No transactions found matching your criteria')).toBeVisible()
         demoLogger.testCode.log('[Test] ✓ Empty state message displayed')
       })
     })

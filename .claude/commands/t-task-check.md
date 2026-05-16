@@ -182,6 +182,7 @@ allowed-tools:
 - item 职责混杂，导致一次 agent 调用高概率无法完成。
 - item 合并多个可独立交付、独立验证的主交付物。
 - HTTP/API item 同时覆盖 5 个以上 endpoint、DTO、路由注册和 OpenAPI/schema 更新。
+- 规划“为新增 struct/DTO/builder/getter/常量补单测”这类低价值 backend unit test item。
 - demo item 同时创建复用 helper 并覆盖多个完整用户故事或多个业务状态流。
 - 下游 item 缺少对上游 handoff 的追溯。
 - backend 阶段缺少 `awaiting_finalize` 收口语义。

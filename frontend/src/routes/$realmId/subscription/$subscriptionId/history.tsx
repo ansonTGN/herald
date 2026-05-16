@@ -67,12 +67,7 @@ function SubscriptionDetailHistoryRoute() {
             <ArrowLeft className="h-5 w-5" />
             <span className="sr-only">Back</span>
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold">Subscription History</h1>
-            <p className="text-muted-foreground">
-              View the complete change timeline for this subscription
-            </p>
-          </div>
+          <h1 className="text-xl font-semibold">Subscription History</h1>
         </div>
       </div>
 

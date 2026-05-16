@@ -17,12 +17,6 @@ interface TransactionHistoryTableProps {
   transactions: PointsTransactionResponse[]
   loading?: boolean
   filters: TransactionFilters
-  pagination: {
-    page: number
-    pageSize: number
-    total: number
-  }
-  onPaginationChange: (pagination: { page: number; pageSize: number }) => void
   admin?: boolean
   clientApps?: Array<{ id: string; name: string }>
 }
@@ -31,8 +25,6 @@ export function TransactionHistoryTable({
   transactions,
   loading = false,
   filters,
-  pagination,
-  onPaginationChange,
   admin = false,
   clientApps,
 }: TransactionHistoryTableProps) {
@@ -192,8 +184,6 @@ export function TransactionHistoryTable({
     getCoreRowModel: getCoreRowModel(),
   })
 
-  const totalPages = Math.ceil(pagination.total / pagination.pageSize)
-
   if (loading) {
     return (
       <div className="space-y-4">
@@ -211,8 +201,8 @@ export function TransactionHistoryTable({
     return (
       <div className="text-center py-12 text-muted-foreground" data-testid="no-transactions">
         <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
-        <p>没有找到符合条件的交易记录</p>
-        {hasActiveFilters && <p className="text-sm mt-2">尝试调整筛选条件</p>}
+        <p>No transactions found matching your criteria</p>
+        {hasActiveFilters && <p className="text-sm mt-2">Try adjusting your filters</p>}
       </div>
     )
   }
@@ -245,38 +235,6 @@ export function TransactionHistoryTable({
           ))}
         </TableBody>
       </Table>
-
-      {/* Pagination */}
-      {pagination.total > 0 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Showing {Math.min((pagination.page - 1) * pagination.pageSize + 1, pagination.total)} to{' '}
-            {Math.min(pagination.page * pagination.pageSize, pagination.total)} of{' '}
-            {pagination.total} transactions
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => onPaginationChange({ ...pagination, page: pagination.page - 1 })}
-              disabled={pagination.page === 1}
-              className="px-3 py-1 border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
-              data-testid="prev-page-button"
-            >
-              Previous
-            </button>
-            <span className="px-3 py-1" data-testid="current-page">
-              Page {pagination.page} of {totalPages}
-            </span>
-            <button
-              onClick={() => onPaginationChange({ ...pagination, page: pagination.page + 1 })}
-              disabled={pagination.page >= totalPages}
-              className="px-3 py-1 border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
-              data-testid="next-page-button"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

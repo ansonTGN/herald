@@ -84,16 +84,15 @@ pub async fn delete_permission(
     };
 
     // Check if permission is assigned to any roles
-    let permission_in_use: Option<(bool,)> = sqlx::query_as(
-        "SELECT EXISTS(SELECT 1 FROM role_permissions WHERE permission_id = $1)",
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to check permission usage: {e}");
-        ApiError::internal("Failed to check permission usage")
-    })?;
+    let permission_in_use: Option<(bool,)> =
+        sqlx::query_as("SELECT EXISTS(SELECT 1 FROM role_permissions WHERE permission_id = $1)")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to check permission usage: {e}");
+                ApiError::internal("Failed to check permission usage")
+            })?;
 
     if matches!(permission_in_use, Some((true,))) {
         return Err(ApiError::conflict(
@@ -115,7 +114,10 @@ pub async fn delete_permission(
         return Err(ApiError::not_found("Permission not found"));
     }
 
-    let _ = state.permission_checker.invalidate_realm_cache(&realm_id).await;
+    let _ = state
+        .permission_checker
+        .invalidate_realm_cache(&realm_id)
+        .await;
 
     Ok(ApiResult::no_content())
 }

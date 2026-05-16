@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Coins, History, TrendingUp, TrendingDown, Wallet, Info, Plus } from 'lucide-react'
+import { Coins, History, Plus } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { PointsBalanceCard } from './PointsBalanceCard'
 import { TransactionHistoryTable } from './TransactionHistoryTable'
@@ -17,6 +17,7 @@ import {
 } from '@/data/query-options'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import type { TransactionFilters as TransactionFiltersType } from '@/lib/schemas/points-forms'
+import { ListPagination } from '@/components/shared'
 
 interface UserPointsPageProps {
   realmId: string
@@ -60,11 +61,8 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
   return (
     <div className="space-y-6" data-testid="user-points-page">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">My Points</h1>
-          <p className="text-muted-foreground">View your points balance and transaction history</p>
-        </div>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">My Points</h1>
         <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
           <Button data-testid="purchase-points-button">
             <Plus className="mr-2 h-4 w-4" />
@@ -75,70 +73,6 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
 
       {/* Balance Card */}
       <PointsBalanceCard account={account || null} loading={accountLoading} />
-
-      {/* Points Description */}
-      <Card className="bg-blue-50 border-blue-200">
-        <CardContent className="p-6">
-          <div className="flex items-start gap-4">
-            <Info className="h-6 w-6 text-blue-600 mt-0.5" />
-            <div>
-              <h3 className="font-semibold text-blue-900">About Points</h3>
-              <p className="text-sm text-blue-700 mt-1" data-testid="points-description-text">
-                积分是系统的虚拟货币，可用于消耗第三方应用的服务
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Quick Stats */}
-      {account && (
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-primary/10 rounded-lg">
-                  <Wallet className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <div className="text-sm text-muted-foreground">Current Balance</div>
-                  <div className="text-2xl font-bold">{account.balance.toLocaleString()}</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-green-500/10 rounded-lg">
-                  <TrendingUp className="h-6 w-6 text-green-600" />
-                </div>
-                <div>
-                  <div className="text-sm text-muted-foreground">Total Earned</div>
-                  <div className="text-2xl font-bold text-green-600">
-                    {account.totalRecharged.toLocaleString()}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-red-500/10 rounded-lg">
-                  <TrendingDown className="h-6 w-6 text-red-600" />
-                </div>
-                <div>
-                  <div className="text-sm text-muted-foreground">Total Spent</div>
-                  <div className="text-2xl font-bold text-red-600">
-                    {account.totalConsumed.toLocaleString()}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
       {/* Transaction History and Purchase History Tabs */}
       <Tabs defaultValue="transactions" className="space-y-4" data-testid="points-page-tabs">
@@ -177,16 +111,19 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
                 transactions={transactionsData?.transactions || []}
                 loading={transactionsLoading}
                 filters={transactionFilters}
-                pagination={{
-                  page: transactionsPage,
-                  pageSize: DEFAULT_PAGE_SIZE,
-                  total: transactionsData?.total || 0,
-                }}
-                onPaginationChange={(pagination) => setTransactionsPage(pagination.page)}
                 admin={false}
               />
             </CardContent>
           </Card>
+          {transactionsData && transactionsData.total > 0 && (
+            <ListPagination
+              page={transactionsPage - 1}
+              pageSize={DEFAULT_PAGE_SIZE}
+              total={transactionsData.total}
+              onPageChange={(page) => setTransactionsPage(page + 1)}
+              testIdPrefix="transaction-pagination"
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="purchase-history" className="space-y-4">
@@ -201,25 +138,23 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
               <PurchaseHistoryList
                 purchases={purchaseHistoryData?.purchases || []}
                 isLoading={purchaseHistoryLoading}
-                pagination={
-                  purchaseHistoryData
-                    ? {
-                        page: purchaseHistoryPage,
-                        pageSize: DEFAULT_PAGE_SIZE,
-                        total: purchaseHistoryData?.purchases?.length || 0,
-                        totalPages: Math.ceil(
-                          (purchaseHistoryData?.purchases?.length || 0) / DEFAULT_PAGE_SIZE
-                        ),
-                      }
-                    : undefined
-                }
-                onPageChange={setPurchaseHistoryPage}
                 onDetailsClick={(purchaseId) => {
                   setSelectedPurchaseId(purchaseId)
                 }}
               />
             </CardContent>
           </Card>
+          {purchaseHistoryData &&
+            purchaseHistoryData.purchases &&
+            purchaseHistoryData.purchases.length > 0 && (
+              <ListPagination
+                page={purchaseHistoryPage - 1}
+                pageSize={DEFAULT_PAGE_SIZE}
+                total={purchaseHistoryData.purchases.length}
+                onPageChange={(page) => setPurchaseHistoryPage(page + 1)}
+                testIdPrefix="purchase-pagination"
+              />
+            )}
         </TabsContent>
       </Tabs>
 
@@ -233,24 +168,6 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
             if (!open) setSelectedPurchaseId(null)
           }}
         />
-      )}
-
-      {/* Info Banner */}
-      {account && account.balance < 100 && (
-        <Card className="bg-amber-50 border-amber-200">
-          <CardContent className="p-6">
-            <div className="flex items-start gap-4">
-              <Coins className="h-6 w-6 text-amber-600 mt-0.5" />
-              <div>
-                <h3 className="font-semibold text-amber-900">Low Points Balance</h3>
-                <p className="text-sm text-amber-700 mt-1">
-                  You have less than 100 points remaining. Consider subscribing to a plan to earn
-                  more points and avoid service interruptions.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       )}
     </div>
   )

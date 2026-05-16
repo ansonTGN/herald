@@ -64,7 +64,7 @@ export function SubscriptionManagement({ realmId, clientAppId }: SubscriptionMan
 
   return (
     <div className="space-y-6" data-testid="subscription-management">
-      <PageHeader title="Subscription" description="Manage your subscription status" />
+      <PageHeader title="Subscription" />
 
       <Card>
         <CardHeader>

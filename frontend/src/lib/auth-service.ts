@@ -77,14 +77,17 @@ export async function performLogin(
   realmId: string,
   credentials: LoginRequestPayload
 ): Promise<LoginResponse> {
-  const response = await login({
+  const { data, error } = await login({
     path: { realmId },
     body: credentials,
   })
-  if (!response.data) {
+  if (error) {
+    throw error
+  }
+  if (!data) {
     throw new Error('Login failed: no response data')
   }
-  return response.data
+  return data
 }
 
 /**

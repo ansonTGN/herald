@@ -589,7 +589,7 @@ BEGIN
         'prod_realm001_' || uuidv7(),
         'stripe',
         'active',
-        'premium',
+        'professional',
         v_test_timestamp - INTERVAL '30 days',
         v_test_timestamp + INTERVAL '30 days',
         v_plan_id,
@@ -611,9 +611,9 @@ BEGIN
         'created',
         v_test_timestamp - INTERVAL '25 days',
         'admin@realm-001.com',
-        '{{"tier": ["free", "premium"]}}'::jsonb,
+        '{{"tier": ["free", "professional"]}}'::jsonb,
         '{{"status": "inactive", "tier": "free"}}'::jsonb,
-        '{{"status": "active", "tier": "premium"}}'::jsonb,
+        '{{"status": "active", "tier": "professional"}}'::jsonb,
         '{POINTS_REALM_ID}'
     ),
     (
@@ -622,9 +622,9 @@ BEGIN
         'upgraded',
         v_test_timestamp - INTERVAL '15 days',
         'admin@realm-001.com',
-        '{{"tier": ["basic", "premium"]}}'::jsonb,
-        '{{"tier": "basic"}}'::jsonb,
-        '{{"tier": "premium"}}'::jsonb,
+        '{{"tier": ["starter", "professional"]}}'::jsonb,
+        '{{"tier": "starter"}}'::jsonb,
+        '{{"tier": "professional"}}'::jsonb,
         '{POINTS_REALM_ID}'
     ),
     (
@@ -913,7 +913,7 @@ BEGIN
         'prod_demo_' || uuidv7(),
         'stripe',
         'active',
-        'premium',
+        'professional',
         v_test_timestamp - INTERVAL '30 days',
         v_test_timestamp + INTERVAL '30 days',
         v_plan_id,
@@ -935,9 +935,9 @@ BEGIN
         'created',
         v_test_timestamp - INTERVAL '25 days',
         'admin@cas.com',
-        '{{"tier": ["free", "premium"]}}'::jsonb,
+        '{{"tier": ["free", "professional"]}}'::jsonb,
         '{{"status": "inactive", "tier": "free"}}'::jsonb,
-        '{{"status": "active", "tier": "premium"}}'::jsonb,
+        '{{"status": "active", "tier": "professional"}}'::jsonb,
         '{ADMIN_REALM}'
     ),
     (
@@ -946,9 +946,9 @@ BEGIN
         'upgraded',
         v_test_timestamp - INTERVAL '15 days',
         'admin@cas.com',
-        '{{"tier": ["basic", "premium"]}}'::jsonb,
-        '{{"tier": "basic"}}'::jsonb,
-        '{{"tier": "premium"}}'::jsonb,
+        '{{"tier": ["starter", "professional"]}}'::jsonb,
+        '{{"tier": "starter"}}'::jsonb,
+        '{{"tier": "professional"}}'::jsonb,
         '{ADMIN_REALM}'
     ),
     (
@@ -1169,7 +1169,7 @@ def _ensure_shopify_unclaimed_subscription(logger: "Logger | None") -> None:
             'shopify_test_product',
             'shopify',
             'active',
-            'premium',
+            'professional',
             NOW(),
             NOW() + INTERVAL '30 days',
             v_plan_id,

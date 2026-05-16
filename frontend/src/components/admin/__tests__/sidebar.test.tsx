@@ -71,12 +71,12 @@ describe('Sidebar navigation', () => {
     useAuthStore.getState().reset()
   })
 
-  it('highlights billing plans on the billing page (under Products & Pricing)', async () => {
+  it('highlights billing plans on the billing page (under Billing)', async () => {
     currentPath = '/admin/manage/billing?page=0&pageSize=20&status=all'
     const user = userEvent.setup()
     render(<Sidebar />)
 
-    await user.click(screen.getByTestId('sidebar-menu-products-&-pricing'))
+    await user.click(screen.getByTestId('sidebar-menu-billing'))
 
     const billingPlansLink = screen.getByTestId('sidebar-menu-billing-plans')
     const productsLink = screen.getByTestId('sidebar-menu-products')
@@ -118,7 +118,7 @@ describe('Sidebar navigation', () => {
     const user = userEvent.setup()
     render(<Sidebar />)
 
-    await user.click(screen.getByTestId('sidebar-menu-products-&-pricing'))
+    await user.click(screen.getByTestId('sidebar-menu-billing'))
 
     const sidebar = screen.getByTestId('admin-sidebar')
     const nav = screen.getByTestId('sidebar-nav')

@@ -1,6 +1,6 @@
 ---
 name: backend-dev
-description: Rust 后端开发专家。负责 Herald 后端生产代码、Domain/Application 单元测试和后端缺陷修复。
+description: Rust 后端开发专家。负责 Herald 后端生产代码、通过价值门槛的 Domain/Application 单元测试和后端缺陷修复。
 tools:
   - Read
   - Edit
@@ -33,7 +33,7 @@ hooks:
 ## 职责
 
 - 实现或修复 Rust 后端生产代码。
-- 编写最小必要的 Domain/Application 单元测试。
+- 编写通过价值门槛的最小必要 Domain/Application 单元测试；没有高价值单元测试点时允许不新增。
 - 修复来自 `backend-test-run` 的生产代码问题。
 - 保持六边形架构、现有模块边界和项目命名风格。
 
@@ -68,6 +68,8 @@ hooks:
 | Domain/Application 单元测试 | `backend-dev` | 源文件内 `#[cfg(test)]` 或既有单元测试位置 |
 | API/业务场景测试 | `backend-test` authoring item | `backend/**/tests/scenarios/**` |
 | 后端测试执行与修复闭环 | `backend-test-run` skill | runner item |
+
+不要为了满足“补测试”而新增构造函数赋值、DTO/derive、getter/setter、常量或机械字段映射测试。
 
 当失败来自 `backend-test-run` 或场景测试：
 

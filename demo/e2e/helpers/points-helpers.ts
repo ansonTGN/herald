@@ -139,8 +139,6 @@ export interface PointsAccountInfo {
   userId: string
   email: string
   balance: number
-  totalRecharged: number
-  totalConsumed: number
   status: string
 }
 
@@ -363,8 +361,6 @@ export async function getUserAccountInfo(
     userId,
     email: email || nameText || '',
     balance: parseInt(balanceText?.replace(/,/g, '') || '0'),
-    totalRecharged: 0, // Would need to parse from table
-    totalConsumed: 0, // Would need to parse from table
     status: status || '',
   }
 }
@@ -425,20 +421,6 @@ async function parseNumberFromSelector(page: Page, selector: string): Promise<nu
  */
 export async function getUserBalance(page: Page): Promise<number> {
   return parseNumberFromSelector(page, SELECTORS.pointsUser.balanceAmount)
-}
-
-/**
- * Get total recharged from balance card
- */
-export async function getTotalRecharged(page: Page): Promise<number> {
-  return parseNumberFromSelector(page, SELECTORS.pointsUser.totalRecharged)
-}
-
-/**
- * Get total consumed from balance card
- */
-export async function getTotalConsumed(page: Page): Promise<number> {
-  return parseNumberFromSelector(page, SELECTORS.pointsUser.totalConsumed)
 }
 
 /**

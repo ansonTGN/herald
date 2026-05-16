@@ -32,12 +32,7 @@ function DashboardStatsTestComponent({ realmId }: { realmId: string }) {
 
   if (isLoading) return <div data-testid="loading">Loading...</div>
   if (error) return <div data-testid="dashboard-error">{error.message}</div>
-  if (data)
-    return (
-      <div data-testid="dashboard-data">
-        {data.userStats.totalUsers} users
-      </div>
-    )
+  if (data) return <div data-testid="dashboard-data">{data.userStats.totalUsers} users</div>
   return null
 }
 
@@ -142,10 +137,7 @@ describe('dashboardStatsQueryOptions', () => {
     it('should enter error state on 500 Internal Server Error', async () => {
       server.use(
         http.get(`${API_BASE_URL}/api/dashboard/:realmId/stats`, () => {
-          return HttpResponse.json(
-            { message: 'Internal Server Error' },
-            { status: 500 }
-          )
+          return HttpResponse.json({ message: 'Internal Server Error' }, { status: 500 })
         })
       )
 

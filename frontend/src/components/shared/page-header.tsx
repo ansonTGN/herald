@@ -4,7 +4,6 @@ import { Plus } from 'lucide-react'
 
 export interface PageHeaderProps {
   title: string
-  description: string
   headingTestId?: string
   action?: {
     label: string
@@ -18,13 +17,12 @@ export interface PageHeaderProps {
 
 /**
  * Standardized page header component for list pages.
- * Provides consistent layout for page title, description, and action button.
+ * Provides consistent layout for page title and action button.
  *
  * @example
  * ```tsx
  * <PageHeader
  *   title="Roles"
- *   description="Manage role definitions for your realm"
  *   action={{
  *     label: "Add Role",
  *     onClick: () => setDialogOpen(true),
@@ -33,23 +31,16 @@ export interface PageHeaderProps {
  * />
  * ```
  */
-export function PageHeader({
-  title,
-  description,
-  headingTestId,
-  action,
-  className = '',
-}: PageHeaderProps) {
+export function PageHeader({ title, headingTestId, action, className = '' }: PageHeaderProps) {
   return (
     <div className={`flex items-center justify-between ${className}`}>
       <div>
         <h1
-          className="text-3xl font-bold"
+          className="text-xl font-semibold"
           data-testid={headingTestId ?? `${title.toLowerCase()}-heading`}
         >
           {title}
         </h1>
-        <p className="text-muted-foreground mt-1">{description}</p>
       </div>
       {action && action.show !== false && (
         <Button onClick={action.onClick} data-testid={action.testId}>

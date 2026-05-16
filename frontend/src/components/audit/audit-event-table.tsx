@@ -1,42 +1,13 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTable } from '@/components/shared'
 import { Badge } from '@/components/ui/badge'
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination'
-import { ChevronLeftIcon, ChevronRightIcon } from '@radix-ui/react-icons'
 import type { AuditEventResponse } from '@/lib/api-generated'
 import { formatDateTime } from '@/lib/date-utils'
 
 interface AuditEventTableProps {
   data: AuditEventResponse[]
-  total: number
-  page: number
-  pageSize: number
   onRowClick: (event: AuditEventResponse) => void
-  onPageChange: (page: number) => void
   emptyMessage?: string
-}
-
-function getPageNumbers(currentPage: number, totalPages: number): number[] {
-  const maxVisible = 5
-  let startPage = Math.max(0, currentPage - 2)
-  let endPage = Math.min(totalPages - 1, startPage + maxVisible - 1)
-
-  if (endPage - startPage < maxVisible - 1) {
-    startPage = Math.max(0, endPage - maxVisible + 1)
-  }
-
-  const pages: number[] = []
-  for (let i = startPage; i <= endPage; i++) {
-    pages.push(i)
-  }
-  return pages
 }
 
 const columns: ColumnDef<AuditEventResponse>[] = [
@@ -118,77 +89,16 @@ const columns: ColumnDef<AuditEventResponse>[] = [
 
 export function AuditEventTable({
   data,
-  total,
-  page,
-  pageSize,
   onRowClick,
-  onPageChange,
   emptyMessage = 'No audit logs yet.',
 }: AuditEventTableProps) {
-  const totalPages = Math.ceil(total / pageSize)
-  const pageNumbers = getPageNumbers(page, totalPages)
-
   return (
-    <div className="space-y-4">
-      <DataTable
-        columns={columns}
-        data={data}
-        onRowClick={onRowClick}
-        emptyMessage={emptyMessage}
-        data-testid="audit-table"
-      />
-
-      {totalPages > 1 && (
-        <Pagination data-testid="audit-pagination">
-          <PaginationContent>
-            <PaginationItem>
-              {page === 0 ? (
-                <span
-                  className="inline-flex cursor-not-allowed items-center gap-1 pl-2.5 opacity-50"
-                  data-testid="audit-pagination-previous"
-                >
-                  <ChevronLeftIcon className="h-4 w-4" />
-                  <span>Previous</span>
-                </span>
-              ) : (
-                <PaginationPrevious
-                  onClick={() => onPageChange(page - 1)}
-                  data-testid="audit-pagination-previous"
-                />
-              )}
-            </PaginationItem>
-
-            {pageNumbers.map((pageNum) => (
-              <PaginationItem key={pageNum}>
-                <PaginationLink
-                  onClick={() => onPageChange(pageNum)}
-                  isActive={page === pageNum}
-                  data-testid={`audit-pagination-page-${pageNum}`}
-                >
-                  {pageNum + 1}
-                </PaginationLink>
-              </PaginationItem>
-            ))}
-
-            <PaginationItem>
-              {page >= totalPages - 1 ? (
-                <span
-                  className="inline-flex cursor-not-allowed items-center gap-1 pr-2.5 opacity-50"
-                  data-testid="audit-pagination-next"
-                >
-                  <span>Next</span>
-                  <ChevronRightIcon className="h-4 w-4" />
-                </span>
-              ) : (
-                <PaginationNext
-                  onClick={() => onPageChange(page + 1)}
-                  data-testid="audit-pagination-next"
-                />
-              )}
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
-      )}
-    </div>
+    <DataTable
+      columns={columns}
+      data={data}
+      onRowClick={onRowClick}
+      emptyMessage={emptyMessage}
+      data-testid="audit-table"
+    />
   )
 }

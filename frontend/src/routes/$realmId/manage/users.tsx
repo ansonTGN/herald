@@ -7,13 +7,14 @@ import { queryKeys, usersQueryOptions } from '@/data/query-options'
 import { usersSearchSchema, type UsersSearchParams } from '@/lib/schemas/search-params'
 import { UserSearch } from '@/components/users/user-search'
 import { UserTable } from '@/components/users/user-table'
-import { UserPagination } from '@/components/users/user-pagination'
+import { ListPagination } from '@/components/shared'
 import { CreateUserDialog } from '@/components/users/create-user-dialog'
 import { EditUserDialog } from '@/components/users/edit-user-dialog'
 import { UserRolesDialog } from '@/components/users/user-roles-dialog'
 import { deleteUser } from '@/lib/api-generated'
 import { useRealmId, useAuthStore } from '@/stores/auth-store'
 import type { UserResponse } from '@/lib/api-generated'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDeleteDialog, PageHeader } from '@/components/shared'
 
 export const Route = createFileRoute('/$realmId/manage/users')({
@@ -99,7 +100,6 @@ function UsersPage() {
     <div data-testid="users-page" className="space-y-6">
       <PageHeader
         title="Users"
-        description="Manage user accounts and permissions"
         headingTestId="users-heading"
         action={{
           label: 'Add User',
@@ -108,22 +108,36 @@ function UsersPage() {
         }}
       />
 
-      <div className="flex items-center gap-4">
-        <UserSearch email={search.email} onSearchChange={handleSearchChange} />
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Users</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-4">
+            <UserSearch email={search.email} onSearchChange={handleSearchChange} />
+          </div>
+
+          {data && (
+            <UserTable
+              data={data.items}
+              isLoading={isLoading}
+              error={error ?? undefined}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onManageRoles={handleManageRoles}
+            />
+          )}
+        </CardContent>
+      </Card>
 
       {data && (
-        <>
-          <UserTable
-            data={data.items}
-            isLoading={isLoading}
-            error={error ?? undefined}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-            onManageRoles={handleManageRoles}
-          />
-          <UserPagination pagination={data} onPageChange={handlePageChange} />
-        </>
+        <ListPagination
+          page={data.page}
+          pageSize={data.pageSize}
+          total={data.total}
+          onPageChange={handlePageChange}
+          testIdPrefix="user-pagination"
+        />
       )}
 
       <CreateUserDialog

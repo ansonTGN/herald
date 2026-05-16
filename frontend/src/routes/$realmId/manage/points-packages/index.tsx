@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Plus } from 'lucide-react'
 import { type PointsPackageResponse, deletePointsPackage } from '@/lib/api-generated'
 import { pointsPackagesQueryOptions, queryKeys } from '@/data/query-options'
@@ -10,7 +10,6 @@ import { PointsPackageDeleteDialog } from '@/components/points-packages/points-p
 import { PaymentProviderConfigForm } from '@/components/points-packages/payment-provider-config-form'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/shared/page-header'
-import { Button } from '@/components/ui/button'
 
 export const Route = createFileRoute('/$realmId/manage/points-packages/')({
   component: PointsPackagesPage,
@@ -72,30 +71,22 @@ function PointsPackagesPage() {
   }
 
   return (
-    <div className="container" data-testid="points-packages-page">
+    <div className="space-y-6" data-testid="points-packages-page">
       <PageHeader
         title="Points Packages"
-        description="Manage points packages that users can purchase"
+        action={{
+          label: 'Create Package',
+          onClick: () =>
+            navigate({
+              to: '/$realmId/manage/points-packages/new',
+              params: { realmId },
+            }),
+          testId: 'add-points-package-button',
+          icon: <Plus className="mr-2 h-4 w-4" />,
+        }}
       />
 
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Points Packages</CardTitle>
-            <Button
-              onClick={() =>
-                navigate({
-                  to: '/$realmId/manage/points-packages/new',
-                  params: { realmId },
-                })
-              }
-              data-testid="add-points-package-button"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Create Package
-            </Button>
-          </div>
-        </CardHeader>
         <CardContent>
           <PointsPackageList
             data={packages || []}

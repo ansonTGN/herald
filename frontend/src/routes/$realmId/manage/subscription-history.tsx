@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SubscriptionHistoryList } from '@/components/billing/subscription-history-list'
@@ -12,6 +11,7 @@ import {
 } from '@/data/query-options'
 import type { HistoryFilters, SubscriptionHistoryEventWithUser } from '@/types/billing'
 import { toast } from 'sonner'
+import { PageHeader, ListPagination } from '@/components/shared'
 
 export const Route = createFileRoute('/$realmId/manage/subscription-history')({
   component: SubscriptionHistoryRoute,
@@ -78,7 +78,7 @@ function SubscriptionHistoryRoute() {
 
   if (error) {
     return (
-      <div className="container mx-auto px-4 py-8" data-testid="subscription-history-page">
+      <div className="space-y-6" data-testid="subscription-history-page">
         <Card className="border-destructive">
           <CardContent className="p-6">
             <p className="text-destructive">
@@ -96,7 +96,7 @@ function SubscriptionHistoryRoute() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto px-4 py-8" data-testid="subscription-history-page">
+      <div className="space-y-6" data-testid="subscription-history-page">
         <div className="flex items-center justify-center py-12" data-testid="page-loading">
           <div className="text-center">
             <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent" />
@@ -108,26 +108,8 @@ function SubscriptionHistoryRoute() {
   }
 
   return (
-    <div className="container mx-auto space-y-6 px-4 py-8" data-testid="subscription-history-page">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link
-            to="/$realmId/manage/billing"
-            params={{ realmId }}
-            search={{ page: 0, pageSize: 20, status: 'all' }}
-          >
-            <Button variant="ghost" size="icon" data-testid="back-button">
-              <ArrowLeft className="h-5 w-5" />
-              <span className="sr-only">Back</span>
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-3xl font-bold">Subscription History</h1>
-            <p className="text-muted-foreground">View all subscription changes across the realm</p>
-          </div>
-        </div>
-      </div>
+    <div className="space-y-6" data-testid="subscription-history-page">
+      <PageHeader title="Subscription History" />
 
       {/* Filters */}
       <SubscriptionHistoryFilter
@@ -141,22 +123,27 @@ function SubscriptionHistoryRoute() {
       {/* History List */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Info className="h-5 w-5" />
-            History Events
-          </CardTitle>
+          <CardTitle>History Events</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <SubscriptionHistoryList
             events={historyData?.events || []}
             loading={isLoading}
-            pagination={historyData?.pagination}
-            onPageChange={handlePageChange}
             onSortChange={handleSortChange}
             onEventClick={handleEventClick}
           />
         </CardContent>
       </Card>
+
+      {historyData?.pagination && historyData.pagination.totalCount > 0 && (
+        <ListPagination
+          page={historyData.pagination.page - 1}
+          pageSize={pageSize}
+          total={historyData.pagination.totalCount}
+          onPageChange={(newPage) => handlePageChange(newPage + 1)}
+          testIdPrefix="subscription-history-pagination"
+        />
+      )}
     </div>
   )
 }

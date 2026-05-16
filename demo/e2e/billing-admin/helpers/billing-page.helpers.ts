@@ -41,7 +41,7 @@ export async function createBillingPlan(page: Page, formData: PlanFormData): Pro
     await expect(page.getByTestId('products-page')).toBeVisible({ timeout: 10000 })
     productTitle = `Default Product ${Date.now()}`
     await createProduct(page, {
-      name: `default-product-${Date.now()}`,
+      code: `default-product-${Date.now()}`,
       title: productTitle,
       description: 'Auto-created default product',
     })

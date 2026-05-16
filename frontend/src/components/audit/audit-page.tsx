@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useNavigate } from '@tanstack/react-router'
 import { auditListQueryOptions } from '@/data/query-options'
-import { PageHeader } from '@/components/shared'
+import { PageHeader, ListPagination } from '@/components/shared'
+import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AuditSearchParams } from '@/lib/schemas/search-params'
 import { AuditFilterBar, hasActiveFilters } from './audit-filter-bar'
@@ -67,11 +68,7 @@ export function AuditPage({ realmId, search }: AuditPageProps) {
 
   return (
     <div data-testid="audit-page" className="space-y-6">
-      <PageHeader
-        title="Audit Log"
-        description="View and filter audit events for this realm"
-        headingTestId="audit-heading"
-      />
+      <PageHeader title="Audit Log" headingTestId="audit-heading" />
 
       <AuditFilterBar
         filters={search}
@@ -79,29 +76,39 @@ export function AuditPage({ realmId, search }: AuditPageProps) {
         onClearFilters={handleClearFilters}
       />
 
-      {isLoading ? (
-        <div data-testid="audit-table-loading" className="space-y-3">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-        </div>
-      ) : data ? (
-        <AuditEventTable
-          data={data.items}
-          total={data.total}
+      <Card>
+        <CardContent className="space-y-4">
+          {isLoading ? (
+            <div data-testid="audit-table-loading" className="space-y-3">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : data ? (
+            <AuditEventTable
+              data={data.items}
+              onRowClick={(event) => setSelectedEventId(event.id)}
+              emptyMessage={
+                hasActiveFilters(search)
+                  ? 'No matching audit logs. Try adjusting your filters.'
+                  : 'No audit logs yet.'
+              }
+            />
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {data && (
+        <ListPagination
           page={data.page}
           pageSize={data.pageSize}
-          onRowClick={(event) => setSelectedEventId(event.id)}
+          total={data.total}
           onPageChange={handlePageChange}
-          emptyMessage={
-            hasActiveFilters(search)
-              ? 'No matching audit logs. Try adjusting your filters.'
-              : 'No audit logs yet.'
-          }
+          testIdPrefix="audit-pagination"
         />
-      ) : null}
+      )}
 
       <AuditEventDetailSheet
         eventId={selectedEventId}

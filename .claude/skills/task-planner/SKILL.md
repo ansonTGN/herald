@@ -187,6 +187,7 @@ manifest 不得包含完整实现步骤；完整步骤必须写入 item 文件�
 - backend dev：数据库/实体、domain、repository、service/use case、HTTP/OpenAPI、外部集成、SDK/API 影响点。
 - backend HTTP/API：DTO 与路由骨架、读模型/list/detail、写操作/create/update、状态操作、配置类接口分别拆分；每个 item 必须能用定向 `cargo check` 或场景测试验证。
 - backend test：按场景测试 authoring 与测试执行 runner 拆分；不要把创建场景测试和修复实现直到测试通过放在同一个 item。
+- backend unit test：不得规划“为新增 struct/DTO/builder/getter/常量补单测”这类低价值 item。
 - frontend dev：API/type 适配、schema/query/store、页面主流程、状态与错误处理、权限与空态。
 - frontend dev：一个 item 默认只交付一个页面域或一个可复用组件族；seller config、user page、admin page、dialog 等可独立验证的 UI 不应合并。
 - frontend test：schema、query options、store/state machine、数据转换、异常边界。
@@ -243,6 +244,8 @@ runner item：
 - 只执行定向测试、分析失败、委派 production-code 修复、重测。
 - 必须声明 backend-dev 不得修改 `backend/**/tests/scenarios/**` 或任何 `*_scenarios.rs`。
 - 测试语义可能错误时，停止并输出诊断报告，由用户决定。
+
+backend/test slot 不规划源文件内单元测试；确有必要的高价值单元测试归入对应 backend/dev item。
 
 依赖规则：
 - runner item 必须依赖对应 authoring item。

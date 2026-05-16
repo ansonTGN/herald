@@ -6,8 +6,8 @@ mod tests {
     use crate::authentication::Identity;
     use crate::billing::{
         AllowAllBillingPolicy, BillingRepository, ClientAppPlan, CreatePlanInput, PaymentEvent,
-        Plan, PlanPaymentProvider, PlanService, Product, Subscription,
-        SubscriptionHistoryEvent, SubscriptionHistoryQuery, UpdatePlanInput, test_helpers::*,
+        Plan, PlanPaymentProvider, PlanService, Product, Subscription, SubscriptionHistoryEvent,
+        SubscriptionHistoryQuery, UpdatePlanInput, test_helpers::*,
     };
     use crate::common::entities::app_errors::CoreError;
     use crate::user::entities::{User, UserStatus};

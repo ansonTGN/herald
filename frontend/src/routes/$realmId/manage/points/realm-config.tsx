@@ -31,16 +31,16 @@ function RealmConfigPage() {
   const queryClient = useQueryClient()
 
   const periodTypeLabels = {
-    once: '一次性发放',
-    daily: '每日发放',
-    weekly: '每周发放',
-    monthly: '每月发放',
+    once: 'One-time grant',
+    daily: 'Daily grant',
+    weekly: 'Weekly grant',
+    monthly: 'Monthly grant',
   }
 
   const { data: config, isLoading, error } = useQuery(realmConfigQueryOptions(realmId))
 
   // Treat 404 (no config yet) as non-error: use defaults
-  const isNotFound = error && /404|not found|不存在/i.test(error.message || '')
+  const isNotFound = error && /404|not found/i.test((error as Error).message || '')
   const effectiveConfig = config ?? null
 
   const updateMutation = useMutation({
@@ -53,11 +53,11 @@ function RealmConfigPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.realmConfig(realmId) })
-      toast.success('配置已更新')
+      toast.success('Configuration updated')
     },
     onError: (error) => {
       console.error('Failed to update realm config:', error)
-      toast.error(error.message || '更新配置失败，请重试')
+      toast.error(error.message || 'Failed to update config, please retry')
     },
   })
 
@@ -94,29 +94,26 @@ function RealmConfigPage() {
   if (error && !isNotFound) {
     return (
       <Alert variant="destructive">
-        <AlertDescription>加载配置失败: {error.message}</AlertDescription>
+        <AlertDescription>Failed to load config: {(error as Error).message}</AlertDescription>
       </Alert>
     )
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">积分默认配置</h1>
-        <p className="text-muted-foreground mt-2">
-          配置新用户的默认积分设置，包括注册奖励和定期积分
-        </p>
-      </div>
+      <h1 className="text-xl font-semibold">Points Default Configuration</h1>
 
       <Alert>
         <Info className="h-4 w-4" />
-        <AlertDescription>此配置仅影响新注册的用户。现有用户的配置不会受到影响。</AlertDescription>
+        <AlertDescription>
+          This config only affects newly registered users. Existing users are unaffected.
+        </AlertDescription>
       </Alert>
 
       <Card data-testid="realm-config-form" aria-labelledby="realm-config-title">
         <CardHeader>
-          <CardTitle id="realm-config-title">默认配置</CardTitle>
-          <CardDescription>设置免费用户的积分奖励规则</CardDescription>
+          <CardTitle id="realm-config-title">Default Configuration</CardTitle>
+          <CardDescription>Set points reward rules for free users</CardDescription>
         </CardHeader>
         <CardContent>
           <AppForm>
@@ -126,13 +123,13 @@ function RealmConfigPage() {
                 form.handleSubmit()
               }}
               className="space-y-6"
-              aria-label="积分默认配置表单"
+              aria-label="Points default config form"
             >
               <form.Field name="registrationBonusPoints">
                 {(field) => (
                   <div className="space-y-2">
                     <Label htmlFor={field.name} id={`${field.name}-label`}>
-                      注册奖励积分 *
+                      Registration Bonus Points *
                     </Label>
                     <Input
                       id={field.name}
@@ -150,7 +147,7 @@ function RealmConfigPage() {
                       disabled={updateMutation.isPending}
                     />
                     <p id={`${field.name}-description`} className="text-xs text-muted-foreground">
-                      用户注册时一次性获得的奖励积分
+                      One-time bonus points granted on registration
                     </p>
                     {field.state.meta.errors.length > 0 && (
                       <p
@@ -171,7 +168,7 @@ function RealmConfigPage() {
                 {(field) => (
                   <div className="space-y-2">
                     <Label htmlFor={field.name} id={`${field.name}-label`}>
-                      发放周期类型 *
+                      Grant Period Type *
                     </Label>
                     <Select
                       value={field.state.value}
@@ -188,7 +185,7 @@ function RealmConfigPage() {
                         aria-invalid={field.state.meta.errors.length > 0}
                         aria-required="true"
                       >
-                        <SelectValue placeholder="选择周期类型" />
+                        <SelectValue placeholder="Select period type" />
                       </SelectTrigger>
                       <SelectContent>
                         {Object.entries(periodTypeLabels).map(([value, label]) => (
@@ -199,7 +196,7 @@ function RealmConfigPage() {
                       </SelectContent>
                     </Select>
                     <p id={`${field.name}-description`} className="text-xs text-muted-foreground">
-                      免费用户积分的发放周期
+                      Grant period for free user points
                     </p>
                     {field.state.meta.errors.length > 0 && (
                       <p
@@ -220,7 +217,7 @@ function RealmConfigPage() {
                 {(field) => (
                   <div className="space-y-2">
                     <Label htmlFor={field.name} id={`${field.name}-label`}>
-                      定期积分数量 *
+                      Periodic Points Amount *
                     </Label>
                     <Input
                       id={field.name}
@@ -238,7 +235,7 @@ function RealmConfigPage() {
                       disabled={updateMutation.isPending}
                     />
                     <p id={`${field.name}-description`} className="text-xs text-muted-foreground">
-                      按选定周期自动发放的积分数量
+                      Points granted automatically per period
                     </p>
                     {field.state.meta.errors.length > 0 && (
                       <p
@@ -259,7 +256,7 @@ function RealmConfigPage() {
                 {(field) => (
                   <div className="space-y-2">
                     <Label htmlFor={field.name} id={`${field.name}-label`}>
-                      定期积分有效期（天） *
+                      Periodic Points Validity (Days) *
                     </Label>
                     <Input
                       id={field.name}
@@ -277,7 +274,8 @@ function RealmConfigPage() {
                       disabled={updateMutation.isPending}
                     />
                     <p id={`${field.name}-description`} className="text-xs text-muted-foreground">
-                      定期积分的有效期，过期后将自动清除（一次性周期可设置为 0 表示永久有效）
+                      Validity period for periodic points; expired points are removed (set 0 for
+                      one-time period to make permanent)
                     </p>
                     {field.state.meta.errors.length > 0 && (
                       <p
@@ -309,12 +307,14 @@ function RealmConfigPage() {
                       data-testid="save-config-button"
                       aria-label={
                         state.isSubmitting || updateMutation.isPending
-                          ? '正在保存配置...'
-                          : '保存配置'
+                          ? 'Saving configuration...'
+                          : 'Save Configuration'
                       }
                       aria-busy={state.isSubmitting || updateMutation.isPending}
                     >
-                      {state.isSubmitting || updateMutation.isPending ? '保存中...' : '保存配置'}
+                      {state.isSubmitting || updateMutation.isPending
+                        ? 'Saving...'
+                        : 'Save Configuration'}
                     </Button>
                   )}
                 </form.Subscribe>

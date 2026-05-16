@@ -151,7 +151,7 @@ def wait_for_tcp_with_compile_awareness(
                     logger.verbose_info(
                         f"Detected cargo compilation, extending timeout by {extension_time}s"
                     )
-                deadline = time.time() + extension_time
+                deadline += extension_time
                 extension_count += 1
                 # 给编译一些时间，避免频繁检测
                 time.sleep(5)

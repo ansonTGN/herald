@@ -20,22 +20,6 @@ describe('PointsBalanceCard', () => {
       expect(balance).toBeInTheDocument()
       expect(balance).toHaveTextContent('5,000')
     })
-
-    it('GIVEN account WHEN rendering THEN should display total recharged', () => {
-      render(<PointsBalanceCard account={mockPointsAccount} />)
-
-      const totalRecharged = screen.getByTestId('points-total-recharged')
-      expect(totalRecharged).toBeInTheDocument()
-      expect(totalRecharged).toHaveTextContent('10,000')
-    })
-
-    it('GIVEN account WHEN rendering THEN should display total consumed', () => {
-      render(<PointsBalanceCard account={mockPointsAccount} />)
-
-      const totalConsumed = screen.getByTestId('points-total-consumed')
-      expect(totalConsumed).toBeInTheDocument()
-      expect(totalConsumed).toHaveTextContent('5,000')
-    })
   })
 
   describe('status display', () => {

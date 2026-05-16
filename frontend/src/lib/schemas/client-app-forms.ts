@@ -33,10 +33,7 @@ export const createClientAppSchema = z
         /^[a-zA-Z0-9-_]+$/,
         'Client ID must contain only letters, numbers, hyphens, and underscores'
       ),
-    name: z
-      .string()
-      .min(1, 'Name is required')
-      .max(100, 'Name must be at most 100 characters'),
+    name: z.string().min(1, 'Name is required').max(100, 'Name must be at most 100 characters'),
     description: z.string().max(500, 'Description must be at most 500 characters').optional(),
     redirectUris: z.array(urlSchema).min(1, 'At least one redirect URI is required'),
     iconUrl: z.string().url('Invalid icon URL').optional().or(z.literal('')),
@@ -60,10 +57,7 @@ export const createClientAppSchema = z
 
 export const updateClientAppSchema = z
   .object({
-    name: z
-      .string()
-      .min(1, 'Name is required')
-      .max(36, 'Name must be at most 36 characters'),
+    name: z.string().min(1, 'Name is required').max(36, 'Name must be at most 36 characters'),
     description: z.string().max(255, 'Description must be at most 255 characters').optional(),
     redirectUris: z.array(urlSchema).min(1, 'At least one redirect URI is required'),
     iconUrl: z.string().url('Invalid icon URL').optional().or(z.literal('')),

@@ -652,15 +652,9 @@ billing_repo_test!(
             .await
             .unwrap();
 
-        repo.update_product(
-            hidden_realm,
-            hidden_product_id,
-            None,
-            None,
-            Some(false),
-        )
-        .await
-        .unwrap();
+        repo.update_product(hidden_realm, hidden_product_id, None, None, Some(false))
+            .await
+            .unwrap();
 
         let visible_plans = repo
             .list_public_plans_by_realm(visible_realm)

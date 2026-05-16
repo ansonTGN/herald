@@ -40,9 +40,10 @@ export function RolePermissionsDialog({
 
   const [localAssignedIds, setLocalAssignedIds] = useState<string[]>(assignedPermissionIds)
 
+  // Sync from props when dialog opens
   useEffect(() => {
     if (open) {
-      setLocalAssignedIds(assignedPermissionIds)
+      setLocalAssignedIds(assignedPermissionIds) // eslint-disable-line react-hooks/set-state-in-effect -- syncing state when dialog opens
     }
   }, [open, assignedPermissionIds])
 
@@ -59,7 +60,7 @@ export function RolePermissionsDialog({
         }).then((response) => {
           if (response.error) throw response.error
           return response.data
-        }),
+        })
       )
 
       const removeRequests = removedIds.map((permissionId) =>
@@ -68,7 +69,7 @@ export function RolePermissionsDialog({
         }).then((response) => {
           if (response.error) throw response.error
           return response.data
-        }),
+        })
       )
 
       await Promise.all([...assignRequests, ...removeRequests])
@@ -91,7 +92,7 @@ export function RolePermissionsDialog({
 
   const handleTogglePermission = (permissionId: string, checked: boolean) => {
     setLocalAssignedIds((prev) =>
-      checked ? [...prev, permissionId] : prev.filter((id) => id !== permissionId),
+      checked ? [...prev, permissionId] : prev.filter((id) => id !== permissionId)
     )
   }
 

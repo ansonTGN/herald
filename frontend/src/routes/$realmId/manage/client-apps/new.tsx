@@ -19,7 +19,10 @@ function NewClientAppPage() {
     <div className="container max-w-4xl mx-auto py-6 px-6">
       <Suspense
         fallback={
-          <div className="flex items-center justify-center py-12" data-testid="client-app-form-loading">
+          <div
+            className="flex items-center justify-center py-12"
+            data-testid="client-app-form-loading"
+          >
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         }

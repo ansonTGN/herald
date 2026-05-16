@@ -21,6 +21,7 @@ impl PostgresDashboardRepository {
 }
 
 impl DashboardRepository for PostgresDashboardRepository {
+    #[allow(clippy::manual_async_fn)]
     fn get_stats(
         &self,
         realm_id: &str,

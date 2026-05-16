@@ -51,7 +51,7 @@ pub struct EnableTotpResponse {
         (status = 200, description = "TOTP setup initiated", body = EnableTotpResponse),
         (status = 400, description = "Bad request", body = ErrorResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "TOTP not enabled for realm or already enabled", body = ErrorResponse),
+        (status = 403, description = "TOTP already enabled", body = ErrorResponse),
     ),
     security(("bearer_auth" = []))
 )]
@@ -87,20 +87,7 @@ pub async fn handle_enable_totp(
         return Err(ApiError::unauthorized("Invalid password".to_string()));
     }
 
-    // 2. Check Realm TOTP configuration
-    let realm_repo = PostgresRealmTotpConfigRepository::new(state.db.clone());
-    let realm_config = realm_repo.get_realm_totp_config(&user.realm_id).await?;
-
-    let realm_config = realm_config
-        .ok_or_else(|| ApiError::bad_request("Realm TOTP is not enabled".to_string()))?;
-
-    if !realm_config.enabled {
-        return Err(ApiError::bad_request(
-            "Realm TOTP is not enabled".to_string(),
-        ));
-    }
-
-    // 3. Check if user already has TOTP enabled
+    // 2. Check if user already has TOTP enabled
     let totp_repo = PostgresUserTotpRepository::new(state.db.clone());
     let existing_config = totp_repo.get_config_by_user_id(user_id).await?;
 
@@ -117,11 +104,11 @@ pub async fn handle_enable_totp(
         // Note: delete_config will cascade delete backup codes via ON DELETE CASCADE
     }
 
-    // 4. Generate TOTP secret and backup codes
+    // 3. Generate TOTP secret and backup codes
     let secret = UserTotpService::generate_secret();
     let backup_codes = UserTotpService::generate_backup_codes();
 
-    // 5. Encrypt secret and hash backup codes
+    // 4. Encrypt secret and hash backup codes
     let secret_hash = UserTotpService::encrypt_secret(&secret)?;
     let backup_codes_hashes: Result<Vec<String>, _> = backup_codes
         .iter()
@@ -129,19 +116,19 @@ pub async fn handle_enable_totp(
         .collect();
     let backup_codes_hashes = backup_codes_hashes?;
 
-    // 6. Create TOTP config (disabled until verified)
+    // 5. Create TOTP config (disabled until verified)
     // Note: key_version is fixed at 1, reserved for future key rotation
     let totp_config = UserTotpConfig::new(user_id, user.realm_id.clone(), secret_hash, 1);
     let totp_config = totp_repo.create_config(totp_config).await?;
 
-    // 7. Create backup codes
+    // 6. Create backup codes
     let backup_code_entities: Vec<UserTotpBackupCode> = backup_codes_hashes
         .iter()
         .map(|hash| UserTotpBackupCode::new(totp_config.id, hash.clone()))
         .collect();
     totp_repo.create_backup_codes(backup_code_entities).await?;
 
-    // 8. Generate temp token for verification step
+    // 7. Generate temp token for verification step
     let temp_token = format!("totp_setup_{}", Uuid::now_v7());
     let temp_key = format!("totp:setup:temp:{}", temp_token);
     let temp_data = serde_json::json!({
@@ -163,7 +150,7 @@ pub async fn handle_enable_totp(
             ApiError::internal("Internal server error".to_string())
         })?;
 
-    // 9. Generate QR code URL
+    // 8. Generate QR code URL
     let qr_code_url = UserTotpService::generate_qr_code_url(&secret, &user.email, &user.realm_id);
 
     Ok(ApiResult::ok(EnableTotpResponse {

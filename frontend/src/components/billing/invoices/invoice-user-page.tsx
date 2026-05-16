@@ -5,11 +5,12 @@ import { Download, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataTable } from '@/components/shared/data-table'
+import { PageHeader } from '@/components/shared'
 import { BaseFormDialog } from '@/components/shared/form-dialog'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
 import { TextField, TextareaField } from '@/components/shared/form-fields'
 import { InvoiceStatusBadge } from '@/components/billing/invoices/invoice-status-badge'
-import { InvoicePagination } from '@/components/billing/invoices/invoice-pagination'
+import { ListPagination } from '@/components/shared'
 import type { InvoiceResponse } from '@/lib/api-generated'
 import { myInvoiceListQueryOptions } from '@/data/invoice-query-options'
 import { useApplyInvoice } from '@/data/invoice-mutations'
@@ -250,18 +251,16 @@ export function InvoiceUserPage({ realmId }: { realmId: string }) {
 
   return (
     <div className="space-y-6" data-testid="invoice-user-page">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="invoice-user-heading">
-            My Invoices
-          </h1>
-          <p className="text-muted-foreground mt-1">View your invoices and apply for new ones</p>
-        </div>
-        <Button onClick={() => setApplyDialogOpen(true)} data-testid="apply-invoice-button">
-          <Plus className="mr-2 h-4 w-4" />
-          Apply for Invoice
-        </Button>
-      </div>
+      <PageHeader
+        title="My Invoices"
+        headingTestId="invoice-user-heading"
+        action={{
+          label: 'Apply for Invoice',
+          onClick: () => setApplyDialogOpen(true),
+          testId: 'apply-invoice-button',
+          icon: <Plus className="mr-2 h-4 w-4" />,
+        }}
+      />
 
       <Card>
         <CardHeader>
@@ -281,12 +280,12 @@ export function InvoiceUserPage({ realmId }: { realmId: string }) {
       </Card>
 
       {total > 0 && (
-        <InvoicePagination
+        <ListPagination
           page={page}
           pageSize={INVOICE_PAGE_SIZE}
           total={total}
           onPageChange={setPage}
-          testIdPrefix="invoice-user"
+          testIdPrefix="invoice-user-pagination"
         />
       )}
 

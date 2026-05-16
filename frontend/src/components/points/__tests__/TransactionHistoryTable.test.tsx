@@ -14,17 +14,11 @@ describe('TransactionHistoryTable', () => {
   })
 
   const mockOnFiltersChange = vi.fn()
-  const mockOnPaginationChange = vi.fn()
   const mockFilters: TransactionFilters = {
     transaction_type: undefined,
     start_time: undefined,
     end_time: undefined,
     client_app_id: undefined,
-  }
-  const mockPagination = {
-    page: 1,
-    pageSize: 10,
-    total: 2,
   }
   const mockClientApps = [{ id: 'app-123', name: 'Test App' }]
 
@@ -34,14 +28,11 @@ describe('TransactionHistoryTable', () => {
         <TransactionHistoryTable
           transactions={[]}
           filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 0 }}
-          onPaginationChange={mockOnPaginationChange}
         />
       )
 
       expect(screen.getByTestId('no-transactions')).toBeInTheDocument()
-      expect(screen.getByText('没有找到符合条件的交易记录')).toBeInTheDocument()
+      expect(screen.getByText('No transactions found matching your criteria')).toBeInTheDocument()
     })
 
     it('GIVEN no transactions with active filters WHEN rendering THEN should show filter hint', () => {
@@ -52,13 +43,10 @@ describe('TransactionHistoryTable', () => {
         <TransactionHistoryTable
           transactions={[]}
           filters={activeFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 0 }}
-          onPaginationChange={mockOnPaginationChange}
         />
       )
 
-      expect(screen.getByText('尝试调整筛选条件')).toBeInTheDocument()
+      expect(screen.getByText('Try adjusting your filters')).toBeInTheDocument()
     })
   })
 
@@ -68,9 +56,6 @@ describe('TransactionHistoryTable', () => {
         <TransactionHistoryTable
           transactions={[mockRechargeTransaction]}
           filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 1 }}
-          onPaginationChange={mockOnPaginationChange}
         />
       )
 
@@ -85,9 +70,6 @@ describe('TransactionHistoryTable', () => {
         <TransactionHistoryTable
           transactions={[mockConsumeTransaction]}
           filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 1 }}
-          onPaginationChange={mockOnPaginationChange}
         />
       )
 
@@ -106,9 +88,6 @@ describe('TransactionHistoryTable', () => {
         <TransactionHistoryTable
           transactions={[transactionWithoutDesc]}
           filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 1 }}
-          onPaginationChange={mockOnPaginationChange}
         />
       )
 
@@ -123,9 +102,6 @@ describe('TransactionHistoryTable', () => {
         <TransactionHistoryTable
           transactions={[mockRechargeTransaction]}
           filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 1 }}
-          onPaginationChange={mockOnPaginationChange}
           admin={true}
           clientApps={mockClientApps}
         />
@@ -141,9 +117,6 @@ describe('TransactionHistoryTable', () => {
         <TransactionHistoryTable
           transactions={[mockRechargeTransaction]}
           filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 1 }}
-          onPaginationChange={mockOnPaginationChange}
           admin={true}
           clientApps={[]}
         />
@@ -163,9 +136,6 @@ describe('TransactionHistoryTable', () => {
         <TransactionHistoryTable
           transactions={[transactionWithoutClient]}
           filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 1 }}
-          onPaginationChange={mockOnPaginationChange}
           admin={true}
           clientApps={mockClientApps}
         />
@@ -180,9 +150,6 @@ describe('TransactionHistoryTable', () => {
         <TransactionHistoryTable
           transactions={[mockRechargeTransaction]}
           filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 1 }}
-          onPaginationChange={mockOnPaginationChange}
           admin={false}
           clientApps={mockClientApps}
         />
@@ -199,98 +166,11 @@ describe('TransactionHistoryTable', () => {
           transactions={[]}
           loading={true}
           filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 0 }}
-          onPaginationChange={mockOnPaginationChange}
         />
       )
 
       expect(screen.queryByTestId('no-transactions')).not.toBeInTheDocument()
       expect(screen.queryByTestId('transaction-row-0')).not.toBeInTheDocument()
-    })
-  })
-
-  describe('pagination', () => {
-    it('GIVEN user clicks previous button WHEN on page 2 THEN should call onPaginationChange with page 1', async () => {
-      const user = userEvent.setup()
-      render(
-        <TransactionHistoryTable
-          transactions={[mockRechargeTransaction]}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 2, pageSize: 10, total: 15 }}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      const prevButton = screen.getByTestId('prev-page-button')
-      expect(prevButton).not.toBeDisabled()
-
-      await user.click(prevButton)
-
-      // The function is called with the existing pagination object, just page changed
-      expect(mockOnPaginationChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          page: 1,
-          pageSize: 10,
-        })
-      )
-    })
-
-    it('GIVEN user clicks next button WHEN on page 1 THEN should call onPaginationChange with page 2', async () => {
-      const user = userEvent.setup()
-      render(
-        <TransactionHistoryTable
-          transactions={[mockRechargeTransaction]}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 15 }}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      const nextButton = screen.getByTestId('next-page-button')
-      expect(nextButton).not.toBeDisabled()
-
-      await user.click(nextButton)
-
-      // The function is called with the existing pagination object, just page changed
-      expect(mockOnPaginationChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          page: 2,
-          pageSize: 10,
-        })
-      )
-    })
-
-    it('GIVEN first page WHEN rendering THEN should disable previous button', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={[mockRechargeTransaction]}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 1, pageSize: 10, total: 15 }}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      const prevButton = screen.getByTestId('prev-page-button')
-      expect(prevButton).toBeDisabled()
-    })
-
-    it('GIVEN last page WHEN rendering THEN should disable next button', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={[mockRechargeTransaction]}
-          filters={mockFilters}
-          onFiltersChange={mockOnFiltersChange}
-          pagination={{ page: 2, pageSize: 10, total: 15 }}
-          onPaginationChange={mockOnPaginationChange}
-        />
-      )
-
-      const nextButton = screen.getByTestId('next-page-button')
-      expect(nextButton).toBeDisabled()
     })
   })
 })

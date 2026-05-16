@@ -32,7 +32,7 @@ export const SELECTORS = {
    * Route: /{realmId}/
    */
   dashboard: {
-    heading: 'h1',
+    heading: 'h1:has-text("Dashboard")',
     statsRow: '[data-testid="dashboard-stats-row"]',
     totalUsersCard: '[data-testid="dashboard-total-users-card"]',
     newUsersCard: '[data-testid="dashboard-new-users-card"]',
@@ -222,8 +222,7 @@ export const SELECTORS = {
     totpSetupStepQRCode: '[data-testid="totp-setup-step-qr-code"]',
     totpQRCodeContainer: '[data-testid="totp-qr-code-container"]',
     totpQRCode: '[data-testid="totp-qr-code"]',
-    totpSecretKey: '[data-testid="totp-secret-key"]',
-    totpSecretCopyButton: '[data-testid="totp-secret-copy-button"]',
+    totpSecretKey: '[data-testid="totp-qr-code-container"]',
     totpSetupBackButton: '[data-testid="totp-setup-back-button"]',
     totpSetupNextButton: '[data-testid="totp-setup-next-button"]',
     // Step 3: Verification
@@ -498,10 +497,7 @@ export const SELECTORS = {
     // Balance Card
     balanceCard: '[data-testid="points-balance-card"]',
     balanceAmount: '[data-testid="points-balance"]',
-    totalRecharged: '[data-testid="points-total-recharged"]',
-    totalConsumed: '[data-testid="points-total-consumed"]',
     accountStatus: '[data-testid="points-account-status"]',
-    pointsDescription: '[data-testid="points-description-text"]',
     // Transaction History
     transactionsSection: '[data-testid="transaction-history-table"], [data-testid="no-transactions"]',
     transactionsTable: '[data-testid="transaction-history-table"]',

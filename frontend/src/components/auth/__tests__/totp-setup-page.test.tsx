@@ -230,53 +230,15 @@ describe('TotpSetupPage', () => {
       await user.click(screen.getByTestId('totp-setup-generate-button'))
 
       await waitFor(() => {
-        expect(screen.getByTestId('totp-secret-key')).toBeInTheDocument()
-        expect(screen.getByTestId('totp-secret-copy-button')).toBeInTheDocument()
-        // Secret should be formatted with spaces every 4 characters
-        expect(screen.getByTestId('totp-secret-key')).toHaveTextContent('JBSW Y3DP EHPK 3PXP')
+        expect(screen.getByTestId('totp-qr-code-container')).toBeInTheDocument()
+        expect(screen.getByTestId('totp-qr-code-container')).toHaveAttribute(
+          'data-secret',
+          'JBSWY3DPEHPK3PXP'
+        )
       })
     })
 
-    it('GIVEN secret key WHEN clicking copy button THEN should copy to clipboard', async () => {
-      const user = userEvent.setup()
-
-      const clipboardWriteText = vi.fn().mockResolvedValue(undefined)
-      Object.defineProperty(navigator, 'clipboard', {
-        value: {
-          writeText: clipboardWriteText,
-        },
-        writable: true,
-        configurable: true,
-      })
-
-      vi.mocked(useFormMutation).mockImplementation(({ onSuccess }) => {
-        return {
-          isSubmitting: false,
-          mutate: async () => {
-            if (onSuccess) {
-              onSuccess(mockEnableTotpResponse as any)
-            }
-          },
-        }
-      })
-
-      renderWithQueryClient(<TotpSetupPage />)
-
-      await user.type(screen.getByTestId('totp-setup-password-input'), 'password123')
-      await user.click(screen.getByTestId('totp-setup-generate-button'))
-
-      await waitFor(() => {
-        expect(screen.getByTestId('totp-secret-copy-button')).toBeInTheDocument()
-      })
-
-      await user.click(screen.getByTestId('totp-secret-copy-button'))
-
-      expect(clipboardWriteText).toHaveBeenCalledWith('JBSWY3DPEHPK3PXP')
-
-      await waitFor(() => {
-        expect(screen.getByText('Copied')).toBeInTheDocument()
-      })
-    })
+    it.todo('GIVEN qr code WHEN rendered THEN should display QR code with secret data attribute')
 
     it('GIVEN QR code step WHEN rendering THEN should display backup codes', async () => {
       const user = userEvent.setup()

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Plus } from 'lucide-react'
 import { ProviderList } from './provider-list'
 import { ProviderConfigDialog } from './provider-config-dialog'
@@ -24,33 +25,28 @@ export function ProviderConfigPage({ realmId }: ProviderConfigPageProps) {
   }
 
   return (
-    <div className="p-8 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Identity Providers</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Configure OAuth providers for third-party login
-          </p>
-        </div>
-        <Button onClick={handleAdd} data-testid="add-provider-button">
-          <Plus className="mr-2 h-4 w-4" />
-          Add Provider
-        </Button>
-      </div>
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Identity Providers</CardTitle>
+            <Button onClick={handleAdd} data-testid="add-provider-button">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Provider
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <ProviderList realmId={realmId} onEdit={handleEdit} />
+        </CardContent>
+      </Card>
 
-      {/* Provider List */}
-      <div className="border rounded-lg p-6">
-        <ProviderList realmId={realmId} onEdit={handleEdit} />
-      </div>
-
-      {/* Add/Edit Dialog */}
       <ProviderConfigDialog
         realmId={realmId}
         open={open}
         onOpenChange={setOpen}
         editingConfig={editingConfig}
       />
-    </div>
+    </>
   )
 }

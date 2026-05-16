@@ -79,6 +79,7 @@ allowed-tools:
   - runner item 使用 `.claude/skills/backend-test-run/SKILL.md` 执行定向测试、分类失败、委派生产代码修复和重测。
   - `backend-test-run` 是 skill，不是 agent；runner item 的 `agent` 仍是 `backend-test`。
 - 不生成同时“写场景测试”和“修复生产代码直到通过”的 backend test item。
+- 不生成“为新增 struct/DTO/builder/getter/常量补单测”这类低价值 backend unit test item。
 
 ## 失败处理
 

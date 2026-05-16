@@ -20,7 +20,7 @@ use herald_api_base::application::http::server::api_entities::ApiError;
 
 mod constants {
     pub const PAYMENT_PROVIDER: &str = "shopify";
-    pub const SUBSCRIPTION_TIER: &str = "premium";
+    pub const SUBSCRIPTION_TIER: &str = "professional";
     pub const BILLING_PERIOD: &str = "monthly";
     pub const BINDING_STATUS: &str = "active";
     pub const TEST_API_TOKEN_HEADER: &str = "x-test-api-token";

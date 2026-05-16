@@ -31,10 +31,7 @@ function ProfileIndex() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Profile"
-        description="Review your account details and current subscriptions"
-      />
+      <PageHeader title="Profile" />
 
       {/* Profile Information Card */}
       <Card>

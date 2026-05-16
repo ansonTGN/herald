@@ -200,7 +200,7 @@ test.describe('[Billing Admin] Subscription History Demo Tests', () => {
         await expect(page.getByTestId('products-page')).toBeVisible({ timeout: 10000 })
 
         await createProduct(page, {
-          name: `test-product-${testStartTime}`,
+          code: `test-product-${testStartTime}`,
           title: `Test Product ${testStartTime}`,
         })
 

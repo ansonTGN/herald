@@ -11,6 +11,9 @@ import { UserSubscriptionTimeline } from '@/components/billing/user-subscription
 import type { ClientAppItem, SubscriptionDetailResponse } from '@/lib/api-generated'
 import { getSubscriptionForClientApp } from '@/lib/api-generated'
 import { PageHeader } from '@/components/shared'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { getStatusBadgeVariant, type SubscriptionStatus } from '@/types/billing'
 
 type SubscriptionWithClientApp = {
   clientApp: ClientAppItem
@@ -95,34 +98,67 @@ function SubscriptionHistoryRoute() {
     enabled: !!selectedSubscriptionId,
   })
 
+  const hasMultipleSubscriptions = (subscriptionList?.length ?? 0) > 1
+  const singleSubscription =
+    !hasMultipleSubscriptions && subscriptionList?.length === 1 ? subscriptionList[0] : null
+
   return (
     <div className="space-y-6" data-testid="subscription-history-page">
-      <PageHeader
-        title="Subscription History"
-        description="View your subscription changes and history"
-      />
+      <PageHeader title="Subscription History" />
 
-      {/* Subscription Selector */}
-      <div>
-        <h2 className="text-lg font-semibold mb-4">Select Subscription</h2>
-        {loadingApps || loadingSubscriptions ? (
-          <div className="text-center py-8 text-muted-foreground">Loading subscriptions...</div>
-        ) : (
-          <SubscriptionSelector
-            subscriptions={subscriptionList ?? []}
-            selectedId={selectedSubscriptionId}
-            onSelect={setManualSelectionId}
-          />
-        )}
-      </div>
+      <Card>
+        <CardContent className="space-y-6 pt-6">
+          {loadingApps || loadingSubscriptions ? (
+            <div className="text-center py-8 text-muted-foreground">Loading subscriptions...</div>
+          ) : hasMultipleSubscriptions ? (
+            <>
+              <div>
+                <h2 className="text-lg font-semibold mb-4">Select Subscription</h2>
+                <SubscriptionSelector
+                  subscriptions={subscriptionList ?? []}
+                  selectedId={selectedSubscriptionId}
+                  onSelect={setManualSelectionId}
+                />
+              </div>
 
-      {/* History Timeline */}
-      {selectedSubscriptionId && (
-        <div>
-          <h2 className="text-lg font-semibold mb-4">History Timeline</h2>
-          <UserSubscriptionTimeline events={historyData?.events ?? []} loading={loadingHistory} />
-        </div>
-      )}
+              {selectedSubscriptionId && (
+                <div>
+                  <h2 className="text-lg font-semibold mb-4">History Timeline</h2>
+                  <UserSubscriptionTimeline
+                    events={historyData?.events ?? []}
+                    loading={loadingHistory}
+                  />
+                </div>
+              )}
+            </>
+          ) : singleSubscription ? (
+            <div>
+              <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground">
+                <span>Showing history for</span>
+                <span className="font-medium text-foreground">
+                  {singleSubscription.clientApp.name}
+                </span>
+                {singleSubscription.subscription && (
+                  <Badge
+                    variant={getStatusBadgeVariant(
+                      singleSubscription.subscription.status as SubscriptionStatus
+                    )}
+                    className="text-xs"
+                  >
+                    {singleSubscription.subscription.status}
+                  </Badge>
+                )}
+              </div>
+              <UserSubscriptionTimeline
+                events={historyData?.events ?? []}
+                loading={loadingHistory}
+              />
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">No subscriptions found</div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
