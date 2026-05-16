@@ -18,6 +18,7 @@ pub mod client;
 pub mod client_api_keys;
 pub mod client_app;
 pub mod common;
+pub mod dashboard;
 pub mod oauth;
 pub mod payment_attempt;
 pub mod points;

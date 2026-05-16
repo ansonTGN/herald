@@ -200,7 +200,12 @@ impl RealmRepository for PostgresRealmRepository {
         })
     }
 
-    async fn update_realm(&self, id: &str, name: String, description: Option<String>) -> Result<Realm, CoreError> {
+    async fn update_realm(
+        &self,
+        id: &str,
+        name: String,
+        description: Option<String>,
+    ) -> Result<Realm, CoreError> {
         let mut active_model: realm::ActiveModel = realm::Entity::find_by_id(id.to_string())
             .one(&*self.db)
             .await?

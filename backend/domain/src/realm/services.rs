@@ -456,12 +456,17 @@ where
         // Boundary check: allow self-realm update OR master admin via policy
         let can_update_other_realms = self.policy.can_update_realm(identity.clone()).await;
         let can_update_target = id == identity.realm_id() || can_update_other_realms;
-        ensure_policy(can_update_target, "Insufficient permissions to update realm")?;
+        ensure_policy(
+            can_update_target,
+            "Insufficient permissions to update realm",
+        )?;
 
         let name = request
             .name
             .ok_or(CoreError::BadRequest("Name is required".to_string()))?;
-        self.realm_repository.update_realm(&id, name, request.description).await
+        self.realm_repository
+            .update_realm(&id, name, request.description)
+            .await
     }
 
     async fn delete_realm(&self, identity: Identity, id: String) -> Result<(), CoreError> {

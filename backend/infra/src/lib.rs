@@ -7,6 +7,7 @@ pub mod billing;
 pub mod client;
 pub mod client_api_keys;
 pub mod creem;
+pub mod dashboard;
 pub mod oauth;
 pub mod payment_attempt;
 pub mod points;
@@ -26,6 +27,7 @@ pub mod webhook;
 
 // Re-export commonly used types
 pub use audit::PostgresAuditEventRepository;
+pub use dashboard::PostgresDashboardRepository;
 pub use user::{
     PostgresAdminUserRepository, PostgresRolePolicyRepository, PostgresUserRepository,
     PostgresUserRoleRepository, PostgresVerificationRepository,

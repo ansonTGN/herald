@@ -36,6 +36,9 @@ pub mod realm_creation_permission_test;
 // Client API scenarios
 pub mod client_api_scenarios;
 
+// Dashboard statistics scenarios
+pub mod dashboard_stats_scenarios;
+
 // TOTP scenarios
 pub mod realm_totp_key_initialization_scenarios;
 pub mod user_totp_disable_scenarios;

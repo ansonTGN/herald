@@ -83,6 +83,15 @@ export type AuditEventResponse = {
     targetType: string;
 };
 
+/**
+ * A single data point in the authentication trend response.
+ */
+export type AuthTrendPointResponse = {
+    date: string;
+    failureCount: number;
+    successCount: number;
+};
+
 export type AuthorizeQueryParams = {
     clientId: string;
     redirectUri: string;
@@ -520,6 +529,14 @@ export type CreateRealmValidator = {
     description?: string | null;
     id?: string | null;
     name: string;
+};
+
+/**
+ * Aggregated dashboard statistics response DTO.
+ */
+export type DashboardStatsResponse = {
+    authTrend: Array<AuthTrendPointResponse>;
+    userStats: UserStatsResponse;
 };
 
 export type DeviceAuthorizationErrorResponse = {
@@ -2117,6 +2134,15 @@ export type UserRoleDetail = {
 
 export type UserRolesResponse = {
     roles: Array<UserRoleDetail>;
+};
+
+/**
+ * User statistics response DTO.
+ */
+export type UserStatsResponse = {
+    activeUsers: number;
+    newUsers: number;
+    totalUsers: number;
 };
 
 export type UserUpdateRequest = {
@@ -5624,6 +5650,44 @@ export type GetRealmConfigResponses = {
 };
 
 export type GetRealmConfigResponse = GetRealmConfigResponses[keyof GetRealmConfigResponses];
+
+export type GetDashboardStatsData = {
+    body?: never;
+    path: {
+        /**
+         * Realm ID
+         */
+        realmId: string;
+    };
+    query?: never;
+    url: '/api/dashboard/{realmId}/stats';
+};
+
+export type GetDashboardStatsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: ErrorResponse;
+    /**
+     * Forbidden
+     */
+    403: ErrorResponse;
+    /**
+     * Realm not found
+     */
+    404: ErrorResponse;
+};
+
+export type GetDashboardStatsError = GetDashboardStatsErrors[keyof GetDashboardStatsErrors];
+
+export type GetDashboardStatsResponses = {
+    /**
+     * Dashboard statistics
+     */
+    200: DashboardStatsResponse;
+};
+
+export type GetDashboardStatsResponse = GetDashboardStatsResponses[keyof GetDashboardStatsResponses];
 
 export type DeviceAuthorizeData = {
     body: DeviceAuthorizationRequest;

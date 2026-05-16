@@ -27,8 +27,8 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::application::http::auth::identity_middleware::inject_identity;
 use crate::application::http::state::AppState;
 use crate::application::http::{
-    admin, audit, auth, billing, client_apps, oauth, permission, points, public_config, realm,
-    realm_config, user, users,
+    admin, audit, auth, billing, client_apps, dashboard, oauth, permission, points, public_config,
+    realm, realm_config, user, users,
 };
 
 /// Health check response schema
@@ -83,6 +83,7 @@ pub struct HealthCheckResponse {
         public_config::get_public_config,
         audit::list::list_audit_events,
         audit::detail::get_audit_event,
+        dashboard::get_dashboard_stats,
         health_check,
     ),
     components(
@@ -129,6 +130,9 @@ pub struct HealthCheckResponse {
             audit::types::AuditEventResponse,
             audit::types::AuditEventDetailResponse,
             audit::types::AuditEventListResponse,
+            dashboard::DashboardStatsResponse,
+            dashboard::UserStatsResponse,
+            dashboard::AuthTrendPointResponse,
             HealthCheckResponse,
         )
     ),
@@ -145,6 +149,7 @@ pub struct HealthCheckResponse {
         (name = "ext", description = "External API (API Key authentication)"),
         (name = "system", description = "System health and monitoring APIs"),
         (name = "audit", description = "Audit log query APIs"),
+        (name = "dashboard", description = "Dashboard statistics APIs"),
         (name = "device", description = "OAuth Device Authorization Grant APIs")
     )
 )]
@@ -369,6 +374,12 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
         .nest(
             "/api/audit/{realmId}",
             audit_routes.layer(from_fn_with_state((*state).clone(), inject_identity)),
+        )
+        // Dashboard statistics routes
+        .nest(
+            "/api/dashboard/{realmId}",
+            dashboard::dashboard_router()
+                .layer(from_fn_with_state((*state).clone(), inject_identity)),
         )
         .merge(billing::billing_public_routes())
         .merge(billing_routes.layer(from_fn_with_state((*state).clone(), inject_identity)))
