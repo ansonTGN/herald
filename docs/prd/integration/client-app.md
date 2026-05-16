@@ -21,15 +21,15 @@
 
 - 📄 [docs/user-stories/client-app-settings.md](/docs/user-stories/client-app-settings.md)
   - **配置 OAuth 2.0 设置** (P0): 作为 Realm Admin，我想要配置 OAuth 2.0 设置（redirect_uris、client_secret、enabled），以便确保应用安全接入
-  - **配置会话设置** (P0): 作为 Realm Admin，我想要配置会话 TTL，以便控制用户会话有效期
+  - **配置会话设置** (P0): 作为 Realm Admin，我想要配置会话 TTL 和滑动续期策略，以便在用户活跃时自动延长会话
   - **配置应用外观** (P1): 作为 Realm Admin，我想要配置应用图标，以便提升用户体验
   - **重新生成 Client Secret** (P0): 作为 Realm Admin，我想要重新生成 Client Secret，以便在密钥泄露时更新凭证
 
-### 1.3 用户故事优先级汇总
+### 1.3 优先级汇总
 
-| 优先级 | 用户故事数量 | 关键故事 |
-|--------|------------|---------|
-| P0 | 7 | Client App 管理、创建/编辑/删除 Client App、配置 OAuth 2.0 设置、配置会话设置、重新生成 Client Secret |
+| 优先级 | 数量 | 关键故事 |
+|--------|------|----------|
+| P0 | 7 | Client App 管理、创建/编辑/删除 Client App、配置 OAuth 2.0 设置、配置会话设置（含滑动续期）、重新生成 Client Secret |
 | P1 | 1 | 配置应用外观 |
 | P2 | 0 | - |
 
@@ -45,6 +45,7 @@
 - ✅ 删除 Client App（需要二次确认）
 - ✅ OAuth 2.0 配置（redirect_uris、client_secret、enabled）
 - ✅ 会话配置（session_ttl_seconds、session_renewal_ttl_seconds）
+- ✅ 滑动会话续期（Identity 中间件在受保护 API 请求时自动续期）
 - ✅ 应用外观配置（icon_url）
 - ✅ Client Secret 重新生成
 - ✅ Client App 快速切换（启用/禁用）
@@ -75,16 +76,31 @@
   - `id`: UUID (内部主键，用于数据库关联和 role_policies)
   - `client_id`: string (外部标识符，必填，3-36字符，仅字母数字)
 
+### 3.1 会话滑动续期机制
+
+当 Client App 配置了 `session_renewal_ttl_seconds` 时，Identity 中间件在处理受保护 API 请求时自动执行滑动续期：
+
+1. **触发条件**：Redis 中 Session 的剩余 TTL 低于 `session_renewal_ttl_seconds` 的一半（`<= renewal_ttl / 2`）
+2. **续期行为**：将 Redis TTL 刷新为 `session_renewal_ttl_seconds`，并在响应中追加新的 `Set-Cookie` 头以同步浏览器 Cookie 的 Max-Age
+3. **不续期的情况**：`session_renewal_ttl_seconds` 为 null 时，中间件不执行任何续期操作，Session 按原始 TTL 自然过期
+4. **配置固化**：续期策略在 Session 创建时固化（写入 Redis SessionData），后续对 Client App 配置的修改只影响新创建的 Session
+
+典型场景：
+- **严格策略**（银行应用）：`session_ttl=300, renewal_ttl=null` → 5 分钟过期，无续期
+- **宽松策略**（企业工具）：`session_ttl=28800, renewal_ttl=28800` → 用户持续活跃时 Session 永不过期
+- **渐进策略**：`session_ttl=300, renewal_ttl=7200` → 首次登录 5 分钟，首次续期后延长到 2 小时
+
 ---
 
 ## 4. 当前实现状态
 
-### 2.1 已实现功能
+### 4.1 已实现功能
 
 - ✅ **后端实体层**：Client App 实体定义（双 ID 系统）
 - ✅ **后端 Repository 层**：Client App 数据库操作接口和实现
 - ✅ **后端 Service 层**：Client App 业务逻辑和权限检查
 - ✅ **后端 HTTP API**：Client App CRUD RESTful API
+- ✅ **滑动会话续期**：Identity 中间件自动检测 Redis TTL 并续期，同步 Set-Cookie
 - ✅ **前端数据层**：Client App API 调用函数
 - ✅ **前端类型定义**：TypeScript 类型定义（支持双 ID）
 - ✅ **前端导航菜单**：Client Apps 菜单项已配置
@@ -92,7 +108,7 @@
 - ✅ **前端 OAuth 2.0 配置**：redirect_uris、client_secret、enabled、icon_url、session_ttl_seconds 等
 - ✅ **演示测试**：client-app-settings-demo.e2e.ts
 
-### 2.2 未实现功能
+### 4.2 未实现功能
 
 - ❌ **Client App 作用域管理**：没有实现 OAuth 2.0 scope 管理
 - ❌ **Client App 访问日志**：没有记录 Client App 访问日志
@@ -107,17 +123,17 @@
 
 ## 5. 功能需求
 
-### 3.1 导航菜单配置
+### 5.1 导航菜单配置
 
 导航菜单已配置完成（参考 `frontend/src/data/navigation.ts`）：
 
-### 2.2 Client Apps 列表页面
+### 5.2 Client Apps 列表页面
 
-#### 2.2.1 路由定义
+#### 5.2.1 路由定义
 
 创建 `frontend/src/routes/$realmId/clients.tsx` 路由文件：
 
-#### 2.2.2 页面布局
+#### 5.2.2 页面布局
 
 Client Apps 列表页面应包含以下元素：
 
@@ -134,7 +150,7 @@ Client Apps 列表页面应包含以下元素：
    - 支持分页
    - 支持编辑、删除等操作
 
-#### 2.2.3 表格列定义
+#### 5.2.3 表格列定义
 
 | 列名 | 说明 | 数据来源 |
 |------|------|----------|
@@ -147,14 +163,14 @@ Client Apps 列表页面应包含以下元素：
 | Status | 启用/禁用状态 | `client_app.enabled` |
 | Actions | 操作按钮 | - |
 
-#### 2.2.4 操作列功能
+#### 5.2.4 操作列功能
 
 - **Edit**: 编辑 Client App 信息
 - **Delete**: 删除 Client App（需要二次确认）
 
-### 2.3 创建 Client App 功能
+### 5.3 创建 Client App 功能
 
-#### 2.3.1 创建 Client App 对话框
+#### 5.3.1 创建 Client App 对话框
 
 使用 Shadcn/ui 的 `Dialog` 组件创建表单，采用 **Tabs 布局**，包含以下字段：
 | **Basic 标签页** ||||||
@@ -165,8 +181,8 @@ Client Apps 列表页面应包含以下元素：
 | Redirect URIs | string[] | **是** | 至少一个有效 URL，禁止 javascript: 和协议相对 URL | - |
 | **Security 标签页** ||||||
 | Enabled | boolean | 否 | - | true |
-| Session TTL (seconds) | number | 否 | 最小 60 秒 | 1800 (30分钟) |
-| Session Renewal TTL (seconds) | number | 否 | 正整数 | - |
+| Session TTL (seconds) | number | 否 | 最小 60 秒，最大 86400 秒（24小时） | 1800 (30分钟) |
+| Session Renewal TTL (seconds) | number | 否 | 最小 60 秒，最大 604800 秒（7天），可为 null（禁止续期），需 >= Session TTL | - |
 | **Appearance 标签页** ||||||
 | Icon URL | string | 否 | 有效 URL | - |
 
@@ -176,13 +192,13 @@ Client Apps 列表页面应包含以下元素：
 - 系统会自动生成 `client_secret` (UUID)，只在创建时返回一次
 - 表单使用 TanStack Form + Zod 验证
 
-#### 2.3.2 表单验证
+#### 5.3.2 表单验证
 
-使用 Zod schema 进行验证（详见 `frontend/src/lib/schemas/common.ts`）：
+使用 Zod schema 进行验证（详见 `frontend/src/lib/schemas/client-app-forms.ts`）：
 
-### 2.4 编辑 Client App 功能
+### 5.4 编辑 Client App 功能
 
-#### 2.4.1 编辑 Client App 对话框
+#### 5.4.1 编辑 Client App 对话框
 
 使用相同的表单结构，预填充现有数据，并添加以下选项：
 | **所有创建字段** | - | - | - |
@@ -211,6 +227,8 @@ Client Apps 列表页面应包含以下元素：
 
 - 仅保留接入配置入口、凭证展示规则、状态反馈和帮助说明，不写 SDK 调用示例、前端实现代码或接口调试步骤。
 - 涉及第三方接入时，需明确哪些流程由 Herald 后台完成，哪些流程在第三方应用或外部平台完成。
+- Session Renewal TTL 字段允许设置为 null 或留空，表示禁止续期；设置值必须 >= Session TTL。
+- 续期行为由后端中间件自动完成，前端无需主动调用续期接口。
 
 ---
 
@@ -244,4 +262,3 @@ Client Apps 列表页面应包含以下元素：
   - 表单组件: `frontend/src/features/users/user-form.tsx`
   - 路由配置: `frontend/src/routes/$realmId/users.tsx`
   - 类型定义: `frontend/src/lib/types.ts`
-
