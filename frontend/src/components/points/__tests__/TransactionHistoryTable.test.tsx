@@ -24,12 +24,7 @@ describe('TransactionHistoryTable', () => {
 
   describe('empty state', () => {
     it('GIVEN no transactions WHEN rendering THEN should show empty state', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={[]}
-          filters={mockFilters}
-        />
-      )
+      render(<TransactionHistoryTable transactions={[]} filters={mockFilters} />)
 
       expect(screen.getByTestId('no-transactions')).toBeInTheDocument()
       expect(screen.getByText('No transactions found matching your criteria')).toBeInTheDocument()
@@ -39,12 +34,7 @@ describe('TransactionHistoryTable', () => {
       const activeFilters: TransactionFilters = {
         transactionType: 'recharge',
       }
-      render(
-        <TransactionHistoryTable
-          transactions={[]}
-          filters={activeFilters}
-        />
-      )
+      render(<TransactionHistoryTable transactions={[]} filters={activeFilters} />)
 
       expect(screen.getByText('Try adjusting your filters')).toBeInTheDocument()
     })
@@ -53,10 +43,7 @@ describe('TransactionHistoryTable', () => {
   describe('rendering transactions', () => {
     it('GIVEN recharge transaction WHEN rendering THEN should display with green color and plus sign', () => {
       render(
-        <TransactionHistoryTable
-          transactions={[mockRechargeTransaction]}
-          filters={mockFilters}
-        />
+        <TransactionHistoryTable transactions={[mockRechargeTransaction]} filters={mockFilters} />
       )
 
       const amount = screen.getByTestId('transaction-amount-0')
@@ -67,10 +54,7 @@ describe('TransactionHistoryTable', () => {
 
     it('GIVEN consume transaction WHEN rendering THEN should display with red color and minus sign', () => {
       render(
-        <TransactionHistoryTable
-          transactions={[mockConsumeTransaction]}
-          filters={mockFilters}
-        />
+        <TransactionHistoryTable transactions={[mockConsumeTransaction]} filters={mockFilters} />
       )
 
       const amount = screen.getByTestId('transaction-amount-0')
@@ -85,10 +69,7 @@ describe('TransactionHistoryTable', () => {
         description: null,
       }
       render(
-        <TransactionHistoryTable
-          transactions={[transactionWithoutDesc]}
-          filters={mockFilters}
-        />
+        <TransactionHistoryTable transactions={[transactionWithoutDesc]} filters={mockFilters} />
       )
 
       const description = screen.getByTestId('transaction-description-0')
@@ -161,13 +142,7 @@ describe('TransactionHistoryTable', () => {
 
   describe('loading state', () => {
     it('GIVEN loading is true WHEN rendering THEN should show loading skeleton', () => {
-      render(
-        <TransactionHistoryTable
-          transactions={[]}
-          loading={true}
-          filters={mockFilters}
-        />
-      )
+      render(<TransactionHistoryTable transactions={[]} loading={true} filters={mockFilters} />)
 
       expect(screen.queryByTestId('no-transactions')).not.toBeInTheDocument()
       expect(screen.queryByTestId('transaction-row-0')).not.toBeInTheDocument()
