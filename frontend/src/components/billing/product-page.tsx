@@ -41,7 +41,6 @@ export function ProductPage({ realmId }: ProductPageProps) {
           body: {
             title: formData.title,
             description: formData.description ?? null,
-            sortOrder: formData.sortOrder,
             enabled: formData.enabled,
           },
         })

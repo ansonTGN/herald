@@ -25,31 +25,30 @@
 Given 我是 realm-1 的管理员
 When 我在 Billing 管理页面点击 "Create Product" 按钮
 And 我填写 Product 信息：
-  | Name        | ai-services          |
+  | Code        | ai-services          |
   | Title       | AI 服务              |
   | Description | AI 驱动的智能服务集合 |
-  | Sort Order  | 1                    |
 And 我提交表单
 Then Product 创建成功
 And 系统显示成功消息："Product 'ai-services' created successfully"
 And Product 列表显示新创建的 Product
 ```
 
-**场景 2：Product 名称唯一性验证**
+**场景 2：Product 代码唯一性验证**
 ```gherkin
 Given 我是 realm-1 的管理员
 And 已存在 Product "ai-services"
-When 我尝试创建同名 Product "ai-services"
-Then 系统显示验证错误："Product name 'ai-services' already exists in this realm"
+When 我尝试创建同代码 Product "ai-services"
+Then 系统显示验证错误："Product code 'ai-services' already exists in this realm"
 And Product 创建失败
 ```
 
-**场景 3：Product 名称格式验证**
+**场景 3：Product 代码格式验证**
 ```gherkin
 Given 我是 realm-1 的管理员
 When 我创建 Product
-And 我设置 Name 为无效格式（包含空格或特殊字符）
-Then 系统显示验证错误："Product name must contain only letters, numbers, hyphens, and underscores"
+And 我设置 Code 为无效格式（包含空格或特殊字符）
+Then 系统显示验证错误："Product code must contain only letters, numbers, hyphens, and underscores"
 ```
 
 ---
@@ -60,7 +59,7 @@ Then 系统显示验证错误："Product name must contain only letters, numbers
 
 **【用户故事】**
 **作为**：Realm Admin
-**我希望**：编辑 Product 信息，以便更新产品描述和显示顺序
+**我希望**：编辑 Product 信息，以便更新产品描述
 **从而**：保持产品目录的准确性和良好的用户体验
 
 **【验收标准】**
@@ -73,20 +72,19 @@ When 我在 Product 列表中点击 "Edit" 按钮
 And 我修改以下信息：
   | Title       | AI 服务（已更新）   |
   | Description | 企业级 AI 解决方案 |
-  | Sort Order  | 0                   |
 And 我保存更改
 Then Product 更新成功
 And 系统显示成功消息："Product updated successfully"
 And Product 列表显示更新后的信息
 ```
 
-**场景 2：Product 名称不可修改**
+**场景 2：Product 代码不可修改**
 ```gherkin
 Given 我是 realm-1 的管理员
 And 已存在 Product "ai-services"
 When 我编辑 Product
-Then "Name" 字段为只读或禁用
-And 我无法修改 Product 名称
+Then "Code" 字段为只读或禁用
+And 我无法修改 Product 代码
 ```
 
 **场景 3：启用/禁用 Product**
@@ -117,14 +115,13 @@ And 已订阅用户不受影响
 ```gherkin
 Given 我是 realm-1 的管理员
 When 我访问 Billing 管理页面
-Then 我看到 Product 列表按 sort_order 排序
+Then 我看到 Product 列表按创建时间排序
 And 每个 Product 显示：
-  | Name        | ai-services        |
+  | Code        | ai-services        |
   | Title       | AI 服务            |
   | Description | AI 驱动的智能服务  |
   | Plans Count | 3                  |
   | Status      | Enabled            |
-  | Sort Order  | 1                  |
 ```
 
 **场景 2：按状态筛选 Product**
@@ -326,9 +323,9 @@ And 至少存在一个 Product 才能创建 Plan
 ## 业务规则总结
 
 ### Product 规则
-1. **唯一性**：Product 名称在同一 Realm 内必须唯一
+1. **唯一性**：Product 代码在同一 Realm 内必须唯一
 2. **命名规范**：只能包含字母、数字、横线和下划线
-3. **排序**：使用 `sort_order` 字段控制显示顺序
+3. **排序**：按创建时间排序
 4. **状态管理**：支持启用/禁用，禁用不影响已订阅用户
 5. **删除限制**：有 Plan 的 Product 不能删除
 

@@ -401,10 +401,9 @@ impl From<&str> for BillingPeriod {
 pub struct Product {
     pub id: Uuid,
     pub realm_id: String,
-    pub name: String,
+    pub code: String,
     pub title: String,
     pub description: Option<String>,
-    pub sort_order: i32,
     pub enabled: bool,
     pub plans_count: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,

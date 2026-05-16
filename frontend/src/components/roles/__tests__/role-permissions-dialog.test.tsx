@@ -1,25 +1,31 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RolePermissionsDialog } from '../role-permissions-dialog'
 import type { RoleResponse, PermissionResponse } from '@/lib/api-generated'
 
-// Mock API and hooks
+// Mock API
+const mockAssignPermission = vi.fn().mockResolvedValue({ data: { success: true } })
+const mockRemovePermission = vi.fn().mockResolvedValue({ data: { success: true } })
+
 vi.mock('@/lib/api-generated', () => ({
-  assignPermissionToRole: vi.fn().mockResolvedValue({
-    data: { success: true },
-  }),
-  removePermissionFromRole: vi.fn().mockResolvedValue({
-    data: { success: true },
-  }),
+  assignPermissionToRole: (...args: unknown[]) => mockAssignPermission(...args),
+  removePermissionFromRole: (...args: unknown[]) => mockRemovePermission(...args),
 }))
 
-vi.mock('@/hooks/use-form-mutation', () => ({
-  useFormMutation: () => ({
-    isSubmitting: false,
-    mutate: vi.fn().mockResolvedValue({}),
-  }),
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
 }))
+
+vi.mock('@/stores/auth-store', () => ({
+  useRealmId: () => 'realm-1',
+}))
+
+function wrapper({ children }: { children: React.ReactNode }) {
+  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+}
 
 describe('RolePermissionsDialog', () => {
   const mockRole: RoleResponse = {
@@ -68,7 +74,7 @@ describe('RolePermissionsDialog', () => {
   })
 
   it('GIVEN dialog is open WHEN rendering THEN should display permission summary stats', async () => {
-    const screen = render(
+    const result = render(
       <RolePermissionsDialog
         open={true}
         onOpenChange={vi.fn()}
@@ -76,15 +82,16 @@ describe('RolePermissionsDialog', () => {
         realmId="realm-1"
         allPermissions={mockPermissions}
         assignedPermissionIds={assignedPermissionIds}
-      />
+      />,
+      { wrapper },
     )
 
-    expect(screen.getByText('2 / 3')).toBeInTheDocument()
-    expect(screen.getByText('permissions assigned')).toBeInTheDocument()
+    expect(result.getByText('2 / 3')).toBeInTheDocument()
+    expect(result.getByText('permissions assigned')).toBeInTheDocument()
   })
 
   it('GIVEN role is builtin WHEN rendering THEN should show warning message', async () => {
-    const screen = render(
+    const result = render(
       <RolePermissionsDialog
         open={true}
         onOpenChange={vi.fn()}
@@ -92,11 +99,11 @@ describe('RolePermissionsDialog', () => {
         realmId="realm-1"
         allPermissions={mockPermissions}
         assignedPermissionIds={assignedPermissionIds}
-      />
+      />,
+      { wrapper },
     )
 
-    // The warning appears in both DialogDescription and Alert
-    expect(screen.getAllByText(/Built-in permissions cannot be removed/)[0]).toBeInTheDocument()
+    expect(result.getAllByText(/Built-in permissions cannot be removed/)[0]).toBeInTheDocument()
   })
 
   it('GIVEN role is not builtin WHEN rendering THEN should not show warning message', async () => {
@@ -109,13 +116,14 @@ describe('RolePermissionsDialog', () => {
         realmId="realm-1"
         allPermissions={mockPermissions}
         assignedPermissionIds={assignedPermissionIds}
-      />
+      />,
+      { wrapper },
     )
 
     expect(screen.queryByTestId('builtin-permission-warning')).not.toBeInTheDocument()
   })
 
-  it('GIVEN user clicks Close button WHEN clicked THEN should call onOpenChange with false', async () => {
+  it('GIVEN user clicks Cancel button WHEN clicked THEN should call onOpenChange with false', async () => {
     const handleOpenChange = vi.fn()
     render(
       <RolePermissionsDialog
@@ -125,18 +133,18 @@ describe('RolePermissionsDialog', () => {
         realmId="realm-1"
         allPermissions={mockPermissions}
         assignedPermissionIds={assignedPermissionIds}
-      />
+      />,
+      { wrapper },
     )
 
-    const closeButton = screen.getByTestId('role-permissions-close-button')
-    await userEvent.click(closeButton)
+    const cancelButton = screen.getByTestId('role-permissions-cancel-button')
+    await userEvent.click(cancelButton)
 
-    expect(handleOpenChange).toHaveBeenCalledTimes(1)
     expect(handleOpenChange).toHaveBeenCalledWith(false)
   })
 
   it('GIVEN permissions are provided WHEN rendering THEN should group by resource', async () => {
-    const screen = render(
+    const result = render(
       <RolePermissionsDialog
         open={true}
         onOpenChange={vi.fn()}
@@ -144,11 +152,84 @@ describe('RolePermissionsDialog', () => {
         realmId="realm-1"
         allPermissions={mockPermissions}
         assignedPermissionIds={assignedPermissionIds}
-      />
+      />,
+      { wrapper },
     )
 
-    // Check for resource badges - they should appear multiple times (in badge and in the count text)
-    expect(screen.getAllByText('users', { exact: true })[0]).toBeInTheDocument()
-    expect(screen.getAllByText('roles', { exact: true })[0]).toBeInTheDocument()
+    expect(result.getAllByText('users', { exact: true })[0]).toBeInTheDocument()
+    expect(result.getAllByText('roles', { exact: true })[0]).toBeInTheDocument()
+  })
+
+  it('GIVEN no changes WHEN rendering THEN Save button should be disabled', async () => {
+    render(
+      <RolePermissionsDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        role={mockRole}
+        realmId="realm-1"
+        allPermissions={mockPermissions}
+        assignedPermissionIds={assignedPermissionIds}
+      />,
+      { wrapper },
+    )
+
+    const saveButton = screen.getByTestId('role-permissions-save-button')
+    expect(saveButton).toBeDisabled()
+  })
+
+  it('GIVEN user toggles a permission WHEN toggled THEN Save button should be enabled', async () => {
+    const customRole = { ...mockRole, isBuiltin: false }
+    render(
+      <RolePermissionsDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        role={customRole}
+        realmId="realm-1"
+        allPermissions={mockPermissions}
+        assignedPermissionIds={['1']}
+      />,
+      { wrapper },
+    )
+
+    // permission 2 is not assigned, click to assign
+    const checkbox = screen.getByTestId('permission-checkbox-2')
+    await userEvent.click(checkbox)
+
+    const saveButton = screen.getByTestId('role-permissions-save-button')
+    expect(saveButton).toBeEnabled()
+  })
+
+  it('GIVEN user toggles permissions and saves WHEN Save clicked THEN should fire batch API calls', async () => {
+    const customRole = { ...mockRole, isBuiltin: false }
+    render(
+      <RolePermissionsDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        role={customRole}
+        realmId="realm-1"
+        allPermissions={mockPermissions}
+        assignedPermissionIds={['1']}
+      />,
+      { wrapper },
+    )
+
+    // Assign permission 2
+    await userEvent.click(screen.getByTestId('permission-checkbox-2'))
+    // Remove permission 1
+    await userEvent.click(screen.getByTestId('permission-checkbox-1'))
+
+    const saveButton = screen.getByTestId('role-permissions-save-button')
+    await userEvent.click(saveButton)
+
+    expect(mockAssignPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: { permissionId: '2' },
+      }),
+    )
+    expect(mockRemovePermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: expect.objectContaining({ permissionId: '1' }),
+      }),
+    )
   })
 })

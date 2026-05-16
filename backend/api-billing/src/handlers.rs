@@ -2512,10 +2512,9 @@ pub fn product_to_response(product: Product) -> ProductResponse {
     ProductResponse {
         id: product.id,
         realm_id: product.realm_id,
-        name: product.name,
+        code: product.code,
         title: product.title,
         description: product.description,
-        sort_order: product.sort_order,
         enabled: product.enabled,
         plans_count: product.plans_count,
         created_at: product.created_at.to_rfc3339(),
@@ -2599,7 +2598,7 @@ pub async fn create_product(
 ) -> Result<(StatusCode, Json<ProductResponse>), ApiError> {
     tracing::info!(
         "Creating product '{}' for realm: {}",
-        request.name,
+        request.code,
         realm_id
     );
 
@@ -2614,10 +2613,9 @@ pub async fn create_product(
 
     let input = CreateProductInput {
         realm_id: realm_id.clone(),
-        name: request.name,
+        code: request.code,
         title: request.title,
         description: request.description,
-        sort_order: request.sort_order,
     };
 
     let product = state
@@ -2669,10 +2667,9 @@ pub async fn get_product(
     Ok(Json(ProductDetailResponse {
         id: product.id,
         realm_id: product.realm_id,
-        name: product.name,
+        code: product.code,
         title: product.title,
         description: product.description,
-        sort_order: product.sort_order,
         enabled: product.enabled,
         plans_count: product.plans_count,
         plans: plans.into_iter().map(plan_to_product_summary).collect(),
@@ -2721,7 +2718,6 @@ pub async fn update_product(
     let input = UpdateProductInput {
         title: request.title,
         description: request.description,
-        sort_order: request.sort_order,
         enabled: request.enabled,
     };
 

@@ -13,7 +13,7 @@
 
 - 📄 [docs/user-stories/product-management.md](/docs/user-stories/product-management.md)
   - **[US-PR-001] 创建 Product** (P0): 作为 Realm Admin，我想要创建 Product，以便将相关的套餐组织在一起
-  - **[US-PR-002] 编辑 Product** (P0): 作为 Realm Admin，我想要编辑 Product 信息，以便更新产品描述和显示顺序
+  - **[US-PR-002] 编辑 Product** (P0): 作为 Realm Admin，我想要编辑 Product 信息，以便更新产品描述
   - **[US-PR-003] 查看 Product 列表** (P0): 作为 Realm Admin，我想要查看所有 Product 列表，以便了解产品目录结构
   - **[US-PR-004] 启用/禁用 Product** (P1): 作为 Realm Admin，我想要启用或禁用 Product，以便控制产品的可见性
   - **[US-PR-005] 删除 Product** (P1): 作为 Realm Admin，我想要删除不再需要的 Product，以便保持产品目录整洁
@@ -36,7 +36,7 @@
 - ✅ Product 实体管理（创建、编辑、删除、查看）
 - ✅ Product-Plan 层级关系管理
 - ✅ Product 启用/禁用控制
-- ✅ Product 排序（sort_order）
+- ✅ Product 排序（按创建时间）
 - ✅ Plan 到 Product 的归属管理
 - ✅ Product 删除约束（有 Plan 时不可删除）
 - ✅ 前端 Product 管理页面
@@ -116,18 +116,17 @@ Product 是 Realm 下的正式业务对象，具有以下特征：
 **基本属性**：
 - `id`: UUID v7（主键）
 - `realm_id`: 所属 Realm（外键到 realm 表）
-- `name`: 产品名称（Realm 内唯一，如 "ai-services"）
+- `code`: 产品代码（Realm 内唯一，如 "ai-services"）
 - `title`: 产品标题（显示名称，如 "AI 服务"）
 - `description`: 产品描述
-- `sort_order`: 排序顺序（越小越靠前，默认 0）
 - `enabled`: 是否启用（默认 true）
 - `created_at`: 创建时间
 - `updated_at`: 更新时间
 
 **命名规范**：
-- `name` 只能包含字母、数字、横线（-）和下划线（_）
-- `name` 在同一 Realm 内必须唯一
-- `name` 长度限制：3-50 字符
+- `code` 只能包含字母、数字、横线（-）和下划线（_）
+- `code` 在同一 Realm 内必须唯一
+- `code` 长度限制：3-50 字符
 - `title` 长度限制：1-100 字符
 - `description` 长度限制：0-500 字符（可选）
 
@@ -149,22 +148,22 @@ Product 是 Realm 下的正式业务对象，具有以下特征：
 
 **功能点**：
 - Realm Admin 可以创建新的 Product
-- 必须提供 `name`、`title`、`description`
-- `sort_order` 和 `enabled` 有默认值
-- 创建时检查 `name` 唯一性
+- 必须提供 `code`、`title`、`description`
+- `enabled` 有默认值
+- 创建时检查 `code` 唯一性
 
 **验证规则**：
-- `name` 唯一性检查（同一 Realm 内）
-- `name` 格式验证（字母、数字、横线、下划线）
-- `name` 长度验证（3-50 字符）
+- `code` 唯一性检查（同一 Realm 内）
+- `code` 格式验证（字母、数字、横线、下划线）
+- `code` 长度验证（3-50 字符）
 - `title` 长度验证（1-100 字符）
 - `description` 长度验证（0-500 字符）
 
 #### 5.3.2 编辑 Product
 
 **功能点**：
-- Realm Admin 可以编辑 Product 的 `title`、`description`、`sort_order`、`enabled`
-- `name` 字段不可修改（作为唯一标识符）
+- Realm Admin 可以编辑 Product 的 `title`、`description`、`enabled`
+- `code` 字段不可修改（作为唯一标识符）
 - 更新 `enabled` 状态会影响其下所有 Plan 的可见性
 
 **可见性规则**：
@@ -192,15 +191,14 @@ Product 是 Realm 下的正式业务对象，具有以下特征：
 
 **功能点**：
 - Realm Admin 可以查看 Realm 内所有 Product
-- 列表默认按 `sort_order` 升序排序
+- 列表默认按创建时间排序
 - 支持按 `enabled` 状态筛选
 - 每个 Product 显示其下的 Plan 数量
 
 **显示信息**：
-- Product 基本信息（name, title, description）
+- Product 基本信息（code, title, description）
 - Plan 数量
 - 启用状态
-- 排序顺序
 - 创建和更新时间
 
 ### 5.4 Product 与积分系统边界

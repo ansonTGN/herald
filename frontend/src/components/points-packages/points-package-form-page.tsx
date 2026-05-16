@@ -1,41 +1,41 @@
-import { useEffect, useMemo } from 'react'
+import { useMemo } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
-import { type PointsPackageResponse } from '@/lib/api-generated'
+import { Card, CardContent } from '@/components/ui/card'
+import { type PointsPackageResponse, createPointsPackage, updatePointsPackage } from '@/lib/api-generated'
 import {
   pointsPackageFormSchema,
   type PointsPackageFormData,
   getPointsPackageDefaults,
   apiPriceToDisplayPrice,
+  displayPriceToApiPrice,
 } from '@/lib/schemas/points-package-forms'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { NumberField, TextField, TextareaField } from '@/components/shared/form-fields'
+import { useFormMutation } from '@/hooks/use-form-mutation'
+import { queryKeys } from '@/data/query-options'
+import { ArrowLeft } from 'lucide-react'
 
-interface PointsPackageFormDialogProps {
-  package?: PointsPackageResponse
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onSubmit: (data: PointsPackageFormData) => void
-  isSubmitting: boolean
+interface PointsPackageFormPageProps {
+  mode: 'create' | 'edit'
+  realmId: string
+  pkg?: PointsPackageResponse
 }
 
-export function PointsPackageFormDialog({
-  package: pkg,
-  open,
-  onOpenChange,
-  onSubmit,
-  isSubmitting,
-}: PointsPackageFormDialogProps) {
-  const isEditing = !!pkg
+export function PointsPackageFormPage({
+  mode,
+  realmId,
+  pkg,
+}: PointsPackageFormPageProps) {
+  const isCreate = mode === 'create'
+  const navigate = useNavigate()
+
+  const handleCancel = () => {
+    navigate({ to: '/$realmId/manage/points-packages', params: { realmId } })
+  }
+
   const defaultValues = useMemo(
     () =>
       getPointsPackageDefaults(
@@ -45,7 +45,7 @@ export function PointsPackageFormDialog({
               title: pkg.title,
               description: pkg.description ?? undefined,
               points: pkg.points,
-              price: apiPriceToDisplayPrice(pkg.price, pkg.currency), // KEY: Convert cents to dollars
+              price: apiPriceToDisplayPrice(pkg.price, pkg.currency),
               currency: pkg.currency,
               sortOrder: pkg.sortOrder,
               enabled: pkg.enabled,
@@ -55,42 +55,91 @@ export function PointsPackageFormDialog({
     [pkg]
   )
 
+  const { isSubmitting, mutate } = useFormMutation({
+    mutationFn: (data: PointsPackageFormData) => {
+      const apiPrice = displayPriceToApiPrice(data.price, data.currency)
+
+      if (isCreate) {
+        return createPointsPackage({
+          path: { realmId },
+          body: {
+            ...data,
+            price: apiPrice,
+          },
+        }).then((response) => {
+          if (response.error) throw response.error
+          if (!response.data) throw new Error('Failed to create package')
+          return response.data as unknown as PointsPackageResponse
+        })
+      }
+
+      return updatePointsPackage({
+        path: { realmId, packageId: pkg!.id },
+        body: {
+          title: data.title,
+          description: data.description ?? null,
+          price: apiPrice,
+          currency: data.currency,
+          sortOrder: data.sortOrder,
+          enabled: data.enabled,
+        },
+      }).then((response) => {
+        if (response.error) throw response.error
+        if (!response.data) throw new Error('Failed to update package')
+        return response.data as unknown as PointsPackageResponse
+      })
+    },
+    getSuccessMessage: (data) =>
+      `Points package "${data?.title}" ${isCreate ? 'created' : 'updated'} successfully`,
+    invalidateQueries: [queryKeys.pointsPackages(realmId)],
+    onSuccess: () => {
+      navigate({ to: '/$realmId/manage/points-packages', params: { realmId } })
+    },
+  })
+
   const form = useAppForm({
     schema: pointsPackageFormSchema,
     defaultValues,
-    onSubmit: ({ value }) => onSubmit(value),
+    onSubmit: async ({ value }) => {
+      await mutate(value)
+    },
   })
 
-  useEffect(() => {
-    if (open) {
-      form.reset(defaultValues)
-    }
-  }, [defaultValues, form, open])
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg" data-testid="points-package-form-dialog">
-        <DialogHeader>
-          <DialogTitle>{isEditing ? 'Edit Points Package' : 'Create Points Package'}</DialogTitle>
-          <DialogDescription>
-            {isEditing
-              ? 'Update points package details'
-              : 'Create a new points package for users to purchase'}
-          </DialogDescription>
-        </DialogHeader>
+    <div className="container max-w-4xl mx-auto py-6 px-6 space-y-6" data-testid="points-package-form-page">
+      <div className="flex items-center gap-4">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleCancel}
+          data-testid="points-package-form-back-button"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold" data-testid="page-title">
+            {isCreate ? 'Create Points Package' : 'Edit Points Package'}
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            {isCreate
+              ? 'Create a new points package for users to purchase'
+              : 'Update points package details'}
+          </p>
+        </div>
+      </div>
 
-        <AppForm>
-          <form
-            id="points-package-form"
-            onSubmit={async (e) => {
-              e.preventDefault()
-              await form.validateAllFields('submit')
-              if (form.state.isFieldsValid) {
-                onSubmit(form.state.values)
-              }
-            }}
-          >
-            <div className="space-y-6">
+      <AppForm>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            form.handleSubmit()
+          }}
+          className="max-w-4xl space-y-6"
+        >
+          <Card>
+            <CardContent className="pt-6 space-y-6">
               <div className="space-y-2">
                 <TextField
                   form={form}
@@ -98,7 +147,7 @@ export function PointsPackageFormDialog({
                   label="Package Name"
                   dataTestId="points-package-name-input"
                   placeholder="basic-points-package"
-                  disabled={isEditing}
+                  disabled={!isCreate}
                   required
                 />
                 <p className="text-xs text-muted-foreground">
@@ -141,6 +190,7 @@ export function PointsPackageFormDialog({
                     label="Points"
                     dataTestId="points-package-points-input"
                     placeholder="100"
+                    disabled={!isCreate}
                     required
                   />
                   <p className="text-xs text-muted-foreground">Number of points granted</p>
@@ -202,28 +252,32 @@ export function PointsPackageFormDialog({
                   </div>
                 )}
               </form.Field>
-            </div>
+            </CardContent>
+          </Card>
 
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                data-testid="points-package-cancel-button"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                data-testid="points-package-submit-button"
-              >
-                {isSubmitting ? 'Saving...' : isEditing ? 'Update Package' : 'Create Package'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </AppForm>
-      </DialogContent>
-    </Dialog>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCancel}
+              data-testid="points-package-cancel-button"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              data-testid="points-package-submit-button"
+            >
+              {isSubmitting
+                ? 'Saving...'
+                : isCreate
+                  ? 'Create Package'
+                  : 'Save Changes'}
+            </Button>
+          </div>
+        </form>
+      </AppForm>
+    </div>
   )
 }

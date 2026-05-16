@@ -78,7 +78,7 @@ pub async fn setup_billing_admin_session_with_user(
 pub async fn ensure_default_product(ctx: &mut TestContext, realm_id: &str) -> Uuid {
     // Check if default product already exists for this realm
     let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM products WHERE realm_id = $1 AND name = 'default' LIMIT 1",
+        "SELECT id FROM products WHERE realm_id = $1 AND code = 'default' LIMIT 1",
     )
     .bind(realm_id)
     .fetch_optional(&ctx.app_state.pool)
@@ -92,8 +92,8 @@ pub async fn ensure_default_product(ctx: &mut TestContext, realm_id: &str) -> Uu
     // Create default product
     let product_id = Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO products (id, realm_id, name, title, description, sort_order, enabled, created_at, updated_at)
-         VALUES ($1, $2, 'default', 'Default Product', 'Default test product', 0, true, NOW(), NOW())"
+        "INSERT INTO products (id, realm_id, code, title, description, enabled, created_at, updated_at)
+         VALUES ($1, $2, 'default', 'Default Product', 'Default test product', true, NOW(), NOW())"
     )
     .bind(product_id)
     .bind(realm_id)

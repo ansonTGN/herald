@@ -1,7 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Users, Shield, Key, Briefcase, Globe, Settings, LayoutDashboard } from 'lucide-react'
-import { Link } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
+import { LayoutDashboard, Users, UserPlus, Activity } from 'lucide-react'
+import { dashboardStatsQueryOptions } from '@/data/query-options'
+import { StatsCard } from '@/components/dashboard/stats-card'
+import { AuthTrendChart } from '@/components/dashboard/auth-trend-chart'
+import { QuickNav } from '@/components/dashboard/quick-nav'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export const Route = createFileRoute('/$realmId/manage/')({
   component: ManageDashboard,
@@ -9,51 +13,12 @@ export const Route = createFileRoute('/$realmId/manage/')({
 
 function ManageDashboard() {
   const { realmId } = Route.useParams()
+  const { data, isLoading, isError, error, refetch } = useQuery(
+    dashboardStatsQueryOptions(realmId)
+  )
 
-  const dashboardItems = [
-    {
-      title: 'Users',
-      description: 'Manage users and their permissions',
-      icon: Users,
-      path: `/${realmId}/manage/users`,
-      testId: 'dashboard-users-card',
-    },
-    {
-      title: 'Roles',
-      description: 'Define roles and assign permissions',
-      icon: Shield,
-      path: `/${realmId}/manage/roles`,
-      testId: 'dashboard-roles-card',
-    },
-    {
-      title: 'Permissions',
-      description: 'Configure system permissions',
-      icon: Key,
-      path: `/${realmId}/manage/permissions`,
-      testId: 'dashboard-permissions-card',
-    },
-    {
-      title: 'Client Apps',
-      description: 'Manage OAuth 2.0 client applications',
-      icon: Briefcase,
-      path: `/${realmId}/manage/client-apps`,
-      testId: 'dashboard-client-apps-card',
-    },
-    {
-      title: 'Realms',
-      description: 'Manage realms in the system',
-      icon: Globe,
-      path: `/${realmId}/manage/realms`,
-      testId: 'dashboard-realms-card',
-    },
-    {
-      title: 'Settings',
-      description: 'Configure realm settings',
-      icon: Settings,
-      path: `/${realmId}/manage/settings`,
-      testId: 'dashboard-settings-card',
-    },
-  ]
+  const userStats = data?.userStats
+  const authTrend = data?.authTrend ?? []
 
   return (
     <div className="container mx-auto py-6 space-y-6">
@@ -65,27 +30,75 @@ function ManageDashboard() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {dashboardItems.map((item) => {
-          const Icon = item.icon
-          return (
-            <Link key={item.path} to={item.path} params={{ realmId }}>
-              <Card
-                className="cursor-pointer transition-colors hover:bg-accent"
-                data-testid={item.testId}
-              >
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">{item.title}</CardTitle>
-                  <Icon className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <p className="text-xs text-muted-foreground">{item.description}</p>
-                </CardContent>
-              </Card>
-            </Link>
-          )
-        })}
-      </div>
+      {isError ? (
+        <div
+          className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center"
+          data-testid="dashboard-error"
+        >
+          <p className="text-destructive mb-3">
+            {error instanceof Error ? error.message : 'Failed to load dashboard data'}
+          </p>
+          <button
+            onClick={() => refetch()}
+            className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
+            data-testid="dashboard-retry-button"
+          >
+            Retry
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Stats Cards */}
+          <div className="grid gap-4 md:grid-cols-3" data-testid="dashboard-stats-row">
+            {isLoading ? (
+              <>
+                <Skeleton className="h-[120px] rounded-xl" />
+                <Skeleton className="h-[120px] rounded-xl" />
+                <Skeleton className="h-[120px] rounded-xl" />
+              </>
+            ) : (
+              <>
+                <StatsCard
+                  title="Total Users"
+                  value={userStats?.totalUsers ?? 0}
+                  description="users"
+                  icon={Users}
+                  testId="dashboard-total-users-card"
+                  linkTo="/$realmId/manage/users"
+                  linkParams={{ realmId }}
+                />
+                <StatsCard
+                  title="New Users"
+                  value={userStats?.newUsers ?? 0}
+                  description="past 7 days"
+                  icon={UserPlus}
+                  testId="dashboard-new-users-card"
+                />
+                <StatsCard
+                  title="Active Users"
+                  value={userStats?.activeUsers ?? 0}
+                  description="past 7 days"
+                  icon={Activity}
+                  testId="dashboard-active-users-card"
+                />
+              </>
+            )}
+          </div>
+
+          {/* Auth Trend Chart */}
+          {isLoading ? (
+            <Skeleton className="h-[350px] rounded-xl" data-testid="dashboard-chart-skeleton" />
+          ) : (
+            <AuthTrendChart
+              data={authTrend}
+              testId="dashboard-auth-trend-chart"
+            />
+          )}
+
+          {/* Quick Navigation */}
+          <QuickNav realmId={realmId} testId="dashboard-quick-nav" />
+        </>
+      )}
     </div>
   )
 }

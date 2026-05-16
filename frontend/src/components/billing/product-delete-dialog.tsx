@@ -2,7 +2,6 @@ import { ConfirmDeleteDialog } from '@/components/shared'
 
 interface ProductDeleteDialogProps {
   product: {
-    name: string
     title: string
   }
   open: boolean

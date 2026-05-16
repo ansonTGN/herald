@@ -18,17 +18,16 @@ export type WebhookMode = (typeof WEBHOOK_MODES)[keyof typeof WEBHOOK_MODES]
 // ==================== Product Form Schema ====================
 
 export const productFormSchema = z.object({
-  name: z
+  code: z
     .string()
-    .min(3, 'Product name must be at least 3 characters')
-    .max(50, 'Product name must not exceed 50 characters')
+    .min(3, 'Product code must be at least 3 characters')
+    .max(50, 'Product code must not exceed 50 characters')
     .regex(
       PLAN_NAME_REGEX,
-      'Product name can only contain lowercase letters, numbers, hyphens, and underscores'
+      'Product code can only contain lowercase letters, numbers, hyphens, and underscores'
     ),
   title: z.string().min(1, 'Title is required').max(100, 'Title must not exceed 100 characters'),
   description: z.string().max(500, 'Description must not exceed 500 characters').optional(),
-  sortOrder: z.number().min(0, 'Sort order cannot be negative').default(0),
   enabled: z.boolean().default(true),
 })
 
@@ -36,10 +35,9 @@ export type ProductFormData = z.infer<typeof productFormSchema>
 
 export function getProductDefaults(product?: Partial<ProductFormData>): ProductFormData {
   return {
-    name: '',
+    code: '',
     title: '',
     description: '',
-    sortOrder: 0,
     enabled: true,
     ...product,
   } as ProductFormData

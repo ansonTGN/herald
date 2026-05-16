@@ -2,8 +2,8 @@
  * Product Management Demo Tests
  *
  * User Stories:
- * - US-PR-001: Create Product (name uniqueness, format validation)
- * - US-PR-002: Edit Product (basic info, name immutable)
+ * - US-PR-001: Create Product (code uniqueness, format validation)
+ * - US-PR-002: Edit Product (basic info, code immutable)
  * - US-PR-003: View Product List (table display, plans count)
  * - US-PR-004: Enable/Disable Product (toggle status)
  * - US-PR-005: Delete Product (without plans, confirmation dialog)
@@ -84,9 +84,9 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
       demoLogger,
       testStartTime,
     }) => {
-      const productAName = `test-product-a-${testStartTime}`
+      const productACode = `test-product-a-${testStartTime}`
       const productATitle = `Test Product A`
-      const productBName = `test-product-b-${testStartTime}`
+      const productBCode = `test-product-b-${testStartTime}`
       const productBTitle = `Test Product B`
 
       // ------------------------------------------------------------------
@@ -104,10 +104,9 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
       // ------------------------------------------------------------------
       await test.step('Step 2: Create First Product (US-PR-001 Scene 1)', async () => {
         await createProduct(page, {
-          name: productAName,
+          code: productACode,
           title: productATitle,
           description: 'Product for E2E testing',
-          sortOrder: 1,
           enabled: true,
         })
 
@@ -117,7 +116,7 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
         ).toBeVisible()
 
         // Verify product appears in table
-        await verifyProductInTable(page, productAName)
+        await verifyProductInTable(page, productACode)
         console.log('[Test] First product created successfully')
       })
 
@@ -126,10 +125,9 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
       // ------------------------------------------------------------------
       await test.step('Step 3: Create Second Product', async () => {
         await createProduct(page, {
-          name: productBName,
+          code: productBCode,
           title: productBTitle,
           description: 'Second product for E2E',
-          sortOrder: 2,
           enabled: true,
         })
 
@@ -137,18 +135,18 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
           page.getByText(/Product "Test Product B" created successfully/)
         ).toBeVisible()
 
-        await verifyProductInTable(page, productBName)
+        await verifyProductInTable(page, productBCode)
         console.log('[Test] Second product created successfully')
       })
 
       // ------------------------------------------------------------------
-      // Step 4: Validate Name Uniqueness (US-PR-001 Scene 2)
+      // Step 4: Validate Code Uniqueness (US-PR-001 Scene 2)
       // ------------------------------------------------------------------
-      await test.step('Step 4: Validate Name Uniqueness (US-PR-001 Scene 2)', async () => {
+      await test.step('Step 4: Validate Code Uniqueness (US-PR-001 Scene 2)', async () => {
         await page.getByTestId('add-product-button').click()
         await expect(page.getByRole('dialog')).toBeVisible()
 
-        await page.getByTestId('product-name-input').fill(productAName)
+        await page.getByTestId('product-code-input').fill(productACode)
         await page.getByTestId('product-title-input').fill('Duplicate Test')
         await page.getByTestId('product-form-submit-button').click()
 
@@ -158,32 +156,32 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
         // Close the dialog via cancel button
         await page.getByTestId('product-form-cancel-button').click()
         await expect(page.getByRole('dialog')).toBeHidden()
-        console.log('[Test] Name uniqueness validation verified')
+        console.log('[Test] Code uniqueness validation verified')
       })
 
       // ------------------------------------------------------------------
-      // Step 5: Validate Name Format (US-PR-001 Scene 3)
+      // Step 5: Validate Code Format (US-PR-001 Scene 3)
       // ------------------------------------------------------------------
-      await test.step('Step 5: Validate Name Format (US-PR-001 Scene 3)', async () => {
+      await test.step('Step 5: Validate Code Format (US-PR-001 Scene 3)', async () => {
         await page.getByTestId('add-product-button').click()
         await expect(page.getByRole('dialog')).toBeVisible()
 
-        // Fill with invalid name (spaces and special characters)
-        await page.getByTestId('product-name-input').fill('invalid name!@#')
-        await page.getByTestId('product-title-input').fill('Invalid Name Test')
+        // Fill with invalid code (spaces and special characters)
+        await page.getByTestId('product-code-input').fill('invalid code!@#')
+        await page.getByTestId('product-title-input').fill('Invalid Code Test')
 
         // Trigger validation by submitting
         await page.getByTestId('product-form-submit-button').click()
 
         // Inline validation error should appear
         await expect(
-          page.getByText(/Product name can only contain lowercase letters/)
+          page.getByText(/Product code can only contain lowercase letters/)
         ).toBeVisible()
 
         // Close the dialog
         await page.getByTestId('product-form-cancel-button').click()
         await expect(page.getByRole('dialog')).toBeHidden()
-        console.log('[Test] Name format validation verified')
+        console.log('[Test] Code format validation verified')
       })
 
       // ------------------------------------------------------------------
@@ -192,17 +190,17 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
       await test.step('Step 6: View Product List (US-PR-003 Scene 1)', async () => {
         // Both products should be visible in the table
         await expect(page.getByTestId('product-table')).toBeVisible()
-        await verifyProductInTable(page, productAName)
-        await verifyProductInTable(page, productBName)
+        await verifyProductInTable(page, productACode)
+        await verifyProductInTable(page, productBCode)
 
         // Verify table headers
-        await expect(page.getByRole('columnheader', { name: 'Name' })).toBeVisible()
+        await expect(page.getByRole('columnheader', { name: 'Code' })).toBeVisible()
         await expect(page.getByRole('columnheader', { name: 'Title' })).toBeVisible()
         await expect(page.getByRole('columnheader', { name: 'Status' })).toBeVisible()
 
         // Verify status badges show "Enabled" for both products
-        const productARow = page.locator(`tr:has-text("${productAName}")`)
-        const productBRow = page.locator(`tr:has-text("${productBName}")`)
+        const productARow = page.locator(`tr:has-text("${productACode}")`)
+        const productBRow = page.locator(`tr:has-text("${productBCode}")`)
         await expect(productARow.getByText('Enabled')).toBeVisible()
         await expect(productBRow.getByText('Enabled')).toBeVisible()
         console.log('[Test] Product list view verified')
@@ -212,16 +210,15 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
       // Step 7: Edit Product (US-PR-002 Scene 1 + Scene 2)
       // ------------------------------------------------------------------
       await test.step('Step 7: Edit Product (US-PR-002 Scene 1+2)', async () => {
-        await openEditProductDialog(page, productAName)
+        await openEditProductDialog(page, productACode)
 
-        // US-PR-002 Scene 2: Name field is disabled in edit mode
-        const nameInput = page.getByTestId('product-name-input')
-        await expect(nameInput).toBeDisabled()
+        // US-PR-002 Scene 2: Code field is disabled in edit mode
+        const codeInput = page.getByTestId('product-code-input')
+        await expect(codeInput).toBeDisabled()
 
         // Update title and description
         await page.getByTestId('product-title-input').fill('Test Product A Updated')
         await page.getByTestId('product-description-input').fill('Updated description')
-        await page.getByTestId('product-sort-order-input').fill('0')
 
         await page.getByTestId('product-form-submit-button').click()
 
@@ -231,7 +228,7 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
         ).toBeVisible()
 
         // Verify updated values in table (use specific row locator to avoid matching toast)
-        const productARow = page.locator(`tr:has-text("${productAName}")`)
+        const productARow = page.locator(`tr:has-text("${productACode}")`)
         await expect(productARow.getByText('Test Product A Updated')).toBeVisible()
         console.log('[Test] Product edited successfully')
       })
@@ -240,7 +237,7 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
       // Step 8: Disable Product (US-PR-004 Scene 1)
       // ------------------------------------------------------------------
       await test.step('Step 8: Disable Product (US-PR-004 Scene 1)', async () => {
-        await openEditProductDialog(page, productBName)
+        await openEditProductDialog(page, productBCode)
 
         // Toggle enabled switch OFF
         await page.getByTestId('product-enabled-switch').click()
@@ -253,7 +250,7 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
         ).toBeVisible()
 
         // Verify status badge changed to "Disabled"
-        const productBRow = page.locator(`tr:has-text("${productBName}")`)
+        const productBRow = page.locator(`tr:has-text("${productBCode}")`)
         await expect(productBRow.getByText('Disabled')).toBeVisible()
         console.log('[Test] Product disabled successfully')
       })
@@ -266,7 +263,7 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
         // This prevents duplicate toast detection (Step 8 and Step 9 both show "Test Product B updated successfully")
         await waitForOldToastsToDisappear(page, /Product "Test Product B" updated successfully/)
 
-        await openEditProductDialog(page, productBName)
+        await openEditProductDialog(page, productBCode)
 
         // Toggle enabled switch back ON
         await page.getByTestId('product-enabled-switch').click()
@@ -279,7 +276,7 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
         ).toBeVisible()
 
         // Verify status badge reverted to "Enabled"
-        const productBRow = page.locator(`tr:has-text("${productBName}")`)
+        const productBRow = page.locator(`tr:has-text("${productBCode}")`)
         await expect(productBRow.getByText('Enabled')).toBeVisible()
         console.log('[Test] Product re-enabled successfully')
       })
@@ -289,7 +286,7 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
       // ------------------------------------------------------------------
       await test.step('Step 10: Delete Product Without Plans (US-PR-005 Scene 1+4)', async () => {
         // Open delete dialog for product-b (has 0 plans)
-        await openDeleteProductDialog(page, productBName)
+        await openDeleteProductDialog(page, productBCode)
 
         // US-PR-005 Scene 4: Verify confirmation dialog content
         await expect(
@@ -309,7 +306,7 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
         ).toBeVisible()
 
         // Verify product no longer appears in table
-        await verifyProductNotInTable(page, productBName)
+        await verifyProductNotInTable(page, productBCode)
         console.log('[Test] Product deleted successfully')
       })
 
@@ -318,7 +315,7 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
       // ------------------------------------------------------------------
       await test.step('Cleanup: Delete remaining test products', async () => {
         try {
-          await openDeleteProductDialog(page, productAName)
+          await openDeleteProductDialog(page, productACode)
           await confirmDeleteProductAndWait(page)
           console.log('[Test] Cleanup: product-a deleted')
         } catch {
@@ -339,9 +336,9 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
       demoLogger,
       testStartTime,
     }) => {
-      const planHostName = `plan-host-${testStartTime}`
+      const planHostCode = `plan-host-${testStartTime}`
       const planHostTitle = `Plan Host Product ${testStartTime}`
-      const planTargetName = `plan-target-${testStartTime}`
+      const planTargetCode = `plan-target-${testStartTime}`
       const planTargetTitle = `Plan Target Product ${testStartTime}`
       const planName = `test-plan-${testStartTime}`
 
@@ -355,9 +352,8 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
 
         // Create plan-host product
         await createProduct(page, {
-          name: planHostName,
+          code: planHostCode,
           title: planHostTitle,
-          sortOrder: 1,
         })
         await expect(
           page.getByText(new RegExp(`Product "${planHostTitle}" created successfully`))
@@ -365,9 +361,8 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
 
         // Create plan-target product
         await createProduct(page, {
-          name: planTargetName,
+          code: planTargetCode,
           title: planTargetTitle,
-          sortOrder: 2,
         })
         await expect(
           page.getByText(new RegExp(`Product "${planTargetTitle}" created successfully`))
@@ -463,13 +458,13 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
         await expect(page.getByTestId('products-page')).toBeVisible()
 
         // plan-host should show Plans count = 0
-        const planHostRow = page.locator(`tr:has-text("${planHostName}")`)
+        const planHostRow = page.locator(`tr:has-text("${planHostCode}")`)
         await expect(planHostRow).toBeVisible()
         // The plans count column shows the number
         await expect(planHostRow.locator('td').nth(4)).toHaveText('0')
 
         // plan-target should show Plans count = 1
-        const planTargetRow = page.locator(`tr:has-text("${planTargetName}")`)
+        const planTargetRow = page.locator(`tr:has-text("${planTargetCode}")`)
         await expect(planTargetRow).toBeVisible()
         await expect(planTargetRow.locator('td').nth(4)).toHaveText('1')
 
@@ -481,7 +476,7 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
       // ------------------------------------------------------------------
       await test.step('Step 6: Verify Product Cannot Be Deleted with Plans (US-PR-006 Scene 4)', async () => {
         // plan-target has 1 plan, should not be deletable
-        await openDeleteProductDialog(page, planTargetName)
+        await openDeleteProductDialog(page, planTargetCode)
 
         // Verify warning message about plans
         await expect(
@@ -516,11 +511,11 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
           await expect(page.getByTestId('products-page')).toBeVisible()
 
           // Use confirmDeleteProductAndWait to prevent race conditions
-          await openDeleteProductDialog(page, planHostName)
+          await openDeleteProductDialog(page, planHostCode)
           await confirmDeleteProductAndWait(page)
           console.log('[Test] Cleanup: plan-host product deleted')
 
-          await openDeleteProductDialog(page, planTargetName)
+          await openDeleteProductDialog(page, planTargetCode)
           await confirmDeleteProductAndWait(page)
           console.log('[Test] Cleanup: plan-target product deleted')
         } catch {
@@ -548,64 +543,64 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
       })
 
       // ------------------------------------------------------------------
-      // Step 1: Name Too Short
+      // Step 1: Code Too Short
       // ------------------------------------------------------------------
-      await test.step('Name Too Short (less than 3 characters)', async () => {
+      await test.step('Code Too Short (less than 3 characters)', async () => {
         await page.getByTestId('add-product-button').click()
         await expect(page.getByRole('dialog')).toBeVisible()
 
-        await page.getByTestId('product-name-input').fill('ab')
-        await page.getByTestId('product-title-input').fill('Short Name Test')
+        await page.getByTestId('product-code-input').fill('ab')
+        await page.getByTestId('product-title-input').fill('Short Code Test')
 
         // Trigger validation by submitting
         await page.getByTestId('product-form-submit-button').click()
 
         // Verify inline validation error
         await expect(
-          page.getByText('Product name must be at least 3 characters')
+          page.getByText('Product code must be at least 3 characters')
         ).toBeVisible()
-        console.log('[Test] Name too short validation verified')
+        console.log('[Test] Code too short validation verified')
       })
 
       // ------------------------------------------------------------------
-      // Step 2: Name Too Long
+      // Step 2: Code Too Long
       // ------------------------------------------------------------------
-      await test.step('Name Too Long (exceeds 50 characters)', async () => {
-        const longName = 'a'.repeat(51)
-        await page.getByTestId('product-name-input').fill(longName)
+      await test.step('Code Too Long (exceeds 50 characters)', async () => {
+        const longCode = 'a'.repeat(51)
+        await page.getByTestId('product-code-input').fill(longCode)
 
         // Trigger validation
         await page.getByTestId('product-form-submit-button').click()
 
         // Verify inline validation error
         await expect(
-          page.getByText('Product name must not exceed 50 characters')
+          page.getByText('Product code must not exceed 50 characters')
         ).toBeVisible()
-        console.log('[Test] Name too long validation verified')
+        console.log('[Test] Code too long validation verified')
       })
 
       // ------------------------------------------------------------------
-      // Step 3: Name with Spaces
+      // Step 3: Code with Spaces
       // ------------------------------------------------------------------
-      await test.step('Name with Spaces', async () => {
-        await page.getByTestId('product-name-input').fill('has spaces')
-        await page.getByTestId('product-title-input').fill('Space Name Test')
+      await test.step('Code with Spaces', async () => {
+        await page.getByTestId('product-code-input').fill('has spaces')
+        await page.getByTestId('product-title-input').fill('Space Code Test')
 
         // Trigger validation
         await page.getByTestId('product-form-submit-button').click()
 
         // Verify inline validation error
         await expect(
-          page.getByText(/Product name can only contain lowercase letters/)
+          page.getByText(/Product code can only contain lowercase letters/)
         ).toBeVisible()
-        console.log('[Test] Name with spaces validation verified')
+        console.log('[Test] Code with spaces validation verified')
       })
 
       // ------------------------------------------------------------------
-      // Step 4: Name with Special Characters
+      // Step 4: Code with Special Characters
       // ------------------------------------------------------------------
-      await test.step('Name with Special Characters', async () => {
-        await page.getByTestId('product-name-input').fill('special!@#')
+      await test.step('Code with Special Characters', async () => {
+        await page.getByTestId('product-code-input').fill('special!@#')
         await page.getByTestId('product-title-input').fill('Special Char Test')
 
         // Trigger validation
@@ -613,17 +608,17 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
 
         // Verify inline validation error
         await expect(
-          page.getByText(/Product name can only contain lowercase letters/)
+          page.getByText(/Product code can only contain lowercase letters/)
         ).toBeVisible()
-        console.log('[Test] Name with special chars validation verified')
+        console.log('[Test] Code with special chars validation verified')
       })
 
       // ------------------------------------------------------------------
       // Step 5: Empty Title
       // ------------------------------------------------------------------
       await test.step('Empty Title', async () => {
-        // Fill valid name but clear title
-        await page.getByTestId('product-name-input').fill('valid-name-test')
+        // Fill valid code but clear title
+        await page.getByTestId('product-code-input').fill('valid-code-test')
         await page.getByTestId('product-title-input').clear()
 
         // Trigger validation

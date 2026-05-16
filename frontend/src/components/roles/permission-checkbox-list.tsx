@@ -12,6 +12,7 @@ interface PermissionCheckboxListProps {
   isBuiltinRole: boolean
   disabled?: boolean
   dataTestId?: string
+  className?: string
 }
 
 /**
@@ -48,6 +49,7 @@ export function PermissionCheckboxList({
   isBuiltinRole,
   disabled = false,
   dataTestId = 'permission-checkbox-list',
+  className,
 }: PermissionCheckboxListProps) {
   const groupedPermissions = groupPermissionsByResource(permissions)
 
@@ -66,7 +68,7 @@ export function PermissionCheckboxList({
   }
 
   return (
-    <div className="max-h-[400px] overflow-y-auto pr-4" data-testid={dataTestId}>
+    <div className={className} data-testid={dataTestId}>
       <div className="space-y-6">
         {isBuiltinRole && (
           <Alert variant="default">

@@ -25,11 +25,11 @@ function createProductColumns(
 ): ColumnDef<ProductResponse>[] {
   return [
     {
-      accessorKey: 'name',
-      header: 'Name',
+      accessorKey: 'code',
+      header: 'Code',
       cell: ({ row }) => (
-        <div className="font-medium" data-testid={`product-name-${row.index}`}>
-          {(row.getValue('name') as string) || ''}
+        <div className="font-medium" data-testid={`product-code-${row.index}`}>
+          {(row.getValue('code') as string) || ''}
         </div>
       ),
     },
@@ -50,11 +50,6 @@ function createProductColumns(
           </span>
         )
       },
-    },
-    {
-      accessorKey: 'sortOrder',
-      header: 'Sort Order',
-      cell: ({ row }) => (row.getValue('sortOrder') as number).toString(),
     },
     {
       accessorKey: 'plansCount',

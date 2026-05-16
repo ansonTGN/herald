@@ -43,6 +43,7 @@ import {
   listPaymentProviderMappings,
   listAuditEvents,
   getAuditEvent,
+  getDashboardStats,
 } from '@/lib/api-generated'
 import { handleApiResponse } from '@/lib/api-utils'
 import type {
@@ -200,6 +201,8 @@ export const queryKeys = {
     [QUERY_KEYS.AUDIT_EVENTS, realmId, filters ?? {}] as const,
   auditDetail: (realmId: string, eventId: string) =>
     [QUERY_KEYS.AUDIT_EVENT, realmId, eventId] as const,
+  dashboardStats: (realmId: string) =>
+    [QUERY_KEYS.DASHBOARD_STATS, realmId] as const,
 }
 
 function extractNestedArray<T>(response: unknown, key: string): T[] {
@@ -542,11 +545,10 @@ export const productsQueryOptions = (realmId: string) =>
       if (response.error) throw response.error
       return extractNestedArray<{
         id: string
-        name: string
+        code: string
         title: string
         description?: string | null
         enabled: boolean
-        sortOrder: number
         plansCount: number
         realmId: string
         createdAt: string
@@ -1151,4 +1153,18 @@ export const auditDetailQueryOptions = (realmId: string, eventId: string) =>
     queryFn: async () => handleApiResponse(await getAuditEvent({ path: { realmId, eventId } })),
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_5_MIN,
+  })
+
+// ==================== Dashboard ====================
+
+export const dashboardStatsQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.dashboardStats(realmId),
+    queryFn: async () => {
+      const response = await getDashboardStats({ path: { realmId } })
+      if (response.error) throw response.error
+      return response.data
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
   })

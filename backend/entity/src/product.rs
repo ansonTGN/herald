@@ -7,13 +7,11 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: Uuid,
     pub realm_id: String,
-    pub name: String,
+    pub code: String,
     #[sea_orm(default_value = "")]
     pub title: String,
     #[sea_orm(nullable)]
     pub description: Option<String>,
-    #[sea_orm(default_value = "0")]
-    pub sort_order: i32,
     #[sea_orm(default_value = "true")]
     pub enabled: bool,
     pub created_at: DateTimeWithTimeZone,

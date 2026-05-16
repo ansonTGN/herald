@@ -101,10 +101,9 @@ const secondPlan: PlanResponse = {
 const firstProduct = {
   id: 'product-1',
   realmId: REALM_ID,
-  name: 'starter',
+  code: 'starter',
   title: 'Starter Product',
   description: 'Starter description',
-  sortOrder: 1,
   enabled: true,
   plansCount: 1,
   createdAt: '2026-03-29T00:00:00Z',
@@ -114,7 +113,7 @@ const firstProduct = {
 const secondProduct = {
   ...firstProduct,
   id: 'product-2',
-  name: 'growth',
+  code: 'growth',
   title: 'Growth Product',
   description: 'Growth description',
   sortOrder: 2,
@@ -272,7 +271,7 @@ describe('Billing form regressions', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByTestId('product-name-input')).toHaveValue('growth')
+        expect(screen.getByTestId('product-code-input')).toHaveValue('growth')
         expect(screen.getByTestId('product-title-input')).toHaveValue('Growth Product')
       })
 
@@ -287,7 +286,7 @@ describe('Billing form regressions', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByTestId('product-name-input')).toHaveValue('')
+        expect(screen.getByTestId('product-code-input')).toHaveValue('')
         expect(screen.getByTestId('product-title-input')).toHaveValue('')
       })
     })

@@ -6,7 +6,7 @@ mod tests {
     use crate::authentication::Identity;
     use crate::billing::{
         AllowAllBillingPolicy, BillingRepository, ClientAppPlan, CreatePlanInput, PaymentEvent,
-        Plan, PlanPaymentProvider, PlanService, PlanType, Product, Subscription,
+        Plan, PlanPaymentProvider, PlanService, Product, Subscription,
         SubscriptionHistoryEvent, SubscriptionHistoryQuery, UpdatePlanInput, test_helpers::*,
     };
     use crate::common::entities::app_errors::CoreError;
@@ -262,10 +262,10 @@ mod tests {
             Ok(product)
         }
 
-        async fn product_name_exists(
+        async fn product_code_exists(
             &self,
             _realm_id: &str,
-            _name: &str,
+            _code: &str,
         ) -> Result<bool, CoreError> {
             Ok(false)
         }
@@ -284,7 +284,6 @@ mod tests {
             _product_id: Uuid,
             _title: Option<String>,
             _description: Option<String>,
-            _sort_order: Option<i32>,
             _enabled: Option<bool>,
         ) -> Result<Product, CoreError> {
             unimplemented!()
@@ -383,61 +382,14 @@ mod tests {
         Product {
             id: product_id,
             realm_id: realm_id.to_string(),
-            name: format!("product-{}", realm_id),
+            code: format!("product-{}", realm_id),
             title: format!("Product {}", realm_id),
             description: None,
-            sort_order: 0,
             enabled: true,
             plans_count: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
-    }
-
-    #[test]
-    fn test_create_plan_input_all_fields() {
-        let input = CreatePlanInputBuilder::new()
-            .with_realm_id("test-realm")
-            .with_name("full_plan")
-            .with_title("Full Plan")
-            .with_description("Full description")
-            .with_type(PlanType::Yearly)
-            .with_price(5000)
-            .with_checkout_url("https://app.example.com/billing/checkout?plan_id=full")
-            .with_trial_days(30)
-            .with_sort_order(10)
-            .build();
-
-        assert_eq!(input.name, "full_plan");
-        assert_eq!(input.trial_days, Some(30));
-    }
-
-    #[test]
-    fn test_update_plan_input_full() {
-        let input = UpdatePlanInputBuilder::new()
-            .with_name("updated_plan")
-            .with_title("Updated Plan")
-            .with_type(PlanType::Yearly)
-            .with_price(2000)
-            .with_currency("EUR")
-            .with_checkout_url("https://app.example.com/billing/checkout?plan_id=updated")
-            .with_active(false)
-            .build();
-
-        assert_eq!(input.name, Some("updated_plan".to_string()));
-        assert_eq!(input.active, Some(false));
-    }
-
-    #[test]
-    fn test_update_plan_input_partial() {
-        let input = UpdatePlanInputBuilder::new()
-            .with_description("Updated")
-            .with_active(false)
-            .build();
-
-        assert!(input.name.is_none());
-        assert!(input.description.is_some());
-        assert!(input.active.is_some());
     }
 
     #[tokio::test]

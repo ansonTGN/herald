@@ -52,8 +52,6 @@ def kill_demo_node_processes(quiet: bool) -> None:
         if kill_process_by_port(port):
             killed_count += 1
             log_verbose(f"Killed process on port {port}")
-    if killed_count > 0 and should_print(quiet):
-        print(f"Killed {killed_count} process(es) on demo ports")
 
 
 def _pids_holding_path_windows(path: str) -> set[int]:

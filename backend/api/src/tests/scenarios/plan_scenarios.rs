@@ -28,9 +28,9 @@ mod tests {
     ) -> (StatusCode, serde_json::Value) {
         // Ensure default product exists for this realm
         let product_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO products (id, realm_id, name, title, description, sort_order, enabled, created_at, updated_at)
-             VALUES ($1, $2, 'default', 'Default Product', 'Default test product', 0, true, NOW(), NOW())
-             ON CONFLICT (realm_id, name) DO UPDATE SET updated_at = products.updated_at
+            "INSERT INTO products (id, realm_id, code, title, description, enabled, created_at, updated_at)
+             VALUES ($1, $2, 'default', 'Default Product', 'Default test product', true, NOW(), NOW())
+             ON CONFLICT (realm_id, code) DO UPDATE SET updated_at = products.updated_at
              RETURNING id"
         )
             .bind(Uuid::now_v7())
@@ -136,9 +136,9 @@ mod tests {
 
         // Ensure default product exists for this realm
         let product_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO products (id, realm_id, name, title, description, sort_order, enabled, created_at, updated_at)
-             VALUES ($1, $2, 'default', 'Default Product', 'Default test product', 0, true, NOW(), NOW())
-             ON CONFLICT (realm_id, name) DO UPDATE SET updated_at = products.updated_at
+            "INSERT INTO products (id, realm_id, code, title, description, enabled, created_at, updated_at)
+             VALUES ($1, $2, 'default', 'Default Product', 'Default test product', true, NOW(), NOW())
+             ON CONFLICT (realm_id, code) DO UPDATE SET updated_at = products.updated_at
              RETURNING id"
         )
             .bind(Uuid::now_v7())

@@ -599,17 +599,15 @@ where
 #[derive(Debug, Clone)]
 pub struct CreateProductInput {
     pub realm_id: String,
-    pub name: String,
+    pub code: String,
     pub title: String,
     pub description: Option<String>,
-    pub sort_order: Option<i32>,
 }
 
 #[derive(Debug, Clone)]
 pub struct UpdateProductInput {
     pub title: Option<String>,
     pub description: Option<String>,
-    pub sort_order: Option<i32>,
     pub enabled: Option<bool>,
 }
 
@@ -673,22 +671,21 @@ where
 
         if self
             .repository
-            .product_name_exists(realm_id, &input.name)
+            .product_code_exists(realm_id, &input.code)
             .await?
         {
-            return Err(CoreError::ProductNameExists {
+            return Err(CoreError::ProductCodeExists {
                 realm_id: realm_id.to_string(),
-                name: input.name.clone(),
+                code: input.code.clone(),
             });
         }
 
         let product = Product {
             id: Uuid::now_v7(),
             realm_id: realm_id.to_string(),
-            name: input.name,
+            code: input.code,
             title: input.title,
             description: input.description,
-            sort_order: input.sort_order.unwrap_or(0),
             enabled: true,
             plans_count: 0,
             created_at: chrono::Utc::now(),
@@ -759,7 +756,6 @@ where
                 product_id,
                 input.title,
                 input.description,
-                input.sort_order,
                 input.enabled,
             )
             .await

@@ -180,10 +180,10 @@ pub trait BillingRepository: Send + Sync {
         realm_id: &str,
         product_id: Uuid,
     ) -> impl Future<Output = Result<Option<Product>, CoreError>> + Send;
-    fn product_name_exists(
+    fn product_code_exists(
         &self,
         realm_id: &str,
-        name: &str,
+        code: &str,
     ) -> impl Future<Output = Result<bool, CoreError>> + Send;
     fn list_products(
         &self,
@@ -196,7 +196,6 @@ pub trait BillingRepository: Send + Sync {
         product_id: Uuid,
         title: Option<String>,
         description: Option<String>,
-        sort_order: Option<i32>,
         enabled: Option<bool>,
     ) -> impl Future<Output = Result<Product, CoreError>> + Send;
     fn delete_product(

@@ -507,10 +507,9 @@ export type CreatePointsPackageRequest = {
  * Request to create a product
  */
 export type CreateProductRequest = {
+    code: string;
     description?: string | null;
     enabled?: boolean | null;
-    name: string;
-    sortOrder?: number | null;
     title: string;
 };
 
@@ -1481,15 +1480,14 @@ export type Police = {
  * Response for product detail (includes plan summary and plans_count)
  */
 export type ProductDetailResponse = {
+    code: string;
     createdAt: string;
     description?: string | null;
     enabled: boolean;
     id: string;
-    name: string;
     plans: Array<PlanSummaryForProduct>;
     plansCount: number;
     realmId: string;
-    sortOrder: number;
     title: string;
     updatedAt: string;
 };
@@ -1498,14 +1496,13 @@ export type ProductDetailResponse = {
  * Response for product query
  */
 export type ProductResponse = {
+    code: string;
     createdAt: string;
     description?: string | null;
     enabled: boolean;
     id: string;
-    name: string;
     plansCount: number;
     realmId: string;
-    sortOrder: number;
     title: string;
     updatedAt: string;
 };
@@ -1972,7 +1969,6 @@ export type UpdatePointsPackageRequest = {
 export type UpdateProductRequest = {
     description?: string | null;
     enabled?: boolean | null;
-    sortOrder?: number | null;
     title?: string | null;
 };
 

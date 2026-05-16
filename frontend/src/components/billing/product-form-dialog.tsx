@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
 import { BaseFormDialog } from '@/components/shared/form-dialog'
 import { getFieldErrorMessage } from '@/lib/form-utils'
-import { NumberField, TextField, TextareaField } from '@/components/shared/form-fields'
+import { TextField, TextareaField } from '@/components/shared/form-fields'
 
 interface ProductFormDialogProps {
   product?: ProductResponse
@@ -34,10 +34,9 @@ export function ProductFormDialog({
       getProductDefaults(
         product
           ? {
-              name: product.name,
+              code: product.code,
               title: product.title,
               description: product.description ?? undefined,
-              sortOrder: product.sortOrder,
               enabled: product.enabled,
             }
           : undefined
@@ -100,9 +99,9 @@ export function ProductFormDialog({
             <div className="space-y-2">
               <TextField
                 form={form}
-                name="name"
-                label="Product Name"
-                dataTestId="product-name-input"
+                name="code"
+                label="Product Code"
+                dataTestId="product-code-input"
                 placeholder="basic-product"
                 disabled={isEditing}
                 required
@@ -124,15 +123,6 @@ export function ProductFormDialog({
               />
             </div>
 
-            <NumberField
-              form={form}
-              name="sortOrder"
-              label="Sort Order"
-              dataTestId="product-sort-order-input"
-              placeholder="0"
-              min={0}
-              helpText="Display order in product list (lower numbers appear first)"
-            />
             <div className="flex items-center space-x-2">
               <form.Field
                 name="enabled"

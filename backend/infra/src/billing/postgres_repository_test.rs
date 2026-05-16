@@ -75,7 +75,7 @@ async fn create_test_products(db: &DatabaseConnection) {
             .execute(Statement::from_string(
                 backend,
                 format!(
-                    "INSERT INTO products (id, realm_id, name, title, description, sort_order, enabled, created_at, updated_at) VALUES ('{}', '{}', '{}_product', 'Test Product', 'Test product for {}', 1, true, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
+                    "INSERT INTO products (id, realm_id, code, title, description, enabled, created_at, updated_at) VALUES ('{}', '{}', '{}_product', 'Test Product', 'Test product for {}', true, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
                     product_id, realm_id, realm_id, realm_id
                 ),
             ))
@@ -554,10 +554,9 @@ billing_repo_test!(test_repository_update_plan_persists_product_id, |repo| {
     repo.create_product(Product {
         id: target_product_id,
         realm_id: realm_id.to_string(),
-        name: "target_product".to_string(),
+        code: "target_product".to_string(),
         title: "Target Product".to_string(),
         description: None,
-        sort_order: 2,
         enabled: true,
         plans_count: 0,
         created_at: Utc::now(),
@@ -606,10 +605,9 @@ billing_repo_test!(
         repo.create_product(Product {
             id: visible_product_id,
             realm_id: visible_realm.to_string(),
-            name: "visible_product".to_string(),
+            code: "visible_product".to_string(),
             title: "Visible Product".to_string(),
             description: None,
-            sort_order: 1,
             enabled: true,
             plans_count: 0,
             created_at: Utc::now(),
@@ -621,10 +619,9 @@ billing_repo_test!(
         repo.create_product(Product {
             id: hidden_product_id,
             realm_id: hidden_realm.to_string(),
-            name: "hidden_product".to_string(),
+            code: "hidden_product".to_string(),
             title: "Hidden Product".to_string(),
             description: None,
-            sort_order: 1,
             enabled: true,
             plans_count: 0,
             created_at: Utc::now(),
@@ -658,7 +655,6 @@ billing_repo_test!(
         repo.update_product(
             hidden_realm,
             hidden_product_id,
-            None,
             None,
             None,
             Some(false),

@@ -150,10 +150,9 @@ impl PostgresBillingRepository {
         Product {
             id: model.id,
             realm_id: model.realm_id,
-            name: model.name,
+            code: model.code,
             title: model.title,
             description: model.description,
-            sort_order: model.sort_order,
             enabled: model.enabled,
             plans_count,
             created_at: chrono::DateTime::from(model.created_at),
@@ -628,10 +627,9 @@ impl BillingRepository for PostgresBillingRepository {
         let active_model = product::ActiveModel {
             id: Set(product.id),
             realm_id: Set(product.realm_id.clone()),
-            name: Set(product.name.clone()),
+            code: Set(product.code.clone()),
             title: Set(product.title.clone()),
             description: Set(product.description.clone()),
-            sort_order: Set(product.sort_order),
             enabled: Set(product.enabled),
             created_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
                 product.created_at,
@@ -666,10 +664,10 @@ impl BillingRepository for PostgresBillingRepository {
         }
     }
 
-    async fn product_name_exists(&self, realm_id: &str, name: &str) -> Result<bool, CoreError> {
+    async fn product_code_exists(&self, realm_id: &str, code: &str) -> Result<bool, CoreError> {
         let count = product::Entity::find()
             .filter(product::Column::RealmId.eq(realm_id))
-            .filter(product::Column::Name.eq(name))
+            .filter(product::Column::Code.eq(code))
             .count(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
@@ -689,7 +687,7 @@ impl BillingRepository for PostgresBillingRepository {
         }
 
         let results = query
-            .order_by_asc(product::Column::SortOrder)
+            .order_by_asc(product::Column::CreatedAt)
             .all(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
@@ -728,7 +726,6 @@ impl BillingRepository for PostgresBillingRepository {
         product_id: Uuid,
         title: Option<String>,
         description: Option<String>,
-        sort_order: Option<i32>,
         enabled: Option<bool>,
     ) -> Result<Product, CoreError> {
         let existing = product::Entity::find_by_id(product_id)
@@ -747,9 +744,6 @@ impl BillingRepository for PostgresBillingRepository {
         }
         if let Some(description) = description {
             active_model.description = Set(Some(description));
-        }
-        if let Some(sort_order) = sort_order {
-            active_model.sort_order = Set(sort_order);
         }
         if let Some(enabled) = enabled {
             active_model.enabled = Set(enabled);

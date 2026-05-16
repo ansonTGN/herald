@@ -11,6 +11,7 @@ import { wechatPayHandlers } from './handlers/wechat'
 import { unifiedPurchaseHandlers } from './handlers/unified-purchase'
 import { auditHandlers } from './handlers/audit'
 import { deviceHandlers } from './handlers/device'
+import { dashboardHandlers } from './handlers/dashboard'
 
 // Add API handlers here and override with `server.use(...)` in specific tests when needed.
 export const handlers = [
@@ -31,6 +32,9 @@ export const handlers = [
 
   // Device code handlers
   ...deviceHandlers,
+
+  // Dashboard handlers
+  ...dashboardHandlers,
   http.get('/__msw_health__', () => {
     return new Response(null, { status: 204 })
   }),

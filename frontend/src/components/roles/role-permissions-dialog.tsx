@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Shield, Loader2 } from 'lucide-react'
-import { useFormMutation } from '@/hooks/use-form-mutation'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { assignPermissionToRole, removePermissionFromRole } from '@/lib/api-generated'
 import { PermissionCheckboxList } from './permission-checkbox-list'
 import { useRealmId } from '@/stores/auth-store'
@@ -20,7 +21,7 @@ interface RolePermissionsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   role: RoleResponse
-  realmId?: string // Optional for backward compatibility
+  realmId?: string
   allPermissions: PermissionResponse[]
   assignedPermissionIds: string[]
 }
@@ -35,72 +36,72 @@ export function RolePermissionsDialog({
 }: RolePermissionsDialogProps) {
   const storeRealmId = useRealmId()
   const realmId = realmIdProp ?? storeRealmId
-  const [optimisticAssignedIds, setOptimisticAssignedIds] =
-    useState<string[]>(assignedPermissionIds)
+  const queryClient = useQueryClient()
 
-  // Reset optimistic state when dialog opens or assigned permissions change
-  if (open && optimisticAssignedIds.join(',') !== assignedPermissionIds.join(',')) {
-    setOptimisticAssignedIds(assignedPermissionIds)
-  }
+  const [localAssignedIds, setLocalAssignedIds] = useState<string[]>(assignedPermissionIds)
 
-  // Assign permission mutation
-  const { isSubmitting: isAssigning, mutate: assignPermission } = useFormMutation({
-    mutationFn: async (permissionId: string) => {
-      const response = await assignPermissionToRole({
-        path: { realmId, roleId: role.id },
-        body: { permissionId },
+  useEffect(() => {
+    if (open) {
+      setLocalAssignedIds(assignedPermissionIds)
+    }
+  }, [open, assignedPermissionIds])
+
+  const addedIds = localAssignedIds.filter((id) => !assignedPermissionIds.includes(id))
+  const removedIds = assignedPermissionIds.filter((id) => !localAssignedIds.includes(id))
+  const hasChanges = addedIds.length > 0 || removedIds.length > 0
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const assignRequests = addedIds.map((permissionId) =>
+        assignPermissionToRole({
+          path: { realmId, roleId: role.id },
+          body: { permissionId },
+        }).then((response) => {
+          if (response.error) throw response.error
+          return response.data
+        }),
+      )
+
+      const removeRequests = removedIds.map((permissionId) =>
+        removePermissionFromRole({
+          path: { realmId, roleId: role.id, permissionId },
+        }).then((response) => {
+          if (response.error) throw response.error
+          return response.data
+        }),
+      )
+
+      await Promise.all([...assignRequests, ...removeRequests])
+      return { assigned: addedIds.length, removed: removedIds.length }
+    },
+    onSuccess: async (result) => {
+      const parts: string[] = []
+      if (result.assigned > 0) parts.push(`${result.assigned} permission(s) assigned`)
+      if (result.removed > 0) parts.push(`${result.removed} permission(s) removed`)
+      toast.success(`Permissions updated: ${parts.join(', ')}`)
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.rolePermissions(realmId, role.id),
       })
-
-      if (response.error) {
-        throw response.error
-      }
-
-      return response.data
+      onOpenChange(false)
     },
-    getSuccessMessage: () => `Permission assigned to role "${role.name}"`,
-    invalidateQueries: [queryKeys.rolePermissions(realmId, role.id)],
-    onSuccess: () => {
-      // Refresh will happen automatically via invalidateQueries
-    },
-  })
-
-  // Remove permission mutation
-  const { isSubmitting: isRemoving, mutate: removePermission } = useFormMutation({
-    mutationFn: async (permissionId: string) => {
-      const response = await removePermissionFromRole({
-        path: { realmId, roleId: role.id, permissionId },
-      })
-
-      if (response.error) {
-        throw response.error
-      }
-
-      return response.data
-    },
-    getSuccessMessage: () => `Permission removed from role "${role.name}"`,
-    invalidateQueries: [queryKeys.rolePermissions(realmId, role.id)],
-    onSuccess: () => {
-      // Refresh will happen automatically via invalidateQueries
+    onError: (error: Error) => {
+      toast.error(`Failed to save permissions: ${error.message}`)
     },
   })
 
   const handleTogglePermission = (permissionId: string, checked: boolean) => {
-    // Optimistic update
-    if (checked) {
-      setOptimisticAssignedIds((prev) => [...prev, permissionId])
-      assignPermission(permissionId)
-    } else {
-      setOptimisticAssignedIds((prev) => prev.filter((id) => id !== permissionId))
-      removePermission(permissionId)
-    }
+    setLocalAssignedIds((prev) =>
+      checked ? [...prev, permissionId] : prev.filter((id) => id !== permissionId),
+    )
   }
-
-  const isLoading = isAssigning || isRemoving
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh]" data-testid="role-permissions-dialog">
-        <DialogHeader>
+      <DialogContent
+        className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col"
+        data-testid="role-permissions-dialog"
+      >
+        <DialogHeader className="flex-shrink-0">
           <div className="flex items-center gap-2">
             <Shield className="h-5 w-5" />
             <DialogTitle>Manage Permissions for {role.name}</DialogTitle>
@@ -115,16 +116,16 @@ export function RolePermissionsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-2">
           {/* Summary stats */}
           <div className="flex items-center gap-4 text-sm">
             <div className="flex items-center gap-2">
               <Badge variant="outline">
-                {optimisticAssignedIds.length} / {allPermissions.length}
+                {localAssignedIds.length} / {allPermissions.length}
               </Badge>
               <span className="text-muted-foreground">permissions assigned</span>
             </div>
-            {isLoading && (
+            {saveMutation.isPending && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 <span>Saving changes...</span>
@@ -135,22 +136,41 @@ export function RolePermissionsDialog({
           {/* Permission list */}
           <PermissionCheckboxList
             permissions={allPermissions}
-            assignedPermissionIds={optimisticAssignedIds}
+            assignedPermissionIds={localAssignedIds}
             onTogglePermission={handleTogglePermission}
             isBuiltinRole={role.isBuiltin}
-            disabled={isLoading}
+            disabled={saveMutation.isPending}
+            className="space-y-6"
             data-testid="role-permissions-checkbox-list"
           />
         </div>
 
         {/* Footer actions */}
-        <div className="flex justify-end pt-4 border-t">
+        <div className="flex-shrink-0 flex justify-end gap-2 pt-4 border-t">
           <Button
-            onClick={() => onOpenChange(false)}
-            disabled={isLoading}
-            data-testid="role-permissions-close-button"
+            variant="outline"
+            onClick={() => {
+              setLocalAssignedIds(assignedPermissionIds)
+              onOpenChange(false)
+            }}
+            disabled={saveMutation.isPending}
+            data-testid="role-permissions-cancel-button"
           >
-            Close
+            Cancel
+          </Button>
+          <Button
+            onClick={() => saveMutation.mutate()}
+            disabled={!hasChanges || saveMutation.isPending}
+            data-testid="role-permissions-save-button"
+          >
+            {saveMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Saving...
+              </>
+            ) : (
+              'Save Changes'
+            )}
           </Button>
         </div>
       </DialogContent>

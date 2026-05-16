@@ -238,15 +238,12 @@ pub struct PlanSummary {
 #[serde(rename_all = "camelCase")]
 pub struct CreateProductRequest {
     #[validate(length(min = 3, max = 50))]
-    pub name: String,
+    pub code: String,
     #[validate(length(min = 1, max = 100))]
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(length(max = 500))]
     pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 0))]
-    pub sort_order: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
 }
@@ -262,8 +259,6 @@ pub struct UpdateProductRequest {
     #[validate(length(max = 500))]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sort_order: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
 }
 
@@ -273,11 +268,10 @@ pub struct UpdateProductRequest {
 pub struct ProductResponse {
     pub id: Uuid,
     pub realm_id: String,
-    pub name: String,
+    pub code: String,
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub sort_order: i32,
     pub enabled: bool,
     pub plans_count: i64,
     pub created_at: String,
@@ -296,11 +290,10 @@ pub struct ListProductsResponse {
 pub struct ProductDetailResponse {
     pub id: Uuid,
     pub realm_id: String,
-    pub name: String,
+    pub code: String,
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub sort_order: i32,
     pub enabled: bool,
     pub plans_count: i64,
     pub plans: Vec<PlanSummaryForProduct>,

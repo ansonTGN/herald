@@ -2,10 +2,9 @@ import { Page, expect } from '@playwright/test'
 import { clickRowMenuItem } from './table-actions.helpers'
 
 export interface ProductFormData {
-  name: string
+  code: string
   title: string
   description?: string
-  sortOrder?: number
   enabled?: boolean
 }
 
@@ -13,17 +12,13 @@ export async function createProduct(page: Page, formData: ProductFormData): Prom
   await page.getByTestId('add-product-button').click()
   await expect(page.getByRole('dialog')).toBeVisible()
 
-  await expect(page.getByTestId('product-name-input')).toBeVisible()
+  await expect(page.getByTestId('product-code-input')).toBeVisible()
 
-  await page.getByTestId('product-name-input').fill(formData.name)
+  await page.getByTestId('product-code-input').fill(formData.code)
   await page.getByTestId('product-title-input').fill(formData.title)
 
   if (formData.description) {
     await page.getByTestId('product-description-input').fill(formData.description)
-  }
-
-  if (formData.sortOrder !== undefined) {
-    await page.getByTestId('product-sort-order-input').fill(formData.sortOrder.toString())
   }
 
   if (formData.enabled === false) {
@@ -35,13 +30,13 @@ export async function createProduct(page: Page, formData: ProductFormData): Prom
   await expect(page.getByTestId('product-form-dialog')).toBeHidden({ timeout: 5000 })
 }
 
-export async function openEditProductDialog(page: Page, productName: string): Promise<void> {
-  await clickRowMenuItem(page, productName, 'Edit')
+export async function openEditProductDialog(page: Page, productCode: string): Promise<void> {
+  await clickRowMenuItem(page, productCode, 'Edit')
   await expect(page.getByRole('dialog')).toBeVisible()
 }
 
-export async function openDeleteProductDialog(page: Page, productName: string): Promise<void> {
-  await clickRowMenuItem(page, productName, 'Delete')
+export async function openDeleteProductDialog(page: Page, productCode: string): Promise<void> {
+  await clickRowMenuItem(page, productCode, 'Delete')
   await expect(page.getByTestId('product-delete-confirm-dialog')).toBeVisible()
 }
 
@@ -66,10 +61,10 @@ export async function confirmDeleteProductAndWait(page: Page): Promise<void> {
   await page.waitForTimeout(300)
 }
 
-export async function verifyProductInTable(page: Page, productName: string): Promise<void> {
-  await expect(page.locator(`tr:has-text("${productName}")`)).toBeVisible()
+export async function verifyProductInTable(page: Page, productCode: string): Promise<void> {
+  await expect(page.locator(`tr:has-text("${productCode}")`)).toBeVisible()
 }
 
-export async function verifyProductNotInTable(page: Page, productName: string): Promise<void> {
-  await expect(page.locator(`tr:has-text("${productName}")`)).not.toBeVisible()
+export async function verifyProductNotInTable(page: Page, productCode: string): Promise<void> {
+  await expect(page.locator(`tr:has-text("${productCode}")`)).not.toBeVisible()
 }

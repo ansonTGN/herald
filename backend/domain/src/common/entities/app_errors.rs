@@ -63,8 +63,8 @@ pub enum CoreError {
         realm_id: String,
         product_id: String,
     },
-    #[error("Product name '{name}' already exists in realm: {realm_id}")]
-    ProductNameExists { realm_id: String, name: String },
+    #[error("Product code '{code}' already exists in realm: {realm_id}")]
+    ProductCodeExists { realm_id: String, code: String },
     #[error("Cannot delete product with existing plans: {product_id}")]
     ProductHasPlans { product_id: String },
     #[error("Points package not found: {0}")]
@@ -250,11 +250,11 @@ impl IntoResponse for CoreError {
                     realm_id, product_id
                 ),
             ),
-            CoreError::ProductNameExists { realm_id, name } => (
+            CoreError::ProductCodeExists { realm_id, code } => (
                 StatusCode::CONFLICT,
                 format!(
-                    "Product name '{}' already exists in realm: {}",
-                    name, realm_id
+                    "Product code '{}' already exists in realm: {}",
+                    code, realm_id
                 ),
             ),
             CoreError::ProductHasPlans { product_id } => (

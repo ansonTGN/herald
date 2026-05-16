@@ -184,8 +184,8 @@ impl From<herald_core::domain::common::entities::app_errors::CoreError> for ApiE
             } => Self::not_found(format!(
                 "Product not found for realm: {realm_id}, product_id: {product_id}"
             )),
-            CoreError::ProductNameExists { realm_id, name } => Self::conflict(format!(
-                "Product name '{name}' already exists in realm: {realm_id}"
+            CoreError::ProductCodeExists { realm_id, code } => Self::conflict(format!(
+                "Product code '{code}' already exists in realm: {realm_id}"
             )),
             CoreError::ProductHasPlans { product_id } => Self::conflict(format!(
                 "Cannot delete product with existing plans: {product_id}"
