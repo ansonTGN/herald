@@ -29,6 +29,7 @@ async fn test_create_realm_success(ctx: &mut RealmTestContext) {
     let payload = json!(CreateRealmValidator {
         id: None,
         name: "Test Realm Auto".to_string(),
+        description: None,
         admin_user: InitialAdminUserValidator {
             email: "admin@test.com".to_string(),
             password: "password123".to_string(),
@@ -55,6 +56,7 @@ async fn test_create_realm_success(ctx: &mut RealmTestContext) {
     let payload = json!(CreateRealmValidator {
         id: Some("customrealm".to_string()),
         name: "Custom Realm".to_string(),
+        description: None,
         admin_user: InitialAdminUserValidator {
             email: "admin2@test.com".to_string(),
             password: "password123".to_string(),
@@ -91,6 +93,7 @@ async fn test_list_realms(ctx: &mut RealmTestContext) {
     let payload = json!(CreateRealmValidator {
         id: Some("listtest".to_string()),
         name: "List Test Realm".to_string(),
+        description: None,
         admin_user: InitialAdminUserValidator {
             email: "listadmin@test.com".to_string(),
             password: "password123".to_string(),
@@ -139,6 +142,7 @@ async fn test_update_realm(ctx: &mut RealmTestContext) {
     let payload = json!(CreateRealmValidator {
         id: Some("updatetest".to_string()),
         name: "Original Name".to_string(),
+        description: None,
         admin_user: InitialAdminUserValidator {
             email: "updateadmin@test.com".to_string(),
             password: "password123".to_string(),
@@ -158,6 +162,7 @@ async fn test_update_realm(ctx: &mut RealmTestContext) {
 
     let update_payload = json!(UpdateRealmValidator {
         name: "Updated Name".to_string(),
+        description: None,
     });
 
     let req = Request::builder()
@@ -190,6 +195,7 @@ async fn test_create_realm_duplicate_id_fails(ctx: &mut RealmTestContext) {
     let payload = json!(CreateRealmValidator {
         id: Some("duplicate".to_string()),
         name: "First Realm".to_string(),
+        description: None,
         admin_user: InitialAdminUserValidator {
             email: "dupadmin1@test.com".to_string(),
             password: "password123".to_string(),
@@ -211,6 +217,7 @@ async fn test_create_realm_duplicate_id_fails(ctx: &mut RealmTestContext) {
     let payload = json!(CreateRealmValidator {
         id: Some("duplicate".to_string()),
         name: "Second Realm".to_string(),
+        description: None,
         admin_user: InitialAdminUserValidator {
             email: "dupadmin2@test.com".to_string(),
             password: "password123".to_string(),
@@ -247,6 +254,7 @@ async fn test_delete_realm_not_supported(ctx: &mut RealmTestContext) {
     let payload = json!(CreateRealmValidator {
         id: Some("deletetest".to_string()),
         name: "Delete Test Realm".to_string(),
+        description: None,
         admin_user: InitialAdminUserValidator {
             email: "deleteadmin@test.com".to_string(),
             password: "password123".to_string(),

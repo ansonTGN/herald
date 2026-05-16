@@ -2,7 +2,7 @@
  * Client Apps Page Object
  *
  * Encapsulates Client App management page operations.
- * Updated to support the new 4-step wizard flow (separate pages).
+ * Updated to support the new Page-based + Tabs UI (replaces dialog-based flow).
  *
  * User Stories:
  * - US-TP-005: Client App Configuration Management
@@ -12,7 +12,6 @@
  * - US-TP-011: Configure Session TTL Policy
  *
  * @see ../../../spec/demo/e2e-testing.md#page-object-model-pom-规范
- * @see .ai/design/client-app-management-frontend-and-demo.md
  */
 
 import { Page, Locator, expect } from '@playwright/test'
@@ -24,8 +23,8 @@ import type { UnifiedLogger } from '../helpers/unified-logger'
  * Client App data interface
  */
 export interface ClientAppData {
-  id?: string  // UUID (internal ID)
-  clientId?: string  // OAuth client_id
+  id?: string
+  clientId?: string
   name: string
   description?: string
   redirectUris?: string[]
@@ -33,12 +32,19 @@ export interface ClientAppData {
   sessionTtl?: number
   renewalTtl?: number | null
   iconUrl?: string
+  deviceCodeGrantEnabled?: boolean
 }
+
+/**
+ * Tab names in the Client App form page
+ */
+export type DialogTabName = 'basic' | 'redirect-uris' | 'security' | 'appearance'
 
 /**
  * Client Apps Page Object
  *
  * Represents Client App management page at /{realmId}/manage/client-apps
+ * with a dedicated Page + Tabs form for creating and editing client apps.
  *
  * @example
  * ```typescript
@@ -58,87 +64,90 @@ export class ClientAppsPage extends BasePage {
   readonly table: Locator
   readonly addButton: Locator
 
-  // Wizard selectors (new flow)
-  readonly wizardContainer: Locator
-  readonly wizardHeading: Locator
-  readonly cancelButton: Locator
-  readonly backButton: Locator
-  readonly nextButton: Locator
-  readonly submitButton: Locator
+  // Form page selectors
+  readonly formPage: Locator
+  readonly pageTitle: Locator
 
-  // Step 1: Basic Info
-  readonly basicInfoStep: Locator
+  // Tab triggers
+  readonly tabBasic: Locator
+  readonly tabRedirectUris: Locator
+  readonly tabSecurity: Locator
+  readonly tabAppearance: Locator
+
+  // Basic tab fields
+  readonly clientIdInput: Locator
+  readonly clientIdDisplay: Locator
   readonly nameInput: Locator
   readonly descriptionInput: Locator
-  readonly appTypeSelect: Locator
-  readonly clientTypeRadioGroup: Locator
 
-  // Step 2: Redirect URIs
-  readonly redirectUrisStep: Locator
+  // Redirect URIs tab
   readonly redirectUrisInput: Locator
 
-  // Step 3: Security
-  readonly securityStep: Locator
-  readonly sessionTtlPreset: (seconds: number) => Locator
-  readonly sessionTtlCustomField: Locator
-  readonly sessionRenewalTtlField: Locator
+  // Security tab fields
+  readonly enabledSwitch: Locator
+  readonly sessionTtlInput: Locator
+  readonly sessionRenewalTtlInput: Locator
+  readonly deviceCodeGrantSwitch: Locator
+  readonly regenerateSecretSwitch: Locator
 
-  // Step 4: Review
-  readonly reviewStep: Locator
+  // Appearance tab fields
+  readonly iconUrlInput: Locator
 
-  // Delete confirmation (legacy, may still be needed)
+  // Footer buttons
+  readonly cancelButton: Locator
+  readonly submitButton: Locator
+
+  // Delete confirmation dialog
   readonly deleteConfirmDialog: Locator
   readonly deleteConfirmButton: Locator
 
-  // Client Secret display (toast notification)
+  // Success message (toast notification)
   readonly successMessage: Locator
 
-  // Draft restore dialog
-  readonly draftRestoreDialog: Locator
-  readonly draftRestoreButton: Locator
-  readonly draftDiscardButton: Locator
-  readonly autoSaveToast: Locator
-
-  // Table rows
-  readonly clientAppRow: (clientId: string) => Locator
+  // Current realm ID (stored for navigation)
+  private currentRealmId: string = 'admin'
 
   constructor(page: Page, logger?: UnifiedLogger) {
     super(page, logger)
 
     // Page selectors
     this.container = this.page.locator(SELECTORS.clientApps.page)
-    this.heading = this.page.getByRole('heading', { name: /client apps/i })
+    this.heading = this.page.locator(SELECTORS.clientApps.heading)
     this.table = this.page.locator(SELECTORS.clientApps.table)
     this.addButton = this.page.locator(SELECTORS.clientApps.addButton)
 
-    // Wizard selectors
-    this.wizardContainer = this.page.locator(SELECTORS.clientAppWizard.container)
-    this.wizardHeading = this.page.locator(SELECTORS.clientAppWizard.heading)
-    this.cancelButton = this.page.locator(SELECTORS.clientAppWizard.cancelButton)
-    this.backButton = this.page.locator(SELECTORS.clientAppWizard.backButton)
-    this.nextButton = this.page.locator(SELECTORS.clientAppWizard.nextButton)
-    this.submitButton = this.page.locator(SELECTORS.clientAppWizard.submitButton)
+    // Form page selectors
+    this.formPage = this.page.locator(SELECTORS.clientAppForm.page)
+    this.pageTitle = this.page.locator(SELECTORS.clientAppForm.pageTitle)
 
-    // Step 1: Basic Info
-    this.basicInfoStep = this.page.locator(SELECTORS.clientAppWizard.basicInfoStep)
-    this.nameInput = this.page.locator(SELECTORS.clientAppWizard.nameInput)
-    this.descriptionInput = this.page.locator(SELECTORS.clientAppWizard.descriptionInput)
-    this.appTypeSelect = this.page.locator(SELECTORS.clientAppWizard.appTypeSelect)
-    this.clientTypeRadioGroup = this.page.locator(SELECTORS.clientAppWizard.clientTypeRadioGroup)
+    // Tab triggers
+    this.tabBasic = this.page.locator(SELECTORS.clientAppForm.tabBasic)
+    this.tabRedirectUris = this.page.locator(SELECTORS.clientAppForm.tabRedirectUris)
+    this.tabSecurity = this.page.locator(SELECTORS.clientAppForm.tabSecurity)
+    this.tabAppearance = this.page.locator(SELECTORS.clientAppForm.tabAppearance)
 
-    // Step 2: Redirect URIs
-    this.redirectUrisStep = this.page.locator(SELECTORS.clientAppWizard.redirectUrisStep)
-    this.redirectUrisInput = this.page.locator(SELECTORS.clientAppWizard.redirectUrisInput)
+    // Basic tab fields
+    this.clientIdInput = this.page.locator(SELECTORS.clientAppForm.clientIdInput)
+    this.clientIdDisplay = this.page.locator(SELECTORS.clientAppForm.clientIdDisplay)
+    this.nameInput = this.page.locator(SELECTORS.clientAppForm.nameInput)
+    this.descriptionInput = this.page.locator(SELECTORS.clientAppForm.descriptionInput)
 
-    // Step 3: Security
-    this.securityStep = this.page.locator(SELECTORS.clientAppWizard.securityStep)
-    this.sessionTtlPreset = (seconds: number) =>
-      this.page.locator(SELECTORS.clientAppWizard.sessionTtlPreset(seconds))
-    this.sessionTtlCustomField = this.page.locator(SELECTORS.clientAppWizard.sessionTtlCustomField)
-    this.sessionRenewalTtlField = this.page.locator(SELECTORS.clientAppWizard.sessionRenewalTtlField)
+    // Redirect URIs tab
+    this.redirectUrisInput = this.page.locator(SELECTORS.clientAppForm.redirectUrisInput)
 
-    // Step 4: Review
-    this.reviewStep = this.page.locator(SELECTORS.clientAppWizard.reviewStep)
+    // Security tab fields
+    this.enabledSwitch = this.page.locator(SELECTORS.clientAppForm.enabledSwitch)
+    this.sessionTtlInput = this.page.locator(SELECTORS.clientAppForm.sessionTtlInput)
+    this.sessionRenewalTtlInput = this.page.locator(SELECTORS.clientAppForm.sessionRenewalTtlInput)
+    this.deviceCodeGrantSwitch = this.page.locator(SELECTORS.clientAppForm.deviceCodeGrantSwitch)
+    this.regenerateSecretSwitch = this.page.locator(SELECTORS.clientAppForm.regenerateSecretSwitch)
+
+    // Appearance tab fields
+    this.iconUrlInput = this.page.locator(SELECTORS.clientAppForm.iconUrlInput)
+
+    // Footer buttons
+    this.cancelButton = this.page.locator(SELECTORS.clientAppForm.cancelButton)
+    this.submitButton = this.page.locator(SELECTORS.clientAppForm.submitButton)
 
     // Delete confirmation
     this.deleteConfirmDialog = this.page.locator('[data-testid="delete-confirmation-dialog"]')
@@ -146,17 +155,11 @@ export class ClientAppsPage extends BasePage {
 
     // Success message (toast)
     this.successMessage = this.page.locator('[data-sonner-toast][data-type="success"]')
-
-    // Draft restore dialog
-    this.draftRestoreDialog = this.page.locator(SELECTORS.clientAppWizard.draftRestoreDialog)
-    this.draftRestoreButton = this.page.locator(SELECTORS.clientAppWizard.draftRestoreButton)
-    this.draftDiscardButton = this.page.locator(SELECTORS.clientAppWizard.draftDiscardButton)
-    this.autoSaveToast = this.page.locator('[data-sonner-toast]').filter({ hasText: 'Auto-saved' })
-
-    // Table rows helper
-    this.clientAppRow = (clientId: string) =>
-      this.page.locator(SELECTORS.clientApps.row(clientId))
   }
+
+  // ============================================================================
+  // Page Navigation
+  // ============================================================================
 
   /**
    * Navigate to Client Apps page
@@ -164,6 +167,7 @@ export class ClientAppsPage extends BasePage {
    * @param realmId Realm ID (defaults to 'admin')
    */
   async goto(realmId: string = 'admin'): Promise<void> {
+    this.currentRealmId = realmId
     const url = `/${realmId}/manage/client-apps`
     await this.page.goto(url)
     await this.waitForReady()
@@ -178,347 +182,380 @@ export class ClientAppsPage extends BasePage {
     await expect(this.table).toBeVisible()
   }
 
-  /**
-   * Navigate to Create Client App Wizard (new flow)
-   *
-   * @param realmId Realm ID
-   */
-  async gotoCreateWizard(realmId: string = 'admin'): Promise<void> {
-    // Clear any draft data from localStorage to prevent draft restore dialog
-    await this.page.evaluate(() => {
-      const keys = Object.keys(localStorage)
-      keys.forEach((key) => {
-        if (key.includes('draft') || key.includes('client-app-wizard')) {
-          localStorage.removeItem(key)
-        }
-      })
-    })
-    const url = `/${realmId}/manage/client-apps/new`
-    await this.page.goto(url)
-    await this.waitForWizardReady()
-  }
-
-  /**
-   * Navigate to Edit Client App Wizard (new flow)
-   *
-   * @param realmId Realm ID
-   * @param clientAppId Client App ID to edit
-   */
-  async gotoEditWizard(realmId: string, clientAppId: string): Promise<void> {
-    const url = `/${realmId}/manage/client-apps/${clientAppId}/edit`
-    await this.page.goto(url)
-    await this.waitForWizardReady()
-  }
-
-  /**
-   * Wait for Wizard to be ready
-   */
-  async waitForWizardReady(): Promise<void> {
-    await expect(this.wizardContainer).toBeVisible()
-    await expect(this.wizardHeading).toBeVisible()
-  }
-
   // ============================================================================
-  // Wizard Step Methods
+  // Form Page Navigation Methods
   // ============================================================================
 
   /**
-   * Fill Step 1: Basic Information
+   * Navigate to the Create Client App page
    *
-   * @param data Basic info data
+   * Navigates to /{realmId}/manage/client-apps/new and waits for the form page.
    */
-  async fillStep1BasicInfo(data: {
+  async gotoCreatePage(): Promise<void> {
+    const url = `/${this.currentRealmId}/manage/client-apps/new`
+    await this.page.goto(url)
+    await this.waitForFormPage()
+    this.logger?.testCode.log('Create form page opened')
+  }
+
+  /**
+   * Navigate to the Edit Client App page by finding the row by name
+   *
+   * Finds the app in the table to get its UUID, then navigates to the edit page.
+   *
+   * @param appName Name of the client app to edit
+   */
+  async gotoEditPage(appName: string): Promise<void> {
+    // Ensure we are on the list page to find the app
+    if (!await this.container.isVisible().catch(() => false)) {
+      await this.goto(this.currentRealmId)
+    }
+
+    // Find the app ID by name
+    const appId = await this.getClientIdByName(appName)
+    if (!appId) {
+      throw new Error(`Client App "${appName}" not found in table`)
+    }
+
+    await this.gotoEditPageById(appId)
+    this.logger?.testCode.log(`Edit form page opened for "${appName}"`)
+  }
+
+  /**
+   * Navigate to the Edit Client App page by app UUID
+   *
+   * @param appId Client App UUID
+   */
+  async gotoEditPageById(appId: string): Promise<void> {
+    const url = `/${this.currentRealmId}/manage/client-apps/${appId}/edit`
+    await this.page.goto(url)
+    await this.waitForFormPage()
+    this.logger?.testCode.log(`Edit form page opened for app ID "${appId}"`)
+  }
+
+  /**
+   * Wait for the form page to be visible
+   */
+  async waitForFormPage(): Promise<void> {
+    await expect(this.formPage).toBeVisible()
+    await expect(this.pageTitle).toBeVisible()
+  }
+
+  /**
+   * Check if the form page is currently visible
+   */
+  async isFormPageOpen(): Promise<boolean> {
+    return await this.formPage.isVisible().catch(() => false)
+  }
+
+  /**
+   * Switch to a specific tab in the form page
+   *
+   * @param tabName Tab to switch to
+   */
+  private getTabLocator(tabName: DialogTabName): Locator {
+    const tabMap: Record<DialogTabName, Locator> = {
+      'basic': this.tabBasic,
+      'redirect-uris': this.tabRedirectUris,
+      'security': this.tabSecurity,
+      'appearance': this.tabAppearance,
+    }
+    return tabMap[tabName]
+  }
+
+  async switchTab(tabName: DialogTabName): Promise<void> {
+    const tab = this.getTabLocator(tabName)
+    await expect(tab).toBeVisible()
+    await tab.click()
+    this.logger?.testCode.log(`Switched to tab: ${tabName}`)
+  }
+
+  /**
+   * Fill the Basic tab fields
+   *
+   * @param data Basic tab data
+   */
+  async fillBasicTab(data: {
+    clientId?: string
     name: string
     description?: string
-    appType?: string
-    clientType?: 'confidential' | 'public'
   }): Promise<void> {
-    // Verify we're on Step 1
-    await expect(this.basicInfoStep).toBeVisible()
+    // Client ID (create mode only)
+    if (data.clientId) {
+      await expect(this.clientIdInput).toBeVisible()
+      await this.clientIdInput.fill(data.clientId)
+      this.logger?.testCode.log(`Filled Client ID: "${data.clientId}"`)
+    }
 
-    // Fill Name
+    // Name (required)
     await expect(this.nameInput).toBeVisible()
     await this.nameInput.fill(data.name)
-    this.logger?.testCode.log(`✓ Filled App Name: "${data.name}"`)
+    this.logger?.testCode.log(`Filled Name: "${data.name}"`)
 
-    // Fill Description (optional)
+    // Description (optional)
     if (data.description) {
       await this.descriptionInput.fill(data.description)
-      this.logger?.testCode.log(`✓ Filled Description: "${data.description}"`)
-    }
-
-    // Select App Type (optional)
-    if (data.appType) {
-      await this.appTypeSelect.click()
-      await this.page.getByRole('option', { name: data.appType }).click()
-      this.logger?.testCode.log(`✓ Selected App Type: "${data.appType}"`)
-    }
-
-    // Select Client Type (optional)
-    if (data.clientType) {
-      const radio = this.clientTypeRadioGroup.locator(
-        SELECTORS.clientAppWizard.clientTypeRadio(data.clientType)
-      )
-      await radio.click()
-      this.logger?.testCode.log(`✓ Selected Client Type: "${data.clientType}"`)
+      this.logger?.testCode.log(`Filled Description: "${data.description}"`)
     }
   }
 
   /**
-   * Fill Step 2: Redirect URIs
+   * Fill the Redirect URIs tab
    *
-   * @param redirectUris Array of redirect URIs
+   * @param uris Array of redirect URIs to add
    */
-  async fillStep2RedirectUris(redirectUris: string[]): Promise<void> {
-    // Verify we're on Step 2
-    await expect(this.redirectUrisStep).toBeVisible()
+  async fillRedirectUrisTab(uris: string[]): Promise<void> {
+    // Switch to Redirect URIs tab first
+    await this.switchTab('redirect-uris')
 
-    // The redirect URIs input is a dynamic component that manages multiple URIs
-    // We'll fill URIs by interacting with the input component
     const input = this.redirectUrisInput
 
-    for (const uri of redirectUris) {
+    for (const uri of uris) {
       // Click the input to focus it
       await input.click()
 
       // Fill the URI
       await input.fill(uri)
 
-      // Press Enter to add the URI (this is how the component works)
+      // Press Enter to add the URI
       await this.page.keyboard.press('Enter')
 
       // Wait for the URI to be added to the list
-      await expect(this.page.locator(`[data-testid^="uri-item-"]`).filter({ hasText: uri })).toBeVisible({ timeout: 5000 })
+      await expect(
+        this.page.locator('[data-testid^="uri-item-"]').filter({ hasText: uri })
+      ).toBeVisible({ timeout: 5000 })
 
-      this.logger?.testCode.log(`✓ Added Redirect URI: "${uri}"`)
+      this.logger?.testCode.log(`Added Redirect URI: "${uri}"`)
+    }
+  }
+
+  private async toggleSwitch(locator: Locator, desiredState: boolean, label: string): Promise<void> {
+    const isChecked = await locator.getAttribute('aria-checked')
+    const currentlyEnabled = isChecked === 'true'
+    if (currentlyEnabled !== desiredState) {
+      await locator.click()
+      this.logger?.testCode.log(`Toggled ${label}: ${desiredState}`)
+    }
+  }
+
+  async fillSecurityTab(data: {
+    enabled?: boolean
+    sessionTtlSeconds?: number
+    sessionRenewalTtlSeconds?: number | null
+    deviceCodeGrantEnabled?: boolean
+  }): Promise<void> {
+    await this.switchTab('security')
+
+    if (data.enabled !== undefined) {
+      await this.toggleSwitch(this.enabledSwitch, data.enabled, 'Enabled')
+    }
+
+    // Session TTL - use preset button if available, otherwise type value
+    if (data.sessionTtlSeconds !== undefined) {
+      const presetMap: Record<number, string> = {
+        1800: '30m',
+        3600: '1h',
+        7200: '2h',
+        14400: '4h',
+        28800: '8h',
+        43200: '12h',
+        86400: '24h',
+      }
+      const presetLabel = presetMap[data.sessionTtlSeconds]
+      if (presetLabel) {
+        const presetButton = this.page.locator(
+          SELECTORS.clientAppForm.sessionTtlPreset(presetLabel)
+        )
+        await presetButton.click()
+        this.logger?.testCode.log(`Selected Session TTL preset: ${presetLabel}`)
+      } else {
+        await this.sessionTtlInput.fill(data.sessionTtlSeconds.toString())
+        this.logger?.testCode.log(`Filled custom Session TTL: ${data.sessionTtlSeconds}s`)
+      }
+    }
+
+    // Session Renewal TTL
+    if (data.sessionRenewalTtlSeconds !== undefined) {
+      if (data.sessionRenewalTtlSeconds === null) {
+        await this.sessionRenewalTtlInput.clear()
+      } else {
+        await this.sessionRenewalTtlInput.fill(data.sessionRenewalTtlSeconds.toString())
+      }
+      this.logger?.testCode.log(`Filled Session Renewal TTL: ${data.sessionRenewalTtlSeconds}`)
+    }
+
+    if (data.deviceCodeGrantEnabled !== undefined) {
+      await this.toggleSwitch(this.deviceCodeGrantSwitch, data.deviceCodeGrantEnabled, 'Device Code Grant')
     }
   }
 
   /**
-   * Fill Step 3: Security Settings
+   * Fill the Appearance tab
    *
-   * @param sessionTtl Session TTL in seconds
-   * @param renewalTtl Optional renewal TTL in seconds
+   * @param iconUrl Icon URL
    */
-  async fillStep3Security(sessionTtl: number, renewalTtl?: number): Promise<void> {
-    // Verify we're on Step 3
-    await expect(this.securityStep).toBeVisible()
+  async fillAppearanceTab(iconUrl?: string): Promise<void> {
+    // Switch to Appearance tab first
+    await this.switchTab('appearance')
 
-    // Use preset button if available, otherwise use custom field
-    const presetButtons = [
-      1800, 3600, 7200, 86400 // Common presets
-    ]
-
-    if (presetButtons.includes(sessionTtl)) {
-      await this.sessionTtlPreset(sessionTtl).click()
-      this.logger?.testCode.log(`✓ Selected Session TTL preset: ${sessionTtl}s`)
-    } else {
-      await this.sessionTtlCustomField.fill(sessionTtl.toString())
-      this.logger?.testCode.log(`✓ Filled custom Session TTL: ${sessionTtl}s`)
-    }
-
-    // Fill Renewal TTL (optional)
-    if (renewalTtl !== undefined) {
-      await this.sessionRenewalTtlField.fill(renewalTtl.toString())
-      this.logger?.testCode.log(`✓ Filled Renewal TTL: ${renewalTtl}s`)
+    if (iconUrl) {
+      await this.iconUrlInput.fill(iconUrl)
+      this.logger?.testCode.log(`Filled Icon URL: "${iconUrl}"`)
     }
   }
 
   /**
-   * Navigate to next wizard step
+   * Submit the form page
+   *
+   * Clicks the submit button and waits for success toast and navigation back to list page.
    */
-  async goToNextStep(): Promise<void> {
-    await expect(this.nextButton).toBeEnabled()
-    await this.smartClick(this.nextButton)
-    this.logger?.testCode.log('✓ Clicked Next button')
-
-    // Wait for frontend transition animation to complete (200ms transition + 100ms buffer)
-    // Technical reason: Frontend wizard uses 200ms transition animations between steps
-    await this.page.waitForTimeout(300)
-  }
-
-  /**
-   * Navigate to previous wizard step
-   */
-  async goToPreviousStep(): Promise<void> {
-    await expect(this.backButton).toBeVisible()
-    await this.smartClick(this.backButton)
-    this.logger?.testCode.log('✓ Clicked Back button')
-
-    // Wait for frontend transition animation to complete (200ms transition + 100ms buffer)
-    // Technical reason: Frontend wizard uses 200ms transition animations between steps
-    await this.page.waitForTimeout(300)
-  }
-
-  /**
-   * Submit wizard (create or update)
-   */
-  async submitWizard(): Promise<void> {
-    // Verify we're on Review step
-    await expect(this.reviewStep).toBeVisible()
-
-    // Click submit button
+  async submitForm(): Promise<void> {
     await expect(this.submitButton).toBeEnabled()
     await this.smartClick(this.submitButton)
-    this.logger?.testCode.log('✓ Clicked Submit button')
+    this.logger?.testCode.log('Clicked submit button')
 
-    // Wait for success message (toast notification)
+    // Wait for success toast
     await expect(this.successMessage).toBeVisible({ timeout: 10000 })
-    this.logger?.testCode.log('✓ Success message appeared')
+    this.logger?.testCode.log('Success message appeared')
 
     // Wait for navigation back to list page
-    await this.waitForReady()
+    await expect(this.container).toBeVisible({ timeout: 10000 })
+    this.logger?.testCode.log('Navigated back to list page')
   }
 
   /**
-   * Cancel wizard
+   * Cancel the form and return to list page
+   *
+   * Clicks the cancel button and waits for navigation back to list page.
    */
-  async cancelWizard(): Promise<void> {
+  async cancelForm(): Promise<void> {
     await this.smartClick(this.cancelButton)
-    this.logger?.testCode.log('✓ Clicked Cancel button')
+    this.logger?.testCode.log('Clicked cancel button')
 
     // Wait for navigation back to list page
-    await this.waitForReady()
+    await expect(this.container).toBeVisible({ timeout: 5000 })
   }
 
+  // ============================================================================
+  // Convenience Methods
+  // ============================================================================
+
   /**
-   * Create a new Client App using the wizard flow
+   * Create a new Client App using the page + tabs flow
+   *
+   * Navigates to page, opens create page, fills all tabs, and submits.
    *
    * @param data Client App data
    * @param realmId Realm ID
    */
   async createClientApp(data: ClientAppData, realmId: string = 'admin'): Promise<void> {
-    // Navigate to wizard
-    await this.gotoCreateWizard(realmId)
+    // Navigate to list page if not already there
+    await this.goto(realmId)
 
-    // Step 1: Basic Information
-    await this.fillStep1BasicInfo({
+    // Open create form page
+    await this.gotoCreatePage()
+
+    // Fill Basic tab
+    await this.fillBasicTab({
+      clientId: data.clientId,
       name: data.name,
       description: data.description,
-      appType: 'Web', // Default
-      clientType: 'confidential', // Default
     })
-    await this.goToNextStep()
 
-    // Step 2: Redirect URIs
+    // Fill Redirect URIs tab
     if (data.redirectUris && data.redirectUris.length > 0) {
-      await this.fillStep2RedirectUris(data.redirectUris)
+      await this.fillRedirectUrisTab(data.redirectUris)
     }
-    await this.goToNextStep()
 
-    // Step 3: Security Settings
-    await this.fillStep3Security(
-      data.sessionTtl || 3600,
-      data.renewalTtl
-    )
-    await this.goToNextStep()
+    // Fill Security tab
+    await this.fillSecurityTab({
+      enabled: data.enabled,
+      sessionTtlSeconds: data.sessionTtl,
+      sessionRenewalTtlSeconds: data.renewalTtl,
+      deviceCodeGrantEnabled: data.deviceCodeGrantEnabled,
+    })
 
-    // Step 4: Review & Submit
-    await this.submitWizard()
+    // Fill Appearance tab
+    if (data.iconUrl) {
+      await this.fillAppearanceTab(data.iconUrl)
+    }
 
-    // Navigate back to list page to verify creation
-    await this.goto(realmId)
+    // Submit
+    await this.submitForm()
 
-    // Verify the Client App was created
+    // Verify the Client App appears in the list
     await this.waitForClientAppByName(data.name)
-    this.logger?.testCode.log(`✓ Verified Client App "${data.name}" created successfully`)
+    this.logger?.testCode.log(`Client App "${data.name}" created and verified`)
   }
 
   /**
-   * Edit existing Client App using the wizard flow
+   * Edit an existing Client App using the page + tabs flow
    *
-   * @param clientAppId Client App ID to edit
-   * @param data Updated Client App data
+   * @param appName Current name of the client app
+   * @param data Updated fields
    * @param realmId Realm ID
    */
-  async editClientAppWizard(clientAppId: string, data: Partial<ClientAppData>, realmId: string = 'admin'): Promise<void> {
-    // Navigate to edit wizard
-    await this.gotoEditWizard(realmId, clientAppId)
-
-    // Step 1: Basic Information (if provided)
-    if (data.name || data.description) {
-      await this.fillStep1BasicInfo({
-        name: data.name || '',
-        description: data.description,
-      })
-      await this.goToNextStep()
-    } else {
-      await this.goToNextStep()
-    }
-
-    // Step 2: Redirect URIs (if provided)
-    if (data.redirectUris) {
-      await this.fillStep2RedirectUris(data.redirectUris)
-    }
-    await this.goToNextStep()
-
-    // Step 3: Security Settings (if provided)
-    if (data.sessionTtl !== undefined || data.renewalTtl !== undefined) {
-      await this.fillStep3Security(
-        data.sessionTtl || 3600,
-        data.renewalTtl
-      )
-    }
-    await this.goToNextStep()
-
-    // Step 4: Review & Submit
-    await this.submitWizard()
-
-    // Navigate back to list page
+  async editClientApp(
+    appName: string,
+    data: Partial<ClientAppData>,
+    realmId: string = 'admin'
+  ): Promise<void> {
+    // Navigate to list page if not already there
     await this.goto(realmId)
 
-    this.logger?.testCode.log(`✓ Client App "${clientAppId}" updated successfully`)
+    // Open edit form page by finding the row by name
+    await this.gotoEditPage(appName)
+
+    // Update Basic tab fields (if provided)
+    if (data.name || data.description) {
+      // We are on Basic tab by default when form page opens
+      if (data.name) {
+        await this.nameInput.clear()
+        await this.nameInput.fill(data.name)
+        this.logger?.testCode.log(`Updated Name: "${data.name}"`)
+      }
+      if (data.description) {
+        await this.descriptionInput.clear()
+        await this.descriptionInput.fill(data.description)
+        this.logger?.testCode.log(`Updated Description: "${data.description}"`)
+      }
+    }
+
+    // Update Redirect URIs tab (if provided)
+    if (data.redirectUris) {
+      await this.fillRedirectUrisTab(data.redirectUris)
+    }
+
+    // Update Security tab (if provided)
+    if (data.enabled !== undefined || data.sessionTtl !== undefined || data.deviceCodeGrantEnabled !== undefined) {
+      await this.fillSecurityTab({
+        enabled: data.enabled,
+        sessionTtlSeconds: data.sessionTtl,
+        sessionRenewalTtlSeconds: data.renewalTtl,
+        deviceCodeGrantEnabled: data.deviceCodeGrantEnabled,
+      })
+    }
+
+    // Update Appearance tab (if provided)
+    if (data.iconUrl) {
+      await this.fillAppearanceTab(data.iconUrl)
+    }
+
+    // Submit
+    await this.submitForm()
+
+    // Verify update if name changed
+    const verifyName = data.name || appName
+    await this.waitForClientAppByName(verifyName)
+    this.logger?.testCode.log(`Client App "${verifyName}" updated and verified`)
   }
 
   // ============================================================================
-  // Legacy Methods (for backward compatibility)
+  // Table Interaction Methods
   // ============================================================================
 
-  /**
-   * Click "Add Client App" button (legacy, opens new wizard page)
-   */
-  async clickAddClientApp(): Promise<void> {
-    await this.smartClick(this.addButton)
-    // Wait for navigation to wizard page
-    await this.waitForWizardReady()
-  }
-
-  /**
-   * Edit existing Client App (legacy, navigates to edit wizard page)
-   *
-   * @param appId Client App UUID (id field) to edit
-   */
-  async editClientApp(appId: string): Promise<void> {
-    const row = this.clientAppRow(appId)
-    const editButton = row.locator('[data-testid="edit-client-app-button"]')
-
-    await this.smartClick(editButton)
-    // Wait for navigation to edit wizard page
-    await this.waitForWizardReady()
-  }
-
-  /**
-   * Edit existing Client App by OAuth client_id
-   *
-   * @param clientId OAuth client_id to edit
-   */
-  async editClientAppByClientId(clientId: string): Promise<void> {
-    const row = this.page.locator(SELECTORS.clientApps.rowByClientId(clientId))
-    const editButton = row.locator('[data-testid="edit-client-app-button"]')
-
-    await this.smartClick(editButton)
-    // Wait for navigation to edit wizard page
-    await this.waitForWizardReady()
-  }
-
-  /**
-   * Delete Client App
-   *
-   * @param appId Client App UUID (id field) to delete
-   */
   async deleteClientApp(appId: string): Promise<void> {
-    const row = this.clientAppRow(appId)
-    const deleteButton = row.locator('[data-testid="delete-client-app-button"]')
+    const deleteButton = this.page.locator(SELECTORS.clientApps.deleteButton(appId))
 
     // Click delete button to open confirmation dialog
     await this.smartClick(deleteButton)
@@ -533,20 +570,17 @@ export class ClientAppsPage extends BasePage {
     await expect(this.deleteConfirmDialog).toBeHidden({ timeout: 10000 })
   }
 
-  /**
-   * Check if Client App exists in table
-   *
-   * @param appId Client App UUID (id field) to check
-   * @returns True if Client App exists
-   */
-  async clientAppExists(appId: string): Promise<boolean> {
-    const row = this.clientAppRow(appId)
-    const count = await row.count()
-    if (count > 0) return true
+  async deleteClientAppByName(appName: string): Promise<void> {
+    const appId = await this.getClientIdByName(appName)
+    if (!appId) {
+      throw new Error(`Client App "${appName}" not found`)
+    }
+    await this.deleteClientApp(appId)
+  }
 
-    // Fallback: try to find by name in table
-    const nameCell = this.page.getByText(appId).first()
-    return await nameCell.isVisible({ timeout: 2000 }).catch(() => false)
+  async clientAppExists(appIdOrName: string): Promise<boolean> {
+    const nameCell = this.page.getByText(appIdOrName, { exact: true }).first()
+    return await nameCell.isVisible({ timeout: 5000 }).catch(() => false)
   }
 
   /**
@@ -556,17 +590,17 @@ export class ClientAppsPage extends BasePage {
    * @param timeout Timeout in milliseconds (default: 10000)
    */
   async waitForClientAppByName(name: string, timeout: number = 10000): Promise<void> {
-    await expect(this.page.getByText(name)).toBeVisible({ timeout })
+    await expect(this.page.getByText(name, { exact: true })).toBeVisible({ timeout })
   }
 
   /**
    * Get Client App UUID by name
    *
    * @param name Client App name
-   * @returns Client App UUID (id field) or empty string if not found
+   * @returns Client App UUID (data-app-id) or empty string if not found
    */
   async getClientIdByName(name: string): Promise<string> {
-    const nameCell = this.page.getByText(name).first()
+    const nameCell = this.page.getByText(name, { exact: true }).first()
     const isVisible = await nameCell.isVisible({ timeout: 5000 }).catch(() => false)
 
     if (!isVisible) {
@@ -592,7 +626,7 @@ export class ClientAppsPage extends BasePage {
   /**
    * Get list of Client Apps from table
    *
-   * @returns Array of Client App data with both UUID and client_id
+   * @returns Array of Client App data with UUID, client_id, and name
    */
   async getClientAppsList(): Promise<Array<{ id: string; clientId: string; name: string }>> {
     await this.waitForReady()
@@ -617,160 +651,19 @@ export class ClientAppsPage extends BasePage {
   }
 
   // ============================================================================
-  // Draft Auto-Save Methods
+  // Validation Methods
   // ============================================================================
 
   /**
-   * Wait for auto-save toast to appear (Method 1: Toast monitoring)
-   *
-   * This is the recommended method for testing auto-save functionality.
-   * It waits for the "Auto-saved" toast notification to appear.
-   *
-   * @param timeout Timeout in milliseconds (default: 35000ms to accommodate 30s interval)
-   *
-   * Testing Strategy:
-   * - This method uses assertion-based waiting (Playwright auto-wait)
-   * - No fixed delays are used
-   * - Waits for the actual toast notification from the frontend
-   */
-  async waitForDraftSaved(timeout: number = 35000): Promise<void> {
-    await expect(this.autoSaveToast).toBeVisible({ timeout })
-    this.logger?.testCode.log('✓ Auto-save toast appeared')
-  }
-
-  /**
-   * Reload the current page
-   *
-   * Used to test draft recovery functionality
-   */
-  async reloadPage(): Promise<void> {
-    await this.page.reload()
-    this.logger?.testCode.log('✓ Page reloaded')
-  }
-
-  /**
-   * Check if draft restore dialog is visible
-   *
-   * @returns True if dialog is visible
-   */
-  async isDraftRestoreDialogVisible(): Promise<boolean> {
-    const isVisible = await this.draftRestoreDialog.isVisible().catch(() => false)
-    this.logger?.testCode.log(`✓ Draft restore dialog visible: ${isVisible}`)
-    return isVisible
-  }
-
-  /**
-   * Click "Restore Draft" button in draft restore dialog
-   */
-  async clickRestoreDraft(): Promise<void> {
-    await expect(this.draftRestoreButton).toBeVisible()
-    await this.smartClick(this.draftRestoreButton)
-    this.logger?.testCode.log('✓ Clicked Restore Draft button')
-  }
-
-  /**
-   * Click "Discard Draft" button in draft restore dialog
-   */
-  async clickDiscardDraft(): Promise<void> {
-    await expect(this.draftDiscardButton).toBeVisible()
-    await this.smartClick(this.draftDiscardButton, true)
-    this.logger?.testCode.log('✓ Clicked Discard Draft button')
-  }
-
-  /**
-   * Get draft data from localStorage (Method 2: LocalStorage polling)
-   *
-   * This is a fallback method if toast monitoring is not reliable.
-   * It directly checks localStorage for draft data.
-   *
-   * @param draftKey The localStorage key for the draft
-   * @returns Draft data or null if not found
-   *
-   * Testing Strategy:
-   * - This method polls localStorage for draft data
-   * - Useful when toast notifications are not implemented or unreliable
-   * - Still uses assertion-based waiting (retry logic)
-   */
-  async getDraftFromStorage(draftKey: string): Promise<any> {
-    const draftData = await this.page.evaluate((key) => {
-      const stored = localStorage.getItem(key)
-      if (!stored) return null
-
-      try {
-        return JSON.parse(stored)
-      } catch {
-        return null
-      }
-    }, draftKey)
-
-    this.logger?.testCode.log(`✓ Retrieved draft from storage: ${draftKey}`)
-    return draftData
-  }
-
-  /**
-   * Verify draft has been cleared from localStorage
-   *
-   * @param draftKey The localStorage key for the draft
-   * @returns True if draft is cleared (not found)
-   */
-  async verifyDraftCleared(draftKey: string): Promise<boolean> {
-    const isCleared = await this.page.evaluate((key) => {
-      return localStorage.getItem(key) === null
-    }, draftKey)
-
-    if (isCleared) {
-      this.logger?.testCode.log(`✓ Draft cleared from storage: ${draftKey}`)
-    } else {
-      this.logger?.testCode.log(`✗ Draft still exists in storage: ${draftKey}`)
-    }
-
-    return isCleared
-  }
-
-  /**
-   * Wait for draft to be saved to localStorage (Method 2: LocalStorage polling)
-   *
-   * This method polls localStorage until draft data is found.
-   *
-   * @param draftKey The localStorage key for the draft
-   * @param timeout Timeout in milliseconds (default: 35000ms)
-   *
-   * Testing Strategy:
-   * - Uses retry logic with assertions instead of fixed delays
-   * - Polls localStorage every 500ms
-   * - Throws error if timeout is reached
-   */
-  async waitForDraftInStorage(draftKey: string, timeout: number = 35000): Promise<void> {
-    const startTime = Date.now()
-    const pollInterval = 500
-
-    while (Date.now() - startTime < timeout) {
-      const draft = await this.getDraftFromStorage(draftKey)
-      if (draft && draft.data && draft.timestamp) {
-        this.logger?.testCode.log(`✓ Draft found in storage: ${draftKey}`)
-        return
-      }
-      // Wait before next poll (using small delay for polling, not fixed wait)
-      await this.page.waitForTimeout(pollInterval)
-    }
-
-    throw new Error(`Draft not found in storage within ${timeout}ms: ${draftKey}`)
-  }
-
-  // ============================================================================
-  // Step Validation and Navigation Methods (DEMO-D04)
-  // ============================================================================
-
-  /**
-   * Get validation errors for current step
+   * Get validation errors visible in the form page
    *
    * @returns Array of validation error messages
    */
   async getValidationErrors(): Promise<string[]> {
     const errors: string[] = []
 
-    // Get all error messages with role="alert"
-    const errorElements = this.page.locator('[role="alert"]')
+    // Get error messages within the form page
+    const errorElements = this.formPage.locator('[role="alert"], .text-destructive')
     const count = await errorElements.count()
 
     for (let i = 0; i < count; i++) {
@@ -784,200 +677,46 @@ export class ClientAppsPage extends BasePage {
   }
 
   /**
-   * Verify step validation errors
+   * Verify page title text
    *
-   * @param step Step number (1-4)
-   * @param expectedErrors Expected error messages
+   * @param expectedTitle Expected title text ("Create Client App" or "Edit Client App")
    */
-  async verifyStepValidation(step: number, expectedErrors: string[]): Promise<void> {
-    const actualErrors = await this.getValidationErrors()
-
-    // Verify all expected errors are present
-    for (const expectedError of expectedErrors) {
-      const hasError = actualErrors.some((error) =>
-        error.toLowerCase().includes(expectedError.toLowerCase())
-      )
-      if (!hasError) {
-        throw new Error(`Expected validation error not found: "${expectedError}"`)
-      }
-    }
-
-    // Verify error count matches
-    if (actualErrors.length !== expectedErrors.length) {
-      throw new Error(
-        `Expected ${expectedErrors.length} validation errors, but found ${actualErrors.length}: ${actualErrors.join(', ')}`
-      )
-    }
-
-    this.logger?.testCode.log(`✓ Step ${step} validation verified: ${expectedErrors.length} errors`)
+  async verifyPageTitle(expectedTitle: string): Promise<void> {
+    await expect(this.pageTitle).toHaveText(expectedTitle)
+    this.logger?.testCode.log(`Page title verified: "${expectedTitle}"`)
   }
 
   /**
-   * Click step indicator in progress bar
+   * Verify tab is active (has data-state="active")
    *
-   * @param stepId Step ID: 'basic' | 'redirect-uris' | 'security' | 'review'
+   * @param tabName Tab name to verify
    */
-  async clickStepIndicator(stepId: 'basic' | 'redirect-uris' | 'security' | 'review'): Promise<void> {
-    const stepButton = this.page.locator(SELECTORS.clientAppWizard.progressStep(stepId))
-    await this.smartClick(stepButton)
-    this.logger?.testCode.log(`✓ Clicked step indicator: ${stepId}`)
-
-    // Wait for frontend transition animation to complete (200ms transition + 100ms buffer)
-    // Technical reason: Frontend wizard uses 200ms transition animations between steps
-    await this.page.waitForTimeout(300)
+  async verifyActiveTab(tabName: DialogTabName): Promise<void> {
+    const tab = this.getTabLocator(tabName)
+    await expect(tab).toHaveAttribute('data-state', 'active')
+    this.logger?.testCode.log(`Active tab verified: ${tabName}`)
   }
 
   /**
-   * Get current wizard step
+   * Verify submit button text
    *
-   * @returns Current step number (1-4)
+   * @param expectedText Expected button text ("Create" or "Save Changes")
    */
-  async getCurrentStep(): Promise<number> {
-    // Check which step container is visible
-    const steps = [
-      { number: 1, selector: '[data-testid="wizard-step-basic"]' },
-      { number: 2, selector: '[data-testid="wizard-step-redirect-uris"]' },
-      { number: 3, selector: '[data-testid="wizard-step-security"]' },
-      { number: 4, selector: '[data-testid="wizard-step-review"]' },
-    ]
-
-    for (const step of steps) {
-      const isVisible = await this.page.locator(step.selector).isVisible().catch(() => false)
-      if (isVisible) {
-        return step.number
-      }
-    }
-
-    throw new Error('Unable to determine current step')
+  async verifySubmitButtonText(expectedText: string): Promise<void> {
+    await expect(this.submitButton).toHaveText(expectedText)
+    this.logger?.testCode.log(`Submit button text verified: "${expectedText}"`)
   }
 
   /**
-   * Verify progress indicator state
+   * Verify a field value in the form page
    *
-   * @param currentStep Expected current step (1-4)
+   * @param fieldSelector Selector for the field
+   * @param expectedValue Expected value
    */
-  async verifyProgressIndicator(currentStep: number): Promise<void> {
-    const actualStep = await this.getCurrentStep()
-
-    if (actualStep !== currentStep) {
-      throw new Error(`Expected step ${currentStep}, but current step is ${actualStep}`)
-    }
-
-    // Map step number to step ID
-    const stepIdMap = {
-      1: 'basic',
-      2: 'redirect-uris',
-      3: 'security',
-      4: 'review',
-    } as const
-    const stepId = stepIdMap[currentStep as keyof typeof stepIdMap]
-
-    // Verify the step indicator shows the correct current step
-    const currentStepIndicator = this.page.locator(SELECTORS.clientAppWizard.currentStep(stepId))
-    await expect(currentStepIndicator).toBeVisible()
-
-    this.logger?.testCode.log(`✓ Progress indicator verified: Step ${currentStep}`)
-  }
-
-  /**
-   * Verify individual step status
-   *
-   * This method checks the status of a specific step using the data-status attribute.
-   * Unlike verifyProgressIndicator() which only checks the current step, this method
-   * can verify any step's status (completed/current/pending).
-   *
-   * @param stepNumber Step number (1-4)
-   * @param expectedStatus Expected status: 'completed' | 'current' | 'pending'
-   */
-  async verifyStepStatus(
-    stepNumber: number,
-    expectedStatus: 'completed' | 'current' | 'pending'
-  ): Promise<void> {
-    // Map step number to step ID
-    const stepIdMap = {
-      1: 'basic',
-      2: 'redirect-uris',
-      3: 'security',
-      4: 'review',
-    } as const
-    const stepId = stepIdMap[stepNumber as keyof typeof stepIdMap]
-
-    const stepIndicator = this.page.locator(SELECTORS.clientAppWizard.progressStep(stepId))
-
-    // Verify the step has the expected status attribute
-    await expect(stepIndicator).toHaveAttribute('data-status', expectedStatus)
-
-    this.logger?.testCode.log(`✓ Step ${stepNumber} status verified: ${expectedStatus}`)
-  }
-
-  /**
-   * Verify Next button state
-   *
-   * @param enabled Expected enabled state
-   */
-  async verifyNextButtonState(enabled: boolean): Promise<void> {
-    if (enabled) {
-      await expect(this.nextButton).toBeEnabled()
-      this.logger?.testCode.log('✓ Next button is enabled')
-    } else {
-      await expect(this.nextButton).toBeDisabled()
-      this.logger?.testCode.log('✓ Next button is disabled')
-    }
-  }
-
-  /**
-   * Verify step data is preserved
-   *
-   * @param step Step number (1-4)
-   * @param expectedData Expected data to verify
-   */
-  async verifyStepData(step: number, expectedData: Record<string, any>): Promise<void> {
-    switch (step) {
-      case 1: {
-        // Verify Step 1 data
-        if (expectedData.name) {
-          const nameValue = await this.nameInput.inputValue()
-          expect(nameValue).toBe(expectedData.name)
-        }
-        if (expectedData.description !== undefined) {
-          const descriptionValue = await this.descriptionInput.inputValue()
-          expect(descriptionValue).toBe(expectedData.description)
-        }
-        this.logger?.testCode.log(`✓ Step 1 data verified`)
-        break
-      }
-      case 2: {
-        // Verify Step 2 data (redirect URIs)
-        if (expectedData.redirectUris) {
-          // Redirect URIs are displayed as uri-item elements within the redirect-uris container
-          const uriContainer = this.page.locator('[data-testid="redirect-uris"]')
-          const uriItems = uriContainer.locator('[data-testid^="uri-item-"]')
-          const count = await uriItems.count()
-          expect(count).toBe(expectedData.redirectUris.length)
-
-          for (let i = 0; i < expectedData.redirectUris.length; i++) {
-            const itemText = await uriItems.nth(i).textContent()
-            expect(itemText).toContain(expectedData.redirectUris[i])
-          }
-        }
-        this.logger?.testCode.log(`✓ Step 2 data verified`)
-        break
-      }
-      case 3: {
-        // Verify Step 3 data (session settings)
-        if (expectedData.sessionTtl !== undefined) {
-          const ttlValue = await this.sessionTtlCustomField.inputValue()
-          expect(parseInt(ttlValue)).toBe(expectedData.sessionTtl)
-        }
-        if (expectedData.renewalTtl !== undefined) {
-          const renewalValue = await this.sessionRenewalTtlField.inputValue()
-          expect(parseInt(renewalValue)).toBe(expectedData.renewalTtl)
-        }
-        this.logger?.testCode.log(`✓ Step 3 data verified`)
-        break
-      }
-      default:
-        throw new Error(`Invalid step number: ${step}`)
-    }
+  async verifyFieldValue(fieldSelector: string, expectedValue: string): Promise<void> {
+    const field = this.formPage.locator(fieldSelector)
+    const value = await field.inputValue()
+    expect(value).toBe(expectedValue)
+    this.logger?.testCode.log(`Field value verified: "${expectedValue}"`)
   }
 }

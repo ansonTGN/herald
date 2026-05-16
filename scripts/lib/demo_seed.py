@@ -176,6 +176,7 @@ def _ensure_points_realm(opener: urllib.request.OpenerDirector, logger: "Logger 
     payload = {
         "id": POINTS_REALM_ID,
         "name": POINTS_REALM_NAME,
+        "description": "Demo realm for testing and demonstration purposes",
         "adminUser": {
             "email": POINTS_REALM_ADMIN_EMAIL,
             "password": POINTS_REALM_ADMIN_PASSWORD,

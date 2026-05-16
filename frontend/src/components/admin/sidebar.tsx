@@ -15,8 +15,10 @@ import {
   FileText,
   ScrollText,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/use-auth'
 import { useRealmId } from '@/stores/auth-store'
+import { realmQueryOptions } from '@/data/query-options'
 import type { LucideIcon } from 'lucide-react'
 
 interface MenuItem {
@@ -30,6 +32,7 @@ interface MenuItem {
 export function Sidebar() {
   const realmId = useRealmId()
   const { permissions } = useAuth()
+  const { data: realm } = useQuery(realmQueryOptions(realmId))
   const [openMenus, setOpenMenus] = useState<Set<string>>(new Set(['Authorization']))
 
   // Memoize toggle function to prevent unnecessary re-renders
@@ -228,8 +231,8 @@ export function Sidebar() {
       data-testid="admin-sidebar"
     >
       <div className="shrink-0 p-6">
-        <h1 className="text-xl font-bold">CAS Admin</h1>
-        <p className="text-sm text-gray-500">{realmId}</p>
+        <h1 className="text-xl font-bold">Herald</h1>
+        <p className="text-sm text-gray-500">{realm?.name ?? realmId}</p>
       </div>
 
       <nav className="mt-6 min-h-0 flex-1 overflow-y-auto" data-testid="sidebar-nav">

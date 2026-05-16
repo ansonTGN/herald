@@ -517,6 +517,7 @@ export type CreateRealmConfigRequest = {
 
 export type CreateRealmValidator = {
     adminUser: InitialAdminUserValidator;
+    description?: string | null;
     id?: string | null;
     name: string;
 };
@@ -1127,6 +1128,7 @@ export type PageResponseRealmResponse = {
     items: Array<{
         adminUser?: null | AdminUserResponse;
         createdAt: string;
+        description?: string | null;
         id: string;
         name: string;
         updatedAt: string;
@@ -1493,6 +1495,8 @@ export type ProductResponse = {
 
 export type PublicConfigResponse = {
     oauthProviders: Array<OAuthProviderInfo>;
+    realmDescription?: string | null;
+    realmName: string;
     registration: RegistrationConfig;
 };
 
@@ -1545,6 +1549,7 @@ export type RealmDefaultConfigResponse = {
 export type RealmResponse = {
     adminUser?: null | AdminUserResponse;
     createdAt: string;
+    description?: string | null;
     id: string;
     name: string;
     updatedAt: string;
@@ -1981,6 +1986,7 @@ export type UpdateRealmTotpConfigResponse = {
 };
 
 export type UpdateRealmValidator = {
+    description?: string | null;
     name: string;
 };
 

@@ -22,6 +22,11 @@ uv run scripts/dev-start.py
 
 启动完成后前端在 http://localhost:3000，后端 API 在 http://localhost:8080。
 
+## 演示
+
+- **地址**：https://auth.fornetcode.com
+- **管理员**：admin@cas.com / Herald@2026Admin
+
 ## 文档
 
 完整教程见 [docs/tutorials/](docs/tutorials/)，涵盖本地开发、架构、配置和部署。

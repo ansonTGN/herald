@@ -40,6 +40,7 @@ mod realm_admin_tests {
         Realm {
             id: "test-realm".to_string(),
             name: "Test Realm".to_string(),
+            description: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
             admin_user: None,
@@ -245,6 +246,7 @@ mod realm_admin_tests {
                 CreateRealmRequest {
                     id: Some("test-realm".to_string()),
                     name: "Test Realm".to_string(),
+                    description: None,
                     admin_user: InitialAdminUser {
                         email: "admin@test.com".to_string(),
                         password: "password123".to_string(),
@@ -350,6 +352,7 @@ mod realm_admin_tests {
                 CreateRealmRequest {
                     id: Some("test-realm".to_string()),
                     name: "Test Realm".to_string(),
+                    description: None,
                     admin_user: InitialAdminUser {
                         email: "admin@test.com".to_string(),
                         password: "password123".to_string(),
@@ -468,6 +471,7 @@ mod realm_admin_tests {
                 CreateRealmRequest {
                     id: Some("test-realm".to_string()),
                     name: "Test Realm".to_string(),
+                    description: None,
                     admin_user: InitialAdminUser {
                         email: "admin@test.com".to_string(),
                         password: "password123".to_string(),
@@ -540,6 +544,88 @@ mod realm_admin_tests {
                 assert!(msg.contains("read realm"));
             }
             _ => panic!("expected forbidden for cross-realm read"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_unit_update_realm_allows_updating_own_realm_without_global_permission() {
+        let mut mock_realm_repo = MockRealmRepository::new();
+        mock_realm_repo
+            .expect_update_realm()
+            .returning(|id, name, desc| {
+                let id = id.to_string();
+                Box::pin(async move {
+                    Ok(Realm {
+                        id,
+                        name,
+                        description: desc,
+                        created_at: Utc::now(),
+                        updated_at: Utc::now(),
+                        admin_user: None,
+                    })
+                })
+            });
+
+        let realm_service = Arc::new(RealmServiceImpl::new(
+            Arc::new(mock_realm_repo),
+            Arc::new(DenyAllRealmPolicy),
+            Arc::new(MockRealmInitializationService::new()),
+            Arc::new(MockClientRepository::new()),
+            Arc::new(MockUserRoleRepository::new()),
+            Arc::new(MockRoleRepository::new()),
+            Arc::new(MockUserRepository::new()),
+            Arc::new(MockUserService::new()),
+            Arc::new(MockRealmConfigRepository::new()),
+            Arc::new(mock_audit_repo()),
+        ));
+
+        let result = realm_service
+            .update_realm(
+                identity_fixture(),
+                "test-realm".to_string(),
+                crate::realm::UpdateRealmRequest {
+                    name: Some("Updated Name".to_string()),
+                    description: None,
+                },
+            )
+            .await;
+
+        assert!(result.is_ok(), "own realm should remain updatable");
+        let realm = result.unwrap();
+        assert_eq!(realm.name, "Updated Name");
+    }
+
+    #[tokio::test]
+    async fn test_unit_update_realm_denies_cross_realm_update_without_global_permission() {
+        let realm_service = Arc::new(RealmServiceImpl::new(
+            Arc::new(MockRealmRepository::new()),
+            Arc::new(DenyAllRealmPolicy),
+            Arc::new(MockRealmInitializationService::new()),
+            Arc::new(MockClientRepository::new()),
+            Arc::new(MockUserRoleRepository::new()),
+            Arc::new(MockRoleRepository::new()),
+            Arc::new(MockUserRepository::new()),
+            Arc::new(MockUserService::new()),
+            Arc::new(MockRealmConfigRepository::new()),
+            Arc::new(mock_audit_repo()),
+        ));
+
+        let result = realm_service
+            .update_realm(
+                identity_fixture(),
+                "other-realm".to_string(),
+                crate::realm::UpdateRealmRequest {
+                    name: Some("Updated Name".to_string()),
+                    description: None,
+                },
+            )
+            .await;
+
+        match result {
+            Err(CoreError::Forbidden(msg)) => {
+                assert!(msg.contains("update realm"));
+            }
+            _ => panic!("expected forbidden for cross-realm update"),
         }
     }
 

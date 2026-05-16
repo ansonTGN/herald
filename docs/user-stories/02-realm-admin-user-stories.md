@@ -3,7 +3,7 @@
 **角色代码**: RA
 **角色定义**：Realm Admin 是特定 Realm 的管理员，负责管理该 Realm 下的用户、客户端应用、角色、权限和订阅套餐。
 
-**故事范围**: US-RA-001 ~ US-RA-009
+**故事范围**: US-RA-001 ~ US-RA-012
 **创建时间**: 2025-02-01
 **状态**: Active
 
@@ -459,12 +459,97 @@ Then 只有创建操作能正常执行
 ```
 
 
+## 故事 10：查看 Dashboard 用户活跃概览 [US-RA-010]
+
+**优先级**: P1
+
+**【用户故事】**
+**作为**：Realm Admin
+**我希望**：在 Admin Dashboard 首屏看到本 Realm 的用户核心指标（总用户数、新增用户数、活跃用户数）
+**从而**：快速了解 Realm 的用户增长与活跃趋势，无需进入多个子页面分别查看
+
+**【验收标准】**
+
+**场景 1：Dashboard 正常展示用户指标**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 下有用户和近期的登录活动
+When 我访问 realm-1 的管理后台首页
+Then 页面首屏显示 3 张指标卡片：总用户数、最近 7 天新增用户数、最近 7 天活跃用户数
+And 每张卡片显示对应的数值
+```
+
+**场景 2：新 Realm 无数据时的空态**
+```gherkin
+Given 我是新创建的 realm-2 的管理员
+And realm-2 下没有任何用户
+When 我访问 realm-2 的管理后台首页
+Then 3 张指标卡片均显示数值 0
+```
+
+## 故事 11：查看 Dashboard 认证趋势图 [US-RA-011]
+
+**优先级**: P1
+
+**【用户故事】**
+**作为**：Realm Admin
+**我希望**：在 Dashboard 上看到最近 30 天的认证趋势图（登录成功和失败次数）
+**从而**：发现异常登录波动，及时响应安全问题
+
+**【验收标准】**
+
+**场景 1：正常展示认证趋势**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 在最近 30 天内有认证事件记录
+When 我访问 realm-1 的管理后台首页
+Then 页面显示最近 30 天的认证趋势图
+And 图表包含两条线：登录成功次数和登录失败次数
+And 图表按天聚合，X 轴为日期
+```
+
+**场景 2：无认证事件时的空态**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 在最近 30 天内没有任何认证事件
+When 我访问 realm-1 的管理后台首页
+Then 趋势图区域显示"暂无数据"提示
+```
+
+## 故事 12：通过 Dashboard 快捷导航跳转 [US-RA-012]
+
+**优先级**: P1
+
+**【用户故事】**
+**作为**：Realm Admin
+**我希望**：在 Dashboard 下方保留原有的管理功能导航入口
+**从而**：从 Dashboard 快速跳转到用户管理、角色管理等子页面
+
+**【验收标准】**
+
+**场景 1：快捷导航正常跳转**
+```gherkin
+Given 我是 realm-1 的管理员
+When 我访问 realm-1 的管理后台首页
+Then 页面下方显示快捷导航入口（Users、Roles、Permissions、Client Apps、Realms、Settings）
+And 点击任一导航项可跳转到对应管理页面
+```
+
+**场景 2：原有导航入口不丢失**
+```gherkin
+Given Dashboard 重设计前已有 6 张导航卡片
+When Dashboard 重设计上线后
+Then 所有原有导航入口仍可通过页面下方快捷导航区域访问
+And 每个导航入口的跳转目标不变
+```
+
+
 ## 用户故事优先级汇总
 
 | 优先级 | 用户故事数量 | 关键故事 |
 |--------|------------|---------|
 | P0 | 9 | Realm 隔离访问、角色定义管理、权限定义管理、为角色分配权限、查看角色权限、用户角色分配、权限策略管理、订阅套餐管理、权限层级验证 |
-| P1 | 0 | - |
+| P1 | 3 | 查看 Dashboard 用户活跃概览、查看 Dashboard 认证趋势图、通过 Dashboard 快捷导航跳转 |
 | P2 | 0 | - |
 
 ---
@@ -474,4 +559,5 @@ Then 只有创建操作能正常执行
 - **PRD**: `docs/prd/auth/permissions.md` - 权限与角色管理产品需求文档
 - **PRD**: `docs/prd/billing/billing.md` - Billing 订阅计费产品需求文档
 - **技术设计**: `.ai/design/fix-permission-and-sdk-impl.md` - Realm 创建权限修复技术设计
-- **用户故事**: `docs/user-stories/builtin_protection.md` - 默认角色和权限保护 [US-RA-010]
+- **用户故事**: `docs/user-stories/builtin_protection.md` - 默认角色和权限保护
+- **PRD**: `docs/prd/core/dashboard-redesign.md` - Dashboard 重设计产品需求文档

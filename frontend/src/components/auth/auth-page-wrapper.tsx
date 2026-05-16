@@ -3,5 +3,5 @@ interface AuthPageWrapperProps {
 }
 
 export function AuthPageWrapper({ children }: AuthPageWrapperProps) {
-  return <div className="flex min-h-screen items-center justify-center bg-gray-50">{children}</div>
+  return <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-background to-muted/30">{children}</div>
 }

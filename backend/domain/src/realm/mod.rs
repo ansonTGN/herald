@@ -63,6 +63,7 @@ pub struct PaginatedRealmsResponse {
 pub struct Realm {
     pub id: String,
     pub name: String,
+    pub description: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub admin_user: Option<CreatedAdminUser>,
@@ -109,6 +110,8 @@ pub struct CreateRealmRequest {
     #[validate(length(min = 3, max = 50))]
     pub name: String,
 
+    pub description: Option<String>,
+
     /// Initial realm administrator (required)
     pub admin_user: InitialAdminUser,
 }
@@ -117,6 +120,15 @@ pub struct CreateRealmRequest {
 pub struct UpdateRealmRequest {
     #[validate(length(min = 3, max = 50))]
     pub name: Option<String>,
+
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RealmSummary {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -144,6 +156,7 @@ pub trait RealmRepository: Send + Sync {
         &self,
         id: &str,
         name: String,
+        description: Option<String>,
     ) -> impl Future<Output = Result<Realm, CoreError>> + Send;
 
     fn delete_realm(&self, id: &str) -> impl Future<Output = Result<(), CoreError>> + Send;
@@ -186,6 +199,11 @@ pub trait RealmService: Send + Sync {
         identity: Identity,
         id: String,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    fn get_public_realm_info(
+        &self,
+        id: String,
+    ) -> impl Future<Output = Result<RealmSummary, CoreError>> + Send;
 }
 
 // Service implementations

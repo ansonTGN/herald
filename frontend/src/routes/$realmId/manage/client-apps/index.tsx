@@ -88,12 +88,7 @@ function ClientAppsPage() {
           canCreate
             ? {
                 label: 'Add Client App',
-                onClick: () => {
-                  navigate({
-                    to: '/$realmId/manage/client-apps/new',
-                    params: { realmId },
-                  })
-                },
+                onClick: () => navigate({ to: '/$realmId/manage/client-apps/new', params: { realmId } }),
                 testId: 'add-client-app-button',
                 icon: <Plus className="h-4 w-4 mr-2" />,
               }
@@ -105,15 +100,8 @@ function ClientAppsPage() {
         data={data?.items ?? []}
         isLoading={isLoading}
         error={error}
-        onEdit={(app) => {
-          navigate({
-            to: '/$realmId/manage/client-apps/$clientAppId/edit',
-            params: { realmId, clientAppId: app.id },
-          })
-        }}
-        onDelete={(app) => {
-          deleteDialog.open(app)
-        }}
+        onEdit={(app) => navigate({ to: '/$realmId/manage/client-apps/$clientAppId/edit', params: { realmId, clientAppId: app.id } })}
+        onDelete={(app) => deleteDialog.open(app)}
         onToggleEnabled={(app) => toggleMutate(app)}
         canUpdate={canUpdate}
         canDelete={canDelete}

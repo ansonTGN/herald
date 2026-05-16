@@ -11,6 +11,7 @@ use crate::application::http::realm_config::public_helper::{parse_bool, query_co
 pub use crate::application::http::server::api_entities::ErrorResponse;
 use crate::application::http::server::api_entities::{ApiError, ApiResult};
 use crate::application::http::state::AppState;
+use herald_core::domain::realm::{RealmService, RealmSummary};
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +31,8 @@ pub struct OAuthProviderInfo {
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicConfigResponse {
+    pub realm_name: String,
+    pub realm_description: Option<String>,
     pub registration: RegistrationConfig,
     pub oauth_providers: Vec<OAuthProviderInfo>,
 }
@@ -104,7 +107,23 @@ pub async fn get_public_config(
         })
         .collect();
 
+    let realm_info = match state
+        .service
+        .realm_service()
+        .get_public_realm_info(realm_id.clone())
+        .await
+    {
+        Ok(info) => info,
+        Err(_) => RealmSummary {
+            id: realm_id.clone(),
+            name: realm_id.clone(),
+            description: None,
+        },
+    };
+
     Ok(ApiResult::ok(PublicConfigResponse {
+        realm_name: realm_info.name,
+        realm_description: realm_info.description,
         registration: RegistrationConfig {
             allowed,
             require_email_verification,

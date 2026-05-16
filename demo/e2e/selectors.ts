@@ -242,83 +242,57 @@ export const SELECTORS = {
   /**
    * Client Apps Page Selectors
    * Route: /{realmId}/manage/client-apps
-   * Wizard Routes: /{realmId}/manage/client-apps/new, /{realmId}/manage/client-apps/$id/edit
    */
   clientApps: {
     page: '[data-testid="client-apps-page"]',
-    heading: 'h1:has-text("Client Apps")',
+    heading: '[data-testid="client-apps-heading"]',
     table: '[data-testid="client-apps-table"]',
-    addButton: '[data-testid="add-client-app-button"], [aria-label*="add client app" i]',
+    addButton: '[data-testid="add-client-app-button"]',
     searchInput: '[data-testid="client-apps-search-input"]',
+    // Table rows (by row index)
+    rowByIndex: (index: number) => `[data-testid="client-app-row-${index}"]`,
     // Table rows (by app UUID)
     row: (appId: string) => `[data-app-id="${appId}"]`,
-    // Table rows (by client ID - legacy)
+    // Table rows (by client ID)
     rowByClientId: (clientId: string) => `[data-client-id="${clientId}"]`,
     editButton: (appId: string) => `[data-app-id="${appId}"] [data-testid="edit-client-app-button"]`,
     deleteButton: (appId: string) => `[data-app-id="${appId}"] [data-testid="delete-client-app-button"]`,
-    enabledSwitch: (appId: string) => `[data-app-id="${appId}"] [data-testid="enabled-switch"]`,
+    enabledSwitch: (appId: string) => `[data-app-id="${appId}"] [data-testid="client-app-enabled-switch"]`,
   },
 
   /**
-   * Client App Wizard Selectors
-   * Routes: /{realmId}/manage/client-apps/new, /{realmId}/manage/client-apps/$id/edit
+   * Client App Form Page Selectors
+   * Dedicated page with tabs for creating/editing client apps (replaces dialog).
    */
-  clientAppWizard: {
-    container: '[data-testid="client-app-wizard"]',
-    heading: '[data-testid="client-app-wizard-heading"]',
-    // Step indicators (using semantic step IDs from frontend)
-    stepIndicator: '[data-testid="progress-indicator"]',
-    progressStep: (stepId: 'basic' | 'redirect-uris' | 'security' | 'review') =>
-      `[data-testid="progress-step-${stepId}"]`,
-    currentStep: (stepId: 'basic' | 'redirect-uris' | 'security' | 'review') =>
-      `[data-testid="progress-step-${stepId}"][aria-current="step"]`,
-    // Navigation buttons
-    cancelButton: '[data-testid="cancel-button"]',
-    backButton: '[data-testid="back-button"]',
-    nextButton: '[data-testid="next-button"]',
-    submitButton: '[data-testid="submit-button"]',
-    // Step containers
-    step1: '[data-testid="wizard-step-basic"]',
-    step2: '[data-testid="wizard-step-redirect-uris"]',
-    step3: '[data-testid="wizard-step-security"]',
-    step4: '[data-testid="wizard-step-review"]',
-    // Step 1: Basic Info
-    basicInfoStep: '[data-testid="basic-info-step"]',
+  clientAppForm: {
+    // Page container
+    page: '[data-testid="client-app-form-page"]',
+    pageTitle: '[data-testid="page-title"]',
+    // Tab triggers
+    tabBasic: '[data-testid="tab-basic"]',
+    tabRedirectUris: '[data-testid="tab-redirect-uris"]',
+    tabSecurity: '[data-testid="tab-security"]',
+    tabAppearance: '[data-testid="tab-appearance"]',
+    // Basic tab
+    clientIdInput: '[data-testid="client-id-input"]',
+    clientIdDisplay: '[data-testid="client-id-display"]',
     nameInput: '[data-testid="client-app-name-input"]',
     descriptionInput: '[data-testid="client-app-description-input"]',
-    appTypeSelect: '[data-testid="client-app-app-type-select"]',
-    clientTypeRadioGroup: '[data-testid="client-app-client-type-radiogroup"]',
-    clientTypeRadio: (type: 'confidential' | 'public') =>
-      `[data-testid="client-app-client-type-${type}-radio"]`,
-    // Step 2: Redirect URIs
-    redirectUrisStep: '[data-testid="redirect-uris-step"]',
-    redirectUrisInput: '[data-testid="redirect-uris-field"]',
-    addRedirectUriButton: '[data-testid="redirect-uris-add-button"]',
-    removeRedirectUriButton: (index: number) =>
-      `[data-testid="remove-uri-${index}"]`,
-    redirectUriInput: (index: number) =>
-      `[data-testid="uri-item-${index}"]`,
-    // Step 3: Security
-    securityStep: '[data-testid="security-step"]',
-    sessionTtlPreset: (seconds: number) =>
-      `[data-testid="session-ttl-preset-${seconds}"]`,
-    sessionTtlCustomField: '[data-testid="session-ttl-custom-field"]',
-    sessionRenewalTtlField: '[data-testid="session-renewal-ttl-field"]',
-    // Step 4: Review
-    reviewStep: '[data-testid="review-step"]',
-    reviewBasicInfo: '[data-testid="review-basic-info"]',
-    reviewRedirectUris: '[data-testid="review-redirect-uris"]',
-    reviewSecurity: '[data-testid="review-security"]',
-    editStepButton: (stepId: 'basic' | 'redirect-uris' | 'security' | 'review') =>
-      `[data-testid="edit-step-${stepId}"]`,
-    // Draft restore dialog
-    draftRestoreDialog: '[data-testid="draft-restore-dialog"]',
-    draftRestoreDialogTitle: '[data-testid="draft-restore-dialog-title"]',
-    draftRestoreDialogDescription: '[data-testid="draft-restore-dialog-description"]',
-    draftRestoreButton: '[data-testid="draft-restore-button"]',
-    draftDiscardButton: '[data-testid="draft-discard-button"]',
-    // Auto-save toast
-    autoSaveToast: '[data-sonner-toast]:has-text("Auto-saved")',
+    // Redirect URIs tab
+    redirectUrisInput: '[data-testid="redirect-uris-input"]',
+    // Security tab
+    enabledSwitch: '[data-testid="client-app-enabled-switch"]',
+    sessionTtlInput: '[data-testid="session-ttl-input"]',
+    sessionTtlPreset: (label: string) =>
+      `[data-testid="session-ttl-preset-${label}"]`,
+    sessionRenewalTtlInput: '[data-testid="session-renewal-ttl-input"]',
+    deviceCodeGrantSwitch: '[data-testid="device-code-grant-switch"]',
+    regenerateSecretSwitch: '[data-testid="regenerate-secret-switch"]',
+    // Appearance tab
+    iconUrlInput: '[data-testid="icon-url-input"]',
+    // Footer buttons
+    cancelButton: '[data-testid="cancel-button"]',
+    submitButton: '[data-testid="submit-button"]',
   },
 
   /**

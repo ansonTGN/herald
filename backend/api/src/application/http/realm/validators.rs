@@ -58,6 +58,8 @@ pub struct CreateRealmValidator {
     #[validate(length(min = 3, max = 50))]
     pub name: String,
 
+    pub description: Option<String>,
+
     pub admin_user: InitialAdminUserValidator,
 }
 
@@ -76,4 +78,6 @@ pub struct InitialAdminUserValidator {
 pub struct UpdateRealmValidator {
     #[validate(length(min = 3, max = 50))]
     pub name: String,
+
+    pub description: Option<String>,
 }

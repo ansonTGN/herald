@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { updateRealmSchema, type UpdateRealmFormData } from '@/lib/schemas/realm'
-import { getRealm, updateRealm } from '@/lib/api-generated'
+import { updateRealm } from '@/lib/api-generated'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import {
   Dialog,
@@ -14,9 +14,10 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { getFieldErrorMessage } from '@/lib/form-utils'
-import { queryKeys } from '@/data/query-options'
+import { queryKeys, realmQueryOptions } from '@/data/query-options'
 
 interface RealmDetailDialogProps {
   open: boolean
@@ -25,15 +26,8 @@ interface RealmDetailDialogProps {
 }
 
 export function RealmDetailDialog({ open, onOpenChange, realmId }: RealmDetailDialogProps) {
-  const [isEditing, setIsEditing] = useState(false)
-
-  // 获取 Realm 详情
   const { data: realm, isLoading } = useQuery({
-    queryKey: queryKeys.realm(realmId),
-    queryFn: () => {
-      if (!realmId) throw new Error('Realm ID is required')
-      return getRealm({ path: { realmId } })
-    },
+    ...realmQueryOptions(realmId ?? ''),
     enabled: open && !!realmId,
   })
 
@@ -48,7 +42,6 @@ export function RealmDetailDialog({ open, onOpenChange, realmId }: RealmDetailDi
     getSuccessMessage: () => 'Realm updated successfully',
     invalidateQueries: [queryKeys.realmsList(), queryKeys.realm(realmId)],
     onSuccess: () => {
-      setIsEditing(false)
       onOpenChange(false)
     },
   })
@@ -56,61 +49,60 @@ export function RealmDetailDialog({ open, onOpenChange, realmId }: RealmDetailDi
   const form = useAppForm({
     schema: updateRealmSchema,
     defaultValues: {
-      name: realm?.data?.name ?? '',
+      name: realm?.name ?? '',
+      description: realm?.description ?? '',
     },
     onSubmit: async ({ value }) => {
       await mutate(value)
     },
   })
 
-  // 当 realm 数据加载完成后更新表单
   useEffect(() => {
-    if (realm?.data?.name) {
-      form.setFieldValue('name', realm.data.name)
+    if (realm?.name) {
+      form.setFieldValue('name', realm.name)
     }
-  }, [realm?.data, form])
+    if (realm) {
+      form.setFieldValue('description', realm.description ?? '')
+    }
+  }, [realm, form])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]" data-testid="dialog">
         <DialogHeader>
-          <DialogTitle data-testid="dialog-title">Realm Details</DialogTitle>
-          <DialogDescription>View and edit realm information</DialogDescription>
+          <DialogTitle data-testid="dialog-title">Edit Realm</DialogTitle>
+          <DialogDescription>Edit realm information</DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
           <div className="py-4" data-testid="realm-detail-loading">
             Loading...
           </div>
-        ) : realm?.data ? (
+        ) : realm ? (
           <div className="space-y-4">
-            {/* Realm ID (Read-only) */}
             <div className="space-y-2">
               <Label>Realm ID</Label>
-              <Input value={realm.data.id} disabled data-testid="realm-detail-id" />
+              <Input value={realm.id} disabled data-testid="realm-detail-id" />
             </div>
 
-            {/* Created At (Read-only) */}
             <div className="space-y-2">
               <Label>Created At</Label>
               <Input
-                value={new Date(realm.data.createdAt).toLocaleString()}
+                value={new Date(realm.createdAt).toLocaleString()}
                 disabled
                 data-testid="realm-detail-created-at"
               />
             </div>
 
-            {/* Updated At (Read-only) */}
             <div className="space-y-2">
               <Label>Updated At</Label>
               <Input
-                value={new Date(realm.data.updatedAt).toLocaleString()}
+                value={new Date(realm.updatedAt).toLocaleString()}
                 disabled
                 data-testid="realm-detail-updated-at"
               />
             </div>
 
-            {/* Realm Name (Editable) */}
             <AppForm>
               <form
                 id="realm-edit-form"
@@ -128,7 +120,6 @@ export function RealmDetailDialog({ open, onOpenChange, realmId }: RealmDetailDi
                         id="realm-name"
                         value={field.state.value ?? ''}
                         onChange={(e) => field.handleChange(e.target.value)}
-                        disabled={!isEditing}
                         data-testid="realm-detail-name-input"
                       />
                       {(field.state.meta.isTouched || form.state.isSubmitted) &&
@@ -140,41 +131,44 @@ export function RealmDetailDialog({ open, onOpenChange, realmId }: RealmDetailDi
                     </div>
                   )}
                 />
+                <form.Field
+                  name="description"
+                  children={(field) => (
+                    <div className="space-y-2 mt-4">
+                      <Label htmlFor="realm-description">Description</Label>
+                      <Textarea
+                        id="realm-description"
+                        value={field.state.value ?? ''}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        data-testid="realm-detail-description-input"
+                        rows={3}
+                      />
+                    </div>
+                  )}
+                />
               </form>
             </AppForm>
 
             <DialogFooter>
-              {isEditing ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setIsEditing(false)
-                      form.reset()
-                    }}
-                    data-testid="dialog-cancel-button"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    form="realm-edit-form"
-                    disabled={isSubmitting}
-                    data-testid="dialog-submit-button"
-                  >
-                    {isSubmitting ? 'Saving...' : 'Save'}
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={() => setIsEditing(true)}
-                  data-testid="realm-detail-edit-button"
-                >
-                  Edit
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  form.reset()
+                  onOpenChange(false)
+                }}
+                data-testid="dialog-cancel-button"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="realm-edit-form"
+                disabled={isSubmitting}
+                data-testid="dialog-submit-button"
+              >
+                {isSubmitting ? 'Saving...' : 'Save'}
+              </Button>
             </DialogFooter>
           </div>
         ) : null}

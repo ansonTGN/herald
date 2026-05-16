@@ -35,6 +35,7 @@ docs/
 | [users.md](core/users.md) | 用户管理 | ✅ Implemented | Realm Admin, Regular User | - |
 | [realm-settings.md](core/realm-settings.md) | Realm 设置 | ✅ Implemented | Realm Admin | 2026-03-31 |
 | [audit.md](core/audit.md) | Audit 审计日志 | 📝 Draft | Realm Admin, Admin Realm | 2026-05-13 |
+| [dashboard-redesign.md](core/dashboard-redesign.md) | Dashboard 重设计 | 📝 Draft | Realm Admin | 2026-05-16 |
 
 ### Auth 认证与授权
 

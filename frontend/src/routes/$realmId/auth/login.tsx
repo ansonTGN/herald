@@ -21,7 +21,7 @@ import { TotpVerificationForm } from '@/components/auth/totp-verification-form'
 import { publicConfigQueryOptions } from '@/data/query-options'
 import { Link } from '@tanstack/react-router'
 import { useOAuthLogin } from '@/hooks/use-oauth-login'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 
 interface TotpStep {
@@ -47,6 +47,11 @@ function LoginPage() {
   const [globalError, setGlobalError] = useState<string | null>(null)
 
   const { data: publicConfig, isLoading } = useQuery(publicConfigQueryOptions(realmId))
+
+  useEffect(() => {
+    document.title = publicConfig?.realmName ?? 'Herald'
+    return () => { document.title = 'Herald' }
+  }, [publicConfig?.realmName])
 
   const oauthProviders = publicConfig?.oauthProviders ?? []
   const isRegistrationEnabled = publicConfig?.registration?.allowed === true
@@ -161,8 +166,13 @@ function LoginPage() {
   return (
     <AuthPageWrapper>
       <Card className="w-full max-w-md" data-testid="login-card">
-        <CardHeader>
-          <CardTitle data-testid="login-title">Login to CAS Admin</CardTitle>
+        <CardHeader className="text-center">
+          <CardTitle data-testid="login-title" className="text-2xl">
+            {publicConfig?.realmName ?? 'Herald'}
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            {publicConfig?.realmDescription || 'Login to your account'}
+          </p>
         </CardHeader>
         <CardContent>
           {globalError && (

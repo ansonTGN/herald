@@ -33,6 +33,7 @@ pub struct AdminUserResponse {
 pub struct RealmResponse {
     pub id: String,
     pub name: String,
+    pub description: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub admin_user: Option<AdminUserResponse>,
@@ -53,6 +54,7 @@ impl From<Realm> for RealmResponse {
         Self {
             id: realm.id,
             name: realm.name,
+            description: realm.description,
             created_at: realm.created_at.to_rfc3339(),
             updated_at: realm.updated_at.to_rfc3339(),
             admin_user: realm.admin_user.map(AdminUserResponse::from),
@@ -282,6 +284,7 @@ pub async fn create_realm(
     let request = CreateRealmRequest {
         id: payload.id.clone(),
         name: payload.name.clone(),
+        description: payload.description.clone(),
         admin_user: payload.admin_user.into(),
     };
 
@@ -356,6 +359,7 @@ pub async fn update_realm(
 
     let request = UpdateRealmRequest {
         name: Some(payload.name),
+        description: payload.description,
     };
 
     let realm = realm_service

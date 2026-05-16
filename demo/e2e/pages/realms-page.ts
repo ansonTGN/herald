@@ -26,6 +26,7 @@ export interface RealmData {
 export interface CreateRealmData {
   id?: string
   name: string
+  description?: string
   adminEmail: string
   adminPassword: string
 }
@@ -198,6 +199,13 @@ export class RealmsPage extends BasePage {
     }
 
     await this.fillField(this.createNameInput, realmData.name)
+
+    // Fill description if provided
+    if (realmData.description) {
+      const descriptionInput = this.page.locator('[data-testid="realm-create-description-input"]')
+      await this.fillField(descriptionInput, realmData.description)
+    }
+
     await this.fillField(this.createAdminEmailInput, realmData.adminEmail)
     await this.fillField(this.createAdminPasswordInput, realmData.adminPassword)
   }

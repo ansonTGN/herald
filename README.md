@@ -22,6 +22,11 @@ uv run scripts/dev-start.py
 
 Once running: frontend at http://localhost:3000, backend API at http://localhost:8080.
 
+## Demo
+
+- **URL**: https://auth.fornetcode.com
+- **Admin**: admin@cas.com / Herald@2026Admin
+
 ## Documentation
 
 Full tutorials at [docs/tutorials/](docs/tutorials/), covering local development, architecture, configuration, and deployment.

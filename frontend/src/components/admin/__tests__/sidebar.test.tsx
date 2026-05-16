@@ -10,6 +10,14 @@ import { useAuthStore } from '@/stores/auth-store'
 
 let currentPath = '/admin/manage/billing?page=0&pageSize=20&status=all'
 
+vi.mock('@tanstack/react-query', () => ({
+  useQuery: () => ({ data: { id: 'admin', name: 'Admin Realm' } }),
+}))
+
+vi.mock('@/data/query-options', () => ({
+  realmQueryOptions: () => ({ queryKey: ['realm', 'admin'] }),
+}))
+
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
     to,

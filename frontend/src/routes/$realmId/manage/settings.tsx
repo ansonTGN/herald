@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { listRealmConfigs, batchUpsertRealmConfigs } from '@/lib/api-generated'
+import { listRealmConfigs, batchUpsertRealmConfigs, updateRealm } from '@/lib/api-generated'
 import type { UpsertRealmConfigRequest } from '@/lib/api-generated/types.gen'
 import { TOTPConfigForm as TOTPConfigFormComponent } from '@/components/realm-config/totp-config-form'
 import { RegistrationConfigForm as RegistrationConfigFormComponent } from '@/components/realm-config/registration-config-form'
@@ -15,19 +15,113 @@ import {
   buildTOTPConfigRequest,
   buildRegistrationConfigRequest,
 } from '@/lib/realm-config-utils'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { PageHeader } from '@/components/shared'
-import { queryKeys } from '@/data/query-options'
+import { queryKeys, realmQueryOptions } from '@/data/query-options'
+import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
+import { updateRealmSchema, type UpdateRealmFormData } from '@/lib/schemas/realm'
+import { useFormMutation } from '@/hooks/use-form-mutation'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
+import { TextField } from '@/components/shared/form-fields/text-field'
+import { TextareaField } from '@/components/shared/form-fields/textarea-field'
 
 export const Route = createFileRoute('/$realmId/manage/settings')({
   component: SettingsPage,
 })
 
+function GeneralTab({ realmId }: { realmId: string }) {
+  const { data: realm, isLoading } = useQuery(realmQueryOptions(realmId))
+  const auth = useAuth()
+  const canUpdate = auth.permissions?.includes('settings.manage') ?? true
+
+  const { isSubmitting, mutate } = useFormMutation({
+    mutationFn: (data: UpdateRealmFormData) =>
+      updateRealm({ path: { realmId }, body: data }),
+    getSuccessMessage: () => 'Realm updated successfully',
+    invalidateQueries: [queryKeys.realm(realmId)],
+  })
+
+  const form = useAppForm({
+    schema: updateRealmSchema,
+    defaultValues: {
+      name: '',
+      description: '',
+    },
+    onSubmit: async ({ value }) => {
+      await mutate(value)
+    },
+  })
+
+  useEffect(() => {
+    if (realm?.name !== undefined) {
+      form.setFieldValue('name', realm.name)
+    }
+    if (realm !== undefined) {
+      form.setFieldValue('description', realm.description ?? '')
+    }
+  }, [realm, form])
+
+  if (isLoading) return <div>Loading...</div>
+
+  return (
+    <div className="space-y-4 max-w-lg">
+      <div className="space-y-2">
+        <Label>Realm ID</Label>
+        <Input value={realmId} disabled data-testid="general-realm-id" />
+      </div>
+
+      <AppForm>
+        <form
+          id="general-realm-form"
+          onSubmit={async (e) => {
+            e.preventDefault()
+            await form.handleSubmit()
+          }}
+        >
+          <TextField
+            form={form}
+            name="name"
+            label="Realm Name"
+            inputId="general-realm-name"
+            dataTestId="general-realm-name-input"
+            disabled={!canUpdate}
+          />
+          <div className="mt-4">
+            <TextareaField
+              form={form}
+              name="description"
+              label="Description"
+              inputId="general-realm-description"
+              dataTestId="general-realm-description-input"
+              disabled={!canUpdate}
+              rows={3}
+            />
+          </div>
+          {canUpdate && (
+            <div className="mt-4">
+              <Button
+                type="submit"
+                form="general-realm-form"
+                disabled={isSubmitting}
+                data-testid="general-realm-save"
+              >
+                {isSubmitting ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+          )}
+        </form>
+      </AppForm>
+    </div>
+  )
+}
+
 function SettingsPage() {
   const { realmId } = Route.useParams()
   const queryClient = useQueryClient()
   const auth = useAuth()
-  const [activeTab, setActiveTab] = useState('totp')
+  const [activeTab, setActiveTab] = useState('general')
 
   // Permission checks
   const canViewConfig = auth.permissions?.includes('settings.view') ?? true // Temporary default
@@ -141,6 +235,9 @@ function SettingsPage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
+          <TabsTrigger value="general" data-testid="general-tab">
+            General
+          </TabsTrigger>
           <TabsTrigger value="totp" data-testid="totp-tab">
             TOTP
           </TabsTrigger>
@@ -151,6 +248,10 @@ function SettingsPage() {
             Providers
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="general">
+          <GeneralTab realmId={realmId} />
+        </TabsContent>
 
         <TabsContent value="totp">
           <TOTPConfigFormComponent

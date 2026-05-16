@@ -68,6 +68,19 @@ function createRealmColumns(
       cell: ({ row }) => row.getValue('name') || '-',
     },
     {
+      accessorKey: 'description',
+      header: 'Description',
+      cell: ({ row }) => {
+        const desc = row.getValue('description') as string | null | undefined
+        if (!desc) return <span className="text-muted-foreground">&mdash;</span>
+        return (
+          <span className="line-clamp-2 max-w-[200px]" title={desc}>
+            {desc.length > 50 ? desc.slice(0, 50) + '...' : desc}
+          </span>
+        )
+      },
+    },
+    {
       accessorKey: 'createdAt',
       header: ({ column }) => {
         const isSorted = column.getIsSorted()
@@ -109,9 +122,9 @@ function createRealmColumns(
           variant="ghost"
           size="sm"
           onClick={() => onViewDetail?.(row.original)}
-          data-testid={`realm-${row.index}-view-button`}
+          data-testid={`realm-${row.index}-edit-button`}
         >
-          View
+          Edit
         </Button>
       ),
     },

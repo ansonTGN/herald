@@ -27,12 +27,14 @@ const adminUserSchema = z.object({
 export const createRealmSchema = z.object({
   id: realmIdSchema.optional(), // ID is optional - backend will auto-generate if not provided
   name: z.string().min(1, 'Name is required').max(50, 'Name must be at most 50 characters'),
+  description: z.string().optional(),
   adminUser: adminUserSchema, // camelCase 匹配 API
 })
 
-// 更新 Realm Schema（仅 name 字段）
+// 更新 Realm Schema
 export const updateRealmSchema = z.object({
   name: z.string().min(1, 'Name is required').max(50, 'Name must be at most 50 characters'),
+  description: z.string().optional(),
 })
 
 // 类型导出

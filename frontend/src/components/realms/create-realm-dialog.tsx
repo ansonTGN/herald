@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { getFieldErrorMessage } from '@/lib/form-utils'
 import { queryKeys } from '@/data/query-options'
@@ -41,6 +42,7 @@ export function CreateRealmDialog({ open, onOpenChange }: CreateRealmDialogProps
     schema: createRealmSchema,
     defaultValues: {
       name: '',
+      description: '',
       adminUser: {
         email: '',
         password: '',
@@ -110,6 +112,24 @@ export function CreateRealmDialog({ open, onOpenChange }: CreateRealmDialogProps
                         {getFieldErrorMessage(field.state.meta)}
                       </p>
                     )}
+                </div>
+              )}
+            />
+
+            {/* Description */}
+            <form.Field
+              name="description"
+              children={(field) => (
+                <div className="space-y-2">
+                  <Label htmlFor="realm-description">Description</Label>
+                  <Textarea
+                    id="realm-description"
+                    value={field.state.value ?? ''}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    data-testid="realm-create-description-input"
+                    rows={3}
+                    placeholder="Optional description for this realm"
+                  />
                 </div>
               )}
             />

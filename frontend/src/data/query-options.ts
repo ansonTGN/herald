@@ -10,6 +10,7 @@ import {
   getUserRoles,
   adminGetUserRoles,
   listRealmsPaginated,
+  getRealm,
   listClientApps,
   getClientApp,
   listOauthConfigs,
@@ -229,6 +230,14 @@ export const publicConfigQueryOptions = (realmId: string) =>
   })
 
 // ==================== Realms ====================
+
+export const realmQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.realm(realmId),
+    queryFn: async () => handleApiResponse(await getRealm({ path: { realmId } })),
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
 
 export const realmsQueryOptions = (filters: {
   page?: number

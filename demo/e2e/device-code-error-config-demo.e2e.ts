@@ -11,9 +11,9 @@
  *   - Verify UI shows denied text
  *   - Verify CLI receives access_denied error on token poll
  * - Test 3: Admin Enables and Disables Device Code Grant (US-DC-004 all scenarios)
- *   - Create Client App with device code grant enabled via wizard
+ *   - Create Client App with device code grant enabled via form page
  *   - Verify deviceAuthorize succeeds
- *   - Edit app to disable device code grant via wizard
+ *   - Edit app to disable device code grant via form page
  *   - Verify deviceAuthorize fails with unauthorized_client
  *   - Create Client App without device code grant (default disabled)
  *   - Verify deviceAuthorize fails
@@ -62,25 +62,25 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
   test('Invalid and Expired Device Code', async ({ page, loginPage, demoLogger }) => {
     const realmId = DEMO_ADMIN.realmId
 
-    await test.step('Given: 管理员已登录', async () => {
+    await test.step('Given: Admin is logged in', async () => {
       await loginPage.loginAsAdmin(DEMO_ADMIN.email, DEMO_ADMIN.password, realmId)
       console.log('Admin logged in')
     })
 
     const devicePage = new DeviceVerificationPage(page, demoLogger)
 
-    await test.step('When: 用户访问设备验证页面', async () => {
+    await test.step('When: User navigates to device verification page', async () => {
       await devicePage.goto(realmId)
       console.log('Navigated to device verification page')
     })
 
-    await test.step('And: 用户输入从未发出的无效设备码 (US-DC-002 scenario 3)', async () => {
+    await test.step('And: User enters invalid device code (US-DC-002 scenario 3)', async () => {
       // "BCDFGHJK" is 8 valid chars but does not correspond to any real device_code
       await devicePage.enterCode('BCDFGHJK')
       console.log('Entered invalid user code: BCDFGHJK')
     })
 
-    await test.step('Then: 验证页面显示错误信息', async () => {
+    await test.step('Then: Verify error message displayed', async () => {
       await expect(devicePage.error).toBeVisible({ timeout: 10000 })
       const errorText = await devicePage.getErrorText()
       // Error message should indicate the code is invalid or not found
@@ -95,7 +95,7 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
       console.log(`Error message verified: "${errorText}"`)
     })
 
-    await test.step('And: 验证前端过滤无效字符 (只允许 BCDFGHJKMNPQRSTVWXYZ)', async () => {
+    await test.step('And: Verify frontend filters invalid characters', async () => {
       // Navigate back to the input page for a fresh test
       await devicePage.goto(realmId)
 
@@ -124,12 +124,12 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
 
     let clientId: string
 
-    await test.step('Given: 管理员已登录', async () => {
+    await test.step('Given: Admin is logged in', async () => {
       await loginPage.loginAsAdmin(DEMO_ADMIN.email, DEMO_ADMIN.password, realmId)
       console.log('Admin logged in')
     })
 
-    await test.step('And: 准备启用了 Device Code Grant 的 Client App', async () => {
+    await test.step('And: Seed Client App with Device Code Grant enabled', async () => {
       const result = await seedDeviceCodeClientApp(page.request, realmId)
       clientId = result.clientId
       console.log(`Seeded device code client app (clientId=${clientId})`)
@@ -138,7 +138,7 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
     let deviceCode: string
     let userCode: string
 
-    await test.step('When: CLI 发起设备授权请求', async () => {
+    await test.step('When: CLI initiates device authorization request', async () => {
       const response = await deviceAuthorize(undefined, realmId, clientId)
       expect(response.device_code).toBeDefined()
       expect(response.user_code).toBeDefined()
@@ -149,19 +149,19 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
 
     const devicePage = new DeviceVerificationPage(page, demoLogger)
 
-    await test.step('And: 用户在验证页面输入 user_code 并提交', async () => {
+    await test.step('And: User enters user_code on verification page', async () => {
       await devicePage.goto(realmId)
       await devicePage.enterCode(userCode)
       await devicePage.waitForVerified()
       console.log('User code entered and verified')
     })
 
-    await test.step('When: 用户点击"拒绝" (US-DC-002 scenario 5)', async () => {
+    await test.step('When: User clicks "Deny" (US-DC-002 scenario 5)', async () => {
       await devicePage.deny()
       console.log('User denied the device authorization')
     })
 
-    await test.step('Then: 验证结果显示"拒绝"信息', async () => {
+    await test.step('Then: Verify denial result shown', async () => {
       const resultText = await devicePage.getResultText()
       const lowerResult = resultText.toLowerCase()
       expect(
@@ -171,7 +171,7 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
       console.log(`Denial result verified: "${resultText}"`)
     })
 
-    await test.step('Then: CLI 轮询令牌端点收到 access_denied 错误 (US-DC-003 scenario 5)', async () => {
+    await test.step('Then: CLI receives access_denied error (US-DC-003 scenario 5)', async () => {
       const tokenResponse = await deviceTokenPoll(undefined, realmId, deviceCode)
       if ('error' in tokenResponse) {
         expect(tokenResponse.error).toBe('access_denied')
@@ -190,7 +190,7 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
     const realmId = DEMO_ADMIN.realmId
     const ts = testStartTime
 
-    await test.step('Given: 管理员已登录', async () => {
+    await test.step('Given: Admin is logged in', async () => {
       await loginPage.loginAsAdmin(DEMO_ADMIN.email, DEMO_ADMIN.password, realmId)
       console.log('Admin logged in')
     })
@@ -204,34 +204,33 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
     let createdAppId: string
     let createdClientId: string
 
-    await test.step('When: 管理员创建 Client App 并启用 Device Code Grant (US-DC-004 scenario 1)', async () => {
-      // Open create wizard
-      await clientAppsPage.gotoCreateWizard(realmId)
+    await test.step('When: Admin creates Client App with Device Code Grant enabled (US-DC-004 scenario 1)', async () => {
+      // Navigate to page
+      await clientAppsPage.goto(realmId)
 
-      // Step 1: Fill basic info
-      await clientAppsPage.fillStep1BasicInfo({
+      // Open create form page
+      await clientAppsPage.gotoCreatePage()
+
+      // Fill Basic tab
+      await clientAppsPage.fillBasicTab({
         name: `DC Grant Test App ${ts}`,
         description: 'Test app for device code grant toggle',
-        appType: 'Web',
-        clientType: 'confidential',
       })
-      await clientAppsPage.goToNextStep()
 
-      // Step 2: Skip redirect URIs (not required for device code)
-      await clientAppsPage.goToNextStep()
+      // Skip Redirect URIs (not required for device code)
 
-      // Step 3: Security - toggle device code grant ON
-      await expect(clientAppsPage.securityStep).toBeVisible()
-      const dcSwitch = page.locator(DEVICE_CODE_GRANT_SWITCH)
-      await expect(dcSwitch).toBeVisible()
-      await dcSwitch.click()
+      // Switch to Security tab and toggle device code grant ON
+      await clientAppsPage.fillSecurityTab({
+        deviceCodeGrantEnabled: true,
+      })
+
       // Verify switch is ON
+      const dcSwitch = page.locator(DEVICE_CODE_GRANT_SWITCH)
       await expect(dcSwitch).toHaveAttribute('aria-checked', 'true')
       console.log('Device code grant switch toggled ON')
-      await clientAppsPage.goToNextStep()
 
-      // Step 4: Review & Submit
-      await clientAppsPage.submitWizard()
+      // Submit
+      await clientAppsPage.submitForm()
       console.log('Client app created with device code grant enabled')
 
       // Navigate to list page to verify
@@ -239,7 +238,7 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
       await clientAppsPage.waitForClientAppByName(`DC Grant Test App ${ts}`)
     })
 
-    await test.step('Then: 获取新创建 Client App 的 client_id', async () => {
+    await test.step('Then: Get created Client App client_id', async () => {
       // Use page.request to list client apps and find the one by name
       const response = await page.request.get(`${process.env.BASE_URL || 'http://localhost:3000'}/api/client/${realmId}`)
       expect(response.ok()).toBe(true)
@@ -252,7 +251,7 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
       console.log(`Found client app: id=${createdAppId}, client_id=${createdClientId}`)
     })
 
-    await test.step('Then: deviceAuthorize 成功 (200, 包含 device_code)', async () => {
+    await test.step('Then: deviceAuthorize succeeds (200, includes device_code)', async () => {
       const response = await deviceAuthorize(undefined, realmId, createdClientId)
       expect(response.device_code).toBeDefined()
       expect(response.user_code).toBeDefined()
@@ -263,32 +262,30 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
     // US-DC-004 Scenario 2: Disable Device Code Grant
     // -------------------------------------------------------------------------
 
-    await test.step('When: 管理员编辑 Client App 并禁用 Device Code Grant (US-DC-004 scenario 2)', async () => {
-      // Navigate to edit wizard for the created app
-      await clientAppsPage.gotoEditWizard(realmId, createdAppId)
+    await test.step('When: Admin edits Client App and disables Device Code Grant (US-DC-004 scenario 2)', async () => {
+      // Navigate to list
+      await clientAppsPage.goto(realmId)
 
-      // Navigate to Step 3 (Security)
-      // Step 1 -> Next
-      await clientAppsPage.goToNextStep()
-      // Step 2 -> Next
-      await clientAppsPage.goToNextStep()
+      // Open edit page by name
+      await clientAppsPage.gotoEditPage(`DC Grant Test App ${ts}`)
 
-      // Step 3: Toggle device code grant OFF
-      await expect(clientAppsPage.securityStep).toBeVisible()
+      // Switch to Security tab
+      await clientAppsPage.switchTab('security')
+
+      // Toggle device code grant OFF
       const dcSwitch = page.locator(DEVICE_CODE_GRANT_SWITCH)
       await expect(dcSwitch).toBeVisible()
       await dcSwitch.click()
       // Verify switch is OFF
       await expect(dcSwitch).toHaveAttribute('aria-checked', 'false')
       console.log('Device code grant switch toggled OFF')
-      await clientAppsPage.goToNextStep()
 
-      // Step 4: Review & Submit
-      await clientAppsPage.submitWizard()
+      // Submit changes
+      await clientAppsPage.submitForm()
       console.log('Client app updated with device code grant disabled')
     })
 
-    await test.step('Then: deviceAuthorize 返回错误 (403 unauthorized_client)', async () => {
+    await test.step('Then: deviceAuthorize returns error (403 unauthorized_client)', async () => {
       try {
         await deviceAuthorize(undefined, realmId, createdClientId)
         throw new Error('Expected deviceAuthorize to fail for disabled client')
@@ -306,33 +303,30 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
     let defaultAppId: string
     let defaultClientId: string
 
-    await test.step('When: 管理员创建新 Client App 但不启用 Device Code Grant (US-DC-004 scenario 3)', async () => {
-      // Open create wizard
-      await clientAppsPage.gotoCreateWizard(realmId)
+    await test.step('When: Admin creates Client App without enabling Device Code Grant (US-DC-004 scenario 3)', async () => {
+      // Navigate to page
+      await clientAppsPage.goto(realmId)
 
-      // Step 1: Fill basic info
-      await clientAppsPage.fillStep1BasicInfo({
+      // Open create form page
+      await clientAppsPage.gotoCreatePage()
+
+      // Fill Basic tab
+      await clientAppsPage.fillBasicTab({
         name: `DC Grant Default App ${ts}`,
         description: 'Test app with default device code grant (disabled)',
-        appType: 'Web',
-        clientType: 'confidential',
       })
-      await clientAppsPage.goToNextStep()
 
-      // Step 2: Configure redirect URI for the default OAuth flow
-      await clientAppsPage.fillStep2RedirectUris([`https://default-${ts}.example.com/callback`])
-      await clientAppsPage.goToNextStep()
+      // Configure redirect URI for the default OAuth flow
+      await clientAppsPage.fillRedirectUrisTab([`https://default-${ts}.example.com/callback`])
 
-      // Step 3: Security - do NOT toggle device code grant (leave as default OFF)
-      await expect(clientAppsPage.securityStep).toBeVisible()
+      // Switch to Security tab and verify default is OFF
+      await clientAppsPage.switchTab('security')
       const dcSwitch = page.locator(DEVICE_CODE_GRANT_SWITCH)
-      // Verify default state is OFF
       await expect(dcSwitch).toHaveAttribute('aria-checked', 'false')
       console.log('Device code grant is OFF by default (verified)')
-      await clientAppsPage.goToNextStep()
 
-      // Step 4: Review & Submit
-      await clientAppsPage.submitWizard()
+      // Submit
+      await clientAppsPage.submitForm()
       console.log('Client app created with default device code grant (disabled)')
 
       // Navigate to list page
@@ -340,7 +334,7 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
       await clientAppsPage.waitForClientAppByName(`DC Grant Default App ${ts}`)
     })
 
-    await test.step('Then: 获取新创建 Client App 的 client_id', async () => {
+    await test.step('Then: Get default Client App client_id', async () => {
       const response = await page.request.get(`${process.env.BASE_URL || 'http://localhost:3000'}/api/client/${realmId}`)
       expect(response.ok()).toBe(true)
       const appsPayload = await response.json()
@@ -352,7 +346,7 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
       console.log(`Found default client app: id=${defaultAppId}, client_id=${defaultClientId}`)
     })
 
-    await test.step('Then: deviceAuthorize 失败 (默认禁用)', async () => {
+    await test.step('Then: deviceAuthorize fails (default disabled)', async () => {
       try {
         await deviceAuthorize(undefined, realmId, defaultClientId)
         throw new Error('Expected deviceAuthorize to fail for default-disabled client')

@@ -2,9 +2,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import { lazy, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
 
-const ClientAppWizard = lazy(() =>
-  import('@/components/client-apps/client-app-wizard').then((m) => ({
-    default: m.ClientAppWizard,
+const ClientAppFormPage = lazy(() =>
+  import('@/components/client-apps/client-app-form-page').then((m) => ({
+    default: m.ClientAppFormPage,
   }))
 )
 
@@ -16,15 +16,15 @@ function NewClientAppPage() {
   const { realmId } = Route.useParams()
 
   return (
-    <div className="container max-w-3xl mx-auto py-12 px-6">
+    <div className="container max-w-4xl mx-auto py-6 px-6">
       <Suspense
         fallback={
-          <div className="flex items-center justify-center py-12" data-testid="wizard-loading">
+          <div className="flex items-center justify-center py-12" data-testid="client-app-form-loading">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         }
       >
-        <ClientAppWizard mode="create" realmId={realmId} />
+        <ClientAppFormPage mode="create" realmId={realmId} />
       </Suspense>
     </div>
   )

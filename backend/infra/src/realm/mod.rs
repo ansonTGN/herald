@@ -25,6 +25,7 @@ impl PostgresRealmRepository {
         Realm {
             id: model.id.clone(),
             name: model.name.clone(),
+            description: model.description.clone(),
             created_at: model.created_at.into(),
             updated_at: model.updated_at.into(),
             admin_user: None, // Not stored in database, only returned on creation
@@ -71,6 +72,7 @@ impl RealmRepository for PostgresRealmRepository {
         let active_model = realm::ActiveModel {
             id: sea_orm::Set(realm_id.clone()),
             name: sea_orm::Set(request.name),
+            description: sea_orm::Set(request.description),
             created_at: sea_orm::Set(now.into()),
             updated_at: sea_orm::Set(now.into()),
         };
@@ -198,7 +200,7 @@ impl RealmRepository for PostgresRealmRepository {
         })
     }
 
-    async fn update_realm(&self, id: &str, name: String) -> Result<Realm, CoreError> {
+    async fn update_realm(&self, id: &str, name: String, description: Option<String>) -> Result<Realm, CoreError> {
         let mut active_model: realm::ActiveModel = realm::Entity::find_by_id(id.to_string())
             .one(&*self.db)
             .await?
@@ -206,6 +208,7 @@ impl RealmRepository for PostgresRealmRepository {
             .into();
 
         active_model.name = sea_orm::Set(name);
+        active_model.description = sea_orm::Set(description);
         active_model.updated_at = sea_orm::Set(chrono::Utc::now().into());
 
         let result = active_model.update(&*self.db).await?;
