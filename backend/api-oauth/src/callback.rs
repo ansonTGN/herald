@@ -12,7 +12,7 @@ use validator::Validate;
 
 use crate::helper::handle_oauth_callback;
 use herald_api_base::application::http::auth::util::{
-    SessionData, build_set_cookie, extract_ip, store_session,
+    SessionData, build_set_cookie, extract_ip, renewal_ttl_seconds_from_i32, store_session,
 };
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
@@ -104,21 +104,27 @@ async fn oauth_callback_inner(
     .await?;
 
     let session_token = Uuid::now_v7().to_string();
-    let session_ttl_seconds =
-        load_client_session_ttl_seconds(&state, &realm_id, &client_id).await?;
+    let session_config = load_client_session_config(&state, &realm_id, &client_id).await?;
     let session_data = SessionData {
         realm_id: realm_id.clone(),
         client_id,
         user_id: user_id.to_string(),
         client_ip: extract_ip(&headers),
+        renewal_ttl_seconds: session_config.renewal_ttl_seconds,
     };
 
-    store_session(&state, &session_token, &session_data, session_ttl_seconds).await?;
+    store_session(
+        &state,
+        &session_token,
+        &session_data,
+        session_config.ttl_seconds,
+    )
+    .await?;
 
     let set_cookie = build_set_cookie(
         "X-Auth",
         &session_token,
-        session_ttl_seconds as i64,
+        session_config.ttl_seconds as i64,
         state.app_env == "production",
     );
 
@@ -151,13 +157,18 @@ async fn oauth_callback_inner(
     // Ok(Redirect::to(&format!("{}/oauth/callback?token=...", redirect_uri)))
 }
 
-async fn load_client_session_ttl_seconds(
+struct ClientSessionConfig {
+    ttl_seconds: usize,
+    renewal_ttl_seconds: Option<u64>,
+}
+
+async fn load_client_session_config(
     state: &AppState,
     realm_id: &str,
     client_id: &str,
-) -> Result<usize, ApiError> {
-    let ttl = sqlx::query_scalar::<_, i32>(
-        "SELECT session_ttl_seconds FROM client_app WHERE realm_id = $1 AND client_id = $2 AND enabled = true",
+) -> Result<ClientSessionConfig, ApiError> {
+    let config = sqlx::query_as::<_, (i32, Option<i32>)>(
+        "SELECT session_ttl_seconds, session_renewal_ttl_seconds FROM client_app WHERE realm_id = $1 AND client_id = $2 AND enabled = true",
     )
     .bind(realm_id)
     .bind(client_id)
@@ -173,12 +184,15 @@ async fn load_client_session_ttl_seconds(
         ApiError::internal("Failed to load client session configuration".to_string())
     })?;
 
-    let Some(ttl) = ttl else {
+    let Some((ttl, renewal_ttl)) = config else {
         return Err(ApiError::bad_request(
             "OAuth client app is not enabled".to_string(),
         ));
     };
 
-    usize::try_from(ttl)
-        .map_err(|_| ApiError::internal("Client session TTL is invalid".to_string()))
+    Ok(ClientSessionConfig {
+        ttl_seconds: usize::try_from(ttl)
+            .map_err(|_| ApiError::internal("Client session TTL is invalid".to_string()))?,
+        renewal_ttl_seconds: renewal_ttl_seconds_from_i32(renewal_ttl)?,
+    })
 }

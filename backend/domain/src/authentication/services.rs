@@ -62,6 +62,7 @@ where
             client_id: client_id.clone(),
             user_id: user.id.to_string(),
             client_ip,
+            renewal_ttl_seconds: None,
         };
 
         // Generate session token
@@ -96,6 +97,7 @@ where
         client_id: String,
         client_ip: String,
         ttl_seconds: u64,
+        renewal_ttl_seconds: Option<u64>,
     ) -> Result<(Session, Identity), CoreError> {
         // Create session data first
         let session_data = SessionData {
@@ -103,6 +105,7 @@ where
             client_id: client_id.clone(),
             user_id: user.id.to_string(),
             client_ip,
+            renewal_ttl_seconds,
         };
 
         // Generate session token
@@ -176,6 +179,7 @@ where
             client_id: session_data.client_id.clone(),
             user_id: session_data.user_id.clone(),
             client_ip: session_data.client_ip.clone(),
+            renewal_ttl_seconds: session_data.renewal_ttl_seconds,
         };
 
         self.session_repository

@@ -33,6 +33,8 @@ pub struct SessionData {
     pub client_id: String,
     pub user_id: String,
     pub client_ip: String,
+    #[serde(default)]
+    pub renewal_ttl_seconds: Option<u64>,
 }
 
 impl Session {

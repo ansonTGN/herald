@@ -12,7 +12,8 @@ use uuid::Uuid;
 use validator::Validate;
 
 use herald_api_base::application::http::auth::util::{
-    SessionData, build_set_cookie, epoch_seconds, extract_ip, rate_limit_hit, store_session,
+    SessionData, build_set_cookie, epoch_seconds, extract_ip, rate_limit_hit,
+    renewal_ttl_seconds_from_i32, store_session,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -153,6 +154,7 @@ pub async fn handle_verify_totp(
         .await
         .map_err(|_| ApiError::internal("Client app lookup failed".to_string()))?;
     let session_ttl = client_app.session_ttl_seconds as usize;
+    let renewal_ttl_seconds = renewal_ttl_seconds_from_i32(client_app.session_renewal_ttl_seconds)?;
 
     // 2. Check rate limits
     rate_limit_hit(
@@ -331,6 +333,7 @@ pub async fn handle_verify_totp(
         client_id: temp_session.client_id,
         user_id: temp_session.user_id.clone(),
         client_ip,
+        renewal_ttl_seconds,
     };
 
     store_session(&state, &token, &session_data, session_ttl).await?;

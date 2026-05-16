@@ -1,13 +1,16 @@
 // Identity injection middleware
 // Reconstructs Identity enum from SessionData and injects into Request extensions
 
-use crate::application::http::auth::util::require_session;
+use crate::application::http::auth::util::{
+    build_set_cookie, get_cookie, load_session_with_ttl, refresh_session_ttl,
+};
 use crate::application::http::server::api_entities::ApiError;
 use crate::application::http::state::AppState;
 use axum::{
     extract::{Request, State},
+    http::{HeaderValue, header::SET_COOKIE},
     middleware::Next,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::user::UserRepository;
@@ -35,7 +38,23 @@ pub async fn inject_identity(
     let headers = req.headers().clone();
 
     // Extract session from cookie/header
-    let (_token, session_data) = require_session(&state, &headers).await?;
+    let token =
+        get_cookie(&headers, "X-Auth").ok_or_else(|| ApiError::unauthorized("missing session"))?;
+    let (session_data, current_ttl) = load_session_with_ttl(&state, &token)
+        .await?
+        .ok_or_else(|| ApiError::unauthorized("invalid session"))?;
+
+    let renewal_ttl = session_data.renewal_ttl_seconds;
+    let should_renew = renewal_ttl.is_some_and(|rt| current_ttl <= (rt / 2).max(1));
+
+    if should_renew {
+        refresh_session_ttl(
+            &state,
+            &token,
+            renewal_ttl.expect("checked by should_renew"),
+        )
+        .await?;
+    }
 
     // Parse user_id from session with validation
     let session_user_id = &session_data.user_id;
@@ -93,5 +112,16 @@ pub async fn inject_identity(
     let mut req = req;
     req.extensions_mut().insert(identity.clone());
 
-    Ok(next.run(req).await)
+    let mut response: Response = next.run(req).await;
+    if should_renew {
+        let rt = renewal_ttl.expect("checked by should_renew");
+        let max_age = i64::try_from(rt)
+            .map_err(|_| ApiError::internal("Session renewal TTL is invalid".to_string()))?;
+        let set_cookie = build_set_cookie("X-Auth", &token, max_age, state.app_env == "production");
+        let value = HeaderValue::from_str(&set_cookie)
+            .map_err(|_| ApiError::internal("Internal server error"))?;
+        response.headers_mut().append(SET_COOKIE, value);
+    }
+
+    Ok(response)
 }

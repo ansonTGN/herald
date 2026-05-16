@@ -281,7 +281,7 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                 name="sessionTtlSeconds"
                 children={(field) => (
                   <div className="space-y-2">
-                    <Label htmlFor="session-ttl">Session TTL (seconds)</Label>
+                    <Label htmlFor="session-ttl">Initial Session TTL (seconds)</Label>
                     <Input
                       id="session-ttl"
                       type="number"
@@ -320,7 +320,7 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                 name="sessionRenewalTtlSeconds"
                 children={(field) => (
                   <div className="space-y-2">
-                    <Label htmlFor="session-renewal-ttl">Session Renewal TTL (seconds)</Label>
+                    <Label htmlFor="session-renewal-ttl">Sliding Renewal TTL (seconds)</Label>
                     <Input
                       id="session-renewal-ttl"
                       type="number"
@@ -329,7 +329,7 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                         const val = e.target.value
                         field.handleChange(val === '' ? null : Number(val))
                       }}
-                      placeholder="Optional — enables sliding sessions"
+                      placeholder="Optional - disabled when empty"
                       min={60}
                       max={604800}
                       data-testid="session-renewal-ttl-input"

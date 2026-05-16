@@ -83,6 +83,17 @@ pub struct SessionData {
     pub client_id: String, // External identifier (TEXT, e.g., 'admin-web-console')
     pub user_id: String,
     pub client_ip: String,
+    #[serde(default)]
+    pub renewal_ttl_seconds: Option<u64>,
+}
+
+pub fn renewal_ttl_seconds_from_i32(value: Option<i32>) -> Result<Option<u64>, ApiError> {
+    value
+        .map(|ttl| {
+            u64::try_from(ttl)
+                .map_err(|_| ApiError::internal("Session renewal TTL is invalid".to_string()))
+        })
+        .transpose()
 }
 
 pub async fn store_session(
@@ -114,6 +125,72 @@ pub async fn store_session(
 
 pub async fn load_session(state: &AppState, token: &str) -> Result<Option<SessionData>, ApiError> {
     load_session_with_ip_validation(state, token, None).await
+}
+
+pub async fn load_session_with_ttl(
+    state: &AppState,
+    token: &str,
+) -> Result<Option<(SessionData, u64)>, ApiError> {
+    let key = format!("sess:{token}");
+
+    let mut conn = state
+        .redis_manager
+        .get()
+        .await
+        .map_err(|_| ApiError::internal("Internal server error"))?;
+
+    let (val, ttl): (Option<String>, i64) = redis::pipe()
+        .cmd("GET")
+        .arg(&key)
+        .cmd("TTL")
+        .arg(&key)
+        .query_async(&mut conn)
+        .await
+        .map_err(|_| ApiError::internal("Internal server error"))?;
+
+    let Some(val) = val else {
+        return Ok(None);
+    };
+
+    if ttl == -2 {
+        return Ok(None);
+    }
+    if ttl < 0 {
+        tracing::error!(token = %token, ttl, "Session key has invalid TTL");
+        return Err(ApiError::internal("Internal server error"));
+    }
+
+    let data: SessionData = serde_json::from_str(&val)
+        .map_err(|_| ApiError::internal("Failed to deserialize session data"))?;
+
+    Ok(Some((data, ttl as u64)))
+}
+
+pub async fn refresh_session_ttl(
+    state: &AppState,
+    token: &str,
+    ttl_secs: u64,
+) -> Result<(), ApiError> {
+    let key = format!("sess:{token}");
+    let ttl_secs = i64::try_from(ttl_secs)
+        .map_err(|_| ApiError::internal("Session renewal TTL is invalid".to_string()))?;
+
+    let mut conn = state
+        .redis_manager
+        .get()
+        .await
+        .map_err(|_| ApiError::internal("Internal server error"))?;
+
+    let refreshed: bool = conn
+        .expire(key, ttl_secs)
+        .await
+        .map_err(|_| ApiError::internal("Internal server error"))?;
+
+    if !refreshed {
+        return Err(ApiError::unauthorized("invalid session"));
+    }
+
+    Ok(())
 }
 
 /// Load session and optionally validate client IP
@@ -401,4 +478,19 @@ pub async fn require_permission(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SessionData;
+
+    #[test]
+    fn session_data_defaults_missing_renewal_ttl_to_none() {
+        let data: SessionData = serde_json::from_str(
+            r#"{"realm_id":"admin","client_id":"admin-web-console","user_id":"user-1","client_ip":"127.0.0.1"}"#,
+        )
+        .expect("legacy session without renewal_ttl_seconds should deserialize");
+
+        assert_eq!(data.renewal_ttl_seconds, None);
+    }
 }

@@ -45,12 +45,12 @@ export const createClientAppSchema = z
   .refine(
     (data) => {
       if (data.sessionRenewalTtlSeconds != null && data.sessionTtlSeconds != null) {
-        return data.sessionRenewalTtlSeconds > data.sessionTtlSeconds
+        return data.sessionRenewalTtlSeconds >= data.sessionTtlSeconds
       }
       return true
     },
     {
-      message: 'Session renewal TTL must be greater than session TTL',
+      message: 'Session renewal TTL must be greater than or equal to session TTL',
       path: ['sessionRenewalTtlSeconds'],
     }
   )
@@ -70,12 +70,12 @@ export const updateClientAppSchema = z
   .refine(
     (data) => {
       if (data.sessionRenewalTtlSeconds != null && data.sessionTtlSeconds != null) {
-        return data.sessionRenewalTtlSeconds > data.sessionTtlSeconds
+        return data.sessionRenewalTtlSeconds >= data.sessionTtlSeconds
       }
       return true
     },
     {
-      message: 'Session renewal TTL must be greater than session TTL',
+      message: 'Session renewal TTL must be greater than or equal to session TTL',
       path: ['sessionRenewalTtlSeconds'],
     }
   )

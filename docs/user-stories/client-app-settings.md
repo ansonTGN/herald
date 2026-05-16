@@ -127,10 +127,10 @@ Then 用户 Session 在 5 分钟后过期，必须重新登录
 
 **场景 2：设置宽松的 Session 策略（企业内部工具）**
 Given 管理员在 Client App 设置页面
-When 管理员设置 session_ttl_seconds 为 28800（8小时）
-And 设置 session_renewal_ttl_seconds 为 28800（允许续期到8小时）
+When 管理员设置 session_ttl_seconds 为 28800（初始8小时）
+And 设置 session_renewal_ttl_seconds 为 28800（活跃认证请求触发续期时刷新为8小时）
 And 点击保存
-Then 用户 Session 可持续 8 小时，并可通过续期延长
+Then 用户保持活跃时 Session 可通过受保护 API 自动滑动续期
 
 **场景 3：设置渐进式安全策略**
 Given 管理员在 Client App 设置页面
@@ -141,8 +141,8 @@ Then 用户首次登录获得 5 分钟 Session，续期后延长到 2 小时
 
 **场景 4：禁止续期时的错误提示**
 Given Client App 的 session_renewal_ttl_seconds 为 null
-When 用户尝试刷新 Session
-Then 系统返回 401 Unauthorized，提示需要重新登录
+When 用户访问受保护 API
+Then 系统不会刷新 Redis Session TTL，也不会追加新的 Set-Cookie
 
 ---
 
@@ -155,9 +155,10 @@ Then 系统返回 401 Unauthorized，提示需要重新登录
    - OAuth 授权时严格验证 redirect_uri 是否在白名单中
 
 2. **Session 配置规则**：
-   - `session_ttl_seconds`：Cookie 初始有效期，默认 1800（30分钟）
+   - `session_ttl_seconds`：登录创建 Session 时的初始有效期，默认 1800（30分钟）
    - `session_renewal_ttl_seconds`：续期后的有效期，**NULL 表示不允许续期**
-   - 续期时删除旧 Session，生成新 Token
+   - 受保护 API 认证成功且 Redis TTL 低于阈值时，同一个 Session Token 的 Redis TTL 和 Cookie Max-Age 会刷新为 `session_renewal_ttl_seconds`
+   - 配置变更只影响新创建的 Session；已存在 Session 使用创建时固化的续期策略
 
 3. **安全考虑**：
    - `client_secret` 创建时自动生成 UUID，只能通过管理接口重新生成
@@ -167,7 +168,7 @@ Then 系统返回 401 Unauthorized，提示需要重新登录
 ### 边界说明
 - Realm 管理员只能管理本 Realm 的 Client App 设置
 - 删除 Client App 时级联删除其设置（ON DELETE CASCADE）
-- 修改设置后立即生效，无需重启服务
+- 修改设置后对新 Session 生效，无需重启服务
 
 ---
 

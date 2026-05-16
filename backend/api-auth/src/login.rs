@@ -11,7 +11,8 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use herald_api_base::application::http::auth::util::{
-    build_set_cookie, extract_ip, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
+    build_set_cookie, extract_ip, normalize_email, rate_limit_hit, renewal_ttl_seconds_from_i32,
+    verify_turnstile_for_realm,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -341,6 +342,11 @@ pub async fn login(
     } else {
         client_app.session_ttl_seconds as u64
     };
+    let renewal_ttl_seconds = if is_oauth_flow {
+        None
+    } else {
+        renewal_ttl_seconds_from_i32(client_app.session_renewal_ttl_seconds)?
+    };
 
     tracing::debug!(
         "Creating session with user_id: {}, realm_id: {}, client_id: {}",
@@ -352,7 +358,13 @@ pub async fn login(
     // Use AuthenticationService to create session with proper client_id
     let auth_service = state.service.authentication_service();
     let (session, identity) = auth_service
-        .create_session(user.clone(), payload.client_id.clone(), ip.clone(), ttl)
+        .create_session(
+            user.clone(),
+            payload.client_id.clone(),
+            ip.clone(),
+            ttl,
+            renewal_ttl_seconds,
+        )
         .await
         .map_err(|e| match e {
             herald_core::domain::common::entities::app_errors::CoreError::NotFound => {

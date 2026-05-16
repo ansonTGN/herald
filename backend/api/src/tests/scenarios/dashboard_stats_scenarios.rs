@@ -349,6 +349,7 @@ async fn test_scenario_dashboard_stats_empty_realm_returns_zeros(ctx: &mut TestC
         client_id: ctx._client_id.clone(),
         user_id: empty_admin_id.clone(),
         client_ip: "127.0.0.1".to_string(),
+        renewal_ttl_seconds: None,
     };
     crate::application::http::auth::util::store_session(
         &ctx._app_state,
@@ -511,6 +512,7 @@ async fn test_scenario_dashboard_stats_realm_isolation_no_leakage(ctx: &mut Test
         client_id: ctx._client_id.clone(),
         user_id: realm_b_admin_id.clone(),
         client_ip: "127.0.0.1".to_string(),
+        renewal_ttl_seconds: None,
     };
     crate::application::http::auth::util::store_session(
         &ctx._app_state,

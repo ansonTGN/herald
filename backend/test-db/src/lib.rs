@@ -144,8 +144,8 @@ pub async fn init_template_data(pool: &PgPool, schema_name: &str) {
         .expect("Failed to insert template realm");
 
     sqlx::query(
-        r#"INSERT INTO client_app (realm_id, client_id, name, description, redirect_uris, enabled, session_ttl_seconds, client_secret)
-        VALUES ($1, 'admin-web-console', 'Admin Console', 'Admin Console for Testing', '["http://localhost:3000/callback"]'::jsonb, true, 1800, 'test-secret')"#,
+        r#"INSERT INTO client_app (realm_id, client_id, name, description, redirect_uris, enabled, session_ttl_seconds, session_renewal_ttl_seconds, client_secret)
+        VALUES ($1, 'admin-web-console', 'Admin Console', 'Admin Console for Testing', '["http://localhost:3000/callback"]'::jsonb, true, 1800, 86400, 'test-secret')"#,
     )
     .bind(realm_id)
     .execute(&mut *conn)

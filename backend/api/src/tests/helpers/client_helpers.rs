@@ -174,6 +174,7 @@ pub async fn create_test_user_with_permissions(
         client_id: ctx._client_id.clone(),
         user_id: user_id.to_string(),
         client_ip: "127.0.0.1".to_string(),
+        renewal_ttl_seconds: None,
     };
     store_session(
         &ctx._app_state,

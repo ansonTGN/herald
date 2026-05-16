@@ -63,6 +63,7 @@ pub trait AuthenticationService: Send + Sync {
         client_id: String,
         client_ip: String,
         ttl_seconds: u64,
+        renewal_ttl_seconds: Option<u64>,
     ) -> impl Future<Output = Result<(Session, Identity), CoreError>> + Send;
 
     fn logout(&self, token: String) -> impl Future<Output = Result<(), CoreError>> + Send;

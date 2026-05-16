@@ -37,6 +37,8 @@ struct SessionDataInternal {
     client_id: String,
     user_id: String,
     client_ip: String,
+    #[serde(default)]
+    renewal_ttl_seconds: Option<u64>,
 }
 
 impl SessionRepository for RedisSessionRepository {
@@ -53,6 +55,7 @@ impl SessionRepository for RedisSessionRepository {
             client_id: data.client_id,
             user_id: data.user_id,
             client_ip: data.client_ip,
+            renewal_ttl_seconds: data.renewal_ttl_seconds,
         };
 
         let value = serde_json::to_string(&data_internal)?;
@@ -96,6 +99,7 @@ impl SessionRepository for RedisSessionRepository {
             client_id: data_internal.client_id,
             user_id: data_internal.user_id,
             client_ip: data_internal.client_ip,
+            renewal_ttl_seconds: data_internal.renewal_ttl_seconds,
         }))
     }
 

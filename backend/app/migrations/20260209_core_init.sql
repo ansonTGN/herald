@@ -104,8 +104,8 @@ COMMENT ON COLUMN client_app.client_id IS 'External client identifier for API us
 COMMENT ON COLUMN client_app.redirect_uris IS 'Redirect URI whitelist, JSON array format, must contain at least one valid HTTPS address (HTTP allowed in dev)';
 COMMENT ON COLUMN client_app.enabled IS 'Whether the client app is enabled, OAuth authorization cannot be completed when disabled';
 COMMENT ON COLUMN client_app.icon_url IS 'App icon URL, optional';
-COMMENT ON COLUMN client_app.session_ttl_seconds IS 'Initial session validity period (seconds), default 1800 (30 minutes)';
-COMMENT ON COLUMN client_app.session_renewal_ttl_seconds IS 'Session validity period after renewal (seconds), NULL means renewal not allowed';
+COMMENT ON COLUMN client_app.session_ttl_seconds IS 'Initial session validity period at login (seconds), default 1800 (30 minutes)';
+COMMENT ON COLUMN client_app.session_renewal_ttl_seconds IS 'Sliding session validity period after active protected API renewal (seconds), NULL means renewal not allowed';
 COMMENT ON COLUMN client_app.client_secret IS 'OAuth client secret, UUID auto-generated on creation';
 COMMENT ON INDEX client_app_realm_client_idx IS 'Unique constraint on (realm_id, client_id) for external lookups';
 COMMENT ON INDEX idx_client_app_realm_enabled IS 'Index for filtering enabled client apps by realm';
@@ -492,5 +492,5 @@ INSERT INTO realm (id, name)
 VALUES ('admin', 'Admin Realm');
 
 -- Insert default admin client app
-INSERT INTO client_app (id, realm_id, client_id, name)
-VALUES (uuidv7(), 'admin', 'admin-web-console', 'Admin Client App');
+INSERT INTO client_app (id, realm_id, client_id, name, session_renewal_ttl_seconds)
+VALUES (uuidv7(), 'admin', 'admin-web-console', 'Admin Client App', 86400);
