@@ -1,6 +1,13 @@
 ---
 name: backend-test-run
 description: Backend test runner and fix orchestrator. Use this skill for runner items, backend test execution, failure diagnosis, "uv run scripts/backend-test.py", and fix/retest loops. It runs targeted tests, classifies failures, delegates production-code fixes to backend-dev, and protects scenario-test semantics.
+tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+  - Task
+  - Agent
 ---
 
 # Backend Test Run
@@ -74,7 +81,7 @@ The runner may update tests only for mechanical issues. It must not weaken or re
 
 ### 5. Delegate Production Fixes
 
-When delegating to `backend-dev`, the prompt must include:
+When delegating to `backend-dev`, use `Agent(subagent_type="backend-dev")` and the prompt must include:
 
 ```markdown
 Task: Fix this backend test failure in production code.

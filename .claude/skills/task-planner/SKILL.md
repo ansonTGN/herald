@@ -15,6 +15,7 @@ tools:
   - TaskUpdate
   - TaskList
   - TaskGet
+  - Agent
 ---
 
 # 任务规划生成助手
@@ -113,7 +114,7 @@ tools:
 3. 校验阶段前置状态。
 4. 提取并过滤阶段 agents。
 5. 若目标阶段为 `frontend`，先执行 `cd frontend && npm run generate-api && cd ../`。
-6. 按 slot 串行调度当前阶段 agents：
+6. 按 slot 串行调度当前阶段 agents。每个 slot agent 必须通过 `Agent` tool 启动，`subagent_type` 按 Agent Dispatch Mapping 映射。传入 prompt 必须包含：设计文档相关节、上游 slot handoff（如有）、`.claude/guides/` 路径、Agent Output Contract 要求的字段列表。
    - backend/frontend: `dev -> test -> accept`
    - demo: `dev -> accept`
 7. 每个 slot agent 返回 manifest 和 item 集合。
@@ -130,6 +131,19 @@ tools:
 12. 当前阶段 slot 齐备后生成 `<phase>/index.md`。
 13. 更新 `.state.json`。
 14. 返回下一步建议：`/t-run [feature] --phase [phase]`。
+
+## Agent Dispatch Mapping
+
+| phase | slot | subagent_type |
+|-------|------|---------------|
+| backend | dev | backend-dev |
+| backend | test | backend-test |
+| backend | accept | backend-accept |
+| frontend | dev | frontend-dev |
+| frontend | test | frontend-test |
+| frontend | accept | frontend-accept |
+| demo | dev | demo-dev |
+| demo | accept | demo-accept |
 
 ## Slot Manifest Contract
 每个 slot manifest 必须包含：

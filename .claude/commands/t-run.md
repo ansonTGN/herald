@@ -13,6 +13,7 @@ allowed-tools:
   - TaskGet
   - Write
   - Bash
+  - Agent
 ---
 
 # 任务执行
@@ -44,7 +45,7 @@ allowed-tools:
 
 ## 最小上下文
 
-调用 item 对应 agent 时，prompt 至少包含：
+每个 item 必须通过 `Agent` tool 启动，`subagent_type` 为 item 文件中的 `agent` 字段值。调用 item 对应 agent 时，prompt 至少包含：
 
 - agent 规范文件路径。
 - `feature`、`phase`、`slot`、`item_id`、目标 agent。

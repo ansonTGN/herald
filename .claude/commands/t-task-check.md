@@ -8,6 +8,7 @@ allowed-tools:
   - Grep
   - Task
   - Write
+  - Agent
 ---
 
 # 任务规划质量检查
@@ -107,16 +108,18 @@ allowed-tools:
    - `test_item_type: runner` 必须声明 `uses_skill: .claude/skills/backend-test-run/SKILL.md`
    - backend/test item 的 `steps`、`validation`、`completion_criteria` 必须与显式 `test_item_type` 自洽
 9. 核对设计文档与任务文档的一致性。
-10. 调用当前阶段对应 agent 进行专业校验：
-   - backend: `backend-dev`, `backend-test`, `backend-accept`
-   - frontend: `frontend-dev`, `frontend-test`, `frontend-accept`
-   - demo: `demo-dev`, `demo-accept`
+10. 通过 `Agent` tool 调度当前阶段对应 subagent 做专业校验。每个 subagent 独立启动，传入 prompt 包含：item 文件内容、设计文档相关节、验证范围、输出格式要求（score/findings/fixes/summary）。可并行调度同阶段多个 subagent。
+   - backend: subagent_type="backend-dev", "backend-test", "backend-accept"
+   - frontend: subagent_type="frontend-dev", "frontend-test", "frontend-accept"
+   - demo: subagent_type="demo-dev", "demo-accept"
 11. 聚合 agent 结果并进行主流程复核。
 12. 按评分体系生成评分与问题清单。
 13. 执行报告一致性自检。
 14. 写入报告：`.ai/quality/task-check-[feature]-[YYYYMMDD-HHMMSS].md`。
 
 ## Agent Review Contract
+调度方式：通过 `Agent(subagent_type="<agent-name>")` 启动。主流程收集所有 subagent 返回后进行交叉验证（证据优先级：仓库证据 > subagent 发现 > 假设）。
+
 任务检查时，当前阶段每个被调度的 agent 输出必须至少包含：
 - `score`：该 agent 对当前阶段任务文档的评分
 - `findings`：问题列表，包含 `severity`、`file`、`evidence`、`why_it_matters`

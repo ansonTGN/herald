@@ -10,6 +10,7 @@ allowed-tools:
   - Task
   - Write
   - Bash
+  - Agent
 ---
 
 # 任务规划生成
@@ -70,6 +71,7 @@ allowed-tools:
 ## 关键约束
 
 - slot 串行生成：backend/frontend 为 `dev -> test -> accept`，demo 为 `dev -> accept`。
+- 每个 slot agent 必须通过 `Agent` tool 启动，`subagent_type` 按 `.claude/skills/task-planner/SKILL.md` 的 Agent Dispatch Mapping 映射。
 - 先写入上游 slot manifest 和 item 文件，再生成下游 slot。
 - 单个 item 必须足够小，能由一次 agent 调用完成、验证并写 handoff。
 - backend/test 必须拆成 `test_item_type: authoring` 与 `test_item_type: runner`：
