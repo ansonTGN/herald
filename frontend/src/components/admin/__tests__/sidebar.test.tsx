@@ -54,7 +54,7 @@ vi.mock('@tanstack/react-router', () => ({
   },
 }))
 
-describe('Sidebar billing navigation', () => {
+describe('Sidebar navigation', () => {
   beforeEach(() => {
     useAuthStore.setState({
       isAuthenticated: true,
@@ -71,47 +71,54 @@ describe('Sidebar billing navigation', () => {
     useAuthStore.getState().reset()
   })
 
-  async function renderSidebar(pathname: string) {
-    currentPath = pathname
+  it('highlights billing plans on the billing page (under Products & Pricing)', async () => {
+    currentPath = '/admin/manage/billing?page=0&pageSize=20&status=all'
     const user = userEvent.setup()
+    render(<Sidebar />)
 
+    await user.click(screen.getByTestId('sidebar-menu-products-&-pricing'))
+
+    const billingPlansLink = screen.getByTestId('sidebar-menu-billing-plans')
+    const productsLink = screen.getByTestId('sidebar-menu-products')
+
+    expect(billingPlansLink).toHaveClass('font-semibold')
+    expect(productsLink).not.toHaveClass('font-semibold')
+  })
+
+  it('highlights invoices on the invoices page (under Billing)', async () => {
+    currentPath = '/admin/manage/billing/invoices'
+    const user = userEvent.setup()
     render(<Sidebar />)
 
     await user.click(screen.getByTestId('sidebar-menu-billing'))
-  }
 
-  it('highlights billing plans on the billing page', async () => {
-    await renderSidebar('/admin/manage/billing?page=0&pageSize=20&status=all')
+    const invoicesLink = screen.getByTestId('sidebar-menu-invoices')
+    const providersLink = screen.getByTestId('sidebar-menu-payment-providers')
 
-    const billingPlansLink = screen.getByTestId('sidebar-menu-billing-plans')
+    expect(invoicesLink).toHaveClass('font-semibold')
+    expect(providersLink).not.toHaveClass('font-semibold')
+  })
+
+  it('highlights only payment providers on the payment providers page (under Billing)', async () => {
+    currentPath = '/admin/manage/billing/payment-providers'
+    const user = userEvent.setup()
+    render(<Sidebar />)
+
+    await user.click(screen.getByTestId('sidebar-menu-billing'))
+
+    const providersLink = screen.getByTestId('sidebar-menu-payment-providers')
     const invoicesLink = screen.getByTestId('sidebar-menu-invoices')
 
-    expect(billingPlansLink).toHaveClass('font-semibold')
+    expect(providersLink).toHaveClass('font-semibold')
     expect(invoicesLink).not.toHaveClass('font-semibold')
   })
 
-  it('highlights invoices on the invoices page', async () => {
-    await renderSidebar('/admin/manage/billing/invoices')
+  it('keeps sidebar navigation in its own scroll container when group expands', async () => {
+    currentPath = '/admin/manage/billing?page=0&pageSize=20&status=all'
+    const user = userEvent.setup()
+    render(<Sidebar />)
 
-    const billingPlansLink = screen.getByTestId('sidebar-menu-billing-plans')
-    const invoicesLink = screen.getByTestId('sidebar-menu-invoices')
-
-    expect(billingPlansLink).not.toHaveClass('font-semibold')
-    expect(invoicesLink).toHaveClass('font-semibold')
-  })
-
-  it('highlights only payment providers on the payment providers page', async () => {
-    await renderSidebar('/admin/manage/billing/payment-providers')
-
-    const billingPlansLink = screen.getByTestId('sidebar-menu-billing-plans')
-    const providersLink = screen.getByTestId('sidebar-menu-payment-providers')
-
-    expect(billingPlansLink).not.toHaveClass('font-semibold')
-    expect(providersLink).toHaveClass('font-semibold')
-  })
-
-  it('keeps sidebar navigation in its own scroll container when billing expands', async () => {
-    await renderSidebar('/admin/manage/billing?page=0&pageSize=20&status=all')
+    await user.click(screen.getByTestId('sidebar-menu-products-&-pricing'))
 
     const sidebar = screen.getByTestId('admin-sidebar')
     const nav = screen.getByTestId('sidebar-nav')

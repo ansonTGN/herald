@@ -524,9 +524,9 @@ DECLARE
     v_test_timestamp TIMESTAMPTZ := TIMESTAMPTZ '2026-03-24 12:00:00+00';
 BEGIN
     -- Ensure product exists
-    INSERT INTO products (id, realm_id, name, title, description, sort_order, enabled)
-    VALUES (uuidv7(), '{POINTS_REALM_ID}', 'default', 'Default Product', 'Default product for realm-001 demo', 0, TRUE)
-    ON CONFLICT (realm_id, name) DO UPDATE SET title = EXCLUDED.title
+    INSERT INTO products (id, realm_id, code, title, description, enabled)
+    VALUES (uuidv7(), '{POINTS_REALM_ID}', 'default', 'Default Product', 'Default product for realm-001 demo', TRUE)
+    ON CONFLICT (realm_id, code) DO UPDATE SET title = EXCLUDED.title
     RETURNING id INTO v_product_id;
 
     -- Get existing client app
@@ -848,9 +848,9 @@ DECLARE
     v_test_timestamp TIMESTAMPTZ := TIMESTAMPTZ '2026-03-24 12:00:00+00';
 BEGIN
     -- Ensure default product exists
-    INSERT INTO products (id, realm_id, name, title, description, sort_order, enabled)
-    VALUES (uuidv7(), '{ADMIN_REALM}', 'default', 'Default Product', 'Default product for demo seed', 0, TRUE)
-    ON CONFLICT (realm_id, name) DO UPDATE SET title = EXCLUDED.title
+    INSERT INTO products (id, realm_id, code, title, description, enabled)
+    VALUES (uuidv7(), '{ADMIN_REALM}', 'default', 'Default Product', 'Default product for demo seed', TRUE)
+    ON CONFLICT (realm_id, code) DO UPDATE SET title = EXCLUDED.title
     RETURNING id INTO v_product_id;
 
     -- Get or create client app (use admin-web-console)
@@ -1097,9 +1097,9 @@ def _ensure_shopify_unclaimed_subscription(logger: "Logger | None") -> None:
             v_plan_id UUID;
         BEGIN
             -- Ensure product exists
-            INSERT INTO products (id, realm_id, name, title, description, sort_order, enabled)
-            VALUES (uuidv7(), '{POINTS_REALM_ID}', 'shopify-default', 'Shopify Default Product', 'Default product for Shopify demo', 0, TRUE)
-            ON CONFLICT (realm_id, name) DO UPDATE SET title = EXCLUDED.title
+            INSERT INTO products (id, realm_id, code, title, description, enabled)
+            VALUES (uuidv7(), '{POINTS_REALM_ID}', 'shopify-default', 'Shopify Default Product', 'Default product for Shopify demo', TRUE)
+            ON CONFLICT (realm_id, code) DO UPDATE SET title = EXCLUDED.title
             RETURNING id INTO v_product_id;
 
             -- Create billing plan

@@ -24,6 +24,7 @@ import { PermissionsPage } from '../pages/permissions-page'
 import { RealmsPage } from '../pages/realms-page'
 import { ClientAppsPage } from '../pages/client-apps-page'
 import { AuditPage } from '../pages/audit-page'
+import { DashboardPage } from '../pages/dashboard-page'
 import { SELECTORS } from '../selectors'
 
 /**
@@ -56,6 +57,7 @@ export const test = base.extend<{
   realmsPage: RealmsPage
   clientAppsPage: ClientAppsPage
   auditPage: AuditPage
+  dashboardPage: DashboardPage
   testStartTime: number
   page: Page
 }>({
@@ -307,6 +309,34 @@ export const test = base.extend<{
     await auditPage.goto()
 
     await use(auditPage)
+  },
+
+  /**
+   * Fixture: Dashboard Page
+   *
+   * Automatically:
+   * 1. Verifies environment
+   * 2. Logs in as admin
+   * 3. Navigates to dashboard via sidebar click
+   *
+   * Use for:
+   * - Dashboard stats display tests
+   * - Auth trend chart tests
+   * - Quick navigation tests
+   * - Error state and retry tests
+   */
+  dashboardPage: async ({ page, demoLogger, testStartTime, loginPage }, use) => {
+    await verifyTestEnvironment(page, {
+      requiredRealms: ['admin'],
+      requiredUsers: ['admin@cas.com'],
+    })
+
+    await loginPage.loginAsAdmin('admin@cas.com', 'password', 'admin')
+
+    const dashboardPage = new DashboardPage(page, demoLogger)
+    await dashboardPage.goto()
+
+    await use(dashboardPage)
   },
 })
 

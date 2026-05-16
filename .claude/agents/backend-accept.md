@@ -15,6 +15,7 @@ tools:
   - Grep
   - Glob
   - Bash
+  - Write
 
 ---
 

@@ -22,6 +22,7 @@ use herald_api_base::application::http::state::AppState;
         (status = 204, description = "Permission deleted"),
         (status = 403, description = "Forbidden - Insufficient permissions (requires permissions.manage) or attempting to delete built-in permission", body = ErrorResponse),
         (status = 404, description = "Permission not found", body = ErrorResponse),
+        (status = 409, description = "Conflict - Permission is assigned to roles and cannot be deleted", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -54,8 +55,8 @@ pub async fn delete_permission(
     }
 
     // 3. Check if permission is built-in
-    let permission: Option<(bool, String)> =
-        sqlx::query_as("SELECT is_builtin, name FROM permissions WHERE id = $1")
+    let permission: Option<(bool, String, String)> =
+        sqlx::query_as("SELECT is_builtin, name, realm_id FROM permissions WHERE id = $1")
             .bind(id)
             .fetch_optional(&state.pool)
             .await
@@ -64,8 +65,8 @@ pub async fn delete_permission(
                 ApiError::internal("Failed to check permission")
             })?;
 
-    match permission {
-        Some((is_builtin, permission_name)) => {
+    let realm_id = match permission {
+        Some((is_builtin, permission_name, realm_id)) => {
             if is_builtin {
                 tracing::warn!(
                     user_id = %identity.user_id(),
@@ -75,10 +76,29 @@ pub async fn delete_permission(
                 );
                 return Err(ApiError::forbidden("Cannot delete built-in permission"));
             }
+            realm_id
         }
         None => {
             return Err(ApiError::not_found("Permission not found"));
         }
+    };
+
+    // Check if permission is assigned to any roles
+    let permission_in_use: Option<(bool,)> = sqlx::query_as(
+        "SELECT EXISTS(SELECT 1 FROM role_permissions WHERE permission_id = $1)",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to check permission usage: {e}");
+        ApiError::internal("Failed to check permission usage")
+    })?;
+
+    if matches!(permission_in_use, Some((true,))) {
+        return Err(ApiError::conflict(
+            "Cannot delete permission that is assigned to roles",
+        ));
     }
 
     // 4. Execute deletion
@@ -94,6 +114,8 @@ pub async fn delete_permission(
     if result.rows_affected() == 0 {
         return Err(ApiError::not_found("Permission not found"));
     }
+
+    let _ = state.permission_checker.invalidate_realm_cache(&realm_id).await;
 
     Ok(ApiResult::no_content())
 }

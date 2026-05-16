@@ -66,12 +66,6 @@ export function Sidebar() {
       },
       { name: 'Users', path: `/${realmId}/manage/users`, icon: Users, permission: 'users.view' },
       {
-        name: 'Audit Log',
-        path: `/${realmId}/manage/audit`,
-        icon: ScrollText,
-        permission: 'users.view',
-      },
-      {
         name: 'Authorization',
         icon: Shield,
         permission: null,
@@ -110,22 +104,10 @@ export function Sidebar() {
         ],
       },
       {
-        name: 'Billing',
-        icon: CreditCard,
+        name: 'Products & Pricing',
+        icon: Briefcase,
         permission: 'billing.view',
         children: [
-          {
-            name: 'Billing Plans',
-            path: `/${realmId}/manage/billing`,
-            icon: CreditCard,
-            permission: 'billing.view',
-          },
-          {
-            name: 'Invoices',
-            path: `/${realmId}/manage/billing/invoices`,
-            icon: FileText,
-            permission: 'billing.view',
-          },
           {
             name: 'Products',
             path: `/${realmId}/manage/products`,
@@ -133,9 +115,28 @@ export function Sidebar() {
             permission: 'billing.view',
           },
           {
+            name: 'Billing Plans',
+            path: `/${realmId}/manage/billing`,
+            icon: CreditCard,
+            permission: 'billing.view',
+          },
+          {
             name: 'Points Packages',
             path: `/${realmId}/manage/points-packages`,
             icon: Coins,
+            permission: 'billing.view',
+          },
+        ],
+      },
+      {
+        name: 'Billing',
+        icon: CreditCard,
+        permission: 'billing.view',
+        children: [
+          {
+            name: 'Invoices',
+            path: `/${realmId}/manage/billing/invoices`,
+            icon: FileText,
             permission: 'billing.view',
           },
           {
@@ -152,19 +153,20 @@ export function Sidebar() {
           },
         ],
       },
+      {
+        name: 'Audit Log',
+        path: `/${realmId}/manage/audit`,
+        icon: ScrollText,
+        permission: 'users.view',
+      },
       { name: 'Settings', path: `/${realmId}/manage/settings`, icon: Settings, permission: null },
     ],
     [realmId]
   )
 
-  // Filter menu items: Realms menu only shows in admin realm
-  const filteredMenuItems = menuItems.filter((item) => {
-    // Realms menu only shows in admin realm
-    if (item.name === 'Realms' && realmId !== 'admin') {
-      return false
-    }
-    return true
-  })
+  const filteredMenuItems = menuItems.filter(
+    (item) => !(item.name === 'Realms' && realmId !== 'admin')
+  )
 
   const renderMenuItem = (item: MenuItem, level: number = 0) => {
     const hasChildren = item.children && item.children.length > 0

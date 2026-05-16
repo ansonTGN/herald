@@ -108,11 +108,6 @@ export function RolePermissionsDialog({
           </div>
           <DialogDescription>
             Assign or remove permissions for this role. Permissions are grouped by resource.
-            {role.isBuiltin && (
-              <span className="block mt-2 text-amber-600 dark:text-amber-400 font-medium">
-                Built-in permissions cannot be removed from built-in roles.
-              </span>
-            )}
           </DialogDescription>
         </DialogHeader>
 

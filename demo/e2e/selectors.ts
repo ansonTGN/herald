@@ -32,9 +32,22 @@ export const SELECTORS = {
    * Route: /{realmId}/
    */
   dashboard: {
-    container: '[data-testid="dashboard-container"]',
-    heading: '[data-testid="dashboard-heading"]',
-    welcomeMessage: '[data-testid="welcome-message"]',
+    heading: 'h1',
+    statsRow: '[data-testid="dashboard-stats-row"]',
+    totalUsersCard: '[data-testid="dashboard-total-users-card"]',
+    newUsersCard: '[data-testid="dashboard-new-users-card"]',
+    activeUsersCard: '[data-testid="dashboard-active-users-card"]',
+    authTrendChart: '[data-testid="dashboard-auth-trend-chart"]',
+    quickNav: '[data-testid="dashboard-quick-nav"]',
+    quickNavUsers: '[data-testid="dashboard-users-card"]',
+    quickNavRoles: '[data-testid="dashboard-roles-card"]',
+    quickNavPermissions: '[data-testid="dashboard-permissions-card"]',
+    quickNavClientApps: '[data-testid="dashboard-client-apps-card"]',
+    quickNavRealms: '[data-testid="dashboard-realms-card"]',
+    quickNavSettings: '[data-testid="dashboard-settings-card"]',
+    errorState: '[data-testid="dashboard-error"]',
+    retryButton: '[data-testid="dashboard-retry-button"]',
+    chartSkeleton: '[data-testid="dashboard-chart-skeleton"]',
   },
 
   /**
