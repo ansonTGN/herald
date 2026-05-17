@@ -210,7 +210,7 @@ describe('Billing form regressions', () => {
       await user.click(screen.getByTestId('plan-product-prod-1'))
       await user.type(screen.getByTestId('plan-name-input'), 'test-plan')
       await user.type(screen.getByTestId('plan-title-input'), 'Test Plan')
-      await user.type(screen.getByTestId('plan-price-input'), '1000')
+      await user.type(screen.getByTestId('plan-price-input'), '10')
       await user.click(screen.getByTestId('plan-form-submit-button'))
 
       await waitFor(() => {

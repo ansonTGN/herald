@@ -66,7 +66,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
           planName: monthlyPlanName,
           title: 'Basic Monthly Plan',
           description: 'Basic monthly plan for small teams',
-          price: '1000',
+          price: '10',
           type: 'monthly',
           currency: 'usd',
           externalProductId: `prod_monthly_${testStartTime}`,
@@ -87,7 +87,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
           planName: yearlyPlanName,
           title: 'Pro Yearly Plan',
           description: 'Pro yearly plan with all features',
-          price: '10000',
+          price: '100',
           type: 'yearly',
           currency: 'usd',
           externalProductId: `prod_yearly_${testStartTime}`,
@@ -145,7 +145,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
         await createSubscriptionPlan(page, {
           planName,
           title: 'Unique Test Plan',
-          price: '1000',
+          price: '10',
           type: 'monthly',
           externalProductId: `prod_${planName}`,
         })
@@ -217,7 +217,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
         await createSubscriptionPlan(page, {
           planName,
           title: 'Edit Test Plan',
-          price: '1000',
+          price: '10',
           type: 'monthly',
           externalProductId: `prod_${planName}`,
         })
@@ -274,7 +274,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
         await createSubscriptionPlan(page, {
           planName,
           title: 'Toggle Test Plan',
-          price: '1000',
+          price: '10',
           type: 'monthly',
           externalProductId: `prod_${planName}`,
         })
@@ -343,7 +343,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
         await createSubscriptionPlan(page, {
           planName,
           title: 'Delete Test Plan',
-          price: '1000',
+          price: '10',
           type: 'monthly',
           externalProductId: `prod_${planName}`,
         })
@@ -383,7 +383,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
         await createSubscriptionPlan(page, {
           planName: activePlanName,
           title: 'Active Subscription Test Plan',
-          price: '1000',
+          price: '10',
           type: 'monthly',
           externalProductId: `prod_${activePlanName}`,
         })
@@ -416,7 +416,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
         await createSubscriptionPlan(page, {
           planName: canceledPlanName,
           title: 'Canceled Sub Plan',
-          price: '2999',
+          price: '29.99',
           type: 'monthly',
           currency: 'usd',
           externalProductId: `prod_${canceledPlanName}`,

@@ -1,4 +1,4 @@
-export { ShopifyConfigFormDialog } from './ShopifyConfigForm'
+export { ShopifyConfigFormDialog, ShopifyConfigFormPage } from './ShopifyConfigForm'
 export { WechatConfigFormDialog } from './WechatConfigForm'
 export { ClaimSubscriptionDialog } from './ClaimSubscriptionDialog'
 export { ShopifyConfigDetail } from './ShopifyConfigDetail'

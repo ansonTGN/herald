@@ -272,12 +272,13 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
               <NumberField
                 form={form}
                 name="price"
-                label="Price (cents)"
+                label="Price (USD)"
                 dataTestId="plan-price-input"
-                placeholder="1000"
-                min={1}
-                max={9999999}
-                helpText="Price in cents (e.g., 1000 = $10.00)"
+                placeholder="10.00"
+                min={0.01}
+                max={99999.99}
+                step="0.01"
+                helpText="Price in dollars (e.g., 10.00 = $10.00)"
                 required
               />
             </div>

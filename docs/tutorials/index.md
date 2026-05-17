@@ -18,3 +18,4 @@
 - [架构](architecture.md) — 项目结构和技术选型
 - [配置](configuration.md) — 配置项说明
 - [部署](deployment.md) — Docker 生产环境部署
+- [Creem 支付流程](billing-creem-payment.md) — 从创建产品到收到付款的端到端操作指南

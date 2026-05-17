@@ -53,7 +53,7 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
         await createSubscriptionPlan(page, {
           planName,
           title: 'Assign Test Plan',
-          price: '1000',
+          price: '10',
           type: 'monthly',
         })
         // Note: We don't wait for the plan to appear in the list because new plans
@@ -106,7 +106,7 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
         await createSubscriptionPlan(page, {
           planName,
           title: 'Multi Assign Test Plan',
-          price: '1000',
+          price: '10',
           type: 'monthly',
         })
         // Note: Plan may not be visible on first page due to sort_order
@@ -157,7 +157,7 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
         await createSubscriptionPlan(page, {
           planName,
           title: 'Assign Status Test Plan',
-          price: '1000',
+          price: '10',
           type: 'monthly',
         })
 
@@ -195,7 +195,7 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
         await createSubscriptionPlan(page, {
           planName,
           title: 'Remove Assign Test Plan',
-          price: '1000',
+          price: '10',
           type: 'monthly',
         })
 

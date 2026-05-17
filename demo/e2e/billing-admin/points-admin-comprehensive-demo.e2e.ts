@@ -41,7 +41,7 @@ async function createSubscriptionPlan(page: Page, planName: string, planTitle?: 
     planName,
     title: planTitle || 'Test Plan',
     description: 'Test plan for points configuration',
-    price: '1000',
+    price: '10',
     type: 'monthly',
     currency: 'usd',
     provider: 'creem',

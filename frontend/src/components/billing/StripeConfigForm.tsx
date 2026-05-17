@@ -1,3 +1,7 @@
+import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import {
   stripeConfigSchema,
@@ -16,8 +20,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { PageHeader } from '@/components/shared/page-header'
+import { FormActionBar } from '@/components/shared/form-action-bar'
+import { SwitchField, PasswordField } from '@/components/shared/form-fields'
 import { getFieldErrorMessage } from '@/lib/error-utils'
-import { useState } from 'react'
+import { batchUpsertRealmConfigs } from '@/lib/api-generated/sdk.gen'
+import { buildStripeConfigRequest } from '@/lib/stripe-config-utils'
 
 interface StripeConfigFormDialogProps {
   open: boolean
@@ -84,7 +92,6 @@ export function StripeConfigFormDialog({
             }}
             className="space-y-4"
           >
-            {/* Enable Stripe */}
             <form.Field
               name="enabled"
               children={(field) => (
@@ -106,7 +113,6 @@ export function StripeConfigFormDialog({
               )}
             />
 
-            {/* Publishable Key */}
             <form.Field
               name="publishableKey"
               children={(field) => (
@@ -136,7 +142,6 @@ export function StripeConfigFormDialog({
               )}
             />
 
-            {/* Secret Key */}
             <form.Field
               name="secretKey"
               children={(field) => (
@@ -166,7 +171,6 @@ export function StripeConfigFormDialog({
               )}
             />
 
-            {/* Webhook Secret */}
             <form.Field
               name="webhookSecret"
               children={(field) => (
@@ -215,7 +219,7 @@ export function StripeConfigFormDialog({
                     </Button>
                     <Button
                       type="submit"
-                      disabled={isSubmitting || isSubmitting || !canSubmit}
+                      disabled={isSubmitting || !canSubmit}
                       data-testid="stripe-save-button"
                     >
                       {isSubmitting ? 'Saving...' : 'Save'}
@@ -228,5 +232,137 @@ export function StripeConfigFormDialog({
         </AppForm>
       </DialogContent>
     </Dialog>
+  )
+}
+
+interface StripeConfigFormPageProps {
+  realmId: string
+  mode: 'create' | 'edit'
+  initialValues?: Partial<StripeConfigFormValues>
+}
+
+export function StripeConfigFormPage({
+  realmId,
+  mode,
+  initialValues,
+}: StripeConfigFormPageProps) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const isEditing = mode === 'edit'
+
+  const defaultValues = useMemo(() => getStripeConfigDefaults(initialValues), [initialValues])
+
+  const form = useAppForm({
+    schema: stripeConfigSchema,
+    defaultValues,
+    onSubmit: async ({ value }) => {
+      await saveMutation.mutateAsync(value)
+    },
+  })
+
+  useEffect(() => {
+    form.reset(defaultValues)
+  }, [defaultValues, form])
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: StripeConfigFormValues) => {
+      const response = await batchUpsertRealmConfigs({
+        path: { realmId },
+        body: { configs: [buildStripeConfigRequest(data)] },
+      })
+      if (response.error) throw response.error
+      return response.data
+    },
+    onSuccess: async () => {
+      toast.success(
+        isEditing ? 'Stripe configuration updated successfully' : 'Stripe configuration created successfully'
+      )
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] }),
+        queryClient.invalidateQueries({ queryKey: ['realmConfig', realmId] }),
+      ])
+      navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
+    },
+    onError: (error: { status?: number; message?: string }) => {
+      toast.error(`Failed to save configuration: ${error?.message || 'Unknown error'}`)
+    },
+  })
+
+  const handleCancel = () => {
+    navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
+  }
+
+  const isSubmitting = saveMutation.isPending
+
+  return (
+    <div className="container max-w-3xl mx-auto py-6 px-6" data-testid="stripe-config-form-page">
+      <PageHeader
+        title={isEditing ? 'Edit Stripe Configuration' : 'Configure Stripe'}
+        headingTestId="stripe-config-form-page-heading"
+      />
+
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          await form.validateAllFields('submit')
+          if (!form.state.isFieldsValid) {
+            return
+          }
+          await form.handleSubmit()
+        }}
+        data-testid="stripe-config-page-form"
+        className="space-y-6 pt-6"
+      >
+        <AppForm>
+          <div className="space-y-6">
+            <SwitchField
+              form={form}
+              name="enabled"
+              label="Enable Stripe"
+              description="Allow users to pay with Stripe"
+              dataTestId="page-stripe-enabled-switch"
+            />
+
+            <PasswordField
+              form={form}
+              name="publishableKey"
+              label="Publishable Key"
+              dataTestId="page-stripe-publishable-key-input"
+              placeholder="pk_test_..."
+              helpText={<>Starts with <code>pk_</code>. Found in Stripe Dashboard → Developers → API keys</>}
+              required
+            />
+
+            <PasswordField
+              form={form}
+              name="secretKey"
+              label="Secret Key"
+              dataTestId="page-stripe-secret-key-input"
+              placeholder="sk_test_..."
+              helpText={<>Starts with <code>sk_</code>. Found in Stripe Dashboard → Developers → API keys</>}
+              required
+            />
+
+            <PasswordField
+              form={form}
+              name="webhookSecret"
+              label="Webhook Secret"
+              dataTestId="page-stripe-webhook-secret-input"
+              placeholder="whsec_..."
+              helpText={<>Optional. Starts with <code>whsec_</code>. Configure in Stripe Dashboard → Developers → Webhooks</>}
+            />
+          </div>
+        </AppForm>
+
+        <FormActionBar
+          onCancel={handleCancel}
+          isSubmitting={isSubmitting}
+          isEditing={isEditing}
+          cancelTestId="stripe-config-page-cancel-button"
+          submitTestId="stripe-config-page-submit-button"
+        />
+      </form>
+    </div>
   )
 }

@@ -1,9 +1,5 @@
 import { z } from 'zod'
 
-/**
- * Stripe 配置 Schema
- * 用于 Realm Admin 配置 Stripe 支付平台
- */
 export const stripeConfigSchema = z.object({
   enabled: z.boolean().default(false),
   publishableKey: z
@@ -23,14 +19,12 @@ export const stripeConfigSchema = z.object({
 
 export type StripeConfigForm = z.infer<typeof stripeConfigSchema>
 
-/**
- * Get default values for Stripe configuration form
- */
-export function getStripeConfigDefaults(): StripeConfigForm {
+export function getStripeConfigDefaults(initialValues?: Partial<StripeConfigForm>): StripeConfigForm {
   return {
     enabled: false,
     publishableKey: '',
     secretKey: '',
     webhookSecret: '',
+    ...initialValues,
   }
 }

@@ -164,7 +164,7 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
         const planRow = page.locator(`tr:has-text("${planName}")`)
         await expect(planRow).toBeVisible()
 
-        // Verify price is correctly displayed ($10.00 = 1000 cents)
+        // Verify price is correctly displayed ($10.00 USD)
         const priceCell = planRow.locator('td').nth(4)
         await expect(priceCell).toContainText('$10.00')
 
@@ -258,7 +258,7 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
           name: planName,
           title: 'Assign Test Plan',
           description: 'Test plan for assignment',
-          price: '1000',
+          price: '10',
           type: 'monthly',
           currency: 'USD',
           trialDays: '14',
@@ -409,7 +409,7 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
           name: planName,
           title: 'Checkout Test Plan',
           description: 'Test plan for checkout flow',
-          price: '1000',
+          price: '10',
           type: 'monthly',
           currency: 'USD',
           trialDays: '14',
@@ -423,7 +423,7 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
         const planRow = page.locator(`tr:has-text("${planName}")`)
         await expect(planRow).toBeVisible()
 
-        // Verify price is correctly displayed ($10.00 = 1000 cents)
+        // Verify price is correctly displayed ($10.00 USD)
         const priceCell = planRow.locator('td').nth(4)
         await expect(priceCell).toContainText('$10.00')
 
@@ -509,7 +509,7 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
           name: planName,
           title: 'Failure Test Plan',
           description: 'Test plan for failure scenario',
-          price: '1000',
+          price: '10',
           type: 'monthly',
           currency: 'USD',
           trialDays: '14',
@@ -553,7 +553,7 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
           name: planName,
           title: 'History Test Plan',
           description: 'Test plan for history',
-          price: '1000',
+          price: '10',
           type: 'monthly',
           currency: 'USD',
           trialDays: '14',

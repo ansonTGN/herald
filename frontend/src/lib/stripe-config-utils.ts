@@ -2,10 +2,6 @@ import type { RealmConfigResponse } from '@/lib/api-generated'
 import type { StripeConfigForm } from '@/lib/schemas/stripe-config'
 import { PAYMENT_PROVIDERS } from '@/lib/billing-constants'
 
-/**
- * Stripe 配置的 JSON 结构
- * 与后端保持一致
- */
 interface StripeConfigJSON {
   enabled: boolean
   publishableKey: string
@@ -13,11 +9,6 @@ interface StripeConfigJSON {
   webhookSecret?: string
 }
 
-/**
- * Parses Stripe configuration from realm config array
- * @param configs - Array of realm configurations
- * @returns Parsed Stripe configuration
- */
 export function parseStripeConfig(configs: RealmConfigResponse[]): StripeConfigForm {
   const stripeSettings = configs.find(
     (c) => c.configType === PAYMENT_PROVIDERS.STRIPE && c.configKey === 'settings'
@@ -51,12 +42,6 @@ export function parseStripeConfig(configs: RealmConfigResponse[]): StripeConfigF
   }
 }
 
-/**
- * Builds Stripe config request for upsert operation
- * Converts frontend form data to backend request format
- * @param config - Stripe configuration form data
- * @returns Realm config upsert request
- */
 export function buildStripeConfigRequest(config: StripeConfigForm) {
   const configJSON: StripeConfigJSON = {
     enabled: config.enabled,

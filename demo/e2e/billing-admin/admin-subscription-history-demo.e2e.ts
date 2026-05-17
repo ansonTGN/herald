@@ -212,7 +212,7 @@ test.describe('[Billing Admin] Subscription History Demo Tests', () => {
           planName,
           title: planTitle,
           description: 'Plan used for subscription history filter verification',
-          price: '1000',
+          price: '10',
           type: 'monthly',
           currency: 'usd',
           provider: 'creem',

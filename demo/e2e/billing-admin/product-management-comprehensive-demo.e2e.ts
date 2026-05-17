@@ -384,7 +384,7 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
           productTitle: planHostTitle,
           planName,
           title: 'Test Plan',
-          price: '1000',
+          price: '10',
           type: 'monthly',
           provider: 'creem',
           externalProductId: `ext_${testStartTime}`,

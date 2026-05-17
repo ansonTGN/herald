@@ -60,8 +60,9 @@ export const subscriptionPlanSchema = z.object({
   type: z.enum(['monthly', 'yearly']),
   price: z
     .number()
-    .min(1, 'Price must be at least 1 cent')
-    .max(9999999, 'Price must not exceed $99999.99'),
+    .min(0.01, 'Price must be at least $0.01')
+    .max(99999.99, 'Price must not exceed $99,999.99')
+    .transform((val) => Math.round(val * 100)),
   currency: z
     .string()
     .min(3, 'Currency must be at least 3 characters')
@@ -108,6 +109,7 @@ export function getSubscriptionPlanDefaults(plan?: {
     sortOrder: 0,
     active: true,
     ...plan,
+    price: plan?.price != null ? plan.price / 100 : undefined,
   } as SubscriptionPlanFormData
 }
 
