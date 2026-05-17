@@ -540,7 +540,7 @@ BEGIN
     END IF;
 
     -- Create billing plan
-    INSERT INTO plan (
+    INSERT INTO subscription_plan (
         id, realm_id, name, description, title, type, price, currency,
         active, trial_days, sort_order, product_id
     ) VALUES (
@@ -564,13 +564,13 @@ BEGIN
     RETURNING id INTO v_plan_id;
 
     -- Assign payment provider to plan
-    INSERT INTO plan_payment_provider (id, plan_id, payment_provider, external_product_id)
+    INSERT INTO subscription_plan_payment_provider (id, plan_id, payment_provider, external_product_id)
     VALUES (uuidv7(), v_plan_id, 'stripe', 'realm001-product-subscription')
     ON CONFLICT (plan_id, payment_provider) DO UPDATE
         SET external_product_id = EXCLUDED.external_product_id;
 
     -- Assign plan to client app
-    INSERT INTO client_app_plan (id, client_app_id, plan_id, enabled)
+    INSERT INTO client_app_subscription_plan (id, client_app_id, plan_id, enabled)
     VALUES (uuidv7(), v_client_app_id, v_plan_id, TRUE)
     ON CONFLICT (client_app_id, plan_id) DO UPDATE
         SET enabled = TRUE;
@@ -864,7 +864,7 @@ BEGIN
     END IF;
 
     -- Create billing plan
-    INSERT INTO plan (
+    INSERT INTO subscription_plan (
         id, realm_id, name, description, title, type, price, currency,
         active, trial_days, sort_order, product_id
     ) VALUES (
@@ -888,13 +888,13 @@ BEGIN
     RETURNING id INTO v_plan_id;
 
     -- Assign payment provider to plan
-    INSERT INTO plan_payment_provider (id, plan_id, payment_provider, external_product_id)
+    INSERT INTO subscription_plan_payment_provider (id, plan_id, payment_provider, external_product_id)
     VALUES (uuidv7(), v_plan_id, 'stripe', 'test-product-subscription')
     ON CONFLICT (plan_id, payment_provider) DO UPDATE
         SET external_product_id = EXCLUDED.external_product_id;
 
     -- Assign plan to client app
-    INSERT INTO client_app_plan (id, client_app_id, plan_id, enabled)
+    INSERT INTO client_app_subscription_plan (id, client_app_id, plan_id, enabled)
     VALUES (uuidv7(), v_client_app_id, v_plan_id, TRUE)
     ON CONFLICT (client_app_id, plan_id) DO UPDATE
         SET enabled = TRUE;
@@ -1080,7 +1080,7 @@ def _ensure_shopify_unclaimed_subscription(logger: "Logger | None") -> None:
     plan_id = _sql_scalar(
         f"""
         SELECT id::text
-        FROM plan
+        FROM subscription_plan
         WHERE realm_id = '{POINTS_REALM_ID}'
           AND name = 'realm001-subscription-plan'
         LIMIT 1;
@@ -1103,7 +1103,7 @@ def _ensure_shopify_unclaimed_subscription(logger: "Logger | None") -> None:
             RETURNING id INTO v_product_id;
 
             -- Create billing plan
-            INSERT INTO plan (
+            INSERT INTO subscription_plan (
                 id, realm_id, name, description, title, type, price, currency,
                 active, trial_days, sort_order, product_id
             ) VALUES (
@@ -1127,7 +1127,7 @@ def _ensure_shopify_unclaimed_subscription(logger: "Logger | None") -> None:
             RETURNING id INTO v_plan_id;
 
             -- Assign payment provider to plan
-            INSERT INTO plan_payment_provider (id, plan_id, payment_provider, external_product_id)
+            INSERT INTO subscription_plan_payment_provider (id, plan_id, payment_provider, external_product_id)
             VALUES (uuidv7(), v_plan_id, 'shopify', 'shopify-product-subscription')
             ON CONFLICT (plan_id, payment_provider) DO UPDATE
                 SET external_product_id = EXCLUDED.external_product_id;
@@ -1139,7 +1139,7 @@ def _ensure_shopify_unclaimed_subscription(logger: "Logger | None") -> None:
         plan_id = _sql_scalar(
             f"""
             SELECT id::text
-            FROM plan
+            FROM subscription_plan
             WHERE realm_id = '{POINTS_REALM_ID}'
               AND name = 'realm001-subscription-plan'
             LIMIT 1;

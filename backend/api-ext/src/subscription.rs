@@ -16,13 +16,9 @@ use uuid::Uuid;
 
 use crate::client_helper::ClientAppLookup;
 use herald_api_base::application::http::common::error_codes::ErrorCode;
-use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
+use herald_api_base::application::http::common::error_helpers::json_error;
+use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::state::AppState;
-
-/// Create a JSON error response
-fn json_error(status: StatusCode, error_code: ErrorCode) -> Response {
-    ApiError::with_code(status, error_code.as_u32(), error_code.as_str()).into_response()
-}
 
 /// Subscription status response
 #[derive(Debug, Serialize, ToSchema)]

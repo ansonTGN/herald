@@ -13,10 +13,10 @@ pub struct CreateCheckoutResponse {
 
 // ===== Plan Management Types =====
 
-/// Request to create a plan
+/// Request to create a subscription plan
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
-pub struct CreatePlanRequest {
+pub struct CreateSubscriptionPlanRequest {
     #[validate(length(min = 1, max = 100))]
     pub name: String,
     #[validate(length(min = 1))]
@@ -32,7 +32,6 @@ pub struct CreatePlanRequest {
     pub price: i32, // Price in cents
     #[validate(custom(function = "validate_currency"))]
     pub currency: String, // USD, EUR, CNY
-    // NOTE: Payment provider fields removed - use PlanPaymentProvider API instead
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(url)]
     pub checkout_url: Option<String>,
@@ -63,10 +62,10 @@ fn validate_currency(currency: &str) -> Result<(), validator::ValidationError> {
     }
 }
 
-/// Request to update a plan
+/// Request to update a subscription plan
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct UpdatePlanRequest {
+pub struct UpdateSubscriptionPlanRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -81,7 +80,6 @@ pub struct UpdatePlanRequest {
     pub price: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub currency: Option<String>,
-    // NOTE: Payment provider fields removed - use PlanPaymentProvider API instead
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checkout_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,10 +92,10 @@ pub struct UpdatePlanRequest {
     pub product_id: Option<Uuid>,
 }
 
-/// Response for plan query
+/// Response for subscription plan query
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PlanResponse {
+pub struct SubscriptionPlanResponse {
     pub id: Uuid,
     pub realm_id: String,
     pub name: String,
@@ -134,25 +132,25 @@ pub struct PaymentProviderSummary {
     pub enabled: bool,
 }
 
-/// Response for listing plans
+/// Response for listing subscription plans
 #[derive(Debug, Serialize, ToSchema)]
-pub struct ListPlansResponse {
-    pub plans: Vec<PlanResponse>,
+pub struct ListSubscriptionPlansResponse {
+    pub plans: Vec<SubscriptionPlanResponse>,
 }
 
 // ===== Plan Assignment Types =====
 
-/// Request to assign a plan to a client app
+/// Request to assign a subscription plan to a client app
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct AssignPlanRequest {
+pub struct SubscriptionPlanAssignmentRequest {
     pub plan_id: Uuid,
 }
 
-/// Response for plan assignment
+/// Response for subscription plan assignment
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PlanAssignmentResponse {
+pub struct SubscriptionPlanAssignmentResponse {
     pub id: Uuid,
     pub client_app_id: Uuid,
     pub plan_id: Uuid,
@@ -160,15 +158,15 @@ pub struct PlanAssignmentResponse {
     pub created_at: String,
 }
 
-/// Response for listing plan assignments
+/// Response for listing subscription plan assignments
 #[derive(Debug, Serialize, ToSchema)]
-pub struct ListPlanAssignmentsResponse {
-    pub assignments: Vec<PlanAssignmentResponse>,
+pub struct ListSubscriptionPlanAssignmentsResponse {
+    pub assignments: Vec<SubscriptionPlanAssignmentResponse>,
 }
 
-/// Request to toggle plan assignment
+/// Request to toggle subscription plan assignment
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct TogglePlanAssignmentRequest {
+pub struct ToggleSubscriptionPlanAssignmentRequest {
     pub enabled: bool,
 }
 
@@ -182,7 +180,7 @@ pub struct SubscriptionDetailResponse {
     pub client_app_id: Option<Uuid>,
     pub plan_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub plan: Option<PlanResponse>,
+    pub plan: Option<SubscriptionPlanResponse>,
     pub status: String,
     pub billing_period: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -222,10 +220,10 @@ pub struct CreateCheckoutSessionRequest {
     pub billing_period: String,
 }
 
-/// Plan summary in subscription history responses
+/// Subscription plan summary in subscription history responses
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PlanSummary {
+pub struct SubscriptionPlanSummary {
     pub id: Uuid,
     pub name: String,
     pub title: String,
@@ -296,15 +294,15 @@ pub struct ProductDetailResponse {
     pub description: Option<String>,
     pub enabled: bool,
     pub plans_count: i64,
-    pub plans: Vec<PlanSummaryForProduct>,
+    pub plans: Vec<SubscriptionPlanSummaryForProduct>,
     pub created_at: String,
     pub updated_at: String,
 }
 
-/// Plan summary within product detail response
+/// Subscription plan summary within product detail response
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PlanSummaryForProduct {
+pub struct SubscriptionPlanSummaryForProduct {
     pub id: Uuid,
     pub name: String,
     pub title: String,
@@ -317,10 +315,10 @@ pub struct PlanSummaryForProduct {
 
 // ===== Plan Payment Provider Mapping Types =====
 
-/// Request to add a payment provider to a plan
+/// Request to add a payment provider to a subscription plan
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
-pub struct CreatePlanPaymentProviderRequest {
+pub struct CreateSubscriptionPlanPaymentProviderRequest {
     #[validate(length(min = 1))]
     pub payment_provider: String,
     #[validate(length(min = 1))]
@@ -331,10 +329,10 @@ pub struct CreatePlanPaymentProviderRequest {
     pub enabled: Option<bool>,
 }
 
-/// Response for plan payment provider mapping
+/// Response for subscription plan payment provider mapping
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PlanPaymentProviderResponse {
+pub struct SubscriptionPlanPaymentProviderResponse {
     pub id: Uuid,
     pub plan_id: Uuid,
     pub payment_provider: String,
@@ -346,10 +344,10 @@ pub struct PlanPaymentProviderResponse {
     pub updated_at: String,
 }
 
-/// Request to update a payment provider mapping
+/// Request to update a subscription plan payment provider mapping
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
-pub struct UpdatePlanPaymentProviderRequest {
+pub struct UpdateSubscriptionPlanPaymentProviderRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(length(min = 1))]
     pub external_product_id: Option<String>,
@@ -359,9 +357,9 @@ pub struct UpdatePlanPaymentProviderRequest {
     pub enabled: Option<bool>,
 }
 
-/// Request to toggle payment provider enabled status
+/// Request to toggle subscription plan payment provider enabled status
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct TogglePlanPaymentProviderRequest {
+pub struct ToggleSubscriptionPlanPaymentProviderRequest {
     pub enabled: bool,
 }

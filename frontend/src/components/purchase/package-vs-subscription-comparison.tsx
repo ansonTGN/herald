@@ -2,14 +2,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Check, X, Info } from 'lucide-react'
 import type { PointsPackageResponse } from '@/lib/api-generated'
-import type { PlanResponse } from '@/lib/api-generated'
+import type { SubscriptionPlanResponse } from '@/lib/api-generated'
 import { formatPrice, apiPriceToDisplayPrice } from '@/lib/schemas/points-package-forms'
 
 interface PackageVsSubscriptionComparisonProps {
   packages: PointsPackageResponse[]
-  plans: PlanResponse[]
+  plans: SubscriptionPlanResponse[]
   onPackageClick?: (pkg: PointsPackageResponse) => void
-  onPlanClick?: (plan: PlanResponse) => void
+  onPlanClick?: (plan: SubscriptionPlanResponse) => void
 }
 
 export function PackageVsSubscriptionComparison({

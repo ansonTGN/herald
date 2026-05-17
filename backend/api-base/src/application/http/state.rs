@@ -75,7 +75,7 @@ pub struct AppState {
 
     /// Billing service (with policy)
     pub billing_service: Arc<
-        herald_core::domain::billing::PlanService<
+        herald_core::domain::billing::SubscriptionPlanService<
             PostgresBillingRepository,
             herald_core::infrastructure::authorization::policies::PermissionBasedBillingPolicy,
         >,

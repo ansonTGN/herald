@@ -133,7 +133,7 @@ export function Sidebar() {
             permission: 'points.view',
           },
           {
-            name: 'Plan Configurations',
+            name: 'Points Rules',
             path: `/${realmId}/manage/points/configs`,
             icon: Settings,
             permission: 'points.view',

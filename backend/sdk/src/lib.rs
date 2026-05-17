@@ -53,7 +53,7 @@ pub struct SubscriptionDetail {
     pub id: String,
     pub client_app_id: Option<String>,
     pub plan_id: Option<String>,
-    pub plan: Option<Plan>,
+    pub plan: Option<SubscriptionPlan>,
     pub status: String,
     pub billing_period: String,
     pub current_period_start: Option<String>,
@@ -66,7 +66,7 @@ pub struct SubscriptionDetail {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct Plan {
+pub struct SubscriptionPlan {
     pub id: String,
     pub realm_id: String,
     pub name: String,
@@ -84,7 +84,7 @@ pub struct Plan {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct PlanAssignment {
+pub struct SubscriptionPlanAssignment {
     pub id: String,
     pub client_app_id: String,
     pub plan_id: String,
@@ -303,9 +303,9 @@ impl Client {
     /// * `realm_id` - The realm ID
     ///
     /// # Returns
-    /// * `Ok(Vec<Plan>)` if the request succeeds
+    /// * `Ok(Vec<SubscriptionPlan>)` if the request succeeds
     /// * `Err(Error)` if network or parsing fails
-    pub async fn list_plans(&self, realm_id: &str) -> Result<Vec<Plan>, Error> {
+    pub async fn list_plans(&self, realm_id: &str) -> Result<Vec<SubscriptionPlan>, Error> {
         let url = format!("{}/api/ext/bill/{}/plans", self.base_url, realm_id);
 
         let response = self.build_request(Method::GET, &url).send().await?;
@@ -330,7 +330,7 @@ impl Client {
         &self,
         realm_id: &str,
         client_app_id: &str,
-    ) -> Result<Vec<PlanAssignment>, Error> {
+    ) -> Result<Vec<SubscriptionPlanAssignment>, Error> {
         let url = format!(
             "{}/api/ext/bill/{}/client/{}/plans",
             self.base_url, realm_id, client_app_id

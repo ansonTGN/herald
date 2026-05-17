@@ -178,7 +178,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
 
     // Create billing service with permission-based policy
     let billing_policy = PermissionBasedBillingPolicy::new(permission_checker.clone());
-    let billing_service = Arc::new(billing::PlanService::new(
+    let billing_service = Arc::new(billing::SubscriptionPlanService::new(
         billing_repository.clone(),
         Arc::new(billing_policy.clone()),
     ));

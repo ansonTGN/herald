@@ -157,7 +157,7 @@ COMMENT ON INDEX idx_transactions_external_ref IS 'Idempotency constraint for we
 CREATE TABLE points_plan_configs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     realm_id TEXT NOT NULL,
-    plan_id UUID NOT NULL REFERENCES plan(id) ON DELETE CASCADE,
+    plan_id UUID NOT NULL REFERENCES subscription_plan(id) ON DELETE CASCADE,
     grant_period_type VARCHAR(20) NOT NULL DEFAULT 'once' CHECK (grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
     points_per_period BIGINT NOT NULL DEFAULT 0 CHECK (points_per_period >= 0),
     validity_days BIGINT NOT NULL DEFAULT 0 CHECK (validity_days >= 0),

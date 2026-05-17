@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { lazy, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
-import { billingPlanQueryOptions } from '@/data/query-options'
+import { subscriptionPlanQueryOptions } from '@/data/query-options'
 
 const PlanFormPage = lazy(() =>
   import('@/components/billing/plan-form-page').then((m) => ({
@@ -16,7 +16,7 @@ export const Route = createFileRoute('/$realmId/manage/billing/plans/$planId/edi
 
 function EditPlanPage() {
   const { realmId, planId } = Route.useParams()
-  const { data: plan } = useSuspenseQuery(billingPlanQueryOptions(realmId, planId))
+  const { data: plan } = useSuspenseQuery(subscriptionPlanQueryOptions(realmId, planId))
 
   return (
     <div className="container max-w-3xl mx-auto py-6 px-6">

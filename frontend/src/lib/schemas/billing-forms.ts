@@ -43,9 +43,9 @@ export function getProductDefaults(product?: Partial<ProductFormData>): ProductF
   } as ProductFormData
 }
 
-// ==================== Plan Form Schema ====================
+// ==================== Subscription Plan Form Schema ====================
 
-export const billingPlanSchema = z.object({
+export const subscriptionPlanSchema = z.object({
   productId: z.string().min(1, 'Product is required'),
   name: z
     .string()
@@ -81,9 +81,9 @@ export const billingPlanSchema = z.object({
   active: z.boolean().default(true),
 })
 
-export type BillingPlanFormData = z.infer<typeof billingPlanSchema>
+export type SubscriptionPlanFormData = z.infer<typeof subscriptionPlanSchema>
 
-export function getBillingPlanDefaults(plan?: {
+export function getSubscriptionPlanDefaults(plan?: {
   productId?: string
   name?: string
   title?: string
@@ -95,7 +95,7 @@ export function getBillingPlanDefaults(plan?: {
   trialDays?: number
   sortOrder?: number
   active?: boolean
-}): BillingPlanFormData {
+}): SubscriptionPlanFormData {
   return {
     productId: '',
     name: '',
@@ -108,7 +108,7 @@ export function getBillingPlanDefaults(plan?: {
     sortOrder: 0,
     active: true,
     ...plan,
-  } as BillingPlanFormData
+  } as SubscriptionPlanFormData
 }
 
 // ==================== Shopify Config Schema ====================

@@ -90,7 +90,7 @@ where
             .repo
             .find_plan_config(realm_id, old_plan_id)
             .await?
-            .ok_or_else(|| CoreError::PlanNotFound {
+            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
                 realm_id: realm_id.to_string(),
                 plan_id: old_plan_id.to_string(),
             })?;
@@ -99,7 +99,7 @@ where
             .repo
             .find_plan_config(realm_id, new_plan_id)
             .await?
-            .ok_or_else(|| CoreError::PlanNotFound {
+            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
                 realm_id: realm_id.to_string(),
                 plan_id: new_plan_id.to_string(),
             })?;
@@ -165,7 +165,7 @@ where
             .repo
             .find_plan_config(realm_id, old_plan_id)
             .await?
-            .ok_or_else(|| CoreError::PlanNotFound {
+            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
                 realm_id: realm_id.to_string(),
                 plan_id: old_plan_id.to_string(),
             })?;
@@ -174,7 +174,7 @@ where
             .repo
             .find_plan_config(realm_id, new_plan_id)
             .await?
-            .ok_or_else(|| CoreError::PlanNotFound {
+            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
                 realm_id: realm_id.to_string(),
                 plan_id: new_plan_id.to_string(),
             })?;
@@ -236,7 +236,7 @@ where
             .repo
             .find_plan_config(realm_id, plan_id)
             .await?
-            .ok_or_else(|| CoreError::PlanNotFound {
+            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
                 realm_id: realm_id.to_string(),
                 plan_id: plan_id.to_string(),
             })?;

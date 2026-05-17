@@ -8,7 +8,7 @@ import { Page, expect } from '@playwright/test'
 import { clickRowMenuItem } from './table-actions.helpers'
 import { createProduct } from './product-page.helpers'
 
-export interface PlanFormData {
+export interface SubscriptionPlanFormData {
   planName: string
   title: string
   description?: string
@@ -26,11 +26,11 @@ export interface PlanFormData {
 }
 
 /**
- * Helper function to create a billing plan.
+ * Helper function to create a subscription plan.
  * If productTitle is not provided, automatically navigates to products page,
  * creates a default product, then returns to the billing plans page.
  */
-export async function createBillingPlan(page: Page, formData: PlanFormData): Promise<void> {
+export async function createBillingPlan(page: Page, formData: SubscriptionPlanFormData): Promise<void> {
   // Auto-create product if not provided
   let productTitle = formData.productTitle
   if (!productTitle) {

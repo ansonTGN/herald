@@ -179,10 +179,10 @@ impl AsyncTestContext for SchemaTestContext {
         );
 
         // Create billing service with PermissionBasedBillingPolicy for testing
-        use herald_core::domain::billing::PlanService;
+        use herald_core::domain::billing::SubscriptionPlanService;
         use herald_core::infrastructure::authorization::policies::PermissionBasedBillingPolicy;
         let billing_policy = PermissionBasedBillingPolicy::new(permission_checker.clone());
-        let billing_service = Arc::new(PlanService::new(
+        let billing_service = Arc::new(SubscriptionPlanService::new(
             billing_repository.clone(),
             Arc::new(billing_policy.clone()),
         ));

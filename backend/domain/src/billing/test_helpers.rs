@@ -9,8 +9,9 @@
 // =============================================================================
 
 use crate::billing::{
-    BillingPeriod, ClientAppPlan, CreatePlanInput, PaymentEvent, Plan, PlanType, Subscription,
-    SubscriptionStatus, SubscriptionTier, UpdatePlanInput,
+    BillingPeriod, ClientAppSubscriptionPlan, CreateSubscriptionPlanInput, PaymentEvent,
+    Subscription, SubscriptionPlan, SubscriptionPlanType, SubscriptionStatus, SubscriptionTier,
+    UpdateSubscriptionPlanInput,
 };
 use chrono::Utc;
 use serde_json;
@@ -20,18 +21,17 @@ use uuid::Uuid;
 // Builders
 // =============================================================================
 
-/// Builder for creating test Plan instances
+/// Builder for creating test SubscriptionPlan instances
 #[derive(Debug, Clone)]
-pub struct PlanBuilder {
+pub struct SubscriptionPlanBuilder {
     id: Option<Uuid>,
     realm_id: String,
     name: String,
     title: String,
     description: Option<String>,
-    plan_type: PlanType,
+    plan_type: SubscriptionPlanType,
     price: i32,
     currency: String,
-    // NOTE: Payment provider fields removed
     checkout_url: Option<String>,
     active: bool,
     trial_days: i32,
@@ -39,13 +39,13 @@ pub struct PlanBuilder {
     product_id: Uuid,
 }
 
-impl Default for PlanBuilder {
+impl Default for SubscriptionPlanBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl PlanBuilder {
+impl SubscriptionPlanBuilder {
     pub fn new() -> Self {
         Self {
             id: None,
@@ -53,10 +53,9 @@ impl PlanBuilder {
             name: "test_plan".to_string(),
             title: "Test Plan".to_string(),
             description: Some("Test Description".to_string()),
-            plan_type: PlanType::Monthly,
+            plan_type: SubscriptionPlanType::Monthly,
             price: 1000,
             currency: "USD".to_string(),
-            // NOTE: Payment provider fields removed
             checkout_url: Some("https://app.example.com/billing/checkout?plan_id=test".to_string()),
             active: true,
             trial_days: 0,
@@ -97,7 +96,7 @@ impl PlanBuilder {
         self
     }
 
-    pub fn with_type(mut self, plan_type: PlanType) -> Self {
+    pub fn with_type(mut self, plan_type: SubscriptionPlanType) -> Self {
         self.plan_type = plan_type;
         self
     }
@@ -142,8 +141,8 @@ impl PlanBuilder {
         self
     }
 
-    pub fn build(self) -> Plan {
-        Plan {
+    pub fn build(self) -> SubscriptionPlan {
+        SubscriptionPlan {
             id: self.id.unwrap_or_else(Uuid::now_v7),
             realm_id: self.realm_id,
             name: self.name,
@@ -152,7 +151,6 @@ impl PlanBuilder {
             r#type: self.plan_type,
             price: self.price,
             currency: self.currency,
-            // NOTE: Payment provider fields removed
             checkout_url: self.checkout_url,
             active: self.active,
             trial_days: self.trial_days,
@@ -452,40 +450,38 @@ impl PaymentEventBuilder {
     }
 }
 
-/// Builder for creating test CreatePlanInput instances
+/// Builder for creating test CreateSubscriptionPlanInput instances
 #[derive(Debug, Clone)]
-pub struct CreatePlanInputBuilder {
+pub struct CreateSubscriptionPlanInputBuilder {
     realm_id: String,
     name: String,
     title: String,
     description: Option<String>,
-    plan_type: PlanType,
+    plan_type: SubscriptionPlanType,
     price: i32,
     currency: String,
-    // NOTE: Payment provider fields removed
     checkout_url: Option<String>,
     trial_days: Option<i32>,
     sort_order: Option<i32>,
     product_id: Uuid,
 }
 
-impl Default for CreatePlanInputBuilder {
+impl Default for CreateSubscriptionPlanInputBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl CreatePlanInputBuilder {
+impl CreateSubscriptionPlanInputBuilder {
     pub fn new() -> Self {
         Self {
             realm_id: "test-realm".to_string(),
             name: "test_plan".to_string(),
             title: "Test Plan".to_string(),
             description: Some("Test Description".to_string()),
-            plan_type: PlanType::Monthly,
+            plan_type: SubscriptionPlanType::Monthly,
             price: 1000,
             currency: "USD".to_string(),
-            // NOTE: Payment provider fields removed
             checkout_url: Some("https://app.example.com/billing/checkout?plan_id=test".to_string()),
             trial_days: Some(0),
             sort_order: Some(1),
@@ -520,7 +516,7 @@ impl CreatePlanInputBuilder {
         self
     }
 
-    pub fn with_type(mut self, plan_type: PlanType) -> Self {
+    pub fn with_type(mut self, plan_type: SubscriptionPlanType) -> Self {
         self.plan_type = plan_type;
         self
     }
@@ -565,8 +561,8 @@ impl CreatePlanInputBuilder {
         self
     }
 
-    pub fn build(self) -> CreatePlanInput {
-        CreatePlanInput {
+    pub fn build(self) -> CreateSubscriptionPlanInput {
+        CreateSubscriptionPlanInput {
             realm_id: self.realm_id,
             name: self.name,
             title: self.title,
@@ -574,7 +570,6 @@ impl CreatePlanInputBuilder {
             r#type: self.plan_type,
             price: self.price,
             currency: self.currency,
-            // NOTE: Payment provider fields removed
             checkout_url: self.checkout_url,
             trial_days: self.trial_days,
             sort_order: self.sort_order,
@@ -583,16 +578,15 @@ impl CreatePlanInputBuilder {
     }
 }
 
-/// Builder for creating test UpdatePlanInput instances
+/// Builder for creating test UpdateSubscriptionPlanInput instances
 #[derive(Debug, Clone, Default)]
-pub struct UpdatePlanInputBuilder {
+pub struct UpdateSubscriptionPlanInputBuilder {
     name: Option<String>,
     title: Option<String>,
     description: Option<String>,
-    plan_type: Option<PlanType>,
+    plan_type: Option<SubscriptionPlanType>,
     price: Option<i32>,
     currency: Option<String>,
-    // NOTE: Payment provider fields removed
     checkout_url: Option<String>,
     active: Option<bool>,
     trial_days: Option<i32>,
@@ -600,7 +594,7 @@ pub struct UpdatePlanInputBuilder {
     product_id: Option<Uuid>,
 }
 
-impl UpdatePlanInputBuilder {
+impl UpdateSubscriptionPlanInputBuilder {
     pub fn new() -> Self {
         Self::default()
     }
@@ -635,7 +629,7 @@ impl UpdatePlanInputBuilder {
         self
     }
 
-    pub fn with_type(mut self, plan_type: PlanType) -> Self {
+    pub fn with_type(mut self, plan_type: SubscriptionPlanType) -> Self {
         self.plan_type = Some(plan_type);
         self
     }
@@ -715,15 +709,14 @@ impl UpdatePlanInputBuilder {
         self
     }
 
-    pub fn build(self) -> UpdatePlanInput {
-        UpdatePlanInput {
+    pub fn build(self) -> UpdateSubscriptionPlanInput {
+        UpdateSubscriptionPlanInput {
             name: self.name,
             title: self.title,
             description: self.description,
             r#type: self.plan_type,
             price: self.price,
             currency: self.currency,
-            // NOTE: Payment provider fields removed
             checkout_url: self.checkout_url,
             active: self.active,
             trial_days: self.trial_days,
@@ -754,17 +747,21 @@ pub fn test_payment_event(
         .build()
 }
 
-/// Create a basic test plan with the given realm_id and name
-pub fn test_plan(realm_id: impl Into<String>, name: impl Into<String>) -> Plan {
-    PlanBuilder::new()
+/// Create a basic test subscription plan with the given realm_id and name
+pub fn test_plan(realm_id: impl Into<String>, name: impl Into<String>) -> SubscriptionPlan {
+    SubscriptionPlanBuilder::new()
         .with_realm_id(realm_id)
         .with_name(name)
         .build()
 }
 
-/// Create a basic test client app plan
-pub fn test_client_app_plan(client_app_id: Uuid, plan_id: Uuid, enabled: bool) -> ClientAppPlan {
-    ClientAppPlan {
+/// Create a basic test client app subscription plan
+pub fn test_client_app_plan(
+    client_app_id: Uuid,
+    plan_id: Uuid,
+    enabled: bool,
+) -> ClientAppSubscriptionPlan {
+    ClientAppSubscriptionPlan {
         id: Uuid::now_v7(),
         client_app_id,
         plan_id,
@@ -795,8 +792,8 @@ pub fn assert_subscription_tier(subscription: &Subscription, expected: Subscript
     );
 }
 
-/// Assert that a plan has the expected price
-pub fn assert_plan_price(plan: &Plan, expected_price: i32) {
+/// Assert that a subscription plan has the expected price
+pub fn assert_plan_price(plan: &SubscriptionPlan, expected_price: i32) {
     assert_eq!(
         plan.price, expected_price,
         "Expected plan price {}, got {}",
@@ -804,8 +801,8 @@ pub fn assert_plan_price(plan: &Plan, expected_price: i32) {
     );
 }
 
-/// Assert that a plan is active or inactive
-pub fn assert_plan_active(plan: &Plan, expected_active: bool) {
+/// Assert that a subscription plan is active or inactive
+pub fn assert_plan_active(plan: &SubscriptionPlan, expected_active: bool) {
     assert_eq!(
         plan.active, expected_active,
         "Expected plan.active={}, got {}",

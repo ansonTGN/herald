@@ -64,7 +64,7 @@ export function SubscriptionSelector({
                 {subscription ? (
                   <div className="space-y-1.5">
                     <div className="text-sm">
-                      <span className="text-muted-foreground">Plan: </span>
+                      <span className="text-muted-foreground">Subscription Plan: </span>
                       <span className="font-medium">{subscription.plan?.title || 'None'}</span>
                     </div>
                     <div className="text-xs text-muted-foreground">

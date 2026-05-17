@@ -2,13 +2,13 @@ import { useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
-import { type PlanResponse, createPlan, updatePlan } from '@/lib/api-generated'
+import { type SubscriptionPlanResponse, createPlan, updatePlan } from '@/lib/api-generated'
 import {
-  billingPlanSchema,
-  type BillingPlanFormData,
-  getBillingPlanDefaults,
+  subscriptionPlanSchema,
+  type SubscriptionPlanFormData,
+  getSubscriptionPlanDefaults,
 } from '@/lib/schemas/billing-forms'
-import { productsQueryOptions } from '@/data/query-options'
+import { productsQueryOptions, queryKeys } from '@/data/query-options'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -27,7 +27,7 @@ import { toast } from 'sonner'
 interface PlanFormPageProps {
   mode: 'create' | 'edit'
   realmId: string
-  plan?: PlanResponse
+  plan?: SubscriptionPlanResponse
 }
 
 export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
@@ -37,10 +37,10 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
 
   const { data: products } = useQuery(productsQueryOptions(realmId))
 
-  const defaultValues = useMemo(() => getBillingPlanDefaults(plan), [plan])
+  const defaultValues = useMemo(() => getSubscriptionPlanDefaults(plan), [plan])
 
   const saveMutation = useMutation({
-    mutationFn: async (formData: BillingPlanFormData) => {
+    mutationFn: async (formData: SubscriptionPlanFormData) => {
       if (isEditing && plan) {
         const response = await updatePlan({
           path: { realmId, planId: plan.id },
@@ -59,10 +59,10 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
         return response.data
       }
     },
-    onSuccess: async (data: PlanResponse) => {
+    onSuccess: async (data: SubscriptionPlanResponse) => {
       const action = isEditing ? 'updated' : 'created'
-      toast.success(`Plan "${data?.title}" ${action} successfully`)
-      await queryClient.invalidateQueries({ queryKey: ['billing-plans', realmId] })
+      toast.success(`Subscription Plan "${data?.title}" ${action} successfully`)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.billingPlans(realmId) })
       navigate({
         to: '/$realmId/manage/billing',
         params: { realmId },
@@ -75,7 +75,7 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
   })
 
   const form = useAppForm({
-    schema: billingPlanSchema,
+    schema: subscriptionPlanSchema,
     defaultValues,
     onSubmit: async ({ value }) => {
       await saveMutation.mutateAsync(value)
@@ -104,10 +104,10 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
         </Button>
         <div>
           <h1 className="text-2xl font-bold" data-testid="plan-form-title">
-            {isEditing ? 'Edit Plan' : 'Create Plan'}
+            {isEditing ? 'Edit Subscription Plan' : 'Create Subscription Plan'}
           </h1>
           <p className="text-muted-foreground text-sm">
-            {isEditing ? 'Update billing plan details' : 'Create a new billing plan'}
+            {isEditing ? 'Update subscription plan details' : 'Create a new subscription plan'}
           </p>
         </div>
       </div>
@@ -183,7 +183,7 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
                   name="description"
                   label="Description"
                   dataTestId="plan-description-input"
-                  placeholder="Plan description"
+                  placeholder="Subscription plan description"
                 />
               </div>
             </div>
@@ -358,7 +358,11 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
             disabled={saveMutation.isPending}
             data-testid="plan-form-submit-button"
           >
-            {saveMutation.isPending ? 'Saving...' : isEditing ? 'Update Plan' : 'Create Plan'}
+            {saveMutation.isPending
+              ? 'Saving...'
+              : isEditing
+                ? 'Update Subscription Plan'
+                : 'Create Subscription Plan'}
           </Button>
         </div>
       </form>

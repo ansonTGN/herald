@@ -1,5 +1,5 @@
 import { type ColumnDef } from '@tanstack/react-table'
-import { type PlanResponse, type PaymentProviderSummary } from '@/lib/api-generated'
+import { type SubscriptionPlanResponse, type PaymentProviderSummary } from '@/lib/api-generated'
 import { Badge } from '@/components/ui/badge'
 import { MoreHorizontal, Edit, Trash2, Users, Settings } from 'lucide-react'
 import { getEnabledProviders, formatProviderNames } from '@/lib/billing-utils'
@@ -13,21 +13,21 @@ import { Button } from '@/components/ui/button'
 import { DataTable } from '@/components/shared/data-table'
 
 interface PlanTableProps {
-  data?: PlanResponse[]
+  data?: SubscriptionPlanResponse[]
   isLoading?: boolean
   error?: Error
-  onEdit?: (plan: PlanResponse) => void
-  onDelete?: (plan: PlanResponse) => void
-  onAssign?: (plan: PlanResponse) => void
-  onManageProviders?: (plan: PlanResponse) => void
+  onEdit?: (plan: SubscriptionPlanResponse) => void
+  onDelete?: (plan: SubscriptionPlanResponse) => void
+  onAssign?: (plan: SubscriptionPlanResponse) => void
+  onManageProviders?: (plan: SubscriptionPlanResponse) => void
 }
 
 function createPlanColumns(
-  onEdit?: (plan: PlanResponse) => void,
-  onDelete?: (plan: PlanResponse) => void,
-  onAssign?: (plan: PlanResponse) => void,
-  onManageProviders?: (plan: PlanResponse) => void
-): ColumnDef<PlanResponse>[] {
+  onEdit?: (plan: SubscriptionPlanResponse) => void,
+  onDelete?: (plan: SubscriptionPlanResponse) => void,
+  onAssign?: (plan: SubscriptionPlanResponse) => void,
+  onManageProviders?: (plan: SubscriptionPlanResponse) => void
+): ColumnDef<SubscriptionPlanResponse>[] {
   return [
     {
       id: 'id',
@@ -41,7 +41,7 @@ function createPlanColumns(
     },
     {
       accessorKey: 'name',
-      header: 'Plan Name',
+      header: 'Subscription Plan Name',
       cell: ({ row }) => (
         <div className="font-medium" data-testid={`plan-name-${row.index}`}>
           {(row.getValue('name') as string) || ''}
@@ -183,9 +183,9 @@ export function PlanTable({
       data={data}
       isLoading={isLoading}
       error={error}
-      loadingMessage="Loading plans..."
-      errorMessage={error ? `Error loading plans: ${error.message}` : undefined}
-      emptyMessage="No plans found."
+      loadingMessage="Loading subscription plans..."
+      errorMessage={error ? `Error loading subscription plans: ${error.message}` : undefined}
+      emptyMessage="No subscription plans found."
       data-testid="plans-table"
     />
   )

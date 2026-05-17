@@ -5,9 +5,10 @@ mod tests {
 
     use crate::authentication::Identity;
     use crate::billing::{
-        AllowAllBillingPolicy, BillingRepository, ClientAppPlan, CreatePlanInput, PaymentEvent,
-        Plan, PlanPaymentProvider, PlanService, Product, Subscription, SubscriptionHistoryEvent,
-        SubscriptionHistoryQuery, UpdatePlanInput, test_helpers::*,
+        AllowAllBillingPolicy, BillingRepository, ClientAppSubscriptionPlan,
+        CreateSubscriptionPlanInput, PaymentEvent, Product, Subscription, SubscriptionHistoryEvent,
+        SubscriptionHistoryQuery, SubscriptionPlan, SubscriptionPlanPaymentProvider,
+        SubscriptionPlanService, UpdateSubscriptionPlanInput, test_helpers::*,
     };
     use crate::common::entities::app_errors::CoreError;
     use crate::user::entities::{User, UserStatus};
@@ -20,7 +21,7 @@ mod tests {
     #[derive(Default)]
     struct StubBillingRepository {
         products: Mutex<HashMap<Uuid, Product>>,
-        plans: Mutex<HashMap<Uuid, Plan>>,
+        plans: Mutex<HashMap<Uuid, SubscriptionPlan>>,
     }
 
     impl StubBillingRepository {
@@ -32,7 +33,7 @@ mod tests {
             self
         }
 
-        fn with_plan(mut self, plan: Plan) -> Self {
+        fn with_plan(mut self, plan: SubscriptionPlan) -> Self {
             self.plans
                 .get_mut()
                 .expect("plans mutex poisoned")
@@ -91,7 +92,10 @@ mod tests {
             unimplemented!()
         }
 
-        async fn create_plan(&self, plan: Plan) -> Result<Plan, CoreError> {
+        async fn create_subscription_plan(
+            &self,
+            plan: SubscriptionPlan,
+        ) -> Result<SubscriptionPlan, CoreError> {
             self.plans
                 .lock()
                 .expect("plans mutex poisoned")
@@ -99,7 +103,10 @@ mod tests {
             Ok(plan)
         }
 
-        async fn find_plan_by_id(&self, plan_id: Uuid) -> Result<Option<Plan>, CoreError> {
+        async fn find_subscription_plan_by_id(
+            &self,
+            plan_id: Uuid,
+        ) -> Result<Option<SubscriptionPlan>, CoreError> {
             let plan = self
                 .plans
                 .lock()
@@ -113,7 +120,7 @@ mod tests {
             &self,
             _realm_id: &str,
             plan_id: Uuid,
-        ) -> Result<Option<Plan>, CoreError> {
+        ) -> Result<Option<SubscriptionPlan>, CoreError> {
             let plan = self
                 .plans
                 .lock()
@@ -123,7 +130,10 @@ mod tests {
             Ok(plan)
         }
 
-        async fn list_plans_by_realm(&self, realm_id: &str) -> Result<Vec<Plan>, CoreError> {
+        async fn list_subscription_plans_by_realm(
+            &self,
+            realm_id: &str,
+        ) -> Result<Vec<SubscriptionPlan>, CoreError> {
             let plans = self
                 .plans
                 .lock()
@@ -135,7 +145,10 @@ mod tests {
             Ok(plans)
         }
 
-        async fn list_public_plans_by_realm(&self, realm_id: &str) -> Result<Vec<Plan>, CoreError> {
+        async fn list_public_plans_by_realm(
+            &self,
+            realm_id: &str,
+        ) -> Result<Vec<SubscriptionPlan>, CoreError> {
             let plans = self
                 .plans
                 .lock()
@@ -147,7 +160,10 @@ mod tests {
             Ok(plans)
         }
 
-        async fn update_plan(&self, plan: Plan) -> Result<Plan, CoreError> {
+        async fn update_subscription_plan(
+            &self,
+            plan: SubscriptionPlan,
+        ) -> Result<SubscriptionPlan, CoreError> {
             self.plans
                 .lock()
                 .expect("plans mutex poisoned")
@@ -155,43 +171,53 @@ mod tests {
             Ok(plan)
         }
 
-        async fn delete_plan(&self, _plan_id: Uuid) -> Result<(), CoreError> {
+        async fn delete_subscription_plan(&self, _plan_id: Uuid) -> Result<(), CoreError> {
             unimplemented!()
         }
 
-        async fn assign_plan_to_client_app(
+        async fn assign_subscription_plan_to_client_app(
             &self,
             _client_app_id: Uuid,
             _plan_id: Uuid,
-        ) -> Result<ClientAppPlan, CoreError> {
+        ) -> Result<ClientAppSubscriptionPlan, CoreError> {
             unimplemented!()
         }
 
-        async fn remove_plan_from_client_app(&self, _assignment_id: Uuid) -> Result<(), CoreError> {
+        async fn remove_subscription_plan_from_client_app(
+            &self,
+            _assignment_id: Uuid,
+        ) -> Result<(), CoreError> {
             unimplemented!()
         }
 
-        async fn list_plans_for_client_app(
+        async fn list_subscription_plans_for_client_app(
             &self,
             _client_app_id: Uuid,
-        ) -> Result<Vec<ClientAppPlan>, CoreError> {
+        ) -> Result<Vec<ClientAppSubscriptionPlan>, CoreError> {
             unimplemented!()
         }
 
-        async fn find_plan_assignment(
+        async fn find_subscription_plan_assignment(
             &self,
             _client_app_id: Uuid,
             _plan_id: Uuid,
-        ) -> Result<Option<ClientAppPlan>, CoreError> {
+        ) -> Result<Option<ClientAppSubscriptionPlan>, CoreError> {
             unimplemented!()
         }
 
-        async fn toggle_plan_assignment(
+        async fn toggle_subscription_plan_assignment(
             &self,
             _assignment_id: Uuid,
             _enabled: bool,
-        ) -> Result<ClientAppPlan, CoreError> {
+        ) -> Result<ClientAppSubscriptionPlan, CoreError> {
             unimplemented!()
+        }
+
+        async fn list_subscription_plan_assignments_batch(
+            &self,
+            _client_app_ids: &[Uuid],
+        ) -> Result<Vec<ClientAppSubscriptionPlan>, CoreError> {
+            Ok(Vec::new())
         }
 
         async fn find_subscription_by_client_app_id(
@@ -209,7 +235,7 @@ mod tests {
             unimplemented!()
         }
 
-        async fn count_active_subscriptions_for_plan(
+        async fn count_active_subscriptions_for_subscription_plan(
             &self,
             _plan_id: Uuid,
         ) -> Result<i64, CoreError> {
@@ -297,69 +323,75 @@ mod tests {
             unimplemented!()
         }
 
-        async fn count_plans_by_product(&self, _product_id: Uuid) -> Result<i64, CoreError> {
+        async fn count_subscription_plans_by_product(
+            &self,
+            _product_id: Uuid,
+        ) -> Result<i64, CoreError> {
             Ok(0)
         }
 
-        async fn find_plans_by_product(
+        async fn find_subscription_plans_by_product(
             &self,
             _realm_id: &str,
             _product_id: Uuid,
-        ) -> Result<Vec<Plan>, CoreError> {
+        ) -> Result<Vec<SubscriptionPlan>, CoreError> {
             unimplemented!()
         }
 
-        async fn create_plan_payment_provider(
+        async fn create_subscription_plan_payment_provider(
             &self,
-            mapping: PlanPaymentProvider,
-        ) -> Result<PlanPaymentProvider, CoreError> {
+            mapping: SubscriptionPlanPaymentProvider,
+        ) -> Result<SubscriptionPlanPaymentProvider, CoreError> {
             Ok(mapping)
         }
 
-        async fn find_plan_payment_provider_by_id(
+        async fn find_subscription_plan_payment_provider_by_id(
             &self,
             _mapping_id: Uuid,
-        ) -> Result<Option<PlanPaymentProvider>, CoreError> {
+        ) -> Result<Option<SubscriptionPlanPaymentProvider>, CoreError> {
             Ok(None)
         }
 
-        async fn find_plan_payment_provider_by_plan_and_provider(
+        async fn find_subscription_plan_payment_provider_by_plan_and_provider(
             &self,
             _plan_id: Uuid,
             _payment_provider: &str,
-        ) -> Result<Option<PlanPaymentProvider>, CoreError> {
+        ) -> Result<Option<SubscriptionPlanPaymentProvider>, CoreError> {
             Ok(None)
         }
 
-        async fn list_plan_payment_providers(
+        async fn list_subscription_plan_payment_providers(
             &self,
             _plan_id: Uuid,
-        ) -> Result<Vec<PlanPaymentProvider>, CoreError> {
+        ) -> Result<Vec<SubscriptionPlanPaymentProvider>, CoreError> {
             Ok(Vec::new())
         }
 
-        async fn update_plan_payment_provider(
+        async fn update_subscription_plan_payment_provider(
             &self,
-            mapping: PlanPaymentProvider,
-        ) -> Result<PlanPaymentProvider, CoreError> {
+            mapping: SubscriptionPlanPaymentProvider,
+        ) -> Result<SubscriptionPlanPaymentProvider, CoreError> {
             Ok(mapping)
         }
 
-        async fn delete_plan_payment_provider(&self, _mapping_id: Uuid) -> Result<(), CoreError> {
+        async fn delete_subscription_plan_payment_provider(
+            &self,
+            _mapping_id: Uuid,
+        ) -> Result<(), CoreError> {
             Ok(())
         }
 
-        async fn delete_plan_payment_providers_by_plan(
+        async fn delete_subscription_plan_payment_providers_by_plan(
             &self,
             _plan_id: Uuid,
         ) -> Result<(), CoreError> {
             Ok(())
         }
 
-        async fn list_plan_payment_providers_batch(
+        async fn list_subscription_plan_payment_providers_batch(
             &self,
             _plan_ids: &[Uuid],
-        ) -> Result<Vec<PlanPaymentProvider>, CoreError> {
+        ) -> Result<Vec<SubscriptionPlanPaymentProvider>, CoreError> {
             Ok(Vec::new())
         }
     }
@@ -400,9 +432,9 @@ mod tests {
             StubBillingRepository::default()
                 .with_product(test_product("realm-b", foreign_product_id)),
         );
-        let service = PlanService::new(repository, Arc::new(AllowAllBillingPolicy));
+        let service = SubscriptionPlanService::new(repository, Arc::new(AllowAllBillingPolicy));
 
-        let input: CreatePlanInput = CreatePlanInputBuilder::new()
+        let input: CreateSubscriptionPlanInput = CreateSubscriptionPlanInputBuilder::new()
             .with_realm_id(realm_id)
             .with_name("starter")
             .with_product_id(foreign_product_id)
@@ -436,14 +468,15 @@ mod tests {
             StubBillingRepository::default()
                 .with_product(test_product(realm_id, current_product_id))
                 .with_product(test_product("realm-b", foreign_product_id))
-                .with_plan(Plan {
+                .with_plan(SubscriptionPlan {
                     product_id: current_product_id,
                     ..existing_plan
                 }),
         );
-        let service = PlanService::new(repository.clone(), Arc::new(AllowAllBillingPolicy));
+        let service =
+            SubscriptionPlanService::new(repository.clone(), Arc::new(AllowAllBillingPolicy));
 
-        let input: UpdatePlanInput = UpdatePlanInputBuilder::new()
+        let input: UpdateSubscriptionPlanInput = UpdateSubscriptionPlanInputBuilder::new()
             .with_product_id(foreign_product_id)
             .build();
 
@@ -464,7 +497,7 @@ mod tests {
         }
 
         let saved_plan = repository
-            .find_plan_by_id(existing_plan_id)
+            .find_subscription_plan_by_id(existing_plan_id)
             .await
             .expect("plan lookup should succeed")
             .expect("existing plan should remain stored");

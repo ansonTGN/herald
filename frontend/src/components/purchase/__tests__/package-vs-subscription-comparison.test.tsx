@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { PackageVsSubscriptionComparison } from '../package-vs-subscription-comparison'
 import type { PointsPackageResponse } from '@/lib/api-generated'
-import type { PlanResponse } from '@/lib/api-generated'
+import type { SubscriptionPlanResponse } from '@/lib/api-generated'
 
 describe('PackageVsSubscriptionComparison', () => {
   const mockPackages: PointsPackageResponse[] = [
@@ -32,7 +32,7 @@ describe('PackageVsSubscriptionComparison', () => {
     },
   ]
 
-  const mockPlans: PlanResponse[] = [
+  const mockPlans: SubscriptionPlanResponse[] = [
     {
       id: 'plan-1',
       name: 'basic_monthly',
@@ -275,7 +275,7 @@ describe('PackageVsSubscriptionComparison', () => {
 
   describe('edge cases', () => {
     it('should handle inactive plans correctly', () => {
-      const inactivePlans: PlanResponse[] = [
+      const inactivePlans: SubscriptionPlanResponse[] = [
         {
           ...mockPlans[0],
           active: false,
@@ -288,7 +288,7 @@ describe('PackageVsSubscriptionComparison', () => {
     })
 
     it('should filter out inactive plans when finding cheapest', () => {
-      const mixedPlans: PlanResponse[] = [
+      const mixedPlans: SubscriptionPlanResponse[] = [
         {
           ...mockPlans[0],
           active: false,

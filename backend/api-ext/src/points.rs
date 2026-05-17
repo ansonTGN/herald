@@ -13,16 +13,12 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use herald_api_base::application::http::common::error_codes::ErrorCode;
+use herald_api_base::application::http::common::error_helpers::json_error;
 use herald_api_base::application::http::rate_limit::{RateLimitConfig, rate_limit};
-use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
+use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::points::dtos::ConsumePointsInput;
-
-/// Create a JSON error response using centralized error codes
-fn json_error(status: StatusCode, error_code: ErrorCode) -> Response {
-    ApiError::with_code(status, error_code.as_u32(), error_code.as_str()).into_response()
-}
 
 /// Balance response (SDK-compatible)
 #[derive(Debug, Serialize, ToSchema)]

@@ -37,11 +37,11 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::plan::Entity",
+        belongs_to = "super::subscription_plan::Entity",
         from = "Column::PlanId",
-        to = "super::plan::Column::Id"
+        to = "super::subscription_plan::Column::Id"
     )]
-    Plan,
+    SubscriptionPlan,
     #[sea_orm(
         belongs_to = "super::client_app::Entity",
         from = "Column::ClientAppId",
@@ -56,9 +56,9 @@ pub enum Relation {
     Account,
 }
 
-impl Related<super::plan::Entity> for Entity {
+impl Related<super::subscription_plan::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Plan.def()
+        Relation::SubscriptionPlan.def()
     }
 }
 

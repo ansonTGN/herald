@@ -5,9 +5,9 @@ import { useDialogManager } from '@/hooks/use-dialog-state'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Plus } from 'lucide-react'
-import { type PlanResponse, listPaymentProviders } from '@/lib/api-generated'
+import { type SubscriptionPlanResponse, listPaymentProviders } from '@/lib/api-generated'
 import { deletePlan, assignPlanToClientApp, removePlanAssignment } from '@/lib/api-generated'
-import { billingPlansQueryOptions, queryKeys } from '@/data/query-options'
+import { subscriptionPlansQueryOptions, queryKeys } from '@/data/query-options'
 import { PlanTable } from './plan-table'
 import { PlanAssignmentDialog, type PlanAssignmentSubmitData } from './plan-assignment-dialog'
 import { PlanProviderMappingList } from './plan-provider-mapping-list'
@@ -16,7 +16,7 @@ import { ListPagination } from '@/components/shared'
 import {
   addPaymentProviderToPlan,
   updatePlanPaymentProvider,
-  type PlanPaymentProviderResponse,
+  type SubscriptionPlanPaymentProviderResponse,
 } from '@/lib/api-generated'
 import { toast } from 'sonner'
 import { type ProviderMappingFormData } from '@/lib/schemas/billing-forms'
@@ -40,7 +40,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
   const navigate = useNavigate()
 
   const { data: plansData, isLoading } = useQuery(
-    billingPlansQueryOptions(realmId, {
+    subscriptionPlansQueryOptions(realmId, {
       page: search.page,
       pageSize: search.pageSize,
     })
@@ -58,13 +58,13 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
   }
 
   // Dialog states
-  const assignDialog = useDialogManager<PlanResponse>()
-  const deleteDialog = useDialogManager<PlanResponse>()
+  const assignDialog = useDialogManager<SubscriptionPlanResponse>()
+  const deleteDialog = useDialogManager<SubscriptionPlanResponse>()
 
   // Provider mapping dialog states (interleaved parent/child pattern)
   const [providerMappingOpen, setProviderMappingOpen] = useState(false)
   const [providerMappingPlanId, setProviderMappingPlanId] = useState<string | null>(null)
-  const mappingFormDialog = useDialogManager<PlanPaymentProviderResponse>()
+  const mappingFormDialog = useDialogManager<SubscriptionPlanPaymentProviderResponse>()
 
   // Fetch available payment providers for the realm
   const { data: paymentProvidersResponse } = useQuery({
@@ -87,11 +87,11 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
     },
     onSuccess: async (_, planId) => {
       const plan = plans?.find((p) => p.id === planId)
-      toast.success(`Plan "${plan?.title}" deleted successfully`)
+      toast.success(`Subscription Plan "${plan?.title}" deleted successfully`)
 
       // 先等待数据刷新完成
       await queryClient.invalidateQueries({
-        queryKey: ['billing-plans', realmId],
+        queryKey: queryKeys.billingPlans(realmId),
       })
 
       // 再关闭对话框
@@ -146,7 +146,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
       }
       assignDialog.close()
       // Invalidate queries and wait for refetch to complete
-      await queryClient.invalidateQueries({ queryKey: ['billing-plans', realmId] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.billingPlans(realmId) })
       await queryClient.invalidateQueries({ queryKey: queryKeys.planAssignmentsList(realmId) })
     },
     onError: (error: Error) => {
@@ -212,8 +212,8 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
   })
 
   async function invalidateProviderQueries() {
-    // Always invalidate billing plans to refresh payment provider summaries
-    await queryClient.invalidateQueries({ queryKey: ['billing-plans', realmId] })
+    // Always invalidate subscription plans to refresh payment provider summaries
+    await queryClient.invalidateQueries({ queryKey: queryKeys.billingPlans(realmId) })
 
     // Also invalidate the specific plan's provider list if we have a selected plan
     if (providerMappingPlanId) {
@@ -230,14 +230,14 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
     })
   }
 
-  function handleEditPlan(plan: PlanResponse) {
+  function handleEditPlan(plan: SubscriptionPlanResponse) {
     navigate({
       to: '/$realmId/manage/billing/plans/$planId/edit',
       params: { realmId, planId: plan.id },
     })
   }
 
-  function handleDeletePlan(plan: PlanResponse) {
+  function handleDeletePlan(plan: SubscriptionPlanResponse) {
     deleteDialog.open(plan)
   }
 
@@ -246,7 +246,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
     await deletePlanMutation.mutateAsync(deleteDialog.selectedItem.id)
   }
 
-  function handleAssignPlan(plan: PlanResponse) {
+  function handleAssignPlan(plan: SubscriptionPlanResponse) {
     assignDialog.open(plan)
   }
 
@@ -255,7 +255,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
     assignPlanMutation.mutate({ planId: assignDialog.selectedItem.id, ...data })
   }
 
-  function handleManageProviders(plan: PlanResponse) {
+  function handleManageProviders(plan: SubscriptionPlanResponse) {
     setProviderMappingPlanId(plan.id)
     setProviderMappingOpen(true)
   }
@@ -265,7 +265,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
     setProviderMappingOpen(false)
   }
 
-  function handleEditMapping(mapping: PlanPaymentProviderResponse) {
+  function handleEditMapping(mapping: SubscriptionPlanPaymentProviderResponse) {
     mappingFormDialog.open(mapping)
     setProviderMappingOpen(false)
   }
@@ -300,11 +300,11 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
   return (
     <div className="space-y-6" data-testid="billing-page">
       <div className="flex items-start justify-between gap-4">
-        <PageHeader title="Billing Plans" />
+        <PageHeader title="Subscription Plans" />
         <div className="flex gap-2">
           <Button onClick={handleCreatePlan} data-testid="add-plan-button">
             <Plus className="mr-2 h-4 w-4" />
-            Add Plan
+            Add Subscription Plan
           </Button>
         </div>
       </div>
@@ -327,7 +327,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
             <div className="text-center py-8">Loading...</div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              No plans found. Click "Add Plan" to create one.
+              No subscription plans found. Click "Add Subscription Plan" to create one.
             </div>
           )}
         </CardContent>
@@ -355,8 +355,8 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
       <ConfirmDeleteDialog
         open={deleteDialog.isOpen}
         onOpenChange={deleteDialog.onOpenChange}
-        title="Delete Plan"
-        description={`Are you sure you want to delete plan "${deleteDialog.selectedItem?.title}"?`}
+        title="Delete Subscription Plan"
+        description={`Are you sure you want to delete subscription plan "${deleteDialog.selectedItem?.title}"?`}
         onConfirm={confirmDeletePlan}
         isPending={deletePlanMutation.isPending}
         confirmTestId="confirm-delete-button"
@@ -371,7 +371,9 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
           >
             <DialogHeader>
               <DialogTitle>Manage Payment Providers</DialogTitle>
-              <DialogDescription>Configure payment providers for this plan</DialogDescription>
+              <DialogDescription>
+                Configure payment providers for this subscription plan
+              </DialogDescription>
             </DialogHeader>
             <PlanProviderMappingList
               planId={providerMappingPlanId}

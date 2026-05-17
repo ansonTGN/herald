@@ -20,8 +20,8 @@ CREATE INDEX idx_products_realm_id ON products(realm_id);
 CREATE INDEX idx_products_realm_sort_order ON products(realm_id, sort_order);
 CREATE INDEX idx_products_realm_enabled ON products(realm_id, enabled);
 
--- 2. Add product_id to plan table
-ALTER TABLE plan ADD COLUMN product_id UUID;
+-- 2. Add product_id to subscription_plan table
+ALTER TABLE subscription_plan ADD COLUMN product_id UUID;
 
 -- 3. Create default products for each realm
 INSERT INTO products (id, realm_id, name, title, description, sort_order, enabled)
@@ -33,24 +33,24 @@ SELECT
     'Default product for migrated plans' as description,
     0 as sort_order,
     true as enabled
-FROM (SELECT DISTINCT realm_id FROM plan) AS distinct_realms;
+FROM (SELECT DISTINCT realm_id FROM subscription_plan) AS distinct_realms;
 
--- 4. Backfill plan.product_id
-UPDATE plan
+-- 4. Backfill subscription_plan.product_id
+UPDATE subscription_plan
 SET product_id = (
-    SELECT id FROM products WHERE products.realm_id = plan.realm_id AND products.name = 'default'
+    SELECT id FROM products WHERE products.realm_id = subscription_plan.realm_id AND products.name = 'default'
 );
 
 -- 5. Make product_id NOT NULL
-ALTER TABLE plan ALTER COLUMN product_id SET NOT NULL;
+ALTER TABLE subscription_plan ALTER COLUMN product_id SET NOT NULL;
 
 -- 6. Add foreign key constraint
-ALTER TABLE plan ADD CONSTRAINT fk_plan_product
+ALTER TABLE subscription_plan ADD CONSTRAINT fk_subscription_plan_product
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT;
 
 -- 7. Add indexes for product queries
-CREATE INDEX idx_plan_product_id ON plan(product_id);
-CREATE INDEX idx_plan_realm_product ON plan(realm_id, product_id);
+CREATE INDEX idx_subscription_plan_product_id ON subscription_plan(product_id);
+CREATE INDEX idx_subscription_plan_realm_product ON subscription_plan(realm_id, product_id);
 
 -- ====================================
 -- Down Migration (removed from up file)

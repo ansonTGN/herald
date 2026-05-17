@@ -10,7 +10,7 @@ use super::*;
 use chrono::Utc;
 use futures::FutureExt;
 use herald_domain::billing::{
-    BillingPeriod, BillingRepository, Plan, Product, Subscription, SubscriptionStatus,
+    BillingPeriod, BillingRepository, Product, Subscription, SubscriptionPlan, SubscriptionStatus,
     SubscriptionTier, test_helpers::*,
 };
 use herald_domain::common::entities::app_errors::CoreError;
@@ -94,8 +94,8 @@ async fn create_test_plans(db: &DatabaseConnection) {
             .execute(Statement::from_string(
                 backend,
                 format!(
-                    "INSERT INTO plan (id, realm_id, name, title, description, type, price, currency, payment_provider, external_product_id, external_price_id, checkout_url, active, trial_days, sort_order, product_id, created_at, updated_at) VALUES ('{}', '{}', 'test_plan_{}', 'Test Plan', 'Test plan for {}', 'monthly', 2500, 'USD', 'creem', 'prod_{}', 'price_{}', NULL, true, 0, 1, '{}', NOW(), NOW()) ON CONFLICT DO NOTHING",
-                    plan_id, realm_id, realm_id, realm_id, realm_id, realm_id, product_id
+                    "INSERT INTO subscription_plan (id, realm_id, name, title, description, type, price, currency, checkout_url, active, trial_days, sort_order, product_id, created_at, updated_at) VALUES ('{}', '{}', 'test_plan_{}', 'Test Plan', 'Test plan for {}', 'monthly', 2500, 'USD', NULL, true, 0, 1, '{}', NOW(), NOW()) ON CONFLICT DO NOTHING",
+                    plan_id, realm_id, realm_id, realm_id, product_id
                 ),
             ))
             .await;
@@ -566,8 +566,8 @@ billing_repo_test!(test_repository_update_plan_persists_product_id, |repo| {
     .unwrap();
 
     let created = repo
-        .create_plan(
-            PlanBuilder::new()
+        .create_subscription_plan(
+            SubscriptionPlanBuilder::new()
                 .with_realm_id(realm_id)
                 .with_name("move_plan")
                 .with_product_id(source_product_id)
@@ -577,7 +577,7 @@ billing_repo_test!(test_repository_update_plan_persists_product_id, |repo| {
         .unwrap();
 
     let updated = repo
-        .update_plan(Plan {
+        .update_subscription_plan(SubscriptionPlan {
             product_id: target_product_id,
             updated_at: Utc::now(),
             ..created.clone()
@@ -587,7 +587,11 @@ billing_repo_test!(test_repository_update_plan_persists_product_id, |repo| {
 
     assert_eq!(updated.product_id, target_product_id);
 
-    let reloaded = repo.find_plan_by_id(created.id).await.unwrap().unwrap();
+    let reloaded = repo
+        .find_subscription_plan_by_id(created.id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(reloaded.product_id, target_product_id);
 });
 
@@ -631,8 +635,8 @@ billing_repo_test!(
         .unwrap();
 
         let visible_plan = repo
-            .create_plan(
-                PlanBuilder::new()
+            .create_subscription_plan(
+                SubscriptionPlanBuilder::new()
                     .with_realm_id(visible_realm)
                     .with_name("visible_plan")
                     .with_product_id(visible_product_id)
@@ -642,8 +646,8 @@ billing_repo_test!(
             .unwrap();
 
         let hidden_plan = repo
-            .create_plan(
-                PlanBuilder::new()
+            .create_subscription_plan(
+                SubscriptionPlanBuilder::new()
                     .with_realm_id(hidden_realm)
                     .with_name("hidden_plan")
                     .with_product_id(hidden_product_id)

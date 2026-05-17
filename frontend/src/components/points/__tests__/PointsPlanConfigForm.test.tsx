@@ -24,7 +24,7 @@ describe('PointsPlanConfigForm', () => {
       )
 
       expect(screen.getByTestId('points-plan-config-form')).toBeInTheDocument()
-      expect(screen.getByText('Create Points Plan Configuration')).toBeInTheDocument()
+      expect(screen.getByText('Create Points Rule')).toBeInTheDocument()
 
       // Plan selection
       expect(screen.getByLabelText('Plan *')).toBeInTheDocument()
@@ -67,7 +67,7 @@ describe('PointsPlanConfigForm', () => {
         />
       )
 
-      expect(screen.getByText('Edit Points Plan Configuration')).toBeInTheDocument()
+      expect(screen.getByText('Edit Points Rule')).toBeInTheDocument()
 
       // Check pre-filled values
       await waitFor(() => {

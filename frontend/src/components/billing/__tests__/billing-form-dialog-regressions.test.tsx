@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PlanFormPage } from '../plan-form-page'
 import { ProductFormDialog } from '../product-form-dialog'
-import type { PlanResponse } from '@/lib/api-generated'
+import type { SubscriptionPlanResponse } from '@/lib/api-generated'
 import { server } from '@/test/mocks/server'
 
 // ==================== Router Mock ====================
@@ -68,7 +68,7 @@ function productsHandler() {
   })
 }
 
-const basePlan: PlanResponse = {
+const basePlan: SubscriptionPlanResponse = {
   id: 'plan-1',
   realmId: REALM_ID,
   productId: 'prod-1',
@@ -86,7 +86,7 @@ const basePlan: PlanResponse = {
   updatedAt: '2026-03-29T00:00:00Z',
 }
 
-const secondPlan: PlanResponse = {
+const secondPlan: SubscriptionPlanResponse = {
   ...basePlan,
   id: 'plan-2',
   productId: 'prod-2',
@@ -143,7 +143,7 @@ describe('Billing form regressions', () => {
 
       // Wait for the page to render with products loaded
       await waitFor(() => {
-        expect(screen.getByTestId('plan-form-title')).toHaveTextContent('Edit Plan')
+        expect(screen.getByTestId('plan-form-title')).toHaveTextContent('Edit Subscription Plan')
       })
 
       const trigger = screen.getByTestId('plan-product-select-trigger')
@@ -170,7 +170,7 @@ describe('Billing form regressions', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByTestId('plan-form-title')).toHaveTextContent('Edit Plan')
+        expect(screen.getByTestId('plan-form-title')).toHaveTextContent('Edit Subscription Plan')
         expect(screen.getByTestId('plan-name-input')).toHaveValue('starter-monthly')
         expect(screen.getByTestId('plan-title-input')).toHaveValue('Starter Monthly')
       })
@@ -184,7 +184,7 @@ describe('Billing form regressions', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByTestId('plan-form-title')).toHaveTextContent('Edit Plan')
+        expect(screen.getByTestId('plan-form-title')).toHaveTextContent('Edit Subscription Plan')
         expect(screen.getByTestId('plan-name-input')).toHaveValue('growth-yearly')
         expect(screen.getByTestId('plan-title-input')).toHaveValue('Growth Yearly')
       })
@@ -202,7 +202,7 @@ describe('Billing form regressions', () => {
       renderWithProviders(<PlanFormPage mode="create" realmId={REALM_ID} />)
 
       await waitFor(() => {
-        expect(screen.getByTestId('plan-form-title')).toHaveTextContent('Create Plan')
+        expect(screen.getByTestId('plan-form-title')).toHaveTextContent('Create Subscription Plan')
       })
 
       // Fill required fields
@@ -227,7 +227,7 @@ describe('Billing form regressions', () => {
       renderWithProviders(<PlanFormPage mode="create" realmId={REALM_ID} />)
 
       await waitFor(() => {
-        expect(screen.getByTestId('plan-form-title')).toHaveTextContent('Create Plan')
+        expect(screen.getByTestId('plan-form-title')).toHaveTextContent('Create Subscription Plan')
       })
 
       await user.click(screen.getByTestId('plan-form-cancel-button'))

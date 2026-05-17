@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -13,11 +13,14 @@ import {
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
-  type PlanAssignmentResponse,
-  type PlanResponse,
+  type SubscriptionPlanAssignmentResponse,
+  type SubscriptionPlanResponse,
   type ClientAppItem,
 } from '@/lib/api-generated'
-import { clientAppsQueryOptions, planAssignmentsQueryOptions } from '@/data/query-options'
+import {
+  clientAppsQueryOptions,
+  subscriptionPlanAssignmentsBatchQueryOptions,
+} from '@/data/query-options'
 
 export interface PlanAssignmentSubmitData {
   assignClientAppIds: string[]
@@ -25,7 +28,7 @@ export interface PlanAssignmentSubmitData {
 }
 
 interface PlanAssignmentDialogProps {
-  plan?: PlanResponse
+  plan?: SubscriptionPlanResponse
   realmId: string
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -44,12 +47,11 @@ export function PlanAssignmentDialog({
   const planId = plan?.id ?? ''
   const { data: clientAppsData, isLoading } = useQuery(clientAppsQueryOptions(realmId, {}))
   const clientApps = useMemo<ClientAppItem[]>(() => clientAppsData?.items ?? [], [clientAppsData])
-  const assignmentQueries = useQueries({
-    queries: clientApps.map((app: ClientAppItem) => ({
-      ...planAssignmentsQueryOptions(realmId, app.id),
-      enabled: open && !!plan,
-    })),
-  })
+  const clientAppIds = useMemo(() => clientApps.map((app) => app.id), [clientApps])
+
+  const { data: batchAssignments } = useQuery(
+    subscriptionPlanAssignmentsBatchQueryOptions(realmId, clientAppIds)
+  )
 
   const [selectedApps, setSelectedApps] = useState<string[]>([])
   const [userModified, setUserModified] = useState(false)
@@ -57,20 +59,13 @@ export function PlanAssignmentDialog({
 
   const assignedAppsWithAssignmentIds = useMemo(
     () =>
-      clientApps
-        .map((app: ClientAppItem, index: number) => {
-          const assignments =
-            (assignmentQueries[index]?.data as PlanAssignmentResponse[] | undefined) || []
-          const matchedAssignment = assignments.find(
-            (assignment: PlanAssignmentResponse) => assignment.planId === planId
-          )
-
-          return matchedAssignment
-            ? { clientAppId: app.id, assignmentId: matchedAssignment.id }
-            : null
-        })
-        .filter((item): item is { clientAppId: string; assignmentId: string } => item !== null),
-    [assignmentQueries, clientApps, planId]
+      (batchAssignments || [])
+        .filter((a: SubscriptionPlanAssignmentResponse) => a.planId === planId)
+        .map((a: SubscriptionPlanAssignmentResponse) => ({
+          clientAppId: a.clientAppId,
+          assignmentId: a.id,
+        })),
+    [batchAssignments, planId]
   )
   const assignedClientAppIds = useMemo(
     () => assignedAppsWithAssignmentIds.map((item) => item.clientAppId),
@@ -141,11 +136,9 @@ export function PlanAssignmentDialog({
       <DialogContent className="sm:max-w-[600px]" data-testid="plan-assignment-dialog">
         <DialogHeader>
           <DialogTitle data-testid="plan-assignment-dialog-title">
-            Assign Plan: {plan?.title}
+            Assign Subscription Plan: {plan?.title}
           </DialogTitle>
-          <DialogDescription>
-            Select client apps that should have access to this plan.
-          </DialogDescription>
+          <DialogDescription>Select apps to assign this subscription plan to.</DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
@@ -192,7 +185,7 @@ export function PlanAssignmentDialog({
             disabled={isSubmitting || isLoading || !hasChanges}
             data-testid="plan-assignment-submit-button"
           >
-            {isSubmitting ? 'Assigning...' : 'Assign Plan'}
+            {isSubmitting ? 'Assigning...' : 'Assign Subscription Plan'}
           </Button>
         </DialogFooter>
       </DialogContent>

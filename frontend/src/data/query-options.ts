@@ -26,6 +26,7 @@ import {
   getProductPlans,
   getSubscriptionForClientApp,
   listPlanAssignments,
+  listPlanAssignmentsBatch,
   listAccounts,
   getAccount,
   listTransactions,
@@ -48,7 +49,7 @@ import {
 import { handleApiResponse } from '@/lib/api-utils'
 import type {
   OAuthConfigResponse,
-  PlanResponse,
+  SubscriptionPlanResponse,
   PaymentAttemptStatusResponse,
   PointsAccountResponse,
 } from '@/lib/api-generated'
@@ -186,6 +187,8 @@ export const queryKeys = {
   planAssignments: (realmId: string, clientAppId: string) =>
     [QUERY_KEYS.PLAN_ASSIGNMENTS, realmId, clientAppId] as const,
   planAssignmentsList: (realmId: string) => [QUERY_KEYS.PLAN_ASSIGNMENTS, realmId] as const,
+  planAssignmentsBatch: (realmId: string, clientAppIds: string[]) =>
+    [QUERY_KEYS.PLAN_ASSIGNMENTS, realmId, 'batch', clientAppIds] as const,
   subscriptionHistory: (realmId: string, subscriptionId: string) =>
     [QUERY_KEYS.SUBSCRIPTION_HISTORY, realmId, subscriptionId] as const,
   globalSubscriptionHistory: (
@@ -488,9 +491,9 @@ export const totpStatusQueryOptions = queryOptions({
   gcTime: GC_TIME_5_MIN,
 })
 
-// ==================== Billing Plans ====================
+// ==================== Subscription Plans ====================
 
-export const billingPlansQueryOptions = (
+export const subscriptionPlansQueryOptions = (
   realmId: string,
   filters?: {
     page?: number
@@ -502,7 +505,7 @@ export const billingPlansQueryOptions = (
     queryFn: async () => {
       const response = await listPlans({ path: { realmId } })
       if (response.error) throw response.error
-      const allPlans = extractNestedArray<PlanResponse>(response.data, 'plans')
+      const allPlans = extractNestedArray<SubscriptionPlanResponse>(response.data, 'plans')
 
       // Client-side pagination (backend doesn't support pagination for plans)
       const page = filters?.page ?? 0
@@ -523,7 +526,7 @@ export const billingPlansQueryOptions = (
     staleTime: STALE_TIME_5_MIN,
   })
 
-export const billingPlanQueryOptions = (realmId: string, planId: string) =>
+export const subscriptionPlanQueryOptions = (realmId: string, planId: string) =>
   queryOptions({
     queryKey: queryKeys.billingPlan(realmId, planId),
     queryFn: async () => {
@@ -535,7 +538,7 @@ export const billingPlanQueryOptions = (realmId: string, planId: string) =>
     staleTime: STALE_TIME_5_MIN,
   })
 
-export const planProvidersQueryOptions = (realmId: string, planId: string) =>
+export const subscriptionPlanProvidersQueryOptions = (realmId: string, planId: string) =>
   queryOptions({
     queryKey: queryKeys.planProviders(realmId, planId),
     queryFn: async () => {
@@ -645,9 +648,9 @@ export const userSubscriptionsQueryOptions = <TData>(
     gcTime: GC_TIME_5_MIN,
   })
 
-// ==================== Plan Assignments ====================
+// ==================== Subscription Plan Assignments ====================
 
-export const planAssignmentsQueryOptions = (realmId: string, clientAppId: string) =>
+export const subscriptionPlanAssignmentsQueryOptions = (realmId: string, clientAppId: string) =>
   queryOptions({
     queryKey: queryKeys.planAssignments(realmId, clientAppId),
     queryFn: async () => {
@@ -655,6 +658,25 @@ export const planAssignmentsQueryOptions = (realmId: string, clientAppId: string
       if (response.error) throw response.error
       return response.data?.assignments || []
     },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+
+export const subscriptionPlanAssignmentsBatchQueryOptions = (
+  realmId: string,
+  clientAppIds: string[]
+) =>
+  queryOptions({
+    queryKey: queryKeys.planAssignmentsBatch(realmId, clientAppIds),
+    queryFn: async () => {
+      const response = await listPlanAssignmentsBatch({
+        path: { realmId },
+        query: { clientAppIds: clientAppIds.join(',') },
+      })
+      if (response.error) throw response.error
+      return response.data?.assignments || []
+    },
+    enabled: clientAppIds.length > 0,
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_5_MIN,
   })

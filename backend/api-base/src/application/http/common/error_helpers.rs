@@ -6,8 +6,11 @@
 //
 // =============================================================================
 
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use herald_core::domain::common::entities::app_errors::CoreError;
 
+use crate::application::http::common::error_codes::ErrorCode;
 use crate::application::http::server::api_entities::ApiError;
 
 /// Database error handling macro - logs and converts to InternalServerError
@@ -57,4 +60,8 @@ pub fn core_error_to_api_error(e: CoreError, operation: &str) -> ApiError {
         CoreError::Forbidden(msg) => ApiError::forbidden(msg),
         _ => ApiError::internal(format!("Failed to {operation}: {e}")),
     }
+}
+
+pub fn json_error(status: StatusCode, error_code: ErrorCode) -> Response {
+    ApiError::with_code(status, error_code.as_u32(), error_code.as_str()).into_response()
 }

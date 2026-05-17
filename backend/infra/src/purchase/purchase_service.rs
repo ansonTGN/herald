@@ -275,7 +275,7 @@ where
             PurchasableTarget::SubscriptionPlan => {
                 let plan = self
                     .billing_repository
-                    .find_plan_by_id(target_id)
+                    .find_subscription_plan_by_id(target_id)
                     .await?
                     .ok_or_else(|| CoreError::plan_not_found(&target_id.to_string()))?;
 
@@ -285,7 +285,7 @@ where
 
                 let provider_mapping = self
                     .billing_repository
-                    .list_plan_payment_providers(plan.id)
+                    .list_subscription_plan_payment_providers(plan.id)
                     .await?
                     .into_iter()
                     .find(|mapping| {

@@ -11,9 +11,9 @@ use crate::handlers::{
     add_payment_provider_to_plan, assign_plan_to_client_app, cancel_subscription_for_client_app,
     create_checkout_session, create_plan, create_product, delete_plan, delete_product, get_plan,
     get_product, get_product_plans, get_subscription_for_client_app, list_plan_assignments,
-    list_plan_payment_providers, list_plans, list_products, remove_payment_provider_from_plan,
-    remove_plan_assignment, toggle_plan_assignment, toggle_plan_payment_provider, update_plan,
-    update_plan_payment_provider, update_product,
+    list_plan_assignments_batch, list_plan_payment_providers, list_plans, list_products,
+    remove_payment_provider_from_plan, remove_plan_assignment, toggle_plan_assignment,
+    toggle_plan_payment_provider, update_plan, update_plan_payment_provider, update_product,
 };
 use crate::handlers_history::{get_subscription_history, list_subscription_history};
 use crate::invoice_handlers::{
@@ -135,6 +135,10 @@ pub fn billing_routes() -> Router<AppState> {
             get(get_product_plans),
         )
         // ===== Plan Assignment =====
+        .route(
+            "/api/bill/{realmId}/client/plans/batch",
+            get(list_plan_assignments_batch),
+        )
         .route(
             "/api/bill/{realmId}/client/{clientAppId}/plans",
             get(list_plan_assignments).post(assign_plan_to_client_app),

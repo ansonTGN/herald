@@ -53,9 +53,7 @@ export function PointsPlanConfigForm({
   return (
     <Card data-testid="points-plan-config-form">
       <CardHeader>
-        <CardTitle>
-          {isEdit ? 'Edit Points Plan Configuration' : 'Create Points Plan Configuration'}
-        </CardTitle>
+        <CardTitle>{isEdit ? 'Edit Points Rule' : 'Create Points Rule'}</CardTitle>
       </CardHeader>
       <CardContent>
         <form

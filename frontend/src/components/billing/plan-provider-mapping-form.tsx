@@ -18,7 +18,7 @@ import {
   type ProviderMappingFormData,
   getProviderMappingDefaults,
 } from '@/lib/schemas/billing-forms'
-import type { PlanPaymentProviderResponse } from '@/lib/api-generated'
+import type { SubscriptionPlanPaymentProviderResponse } from '@/lib/api-generated'
 import { formatProviderName } from './format-provider-name'
 
 interface PlanProviderMappingFormProps {
@@ -26,7 +26,7 @@ interface PlanProviderMappingFormProps {
   onOpenChange: (open: boolean) => void
   onSubmit: (data: ProviderMappingFormData) => void
   isSubmitting: boolean
-  mapping?: PlanPaymentProviderResponse
+  mapping?: SubscriptionPlanPaymentProviderResponse
   realmId: string
   availableProviders: string[]
 }

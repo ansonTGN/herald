@@ -271,6 +271,19 @@ def run_tests(
         exit_code = proc.wait()
     duration = round(time.time() - start, 1)
 
+    # 检测 "所有测试被跳过" 的情况：Playwright exit_code=0 但实际没有测试通过
+    all_skipped = False
+    if not list_tests and exit_code == 0:
+        log_content = playwright_log.read_text(encoding="utf-8", errors="replace")
+        has_passed = bool(re.search(r"\d+ passed", log_content))
+        has_failed = bool(re.search(r"\d+ failed", log_content))
+        has_skipped = bool(re.search(r"\d+ skipped", log_content))
+        if has_skipped and not has_passed and not has_failed:
+            all_skipped = True
+
+    if all_skipped:
+        exit_code = 2  # 使用特殊退出码区分 "全部跳过"
+
     # 生成摘要
     summary = {
         "success": "true" if exit_code == 0 else "false",
@@ -283,9 +296,13 @@ def run_tests(
         "runId": run_id,
         "grep": grep,
     }
+    if all_skipped:
+        summary["error"] = "All tests skipped"
 
     # 打印结果
     if not list_tests and exit_code != 0:
+        if all_skipped:
+            print("[!] All tests were skipped — no tests actually executed")
         try:
             print(f"✗ Failed ({exit_code})")
         except UnicodeEncodeError:

@@ -3,14 +3,14 @@ import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StripeCheckoutButton } from '../stripe-checkout-button'
 import { useStripeCheckout } from '@/hooks/use-stripe-checkout'
-import type { PlanResponse } from '@/lib/api-generated'
+import type { SubscriptionPlanResponse } from '@/lib/api-generated'
 
 vi.mock('@/hooks/use-stripe-checkout')
 
 describe('Stripe Integration', () => {
   let queryClient: QueryClient
 
-  const mockStripePlan: PlanResponse = {
+  const mockStripePlan: SubscriptionPlanResponse = {
     id: 'plan-stripe-123',
     name: 'pro-monthly',
     title: 'Pro Monthly',
@@ -55,7 +55,7 @@ describe('Stripe Integration', () => {
   )
 
   test('does not show checkout button when Stripe provider is disabled', () => {
-    const disabledPlan: PlanResponse = {
+    const disabledPlan: SubscriptionPlanResponse = {
       ...mockStripePlan,
       paymentProviders: [{ id: 'pp-1', paymentProvider: 'stripe', enabled: false }],
     }

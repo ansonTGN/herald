@@ -109,7 +109,7 @@ pub struct HealthCheckResponse {
             client_apps::types::ClientAppCreateRequest,
             client_apps::types::ClientAppUpdateRequest,
             client_apps::types::ClientAppItem,
-            client_apps::types::PaginationMeta,
+            herald_api_base::application::http::common::pagination::PaginationMeta,
             users::user_totp::EnableTotpRequest,
             users::user_totp::EnableTotpResponse,
             users::user_totp::VerifyTotpSetupRequest,

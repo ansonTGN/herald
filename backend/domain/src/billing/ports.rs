@@ -3,8 +3,8 @@ use std::future::Future;
 use uuid::Uuid;
 
 use crate::billing::{
-    ClientAppPlan, PaymentEvent, Plan, PlanPaymentProvider, Product, Subscription,
-    SubscriptionHistoryEvent, SubscriptionHistoryQuery,
+    ClientAppSubscriptionPlan, PaymentEvent, Product, Subscription, SubscriptionHistoryEvent,
+    SubscriptionHistoryQuery, SubscriptionPlan, SubscriptionPlanPaymentProvider,
 };
 use crate::common::entities::app_errors::CoreError;
 
@@ -86,52 +86,67 @@ pub trait BillingRepository: Send + Sync {
         id: Uuid,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
-    // ===== Plan CRUD =====
-    fn create_plan(&self, plan: Plan) -> impl Future<Output = Result<Plan, CoreError>> + Send;
-    fn find_plan_by_id(
+    // ===== SubscriptionPlan CRUD =====
+    fn create_subscription_plan(
+        &self,
+        plan: SubscriptionPlan,
+    ) -> impl Future<Output = Result<SubscriptionPlan, CoreError>> + Send;
+    fn find_subscription_plan_by_id(
         &self,
         plan_id: Uuid,
-    ) -> impl Future<Output = Result<Option<Plan>, CoreError>> + Send;
+    ) -> impl Future<Output = Result<Option<SubscriptionPlan>, CoreError>> + Send;
     fn find_public_plan_by_id(
         &self,
         realm_id: &str,
         plan_id: Uuid,
-    ) -> impl Future<Output = Result<Option<Plan>, CoreError>> + Send;
-    fn list_plans_by_realm(
+    ) -> impl Future<Output = Result<Option<SubscriptionPlan>, CoreError>> + Send;
+    fn list_subscription_plans_by_realm(
         &self,
         realm_id: &str,
-    ) -> impl Future<Output = Result<Vec<Plan>, CoreError>> + Send;
+    ) -> impl Future<Output = Result<Vec<SubscriptionPlan>, CoreError>> + Send;
     fn list_public_plans_by_realm(
         &self,
         realm_id: &str,
-    ) -> impl Future<Output = Result<Vec<Plan>, CoreError>> + Send;
-    fn update_plan(&self, plan: Plan) -> impl Future<Output = Result<Plan, CoreError>> + Send;
-    fn delete_plan(&self, plan_id: Uuid) -> impl Future<Output = Result<(), CoreError>> + Send;
+    ) -> impl Future<Output = Result<Vec<SubscriptionPlan>, CoreError>> + Send;
+    fn update_subscription_plan(
+        &self,
+        plan: SubscriptionPlan,
+    ) -> impl Future<Output = Result<SubscriptionPlan, CoreError>> + Send;
+    fn delete_subscription_plan(
+        &self,
+        plan_id: Uuid,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
-    // ===== Plan Assignment =====
-    fn assign_plan_to_client_app(
+    // ===== SubscriptionPlan Assignment =====
+    fn assign_subscription_plan_to_client_app(
         &self,
         client_app_id: Uuid,
         plan_id: Uuid,
-    ) -> impl Future<Output = Result<ClientAppPlan, CoreError>> + Send;
-    fn remove_plan_from_client_app(
+    ) -> impl Future<Output = Result<ClientAppSubscriptionPlan, CoreError>> + Send;
+    fn remove_subscription_plan_from_client_app(
         &self,
         assignment_id: Uuid,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
-    fn list_plans_for_client_app(
+    fn list_subscription_plans_for_client_app(
         &self,
         client_app_id: Uuid,
-    ) -> impl Future<Output = Result<Vec<ClientAppPlan>, CoreError>> + Send;
-    fn find_plan_assignment(
+    ) -> impl Future<Output = Result<Vec<ClientAppSubscriptionPlan>, CoreError>> + Send;
+    fn find_subscription_plan_assignment(
         &self,
         client_app_id: Uuid,
         plan_id: Uuid,
-    ) -> impl Future<Output = Result<Option<ClientAppPlan>, CoreError>> + Send;
-    fn toggle_plan_assignment(
+    ) -> impl Future<Output = Result<Option<ClientAppSubscriptionPlan>, CoreError>> + Send;
+    fn toggle_subscription_plan_assignment(
         &self,
         assignment_id: Uuid,
         enabled: bool,
-    ) -> impl Future<Output = Result<ClientAppPlan, CoreError>> + Send;
+    ) -> impl Future<Output = Result<ClientAppSubscriptionPlan, CoreError>> + Send;
+
+    /// Batch load plan assignments for multiple client apps
+    fn list_subscription_plan_assignments_batch(
+        &self,
+        client_app_ids: &[Uuid],
+    ) -> impl Future<Output = Result<Vec<ClientAppSubscriptionPlan>, CoreError>> + Send;
 
     // ===== Updated Subscription =====
     fn find_subscription_by_client_app_id(
@@ -143,7 +158,7 @@ pub trait BillingRepository: Send + Sync {
         subscription_id: Uuid,
         cancel_at_period_end: bool,
     ) -> impl Future<Output = Result<Subscription, CoreError>> + Send;
-    fn count_active_subscriptions_for_plan(
+    fn count_active_subscriptions_for_subscription_plan(
         &self,
         plan_id: Uuid,
     ) -> impl Future<Output = Result<i64, CoreError>> + Send;
@@ -203,63 +218,63 @@ pub trait BillingRepository: Send + Sync {
         realm_id: &str,
         product_id: Uuid,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
-    fn count_plans_by_product(
+    fn count_subscription_plans_by_product(
         &self,
         product_id: Uuid,
     ) -> impl Future<Output = Result<i64, CoreError>> + Send;
-    fn find_plans_by_product(
+    fn find_subscription_plans_by_product(
         &self,
         realm_id: &str,
         product_id: Uuid,
-    ) -> impl Future<Output = Result<Vec<Plan>, CoreError>> + Send;
+    ) -> impl Future<Output = Result<Vec<SubscriptionPlan>, CoreError>> + Send;
 
-    // ===== Plan Payment Provider Mapping =====
+    // ===== SubscriptionPlan Payment Provider Mapping =====
     /// Create a new plan payment provider mapping
-    fn create_plan_payment_provider(
+    fn create_subscription_plan_payment_provider(
         &self,
-        mapping: PlanPaymentProvider,
-    ) -> impl Future<Output = Result<PlanPaymentProvider, CoreError>> + Send;
+        mapping: SubscriptionPlanPaymentProvider,
+    ) -> impl Future<Output = Result<SubscriptionPlanPaymentProvider, CoreError>> + Send;
 
     /// Find plan payment provider mapping by ID
-    fn find_plan_payment_provider_by_id(
+    fn find_subscription_plan_payment_provider_by_id(
         &self,
         mapping_id: Uuid,
-    ) -> impl Future<Output = Result<Option<PlanPaymentProvider>, CoreError>> + Send;
+    ) -> impl Future<Output = Result<Option<SubscriptionPlanPaymentProvider>, CoreError>> + Send;
 
     /// Find plan payment provider mapping by plan and provider
-    fn find_plan_payment_provider_by_plan_and_provider(
+    fn find_subscription_plan_payment_provider_by_plan_and_provider(
         &self,
         plan_id: Uuid,
         payment_provider: &str,
-    ) -> impl Future<Output = Result<Option<PlanPaymentProvider>, CoreError>> + Send;
+    ) -> impl Future<Output = Result<Option<SubscriptionPlanPaymentProvider>, CoreError>> + Send;
 
     /// List all payment provider mappings for a plan
-    fn list_plan_payment_providers(
+    fn list_subscription_plan_payment_providers(
         &self,
         plan_id: Uuid,
-    ) -> impl Future<Output = Result<Vec<PlanPaymentProvider>, CoreError>> + Send;
+    ) -> impl Future<Output = Result<Vec<SubscriptionPlanPaymentProvider>, CoreError>> + Send;
 
     /// Update plan payment provider mapping
-    fn update_plan_payment_provider(
+    fn update_subscription_plan_payment_provider(
         &self,
-        mapping: PlanPaymentProvider,
-    ) -> impl Future<Output = Result<PlanPaymentProvider, CoreError>> + Send;
+        mapping: SubscriptionPlanPaymentProvider,
+    ) -> impl Future<Output = Result<SubscriptionPlanPaymentProvider, CoreError>> + Send;
 
     /// Delete plan payment provider mapping
-    fn delete_plan_payment_provider(
+    fn delete_subscription_plan_payment_provider(
         &self,
         mapping_id: Uuid,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
     /// Delete all payment provider mappings for a plan (cascade delete)
-    fn delete_plan_payment_providers_by_plan(
+    fn delete_subscription_plan_payment_providers_by_plan(
         &self,
         plan_id: Uuid,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
     /// Batch load payment provider mappings for multiple plans
-    fn list_plan_payment_providers_batch(
+    fn list_subscription_plan_payment_providers_batch(
         &self,
         plan_ids: &[Uuid],
-    ) -> impl Future<Output = Result<Vec<PlanPaymentProvider>, CoreError>> + Send;
+    ) -> impl Future<Output = Result<Vec<SubscriptionPlanPaymentProvider>, CoreError>> + Send;
 }

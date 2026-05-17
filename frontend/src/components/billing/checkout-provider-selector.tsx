@@ -1,11 +1,11 @@
-import { type PlanResponse, type PaymentProviderSummary } from '@/lib/api-generated'
+import { type SubscriptionPlanResponse, type PaymentProviderSummary } from '@/lib/api-generated'
 import { Button } from '@/components/ui/button'
 import { CreditCard, Loader2 } from 'lucide-react'
 import { getEnabledProviders } from '@/lib/billing-utils'
 import { formatProviderName } from './format-provider-name'
 
 interface CheckoutProviderSelectorProps {
-  plan: PlanResponse
+  plan: SubscriptionPlanResponse
   onSelectProvider: (provider: string) => void
   isPending?: boolean
 }

@@ -11,33 +11,33 @@ where
     variants(s).ok_or_else(|| CoreError::BadRequest(format!("{}: {}", error_prefix, s)))
 }
 
-/// Plan type enum
+/// Subscription plan type enum
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum PlanType {
+pub enum SubscriptionPlanType {
     Monthly,
     Yearly,
 }
 
-impl PlanType {
+impl SubscriptionPlanType {
     pub fn as_str(&self) -> &'static str {
         match self {
-            PlanType::Monthly => "monthly",
-            PlanType::Yearly => "yearly",
+            SubscriptionPlanType::Monthly => "monthly",
+            SubscriptionPlanType::Yearly => "yearly",
         }
     }
 }
 
-impl std::str::FromStr for PlanType {
+impl std::str::FromStr for SubscriptionPlanType {
     type Err = CoreError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         parse_enum(
             s.to_lowercase().as_str(),
-            "Invalid plan type",
+            "Invalid subscription plan type",
             |s| match s {
-                "monthly" => Some(PlanType::Monthly),
-                "yearly" => Some(PlanType::Yearly),
+                "monthly" => Some(SubscriptionPlanType::Monthly),
+                "yearly" => Some(SubscriptionPlanType::Yearly),
                 _ => None,
             },
         )
@@ -288,9 +288,9 @@ pub struct PaymentEvent {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Plan domain entity
+/// SubscriptionPlan domain entity
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Plan {
+pub struct SubscriptionPlan {
     pub id: Uuid,
     pub realm_id: String,
     pub name: String,
@@ -299,13 +299,9 @@ pub struct Plan {
 
     // Pricing information
     #[serde(rename = "type")]
-    pub r#type: PlanType,
+    pub r#type: SubscriptionPlanType,
     pub price: i32,       // Price in cents
     pub currency: String, // USD, EUR, CNY
-
-    // NOTE: Payment provider fields removed - see PlanPaymentProvider entity
-    // payment_provider, external_product_id, external_price_id are now
-    // managed through the PlanPaymentProvider entity
 
     // Checkout URL (third-party payment page)
     pub checkout_url: Option<String>,
@@ -321,12 +317,12 @@ pub struct Plan {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Plan Payment Provider mapping entity
+/// SubscriptionPlan Payment Provider mapping entity
 ///
-/// This entity manages the relationship between Plans and Payment Providers,
-/// allowing a single Plan to support multiple payment platforms.
+/// This entity manages the relationship between SubscriptionPlans and Payment Providers,
+/// allowing a single SubscriptionPlan to support multiple payment platforms.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlanPaymentProvider {
+pub struct SubscriptionPlanPaymentProvider {
     pub id: Uuid,
     pub plan_id: Uuid,
     /// Payment provider name (dynamic: stripe, creem, shopify, etc.)
@@ -342,9 +338,9 @@ pub struct PlanPaymentProvider {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Client App Plan junction domain entity
+/// Client App SubscriptionPlan junction domain entity
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClientAppPlan {
+pub struct ClientAppSubscriptionPlan {
     pub id: Uuid,
     pub client_app_id: Uuid,
     pub plan_id: Uuid,
@@ -396,7 +392,7 @@ impl From<&str> for BillingPeriod {
 
 // Product Entity
 
-/// Product domain entity - catalog object for organizing Plans
+/// Product domain entity - catalog object for organizing SubscriptionPlans
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Product {
     pub id: Uuid,

@@ -7,14 +7,16 @@ use sea_orm::{
 use std::str::FromStr;
 use uuid::Uuid;
 
-use herald_domain::billing::entities::{BillingPeriod, PlanType};
+use herald_domain::billing::entities::{BillingPeriod, SubscriptionPlanType};
 use herald_domain::billing::{
-    BillingRepository, ClientAppPlan, HistoryEventType, PaymentEvent, Plan, PlanPaymentProvider,
-    Product, SortOrder, Subscription, SubscriptionHistoryEvent, SubscriptionHistoryQuery,
+    BillingRepository, ClientAppSubscriptionPlan, HistoryEventType, PaymentEvent, Product,
+    SortOrder, Subscription, SubscriptionHistoryEvent, SubscriptionHistoryQuery, SubscriptionPlan,
+    SubscriptionPlanPaymentProvider,
 };
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_entity::{
-    client_app_plan, payment_event, plan, product, subscription, subscription_history,
+    client_app_subscription_plan, payment_event, product, subscription, subscription_history,
+    subscription_plan,
 };
 
 /// PostgreSQL implementation of billing repository
@@ -66,15 +68,17 @@ impl PostgresBillingRepository {
         }
     }
 
-    /// Converts database model to domain Plan
-    fn model_to_plan(model: plan::Model) -> Result<Plan, CoreError> {
-        Ok(Plan {
+    /// Converts database model to domain SubscriptionPlan
+    fn model_to_subscription_plan(
+        model: subscription_plan::Model,
+    ) -> Result<SubscriptionPlan, CoreError> {
+        Ok(SubscriptionPlan {
             id: model.id,
             realm_id: model.realm_id,
             name: model.name,
             title: model.title,
             description: model.description,
-            r#type: parse_plan_type(&model.r#type),
+            r#type: parse_subscription_plan_type(&model.r#type),
             price: model.price,
             currency: model.currency,
             checkout_url: model.checkout_url,
@@ -87,8 +91,10 @@ impl PostgresBillingRepository {
         })
     }
 
-    fn model_to_client_app_plan(model: client_app_plan::Model) -> ClientAppPlan {
-        ClientAppPlan {
+    fn model_to_client_app_subscription_plan(
+        model: client_app_subscription_plan::Model,
+    ) -> ClientAppSubscriptionPlan {
+        ClientAppSubscriptionPlan {
             id: model.id,
             client_app_id: model.client_app_id,
             plan_id: model.plan_id,
@@ -97,20 +103,24 @@ impl PostgresBillingRepository {
         }
     }
 
-    async fn find_plan_model(
+    async fn find_subscription_plan_model(
         &self,
         realm_id: Option<&str>,
         plan_id: Uuid,
         public_only: bool,
-    ) -> Result<Option<plan::Model>, CoreError> {
-        let mut query = plan::Entity::find().filter(plan::Column::Id.eq(plan_id));
+    ) -> Result<Option<subscription_plan::Model>, CoreError> {
+        let mut query =
+            subscription_plan::Entity::find().filter(subscription_plan::Column::Id.eq(plan_id));
         if let Some(realm_id) = realm_id {
-            query = query.filter(plan::Column::RealmId.eq(realm_id));
+            query = query.filter(subscription_plan::Column::RealmId.eq(realm_id));
         }
         if public_only {
             query = query
-                .join(JoinType::InnerJoin, plan::Relation::Product.def())
-                .filter(plan::Column::Active.eq(true))
+                .join(
+                    JoinType::InnerJoin,
+                    subscription_plan::Relation::Product.def(),
+                )
+                .filter(subscription_plan::Column::Active.eq(true))
                 .filter(product::Column::Enabled.eq(true));
         }
 
@@ -120,9 +130,9 @@ impl PostgresBillingRepository {
             .map_err(|e| CoreError::DatabaseError(e.to_string()))
     }
 
-    /// Converts domain Plan to database active model
-    fn plan_to_active_model(plan: Plan) -> plan::ActiveModel {
-        plan::ActiveModel {
+    /// Converts domain SubscriptionPlan to database active model
+    fn subscription_plan_to_active_model(plan: SubscriptionPlan) -> subscription_plan::ActiveModel {
+        subscription_plan::ActiveModel {
             id: Set(plan.id),
             realm_id: Set(plan.realm_id),
             name: Set(plan.name),
@@ -164,8 +174,8 @@ impl PostgresBillingRepository {
         model: product::Model,
         db: &DatabaseConnection,
     ) -> Result<Product, CoreError> {
-        let plans_count = plan::Entity::find()
-            .filter(plan::Column::ProductId.eq(model.id))
+        let plans_count = subscription_plan::Entity::find()
+            .filter(subscription_plan::Column::ProductId.eq(model.id))
             .count(db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
@@ -223,9 +233,9 @@ impl PostgresBillingRepository {
     }
 }
 
-/// Helper struct for deserializing plan payment provider query results
+/// Helper struct for deserializing subscription plan payment provider query results
 #[derive(FromQueryResult)]
-struct PlanPaymentProviderQueryResult {
+struct SubscriptionPlanPaymentProviderQueryResult {
     id: Uuid,
     plan_id: Uuid,
     payment_provider: String,
@@ -236,11 +246,11 @@ struct PlanPaymentProviderQueryResult {
     updated_at: sea_orm::prelude::DateTimeWithTimeZone,
 }
 
-/// Converts query result to domain PlanPaymentProvider
-fn query_result_to_plan_payment_provider(
-    result: PlanPaymentProviderQueryResult,
-) -> PlanPaymentProvider {
-    PlanPaymentProvider {
+/// Converts query result to domain SubscriptionPlanPaymentProvider
+fn query_result_to_subscription_plan_payment_provider(
+    result: SubscriptionPlanPaymentProviderQueryResult,
+) -> SubscriptionPlanPaymentProvider {
+    SubscriptionPlanPaymentProvider {
         id: result.id,
         plan_id: result.plan_id,
         payment_provider: result.payment_provider,
@@ -252,13 +262,9 @@ fn query_result_to_plan_payment_provider(
     }
 }
 
-/// Parse plan type string, defaulting to Monthly
-fn parse_plan_type(s: &str) -> PlanType {
-    match s.to_lowercase().as_str() {
-        "monthly" => PlanType::Monthly,
-        "yearly" => PlanType::Yearly,
-        _ => PlanType::Monthly,
-    }
+/// Parse subscription plan type string, defaulting to Monthly on unknown input
+fn parse_subscription_plan_type(s: &str) -> SubscriptionPlanType {
+    s.parse().unwrap_or(SubscriptionPlanType::Monthly)
 }
 
 impl BillingRepository for PostgresBillingRepository {
@@ -410,19 +416,24 @@ impl BillingRepository for PostgresBillingRepository {
 
     // ===== Plan CRUD =====
 
-    async fn create_plan(&self, plan: Plan) -> Result<Plan, CoreError> {
+    async fn create_subscription_plan(
+        &self,
+        plan: SubscriptionPlan,
+    ) -> Result<SubscriptionPlan, CoreError> {
         let plan_name = plan.name.clone();
         let realm_id = plan.realm_id.clone();
-        let active_model = Self::plan_to_active_model(plan);
+        let active_model = Self::subscription_plan_to_active_model(plan);
 
-        let result = plan::Entity::insert(active_model)
+        let result = subscription_plan::Entity::insert(active_model)
             .exec(&self.db)
             .await
             .map_err(|e| {
                 // Check for unique constraint violation
-                if e.to_string().contains("plan_realm_id_name_key") {
+                if e.to_string()
+                    .contains("subscription_plan_realm_id_name_key")
+                {
                     CoreError::BadRequest(format!(
-                        "Plan with name '{}' already exists in realm '{}'",
+                        "Subscription plan with name '{}' already exists in realm '{}'",
                         plan_name, realm_id
                     ))
                 } else {
@@ -430,67 +441,92 @@ impl BillingRepository for PostgresBillingRepository {
                 }
             })?;
 
-        self.find_plan_by_id(result.last_insert_id)
+        self.find_subscription_plan_by_id(result.last_insert_id)
             .await?
             .ok_or(CoreError::NotFound)
     }
 
-    async fn find_plan_by_id(&self, plan_id: Uuid) -> Result<Option<Plan>, CoreError> {
-        let result = self.find_plan_model(None, plan_id, false).await?;
+    async fn find_subscription_plan_by_id(
+        &self,
+        plan_id: Uuid,
+    ) -> Result<Option<SubscriptionPlan>, CoreError> {
+        let result = self
+            .find_subscription_plan_model(None, plan_id, false)
+            .await?;
 
-        result.map(Self::model_to_plan).transpose()
+        result.map(Self::model_to_subscription_plan).transpose()
     }
 
     async fn find_public_plan_by_id(
         &self,
         realm_id: &str,
         plan_id: Uuid,
-    ) -> Result<Option<Plan>, CoreError> {
-        let result = self.find_plan_model(Some(realm_id), plan_id, true).await?;
+    ) -> Result<Option<SubscriptionPlan>, CoreError> {
+        let result = self
+            .find_subscription_plan_model(Some(realm_id), plan_id, true)
+            .await?;
 
-        result.map(Self::model_to_plan).transpose()
+        result.map(Self::model_to_subscription_plan).transpose()
     }
 
-    async fn list_plans_by_realm(&self, realm_id: &str) -> Result<Vec<Plan>, CoreError> {
-        let results = plan::Entity::find()
-            .filter(plan::Column::RealmId.eq(realm_id))
+    async fn list_subscription_plans_by_realm(
+        &self,
+        realm_id: &str,
+    ) -> Result<Vec<SubscriptionPlan>, CoreError> {
+        let results = subscription_plan::Entity::find()
+            .filter(subscription_plan::Column::RealmId.eq(realm_id))
             // Note: Removed Active.eq(true) filter to allow listing of disabled plans
             // This enables admins to see and re-enable disabled plans
-            .order_by_asc(plan::Column::SortOrder)
+            .order_by_asc(subscription_plan::Column::SortOrder)
             .all(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        results.into_iter().map(Self::model_to_plan).collect()
+        results
+            .into_iter()
+            .map(Self::model_to_subscription_plan)
+            .collect()
     }
 
-    async fn list_public_plans_by_realm(&self, realm_id: &str) -> Result<Vec<Plan>, CoreError> {
-        let results = plan::Entity::find()
-            .join(JoinType::InnerJoin, plan::Relation::Product.def())
-            .filter(plan::Column::RealmId.eq(realm_id))
-            .filter(plan::Column::Active.eq(true))
+    async fn list_public_plans_by_realm(
+        &self,
+        realm_id: &str,
+    ) -> Result<Vec<SubscriptionPlan>, CoreError> {
+        let results = subscription_plan::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                subscription_plan::Relation::Product.def(),
+            )
+            .filter(subscription_plan::Column::RealmId.eq(realm_id))
+            .filter(subscription_plan::Column::Active.eq(true))
             .filter(product::Column::Enabled.eq(true))
-            .order_by_asc(plan::Column::SortOrder)
+            .order_by_asc(subscription_plan::Column::SortOrder)
             .all(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        results.into_iter().map(Self::model_to_plan).collect()
+        results
+            .into_iter()
+            .map(Self::model_to_subscription_plan)
+            .collect()
     }
 
-    async fn update_plan(&self, plan: Plan) -> Result<Plan, CoreError> {
-        let existing = plan::Entity::find_by_id(plan.id)
+    async fn update_subscription_plan(
+        &self,
+        plan: SubscriptionPlan,
+    ) -> Result<SubscriptionPlan, CoreError> {
+        let existing = subscription_plan::Entity::find_by_id(plan.id)
             .one(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| CoreError::PlanNotFound {
+            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
                 realm_id: plan.realm_id.clone(),
                 plan_id: plan.id.to_string(),
             })?;
 
-        let mut active_model: plan::ActiveModel = existing.into_active_model();
+        let mut active_model: subscription_plan::ActiveModel = existing.into_active_model();
         // Copy only updatable fields from the helper
-        let helper = Self::plan_to_active_model(plan);
+        let helper = Self::subscription_plan_to_active_model(plan);
         active_model.realm_id = helper.realm_id;
         active_model.name = helper.name;
         active_model.title = helper.title;
@@ -510,11 +546,11 @@ impl BillingRepository for PostgresBillingRepository {
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        Self::model_to_plan(result)
+        Self::model_to_subscription_plan(result)
     }
 
-    async fn delete_plan(&self, plan_id: Uuid) -> Result<(), CoreError> {
-        plan::Entity::delete_by_id(plan_id)
+    async fn delete_subscription_plan(&self, plan_id: Uuid) -> Result<(), CoreError> {
+        subscription_plan::Entity::delete_by_id(plan_id)
             .exec(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
@@ -524,19 +560,12 @@ impl BillingRepository for PostgresBillingRepository {
 
     // ===== Plan Assignment =====
 
-    async fn assign_plan_to_client_app(
+    async fn assign_subscription_plan_to_client_app(
         &self,
         client_app_id: Uuid,
         plan_id: Uuid,
-    ) -> Result<ClientAppPlan, CoreError> {
-        // Check if already assigned
-        if (self.find_plan_assignment(client_app_id, plan_id).await?).is_some() {
-            return Err(CoreError::Conflict(
-                "Plan already assigned to client app".to_string(),
-            ));
-        }
-
-        let active_model = client_app_plan::ActiveModel {
+    ) -> Result<ClientAppSubscriptionPlan, CoreError> {
+        let active_model = client_app_subscription_plan::ActiveModel {
             id: Set(Uuid::now_v7()),
             client_app_id: Set(client_app_id),
             plan_id: Set(plan_id),
@@ -546,23 +575,34 @@ impl BillingRepository for PostgresBillingRepository {
             )),
         };
 
-        let result = client_app_plan::Entity::insert(active_model)
+        let result = client_app_subscription_plan::Entity::insert(active_model)
             .exec(&self.db)
             .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            .map_err(|e| {
+                if matches!(e, sea_orm::DbErr::Exec(_) if e.to_string().contains("duplicate key")) {
+                    CoreError::Conflict(
+                        "Subscription plan already assigned to client app".to_string(),
+                    )
+                } else {
+                    CoreError::DatabaseError(e.to_string())
+                }
+            })?;
 
         // Find and return the created assignment
-        let assignment = client_app_plan::Entity::find_by_id(result.last_insert_id)
+        let assignment = client_app_subscription_plan::Entity::find_by_id(result.last_insert_id)
             .one(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?
             .ok_or(CoreError::NotFound)?;
 
-        Ok(Self::model_to_client_app_plan(assignment))
+        Ok(Self::model_to_client_app_subscription_plan(assignment))
     }
 
-    async fn remove_plan_from_client_app(&self, assignment_id: Uuid) -> Result<(), CoreError> {
-        client_app_plan::Entity::delete_by_id(assignment_id)
+    async fn remove_subscription_plan_from_client_app(
+        &self,
+        assignment_id: Uuid,
+    ) -> Result<(), CoreError> {
+        client_app_subscription_plan::Entity::delete_by_id(assignment_id)
             .exec(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
@@ -570,49 +610,50 @@ impl BillingRepository for PostgresBillingRepository {
         Ok(())
     }
 
-    async fn list_plans_for_client_app(
+    async fn list_subscription_plans_for_client_app(
         &self,
         client_app_id: Uuid,
-    ) -> Result<Vec<ClientAppPlan>, CoreError> {
-        let results = client_app_plan::Entity::find()
-            .filter(client_app_plan::Column::ClientAppId.eq(client_app_id))
-            .filter(client_app_plan::Column::Enabled.eq(true))
+    ) -> Result<Vec<ClientAppSubscriptionPlan>, CoreError> {
+        let results = client_app_subscription_plan::Entity::find()
+            .filter(client_app_subscription_plan::Column::ClientAppId.eq(client_app_id))
+            .filter(client_app_subscription_plan::Column::Enabled.eq(true))
             .all(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
         Ok(results
             .into_iter()
-            .map(Self::model_to_client_app_plan)
+            .map(Self::model_to_client_app_subscription_plan)
             .collect())
     }
 
-    async fn find_plan_assignment(
+    async fn find_subscription_plan_assignment(
         &self,
         client_app_id: Uuid,
         plan_id: Uuid,
-    ) -> Result<Option<ClientAppPlan>, CoreError> {
-        client_app_plan::Entity::find()
-            .filter(client_app_plan::Column::ClientAppId.eq(client_app_id))
-            .filter(client_app_plan::Column::PlanId.eq(plan_id))
+    ) -> Result<Option<ClientAppSubscriptionPlan>, CoreError> {
+        client_app_subscription_plan::Entity::find()
+            .filter(client_app_subscription_plan::Column::ClientAppId.eq(client_app_id))
+            .filter(client_app_subscription_plan::Column::PlanId.eq(plan_id))
             .one(&self.db)
             .await
-            .map(|opt| opt.map(Self::model_to_client_app_plan))
+            .map(|opt| opt.map(Self::model_to_client_app_subscription_plan))
             .map_err(|e| CoreError::DatabaseError(e.to_string()))
     }
 
-    async fn toggle_plan_assignment(
+    async fn toggle_subscription_plan_assignment(
         &self,
         assignment_id: Uuid,
         enabled: bool,
-    ) -> Result<ClientAppPlan, CoreError> {
-        let assignment = client_app_plan::Entity::find_by_id(assignment_id)
+    ) -> Result<ClientAppSubscriptionPlan, CoreError> {
+        let assignment = client_app_subscription_plan::Entity::find_by_id(assignment_id)
             .one(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?
             .ok_or(CoreError::NotFound)?;
 
-        let mut active_model: client_app_plan::ActiveModel = assignment.into_active_model();
+        let mut active_model: client_app_subscription_plan::ActiveModel =
+            assignment.into_active_model();
         active_model.enabled = Set(enabled);
 
         let updated = active_model
@@ -620,7 +661,31 @@ impl BillingRepository for PostgresBillingRepository {
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        Ok(Self::model_to_client_app_plan(updated))
+        Ok(Self::model_to_client_app_subscription_plan(updated))
+    }
+
+    async fn list_subscription_plan_assignments_batch(
+        &self,
+        client_app_ids: &[Uuid],
+    ) -> Result<Vec<ClientAppSubscriptionPlan>, CoreError> {
+        if client_app_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let results = client_app_subscription_plan::Entity::find()
+            .filter(
+                client_app_subscription_plan::Column::ClientAppId
+                    .is_in(client_app_ids.iter().copied()),
+            )
+            .filter(client_app_subscription_plan::Column::Enabled.eq(true))
+            .all(&self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(results
+            .into_iter()
+            .map(Self::model_to_client_app_subscription_plan)
+            .collect())
     }
 
     async fn create_product(&self, product: Product) -> Result<Product, CoreError> {
@@ -697,8 +762,8 @@ impl BillingRepository for PostgresBillingRepository {
         }
 
         let product_ids: Vec<Uuid> = results.iter().map(|m| m.id).collect();
-        let plan_product_ids: Vec<Uuid> = plan::Entity::find()
-            .filter(plan::Column::ProductId.is_in(product_ids))
+        let plan_product_ids: Vec<Uuid> = subscription_plan::Entity::find()
+            .filter(subscription_plan::Column::ProductId.is_in(product_ids))
             .all(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?
@@ -780,9 +845,12 @@ impl BillingRepository for PostgresBillingRepository {
         Ok(())
     }
 
-    async fn count_plans_by_product(&self, product_id: Uuid) -> Result<i64, CoreError> {
-        let count = plan::Entity::find()
-            .filter(plan::Column::ProductId.eq(product_id))
+    async fn count_subscription_plans_by_product(
+        &self,
+        product_id: Uuid,
+    ) -> Result<i64, CoreError> {
+        let count = subscription_plan::Entity::find()
+            .filter(subscription_plan::Column::ProductId.eq(product_id))
             .count(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
@@ -790,20 +858,23 @@ impl BillingRepository for PostgresBillingRepository {
         Ok(count as i64)
     }
 
-    async fn find_plans_by_product(
+    async fn find_subscription_plans_by_product(
         &self,
         realm_id: &str,
         product_id: Uuid,
-    ) -> Result<Vec<Plan>, CoreError> {
-        let results = plan::Entity::find()
-            .filter(plan::Column::RealmId.eq(realm_id))
-            .filter(plan::Column::ProductId.eq(product_id))
-            .order_by_asc(plan::Column::SortOrder)
+    ) -> Result<Vec<SubscriptionPlan>, CoreError> {
+        let results = subscription_plan::Entity::find()
+            .filter(subscription_plan::Column::RealmId.eq(realm_id))
+            .filter(subscription_plan::Column::ProductId.eq(product_id))
+            .order_by_asc(subscription_plan::Column::SortOrder)
             .all(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        results.into_iter().map(Self::model_to_plan).collect()
+        results
+            .into_iter()
+            .map(Self::model_to_subscription_plan)
+            .collect()
     }
 
     // ===== Updated Subscription =====
@@ -860,7 +931,10 @@ impl BillingRepository for PostgresBillingRepository {
         Self::model_to_subscription(updated)
     }
 
-    async fn count_active_subscriptions_for_plan(&self, plan_id: Uuid) -> Result<i64, CoreError> {
+    async fn count_active_subscriptions_for_subscription_plan(
+        &self,
+        plan_id: Uuid,
+    ) -> Result<i64, CoreError> {
         use sea_orm::EntityTrait;
 
         let count = subscription::Entity::find()
@@ -1030,12 +1104,12 @@ impl BillingRepository for PostgresBillingRepository {
 
     // ===== Plan Payment Provider Mapping =====
 
-    async fn create_plan_payment_provider(
+    async fn create_subscription_plan_payment_provider(
         &self,
-        mapping: PlanPaymentProvider,
-    ) -> Result<PlanPaymentProvider, CoreError> {
+        mapping: SubscriptionPlanPaymentProvider,
+    ) -> Result<SubscriptionPlanPaymentProvider, CoreError> {
         let query = r#"
-            INSERT INTO plan_payment_provider (
+            INSERT INTO subscription_plan_payment_provider (
                 id, plan_id, payment_provider, external_product_id,
                 external_price_id, enabled, created_at, updated_at
             )
@@ -1060,7 +1134,7 @@ impl BillingRepository for PostgresBillingRepository {
             ],
         );
 
-        let result = PlanPaymentProviderQueryResult::find_by_statement(stmt)
+        let result = SubscriptionPlanPaymentProviderQueryResult::find_by_statement(stmt)
             .one(&self.db)
             .await
             .map_err(|e| {
@@ -1082,42 +1156,42 @@ impl BillingRepository for PostgresBillingRepository {
                 )
             })?;
 
-        Ok(query_result_to_plan_payment_provider(result))
+        Ok(query_result_to_subscription_plan_payment_provider(result))
     }
 
-    async fn find_plan_payment_provider_by_id(
+    async fn find_subscription_plan_payment_provider_by_id(
         &self,
         mapping_id: Uuid,
-    ) -> Result<Option<PlanPaymentProvider>, CoreError> {
+    ) -> Result<Option<SubscriptionPlanPaymentProvider>, CoreError> {
         let query = r#"
             SELECT id, plan_id, payment_provider, external_product_id,
                    external_price_id, enabled, created_at, updated_at
-            FROM plan_payment_provider
+            FROM subscription_plan_payment_provider
             WHERE id = $1
         "#;
 
         let stmt =
             Statement::from_sql_and_values(DatabaseBackend::Postgres, query, [mapping_id.into()]);
 
-        let result = PlanPaymentProviderQueryResult::find_by_statement(stmt)
+        let result = SubscriptionPlanPaymentProviderQueryResult::find_by_statement(stmt)
             .one(&self.db)
             .await
             .map_err(|e| {
                 CoreError::DatabaseError(format!("Failed to find plan payment provider: {}", e))
             })?;
 
-        Ok(result.map(query_result_to_plan_payment_provider))
+        Ok(result.map(query_result_to_subscription_plan_payment_provider))
     }
 
-    async fn find_plan_payment_provider_by_plan_and_provider(
+    async fn find_subscription_plan_payment_provider_by_plan_and_provider(
         &self,
         plan_id: Uuid,
         payment_provider: &str,
-    ) -> Result<Option<PlanPaymentProvider>, CoreError> {
+    ) -> Result<Option<SubscriptionPlanPaymentProvider>, CoreError> {
         let query = r#"
             SELECT id, plan_id, payment_provider, external_product_id,
                    external_price_id, enabled, created_at, updated_at
-            FROM plan_payment_provider
+            FROM subscription_plan_payment_provider
             WHERE plan_id = $1 AND payment_provider = $2
         "#;
 
@@ -1127,24 +1201,24 @@ impl BillingRepository for PostgresBillingRepository {
             [plan_id.into(), payment_provider.to_string().into()],
         );
 
-        let result = PlanPaymentProviderQueryResult::find_by_statement(stmt)
+        let result = SubscriptionPlanPaymentProviderQueryResult::find_by_statement(stmt)
             .one(&self.db)
             .await
             .map_err(|e| {
                 CoreError::DatabaseError(format!("Failed to find plan payment provider: {}", e))
             })?;
 
-        Ok(result.map(query_result_to_plan_payment_provider))
+        Ok(result.map(query_result_to_subscription_plan_payment_provider))
     }
 
-    async fn list_plan_payment_providers(
+    async fn list_subscription_plan_payment_providers(
         &self,
         plan_id: Uuid,
-    ) -> Result<Vec<PlanPaymentProvider>, CoreError> {
+    ) -> Result<Vec<SubscriptionPlanPaymentProvider>, CoreError> {
         let query = r#"
             SELECT id, plan_id, payment_provider, external_product_id,
                    external_price_id, enabled, created_at, updated_at
-            FROM plan_payment_provider
+            FROM subscription_plan_payment_provider
             WHERE plan_id = $1
             ORDER BY created_at ASC
         "#;
@@ -1152,7 +1226,7 @@ impl BillingRepository for PostgresBillingRepository {
         let stmt =
             Statement::from_sql_and_values(DatabaseBackend::Postgres, query, [plan_id.into()]);
 
-        let results = PlanPaymentProviderQueryResult::find_by_statement(stmt)
+        let results = SubscriptionPlanPaymentProviderQueryResult::find_by_statement(stmt)
             .all(&self.db)
             .await
             .map_err(|e| {
@@ -1161,16 +1235,16 @@ impl BillingRepository for PostgresBillingRepository {
 
         Ok(results
             .into_iter()
-            .map(query_result_to_plan_payment_provider)
+            .map(query_result_to_subscription_plan_payment_provider)
             .collect())
     }
 
-    async fn update_plan_payment_provider(
+    async fn update_subscription_plan_payment_provider(
         &self,
-        mapping: PlanPaymentProvider,
-    ) -> Result<PlanPaymentProvider, CoreError> {
+        mapping: SubscriptionPlanPaymentProvider,
+    ) -> Result<SubscriptionPlanPaymentProvider, CoreError> {
         let query = r#"
-            UPDATE plan_payment_provider
+            UPDATE subscription_plan_payment_provider
             SET external_product_id = $2,
                 external_price_id = $3,
                 enabled = $4,
@@ -1192,7 +1266,7 @@ impl BillingRepository for PostgresBillingRepository {
             ],
         );
 
-        let result = PlanPaymentProviderQueryResult::find_by_statement(stmt)
+        let result = SubscriptionPlanPaymentProviderQueryResult::find_by_statement(stmt)
             .one(&self.db)
             .await
             .map_err(|e| {
@@ -1204,12 +1278,15 @@ impl BillingRepository for PostgresBillingRepository {
                 )
             })?;
 
-        Ok(query_result_to_plan_payment_provider(result))
+        Ok(query_result_to_subscription_plan_payment_provider(result))
     }
 
-    async fn delete_plan_payment_provider(&self, mapping_id: Uuid) -> Result<(), CoreError> {
+    async fn delete_subscription_plan_payment_provider(
+        &self,
+        mapping_id: Uuid,
+    ) -> Result<(), CoreError> {
         let query = r#"
-            DELETE FROM plan_payment_provider
+            DELETE FROM subscription_plan_payment_provider
             WHERE id = $1
         "#;
 
@@ -1223,9 +1300,12 @@ impl BillingRepository for PostgresBillingRepository {
         Ok(())
     }
 
-    async fn delete_plan_payment_providers_by_plan(&self, plan_id: Uuid) -> Result<(), CoreError> {
+    async fn delete_subscription_plan_payment_providers_by_plan(
+        &self,
+        plan_id: Uuid,
+    ) -> Result<(), CoreError> {
         let query = r#"
-            DELETE FROM plan_payment_provider
+            DELETE FROM subscription_plan_payment_provider
             WHERE plan_id = $1
         "#;
 
@@ -1242,10 +1322,10 @@ impl BillingRepository for PostgresBillingRepository {
         Ok(())
     }
 
-    async fn list_plan_payment_providers_batch(
+    async fn list_subscription_plan_payment_providers_batch(
         &self,
         plan_ids: &[Uuid],
-    ) -> Result<Vec<PlanPaymentProvider>, CoreError> {
+    ) -> Result<Vec<SubscriptionPlanPaymentProvider>, CoreError> {
         if plan_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -1254,7 +1334,7 @@ impl BillingRepository for PostgresBillingRepository {
         let query = r#"
             SELECT id, plan_id, payment_provider, external_product_id,
                    external_price_id, enabled, created_at, updated_at
-            FROM plan_payment_provider
+            FROM subscription_plan_payment_provider
             WHERE plan_id = ANY($1)
             ORDER BY created_at ASC
         "#;
@@ -1265,7 +1345,7 @@ impl BillingRepository for PostgresBillingRepository {
             [plan_ids.to_vec().into()],
         );
 
-        let results = PlanPaymentProviderQueryResult::find_by_statement(stmt)
+        let results = SubscriptionPlanPaymentProviderQueryResult::find_by_statement(stmt)
             .all(&self.db)
             .await
             .map_err(|e| {
@@ -1277,7 +1357,7 @@ impl BillingRepository for PostgresBillingRepository {
 
         Ok(results
             .into_iter()
-            .map(query_result_to_plan_payment_provider)
+            .map(query_result_to_subscription_plan_payment_provider)
             .collect())
     }
 }

@@ -45,14 +45,16 @@ pub enum CoreError {
     InvalidWebhookSecret,
     #[error("Duplicate webhook event: {0}")]
     DuplicateWebhookEvent(String),
-    #[error("Plan not found for realm: {realm_id}, plan_id: {plan_id}")]
-    PlanNotFound { realm_id: String, plan_id: String },
-    #[error("Duplicate plan name for realm: {realm_id}, name: {name}")]
-    DuplicatePlan { realm_id: String, name: String },
-    #[error("Plan has active subscriptions and cannot be deleted: {plan_id}")]
-    PlanHasActiveSubscriptions { plan_id: String },
-    #[error("Plan not assigned to client app: client_app_id={client_app_id}, plan_id={plan_id}")]
-    PlanNotAssignedToClientApp {
+    #[error("Subscription plan not found for realm: {realm_id}, plan_id: {plan_id}")]
+    SubscriptionPlanNotFound { realm_id: String, plan_id: String },
+    #[error("Duplicate subscription plan name for realm: {realm_id}, name: {name}")]
+    DuplicateSubscriptionPlan { realm_id: String, name: String },
+    #[error("Subscription plan has active subscriptions and cannot be deleted: {plan_id}")]
+    SubscriptionPlanHasActiveSubscriptions { plan_id: String },
+    #[error(
+        "Subscription plan not assigned to client app: client_app_id={client_app_id}, plan_id={plan_id}"
+    )]
+    SubscriptionPlanNotAssignedToClientApp {
         client_app_id: String,
         plan_id: String,
     },
@@ -66,7 +68,7 @@ pub enum CoreError {
     #[error("Product code '{code}' already exists in realm: {realm_id}")]
     ProductCodeExists { realm_id: String, code: String },
     #[error("Cannot delete product with existing plans: {product_id}")]
-    ProductHasPlans { product_id: String },
+    ProductHasSubscriptionPlans { product_id: String },
     #[error("Points package not found: {0}")]
     PointsPackageNotFound(String),
     #[error("Payment provider '{0}' already configured for this package")]
@@ -205,34 +207,34 @@ impl IntoResponse for CoreError {
                 StatusCode::CONFLICT,
                 format!("Duplicate webhook event: {}", msg),
             ),
-            CoreError::PlanNotFound { realm_id, plan_id } => (
+            CoreError::SubscriptionPlanNotFound { realm_id, plan_id } => (
                 StatusCode::NOT_FOUND,
                 format!(
-                    "Plan not found for realm: {}, plan_id: {}",
+                    "Subscription plan not found for realm: {}, plan_id: {}",
                     realm_id, plan_id
                 ),
             ),
-            CoreError::DuplicatePlan { realm_id, name } => (
+            CoreError::DuplicateSubscriptionPlan { realm_id, name } => (
                 StatusCode::CONFLICT,
                 format!(
-                    "Duplicate plan name for realm: {}, name: {}",
+                    "Duplicate subscription plan name for realm: {}, name: {}",
                     realm_id, name
                 ),
             ),
-            CoreError::PlanHasActiveSubscriptions { plan_id } => (
+            CoreError::SubscriptionPlanHasActiveSubscriptions { plan_id } => (
                 StatusCode::BAD_REQUEST,
                 format!(
-                    "Plan has active subscriptions and cannot be deleted: {}",
+                    "Subscription plan has active subscriptions and cannot be deleted: {}",
                     plan_id
                 ),
             ),
-            CoreError::PlanNotAssignedToClientApp {
+            CoreError::SubscriptionPlanNotAssignedToClientApp {
                 client_app_id,
                 plan_id,
             } => (
                 StatusCode::NOT_FOUND,
                 format!(
-                    "Plan not assigned to client app: client_app_id={}, plan_id={}",
+                    "Subscription plan not assigned to client app: client_app_id={}, plan_id={}",
                     client_app_id, plan_id
                 ),
             ),
@@ -257,7 +259,7 @@ impl IntoResponse for CoreError {
                     code, realm_id
                 ),
             ),
-            CoreError::ProductHasPlans { product_id } => (
+            CoreError::ProductHasSubscriptionPlans { product_id } => (
                 StatusCode::CONFLICT,
                 format!("Cannot delete product with existing plans: {}", product_id),
             ),

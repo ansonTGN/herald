@@ -50,6 +50,7 @@ mod handlers_test;
         crate::handlers::get_product_plans,
         crate::handlers::assign_plan_to_client_app,
         crate::handlers::list_plan_assignments,
+        crate::handlers::list_plan_assignments_batch,
         crate::handlers::toggle_plan_assignment,
         crate::handlers::remove_plan_assignment,
         crate::handlers::get_subscription_for_client_app,
@@ -109,14 +110,14 @@ mod handlers_test;
         crate::invoice_handlers::download_my_invoice_pdf,
     ),
     components(schemas(
-        crate::types::CreatePlanRequest,
-        crate::types::UpdatePlanRequest,
-        crate::types::PlanResponse,
-        crate::types::ListPlansResponse,
-        crate::types::AssignPlanRequest,
-        crate::types::PlanAssignmentResponse,
-        crate::types::ListPlanAssignmentsResponse,
-        crate::types::TogglePlanAssignmentRequest,
+        crate::types::CreateSubscriptionPlanRequest,
+        crate::types::UpdateSubscriptionPlanRequest,
+        crate::types::SubscriptionPlanResponse,
+        crate::types::ListSubscriptionPlansResponse,
+        crate::types::SubscriptionPlanAssignmentRequest,
+        crate::types::SubscriptionPlanAssignmentResponse,
+        crate::types::ListSubscriptionPlanAssignmentsResponse,
+        crate::types::ToggleSubscriptionPlanAssignmentRequest,
         crate::types::SubscriptionDetailResponse,
         crate::types::CancelSubscriptionRequest,
         crate::types::CancelSubscriptionResponse,
@@ -129,7 +130,7 @@ mod handlers_test;
         crate::types::ProductResponse,
         crate::types::ListProductsResponse,
         crate::types::ProductDetailResponse,
-        crate::types::PlanSummaryForProduct,
+        crate::types::SubscriptionPlanSummaryForProduct,
         crate::shopify_config_types::ShopifyConfigRequest,
         crate::shopify_config_types::ShopifyConfigResponse,
         crate::shopify_config_types::PaymentProvidersResponse,
@@ -146,10 +147,10 @@ mod handlers_test;
         crate::wechat_config_types::WechatOrderCreateRequest,
         crate::wechat_config_types::WechatOrderCreateResponse,
         crate::wechat_config_types::WechatOrderStatusResponse,
-        crate::types::CreatePlanPaymentProviderRequest,
-        crate::types::PlanPaymentProviderResponse,
-        crate::types::UpdatePlanPaymentProviderRequest,
-        crate::types::TogglePlanPaymentProviderRequest,
+        crate::types::CreateSubscriptionPlanPaymentProviderRequest,
+        crate::types::SubscriptionPlanPaymentProviderResponse,
+        crate::types::UpdateSubscriptionPlanPaymentProviderRequest,
+        crate::types::ToggleSubscriptionPlanPaymentProviderRequest,
         crate::points_package_handlers::CreatePointsPackageRequest,
         crate::points_package_handlers::PointsPackageResponse,
         crate::points_package_handlers::ListPointsPackagesResponse,
@@ -188,7 +189,7 @@ mod handlers_test;
 pub struct ApiDoc;
 
 // Re-export handler functions for external use
-pub use handlers::plan_to_response;
+pub use handlers::subscription_plan_to_response;
 pub use routes::{billing_public_routes, billing_routes};
 
 pub use routes::billing_test_routes;

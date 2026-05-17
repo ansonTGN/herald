@@ -12,7 +12,7 @@ import { ExportGuideButton } from '../ExportGuideButton'
 import type { PointsPlanConfigFormData } from '@/lib/schemas/points-forms'
 import {
   pointsPlanConfigsQueryOptions,
-  billingPlansQueryOptions,
+  subscriptionPlansQueryOptions,
   queryKeys,
 } from '@/data/query-options'
 import { createPlanConfig, updatePlanConfig, deletePlanConfig } from '@/lib/api-generated'
@@ -43,7 +43,7 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
     pointsPlanConfigsQueryOptions(realmId)
   )
 
-  const { data: plansData } = useQuery(billingPlansQueryOptions(realmId))
+  const { data: plansData } = useQuery(subscriptionPlansQueryOptions(realmId))
 
   // Memoized plan map for O(1) lookup
   const plansMap = useMemo(() => {
@@ -170,7 +170,7 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
   return (
     <div className="space-y-6" data-testid="points-configs-page">
       <PageHeader
-        title="Plan Configurations"
+        title="Points Rules"
         action={{
           label: 'Create Configuration',
           onClick: handleCreateConfig,
@@ -299,11 +299,7 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
       <Dialog open={configFormOpen} onOpenChange={setConfigFormOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              {editingConfig
-                ? 'Edit Points Plan Configuration'
-                : 'Create Points Plan Configuration'}
-            </DialogTitle>
+            <DialogTitle>{editingConfig ? 'Edit Points Rule' : 'Create Points Rule'}</DialogTitle>
           </DialogHeader>
           <PointsPlanConfigForm
             config={editingConfig}
@@ -319,7 +315,7 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
       <ConfirmDeleteDialog
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
-        title="Delete Points Plan Configuration"
+        title="Delete Points Rule"
         description={
           <>
             Are you sure you want to delete the points configuration for{' '}

@@ -4,7 +4,7 @@ import { userEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StripeCheckoutButton } from '../stripe-checkout-button'
 import { useStripeCheckout } from '@/hooks/use-stripe-checkout'
-import type { PlanResponse } from '@/lib/api-generated'
+import type { SubscriptionPlanResponse } from '@/lib/api-generated'
 
 // Mock the hook
 vi.mock('@/hooks/use-stripe-checkout')
@@ -20,7 +20,7 @@ vi.mock('sonner', () => ({
 describe('StripeCheckoutButton', () => {
   let queryClient: QueryClient
 
-  const mockPlan: PlanResponse = {
+  const mockPlan: SubscriptionPlanResponse = {
     id: 'plan-123',
     name: 'pro-monthly',
     title: 'Pro Plan',
@@ -102,7 +102,7 @@ describe('StripeCheckoutButton', () => {
     })
 
     test('does not render for non-Stripe plans', async () => {
-      const nonStripePlan: PlanResponse = {
+      const nonStripePlan: SubscriptionPlanResponse = {
         ...mockPlan,
         id: 'plan-creem',
         paymentProviders: [{ id: 'pp-2', paymentProvider: 'creem', enabled: true }],

@@ -29,20 +29,6 @@ export type AssignPermissionRequest = {
     permissionId: string;
 };
 
-/**
- * Request to assign a plan to a client app
- */
-export type AssignPlanRequest = {
-    planId: string;
-};
-
-/**
- * Plan assignments list response
- */
-export type AssignmentsListResponse = {
-    assignments: Array<PlanAssignment>;
-};
-
 export type AuditEventDetailResponse = {
     action: string;
     actorId: string;
@@ -466,32 +452,6 @@ export type CreatePlanConfigRequest = {
     validityDays: number;
 };
 
-/**
- * Request to add a payment provider to a plan
- */
-export type CreatePlanPaymentProviderRequest = {
-    enabled?: boolean | null;
-    externalPriceId?: string | null;
-    externalProductId: string;
-    paymentProvider: string;
-};
-
-/**
- * Request to create a plan
- */
-export type CreatePlanRequest = {
-    checkoutUrl?: string | null;
-    currency: string;
-    description?: string | null;
-    name: string;
-    price: number;
-    productId: string;
-    sortOrder?: number | null;
-    title: string;
-    trialDays?: number | null;
-    type: string;
-};
-
 export type CreatePointsPackageRequest = {
     currency: string;
     description?: string | null;
@@ -528,6 +488,32 @@ export type CreateRealmValidator = {
     description?: string | null;
     id?: string | null;
     name: string;
+};
+
+/**
+ * Request to add a payment provider to a subscription plan
+ */
+export type CreateSubscriptionPlanPaymentProviderRequest = {
+    enabled?: boolean | null;
+    externalPriceId?: string | null;
+    externalProductId: string;
+    paymentProvider: string;
+};
+
+/**
+ * Request to create a subscription plan
+ */
+export type CreateSubscriptionPlanRequest = {
+    checkoutUrl?: string | null;
+    currency: string;
+    description?: string | null;
+    name: string;
+    price: number;
+    productId: string;
+    sortOrder?: number | null;
+    title: string;
+    trialDays?: number | null;
+    type: string;
 };
 
 /**
@@ -877,24 +863,10 @@ export type ListPaymentProviderMappingsResponse = {
 };
 
 /**
- * Response for listing plan assignments
- */
-export type ListPlanAssignmentsResponse = {
-    assignments: Array<PlanAssignmentResponse>;
-};
-
-/**
  * List plan configs response wrapper
  */
 export type ListPlanConfigsResponse = {
     configs: Array<PointsPlanConfigResponse>;
-};
-
-/**
- * Response for listing plans
- */
-export type ListPlansResponse = {
-    plans: Array<PlanResponse>;
 };
 
 export type ListPointsPackagesResponse = {
@@ -941,6 +913,20 @@ export type ListRealmsQuery = {
 
 export type ListRealmsResponse = {
     realms: Array<RealmResponse>;
+};
+
+/**
+ * Response for listing subscription plan assignments
+ */
+export type ListSubscriptionPlanAssignmentsResponse = {
+    assignments: Array<SubscriptionPlanAssignmentResponse>;
+};
+
+/**
+ * Response for listing subscription plans
+ */
+export type ListSubscriptionPlansResponse = {
+    plans: Array<SubscriptionPlanResponse>;
 };
 
 /**
@@ -1168,9 +1154,6 @@ export type PageResponseUserResponse = {
     total: number;
 };
 
-/**
- * Pagination metadata for legacy list responses.
- */
 export type PaginationMeta = {
     page: number;
     pageSize: number;
@@ -1291,106 +1274,6 @@ export type PermissionUpdateRequest = {
 };
 
 /**
- * Plan structure (SDK-compatible)
- */
-export type Plan = {
-    active: boolean;
-    checkoutUrl?: string | null;
-    currency: string;
-    description?: string | null;
-    id: string;
-    name: string;
-    price: number;
-    realmId: string;
-    sortOrder: number;
-    title: string;
-    trialDays: number;
-    type: string;
-};
-
-/**
- * Plan assignment (SDK-compatible)
- */
-export type PlanAssignment = {
-    clientAppId: string;
-    createdAt: string;
-    enabled: boolean;
-    id: string;
-    planId: string;
-};
-
-/**
- * Response for plan assignment
- */
-export type PlanAssignmentResponse = {
-    clientAppId: string;
-    createdAt: string;
-    enabled: boolean;
-    id: string;
-    planId: string;
-};
-
-/**
- * Response for plan payment provider mapping
- */
-export type PlanPaymentProviderResponse = {
-    createdAt: string;
-    enabled: boolean;
-    externalPriceId?: string | null;
-    externalProductId: string;
-    id: string;
-    paymentProvider: string;
-    planId: string;
-    updatedAt: string;
-};
-
-/**
- * Response for plan query
- */
-export type PlanResponse = {
-    active: boolean;
-    checkoutUrl?: string | null;
-    createdAt: string;
-    currency: string;
-    description?: string | null;
-    id: string;
-    name: string;
-    /**
-     * Payment providers configured for this plan (summary view)
-     */
-    paymentProviders?: Array<PaymentProviderSummary>;
-    price: number;
-    productId: string;
-    realmId: string;
-    sortOrder: number;
-    title: string;
-    trialDays: number;
-    type: string;
-    updatedAt: string;
-};
-
-/**
- * Plan summary within product detail response
- */
-export type PlanSummaryForProduct = {
-    active: boolean;
-    currency: string;
-    id: string;
-    name: string;
-    price: number;
-    sortOrder: number;
-    title: string;
-    type: string;
-};
-
-/**
- * Plans list response
- */
-export type PlansListResponse = {
-    plans: Array<Plan>;
-};
-
-/**
  * Points account response
  */
 export type PointsAccountResponse = {
@@ -1485,7 +1368,7 @@ export type ProductDetailResponse = {
     description?: string | null;
     enabled: boolean;
     id: string;
-    plans: Array<PlanSummaryForProduct>;
+    plans: Array<SubscriptionPlanSummaryForProduct>;
     plansCount: number;
     realmId: string;
     title: string;
@@ -1772,7 +1655,7 @@ export type SubscriptionDetail = {
     currentPeriodEnd?: string | null;
     currentPeriodStart?: string | null;
     id: string;
-    plan?: null | Plan;
+    plan?: null | SubscriptionPlan;
     planId?: string | null;
     status: string;
     updatedAt: string;
@@ -1790,10 +1673,124 @@ export type SubscriptionDetailResponse = {
     currentPeriodEnd?: string | null;
     currentPeriodStart?: string | null;
     id: string;
-    plan?: null | PlanResponse;
+    plan?: null | SubscriptionPlanResponse;
     planId?: string | null;
     status: string;
     updatedAt: string;
+};
+
+/**
+ * Subscription plan structure (SDK-compatible)
+ */
+export type SubscriptionPlan = {
+    active: boolean;
+    checkoutUrl?: string | null;
+    currency: string;
+    description?: string | null;
+    id: string;
+    name: string;
+    price: number;
+    realmId: string;
+    sortOrder: number;
+    title: string;
+    trialDays: number;
+    type: string;
+};
+
+/**
+ * Subscription plan assignment (SDK-compatible)
+ */
+export type SubscriptionPlanAssignment = {
+    clientAppId: string;
+    createdAt: string;
+    enabled: boolean;
+    id: string;
+    planId: string;
+};
+
+/**
+ * Request to assign a subscription plan to a client app
+ */
+export type SubscriptionPlanAssignmentRequest = {
+    planId: string;
+};
+
+/**
+ * Response for subscription plan assignment
+ */
+export type SubscriptionPlanAssignmentResponse = {
+    clientAppId: string;
+    createdAt: string;
+    enabled: boolean;
+    id: string;
+    planId: string;
+};
+
+/**
+ * Subscription plan assignments list response
+ */
+export type SubscriptionPlanAssignmentsListResponse = {
+    assignments: Array<SubscriptionPlanAssignment>;
+};
+
+/**
+ * Response for subscription plan payment provider mapping
+ */
+export type SubscriptionPlanPaymentProviderResponse = {
+    createdAt: string;
+    enabled: boolean;
+    externalPriceId?: string | null;
+    externalProductId: string;
+    id: string;
+    paymentProvider: string;
+    planId: string;
+    updatedAt: string;
+};
+
+/**
+ * Response for subscription plan query
+ */
+export type SubscriptionPlanResponse = {
+    active: boolean;
+    checkoutUrl?: string | null;
+    createdAt: string;
+    currency: string;
+    description?: string | null;
+    id: string;
+    name: string;
+    /**
+     * Payment providers configured for this plan (summary view)
+     */
+    paymentProviders?: Array<PaymentProviderSummary>;
+    price: number;
+    productId: string;
+    realmId: string;
+    sortOrder: number;
+    title: string;
+    trialDays: number;
+    type: string;
+    updatedAt: string;
+};
+
+/**
+ * Subscription plan summary within product detail response
+ */
+export type SubscriptionPlanSummaryForProduct = {
+    active: boolean;
+    currency: string;
+    id: string;
+    name: string;
+    price: number;
+    sortOrder: number;
+    title: string;
+    type: string;
+};
+
+/**
+ * Subscription plans list response
+ */
+export type SubscriptionPlansListResponse = {
+    plans: Array<SubscriptionPlan>;
 };
 
 /**
@@ -1859,16 +1856,16 @@ export type TestConnectionResults = {
 };
 
 /**
- * Request to toggle plan assignment
+ * Request to toggle subscription plan assignment
  */
-export type TogglePlanAssignmentRequest = {
+export type ToggleSubscriptionPlanAssignmentRequest = {
     enabled: boolean;
 };
 
 /**
- * Request to toggle payment provider enabled status
+ * Request to toggle subscription plan payment provider enabled status
  */
-export type TogglePlanPaymentProviderRequest = {
+export type ToggleSubscriptionPlanPaymentProviderRequest = {
     enabled: boolean;
 };
 
@@ -1928,32 +1925,6 @@ export type UpdatePlanConfigRequest = {
     validity_days?: number | null;
 };
 
-/**
- * Request to update a payment provider mapping
- */
-export type UpdatePlanPaymentProviderRequest = {
-    enabled?: boolean | null;
-    externalPriceId?: string | null;
-    externalProductId?: string | null;
-};
-
-/**
- * Request to update a plan
- */
-export type UpdatePlanRequest = {
-    active?: boolean | null;
-    checkoutUrl?: string | null;
-    currency?: string | null;
-    description?: string | null;
-    name?: string | null;
-    price?: number | null;
-    productId?: string | null;
-    sortOrder?: number | null;
-    title?: string | null;
-    trialDays?: number | null;
-    type?: string | null;
-};
-
 export type UpdatePointsPackageRequest = {
     currency?: string | null;
     description?: string | null;
@@ -2001,6 +1972,32 @@ export type UpdateRealmTotpConfigResponse = {
 export type UpdateRealmValidator = {
     description?: string | null;
     name: string;
+};
+
+/**
+ * Request to update a subscription plan payment provider mapping
+ */
+export type UpdateSubscriptionPlanPaymentProviderRequest = {
+    enabled?: boolean | null;
+    externalPriceId?: string | null;
+    externalProductId?: string | null;
+};
+
+/**
+ * Request to update a subscription plan
+ */
+export type UpdateSubscriptionPlanRequest = {
+    active?: boolean | null;
+    checkoutUrl?: string | null;
+    currency?: string | null;
+    description?: string | null;
+    name?: string | null;
+    price?: number | null;
+    productId?: string | null;
+    sortOrder?: number | null;
+    title?: string | null;
+    trialDays?: number | null;
+    type?: string | null;
 };
 
 export type UpdateUserRolesRequest = {
@@ -2891,6 +2888,53 @@ export type VerifyEmailTriggerResponses = {
 
 export type VerifyEmailTriggerResponse2 = VerifyEmailTriggerResponses[keyof VerifyEmailTriggerResponses];
 
+export type ListPlanAssignmentsBatchData = {
+    body?: never;
+    path: {
+        /**
+         * Realm ID
+         */
+        realmId: string;
+    };
+    query?: {
+        /**
+         * Comma-separated client app IDs (UUIDs)
+         */
+        clientAppIds?: string;
+    };
+    url: '/api/bill/{realmId}/client/plans/batch';
+};
+
+export type ListPlanAssignmentsBatchErrors = {
+    /**
+     * Bad request - Invalid client app IDs
+     */
+    400: ErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: ErrorResponse;
+    /**
+     * Forbidden - Insufficient permissions
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type ListPlanAssignmentsBatchError = ListPlanAssignmentsBatchErrors[keyof ListPlanAssignmentsBatchErrors];
+
+export type ListPlanAssignmentsBatchResponses = {
+    /**
+     * Plan assignments listed successfully
+     */
+    200: ListSubscriptionPlanAssignmentsResponse;
+};
+
+export type ListPlanAssignmentsBatchResponse = ListPlanAssignmentsBatchResponses[keyof ListPlanAssignmentsBatchResponses];
+
 export type CreateCheckoutSessionData = {
     body: CreateCheckoutSessionRequest;
     path: {
@@ -2978,13 +3022,13 @@ export type ListPlanAssignmentsResponses = {
     /**
      * Plans listed successfully
      */
-    200: ListPlanAssignmentsResponse;
+    200: ListSubscriptionPlanAssignmentsResponse;
 };
 
-export type ListPlanAssignmentsResponse2 = ListPlanAssignmentsResponses[keyof ListPlanAssignmentsResponses];
+export type ListPlanAssignmentsResponse = ListPlanAssignmentsResponses[keyof ListPlanAssignmentsResponses];
 
 export type AssignPlanToClientAppData = {
-    body: AssignPlanRequest;
+    body: SubscriptionPlanAssignmentRequest;
     path: {
         /**
          * Realm ID
@@ -3028,7 +3072,7 @@ export type AssignPlanToClientAppResponses = {
     /**
      * Plan assigned successfully
      */
-    201: PlanAssignmentResponse;
+    201: SubscriptionPlanAssignmentResponse;
 };
 
 export type AssignPlanToClientAppResponse = AssignPlanToClientAppResponses[keyof AssignPlanToClientAppResponses];
@@ -3084,7 +3128,7 @@ export type RemovePlanAssignmentResponses = {
 export type RemovePlanAssignmentResponse = RemovePlanAssignmentResponses[keyof RemovePlanAssignmentResponses];
 
 export type TogglePlanAssignmentData = {
-    body: TogglePlanAssignmentRequest;
+    body: ToggleSubscriptionPlanAssignmentRequest;
     path: {
         /**
          * Realm ID
@@ -3128,7 +3172,7 @@ export type TogglePlanAssignmentResponses = {
     /**
      * Assignment toggled successfully
      */
-    200: PlanAssignmentResponse;
+    200: SubscriptionPlanAssignmentResponse;
 };
 
 export type TogglePlanAssignmentResponse = TogglePlanAssignmentResponses[keyof TogglePlanAssignmentResponses];
@@ -3922,13 +3966,13 @@ export type ListPlansResponses = {
     /**
      * Plans listed successfully
      */
-    200: ListPlansResponse;
+    200: ListSubscriptionPlansResponse;
 };
 
-export type ListPlansResponse2 = ListPlansResponses[keyof ListPlansResponses];
+export type ListPlansResponse = ListPlansResponses[keyof ListPlansResponses];
 
 export type CreatePlanData = {
-    body: CreatePlanRequest;
+    body: CreateSubscriptionPlanRequest;
     path: {
         /**
          * Realm ID
@@ -3964,7 +4008,7 @@ export type CreatePlanResponses = {
     /**
      * Plan created successfully
      */
-    201: PlanResponse;
+    201: SubscriptionPlanResponse;
 };
 
 export type CreatePlanResponse = CreatePlanResponses[keyof CreatePlanResponses];
@@ -4056,13 +4100,13 @@ export type GetPlanResponses = {
     /**
      * Plan found
      */
-    200: PlanResponse;
+    200: SubscriptionPlanResponse;
 };
 
 export type GetPlanResponse = GetPlanResponses[keyof GetPlanResponses];
 
 export type UpdatePlanData = {
-    body: UpdatePlanRequest;
+    body: UpdateSubscriptionPlanRequest;
     path: {
         /**
          * Realm ID
@@ -4106,7 +4150,7 @@ export type UpdatePlanResponses = {
     /**
      * Plan updated successfully
      */
-    200: PlanResponse;
+    200: SubscriptionPlanResponse;
 };
 
 export type UpdatePlanResponse = UpdatePlanResponses[keyof UpdatePlanResponses];
@@ -4152,13 +4196,13 @@ export type ListPlanPaymentProvidersResponses = {
     /**
      * Payment providers listed successfully
      */
-    200: Array<PlanPaymentProviderResponse>;
+    200: Array<SubscriptionPlanPaymentProviderResponse>;
 };
 
 export type ListPlanPaymentProvidersResponse = ListPlanPaymentProvidersResponses[keyof ListPlanPaymentProvidersResponses];
 
 export type AddPaymentProviderToPlanData = {
-    body: CreatePlanPaymentProviderRequest;
+    body: CreateSubscriptionPlanPaymentProviderRequest;
     path: {
         /**
          * Realm ID
@@ -4202,7 +4246,7 @@ export type AddPaymentProviderToPlanResponses = {
     /**
      * Payment provider mapping created successfully
      */
-    201: PlanPaymentProviderResponse;
+    201: SubscriptionPlanPaymentProviderResponse;
 };
 
 export type AddPaymentProviderToPlanResponse = AddPaymentProviderToPlanResponses[keyof AddPaymentProviderToPlanResponses];
@@ -4258,7 +4302,7 @@ export type RemovePaymentProviderFromPlanResponses = {
 export type RemovePaymentProviderFromPlanResponse = RemovePaymentProviderFromPlanResponses[keyof RemovePaymentProviderFromPlanResponses];
 
 export type UpdatePlanPaymentProviderData = {
-    body: UpdatePlanPaymentProviderRequest;
+    body: UpdateSubscriptionPlanPaymentProviderRequest;
     path: {
         /**
          * Realm ID
@@ -4306,13 +4350,13 @@ export type UpdatePlanPaymentProviderResponses = {
     /**
      * Payment provider mapping updated successfully
      */
-    200: PlanPaymentProviderResponse;
+    200: SubscriptionPlanPaymentProviderResponse;
 };
 
 export type UpdatePlanPaymentProviderResponse = UpdatePlanPaymentProviderResponses[keyof UpdatePlanPaymentProviderResponses];
 
 export type TogglePlanPaymentProviderData = {
-    body: TogglePlanPaymentProviderRequest;
+    body: ToggleSubscriptionPlanPaymentProviderRequest;
     path: {
         /**
          * Realm ID
@@ -4360,7 +4404,7 @@ export type TogglePlanPaymentProviderResponses = {
     /**
      * Payment provider mapping toggled successfully
      */
-    200: PlanPaymentProviderResponse;
+    200: SubscriptionPlanPaymentProviderResponse;
 };
 
 export type TogglePlanPaymentProviderResponse = TogglePlanPaymentProviderResponses[keyof TogglePlanPaymentProviderResponses];
@@ -5009,7 +5053,7 @@ export type GetProductPlansResponses = {
     /**
      * Product plans listed successfully
      */
-    200: ListPlansResponse;
+    200: ListSubscriptionPlansResponse;
 };
 
 export type GetProductPlansResponse = GetProductPlansResponses[keyof GetProductPlansResponses];
@@ -5833,6 +5877,53 @@ export type DeviceVerifyResponses = {
 
 export type DeviceVerifyResponse2 = DeviceVerifyResponses[keyof DeviceVerifyResponses];
 
+export type ListPlanAssignmentsBatch2Data = {
+    body?: never;
+    path: {
+        /**
+         * Realm ID
+         */
+        realmId: string;
+    };
+    query?: {
+        /**
+         * Comma-separated client app IDs (client_id or UUID)
+         */
+        clientAppIds?: string;
+    };
+    url: '/api/ext/bill/{realmId}/client/plans/batch';
+};
+
+export type ListPlanAssignmentsBatch2Errors = {
+    /**
+     * Bad request - Invalid client app IDs
+     */
+    400: ErrorResponse;
+    /**
+     * Unauthorized - Invalid or missing API Key
+     */
+    401: ErrorResponse;
+    /**
+     * Forbidden - Cross-realm access attempt
+     */
+    403: ErrorResponse;
+    /**
+     * Internal server error
+     */
+    500: ErrorResponse;
+};
+
+export type ListPlanAssignmentsBatch2Error = ListPlanAssignmentsBatch2Errors[keyof ListPlanAssignmentsBatch2Errors];
+
+export type ListPlanAssignmentsBatch2Responses = {
+    /**
+     * Plan assignments listed successfully
+     */
+    200: SubscriptionPlanAssignmentsListResponse;
+};
+
+export type ListPlanAssignmentsBatch2Response = ListPlanAssignmentsBatch2Responses[keyof ListPlanAssignmentsBatch2Responses];
+
 export type ListPlanAssignments2Data = {
     body?: never;
     path: {
@@ -5874,7 +5965,7 @@ export type ListPlanAssignments2Responses = {
     /**
      * Plan assignments listed successfully
      */
-    200: AssignmentsListResponse;
+    200: SubscriptionPlanAssignmentsListResponse;
 };
 
 export type ListPlanAssignments2Response = ListPlanAssignments2Responses[keyof ListPlanAssignments2Responses];
@@ -5958,7 +6049,7 @@ export type ListPlans2Responses = {
     /**
      * Plans listed successfully
      */
-    200: PlansListResponse;
+    200: SubscriptionPlansListResponse;
 };
 
 export type ListPlans2Response = ListPlans2Responses[keyof ListPlans2Responses];
@@ -6782,6 +6873,10 @@ export type DeletePermissionErrors = {
      * Permission not found
      */
     404: ErrorResponse;
+    /**
+     * Conflict - Permission is assigned to roles and cannot be deleted
+     */
+    409: ErrorResponse;
     /**
      * Internal server error
      */
@@ -8971,7 +9066,7 @@ export type HandleEnableTotpErrors = {
      */
     401: ErrorResponse;
     /**
-     * TOTP not enabled for realm or already enabled
+     * TOTP already enabled
      */
     403: ErrorResponse;
 };

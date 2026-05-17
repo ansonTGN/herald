@@ -7,14 +7,9 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use herald_api_base::application::http::common::error_codes::ErrorCode;
-use herald_api_base::application::http::server::api_entities::ApiError;
-
-/// Create a JSON error response
-fn json_error(status: StatusCode, error_code: ErrorCode) -> Response {
-    ApiError::with_code(status, error_code.as_u32(), error_code.as_str()).into_response()
-}
+use herald_api_base::application::http::common::error_helpers::json_error;
 
 /// Client app lookup helper
 pub struct ClientAppLookup {

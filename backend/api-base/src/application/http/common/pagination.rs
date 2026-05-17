@@ -6,7 +6,7 @@
 //
 // =============================================================================
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// 分页请求参数
@@ -46,4 +46,17 @@ pub fn calculate_total_pages(total_count: i64, page_size: i64) -> i64 {
     } else {
         0
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PaginationMeta {
+    #[schema(example = "0")]
+    pub page: i64,
+    #[schema(example = "20")]
+    pub page_size: i64,
+    #[schema(example = "42")]
+    pub total_count: i64,
+    #[schema(example = "3")]
+    pub total_pages: i64,
 }

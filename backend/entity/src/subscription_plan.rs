@@ -2,7 +2,7 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "plan")]
+#[sea_orm(table_name = "subscription_plan")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: Uuid,
@@ -30,8 +30,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::client_app_plan::Entity")]
-    ClientAppPlan,
+    #[sea_orm(has_many = "super::client_app_subscription_plan::Entity")]
+    ClientAppSubscriptionPlan,
     #[sea_orm(
         belongs_to = "super::product::Entity",
         from = "Column::ProductId",
@@ -46,9 +46,9 @@ pub enum Relation {
     Realm,
 }
 
-impl Related<super::client_app_plan::Entity> for Entity {
+impl Related<super::client_app_subscription_plan::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::ClientAppPlan.def()
+        Relation::ClientAppSubscriptionPlan.def()
     }
 }
 

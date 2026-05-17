@@ -4,18 +4,8 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::types::PlanSummary;
-
-/// Pagination metadata for list responses
-/// Copied from herald-api client_apps::types to avoid cross-crate dependency
-#[derive(Debug, Clone, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PaginationMeta {
-    pub page: i64,
-    pub page_size: i64,
-    pub total_count: i64,
-    pub total_pages: i64,
-}
+use crate::types::SubscriptionPlanSummary;
+use herald_api_base::application::http::common::pagination::PaginationMeta;
 
 /// Subscription history event for API responses
 #[derive(Debug, Serialize, ToSchema)]
@@ -54,7 +44,7 @@ pub struct UserInfo {
 pub struct SubscriptionSummary {
     pub id: Uuid,
     pub status: String,
-    pub plan: Option<PlanSummary>,
+    pub plan: Option<SubscriptionPlanSummary>,
 }
 
 /// Subscription history list response with user and subscription details

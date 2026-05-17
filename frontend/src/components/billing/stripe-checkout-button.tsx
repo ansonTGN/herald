@@ -3,12 +3,12 @@ import { Button } from '@/components/ui/button'
 import { CreditCard, Loader2 } from 'lucide-react'
 import { useStripeCheckout } from '@/hooks/use-stripe-checkout'
 import { toast } from 'sonner'
-import type { PlanResponse } from '@/lib/api-generated'
+import type { SubscriptionPlanResponse } from '@/lib/api-generated'
 
 interface StripeCheckoutButtonProps {
   realmId: string
   clientAppId: string
-  plan: PlanResponse
+  plan: SubscriptionPlanResponse
   billingPeriod?: 'monthly' | 'yearly'
   variant?: 'default' | 'outline' | 'ghost' | 'destructive'
   size?: 'default' | 'sm' | 'lg' | 'icon'

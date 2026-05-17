@@ -2,23 +2,25 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::authentication::Identity;
-use crate::billing::entities::{ClientAppPlan, Plan, PlanPaymentProvider, PlanType, Product};
+use crate::billing::entities::{
+    ClientAppSubscriptionPlan, Product, SubscriptionPlan, SubscriptionPlanPaymentProvider,
+    SubscriptionPlanType,
+};
 use crate::billing::policies::BillingPolicy;
 use crate::billing::ports::BillingRepository;
 use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::ensure_policy;
 
-/// Input types for Plan operations
+/// Input types for SubscriptionPlan operations
 #[derive(Debug, Clone)]
-pub struct CreatePlanInput {
+pub struct CreateSubscriptionPlanInput {
     pub realm_id: String,
     pub name: String,
     pub title: String,
     pub description: Option<String>,
-    pub r#type: PlanType,
+    pub r#type: SubscriptionPlanType,
     pub price: i32,
     pub currency: String,
-    // NOTE: Payment provider fields removed - use PlanPaymentProvider operations instead
     pub checkout_url: Option<String>,
     pub trial_days: Option<i32>,
     pub sort_order: Option<i32>,
@@ -26,14 +28,13 @@ pub struct CreatePlanInput {
 }
 
 #[derive(Debug, Clone)]
-pub struct UpdatePlanInput {
+pub struct UpdateSubscriptionPlanInput {
     pub name: Option<String>,
     pub title: Option<String>,
     pub description: Option<String>,
-    pub r#type: Option<PlanType>,
+    pub r#type: Option<SubscriptionPlanType>,
     pub price: Option<i32>,
     pub currency: Option<String>,
-    // NOTE: Payment provider fields removed - use PlanPaymentProvider operations instead
     pub checkout_url: Option<String>,
     pub active: Option<bool>,
     pub trial_days: Option<i32>,
@@ -41,10 +42,10 @@ pub struct UpdatePlanInput {
     pub product_id: Option<Uuid>,
 }
 
-/// Plan Service - Business logic for plan management
+/// SubscriptionPlan Service - Business logic for subscription plan management
 ///
 /// Includes permission-based authorization checks using BillingPolicy
-pub struct PlanService<R, P>
+pub struct SubscriptionPlanService<R, P>
 where
     R: BillingRepository,
     P: BillingPolicy,
@@ -53,7 +54,7 @@ where
     policy: Arc<P>,
 }
 
-impl<R, P> PlanService<R, P>
+impl<R, P> SubscriptionPlanService<R, P>
 where
     R: BillingRepository + Send + Sync,
     P: BillingPolicy,
@@ -68,10 +69,12 @@ where
         &self,
         identity: Identity,
         realm_id: &str,
-    ) -> Result<Vec<Plan>, CoreError> {
+    ) -> Result<Vec<SubscriptionPlan>, CoreError> {
         // Check view permissions
         ensure_policy(
-            self.policy.can_view_plans(identity.clone()).await,
+            self.policy
+                .can_view_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to view billing plans",
         )?;
 
@@ -82,18 +85,22 @@ where
             ));
         }
 
-        self.repository.list_plans_by_realm(realm_id).await
+        self.repository
+            .list_subscription_plans_by_realm(realm_id)
+            .await
     }
 
     pub async fn create_plan(
         &self,
         identity: Identity,
         realm_id: &str,
-        input: CreatePlanInput,
-    ) -> Result<Plan, CoreError> {
+        input: CreateSubscriptionPlanInput,
+    ) -> Result<SubscriptionPlan, CoreError> {
         // Check manage permissions
         ensure_policy(
-            self.policy.can_manage_plans(identity.clone()).await,
+            self.policy
+                .can_manage_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to manage billing plans",
         )?;
 
@@ -107,7 +114,7 @@ where
         self.ensure_product_belongs_to_realm(realm_id, input.product_id)
             .await?;
 
-        let plan = Plan {
+        let plan = SubscriptionPlan {
             id: Uuid::now_v7(),
             realm_id: realm_id.to_string(),
             name: input.name.clone(),
@@ -116,7 +123,6 @@ where
             r#type: input.r#type,
             price: input.price,
             currency: input.currency,
-            // NOTE: Payment provider fields removed
             checkout_url: input.checkout_url,
             active: true,
             trial_days: input.trial_days.unwrap_or(0),
@@ -126,7 +132,7 @@ where
             updated_at: chrono::Utc::now(),
         };
 
-        self.repository.create_plan(plan).await
+        self.repository.create_subscription_plan(plan).await
     }
 
     pub async fn get_plan(
@@ -134,10 +140,12 @@ where
         identity: Identity,
         realm_id: &str,
         plan_id: Uuid,
-    ) -> Result<Plan, CoreError> {
+    ) -> Result<SubscriptionPlan, CoreError> {
         // Check view permissions
         ensure_policy(
-            self.policy.can_view_plans(identity.clone()).await,
+            self.policy
+                .can_view_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to view billing plans",
         )?;
 
@@ -150,16 +158,16 @@ where
 
         let plan = self
             .repository
-            .find_plan_by_id(plan_id)
+            .find_subscription_plan_by_id(plan_id)
             .await?
-            .ok_or_else(|| CoreError::PlanNotFound {
+            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
                 realm_id: realm_id.to_string(),
                 plan_id: plan_id.to_string(),
             })?;
 
-        // Verify plan belongs to realm
+        // Verify subscription plan belongs to realm
         if plan.realm_id != realm_id {
-            return Err(CoreError::PlanNotFound {
+            return Err(CoreError::SubscriptionPlanNotFound {
                 realm_id: realm_id.to_string(),
                 plan_id: plan_id.to_string(),
             });
@@ -173,11 +181,13 @@ where
         identity: Identity,
         realm_id: &str,
         plan_id: Uuid,
-        input: UpdatePlanInput,
-    ) -> Result<Plan, CoreError> {
+        input: UpdateSubscriptionPlanInput,
+    ) -> Result<SubscriptionPlan, CoreError> {
         // Check manage permissions
         ensure_policy(
-            self.policy.can_manage_plans(identity.clone()).await,
+            self.policy
+                .can_manage_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to manage billing plans",
         )?;
 
@@ -194,7 +204,7 @@ where
         self.ensure_product_belongs_to_realm(realm_id, product_id)
             .await?;
 
-        let updated_plan = Plan {
+        let updated_plan = SubscriptionPlan {
             id: existing_plan.id,
             realm_id: existing_plan.realm_id.clone(),
             name: input.name.unwrap_or(existing_plan.name),
@@ -203,7 +213,6 @@ where
             r#type: input.r#type.unwrap_or(existing_plan.r#type),
             price: input.price.unwrap_or(existing_plan.price),
             currency: input.currency.unwrap_or(existing_plan.currency),
-            // NOTE: Payment provider fields removed
             checkout_url: input.checkout_url.or(existing_plan.checkout_url),
             active: input.active.unwrap_or(existing_plan.active),
             trial_days: input.trial_days.unwrap_or(existing_plan.trial_days),
@@ -213,7 +222,7 @@ where
             updated_at: chrono::Utc::now(),
         };
 
-        self.repository.update_plan(updated_plan).await
+        self.repository.update_subscription_plan(updated_plan).await
     }
 
     pub async fn delete_plan(
@@ -224,7 +233,9 @@ where
     ) -> Result<(), CoreError> {
         // Check manage permissions
         ensure_policy(
-            self.policy.can_manage_plans(identity.clone()).await,
+            self.policy
+                .can_manage_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to manage billing plans",
         )?;
 
@@ -240,16 +251,16 @@ where
 
         let count = self
             .repository
-            .count_active_subscriptions_for_plan(plan_id)
+            .count_active_subscriptions_for_subscription_plan(plan_id)
             .await?;
 
         if count > 0 {
-            return Err(CoreError::PlanHasActiveSubscriptions {
+            return Err(CoreError::SubscriptionPlanHasActiveSubscriptions {
                 plan_id: plan_id.to_string(),
             });
         }
 
-        self.repository.delete_plan(plan_id).await
+        self.repository.delete_subscription_plan(plan_id).await
     }
 
     // ===== Plan Assignment =====
@@ -260,10 +271,12 @@ where
         realm_id: &str,
         client_app_id: Uuid,
         plan_id: Uuid,
-    ) -> Result<ClientAppPlan, CoreError> {
+    ) -> Result<ClientAppSubscriptionPlan, CoreError> {
         // Check manage permissions
         ensure_policy(
-            self.policy.can_manage_plans(identity.clone()).await,
+            self.policy
+                .can_manage_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to manage billing plans",
         )?;
 
@@ -277,9 +290,9 @@ where
         // Verify plan exists and belongs to realm
         let _plan = self.get_plan(identity, realm_id, plan_id).await?;
 
-        // Call repository.assign_plan_to_client_app
+        // Call repository.assign_subscription_plan_to_client_app
         self.repository
-            .assign_plan_to_client_app(client_app_id, plan_id)
+            .assign_subscription_plan_to_client_app(client_app_id, plan_id)
             .await
     }
 
@@ -291,7 +304,9 @@ where
     ) -> Result<(), CoreError> {
         // Check manage permissions
         ensure_policy(
-            self.policy.can_manage_plans(identity.clone()).await,
+            self.policy
+                .can_manage_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to manage billing plans",
         )?;
 
@@ -303,7 +318,7 @@ where
         }
 
         self.repository
-            .remove_plan_from_client_app(assignment_id)
+            .remove_subscription_plan_from_client_app(assignment_id)
             .await
     }
 
@@ -312,10 +327,12 @@ where
         identity: Identity,
         realm_id: &str,
         client_app_id: Uuid,
-    ) -> Result<Vec<ClientAppPlan>, CoreError> {
+    ) -> Result<Vec<ClientAppSubscriptionPlan>, CoreError> {
         // Check view permissions
         ensure_policy(
-            self.policy.can_view_plans(identity.clone()).await,
+            self.policy
+                .can_view_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to view billing plans",
         )?;
 
@@ -327,7 +344,7 @@ where
         }
 
         self.repository
-            .list_plans_for_client_app(client_app_id)
+            .list_subscription_plans_for_client_app(client_app_id)
             .await
     }
 
@@ -337,10 +354,12 @@ where
         realm_id: &str,
         assignment_id: Uuid,
         enabled: bool,
-    ) -> Result<ClientAppPlan, CoreError> {
+    ) -> Result<ClientAppSubscriptionPlan, CoreError> {
         // Check manage permissions
         ensure_policy(
-            self.policy.can_manage_plans(identity.clone()).await,
+            self.policy
+                .can_manage_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to manage billing plans",
         )?;
 
@@ -352,7 +371,7 @@ where
         }
 
         self.repository
-            .toggle_plan_assignment(assignment_id, enabled)
+            .toggle_subscription_plan_assignment(assignment_id, enabled)
             .await
     }
 
@@ -383,10 +402,12 @@ where
         identity: Identity,
         realm_id: &str,
         plan_id: Uuid,
-    ) -> Result<Vec<PlanPaymentProvider>, CoreError> {
+    ) -> Result<Vec<SubscriptionPlanPaymentProvider>, CoreError> {
         // Check view permissions
         ensure_policy(
-            self.policy.can_view_plans(identity.clone()).await,
+            self.policy
+                .can_view_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to view billing plans",
         )?;
 
@@ -397,13 +418,15 @@ where
             ));
         }
 
-        // Verify plan exists and belongs to realm
+        // Verify subscription plan exists and belongs to realm
         let _plan = self.get_plan(identity, realm_id, plan_id).await?;
 
-        self.repository.list_plan_payment_providers(plan_id).await
+        self.repository
+            .list_subscription_plan_payment_providers(plan_id)
+            .await
     }
 
-    /// Add a payment provider mapping to a plan
+    /// Add a payment provider mapping to a subscription plan
     pub async fn add_payment_provider_to_plan(
         &self,
         identity: Identity,
@@ -413,10 +436,12 @@ where
         external_product_id: String,
         external_price_id: Option<String>,
         enabled: bool,
-    ) -> Result<PlanPaymentProvider, CoreError> {
+    ) -> Result<SubscriptionPlanPaymentProvider, CoreError> {
         // Check manage permissions
         ensure_policy(
-            self.policy.can_manage_plans(identity.clone()).await,
+            self.policy
+                .can_manage_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to manage billing plans",
         )?;
 
@@ -427,13 +452,16 @@ where
             ));
         }
 
-        // Verify plan exists and belongs to realm
+        // Verify subscription plan exists and belongs to realm
         let _plan = self.get_plan(identity, realm_id, plan_id).await?;
 
         // Check if mapping already exists
         let existing = self
             .repository
-            .find_plan_payment_provider_by_plan_and_provider(plan_id, &payment_provider)
+            .find_subscription_plan_payment_provider_by_plan_and_provider(
+                plan_id,
+                &payment_provider,
+            )
             .await?;
 
         if existing.is_some() {
@@ -443,7 +471,7 @@ where
             )));
         }
 
-        let mapping = PlanPaymentProvider {
+        let mapping = SubscriptionPlanPaymentProvider {
             id: Uuid::now_v7(),
             plan_id,
             payment_provider: payment_provider.clone(),
@@ -454,7 +482,9 @@ where
             updated_at: chrono::Utc::now(),
         };
 
-        self.repository.create_plan_payment_provider(mapping).await
+        self.repository
+            .create_subscription_plan_payment_provider(mapping)
+            .await
     }
 
     /// Update a payment provider mapping
@@ -466,10 +496,12 @@ where
         external_product_id: Option<String>,
         external_price_id: Option<String>,
         enabled: Option<bool>,
-    ) -> Result<PlanPaymentProvider, CoreError> {
+    ) -> Result<SubscriptionPlanPaymentProvider, CoreError> {
         // Check manage permissions
         ensure_policy(
-            self.policy.can_manage_plans(identity.clone()).await,
+            self.policy
+                .can_manage_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to manage billing plans",
         )?;
 
@@ -483,7 +515,7 @@ where
         // Find existing mapping
         let existing = self
             .repository
-            .find_plan_payment_provider_by_id(mapping_id)
+            .find_subscription_plan_payment_provider_by_id(mapping_id)
             .await?
             .ok_or_else(|| {
                 CoreError::BadRequest(format!(
@@ -492,10 +524,7 @@ where
                 ))
             })?;
 
-        // Verify plan belongs to realm
-        let _plan = self.get_plan(identity, realm_id, existing.plan_id).await?;
-
-        let updated = PlanPaymentProvider {
+        let updated = SubscriptionPlanPaymentProvider {
             id: existing.id,
             plan_id: existing.plan_id,
             payment_provider: existing.payment_provider,
@@ -506,7 +535,9 @@ where
             updated_at: chrono::Utc::now(),
         };
 
-        self.repository.update_plan_payment_provider(updated).await
+        self.repository
+            .update_subscription_plan_payment_provider(updated)
+            .await
     }
 
     /// Toggle payment provider enabled status
@@ -516,10 +547,12 @@ where
         realm_id: &str,
         mapping_id: Uuid,
         enabled: bool,
-    ) -> Result<PlanPaymentProvider, CoreError> {
+    ) -> Result<SubscriptionPlanPaymentProvider, CoreError> {
         // Check manage permissions
         ensure_policy(
-            self.policy.can_manage_plans(identity.clone()).await,
+            self.policy
+                .can_manage_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to manage billing plans",
         )?;
 
@@ -533,7 +566,7 @@ where
         // Find existing mapping
         let existing = self
             .repository
-            .find_plan_payment_provider_by_id(mapping_id)
+            .find_subscription_plan_payment_provider_by_id(mapping_id)
             .await?
             .ok_or_else(|| {
                 CoreError::BadRequest(format!(
@@ -542,16 +575,15 @@ where
                 ))
             })?;
 
-        // Verify plan belongs to realm
-        let _plan = self.get_plan(identity, realm_id, existing.plan_id).await?;
-
-        let updated = PlanPaymentProvider {
+        let updated = SubscriptionPlanPaymentProvider {
             enabled,
             updated_at: chrono::Utc::now(),
             ..existing
         };
 
-        self.repository.update_plan_payment_provider(updated).await
+        self.repository
+            .update_subscription_plan_payment_provider(updated)
+            .await
     }
 
     /// Remove a payment provider mapping from a plan
@@ -563,7 +595,9 @@ where
     ) -> Result<(), CoreError> {
         // Check manage permissions
         ensure_policy(
-            self.policy.can_manage_plans(identity.clone()).await,
+            self.policy
+                .can_manage_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to manage billing plans",
         )?;
 
@@ -574,10 +608,10 @@ where
             ));
         }
 
-        // Find existing mapping to verify plan exists
-        let existing = self
+        // Verify mapping exists
+        let _existing = self
             .repository
-            .find_plan_payment_provider_by_id(mapping_id)
+            .find_subscription_plan_payment_provider_by_id(mapping_id)
             .await?
             .ok_or_else(|| {
                 CoreError::BadRequest(format!(
@@ -586,11 +620,8 @@ where
                 ))
             })?;
 
-        // Verify plan belongs to realm
-        let _plan = self.get_plan(identity, realm_id, existing.plan_id).await?;
-
         self.repository
-            .delete_plan_payment_provider(mapping_id)
+            .delete_subscription_plan_payment_provider(mapping_id)
             .await
     }
 }
@@ -639,7 +670,9 @@ where
         enabled_only: Option<bool>,
     ) -> Result<Vec<Product>, CoreError> {
         ensure_policy(
-            self.policy.can_view_plans(identity.clone()).await,
+            self.policy
+                .can_view_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to view billing products",
         )?;
 
@@ -659,7 +692,9 @@ where
         input: CreateProductInput,
     ) -> Result<Product, CoreError> {
         ensure_policy(
-            self.policy.can_manage_plans(identity.clone()).await,
+            self.policy
+                .can_manage_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to manage billing products",
         )?;
 
@@ -702,7 +737,9 @@ where
         product_id: Uuid,
     ) -> Result<Product, CoreError> {
         ensure_policy(
-            self.policy.can_view_plans(identity.clone()).await,
+            self.policy
+                .can_view_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to view billing products",
         )?;
 
@@ -732,7 +769,9 @@ where
         input: UpdateProductInput,
     ) -> Result<Product, CoreError> {
         ensure_policy(
-            self.policy.can_manage_plans(identity.clone()).await,
+            self.policy
+                .can_manage_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to manage billing products",
         )?;
 
@@ -768,7 +807,9 @@ where
         product_id: Uuid,
     ) -> Result<(), CoreError> {
         ensure_policy(
-            self.policy.can_manage_plans(identity.clone()).await,
+            self.policy
+                .can_manage_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to manage billing products",
         )?;
 
@@ -786,9 +827,12 @@ where
                 product_id: product_id.to_string(),
             })?;
 
-        let plan_count = self.repository.count_plans_by_product(product_id).await?;
+        let plan_count = self
+            .repository
+            .count_subscription_plans_by_product(product_id)
+            .await?;
         if plan_count > 0 {
-            return Err(CoreError::ProductHasPlans {
+            return Err(CoreError::ProductHasSubscriptionPlans {
                 product_id: product_id.to_string(),
             });
         }
@@ -801,9 +845,11 @@ where
         identity: Identity,
         realm_id: &str,
         product_id: Uuid,
-    ) -> Result<Vec<Plan>, CoreError> {
+    ) -> Result<Vec<SubscriptionPlan>, CoreError> {
         ensure_policy(
-            self.policy.can_view_plans(identity.clone()).await,
+            self.policy
+                .can_view_subscription_plans(identity.clone())
+                .await,
             "Insufficient permissions to view billing products",
         )?;
 
@@ -822,7 +868,7 @@ where
             })?;
 
         self.repository
-            .find_plans_by_product(realm_id, product_id)
+            .find_subscription_plans_by_product(realm_id, product_id)
             .await
     }
 }

@@ -695,7 +695,7 @@ async fn handle_subscription_updated(
         .points_repository
         .find_plan_config(realm_id, payload.previous_plan_id)
         .await?
-        .ok_or_else(|| CoreError::PlanNotFound {
+        .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
             realm_id: realm_id.to_string(),
             plan_id: payload.previous_plan_id.to_string(),
         })?;
@@ -704,7 +704,7 @@ async fn handle_subscription_updated(
         .points_repository
         .find_plan_config(realm_id, payload.current_plan_id)
         .await?
-        .ok_or_else(|| CoreError::PlanNotFound {
+        .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
             realm_id: realm_id.to_string(),
             plan_id: payload.current_plan_id.to_string(),
         })?;

@@ -8,7 +8,7 @@ use axum::{
     extract::{Request, State},
     http::StatusCode,
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use chrono::Utc;
 use herald_core::domain::authentication::Identity;
@@ -21,13 +21,8 @@ use herald_api_base::application::http::common::api_key_utils::{
     check_entity_status,
 };
 use herald_api_base::application::http::common::error_codes::ErrorCode;
-use herald_api_base::application::http::server::api_entities::ApiError;
+use herald_api_base::application::http::common::error_helpers::json_error;
 use herald_api_base::application::http::state::AppState;
-
-/// Create a JSON error response
-fn json_error_response(status: StatusCode, error_code: ErrorCode) -> Response {
-    ApiError::with_code(status, error_code.as_u32(), error_code.as_str()).into_response()
-}
 
 /// API Key authentication middleware
 ///
@@ -51,7 +46,7 @@ pub async fn api_key_auth_middleware(
         Some(key) => key,
         None => {
             warn!("Missing X-API-Key header");
-            return json_error_response(StatusCode::UNAUTHORIZED, ErrorCode::MissingApiKey);
+            return json_error(StatusCode::UNAUTHORIZED, ErrorCode::MissingApiKey);
         }
     };
 
@@ -59,7 +54,7 @@ pub async fn api_key_auth_middleware(
 
     if api_key.is_empty() {
         warn!("Empty X-API-Key header");
-        return json_error_response(StatusCode::UNAUTHORIZED, ErrorCode::MissingApiKey);
+        return json_error(StatusCode::UNAUTHORIZED, ErrorCode::MissingApiKey);
     }
 
     debug!("API Key authentication attempt (length: {})", api_key.len());
@@ -76,10 +71,7 @@ pub async fn api_key_auth_middleware(
         }
         Err(e) => {
             error!("Redis cache error: {}", e);
-            return json_error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ErrorCode::InternalError,
-            );
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError);
         }
     };
 
@@ -90,7 +82,7 @@ pub async fn api_key_auth_middleware(
         let validation_status = check_cached_key_status(&cached);
         if validation_status != ApiKeyValidationStatus::Valid {
             warn!("Cached API key is invalid: {:?}", validation_status);
-            return json_error_response(
+            return json_error(
                 StatusCode::UNAUTHORIZED,
                 validation_status.to_error_code_enum(),
             );
@@ -101,10 +93,7 @@ pub async fn api_key_auth_middleware(
             Ok(entity) => entity,
             Err(e) => {
                 error!("Failed to convert cached value: {}", e);
-                return json_error_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    ErrorCode::InternalError,
-                );
+                return json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError);
             }
         };
 
@@ -136,14 +125,11 @@ pub async fn api_key_auth_middleware(
         Ok(Some(record)) => record,
         Ok(None) => {
             warn!("No valid API key found");
-            return json_error_response(StatusCode::UNAUTHORIZED, ErrorCode::InvalidApiKey);
+            return json_error(StatusCode::UNAUTHORIZED, ErrorCode::InvalidApiKey);
         }
         Err(e) => {
             error!("Database error finding API key: {}", e);
-            return json_error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ErrorCode::InternalError,
-            );
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError);
         }
     };
 
@@ -154,7 +140,7 @@ pub async fn api_key_auth_middleware(
             "API key is invalid (disabled or expired): {:?}",
             api_key_record.id
         );
-        return json_error_response(
+        return json_error(
             StatusCode::UNAUTHORIZED,
             validation_status.to_error_code_enum(),
         );

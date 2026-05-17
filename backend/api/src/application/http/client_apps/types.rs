@@ -285,17 +285,3 @@ fn default_page() -> i64 {
 fn default_page_size() -> i64 {
     20
 }
-
-/// Pagination metadata for legacy list responses.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PaginationMeta {
-    #[schema(example = "0")]
-    pub page: i64,
-    #[schema(example = "20")]
-    pub page_size: i64,
-    #[schema(example = "42")]
-    pub total_count: i64,
-    #[schema(example = "3")]
-    pub total_pages: i64,
-}

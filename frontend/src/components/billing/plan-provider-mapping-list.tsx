@@ -11,9 +11,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { DataTable } from '@/components/shared/data-table'
-import { planProvidersQueryOptions } from '@/data/query-options'
+import { subscriptionPlanProvidersQueryOptions } from '@/data/query-options'
 import { removePaymentProviderFromPlan, togglePlanPaymentProvider } from '@/lib/api-generated'
-import type { PlanPaymentProviderResponse } from '@/lib/api-generated'
+import type { SubscriptionPlanPaymentProviderResponse } from '@/lib/api-generated'
 import { toast } from 'sonner'
 import { ConfirmDeleteDialog } from '@/components/shared'
 import { formatProviderName } from './format-provider-name'
@@ -22,14 +22,14 @@ interface PlanProviderMappingListProps {
   planId: string
   realmId: string
   onAdd: () => void
-  onEdit: (mapping: PlanPaymentProviderResponse) => void
+  onEdit: (mapping: SubscriptionPlanPaymentProviderResponse) => void
 }
 
 function createMappingColumns(
-  onEdit: (mapping: PlanPaymentProviderResponse) => void,
-  onDelete: (mapping: PlanPaymentProviderResponse) => void,
-  onToggle: (mapping: PlanPaymentProviderResponse) => void
-): ColumnDef<PlanPaymentProviderResponse>[] {
+  onEdit: (mapping: SubscriptionPlanPaymentProviderResponse) => void,
+  onDelete: (mapping: SubscriptionPlanPaymentProviderResponse) => void,
+  onToggle: (mapping: SubscriptionPlanPaymentProviderResponse) => void
+): ColumnDef<SubscriptionPlanPaymentProviderResponse>[] {
   return [
     {
       accessorKey: 'paymentProvider',
@@ -131,13 +131,14 @@ export function PlanProviderMappingList({
 }: PlanProviderMappingListProps) {
   const queryClient = useQueryClient()
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const [deletingMapping, setDeletingMapping] = useState<PlanPaymentProviderResponse | null>(null)
+  const [deletingMapping, setDeletingMapping] =
+    useState<SubscriptionPlanPaymentProviderResponse | null>(null)
 
   const {
     data: mappings = [],
     isLoading,
     error,
-  } = useQuery(planProvidersQueryOptions(realmId, planId))
+  } = useQuery(subscriptionPlanProvidersQueryOptions(realmId, planId))
 
   const deleteMutation = useMutation({
     mutationFn: async (mappingId: string) => {
@@ -153,7 +154,7 @@ export function PlanProviderMappingList({
       setDeletingMapping(null)
       // Invalidate queries to refresh the mapping list
       queryClient.invalidateQueries({
-        queryKey: planProvidersQueryOptions(realmId, planId).queryKey,
+        queryKey: subscriptionPlanProvidersQueryOptions(realmId, planId).queryKey,
       })
     },
     onError: (err: Error) => {
@@ -162,7 +163,7 @@ export function PlanProviderMappingList({
   })
 
   const toggleMutation = useMutation({
-    mutationFn: async (mapping: PlanPaymentProviderResponse) => {
+    mutationFn: async (mapping: SubscriptionPlanPaymentProviderResponse) => {
       const response = await togglePlanPaymentProvider({
         path: { realmId, planId, mappingId: mapping.id },
         body: { enabled: !mapping.enabled },
@@ -175,7 +176,7 @@ export function PlanProviderMappingList({
       toast.success(`Payment provider mapping ${action}`)
       // Invalidate queries to refresh the mapping list
       queryClient.invalidateQueries({
-        queryKey: planProvidersQueryOptions(realmId, planId).queryKey,
+        queryKey: subscriptionPlanProvidersQueryOptions(realmId, planId).queryKey,
       })
     },
     onError: (err: Error) => {
@@ -183,7 +184,7 @@ export function PlanProviderMappingList({
     },
   })
 
-  function handleDelete(mapping: PlanPaymentProviderResponse) {
+  function handleDelete(mapping: SubscriptionPlanPaymentProviderResponse) {
     setDeletingMapping(mapping)
     setDeleteConfirmOpen(true)
   }

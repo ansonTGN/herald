@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SubscriptionHistoryList } from '@/components/billing/subscription-history-list'
 import { SubscriptionHistoryFilter } from '@/components/billing/subscription-history-filter'
 import {
-  billingPlansQueryOptions,
+  subscriptionPlansQueryOptions,
   globalSubscriptionHistoryQueryOptions,
 } from '@/data/query-options'
 import type { HistoryFilters, SubscriptionHistoryEventWithUser } from '@/types/billing'
@@ -29,7 +29,7 @@ function SubscriptionHistoryRoute() {
   const pageSize = 20
 
   // Query plans for filter dropdown
-  const { data: plansData } = useQuery(billingPlansQueryOptions(realmId))
+  const { data: plansData } = useQuery(subscriptionPlansQueryOptions(realmId))
   const plans = plansData?.items ?? []
 
   // Query subscription history

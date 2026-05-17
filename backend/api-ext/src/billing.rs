@@ -4,27 +4,23 @@
 
 use axum::{
     Json,
-    extract::{Extension, Path, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::billing::BillingRepository;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::client_helper::ClientAppLookup;
 use herald_api_base::application::http::common::error_codes::ErrorCode;
+use herald_api_base::application::http::common::error_helpers::json_error;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
-use herald_api_billing::handlers::plan_to_response;
-use herald_api_billing::types::PlanResponse;
-
-/// Create a JSON error response
-fn json_error(status: StatusCode, error_code: ErrorCode) -> Response {
-    ApiError::with_code(status, error_code.as_u32(), error_code.as_str()).into_response()
-}
+use herald_api_billing::handlers::subscription_plan_to_response;
+use herald_api_billing::types::SubscriptionPlanResponse;
 
 /// Subscription detail response (SDK-compatible)
 #[derive(Debug, Serialize, ToSchema)]
@@ -33,7 +29,7 @@ pub struct SubscriptionDetail {
     pub id: String,
     pub client_app_id: Option<String>,
     pub plan_id: Option<String>,
-    pub plan: Option<Plan>,
+    pub plan: Option<SubscriptionPlan>,
     pub status: String,
     pub billing_period: String,
     pub current_period_start: Option<String>,
@@ -44,10 +40,10 @@ pub struct SubscriptionDetail {
     pub updated_at: String,
 }
 
-/// Plan structure (SDK-compatible)
+/// Subscription plan structure (SDK-compatible)
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct Plan {
+pub struct SubscriptionPlan {
     pub id: String,
     pub realm_id: String,
     pub name: String,
@@ -63,10 +59,10 @@ pub struct Plan {
     pub sort_order: i32,
 }
 
-/// Plan assignment (SDK-compatible)
+/// Subscription plan assignment (SDK-compatible)
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PlanAssignment {
+pub struct SubscriptionPlanAssignment {
     pub id: String,
     pub client_app_id: String,
     pub plan_id: String,
@@ -74,21 +70,23 @@ pub struct PlanAssignment {
     pub created_at: String,
 }
 
-/// Plans list response
+/// Subscription plans list response
 #[derive(Debug, Serialize, ToSchema)]
-pub struct PlansListResponse {
-    pub plans: Vec<Plan>,
+pub struct SubscriptionPlansListResponse {
+    pub plans: Vec<SubscriptionPlan>,
 }
 
-/// Plan assignments list response
+/// Subscription plan assignments list response
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AssignmentsListResponse {
-    pub assignments: Vec<PlanAssignment>,
+pub struct SubscriptionPlanAssignmentsListResponse {
+    pub assignments: Vec<SubscriptionPlanAssignment>,
 }
 
-/// Convert domain PlanResponse to SDK-compatible Plan
-pub(crate) fn plan_response_to_sdk_plan(plan: PlanResponse) -> Plan {
-    Plan {
+/// Convert domain SubscriptionPlanResponse to SDK-compatible SubscriptionPlan
+pub(crate) fn subscription_plan_response_to_sdk_plan(
+    plan: SubscriptionPlanResponse,
+) -> SubscriptionPlan {
+    SubscriptionPlan {
         id: plan.id.to_string(),
         realm_id: plan.realm_id,
         name: plan.name,
@@ -201,7 +199,9 @@ pub async fn get_subscription(
             .find_public_plan_by_id(&realm_id, plan_id)
             .await
         {
-            Ok(Some(domain_plan)) => Some(plan_response_to_sdk_plan(plan_to_response(domain_plan))),
+            Ok(Some(domain_plan)) => Some(subscription_plan_response_to_sdk_plan(
+                subscription_plan_to_response(domain_plan),
+            )),
             Ok(None) => None,
             Err(e) => {
                 tracing::error!("Failed to fetch plan: {}", e);
@@ -262,7 +262,7 @@ pub async fn get_subscription(
         ("realmId" = String, Path, description = "Realm ID")
     ),
     responses(
-        (status = 200, description = "Plans listed successfully", body = PlansListResponse),
+        (status = 200, description = "Plans listed successfully", body = SubscriptionPlansListResponse),
         (status = 401, description = "Unauthorized - Invalid or missing API Key", body = ErrorResponse),
         (status = 403, description = "Forbidden - Cross-realm access attempt", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -306,9 +306,9 @@ pub async fn list_plans(
     };
 
     // 3. Convert to SDK-compatible format
-    let sdk_plans: Vec<Plan> = plans
+    let sdk_plans: Vec<SubscriptionPlan> = plans
         .into_iter()
-        .map(|plan| plan_response_to_sdk_plan(plan_to_response(plan)))
+        .map(|plan| subscription_plan_response_to_sdk_plan(subscription_plan_to_response(plan)))
         .collect();
 
     tracing::info!(
@@ -317,7 +317,7 @@ pub async fn list_plans(
         "Plans retrieved successfully"
     );
 
-    Json(PlansListResponse { plans: sdk_plans }).into_response()
+    Json(SubscriptionPlansListResponse { plans: sdk_plans }).into_response()
 }
 
 /// List plan assignments for a client app
@@ -346,7 +346,7 @@ pub async fn list_plans(
         ("clientAppId" = String, Path, description = "Client app ID (client_id or UUID)")
     ),
     responses(
-        (status = 200, description = "Plan assignments listed successfully", body = AssignmentsListResponse),
+        (status = 200, description = "Plan assignments listed successfully", body = SubscriptionPlanAssignmentsListResponse),
         (status = 401, description = "Unauthorized - Invalid or missing API Key", body = ErrorResponse),
         (status = 403, description = "Forbidden - Cross-realm access attempt", body = ErrorResponse),
         (status = 404, description = "Client app not found", body = ErrorResponse),
@@ -393,7 +393,7 @@ pub async fn list_plan_assignments(
     // 3. Query plan assignments
     let assignments = match state
         .billing_repository
-        .list_plans_for_client_app(client_app_uuid)
+        .list_subscription_plans_for_client_app(client_app_uuid)
         .await
     {
         Ok(assignments) => assignments,
@@ -404,9 +404,9 @@ pub async fn list_plan_assignments(
     };
 
     // 4. Convert to SDK-compatible format
-    let sdk_assignments: Vec<PlanAssignment> = assignments
+    let sdk_assignments: Vec<SubscriptionPlanAssignment> = assignments
         .into_iter()
-        .map(|assignment| PlanAssignment {
+        .map(|assignment| SubscriptionPlanAssignment {
             id: assignment.id.to_string(),
             client_app_id: assignment.client_app_id.to_string(),
             plan_id: assignment.plan_id.to_string(),
@@ -422,8 +422,145 @@ pub async fn list_plan_assignments(
         "Plan assignments retrieved successfully"
     );
 
-    Json(AssignmentsListResponse {
+    Json(SubscriptionPlanAssignmentsListResponse {
         assignments: sdk_assignments,
     })
     .into_response()
+}
+
+/// Batch list plan assignments for multiple client apps
+///
+/// Returns all plan assignments for the specified client apps in the realm.
+///
+/// # Authentication
+/// Requires valid API Key via X-API-Key header
+///
+/// # Realm Isolation
+/// The API key must belong to the same realm as the client apps.
+/// Cross-realm requests will return 403 Forbidden.
+///
+/// # Example
+/// ```bash
+/// curl -X GET \
+///   "https://api.example.com/api/ext/bill/realm123/client/plans/batch?clientAppIds=id1,id2,id3" \
+///   -H "X-API-Key: your-api-key"
+/// ```
+#[utoipa::path(
+    get,
+    path = "/api/ext/bill/{realmId}/client/plans/batch",
+    tag = "ext",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("clientAppIds" = Option<String>, Query, description = "Comma-separated client app IDs (client_id or UUID)")
+    ),
+    responses(
+        (status = 200, description = "Plan assignments listed successfully", body = SubscriptionPlanAssignmentsListResponse),
+        (status = 400, description = "Bad request - Invalid client app IDs", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - Invalid or missing API Key", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Cross-realm access attempt", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    security(("api_key" = []))
+)]
+pub async fn list_plan_assignments_batch(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path(realm_id): Path<String>,
+    Query(params): Query<BatchPlanAssignmentsQuery>,
+) -> Response {
+    let api_key_realm_id = identity.realm_id();
+
+    tracing::info!(
+        api_key_realm_id = %api_key_realm_id,
+        request_realm_id = %realm_id,
+        "Batch plan assignments list requested"
+    );
+
+    // 1. Check realm isolation - API key must be for the requested realm
+    if api_key_realm_id != realm_id {
+        tracing::warn!(
+            api_key_realm_id = %api_key_realm_id,
+            request_realm_id = %realm_id,
+            "Cross-realm access attempt blocked"
+        );
+        return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    // 2. Parse client_app_ids from query parameter
+    let client_app_ids_str = match params.client_app_ids {
+        Some(s) if !s.trim().is_empty() => s,
+        _ => {
+            return ApiError::bad_request("clientAppIds query parameter is required")
+                .into_response();
+        }
+    };
+
+    let identifiers: Vec<&str> = client_app_ids_str
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if identifiers.is_empty() {
+        return Json(SubscriptionPlanAssignmentsListResponse {
+            assignments: Vec::new(),
+        })
+        .into_response();
+    }
+
+    // 3. Resolve client app identifiers to UUIDs
+    let client_app_lookup = ClientAppLookup::new(state.pool.clone());
+    let mut client_app_uuids = Vec::with_capacity(identifiers.len());
+    for identifier in &identifiers {
+        match client_app_lookup
+            .find_uuid_by_identifier_required(identifier, &realm_id)
+            .await
+        {
+            Ok(uuid) => client_app_uuids.push(uuid),
+            Err(e) => return e,
+        }
+    }
+
+    // 4. Query plan assignments batch
+    let assignments = match state
+        .billing_repository
+        .list_subscription_plan_assignments_batch(&client_app_uuids)
+        .await
+    {
+        Ok(assignments) => assignments,
+        Err(e) => {
+            tracing::error!("Failed to batch list plan assignments: {}", e);
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError);
+        }
+    };
+
+    // 5. Convert to SDK-compatible format
+    let sdk_assignments: Vec<SubscriptionPlanAssignment> = assignments
+        .into_iter()
+        .map(|assignment| SubscriptionPlanAssignment {
+            id: assignment.id.to_string(),
+            client_app_id: assignment.client_app_id.to_string(),
+            plan_id: assignment.plan_id.to_string(),
+            enabled: assignment.enabled,
+            created_at: assignment.created_at.to_rfc3339(),
+        })
+        .collect();
+
+    tracing::info!(
+        realm_id = %realm_id,
+        client_app_count = client_app_uuids.len(),
+        assignments_count = sdk_assignments.len(),
+        "Batch plan assignments retrieved successfully"
+    );
+
+    Json(SubscriptionPlanAssignmentsListResponse {
+        assignments: sdk_assignments,
+    })
+    .into_response()
+}
+
+/// Query parameters for batch plan assignments endpoint
+#[derive(Debug, Deserialize)]
+pub struct BatchPlanAssignmentsQuery {
+    pub client_app_ids: Option<String>,
 }

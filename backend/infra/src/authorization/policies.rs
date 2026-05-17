@@ -373,7 +373,7 @@ impl PermissionBasedBillingPolicy {
 
 #[allow(clippy::manual_async_fn)]
 impl BillingPolicy for PermissionBasedBillingPolicy {
-    fn can_view_plans(&self, identity: Identity) -> impl Future<Output = bool> + Send {
+    fn can_view_subscription_plans(&self, identity: Identity) -> impl Future<Output = bool> + Send {
         let checker = self.permission_checker.clone();
         let user_id = identity.user_id();
         async move {
@@ -396,7 +396,10 @@ impl BillingPolicy for PermissionBasedBillingPolicy {
         }
     }
 
-    fn can_manage_plans(&self, identity: Identity) -> impl Future<Output = bool> + Send {
+    fn can_manage_subscription_plans(
+        &self,
+        identity: Identity,
+    ) -> impl Future<Output = bool> + Send {
         let checker = self.permission_checker.clone();
         let user_id = identity.user_id();
         async move {

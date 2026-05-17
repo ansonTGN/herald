@@ -382,8 +382,8 @@ COMMENT ON TABLE email_verification_code IS 'Verification codes for email confir
 -- Billing Tables
 -- ====================================
 
--- Plan table (subscription plans)
-CREATE TABLE plan (
+-- Subscription plan table (subscription plans)
+CREATE TABLE subscription_plan (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     realm_id TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -405,33 +405,33 @@ CREATE TABLE plan (
     sort_order INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_plan_realm_name UNIQUE (realm_id, name),
-    CONSTRAINT chk_plan_type CHECK (type IN ('monthly', 'yearly')),
-    CONSTRAINT chk_plan_currency CHECK (currency IN ('USD', 'EUR', 'CNY')),
-    CONSTRAINT chk_plan_payment_provider CHECK (payment_provider IN ('creem', 'stripe', 'shopify'))
+    CONSTRAINT uq_subscription_plan_realm_name UNIQUE (realm_id, name),
+    CONSTRAINT chk_subscription_plan_type CHECK (type IN ('monthly', 'yearly')),
+    CONSTRAINT chk_subscription_plan_currency CHECK (currency IN ('USD', 'EUR', 'CNY')),
+    CONSTRAINT chk_subscription_plan_payment_provider CHECK (payment_provider IN ('creem', 'stripe', 'shopify'))
 );
 
-CREATE INDEX idx_plan_realm_id ON plan(realm_id);
-CREATE INDEX idx_plan_active ON plan(active);
-CREATE INDEX idx_plan_type ON plan(type);
-CREATE INDEX idx_plan_payment_provider ON plan(payment_provider);
-COMMENT ON TABLE plan IS 'Subscription pricing plans for billing';
-COMMENT ON COLUMN plan.type IS 'Plan type: monthly or yearly billing';
-COMMENT ON COLUMN plan.payment_provider IS 'Payment provider: creem, stripe, or shopify';
+CREATE INDEX idx_subscription_plan_realm_id ON subscription_plan(realm_id);
+CREATE INDEX idx_subscription_plan_active ON subscription_plan(active);
+CREATE INDEX idx_subscription_plan_type ON subscription_plan(type);
+CREATE INDEX idx_subscription_plan_payment_provider ON subscription_plan(payment_provider);
+COMMENT ON TABLE subscription_plan IS 'Subscription pricing plans for billing';
+COMMENT ON COLUMN subscription_plan.type IS 'Plan type: monthly or yearly billing';
+COMMENT ON COLUMN subscription_plan.payment_provider IS 'Payment provider: creem, stripe, or shopify';
 
--- Client App Plan junction table
-CREATE TABLE client_app_plan (
+-- Client App Subscription Plan junction table
+CREATE TABLE client_app_subscription_plan (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     client_app_id UUID NOT NULL,
     plan_id UUID NOT NULL,
     enabled BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_client_app_plan UNIQUE (client_app_id, plan_id)
+    CONSTRAINT uq_client_app_subscription_plan UNIQUE (client_app_id, plan_id)
 );
 
-CREATE INDEX idx_client_app_plan_client_app_id ON client_app_plan(client_app_id);
-CREATE INDEX idx_client_app_plan_plan_id ON client_app_plan(plan_id);
-COMMENT ON TABLE client_app_plan IS 'Associates client apps with available plans';
+CREATE INDEX idx_client_app_subscription_plan_client_app_id ON client_app_subscription_plan(client_app_id);
+CREATE INDEX idx_client_app_subscription_plan_plan_id ON client_app_subscription_plan(plan_id);
+COMMENT ON TABLE client_app_subscription_plan IS 'Associates client apps with available plans';
 
 -- Subscription table
 CREATE TABLE subscription (

@@ -6,13 +6,15 @@ use std::str::FromStr;
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::types::PlanSummary as BillingPlanSummary;
+use crate::types::SubscriptionPlanSummary;
 use crate::types_history::{
-    PaginationMeta, SubscriptionHistoryEventResponse, SubscriptionHistoryEventWithUser,
+    SubscriptionHistoryEventResponse, SubscriptionHistoryEventWithUser,
     SubscriptionHistoryListQuery, SubscriptionHistoryListResponse, SubscriptionHistoryResponse,
     SubscriptionSummary,
 };
-use herald_api_base::application::http::common::pagination::calculate_total_pages;
+use herald_api_base::application::http::common::pagination::{
+    PaginationMeta, calculate_total_pages,
+};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -218,24 +220,6 @@ async fn convert_events_with_details(
     let mut events_with_details = Vec::new();
 
     for event in events {
-        let user_info = if let Some(new_state) = &event.new_state {
-            if let Some(_client_app_id) = new_state.get("client_app_id") {
-                if let Ok(Some(_subscription)) = state
-                    .billing_repository
-                    .find_subscription_by_id(event.subscription_id)
-                    .await
-                {
-                    None
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
         let subscription_summary = if let Ok(Some(subscription)) = state
             .billing_repository
             .find_subscription_by_id(event.subscription_id)
@@ -244,11 +228,11 @@ async fn convert_events_with_details(
             let plan = if let Some(plan_id) = subscription.plan_id {
                 state
                     .billing_repository
-                    .find_plan_by_id(plan_id)
+                    .find_subscription_plan_by_id(plan_id)
                     .await
                     .ok()
                     .flatten()
-                    .map(|p| BillingPlanSummary {
+                    .map(|p| SubscriptionPlanSummary {
                         id: p.id,
                         name: p.name,
                         title: p.title,
@@ -260,7 +244,7 @@ async fn convert_events_with_details(
             SubscriptionSummary {
                 id: subscription.id,
                 status: subscription.status.as_str().to_string(),
-                plan: plan.clone(),
+                plan,
             }
         } else {
             SubscriptionSummary {
@@ -279,7 +263,7 @@ async fn convert_events_with_details(
             changes: event.changes,
             previous_state: event.previous_state,
             new_state: event.new_state,
-            user: user_info,
+            user: None,
             subscription: subscription_summary,
         });
     }
