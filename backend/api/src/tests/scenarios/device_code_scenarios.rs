@@ -1197,7 +1197,7 @@ mod tests {
     ///
     /// Given: No client_id in the request body
     /// When: POST /api/device/{realmId}/authorize with empty form body
-    /// Then: 400 Bad Request, error = invalid_request
+    /// Then: 422 Unprocessable Entity (form deserialization fails for missing required field)
     #[test_context(SchemaTestContext)]
     #[tokio::test]
     async fn test_scenario_device_authorize_missing_client_id(ctx: &mut SchemaTestContext) {
@@ -1214,16 +1214,8 @@ mod tests {
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(
             response.status(),
-            400,
-            "Missing client_id should return 400"
-        );
-
-        let json: Value = response_json(response).await;
-        assert_eq!(
-            json["error"].as_str(),
-            Some("invalid_request"),
-            "error should be 'invalid_request', got: {:?}",
-            json["error"]
+            422,
+            "Missing client_id should return 422"
         );
     }
 

@@ -14,9 +14,6 @@ fn is_development_env() -> bool {
 }
 
 fn validate_redirect_uris_if_needed(redirect_uris: &[String]) -> Result<(), CoreError> {
-    if redirect_uris.is_empty() {
-        return Ok(());
-    }
     validate_redirect_uris(redirect_uris, is_development_env())
         .map_err(|e| CoreError::BadRequest(format!("Redirect URI validation failed: {}", e)))
 }

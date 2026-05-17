@@ -248,9 +248,9 @@ async fn test_scenario_dashboard_stats_auth_trend_aggregated(ctx: &mut TestConte
     );
     let today_entry = today_entry.unwrap();
     assert!(
-        today_entry["success_count"].as_i64().unwrap_or(0) >= 2,
-        "Expected today success_count >= 2, got {:?}",
-        today_entry["success_count"],
+        today_entry["successCount"].as_i64().unwrap_or(0) >= 2,
+        "Expected today successCount >= 2, got {:?}",
+        today_entry["successCount"],
     );
 
     // Find yesterday's entry
@@ -266,9 +266,9 @@ async fn test_scenario_dashboard_stats_auth_trend_aggregated(ctx: &mut TestConte
     );
     let yesterday_entry = yesterday_entry.unwrap();
     assert!(
-        yesterday_entry["failure_count"].as_i64().unwrap_or(0) >= 1,
-        "Expected yesterday failure_count >= 1, got {:?}",
-        yesterday_entry["failure_count"],
+        yesterday_entry["failureCount"].as_i64().unwrap_or(0) >= 1,
+        "Expected yesterday failureCount >= 1, got {:?}",
+        yesterday_entry["failureCount"],
     );
 }
 
@@ -411,14 +411,14 @@ async fn test_scenario_dashboard_stats_empty_realm_returns_zeros(ctx: &mut TestC
         .expect("Expected authTrend array");
     for entry in auth_trend {
         assert_eq!(
-            entry["success_count"].as_i64(),
+            entry["successCount"].as_i64(),
             Some(0),
-            "Expected success_count=0 in empty realm trend",
+            "Expected successCount=0 in empty realm trend",
         );
         assert_eq!(
-            entry["failure_count"].as_i64(),
+            entry["failureCount"].as_i64(),
             Some(0),
-            "Expected failure_count=0 in empty realm trend",
+            "Expected failureCount=0 in empty realm trend",
         );
     }
 }
@@ -562,14 +562,14 @@ async fn test_scenario_dashboard_stats_realm_isolation_no_leakage(ctx: &mut Test
         .expect("Expected authTrend array");
     for entry in auth_trend {
         assert_eq!(
-            entry["success_count"].as_i64(),
+            entry["successCount"].as_i64(),
             Some(0),
-            "Realm B trend should have success_count=0",
+            "Realm B trend should have successCount=0",
         );
         assert_eq!(
-            entry["failure_count"].as_i64(),
+            entry["failureCount"].as_i64(),
             Some(0),
-            "Realm B trend should have failure_count=0",
+            "Realm B trend should have failureCount=0",
         );
     }
 }
