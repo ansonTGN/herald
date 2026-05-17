@@ -9,6 +9,13 @@ export interface ProductFormData {
 }
 
 export async function createProduct(page: Page, formData: ProductFormData): Promise<void> {
+  // Idempotent: skip creation if product already exists in the table
+  const productRow = page.locator(`tr:has-text("${formData.code}")`)
+  if (await productRow.isVisible()) {
+    console.log(`[createProduct] Product "${formData.code}" already exists, skipping creation`)
+    return
+  }
+
   await page.getByTestId('add-product-button').click()
   await expect(page.getByRole('dialog')).toBeVisible()
 

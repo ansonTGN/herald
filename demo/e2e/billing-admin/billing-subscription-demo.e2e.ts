@@ -17,7 +17,7 @@
  */
 
 import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
-import { createBillingPlan, openAssignPlanDialog } from './helpers/billing-page.helpers'
+import { createSubscriptionPlan, openAssignSubscriptionPlanDialog } from './helpers/billing-page.helpers'
 import { DEMO_ADMIN } from '../helpers/auth'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 import { ClientAppsPage } from '../pages/client-apps-page'

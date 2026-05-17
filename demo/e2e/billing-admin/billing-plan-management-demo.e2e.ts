@@ -18,7 +18,7 @@
  */
 
 import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
-import { createBillingPlan, openEditPlanDialog, openDeletePlanDialog, openAssignPlanDialog, confirmDeletePlan } from './helpers/billing-page.helpers'
+import { createSubscriptionPlan, openEditSubscriptionPlanDialog, openDeleteSubscriptionPlanDialog, openAssignSubscriptionPlanDialog, confirmDeleteSubscriptionPlan } from './helpers/billing-page.helpers'
 import { DEMO_ADMIN } from '../helpers/auth'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 
@@ -62,7 +62,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
         await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing`)
         await expect(page.getByTestId('billing-page')).toBeVisible()
 
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           planName: monthlyPlanName,
           title: 'Basic Monthly Plan',
           description: 'Basic monthly plan for small teams',
@@ -83,7 +83,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
       await test.step('When: 创建年付套餐', async () => {
         await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing`)
 
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           planName: yearlyPlanName,
           title: 'Pro Yearly Plan',
           description: 'Pro yearly plan with all features',
@@ -142,7 +142,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
 
         // 先创建一个套餐
         await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing`)
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           planName,
           title: 'Unique Test Plan',
           price: '1000',
@@ -214,7 +214,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
         await expect(page.getByTestId('billing-page')).toBeVisible()
 
         // 创建套餐
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           planName,
           title: 'Edit Test Plan',
           price: '1000',
@@ -226,7 +226,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
       })
 
       await test.step('When: 编辑套餐', async () => {
-        await openEditPlanDialog(page, planName)
+        await openEditSubscriptionPlanDialog(page, planName)
         await demoLogger.testCode.log('Edit dialog opened')
       })
 
@@ -271,7 +271,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
         await expect(page.getByTestId('billing-page')).toBeVisible()
 
         // 创建套餐
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           planName,
           title: 'Toggle Test Plan',
           price: '1000',
@@ -282,7 +282,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
       })
 
       await test.step('When: 编辑套餐并禁用', async () => {
-        await openEditPlanDialog(page, planName)
+        await openEditSubscriptionPlanDialog(page, planName)
 
         // 切换 Active 开关
         await page.getByTestId('plan-active-switch').click()
@@ -304,7 +304,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
 
       await test.step('When: 重新编辑并启用套餐', async () => {
         // 使用唯一的 planName 变量来打开编辑对话框
-        await openEditPlanDialog(page, planName)
+        await openEditSubscriptionPlanDialog(page, planName)
 
         // 切换 Active 开关
         await page.getByTestId('plan-active-switch').click()
@@ -340,7 +340,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
         await expect(page.getByTestId('billing-page')).toBeVisible()
 
         // 创建套餐
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           planName,
           title: 'Delete Test Plan',
           price: '1000',
@@ -351,11 +351,11 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
       })
 
       await test.step('When: 删除套餐', async () => {
-        await openDeletePlanDialog(page, planName)
+        await openDeleteSubscriptionPlanDialog(page, planName)
       })
 
       await test.step('And: 确认删除', async () => {
-        await confirmDeletePlan(page)
+        await confirmDeleteSubscriptionPlan(page)
       })
 
       await test.step('Then: 验证套餐删除成功', async () => {
@@ -380,7 +380,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
         await expect(page.getByTestId('billing-page')).toBeVisible()
 
         // 创建套餐
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           planName: activePlanName,
           title: 'Active Subscription Test Plan',
           price: '1000',
@@ -391,11 +391,11 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
       })
 
       await test.step('When: 尝试删除套餐', async () => {
-        await openDeletePlanDialog(page, activePlanName)
+        await openDeleteSubscriptionPlanDialog(page, activePlanName)
       })
 
       await test.step('And: 确认删除', async () => {
-        await confirmDeletePlan(page)
+        await confirmDeleteSubscriptionPlan(page)
       })
 
       await test.step('Then: 验证删除失败（套餐仍然存在）', async () => {
@@ -413,7 +413,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
       await test.step('Given: 已存在一个只有已取消订阅的套餐', async () => {
         await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing`)
 
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           planName: canceledPlanName,
           title: 'Canceled Sub Plan',
           price: '2999',
@@ -425,7 +425,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
         await demoLogger.testCode.log('Plan created successfully')
 
         // 分配套餐到一个 Client App
-        await openAssignPlanDialog(page, canceledPlanName)
+        await openAssignSubscriptionPlanDialog(page, canceledPlanName)
 
         const dialog = page.getByRole('dialog')
         await expect(dialog).toBeVisible()
@@ -454,8 +454,8 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
 
       await test.step('When: 删除套餐', async () => {
         await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing`)
-        await openDeletePlanDialog(page, canceledPlanName)
-        await confirmDeletePlan(page)
+        await openDeleteSubscriptionPlanDialog(page, canceledPlanName)
+        await confirmDeleteSubscriptionPlan(page)
         await demoLogger.testCode.log('Plan deletion initiated')
       })
 

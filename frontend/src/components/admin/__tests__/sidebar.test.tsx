@@ -78,10 +78,10 @@ describe('Sidebar navigation', () => {
 
     await user.click(screen.getByTestId('sidebar-menu-billing'))
 
-    const billingPlansLink = screen.getByTestId('sidebar-menu-billing-plans')
+    const subscriptionPlansLink = screen.getByTestId('sidebar-menu-subscription-plans')
     const productsLink = screen.getByTestId('sidebar-menu-products')
 
-    expect(billingPlansLink).toHaveClass('font-semibold')
+    expect(subscriptionPlansLink).toHaveClass('font-semibold')
     expect(productsLink).not.toHaveClass('font-semibold')
   })
 

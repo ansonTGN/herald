@@ -96,7 +96,7 @@ export function Sidebar() {
             permission: 'billing.view',
           },
           {
-            name: 'Billing Plans',
+            name: 'Subscription Plans',
             path: `/${realmId}/manage/billing`,
             icon: CreditCard,
             permission: 'billing.view',

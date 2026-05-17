@@ -9,7 +9,7 @@
  */
 
 import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
-import { createBillingPlan, openAssignPlanDialog } from './helpers/billing-page.helpers'
+import { createSubscriptionPlan, openAssignSubscriptionPlanDialog } from './helpers/billing-page.helpers'
 import { DEMO_ADMIN } from '../helpers/auth'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 
@@ -50,7 +50,7 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
         await expect(page.getByTestId('billing-page')).toBeVisible()
 
         // 创建套餐
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           planName,
           title: 'Assign Test Plan',
           price: '1000',
@@ -61,7 +61,7 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
       })
 
       await test.step('When: 点击 "Assign to App" 按钮', async () => {
-        await openAssignPlanDialog(page, planName)
+        await openAssignSubscriptionPlanDialog(page, planName)
         demoLogger.testCode.log('[Test] ✓ Assign to App button clicked')
       })
 
@@ -103,7 +103,7 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
         await expect(page.getByTestId('billing-page')).toBeVisible()
 
         // 创建套餐
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           planName,
           title: 'Multi Assign Test Plan',
           price: '1000',
@@ -113,7 +113,7 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
       })
 
       await test.step('When: 点击 "Assign to App" 按钮', async () => {
-        await openAssignPlanDialog(page, planName)
+        await openAssignSubscriptionPlanDialog(page, planName)
       })
 
       await test.step('And: 选择多个 Client App', async () => {
@@ -154,7 +154,7 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
         await expect(page.getByTestId('billing-page')).toBeVisible()
 
         // 创建并分配套餐
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           planName,
           title: 'Assign Status Test Plan',
           price: '1000',
@@ -162,14 +162,14 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
         })
 
         // 分配套餐
-        await openAssignPlanDialog(page, planName)
+        await openAssignSubscriptionPlanDialog(page, planName)
         await page.getByTestId(/^plan-assignment-checkbox-/).first().check()
         await page.getByTestId('plan-assignment-submit-button').click()
         await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 5000 })
       })
 
       await test.step('When: 查看分配状态', async () => {
-        await openAssignPlanDialog(page, planName)
+        await openAssignSubscriptionPlanDialog(page, planName)
       })
 
       await test.step('Then: 验证已分配的 Client App 被选中', async () => {
@@ -192,7 +192,7 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
         await expect(page.getByTestId('billing-page')).toBeVisible()
 
         // 创建并分配套餐
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           planName,
           title: 'Remove Assign Test Plan',
           price: '1000',
@@ -200,14 +200,14 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
         })
 
         // 分配套餐
-        await openAssignPlanDialog(page, planName)
+        await openAssignSubscriptionPlanDialog(page, planName)
         await page.getByTestId(/^plan-assignment-checkbox-/).first().check()
         await page.getByTestId('plan-assignment-submit-button').click()
         await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 5000 })
       })
 
       await test.step('When: 重新打开分配对话框', async () => {
-        await openAssignPlanDialog(page, planName)
+        await openAssignSubscriptionPlanDialog(page, planName)
       })
 
       await test.step('And: 取消选中', async () => {

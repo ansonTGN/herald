@@ -34,7 +34,7 @@ import { seedCreemConfig } from '../secrets/realm-seed'
 import { loginAsAdmin } from '../helpers/auth'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 import { createProduct, verifyProductInTable } from '../billing-admin/helpers/product-page.helpers'
-import { createBillingPlan } from '../billing-admin/helpers/billing-page.helpers'
+import { createSubscriptionPlan } from '../billing-admin/helpers/billing-page.helpers'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 const REALM_ID = 'admin'
@@ -65,6 +65,32 @@ test.describe('Live: Creem Payment', () => {
       apiKey: secrets.creem.apiKey!,
       webhookSecret: secrets.creem.webhookSecret!,
     })
+
+    // Clean up stale test data from previous runs so each test starts fresh.
+    // Plans must be deleted before products (product with plans cannot be deleted).
+    try {
+      const plansResp = await page.request.get(`${BASE_URL}/api/bill/${REALM_ID}/plans`)
+      if (plansResp.ok()) {
+        const plansBody = await plansResp.json()
+        const stalePlans = (plansBody.plans || []).filter((p: any) => p.name === PLAN_NAME)
+        for (const plan of stalePlans) {
+          const delResp = await page.request.delete(`${BASE_URL}/api/bill/${REALM_ID}/plans/${plan.id}`)
+          console.log(`[cleanup] Deleted stale plan ${plan.id}: ${delResp.status()}`)
+        }
+      }
+
+      const productsResp = await page.request.get(`${BASE_URL}/api/bill/${REALM_ID}/products`)
+      if (productsResp.ok()) {
+        const productsBody = await productsResp.json()
+        const staleProducts = (productsBody.products || []).filter((p: any) => p.code === PRODUCT_NAME)
+        for (const product of staleProducts) {
+          const delResp = await page.request.delete(`${BASE_URL}/api/bill/${REALM_ID}/products/${product.id}`)
+          console.log(`[cleanup] Deleted stale product ${product.id}: ${delResp.status()}`)
+        }
+      }
+    } catch (error) {
+      console.error('[cleanup] Error during stale data cleanup (non-fatal):', error)
+    }
   })
 
   test.afterEach(async ({ page }) => {
@@ -116,7 +142,7 @@ test.describe('Live: Creem Payment', () => {
       await page.goto(`/${REALM_ID}/manage/billing`, { waitUntil: 'networkidle' })
       await expect(page.getByTestId('billing-page')).toBeVisible({ timeout: 10000 })
 
-      await createBillingPlan(page, {
+      await createSubscriptionPlan(page, {
         planName: PLAN_NAME,
         title: PLAN_TITLE,
         description: 'Herald live test billing plan for Creem payment',
@@ -184,7 +210,7 @@ test.describe('Live: Creem Payment', () => {
       await page.goto(`/${REALM_ID}/manage/billing`, { waitUntil: 'networkidle' })
       await expect(page.getByTestId('billing-page')).toBeVisible({ timeout: 10000 })
 
-      await createBillingPlan(page, {
+      await createSubscriptionPlan(page, {
         planName: PLAN_NAME,
         title: PLAN_TITLE,
         description: 'Herald live test billing plan for Creem payment',

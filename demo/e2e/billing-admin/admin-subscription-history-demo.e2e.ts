@@ -13,7 +13,7 @@
  */
 
 import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
-import { createBillingPlan } from './helpers/billing-page.helpers'
+import { createSubscriptionPlan } from './helpers/billing-page.helpers'
 import { createProduct } from './helpers/product-page.helpers'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 import { DEMO_ADMIN } from '../helpers/auth'
@@ -208,7 +208,7 @@ test.describe('[Billing Admin] Subscription History Demo Tests', () => {
         await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing`)
         await expect(page.getByTestId('billing-page')).toBeVisible()
 
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           planName,
           title: planTitle,
           description: 'Plan used for subscription history filter verification',

@@ -18,7 +18,7 @@
  */
 
 import { test, cleanupTestData, expect, type Page } from '../fixtures/demo-page.fixtures'
-import { createBillingPlan, openEditPlanDialog, openDeletePlanDialog, confirmDeletePlan } from './helpers/billing-page.helpers'
+import { createSubscriptionPlan, openEditSubscriptionPlanDialog, openDeleteSubscriptionPlanDialog, confirmDeleteSubscriptionPlan } from './helpers/billing-page.helpers'
 import {
   createProduct,
   openEditProductDialog,
@@ -380,7 +380,7 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
         await expect(page.getByTestId('billing-page')).toBeVisible()
 
         // Create plan with product selector
-        await createBillingPlan(page, {
+        await createSubscriptionPlan(page, {
           productTitle: planHostTitle,
           planName,
           title: 'Test Plan',
@@ -433,7 +433,7 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
       // Step 4: Move Plan Between Products (US-PR-006 Scene 3)
       // ------------------------------------------------------------------
       await test.step('Step 4: Move Plan Between Products (US-PR-006 Scene 3)', async () => {
-        await openEditPlanDialog(page, planName)
+        await openEditSubscriptionPlanDialog(page, planName)
 
         // Change product selector from "Plan Host Product" to "Plan Target Product"
         const productSelectTrigger = page.getByTestId('plan-product-select-trigger')
@@ -502,8 +502,8 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
           await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing`)
           await expect(page.getByTestId('billing-page')).toBeVisible()
 
-          await openDeletePlanDialog(page, planName)
-          await confirmDeletePlan(page)
+          await openDeleteSubscriptionPlanDialog(page, planName)
+          await confirmDeleteSubscriptionPlan(page)
           console.log('[Test] Cleanup: plan deleted')
 
           // Now delete products

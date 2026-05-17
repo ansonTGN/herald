@@ -30,7 +30,7 @@ export interface SubscriptionPlanFormData {
  * If productTitle is not provided, automatically navigates to products page,
  * creates a default product, then returns to the billing plans page.
  */
-export async function createBillingPlan(page: Page, formData: SubscriptionPlanFormData): Promise<void> {
+export async function createSubscriptionPlan(page: Page, formData: SubscriptionPlanFormData): Promise<void> {
   // Auto-create product if not provided
   let productTitle = formData.productTitle
   if (!productTitle) {
@@ -49,6 +49,13 @@ export async function createBillingPlan(page: Page, formData: SubscriptionPlanFo
     // Navigate back to billing plans page
     await page.goto(`/${realmId}/manage/billing`)
     await expect(page.getByTestId('billing-page')).toBeVisible({ timeout: 10000 })
+  }
+
+  // Idempotent: skip creation if plan already exists in the table
+  const planRow = page.locator(`tr:has-text("${formData.planName}")`)
+  if (await planRow.isVisible()) {
+    console.log(`[createSubscriptionPlan] Plan "${formData.planName}" already exists, skipping creation`)
+    return
   }
 
   await page.getByTestId('add-plan-button').click()
@@ -124,7 +131,7 @@ export async function createBillingPlan(page: Page, formData: SubscriptionPlanFo
   // 2. With many existing plans, new plans might not appear on first page
   // 3. Backend logs confirm plan creation is successful
   try {
-    await page.waitForURL(/\/manage\/billing/, { timeout: 10000 })
+    await page.waitForURL(/\/manage\/billing(\?|$)/, { timeout: 10000 })
   } catch (error) {
     // Take screenshot for debugging
     await page.screenshot({ path: `test-results/plan-form-error-${Date.now()}.png` })
@@ -158,19 +165,19 @@ export async function createBillingPlan(page: Page, formData: SubscriptionPlanFo
 /**
  * Helper function to navigate to edit page for a plan
  */
-export async function openEditPlanDialog(page: Page, planName: string): Promise<void> {
+export async function openEditSubscriptionPlanDialog(page: Page, planName: string): Promise<void> {
   await clickRowMenuItem(page, planName, 'Edit')
   // Edit now navigates to a separate page instead of opening a dialog
   await page.waitForURL('**/manage/billing/plans/*/edit', { timeout: 10000 })
   await expect(page.getByTestId('plan-form-page')).toBeVisible()
 }
 
-export async function openDeletePlanDialog(page: Page, planName: string): Promise<void> {
+export async function openDeleteSubscriptionPlanDialog(page: Page, planName: string): Promise<void> {
   await clickRowMenuItem(page, planName, 'Delete')
   await expect(page.getByText(/Are you sure you want to delete/i)).toBeVisible()
 }
 
-export async function openAssignPlanDialog(page: Page, planName: string): Promise<void> {
+export async function openAssignSubscriptionPlanDialog(page: Page, planName: string): Promise<void> {
   await clickRowMenuItem(page, planName, 'Assign to App')
   await expect(page.getByRole('dialog')).toBeVisible()
 }
@@ -178,7 +185,7 @@ export async function openAssignPlanDialog(page: Page, planName: string): Promis
 /**
  * Helper function to confirm delete in confirmation dialog
  */
-export async function confirmDeletePlan(page: Page): Promise<void> {
+export async function confirmDeleteSubscriptionPlan(page: Page): Promise<void> {
   await page.getByTestId('confirm-delete-button').click()
   await expect(page.getByText(/Are you sure you want to delete/i)).toBeHidden({ timeout: 5000 })
   await page.waitForLoadState('networkidle', { timeout: 10000 })
@@ -190,8 +197,8 @@ export async function confirmDeletePlan(page: Page): Promise<void> {
 /**
  * Confirm plan deletion and wait for page to stabilize.
  * This prevents race conditions when deleting plans in sequence.
- * @deprecated Use confirmDeletePlan instead - it now includes wait logic
+ * @deprecated Use confirmDeleteSubscriptionPlan instead - it now includes wait logic
  */
-export async function confirmDeletePlanAndWait(page: Page): Promise<void> {
-  await confirmDeletePlan(page)
+export async function confirmDeleteSubscriptionPlanAndWait(page: Page): Promise<void> {
+  await confirmDeleteSubscriptionPlan(page)
 }
