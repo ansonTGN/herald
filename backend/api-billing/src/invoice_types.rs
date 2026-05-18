@@ -18,8 +18,8 @@ use herald_core::domain::billing::invoice::{
 pub struct SellerConfigRequest {
     #[validate(length(min = 1, max = 200))]
     pub seller_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub seller_address: Option<String>,
+    #[validate(length(min = 1))]
+    pub seller_address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seller_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -34,7 +34,7 @@ pub struct SellerConfigRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SellerConfigResponse {
     pub seller_name: String,
-    pub seller_address: Option<String>,
+    pub seller_address: String,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
     pub seller_tax_id: String,
@@ -150,14 +150,13 @@ pub struct ApplyInvoiceRequest {
     pub currency: String,
     #[validate(length(min = 1, max = 200))]
     pub billing_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub billing_address: Option<String>,
+    #[validate(length(min = 1))]
+    pub billing_address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_phone: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub due_date: Option<NaiveDate>,
+    pub due_date: NaiveDate,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
 }
@@ -185,8 +184,8 @@ pub struct CreateInvoiceRequest {
     // Buyer
     #[validate(length(min = 1, max = 200))]
     pub billing_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub billing_address: Option<String>,
+    #[validate(length(min = 1))]
+    pub billing_address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -197,8 +196,8 @@ pub struct CreateInvoiceRequest {
     // Seller snapshot
     #[validate(length(min = 1, max = 200))]
     pub seller_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub seller_address: Option<String>,
+    #[validate(length(min = 1))]
+    pub seller_address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seller_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -220,8 +219,7 @@ pub struct CreateInvoiceRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shipping_value: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub due_date: Option<NaiveDate>,
+    pub due_date: NaiveDate,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payment_terms: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -371,7 +369,7 @@ pub struct InvoiceResponse {
     pub currency: String,
     pub total: i64,
     pub billing_name: String,
-    pub due_date: Option<NaiveDate>,
+    pub due_date: NaiveDate,
     pub created_at: String,
 }
 
@@ -394,7 +392,7 @@ pub struct InvoiceDetailResponse {
     pub currency: String,
 
     pub issue_date: Option<NaiveDate>,
-    pub due_date: Option<NaiveDate>,
+    pub due_date: NaiveDate,
     pub issued_at: Option<String>,
     pub paid_at: Option<String>,
     pub voided_at: Option<String>,
@@ -413,13 +411,13 @@ pub struct InvoiceDetailResponse {
     pub shipping_value: Option<String>,
 
     pub billing_name: String,
-    pub billing_address: Option<String>,
+    pub billing_address: String,
     pub billing_email: Option<String>,
     pub billing_phone: Option<String>,
     pub billing_tax_id: String,
 
     pub seller_name: String,
-    pub seller_address: Option<String>,
+    pub seller_address: String,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
     pub seller_tax_id: String,

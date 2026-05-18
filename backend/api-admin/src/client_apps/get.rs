@@ -5,9 +5,9 @@ use axum::{
 use herald_core::domain::authentication::Identity;
 use uuid::Uuid;
 
-use crate::application::http::client_apps::types::ClientAppItem;
-use crate::application::http::server::api_entities::{ApiError, ApiResult};
-use crate::application::http::state::AppState;
+use crate::client_apps::types::ClientAppItem;
+use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
+use herald_api_base::application::http::state::AppState;
 use herald_core::domain::client::ports::ClientService;
 
 /// Get a specific client app by ID
@@ -23,8 +23,8 @@ use herald_core::domain::client::ports::ClientService;
     ),
     responses(
         (status = 200, description = "ClientApp retrieved", body = ClientAppItem),
-        (status = 404, description = "ClientApp not found", body = crate::application::http::server::api_entities::ErrorResponse),
-        (status = 500, description = "Internal server error", body = crate::application::http::server::api_entities::ErrorResponse)
+        (status = 404, description = "ClientApp not found", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 500, description = "Internal server error", body = herald_api_base::application::http::server::api_entities::ErrorResponse)
     )
 )]
 pub async fn get_client_app(

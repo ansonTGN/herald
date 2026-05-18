@@ -152,7 +152,6 @@ export function UserTable({
 }: UserTableProps) {
   const columns = createUserColumns(onEdit, onDelete, onManageRoles)
 
-  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: data ?? [],
     columns,

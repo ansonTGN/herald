@@ -60,8 +60,7 @@ function createInvoiceColumns(
       accessorKey: 'dueDate',
       header: 'Due Date',
       cell: ({ row }) => {
-        const dueDate = row.getValue('dueDate') as string | null | undefined
-        if (!dueDate) return <span className="text-muted-foreground">-</span>
+        const dueDate = row.getValue('dueDate') as string
         return <span className="text-sm">{new Date(dueDate).toLocaleDateString()}</span>
       },
     },
@@ -202,6 +201,7 @@ function ApplyInvoiceDialog({
               label="Billing Address"
               dataTestId="apply-billing-address-input"
               placeholder="Billing address"
+              required
             />
             <TextField
               form={form}
@@ -209,6 +209,14 @@ function ApplyInvoiceDialog({
               label="Billing Phone"
               dataTestId="apply-billing-phone-input"
               placeholder="+1 234 567 8900"
+            />
+            <TextField
+              form={form}
+              name="dueDate"
+              label="Due Date"
+              dataTestId="apply-due-date-input"
+              type="date"
+              required
             />
             <TextareaField
               form={form}

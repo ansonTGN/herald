@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { toast } from 'sonner'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import {
   stripeConfigSchema,
@@ -27,6 +25,7 @@ import { getFieldErrorMessage } from '@/lib/error-utils'
 import { batchUpsertRealmConfigs } from '@/lib/api-generated/sdk.gen'
 import { buildStripeConfigRequest } from '@/lib/stripe-config-utils'
 import { requireFieldOnCreate } from '@/lib/form-utils'
+import { useSaveConfigMutation } from '@/hooks/use-save-config-mutation'
 
 interface StripeConfigFormDialogProps {
   open: boolean
@@ -244,10 +243,22 @@ interface StripeConfigFormPageProps {
 
 export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeConfigFormPageProps) {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const isEditing = mode === 'edit'
 
   const defaultValues = useMemo(() => getStripeConfigDefaults(initialValues), [initialValues])
+
+  const saveMutation = useSaveConfigMutation<StripeConfigFormValues>({
+    realmId,
+    providerName: 'Stripe',
+    isEditing,
+    mutationFn: async (data) => {
+      const response = await batchUpsertRealmConfigs({
+        path: { realmId },
+        body: { configs: buildStripeConfigRequest(data) },
+      })
+      if (response.error) throw response.error
+    },
+  })
 
   const form = useAppForm({
     schema: stripeConfigSchema,
@@ -262,32 +273,6 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
   useEffect(() => {
     form.reset(defaultValues)
   }, [defaultValues, form])
-
-  const saveMutation = useMutation({
-    mutationFn: async (data: StripeConfigFormValues) => {
-      const response = await batchUpsertRealmConfigs({
-        path: { realmId },
-        body: { configs: buildStripeConfigRequest(data) },
-      })
-      if (response.error) throw response.error
-      return response.data
-    },
-    onSuccess: async () => {
-      toast.success(
-        isEditing
-          ? 'Stripe configuration updated successfully'
-          : 'Stripe configuration created successfully'
-      )
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] }),
-        queryClient.invalidateQueries({ queryKey: ['realmConfig', realmId] }),
-      ])
-      navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
-    },
-    onError: (error: { status?: number; message?: string }) => {
-      toast.error(`Failed to save configuration: ${error?.message || 'Unknown error'}`)
-    },
-  })
 
   const handleCancel = () => {
     navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })

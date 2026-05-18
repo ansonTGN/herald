@@ -124,7 +124,7 @@ function sellerConfigHandler(
     return HttpResponse.json({
       sellerName: config.sellerName,
       sellerEmail: config.sellerEmail ?? null,
-      sellerAddress: config.sellerAddress ?? null,
+      sellerAddress: config.sellerAddress ?? '',
       sellerPhone: config.sellerPhone ?? null,
       sellerTaxId: config.sellerTaxId ?? '',
       createdAt: '2025-01-01T00:00:00Z',
@@ -477,12 +477,21 @@ describe('InvoiceFormPage', () => {
         expect(screen.getByText('Create Invoice')).toBeInTheDocument()
       })
 
+      // Wait for seller config to load and populate seller fields
+      await waitFor(() => {
+        const sellerNameInput = screen.getByTestId('invoice-seller-name') as HTMLInputElement
+        expect(sellerNameInput.value).toBe('Default Seller Corp')
+      })
+
       // Fill required fields
       await user.type(screen.getByTestId('invoice-account-id'), 'acc-test-1')
       await user.type(screen.getByTestId('invoice-billing-name'), 'Acme Corp')
 
       // Fill billing tax ID (required)
       await user.type(screen.getByTestId('invoice-billing-tax-id'), 'TAX123456')
+
+      // Fill billing address (required)
+      await user.type(screen.getByTestId('invoice-billing-address'), '123 Billing St')
 
       // Seller name should be auto-filled from config, ensure it has a value
       const sellerNameInput = screen.getByTestId('invoice-seller-name')
@@ -551,7 +560,8 @@ describe('InvoiceFormPage', () => {
       // Fields should already be populated from invoice data
       // Change billing name
       const billingNameInput = screen.getByTestId('invoice-billing-name')
-      await user.clear(billingNameInput)
+      await user.tripleClick(billingNameInput)
+      await user.keyboard('{Backspace}')
       await user.type(billingNameInput, 'Updated Buyer')
 
       // Submit

@@ -148,7 +148,6 @@ export function ClientAppTable({
 }: ClientAppTableProps) {
   const columns = createClientAppColumns(onEdit, onDelete, onToggleEnabled, canUpdate, canDelete)
 
-  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: data ?? [],
     columns,

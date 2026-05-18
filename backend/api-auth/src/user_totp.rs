@@ -6,9 +6,9 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
-pub use crate::application::http::server::api_entities::ErrorResponse;
-use crate::application::http::server::api_entities::{ApiError, ApiResult};
-use crate::application::http::state::AppState;
+pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
+use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
+use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::user::ports::UserRepository;
 use herald_core::domain::user_totp::{
@@ -19,6 +19,22 @@ use herald_core::infrastructure::user::repositories::PostgresUserRepository;
 use herald_core::infrastructure::user_totp::{
     PostgresRealmTotpConfigRepository, PostgresUserTotpRepository,
 };
+
+/// Router for user TOTP endpoints
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route("/totp", axum::routing::post(handle_enable_totp))
+        .route("/totp", axum::routing::delete(handle_disable_totp))
+        .route(
+            "/totp/verify",
+            axum::routing::post(handle_verify_totp_setup),
+        )
+        .route(
+            "/totp/regenerate",
+            axum::routing::post(handle_regenerate_totp),
+        )
+        .route("/totp/status", axum::routing::get(handle_get_totp_status))
+}
 
 // ============================================================================
 // Enable TOTP

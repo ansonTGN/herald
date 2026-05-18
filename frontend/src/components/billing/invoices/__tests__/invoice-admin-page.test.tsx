@@ -113,7 +113,7 @@ describe('InvoiceAdminPage', () => {
           status: 'void',
           billingName: 'Buyer E',
           total: 3000,
-          dueDate: null,
+          dueDate: '2025-01-15T00:00:00Z',
           createdAt: '2025-01-01T00:00:00Z',
         }),
       ]

@@ -34,32 +34,18 @@ export interface LoginFlowResult {
  */
 export async function initializeAuth(
   realmId: string,
-  forceRefresh: boolean = false
+  _forceRefresh: boolean = false
 ): Promise<{
   authenticated: boolean
   redirectPath: string
 }> {
-  console.log(
-    '[initializeAuth] Starting auth initialization for realm:',
-    realmId,
-    'forceRefresh:',
-    forceRefresh
-  )
-
   const store = useAuthStore.getState()
 
   // Always fetch fresh auth data from API
   store.setIsLoading(true)
 
   try {
-    console.log('[initializeAuth] Fetching auth data from API...')
     const { authStatus, userPermissions, userProfile } = await fetchAuthData(realmId)
-
-    console.log('[initializeAuth] Auth data fetched:', {
-      authenticated: authStatus.authenticated,
-      permissions: userPermissions.permissions,
-      roles: userPermissions.roles,
-    })
 
     // Update store with fetched data
     store.setAuthStatus(authStatus.authenticated, authStatus.realmId || realmId)
@@ -71,14 +57,11 @@ export async function initializeAuth(
       ? DEFAULT_ADMIN_REDIRECT
       : DEFAULT_USER_REDIRECT
 
-    console.log('[initializeAuth] Auth initialization completed, redirectPath:', redirectPath)
-
     return {
       authenticated: authStatus.authenticated,
       redirectPath,
     }
-  } catch (error) {
-    console.error('[initializeAuth] Error during auth initialization:', error)
+  } catch {
     // On error, clear auth state
     store.reset()
     return {
@@ -119,24 +102,12 @@ export async function loginFlow(
 ): Promise<LoginFlowResult> {
   const store = useAuthStore.getState()
 
-  console.log('[loginFlow] Starting login flow for realm:', realmId)
-  console.log('[loginFlow] Store state before login:', {
-    isAuthenticated: store.isAuthenticated,
-    permissions: store.permissions,
-  })
-
   try {
     // Perform login API call
     const loginResponse = await performLogin(realmId, credentials)
 
-    console.log('[loginFlow] Login API response:', {
-      requiresTotp: loginResponse.requiresTotp,
-      realmId: loginResponse.realmId,
-    })
-
     // Check if TOTP is required
     if (loginResponse.requiresTotp) {
-      console.log('[loginFlow] TOTP required, returning early')
       // Return early - caller should handle TOTP verification
       return { response: loginResponse, redirectPath: DEFAULT_USER_REDIRECT }
     }
@@ -144,22 +115,13 @@ export async function loginFlow(
     // Get the user's actual realm from the response
     const userRealmId = loginResponse.realmId || realmId
 
-    console.log('[loginFlow] Updating store with login state')
     // Update store with login state
     store.login(userRealmId)
 
-    console.log('[loginFlow] Fetching auth data...')
     // Fetch and populate auth data
     const { authStatus, userPermissions, userProfile } = await fetchAuthData(userRealmId)
 
-    console.log('[loginFlow] Auth data fetched:', {
-      authenticated: authStatus.authenticated,
-      permissions: userPermissions.permissions,
-      roles: userPermissions.roles,
-    })
-
     // Update store with fetched data
-    console.log('[loginFlow] Updating store with auth status and permissions')
     store.setAuthStatus(authStatus.authenticated, authStatus.realmId || userRealmId)
     store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
     store.setUserProfile(userProfile)
@@ -169,12 +131,8 @@ export async function loginFlow(
       ? DEFAULT_ADMIN_REDIRECT
       : DEFAULT_USER_REDIRECT
 
-    console.log('[loginFlow] Redirect path determined:', redirectPath)
-    console.log('[loginFlow] Login flow completed successfully')
-
     return { response: loginResponse, redirectPath }
   } catch (error) {
-    console.error('[loginFlow] Error during login flow:', error)
     // On error, ensure store is in clean state
     store.logout()
     throw error
@@ -229,13 +187,8 @@ export function checkAdminPermission(): boolean {
  * @returns The appropriate redirect path
  */
 export function getRedirectPath(): string {
-  console.log('[getRedirectPath] Calculating redirect path')
-  const { permissions } = useAuthStore.getState()
-  console.log('[getRedirectPath] Current permissions in store:', permissions)
   const hasAdmin = checkAdminPermission()
-  console.log('[getRedirectPath] Has admin permission:', hasAdmin)
   const redirectPath = hasAdmin ? DEFAULT_ADMIN_REDIRECT : DEFAULT_USER_REDIRECT
-  console.log('[getRedirectPath] Final redirect path:', redirectPath)
   return redirectPath
 }
 

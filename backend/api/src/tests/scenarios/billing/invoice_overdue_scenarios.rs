@@ -50,7 +50,7 @@ mod tests {
     fn build_new_invoice(
         realm_id: &str,
         account_id: Uuid,
-        due_date: Option<chrono::NaiveDate>,
+        due_date: chrono::NaiveDate,
     ) -> NewInvoice {
         NewInvoice {
             realm_id: realm_id.to_string(),
@@ -68,12 +68,12 @@ mod tests {
             }],
             actor_user_id: None,
             billing_name: "Overdue Test Client".to_string(),
-            billing_address: None,
+            billing_address: "123 Test St".to_string(),
             billing_email: None,
             billing_phone: None,
             billing_tax_id: String::new(),
             seller_name: "Test Seller".to_string(),
-            seller_address: None,
+            seller_address: "456 Seller Ave".to_string(),
             seller_email: None,
             seller_phone: None,
             seller_tax_id: String::new(),
@@ -108,7 +108,7 @@ mod tests {
 
         // Create and issue an invoice with a past due_date (5 days ago)
         let past_date = (Utc::now() - Duration::days(5)).date_naive();
-        let input = build_new_invoice(&realm_id, account_id, Some(past_date));
+        let input = build_new_invoice(&realm_id, account_id, past_date);
         let created = repo.create_invoice(input).await.unwrap();
 
         // Issue the invoice
@@ -119,6 +119,7 @@ mod tests {
             actor_user_id: None,
             actor_type: ActorType::User,
             void_reason: None,
+            issue_date: None,
         })
         .await
         .unwrap();
@@ -207,10 +208,10 @@ mod tests {
         for case in &cases {
             let account_id = ensure_test_account(ctx, &realm_id).await;
             let due_date = (Utc::now() + Duration::days(case.due_date_offset_days)).date_naive();
-            let input = build_new_invoice(&realm_id, account_id, Some(due_date));
+            let input = build_new_invoice(&realm_id, account_id, due_date);
             let created = repo.create_invoice(input).await.unwrap();
 
-            // Transition to the required status (skip draft — already draft)
+            // Transition to the required status (skip draft -- already draft)
             if case.initial_status != InvoiceStatus::Draft {
                 repo.transition_status(InvoiceStatusTransition {
                     realm_id: realm_id.clone(),
@@ -219,6 +220,7 @@ mod tests {
                     actor_user_id: None,
                     actor_type: ActorType::User,
                     void_reason: None,
+                    issue_date: None,
                 })
                 .await
                 .unwrap();
@@ -231,6 +233,7 @@ mod tests {
                         actor_user_id: None,
                         actor_type: ActorType::User,
                         void_reason: None,
+                        issue_date: None,
                     })
                     .await
                     .unwrap();
@@ -242,6 +245,7 @@ mod tests {
                         actor_user_id: None,
                         actor_type: ActorType::User,
                         void_reason: case.void_reason.map(|s| s.to_string()),
+                        issue_date: None,
                     })
                     .await
                     .unwrap();
@@ -286,7 +290,7 @@ mod tests {
 
         // Create and issue an invoice with a past due_date
         let past_date = (Utc::now() - Duration::days(3)).date_naive();
-        let input = build_new_invoice(&realm_id, account_id, Some(past_date));
+        let input = build_new_invoice(&realm_id, account_id, past_date);
         let created = repo.create_invoice(input).await.unwrap();
 
         repo.transition_status(InvoiceStatusTransition {
@@ -296,6 +300,7 @@ mod tests {
             actor_user_id: None,
             actor_type: ActorType::User,
             void_reason: None,
+            issue_date: None,
         })
         .await
         .unwrap();
@@ -362,7 +367,7 @@ mod tests {
 
         // Create 3 issued invoices with past due_dates
         for _ in 0..3 {
-            let input = build_new_invoice(&realm_id, account_id, Some(past_date));
+            let input = build_new_invoice(&realm_id, account_id, past_date);
             let created = repo.create_invoice(input).await.unwrap();
 
             repo.transition_status(InvoiceStatusTransition {
@@ -372,6 +377,7 @@ mod tests {
                 actor_user_id: None,
                 actor_type: ActorType::User,
                 void_reason: None,
+                issue_date: None,
             })
             .await
             .unwrap();
@@ -380,7 +386,7 @@ mod tests {
         }
 
         // Create 1 issued invoice with a future due_date (should be skipped)
-        let input = build_new_invoice(&realm_id, account_id, Some(future_date));
+        let input = build_new_invoice(&realm_id, account_id, future_date);
         let future_inv = repo.create_invoice(input).await.unwrap();
 
         repo.transition_status(InvoiceStatusTransition {
@@ -390,6 +396,7 @@ mod tests {
             actor_user_id: None,
             actor_type: ActorType::User,
             void_reason: None,
+            issue_date: None,
         })
         .await
         .unwrap();
@@ -458,7 +465,7 @@ mod tests {
 
         // Create and issue an invoice with a past due_date
         let past_date = (Utc::now() - Duration::days(7)).date_naive();
-        let input = build_new_invoice(&realm_id, account_id, Some(past_date));
+        let input = build_new_invoice(&realm_id, account_id, past_date);
         let created = repo.create_invoice(input).await.unwrap();
 
         repo.transition_status(InvoiceStatusTransition {
@@ -468,6 +475,7 @@ mod tests {
             actor_user_id: None,
             actor_type: ActorType::User,
             void_reason: None,
+            issue_date: None,
         })
         .await
         .unwrap();

@@ -4,8 +4,8 @@ use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::PermissionService;
 
 use super::types::AuditEventDetailResponse;
-use crate::application::http::server::api_entities::{ApiError, ApiResult};
-use crate::application::http::state::AppState;
+use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
+use herald_api_base::application::http::state::AppState;
 
 /// Get a single audit event by ID
 #[utoipa::path(
@@ -18,10 +18,10 @@ use crate::application::http::state::AppState;
     ),
     responses(
         (status = 200, description = "Audit event detail", body = AuditEventDetailResponse),
-        (status = 401, description = "Unauthorized", body = crate::application::http::server::api_entities::ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = crate::application::http::server::api_entities::ErrorResponse),
-        (status = 404, description = "Audit event not found", body = crate::application::http::server::api_entities::ErrorResponse),
-        (status = 500, description = "Internal server error", body = crate::application::http::server::api_entities::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 403, description = "Forbidden - Insufficient permissions", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 404, description = "Audit event not found", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 500, description = "Internal server error", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
     ),
     security(("bearer_auth" = []))
 )]

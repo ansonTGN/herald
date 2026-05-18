@@ -28,7 +28,7 @@ export function InvoiceSellerConfigForm({
   const defaultValues = useMemo<InvoiceSellerConfigFormData>(
     () => ({
       sellerName: sellerConfig?.sellerName ?? '',
-      sellerAddress: sellerConfig?.sellerAddress ?? null,
+      sellerAddress: sellerConfig?.sellerAddress ?? '',
       sellerEmail: sellerConfig?.sellerEmail ?? null,
       sellerPhone: sellerConfig?.sellerPhone ?? null,
       sellerTaxId: sellerConfig?.sellerTaxId ?? '',
@@ -107,6 +107,7 @@ export function InvoiceSellerConfigForm({
               label="Address"
               dataTestId="seller-config-address-input"
               placeholder="Business address"
+              required
             />
             <TextField
               form={form}

@@ -1827,6 +1827,8 @@ version = "0.1.4"
 dependencies = [
  "axum",
  "axum-valid",
+ "bcrypt",
+ "chrono",
  "herald-api-base",
  "herald-core",
  "redis",

@@ -2,6 +2,9 @@
 // Admin handlers, role definitions, permission management
 
 pub mod admin;
+pub mod audit;
+pub mod client_apps;
+pub mod dashboard;
 pub mod permission;
 pub mod role_definitions;
 
@@ -37,6 +40,14 @@ pub use admin::admin_router_with_middleware;
         crate::admin::permission_definitions::get_permission_definition,
         crate::admin::permission_definitions::update_permission_definition,
         crate::admin::permission_definitions::delete_permission_definition,
+        crate::audit::list::list_audit_events,
+        crate::audit::detail::get_audit_event,
+        crate::dashboard::get_dashboard_stats,
+        crate::client_apps::list::list_client_apps,
+        crate::client_apps::create::create_client_app,
+        crate::client_apps::get::get_client_app,
+        crate::client_apps::update::update_client_app,
+        crate::client_apps::delete::delete_client_app,
     ),
     components(schemas(
         crate::role_definitions::types::RoleCreateRequest,
@@ -53,6 +64,17 @@ pub use admin::admin_router_with_middleware;
         crate::admin::permission::Role,
         crate::admin::permission::Police,
         crate::admin::permission::PermissionData,
+        crate::audit::types::AuditEventResponse,
+        crate::audit::types::AuditEventDetailResponse,
+        crate::audit::types::AuditEventListResponse,
+        crate::dashboard::DashboardStatsResponse,
+        crate::dashboard::UserStatsResponse,
+        crate::dashboard::AuthTrendPointResponse,
+        crate::client_apps::types::ClientAppCreateRequest,
+        crate::client_apps::types::ClientAppUpdateRequest,
+        crate::client_apps::types::ClientAppItem,
+        herald_api_base::application::http::common::pagination::PaginationMeta,
+        herald_api_base::application::http::server::api_entities::PageResponse<crate::client_apps::types::ClientAppItem>,
     ))
 )]
 pub struct ApiDoc;

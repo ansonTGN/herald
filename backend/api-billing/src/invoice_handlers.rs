@@ -8,9 +8,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
 
-use herald_api_base::application::http::common::auth_utils::{
-    require_authenticated_user_in_realm, require_realm_access,
-};
+use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -194,6 +192,11 @@ pub async fn upsert_seller_config(
             CoreError::BadRequest(format!("Validation failed: {}", e))
         })?;
 
+    // Trim and validate seller_address is non-empty
+    if request.seller_address.trim().is_empty() {
+        return Err(ApiError::bad_request("seller_address must not be blank"));
+    }
+
     let now = chrono::Utc::now();
     let config = herald_core::domain::billing::invoice::InvoiceSellerConfig {
         realm_id: realm_id.clone(),
@@ -248,6 +251,14 @@ pub async fn create_invoice(
         .map_err(|e: validator::ValidationErrors| {
             CoreError::BadRequest(format!("Validation failed: {}", e))
         })?;
+
+    // Trim and validate address fields are non-empty
+    if request.billing_address.trim().is_empty() {
+        return Err(ApiError::bad_request("billing_address must not be blank"));
+    }
+    if request.seller_address.trim().is_empty() {
+        return Err(ApiError::bad_request("seller_address must not be blank"));
+    }
 
     validate_account_in_realm(&state.pool, request.account_id, &realm_id).await?;
     if let Some(applicant_id) = request.applicant_user_id {
@@ -478,7 +489,7 @@ pub async fn issue_invoice(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path((realm_id, invoice_id)): Path<(String, Uuid)>,
-    Json(_request): Json<IssueInvoiceRequest>,
+    Json(request): Json<IssueInvoiceRequest>,
 ) -> Result<Json<InvoiceDetailResponse>, ApiError> {
     tracing::info!("Issuing invoice {} for realm: {}", invoice_id, realm_id);
     require_billing_permission(&state, &identity, &realm_id, "manage").await?;
@@ -495,6 +506,35 @@ pub async fn issue_invoice(
         None,
     )?;
 
+    // Determine issue_date: use request override or default to today
+    let issue_date = request
+        .issue_date
+        .unwrap_or(chrono::Utc::now().date_naive());
+
+    // Validate due_date >= issue_date
+    if detail.invoice.due_date < issue_date {
+        return Err(ApiError::bad_request(
+            "due_date must be on or after issue_date",
+        ));
+    }
+
+    // Validate at least one of billing_email or billing_phone is non-empty
+    let has_email = detail
+        .invoice
+        .billing_email
+        .as_deref()
+        .is_some_and(|s| !s.trim().is_empty());
+    let has_phone = detail
+        .invoice
+        .billing_phone
+        .as_deref()
+        .is_some_and(|s| !s.trim().is_empty());
+    if !has_email && !has_phone {
+        return Err(ApiError::bad_request(
+            "At least one of billing_email or billing_phone must be provided",
+        ));
+    }
+
     let actor_user_id = Uuid::parse_str(&identity.user_id()).ok();
     state
         .invoice_repository
@@ -505,6 +545,7 @@ pub async fn issue_invoice(
             actor_user_id,
             actor_type: ActorType::User,
             void_reason: None,
+            issue_date: Some(issue_date),
         })
         .await?;
 
@@ -564,6 +605,7 @@ pub async fn void_invoice(
             actor_user_id,
             actor_type: ActorType::User,
             void_reason: request.void_reason,
+            issue_date: None,
         })
         .await?;
 
@@ -627,6 +669,7 @@ pub async fn mark_paid(
             actor_user_id,
             actor_type: ActorType::User,
             void_reason: None,
+            issue_date: None,
         })
         .await?;
 
@@ -670,6 +713,11 @@ pub async fn apply_invoice(
         .map_err(|e: validator::ValidationErrors| {
             CoreError::BadRequest(format!("Validation failed: {}", e))
         })?;
+
+    // Trim and validate billing_address is non-empty
+    if request.billing_address.trim().is_empty() {
+        return Err(ApiError::bad_request("billing_address must not be blank"));
+    }
 
     if request.payment_attempt_id.is_none() && request.subscription_id.is_none() {
         return Err(ApiError::bad_request(
@@ -812,13 +860,12 @@ pub async fn get_my_invoice(
     Path((realm_id, invoice_id)): Path<(String, Uuid)>,
 ) -> Result<Json<InvoiceDetailResponse>, ApiError> {
     tracing::info!("Getting my invoice {} for realm: {}", invoice_id, realm_id);
-    require_realm_access(&identity, &realm_id, "view invoices")?;
+    let current_user_id =
+        require_authenticated_user_in_realm(&identity, &realm_id, "view invoices")?;
 
     let detail = load_detail(&state, &realm_id, invoice_id).await?;
 
-    // Verify the invoice belongs to the current user
-    let current_user_id = Uuid::parse_str(&identity.user_id()).ok();
-    if detail.invoice.applicant_user_id != current_user_id {
+    if detail.invoice.applicant_user_id != Some(current_user_id) {
         return Err(ApiError::forbidden("You can only view your own invoices"));
     }
 
@@ -922,13 +969,12 @@ pub async fn download_my_invoice_pdf(
         invoice_id,
         realm_id
     );
-    require_realm_access(&identity, &realm_id, "view invoices")?;
+    let current_user_id =
+        require_authenticated_user_in_realm(&identity, &realm_id, "view invoices")?;
 
     let detail = load_detail(&state, &realm_id, invoice_id).await?;
 
-    // Verify the invoice belongs to the current user
-    let current_user_id = Uuid::parse_str(&identity.user_id()).ok();
-    if detail.invoice.applicant_user_id != current_user_id {
+    if detail.invoice.applicant_user_id != Some(current_user_id) {
         return Err(ApiError::forbidden(
             "You can only download your own invoices",
         ));

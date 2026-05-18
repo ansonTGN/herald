@@ -46,7 +46,7 @@ struct InvoiceRow {
     status: String,
     currency: String,
     issue_date: Option<chrono::NaiveDate>,
-    due_date: Option<chrono::NaiveDate>,
+    due_date: chrono::NaiveDate,
     issued_at: Option<DateTime<Utc>>,
     paid_at: Option<DateTime<Utc>>,
     voided_at: Option<DateTime<Utc>>,
@@ -62,12 +62,12 @@ struct InvoiceRow {
     shipping_mode: Option<String>,
     shipping_value: Option<String>,
     billing_name: String,
-    billing_address: Option<String>,
+    billing_address: String,
     billing_email: Option<String>,
     billing_phone: Option<String>,
     billing_tax_id: String,
     seller_name: String,
-    seller_address: Option<String>,
+    seller_address: String,
     seller_email: Option<String>,
     seller_phone: Option<String>,
     seller_tax_id: String,
@@ -211,7 +211,7 @@ fn row_to_history(row: HistoryRow) -> Result<InvoiceHistory, CoreError> {
 struct SellerConfigRow {
     realm_id: String,
     seller_name: String,
-    seller_address: Option<String>,
+    seller_address: String,
     seller_email: Option<String>,
     seller_phone: Option<String>,
     seller_tax_id: String,
@@ -245,7 +245,7 @@ struct InvoiceSummaryRow {
     currency: String,
     total: i64,
     billing_name: String,
-    due_date: Option<chrono::NaiveDate>,
+    due_date: chrono::NaiveDate,
     created_at: DateTime<Utc>,
 }
 
@@ -445,16 +445,16 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         }
 
         let billing_name = input.billing_name.unwrap_or(existing.billing_name);
-        let billing_address = input.billing_address.or(existing.billing_address);
+        let billing_address = input.billing_address.unwrap_or(existing.billing_address);
         let billing_email = input.billing_email.or(existing.billing_email);
         let billing_phone = input.billing_phone.or(existing.billing_phone);
         let billing_tax_id = input.billing_tax_id;
         let seller_name = input.seller_name.unwrap_or(existing.seller_name);
-        let seller_address = input.seller_address.or(existing.seller_address);
+        let seller_address = input.seller_address.unwrap_or(existing.seller_address);
         let seller_email = input.seller_email.or(existing.seller_email);
         let seller_phone = input.seller_phone.or(existing.seller_phone);
         let seller_tax_id = input.seller_tax_id;
-        let due_date = input.due_date.or(existing.due_date);
+        let due_date = input.due_date.unwrap_or(existing.due_date);
         let payment_terms = input.payment_terms.or(existing.payment_terms);
         let notes = input.notes.or(existing.notes);
 
@@ -750,7 +750,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
                 Some(now),
                 None,
                 None,
-                Some(now.date_naive()),
+                Some(input.issue_date.unwrap_or(now.date_naive())),
                 None,
             ),
             InvoiceStatus::Paid => (
@@ -906,7 +906,6 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         let rows = sqlx::query_as::<_, InvoiceRow>(&format!(
             "SELECT {cols} FROM invoice
              WHERE status = 'issued'
-               AND due_date IS NOT NULL
                AND due_date < $1
              ORDER BY due_date ASC
              LIMIT $2",

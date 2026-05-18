@@ -1,7 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { toast } from 'sonner'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import {
   creemConfigSchema,
@@ -14,6 +12,7 @@ import { SwitchField, PasswordField, NumberField } from '@/components/shared/for
 import { batchUpsertRealmConfigs } from '@/lib/api-generated/sdk.gen'
 import { buildCreemConfigRequest } from '@/lib/creem-config-utils'
 import { requireFieldOnCreate } from '@/lib/form-utils'
+import { useSaveConfigMutation } from '@/hooks/use-save-config-mutation'
 
 interface CreemConfigFormPageProps {
   realmId: string
@@ -23,10 +22,22 @@ interface CreemConfigFormPageProps {
 
 export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfigFormPageProps) {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const isEditing = mode === 'edit'
 
   const defaultValues = useMemo(() => getCreemConfigDefaults(initialValues), [initialValues])
+
+  const saveMutation = useSaveConfigMutation<CreemConfigFormValues>({
+    realmId,
+    providerName: 'Creem',
+    isEditing,
+    mutationFn: async (data) => {
+      const response = await batchUpsertRealmConfigs({
+        path: { realmId },
+        body: { configs: buildCreemConfigRequest(data) },
+      })
+      if (response.error) throw response.error
+    },
+  })
 
   const form = useAppForm({
     schema: creemConfigSchema,
@@ -40,32 +51,6 @@ export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfi
   useEffect(() => {
     form.reset(defaultValues)
   }, [defaultValues, form])
-
-  const saveMutation = useMutation({
-    mutationFn: async (data: CreemConfigFormValues) => {
-      const response = await batchUpsertRealmConfigs({
-        path: { realmId },
-        body: { configs: buildCreemConfigRequest(data) },
-      })
-      if (response.error) throw response.error
-      return response.data
-    },
-    onSuccess: async () => {
-      toast.success(
-        isEditing
-          ? 'Creem configuration updated successfully'
-          : 'Creem configuration created successfully'
-      )
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] }),
-        queryClient.invalidateQueries({ queryKey: ['realmConfig', realmId] }),
-      ])
-      navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
-    },
-    onError: (error: { status?: number; message?: string }) => {
-      toast.error(`Failed to save configuration: ${error?.message || 'Unknown error'}`)
-    },
-  })
 
   const handleCancel = () => {
     navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })

@@ -15,6 +15,7 @@ import { optionalStringEnum } from '@/lib/form-utils'
 import { toDateInputValue, toUtcDateRangeBoundary } from '@/lib/date-utils'
 import { FILTER_ALL_VALUE } from '@/lib/constants'
 import type { TransactionFilters as TransactionFiltersType } from '@/lib/schemas/points-forms'
+import { useActiveFilters } from '@/hooks/use-active-filters'
 
 const transactionTypeEnum = z.enum(['recharge', 'consume'])
 
@@ -66,14 +67,7 @@ export function TransactionFilters({
     onClear()
   }
 
-  function hasActiveFilters() {
-    return !!(
-      filters.transactionType ||
-      filters.startTime ||
-      filters.endTime ||
-      filters.clientAppId
-    )
-  }
+  const hasActiveFilters = useActiveFilters(filters)
 
   return (
     <div className={className} data-testid="transaction-filters">
@@ -193,7 +187,7 @@ export function TransactionFilters({
 
             {/* Action Buttons */}
             <div className="flex justify-end gap-2">
-              {hasActiveFilters() && (
+              {hasActiveFilters && (
                 <Button
                   type="button"
                   variant="ghost"

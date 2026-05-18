@@ -1,38 +1,43 @@
 use axum::{
     Json,
     extract::{Extension, Path, State},
+    http::HeaderMap,
 };
 use axum_valid::Valid;
 use herald_core::domain::authentication::Identity;
+use uuid::Uuid;
 
-use crate::application::http::client_apps::types::{ClientAppCreateRequest, ClientAppItem};
-use crate::application::http::server::api_entities::{ApiError, ApiResult};
-use crate::application::http::state::AppState;
+use crate::client_apps::types::{ClientAppItem, ClientAppUpdateRequest};
+use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
+use herald_api_base::application::http::state::AppState;
 use herald_core::domain::client::ports::ClientService;
-use herald_core::domain::client::value_objects::CreateClientAppRequest;
+use herald_core::domain::client::value_objects::UpdateClientAppRequest;
 
-/// Create a new client app
+/// Update a client app configuration
 ///
-/// Creates a new OAuth client application with the specified configuration.
+/// Updates the configuration of an existing OAuth client application.
+/// Optionally regenerate the client secret.
 #[utoipa::path(
-    post,
-    path = "/api/client/{realmId}",
+    put,
+    path = "/api/client/{realmId}/{clientAppId}",
     tag = "client",
+    request_body = ClientAppUpdateRequest,
     params(
-        ("realmId" = String, Path, description = "Realm ID")
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("clientAppId" = Uuid, Path, description = "client app UUID"),
     ),
-    request_body = ClientAppCreateRequest,
     responses(
-        (status = 201, description = "ClientApp created", body = ClientAppItem),
-        (status = 400, description = "Bad request", body = crate::application::http::server::api_entities::ErrorResponse),
-        (status = 500, description = "Internal server error", body = crate::application::http::server::api_entities::ErrorResponse)
+        (status = 200, description = "ClientApp updated", body = ClientAppItem),
+        (status = 404, description = "ClientApp not found", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 500, description = "Internal server error", body = herald_api_base::application::http::server::api_entities::ErrorResponse)
     )
 )]
-pub async fn create_client_app(
+pub async fn update_client_app(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-    Path(realm_id): Path<String>,
-    Valid(Json(payload)): Valid<Json<ClientAppCreateRequest>>,
+    Path((_realm_id, id)): Path<(String, Uuid)>,
+    _headers: HeaderMap,
+    Valid(Json(payload)): Valid<Json<ClientAppUpdateRequest>>,
 ) -> Result<ApiResult<ClientAppItem>, ApiError> {
     // Extract identity from request extension (injected by inject_identity middleware)
     let identity_realm_id = identity.realm_id();
@@ -41,13 +46,11 @@ pub async fn create_client_app(
     tracing::debug!(
         realm_id = %identity_realm_id,
         user_id = %current_user_id,
-        "Creating client app"
+        "Updating client app"
     );
 
     // Create service request
-    let service_request = CreateClientAppRequest {
-        realm_id: realm_id.clone(),
-        client_id: payload.client_id.clone(),
+    let service_request = UpdateClientAppRequest {
         name: payload.name.clone(),
         description: payload.description.clone(),
         redirect_uris: payload.redirect_uris.clone(),
@@ -55,26 +58,26 @@ pub async fn create_client_app(
         icon_url: payload.icon_url.clone(),
         session_ttl_seconds: payload.session_ttl_seconds,
         session_renewal_ttl_seconds: payload.session_renewal_ttl_seconds,
+        regenerate_secret: payload.regenerate_secret,
         device_code_grant_enabled: payload.device_code_grant_enabled,
     };
 
     // Call service layer
     let client_service = state.service.client_service();
     let client_app = client_service
-        .create_client_app(identity, service_request)
+        .update_client_app(identity, id, service_request)
         .await
         .map_err(|e| match e {
-            herald_core::domain::common::entities::app_errors::CoreError::Conflict(msg) => {
-                tracing::error!("Client app conflict: {}", msg);
-                ApiError::bad_request(msg)
+            herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
+                ApiError::not_found("client_app not found")
             }
             herald_core::domain::common::entities::app_errors::CoreError::BadRequest(msg) => {
                 tracing::error!("Bad request: {}", msg);
                 ApiError::bad_request(msg)
             }
             e => {
-                tracing::error!("Failed to create client app: {}", e);
-                ApiError::internal(format!("Failed to create client app: {e}"))
+                tracing::error!("Failed to update client app: {}", e);
+                ApiError::internal(format!("Failed to update client app: {e}"))
             }
         })?;
 
@@ -90,9 +93,12 @@ pub async fn create_client_app(
         icon_url: client_app.icon_url,
         session_ttl_seconds: client_app.session_ttl_seconds,
         session_renewal_ttl_seconds: client_app.session_renewal_ttl_seconds,
-        client_secret: client_app.client_secret,
+        client_secret: payload
+            .regenerate_secret
+            .filter(|regenerate| *regenerate)
+            .and(client_app.client_secret),
         device_code_grant_enabled: client_app.device_code_grant_enabled,
     };
 
-    Ok(ApiResult::created(response))
+    Ok(ApiResult::ok(response))
 }

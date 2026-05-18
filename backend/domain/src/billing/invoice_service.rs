@@ -286,6 +286,7 @@ impl<R: InvoiceRepository> InvoiceService<R> {
                 actor_user_id,
                 actor_type,
                 void_reason: None,
+                issue_date: None,
             })
             .await
     }
@@ -326,6 +327,7 @@ impl<R: InvoiceRepository> InvoiceService<R> {
                 actor_user_id,
                 actor_type,
                 void_reason,
+                issue_date: None,
             })
             .await
     }
@@ -362,6 +364,7 @@ impl<R: InvoiceRepository> InvoiceService<R> {
                 actor_user_id,
                 actor_type,
                 void_reason: None,
+                issue_date: None,
             })
             .await
     }
@@ -390,6 +393,7 @@ impl<R: InvoiceRepository> InvoiceService<R> {
                     actor_user_id: None,
                     actor_type: ActorType::System,
                     void_reason: None,
+                    issue_date: None,
                 })
                 .await;
 

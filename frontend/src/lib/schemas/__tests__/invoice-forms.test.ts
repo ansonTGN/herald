@@ -276,10 +276,8 @@ describe('invoiceCreateFormSchema', () => {
     const result = invoiceCreateFormSchema.safeParse({
       ...validCreateForm,
       billingEmail: null,
-      billingAddress: null,
       billingPhone: null,
       sellerEmail: null,
-      sellerAddress: null,
       sellerPhone: null,
       paymentTerms: null,
       notes: null,
@@ -405,9 +403,10 @@ describe('invoiceSellerConfigSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  it('accepts config with only sellerName and sellerTaxId', () => {
+  it('accepts config with only sellerName, sellerAddress and sellerTaxId', () => {
     const result = invoiceSellerConfigSchema.safeParse({
       sellerName: 'Seller Inc',
+      sellerAddress: '456 Oak Ave',
       sellerTaxId: 'TAX123',
     })
     expect(result.success).toBe(true)
@@ -423,7 +422,7 @@ describe('invoiceSellerConfigSchema', () => {
   it('accepts optional fields as null', () => {
     const result = invoiceSellerConfigSchema.safeParse({
       sellerName: 'Seller Inc',
-      sellerAddress: null,
+      sellerAddress: '456 Oak Ave',
       sellerEmail: null,
       sellerPhone: null,
       sellerTaxId: 'TAX123',
@@ -435,11 +434,8 @@ describe('invoiceSellerConfigSchema', () => {
   it('accepts optional fields as undefined (omitted)', () => {
     const result = invoiceSellerConfigSchema.safeParse({
       sellerName: 'Seller Inc',
-      sellerAddress: undefined,
-      sellerEmail: undefined,
-      sellerPhone: undefined,
+      sellerAddress: '456 Oak Ave',
       sellerTaxId: 'TAX123',
-      defaultPaymentTerms: undefined,
     })
     expect(result.success).toBe(true)
   })
@@ -463,8 +459,9 @@ describe('applyInvoiceSchema', () => {
       subscriptionId: null,
       billingName: 'Acme Corp',
       billingEmail: null,
-      billingAddress: null,
+      billingAddress: '123 Main St',
       billingPhone: null,
+      dueDate: '2025-08-01',
       notes: null,
     })
     expect(result.success).toBe(true)
@@ -477,8 +474,9 @@ describe('applyInvoiceSchema', () => {
       subscriptionId: 'sub_123',
       billingName: 'Acme Corp',
       billingEmail: null,
-      billingAddress: null,
+      billingAddress: '123 Main St',
       billingPhone: null,
+      dueDate: '2025-08-01',
       notes: null,
     })
     expect(result.success).toBe(true)
@@ -490,6 +488,8 @@ describe('applyInvoiceSchema', () => {
       paymentAttemptId: 'pa_123',
       subscriptionId: 'sub_123',
       billingName: 'Acme Corp',
+      billingAddress: '123 Main St',
+      dueDate: '2025-08-01',
     })
     expect(result.success).toBe(true)
   })
@@ -500,6 +500,8 @@ describe('applyInvoiceSchema', () => {
       paymentAttemptId: null,
       subscriptionId: null,
       billingName: 'Acme Corp',
+      billingAddress: '123 Main St',
+      dueDate: '2025-08-01',
     })
     expect(result.success).toBe(false)
   })
@@ -510,6 +512,8 @@ describe('applyInvoiceSchema', () => {
       paymentAttemptId: '',
       subscriptionId: '',
       billingName: 'Acme Corp',
+      billingAddress: '123 Main St',
+      dueDate: '2025-08-01',
     })
     // Empty strings are falsy, so the refine will fail
     expect(result.success).toBe(false)
@@ -521,6 +525,8 @@ describe('applyInvoiceSchema', () => {
       paymentAttemptId: 'pa_123',
       subscriptionId: null,
       billingName: '',
+      billingAddress: '123 Main St',
+      dueDate: '2025-08-01',
     })
     expect(result.success).toBe(false)
   })
@@ -530,6 +536,8 @@ describe('applyInvoiceSchema', () => {
       paymentAttemptId: 'pa_123',
       subscriptionId: null,
       billingName: 'Acme Corp',
+      billingAddress: '123 Main St',
+      dueDate: '2025-08-01',
     })
     expect(result.success).toBe(true)
     if (result.success) {
@@ -592,12 +600,12 @@ describe('getInvoiceFormDefaults', () => {
       accountId: '',
       billingName: '',
       billingEmail: null,
-      billingAddress: null,
+      billingAddress: '',
       billingPhone: null,
       billingTaxId: '',
       sellerName: '',
       sellerEmail: null,
-      sellerAddress: null,
+      sellerAddress: '',
       sellerPhone: null,
       sellerTaxId: '',
       currency: 'CNY',
@@ -645,7 +653,7 @@ describe('getInvoiceFormDefaults', () => {
     })
 
     expect(defaults.sellerName).toBe('Seller Inc')
-    expect(defaults.sellerAddress).toBe(null)
+    expect(defaults.sellerAddress).toBe('')
     expect(defaults.sellerEmail).toBe(null)
     expect(defaults.sellerPhone).toBe(null)
   })
@@ -661,8 +669,9 @@ describe('getApplyFormDefaults', () => {
       subscriptionId: null,
       billingName: '',
       billingEmail: null,
-      billingAddress: null,
+      billingAddress: '',
       billingPhone: null,
+      dueDate: '',
       notes: null,
     })
   })

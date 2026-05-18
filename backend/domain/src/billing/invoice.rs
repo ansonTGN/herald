@@ -167,7 +167,7 @@ impl InvoiceEventType {
 pub struct InvoiceSellerConfig {
     pub realm_id: String,
     pub seller_name: String,
-    pub seller_address: Option<String>,
+    pub seller_address: String,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
     pub seller_tax_id: String,
@@ -192,7 +192,7 @@ pub struct Invoice {
 
     // Dates
     pub issue_date: Option<chrono::NaiveDate>,
-    pub due_date: Option<chrono::NaiveDate>,
+    pub due_date: chrono::NaiveDate,
     pub issued_at: Option<DateTime<Utc>>,
     pub paid_at: Option<DateTime<Utc>>,
     pub voided_at: Option<DateTime<Utc>>,
@@ -214,14 +214,14 @@ pub struct Invoice {
 
     // Buyer
     pub billing_name: String,
-    pub billing_address: Option<String>,
+    pub billing_address: String,
     pub billing_email: Option<String>,
     pub billing_phone: Option<String>,
     pub billing_tax_id: String,
 
     // Seller snapshot
     pub seller_name: String,
-    pub seller_address: Option<String>,
+    pub seller_address: String,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
     pub seller_tax_id: String,
@@ -293,7 +293,7 @@ pub struct InvoiceSummary {
     pub currency: String,
     pub total: i64,
     pub billing_name: String,
-    pub due_date: Option<chrono::NaiveDate>,
+    pub due_date: chrono::NaiveDate,
     pub created_at: DateTime<Utc>,
 }
 
@@ -319,14 +319,14 @@ pub struct NewInvoice {
 
     // Buyer
     pub billing_name: String,
-    pub billing_address: Option<String>,
+    pub billing_address: String,
     pub billing_email: Option<String>,
     pub billing_phone: Option<String>,
     pub billing_tax_id: String,
 
     // Seller snapshot (caller should populate from seller config)
     pub seller_name: String,
-    pub seller_address: Option<String>,
+    pub seller_address: String,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
     pub seller_tax_id: String,
@@ -339,7 +339,7 @@ pub struct NewInvoice {
     pub shipping_mode: Option<AdjustmentMode>,
     pub shipping_value: Option<DecimalStr>,
 
-    pub due_date: Option<chrono::NaiveDate>,
+    pub due_date: chrono::NaiveDate,
     pub payment_terms: Option<String>,
     pub notes: Option<String>,
 }
@@ -399,6 +399,8 @@ pub struct InvoiceStatusTransition {
     pub actor_type: ActorType,
     /// Reason required for void transition.
     pub void_reason: Option<String>,
+    /// Issue date to set when transitioning to Issued. If None, repository defaults to today.
+    pub issue_date: Option<chrono::NaiveDate>,
 }
 
 /// Filters for listing invoices.

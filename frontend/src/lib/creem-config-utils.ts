@@ -1,6 +1,7 @@
 import type { RealmConfigResponse } from '@/lib/api-generated'
 import type { CreemConfigForm } from '@/lib/schemas/creem-config'
 import { PAYMENT_PROVIDERS } from '@/lib/billing-constants'
+import { parseProviderConfig, buildProviderConfigRequest } from '@/lib/provider-config-utils'
 
 export const CREEM_CONFIG_KEYS = {
   ENABLED: 'enabled',
@@ -9,64 +10,32 @@ export const CREEM_CONFIG_KEYS = {
   WEBHOOK_SECRET: 'webhook_secret',
 } as const
 
-export function parseCreemConfig(configs: RealmConfigResponse[]): CreemConfigForm {
-  const creemConfigs = configs.filter((c) => c.configType === PAYMENT_PROVIDERS.CREEM)
+const CREEM_KEY_MAPPINGS = [
+  { configKey: CREEM_CONFIG_KEYS.ENABLED, fieldName: 'enabled', transform: (v?: string) => v === 'true' },
+  { configKey: CREEM_CONFIG_KEYS.API_KEY, fieldName: 'apiKey', isSecret: true },
+  { configKey: CREEM_CONFIG_KEYS.TIMEOUT, fieldName: 'timeout', transform: (v?: string) => (v ? Number(v) : 30) },
+  { configKey: CREEM_CONFIG_KEYS.WEBHOOK_SECRET, fieldName: 'webhookSecret', isSecret: true },
+] as const
 
-  if (creemConfigs.length === 0) {
-    return {
+export function parseCreemConfig(configs: RealmConfigResponse[]): CreemConfigForm {
+  return parseProviderConfig<CreemConfigForm>(
+    configs,
+    PAYMENT_PROVIDERS.CREEM,
+    [...CREEM_KEY_MAPPINGS],
+    {
       enabled: false,
       apiKey: '',
       timeout: 30,
       webhookSecret: '',
     }
-  }
-
-  const getValue = (key: string): string | undefined =>
-    creemConfigs.find((c) => c.configKey === key)?.configValue
-
-  const enabledStr = getValue(CREEM_CONFIG_KEYS.ENABLED)
-  const timeoutStr = getValue(CREEM_CONFIG_KEYS.TIMEOUT)
-
-  return {
-    enabled: enabledStr === 'true',
-    apiKey: getValue(CREEM_CONFIG_KEYS.API_KEY) ?? '',
-    timeout: timeoutStr ? Number(timeoutStr) : 30,
-    webhookSecret: getValue(CREEM_CONFIG_KEYS.WEBHOOK_SECRET) ?? '',
-  }
+  )
 }
 
 export function buildCreemConfigRequest(config: CreemConfigForm) {
-  const items = [
-    {
-      configType: PAYMENT_PROVIDERS.CREEM,
-      configKey: CREEM_CONFIG_KEYS.ENABLED,
-      configValue: String(config.enabled),
-      isSecret: false,
-      enabled: config.enabled,
-    },
-    {
-      configType: PAYMENT_PROVIDERS.CREEM,
-      configKey: CREEM_CONFIG_KEYS.API_KEY,
-      configValue: config.apiKey,
-      isSecret: true,
-      enabled: config.enabled,
-    },
-    {
-      configType: PAYMENT_PROVIDERS.CREEM,
-      configKey: CREEM_CONFIG_KEYS.TIMEOUT,
-      configValue: String(config.timeout),
-      isSecret: false,
-      enabled: config.enabled,
-    },
-    {
-      configType: PAYMENT_PROVIDERS.CREEM,
-      configKey: CREEM_CONFIG_KEYS.WEBHOOK_SECRET,
-      configValue: config.webhookSecret || '',
-      isSecret: true,
-      enabled: config.enabled,
-    },
-  ]
-
-  // Skip empty secret values so the backend preserves existing secrets
-  return items.filter((item) => !(item.isSecret && !item.configValue))
+  return buildProviderConfigRequest(
+    config,
+    PAYMENT_PROVIDERS.CREEM,
+    [...CREEM_KEY_MAPPINGS],
+    config.enabled
+  )
 }

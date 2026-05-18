@@ -20,6 +20,8 @@ redis = { workspace = true }
 tower = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
+bcrypt = { workspace = true }
+chrono = { workspace = true }
 
 [dev-dependencies]
 test-context = { workspace = true }

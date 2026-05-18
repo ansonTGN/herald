@@ -34,6 +34,12 @@ import { execSync } from 'child_process'
 const REALM_ID = DEMO_ADMIN.realmId
 const POSTGRES_CONTAINER = 'cas-demo-postgres'
 
+function futureDueDate(): string {
+  const d = new Date()
+  d.setDate(d.getDate() + 30)
+  return d.toISOString().slice(0, 10)
+}
+
 function execPgSql(query: string): string {
   return execSync(
     `docker exec -i ${POSTGRES_CONTAINER} psql -U postgres -d herald_demo -t -A`,
@@ -225,6 +231,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('apply-billing-email-input').fill(billingEmail)
         await page.getByTestId('apply-billing-address-input').fill(billingAddress)
         await page.getByTestId('apply-billing-phone-input').fill('+1-555-0300')
+        await page.getByTestId('apply-due-date-input').fill(futureDueDate())
         await page.getByTestId('apply-notes-input').fill(`Test invoice application at ${testStartTime}`)
       })
 

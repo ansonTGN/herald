@@ -97,8 +97,8 @@ export default [
     },
   },
   // TanStack Table 的 useReactTable API 返回的函数无法被安全 memoize，这是库的已知限制
+  // 全局关闭，所有使用 useReactTable 的组件都会触发此 false positive
   {
-    files: ['src/components/billing/plan-table.tsx'],
     rules: {
       'react-hooks/incompatible-library': 'off',
     },

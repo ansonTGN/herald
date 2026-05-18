@@ -1,8 +1,8 @@
 import { toast } from 'sonner'
 import { useRouter } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { AUTH_QUERY_KEY } from '@/lib/auth-page-utils'
 
+const AUTH_QUERY_KEY = (realmId: string) => ['auth', realmId, 'status'] as const
 const REQUEST_TIMEOUT_MS = 30000
 
 export interface TotpData {

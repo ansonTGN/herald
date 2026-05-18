@@ -187,7 +187,7 @@ function ContactCard({
   title: string
   name: string
   email?: string | null
-  address?: string | null
+  address: string
   phone?: string | null
   taxId?: string | null
   dataTestId: string
@@ -198,7 +198,7 @@ function ContactCard({
       <div className="space-y-1 text-sm">
         <p className="font-medium">{name}</p>
         {email && <p className="text-muted-foreground">{email}</p>}
-        {address && <p className="text-muted-foreground">{address}</p>}
+        <p className="text-muted-foreground">{address}</p>
         {phone && <p className="text-muted-foreground">{phone}</p>}
         {taxId && <p className="text-muted-foreground">Tax ID: {taxId}</p>}
       </div>
@@ -250,9 +250,7 @@ function AdditionalInfo({ invoice }: { invoice: InvoiceDetailResponse }) {
       {invoice.issueDate && (
         <InfoField label="Issue Date">{format(new Date(invoice.issueDate), 'PPP')}</InfoField>
       )}
-      {invoice.dueDate && (
-        <InfoField label="Due Date">{format(new Date(invoice.dueDate), 'PPP')}</InfoField>
-      )}
+      <InfoField label="Due Date">{format(new Date(invoice.dueDate), 'PPP')}</InfoField>
       {invoice.paymentTerms && <InfoField label="Payment Terms">{invoice.paymentTerms}</InfoField>}
       {invoice.notes && <InfoField label="Additional Information">{invoice.notes}</InfoField>}
     </div>

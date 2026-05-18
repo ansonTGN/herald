@@ -105,7 +105,7 @@ describe('InvoiceUserPage', () => {
       status: 'void',
       total: 3000,
       currency: 'CNY',
-      dueDate: null,
+      dueDate: '2025-01-15T00:00:00Z',
       createdAt: '2025-01-01T00:00:00Z',
     }),
   ]
@@ -333,6 +333,14 @@ describe('InvoiceUserPage', () => {
       const billingEmailInput = screen.getByTestId('apply-billing-email-input')
       await user.type(billingEmailInput, 'john@example.com')
 
+      // Fill billing address (required)
+      const billingAddressInput = screen.getByTestId('apply-billing-address-input')
+      await user.type(billingAddressInput, '123 Billing St')
+
+      // Fill due date (required)
+      const dueDateInput = screen.getByTestId('apply-due-date-input')
+      await user.type(dueDateInput, '2025-08-01')
+
       // Submit
       const submitButton = screen.getByTestId('apply-invoice-submit-button')
       await user.click(submitButton)
@@ -346,6 +354,8 @@ describe('InvoiceUserPage', () => {
         paymentAttemptId: 'pay-abc-123',
         billingName: 'John Doe',
         billingEmail: 'john@example.com',
+        billingAddress: '123 Billing St',
+        dueDate: '2025-08-01',
         currency: 'CNY',
       })
     })

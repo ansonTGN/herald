@@ -28,9 +28,7 @@ export interface ExtendedStatusResponse extends StatusResponse {
  * @returns The authentication status
  */
 export async function fetchAuthStatus(realmId: string): Promise<StatusResponse> {
-  console.log('[fetchAuthStatus] Checking auth status for realm:', realmId)
   const { data, error } = await status({ path: { realmId } })
-  console.log('[fetchAuthStatus] Response:', { data, error })
   if (error) throw error
   return data
 }
@@ -41,9 +39,7 @@ export async function fetchAuthStatus(realmId: string): Promise<StatusResponse> 
  * @returns Object containing permissions and roles arrays
  */
 export async function fetchUserPermissions(): Promise<{ permissions: string[]; roles: string[] }> {
-  console.log('[fetchUserPermissions] Fetching user roles and permissions')
   const { data, error } = await getUserRoles()
-  console.log('[fetchUserPermissions] Response:', { data, error })
   if (error || !data) {
     return { permissions: [], roles: [] }
   }
@@ -101,8 +97,8 @@ export async function performLogout(realmId: string): Promise<void> {
 }
 
 /**
- * Fetch auth data sequentially based on authentication status
- * First checks auth status, then conditionally fetches user data
+ * Fetch auth data based on authentication status.
+ * First checks auth status, then conditionally fetches user data in parallel.
  *
  * @param realmId - The realm ID to fetch auth data for
  * @returns Object containing auth status, user permissions, and profile
@@ -112,28 +108,16 @@ export async function fetchAuthData(realmId: string): Promise<{
   userPermissions: { permissions: string[]; roles: string[] }
   userProfile: UserProfile | null
 }> {
-  console.log('[fetchAuthData] Starting to fetch auth data for realm:', realmId)
-
   // First, check authentication status
   const authStatus = await fetchAuthStatus(realmId)
 
-  console.log('[fetchAuthData] Auth status:', {
-    authenticated: authStatus.authenticated,
-    realmId: authStatus.realmId,
-  })
-
-  // Only fetch user data if authenticated
-  const userPermissions = authStatus.authenticated
-    ? await fetchUserPermissions()
-    : { permissions: [], roles: [] }
-
-  const userProfile = authStatus.authenticated ? await fetchUserProfile().catch(() => null) : null
-
-  console.log('[fetchAuthData] Final result:', {
-    authenticated: authStatus.authenticated,
-    permissions: userPermissions.permissions,
-    hasProfile: !!userProfile,
-  })
+  // Fetch user data in parallel since they have no dependency on each other
+  const [userPermissions, userProfile] = authStatus.authenticated
+    ? await Promise.all([
+        fetchUserPermissions(),
+        fetchUserProfile().catch(() => null),
+      ])
+    : [{ permissions: [], roles: [] }, null]
 
   return {
     authStatus,

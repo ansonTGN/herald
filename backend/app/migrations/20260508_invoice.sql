@@ -11,7 +11,7 @@
 CREATE TABLE invoice_seller_config (
     realm_id TEXT PRIMARY KEY REFERENCES realm(id) ON DELETE CASCADE,
     seller_name TEXT NOT NULL,
-    seller_address TEXT,
+    seller_address TEXT NOT NULL CHECK (BTRIM(seller_address) <> ''),
     seller_email TEXT,
     seller_phone TEXT,
     seller_tax_id TEXT NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE invoice (
 
     -- Dates
     issue_date DATE,
-    due_date DATE,
+    due_date DATE NOT NULL,
     issued_at TIMESTAMPTZ,
     paid_at TIMESTAMPTZ,
     voided_at TIMESTAMPTZ,
@@ -63,14 +63,14 @@ CREATE TABLE invoice (
 
     -- Buyer info
     billing_name TEXT NOT NULL,
-    billing_address TEXT,
+    billing_address TEXT NOT NULL CHECK (BTRIM(billing_address) <> ''),
     billing_email TEXT,
     billing_phone TEXT,
     billing_tax_id TEXT NOT NULL,
 
     -- Seller info (snapshot at creation time)
     seller_name TEXT NOT NULL,
-    seller_address TEXT,
+    seller_address TEXT NOT NULL CHECK (BTRIM(seller_address) <> ''),
     seller_email TEXT,
     seller_phone TEXT,
     seller_tax_id TEXT NOT NULL,

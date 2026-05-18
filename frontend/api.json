@@ -13170,14 +13170,13 @@
         "type": "object",
         "required": [
           "currency",
-          "billingName"
+          "billingName",
+          "billingAddress",
+          "dueDate"
         ],
         "properties": {
           "billingAddress": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "billingEmail": {
             "type": [
@@ -13198,10 +13197,7 @@
             "type": "string"
           },
           "dueDate": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date"
           },
           "notes": {
@@ -13967,9 +13963,12 @@
           "currency",
           "lineItems",
           "billingName",
+          "billingAddress",
           "billingTaxId",
           "sellerName",
-          "sellerTaxId"
+          "sellerAddress",
+          "sellerTaxId",
+          "dueDate"
         ],
         "properties": {
           "accountId": {
@@ -13984,10 +13983,7 @@
             "format": "uuid"
           },
           "billingAddress": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "billingEmail": {
             "type": [
@@ -14023,10 +14019,7 @@
             ]
           },
           "dueDate": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date"
           },
           "lineItems": {
@@ -14055,10 +14048,7 @@
             ]
           },
           "sellerAddress": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "sellerEmail": {
             "type": [
@@ -15143,14 +15133,17 @@
           "accountId",
           "status",
           "currency",
+          "dueDate",
           "subtotal",
           "discountAmount",
           "taxAmount",
           "shippingAmount",
           "total",
           "billingName",
+          "billingAddress",
           "billingTaxId",
           "sellerName",
+          "sellerAddress",
           "sellerTaxId",
           "lineItems",
           "history",
@@ -15170,10 +15163,7 @@
             "format": "uuid"
           },
           "billingAddress": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "billingEmail": {
             "type": [
@@ -15216,10 +15206,7 @@
             ]
           },
           "dueDate": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date"
           },
           "history": {
@@ -15283,10 +15270,7 @@
             "type": "string"
           },
           "sellerAddress": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "sellerEmail": {
             "type": [
@@ -15556,6 +15540,7 @@
           "currency",
           "total",
           "billingName",
+          "dueDate",
           "createdAt"
         ],
         "properties": {
@@ -15573,10 +15558,7 @@
             "type": "string"
           },
           "dueDate": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date"
           },
           "id": {
@@ -17900,6 +17882,7 @@
         "type": "object",
         "required": [
           "sellerName",
+          "sellerAddress",
           "sellerTaxId"
         ],
         "properties": {
@@ -17910,10 +17893,7 @@
             ]
           },
           "sellerAddress": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "sellerEmail": {
             "type": [
@@ -17939,6 +17919,7 @@
         "type": "object",
         "required": [
           "sellerName",
+          "sellerAddress",
           "sellerTaxId",
           "createdAt",
           "updatedAt"
@@ -17954,10 +17935,7 @@
             ]
           },
           "sellerAddress": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "sellerEmail": {
             "type": [

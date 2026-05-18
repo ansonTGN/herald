@@ -17,13 +17,13 @@ pub fn render_invoice_html(detail: &InvoiceDetail) -> String {
     let currency = html_escape(&inv.currency);
 
     let billing_name = html_escape(&inv.billing_name);
-    let billing_address = opt_div(&inv.billing_address);
+    let billing_address = format!("<div>{}</div>", html_escape(&inv.billing_address));
     let billing_email = opt_div(&inv.billing_email);
     let billing_phone = opt_div(&inv.billing_phone);
     let billing_tax_id = non_empty_div(&inv.billing_tax_id);
 
     let seller_name = html_escape(&inv.seller_name);
-    let seller_address = opt_div(&inv.seller_address);
+    let seller_address = format!("<div>{}</div>", html_escape(&inv.seller_address));
     let seller_email = opt_div(&inv.seller_email);
     let seller_phone = opt_div(&inv.seller_phone);
     let seller_tax_id = non_empty_div(&inv.seller_tax_id);
@@ -31,9 +31,7 @@ pub fn render_invoice_html(detail: &InvoiceDetail) -> String {
     let issue_date = inv
         .issue_date
         .map_or(String::new(), |d| html_escape(&d.to_string()));
-    let due_date = inv
-        .due_date
-        .map_or(String::new(), |d| html_escape(&d.to_string()));
+    let due_date = html_escape(&inv.due_date.to_string());
     let payment_terms = inv
         .payment_terms
         .as_deref()

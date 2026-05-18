@@ -33,7 +33,6 @@ export function DataTable<TData, TValue>({
   onRowClick,
   'data-testid': dataTestId,
 }: DataTableProps<TData, TValue>) {
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table's useReactTable is intentionally used here
   const table = useReactTable({
     data,
     columns,

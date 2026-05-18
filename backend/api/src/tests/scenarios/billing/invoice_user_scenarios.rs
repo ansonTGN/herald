@@ -16,9 +16,13 @@ mod tests {
     use crate::tests::schema_test_context::SchemaTestContext;
     use axum::{
         body::Body,
+        extract::{Extension, Path, State},
         http::{Request, StatusCode},
+        response::IntoResponse,
     };
-    use chrono::Datelike;
+    use chrono::{Datelike, Utc};
+    use herald_api_billing::invoice_handlers::{download_my_invoice_pdf, get_my_invoice};
+    use herald_core::domain::{authentication::Identity, client_api_keys::entities::ClientApiKey};
     use serde_json::json;
     use test_context::test_context;
     use tower::ServiceExt;
@@ -40,6 +44,21 @@ mod tests {
         let user_id = Uuid::parse_str(&user_id_str).expect("Invalid user_id format");
         // Do NOT grant realm-admin role -- this is a regular user.
         (token, user_id)
+    }
+
+    fn third_party_identity_in_realm(realm_id: &str) -> Identity {
+        Identity::ThirdParty(ClientApiKey {
+            id: Uuid::now_v7().to_string(),
+            name: "Test API Key".to_string(),
+            api_key_hash: "sha256:test".to_string(),
+            realm_id: realm_id.to_string(),
+            client_app_id: None,
+            enabled: true,
+            expires_at: None,
+            created_at: Utc::now(),
+            last_used_at: None,
+            usage_count: 0,
+        })
     }
 
     /// Helper: set up seller config for a realm via admin API.
@@ -549,6 +568,80 @@ mod tests {
         let history = detail["history"].as_array().unwrap();
         let has_created = history.iter().any(|h| h["eventType"] == "created");
         assert!(has_created, "Expected 'created' event in history");
+    }
+
+    // -------------------------------------------------------------------------
+    // test_my_invoice_detail_rejects_non_user_identity -- handler contract
+    // -------------------------------------------------------------------------
+    // Given: A non-user identity in the same realm
+    // When: The my invoice detail handler is called
+    // Then: It rejects before relying on ownership mismatch
+
+    #[test_context(InvoiceTestContext)]
+    #[tokio::test]
+    async fn test_my_invoice_detail_rejects_non_user_identity(ctx: &mut InvoiceTestContext) {
+        let realm_id = ctx._realm_id.clone();
+        let identity = third_party_identity_in_realm(&realm_id);
+
+        let err = match get_my_invoice(
+            State((*ctx.app_state).clone()),
+            Extension(identity),
+            Path((realm_id, Uuid::now_v7())),
+        )
+        .await
+        {
+            Ok(_) => panic!("Expected non-user identity to be rejected"),
+            Err(err) => err,
+        };
+
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = parse_body(response.into_body()).await;
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap()
+                .contains("authenticated user session required"),
+            "Expected authenticated user session error, got: {}",
+            body
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // test_my_invoice_pdf_rejects_non_user_identity -- handler contract
+    // -------------------------------------------------------------------------
+    // Given: A non-user identity in the same realm
+    // When: The my invoice PDF handler is called
+    // Then: It rejects before relying on ownership mismatch
+
+    #[test_context(InvoiceTestContext)]
+    #[tokio::test]
+    async fn test_my_invoice_pdf_rejects_non_user_identity(ctx: &mut InvoiceTestContext) {
+        let realm_id = ctx._realm_id.clone();
+        let identity = third_party_identity_in_realm(&realm_id);
+
+        let err = match download_my_invoice_pdf(
+            State((*ctx.app_state).clone()),
+            Extension(identity),
+            Path((realm_id, Uuid::now_v7())),
+        )
+        .await
+        {
+            Ok(_) => panic!("Expected non-user identity to be rejected"),
+            Err(err) => err,
+        };
+
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = parse_body(response.into_body()).await;
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap()
+                .contains("authenticated user session required"),
+            "Expected authenticated user session error, got: {}",
+            body
+        );
     }
     // -------------------------------------------------------------------------
     // test_regular_user_cannot_use_admin_endpoints -- admin endpoints return 403

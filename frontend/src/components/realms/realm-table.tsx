@@ -134,7 +134,6 @@ function createRealmColumns(
 export function RealmTable({ data, isLoading, error, onViewDetail }: RealmTableProps) {
   const columns = createRealmColumns(onViewDetail)
 
-  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: data ?? [],
     columns,

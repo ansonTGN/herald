@@ -26,9 +26,11 @@ export interface InvoiceCreateData {
   accountId: string
   billingName: string
   billingEmail?: string
+  billingAddress?: string
   billingTaxId?: string
   sellerName: string
   sellerEmail?: string
+  sellerAddress?: string
   sellerTaxId?: string
   lineItems: InvoiceLineItemData[]
   dueDate: string           // ISO date string, e.g. '2026-12-31'
@@ -93,6 +95,7 @@ export async function createInvoice(
   if (data.billingEmail) {
     await page.getByTestId('invoice-billing-email').fill(data.billingEmail)
   }
+  await page.getByTestId('invoice-billing-address').fill(data.billingAddress ?? '123 Billing St')
   await page.getByTestId('invoice-billing-tax-id').fill(data.billingTaxId ?? 'N/A')
 
   // Seller info
@@ -100,6 +103,7 @@ export async function createInvoice(
   if (data.sellerEmail) {
     await page.getByTestId('invoice-seller-email').fill(data.sellerEmail)
   }
+  await page.getByTestId('invoice-seller-address').fill(data.sellerAddress ?? '456 Seller Ave')
   await page.getByTestId('invoice-seller-tax-id').fill(data.sellerTaxId ?? 'N/A')
 
   // Fill the first line item (always present with default values)

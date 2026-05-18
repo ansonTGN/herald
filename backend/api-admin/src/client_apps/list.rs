@@ -4,9 +4,9 @@ use axum::{
 };
 use herald_core::domain::authentication::Identity;
 
-use crate::application::http::client_apps::types::{ClientAppItem, ListQuery};
-use crate::application::http::server::api_entities::{ApiError, ApiResult, PageResponse};
-use crate::application::http::state::AppState;
+use crate::client_apps::types::{ClientAppItem, ListQuery};
+use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult, PageResponse};
+use herald_api_base::application::http::state::AppState;
 use herald_core::domain::client::ports::ClientService;
 
 /// List all client apps for a realm
@@ -25,8 +25,8 @@ use herald_core::domain::client::ports::ClientService;
     ),
     responses(
         (status = 200, description = "ClientApp list", body = PageResponse<ClientAppItem>),
-        (status = 403, description = "Forbidden - Insufficient permissions (requires clients.view)", body = crate::application::http::server::api_entities::ErrorResponse),
-        (status = 500, description = "Internal server error", body = crate::application::http::server::api_entities::ErrorResponse)
+        (status = 403, description = "Forbidden - Insufficient permissions (requires clients.view)", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 500, description = "Internal server error", body = herald_api_base::application::http::server::api_entities::ErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]

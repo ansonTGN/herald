@@ -180,6 +180,7 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
                   name="billingAddress"
                   label="Address"
                   placeholder="Billing address"
+                  required
                   dataTestId="invoice-billing-address"
                 />
                 <InvoiceTextField
@@ -221,6 +222,7 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
                   name="sellerAddress"
                   label="Address"
                   placeholder="Seller address"
+                  required
                   dataTestId="invoice-seller-address"
                 />
                 <InvoiceTextField
@@ -402,12 +404,12 @@ function getEditDefaults(invoice: InvoiceDetailResponse): InvoiceEditFormData {
   return {
     billingName: invoice.billingName,
     billingEmail: invoice.billingEmail ?? null,
-    billingAddress: invoice.billingAddress ?? null,
+    billingAddress: invoice.billingAddress,
     billingPhone: invoice.billingPhone ?? null,
     billingTaxId: invoice.billingTaxId,
     sellerName: invoice.sellerName,
     sellerEmail: invoice.sellerEmail ?? null,
-    sellerAddress: invoice.sellerAddress ?? null,
+    sellerAddress: invoice.sellerAddress,
     sellerPhone: invoice.sellerPhone ?? null,
     sellerTaxId: invoice.sellerTaxId,
     lineItems: invoice.lineItems.map((item) => ({
@@ -422,7 +424,7 @@ function getEditDefaults(invoice: InvoiceDetailResponse): InvoiceEditFormData {
     taxValue: invoice.taxValue ?? null,
     shippingMode: (invoice.shippingMode as 'fixed' | null) ?? null,
     shippingValue: invoice.shippingValue ?? null,
-    dueDate: invoice.dueDate ?? '',
+    dueDate: invoice.dueDate,
     paymentTerms: invoice.paymentTerms ?? null,
     notes: invoice.notes ?? null,
   }

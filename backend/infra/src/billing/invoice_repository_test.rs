@@ -154,12 +154,12 @@ fn new_invoice(realm_id: &str, line_items: Vec<NewLineItem>) -> NewInvoice {
         line_items,
         actor_user_id: None,
         billing_name: "Test Buyer".to_string(),
-        billing_address: Some("123 Main St".to_string()),
+        billing_address: "123 Main St".to_string(),
         billing_email: Some("buyer@example.com".to_string()),
         billing_phone: None,
         billing_tax_id: String::new(),
         seller_name: "Test Seller".to_string(),
-        seller_address: Some("456 Corp Ave".to_string()),
+        seller_address: "456 Corp Ave".to_string(),
         seller_email: Some("seller@example.com".to_string()),
         seller_phone: None,
         seller_tax_id: String::new(),
@@ -169,7 +169,7 @@ fn new_invoice(realm_id: &str, line_items: Vec<NewLineItem>) -> NewInvoice {
         tax_value: None,
         shipping_mode: None,
         shipping_value: None,
-        due_date: None,
+        due_date: (Utc::now() + chrono::Duration::days(30)).date_naive(),
         payment_terms: None,
         notes: None,
     }
@@ -404,7 +404,7 @@ invoice_repo_test!(test_list_overdue_candidates, |repo| {
 
     // Create and issue an invoice with a past due_date
     let mut input = new_invoice(realm, vec![line_item("Overdue Item", "1", 1000)]);
-    input.due_date = Some(past_date);
+    input.due_date = past_date;
     let created = repo.create_invoice(input).await.unwrap();
 
     repo.transition_status(InvoiceStatusTransition {
@@ -414,6 +414,7 @@ invoice_repo_test!(test_list_overdue_candidates, |repo| {
         actor_user_id: None,
         actor_type: ActorType::User,
         void_reason: None,
+        issue_date: None,
     })
     .await
     .unwrap();
@@ -435,12 +436,12 @@ invoice_repo_test!(test_excludes_non_issued_status, |repo| {
 
     // Create a draft invoice with past due_date -- should NOT be in overdue candidates
     let mut input = new_invoice(realm, vec![line_item("Draft Item", "1", 1000)]);
-    input.due_date = Some(past_date);
+    input.due_date = past_date;
     let draft_inv = repo.create_invoice(input).await.unwrap();
 
     // Create and issue, then pay an invoice with past due_date -- should NOT be in overdue candidates
     let mut input2 = new_invoice(realm, vec![line_item("Paid Item", "1", 2000)]);
-    input2.due_date = Some(past_date);
+    input2.due_date = past_date;
     let paid_inv = repo.create_invoice(input2).await.unwrap();
     repo.transition_status(InvoiceStatusTransition {
         realm_id: realm.to_string(),
@@ -449,6 +450,7 @@ invoice_repo_test!(test_excludes_non_issued_status, |repo| {
         actor_user_id: None,
         actor_type: ActorType::User,
         void_reason: None,
+        issue_date: None,
     })
     .await
     .unwrap();
@@ -459,6 +461,7 @@ invoice_repo_test!(test_excludes_non_issued_status, |repo| {
         actor_user_id: None,
         actor_type: ActorType::User,
         void_reason: None,
+        issue_date: None,
     })
     .await
     .unwrap();
@@ -496,6 +499,7 @@ invoice_repo_test!(test_transition_records_history, |repo| {
             actor_user_id: Some(actor_user_id),
             actor_type: ActorType::User,
             void_reason: None,
+            issue_date: None,
         })
         .await
         .unwrap();
@@ -551,6 +555,7 @@ invoice_repo_test!(test_transition_updates_timestamps, |repo| {
             actor_user_id: None,
             actor_type: ActorType::User,
             void_reason: None,
+            issue_date: None,
         })
         .await
         .unwrap();
@@ -576,6 +581,7 @@ invoice_repo_test!(test_transition_updates_timestamps, |repo| {
             actor_user_id: None,
             actor_type: ActorType::User,
             void_reason: None,
+            issue_date: None,
         })
         .await
         .unwrap();
@@ -606,6 +612,7 @@ invoice_repo_test!(test_transition_void_sets_reason, |repo| {
             actor_user_id: None,
             actor_type: ActorType::User,
             void_reason: Some("Customer cancelled".to_string()),
+            issue_date: None,
         })
         .await
         .unwrap();

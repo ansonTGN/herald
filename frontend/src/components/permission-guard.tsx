@@ -10,14 +10,14 @@ interface PermissionGuardProps {
 }
 
 export function PermissionGuard({
-  realmId: realmIdProp,
+  realmId: _realmId,
   permission,
   fallback = null,
   children,
 }: PermissionGuardProps) {
-  // realmId is no longer used by usePermission, kept for backward compatibility
-  const storeRealmId = useRealmId()
-  void (realmIdProp ?? storeRealmId)
+  // realmId prop and useRealmId are kept for backward compatibility but unused
+  void _realmId
+  void useRealmId()
   const { hasPermission } = usePermission()
 
   if (!permission || hasPermission(permission)) {

@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { ArrowUpRight, ArrowDownRight, Clock, ExternalLink } from 'lucide-react'
 import type { PointsTransactionResponse } from '@/lib/api-generated'
 import type { TransactionFilters } from '@/lib/schemas/points-forms'
+import { useActiveFilters } from '@/hooks/use-active-filters'
 
 interface TransactionHistoryTableProps {
   transactions: PointsTransactionResponse[]
@@ -34,15 +35,7 @@ export function TransactionHistoryTable({
     return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`
   }, [])
 
-  // Memoized filter check to avoid computing on every render
-  const hasActiveFilters = useMemo(
-    () =>
-      !!filters.transactionType ||
-      !!filters.startTime ||
-      !!filters.endTime ||
-      !!filters.clientAppId,
-    [filters]
-  )
+  const hasActiveFilters = useActiveFilters(filters)
 
   // Memoized client app map for O(1) lookup
   const clientAppsMap = useMemo(
@@ -177,7 +170,6 @@ export function TransactionHistoryTable({
     [admin, clientAppsMap, formatDate]
   )
 
-  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: transactions,
     columns,

@@ -9,6 +9,7 @@ pub mod registration_status;
 pub mod reset_password;
 pub mod status;
 pub mod turnstile_status;
+pub mod user_totp;
 pub mod verify_email;
 pub mod verify_totp;
 
@@ -43,6 +44,11 @@ pub use reset_password::__path_confirm as __path_reset_password_confirm;
 pub use reset_password::__path_request as __path_reset_password_request;
 pub use status::__path_status;
 pub use turnstile_status::__path_get_turnstile_status;
+pub use user_totp::__path_handle_disable_totp;
+pub use user_totp::__path_handle_enable_totp;
+pub use user_totp::__path_handle_get_totp_status;
+pub use user_totp::__path_handle_regenerate_totp;
+pub use user_totp::__path_handle_verify_totp_setup;
 pub use verify_email::__path_confirm as __path_verify_email_confirm;
 pub use verify_email::__path_trigger as __path_verify_email_trigger;
 pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
@@ -63,6 +69,11 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
         crate::change_email::request,
         crate::change_email::confirm,
         crate::verify_totp::handle_verify_totp,
+        crate::user_totp::handle_enable_totp,
+        crate::user_totp::handle_verify_totp_setup,
+        crate::user_totp::handle_disable_totp,
+        crate::user_totp::handle_regenerate_totp,
+        crate::user_totp::handle_get_totp_status,
     ),
     components(schemas(
         crate::login::LoginRequestPayload,
@@ -81,6 +92,16 @@ pub use verify_totp::__path_handle_verify_totp as __path_verify_totp;
         crate::change_email::ChangeEmailResponse,
         crate::verify_totp::VerifyTotpRequest,
         crate::verify_totp::VerifyTotpResponse,
+        crate::user_totp::EnableTotpRequest,
+        crate::user_totp::EnableTotpResponse,
+        crate::user_totp::VerifyTotpSetupRequest,
+        crate::user_totp::VerifyTotpSetupResponse,
+        crate::user_totp::DisableTotpRequest,
+        crate::user_totp::DisableTotpResponse,
+        crate::user_totp::RegenerateTotpRequest,
+        crate::user_totp::RegenerateTotpResponse,
+        crate::user_totp::TotpStatusResponse,
+        crate::user_totp::BackupCodeStatsResponse,
     ))
 )]
 pub struct ApiDoc;
