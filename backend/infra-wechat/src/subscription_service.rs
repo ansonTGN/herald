@@ -49,7 +49,7 @@ impl WechatSubscriptionService {
         let plan_row = sqlx::query(
             r#"
             SELECT id, type, price
-            FROM plan WHERE id = $1
+            FROM subscription_plan WHERE id = $1
             "#,
         )
         .bind(plan_id)

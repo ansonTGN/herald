@@ -10,6 +10,7 @@ use sqlx::Row;
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::payment_email::formal_payment_email;
 use crate::types::{
     CancelSubscriptionRequest,
     CancelSubscriptionResponse,
@@ -1424,6 +1425,12 @@ pub async fn create_checkout_session(
     }
 
     let product_id = provider_mapping.external_product_id;
+    let user_email = formal_payment_email(&identity);
+    if matches!(payment_provider.as_str(), "stripe" | "creem") && user_email.is_none() {
+        return Err(ApiError::bad_request(
+            "A formal user email is required for this payment provider",
+        ));
+    }
 
     // Route to appropriate payment provider based on request parameter
     let checkout_url = match payment_provider.as_str() {
@@ -1439,6 +1446,7 @@ pub async fn create_checkout_session(
                 client_app_id,
                 plan_id: plan.id,
                 user_id: Uuid::parse_str(&identity.user_id()).ok(),
+                customer_email: user_email.clone(),
                 success_url: format!("{}/billing/success", state.public_base_url),
                 cancel_url: format!("{}/billing/cancel", state.public_base_url),
                 billing_period: request.billing_period.clone(),
@@ -1477,9 +1485,10 @@ pub async fn create_checkout_session(
             // Create Creem checkout request
             let creem_request = CreemCreateCheckoutRequest {
                 product_id,
-                success_url: format!("{}/billing/success", state.public_base_url),
-                cancel_url: format!("{}/billing/cancel", state.public_base_url),
-                customer_email: format!("client-app-{}@{}", client_app_id, realm_id),
+                success_url: Some(format!("{}/billing/success", state.public_base_url)),
+                customer: herald_core::infrastructure::creem::CreemCheckoutCustomer {
+                    email: user_email.clone(),
+                },
                 metadata: {
                     let mut map = std::collections::HashMap::new();
                     map.insert("realmId".to_string(), realm_id.clone());
@@ -1489,10 +1498,6 @@ pub async fn create_checkout_session(
                     map.insert("billing_period".to_string(), request.billing_period.clone());
                     Some(map)
                 },
-                webhook_url: Some(format!(
-                    "{}/api/third/pay/{}/creem/webhooks",
-                    state.public_base_url, realm_id
-                )),
             };
 
             let session = creem_client
@@ -1503,7 +1508,7 @@ pub async fn create_checkout_session(
                     ApiError::internal(format!("Failed to create checkout session: {}", e))
                 })?;
 
-            session.url
+            session.checkout_url
         }
         provider => {
             tracing::error!("Unsupported payment provider: {}", provider);

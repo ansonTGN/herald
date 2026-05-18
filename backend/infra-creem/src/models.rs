@@ -4,21 +4,24 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize)]
 pub struct CreateCheckoutRequest {
     pub product_id: String,
-    pub success_url: String,
-    pub cancel_url: String,
-    pub customer_email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub success_url: Option<String>,
+    pub customer: CreemCheckoutCustomer,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<std::collections::HashMap<String, String>>,
-    /// Webhook URL (optional, for realm-specific webhooks)
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CreemCheckoutCustomer {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub webhook_url: Option<String>,
+    pub email: Option<String>,
 }
 
 /// Response from Creem checkout session creation
 #[derive(Debug, Clone, Deserialize)]
 pub struct CheckoutSession {
     pub id: String,
-    pub url: String,
+    pub checkout_url: String,
     pub status: String,
 }
 

@@ -239,7 +239,7 @@ pub async fn create_third_party_test_subscription(
         // 创建 Plan 记录 (使用新 schema)
         let plan_id = Uuid::now_v7();
         sqlx::query(
-            "INSERT INTO plan (id, realm_id, name, description, title, type, price, currency, active, trial_days, sort_order, product_id, created_at, updated_at)
+            "INSERT INTO subscription_plan (id, realm_id, name, description, title, type, price, currency, active, trial_days, sort_order, product_id, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5, 'monthly', $6, 'USD', true, 0, 0, $7, NOW(), NOW())",
         )
         .bind(plan_id)

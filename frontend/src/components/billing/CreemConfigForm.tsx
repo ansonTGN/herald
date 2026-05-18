@@ -20,11 +20,7 @@ interface CreemConfigFormPageProps {
   initialValues?: Partial<CreemConfigFormValues>
 }
 
-export function CreemConfigFormPage({
-  realmId,
-  mode,
-  initialValues,
-}: CreemConfigFormPageProps) {
+export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfigFormPageProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isEditing = mode === 'edit'
@@ -54,7 +50,9 @@ export function CreemConfigFormPage({
     },
     onSuccess: async () => {
       toast.success(
-        isEditing ? 'Creem configuration updated successfully' : 'Creem configuration created successfully'
+        isEditing
+          ? 'Creem configuration updated successfully'
+          : 'Creem configuration created successfully'
       )
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] }),
@@ -109,7 +107,11 @@ export function CreemConfigFormPage({
               label="API Key"
               dataTestId="page-creem-api-key-input"
               placeholder="ck_test_..."
-              helpText={<>Starts with <code>ck_test_</code> or <code>ck_live_</code></>}
+              helpText={
+                <>
+                  Starts with <code>ck_test_</code> or <code>ck_live_</code>
+                </>
+              }
               required
             />
 
@@ -129,7 +131,11 @@ export function CreemConfigFormPage({
               label="Webhook Secret"
               dataTestId="page-creem-webhook-secret-input"
               placeholder="whsec_..."
-              helpText={<>Optional. Starts with <code>whsec_</code></>}
+              helpText={
+                <>
+                  Optional. Starts with <code>whsec_</code>
+                </>
+              }
             />
           </div>
         </AppForm>

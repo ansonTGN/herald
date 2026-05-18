@@ -241,11 +241,7 @@ interface StripeConfigFormPageProps {
   initialValues?: Partial<StripeConfigFormValues>
 }
 
-export function StripeConfigFormPage({
-  realmId,
-  mode,
-  initialValues,
-}: StripeConfigFormPageProps) {
+export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeConfigFormPageProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isEditing = mode === 'edit'
@@ -275,7 +271,9 @@ export function StripeConfigFormPage({
     },
     onSuccess: async () => {
       toast.success(
-        isEditing ? 'Stripe configuration updated successfully' : 'Stripe configuration created successfully'
+        isEditing
+          ? 'Stripe configuration updated successfully'
+          : 'Stripe configuration created successfully'
       )
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] }),
@@ -330,7 +328,11 @@ export function StripeConfigFormPage({
               label="Publishable Key"
               dataTestId="page-stripe-publishable-key-input"
               placeholder="pk_test_..."
-              helpText={<>Starts with <code>pk_</code>. Found in Stripe Dashboard → Developers → API keys</>}
+              helpText={
+                <>
+                  Starts with <code>pk_</code>. Found in Stripe Dashboard → Developers → API keys
+                </>
+              }
               required
             />
 
@@ -340,7 +342,11 @@ export function StripeConfigFormPage({
               label="Secret Key"
               dataTestId="page-stripe-secret-key-input"
               placeholder="sk_test_..."
-              helpText={<>Starts with <code>sk_</code>. Found in Stripe Dashboard → Developers → API keys</>}
+              helpText={
+                <>
+                  Starts with <code>sk_</code>. Found in Stripe Dashboard → Developers → API keys
+                </>
+              }
               required
             />
 
@@ -350,7 +356,12 @@ export function StripeConfigFormPage({
               label="Webhook Secret"
               dataTestId="page-stripe-webhook-secret-input"
               placeholder="whsec_..."
-              helpText={<>Optional. Starts with <code>whsec_</code>. Configure in Stripe Dashboard → Developers → Webhooks</>}
+              helpText={
+                <>
+                  Optional. Starts with <code>whsec_</code>. Configure in Stripe Dashboard →
+                  Developers → Webhooks
+                </>
+              }
             />
           </div>
         </AppForm>

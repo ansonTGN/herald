@@ -11,7 +11,7 @@ import { useAuthStore } from '@/stores/auth-store'
 let currentPath = '/admin/manage/billing?page=0&pageSize=20&status=all'
 
 vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => ({ data: { id: 'admin', name: 'Admin Realm' } }),
+  useQuery: () => ({ data: { id: 'admin', name: 'Admin' } }),
 }))
 
 vi.mock('@/data/query-options', () => ({

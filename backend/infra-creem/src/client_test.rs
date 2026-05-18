@@ -33,10 +33,10 @@ async fn test_unit_create_checkout_session_success() {
     let client = create_test_client(&mock_server);
 
     Mock::given(method("POST"))
-        .and(path("/v1/checkout"))
+        .and(path("/v1/checkouts"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "chk_test123",
-            "url": "https://checkout.test.creem.io/abc123",
+            "checkout_url": "https://checkout.test.creem.io/abc123",
             "status": "pending"
         })))
         .mount(&mock_server)
@@ -44,11 +44,11 @@ async fn test_unit_create_checkout_session_success() {
 
     let request = CreateCheckoutRequest {
         product_id: "prod_starter_monthly".to_string(),
-        success_url: "https://example.com/success".to_string(),
-        cancel_url: "https://example.com/cancel".to_string(),
-        customer_email: "test@example.com".to_string(),
+        success_url: Some("https://example.com/success".to_string()),
+        customer: crate::models::CreemCheckoutCustomer {
+            email: Some("test@example.com".to_string()),
+        },
         metadata: None,
-        webhook_url: None,
     };
 
     // Act
@@ -58,7 +58,10 @@ async fn test_unit_create_checkout_session_success() {
     assert!(result.is_ok());
     let session = result.unwrap();
     assert_eq!(session.id, "chk_test123");
-    assert_eq!(session.url, "https://checkout.test.creem.io/abc123");
+    assert_eq!(
+        session.checkout_url,
+        "https://checkout.test.creem.io/abc123"
+    );
     assert_eq!(session.status, "pending");
 }
 
@@ -70,10 +73,10 @@ async fn test_unit_create_checkout_session_with_metadata() {
     let client = create_test_client(&mock_server);
 
     Mock::given(method("POST"))
-        .and(path("/v1/checkout"))
+        .and(path("/v1/checkouts"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "chk_metadata",
-            "url": "https://checkout.test.creem.io/metadata",
+            "checkout_url": "https://checkout.test.creem.io/metadata",
             "status": "pending"
         })))
         .mount(&mock_server)
@@ -85,11 +88,11 @@ async fn test_unit_create_checkout_session_with_metadata() {
 
     let request = CreateCheckoutRequest {
         product_id: "prod_test".to_string(),
-        success_url: "https://example.com/success".to_string(),
-        cancel_url: "https://example.com/cancel".to_string(),
-        customer_email: "admin@example.com".to_string(),
+        success_url: Some("https://example.com/success".to_string()),
+        customer: crate::models::CreemCheckoutCustomer {
+            email: Some("admin@example.com".to_string()),
+        },
         metadata: Some(metadata),
-        webhook_url: None,
     };
 
     // Act
@@ -116,7 +119,7 @@ async fn test_unit_create_checkout_session_unauthorized() {
     };
 
     Mock::given(method("POST"))
-        .and(path("/v1/checkout"))
+        .and(path("/v1/checkouts"))
         .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
             "error": "Unauthorized",
             "message": "Invalid API key"
@@ -126,11 +129,11 @@ async fn test_unit_create_checkout_session_unauthorized() {
 
     let request = CreateCheckoutRequest {
         product_id: "prod_test".to_string(),
-        success_url: "https://example.com/success".to_string(),
-        cancel_url: "https://example.com/cancel".to_string(),
-        customer_email: "test@example.com".to_string(),
+        success_url: Some("https://example.com/success".to_string()),
+        customer: crate::models::CreemCheckoutCustomer {
+            email: Some("test@example.com".to_string()),
+        },
         metadata: None,
-        webhook_url: None,
     };
 
     // Act
@@ -155,10 +158,10 @@ async fn test_unit_create_checkout_session_invalid_json() {
     let client = create_test_client(&mock_server);
 
     Mock::given(method("POST"))
-        .and(path("/v1/checkout"))
+        .and(path("/v1/checkouts"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "chk_test",
-            "url": "https://checkout.test.creem.io/test",
+            "checkout_url": "https://checkout.test.creem.io/test",
             // Missing "status" field
         })))
         .mount(&mock_server)
@@ -166,11 +169,11 @@ async fn test_unit_create_checkout_session_invalid_json() {
 
     let request = CreateCheckoutRequest {
         product_id: "prod_test".to_string(),
-        success_url: "https://example.com/success".to_string(),
-        cancel_url: "https://example.com/cancel".to_string(),
-        customer_email: "test@example.com".to_string(),
+        success_url: Some("https://example.com/success".to_string()),
+        customer: crate::models::CreemCheckoutCustomer {
+            email: Some("test@example.com".to_string()),
+        },
         metadata: None,
-        webhook_url: None,
     };
 
     // Act

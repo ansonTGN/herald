@@ -85,7 +85,7 @@ async fn test_scenario_update_plan_name_and_description(ctx: &mut TestContext) {
     println!("[Step 3] Verify plan updates");
 
     let (name, title, description): (String, String, String) =
-        sqlx::query_as("SELECT name, title, description FROM plan WHERE id = $1")
+        sqlx::query_as("SELECT name, title, description FROM subscription_plan WHERE id = $1")
             .bind(plan_id)
             .fetch_one(&ctx._app_state.pool)
             .await
@@ -159,7 +159,7 @@ async fn test_scenario_update_plan_price(ctx: &mut TestContext) {
     println!("[Step 3] Verify price update");
 
     let (price, currency): (i32, String) =
-        sqlx::query_as("SELECT price, currency FROM plan WHERE id = $1")
+        sqlx::query_as("SELECT price, currency FROM subscription_plan WHERE id = $1")
             .bind(plan_id)
             .fetch_one(&ctx._app_state.pool)
             .await
@@ -194,7 +194,7 @@ async fn test_scenario_partial_plan_update(ctx: &mut TestContext) {
 
     // Get initial values
     let (initial_name, initial_price): (String, i32) =
-        sqlx::query_as("SELECT name, price FROM plan WHERE id = $1")
+        sqlx::query_as("SELECT name, price FROM subscription_plan WHERE id = $1")
             .bind(plan_id)
             .fetch_one(&ctx._app_state.pool)
             .await
@@ -233,7 +233,7 @@ async fn test_scenario_partial_plan_update(ctx: &mut TestContext) {
     println!("[Step 3] Verify partial update");
 
     let (name, price, description): (String, i32, String) =
-        sqlx::query_as("SELECT name, price, description FROM plan WHERE id = $1")
+        sqlx::query_as("SELECT name, price, description FROM subscription_plan WHERE id = $1")
             .bind(plan_id)
             .fetch_one(&ctx._app_state.pool)
             .await

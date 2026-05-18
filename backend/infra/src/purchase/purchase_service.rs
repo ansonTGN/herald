@@ -80,6 +80,12 @@ where
         &self,
         input: PreparePaymentAttemptInput,
     ) -> PurchaseResult<PreparedPaymentAttempt> {
+        if input.payment_provider != "wechat" && input.user_email.is_none() {
+            return Err(CoreError::BadRequest(
+                "A formal user email is required for non-WeChat payment providers".to_string(),
+            ));
+        }
+
         let target = self
             .resolve_target(
                 &input.realm_id,
@@ -119,6 +125,7 @@ where
         &self,
         input: PreparePaymentAttemptInput,
     ) -> PurchaseResult<CreatedPaymentAttempt> {
+        let user_email = input.user_email.clone();
         let prepared = self.prepare_payment_attempt(input).await?;
         let (provider_reference, context) = self
             .build_payment_context(
@@ -129,6 +136,7 @@ where
                 &prepared.attempt.payment_provider,
                 &prepared.target,
                 prepared.attempt.id,
+                user_email.as_deref(),
             )
             .await?;
 
@@ -319,6 +327,7 @@ where
         payment_provider: &str,
         target: &PurchaseTargetSnapshot,
         attempt_id: Uuid,
+        user_email: Option<&str>,
     ) -> PurchaseResult<(Option<String>, PaymentContext)> {
         match payment_provider {
             "wechat" => {
@@ -333,6 +342,7 @@ where
                     target_id,
                     target,
                     attempt_id,
+                    user_email,
                 )
                 .await
             }
@@ -344,6 +354,7 @@ where
                     target_id,
                     target,
                     attempt_id,
+                    user_email,
                 )
                 .await
             }
@@ -466,6 +477,7 @@ where
         target_id: Uuid,
         target: &PurchaseTargetSnapshot,
         attempt_id: Uuid,
+        user_email: Option<&str>,
     ) -> PurchaseResult<(Option<String>, PaymentContext)> {
         let product_id = target.provider_external_product_id.clone().ok_or_else(|| {
             CoreError::Conflict("Creem product mapping missing external_product_id".into())
@@ -481,14 +493,15 @@ where
         let session = client
             .create_checkout_session(&CreemCreateCheckoutRequest {
                 product_id,
-                success_url: format!("{}/billing/success", self.public_base_url),
-                cancel_url: format!("{}/billing/cancel", self.public_base_url),
-                customer_email: format!("purchase-{}@{}", user_id, realm_id),
+                success_url: Some(format!("{}/billing/success", self.public_base_url)),
+                customer: herald_infra_creem::CreemCheckoutCustomer {
+                    email: Some(
+                        user_email
+                            .expect("validated in prepare_payment_attempt")
+                            .to_owned(),
+                    ),
+                },
                 metadata: Some(metadata),
-                webhook_url: Some(format!(
-                    "{}/api/internal/bill/purchase/payment-attempts/{}/fulfill",
-                    self.public_base_url, attempt_id
-                )),
             })
             .await
             .map_err(|e| {
@@ -502,7 +515,7 @@ where
             PaymentContext {
                 wechat_code_url: None,
                 stripe_checkout_url: None,
-                creem_checkout_url: Some(session.url),
+                creem_checkout_url: Some(session.checkout_url),
                 client_secret: None,
             },
         ))
@@ -516,6 +529,7 @@ where
         target_id: Uuid,
         target: &PurchaseTargetSnapshot,
         attempt_id: Uuid,
+        user_email: Option<&str>,
     ) -> PurchaseResult<(Option<String>, PaymentContext)> {
         let client = self.get_stripe_client_for_realm(realm_id).await?;
 
@@ -537,6 +551,11 @@ where
                 .create_payment_intent(&StripeCreatePaymentIntentRequest {
                     amount: target.amount,
                     currency: target.currency.clone(),
+                    receipt_email: Some(
+                        user_email
+                            .expect("validated in prepare_payment_attempt")
+                            .to_owned(),
+                    ),
                     metadata,
                 })
                 .await
@@ -564,6 +583,11 @@ where
                 client_app_id: target_id,
                 plan_id: target_id,
                 user_id: Some(user_id),
+                customer_email: Some(
+                    user_email
+                        .expect("validated in prepare_payment_attempt")
+                        .to_owned(),
+                ),
                 success_url: format!("{}/billing/success", self.public_base_url),
                 cancel_url: format!("{}/billing/cancel", self.public_base_url),
                 billing_period: target

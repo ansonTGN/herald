@@ -8,6 +8,7 @@ pub mod handlers;
 pub mod handlers_history;
 pub mod invoice_handlers;
 pub mod invoice_types;
+mod payment_email;
 pub mod points_package_handlers;
 pub mod purchase_handlers;
 pub mod routes;

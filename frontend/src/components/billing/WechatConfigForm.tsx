@@ -196,11 +196,7 @@ interface WechatConfigFormPageProps {
   initialValues?: Partial<WechatConfigForm>
 }
 
-export function WechatConfigFormPage({
-  realmId,
-  mode,
-  initialValues,
-}: WechatConfigFormPageProps) {
+export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatConfigFormPageProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isEditing = mode === 'edit'

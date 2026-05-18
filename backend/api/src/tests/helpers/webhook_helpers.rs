@@ -440,7 +440,7 @@ pub async fn setup_test_plan_config_with_points(
     // First, create the plan record to satisfy foreign key constraint
     let plan_name = format!("Test Plan {}", plan_id);
     sqlx::query(
-        "INSERT INTO plan (id, realm_id, name, description, title, type, price, currency,
+        "INSERT INTO subscription_plan (id, realm_id, name, description, title, type, price, currency,
                           active, trial_days, sort_order, product_id, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())",
     )

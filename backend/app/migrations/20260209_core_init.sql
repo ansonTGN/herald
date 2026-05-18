@@ -489,7 +489,7 @@ COMMENT ON TABLE payment_event IS 'Webhook events from payment providers';
 
 -- Insert default admin realm
 INSERT INTO realm (id, name)
-VALUES ('admin', 'Admin Realm');
+VALUES ('admin', 'Admin');
 
 -- Insert default admin client app
 INSERT INTO client_app (id, realm_id, client_id, name, session_renewal_ttl_seconds)

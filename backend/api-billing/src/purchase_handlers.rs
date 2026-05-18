@@ -20,6 +20,8 @@ use herald_core::domain::purchase::{
     PreparePaymentAttemptInput,
 };
 
+use crate::payment_email::formal_payment_email;
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -253,6 +255,7 @@ pub async fn create_payment_attempt(
         .create_payment_attempt(PreparePaymentAttemptInput {
             realm_id: realm_id.clone(),
             user_id,
+            user_email: formal_payment_email(&identity),
             payment_provider: input.payment_provider.clone(),
             target_type: input.target_type.clone(),
             target_id: input.target_id,

@@ -6,7 +6,9 @@ import { listPaymentProviders, getShopifyConfig } from '@/lib/api-generated'
 import type { ShopifyConfigForm } from '@/lib/schemas/billing-forms'
 
 const ShopifyConfigFormPage = lazy(() =>
-  import('@/components/billing/ShopifyConfigForm').then((m) => ({ default: m.ShopifyConfigFormPage }))
+  import('@/components/billing/ShopifyConfigForm').then((m) => ({
+    default: m.ShopifyConfigFormPage,
+  }))
 )
 
 export const Route = createFileRoute('/$realmId/manage/billing/payment-providers/shopify')({

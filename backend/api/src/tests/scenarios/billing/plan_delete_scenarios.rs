@@ -52,7 +52,7 @@ async fn test_scenario_soft_delete_plan(ctx: &mut TestContext) {
     println!("[Step 1] ✓ Plan created: {}", plan_id);
 
     // Verify plan is initially active
-    let (active,): (bool,) = sqlx::query_as("SELECT active FROM plan WHERE id = $1")
+    let (active,): (bool,) = sqlx::query_as("SELECT active FROM subscription_plan WHERE id = $1")
         .bind(plan_id)
         .fetch_one(&ctx._app_state.pool)
         .await
@@ -88,11 +88,12 @@ async fn test_scenario_soft_delete_plan(ctx: &mut TestContext) {
     println!("[Step 3] Verify plan is deleted");
 
     // Plan should be completely deleted (hard delete)
-    let plan_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM plan WHERE id = $1)")
-        .bind(plan_id)
-        .fetch_one(&ctx._app_state.pool)
-        .await
-        .expect("Failed to check if plan exists");
+    let plan_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM subscription_plan WHERE id = $1)")
+            .bind(plan_id)
+            .fetch_one(&ctx._app_state.pool)
+            .await
+            .expect("Failed to check if plan exists");
 
     assert!(!plan_exists, "Plan should be hard deleted");
 

@@ -121,6 +121,12 @@ impl StripeClient {
             serde_json::to_value("subscription".to_string())?,
         );
         stripe_request.insert("metadata".to_string(), serde_json::to_value(metadata)?);
+        if let Some(customer_email) = &request.customer_email {
+            stripe_request.insert(
+                "customer_email".to_string(),
+                serde_json::to_value(customer_email.clone())?,
+            );
+        }
 
         // Build line items
         let line_item = serde_json::json!({
@@ -257,6 +263,9 @@ impl StripeClient {
                 "true".to_string(),
             ),
         ];
+        if let Some(receipt_email) = &request.receipt_email {
+            form_fields.push(("receipt_email".to_string(), receipt_email.clone()));
+        }
         form_fields.extend(
             request
                 .metadata
@@ -480,6 +489,7 @@ mod tests {
             .create_payment_intent(&CreatePaymentIntentRequest {
                 amount: 1299,
                 currency: "usd".to_string(),
+                receipt_email: Some("buyer@example.com".to_string()),
                 metadata: std::collections::HashMap::from([
                     ("attemptId".to_string(), "attempt-123".to_string()),
                     ("targetType".to_string(), "points_package".to_string()),
@@ -515,6 +525,10 @@ mod tests {
         assert_eq!(form.get("amount"), Some(&"1299".to_string()));
         assert_eq!(form.get("currency"), Some(&"usd".to_string()));
         assert_eq!(
+            form.get("receipt_email"),
+            Some(&"buyer@example.com".to_string())
+        );
+        assert_eq!(
             form.get("automatic_payment_methods[enabled]"),
             Some(&"true".to_string())
         );
@@ -541,6 +555,7 @@ mod tests {
             .create_payment_intent(&CreatePaymentIntentRequest {
                 amount: 500,
                 currency: "USD".to_string(),
+                receipt_email: Some("buyer@example.com".to_string()),
                 metadata: std::collections::HashMap::from([(
                     "attemptId".to_string(),
                     "attempt-123".to_string(),
@@ -567,6 +582,7 @@ mod tests {
             .create_payment_intent(&CreatePaymentIntentRequest {
                 amount: 0,
                 currency: "usd".to_string(),
+                receipt_email: None,
                 metadata: std::collections::HashMap::new(),
             })
             .await;

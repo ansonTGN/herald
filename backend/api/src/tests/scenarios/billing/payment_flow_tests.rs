@@ -325,7 +325,7 @@ mod tests {
         .await;
 
         // Deactivate the plan
-        sqlx::query("UPDATE plan SET active = false WHERE id = $1")
+        sqlx::query("UPDATE subscription_plan SET active = false WHERE id = $1")
             .bind(plan_id)
             .execute(&ctx.app_state.pool)
             .await

@@ -19,7 +19,9 @@ export const stripeConfigSchema = z.object({
 
 export type StripeConfigForm = z.infer<typeof stripeConfigSchema>
 
-export function getStripeConfigDefaults(initialValues?: Partial<StripeConfigForm>): StripeConfigForm {
+export function getStripeConfigDefaults(
+  initialValues?: Partial<StripeConfigForm>
+): StripeConfigForm {
   return {
     enabled: false,
     publishableKey: '',

@@ -314,7 +314,7 @@ mod tests {
             .execute(&ctx.app_state.pool)
             .await
             .unwrap();
-        sqlx::query("DELETE FROM plan WHERE id = $1 OR id = $2")
+        sqlx::query("DELETE FROM subscription_plan WHERE id = $1 OR id = $2")
             .bind(plan_a)
             .bind(plan_b)
             .execute(&ctx.app_state.pool)
@@ -385,11 +385,13 @@ mod tests {
         );
 
         // Cleanup
-        sqlx::query("DELETE FROM plan WHERE realm_id = $1 AND name = 'test-plan-with-perm'")
-            .bind(&realm_id)
-            .execute(&ctx.app_state.pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "DELETE FROM subscription_plan WHERE realm_id = $1 AND name = 'test-plan-with-perm'",
+        )
+        .bind(&realm_id)
+        .execute(&ctx.app_state.pool)
+        .await
+        .unwrap();
         sqlx::query("DELETE FROM account WHERE id = $1::uuid")
             .bind(&user_id)
             .execute(&ctx.app_state.pool)
@@ -438,7 +440,7 @@ mod tests {
         assert!(!plans["plans"].as_array().unwrap().is_empty());
 
         // Cleanup
-        sqlx::query("DELETE FROM plan WHERE id = $1")
+        sqlx::query("DELETE FROM subscription_plan WHERE id = $1")
             .bind(plan_id)
             .execute(&ctx.app_state.pool)
             .await

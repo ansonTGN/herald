@@ -52,11 +52,11 @@ impl CreemMockServer {
     /// * `product_id` - The product ID that should be in the request
     pub fn mock_checkout_success(&self, session_id: &str, product_id: &str) {
         let _ = Mock::given(method("POST"))
-            .and(path("/v1/checkout"))
-            .and(header("Authorization", format!("Bearer {}", self.api_key)))
+            .and(path("/v1/checkouts"))
+            .and(header("x-api-key", &self.api_key))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "id": session_id,
-                "url": format!("https://checkout.test.creem.io/{}", session_id),
+                "checkout_url": format!("https://checkout.test.creem.io/{}", session_id),
                 "status": "pending",
                 "product_id": product_id
             })))
@@ -77,7 +77,7 @@ impl CreemMockServer {
     ) {
         let mut response = json!({
             "id": session_id,
-            "url": format!("https://checkout.test.creem.io/{}", session_id),
+            "checkout_url": format!("https://checkout.test.creem.io/{}", session_id),
             "status": "pending",
             "product_id": product_id
         });
@@ -87,8 +87,8 @@ impl CreemMockServer {
         }
 
         let _ = Mock::given(method("POST"))
-            .and(path("/v1/checkout"))
-            .and(header("Authorization", format!("Bearer {}", self.api_key)))
+            .and(path("/v1/checkouts"))
+            .and(header("x-api-key", &self.api_key))
             .respond_with(ResponseTemplate::new(200).set_body_json(response))
             .mount(&self.server);
     }
@@ -105,7 +105,7 @@ impl CreemMockServer {
         };
 
         let _ = Mock::given(method("POST"))
-            .and(path("/v1/checkout"))
+            .and(path("/v1/checkouts"))
             .respond_with(ResponseTemplate::new(status_code).set_body_json(json!({
                 "error": error_code,
                 "message": format!("Checkout failed: {}", error_code)
@@ -119,7 +119,7 @@ impl CreemMockServer {
     /// Note: wiremock doesn't support actual delays, so this returns a 504 Gateway Timeout.
     pub fn mock_api_timeout(&self) {
         let _ = Mock::given(method("POST"))
-            .and(path("/v1/checkout"))
+            .and(path("/v1/checkouts"))
             .respond_with(ResponseTemplate::new(504).set_body_json(json!({
                 "error": "timeout",
                 "message": "Gateway timeout"
@@ -134,7 +134,7 @@ impl CreemMockServer {
     /// * `error_msg` - Error message to return
     pub fn mock_api_error(&self, status_code: u16, error_msg: &str) {
         let _ = Mock::given(method("POST"))
-            .and(path("/v1/checkout"))
+            .and(path("/v1/checkouts"))
             .respond_with(ResponseTemplate::new(status_code).set_body_json(json!({
                 "error": "api_error",
                 "message": error_msg

@@ -234,7 +234,7 @@ pub async fn create_test_plan(pool: &PgPool, realm_id: &str, _plan_name: &str, p
     .expect("Failed to ensure default product");
 
     sqlx::query(
-        "INSERT INTO plan (id, realm_id, name, title, type, price, currency, active, product_id)
+        "INSERT INTO subscription_plan (id, realm_id, name, title, type, price, currency, active, product_id)
          VALUES ($1, $2, $3, $4, 'monthly', $5, 'USD', true, $6)",
     )
     .bind(plan_id)

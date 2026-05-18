@@ -7,6 +7,9 @@
  * Prerequisites:
  *   - CREEM_API_KEY and CREEM_WEBHOOK_SECRET set in demo/.env.demo
  *   - Demo seed data loaded (admin realm, admin@cas.com user)
+ *   - backend/config.demo.toml [frontend].url must point to a publicly
+ *     reachable address (e.g. an ngrok tunnel) so Creem can deliver
+ *     webhook callbacks during checkout
  *
  * Creem Dashboard Setup (https://creem.io dashboard):
  *   1. Developers → API Keys → Copy API key (starts with ck_test_)
@@ -28,8 +31,8 @@
  * Skips gracefully when credentials are absent.
  */
 
-import { test, expect } from '@playwright/test'
-import { secrets, hasCreemPayment } from '../secrets/env'
+import { test, expect, type Frame, type Locator, type Page } from '@playwright/test'
+import { secrets, requireCreemPayment } from '../secrets/env'
 import { seedCreemConfig } from '../secrets/realm-seed'
 import { loginAsAdmin } from '../helpers/auth'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
@@ -45,11 +48,42 @@ const PRODUCT_NAME = 'herald-live-creem-product'
 const PLAN_NAME = 'herald-live-creem-plan'
 const PLAN_TITLE = 'Herald Live Creem Plan'
 
+type SearchRoot = Page | Frame
+
+async function findVisibleCheckoutControl(
+  page: Page,
+  label: string,
+  selectors: Array<(root: SearchRoot) => Locator>,
+): Promise<Locator> {
+  const roots: SearchRoot[] = [page, ...page.frames()]
+
+  for (const root of roots) {
+    for (const selector of selectors) {
+      const locator = selector(root).first()
+      if (await locator.isVisible({ timeout: 1000 }).catch(() => false)) {
+        return locator
+      }
+    }
+  }
+
+  const frames = page.frames()
+    .map((frame) => `- name="${frame.name()}" url="${frame.url()}"`)
+    .join('\n')
+  const title = await page.title().catch(() => '<unavailable>')
+
+  throw new Error(
+    `Creem checkout ${label} control not found.\n` +
+      `Current URL: ${page.url()}\n` +
+      `Page title: ${title}\n` +
+      `Frames:\n${frames || '- <none>'}`,
+  )
+}
+
 test.describe('Live: Creem Payment', () => {
 
   test.beforeEach(async ({ page }) => {
-    // Skip entire suite when credentials are not configured
-    test.skip(!hasCreemPayment(), 'Creem payment credentials not configured in .env.demo')
+    // Live payment tests must fail loud when credentials are missing.
+    requireCreemPayment()
 
     // Verify environment is ready
     await verifyTestEnvironment(page, {
@@ -192,6 +226,7 @@ test.describe('Live: Creem Payment', () => {
   test('Checkout: full Creem payment with test card', async ({ page }) => {
     let planId: string
     let attemptId: string
+    let checkoutUrl: string
 
     await test.step('Given a product and billing plan exist', async () => {
       // Navigate to products page and create product
@@ -271,7 +306,7 @@ test.describe('Live: Creem Payment', () => {
       console.log(`[live] Payment context: ${JSON.stringify(attemptBody.paymentContext)}`)
 
       expect(attemptBody.paymentContext?.creemCheckoutUrl).toBeTruthy()
-      const checkoutUrl = attemptBody.paymentContext.creemCheckoutUrl
+      checkoutUrl = attemptBody.paymentContext.creemCheckoutUrl
       console.log(`[live] Creem checkout URL: ${checkoutUrl}`)
 
       // Navigate to Creem checkout page
@@ -286,47 +321,49 @@ test.describe('Live: Creem Payment', () => {
       // Wait for the checkout page to fully load
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
 
-      // Try multiple selector strategies for the card number field
-      const cardInput = page.locator(
-        'input[name*="card"], input[name*="number"], input[placeholder*="4242"], input[placeholder*="Card"], input[autocomplete*="cc-number"]'
-      ).first()
-
-      await expect(cardInput).toBeVisible({ timeout: 10000 })
+      const cardInput = await findVisibleCheckoutControl(page, 'card number', [
+        (root) => root.locator('input[autocomplete*="cc-number"]'),
+        (root) => root.getByLabel(/card number/i),
+        (root) => root.locator('input[name*="card" i], input[name*="number" i]'),
+        (root) => root.getByPlaceholder(/4242|card|number/i),
+      ])
       await cardInput.fill('4242424242424242')
 
-      // Expiry date
-      const expiryInput = page.locator(
-        'input[name*="expir"], input[placeholder*="MM"], input[placeholder*="MM/YY"], input[autocomplete*="cc-exp"]'
-      ).first()
-
-      await expect(expiryInput).toBeVisible({ timeout: 5000 })
+      const expiryInput = await findVisibleCheckoutControl(page, 'expiry', [
+        (root) => root.locator('input[autocomplete*="cc-exp"]'),
+        (root) => root.getByLabel(/expiry|expiration|expires/i),
+        (root) => root.locator('input[name*="expir" i], input[name*="expiry" i], input[name*="exp" i]'),
+        (root) => root.getByPlaceholder(/MM|YY|expiry|expiration/i),
+      ])
       await expiryInput.fill('1230')
 
-      // CVC
-      const cvcInput = page.locator(
-        'input[name*="cvc"], input[name*="cvv"], input[placeholder*="CVC"], input[placeholder*="CVV"], input[autocomplete*="cc-csc"]'
-      ).first()
-
-      await expect(cvcInput).toBeVisible({ timeout: 5000 })
+      const cvcInput = await findVisibleCheckoutControl(page, 'CVC', [
+        (root) => root.locator('input[autocomplete*="cc-csc"]'),
+        (root) => root.getByLabel(/cvc|cvv|security code/i),
+        (root) => root.locator('input[name*="cvc" i], input[name*="cvv" i]'),
+        (root) => root.getByPlaceholder(/CVC|CVV|security/i),
+      ])
       await cvcInput.fill('123')
+
+      const fullNameInput = page.getByRole('textbox', { name: /full name/i })
+      if (await fullNameInput.isVisible({ timeout: 1000 }).catch(() => false)) {
+        await fullNameInput.fill('Herald Demo User')
+      }
 
       // Take screenshot before submitting
       await page.screenshot({ path: 'test-results/creem-checkout-filled.png' })
 
       // Submit payment
-      const submitButton = page.locator(
-        'button[type="submit"], button:has-text("Pay"), button:has-text("Submit")'
-      ).first()
-
+      const submitButton = page.getByRole('button', { name: /pay/i }).last()
       await expect(submitButton).toBeVisible({ timeout: 5000 })
+      await submitButton.scrollIntoViewIfNeeded()
       await submitButton.click()
+      await page.waitForTimeout(5000)
 
       console.log('[live] Payment submitted, waiting for result...')
     })
 
     await test.step('And verify payment status changes', async () => {
-      // Wait for payment to process -- either redirect back or status change
-      // Poll the payment attempt status via API
       const maxWait = 60000
       const startTime = Date.now()
       let status = 'Pending'
@@ -353,10 +390,11 @@ test.describe('Live: Creem Payment', () => {
       await page.screenshot({ path: `test-results/creem-checkout-result-${status}.png` })
 
       console.log(`[live] Final payment status: ${status}`)
-
-      // The payment should have moved past Pending
-      // With test card 4242, it should succeed
-      expect(status).not.toBe('Pending')
+      expect(
+        status,
+        `Payment remained Pending after Creem checkout. ` +
+          `Creem checkout URL: ${checkoutUrl}. Final browser URL: ${page.url()}.`,
+      ).not.toBe('Pending')
     })
   })
 })

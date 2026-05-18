@@ -3,16 +3,14 @@ import type { CreemConfigForm } from '@/lib/schemas/creem-config'
 import { PAYMENT_PROVIDERS } from '@/lib/billing-constants'
 
 export const CREEM_CONFIG_KEYS = {
-  ENABLED: 'creem_enabled',
-  API_KEY: 'creem_api_key',
-  TIMEOUT: 'creem_timeout',
-  WEBHOOK_SECRET: 'creem_webhook_secret',
+  ENABLED: 'enabled',
+  API_KEY: 'api_key',
+  TIMEOUT: 'timeout',
+  WEBHOOK_SECRET: 'webhook_secret',
 } as const
 
 export function parseCreemConfig(configs: RealmConfigResponse[]): CreemConfigForm {
-  const creemConfigs = configs.filter(
-    (c) => c.configType === PAYMENT_PROVIDERS.CREEM
-  )
+  const creemConfigs = configs.filter((c) => c.configType === PAYMENT_PROVIDERS.CREEM)
 
   if (creemConfigs.length === 0) {
     return {

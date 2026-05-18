@@ -844,7 +844,7 @@ mod tests {
 
         // Then: Plan should be created successfully
         let plan_exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM plan WHERE id = $1)")
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM subscription_plan WHERE id = $1)")
                 .bind(plan_id)
                 .fetch_one(&ctx.app_state.pool)
                 .await

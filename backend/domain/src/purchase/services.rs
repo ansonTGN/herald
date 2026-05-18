@@ -10,6 +10,7 @@ use crate::payment_attempt::entities::{PaymentAttempt, PaymentContext};
 pub struct PreparePaymentAttemptInput {
     pub realm_id: String,
     pub user_id: Uuid,
+    pub user_email: Option<String>,
     pub payment_provider: String,
     pub target_type: String,
     pub target_id: Uuid,

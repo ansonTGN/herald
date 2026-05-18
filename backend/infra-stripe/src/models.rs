@@ -32,6 +32,9 @@ pub struct CreateCheckoutRequest {
     /// User ID (for subscription tracking)
     #[serde(rename = "userId")]
     pub user_id: Option<Uuid>,
+    /// Customer email for checkout prefill and payment provider requirements
+    #[serde(rename = "customerEmail", skip_serializing_if = "Option::is_none")]
+    pub customer_email: Option<String>,
     /// Success URL
     #[serde(rename = "successUrl")]
     pub success_url: String,
@@ -71,6 +74,9 @@ pub struct CreatePaymentIntentRequest {
     pub amount: i64,
     /// ISO 4217 currency code
     pub currency: String,
+    /// Customer email for receipt and payment provider requirements
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receipt_email: Option<String>,
     /// Provider metadata stored on the payment intent
     pub metadata: std::collections::HashMap<String, String>,
 }

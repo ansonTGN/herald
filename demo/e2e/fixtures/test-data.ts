@@ -30,7 +30,7 @@ export const TEST_INTEGRITY_SPECS = {
     realms: [
       {
         realmId: 'admin',
-        expectedName: 'Admin Realm',
+        expectedName: 'Admin',
       },
     ],
     users: [
@@ -138,7 +138,7 @@ export interface TestRealm {
 export const TEST_REALMS: Record<string, TestRealm> = {
   admin: {
     id: 'admin',
-    name: 'Admin Realm',
+    name: 'Admin',
     adminEmail: 'admin@cas.com',
   },
   realm1: {

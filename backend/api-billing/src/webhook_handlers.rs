@@ -114,6 +114,22 @@ fn parse_attempt_id(value: &Value) -> Option<Uuid> {
         .filter(|id| *id != Uuid::nil())
 }
 
+fn creem_event_object(event: &Value) -> &Value {
+    if !event["data"]["object"].is_null() {
+        &event["data"]["object"]
+    } else {
+        &event["object"]
+    }
+}
+
+fn creem_event_data<'a>(event: &'a Value, field: &str) -> &'a Value {
+    if !event["data"][field].is_null() {
+        &event["data"][field]
+    } else {
+        &Value::Null
+    }
+}
+
 fn parse_creem_datetime(value: &Value, field_name: &str) -> Result<DateTime<Utc>, CoreError> {
     if let Some(raw) = value.as_str() {
         return DateTime::parse_from_rfc3339(raw)
@@ -209,7 +225,7 @@ fn parse_checkout_completed_payload(
 fn parse_subscription_paid_payload(
     event: &Value,
 ) -> Result<CreemSubscriptionPaidPayload, CoreError> {
-    let object = &event["data"]["object"];
+    let object = creem_event_object(event);
     let cancel_at_period_end = object["cancelAtPeriodEnd"].as_bool().unwrap_or(false);
 
     Ok(CreemSubscriptionPaidPayload {
@@ -251,8 +267,8 @@ fn parse_subscription_paid_payload(
 fn parse_subscription_updated_payload(
     event: &Value,
 ) -> Result<CreemSubscriptionUpdatedPayload, CoreError> {
-    let object = &event["data"]["object"];
-    let previous_attributes = &event["data"]["previousAttributes"];
+    let object = creem_event_object(event);
+    let previous_attributes = creem_event_data(event, "previousAttributes");
     let cancel_at_period_end = object["cancelAtPeriodEnd"].as_bool().unwrap_or(false);
 
     Ok(CreemSubscriptionUpdatedPayload {
@@ -294,7 +310,7 @@ fn parse_subscription_updated_payload(
 fn parse_subscription_canceled_payload(
     event: &Value,
 ) -> Result<CreemSubscriptionCanceledPayload, CoreError> {
-    let object = &event["data"]["object"];
+    let object = creem_event_object(event);
     let cancel_at_period_end = object["cancelAtPeriodEnd"].as_bool().unwrap_or(false);
     let status = if cancel_at_period_end {
         SubscriptionStatus::ScheduledCancel
@@ -332,7 +348,7 @@ fn parse_subscription_canceled_payload(
 }
 
 fn parse_refund_created_payload(event: &Value) -> Result<CreemRefundCreatedPayload, CoreError> {
-    let object = &event["data"]["object"];
+    let object = creem_event_object(event);
 
     Ok(CreemRefundCreatedPayload {
         event_id: parse_event_id(event)?,
@@ -449,8 +465,9 @@ async fn handle_subscription_paid(
     realm_id: &str,
     _idempotency_key: &str,
 ) -> Result<PointsTransaction, CoreError> {
-    if let Some(attempt_id) = parse_attempt_id(&event["data"]["object"]["metadata"]["attemptId"]) {
-        let object = &event["data"]["object"];
+    let object = creem_event_object(&event);
+
+    if let Some(attempt_id) = parse_attempt_id(&object["metadata"]["attemptId"]) {
         let provider_transaction_id = object["subscriptionId"]
             .as_str()
             .or_else(|| object["id"].as_str())

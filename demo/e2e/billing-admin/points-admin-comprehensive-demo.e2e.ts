@@ -21,7 +21,7 @@ import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
 import type { Page } from '@playwright/test'
 import { SELECTORS } from '../selectors'
 import { TRANSACTION_TYPES, RENEWAL_PERIOD_TYPES, POINTS_ROUTES, generateTestEmail, updateRealmConfig, verifyConfigValidation, verifyChartDisplayed, verifyStatisticsDisplayed, registerUser, navigateToPointsPageAndVerify } from '../helpers/points-helpers'
-import { createSubscriptionPlan } from './helpers/billing-page.helpers'
+import { createSubscriptionPlan as createPlanFromUI } from './helpers/billing-page.helpers'
 import { DEMO_ADMIN } from '../helpers/auth'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 
@@ -37,7 +37,7 @@ async function createSubscriptionPlan(page: Page, planName: string, planTitle?: 
   await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing`)
   await expect(page.getByTestId('billing-page')).toBeVisible()
 
-  await createSubscriptionPlan(page, {
+  await createPlanFromUI(page, {
     planName,
     title: planTitle || 'Test Plan',
     description: 'Test plan for points configuration',

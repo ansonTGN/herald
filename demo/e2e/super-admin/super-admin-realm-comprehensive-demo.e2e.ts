@@ -114,7 +114,7 @@ test.describe('Realm Management - US-AR-001 to US-AR-005', () => {
       await realmsPage.clickAddRealm()
       await realmsPage.fillCreateRealmForm({
         id: 'admin', // Reserved word
-        name: 'Admin Realm',
+        name: 'Admin',
         adminEmail: 'admin@admin.com',
         adminPassword: 'SecurePassword123',
       })

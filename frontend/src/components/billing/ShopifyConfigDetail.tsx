@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Edit, Trash2 } from 'lucide-react'
 
-interface ShopifyConfigDetailProps {
+export interface ShopifyConfigFieldsProps {
   config: {
     shopDomain: string
     apiVersion: string
@@ -15,6 +15,117 @@ interface ShopifyConfigDetailProps {
     lastUpdated: string
     enabled: boolean
   }
+  showSecrets: boolean
+  onShowSecrets: () => void
+  onHideSecrets: () => void
+}
+
+export function ShopifyConfigFields({
+  config,
+  showSecrets,
+  onShowSecrets,
+  onHideSecrets,
+}: ShopifyConfigFieldsProps) {
+  const maskToken = (token: string, prefix: string) => {
+    if (showSecrets) {
+      return token
+    }
+    return `${prefix}***`
+  }
+
+  const maskSecret = (secret: string) => {
+    if (showSecrets) {
+      return secret
+    }
+    return '***'
+  }
+
+  return (
+    <div className="space-y-4 p-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <div className="text-sm font-medium text-muted-foreground">Shop Domain</div>
+          <div className="mt-1" data-testid="shop-domain-display">
+            {config.shopDomain}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-sm font-medium text-muted-foreground">API Version</div>
+          <div className="mt-1" data-testid="api-version-display">
+            {config.apiVersion}
+          </div>
+        </div>
+
+        {config.webhookEndpoint && (
+          <div className="col-span-2">
+            <div className="text-sm font-medium text-muted-foreground">Webhook Endpoint</div>
+            <div className="mt-1 break-all text-sm" data-testid="webhook-endpoint-display">
+              {config.webhookEndpoint}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <div className="text-sm font-medium text-muted-foreground">Admin Access Token</div>
+          <div className="mt-1 flex items-center gap-2" data-testid="admin-access-token-display">
+            <code className="text-sm bg-muted px-2 py-1 rounded" data-testid="masked-token-display">
+              {maskToken(config.adminAccessToken, 'shpat_')}
+            </code>
+          </div>
+        </div>
+
+        <div>
+          <div className="text-sm font-medium text-muted-foreground">Storefront Access Token</div>
+          <div
+            className="mt-1 flex items-center gap-2"
+            data-testid="storefront-access-token-display"
+          >
+            <code className="text-sm bg-muted px-2 py-1 rounded">
+              {maskToken(config.storefrontAccessToken, 'shp_')}
+            </code>
+          </div>
+        </div>
+
+        <div>
+          <div className="text-sm font-medium text-muted-foreground">App Client Secret</div>
+          <div className="mt-1 flex items-center gap-2" data-testid="app-client-secret-display">
+            <code className="text-sm bg-muted px-2 py-1 rounded">
+              {maskSecret(config.appClientSecret)}
+            </code>
+          </div>
+        </div>
+
+        <div className="flex items-end">
+          {!showSecrets ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onShowSecrets}
+              data-testid="show-secrets-button"
+            >
+              Show Secrets
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onHideSecrets}
+              data-testid="hide-secrets-button"
+            >
+              Hide Secrets
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface ShopifyConfigDetailProps {
+  config: ShopifyConfigFieldsProps['config']
   onEdit: () => void
   onDelete: () => void
 }
@@ -26,12 +137,10 @@ export function ShopifyConfigDetail({ config, onEdit, onDelete }: ShopifyConfigD
   const handleShowSecrets = () => {
     setShowSecrets(true)
 
-    // Clear any existing timer
     if (autoHideTimer) {
       clearTimeout(autoHideTimer)
     }
 
-    // Auto-hide after 5 seconds
     const timer = setTimeout(() => {
       setShowSecrets(false)
     }, 5000)
@@ -47,7 +156,6 @@ export function ShopifyConfigDetail({ config, onEdit, onDelete }: ShopifyConfigD
     }
   }
 
-  // Cleanup timer on unmount
   useEffect(() => {
     return () => {
       if (autoHideTimer) {
@@ -55,20 +163,6 @@ export function ShopifyConfigDetail({ config, onEdit, onDelete }: ShopifyConfigD
       }
     }
   }, [autoHideTimer])
-
-  const maskToken = (token: string, prefix: string) => {
-    if (showSecrets) {
-      return token
-    }
-    return `${prefix}***`
-  }
-
-  const maskSecret = (secret: string) => {
-    if (showSecrets) {
-      return secret
-    }
-    return '***'
-  }
 
   return (
     <Card data-testid="shopify-config-detail">
@@ -86,87 +180,12 @@ export function ShopifyConfigDetail({ config, onEdit, onDelete }: ShopifyConfigD
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-4">
-          <div>
-            <div className="text-sm font-medium text-muted-foreground">Shop Domain</div>
-            <div className="mt-1" data-testid="shop-domain-display">
-              {config.shopDomain}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-sm font-medium text-muted-foreground">API Version</div>
-            <div className="mt-1" data-testid="api-version-display">
-              {config.apiVersion}
-            </div>
-          </div>
-
-          {config.webhookEndpoint && (
-            <div>
-              <div className="text-sm font-medium text-muted-foreground">Webhook Endpoint</div>
-              <div className="mt-1 break-all text-sm" data-testid="webhook-endpoint-display">
-                {config.webhookEndpoint}
-              </div>
-            </div>
-          )}
-
-          <div>
-            <div className="text-sm font-medium text-muted-foreground">Admin Access Token</div>
-            <div className="mt-1 flex items-center gap-2" data-testid="admin-access-token-display">
-              <code
-                className="text-sm bg-muted px-2 py-1 rounded"
-                data-testid="masked-token-display"
-              >
-                {maskToken(config.adminAccessToken, 'shpat_')}
-              </code>
-            </div>
-          </div>
-
-          <div>
-            <div className="text-sm font-medium text-muted-foreground">Storefront Access Token</div>
-            <div
-              className="mt-1 flex items-center gap-2"
-              data-testid="storefront-access-token-display"
-            >
-              <code className="text-sm bg-muted px-2 py-1 rounded">
-                {maskToken(config.storefrontAccessToken, 'shp_')}
-              </code>
-            </div>
-          </div>
-
-          <div>
-            <div className="text-sm font-medium text-muted-foreground">App Client Secret</div>
-            <div className="mt-1 flex items-center gap-2" data-testid="app-client-secret-display">
-              <code className="text-sm bg-muted px-2 py-1 rounded">
-                {maskSecret(config.appClientSecret)}
-              </code>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-2 pt-4 border-t">
-          {!showSecrets ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleShowSecrets}
-              data-testid="show-secrets-button"
-            >
-              Show Secrets
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleHideSecrets}
-              data-testid="hide-secrets-button"
-            >
-              Hide Secrets
-            </Button>
-          )}
-        </div>
+        <ShopifyConfigFields
+          config={config}
+          showSecrets={showSecrets}
+          onShowSecrets={handleShowSecrets}
+          onHideSecrets={handleHideSecrets}
+        />
 
         <div className="flex gap-2 pt-4 border-t">
           <Button

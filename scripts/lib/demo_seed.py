@@ -772,8 +772,8 @@ def _ensure_admin_realm_audit_events(logger: "Logger | None") -> None:
     BEGIN
         INSERT INTO audit_events (id, realm_id, category, action, actor_id, actor_type, actor_name, target_type, target_id, target_name, result, details, created_at)
         VALUES
-        (uuidv7(), '{ADMIN_REALM}', 'realm_management', 'realm.create', v_admin_id::text, 'admin', '{ADMIN_EMAIL}', 'realm', '{ADMIN_REALM}', 'Admin Realm', 'success', '{{\"status\": \"created\"}}', NOW() - INTERVAL '1 hour'),
-        (uuidv7(), '{ADMIN_REALM}', 'realm_management', 'realm.rbac_init', v_admin_id::text, 'admin', '{ADMIN_EMAIL}', 'realm', '{ADMIN_REALM}', 'Admin Realm', 'success', '{{\"roles\": [\"admin\", \"user\"]}}', NOW() - INTERVAL '59 minutes');
+        (uuidv7(), '{ADMIN_REALM}', 'realm_management', 'realm.create', v_admin_id::text, 'admin', '{ADMIN_EMAIL}', 'realm', '{ADMIN_REALM}', 'Admin', 'success', '{{\"status\": \"created\"}}', NOW() - INTERVAL '1 hour'),
+        (uuidv7(), '{ADMIN_REALM}', 'realm_management', 'realm.rbac_init', v_admin_id::text, 'admin', '{ADMIN_EMAIL}', 'realm', '{ADMIN_REALM}', 'Admin', 'success', '{{\"roles\": [\"admin\", \"user\"]}}', NOW() - INTERVAL '59 minutes');
     END $$;
     """
     _sql_exec(sql)

@@ -21,11 +21,11 @@ interface AuthTrendChartProps {
 const chartConfig = {
   successCount: {
     label: 'Login Success',
-    color: 'hsl(var(--chart-1))',
+    color: 'var(--chart-1)',
   },
   failureCount: {
     label: 'Login Failed',
-    color: 'hsl(var(--chart-2))',
+    color: 'var(--chart-2)',
   },
 } satisfies ChartConfig
 
