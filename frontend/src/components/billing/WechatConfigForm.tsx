@@ -8,6 +8,7 @@ import {
   type WechatConfigForm,
   getWechatConfigDefaults,
 } from '@/lib/schemas/billing-forms'
+import { requireFieldOnCreate } from '@/lib/form-utils'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
 import { BaseFormDialog } from '@/components/shared/form-dialog'
 import { TextField, PasswordField } from '@/components/shared/form-fields'
@@ -207,6 +208,8 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
     schema: wechatConfigSchema,
     defaultValues,
     onSubmit: async ({ value }) => {
+      if (!requireFieldOnCreate(form, isEditing, 'privateKey', value.privateKey, 'Private Key is required')) return
+      if (!requireFieldOnCreate(form, isEditing, 'v3Key', value.v3Key, 'API v3 Key is required')) return
       if (isEditing) {
         await updateMutation.mutateAsync(value)
       } else {
@@ -251,16 +254,17 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
 
   const updateMutation = useMutation({
     mutationFn: async (data: WechatConfigForm) => {
+      const body: Record<string, unknown> = {
+        appId: data.appId,
+        mchId: data.mchId,
+        notifyUrl: data.notifyUrl,
+        serialNo: data.serialNo,
+      }
+      if (data.privateKey) body.privateKey = data.privateKey
+      if (data.v3Key) body.v3Key = data.v3Key
       const response = await updateWechatConfig({
         path: { realmId },
-        body: {
-          appId: data.appId,
-          mchId: data.mchId,
-          notifyUrl: data.notifyUrl,
-          privateKey: data.privateKey,
-          serialNo: data.serialNo,
-          v3Key: data.v3Key,
-        },
+        body: body as Parameters<typeof updateWechatConfig>[0]['body'],
       })
       if (response.error) throw response.error
       return response.data
@@ -328,7 +332,7 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
               children={(field) => (
                 <div className="space-y-2">
                   <label htmlFor={field.name} className="text-sm font-medium">
-                    Private Key <span className="text-destructive">*</span>
+                    Private Key {!isEditing && <span className="text-destructive">*</span>}
                   </label>
                   <Textarea
                     id={field.name}
@@ -345,7 +349,9 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
                     </p>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Merchant private key in PEM format. Used for signing requests to WeChat Pay API.
+                    {isEditing
+                      ? 'Leave empty to keep the existing key'
+                      : 'Merchant private key in PEM format. Used for signing requests to WeChat Pay API.'}
                   </p>
                 </div>
               )}
@@ -367,8 +373,12 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
               label="API v3 Key"
               dataTestId="page-v3-key-input"
               placeholder="0123456789abcdef0123456789abcdef"
-              required
-              helpText="Exactly 32 characters. Used for verifying webhook signatures."
+              required={!isEditing}
+              helpText={
+                isEditing
+                  ? 'Leave empty to keep the existing key'
+                  : 'Exactly 32 characters. Used for verifying webhook signatures.'
+              }
             />
 
             <TextField

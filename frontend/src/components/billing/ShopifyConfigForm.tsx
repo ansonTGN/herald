@@ -10,6 +10,7 @@ import {
   WEBHOOK_MODES,
   type WebhookMode,
 } from '@/lib/schemas/billing-forms'
+import { requireFieldOnCreate } from '@/lib/form-utils'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
 import { BaseFormDialog } from '@/components/shared/form-dialog'
 import { TextField, PasswordField, NumberField } from '@/components/shared/form-fields'
@@ -158,8 +159,12 @@ export function ShopifyConfigFormDialog({
               label="Admin Access Token"
               dataTestId="admin-access-token-input"
               placeholder="shpat_..."
-              required
-              helpText="Must start with shpat_. Used for Admin API calls."
+              required={mode !== 'edit'}
+              helpText={
+                mode === 'edit'
+                  ? 'Leave empty to keep the existing token'
+                  : 'Must start with shpat_. Used for Admin API calls.'
+              }
             />
 
             <PasswordField
@@ -168,8 +173,12 @@ export function ShopifyConfigFormDialog({
               label="Storefront Access Token"
               dataTestId="storefront-access-token-input"
               placeholder="shp_..."
-              required
-              helpText="Must start with shp_. Used for Storefront API calls."
+              required={mode !== 'edit'}
+              helpText={
+                mode === 'edit'
+                  ? 'Leave empty to keep the existing token'
+                  : 'Must start with shp_. Used for Storefront API calls.'
+              }
             />
 
             <PasswordField
@@ -178,8 +187,12 @@ export function ShopifyConfigFormDialog({
               label="App Client Secret"
               dataTestId="app-client-secret-input"
               placeholder="Your app client secret"
-              required
-              helpText="Used for webhook HMAC verification. Keep this secure!"
+              required={mode !== 'edit'}
+              helpText={
+                mode === 'edit'
+                  ? 'Leave empty to keep the existing secret'
+                  : 'Used for webhook HMAC verification. Keep this secure!'
+              }
             />
 
             <TextField
@@ -273,6 +286,9 @@ export function ShopifyConfigFormPage({
     schema: shopifyConfigSchema,
     defaultValues,
     onSubmit: async ({ value }) => {
+      if (!requireFieldOnCreate(form, isEditing, 'adminAccessToken', value.adminAccessToken, 'Admin Access Token is required')) return
+      if (!requireFieldOnCreate(form, isEditing, 'storefrontAccessToken', value.storefrontAccessToken, 'Storefront Access Token is required')) return
+      if (!requireFieldOnCreate(form, isEditing, 'appClientSecret', value.appClientSecret, 'App Client Secret is required')) return
       if (isEditing) {
         await updateMutation.mutateAsync(value)
       } else {
@@ -321,18 +337,19 @@ export function ShopifyConfigFormPage({
 
   const updateMutation = useMutation({
     mutationFn: async (data: ShopifyConfigForm) => {
+      const body: Record<string, unknown> = {
+        shopDomain: data.shopDomain,
+        apiVersion: data.apiVersion,
+        webhookSubscriptionMode: data.webhookSubscriptionMode as 'admin_api' | 'event_bridge',
+        timeout: data.timeout,
+        skipConnectionTest: data.skipConnectionTest,
+      }
+      if (data.adminAccessToken) body.adminAccessToken = data.adminAccessToken
+      if (data.storefrontAccessToken) body.storefrontAccessToken = data.storefrontAccessToken
+      if (data.appClientSecret) body.appClientSecret = data.appClientSecret
       const response = await updateShopifyConfig({
         path: { realmId },
-        body: {
-          shopDomain: data.shopDomain,
-          adminAccessToken: data.adminAccessToken,
-          storefrontAccessToken: data.storefrontAccessToken,
-          appClientSecret: data.appClientSecret,
-          apiVersion: data.apiVersion,
-          webhookSubscriptionMode: data.webhookSubscriptionMode as 'admin_api' | 'event_bridge',
-          timeout: data.timeout,
-          skipConnectionTest: data.skipConnectionTest,
-        },
+        body: body as Parameters<typeof updateShopifyConfig>[0]['body'],
       })
       if (response.error) throw response.error
       return response.data
@@ -430,8 +447,12 @@ export function ShopifyConfigFormPage({
               label="Admin Access Token"
               dataTestId="page-admin-access-token-input"
               placeholder="shpat_..."
-              required
-              helpText="Must start with shpat_. Used for Admin API calls."
+              required={!isEditing}
+              helpText={
+                isEditing
+                  ? 'Leave empty to keep the existing token'
+                  : 'Must start with shpat_. Used for Admin API calls.'
+              }
             />
 
             <PasswordField
@@ -440,8 +461,12 @@ export function ShopifyConfigFormPage({
               label="Storefront Access Token"
               dataTestId="page-storefront-access-token-input"
               placeholder="shp_..."
-              required
-              helpText="Must start with shp_. Used for Storefront API calls."
+              required={!isEditing}
+              helpText={
+                isEditing
+                  ? 'Leave empty to keep the existing token'
+                  : 'Must start with shp_. Used for Storefront API calls.'
+              }
             />
 
             <PasswordField
@@ -450,8 +475,12 @@ export function ShopifyConfigFormPage({
               label="App Client Secret"
               dataTestId="page-app-client-secret-input"
               placeholder="Your app client secret"
-              required
-              helpText="Used for webhook HMAC verification. Keep this secure!"
+              required={!isEditing}
+              helpText={
+                isEditing
+                  ? 'Leave empty to keep the existing secret'
+                  : 'Used for webhook HMAC verification. Keep this secure!'
+              }
             />
 
             <TextField

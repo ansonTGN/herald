@@ -126,6 +126,7 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 - API Key 必须加密存储在数据库中
 - 只有 Realm Admin 可以查看和更新 Stripe 配置
 - Secret Key 查看时显示脱敏信息（如 `sk_test_*******************`）
+- **编辑时密钥保留**：更新配置时，敏感字段（Secret Key、Webhook Secret）为可选；留空则保留现有值。非敏感字段（Publishable Key、Timeout 等）正常更新
 
 ### 5.2 支付处理流程
 

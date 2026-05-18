@@ -123,6 +123,7 @@ function InvoiceContent({ invoice }: { invoice: InvoiceDetailResponse }) {
           email={invoice.sellerEmail}
           address={invoice.sellerAddress}
           phone={invoice.sellerPhone}
+          taxId={invoice.sellerTaxId}
           dataTestId="invoice-seller-info"
         />
         <ContactCard
@@ -131,6 +132,7 @@ function InvoiceContent({ invoice }: { invoice: InvoiceDetailResponse }) {
           email={invoice.billingEmail}
           address={invoice.billingAddress}
           phone={invoice.billingPhone}
+          taxId={invoice.billingTaxId}
           dataTestId="invoice-buyer-info"
         />
       </div>
@@ -179,6 +181,7 @@ function ContactCard({
   email,
   address,
   phone,
+  taxId,
   dataTestId,
 }: {
   title: string
@@ -186,6 +189,7 @@ function ContactCard({
   email?: string | null
   address?: string | null
   phone?: string | null
+  taxId?: string | null
   dataTestId: string
 }) {
   return (
@@ -196,6 +200,7 @@ function ContactCard({
         {email && <p className="text-muted-foreground">{email}</p>}
         {address && <p className="text-muted-foreground">{address}</p>}
         {phone && <p className="text-muted-foreground">{phone}</p>}
+        {taxId && <p className="text-muted-foreground">Tax ID: {taxId}</p>}
       </div>
     </div>
   )
@@ -249,7 +254,7 @@ function AdditionalInfo({ invoice }: { invoice: InvoiceDetailResponse }) {
         <InfoField label="Due Date">{format(new Date(invoice.dueDate), 'PPP')}</InfoField>
       )}
       {invoice.paymentTerms && <InfoField label="Payment Terms">{invoice.paymentTerms}</InfoField>}
-      {invoice.notes && <InfoField label="Notes">{invoice.notes}</InfoField>}
+      {invoice.notes && <InfoField label="Additional Information">{invoice.notes}</InfoField>}
     </div>
   )
 }

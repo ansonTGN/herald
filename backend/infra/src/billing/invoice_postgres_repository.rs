@@ -65,10 +65,12 @@ struct InvoiceRow {
     billing_address: Option<String>,
     billing_email: Option<String>,
     billing_phone: Option<String>,
+    billing_tax_id: String,
     seller_name: String,
     seller_address: Option<String>,
     seller_email: Option<String>,
     seller_phone: Option<String>,
+    seller_tax_id: String,
     notes: Option<String>,
     payment_terms: Option<String>,
     void_reason: Option<String>,
@@ -117,10 +119,12 @@ fn row_to_invoice(row: InvoiceRow) -> Result<Invoice, CoreError> {
         billing_address: row.billing_address,
         billing_email: row.billing_email,
         billing_phone: row.billing_phone,
+        billing_tax_id: row.billing_tax_id,
         seller_name: row.seller_name,
         seller_address: row.seller_address,
         seller_email: row.seller_email,
         seller_phone: row.seller_phone,
+        seller_tax_id: row.seller_tax_id,
         notes: row.notes,
         payment_terms: row.payment_terms,
         void_reason: row.void_reason,
@@ -210,6 +214,7 @@ struct SellerConfigRow {
     seller_address: Option<String>,
     seller_email: Option<String>,
     seller_phone: Option<String>,
+    seller_tax_id: String,
     default_payment_terms: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -222,6 +227,7 @@ fn row_to_seller_config(row: SellerConfigRow) -> InvoiceSellerConfig {
         seller_address: row.seller_address,
         seller_email: row.seller_email,
         seller_phone: row.seller_phone,
+        seller_tax_id: row.seller_tax_id,
         default_payment_terms: row.default_payment_terms,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -274,8 +280,8 @@ const INVOICE_COLUMNS: &str = r#"
     issue_date, due_date, issued_at, paid_at, voided_at,
     subtotal, discount_amount, tax_amount, shipping_amount, total,
     discount_mode, discount_value, tax_mode, tax_value, shipping_mode, shipping_value,
-    billing_name, billing_address, billing_email, billing_phone,
-    seller_name, seller_address, seller_email, seller_phone,
+    billing_name, billing_address, billing_email, billing_phone, billing_tax_id,
+    seller_name, seller_address, seller_email, seller_phone, seller_tax_id,
     notes, payment_terms, void_reason, created_at, updated_at
 "#;
 
@@ -286,8 +292,8 @@ const INVOICE_COLUMNS_READ: &str = r#"
     issue_date, due_date, issued_at, paid_at, voided_at,
     subtotal, discount_amount, tax_amount, shipping_amount, total,
     discount_mode, discount_value::text, tax_mode, tax_value::text, shipping_mode, shipping_value::text,
-    billing_name, billing_address, billing_email, billing_phone,
-    seller_name, seller_address, seller_email, seller_phone,
+    billing_name, billing_address, billing_email, billing_phone, billing_tax_id,
+    seller_name, seller_address, seller_email, seller_phone, seller_tax_id,
     notes, payment_terms, void_reason, created_at, updated_at
 "#;
 
@@ -322,7 +328,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             Self::reserve_invoice_number_tx(&mut tx, &input.realm_id, year).await?;
 
         let invoice_row = sqlx::query_as::<_, InvoiceRow>(&format!(
-            "INSERT INTO invoice ({insert_cols}) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::numeric,$23,$24::numeric,$25,$26::numeric,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39) RETURNING {read_cols}",
+            "INSERT INTO invoice ({insert_cols}) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::numeric,$23,$24::numeric,$25,$26::numeric,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41) RETURNING {read_cols}",
             insert_cols = INVOICE_COLUMNS,
             read_cols = INVOICE_COLUMNS_READ
         ))
@@ -356,10 +362,12 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             .bind(&input.billing_address)
             .bind(&input.billing_email)
             .bind(&input.billing_phone)
+            .bind(&input.billing_tax_id)
             .bind(&input.seller_name)
             .bind(&input.seller_address)
             .bind(&input.seller_email)
             .bind(&input.seller_phone)
+            .bind(&input.seller_tax_id)
             .bind(&input.notes)
             .bind(&input.payment_terms)
             .bind(None::<String>) // void_reason
@@ -440,10 +448,12 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         let billing_address = input.billing_address.or(existing.billing_address);
         let billing_email = input.billing_email.or(existing.billing_email);
         let billing_phone = input.billing_phone.or(existing.billing_phone);
+        let billing_tax_id = input.billing_tax_id;
         let seller_name = input.seller_name.unwrap_or(existing.seller_name);
         let seller_address = input.seller_address.or(existing.seller_address);
         let seller_email = input.seller_email.or(existing.seller_email);
         let seller_phone = input.seller_phone.or(existing.seller_phone);
+        let seller_tax_id = input.seller_tax_id;
         let due_date = input.due_date.or(existing.due_date);
         let payment_terms = input.payment_terms.or(existing.payment_terms);
         let notes = input.notes.or(existing.notes);
@@ -556,14 +566,16 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         let updated = sqlx::query_as::<_, InvoiceRow>(&format!(
             "UPDATE invoice SET
                 billing_name = $1, billing_address = $2, billing_email = $3, billing_phone = $4,
-                seller_name = $5, seller_address = $6, seller_email = $7, seller_phone = $8,
-                due_date = $9, payment_terms = $10, notes = $11,
-                discount_mode = $12, discount_value = $13::numeric,
-                tax_mode = $14, tax_value = $15::numeric,
-                shipping_mode = $16, shipping_value = $17::numeric,
-                subtotal = $18, discount_amount = $19, tax_amount = $20, shipping_amount = $21,
-                total = $22, updated_at = $23
-             WHERE id = $24
+                billing_tax_id = $5,
+                seller_name = $6, seller_address = $7, seller_email = $8, seller_phone = $9,
+                seller_tax_id = $10,
+                due_date = $11, payment_terms = $12, notes = $13,
+                discount_mode = $14, discount_value = $15::numeric,
+                tax_mode = $16, tax_value = $17::numeric,
+                shipping_mode = $18, shipping_value = $19::numeric,
+                subtotal = $20, discount_amount = $21, tax_amount = $22, shipping_amount = $23,
+                total = $24, updated_at = $25
+             WHERE id = $26
              RETURNING {cols}",
             cols = INVOICE_COLUMNS_READ
         ))
@@ -571,10 +583,12 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         .bind(&billing_address)
         .bind(&billing_email)
         .bind(&billing_phone)
+        .bind(&billing_tax_id)
         .bind(&seller_name)
         .bind(&seller_address)
         .bind(&seller_email)
         .bind(&seller_phone)
+        .bind(&seller_tax_id)
         .bind(due_date)
         .bind(&payment_terms)
         .bind(&notes)
@@ -837,7 +851,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         realm_id: &str,
     ) -> Result<Option<InvoiceSellerConfig>, CoreError> {
         let row = sqlx::query_as::<_, SellerConfigRow>(
-            "SELECT realm_id, seller_name, seller_address, seller_email, seller_phone, default_payment_terms, created_at, updated_at FROM invoice_seller_config WHERE realm_id = $1"
+            "SELECT realm_id, seller_name, seller_address, seller_email, seller_phone, seller_tax_id, default_payment_terms, created_at, updated_at FROM invoice_seller_config WHERE realm_id = $1"
         )
             .bind(realm_id)
             .fetch_optional(self.db.get_postgres_connection_pool())
@@ -854,22 +868,24 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         let now = chrono::Utc::now();
 
         let row = sqlx::query_as::<_, SellerConfigRow>(
-            "INSERT INTO invoice_seller_config (realm_id, seller_name, seller_address, seller_email, seller_phone, default_payment_terms, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            "INSERT INTO invoice_seller_config (realm_id, seller_name, seller_address, seller_email, seller_phone, seller_tax_id, default_payment_terms, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              ON CONFLICT (realm_id) DO UPDATE SET
                  seller_name = EXCLUDED.seller_name,
                  seller_address = EXCLUDED.seller_address,
                  seller_email = EXCLUDED.seller_email,
                  seller_phone = EXCLUDED.seller_phone,
+                 seller_tax_id = EXCLUDED.seller_tax_id,
                  default_payment_terms = EXCLUDED.default_payment_terms,
                  updated_at = EXCLUDED.updated_at
-             RETURNING realm_id, seller_name, seller_address, seller_email, seller_phone, default_payment_terms, created_at, updated_at"
+             RETURNING realm_id, seller_name, seller_address, seller_email, seller_phone, seller_tax_id, default_payment_terms, created_at, updated_at"
         )
             .bind(&config.realm_id)
             .bind(&config.seller_name)
             .bind(&config.seller_address)
             .bind(&config.seller_email)
             .bind(&config.seller_phone)
+            .bind(&config.seller_tax_id)
             .bind(&config.default_payment_terms)
             .bind(now)
             .bind(now)

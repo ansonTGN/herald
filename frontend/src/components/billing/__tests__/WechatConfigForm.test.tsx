@@ -25,8 +25,7 @@ describe('WechatConfigForm', () => {
       await waitFor(() => {
         expect(screen.getByText('App ID is required')).toBeInTheDocument()
         expect(screen.getByText('Merchant ID is required')).toBeInTheDocument()
-        expect(screen.getByText('Private Key is required')).toBeInTheDocument()
-        expect(screen.getByText('API v3 Key is required')).toBeInTheDocument()
+        expect(screen.getByText('Serial No is required')).toBeInTheDocument()
         expect(screen.getByText('Notify URL is required')).toBeInTheDocument()
       })
 

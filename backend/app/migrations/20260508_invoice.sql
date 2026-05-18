@@ -14,6 +14,7 @@ CREATE TABLE invoice_seller_config (
     seller_address TEXT,
     seller_email TEXT,
     seller_phone TEXT,
+    seller_tax_id TEXT NOT NULL,
     default_payment_terms TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -65,12 +66,14 @@ CREATE TABLE invoice (
     billing_address TEXT,
     billing_email TEXT,
     billing_phone TEXT,
+    billing_tax_id TEXT NOT NULL,
 
     -- Seller info (snapshot at creation time)
     seller_name TEXT NOT NULL,
     seller_address TEXT,
     seller_email TEXT,
     seller_phone TEXT,
+    seller_tax_id TEXT NOT NULL,
 
     -- Additional fields
     notes TEXT,

@@ -26,6 +26,7 @@ import { SwitchField, PasswordField } from '@/components/shared/form-fields'
 import { getFieldErrorMessage } from '@/lib/error-utils'
 import { batchUpsertRealmConfigs } from '@/lib/api-generated/sdk.gen'
 import { buildStripeConfigRequest } from '@/lib/stripe-config-utils'
+import { requireFieldOnCreate } from '@/lib/form-utils'
 
 interface StripeConfigFormDialogProps {
   open: boolean
@@ -252,6 +253,8 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
     schema: stripeConfigSchema,
     defaultValues,
     onSubmit: async ({ value }) => {
+      if (!requireFieldOnCreate(form, isEditing, 'publishableKey', value.publishableKey, 'Publishable key is required')) return
+      if (!requireFieldOnCreate(form, isEditing, 'secretKey', value.secretKey, 'Secret key is required')) return
       await saveMutation.mutateAsync(value)
     },
   })
@@ -264,7 +267,7 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
     mutationFn: async (data: StripeConfigFormValues) => {
       const response = await batchUpsertRealmConfigs({
         path: { realmId },
-        body: { configs: [buildStripeConfigRequest(data)] },
+        body: { configs: buildStripeConfigRequest(data) },
       })
       if (response.error) throw response.error
       return response.data
@@ -329,11 +332,11 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
               dataTestId="page-stripe-publishable-key-input"
               placeholder="pk_test_..."
               helpText={
-                <>
-                  Starts with <code>pk_</code>. Found in Stripe Dashboard → Developers → API keys
-                </>
+                isEditing
+                  ? 'Leave empty to keep the existing key'
+                  : undefined
               }
-              required
+              required={!isEditing}
             />
 
             <PasswordField
@@ -343,11 +346,11 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
               dataTestId="page-stripe-secret-key-input"
               placeholder="sk_test_..."
               helpText={
-                <>
-                  Starts with <code>sk_</code>. Found in Stripe Dashboard → Developers → API keys
-                </>
+                isEditing
+                  ? 'Leave empty to keep the existing key'
+                  : undefined
               }
-              required
+              required={!isEditing}
             />
 
             <PasswordField

@@ -31,6 +31,7 @@ export function InvoiceSellerConfigForm({
       sellerAddress: sellerConfig?.sellerAddress ?? null,
       sellerEmail: sellerConfig?.sellerEmail ?? null,
       sellerPhone: sellerConfig?.sellerPhone ?? null,
+      sellerTaxId: sellerConfig?.sellerTaxId ?? '',
       defaultPaymentTerms: sellerConfig?.defaultPaymentTerms ?? null,
     }),
     [sellerConfig]
@@ -121,6 +122,14 @@ export function InvoiceSellerConfigForm({
               label="Phone"
               dataTestId="seller-config-phone-input"
               placeholder="+1 234 567 8900"
+            />
+            <TextField
+              form={form}
+              name="sellerTaxId"
+              label="Tax ID"
+              dataTestId="seller-config-tax-id-input"
+              placeholder="Tax identification number"
+              required
             />
             <TextField
               form={form}

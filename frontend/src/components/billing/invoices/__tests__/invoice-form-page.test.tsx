@@ -51,10 +51,12 @@ function makeInvoiceDetail(overrides: Partial<InvoiceDetailResponse> = {}): Invo
     billingEmail: 'buyer@test.com',
     billingAddress: '123 Buyer St',
     billingPhone: '111-222-3333',
+    billingTaxId: 'TAX123',
     sellerName: 'Test Seller',
     sellerEmail: 'seller@test.com',
     sellerAddress: '456 Seller Ave',
     sellerPhone: '444-555-6666',
+    sellerTaxId: 'TAX456',
     currency: 'CNY',
     source: 'admin_manual',
     status: 'draft',
@@ -106,11 +108,13 @@ function sellerConfigHandler(
     sellerEmail?: string
     sellerAddress?: string
     sellerPhone?: string
+    sellerTaxId?: string
   } | null = {
     sellerName: 'Default Seller Corp',
     sellerEmail: 'seller@default.com',
     sellerAddress: '789 Default Blvd',
     sellerPhone: '999-888-7777',
+    sellerTaxId: 'TAX999',
   }
 ) {
   return http.get(`${BASE_URL}/api/bill/${REALM_ID}/invoice-seller-config`, () => {
@@ -122,6 +126,7 @@ function sellerConfigHandler(
       sellerEmail: config.sellerEmail ?? null,
       sellerAddress: config.sellerAddress ?? null,
       sellerPhone: config.sellerPhone ?? null,
+      sellerTaxId: config.sellerTaxId ?? '',
       createdAt: '2025-01-01T00:00:00Z',
       updatedAt: '2025-01-01T00:00:00Z',
     })
@@ -395,6 +400,9 @@ describe('InvoiceFormPage', () => {
       // Fill accountId (required for create mode) but leave billingName empty
       await user.type(screen.getByTestId('invoice-account-id'), 'acc-1')
 
+      // Fill billing tax ID (required)
+      await user.type(screen.getByTestId('invoice-billing-tax-id'), 'TAX123')
+
       // Fill due date (required)
       await user.type(screen.getByTestId('invoice-due-date'), '2025-07-01')
 
@@ -432,6 +440,7 @@ describe('InvoiceFormPage', () => {
       // Fill required fields except line item name
       await user.type(screen.getByTestId('invoice-account-id'), 'acc-1')
       await user.type(screen.getByTestId('invoice-billing-name'), 'Buyer Name')
+      await user.type(screen.getByTestId('invoice-billing-tax-id'), 'TAX123')
       await user.type(screen.getByTestId('invoice-due-date'), '2025-07-01')
 
       // Line item name is empty (default), blur it
@@ -471,6 +480,9 @@ describe('InvoiceFormPage', () => {
       // Fill required fields
       await user.type(screen.getByTestId('invoice-account-id'), 'acc-test-1')
       await user.type(screen.getByTestId('invoice-billing-name'), 'Acme Corp')
+
+      // Fill billing tax ID (required)
+      await user.type(screen.getByTestId('invoice-billing-tax-id'), 'TAX123456')
 
       // Seller name should be auto-filled from config, ensure it has a value
       const sellerNameInput = screen.getByTestId('invoice-seller-name')

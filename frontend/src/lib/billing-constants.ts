@@ -11,6 +11,14 @@ export const PAYMENT_PROVIDERS = {
   STRIPE: 'stripe',
 } as const
 
+export const STRIPE_CONFIG_KEYS = {
+  ENABLED: 'enabled',
+  API_KEY: 'api_key',
+  PUBLISHABLE_KEY: 'publishable_key',
+  WEBHOOK_SECRET: 'webhook_secret',
+  TIMEOUT: 'timeout',
+} as const
+
 export type PaymentProvider = (typeof PAYMENT_PROVIDERS)[keyof typeof PAYMENT_PROVIDERS]
 
 /**

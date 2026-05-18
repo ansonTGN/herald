@@ -36,7 +36,7 @@ export function parseCreemConfig(configs: RealmConfigResponse[]): CreemConfigFor
 }
 
 export function buildCreemConfigRequest(config: CreemConfigForm) {
-  return [
+  const items = [
     {
       configType: PAYMENT_PROVIDERS.CREEM,
       configKey: CREEM_CONFIG_KEYS.ENABLED,
@@ -66,4 +66,7 @@ export function buildCreemConfigRequest(config: CreemConfigForm) {
       enabled: config.enabled,
     },
   ]
+
+  // Skip empty secret values so the backend preserves existing secrets
+  return items.filter((item) => !(item.isSecret && !item.configValue))
 }

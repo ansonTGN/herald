@@ -1,5 +1,12 @@
 use herald_domain::billing::invoice::InvoiceDetail;
 
+const COLOR_PRIMARY: &str = "#1a365d";
+const COLOR_PRIMARY_LIGHT: &str = "#2b6cb0";
+const COLOR_BG_LIGHT: &str = "#f7fafc";
+const COLOR_BORDER: &str = "#e2e8f0";
+const COLOR_MUTED: &str = "#718096";
+const COLOR_SUBTLE: &str = "#cbd5e0";
+
 /// Render an InvoiceDetail to an HTML string suitable for PDF conversion.
 /// All dynamic text is HTML-escaped to prevent injection.
 pub fn render_invoice_html(detail: &InvoiceDetail) -> String {
@@ -13,11 +20,13 @@ pub fn render_invoice_html(detail: &InvoiceDetail) -> String {
     let billing_address = opt_div(&inv.billing_address);
     let billing_email = opt_div(&inv.billing_email);
     let billing_phone = opt_div(&inv.billing_phone);
+    let billing_tax_id = non_empty_div(&inv.billing_tax_id);
 
     let seller_name = html_escape(&inv.seller_name);
     let seller_address = opt_div(&inv.seller_address);
     let seller_email = opt_div(&inv.seller_email);
     let seller_phone = opt_div(&inv.seller_phone);
+    let seller_tax_id = non_empty_div(&inv.seller_tax_id);
 
     let issue_date = inv
         .issue_date
@@ -38,13 +47,22 @@ pub fn render_invoice_html(detail: &InvoiceDetail) -> String {
 
     let notes = inv.notes.as_deref().map_or(String::new(), |s| {
         format!(
-            "<div class=\"notes\"><strong>Notes:</strong> {}</div>",
+            "<div style=\"margin-top: 24px; padding: 12px; background: #f7fafc; border-top: 2px solid #e2e8f0;\"><strong>Additional Information:</strong> {}</div>",
             html_escape(s)
         )
     });
 
+    let status_color = match inv.status.as_str() {
+        "paid" => "#16a34a",
+        "issued" => "#2563eb",
+        "overdue" => "#d97706",
+        "draft" => "#6b7280",
+        "void" => "#dc2626",
+        _ => "#6b7280",
+    };
+
     let mut line_items_html = String::new();
-    for item in &detail.line_items {
+    for (i, item) in detail.line_items.iter().enumerate() {
         let name = html_escape(&item.name);
         let desc = item.description.as_deref().map_or(String::new(), |d| {
             format!("<br/><small>{}</small>", html_escape(d))
@@ -52,15 +70,20 @@ pub fn render_invoice_html(detail: &InvoiceDetail) -> String {
         let qty = html_escape(&item.quantity);
         let unit_price = format_cents(item.unit_price);
         let item_subtotal = format_cents(item.subtotal);
+        let row_bg = if i % 2 == 1 {
+            " style=\"background: #f9fafb;\""
+        } else {
+            ""
+        };
         line_items_html.push_str(&format!(
-            "<tr><td>{}{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
-            name, desc, qty, unit_price, item_subtotal
+            "<tr{}><td>{}{}</td><td style=\"text-align: right;\">{}</td><td style=\"text-align: right;\">{}</td><td style=\"text-align: right;\">{}</td></tr>",
+            row_bg, name, desc, qty, unit_price, item_subtotal
         ));
     }
 
     let discount_row = if inv.discount_amount != 0 {
         format!(
-            "<tr><td colspan=\"3\">Discount</td><td>{}</td></tr>",
+            "<tr><td style=\"padding: 4px 8px;\">Discount</td><td style=\"padding: 4px 8px; text-align: right;\">{}</td></tr>",
             discount
         )
     } else {
@@ -68,19 +91,26 @@ pub fn render_invoice_html(detail: &InvoiceDetail) -> String {
     };
 
     let tax_row = if inv.tax_amount != 0 {
-        format!("<tr><td colspan=\"3\">Tax</td><td>{}</td></tr>", tax)
+        format!(
+            "<tr><td style=\"padding: 4px 8px;\">Tax</td><td style=\"padding: 4px 8px; text-align: right;\">{}</td></tr>",
+            tax
+        )
     } else {
         String::new()
     };
 
     let shipping_row = if inv.shipping_amount != 0 {
         format!(
-            "<tr><td colspan=\"3\">Shipping</td><td>{}</td></tr>",
+            "<tr><td style=\"padding: 4px 8px;\">Shipping</td><td style=\"padding: 4px 8px; text-align: right;\">{}</td></tr>",
             shipping
         )
     } else {
         String::new()
     };
+
+    let th_style = format!(
+        "padding: 8px; background: {COLOR_PRIMARY}; color: #ffffff; font-size: 11px; font-weight: bold;"
+    );
 
     format!(
         r#"<!DOCTYPE html>
@@ -88,85 +118,114 @@ pub fn render_invoice_html(detail: &InvoiceDetail) -> String {
 <head>
 <meta charset="utf-8"/>
 <style>
-  body {{ font-family: sans-serif; font-size: 12px; color: #333; margin: 0; padding: 20px; }}
-  h1 {{ font-size: 20px; margin-bottom: 4px; }}
-  .header {{ display: flex; justify-content: space-between; margin-bottom: 24px; }}
-  .parties {{ display: flex; justify-content: space-between; margin-bottom: 24px; }}
-  .party {{ width: 45%; }}
-  .party h3 {{ font-size: 13px; margin-bottom: 4px; color: #666; }}
-  .party div {{ margin: 2px 0; }}
-  table {{ width: 100%; border-collapse: collapse; margin-bottom: 16px; }}
-  th {{ text-align: left; padding: 8px; border-bottom: 2px solid #333; font-size: 11px; }}
-  td {{ padding: 8px; border-bottom: 1px solid #ddd; }}
-  .totals {{ float: right; width: 300px; }}
-  .totals td {{ padding: 4px 8px; }}
-  .totals .total-row {{ font-weight: bold; font-size: 14px; border-top: 2px solid #333; }}
-  .notes {{ margin-top: 24px; padding: 12px; background: #f9f9f9; border-radius: 4px; }}
-  .status {{ display: inline-block; padding: 2px 8px; background: #e0e0e0; border-radius: 3px; font-size: 11px; text-transform: uppercase; }}
-  .clearfix {{ clear: both; }}
+  body {{ font-family: sans-serif; font-size: 12px; color: #333; margin: 0; padding: 40px; }}
+  table {{ border-collapse: collapse; }}
+  td {{ padding: 0; }}
 </style>
 </head>
 <body>
-  <div class="header">
-    <div>
-      <h1>INVOICE</h1>
-      <div>{}</div>
-      <div class="status">{}</div>
-    </div>
-    <div style="text-align: right;">
-      <div><strong>Date:</strong> {}</div>
-      <div><strong>Due:</strong> {}</div>
+
+<table width="100%" style="margin-bottom: 20px;">
+  <tr>
+    <td style="background: {COLOR_PRIMARY}; padding: 16px 24px;" width="100%">
+      <table width="100%">
+        <tr>
+          <td>
+            <div style="font-size: 24px; font-weight: bold; color: #ffffff;">INVOICE</div>
+            <div style="font-size: 13px; color: {COLOR_SUBTLE}; margin-top: 2px;">{}</div>
+          </td>
+          <td style="text-align: right;">
+            <span style="background: {}; color: #ffffff; padding: 4px 12px; font-size: 11px; font-weight: bold; text-transform: uppercase;">{}</span>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+
+<table width="100%" style="margin-bottom: 24px;">
+  <tr>
+    <td style="padding-right: 8px;" width="50%">
+      <div style="padding: 12px; background: {COLOR_BG_LIGHT};\">
+        <div style="font-size: 11px; font-weight: bold; color: {COLOR_PRIMARY_LIGHT}; text-transform: uppercase; margin-bottom: 8px;">From</div>
+        <div style="font-weight: bold; margin-bottom: 4px;">{}</div>
+        {}{}{}{}
+      </div>
+    </td>
+    <td style="padding-left: 8px;" width="50%">
+      <div style="padding: 12px; background: {COLOR_BG_LIGHT};\">
+        <div style="font-size: 11px; font-weight: bold; color: {COLOR_PRIMARY_LIGHT}; text-transform: uppercase; margin-bottom: 8px;">Bill To</div>
+        <div style="font-weight: bold; margin-bottom: 4px;">{}</div>
+        {}{}{}{}
+      </div>
+    </td>
+  </tr>
+</table>
+
+<table width="100%" style="margin-bottom: 24px;">
+  <tr>
+    <td style="padding: 0 8px; font-size: 12px;" width="50%">
+      <div style="margin-bottom: 4px;"><strong>Date:</strong> {}</div>
+      <div style="margin-bottom: 4px;"><strong>Due:</strong> {}</div>
       <div><strong>Terms:</strong> {}</div>
-    </div>
-  </div>
+    </td>
+    <td style="padding: 0 8px; font-size: 12px;" width="50%"></td>
+  </tr>
+</table>
 
-  <div class="parties">
-    <div class="party">
-      <h3>From</h3>
-      <div><strong>{}</strong></div>
-      {}{}{}
-    </div>
-    <div class="party">
-      <h3>Bill To</h3>
-      <div><strong>{}</strong></div>
-      {}{}{}
-    </div>
-  </div>
+<table width="100%" style="margin-bottom: 16px; border-collapse: collapse;">
+  <thead>
+    <tr>
+      <th style="text-align: left; {th_style}">Description</th>
+      <th style="text-align: right; {th_style}">Qty</th>
+      <th style="text-align: right; {th_style}">Unit Price</th>
+      <th style="text-align: right; {th_style}">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {}
+  </tbody>
+</table>
 
-  <table>
-    <thead>
-      <tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr>
-    </thead>
-    <tbody>
-      {}
-    </tbody>
-  </table>
+<table width="100%">
+  <tr>
+    <td width="50%"></td>
+    <td width="50%">
+      <table width="100%" style="border-collapse: collapse;">
+        <tr><td style="padding: 4px 8px;">Subtotal</td><td style="padding: 4px 8px; text-align: right;">{}</td></tr>
+        {}{}{}
+        <tr><td style="padding: 8px 8px 4px; font-weight: bold; font-size: 14px; border-top: 2px solid {COLOR_PRIMARY};">Total ({})</td><td style="padding: 8px 8px 4px; text-align: right; font-weight: bold; font-size: 14px; border-top: 2px solid {COLOR_PRIMARY};">{}</td></tr>
+      </table>
+    </td>
+  </tr>
+</table>
 
-  <div class="totals">
-    <table>
-      <tr><td>Subtotal</td><td>{}</td></tr>
-      {}{}{}
-      <tr class="total-row"><td>Total ({})</td><td>{}</td></tr>
-    </table>
-  </div>
-  <div class="clearfix"></div>
+{}
 
-  {}
+<table width="100%" style="margin-top: 32px;">
+  <tr>
+    <td style="border-top: 1px solid {COLOR_BORDER}; padding-top: 8px; font-size: 11px; color: {COLOR_MUTED}; text-align: center;">Thank you for your business</td>
+  </tr>
+</table>
+
 </body>
 </html>"#,
         invoice_number,
+        status_color,
         status,
-        issue_date,
-        due_date,
-        payment_terms,
         seller_name,
         seller_address,
         seller_email,
         seller_phone,
+        seller_tax_id,
         billing_name,
         billing_address,
         billing_email,
         billing_phone,
+        billing_tax_id,
+        issue_date,
+        due_date,
+        payment_terms,
         line_items_html,
         subtotal,
         discount_row,
@@ -203,6 +262,14 @@ fn html_escape(s: &str) -> String {
 fn opt_div(val: &Option<String>) -> String {
     val.as_deref()
         .map_or(String::new(), |s| format!("<div>{}</div>", html_escape(s)))
+}
+
+fn non_empty_div(val: &str) -> String {
+    if val.is_empty() {
+        String::new()
+    } else {
+        format!("<div>{}</div>", html_escape(val))
+    }
 }
 
 #[cfg(test)]

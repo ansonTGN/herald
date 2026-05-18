@@ -87,10 +87,12 @@ function makeInvoiceDetail(overrides: Partial<InvoiceDetailResponse> = {}): Invo
     billingEmail: 'buyer@test.com',
     billingAddress: '123 Buyer St',
     billingPhone: '111-222-3333',
+    billingTaxId: 'TAX123',
     sellerName: 'Test Seller',
     sellerEmail: 'seller@test.com',
     sellerAddress: '456 Seller Ave',
     sellerPhone: '444-555-6666',
+    sellerTaxId: 'TAX456',
     currency: 'CNY',
     source: 'admin_manual',
     status: 'draft',
@@ -335,7 +337,7 @@ describe('InvoiceDetailDialog', () => {
       expect(section.getByText('Issue Date')).toBeInTheDocument()
       expect(section.getByText('Due Date')).toBeInTheDocument()
       expect(section.getByText('Payment Terms')).toBeInTheDocument()
-      expect(section.getByText('Notes')).toBeInTheDocument()
+      expect(section.getByText('Additional Information')).toBeInTheDocument()
 
       // Values
       expect(section.getByText('Net 30')).toBeInTheDocument()

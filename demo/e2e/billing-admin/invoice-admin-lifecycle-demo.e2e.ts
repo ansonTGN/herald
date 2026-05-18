@@ -131,7 +131,9 @@ test.describe('[Billing Admin] Invoice Admin Lifecycle Demo Tests', () => {
       await test.step('And: fill invoice form with subtotal 9900 cents', async () => {
         await page.getByTestId('invoice-account-id').fill(userId)
         await page.getByTestId('invoice-billing-name').fill(billingName)
+        await page.getByTestId('invoice-billing-tax-id').fill('N/A')
         await page.getByTestId('invoice-seller-name').fill(sellerName)
+        await page.getByTestId('invoice-seller-tax-id').fill('N/A')
 
         // Fill line item: unitPrice is in display units (major currency).
         // "99" => 9900 cents. qty=1 => subtotal = 9900 cents.

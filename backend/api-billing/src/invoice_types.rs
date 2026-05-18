@@ -24,6 +24,8 @@ pub struct SellerConfigRequest {
     pub seller_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seller_phone: Option<String>,
+    #[validate(length(min = 1, max = 100))]
+    pub seller_tax_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_payment_terms: Option<String>,
 }
@@ -35,6 +37,7 @@ pub struct SellerConfigResponse {
     pub seller_address: Option<String>,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
+    pub seller_tax_id: String,
     pub default_payment_terms: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -47,6 +50,7 @@ impl From<InvoiceSellerConfig> for SellerConfigResponse {
             seller_address: c.seller_address,
             seller_email: c.seller_email,
             seller_phone: c.seller_phone,
+            seller_tax_id: c.seller_tax_id,
             default_payment_terms: c.default_payment_terms,
             created_at: c.created_at.to_rfc3339(),
             updated_at: c.updated_at.to_rfc3339(),
@@ -187,6 +191,8 @@ pub struct CreateInvoiceRequest {
     pub billing_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_phone: Option<String>,
+    #[validate(length(min = 1, max = 100))]
+    pub billing_tax_id: String,
 
     // Seller snapshot
     #[validate(length(min = 1, max = 200))]
@@ -197,6 +203,8 @@ pub struct CreateInvoiceRequest {
     pub seller_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seller_phone: Option<String>,
+    #[validate(length(min = 1, max = 100))]
+    pub seller_tax_id: String,
 
     // Adjustments
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -235,6 +243,7 @@ pub struct UpdateInvoiceRequest {
     pub billing_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_phone: Option<String>,
+    pub billing_tax_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seller_name: Option<String>,
@@ -244,6 +253,7 @@ pub struct UpdateInvoiceRequest {
     pub seller_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seller_phone: Option<String>,
+    pub seller_tax_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line_items: Option<Vec<LineItemRequest>>,
@@ -406,11 +416,13 @@ pub struct InvoiceDetailResponse {
     pub billing_address: Option<String>,
     pub billing_email: Option<String>,
     pub billing_phone: Option<String>,
+    pub billing_tax_id: String,
 
     pub seller_name: String,
     pub seller_address: Option<String>,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
+    pub seller_tax_id: String,
 
     pub notes: Option<String>,
     pub payment_terms: Option<String>,
@@ -500,11 +512,13 @@ pub fn invoice_to_detail_response(detail: InvoiceDetail) -> InvoiceDetailRespons
         billing_address: detail.invoice.billing_address,
         billing_email: detail.invoice.billing_email,
         billing_phone: detail.invoice.billing_phone,
+        billing_tax_id: detail.invoice.billing_tax_id,
 
         seller_name: detail.invoice.seller_name,
         seller_address: detail.invoice.seller_address,
         seller_email: detail.invoice.seller_email,
         seller_phone: detail.invoice.seller_phone,
+        seller_tax_id: detail.invoice.seller_tax_id,
 
         notes: detail.invoice.notes,
         payment_terms: detail.invoice.payment_terms,

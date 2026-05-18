@@ -133,6 +133,7 @@ mod handlers_test;
         crate::types::ProductDetailResponse,
         crate::types::SubscriptionPlanSummaryForProduct,
         crate::shopify_config_types::ShopifyConfigRequest,
+        crate::shopify_config_types::ShopifyConfigUpdateRequest,
         crate::shopify_config_types::ShopifyConfigResponse,
         crate::shopify_config_types::PaymentProvidersResponse,
         crate::shopify_config_types::PaymentProviderInfo,

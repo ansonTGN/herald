@@ -1,6 +1,7 @@
 use super::shopify_config_handlers::require_realm_admin;
 use crate::shopify_config_types::{
     GenericErrorResponse, PaymentProviderInfo, ValidationErrorDetail, ValidationErrorResponse,
+    validate_request,
 };
 use crate::wechat_config_types::{
     WechatConfigQuery, WechatConfigRequest, WechatConfigResponse, WechatConfigUpdateRequest,
@@ -19,7 +20,6 @@ use sqlx::PgPool;
 use sqlx::Row;
 use tracing::info;
 use uuid::Uuid;
-use validator::Validate;
 
 #[utoipa::path(
     post,
@@ -45,23 +45,7 @@ pub async fn create_wechat_config(
 ) -> Result<(StatusCode, Json<WechatConfigResponse>), ApiError> {
     require_realm_admin(&state, &identity, &realm_id).await?;
 
-    if let Err(errors) = request.validate() {
-        let details: Vec<ValidationErrorDetail> = errors
-            .field_errors()
-            .iter()
-            .flat_map(|(field, errors)| {
-                errors.iter().map(move |error| ValidationErrorDetail {
-                    field: field.to_string(),
-                    message: error.code.to_string(),
-                })
-            })
-            .collect();
-
-        return Err(ApiError::bad_request_json(ValidationErrorResponse {
-            error: "validation_failed".to_string(),
-            details,
-        }));
-    }
+    validate_request(&request).map_err(ApiError::bad_request_json)?;
 
     if !request.app_id.starts_with("wx") {
         return Err(ApiError::bad_request_json(ValidationErrorResponse {
@@ -170,23 +154,7 @@ pub async fn update_wechat_config(
 ) -> Result<(StatusCode, Json<WechatConfigResponse>), ApiError> {
     require_realm_admin(&state, &identity, &realm_id).await?;
 
-    if let Err(errors) = request.validate() {
-        let details: Vec<ValidationErrorDetail> = errors
-            .field_errors()
-            .iter()
-            .flat_map(|(field, errors)| {
-                errors.iter().map(move |error| ValidationErrorDetail {
-                    field: field.to_string(),
-                    message: error.code.to_string(),
-                })
-            })
-            .collect();
-
-        return Err(ApiError::bad_request_json(ValidationErrorResponse {
-            error: "validation_failed".to_string(),
-            details,
-        }));
-    }
+    validate_request(&request).map_err(ApiError::bad_request_json)?;
 
     if let Some(app_id) = &request.app_id
         && !app_id.starts_with("wx")

@@ -189,6 +189,14 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
                   placeholder="Phone number"
                   dataTestId="invoice-billing-phone"
                 />
+                <InvoiceTextField
+                  form={form}
+                  name="billingTaxId"
+                  label="Tax ID"
+                  placeholder="Tax identification number"
+                  required
+                  dataTestId="invoice-billing-tax-id"
+                />
               </div>
 
               <div className="space-y-3">
@@ -221,6 +229,14 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
                   label="Phone"
                   placeholder="Phone number"
                   dataTestId="invoice-seller-phone"
+                />
+                <InvoiceTextField
+                  form={form}
+                  name="sellerTaxId"
+                  label="Tax ID"
+                  placeholder="Tax identification number"
+                  required
+                  dataTestId="invoice-seller-tax-id"
                 />
               </div>
             </div>
@@ -341,7 +357,7 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
             <form.Field name="notes">
               {(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor={field.name}>Notes</Label>
+                  <Label htmlFor={field.name}>Additional Information</Label>
                   <textarea
                     id={field.name}
                     data-testid="invoice-notes"
@@ -388,10 +404,12 @@ function getEditDefaults(invoice: InvoiceDetailResponse): InvoiceEditFormData {
     billingEmail: invoice.billingEmail ?? null,
     billingAddress: invoice.billingAddress ?? null,
     billingPhone: invoice.billingPhone ?? null,
+    billingTaxId: invoice.billingTaxId,
     sellerName: invoice.sellerName,
     sellerEmail: invoice.sellerEmail ?? null,
     sellerAddress: invoice.sellerAddress ?? null,
     sellerPhone: invoice.sellerPhone ?? null,
+    sellerTaxId: invoice.sellerTaxId,
     lineItems: invoice.lineItems.map((item) => ({
       name: item.name,
       description: item.description ?? null,

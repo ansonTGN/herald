@@ -4,12 +4,12 @@ export const stripeConfigSchema = z.object({
   enabled: z.boolean().default(false),
   publishableKey: z
     .string()
-    .min(1, 'Publishable key is required')
-    .regex(/^pk_/, 'Publishable key must start with pk_'),
+    .regex(/^pk_/, 'Publishable key must start with pk_')
+    .or(z.literal('')),
   secretKey: z
     .string()
-    .min(1, 'Secret key is required')
-    .regex(/^sk_/, 'Secret key must start with sk_'),
+    .regex(/^sk_/, 'Secret key must start with sk_')
+    .or(z.literal('')),
   webhookSecret: z
     .string()
     .regex(/^whsec_/, 'Webhook secret must start with whsec_')

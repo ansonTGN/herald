@@ -2,20 +2,34 @@ import { describe, test, expect } from 'vitest'
 import { parseStripeConfig, buildStripeConfigRequest } from '../stripe-config-utils'
 import type { RealmConfigResponse } from '@/lib/api-generated'
 import type { StripeConfigForm } from '@/lib/schemas/stripe-config'
+import { PAYMENT_PROVIDERS, STRIPE_CONFIG_KEYS } from '@/lib/billing-constants'
 
 describe('stripe-config-utils', () => {
   describe('parseStripeConfig', () => {
     test('parses valid Stripe config from realm config array', () => {
       const configs: RealmConfigResponse[] = [
         {
-          configType: 'stripe',
-          configKey: 'settings',
-          configValue: JSON.stringify({
-            enabled: true,
-            publishableKey: 'pk_test_123456789',
-            secretKey: 'sk_test_987654321',
-            webhookSecret: 'whsec_abcdef',
-          }),
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.ENABLED,
+          configValue: 'true',
+          enabled: true,
+        },
+        {
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY,
+          configValue: 'pk_test_123456789',
+          enabled: true,
+        },
+        {
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.API_KEY,
+          configValue: 'sk_test_987654321',
+          enabled: true,
+        },
+        {
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.WEBHOOK_SECRET,
+          configValue: 'whsec_abcdef',
           enabled: true,
         },
       ]
@@ -25,8 +39,8 @@ describe('stripe-config-utils', () => {
       expect(result).toEqual({
         enabled: true,
         publishableKey: 'pk_test_123456789',
-        secretKey: 'sk_test_987654321',
-        webhookSecret: 'whsec_abcdef',
+        secretKey: '',
+        webhookSecret: '',
       })
     })
 
@@ -46,16 +60,18 @@ describe('stripe-config-utils', () => {
     test('handles missing optional fields gracefully', () => {
       const configs: RealmConfigResponse[] = [
         {
-          configType: 'stripe',
-          configKey: 'settings',
-          configValue: JSON.stringify({
-            enabled: true,
-            publishableKey: 'pk_test_123',
-            secretKey: 'sk_test_456',
-            // webhookSecret is missing
-          }),
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.ENABLED,
+          configValue: 'true',
           enabled: true,
         },
+        {
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY,
+          configValue: 'pk_test_123',
+          enabled: true,
+        },
+        // API_KEY and WEBHOOK_SECRET are missing
       ]
 
       const result = parseStripeConfig(configs)
@@ -63,49 +79,40 @@ describe('stripe-config-utils', () => {
       expect(result).toEqual({
         enabled: true,
         publishableKey: 'pk_test_123',
-        secretKey: 'sk_test_456',
+        secretKey: '',
         webhookSecret: '',
       })
     })
 
     test('handles malformed JSON gracefully', () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
+      // The new implementation reads configValue directly, not as JSON
+      // so a malformed value just becomes the string value
       const configs: RealmConfigResponse[] = [
         {
-          configType: 'stripe',
-          configKey: 'settings',
-          configValue: 'not-valid-json{',
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.ENABLED,
+          configValue: 'not-true',
           enabled: true,
         },
       ]
 
       const result = parseStripeConfig(configs)
 
-      // Should return default config instead of throwing
-      expect(result).toEqual({
-        enabled: false,
-        publishableKey: '',
-        secretKey: '',
-        webhookSecret: '',
-      })
-
-      expect(consoleSpy).toHaveBeenCalledWith('Failed to parse Stripe config:', expect.any(Error))
-
-      consoleSpy.mockRestore()
+      expect(result.enabled).toBe(false)
     })
 
     test('handles null values in JSON', () => {
       const configs: RealmConfigResponse[] = [
         {
-          configType: 'stripe',
-          configKey: 'settings',
-          configValue: JSON.stringify({
-            enabled: null,
-            publishableKey: null,
-            secretKey: null,
-            webhookSecret: null,
-          }),
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.ENABLED,
+          configValue: '',
+          enabled: true,
+        },
+        {
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY,
+          configValue: '',
           enabled: true,
         },
       ]
@@ -113,9 +120,9 @@ describe('stripe-config-utils', () => {
       const result = parseStripeConfig(configs)
 
       expect(result).toEqual({
-        enabled: false, // null should default to false
-        publishableKey: '', // null should default to empty string
-        secretKey: '', // null should default to empty string
+        enabled: false,
+        publishableKey: '',
+        secretKey: '',
         webhookSecret: '',
       })
     })
@@ -129,13 +136,15 @@ describe('stripe-config-utils', () => {
           enabled: true,
         },
         {
-          configType: 'stripe',
-          configKey: 'settings',
-          configValue: JSON.stringify({
-            enabled: true,
-            publishableKey: 'pk_test_123',
-            secretKey: 'sk_test_456',
-          }),
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.ENABLED,
+          configValue: 'true',
+          enabled: true,
+        },
+        {
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY,
+          configValue: 'pk_test_123',
           enabled: true,
         },
       ]
@@ -145,7 +154,7 @@ describe('stripe-config-utils', () => {
       expect(result).toEqual({
         enabled: true,
         publishableKey: 'pk_test_123',
-        secretKey: 'sk_test_456',
+        secretKey: '',
         webhookSecret: '',
       })
     })
@@ -153,14 +162,15 @@ describe('stripe-config-utils', () => {
     test('handles special characters in config values', () => {
       const configs: RealmConfigResponse[] = [
         {
-          configType: 'stripe',
-          configKey: 'settings',
-          configValue: JSON.stringify({
-            enabled: true,
-            publishableKey: 'pk_test_<>{}"\\n\\t',
-            secretKey: 'sk_test_special',
-            webhookSecret: '',
-          }),
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.ENABLED,
+          configValue: 'true',
+          enabled: true,
+        },
+        {
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY,
+          configValue: 'pk_test_<>{}"\\n\\t',
           enabled: true,
         },
       ]
@@ -170,23 +180,17 @@ describe('stripe-config-utils', () => {
       expect(result.publishableKey).toBe('pk_test_<>{}"\\n\\t')
     })
 
-    test('handles config with null in array', () => {
-      const configs: RealmConfigResponse[] = [
-        {
-          configType: 'stripe',
-          configKey: 'settings',
-          configValue: JSON.stringify({
-            enabled: true,
-            publishableKey: 'pk_test_123',
-            secretKey: 'sk_test_456',
-          }),
-          enabled: true,
-        },
-        null as any,
-      ]
+    test('handles config with empty array', () => {
+      const configs: RealmConfigResponse[] = []
 
-      // Should not throw, should find the valid config
-      expect(() => parseStripeConfig(configs)).not.toThrow()
+      const result = parseStripeConfig(configs)
+
+      expect(result).toEqual({
+        enabled: false,
+        publishableKey: '',
+        secretKey: '',
+        webhookSecret: '',
+      })
     })
   })
 
@@ -201,18 +205,36 @@ describe('stripe-config-utils', () => {
 
       const result = buildStripeConfigRequest(formData)
 
-      expect(result).toEqual({
-        configType: 'stripe',
-        configKey: 'settings',
-        configValue: JSON.stringify({
+      expect(result).toEqual([
+        {
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.ENABLED,
+          configValue: 'true',
+          isSecret: false,
           enabled: true,
-          publishableKey: 'pk_test_123',
-          secretKey: 'sk_test_456',
-          webhookSecret: 'whsec_789',
-        }),
-        isSecret: false,
-        enabled: true,
-      })
+        },
+        {
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY,
+          configValue: 'pk_test_123',
+          isSecret: false,
+          enabled: true,
+        },
+        {
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.API_KEY,
+          configValue: 'sk_test_456',
+          isSecret: true,
+          enabled: true,
+        },
+        {
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.WEBHOOK_SECRET,
+          configValue: 'whsec_789',
+          isSecret: true,
+          enabled: true,
+        },
+      ])
     })
 
     test('builds request with optional webhook secret omitted', () => {
@@ -225,20 +247,9 @@ describe('stripe-config-utils', () => {
 
       const result = buildStripeConfigRequest(formData)
 
-      const parsedValue = JSON.parse(result.configValue)
-      expect(parsedValue.webhookSecret).toBeUndefined()
-      expect(result).toEqual({
-        configType: 'stripe',
-        configKey: 'settings',
-        configValue: JSON.stringify({
-          enabled: true,
-          publishableKey: 'pk_test_123',
-          secretKey: 'sk_test_456',
-          webhookSecret: undefined,
-        }),
-        isSecret: false,
-        enabled: true,
-      })
+      // Empty secrets are filtered out
+      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.WEBHOOK_SECRET)).toBeUndefined()
+      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.API_KEY)).toBeDefined()
     })
 
     test('builds request with disabled config', () => {
@@ -251,8 +262,8 @@ describe('stripe-config-utils', () => {
 
       const result = buildStripeConfigRequest(formData)
 
-      expect(result.enabled).toBe(false)
-      expect(result.configType).toBe('stripe')
+      expect(result.every((r) => r.enabled === false)).toBe(true)
+      expect(result.every((r) => r.configType === PAYMENT_PROVIDERS.STRIPE)).toBe(true)
     })
 
     test('handles minimum valid values', () => {
@@ -265,14 +276,11 @@ describe('stripe-config-utils', () => {
 
       const result = buildStripeConfigRequest(formData)
 
-      expect(result.configType).toBe('stripe')
-      expect(result.configKey).toBe('settings')
-      expect(JSON.parse(result.configValue)).toEqual({
-        enabled: true,
-        publishableKey: 'pk_test_a',
-        secretKey: 'sk_test_a',
-        webhookSecret: undefined,
-      })
+      expect(result.every((r) => r.configType === PAYMENT_PROVIDERS.STRIPE)).toBe(true)
+      const keys = result.map((r) => r.configKey)
+      expect(keys).toContain(STRIPE_CONFIG_KEYS.ENABLED)
+      expect(keys).toContain(STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY)
+      expect(keys).toContain(STRIPE_CONFIG_KEYS.API_KEY)
     })
 
     test('handles long key values', () => {
@@ -286,13 +294,12 @@ describe('stripe-config-utils', () => {
 
       const result = buildStripeConfigRequest(formData)
 
-      const parsedValue = JSON.parse(result.configValue)
-      expect(parsedValue.publishableKey).toBe(`pk_test_${longKey}`)
-      expect(parsedValue.secretKey).toBe(`sk_test_${longKey}`)
-      expect(parsedValue.webhookSecret).toBe(`whsec_${longKey}`)
+      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY)?.configValue).toBe(`pk_test_${longKey}`)
+      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.API_KEY)?.configValue).toBe(`sk_test_${longKey}`)
+      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.WEBHOOK_SECRET)?.configValue).toBe(`whsec_${longKey}`)
     })
 
-    test('marks isSecret as false (individual fields are marked in JSON)', () => {
+    test('marks individual fields with correct isSecret', () => {
       const formData: StripeConfigForm = {
         enabled: true,
         publishableKey: 'pk_test_123',
@@ -302,9 +309,10 @@ describe('stripe-config-utils', () => {
 
       const result = buildStripeConfigRequest(formData)
 
-      // At the request level, isSecret is false
-      // Individual sensitive fields are marked in the JSON structure
-      expect(result.isSecret).toBe(false)
+      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.ENABLED)?.isSecret).toBe(false)
+      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY)?.isSecret).toBe(false)
+      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.API_KEY)?.isSecret).toBe(true)
+      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.WEBHOOK_SECRET)?.isSecret).toBe(true)
     })
   })
 })

@@ -80,3 +80,26 @@ export function getFieldValueAsStringArray(value: unknown): string[] {
   if (Array.isArray(value)) return value as string[]
   return []
 }
+
+/**
+ * Validate that a field is non-empty when creating (not editing).
+ * Sets an onSubmit error on the form field if the value is empty.
+ */
+export function requireFieldOnCreate<T extends string>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  form: { setFieldMeta: (name: T, updater: (meta: any) => any) => void },
+  isEditing: boolean,
+  fieldName: T,
+  value: string | undefined | null,
+  errorMessage: string,
+): boolean {
+  if (!isEditing && !value) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    form.setFieldMeta(fieldName, (meta: any) => ({
+      ...meta,
+      errorMap: { onSubmit: errorMessage },
+    }))
+    return false
+  }
+  return true
+}

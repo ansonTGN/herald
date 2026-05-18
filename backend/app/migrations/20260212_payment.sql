@@ -3,29 +3,6 @@
 -- ====================================
 -- Consolidates payment provider configuration and multi-provider event schema.
 
-INSERT INTO realm_config (
-    realm_id,
-    config_type,
-    config_key,
-    config_value,
-    is_secret,
-    enabled,
-    metadata
-) VALUES
-    ('admin', 'creem', 'api_key', 'creem_your_api_key_here', true, true, null),
-    ('admin', 'creem', 'webhook_secret', 'creem_your_webhook_secret_here', true, true, null),
-    ('admin', 'creem', 'timeout', '30', false, true, null),
-    ('admin', 'stripe', 'api_key', 'sk_test_your_api_key_here', true, true, null),
-    ('admin', 'stripe', 'webhook_secret', 'whsec_your_webhook_secret_here', true, true, null),
-    ('admin', 'stripe', 'publishable_key', 'pk_test_your_publishable_key_here', false, true, null),
-    ('admin', 'stripe', 'timeout', '30', false, true, null)
-ON CONFLICT (realm_id, config_type, config_key)
-DO UPDATE SET
-    config_value = EXCLUDED.config_value,
-    is_secret = EXCLUDED.is_secret,
-    enabled = EXCLUDED.enabled,
-    updated_at = CURRENT_TIMESTAMP;
-
 DROP INDEX IF EXISTS idx_payment_event_creem_event_id;
 ALTER TABLE payment_event DROP CONSTRAINT IF EXISTS payment_event_creem_event_id_key;
 

@@ -4,8 +4,8 @@ export const creemConfigSchema = z.object({
   enabled: z.boolean().default(false),
   apiKey: z
     .string()
-    .min(1, 'API key is required')
-    .regex(/^ck_(test|live)_/, 'API key must start with ck_test_ or ck_live_'),
+    .regex(/^ck_(test|live)_/, 'API key must start with ck_test_ or ck_live_')
+    .or(z.literal('')),
   timeout: z.number().min(1).max(120).default(30),
   webhookSecret: z
     .string()

@@ -13,6 +13,7 @@ import { FormActionBar } from '@/components/shared/form-action-bar'
 import { SwitchField, PasswordField, NumberField } from '@/components/shared/form-fields'
 import { batchUpsertRealmConfigs } from '@/lib/api-generated/sdk.gen'
 import { buildCreemConfigRequest } from '@/lib/creem-config-utils'
+import { requireFieldOnCreate } from '@/lib/form-utils'
 
 interface CreemConfigFormPageProps {
   realmId: string
@@ -31,6 +32,7 @@ export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfi
     schema: creemConfigSchema,
     defaultValues,
     onSubmit: async ({ value }) => {
+      if (!requireFieldOnCreate(form, isEditing, 'apiKey', value.apiKey, 'API key is required')) return
       await saveMutation.mutateAsync(value)
     },
   })
@@ -108,11 +110,11 @@ export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfi
               dataTestId="page-creem-api-key-input"
               placeholder="ck_test_..."
               helpText={
-                <>
-                  Starts with <code>ck_test_</code> or <code>ck_live_</code>
-                </>
+                isEditing
+                  ? 'Leave empty to keep the existing key'
+                  : undefined
               }
-              required
+              required={!isEditing}
             />
 
             <NumberField

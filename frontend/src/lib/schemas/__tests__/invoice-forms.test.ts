@@ -24,10 +24,12 @@ const validCreateForm = {
   billingEmail: 'billing@acme.com',
   billingAddress: '123 Main St',
   billingPhone: '+1234567890',
+  billingTaxId: 'TAX123456',
   sellerName: 'Seller Inc',
   sellerEmail: 'seller@example.com',
   sellerAddress: '456 Oak Ave',
   sellerPhone: '+0987654321',
+  sellerTaxId: 'TAX654321',
   currency: 'CNY',
   lineItems: [validLineItem],
   discountMode: null,
@@ -48,10 +50,12 @@ const validEditForm = {
   billingEmail: 'billing@acme.com',
   billingAddress: '123 Main St',
   billingPhone: '+1234567890',
+  billingTaxId: 'TAX123456',
   sellerName: 'Seller Inc',
   sellerEmail: 'seller@example.com',
   sellerAddress: '456 Oak Ave',
   sellerPhone: '+0987654321',
+  sellerTaxId: 'TAX654321',
   lineItems: [validLineItem],
   discountMode: null,
   discountValue: null,
@@ -107,6 +111,22 @@ describe('invoiceCreateFormSchema', () => {
     const result = invoiceCreateFormSchema.safeParse({
       ...validCreateForm,
       sellerName: '',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects empty billingTaxId', () => {
+    const result = invoiceCreateFormSchema.safeParse({
+      ...validCreateForm,
+      billingTaxId: '',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects empty sellerTaxId', () => {
+    const result = invoiceCreateFormSchema.safeParse({
+      ...validCreateForm,
+      sellerTaxId: '',
     })
     expect(result.success).toBe(false)
   })
@@ -330,6 +350,22 @@ describe('invoiceEditFormSchema', () => {
     expect(result.success).toBe(false)
   })
 
+  it('rejects empty billingTaxId', () => {
+    const result = invoiceEditFormSchema.safeParse({
+      ...validEditForm,
+      billingTaxId: '',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects empty sellerTaxId', () => {
+    const result = invoiceEditFormSchema.safeParse({
+      ...validEditForm,
+      sellerTaxId: '',
+    })
+    expect(result.success).toBe(false)
+  })
+
   it('rejects missing dueDate', () => {
     const result = invoiceEditFormSchema.safeParse({
       ...validEditForm,
@@ -356,6 +392,7 @@ describe('invoiceSellerConfigSchema', () => {
       sellerAddress: '456 Oak Ave',
       sellerEmail: 'seller@example.com',
       sellerPhone: '+1234567890',
+      sellerTaxId: 'TAX654321',
       defaultPaymentTerms: 'Net 30',
     })
     expect(result.success).toBe(true)
@@ -368,11 +405,19 @@ describe('invoiceSellerConfigSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  it('accepts config with only sellerName', () => {
+  it('accepts config with only sellerName and sellerTaxId', () => {
+    const result = invoiceSellerConfigSchema.safeParse({
+      sellerName: 'Seller Inc',
+      sellerTaxId: 'TAX123',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects missing sellerTaxId', () => {
     const result = invoiceSellerConfigSchema.safeParse({
       sellerName: 'Seller Inc',
     })
-    expect(result.success).toBe(true)
+    expect(result.success).toBe(false)
   })
 
   it('accepts optional fields as null', () => {
@@ -381,6 +426,7 @@ describe('invoiceSellerConfigSchema', () => {
       sellerAddress: null,
       sellerEmail: null,
       sellerPhone: null,
+      sellerTaxId: 'TAX123',
       defaultPaymentTerms: null,
     })
     expect(result.success).toBe(true)
@@ -392,6 +438,7 @@ describe('invoiceSellerConfigSchema', () => {
       sellerAddress: undefined,
       sellerEmail: undefined,
       sellerPhone: undefined,
+      sellerTaxId: 'TAX123',
       defaultPaymentTerms: undefined,
     })
     expect(result.success).toBe(true)
@@ -547,10 +594,12 @@ describe('getInvoiceFormDefaults', () => {
       billingEmail: null,
       billingAddress: null,
       billingPhone: null,
+      billingTaxId: '',
       sellerName: '',
       sellerEmail: null,
       sellerAddress: null,
       sellerPhone: null,
+      sellerTaxId: '',
       currency: 'CNY',
       lineItems: [{ name: '', description: null, quantity: '1', unitPrice: '0.00' }],
       discountMode: null,
@@ -573,12 +622,14 @@ describe('getInvoiceFormDefaults', () => {
       sellerAddress: '456 Oak Ave',
       sellerEmail: 'seller@example.com',
       sellerPhone: '+1234567890',
+      sellerTaxId: 'TAX654321',
     })
 
     expect(defaults.sellerName).toBe('Seller Inc')
     expect(defaults.sellerAddress).toBe('456 Oak Ave')
     expect(defaults.sellerEmail).toBe('seller@example.com')
     expect(defaults.sellerPhone).toBe('+1234567890')
+    expect(defaults.sellerTaxId).toBe('TAX654321')
   })
 
   it('handles null seller config gracefully', () => {

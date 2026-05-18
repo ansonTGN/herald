@@ -125,21 +125,21 @@ export const shopifyConfigSchema = z.object({
 
   adminAccessToken: z
     .string()
-    .min(1, 'Admin Access Token is required')
+    .trim()
     .regex(SHOPIFY_ADMIN_TOKEN_REGEX, 'Must start with shpat_')
-    .trim(),
+    .or(z.literal('')),
 
   storefrontAccessToken: z
     .string()
-    .min(1, 'Storefront Access Token is required')
+    .trim()
     .regex(SHOPIFY_STOREFRONT_TOKEN_REGEX, 'Must start with shp_')
-    .trim(),
+    .or(z.literal('')),
 
   appClientSecret: z
     .string()
-    .min(1, 'App Client Secret is required')
+    .trim()
     .min(10, 'App Client Secret must be at least 10 characters')
-    .trim(),
+    .or(z.literal('')),
 
   apiVersion: z.string().default('2024-01').optional(),
 
@@ -251,10 +251,10 @@ export const wechatConfigSchema = z.object({
 
   privateKey: z
     .string()
-    .min(1, 'Private Key is required')
     .refine(
       (val) =>
-        val.includes('-----BEGIN PRIVATE KEY-----') && val.includes('-----END PRIVATE KEY-----'),
+        !val ||
+        (val.includes('-----BEGIN PRIVATE KEY-----') && val.includes('-----END PRIVATE KEY-----')),
       'Private Key must be in valid PEM format'
     )
     .trim(),
@@ -263,8 +263,7 @@ export const wechatConfigSchema = z.object({
 
   v3Key: z
     .string()
-    .min(1, 'API v3 Key is required')
-    .length(32, 'API v3 Key must be exactly 32 bytes')
+    .refine((val) => !val || val.length === 32, 'API v3 Key must be exactly 32 bytes')
     .trim(),
 
   notifyUrl: z

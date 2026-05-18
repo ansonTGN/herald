@@ -204,6 +204,19 @@ And 旧 Secret Key 被替换
 And 系统显示成功消息："Configuration updated successfully"
 ```
 
+**场景 1a：保留已有密钥**
+```gherkin
+Given 我是 realm-1 的管理员
+And 已存在 Stripe 配置
+When 我点击 "Edit" 按钮
+And 我不修改 API Secret Key（留空）
+And 我修改其他非敏感字段（如 API Version）
+And 我保存更改
+Then 配置更新成功
+And 原有的 Secret Key 保持不变
+And 非敏感字段更新为新值
+```
+
 **场景 2：更新 Webhook Endpoint**
 ```gherkin
 Given 我是 realm-1 的管理员

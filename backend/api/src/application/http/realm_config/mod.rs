@@ -459,6 +459,9 @@ pub async fn delete_realm_config(
             herald_core::domain::common::entities::app_errors::CoreError::Forbidden(msg) => {
                 ApiError::forbidden(msg)
             }
+            herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
+                ApiError::not_found("Config not found")
+            }
             _ => {
                 tracing::error!("Failed to delete realm config: {e}");
                 ApiError::internal("Failed to delete realm config")

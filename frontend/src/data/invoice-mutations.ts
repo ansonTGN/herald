@@ -31,10 +31,12 @@ export function useCreateInvoice(realmId: string) {
         billingEmail: values.billingEmail ?? undefined,
         billingAddress: values.billingAddress ?? undefined,
         billingPhone: values.billingPhone ?? undefined,
+        billingTaxId: values.billingTaxId,
         sellerName: values.sellerName,
         sellerEmail: values.sellerEmail ?? undefined,
         sellerAddress: values.sellerAddress ?? undefined,
         sellerPhone: values.sellerPhone ?? undefined,
+        sellerTaxId: values.sellerTaxId,
         currency: values.currency,
         lineItems: values.lineItems.map((item) => ({
           name: item.name,
@@ -79,10 +81,12 @@ export function useUpdateInvoice(realmId: string, invoiceId: string) {
         billingEmail: values.billingEmail ?? undefined,
         billingAddress: values.billingAddress ?? undefined,
         billingPhone: values.billingPhone ?? undefined,
+        billingTaxId: values.billingTaxId,
         sellerName: values.sellerName,
         sellerEmail: values.sellerEmail ?? undefined,
         sellerAddress: values.sellerAddress ?? undefined,
         sellerPhone: values.sellerPhone ?? undefined,
+        sellerTaxId: values.sellerTaxId,
         lineItems: values.lineItems.map((item) => ({
           name: item.name,
           description: item.description ?? undefined,
@@ -198,6 +202,7 @@ export function useUpsertSellerConfig(realmId: string) {
           sellerAddress: values.sellerAddress ?? undefined,
           sellerEmail: values.sellerEmail ?? undefined,
           sellerPhone: values.sellerPhone ?? undefined,
+          sellerTaxId: values.sellerTaxId,
           defaultPaymentTerms: values.defaultPaymentTerms ?? undefined,
         },
       })

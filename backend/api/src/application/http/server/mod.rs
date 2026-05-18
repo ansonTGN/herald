@@ -16,7 +16,7 @@ use tower::ServiceBuilder;
 use tower_http::{
     cors::CorsLayer,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
-    services::ServeDir,
+    services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
 
@@ -224,10 +224,8 @@ pub fn create_router(
     // println!("{router:?}");
     if let Some(dir) = static_dir {
         tracing::info!("Serving static files from: {}", dir);
-        router.fallback_service(
-            ServeDir::new(&dir)
-                .fallback(ServeDir::new(&dir).append_index_html_on_directories(false)),
-        )
+        let index_html = format!("{}/index.html", dir.trim_end_matches('/'));
+        router.fallback_service(ServeDir::new(&dir).fallback(ServeFile::new(index_html)))
     } else {
         router
     }

@@ -11392,7 +11392,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ShopifyConfigRequest"
+                "$ref": "#/components/schemas/ShopifyConfigUpdateRequest"
               }
             }
           },
@@ -13967,7 +13967,9 @@
           "currency",
           "lineItems",
           "billingName",
-          "sellerName"
+          "billingTaxId",
+          "sellerName",
+          "sellerTaxId"
         ],
         "properties": {
           "accountId": {
@@ -14001,6 +14003,9 @@
               "string",
               "null"
             ]
+          },
+          "billingTaxId": {
+            "type": "string"
           },
           "currency": {
             "type": "string"
@@ -14069,6 +14074,9 @@
               "string",
               "null"
             ]
+          },
+          "sellerTaxId": {
+            "type": "string"
           },
           "shippingMode": {
             "type": [
@@ -15141,7 +15149,9 @@
           "shippingAmount",
           "total",
           "billingName",
+          "billingTaxId",
           "sellerName",
+          "sellerTaxId",
           "lineItems",
           "history",
           "createdAt",
@@ -15179,6 +15189,9 @@
               "string",
               "null"
             ]
+          },
+          "billingTaxId": {
+            "type": "string"
           },
           "createdAt": {
             "type": "string"
@@ -15289,6 +15302,9 @@
               "string",
               "null"
             ]
+          },
+          "sellerTaxId": {
+            "type": "string"
           },
           "shippingAmount": {
             "type": "integer",
@@ -17883,7 +17899,8 @@
       "SellerConfigRequest": {
         "type": "object",
         "required": [
-          "sellerName"
+          "sellerName",
+          "sellerTaxId"
         ],
         "properties": {
           "defaultPaymentTerms": {
@@ -17912,6 +17929,9 @@
               "string",
               "null"
             ]
+          },
+          "sellerTaxId": {
+            "type": "string"
           }
         }
       },
@@ -17919,6 +17939,7 @@
         "type": "object",
         "required": [
           "sellerName",
+          "sellerTaxId",
           "createdAt",
           "updatedAt"
         ],
@@ -17952,6 +17973,9 @@
               "string",
               "null"
             ]
+          },
+          "sellerTaxId": {
+            "type": "string"
           },
           "updatedAt": {
             "type": "string"
@@ -18138,6 +18162,71 @@
           },
           "webhookSubscriptionMode": {
             "type": "string"
+          }
+        }
+      },
+      "ShopifyConfigUpdateRequest": {
+        "type": "object",
+        "description": "Shopify configuration update request (secret fields optional — omit to keep existing values)",
+        "properties": {
+          "adminAccessToken": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Admin API access token (shpat_*) — omit to keep existing"
+          },
+          "apiVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Shopify API version (optional, defaults to 2024-01)"
+          },
+          "appClientSecret": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "App client secret for webhook HMAC verification — omit to keep existing"
+          },
+          "shopDomain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Shop domain (e.g., demo-store.myshopify.com)",
+            "example": "demo-store.myshopify.com"
+          },
+          "skipConnectionTest": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Skip connection test (for demo/test environments)"
+          },
+          "storefrontAccessToken": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Storefront API access token (shp_*) — omit to keep existing"
+          },
+          "timeout": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "HTTP timeout in seconds (optional, defaults to 30)",
+            "minimum": 0
+          },
+          "webhookSubscriptionMode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Webhook subscription mode (optional, defaults to admin_api)"
           }
         }
       },
@@ -18821,6 +18910,10 @@
       },
       "UpdateInvoiceRequest": {
         "type": "object",
+        "required": [
+          "billingTaxId",
+          "sellerTaxId"
+        ],
         "properties": {
           "billingAddress": {
             "type": [
@@ -18845,6 +18938,9 @@
               "string",
               "null"
             ]
+          },
+          "billingTaxId": {
+            "type": "string"
           },
           "discountMode": {
             "type": [
@@ -18909,6 +19005,9 @@
               "string",
               "null"
             ]
+          },
+          "sellerTaxId": {
+            "type": "string"
           },
           "shippingMode": {
             "type": [

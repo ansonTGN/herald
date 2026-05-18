@@ -55,6 +55,37 @@ pub struct ShopifyConfigRequest {
     pub skip_connection_test: bool,
 }
 
+/// Shopify configuration update request (secret fields optional — omit to keep existing values)
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct ShopifyConfigUpdateRequest {
+    /// Shop domain (e.g., demo-store.myshopify.com)
+    #[validate(length(min = 1, message = "Shop domain is required"))]
+    #[schema(example = "demo-store.myshopify.com")]
+    pub shop_domain: Option<String>,
+
+    /// Admin API access token (shpat_*) — omit to keep existing
+    pub admin_access_token: Option<String>,
+
+    /// Storefront API access token (shp_*) — omit to keep existing
+    pub storefront_access_token: Option<String>,
+
+    /// App client secret for webhook HMAC verification — omit to keep existing
+    pub app_client_secret: Option<String>,
+
+    /// Shopify API version (optional, defaults to 2024-01)
+    pub api_version: Option<String>,
+
+    /// Webhook subscription mode (optional, defaults to admin_api)
+    pub webhook_subscription_mode: Option<String>,
+
+    /// HTTP timeout in seconds (optional, defaults to 30)
+    pub timeout: Option<u32>,
+
+    /// Skip connection test (for demo/test environments)
+    pub skip_connection_test: Option<bool>,
+}
+
 fn default_api_version() -> String {
     "2024-01".to_string()
 }
@@ -160,4 +191,25 @@ pub struct ValidationErrorDetail {
 pub struct GenericErrorResponse {
     pub error: String,
     pub message: String,
+}
+
+pub fn validate_request<T: Validate>(req: &T) -> Result<(), ValidationErrorResponse> {
+    if let Err(errors) = req.validate() {
+        let details: Vec<ValidationErrorDetail> = errors
+            .field_errors()
+            .iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |error| ValidationErrorDetail {
+                    field: field.to_string(),
+                    message: error.code.to_string(),
+                })
+            })
+            .collect();
+        Err(ValidationErrorResponse {
+            error: "validation_failed".to_string(),
+            details,
+        })
+    } else {
+        Ok(())
+    }
 }

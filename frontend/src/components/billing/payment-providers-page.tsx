@@ -29,6 +29,7 @@ import {
 } from '@/lib/api-generated'
 import { listRealmConfigs, deleteRealmConfig } from '@/lib/api-generated/sdk.gen'
 import { parseStripeConfig } from '@/lib/stripe-config-utils'
+import { STRIPE_CONFIG_KEYS } from '@/lib/billing-constants'
 import { parseCreemConfig, CREEM_CONFIG_KEYS } from '@/lib/creem-config-utils'
 
 interface PaymentProvidersPageProps {
@@ -144,12 +145,22 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
       } else {
         const configKeys =
           deleteProviderType === 'stripe'
-            ? [{ configType: 'stripe', configKey: 'settings' }]
+            ? Object.values(STRIPE_CONFIG_KEYS).map((key) => ({
+                configType: 'stripe',
+                configKey: key,
+              }))
             : Object.values(CREEM_CONFIG_KEYS).map((key) => ({
                 configType: 'creem',
                 configKey: key,
               }))
-        await Promise.all(configKeys.map((k) => deleteRealmConfig({ path: { realmId, ...k } })))
+        // Delete all keys, ignoring 404s for keys that don't exist
+        await Promise.all(
+          configKeys.map((k) =>
+            deleteRealmConfig({ path: { realmId, ...k } }).catch((e) => {
+              if (e?.status !== 404) throw e
+            })
+          )
+        )
         return undefined
       }
     },
@@ -207,57 +218,32 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
     <div className="space-y-6" data-testid="payment-providers-page">
       <PageHeader title="Payment Providers" />
 
-      {!hasAnyProvider ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Plug2 className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No Payment Providers</h3>
-            <p className="text-sm text-muted-foreground text-center mb-4">
-              Configure a payment provider to start accepting subscriptions
-            </p>
-            <div className="flex gap-2 flex-wrap justify-center">
-              <Button onClick={() => handleNavigate('shopify')} data-testid="add-shopify-button">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Shopify
-              </Button>
-              <Button
-                onClick={() => handleNavigate('wechat')}
-                data-testid="add-wechat-button"
-                variant="outline"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add WeChat Pay
-              </Button>
-              <Button
-                onClick={() => handleNavigate('stripe')}
-                data-testid="add-stripe-button"
-                variant="outline"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Stripe
-              </Button>
-              <Button
-                onClick={() => handleNavigate('creem')}
-                data-testid="add-creem-button"
-                variant="outline"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Creem
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div data-testid="provider-list">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Provider</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+      {unconfiguredProviders.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          {unconfiguredProviders.map(({ type, label }) => (
+            <Button
+              key={type}
+              onClick={() => handleNavigate(type)}
+              data-testid={`add-${type}-button`}
+              variant="outline"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add {label}
+            </Button>
+          ))}
+        </div>
+      )}
+
+      {hasAnyProvider ? (
+        <Table data-testid="provider-list">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Provider</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
               {shopifyProvider && shopifyConfigDetails && (
                 <>
                   <TableRow data-testid="shopify-provider-row">
@@ -267,8 +253,8 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                         {shopifyProvider.enabled ? 'Active' : 'Disabled'}
                       </Badge>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -339,8 +325,8 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                     <TableCell>
                       <Badge variant="default">Active</Badge>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -400,8 +386,8 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                       {stripeConfigDetails.enabled ? 'Active' : 'Disabled'}
                     </Badge>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-2">
                       <Button
                         variant="outline"
                         size="sm"
@@ -436,8 +422,8 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                       {creemConfigDetails.enabled ? 'Active' : 'Disabled'}
                     </Badge>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-2">
                       <Button
                         variant="outline"
                         size="sm"
@@ -465,24 +451,15 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
               )}
             </TableBody>
           </Table>
-
-          {unconfiguredProviders.length > 0 && (
-            <div className="flex gap-2 mt-4 flex-wrap">
-              {unconfiguredProviders.map(({ type, label }) => (
-                <Button
-                  key={type}
-                  onClick={() => handleNavigate(type)}
-                  data-testid={`add-${type}-button`}
-                  variant="outline"
-                  size="sm"
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add {label}
-                </Button>
-              ))}
-            </div>
-          )}
-        </div>
+      ) : (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Plug2 className="h-12 w-12 text-muted-foreground mb-4" />
+            <p className="text-sm text-muted-foreground text-center">
+              No providers configured yet. Click a button above to get started.
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       <DeleteConfirmDialog

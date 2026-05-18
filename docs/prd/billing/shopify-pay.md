@@ -160,6 +160,7 @@ Shopify Pay 集成是 Herald 系统支付平台选项之一，与 Creem（模拟
 - 所有敏感信息（API Tokens）必须加密存储在数据库中
 - 只有 Realm Admin 可以查看和更新 Shopify 配置
 - 敏感信息查看时显示脱敏信息
+- **编辑时密钥保留**：更新配置时，敏感字段（Admin Access Token、Storefront Access Token、App Client Secret）为可选；留空则保留现有值，不会覆盖为空。非敏感字段（Shop Domain、API Version 等）正常更新
 
 ### 5.2 Webhook 驱动的订阅创建流程
 
@@ -328,7 +329,7 @@ subscription_id -> points_credit_ledger -> user_id  ❌
 - Shopify 配置页面应包含：
   - 配置列表展示（Shop Domain、Environment、Last Updated、Actions）
   - 配置创建表单（Shop Domain、Admin Access Token、Storefront Access Token、App Client Secret、API Version）
-  - 配置编辑功能（支持密钥轮换）
+  - 配置编辑功能（支持密钥轮换；敏感字段留空保留现有值）
   - 配置删除功能（无活跃订阅时可删除）
   - 连接测试功能（测试 Admin API 和 Storefront API）
 - 必须突出敏感信息的脱敏显示和加密存储说明。

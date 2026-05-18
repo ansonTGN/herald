@@ -26,8 +26,10 @@ export interface InvoiceCreateData {
   accountId: string
   billingName: string
   billingEmail?: string
+  billingTaxId?: string
   sellerName: string
   sellerEmail?: string
+  sellerTaxId?: string
   lineItems: InvoiceLineItemData[]
   dueDate: string           // ISO date string, e.g. '2026-12-31'
   discountMode?: 'fixed' | 'percent' | null
@@ -91,12 +93,14 @@ export async function createInvoice(
   if (data.billingEmail) {
     await page.getByTestId('invoice-billing-email').fill(data.billingEmail)
   }
+  await page.getByTestId('invoice-billing-tax-id').fill(data.billingTaxId ?? 'N/A')
 
   // Seller info
   await page.getByTestId('invoice-seller-name').fill(data.sellerName)
   if (data.sellerEmail) {
     await page.getByTestId('invoice-seller-email').fill(data.sellerEmail)
   }
+  await page.getByTestId('invoice-seller-tax-id').fill(data.sellerTaxId ?? 'N/A')
 
   // Fill the first line item (always present with default values)
   const firstItem = data.lineItems[0]

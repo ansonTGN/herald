@@ -170,6 +170,7 @@ pub struct InvoiceSellerConfig {
     pub seller_address: Option<String>,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
+    pub seller_tax_id: String,
     pub default_payment_terms: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -216,12 +217,14 @@ pub struct Invoice {
     pub billing_address: Option<String>,
     pub billing_email: Option<String>,
     pub billing_phone: Option<String>,
+    pub billing_tax_id: String,
 
     // Seller snapshot
     pub seller_name: String,
     pub seller_address: Option<String>,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
+    pub seller_tax_id: String,
 
     // Extra
     pub notes: Option<String>,
@@ -319,12 +322,14 @@ pub struct NewInvoice {
     pub billing_address: Option<String>,
     pub billing_email: Option<String>,
     pub billing_phone: Option<String>,
+    pub billing_tax_id: String,
 
     // Seller snapshot (caller should populate from seller config)
     pub seller_name: String,
     pub seller_address: Option<String>,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
+    pub seller_tax_id: String,
 
     // Adjustment inputs
     pub discount_mode: Option<AdjustmentMode>,
@@ -362,11 +367,13 @@ pub struct UpdateInvoiceDraft {
     pub billing_address: Option<String>,
     pub billing_email: Option<String>,
     pub billing_phone: Option<String>,
+    pub billing_tax_id: String,
 
     pub seller_name: Option<String>,
     pub seller_address: Option<String>,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
+    pub seller_tax_id: String,
 
     pub line_items: Option<Vec<NewLineItem>>,
 

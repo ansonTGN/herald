@@ -40,10 +40,12 @@ export const invoiceCreateFormSchema = z.object({
   billingEmail: z.string().email('Invalid email').optional().nullable(),
   billingAddress: z.string().max(500).optional().nullable(),
   billingPhone: z.string().max(50).optional().nullable(),
+  billingTaxId: z.string().min(1, 'Tax ID is required'),
   sellerName: z.string().min(1, 'Seller name is required'),
   sellerEmail: z.string().email('Invalid email').optional().nullable(),
   sellerAddress: z.string().max(500).optional().nullable(),
   sellerPhone: z.string().max(50).optional().nullable(),
+  sellerTaxId: z.string().min(1, 'Tax ID is required'),
   currency: z.string().min(3).max(3).default('CNY'),
   lineItems: z.array(invoiceLineItemSchema).min(1, 'At least one line item is required'),
   discountMode: discountModeSchema,
@@ -66,10 +68,12 @@ export const invoiceEditFormSchema = z.object({
   billingEmail: z.string().email('Invalid email').optional().nullable(),
   billingAddress: z.string().max(500).optional().nullable(),
   billingPhone: z.string().max(50).optional().nullable(),
+  billingTaxId: z.string().min(1, 'Tax ID is required'),
   sellerName: z.string().min(1, 'Seller name is required'),
   sellerEmail: z.string().email('Invalid email').optional().nullable(),
   sellerAddress: z.string().max(500).optional().nullable(),
   sellerPhone: z.string().max(50).optional().nullable(),
+  sellerTaxId: z.string().min(1, 'Tax ID is required'),
   lineItems: z.array(invoiceLineItemSchema).min(1, 'At least one line item is required'),
   discountMode: discountModeSchema,
   discountValue: numericStringSchema,
@@ -89,6 +93,7 @@ export const invoiceSellerConfigSchema = z.object({
   sellerAddress: z.string().max(500).optional().nullable(),
   sellerEmail: z.string().email('Invalid email').optional().nullable(),
   sellerPhone: z.string().max(50).optional().nullable(),
+  sellerTaxId: z.string().min(1, 'Tax ID is required'),
   defaultPaymentTerms: z.string().max(200).optional().nullable(),
 })
 
@@ -124,6 +129,7 @@ export function getInvoiceFormDefaults(
     sellerAddress?: string | null
     sellerEmail?: string | null
     sellerPhone?: string | null
+    sellerTaxId?: string
   } | null
 ): InvoiceCreateFormData {
   return {
@@ -132,10 +138,12 @@ export function getInvoiceFormDefaults(
     billingEmail: null,
     billingAddress: null,
     billingPhone: null,
+    billingTaxId: '',
     sellerName: sellerConfig?.sellerName ?? '',
     sellerEmail: sellerConfig?.sellerEmail ?? null,
     sellerAddress: sellerConfig?.sellerAddress ?? null,
     sellerPhone: sellerConfig?.sellerPhone ?? null,
+    sellerTaxId: sellerConfig?.sellerTaxId ?? '',
     currency: 'CNY',
     lineItems: [{ name: '', description: null, quantity: '1', unitPrice: '0.00' }],
     discountMode: null,
