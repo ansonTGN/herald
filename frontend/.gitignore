@@ -12,8 +12,7 @@ dist-ssr
 # MSW worker file (generated)
 src/mocks/mockServiceWorker.js
 
-# Auto-generated API files (from @hey-api/openapi-ts)
-api.json
+# Auto-generated TypeScript from OpenAPI spec (run: npx openapi-ts)
 src/lib/api-generated/
 src/lib/api-schemas.ts
 

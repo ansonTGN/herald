@@ -79,6 +79,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            backend/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -89,6 +101,10 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: npm ci --legacy-peer-deps
+
+      - name: Generate API client
+        working-directory: frontend
+        run: npm run generate-api
 
       - name: Lint
         working-directory: frontend
