@@ -1,8 +1,8 @@
 # Herald
 
-多租户认证与授权系统。Rust 后端 + React 前端，单体部署，Docker 上线。
+中文 | [English](README.md)
 
-[English version](README.md)
+多租户认证与授权系统。Rust 后端 + React 前端，单体部署，Docker 上线。
 
 本项目用于实践 AI 编程，使用 Claude Code + GLM 模型以及 Codex 混合开发。
 
@@ -17,7 +17,7 @@
 需要 Python 3.12+（[uv](https://github.com/astral-sh/uv)）、Docker、Cargo、npm。
 
 ```bash
-uv run scripts/dev-start.py
+uv run scripts/demo-start.py
 ```
 
 启动完成后前端在 http://localhost:3000，后端 API 在 http://localhost:8080。

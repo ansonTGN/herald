@@ -1,8 +1,8 @@
 # Herald
 
-Multi-tenant authentication and authorization system. Rust backend + React frontend, single-process deployment, Docker in production.
+[中文](README-zh.md) | English
 
-[中文版本](README-zh.md)
+Multi-tenant authentication and authorization system. Rust backend + React frontend, single-process deployment, Docker in production.
 
 This project practices AI-assisted programming using Claude Code + GLM model and Codex hybrid development.
 
@@ -17,7 +17,7 @@ This project practices AI-assisted programming using Claude Code + GLM model and
 Requires Python 3.12+ ([uv](https://github.com/astral-sh/uv)), Docker, Cargo, npm.
 
 ```bash
-uv run scripts/dev-start.py
+uv run scripts/demo-start.py
 ```
 
 Once running: frontend at http://localhost:3000, backend API at http://localhost:8080.
