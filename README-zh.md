@@ -25,7 +25,7 @@ uv run scripts/dev-start.py
 ## 演示
 
 - **地址**：https://auth.fornetcode.com
-- **管理员**：admin@cas.com / Herald@2026Admin
+- **管理员**：admin@fornetcode.com / Herald@2026Admin
 
 ## 文档
 

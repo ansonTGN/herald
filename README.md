@@ -25,7 +25,7 @@ Once running: frontend at http://localhost:3000, backend API at http://localhost
 ## Demo
 
 - **URL**: https://auth.fornetcode.com
-- **Admin**: admin@cas.com / Herald@2026Admin
+- **Admin**: admin@fornetcode.com / Herald@2026Admin
 
 ## Documentation
 
