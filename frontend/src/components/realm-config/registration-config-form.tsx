@@ -14,6 +14,7 @@ interface RegistrationConfigFormProps {
   onSave: (config: RegistrationConfigFormValues) => Promise<void>
   isLoading?: boolean
   disabled?: boolean
+  emailConfigured?: boolean
 }
 
 export function RegistrationConfigForm({
@@ -22,6 +23,7 @@ export function RegistrationConfigForm({
   onSave,
   isLoading,
   disabled,
+  emailConfigured = true,
 }: RegistrationConfigFormProps) {
   const [isSubmitting, setIsSubmitting] = React.useState(false)
 
@@ -99,11 +101,19 @@ export function RegistrationConfigForm({
                   id="reg-require-email"
                   label="Require Email Verification"
                   description="Require users to verify their email address"
-                  disabled={disabled}
+                  disabled={disabled || !emailConfigured}
                   errorTestId="reg-require-email-error"
                 />
               )}
             />
+            {!emailConfigured && (
+              <span
+                className="text-sm text-muted-foreground"
+                data-testid="email-config-required-hint"
+              >
+                Email verification requires email configuration
+              </span>
+            )}
 
             <div className="flex justify-end">
               <Button

@@ -67,6 +67,7 @@ export const QUERY_KEYS = {
   PAYMENT_ATTEMPT_STATUS: 'payment-attempt-status',
   REALM_CONFIG: 'realm-config',
   FREE_USER_STATS: 'free-user-stats',
+  EMAIL_STATUS: 'email-status',
   AUDIT_EVENTS: 'audit-events',
   AUDIT_EVENT: 'audit-event',
   DASHBOARD_STATS: 'dashboard-stats',

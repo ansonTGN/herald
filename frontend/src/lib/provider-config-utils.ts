@@ -32,7 +32,7 @@ export function parseProviderConfig<T extends Record<string, unknown>>(
   }
 
   const getValue = (key: string): string | undefined =>
-    providerConfigs.find((c) => c.configKey === key)?.configValue
+    providerConfigs.find((c) => c.configKey === key)?.configValue ?? undefined
 
   const result = { ...defaults }
   for (const mapping of keyMappings) {

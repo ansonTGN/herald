@@ -27,9 +27,8 @@ export function useFormSubmit<T>(onSave: (values: T) => Promise<void>, disabled?
     try {
       await onSave(values)
     } catch (error) {
-      // Log error for visibility but don't re-throw
-      // The parent component should handle display of error messages
       console.error('Failed to save configuration:', error)
+      throw error
     } finally {
       setIsSubmitting(false)
     }

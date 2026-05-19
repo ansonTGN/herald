@@ -15,7 +15,17 @@ export function handleApiResponse<T extends { data?: unknown; error?: unknown }>
   response: T
 ): NonNullable<T['data']> {
   if (response.error) {
-    throw response.error instanceof Error ? response.error : new Error(String(response.error))
+    if (response.error instanceof Error) {
+      throw response.error
+    }
+    // API client returns parsed JSON error objects with a message field
+    if (
+      typeof response.error === 'object' &&
+      'message' in (response.error as Record<string, unknown>)
+    ) {
+      throw new Error((response.error as Record<string, unknown>).message as string)
+    }
+    throw new Error(String(response.error))
   }
   if (!response.data) {
     throw new Error('No data in response')

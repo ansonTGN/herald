@@ -45,6 +45,7 @@ import {
   listAuditEvents,
   getAuditEvent,
   getDashboardStats,
+  emailStatus,
 } from '@/lib/api-generated'
 import { handleApiResponse } from '@/lib/api-utils'
 import type {
@@ -207,6 +208,7 @@ export const queryKeys = {
     [QUERY_KEYS.POINTS_TRANSACTIONS, realmId, filters] as const,
   pointsPlanConfigs: (realmId: string) => [QUERY_KEYS.POINTS_PLAN_CONFIGS, realmId] as const,
   realmConfig: (realmId: string) => [QUERY_KEYS.REALM_CONFIG, realmId] as const,
+  emailStatus: (realmId: string) => [QUERY_KEYS.EMAIL_STATUS, realmId] as const,
   freeUserStats: (realmId: string, dateRange?: { startDate?: string; endDate?: string }) =>
     [QUERY_KEYS.FREE_USER_STATS, realmId, dateRange] as const,
   userRoles: () => [QUERY_KEYS.USER_ROLES] as const,
@@ -1174,6 +1176,20 @@ export const dashboardStatsQueryOptions = (realmId: string) =>
     queryKey: queryKeys.dashboardStats(realmId),
     queryFn: async () => {
       const response = await getDashboardStats({ path: { realmId } })
+      if (response.error) throw response.error
+      return response.data
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+  })
+
+// ==================== Email Status ====================
+
+export const emailStatusQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.emailStatus(realmId),
+    queryFn: async () => {
+      const response = await emailStatus({ path: { realmId } })
       if (response.error) throw response.error
       return response.data
     },

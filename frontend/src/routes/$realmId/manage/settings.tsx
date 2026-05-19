@@ -4,20 +4,27 @@ import { listRealmConfigs, batchUpsertRealmConfigs, updateRealm } from '@/lib/ap
 import type { UpsertRealmConfigRequest } from '@/lib/api-generated/types.gen'
 import { TOTPConfigForm as TOTPConfigFormComponent } from '@/components/realm-config/totp-config-form'
 import { RegistrationConfigForm as RegistrationConfigFormComponent } from '@/components/realm-config/registration-config-form'
+import { EmailConfigForm as EmailConfigFormComponent } from '@/components/realm-config/email-config-form'
 import { ProviderConfigPage } from '@/components/oauth-config/provider-config-page'
 import { useAuth } from '@/hooks/use-auth'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { TOTPConfigForm, RegistrationConfigForm } from '@/lib/schemas/realm-config'
+import type {
+  TOTPConfigForm,
+  RegistrationConfigForm,
+  EmailConfigForm,
+} from '@/lib/schemas/realm-config'
 import {
   parseTOTPConfig,
   parseRegistrationConfig,
+  parseEmailConfig,
   buildTOTPConfigRequest,
   buildRegistrationConfigRequest,
+  buildEmailConfigRequest,
 } from '@/lib/realm-config-utils'
 import { useState, useEffect } from 'react'
 import { PageHeader } from '@/components/shared'
-import { queryKeys, realmQueryOptions } from '@/data/query-options'
+import { queryKeys, realmQueryOptions, emailStatusQueryOptions } from '@/data/query-options'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { updateRealmSchema, type UpdateRealmFormData } from '@/lib/schemas/realm'
 import { useFormMutation } from '@/hooks/use-form-mutation'
@@ -146,6 +153,12 @@ function SettingsPage() {
     enabled: !!realmId && canViewConfig,
   })
 
+  // Get email configuration status
+  const { data: emailStatusData, error: emailStatusQueryError } = useQuery({
+    ...emailStatusQueryOptions(realmId),
+    enabled: !!realmId && canViewConfig,
+  })
+
   // Batch update configuration
   const mutation = useMutation({
     mutationFn: (configs: UpsertRealmConfigRequest[]) =>
@@ -210,6 +223,7 @@ function SettingsPage() {
   // Parse configuration data
   const totpConfig = parseTOTPConfig(configs || [])
   const registrationConfig = parseRegistrationConfig(configs || [])
+  const emailConfig = parseEmailConfig(configs || [])
 
   // Save TOTP configuration
   async function saveTOTPConfig(config: TOTPConfigForm) {
@@ -231,6 +245,17 @@ function SettingsPage() {
     await mutation.mutateAsync(buildRegistrationConfigRequest(config))
   }
 
+  // Save Email configuration
+  async function saveEmailConfig(config: EmailConfigForm) {
+    if (!canUpdateConfig) {
+      toast.error('Access denied: You do not have permission to modify configuration')
+      return
+    }
+
+    await mutation.mutateAsync(buildEmailConfigRequest(config))
+    queryClient.invalidateQueries({ queryKey: queryKeys.emailStatus(realmId) })
+  }
+
   return (
     <div className="space-y-6" data-testid="settings-page">
       <PageHeader title="Settings" />
@@ -245,6 +270,9 @@ function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="registration" data-testid="registration-tab">
             Registration
+          </TabsTrigger>
+          <TabsTrigger value="email" data-testid="email-tab">
+            Email
           </TabsTrigger>
           <TabsTrigger value="providers" data-testid="providers-tab">
             Providers
@@ -272,6 +300,21 @@ function SettingsPage() {
             onSave={saveRegistrationConfig}
             isLoading={isLoading}
             disabled={!canUpdateConfig}
+            emailConfigured={emailStatusData?.configured ?? false}
+          />
+        </TabsContent>
+
+        <TabsContent value="email">
+          <EmailConfigFormComponent
+            realmId={realmId}
+            initialConfig={emailConfig}
+            onSave={saveEmailConfig}
+            isLoading={isLoading}
+            disabled={!canUpdateConfig}
+            emailStatus={emailStatusData ?? null}
+            emailStatusError={
+              emailStatusQueryError instanceof Error ? emailStatusQueryError.message : null
+            }
           />
         </TabsContent>
 

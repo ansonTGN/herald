@@ -211,4 +211,28 @@ describe('RegistrationConfigForm', () => {
     const requireEmailSwitch = screen.getByTestId('reg-require-email-switch')
     expect(requireEmailSwitch).not.toBeChecked()
   })
+
+  // Email configuration gating tests
+  it('GIVEN email not configured WHEN rendering THEN should disable requireEmailVerification switch', async () => {
+    const screen = render(<RegistrationConfigForm {...defaultProps} emailConfigured={false} />)
+
+    const requireEmailSwitch = screen.getByTestId('reg-require-email-switch')
+    expect(requireEmailSwitch).toBeDisabled()
+  })
+
+  it('GIVEN email not configured WHEN rendering THEN should show email config required hint', async () => {
+    const screen = render(<RegistrationConfigForm {...defaultProps} emailConfigured={false} />)
+
+    expect(screen.getByTestId('email-config-required-hint')).toBeInTheDocument()
+    expect(screen.getByTestId('email-config-required-hint')).toHaveTextContent(
+      'Email verification requires email configuration'
+    )
+  })
+
+  it('GIVEN email configured WHEN rendering THEN should enable requireEmailVerification switch', async () => {
+    const screen = render(<RegistrationConfigForm {...defaultProps} emailConfigured={true} />)
+
+    const requireEmailSwitch = screen.getByTestId('reg-require-email-switch')
+    expect(requireEmailSwitch).not.toBeDisabled()
+  })
 })

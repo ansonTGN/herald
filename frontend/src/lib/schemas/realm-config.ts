@@ -13,6 +13,19 @@ export const registrationConfigSchema = z.object({
   requireEmailVerification: z.boolean(), // ✅ camelCase：是否需要邮箱验证
 })
 
+// Email 配置 Schema
+export const emailConfigSchema = z.object({
+  provider: z.enum(['resend', 'smtp']),
+  fromAddress: z.string().email().or(z.literal('')),
+  resendApiKey: z.string().optional(),
+  smtpHost: z.string().optional(),
+  smtpPort: z.string().default('587'),
+  smtpUsername: z.string().optional(),
+  smtpPassword: z.string().optional(),
+  smtpEncryption: z.enum(['starttls', 'ssl']).default('starttls'),
+})
+
 // 类型导出
 export type TOTPConfigForm = z.infer<typeof totpConfigSchema>
 export type RegistrationConfigForm = z.infer<typeof registrationConfigSchema>
+export type EmailConfigForm = z.infer<typeof emailConfigSchema>
