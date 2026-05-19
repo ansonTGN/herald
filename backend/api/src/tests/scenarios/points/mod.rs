@@ -67,4 +67,9 @@ mod unified_filter_tests;
 // Consume + Webhook concurrency race condition tests
 mod test_70_consume_webhook_race;
 
+// Concurrency gap coverage tests
+mod test_71_concurrent_consume_recharge;
+mod test_72_mixed_credit_concurrent_consume;
+mod test_73_mixed_operations_concurrent;
+
 pub mod fixtures;

@@ -1802,16 +1802,22 @@ async fn recharge_points_for_subscription(
         }
     };
 
-    // Call internal recharge
+    // Compute expires_at from plan config validity_days
+    let expires_at = if config.validity_days > 0 {
+        Some(chrono::Utc::now() + chrono::Duration::days(config.validity_days))
+    } else {
+        None
+    };
+
     let _transaction = state
         .points_service
         .recharge_points_internal(
             realm_id,
             user_id,
-            Some(plan_id), // Use plan_id to find plan config for max_periods check
             amount,
             recharge_type.clone(),
-            Some(event_id), // Use webhook event_id as external_ref_id
+            Some(event_id),
+            expires_at,
         )
         .await?;
 

@@ -601,6 +601,18 @@ pub trait PointsRepository: Send + Sync {
         source_id: Option<String>,
     ) -> impl Future<Output = Result<PointsCreditLedger, CoreError>> + Send;
 
+    fn recharge_points_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        credit_type: CreditType,
+        source_type: CreditSourceType,
+        amount: i64,
+        expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        source_id: Option<String>,
+        external_ref_id: Option<String>,
+    ) -> impl Future<Output = Result<PointsTransaction, CoreError>> + Send;
+
     fn set_subscription_ledger_expiration_atomic(
         &self,
         realm_id: &str,

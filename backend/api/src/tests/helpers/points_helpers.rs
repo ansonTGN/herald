@@ -545,6 +545,7 @@ pub async fn consume_points_from_ledger(ctx: &SchemaTestContext, ledger_id: Uuid
     sqlx::query(
         "UPDATE points_credit_ledger
          SET used_amount = used_amount + $1,
+             remaining_amount = remaining_amount - $1,
              updated_at = NOW()
          WHERE id = $2",
     )
@@ -686,4 +687,105 @@ pub fn create_test_third_party_identity(realm_id: &str) -> Identity {
         last_used_at: None,
         usage_count: 0,
     })
+}
+
+/// Assert all account balances are non-negative
+pub async fn assert_balances_non_negative(
+    ctx: &SchemaTestContext,
+    user_id: Uuid,
+    realm_id: &str,
+) -> (i64, i64, i64) {
+    let account = sqlx::query(
+        "SELECT total_balance, topup_balance, subscription_balance FROM points_accounts WHERE user_id = $1 AND realm_id = $2",
+    )
+    .bind(user_id)
+    .bind(realm_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("Failed to fetch account");
+
+    let total_balance: i64 = account.get("total_balance");
+    let topup_balance: i64 = account.get("topup_balance");
+    let subscription_balance: i64 = account.get("subscription_balance");
+
+    assert!(
+        total_balance >= 0,
+        "total_balance must never go negative, got {}",
+        total_balance
+    );
+    assert!(
+        topup_balance >= 0,
+        "topup_balance must never go negative, got {}",
+        topup_balance
+    );
+    assert!(
+        subscription_balance >= 0,
+        "subscription_balance must never go negative, got {}",
+        subscription_balance
+    );
+
+    (total_balance, topup_balance, subscription_balance)
+}
+
+/// Assert ledger accounting invariant: granted == used + revoked + remaining, and remaining >= 0
+pub async fn assert_ledger_invariants(ctx: &SchemaTestContext, user_id: Uuid) {
+    let ledgers = get_user_ledgers(ctx, user_id).await;
+    for ledger in &ledgers {
+        assert!(
+            ledger.remaining_amount >= 0,
+            "ledger {} remaining_amount must be >= 0, got {}",
+            ledger.id,
+            ledger.remaining_amount
+        );
+        assert_eq!(
+            ledger.granted_amount,
+            ledger.used_amount + ledger.revoked_amount + ledger.remaining_amount,
+            "ledger accounting invariant broken for ledger {}: granted={} != used={} + revoked={} + remaining={}",
+            ledger.id,
+            ledger.granted_amount,
+            ledger.used_amount,
+            ledger.revoked_amount,
+            ledger.remaining_amount
+        );
+    }
+}
+
+/// Assert account balance columns match SUM(ledger.remaining_amount) grouped by credit type
+pub async fn assert_account_matches_ledger_sums(
+    ctx: &SchemaTestContext,
+    user_id: Uuid,
+    realm_id: &str,
+    topup_balance: i64,
+    subscription_balance: i64,
+) {
+    let topup_ledger_sum: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(remaining_amount), 0)::BIGINT FROM points_credit_ledger
+         WHERE user_id = $1 AND realm_id = $2 AND credit_type IN ('topup_credit', 'registration_credit', 'free_periodic_credit')",
+    )
+    .bind(user_id)
+    .bind(realm_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("Failed to sum topup ledger remaining");
+
+    let sub_ledger_sum: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(remaining_amount), 0)::BIGINT FROM points_credit_ledger
+         WHERE user_id = $1 AND realm_id = $2 AND credit_type = 'subscription_credit'",
+    )
+    .bind(user_id)
+    .bind(realm_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("Failed to sum subscription ledger remaining");
+
+    assert_eq!(
+        topup_balance, topup_ledger_sum,
+        "topup_balance ({}) must match ledger sum ({})",
+        topup_balance, topup_ledger_sum
+    );
+    assert_eq!(
+        subscription_balance, sub_ledger_sum,
+        "subscription_balance ({}) must match ledger sum ({})",
+        subscription_balance, sub_ledger_sum
+    );
 }

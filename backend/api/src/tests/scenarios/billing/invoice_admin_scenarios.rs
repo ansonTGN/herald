@@ -47,6 +47,7 @@ mod tests {
             "lineItems": line_items,
             "billingName": billing_name,
             "billingAddress": "123 Test St",
+            "billingEmail": "billing@test.com",
             "billingTaxId": "TAX-001",
             "sellerName": "Test Seller Inc.",
             "sellerAddress": "456 Seller Ave",
@@ -1471,13 +1472,13 @@ mod tests {
             "INSERT INTO invoice (
                 id, realm_id, invoice_number, source, account_id, applicant_user_id,
                 status, currency, subtotal, discount_amount, tax_amount, shipping_amount, total,
-                billing_name, billing_address, billing_tax_id,
+                billing_name, billing_address, billing_email, billing_tax_id,
                 seller_name, seller_address, seller_tax_id,
                 due_date, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, 'user_application', $4, $5,
                 'draft', 'USD', 25000, 0, 0, 0, 25000,
-                'User Apply Client', '123 User St', 'TAX-USER-001',
+                'User Apply Client', '123 User St', 'user-apply@test.com', 'TAX-USER-001',
                 'Seller Inc', '456 Seller Ave', 'SELLER-TAX-001',
                 CURRENT_DATE + INTERVAL '30 days', NOW(), NOW()
             )",

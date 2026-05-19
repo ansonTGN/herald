@@ -13,7 +13,7 @@ use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::points::{
     dtos::RevokePointsOutput,
     entities::{
-        CreditLedgerStatus, CreditSourceType, CreditType, Paginated, PointsAccount,
+        AccountStatus, CreditLedgerStatus, CreditSourceType, CreditType, Paginated, PointsAccount,
         PointsConsumptionAllocation, PointsCreditLedger, PointsPlanConfig, PointsRevocationRecord,
         PointsTransaction, RevocationType, TransactionType,
     },
@@ -482,6 +482,26 @@ impl PostgresPointsRepository {
         .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
         Self::row_to_points_account(row)
+    }
+
+    fn determine_transaction_type(
+        credit_type: CreditType,
+        source_type: CreditSourceType,
+    ) -> TransactionType {
+        match (credit_type, source_type) {
+            (CreditType::RegistrationCredit, _) => TransactionType::RegistrationGrant,
+            (CreditType::FreePeriodicCredit, _) => TransactionType::FreePeriodicGrant,
+            (CreditType::SubscriptionCredit, CreditSourceType::SubscriptionInitial) => {
+                TransactionType::SubscriptionGrant
+            }
+            (CreditType::SubscriptionCredit, CreditSourceType::SubscriptionRenewal) => {
+                TransactionType::SubscriptionRenewal
+            }
+            (CreditType::SubscriptionCredit, CreditSourceType::SubscriptionUpgrade) => {
+                TransactionType::SubscriptionUpgrade
+            }
+            _ => TransactionType::Recharge,
+        }
     }
 
     async fn ensure_account_in_tx(
@@ -3619,20 +3639,7 @@ impl PointsRepository for PostgresPointsRepository {
                 },
             )
             .await?;
-            let transaction_type = match (credit_type, source_type) {
-                (CreditType::RegistrationCredit, _) => TransactionType::RegistrationGrant,
-                (CreditType::FreePeriodicCredit, _) => TransactionType::FreePeriodicGrant,
-                (CreditType::SubscriptionCredit, CreditSourceType::SubscriptionInitial) => {
-                    TransactionType::SubscriptionGrant
-                }
-                (CreditType::SubscriptionCredit, CreditSourceType::SubscriptionRenewal) => {
-                    TransactionType::SubscriptionRenewal
-                }
-                (CreditType::SubscriptionCredit, CreditSourceType::SubscriptionUpgrade) => {
-                    TransactionType::SubscriptionUpgrade
-                }
-                _ => TransactionType::Recharge,
-            };
+            let transaction_type = Self::determine_transaction_type(credit_type, source_type);
             let _ = Self::create_transaction_in_tx(
                 &mut tx,
                 PointsTransaction {
@@ -3662,6 +3669,103 @@ impl PointsRepository for PostgresPointsRepository {
                 .await
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
             Ok(created_ledger)
+        }
+    }
+
+    fn recharge_points_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        credit_type: CreditType,
+        source_type: CreditSourceType,
+        amount: i64,
+        expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        source_id: Option<String>,
+        external_ref_id: Option<String>,
+    ) -> impl std::future::Future<Output = Result<PointsTransaction, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            let account = Self::ensure_account_in_tx(&mut tx, &realm_id, user_id).await?;
+
+            if account.status != AccountStatus::Active {
+                return Err(CoreError::BadRequest(format!(
+                    "Cannot recharge points to {} account",
+                    account.status.as_str()
+                )));
+            }
+
+            let resolved_source_id = source_id.unwrap_or_else(|| {
+                external_ref_id
+                    .clone()
+                    .unwrap_or_else(|| "system".to_string())
+            });
+            let now = chrono::Utc::now();
+
+            let ledger = PointsCreditLedger {
+                id: Uuid::now_v7(),
+                user_id,
+                realm_id: realm_id.clone(),
+                credit_type,
+                source_type,
+                source_id: resolved_source_id.clone(),
+                granted_amount: amount,
+                used_amount: 0,
+                revoked_amount: 0,
+                remaining_amount: amount,
+                expires_at,
+                status: CreditLedgerStatus::Active,
+                created_at: now,
+                updated_at: now,
+            };
+
+            Self::create_ledger_in_tx(&mut tx, &ledger).await?;
+
+            let (topup, subscription) = credit_type.account_balance_delta(amount);
+            let updated_account = Self::update_account_in_tx(
+                &mut tx,
+                account.id,
+                AccountUpdate::Grant {
+                    topup,
+                    subscription,
+                },
+            )
+            .await?;
+
+            let transaction_type = Self::determine_transaction_type(credit_type, source_type);
+
+            let transaction = Self::create_transaction_in_tx(
+                &mut tx,
+                PointsTransaction {
+                    id: Uuid::now_v7(),
+                    account_id: account.id,
+                    user_id,
+                    realm_id: realm_id.clone(),
+                    transaction_type,
+                    amount,
+                    balance_after: updated_account.total_balance,
+                    topup_balance_after: Some(updated_account.topup_balance),
+                    subscription_balance_after: Some(updated_account.subscription_balance),
+                    credit_type: Some(credit_type),
+                    description: Some(format!("Points recharge ({})", source_type.as_str())),
+                    client_app_id: None,
+                    subscription_id: None,
+                    external_ref_id,
+                    created_at: now,
+                },
+            )
+            .await?;
+
+            tx.commit()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(transaction)
         }
     }
 

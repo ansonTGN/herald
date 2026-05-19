@@ -65,6 +65,7 @@ mod tests {
             "lineItems": line_items,
             "billingName": billing_name,
             "billingAddress": "123 Test St",
+            "billingEmail": "billing@test.com",
             "billingTaxId": "TAX-001",
             "sellerName": "Test Seller Inc.",
             "sellerAddress": "456 Seller Ave",

@@ -69,19 +69,16 @@ async fn test_scenario_account_creation_on_subscribe(ctx: &mut TestContext) {
     // ============================================================================
     println!("[Step 2] Trigger recharge via service");
 
-    // Call recharge_points_internal directly (simulating webhook behavior)
-    // Note: We pass plan_id as the third parameter, not subscription_id
-    // because find_plan_config expects a plan_id, not subscription_id
     let transaction = ctx
         ._app_state
         .points_service
         .recharge_points_internal(
             &ctx._realm_id,
             user_id,
-            Some(plan_id), // Use plan_id instead of subscription_id
             points_on_subscribe,
             RechargeType::Subscribe,
-            Some(subscription_id.to_string()), // Use subscription_id as external_ref_id
+            Some(subscription_id.to_string()),
+            None, // expires_at: no expiration for test
         )
         .await
         .expect("Recharge should succeed");
@@ -125,7 +122,7 @@ async fn test_scenario_account_creation_on_subscribe(ctx: &mut TestContext) {
     let transaction: (String, String, i64, i64) = sqlx::query_as(
         "SELECT id::text, type::text, amount, balance_after
          FROM points_transactions
-         WHERE user_id = $1 AND type = 'recharge'
+         WHERE user_id = $1 AND type = 'subscription_grant'
          ORDER BY created_at DESC
          LIMIT 1",
     )
@@ -135,8 +132,8 @@ async fn test_scenario_account_creation_on_subscribe(ctx: &mut TestContext) {
     .expect("Failed to fetch transaction");
 
     assert_eq!(
-        transaction.1, "recharge",
-        "Transaction type should be recharge"
+        transaction.1, "subscription_grant",
+        "Transaction type should be subscription_grant"
     );
     assert_eq!(
         transaction.2, points_on_subscribe,

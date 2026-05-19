@@ -120,13 +120,13 @@ mod tests {
             "INSERT INTO invoice (
                 id, realm_id, invoice_number, source, account_id, applicant_user_id,
                 status, currency, subtotal, discount_amount, tax_amount, shipping_amount, total,
-                billing_name, billing_address, billing_tax_id,
+                billing_name, billing_address, billing_email, billing_tax_id,
                 seller_name, seller_address, seller_tax_id,
                 due_date, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, 'user_application', $4, $5,
                 'draft', 'USD', 5000, 0, 0, 0, 5000,
-                'Test User Client', '123 User St', 'TAX-USER-001',
+                'Test User Client', '123 User St', 'user-invoice@test.com', 'TAX-USER-001',
                 'Seller Inc', '456 Seller Ave', 'SELLER-TAX-001',
                 CURRENT_DATE + INTERVAL '30 days', NOW(), NOW()
             )",
@@ -895,6 +895,7 @@ mod tests {
             "currency": "USD",
             "billingName": "Tracking User",
             "billingAddress": "111 Tracking Ave",
+            "billingEmail": "tracking@test.com",
             "dueDate": "2026-06-30",
         });
 

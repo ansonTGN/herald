@@ -9,8 +9,8 @@ use crate::common::policies::ensure_policy;
 use crate::points::{
     dtos::{ConsumePointsInput, CreatePlanConfigInput, RevokePointsOutput, UpdatePlanConfigInput},
     entities::{
-        AccountStatus, CreditType, Paginated, PointsAccount, PointsBalance, PointsPlanConfig,
-        PointsTransaction, RechargeType, RevocationType, TransactionType,
+        AccountStatus, CreditSourceType, CreditType, Paginated, PointsAccount, PointsBalance,
+        PointsPlanConfig, PointsTransaction, RechargeType, RevocationType,
     },
     errors::PointsErrorExt,
     policies::PointsPolicy,
@@ -471,10 +471,10 @@ where
         &self,
         realm_id: &str,
         user_id: Uuid,
-        _plan_id: Option<Uuid>,
         amount: i64,
         recharge_type: RechargeType,
         external_ref_id: Option<String>,
+        expires_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<PointsTransaction, CoreError> {
         if amount <= 0 {
             return Err(CoreError::invalid_amount(
@@ -482,74 +482,41 @@ where
             ));
         }
 
-        // Get or create account
-        let account = match self.repository.find_by_user_id(realm_id, user_id).await? {
-            Some(account) => account,
-            None => {
-                // Auto-create account
-                self.create_account_internal(realm_id, user_id).await?
-            }
+        let (credit_type, source_type) = match recharge_type {
+            RechargeType::Subscribe => (
+                CreditType::SubscriptionCredit,
+                CreditSourceType::SubscriptionInitial,
+            ),
+            RechargeType::Renewal => (
+                CreditType::SubscriptionCredit,
+                CreditSourceType::SubscriptionRenewal,
+            ),
         };
 
-        // Check account status
-        if account.status != AccountStatus::Active {
-            return Err(CoreError::BadRequest(format!(
-                "Cannot recharge points to {} account",
-                account.status.as_str()
-            )));
-        }
-
-        // Update balance using the new ledger system
-        // For subscription recharges, update subscription_balance
-        // For other recharges, update topup_balance
-        let (topup_amount, subscription_amount) = match recharge_type {
-            RechargeType::Subscribe => (0, amount),
-            _ => (amount, 0),
-        };
-
-        use crate::points::ports::AccountUpdate;
-        let updated_account = self
+        let transaction = self
             .repository
-            .update_account(
-                account.id,
-                AccountUpdate::Grant {
-                    topup: topup_amount,
-                    subscription: subscription_amount,
-                },
+            .recharge_points_atomic(
+                realm_id,
+                user_id,
+                credit_type,
+                source_type,
+                amount,
+                expires_at,
+                None,
+                external_ref_id,
             )
             .await?;
-
-        // Create transaction record
-        let transaction = PointsTransaction {
-            id: Uuid::now_v7(),
-            account_id: updated_account.id,
-            user_id: updated_account.user_id,
-            realm_id: updated_account.realm_id.clone(),
-            transaction_type: TransactionType::Recharge,
-            amount, // Positive for recharge
-            balance_after: updated_account.total_balance,
-            topup_balance_after: Some(updated_account.topup_balance),
-            subscription_balance_after: Some(updated_account.subscription_balance),
-            credit_type: None,
-            description: Some(format!("Points recharge ({})", recharge_type.as_str())),
-            client_app_id: None,   // Recharges come from billing, not client apps
-            subscription_id: None, // Not using subscription_id for internal recharge
-            external_ref_id,
-            created_at: chrono::Utc::now(),
-        };
-
-        let saved_transaction = self.repository.create_transaction(transaction).await?;
 
         tracing::info!(
             realm_id = %realm_id,
             user_id = %user_id,
             amount,
             recharge_type = %recharge_type.as_str(),
-            balance_after = %updated_account.total_balance,
+            balance_after = %transaction.balance_after,
             "Points recharged successfully"
         );
 
-        Ok(saved_transaction)
+        Ok(transaction)
     }
 
     /// Revoke points by credit type (internal method for subscription cancellation and refunds)
