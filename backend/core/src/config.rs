@@ -4,7 +4,6 @@ use std::fs;
 pub struct AppConfig {
     pub postgresql_uri: String,
     pub redis_uri: String,
-    pub resend: ResendConfig,
     pub turnstile: TurnstileConfig,
     #[serde(default)]
     pub public_base_url: String,
@@ -19,19 +18,8 @@ pub struct PermissionConfig {
 }
 
 #[derive(serde::Deserialize)]
-pub struct ResendConfig {
-    pub token: String,
-    #[serde(default = "default_resend_from")]
-    pub from: String,
-}
-
-#[derive(serde::Deserialize)]
 pub struct TurnstileConfig {
     pub secret: String,
-}
-
-fn default_resend_from() -> String {
-    "no-reply@example.com".to_string()
 }
 
 impl AppConfig {

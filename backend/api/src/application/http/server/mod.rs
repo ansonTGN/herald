@@ -59,6 +59,8 @@ pub struct HealthCheckResponse {
         realm_config::upsert_realm_config,
         realm_config::batch_upsert_realm_configs,
         realm_config::delete_realm_config,
+        realm_config::email_status,
+        realm_config::email_test,
         realm::crud::list_realms,
         realm::crud::list_realms_paginated,
         realm::crud::get_realm,
@@ -86,6 +88,9 @@ pub struct HealthCheckResponse {
             realm_config::UpsertRealmConfigValidator,
             realm_config::BatchUpsertRealmConfigValidator,
             realm_config::RealmConfigResponse,
+            realm_config::EmailStatusResponse,
+            realm_config::EmailTestRequest,
+            realm_config::EmailTestResponse,
             realm::ListRealmsQuery,
             realm::ListRealmsResponse,
             realm::ListRealmsPaginatedQuery,
@@ -291,6 +296,9 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
                     "/{realmId}/batch",
                     post(realm_config::batch_upsert_realm_configs),
                 )
+                // Email status and test routes (must be before parameterized {configType} routes)
+                .route("/{realmId}/email/status", get(realm_config::email_status))
+                .route("/{realmId}/email/test", post(realm_config::email_test))
                 .route(
                     "/{realmId}/{configType}",
                     get(realm_config::list_realm_configs_by_type),

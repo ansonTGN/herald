@@ -274,6 +274,52 @@ pub enum ConfigType {
     /// }
     /// ```
     Shopify,
+
+    /// Email provider configuration
+    ///
+    /// Valid config_key values:
+    /// - `provider`: Email provider type, either "resend" or "smtp" (non-secret)
+    /// - `from_address`: Default sender email address (non-secret)
+    /// - `resend_api_key`: Resend API key (secret, mark is_secret=true)
+    /// - `smtp_host`: SMTP server hostname (non-secret)
+    /// - `smtp_port`: SMTP server port number (non-secret, e.g., "587")
+    /// - `smtp_username`: SMTP authentication username (non-secret)
+    /// - `smtp_password`: SMTP authentication password (secret, mark is_secret=true)
+    /// - `smtp_encryption`: Encryption mode, "starttls" or "ssl" (non-secret)
+    ///
+    /// Example provider configuration:
+    /// ```json
+    /// {
+    ///   "config_type": "email",
+    ///   "config_key": "provider",
+    ///   "config_value": "resend",
+    ///   "is_secret": false,
+    ///   "enabled": true
+    /// }
+    /// ```
+    ///
+    /// Example Resend API key configuration:
+    /// ```json
+    /// {
+    ///   "config_type": "email",
+    ///   "config_key": "resend_api_key",
+    ///   "config_value": "re_your_api_key_here",
+    ///   "is_secret": true,
+    ///   "enabled": true
+    /// }
+    /// ```
+    ///
+    /// Example SMTP configuration:
+    /// ```json
+    /// {
+    ///   "config_type": "email",
+    ///   "config_key": "smtp_host",
+    ///   "config_value": "smtp.example.com",
+    ///   "is_secret": false,
+    ///   "enabled": true
+    /// }
+    /// ```
+    Email,
 }
 
 impl From<String> for ConfigType {
@@ -286,6 +332,7 @@ impl From<String> for ConfigType {
             "creem" => ConfigType::Creem,
             "stripe" => ConfigType::Stripe,
             "shopify" => ConfigType::Shopify,
+            "email" => ConfigType::Email,
             _ => ConfigType::Turnstile, // 默认值
         }
     }
@@ -301,6 +348,7 @@ impl From<ConfigType> for String {
             ConfigType::Creem => "creem".to_string(),
             ConfigType::Stripe => "stripe".to_string(),
             ConfigType::Shopify => "shopify".to_string(),
+            ConfigType::Email => "email".to_string(),
         }
     }
 }
@@ -315,6 +363,7 @@ impl AsRef<str> for ConfigType {
             ConfigType::Creem => "creem",
             ConfigType::Stripe => "stripe",
             ConfigType::Shopify => "shopify",
+            ConfigType::Email => "email",
         }
     }
 }

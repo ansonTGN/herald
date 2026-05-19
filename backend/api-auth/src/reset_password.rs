@@ -19,6 +19,7 @@ use herald_core::domain::security_constants::{
     RESET_PASSWORD_REQUEST_IP_RATE_LIMIT,
 };
 use herald_core::domain::user::ports::UserService;
+use herald_core::third::email::EmailService;
 
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
@@ -98,18 +99,20 @@ pub async fn request(
             ApiError::internal("Failed to store reset password code".to_string())
         })?;
 
-    // Send email
-    if let Some(resend) = &state.resend {
-        let link = format!(
-            "{}/api/{}/auth/reset_password/confirm/{}",
-            state.public_base_url.trim_end_matches('/'),
-            realm_id,
-            code
-        );
-        let html =
-            format!("<p>please click to reset passowrd：</p><p><a href=\"{link}\">{link}</a></p>");
-        // best effort：不把邮件失败暴露给调用方（仍返回 ok）
-        let _ = resend.send_html(&email, "Reset your password", &html).await;
+    // Send email (best effort: don't expose email failure to caller)
+    let link = format!(
+        "{}/api/{}/auth/reset_password/confirm/{}",
+        state.public_base_url.trim_end_matches('/'),
+        realm_id,
+        code
+    );
+    let html =
+        format!("<p>please click to reset passowrd：</p><p><a href=\"{link}\">{link}</a></p>");
+    if let Err(e) =
+        EmailService::send_html_email(&state.pool, &realm_id, &email, "Reset your password", &html)
+            .await
+    {
+        tracing::error!("Failed to send reset password email: {e}");
     }
 
     Ok(ApiResult::ok(ResetPasswordRequestResponse {

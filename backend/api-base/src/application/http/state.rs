@@ -26,7 +26,6 @@ use herald_core::infrastructure::user::{
     PostgresAdminUserRepository, PostgresRolePolicyRepository, PostgresUserRoleRepository,
     repositories::PostgresUserRepository,
 };
-use herald_core::third::email::ResendClient;
 use sea_orm::DatabaseConnection;
 
 /// Type alias for the PurchaseService to reduce complexity in AppState
@@ -60,9 +59,6 @@ pub struct AppState {
     /// - Production: uses DB 0 (default_db)
     /// - Test: uses DB 1 (test_db) for automatic isolation
     pub redis_manager: RedisConnectionManager,
-
-    /// Email service (optional)
-    pub resend: Option<ResendClient>,
 
     /// Billing repository
     pub billing_repository: Arc<PostgresBillingRepository>,

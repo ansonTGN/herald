@@ -15,6 +15,7 @@ pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::user::ports::UserService;
+use herald_core::third::email::EmailService;
 
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
@@ -83,22 +84,19 @@ pub async fn trigger(
             ApiError::internal("Failed to store email verification code".to_string())
         })?;
 
-    if let Some(resend) = &state.resend {
-        let link = format!(
-            "{}/api/{}/auth/verify_email/confirm/{}",
-            state.public_base_url.trim_end_matches('/'),
-            realm_id,
-            code
-        );
-        let html = format!("<p>请点击以下链接验证邮箱：</p><p><a href=\"{link}\">{link}</a></p>");
-        resend
-            .send_html(&email, "Verify your email", &html)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to send verification email: {e}");
-                ApiError::internal("Failed to send verification email".to_string())
-            })?;
-    }
+    let link = format!(
+        "{}/api/{}/auth/verify_email/confirm/{}",
+        state.public_base_url.trim_end_matches('/'),
+        realm_id,
+        code
+    );
+    let html = format!("<p>请点击以下链接验证邮箱：</p><p><a href=\"{link}\">{link}</a></p>");
+    EmailService::send_html_email(&state.pool, &realm_id, &email, "Verify your email", &html)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to send verification email: {e}");
+            ApiError::internal("Failed to send verification email".to_string())
+        })?;
 
     Ok(ApiResult::ok(VerifyEmailTriggerResponse {
         message: "ok".to_string(),

@@ -59,5 +59,8 @@ pub mod unified_permission_hierarchy_scenarios;
 // Points system scenarios
 pub mod points;
 
+// Email config scenarios
+pub mod email_config_scenarios;
+
 // Realm management scenarios
 // (realm_config_update_scenarios and realm_delete_scenarios removed - see .ai/future/backend_test_delete.md)

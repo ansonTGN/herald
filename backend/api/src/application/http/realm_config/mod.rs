@@ -16,11 +16,14 @@ use validator::Validate;
 
 use crate::application::http::server::api_entities::{ApiError, ErrorResponse};
 use crate::application::http::state::AppState;
+use herald_api_base::application::http::auth::util::{is_email_configured, require_permission};
+use herald_api_base::application::http::rate_limit::rate_limit_hit_forced;
 use herald_core::domain::authorization::PermissionService;
 use herald_core::domain::realm_config::{
     BatchUpsertRealmConfigRequest, ConfigType, RealmConfig, RealmConfigService,
     UpsertRealmConfigRequest,
 };
+use herald_core::third::email::EmailService;
 
 #[derive(Debug, Deserialize, Serialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
@@ -49,12 +52,35 @@ pub struct RealmConfigResponse {
     pub realm_id: String,
     pub config_type: String,
     pub config_key: String,
-    pub config_value: String,
+    pub config_value: Option<String>,
     pub is_secret: bool,
     pub enabled: bool,
     pub metadata: Option<serde_json::Value>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailStatusResponse {
+    pub configured: bool,
+    pub provider: Option<String>,
+    pub from_address: Option<String>,
+    pub missing_fields: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, ToSchema, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailTestRequest {
+    #[validate(email)]
+    pub recipient: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailTestResponse {
+    pub success: bool,
+    pub message: String,
 }
 
 // Helper function to convert domain entity to response
@@ -64,7 +90,11 @@ fn to_response(config: RealmConfig) -> RealmConfigResponse {
         realm_id: config.realm_id,
         config_type: config.config_type.into(),
         config_key: config.config_key,
-        config_value: config.config_value,
+        config_value: if config.is_secret {
+            None
+        } else {
+            Some(config.config_value)
+        },
         is_secret: config.is_secret,
         enabled: config.enabled,
         metadata: config.metadata,
@@ -276,6 +306,19 @@ pub async fn upsert_realm_config(
         metadata: payload.metadata,
     };
 
+    // Validate: cannot enable email verification without email config
+    if request.config_type == ConfigType::Registration
+        && request.config_key == "require_email_verification"
+        && request.config_value == "true"
+    {
+        let email_ready = is_email_configured(&state, &realm_id).await?;
+        if !email_ready {
+            return Err(ApiError::bad_request(
+                "Cannot enable email verification without email configuration".to_string(),
+            ));
+        }
+    }
+
     let config = realm_config_service
         .upsert_config(identity, realm_id, request)
         .await
@@ -350,6 +393,20 @@ pub async fn batch_upsert_realm_configs(
             metadata: r.metadata,
         })
         .collect();
+
+    // Validate: cannot enable email verification without email config
+    if requests.iter().any(|r| {
+        r.config_type == ConfigType::Registration
+            && r.config_key == "require_email_verification"
+            && r.config_value == "true"
+    }) {
+        let email_ready = is_email_configured(&state, &realm_id).await?;
+        if !email_ready {
+            return Err(ApiError::bad_request(
+                "Cannot enable email verification without email configuration".to_string(),
+            ));
+        }
+    }
 
     // Log the requests for debugging
     for (index, req) in requests.iter().enumerate() {
@@ -469,4 +526,131 @@ pub async fn delete_realm_config(
         })?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Get email configuration status for a realm
+#[utoipa::path(
+    get,
+    path = "/api/configs/{realmId}/email/status",
+    tag = "realm_config",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    responses(
+        (status = 200, description = "Email configuration status", body = EmailStatusResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+        (status = 500, description = "Server error", body = ErrorResponse)
+    )
+)]
+pub async fn email_status(
+    Path(realm_id): Path<String>,
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+) -> Result<Json<EmailStatusResponse>, ApiError> {
+    require_permission(
+        &state,
+        &realm_id,
+        &identity.user_id(),
+        "settings",
+        "view",
+        "settings.view",
+    )
+    .await?;
+
+    let status = EmailService::is_email_configured(&state.pool, &realm_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to check email config: {e}");
+            ApiError::internal("Failed to check email config")
+        })?;
+
+    Ok(Json(EmailStatusResponse {
+        configured: status.configured,
+        provider: status.provider,
+        from_address: status.from_address,
+        missing_fields: status.missing_fields,
+    }))
+}
+
+/// Send a test email for a realm
+#[utoipa::path(
+    post,
+    path = "/api/configs/{realmId}/email/test",
+    tag = "realm_config",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    request_body = EmailTestRequest,
+    responses(
+        (status = 200, description = "Test email result", body = EmailTestResponse),
+        (status = 400, description = "Bad request", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+        (status = 429, description = "Too many requests", body = ErrorResponse),
+        (status = 500, description = "Server error", body = ErrorResponse)
+    )
+)]
+pub async fn email_test(
+    Path(realm_id): Path<String>,
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Json(payload): Json<EmailTestRequest>,
+) -> Result<Json<EmailTestResponse>, ApiError> {
+    require_permission(
+        &state,
+        &realm_id,
+        &identity.user_id(),
+        "settings",
+        "manage",
+        "settings.manage",
+    )
+    .await?;
+
+    rate_limit_hit_forced(
+        &state,
+        format!("rl:email:test:{realm_id}:{}", identity.user_id()),
+        3,
+        60,
+    )
+    .await?;
+
+    payload
+        .validate()
+        .map_err(|e| ApiError::bad_request(format!("Invalid recipient: {e}")))?;
+
+    let status = EmailService::is_email_configured(&state.pool, &realm_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to check email config: {e}");
+            ApiError::internal("Failed to check email config")
+        })?;
+
+    if !status.configured {
+        return Err(ApiError::bad_request(
+            "Email is not configured for this realm".to_string(),
+        ));
+    }
+
+    match EmailService::send_html_email(
+        &state.pool,
+        &realm_id,
+        &payload.recipient,
+        "Test Email from Herald",
+        "<h1>Test Email</h1><p>This is a test email from your Herald instance.</p>",
+    )
+    .await
+    {
+        Ok(()) => Ok(Json(EmailTestResponse {
+            success: true,
+            message: "Test email sent successfully".to_string(),
+        })),
+        Err(e) => {
+            tracing::error!("Failed to send test email: {e}");
+            Ok(Json(EmailTestResponse {
+                success: false,
+                message: format!("Failed to send test email: {e}"),
+            }))
+        }
+    }
 }

@@ -400,7 +400,34 @@ pub async fn is_email_verification_required(
         })
         .unwrap_or(false); // Default to NOT required if no config found
 
+    // If email verification is requested, verify email is actually configured
+    if required {
+        let email_ready = is_email_configured(state, realm_id).await?;
+        if !email_ready {
+            tracing::warn!(
+                realm_id = %realm_id,
+                "Email verification requested but email not configured, forcing false"
+            );
+            return Ok(false);
+        }
+    }
+
     Ok(required)
+}
+
+/// Check if email is configured for a realm
+///
+/// Returns true if the realm has a complete email configuration, false otherwise.
+pub async fn is_email_configured(state: &AppState, realm_id: &str) -> Result<bool, ApiError> {
+    let status =
+        herald_core::third::email::EmailService::is_email_configured(&state.pool, realm_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to query email config: {e}");
+                ApiError::internal("Failed to query email config")
+            })?;
+
+    Ok(status.configured)
 }
 
 /// Check if a user has a specific permission with timeout

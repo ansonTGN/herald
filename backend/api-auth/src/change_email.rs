@@ -14,6 +14,7 @@ use herald_api_base::application::http::auth::util::{
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
+use herald_core::third::email::EmailService;
 
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
@@ -121,24 +122,26 @@ async fn send_confirmation_email(
     new_email: &str,
     code: &str,
 ) -> Result<(), ApiError> {
-    if let Some(resend) = &state.resend {
-        let link = format!(
-            "{}/api/auth/{}/change_email/confirm/{}",
-            state.public_base_url.trim_end_matches('/'),
-            realm_id,
-            code
-        );
-        let html = format!(
-            "<p>Please click to confirm change email:</p><p><a href=\"{link}\">{link}</a></p>"
-        );
-        resend
-            .send_html(new_email, "Confirm your new email", &html)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to send confirmation email: {}", e);
-                ApiError::internal("Failed to send confirmation email")
-            })?;
-    }
+    let link = format!(
+        "{}/api/auth/{}/change_email/confirm/{}",
+        state.public_base_url.trim_end_matches('/'),
+        realm_id,
+        code
+    );
+    let html =
+        format!("<p>Please click to confirm change email:</p><p><a href=\"{link}\">{link}</a></p>");
+    EmailService::send_html_email(
+        &state.pool,
+        realm_id,
+        new_email,
+        "Confirm your new email",
+        &html,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to send confirmation email: {}", e);
+        ApiError::internal("Failed to send confirmation email")
+    })?;
     Ok(())
 }
 

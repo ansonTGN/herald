@@ -27,6 +27,7 @@ pub mod client_helpers;
 #[cfg(test)]
 pub mod creem_mocks;
 pub mod device_code_helpers;
+pub mod email_config_helpers;
 pub mod oauth_test_helpers;
 #[cfg(test)]
 pub mod payment_assertions;

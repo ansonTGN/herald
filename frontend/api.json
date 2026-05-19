@@ -6125,6 +6125,160 @@
         }
       }
     },
+    "/api/configs/{realmId}/email/status": {
+      "get": {
+        "tags": [
+          "realm_config"
+        ],
+        "summary": "Get email configuration status for a realm",
+        "operationId": "email_status",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Email configuration status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/configs/{realmId}/email/test": {
+      "post": {
+        "tags": [
+          "realm_config"
+        ],
+        "summary": "Send a test email for a realm",
+        "operationId": "email_test",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Test email result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailTestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/configs/{realmId}/{configType}": {
       "get": {
         "tags": [
@@ -13855,7 +14009,8 @@
           "totp_key",
           "creem",
           "stripe",
-          "shopify"
+          "shopify",
+          "email"
         ]
       },
       "ConsumePointsRequest": {
@@ -14728,6 +14883,62 @@
           },
           "message": {
             "type": "string"
+          }
+        }
+      },
+      "EmailStatusResponse": {
+        "type": "object",
+        "required": [
+          "configured",
+          "missingFields"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "fromAddress": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "missingFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "EmailTestRequest": {
+        "type": "object",
+        "required": [
+          "recipient"
+        ],
+        "properties": {
+          "recipient": {
+            "type": "string"
+          }
+        }
+      },
+      "EmailTestResponse": {
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
           }
         }
       },
@@ -17468,7 +17679,6 @@
           "realmId",
           "configType",
           "configKey",
-          "configValue",
           "isSecret",
           "enabled",
           "createdAt",
@@ -17482,7 +17692,10 @@
             "type": "string"
           },
           "configValue": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "createdAt": {
             "type": "string"

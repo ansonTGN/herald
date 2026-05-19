@@ -25,4 +25,4 @@ pub use infrastructure::points_package::PostgresPointsPackageRepository;
 pub use infrastructure::purchase::{PostgresFulfillmentService, PostgresPurchaseRepository};
 pub use infrastructure::stripe::StripeClient;
 pub use infrastructure::webhook::{IdempotencyResult, WebhookEventRepository};
-pub use third::email::ResendClient;
+pub use third::email::{EmailConfigStatus, EmailService};

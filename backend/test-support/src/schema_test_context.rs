@@ -316,7 +316,6 @@ impl AsyncTestContext for SchemaTestContext {
             pool: pool_with_schema.clone(),
             db: Arc::new(sea_conn.clone()),
             redis_manager: redis_manager.clone(), // NEW: 使用 RedisConnectionManager
-            resend: None,
             billing_repository,
             invoice_repository: Arc::new(
                 herald_core::infrastructure::billing::PostgresInvoiceRepository::new(
