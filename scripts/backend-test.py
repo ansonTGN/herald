@@ -178,11 +178,6 @@ def build_nextest_command(nextest_args: list[str]) -> list[str]:
     return [cargo, "nextest", "run", "--workspace"]
 
 
-def print_utf8_safe(text: str) -> None:
-    sys.stdout.buffer.write(text.encode("utf-8", errors="replace"))
-    sys.stdout.buffer.write(b"\n")
-
-
 def format_command(args: list[str]) -> str:
     return subprocess.list2cmdline(args)
 
@@ -399,36 +394,15 @@ def print_failure_summary(test_result: subprocess.CompletedProcess[str], test_lo
 
 
 def run_test_command(test_cmd: list[str], test_log: Path, test_env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    if os.environ.get("BACKEND_TEST_LOG_STDOUT") != "1":
-        with test_log.open("w", encoding="utf-8") as fp:
-            return subprocess.run(
-                test_cmd,
-                cwd=REPO_ROOT / "backend",
-                stdout=fp,
-                stderr=subprocess.STDOUT,
-                text=True,
-                env=test_env,
-            )
-
     with test_log.open("w", encoding="utf-8") as fp:
-        process = subprocess.Popen(
+        return subprocess.run(
             test_cmd,
             cwd=REPO_ROOT / "backend",
-            stdout=subprocess.PIPE,
+            stdout=fp,
             stderr=subprocess.STDOUT,
             text=True,
-            encoding="utf-8",
-            errors="replace",
             env=test_env,
         )
-        assert process.stdout is not None
-        for line in process.stdout:
-            fp.write(line)
-            fp.flush()
-            print_utf8_safe(line.rstrip("\n"))
-        returncode = process.wait()
-
-    return subprocess.CompletedProcess(test_cmd, returncode)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:

@@ -573,6 +573,14 @@ pub trait PointsRepository: Send + Sync {
         idempotency_key: Option<String>,
     ) -> impl Future<Output = Result<RevokePointsOutput, CoreError>> + Send;
 
+    fn revoke_topup_proportional_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        refund_ratio: f64,
+        refund_id: &str,
+    ) -> impl Future<Output = Result<RevokePointsOutput, CoreError>> + Send;
+
     fn refund_points_atomic(
         &self,
         realm_id: &str,

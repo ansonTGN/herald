@@ -671,6 +671,52 @@ impl PostgresPointsRepository {
         Self::row_to_points_account(row)
     }
 
+    async fn refresh_account_balances_from_ledgers_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        account_id: Uuid,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> Result<PointsAccount, CoreError> {
+        let (topup_balance, subscription_balance): (i64, i64) = sqlx::query_as(
+            r#"
+            SELECT
+                COALESCE(SUM(remaining_amount) FILTER (
+                    WHERE credit_type IN ('topup_credit', 'registration_credit', 'free_periodic_credit')
+                ), 0)::BIGINT AS topup_balance,
+                COALESCE(SUM(remaining_amount) FILTER (
+                    WHERE credit_type = 'subscription_credit'
+                ), 0)::BIGINT AS subscription_balance
+            FROM points_credit_ledger
+            WHERE realm_id = $1
+              AND user_id = $2
+            "#,
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        let row = sqlx::query_as::<_, PointsAccountRow>(
+            r#"
+            UPDATE points_accounts
+            SET topup_balance = $2,
+                subscription_balance = $3,
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING *
+            "#,
+        )
+        .bind(account_id)
+        .bind(topup_balance)
+        .bind(subscription_balance)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Self::row_to_points_account(row)
+    }
+
     async fn update_ledger_in_tx(
         tx: &mut Transaction<'_, Postgres>,
         ledger_id: Uuid,
@@ -3331,6 +3377,101 @@ impl PointsRepository for PostgresPointsRepository {
             tx.commit()
                 .await
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            Ok(RevokePointsOutput {
+                revocation_id: Uuid::now_v7(),
+                ledger_ids,
+                total_revoked,
+                revoked_at: chrono::Utc::now(),
+            })
+        }
+    }
+
+    fn revoke_topup_proportional_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        refund_ratio: f64,
+        refund_id: &str,
+    ) -> impl std::future::Future<Output = Result<RevokePointsOutput, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        let refund_id = refund_id.to_string();
+        async move {
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            let account =
+                match Self::find_account_by_user_for_update(&mut tx, &realm_id, user_id).await? {
+                    Some(acc) => acc,
+                    None => {
+                        tx.commit()
+                            .await
+                            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                        return Ok(RevokePointsOutput {
+                            revocation_id: Uuid::now_v7(),
+                            ledger_ids: vec![],
+                            total_revoked: 0,
+                            revoked_at: chrono::Utc::now(),
+                        });
+                    }
+                };
+
+            let ledgers = Self::find_active_ledgers_by_credit_type_for_update(
+                &mut tx,
+                &realm_id,
+                user_id,
+                CreditType::TopupCredit,
+            )
+            .await?;
+
+            let mut total_revoked = 0i64;
+            let mut ledger_ids = Vec::new();
+            for ledger in ledgers {
+                if ledger.remaining_amount <= 0 {
+                    continue;
+                }
+
+                let amount_to_revoke =
+                    ((ledger.remaining_amount as f64) * refund_ratio).round() as i64;
+                if amount_to_revoke <= 0 {
+                    continue;
+                }
+
+                let updated_ledger = Self::update_ledger_in_tx(
+                    &mut tx,
+                    ledger.id,
+                    LedgerUpdate::Revocation(amount_to_revoke),
+                )
+                .await?;
+
+                let record = PointsRevocationRecord {
+                    id: Uuid::now_v7(),
+                    ledger_id: updated_ledger.id,
+                    user_id,
+                    realm_id: realm_id.clone(),
+                    revocation_type: RevocationType::RefundRevoke,
+                    revoked_amount: amount_to_revoke,
+                    reason: format!("Proportional refund (ratio: {:.2})", refund_ratio),
+                    reference_id: Some(refund_id.clone()),
+                    created_at: chrono::Utc::now(),
+                };
+                Self::create_revocation_record_in_tx(&mut tx, &record).await?;
+
+                total_revoked += amount_to_revoke;
+                ledger_ids.push(updated_ledger.id);
+            }
+
+            let _ = Self::refresh_account_balances_from_ledgers_in_tx(
+                &mut tx, account.id, &realm_id, user_id,
+            )
+            .await?;
+
+            tx.commit()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
             Ok(RevokePointsOutput {
                 revocation_id: Uuid::now_v7(),
                 ledger_ids,

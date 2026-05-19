@@ -29,6 +29,50 @@ use test_context::test_context;
 use tower::ServiceExt;
 use uuid::Uuid;
 
+async fn assert_account_balance_matches_ledger_remaining(
+    ctx: &SchemaTestContext,
+    user_id: Uuid,
+    realm_id: &str,
+    credit_types: &[CreditType],
+) {
+    let account_column = if credit_types == [CreditType::SubscriptionCredit] {
+        "subscription_balance"
+    } else {
+        "topup_balance"
+    };
+
+    let account_balance: i64 = sqlx::query_scalar(&format!(
+        "SELECT {} FROM points_accounts WHERE user_id = $1 AND realm_id = $2",
+        account_column
+    ))
+    .bind(user_id)
+    .bind(realm_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("Failed to fetch account balance");
+
+    let credit_type_values = credit_types
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let ledger_remaining: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(remaining_amount), 0)::BIGINT FROM points_credit_ledger
+         WHERE user_id = $1 AND realm_id = $2 AND credit_type = ANY($3)",
+    )
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(&credit_type_values)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("Failed to fetch ledger remaining sum");
+
+    assert_eq!(
+        account_balance, ledger_remaining,
+        "{} must match remaining ledger sum for {:?}",
+        account_column, credit_types
+    );
+}
+
 // ============================================================================
 // Test 1: Consume + Refund Webhook Race
 // ============================================================================
@@ -163,7 +207,20 @@ async fn test_scenario_consume_refund_race_balance_not_negative(ctx: &mut Schema
         ledger.remaining_amount
     );
 
-    // 4. Verify webhook response is valid
+    // 4. Account balance must match ledger source of truth
+    assert_account_balance_matches_ledger_remaining(
+        ctx,
+        user_id,
+        &realm_id,
+        &[
+            CreditType::TopupCredit,
+            CreditType::RegistrationCredit,
+            CreditType::FreePeriodicCredit,
+        ],
+    )
+    .await;
+
+    // 5. Verify webhook response is valid
     assert_webhook_success(&webhook_response);
 
     // Log the consume status for diagnostics
@@ -295,10 +352,19 @@ async fn test_scenario_consume_cancel_race_balance_not_negative(ctx: &mut Schema
         ledger.remaining_amount
     );
 
-    // 4. Webhook should succeed
+    // 4. Account balance must match ledger source of truth
+    assert_account_balance_matches_ledger_remaining(
+        ctx,
+        user_id,
+        &realm_id,
+        &[CreditType::SubscriptionCredit],
+    )
+    .await;
+
+    // 5. Webhook should succeed
     assert_webhook_success(&webhook_response);
 
-    // 5. If consume succeeded, used_amount should reflect it
+    // 6. If consume succeeded, used_amount should reflect it
     if consume_status == StatusCode::OK {
         assert!(
             ledger.used_amount >= 3000,
@@ -466,7 +532,20 @@ async fn test_scenario_multi_consume_refund_race_no_overspending(ctx: &mut Schem
         ledger.granted_amount
     );
 
-    // 7. Revocation records should exist if webhook processed
+    // 7. Account balance must match ledger source of truth
+    assert_account_balance_matches_ledger_remaining(
+        ctx,
+        user_id,
+        &realm_id,
+        &[
+            CreditType::TopupCredit,
+            CreditType::RegistrationCredit,
+            CreditType::FreePeriodicCredit,
+        ],
+    )
+    .await;
+
+    // 8. Revocation records should exist if webhook processed
     let revocations = get_revocation_records(ctx, user_id).await;
     // The refund webhook should produce exactly one revocation record
     assert!(
@@ -475,7 +554,7 @@ async fn test_scenario_multi_consume_refund_race_no_overspending(ctx: &mut Schem
         revocations.len()
     );
 
-    // 8. Count consume transactions - should match success_count
+    // 9. Count consume transactions - should match success_count
     let consume_tx_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM points_transactions WHERE user_id = $1 AND type = 'consume'",
     )

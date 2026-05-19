@@ -71,8 +71,6 @@ jobs:
           key: ${{ runner.os }}-cargo-nextest-${{ hashFiles('backend/Cargo.lock') }}
 
       - name: Run nextest
-        env:
-          BACKEND_TEST_LOG_STDOUT: "1"
         run: python scripts/backend-test.py
 
       - name: Upload backend test log
