@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Coins, History, Plus } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
-import { PointsBalanceCard } from './PointsBalanceCard'
 import { TransactionHistoryTable } from './TransactionHistoryTable'
 import { TransactionFilters } from './TransactionFilters'
 import { PurchaseHistoryList } from '@/components/purchase/purchase-history-list'
@@ -62,7 +61,20 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
     <div className="space-y-6" data-testid="user-points-page">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">My Points</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-xl font-semibold">My Points</h1>
+          {account && !accountLoading && (
+            <span className="text-2xl font-bold" data-testid="points-balance">
+              {account.balance.toLocaleString()}{' '}
+              <span className="text-sm font-normal text-muted-foreground">{account.unit}</span>
+            </span>
+          )}
+          {accountLoading && (
+            <span className="text-2xl font-bold animate-pulse" data-testid="points-balance">
+              ---
+            </span>
+          )}
+        </div>
         <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
           <Button data-testid="purchase-points-button">
             <Plus className="mr-2 h-4 w-4" />
@@ -70,9 +82,6 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
           </Button>
         </Link>
       </div>
-
-      {/* Balance Card */}
-      <PointsBalanceCard account={account || null} loading={accountLoading} />
 
       {/* Transaction History and Purchase History Tabs */}
       <Tabs defaultValue="transactions" className="space-y-4" data-testid="points-page-tabs">

@@ -3,7 +3,7 @@
 **角色代码**: RA
 **角色定义**：Realm Admin 是特定 Realm 的管理员，负责管理该 Realm 下的用户、客户端应用、角色、权限和订阅套餐。
 
-**故事范围**: US-RA-001 ~ US-RA-012
+**故事范围**: US-RA-001 ~ US-RA-015
 **创建时间**: 2025-02-01
 **状态**: Active
 
@@ -544,12 +544,154 @@ And 每个导航入口的跳转目标不变
 ```
 
 
+## 故事 13：配置 Realm 邮件服务 [US-RA-013]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Realm Admin
+**我希望**：在 Settings 页面的 Email Tab 中配置本 Realm 的邮件发送方式（Resend API 或 SMTP）
+**从而**：让我的 Realm 能够独立发送邮件（验证邮箱、密码重置等），不依赖全局配置
+
+**【验收标准】**
+
+**场景 1：配置 Resend API 方式**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 尚未配置邮件服务
+When 我在 Settings 页面切换到 Email Tab
+And 我选择 provider 为 "Resend API"
+And 我填写：
+  | From Address | noreply@example.com |
+  | API Key      | re_xxxxx            |
+And 我点击 "Save"
+Then 邮件配置保存成功
+And 页面显示 "Email is configured" 状态
+```
+
+**场景 2：配置 SMTP 方式**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 尚未配置邮件服务
+When 我选择 provider 为 "SMTP"
+And 我填写：
+  | From Address  | notify@company.com |
+  | SMTP Host     | smtp.qq.com        |
+  | SMTP Port     | 587                |
+  | Encryption    | STARTTLS           |
+  | Username      | notify@company.com |
+  | Password      | my-auth-code       |
+And 我点击 "Save"
+Then 邮件配置保存成功
+And 页面显示 "Email is configured" 状态
+```
+
+**场景 3：缺少必填字段时无法保存**
+```gherkin
+Given 我是 realm-1 的管理员
+When 我选择 provider 为 "SMTP"
+And 我仅填写了 SMTP Host 而未填写 Username 和 Password
+And 我点击 "Save"
+Then 保存失败
+And 页面提示缺失的必填字段
+```
+
+**场景 4：切换 provider 后清空旧配置**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 已配置了 Resend API 方式
+When 我切换 provider 为 "SMTP"
+Then Resend 相关字段（API Key）被隐藏
+And SMTP 相关字段（Host、Port 等）显示为空
+```
+
+
+## 故事 14：发送测试邮件 [US-RA-014]
+
+**优先级**: P1
+
+**【用户故事】**
+**作为**：Realm Admin
+**我希望**：在邮件配置保存后发送测试邮件以验证配置正确性
+**从而**：确保用户能正常收到系统邮件
+
+**【验收标准】**
+
+**场景 1：测试邮件发送成功**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 已配置完整的邮件服务
+When 我在 Email Tab 中点击 "Send Test Email"
+And 我输入收件人地址 test@example.com
+Then 系统发送测试邮件到 test@example.com
+And 页面显示发送成功提示
+```
+
+**场景 2：邮件配置不完整时无法发送**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 未配置邮件服务
+When 我点击 "Send Test Email"
+Then 系统提示 "Email is not configured"
+And 不发送任何邮件
+```
+
+**场景 3：测试邮件发送失败**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 已配置邮件服务但配置有误
+When 我点击 "Send Test Email"
+And 我输入收件人地址 test@example.com
+Then 系统返回发送失败提示
+And 页面显示错误信息（如 "SMTP authentication failed"）
+```
+
+
+## 故事 15：邮件依赖的功能开关前置验证 [US-RA-015]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Realm Admin
+**我希望**：在未配置邮件服务时无法开启邮件依赖功能（如邮箱验证、密码重置邮件）
+**从而**：避免用户因邮件不可用而无法完成注册或重置密码
+
+**【验收标准】**
+
+**场景 1：邮件未配置时无法开启邮箱验证**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 未配置邮件服务
+When 我在 Settings 页面 Registration Tab 中查看 "Require Email Verification" 开关
+Then 该开关处于禁用状态
+And 开关旁显示提示 "Email verification requires email configuration"
+```
+
+**场景 2：邮件配置完成后可开启邮箱验证**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 已配置完整的邮件服务
+When 我在 Registration Tab 中开启 "Require Email Verification"
+Then 开关切换为启用状态
+And 保存成功
+```
+
+**场景 3：删除邮件配置后，邮箱验证自动失效**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 已配置邮件服务且开启了邮箱验证
+When 我删除邮件配置
+Then "Require Email Verification" 开关自动变为禁用状态
+And 后续用户注册不再要求邮箱验证
+```
+
+
 ## 用户故事优先级汇总
 
 | 优先级 | 用户故事数量 | 关键故事 |
 |--------|------------|---------|
-| P0 | 9 | Realm 隔离访问、角色定义管理、权限定义管理、为角色分配权限、查看角色权限、用户角色分配、权限策略管理、订阅套餐管理、权限层级验证 |
-| P1 | 3 | 查看 Dashboard 用户活跃概览、查看 Dashboard 认证趋势图、通过 Dashboard 快捷导航跳转 |
+| P0 | 11 | Realm 隔离访问、角色定义管理、权限定义管理、为角色分配权限、查看角色权限、用户角色分配、权限策略管理、订阅套餐管理、权限层级验证、配置 Realm 邮件服务、邮件依赖的功能开关前置验证 |
+| P1 | 4 | 查看 Dashboard 用户活跃概览、查看 Dashboard 认证趋势图、通过 Dashboard 快捷导航跳转、发送测试邮件 |
 | P2 | 0 | - |
 
 ---
@@ -561,3 +703,5 @@ And 每个导航入口的跳转目标不变
 - **技术设计**: `.ai/design/fix-permission-and-sdk-impl.md` - Realm 创建权限修复技术设计
 - **用户故事**: `docs/user-stories/builtin_protection.md` - 默认角色和权限保护
 - **PRD**: `docs/prd/core/dashboard-redesign.md` - Dashboard 重设计产品需求文档
+- **PRD**: `docs/prd/core/realm-settings.md` - Realm Settings 产品需求文档（含邮件配置）
+- **技术设计**: `.ai/design/realm-email-config.md` - Per-Realm 邮件配置与功能开关技术设计

@@ -2,7 +2,7 @@
 
 **创建时间**: 2025-01-05
 **状态**: Implemented
-**最后更新**: 2026-03-31
+**最后更新**: 2026-05-19
 
 ---
 ## 1. 相关用户故事
@@ -13,13 +13,16 @@
 
 - 📄 [docs/user-stories/02-realm-admin-user-stories.md](/docs/user-stories/02-realm-admin-user-stories.md)
   - **[US-RA-008] 配置 Realm 设置** (P0): 作为 Realm Admin，我想要配置 Realm 设置（Turnstile、注册策略、OAuth Provider），以便管理本 Realm 的安全和访问控制
+  - **[US-RA-013] 配置 Realm 邮件服务** (P0): 作为 Realm Admin，我想要配置邮件发送方式（Resend API 或 SMTP），以便让本 Realm 独立发送系统邮件
+  - **[US-RA-014] 发送测试邮件** (P1): 作为 Realm Admin，我想要发送测试邮件验证配置正确性
+  - **[US-RA-015] 邮件依赖的功能开关前置验证** (P0): 作为 Realm Admin，我希望在未配置邮件时无法开启邮箱验证等邮件依赖功能
 
 ### 1.2 用户故事优先级汇总
 
 | 优先级 | 用户故事数量 | 关键故事 |
 |--------|------------|---------|
-| P0 | 3 | 配置 Turnstile 验证码、配置注册策略、配置 OAuth Provider |
-| P1 | 0 | - |
+| P0 | 5 | 配置 Turnstile 验证码、配置注册策略、配置 OAuth Provider、配置邮件服务、功能开关前置验证 |
+| P1 | 1 | 发送测试邮件 |
 | P2 | 0 | - |
 
 ---
@@ -30,17 +33,20 @@
 
 - ✅ Realm Config 管理（Turnstile、Registration）
 - ✅ OAuth Provider 配置管理（独立系统）
+- 🚧 Email 邮件服务配置（Per-Realm，支持 Resend / SMTP）
 - ✅ 前端 Settings 页面（多 Tab 布局）
 - ✅ Turnstile 配置表单
 - ✅ Registration 配置表单
 - ✅ OAuth 配置表单
+- 🚧 Email 配置表单
+- 🚧 邮件依赖功能开关前置验证
 - ✅ 后端 Realm Config API
 - ✅ 后端 OAuth Config API（部分实现）
 
 ### 2.2 不包含功能 (Out of Scope)
 
 - ❌ **端到端测试** (原因: 待实施)
-- ❌ **更多配置类型** (原因: 当前只支持 Turnstile、Registration、OAuth)
+- ❌ **更多配置类型** (原因: 当前只支持 Turnstile、Registration、OAuth、Email)
 - ❌ **配置模板功能** (原因: 没有预定义配置模板)
 
 ### 2.3 依赖项
@@ -57,7 +63,8 @@
 
 **注意**:
 - OAuth 配置有独立的配置系统，不在 Realm Config 中管理
-- 邮件服务配置、会话配置、密码策略配置暂不在 Realm Config 中管理
+- 邮件服务配置已纳入 Realm Config 管理（使用 `email` 配置类型）
+- 会话配置、密码策略配置暂不在 Realm Config 中管理
 
 **导航菜单配置**（已完成，参考 `frontend/src/data/navigation.ts`）：
 
@@ -92,6 +99,30 @@
 - ✅ OAuth Provider 配置（Google、GitHub、Facebook、Apple 等）
 - ✅ Stripe 支付配置（API Key、Webhook Secret 等）
 - ✅ 配置的批量保存和验证
+- ✅ 完整的错误处理和用户反馈
+
+**实现说明**：
+- Settings 页面使用 `/$realmId/manage/settings` 路由
+- 使用 Tabs 布局组织多个配置类型
+- 所有配置类型均已实现，包括 PRD 中描述的 Turnstile（现为 TOTP）和 Registration
+- 实际实现比 PRD 原始设计更全面，增加了 OAuth、Stripe 和 TOTP 配置
+
+### 📝 待实现 (2026-05-19 更新)
+
+**Email 邮件服务配置**：
+- [ ] Per-Realm 邮件配置（Resend API / SMTP）
+- [ ] Email 配置表单（Settings 页面新增 Tab）
+- [ ] 发送测试邮件功能
+- [ ] 邮件依赖功能开关前置验证（Registration Tab 联动）
+- [ ] 移除全局 Resend 配置，改为按 Realm 动态获取邮件配置
+- [ ] 更新所有邮件相关 auth handler 使用新的 EmailService
+
+**业务规则**：
+- 每个 Realm 独立配置邮件发送方式和参数
+- 支持 Resend API（HTTP）和标准 SMTP（STARTTLS/SSL）两种方式
+- 邮件相关功能（邮箱验证、密码重置、更换邮箱）仅在邮件配置完整后才可开启
+- 密码/密钥类字段标记 `is_secret = true`，前端读取时脱敏显示
+- 技术设计详见 `.ai/design/realm-email-config.md`
 - ✅ 完整的错误处理和用户反馈
 
 **实现说明**：
@@ -148,8 +179,8 @@
 - ✅ 注册开关: `enabled: "true"`
 - ✅ 会话超时: `session_timeout: "3600"`
 - ✅ Turnstile site_secret: `site_secret: "0x4AAA..."`
+- ✅ 邮件服务配置: `provider: "resend"`, `smtp_host: "smtp.qq.com"` 等
 - ❌ OAuth provider 配置 (使用独立系统)
-- ❌ 邮件服务配置 (未来可能需要独立系统)
 
 #### 关键区别
 
@@ -239,8 +270,40 @@ Settings 页面采用分组卡片布局，每个配置类型对应一个独立�
 **说明**：
 - 所有密码策略字段强制生效，用于密码强度校验
 - 系统默认：最小长度 8，必须包含大小写字母、数字和特殊字符
+- **前置条件**：`require_email_verification` 开关仅在邮件服务配置完整后可启用
 
 **表单定义**:
+
+#### 2.2.4 邮件服务配置
+
+**配置类型**: `email`
+
+**支持的 Provider**:
+- Resend API — 通过 HTTP API 发送，适合使用 Resend 服务的用户
+- SMTP — 标准邮件发送协议，支持 QQ邮箱、Gmail、企业邮箱等
+
+**配置项**:
+
+| 配置键 | 显示名称 | Provider | 类型 | 是否敏感 | 说明 |
+|--------|---------|----------|------|----------|------|
+| `provider` | Provider | 通用 | string | 否 | "resend" 或 "smtp" |
+| `from_address` | From Address | 通用 | string | 否 | 发件人地址 |
+| `resend_api_key` | API Key | Resend | string | 是 | Resend API Key |
+| `smtp_host` | SMTP Host | SMTP | string | 否 | SMTP 服务器地址 |
+| `smtp_port` | SMTP Port | SMTP | string | 否 | 端口（默认 587） |
+| `smtp_encryption` | Encryption | SMTP | string | 否 | "starttls" 或 "ssl" |
+| `smtp_username` | Username | SMTP | string | 否 | SMTP 用户名 |
+| `smtp_password` | Password | SMTP | string | 是 | SMTP 密码/授权码 |
+
+**功能开关前置验证规则**:
+- 邮件配置完整性定义：provider + from_address + 对应 provider 的必填字段均已填写且 enabled=true
+- `require_email_verification` 开关仅在邮件配置完整时可开启
+- 未配置邮件时，Registration Tab 中该开关显示为禁用状态，并提示 "Email verification requires email configuration"
+
+**表单交互**:
+- Provider 切换时，隐藏/显示对应字段（Resend 显示 API Key；SMTP 显示 Host/Port/Username/Password）
+- 密码/密钥类字段编辑时显示脱敏占位符，点击编辑后才变为输入框
+- 保存后可点击 "Send Test Email" 验证配置正确性
 
 ---
 

@@ -22,6 +22,9 @@
 | US-RA-010 | 查看 Dashboard 用户活跃概览 | Realm Admin | P1 | [02-realm-admin](02-realm-admin-user-stories.md#故事-10查看-dashboard-用户活跃概览-us-ra-010) |
 | US-RA-011 | 查看 Dashboard 认证趋势图 | Realm Admin | P1 | [02-realm-admin](02-realm-admin-user-stories.md#故事-11查看-dashboard-认证趋势图-us-ra-011) |
 | US-RA-012 | 通过 Dashboard 快捷导航跳转 | Realm Admin | P1 | [02-realm-admin](02-realm-admin-user-stories.md#故事-12通过-dashboard-快捷导航跳转-us-ra-012) |
+| US-RA-013 | 配置 Realm 邮件服务 | Realm Admin | P0 | [02-realm-admin](02-realm-admin-user-stories.md#故事-13配置-realm-邮件服务-us-ra-013) |
+| US-RA-014 | 发送测试邮件 | Realm Admin | P1 | [02-realm-admin](02-realm-admin-user-stories.md#故事-14发送测试邮件-us-ra-014) |
+| US-RA-015 | 邮件依赖的功能开关前置验证 | Realm Admin | P0 | [02-realm-admin](02-realm-admin-user-stories.md#故事-15邮件依赖的功能开关前置验证-us-ra-015) |
 | US-RU-001 | 账号注册 | Regular User | P0 | [03-regular-user](03-regular-user-user-stories.md#故事-1账号注册-us-ru-001) |
 | US-RU-002 | 账号登录 | Regular User | P0 | [03-regular-user](03-regular-user-user-stories.md#故事-2账号登录-us-ru-002) |
 | US-RU-003 | OAuth 第三方登录 | Regular User | P0 | [03-regular-user](03-regular-user-user-stories.md#故事-3oauth-第三方登录-us-ru-003) |
@@ -125,7 +128,7 @@
 | US-DC-004 | Realm Admin 配置 Device Code Grant | Realm Admin | P1 | [15-device-code](15-device-code-user-stories.md#故事-4realm-admin-配置-device-code-grant-us-dc-004) |
 | US-DC-005 | 设备验证页面 API | Third-Party App | P1 | [15-device-code](15-device-code-user-stories.md#故事-5设备验证页面-api-us-dc-005) |
 
-**总计**: 121 个用户故事
+**总计**: 124 个用户故事
 
 ---
 
@@ -134,7 +137,7 @@
 | 角色 | 文档 | 故事数 | 相关 PRD |
 |------|------|-------|---------|
 | Admin Realm 管理员 | [01-admin-realm-user-stories.md](01-admin-realm-user-stories.md) | 4 | [Realm PRD](/docs/prd/core/realm.md) |
-| Realm Admin | [02-realm-admin-user-stories.md](02-realm-admin-user-stories.md), [builtin_protection.md](builtin_protection.md) | 12 | [Users PRD](/docs/prd/core/users.md), [Permissions PRD](/docs/prd/auth/permissions.md), [Client Apps PRD](/docs/prd/integration/client-app.md), [Realm Settings PRD](/docs/prd/core/realm-settings.md), [Dashboard PRD](/docs/prd/core/dashboard-redesign.md) |
+| Realm Admin | [02-realm-admin-user-stories.md](02-realm-admin-user-stories.md), [builtin_protection.md](builtin_protection.md) | 15 | [Users PRD](/docs/prd/core/users.md), [Permissions PRD](/docs/prd/auth/permissions.md), [Client Apps PRD](/docs/prd/integration/client-app.md), [Realm Settings PRD](/docs/prd/core/realm-settings.md), [Dashboard PRD](/docs/prd/core/dashboard-redesign.md) |
 | Regular User | [03-regular-user-user-stories.md](03-regular-user-user-stories.md) | 9 | [Users PRD](/docs/prd/core/users.md) |
 | 第三方应用开发者 | [04-third-party-app-user-stories.md](04-third-party-app-user-stories.md), [client-app-settings.md](client-app-settings.md) | 11 | [OAuth 第三方集成 PRD](/docs/prd/auth/oauth-third-party-integration.md), [Client Apps PRD](/docs/prd/integration/client-app.md) |
 | TOTP 用户 | [05-totp-user-stories.md](05-totp-user-stories.md) | 7 | [TOTP PRD](/docs/prd/auth/totp.md) |

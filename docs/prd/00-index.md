@@ -33,7 +33,7 @@ docs/
 |---------|------|------|---------|---------|
 | [realm.md](core/realm.md) | Realm 管理 | ✅ Implemented | Admin Realm, Realm Admin | - |
 | [users.md](core/users.md) | 用户管理 | ✅ Implemented | Realm Admin, Regular User | - |
-| [realm-settings.md](core/realm-settings.md) | Realm 设置 | ✅ Implemented | Realm Admin | 2026-03-31 |
+| [realm-settings.md](core/realm-settings.md) | Realm 设置 | 🚧 Partially Implemented | Realm Admin | 2026-05-19 |
 | [audit.md](core/audit.md) | Audit 审计日志 | 📝 Draft | Realm Admin, Admin Realm | 2026-05-13 |
 | [dashboard-redesign.md](core/dashboard-redesign.md) | Dashboard 重设计 | 📝 Draft | Realm Admin | 2026-05-16 |
 

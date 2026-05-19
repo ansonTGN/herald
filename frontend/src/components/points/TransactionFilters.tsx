@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Calendar, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { optionalStringEnum } from '@/lib/form-utils'
 import { toDateInputValue, toUtcDateRangeBoundary } from '@/lib/date-utils'
 import { FILTER_ALL_VALUE } from '@/lib/constants'
@@ -80,9 +80,9 @@ export function TransactionFilters({
       >
         <AppForm>
           <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="flex flex-wrap items-end gap-4">
               {/* Transaction Type */}
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-[160px]">
                 <form.Field name="transactionType">
                   {(field) => (
                     <>
@@ -117,16 +117,13 @@ export function TransactionFilters({
                   {(field) => (
                     <>
                       <Label htmlFor={field.name}>From Date</Label>
-                      <div className="relative">
-                        <Input
-                          id={field.name}
-                          type="date"
-                          value={field.state.value ?? ''}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                          data-testid="filter-from-date"
-                        />
-                        <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                      </div>
+                      <Input
+                        id={field.name}
+                        type="date"
+                        value={field.state.value ?? ''}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        data-testid="filter-from-date"
+                      />
                     </>
                   )}
                 </form.Field>
@@ -138,16 +135,13 @@ export function TransactionFilters({
                   {(field) => (
                     <>
                       <Label htmlFor={field.name}>To Date</Label>
-                      <div className="relative">
-                        <Input
-                          id={field.name}
-                          type="date"
-                          value={field.state.value ?? ''}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                          data-testid="filter-to-date"
-                        />
-                        <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                      </div>
+                      <Input
+                        id={field.name}
+                        type="date"
+                        value={field.state.value ?? ''}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        data-testid="filter-to-date"
+                      />
                     </>
                   )}
                 </form.Field>
@@ -155,7 +149,7 @@ export function TransactionFilters({
 
               {/* Client App (admin only) */}
               {admin && (
-                <div className="space-y-2">
+                <div className="space-y-2 min-w-[160px]">
                   <form.Field name="clientAppId">
                     {(field) => (
                       <>
@@ -183,26 +177,31 @@ export function TransactionFilters({
                   </form.Field>
                 </div>
               )}
-            </div>
 
-            {/* Action Buttons */}
-            <div className="flex justify-end gap-2">
-              {hasActiveFilters && (
+              {/* Action Buttons - same line as filters */}
+              <div className="flex gap-2">
+                {hasActiveFilters && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleReset}
+                    disabled={loading}
+                    data-testid="clear-filters-button"
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Clear
+                  </Button>
+                )}
                 <Button
-                  type="button"
-                  variant="ghost"
+                  type="submit"
                   size="sm"
-                  onClick={handleReset}
                   disabled={loading}
-                  data-testid="clear-filters-button"
+                  data-testid="apply-filters-button"
                 >
-                  <X className="mr-2 h-4 w-4" />
-                  Clear Filters
+                  {loading ? 'Applying...' : 'Apply Filters'}
                 </Button>
-              )}
-              <Button type="submit" size="sm" disabled={loading} data-testid="apply-filters-button">
-                {loading ? 'Applying...' : 'Apply Filters'}
-              </Button>
+              </div>
             </div>
           </div>
         </AppForm>
