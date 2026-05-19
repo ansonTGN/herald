@@ -33,6 +33,7 @@ tools:
 
 ### 步骤 1：基础质量命令
 - 先分析改动范围与上游 handoff，再执行编译与定向测试命令
+- 执行重复代码扫描并保留报告证据
 - 收集失败证据与日志
 - 默认不直接运行全量 `uv run scripts/backend-test.py`
 - 仅在用户明确要求全量测试，或影响范围无法可靠收敛时，才升级为全量测试
@@ -50,6 +51,7 @@ tools:
 ### 步骤 4：输出报告
 - 输出到 `.ai/quality/accept-[feature]-[date].md`
 - 给出状态：`ACCEPTED` / `REJECTED` / `ACCEPTED WITH IMPROVEMENTS`
+- 报告必须包含重复代码检查结果：执行命令、重复率/重复块数量、关键文件位置；未执行时必须说明原因
 - 明确 handoff 给 `/t-backend-finalize [feature]` 做 `/simplify`、clippy、fmt 和全量测试收口
 
 ## 规范来源（唯一标准）

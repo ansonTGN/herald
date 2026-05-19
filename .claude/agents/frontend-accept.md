@@ -33,6 +33,7 @@ tools:
 
 ### 步骤 1：基础质量命令
 - 运行 `type-check`、`test`、`lint`
+- 执行重复代码扫描并保留报告证据
 - 收集类型与测试失败证据
 
 ### 步骤 2：API 一致性检查
@@ -45,6 +46,7 @@ tools:
 ### 步骤 4：输出报告
 - 输出到 `.ai/quality/check-[date].md`
 - 给出状态：`ACCEPTED` / `REJECTED` / `ACCEPTED WITH IMPROVEMENTS`
+- 报告必须包含重复代码检查结果：执行命令、重复率/重复块数量、关键文件位置；未执行时必须说明原因
 
 ## 规范来源（唯一标准）
 
