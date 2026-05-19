@@ -715,6 +715,25 @@ export const SELECTORS = {
   },
 
   /**
+   * Payment Provider-Specific UI Selectors
+   * Rendered within PaymentAttemptStatus for Pending/RequiresAction states
+   */
+  paymentProviderUI: {
+    // WeChat QR code flow
+    wechatQrSection: '[data-testid="payment-wechat-qr-section"]',
+    wechatQrCode: '[data-testid="wechat-qr-code"]',
+    // Stripe / Creem redirect flow
+    redirectPrompt: '[data-testid="payment-redirect-prompt"]',
+    redirectManualLink: '[data-testid="payment-redirect-manual-link"]',
+    // Degraded UI (missing payment context)
+    contextDegraded: '[data-testid="payment-context-degraded"]',
+    // Cancel button (rendered inside provider-specific views)
+    cancelButton: '[data-testid="payment-cancel-button"]',
+    // Countdown timer (rendered inside provider-specific views)
+    countdownTimer: '[data-testid="payment-countdown-timer"]',
+  },
+
+  /**
    * Device Verification Page Selectors
    * Route: /{realmId}/device, /{realmId}/device/{userCode}
    */

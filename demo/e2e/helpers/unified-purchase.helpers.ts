@@ -28,6 +28,7 @@ export const TEST_DATA = {
   PAYMENT_PROVIDERS: {
     WECHAT: 'wechat',
     STRIPE: 'stripe',
+    CREEM: 'creem',
   } as const,
 } as const
 
@@ -141,4 +142,68 @@ export async function selectPaymentMethodAndProceed(
   await expect(page.getByTestId(`payment-method-selected-${provider}`)).toBeVisible()
 
   await page.getByTestId(SELECTORS.purchasePoints.nextButton).click()
+}
+
+/**
+ * Full purchase flow: navigate -> select package -> select provider -> complete purchase.
+ * Returns the payment attempt ID from localStorage.
+ */
+export async function initiatePurchaseFlow(
+  page: Page,
+  provider: PaymentProvider,
+  realmId: string = TEST_DATA.REALMS.REALM_001
+): Promise<string> {
+  await page.goto(`/${realmId}/user/purchase-points`)
+  await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
+
+  await selectFirstPackageAndProceed(page)
+  await expect(page.locator(SELECTORS.purchasePoints.stepPayment)).toBeVisible()
+
+  await selectPaymentMethodAndProceed(page, provider)
+
+  await expect(page.locator(SELECTORS.purchasePoints.stepProcessing)).toBeVisible({
+    timeout: TEST_DATA.TIMEOUTS.ELEMENT_VISIBLE
+  })
+
+  return extractPaymentAttemptId(page)
+}
+
+/**
+ * Verifies redirect prompt or degraded UI for a payment provider.
+ * Handles two cases: checkout URL present (redirect prompt) or absent (degraded UI).
+ * Clicks cancel button in redirect case to prevent auto-redirect.
+ */
+export async function verifyRedirectPromptOrDegraded(
+  page: Page,
+  providerName: string
+): Promise<void> {
+  await expect(
+    page.locator(SELECTORS.paymentProviderUI.redirectPrompt)
+      .or(page.locator(SELECTORS.paymentProviderUI.contextDegraded))
+  ).toBeVisible({ timeout: 5000 })
+
+  const redirectPrompt = page.locator(SELECTORS.paymentProviderUI.redirectPrompt)
+  const isRedirectPromptVisible = await redirectPrompt.isVisible()
+
+  if (isRedirectPromptVisible) {
+    const manualLink = page.locator(SELECTORS.paymentProviderUI.redirectManualLink)
+    await expect(manualLink).toBeVisible()
+
+    const href = await manualLink.getAttribute('href')
+    expect(href).toBeTruthy()
+
+    const promptText = await redirectPrompt.textContent()
+    expect(promptText).toMatch(new RegExp(`${providerName}|Redirecting`, 'i'))
+
+    const cancelButton = page.locator(SELECTORS.paymentProviderUI.cancelButton)
+    await expect(cancelButton).toBeVisible()
+    await cancelButton.click()
+  } else {
+    const degraded = page.locator(SELECTORS.paymentProviderUI.contextDegraded)
+    await expect(degraded).toBeVisible()
+    await expect(degraded).toContainText('Payment Information Unavailable')
+
+    const cancelButton = page.locator(SELECTORS.paymentProviderUI.cancelButton)
+    await expect(cancelButton).toBeVisible()
+  }
 }
