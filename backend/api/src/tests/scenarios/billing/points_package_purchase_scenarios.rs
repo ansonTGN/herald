@@ -14,6 +14,7 @@
 //
 // =============================================================================
 
+use crate::tests::helpers::billing_helpers::setup_stripe_config;
 use crate::tests::helpers::points_helpers::*;
 use crate::tests::helpers::points_package_helpers::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
@@ -575,5 +576,240 @@ mod tests {
         let account = get_points_account_by_user(ctx, user_id).await.unwrap();
         assert_eq!(account.2, 750, "Webhook should grant topup credits once");
         assert_eq!(account.3, 0, "Webhook must not grant subscription credits");
+    }
+
+    /// ============================================================================
+    /// Stripe Checkout Session for points_package
+    /// ============================================================================
+    /// User Story: docs/user-stories/11-points-package-purchase-user-stories.md
+    /// Covers: US-PU-06 Scenario 2 - Stripe payment returns checkout URL
+    ///
+    /// Scenario: Stripe + points_package returns stripeCheckoutUrl (not clientSecret)
+    /// Given: A points package exists with 1000 points at $10
+    /// And: Stripe is configured for the realm with a mock server
+    /// And: An authenticated user exists
+    /// When: Creating a payment attempt via POST /api/bill/{realmId}/purchase/payment-attempts
+    ///   with targetType=points_package, targetId=package_id, paymentProvider=stripe
+    /// Then: Response status is 201
+    /// And: Response body paymentContext.stripeCheckoutUrl is a non-null string starting with https://
+    /// And: Response body paymentContext.clientSecret is null
+    /// And: Response body paymentContext.wechatCodeUrl is null
+    /// And: Response body paymentContext.creemCheckoutUrl is null
+
+    #[test_context(TestContext)]
+    #[tokio::test]
+    async fn test_scenario_stripe_points_package_returns_checkout_url(ctx: &mut TestContext) {
+        use crate::tests::helpers::billing_helpers::ensure_billing_test_encryption_key;
+        use crate::tests::helpers::create_admin_session_with_user;
+        use axum::body::{Body, to_bytes};
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
+        use wiremock::{
+            Mock, MockServer, ResponseTemplate,
+            matchers::{method, path},
+        };
+
+        let realm_id = ctx._realm_id.clone();
+        let app = ctx.create_unified_test_router();
+
+        // Given: Create a points package with 1000 points at $10
+        let package_id = create_points_package(
+            ctx,
+            &realm_id,
+            "stripe_checkout_package",
+            "Stripe Checkout Package",
+            1000,
+            1000, // $10.00 in cents
+            "USD",
+            true,
+        )
+        .await;
+
+        // And: Create payment provider mapping for stripe
+        create_payment_provider_mapping(ctx, package_id, "stripe", None, true).await;
+
+        // And: Set up Stripe mock server
+        let mock_server = MockServer::start().await;
+        let session_id = format!("cs_test_{}", Uuid::now_v7());
+        let checkout_url = format!("https://checkout.stripe.com/c/pay/{}", session_id);
+
+        Mock::given(method("POST"))
+            .and(path("/v1/checkout/sessions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": session_id,
+                "url": checkout_url,
+                "status": "open",
+                "metadata": {}
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // And: Configure Stripe for the realm with mock server URL
+        ensure_billing_test_encryption_key();
+        setup_stripe_config(ctx, &realm_id, "sk_test_fake_key", "whsec_test").await;
+        sqlx::query(
+            "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled, created_at, updated_at)
+             VALUES ($1, 'stripe', 'mock_base_url', $2, true, NOW(), NOW())
+             ON CONFLICT (realm_id, config_type, config_key) DO UPDATE SET config_value = $2, enabled = true, updated_at = NOW()"
+        )
+        .bind(&realm_id)
+        .bind(mock_server.uri())
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("Failed to insert Stripe mock_base_url");
+
+        // And: An authenticated user exists
+        let (token, _user_id) =
+            create_admin_session_with_user(ctx, "stripe-checkout-user@test.com", 1800).await;
+
+        // When: Creating a payment attempt with stripe provider
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/bill/{}/purchase/payment-attempts", realm_id))
+                    .header("Content-Type", "application/json")
+                    .header("cookie", format!("X-Auth={token}"))
+                    .body(Body::from(
+                        json!({
+                            "targetType": "points_package",
+                            "targetId": package_id.to_string(),
+                            "paymentProvider": "stripe"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Then: Response status is 201
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body_text = String::from_utf8(body.to_vec()).unwrap();
+
+        assert_eq!(
+            status,
+            StatusCode::CREATED,
+            "Expected 201, got {}: {}",
+            status,
+            body_text
+        );
+
+        // And: Parse response body as JSON
+        let body_json: serde_json::Value = serde_json::from_str(&body_text)
+            .unwrap_or_else(|e| panic!("Response is not valid JSON: {e}\nBody: {body_text}"));
+
+        let payment_context = body_json
+            .get("paymentContext")
+            .expect("Response should contain paymentContext");
+
+        // And: stripeCheckoutUrl is present and starts with https://
+        let stripe_url = payment_context
+            .get("stripeCheckoutUrl")
+            .expect("paymentContext should contain stripeCheckoutUrl")
+            .as_str()
+            .expect("stripeCheckoutUrl should be a string");
+        assert!(
+            stripe_url.starts_with("https://"),
+            "stripeCheckoutUrl should start with https://, got: {}",
+            stripe_url
+        );
+
+        // And: other payment context fields are null
+        for field in &["clientSecret", "wechatCodeUrl", "creemCheckoutUrl"] {
+            assert!(
+                payment_context.get(*field).is_none_or(|v| v.is_null()),
+                "{field} should be null for Stripe payment, got: {:?}",
+                payment_context.get(*field)
+            );
+        }
+    }
+
+    /// ============================================================================
+    /// Stripe not configured for points_package
+    /// ============================================================================
+    /// User Story: docs/user-stories/11-points-package-purchase-user-stories.md
+    /// Covers: US-PU-06 - Provider not configured returns clear error
+    ///
+    /// Scenario: Stripe + points_package without provider mapping returns 409
+    /// Given: A points package exists
+    /// And: Stripe provider mapping does NOT exist for the package
+    /// And: An authenticated user exists
+    /// When: Creating a payment attempt with paymentProvider=stripe
+    /// Then: Response status is 409 (provider not configured for package)
+
+    #[test_context(TestContext)]
+    #[tokio::test]
+    async fn test_scenario_stripe_points_package_without_config_returns_error(
+        ctx: &mut TestContext,
+    ) {
+        use crate::tests::helpers::create_admin_session_with_user;
+        use axum::body::{Body, to_bytes};
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
+
+        let realm_id = ctx._realm_id.clone();
+        let app = ctx.create_unified_test_router();
+
+        // Given: Create a points package (no stripe provider mapping)
+        let package_id = create_points_package(
+            ctx,
+            &realm_id,
+            "stripe_no_config_package",
+            "Stripe No Config Package",
+            500,
+            500,
+            "USD",
+            true,
+        )
+        .await;
+
+        // Note: Intentionally NOT calling create_payment_provider_mapping for stripe
+        // This tests the "provider not configured" error path
+
+        // And: An authenticated user exists
+        let (token, _user_id) =
+            create_admin_session_with_user(ctx, "stripe-no-config-user@test.com", 1800).await;
+
+        // When: Creating a payment attempt with stripe provider
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/bill/{}/purchase/payment-attempts", realm_id))
+                    .header("Content-Type", "application/json")
+                    .header("cookie", format!("X-Auth={token}"))
+                    .body(Body::from(
+                        json!({
+                            "targetType": "points_package",
+                            "targetId": package_id.to_string(),
+                            "paymentProvider": "stripe"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Then: Response status is 409 (Conflict)
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body_text = String::from_utf8(body.to_vec()).unwrap();
+
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "Expected 409 Conflict when stripe provider not configured for package, got {}: {}",
+            status,
+            body_text
+        );
+
+        assert!(
+            body_text.contains("not configured"),
+            "Error should mention provider not configured, got: {}",
+            body_text
+        );
     }
 }

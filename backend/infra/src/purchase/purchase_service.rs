@@ -22,10 +22,7 @@ use herald_domain::purchase::services::{
 };
 use herald_domain::{billing::BillingRepository, points_package::PointsPackageRepository};
 use herald_infra_creem::{CreateCheckoutRequest as CreemCreateCheckoutRequest, CreemClient};
-use herald_infra_stripe::{
-    CreateCheckoutRequest as StripeCreateCheckoutRequest,
-    CreatePaymentIntentRequest as StripeCreatePaymentIntentRequest, StripeClient,
-};
+use herald_infra_stripe::{CreateCheckoutRequest as StripeCreateCheckoutRequest, StripeClient};
 use herald_infra_wechat::client::WechatPayClient;
 use herald_infra_wechat::models::{CreateOrderParams, WechatOrderStatus, WechatPaymentOrder};
 use herald_infra_wechat::repository::WechatOrderRepository;
@@ -533,51 +530,16 @@ where
     ) -> PurchaseResult<(Option<String>, PaymentContext)> {
         let client = self.get_stripe_client_for_realm(realm_id).await?;
 
+        let mut metadata = HashMap::new();
         if target_type == "points_package" {
-            let _product_id = target.provider_external_product_id.clone().ok_or_else(|| {
-                CoreError::Conflict(
-                    "Stripe payment mapping missing external_product_id for points package".into(),
-                )
-            })?;
-            let mut metadata = HashMap::new();
             metadata.insert("realmId".to_string(), realm_id.to_string());
             metadata.insert("userId".to_string(), user_id.to_string());
             metadata.insert("targetType".to_string(), target_type.to_string());
             metadata.insert("targetId".to_string(), target_id.to_string());
             metadata.insert("pointsPackageId".to_string(), target_id.to_string());
-            metadata.insert("attemptId".to_string(), attempt_id.to_string());
-
-            let payment_intent = client
-                .create_payment_intent(&StripeCreatePaymentIntentRequest {
-                    amount: target.amount,
-                    currency: target.currency.clone(),
-                    receipt_email: Some(
-                        user_email
-                            .expect("validated in prepare_payment_attempt")
-                            .to_owned(),
-                    ),
-                    metadata,
-                })
-                .await
-                .map_err(|e| {
-                    CoreError::InternalServerError(format!(
-                        "Failed to create Stripe payment intent: {e}"
-                    ))
-                })?;
-
-            return Ok((
-                Some(payment_intent.id.clone()),
-                PaymentContext {
-                    wechat_code_url: None,
-                    stripe_checkout_url: None,
-                    creem_checkout_url: None,
-                    client_secret: Some(payment_intent.client_secret),
-                },
-            ));
         }
-
-        let mut metadata = HashMap::new();
         metadata.insert("attemptId".to_string(), attempt_id.to_string());
+
         let session = client
             .create_checkout_session(&StripeCreateCheckoutRequest {
                 client_app_id: target_id,
@@ -612,13 +574,19 @@ where
                 ))
             })?;
 
+        let client_secret = if target_type == "points_package" {
+            None
+        } else {
+            session.payment_intent.or_else(|| Some(session.id.clone()))
+        };
+
         Ok((
-            Some(session.id.clone()),
+            Some(session.id),
             PaymentContext {
                 wechat_code_url: None,
                 stripe_checkout_url: Some(session.url),
                 creem_checkout_url: None,
-                client_secret: session.payment_intent.or(Some(session.id)),
+                client_secret,
             },
         ))
     }
