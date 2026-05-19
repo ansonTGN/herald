@@ -657,6 +657,53 @@ describe('getInvoiceFormDefaults', () => {
     expect(defaults.sellerEmail).toBe(null)
     expect(defaults.sellerPhone).toBe(null)
   })
+
+  it('auto-fills dueDate from defaultPaymentTerms "Net 30"', () => {
+    const defaults = getInvoiceFormDefaults({
+      sellerName: 'Seller Inc',
+      sellerAddress: '456 Oak Ave',
+      sellerTaxId: 'TAX123',
+      defaultPaymentTerms: 'Net 30',
+    })
+
+    // dueDate should be today + 30 days, formatted as YYYY-MM-DD
+    const expected = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+    expect(defaults.dueDate).toBe(expected)
+  })
+
+  it('auto-fills dueDate from "Due on Receipt" as today', () => {
+    const defaults = getInvoiceFormDefaults({
+      sellerName: 'Seller Inc',
+      sellerAddress: '456 Oak Ave',
+      sellerTaxId: 'TAX123',
+      defaultPaymentTerms: 'Due on Receipt',
+    })
+
+    const expected = new Date().toISOString().slice(0, 10)
+    expect(defaults.dueDate).toBe(expected)
+  })
+
+  it('leaves dueDate empty when defaultPaymentTerms is unparseable', () => {
+    const defaults = getInvoiceFormDefaults({
+      sellerName: 'Seller Inc',
+      sellerAddress: '456 Oak Ave',
+      sellerTaxId: 'TAX123',
+      defaultPaymentTerms: 'Custom terms',
+    })
+
+    expect(defaults.dueDate).toBe('')
+  })
+
+  it('leaves dueDate empty when defaultPaymentTerms is null', () => {
+    const defaults = getInvoiceFormDefaults({
+      sellerName: 'Seller Inc',
+      sellerAddress: '456 Oak Ave',
+      sellerTaxId: 'TAX123',
+      defaultPaymentTerms: null,
+    })
+
+    expect(defaults.dueDate).toBe('')
+  })
 })
 
 describe('getApplyFormDefaults', () => {
@@ -674,5 +721,28 @@ describe('getApplyFormDefaults', () => {
       dueDate: '',
       notes: null,
     })
+  })
+
+  it('auto-fills dueDate from sellerConfig defaultPaymentTerms "Net 30"', () => {
+    const defaults = getApplyFormDefaults({
+      defaultPaymentTerms: 'Net 30',
+    })
+
+    const expected = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+    expect(defaults.dueDate).toBe(expected)
+  })
+
+  it('auto-fills dueDate from "Due on Receipt" as today', () => {
+    const defaults = getApplyFormDefaults({
+      defaultPaymentTerms: 'Due on Receipt',
+    })
+
+    const expected = new Date().toISOString().slice(0, 10)
+    expect(defaults.dueDate).toBe(expected)
+  })
+
+  it('leaves dueDate empty when defaultPaymentTerms is null', () => {
+    const defaults = getApplyFormDefaults({ defaultPaymentTerms: null })
+    expect(defaults.dueDate).toBe('')
   })
 })

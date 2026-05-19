@@ -208,8 +208,18 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
     schema: wechatConfigSchema,
     defaultValues,
     onSubmit: async ({ value }) => {
-      if (!requireFieldOnCreate(form, isEditing, 'privateKey', value.privateKey, 'Private Key is required')) return
-      if (!requireFieldOnCreate(form, isEditing, 'v3Key', value.v3Key, 'API v3 Key is required')) return
+      if (
+        !requireFieldOnCreate(
+          form,
+          isEditing,
+          'privateKey',
+          value.privateKey,
+          'Private Key is required'
+        )
+      )
+        return
+      if (!requireFieldOnCreate(form, isEditing, 'v3Key', value.v3Key, 'API v3 Key is required'))
+        return
       if (isEditing) {
         await updateMutation.mutateAsync(value)
       } else {

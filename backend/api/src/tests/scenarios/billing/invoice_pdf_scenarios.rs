@@ -64,7 +64,12 @@ mod tests {
             "currency": "USD",
             "lineItems": line_items,
             "billingName": billing_name,
+            "billingAddress": "123 Test St",
+            "billingTaxId": "TAX-001",
             "sellerName": "Test Seller Inc.",
+            "sellerAddress": "456 Seller Ave",
+            "sellerTaxId": "SELLER-TAX-001",
+            "dueDate": "2026-06-30",
         });
 
         let response = app
@@ -122,11 +127,15 @@ mod tests {
             "INSERT INTO invoice (
                 id, realm_id, invoice_number, source, account_id, applicant_user_id,
                 status, currency, subtotal, discount_amount, tax_amount, shipping_amount, total,
-                billing_name, seller_name, issued_at, issue_date, created_at, updated_at
+                billing_name, billing_address, billing_tax_id,
+                seller_name, seller_address, seller_tax_id,
+                issued_at, issue_date, due_date, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, 'user_application', $4, $5,
                 'issued', 'USD', 10000, 0, 0, 0, 10000,
-                'PDF Test Client', 'Seller Inc', NOW(), CURRENT_DATE, NOW(), NOW()
+                'PDF Test Client', '123 User St', 'TAX-PDF-001',
+                'Seller Inc', '456 Seller Ave', 'SELLER-TAX-001',
+                NOW(), CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', NOW(), NOW()
             )",
         )
         .bind(invoice_id)
@@ -191,11 +200,15 @@ mod tests {
             "INSERT INTO invoice (
                 id, realm_id, invoice_number, source, account_id, applicant_user_id,
                 status, currency, subtotal, discount_amount, tax_amount, shipping_amount, total,
-                billing_name, seller_name, issued_at, paid_at, issue_date, created_at, updated_at
+                billing_name, billing_address, billing_tax_id,
+                seller_name, seller_address, seller_tax_id,
+                issued_at, paid_at, issue_date, due_date, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, 'user_application', $4, $5,
                 'paid', 'USD', 20000, 0, 0, 0, 20000,
-                'Paid Test Client', 'Seller Inc', NOW(), NOW(), CURRENT_DATE, NOW(), NOW()
+                'Paid Test Client', '123 User St', 'TAX-PAID-001',
+                'Seller Inc', '456 Seller Ave', 'SELLER-TAX-001',
+                NOW(), NOW(), CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', NOW(), NOW()
             )",
         )
         .bind(invoice_id)
@@ -685,11 +698,15 @@ mod tests {
             "INSERT INTO invoice (
                 id, realm_id, invoice_number, source, account_id, applicant_user_id,
                 status, currency, subtotal, discount_amount, tax_amount, shipping_amount, total,
-                billing_name, seller_name, created_at, updated_at
+                billing_name, billing_address, billing_tax_id,
+                seller_name, seller_address, seller_tax_id,
+                due_date, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, 'user_application', $4, $5,
                 'draft', 'USD', 5000, 0, 0, 0, 5000,
-                'Draft User Client', 'Seller Inc', NOW(), NOW()
+                'Draft User Client', '123 User St', 'TAX-DRAFT-001',
+                'Seller Inc', '456 Seller Ave', 'SELLER-TAX-001',
+                CURRENT_DATE + INTERVAL '30 days', NOW(), NOW()
             )",
         )
         .bind(invoice_id)

@@ -124,3 +124,88 @@ async fn test_subscription_upgrade_grants_difference(ctx: &mut SchemaTestContext
     )
     .await;
 }
+
+// ============================================================================
+// Test 2: Subscription Upgrade Event Idempotency
+// ============================================================================
+
+// User Story: docs/user-stories/points-billing-events.md
+// Covers: US-BI-009 场景 - subscription.upgraded 幂等性，相同 event_id 不重复发放升级差价积分
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_subscription_upgrade_idempotency(ctx: &mut SchemaTestContext) {
+    // Given
+    let realm_id = ctx._realm_id.clone();
+    let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user2@example.com").await;
+    let basic_plan_id = Uuid::now_v7();
+    let premium_plan_id = Uuid::now_v7();
+    let event_id = generate_test_event_id();
+    let period_end = Utc::now() + Duration::days(30);
+
+    // Configure Creem webhook for this realm
+    ctx.with_creem_config(&realm_id, None, None, None).await;
+
+    // Setup plan configs for the test
+    setup_test_plan_config_with_points(ctx, &realm_id, basic_plan_id, 5000).await;
+    setup_test_plan_config_with_points(ctx, &realm_id, premium_plan_id, 10000).await;
+
+    create_points_account(ctx, user_id, &realm_id).await;
+
+    // User currently has Basic Plan (5000 points)
+    create_credit_ledger_entry_v2(
+        ctx,
+        user_id,
+        &realm_id,
+        CreditType::SubscriptionCredit,
+        CreditSourceType::SubscriptionInitial,
+        basic_plan_id.to_string(),
+        5000,
+        Some(period_end),
+    )
+    .await;
+
+    // Build upgrade event with a shared event_id
+    let event = build_subscription_updated_event(
+        event_id.clone(),
+        user_id,
+        basic_plan_id,
+        premium_plan_id,
+        &realm_id,
+    );
+
+    let app = ctx.create_unified_test_router();
+
+    // When: First processing
+    let response1 =
+        send_webhook_with_signature(&app, &realm_id, event.clone(), "test_webhook_secret").await;
+    assert_webhook_success(&response1);
+
+    // When: Second processing (same event_id)
+    let response2 =
+        send_webhook_with_signature(&app, &realm_id, event, "test_webhook_secret").await;
+    assert_webhook_success(&response2);
+
+    // Then: Should have exactly 2 ledgers (original + one upgrade), not 3
+    let ledgers =
+        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    assert_eq!(
+        ledgers.len(),
+        2,
+        "Should have original and exactly one upgrade ledger"
+    );
+
+    // Verify only one upgrade ledger was created
+    let upgrade_ledgers: Vec<_> = ledgers
+        .iter()
+        .filter(|l| l.source_type == CreditSourceType::SubscriptionUpgrade)
+        .collect();
+    assert_eq!(
+        upgrade_ledgers.len(),
+        1,
+        "Should not duplicate upgrade ledger on retry"
+    );
+    assert_eq!(
+        upgrade_ledgers[0].granted_amount, 5000,
+        "Difference: 10000 - 5000 = 5000"
+    );
+}

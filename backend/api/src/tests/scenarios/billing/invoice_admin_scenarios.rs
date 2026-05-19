@@ -46,7 +46,12 @@ mod tests {
             "currency": "USD",
             "lineItems": line_items,
             "billingName": billing_name,
+            "billingAddress": "123 Test St",
+            "billingTaxId": "TAX-001",
             "sellerName": "Test Seller Inc.",
+            "sellerAddress": "456 Seller Ave",
+            "sellerTaxId": "SELLER-TAX-001",
+            "dueDate": "2026-06-30",
         });
 
         let response = app
@@ -110,6 +115,7 @@ mod tests {
             "sellerAddress": "123 Main St, Springfield",
             "sellerEmail": "billing@acme.com",
             "sellerPhone": "+1-555-0100",
+            "sellerTaxId": "TAX-ACME-001",
         });
 
         let response = app
@@ -160,6 +166,7 @@ mod tests {
             "sellerAddress": "123 Main St, Springfield",
             "sellerEmail": "billing@acme.com",
             "sellerPhone": "+1-555-0100",
+            "sellerTaxId": "TAX-ACME-001",
         });
 
         let response = app
@@ -336,6 +343,8 @@ mod tests {
         // PATCH with updated line items and billing name
         let patch_payload = json!({
             "billingName": "Updated Client Name",
+            "billingTaxId": "TAX-001",
+            "sellerTaxId": "SELLER-TAX-001",
             "lineItems": [
                 {
                     "name": "Item A (updated)",
@@ -402,7 +411,9 @@ mod tests {
 
         // Try to PATCH again on issued invoice -> 409
         let patch_after_issue = json!({
-            "billingName": "Should Not Work"
+            "billingName": "Should Not Work",
+            "billingTaxId": "TAX-001",
+            "sellerTaxId": "SELLER-TAX-001",
         });
 
         let conflict_response = app
@@ -816,7 +827,12 @@ mod tests {
             "currency": "USD",
             "lineItems": [],
             "billingName": "Empty Client",
+            "billingAddress": "123 Empty St",
+            "billingTaxId": "TAX-EMPTY",
             "sellerName": "Test Seller Inc.",
+            "sellerAddress": "456 Seller Ave",
+            "sellerTaxId": "SELLER-TAX-001",
+            "dueDate": "2026-06-30",
         });
 
         let response = app
@@ -1303,11 +1319,15 @@ mod tests {
                 "INSERT INTO invoice (
                     id, realm_id, invoice_number, source, account_id, applicant_user_id,
                     status, currency, subtotal, discount_amount, tax_amount, shipping_amount, total,
-                    billing_name, seller_name, created_at, updated_at
+                    billing_name, billing_address, billing_tax_id,
+                    seller_name, seller_address, seller_tax_id,
+                    due_date, created_at, updated_at
                 ) VALUES (
                     $1, $2, $3, 'user_application', $4, $5,
                     'draft', 'USD', 5000, 0, 0, 0, 5000,
-                    $6, 'Seller Inc', NOW(), NOW()
+                    $6, '123 User St', 'TAX-USER-001',
+                    'Seller Inc', '456 Seller Ave', 'SELLER-TAX-001',
+                    CURRENT_DATE + INTERVAL '30 days', NOW(), NOW()
                 )",
             )
             .bind(inv_id)
@@ -1451,11 +1471,15 @@ mod tests {
             "INSERT INTO invoice (
                 id, realm_id, invoice_number, source, account_id, applicant_user_id,
                 status, currency, subtotal, discount_amount, tax_amount, shipping_amount, total,
-                billing_name, seller_name, created_at, updated_at
+                billing_name, billing_address, billing_tax_id,
+                seller_name, seller_address, seller_tax_id,
+                due_date, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, 'user_application', $4, $5,
                 'draft', 'USD', 25000, 0, 0, 0, 25000,
-                'User Apply Client', 'Seller Inc', NOW(), NOW()
+                'User Apply Client', '123 User St', 'TAX-USER-001',
+                'Seller Inc', '456 Seller Ave', 'SELLER-TAX-001',
+                CURRENT_DATE + INTERVAL '30 days', NOW(), NOW()
             )",
         )
         .bind(user_inv_id)

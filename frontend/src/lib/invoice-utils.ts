@@ -71,6 +71,19 @@ export function getAvailableActions(status: string): InvoiceAction[] {
   return ACTION_RULES[status] ?? ['view']
 }
 
+/**
+ * Parse payment terms string into number of days.
+ * "Net 30" → 30, "Net 60" → 60, "Due on Receipt" → 0
+ * Returns undefined if parsing fails.
+ */
+export function parsePaymentTermsDays(terms: string | null | undefined): number | undefined {
+  if (!terms) return undefined
+  const netMatch = /Net (\d+)/i.exec(terms)
+  if (netMatch) return parseInt(netMatch[1], 10)
+  if (/Due on Receipt/i.test(terms)) return 0
+  return undefined
+}
+
 export function calculateLineSubtotal(quantity: string, unitPrice: string): number {
   const qty = parseFloat(quantity)
   const price = parseFloat(unitPrice)

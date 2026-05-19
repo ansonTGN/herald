@@ -64,7 +64,7 @@ export function RealmDetailDialog({ open, onOpenChange, realmId }: RealmDetailDi
     if (realm) {
       form.setFieldValue('description', realm.description ?? '')
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [realm?.name, realm?.description, form])
 
   return (

@@ -12,7 +12,7 @@ import { TextField, TextareaField } from '@/components/shared/form-fields'
 import { InvoiceStatusBadge } from '@/components/billing/invoices/invoice-status-badge'
 import { ListPagination } from '@/components/shared'
 import type { InvoiceResponse } from '@/lib/api-generated'
-import { myInvoiceListQueryOptions } from '@/data/invoice-query-options'
+import { myInvoiceListQueryOptions, sellerConfigQueryOptions } from '@/data/invoice-query-options'
 import { useApplyInvoice } from '@/data/invoice-mutations'
 import { applyInvoiceSchema, getApplyFormDefaults } from '@/lib/schemas/invoice-forms'
 import {
@@ -102,7 +102,10 @@ function ApplyInvoiceDialog({
   realmId: string
 }) {
   const { mutate: apply, isPending: isSubmitting } = useApplyInvoice(realmId)
-  const defaultValues = useMemo(() => getApplyFormDefaults(), [])
+  const { data: sellerConfig } = useQuery({
+    ...sellerConfigQueryOptions(realmId),
+  })
+  const defaultValues = useMemo(() => getApplyFormDefaults(sellerConfig), [sellerConfig])
 
   const form = useAppForm({
     schema: applyInvoiceSchema,

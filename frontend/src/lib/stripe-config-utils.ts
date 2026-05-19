@@ -4,10 +4,24 @@ import { PAYMENT_PROVIDERS, STRIPE_CONFIG_KEYS } from '@/lib/billing-constants'
 import { parseProviderConfig, buildProviderConfigRequest } from '@/lib/provider-config-utils'
 
 const STRIPE_KEY_MAPPINGS = [
-  { configKey: STRIPE_CONFIG_KEYS.ENABLED, fieldName: 'enabled', transform: (v?: string) => v === 'true' },
+  {
+    configKey: STRIPE_CONFIG_KEYS.ENABLED,
+    fieldName: 'enabled',
+    transform: (v?: string) => v === 'true',
+  },
   { configKey: STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY, fieldName: 'publishableKey' },
-  { configKey: STRIPE_CONFIG_KEYS.API_KEY, fieldName: 'secretKey', isSecret: true, transform: () => '' },
-  { configKey: STRIPE_CONFIG_KEYS.WEBHOOK_SECRET, fieldName: 'webhookSecret', isSecret: true, transform: () => '' },
+  {
+    configKey: STRIPE_CONFIG_KEYS.API_KEY,
+    fieldName: 'secretKey',
+    isSecret: true,
+    transform: () => '',
+  },
+  {
+    configKey: STRIPE_CONFIG_KEYS.WEBHOOK_SECRET,
+    fieldName: 'webhookSecret',
+    isSecret: true,
+    transform: () => '',
+  },
 ] as const
 
 export function parseStripeConfig(configs: RealmConfigResponse[]): StripeConfigForm {

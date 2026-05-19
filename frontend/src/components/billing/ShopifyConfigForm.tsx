@@ -286,9 +286,36 @@ export function ShopifyConfigFormPage({
     schema: shopifyConfigSchema,
     defaultValues,
     onSubmit: async ({ value }) => {
-      if (!requireFieldOnCreate(form, isEditing, 'adminAccessToken', value.adminAccessToken, 'Admin Access Token is required')) return
-      if (!requireFieldOnCreate(form, isEditing, 'storefrontAccessToken', value.storefrontAccessToken, 'Storefront Access Token is required')) return
-      if (!requireFieldOnCreate(form, isEditing, 'appClientSecret', value.appClientSecret, 'App Client Secret is required')) return
+      if (
+        !requireFieldOnCreate(
+          form,
+          isEditing,
+          'adminAccessToken',
+          value.adminAccessToken,
+          'Admin Access Token is required'
+        )
+      )
+        return
+      if (
+        !requireFieldOnCreate(
+          form,
+          isEditing,
+          'storefrontAccessToken',
+          value.storefrontAccessToken,
+          'Storefront Access Token is required'
+        )
+      )
+        return
+      if (
+        !requireFieldOnCreate(
+          form,
+          isEditing,
+          'appClientSecret',
+          value.appClientSecret,
+          'App Client Secret is required'
+        )
+      )
+        return
       if (isEditing) {
         await updateMutation.mutateAsync(value)
       } else {

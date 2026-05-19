@@ -11,9 +11,17 @@ export const CREEM_CONFIG_KEYS = {
 } as const
 
 const CREEM_KEY_MAPPINGS = [
-  { configKey: CREEM_CONFIG_KEYS.ENABLED, fieldName: 'enabled', transform: (v?: string) => v === 'true' },
+  {
+    configKey: CREEM_CONFIG_KEYS.ENABLED,
+    fieldName: 'enabled',
+    transform: (v?: string) => v === 'true',
+  },
   { configKey: CREEM_CONFIG_KEYS.API_KEY, fieldName: 'apiKey', isSecret: true },
-  { configKey: CREEM_CONFIG_KEYS.TIMEOUT, fieldName: 'timeout', transform: (v?: string) => (v ? Number(v) : 30) },
+  {
+    configKey: CREEM_CONFIG_KEYS.TIMEOUT,
+    fieldName: 'timeout',
+    transform: (v?: string) => (v ? Number(v) : 30),
+  },
   { configKey: CREEM_CONFIG_KEYS.WEBHOOK_SECRET, fieldName: 'webhookSecret', isSecret: true },
 ] as const
 

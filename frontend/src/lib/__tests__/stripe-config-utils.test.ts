@@ -294,9 +294,15 @@ describe('stripe-config-utils', () => {
 
       const result = buildStripeConfigRequest(formData)
 
-      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY)?.configValue).toBe(`pk_test_${longKey}`)
-      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.API_KEY)?.configValue).toBe(`sk_test_${longKey}`)
-      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.WEBHOOK_SECRET)?.configValue).toBe(`whsec_${longKey}`)
+      expect(
+        result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY)?.configValue
+      ).toBe(`pk_test_${longKey}`)
+      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.API_KEY)?.configValue).toBe(
+        `sk_test_${longKey}`
+      )
+      expect(
+        result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.WEBHOOK_SECRET)?.configValue
+      ).toBe(`whsec_${longKey}`)
     })
 
     test('marks individual fields with correct isSecret', () => {
@@ -310,9 +316,13 @@ describe('stripe-config-utils', () => {
       const result = buildStripeConfigRequest(formData)
 
       expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.ENABLED)?.isSecret).toBe(false)
-      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY)?.isSecret).toBe(false)
+      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.PUBLISHABLE_KEY)?.isSecret).toBe(
+        false
+      )
       expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.API_KEY)?.isSecret).toBe(true)
-      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.WEBHOOK_SECRET)?.isSecret).toBe(true)
+      expect(result.find((r) => r.configKey === STRIPE_CONFIG_KEYS.WEBHOOK_SECRET)?.isSecret).toBe(
+        true
+      )
     })
   })
 })

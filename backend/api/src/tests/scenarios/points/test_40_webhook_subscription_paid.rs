@@ -141,3 +141,64 @@ async fn test_subscription_paid_renewal_grant(ctx: &mut SchemaTestContext) {
     )
     .await;
 }
+
+// ============================================================================
+// Test 3: Subscription Paid Event Idempotency
+// ============================================================================
+
+// User Story: docs/user-stories/points-billing-events.md
+// Covers: US-PO-06 场景 - subscription.paid 幂等性，相同 event_id 不重复发放积分
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_subscription_paid_idempotency(ctx: &mut SchemaTestContext) {
+    // Given
+    let realm_id = ctx._realm_id.clone();
+    let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user3@example.com").await;
+    let plan_id = Uuid::now_v7();
+    let event_id = generate_test_event_id();
+
+    // Configure Creem webhook for this realm
+    ctx.with_creem_config(&realm_id, None, None, None).await;
+
+    // Setup plan config for the test
+    setup_test_plan_config(ctx, &realm_id, plan_id).await;
+
+    create_points_account(ctx, user_id, &realm_id).await;
+
+    // Build subscription.paid event with a shared event_id
+    let event = build_subscription_paid_event(
+        event_id.clone(),
+        user_id,
+        plan_id,
+        false, // initial subscription
+        &realm_id,
+    );
+
+    let app = ctx.create_unified_test_router();
+
+    // When: First processing
+    let response1 =
+        send_webhook_with_signature(&app, &realm_id, event.clone(), "test_webhook_secret").await;
+    assert_webhook_success(&response1);
+
+    // When: Second processing (same event_id)
+    let response2 =
+        send_webhook_with_signature(&app, &realm_id, event, "test_webhook_secret").await;
+    assert_webhook_success(&response2);
+
+    // Then: Should only create one subscription credit ledger entry
+    let ledgers =
+        get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
+    assert_eq!(
+        ledgers.len(),
+        1,
+        "Should not duplicate credit ledger on retry"
+    );
+
+    let ledger = &ledgers[0];
+    assert_eq!(
+        ledger.granted_amount, 1000,
+        "Granted amount should be exactly one plan allocation"
+    );
+    assert_eq!(ledger.remaining_amount, 1000);
+}

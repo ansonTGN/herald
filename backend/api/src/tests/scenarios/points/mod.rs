@@ -37,12 +37,16 @@ mod test_01_account_creation;
 mod test_02_view_balance;
 mod test_03_balance_permission;
 mod test_08_consume_success;
+mod test_09_consume_exact_balance;
 mod test_10_consume_invalid_amount;
+mod test_11_consume_edge_cases;
 mod test_13_concurrent_consumption;
 mod test_14_api_key_validation;
+mod test_15_consume_idempotency;
 mod test_24_create_plan_config;
 mod test_27_api_key_cannot_access_points_admin_configs;
 mod test_31_closed_account_consumption;
+mod test_32_frozen_account_consumption;
 
 // fix-points-2 test files
 mod test_40_webhook_subscription_paid;
@@ -59,5 +63,8 @@ mod test_62_free_user_upgrade;
 
 // Unified filter test framework (replaces legacy filter tests)
 mod unified_filter_tests;
+
+// Consume + Webhook concurrency race condition tests
+mod test_70_consume_webhook_race;
 
 pub mod fixtures;

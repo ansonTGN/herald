@@ -1,9 +1,18 @@
 import { useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
 import { BaseFormDialog } from '@/components/shared/form-dialog'
 import { TextField } from '@/components/shared/form-fields'
+import { getFieldErrorMessage } from '@/lib/form-utils'
 import {
   invoiceSellerConfigSchema,
   type InvoiceSellerConfigFormData,
@@ -132,12 +141,36 @@ export function InvoiceSellerConfigForm({
               placeholder="Tax identification number"
               required
             />
-            <TextField
-              form={form}
+            <form.Field
               name="defaultPaymentTerms"
-              label="Default Payment Terms"
-              dataTestId="seller-config-payment-terms-input"
-              placeholder="Net 30"
+              children={(field) => (
+                <div className="space-y-2">
+                  <Label htmlFor={field.name}>Default Payment Terms</Label>
+                  <Select
+                    data-testid="seller-config-payment-terms-input"
+                    value={field.state.value ?? ''}
+                    onValueChange={(value) => field.handleChange(value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select payment terms" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Due on Receipt">Due on Receipt</SelectItem>
+                      <SelectItem value="Net 7">Net 7</SelectItem>
+                      <SelectItem value="Net 15">Net 15</SelectItem>
+                      <SelectItem value="Net 30">Net 30</SelectItem>
+                      <SelectItem value="Net 60">Net 60</SelectItem>
+                      <SelectItem value="Net 90">Net 90</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {(field.state.meta.isTouched || form.state.isSubmitted) &&
+                    field.state.meta.errors.length > 0 && (
+                      <p className="text-sm text-destructive" role="alert">
+                        {getFieldErrorMessage(field.state.meta)}
+                      </p>
+                    )}
+                </div>
+              )}
             />
           </div>
         </AppForm>

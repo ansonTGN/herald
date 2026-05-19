@@ -264,8 +264,26 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
     schema: stripeConfigSchema,
     defaultValues,
     onSubmit: async ({ value }) => {
-      if (!requireFieldOnCreate(form, isEditing, 'publishableKey', value.publishableKey, 'Publishable key is required')) return
-      if (!requireFieldOnCreate(form, isEditing, 'secretKey', value.secretKey, 'Secret key is required')) return
+      if (
+        !requireFieldOnCreate(
+          form,
+          isEditing,
+          'publishableKey',
+          value.publishableKey,
+          'Publishable key is required'
+        )
+      )
+        return
+      if (
+        !requireFieldOnCreate(
+          form,
+          isEditing,
+          'secretKey',
+          value.secretKey,
+          'Secret key is required'
+        )
+      )
+        return
       await saveMutation.mutateAsync(value)
     },
   })
@@ -316,11 +334,7 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
               label="Publishable Key"
               dataTestId="page-stripe-publishable-key-input"
               placeholder="pk_test_..."
-              helpText={
-                isEditing
-                  ? 'Leave empty to keep the existing key'
-                  : undefined
-              }
+              helpText={isEditing ? 'Leave empty to keep the existing key' : undefined}
               required={!isEditing}
             />
 
@@ -330,11 +344,7 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
               label="Secret Key"
               dataTestId="page-stripe-secret-key-input"
               placeholder="sk_test_..."
-              helpText={
-                isEditing
-                  ? 'Leave empty to keep the existing key'
-                  : undefined
-              }
+              helpText={isEditing ? 'Leave empty to keep the existing key' : undefined}
               required={!isEditing}
             />
 

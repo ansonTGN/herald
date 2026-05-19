@@ -43,7 +43,8 @@ export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfi
     schema: creemConfigSchema,
     defaultValues,
     onSubmit: async ({ value }) => {
-      if (!requireFieldOnCreate(form, isEditing, 'apiKey', value.apiKey, 'API key is required')) return
+      if (!requireFieldOnCreate(form, isEditing, 'apiKey', value.apiKey, 'API key is required'))
+        return
       await saveMutation.mutateAsync(value)
     },
   })
@@ -94,11 +95,7 @@ export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfi
               label="API Key"
               dataTestId="page-creem-api-key-input"
               placeholder="ck_test_..."
-              helpText={
-                isEditing
-                  ? 'Leave empty to keep the existing key'
-                  : undefined
-              }
+              helpText={isEditing ? 'Leave empty to keep the existing key' : undefined}
               required={!isEditing}
             />
 

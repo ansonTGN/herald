@@ -5,7 +5,7 @@ import { initializeAuth, checkAdminPermission } from '@/lib/auth-utils'
 import { lazy, Suspense } from 'react'
 
 const Devtools = import.meta.env.DEV
-  ? lazy(() => import('@/components/devtools').then(m => ({ default: m.Devtools })))
+  ? lazy(() => import('@/components/devtools').then((m) => ({ default: m.Devtools })))
   : () => null
 
 type RouterContext = {

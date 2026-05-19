@@ -68,6 +68,7 @@ mod tests {
             "sellerAddress": "456 Commerce St",
             "sellerEmail": "seller@testcorp.com",
             "sellerPhone": "+1-555-0200",
+            "sellerTaxId": "TAX-CORP-001",
         });
 
         let response = app
@@ -119,11 +120,15 @@ mod tests {
             "INSERT INTO invoice (
                 id, realm_id, invoice_number, source, account_id, applicant_user_id,
                 status, currency, subtotal, discount_amount, tax_amount, shipping_amount, total,
-                billing_name, seller_name, created_at, updated_at
+                billing_name, billing_address, billing_tax_id,
+                seller_name, seller_address, seller_tax_id,
+                due_date, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, 'user_application', $4, $5,
                 'draft', 'USD', 5000, 0, 0, 0, 5000,
-                'Test User Client', 'Seller Inc', NOW(), NOW()
+                'Test User Client', '123 User St', 'TAX-USER-001',
+                'Seller Inc', '456 Seller Ave', 'SELLER-TAX-001',
+                CURRENT_DATE + INTERVAL '30 days', NOW(), NOW()
             )",
         )
         .bind(invoice_id)
@@ -231,6 +236,7 @@ mod tests {
             "billingEmail": "john@applicant.com",
             "billingAddress": "789 User Lane",
             "billingPhone": "+1-555-0300",
+            "dueDate": "2026-06-30",
         });
 
         let response = app
@@ -305,6 +311,8 @@ mod tests {
             "subscriptionId": subscription_id.to_string(),
             "currency": "USD",
             "billingName": "Jane Buyer",
+            "billingAddress": "321 Buyer Blvd",
+            "dueDate": "2026-06-30",
         });
 
         let response = app
@@ -356,6 +364,8 @@ mod tests {
             "paymentAttemptId": payment_attempt_id.to_string(),
             "currency": "USD",
             "billingName": "No Seller User",
+            "billingAddress": "999 No Seller St",
+            "dueDate": "2026-06-30",
         });
 
         let response = app
@@ -410,6 +420,8 @@ mod tests {
             "paymentAttemptId": Uuid::now_v7().to_string(),
             "currency": "USD",
             "billingName": "Wrong Realm User",
+            "billingAddress": "000 Wrong Realm St",
+            "dueDate": "2026-06-30",
         });
 
         let response = app
@@ -686,7 +698,12 @@ mod tests {
             "currency": "USD",
             "lineItems": [{"name": "Test", "quantity": "1", "unitPrice": 1000}],
             "billingName": "Test",
+            "billingAddress": "123 Test St",
+            "billingTaxId": "TAX-TEST",
             "sellerName": "Test Seller",
+            "sellerAddress": "456 Seller Ave",
+            "sellerTaxId": "SELLER-TAX",
+            "dueDate": "2026-06-30",
         });
 
         let response = app
@@ -732,6 +749,8 @@ mod tests {
         // Test: PUT /invoice-seller-config -> 403 (requires billing.manage)
         let seller_payload = json!({
             "sellerName": "Unauthorized",
+            "sellerAddress": "999 Unauth St",
+            "sellerTaxId": "TAX-UNAUTH",
         });
 
         let response = app
@@ -819,6 +838,8 @@ mod tests {
             "subscriptionId": subscription_id.to_string(),
             "currency": "USD",
             "billingName": "Subs Reference User",
+            "billingAddress": "555 Subs Lane",
+            "dueDate": "2026-06-30",
         });
 
         let response = app
@@ -873,6 +894,8 @@ mod tests {
             "paymentAttemptId": payment_attempt_id.to_string(),
             "currency": "USD",
             "billingName": "Tracking User",
+            "billingAddress": "111 Tracking Ave",
+            "dueDate": "2026-06-30",
         });
 
         let apply_response = app
@@ -918,6 +941,8 @@ mod tests {
         // Admin adds line items and issues the invoice
         // First, update the invoice to add line items (admin can PATCH user_application drafts)
         let patch_payload = json!({
+            "billingTaxId": "TAX-USER-001",
+            "sellerTaxId": "SELLER-TAX-001",
             "lineItems": [{
                 "name": "Service Fee",
                 "quantity": "1",
@@ -1019,6 +1044,8 @@ mod tests {
         let payload = json!({
             "currency": "USD",
             "billingName": "Missing Reference User",
+            "billingAddress": "222 Missing St",
+            "dueDate": "2026-06-30",
         });
 
         let response = app
@@ -1077,6 +1104,8 @@ mod tests {
             "paymentAttemptId": pa_id.to_string(),
             "currency": "USD",
             "billingName": "Imposter User",
+            "billingAddress": "333 Imposter Rd",
+            "dueDate": "2026-06-30",
         });
 
         let response = app
@@ -1128,6 +1157,8 @@ mod tests {
             "paymentAttemptId": fake_pa_id.to_string(),
             "currency": "USD",
             "billingName": "Fake Payment User",
+            "billingAddress": "444 Fake St",
+            "dueDate": "2026-06-30",
         });
 
         let response = app

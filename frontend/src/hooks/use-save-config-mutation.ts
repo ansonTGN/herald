@@ -40,9 +40,7 @@ export function useSaveConfigMutation<T>({
           : `${providerName} configuration created successfully`
       )
       await Promise.all(
-        keysToInvalidate.map((key) =>
-          queryClient.invalidateQueries({ queryKey: key })
-        )
+        keysToInvalidate.map((key) => queryClient.invalidateQueries({ queryKey: key }))
       )
       navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
     },

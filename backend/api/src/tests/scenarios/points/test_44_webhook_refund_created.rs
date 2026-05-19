@@ -215,3 +215,85 @@ async fn get_all_ledgers_for_user(
 
     Ok(result)
 }
+
+// ============================================================================
+// Test 3: Refund Created Event Idempotency
+// ============================================================================
+
+// User Story: docs/user-stories/points-billing-events.md
+// Covers: US-PO-06 场景 - refund.created 幂等性，相同 event_id 不重复回收积分
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_refund_created_idempotency(ctx: &mut SchemaTestContext) {
+    // Given
+    let realm_id = ctx._realm_id.clone();
+    let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user3@example.com").await;
+    let event_id = generate_test_event_id();
+    let refund_id = format!("refund_{}", Uuid::now_v7());
+    let payment_id = format!("payment_{}", Uuid::now_v7());
+
+    create_points_account(ctx, user_id, &realm_id).await;
+
+    // Configure Creem webhook for this realm
+    ctx.with_creem_config(&realm_id, None, None, None).await;
+
+    // Grant 10000 topup credits
+    let ledger_id = create_credit_ledger_entry_v2(
+        ctx,
+        user_id,
+        &realm_id,
+        CreditType::TopupCredit,
+        CreditSourceType::Topup,
+        payment_id.clone(),
+        10000,
+        None,
+    )
+    .await;
+
+    // Consume 3000, remaining 7000
+    consume_points_from_ledger(ctx, ledger_id, 3000).await;
+
+    // Build refund event with a shared event_id
+    let event = build_refund_created_event_with_user(
+        event_id.clone(),
+        refund_id.clone(),
+        payment_id.clone(),
+        5000,  // refund amount
+        10000, // original amount
+        &realm_id,
+        user_id,
+    );
+
+    let app = ctx.create_unified_test_router();
+
+    // When: First processing
+    let response1 =
+        send_webhook_with_signature(&app, &realm_id, event.clone(), "test_webhook_secret").await;
+    assert_webhook_success(&response1);
+
+    // When: Second processing (same event_id)
+    let response2 =
+        send_webhook_with_signature(&app, &realm_id, event, "test_webhook_secret").await;
+    assert_webhook_success(&response2);
+
+    // Then: Should only create one revocation record
+    let revocations = get_revocation_records(ctx, user_id).await;
+    assert_eq!(
+        revocations.len(),
+        1,
+        "Should not duplicate revocation on retry"
+    );
+    assert_eq!(revocations[0].revocation_type, RevocationType::RefundRevoke);
+    assert_eq!(
+        revocations[0].revoked_amount, 3500,
+        "50% of 7000 remaining = 3500"
+    );
+
+    // Verify ledger state is correct (not double-revoked)
+    let ledger = get_ledger_by_id(ctx, ledger_id).await;
+    assert_eq!(
+        ledger.revoked_amount, 3500,
+        "Should revoke exactly 3500, not double"
+    );
+    assert_eq!(ledger.remaining_amount, 3500);
+}

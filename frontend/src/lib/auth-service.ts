@@ -113,10 +113,7 @@ export async function fetchAuthData(realmId: string): Promise<{
 
   // Fetch user data in parallel since they have no dependency on each other
   const [userPermissions, userProfile] = authStatus.authenticated
-    ? await Promise.all([
-        fetchUserPermissions(),
-        fetchUserProfile().catch(() => null),
-      ])
+    ? await Promise.all([fetchUserPermissions(), fetchUserProfile().catch(() => null)])
     : [{ permissions: [], roles: [] }, null]
 
   return {

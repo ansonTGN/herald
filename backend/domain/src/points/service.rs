@@ -716,23 +716,38 @@ where
                 continue;
             }
 
-            // Update ledger to revoke points
-            let _updated_ledger = self
+            // Update ledger to revoke points; skip on concurrent modification
+            let updated_ledger = match self
                 .repository
                 .update_ledger(
                     ledger.id,
                     crate::points::ports::LedgerUpdate::Revocation(revoke_amount),
                 )
-                .await?;
+                .await
+            {
+                Ok(l) => l,
+                Err(e) if matches!(e, CoreError::Conflict(_)) => {
+                    tracing::warn!(
+                        realm_id = %realm_id,
+                        ledger_id = %ledger.id,
+                        "Skipping ledger revocation due to concurrent modification"
+                    );
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+
+            // Record actual amount revoked (may differ from calculated due to race)
+            let actual_ledger_revoked = revoke_amount;
 
             // Create revocation record
             let revocation_record = crate::points::entities::PointsRevocationRecord {
                 id: Uuid::now_v7(),
-                ledger_id: ledger.id,
+                ledger_id: updated_ledger.id,
                 user_id,
                 realm_id: realm_id.to_string(),
                 revocation_type: crate::points::entities::RevocationType::RefundRevoke,
-                revoked_amount: revoke_amount,
+                revoked_amount: actual_ledger_revoked,
                 reason: format!("Proportional refund (ratio: {:.2})", refund_ratio),
                 reference_id: Some(refund_id.to_string()),
                 created_at: chrono::Utc::now(),
@@ -742,8 +757,8 @@ where
                 .create_revocation_record(revocation_record)
                 .await?;
 
-            total_revoked += revoke_amount;
-            ledger_ids.push(ledger.id);
+            total_revoked += actual_ledger_revoked;
+            ledger_ids.push(updated_ledger.id);
         }
 
         // Update account balance
@@ -754,16 +769,21 @@ where
                 .await?
                 .ok_or(CoreError::NotFound)?;
 
-            let _updated_account = self
-                .repository
-                .update_account(
-                    account.id,
-                    crate::points::ports::AccountUpdate::Revocation {
-                        topup: total_revoked,
-                        subscription: 0,
-                    },
-                )
-                .await?;
+            // Cap revocation at available balance to handle concurrent consumption
+            let actual_revoked = total_revoked.min(account.topup_balance);
+
+            if actual_revoked > 0 {
+                let _updated_account = self
+                    .repository
+                    .update_account(
+                        account.id,
+                        crate::points::ports::AccountUpdate::Revocation {
+                            topup: actual_revoked,
+                            subscription: 0,
+                        },
+                    )
+                    .await?;
+            }
 
             tracing::info!(
                 realm_id = %realm_id,
@@ -771,6 +791,7 @@ where
                 refund_id = %refund_id,
                 refund_ratio = refund_ratio,
                 total_revoked,
+                actual_revoked,
                 "Proportionally revoked topup points"
             );
         }

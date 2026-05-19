@@ -2,14 +2,8 @@ import { z } from 'zod'
 
 export const stripeConfigSchema = z.object({
   enabled: z.boolean().default(false),
-  publishableKey: z
-    .string()
-    .regex(/^pk_/, 'Publishable key must start with pk_')
-    .or(z.literal('')),
-  secretKey: z
-    .string()
-    .regex(/^sk_/, 'Secret key must start with sk_')
-    .or(z.literal('')),
+  publishableKey: z.string().regex(/^pk_/, 'Publishable key must start with pk_').or(z.literal('')),
+  secretKey: z.string().regex(/^sk_/, 'Secret key must start with sk_').or(z.literal('')),
   webhookSecret: z
     .string()
     .regex(/^whsec_/, 'Webhook secret must start with whsec_')

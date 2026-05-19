@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { parsePaymentTermsDays } from '@/lib/invoice-utils'
 
 export const invoiceLineItemSchema = z.object({
   name: z.string().min(1, 'Item name is required'),
@@ -124,6 +125,12 @@ export const voidInvoiceSchema = z.object({
 
 export type VoidInvoiceFormData = z.infer<typeof voidInvoiceSchema>
 
+function computeDueDate(terms: string | null | undefined): string {
+  const days = parsePaymentTermsDays(terms)
+  if (days === undefined) return ''
+  return new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)
+}
+
 export function getInvoiceFormDefaults(
   sellerConfig?: {
     sellerName?: string
@@ -131,6 +138,7 @@ export function getInvoiceFormDefaults(
     sellerEmail?: string | null
     sellerPhone?: string | null
     sellerTaxId?: string
+    defaultPaymentTerms?: string | null
   } | null
 ): InvoiceCreateFormData {
   return {
@@ -153,7 +161,7 @@ export function getInvoiceFormDefaults(
     taxValue: null,
     shippingMode: null,
     shippingValue: null,
-    dueDate: '',
+    dueDate: computeDueDate(sellerConfig?.defaultPaymentTerms),
     paymentTerms: null,
     notes: null,
     subscriptionId: null,
@@ -161,7 +169,11 @@ export function getInvoiceFormDefaults(
   }
 }
 
-export function getApplyFormDefaults(): ApplyInvoiceFormData {
+export function getApplyFormDefaults(
+  sellerConfig?: {
+    defaultPaymentTerms?: string | null
+  } | null
+): ApplyInvoiceFormData {
   return {
     currency: 'CNY',
     paymentAttemptId: null,
@@ -170,7 +182,7 @@ export function getApplyFormDefaults(): ApplyInvoiceFormData {
     billingEmail: null,
     billingAddress: '',
     billingPhone: null,
-    dueDate: '',
+    dueDate: computeDueDate(sellerConfig?.defaultPaymentTerms),
     notes: null,
   }
 }

@@ -91,7 +91,7 @@ export function requireFieldOnCreate<T extends string>(
   isEditing: boolean,
   fieldName: T,
   value: string | undefined | null,
-  errorMessage: string,
+  errorMessage: string
 ): boolean {
   if (!isEditing && !value) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
