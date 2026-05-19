@@ -8,6 +8,7 @@ import type {
   PointsPackageResponse,
   PaymentAttemptStatusResponse,
   PurchaseHistoryItemDto,
+  PaymentContextDto,
 } from '@/lib/api-generated'
 
 /**
@@ -242,4 +243,17 @@ export function getMockPaymentAttemptById(attemptId: string): PaymentAttemptStat
     throw new Error(`No mock payment attempt found with ID: ${attemptId}`)
   }
   return attempt
+}
+
+/**
+ * Factory for PaymentContextDto test data
+ */
+export function makePaymentContext(overrides?: Partial<PaymentContextDto>): PaymentContextDto {
+  return {
+    wechatCodeUrl: 'weixin://wxpay/test',
+    stripeCheckoutUrl: null,
+    creemCheckoutUrl: null,
+    clientSecret: null,
+    ...overrides,
+  }
 }

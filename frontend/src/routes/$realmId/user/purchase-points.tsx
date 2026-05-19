@@ -15,6 +15,7 @@ import { PointsPackageSelector } from '@/components/purchase/points-package-sele
 import { PaymentMethodSelector } from '@/components/purchase/payment-method-selector'
 import { PaymentAttemptStatus } from '@/components/purchase/payment-attempt-status'
 import { usePurchaseFlowActions, usePaymentAttempt } from '@/stores/purchase-flow-store'
+import { usePurchaseFlowStore } from '@/stores/purchase-flow-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
 import { formatPrice } from '@/lib/schemas/points-package-forms'
@@ -40,7 +41,8 @@ function PurchasePointsPage() {
   const { setPurchaseState, setPaymentAttempt, clearPurchaseState, canRecover } =
     usePurchaseFlowActions()
   const paymentAttempt = usePaymentAttempt()
-  const { attemptId, attemptStatus: _attemptStatus } = paymentAttempt
+  const { attemptId } = paymentAttempt
+  const paymentProvider = usePurchaseFlowStore((state) => state.paymentProvider)
 
   // Fetch packages and providers
   const { data: packages, isLoading: packagesLoading } = useQuery(
@@ -104,6 +106,22 @@ function PurchasePointsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paymentStatus])
+
+  // Auto-redirect for Stripe/Creem checkout
+  const checkoutUrl =
+    paymentAttempt.paymentContext?.stripeCheckoutUrl ||
+    paymentAttempt.paymentContext?.creemCheckoutUrl ||
+    null
+
+  useEffect(() => {
+    if (currentStep !== 'processing' || !checkoutUrl) return
+
+    const timer = setTimeout(() => {
+      window.location.href = checkoutUrl
+    }, 3000)
+
+    return () => clearTimeout(timer)
+  }, [currentStep, checkoutUrl])
 
   // Create payment attempt mutation
   const createPaymentMutation = useMutation({
@@ -242,6 +260,8 @@ function PurchasePointsPage() {
             {paymentStatus && attemptId && (
               <PaymentAttemptStatus
                 status={paymentStatus}
+                paymentProvider={paymentProvider}
+                paymentContext={paymentAttempt.paymentContext}
                 onRetry={handleRetry}
                 onCancel={handleCancel}
                 isRetrying={createPaymentMutation.isPending}
