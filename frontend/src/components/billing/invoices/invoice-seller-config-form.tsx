@@ -147,11 +147,10 @@ export function InvoiceSellerConfigForm({
                 <div className="space-y-2">
                   <Label htmlFor={field.name}>Default Payment Terms</Label>
                   <Select
-                    data-testid="seller-config-payment-terms-input"
                     value={field.state.value ?? ''}
                     onValueChange={(value) => field.handleChange(value)}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger data-testid="seller-config-payment-terms-input">
                       <SelectValue placeholder="Select payment terms" />
                     </SelectTrigger>
                     <SelectContent>

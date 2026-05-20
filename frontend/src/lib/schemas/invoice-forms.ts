@@ -119,6 +119,10 @@ export const applyInvoiceSchema = z
 
 export type ApplyInvoiceFormData = z.infer<typeof applyInvoiceSchema>
 
+export type PrefilledInvoiceReference =
+  | { type: 'paymentAttempt'; id: string }
+  | { type: 'subscription'; id: string }
+
 export const voidInvoiceSchema = z.object({
   voidReason: z.string().max(500).optional().nullable(),
 })
@@ -172,12 +176,13 @@ export function getInvoiceFormDefaults(
 export function getApplyFormDefaults(
   sellerConfig?: {
     defaultPaymentTerms?: string | null
-  } | null
+  } | null,
+  prefilledReference?: PrefilledInvoiceReference
 ): ApplyInvoiceFormData {
   return {
     currency: 'CNY',
-    paymentAttemptId: null,
-    subscriptionId: null,
+    paymentAttemptId: prefilledReference?.type === 'paymentAttempt' ? prefilledReference.id : null,
+    subscriptionId: prefilledReference?.type === 'subscription' ? prefilledReference.id : null,
     billingName: '',
     billingEmail: null,
     billingAddress: '',

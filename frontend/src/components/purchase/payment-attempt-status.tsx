@@ -2,7 +2,6 @@ import { useEffect, useState, useMemo } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { type PaymentAttemptStatusResponse, type PaymentContextDto } from '@/lib/api-generated'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AlertCircle, CheckCircle2, Clock, XCircle, RefreshCw, X, ExternalLink } from 'lucide-react'
 
 interface PaymentAttemptStatusProps {
@@ -348,14 +347,5 @@ export function PaymentAttemptStatus({
     }
   }
 
-  return (
-    <div data-testid="payment-status-display">
-      <Card>
-        <CardHeader>
-          <CardTitle>Payment Status</CardTitle>
-        </CardHeader>
-        <CardContent>{renderStatusContent()}</CardContent>
-      </Card>
-    </div>
-  )
+  return <div data-testid="payment-status-display">{renderStatusContent()}</div>
 }

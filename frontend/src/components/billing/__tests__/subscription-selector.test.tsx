@@ -103,6 +103,26 @@ describe('SubscriptionSelector - Selection Logic', () => {
     expect(mockOnSelect).toHaveBeenCalledWith('sub1')
   })
 
+  it('should call onApplyInvoice with subscription ID without selecting card', async () => {
+    const mockOnSelect = vi.fn()
+    const mockOnApplyInvoice = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <SubscriptionSelector
+        subscriptions={mockSubscriptions}
+        onSelect={mockOnSelect}
+        onApplyInvoice={mockOnApplyInvoice}
+      />
+    )
+
+    await user.click(screen.getByTestId('subscription-invoice-button-sub1'))
+
+    expect(mockOnApplyInvoice).toHaveBeenCalledTimes(1)
+    expect(mockOnApplyInvoice).toHaveBeenCalledWith('sub1')
+    expect(mockOnSelect).not.toHaveBeenCalled()
+  })
+
   it('should call onSelect with client app ID when subscription is null', async () => {
     const mockOnSelect = vi.fn()
     const user = userEvent.setup()

@@ -4,13 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { History, Search } from 'lucide-react'
-import { PointsBalanceCard } from '../PointsBalanceCard'
 import { TransactionHistoryTable } from '../TransactionHistoryTable'
-import {
-  pointsAccountsQueryOptions,
-  pointsAccountQueryOptions,
-  pointsTransactionsQueryOptions,
-} from '@/data/query-options'
+import { pointsAccountsQueryOptions, pointsTransactionsQueryOptions } from '@/data/query-options'
 import type { TransactionFilters } from '@/lib/schemas/points-forms'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import { PageHeader, ListPagination } from '@/components/shared'
@@ -58,11 +53,6 @@ export function PointsAccountsPage({ realmId }: PointsAccountsPageProps) {
       search: searchQuery,
     })
   )
-
-  const { data: selectedAccount, isLoading: accountLoading } = useQuery({
-    ...pointsAccountQueryOptions(realmId, selectedUserId || ''),
-    enabled: !!selectedUserId,
-  })
 
   const { data: transactionsData, isLoading: transactionsLoading } = useQuery(
     pointsTransactionsQueryOptions(realmId, {
@@ -147,42 +137,34 @@ export function PointsAccountsPage({ realmId }: PointsAccountsPageProps) {
         />
       )}
 
-      {/* Selected User Details */}
+      {/* Transaction History */}
       {selectedUserId && (
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* Balance Card */}
-          <div>
-            <PointsBalanceCard account={selectedAccount || null} loading={accountLoading} />
-          </div>
-
-          {/* Transaction History */}
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <History className="h-4 w-4" />
-                  Transaction History
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <TransactionHistoryTable
-                  transactions={transactionsData?.transactions || []}
-                  loading={transactionsLoading}
-                  filters={transactionFilters}
-                  admin={true}
-                />
-              </CardContent>
-            </Card>
-            {transactionsData && transactionsData.total > 0 && (
-              <ListPagination
-                page={transactionsPage - 1}
-                pageSize={DEFAULT_PAGE_SIZE}
-                total={transactionsData.total}
-                onPageChange={(page) => setTransactionsPage(page + 1)}
-                testIdPrefix="transaction-pagination"
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-4 w-4" />
+                Transaction History
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TransactionHistoryTable
+                transactions={transactionsData?.transactions || []}
+                loading={transactionsLoading}
+                filters={transactionFilters}
+                admin={true}
               />
-            )}
-          </div>
+            </CardContent>
+          </Card>
+          {transactionsData && transactionsData.total > 0 && (
+            <ListPagination
+              page={transactionsPage - 1}
+              pageSize={DEFAULT_PAGE_SIZE}
+              total={transactionsData.total}
+              onPageChange={(page) => setTransactionsPage(page + 1)}
+              testIdPrefix="transaction-pagination"
+            />
+          )}
         </div>
       )}
     </div>

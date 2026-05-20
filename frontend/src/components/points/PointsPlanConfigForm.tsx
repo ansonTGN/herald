@@ -12,7 +12,6 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Info } from 'lucide-react'
 import type { PointsPlanConfigResponse } from '@/lib/api-generated'
 import type { PointsPlanConfigFormData } from '@/lib/schemas/points-forms'
 import { pointsPlanConfigSchema } from '@/lib/schemas/points-forms'
@@ -23,6 +22,7 @@ interface PointsPlanConfigFormProps {
   onSubmit: (data: PointsPlanConfigFormData) => void
   onCancel: () => void
   isSubmitting?: boolean
+  showTitle?: boolean
 }
 
 export function PointsPlanConfigForm({
@@ -31,6 +31,7 @@ export function PointsPlanConfigForm({
   onSubmit,
   onCancel,
   isSubmitting = false,
+  showTitle = true,
 }: PointsPlanConfigFormProps) {
   const isEdit = !!config
 
@@ -52,9 +53,11 @@ export function PointsPlanConfigForm({
 
   return (
     <Card data-testid="points-plan-config-form">
-      <CardHeader>
-        <CardTitle>{isEdit ? 'Edit Points Rule' : 'Create Points Rule'}</CardTitle>
-      </CardHeader>
+      {showTitle && (
+        <CardHeader>
+          <CardTitle>{isEdit ? 'Edit Points Rule' : 'Create Points Rule'}</CardTitle>
+        </CardHeader>
+      )}
       <CardContent>
         <form
           onSubmit={(e) => {
@@ -99,13 +102,7 @@ export function PointsPlanConfigForm({
               <form.Field name="pointsPerPeriod">
                 {(field) => (
                   <div className="space-y-2">
-                    <Label htmlFor={field.name}>
-                      Points per Period *
-                      <Badge variant="outline" className="ml-2">
-                        <Info className="h-3 w-3 mr-1" />
-                        Bonus
-                      </Badge>
-                    </Label>
+                    <Label htmlFor={field.name}>Points per Period *</Label>
                     <Input
                       id={field.name}
                       type="number"

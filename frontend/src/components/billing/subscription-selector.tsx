@@ -1,8 +1,10 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import type { ClientAppItem, SubscriptionDetailResponse } from '@/lib/api-generated'
 import { getStatusBadgeVariant, type SubscriptionStatus } from '@/types/billing'
 import { formatDate } from '@/lib/date-utils'
+import { FileText } from 'lucide-react'
 
 interface SubscriptionSelectorProps {
   subscriptions: Array<{
@@ -11,12 +13,14 @@ interface SubscriptionSelectorProps {
   }>
   selectedId?: string
   onSelect: (subscriptionId: string) => void
+  onApplyInvoice?: (subscriptionId: string) => void
 }
 
 export function SubscriptionSelector({
   subscriptions,
   selectedId,
   onSelect,
+  onApplyInvoice,
 }: SubscriptionSelectorProps) {
   if (subscriptions.length === 0) {
     return (
@@ -72,6 +76,21 @@ export function SubscriptionSelector({
                         <>Expires: {formatDate(subscription.currentPeriodEnd)}</>
                       )}
                     </div>
+                    {onApplyInvoice && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onApplyInvoice(subscription.id)
+                        }}
+                        data-testid={`subscription-invoice-button-${subscription.id}`}
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        Invoice
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <div className="text-sm text-muted-foreground">No subscription</div>

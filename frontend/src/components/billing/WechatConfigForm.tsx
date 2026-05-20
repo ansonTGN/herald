@@ -12,11 +12,12 @@ import {
 import { requireFieldOnCreate } from '@/lib/form-utils'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
 import { BaseFormDialog } from '@/components/shared/form-dialog'
-import { TextField, PasswordField } from '@/components/shared/form-fields'
+import { TextField, PasswordField, SwitchField } from '@/components/shared/form-fields'
 import { Textarea } from '@/components/ui/textarea'
 import { PageHeader } from '@/components/shared/page-header'
 import { FormActionBar } from '@/components/shared/form-action-bar'
 import { createWechatConfig, updateWechatConfig } from '@/lib/api-generated'
+import { upsertRealmConfig } from '@/lib/api-generated/sdk.gen'
 
 interface WechatConfigFormDialogProps {
   initialValues?: Partial<WechatConfigForm>
@@ -171,8 +172,9 @@ export function WechatConfigFormDialog({
               name="v3Key"
               label="API v3 Key"
               dataTestId="v3-key-input"
-              placeholder="0123456789abcdef0123456789abcdef"
+              placeholder="Enter 32-character API v3 key"
               required
+              showToggle={false}
               helpText="Exactly 32 characters. Used for verifying webhook signatures."
             />
 
@@ -279,6 +281,17 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
         body: body as Parameters<typeof updateWechatConfig>[0]['body'],
       })
       if (response.error) throw response.error
+
+      await upsertRealmConfig({
+        path: { realmId },
+        body: {
+          configType: 'wechat',
+          configKey: 'enabled',
+          configValue: String(data.enabled),
+          enabled: data.enabled,
+        },
+      })
+
       return response.data
     },
     onSuccess: async () => {
@@ -320,12 +333,22 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
       >
         <AppForm>
           <div className="space-y-6">
+            {isEditing && (
+              <SwitchField
+                form={form}
+                name="enabled"
+                label="Enable WeChat Pay"
+                description="Allow users to pay with WeChat Pay"
+                dataTestId="page-wechat-enabled-switch"
+              />
+            )}
+
             <TextField
               form={form}
               name="appId"
               label="App ID"
               dataTestId="page-app-id-input"
-              placeholder="wx1234567890abcdef"
+              placeholder="Enter WeChat App ID (e.g. wx1234567890)"
               required
               helpText="Must start with wx. Available in your WeChat Pay merchant account."
             />
@@ -335,7 +358,7 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
               name="mchId"
               label="Merchant ID"
               dataTestId="page-merchant-id-input"
-              placeholder="1234567890"
+              placeholder="Enter merchant ID"
               required
               helpText="Numeric merchant ID from your WeChat Pay account."
             />
@@ -375,7 +398,7 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
               name="serialNo"
               label="Serial No"
               dataTestId="page-serial-no-input"
-              placeholder="1A2B3C4D5E6F"
+              placeholder="Enter certificate serial number"
               required
               helpText="Certificate serial number from your WeChat Pay merchant account."
             />
@@ -385,8 +408,9 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
               name="v3Key"
               label="API v3 Key"
               dataTestId="page-v3-key-input"
-              placeholder="0123456789abcdef0123456789abcdef"
+              placeholder="Enter 32-character API v3 key"
               required={!isEditing}
+              showToggle={false}
               helpText={
                 isEditing
                   ? 'Leave empty to keep the existing key'

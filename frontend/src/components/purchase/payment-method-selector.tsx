@@ -37,16 +37,14 @@ export function PaymentMethodSelector({
               isSelected
                 ? 'border-primary ring-2 ring-primary'
                 : 'border-muted-foreground/25 hover:border-muted-foreground/50'
-            } ${!isAvailable ? 'opacity-50' : ''}`}
+            } ${!isAvailable || disabled ? 'opacity-50 pointer-events-none' : ''}`}
+            onClick={() => isAvailable && !disabled && onSelect(provider.platform)}
             data-testid={`payment-method-button-${provider.platform}`}
             data-selected={isSelected ? true : undefined}
           >
             <CardContent className="p-4">
-              <button
-                type="button"
+              <div
                 className="flex w-full items-center justify-between"
-                onClick={() => isAvailable && !disabled && onSelect(provider.platform)}
-                disabled={!isAvailable || disabled}
                 data-testid={`payment-method-select-${provider.platform}`}
               >
                 <div className="flex items-center gap-3">
@@ -70,7 +68,7 @@ export function PaymentMethodSelector({
                     />
                   </div>
                 )}
-              </button>
+              </div>
             </CardContent>
           </Card>
         )

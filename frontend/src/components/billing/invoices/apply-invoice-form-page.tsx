@@ -6,21 +6,34 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
 import { TextField, TextareaField } from '@/components/shared/form-fields'
-import { applyInvoiceSchema, getApplyFormDefaults } from '@/lib/schemas/invoice-forms'
+import {
+  applyInvoiceSchema,
+  getApplyFormDefaults,
+  type PrefilledInvoiceReference,
+} from '@/lib/schemas/invoice-forms'
 import { sellerConfigQueryOptions } from '@/data/invoice-query-options'
 import { useApplyInvoice } from '@/data/invoice-mutations'
 
 interface ApplyInvoiceFormPageProps {
   realmId: string
+  prefilledReference?: PrefilledInvoiceReference
+  returnTo?: string
 }
 
-export function ApplyInvoiceFormPage({ realmId }: ApplyInvoiceFormPageProps) {
+export function ApplyInvoiceFormPage({
+  realmId,
+  prefilledReference,
+  returnTo,
+}: ApplyInvoiceFormPageProps) {
   const navigate = useNavigate()
   const { mutate: apply, isPending: isSubmitting } = useApplyInvoice(realmId)
   const { data: sellerConfig } = useQuery({
     ...sellerConfigQueryOptions(realmId),
   })
-  const defaultValues = useMemo(() => getApplyFormDefaults(sellerConfig), [sellerConfig])
+  const defaultValues = useMemo(
+    () => getApplyFormDefaults(sellerConfig, prefilledReference),
+    [sellerConfig, prefilledReference]
+  )
 
   const form = useAppForm({
     schema: applyInvoiceSchema,
@@ -44,6 +57,22 @@ export function ApplyInvoiceFormPage({ realmId }: ApplyInvoiceFormPageProps) {
   }, [sellerConfig, defaultValues, form])
 
   const handleCancel = () => {
+    if (returnTo === `/${realmId}/user/points`) {
+      navigate({
+        to: '/$realmId/user/points',
+        params: { realmId },
+      })
+      return
+    }
+
+    if (returnTo === `/${realmId}/user/subscription-history`) {
+      navigate({
+        to: '/$realmId/user/subscription-history',
+        params: { realmId },
+      })
+      return
+    }
+
     navigate({
       to: '/$realmId/user/invoices',
       params: { realmId },
@@ -82,25 +111,43 @@ export function ApplyInvoiceFormPage({ realmId }: ApplyInvoiceFormPageProps) {
                 <CardTitle>Reference</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <TextField
-                  form={form}
-                  name="paymentAttemptId"
-                  label="Payment Attempt ID"
-                  dataTestId="apply-payment-attempt-id-input"
-                  placeholder="Enter payment attempt ID"
-                />
-                <TextField
-                  form={form}
-                  name="subscriptionId"
-                  label="Subscription ID"
-                  dataTestId="apply-subscription-id-input"
-                  placeholder="Enter subscription ID"
-                />
-                <div className="rounded-md border border-muted bg-muted/40 px-3 py-2">
-                  <p className="text-xs text-muted-foreground">
-                    At least one of Payment Attempt ID or Subscription ID is required.
-                  </p>
-                </div>
+                {prefilledReference ? (
+                  <div
+                    className="rounded-md border border-muted bg-muted/40 px-3 py-2"
+                    data-testid="apply-prefilled-reference"
+                  >
+                    <p className="text-sm font-medium">
+                      {prefilledReference.type === 'paymentAttempt'
+                        ? 'Points package purchase'
+                        : 'Subscription'}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Invoice reference is selected from your account history.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <TextField
+                      form={form}
+                      name="paymentAttemptId"
+                      label="Payment Attempt ID"
+                      dataTestId="apply-payment-attempt-id-input"
+                      placeholder="Enter payment attempt ID"
+                    />
+                    <TextField
+                      form={form}
+                      name="subscriptionId"
+                      label="Subscription ID"
+                      dataTestId="apply-subscription-id-input"
+                      placeholder="Enter subscription ID"
+                    />
+                    <div className="rounded-md border border-muted bg-muted/40 px-3 py-2">
+                      <p className="text-xs text-muted-foreground">
+                        At least one of Payment Attempt ID or Subscription ID is required.
+                      </p>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 

@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
   subscriptionHistoryQueryOptions,
   clientAppsQueryOptions,
   userSubscriptionsQueryOptions,
   requireFeature,
+  featureAvailabilityQueryOptions,
 } from '@/data/query-options'
 import { SubscriptionSelector } from '@/components/billing/subscription-selector'
 import { UserSubscriptionTimeline } from '@/components/billing/user-subscription-timeline'
@@ -13,8 +14,10 @@ import type { ClientAppItem, SubscriptionDetailResponse } from '@/lib/api-genera
 import { getSubscriptionForClientApp } from '@/lib/api-generated'
 import { PageHeader } from '@/components/shared'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { getStatusBadgeVariant, type SubscriptionStatus } from '@/types/billing'
+import { FileText } from 'lucide-react'
 
 type SubscriptionWithClientApp = {
   clientApp: ClientAppItem
@@ -32,6 +35,7 @@ export const Route = createFileRoute('/$realmId/user/subscription-history')({
 
 function SubscriptionHistoryRoute() {
   const { realmId } = Route.useParams()
+  const navigate = useNavigate()
   // undefined = auto-select first, string = manually selected this ID
   const [manualSelectionId, setManualSelectionId] = useState<string | undefined>(undefined)
 
@@ -84,6 +88,20 @@ function SubscriptionHistoryRoute() {
     ),
     enabled: clientApps.length > 0,
   })
+  const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
+  const invoicesVisible = features?.user.invoicesVisible === true
+  const handleApplyInvoice = invoicesVisible
+    ? (subscriptionId: string) => {
+        navigate({
+          to: '/$realmId/user/invoices/new',
+          params: { realmId },
+          search: {
+            subscriptionId,
+            returnTo: `/${realmId}/user/subscription-history`,
+          },
+        })
+      }
+    : undefined
 
   // Derive selected subscription ID: use manual selection if user has selected, otherwise auto-select first
   const selectedSubscriptionId = useMemo(() => {
@@ -124,6 +142,7 @@ function SubscriptionHistoryRoute() {
                   subscriptions={subscriptionList ?? []}
                   selectedId={selectedSubscriptionId}
                   onSelect={setManualSelectionId}
+                  onApplyInvoice={handleApplyInvoice}
                 />
               </div>
 
@@ -139,20 +158,34 @@ function SubscriptionHistoryRoute() {
             </>
           ) : singleSubscription ? (
             <div>
-              <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground">
-                <span>Showing history for</span>
-                <span className="font-medium text-foreground">
-                  {singleSubscription.clientApp.name}
-                </span>
-                {singleSubscription.subscription && (
-                  <Badge
-                    variant={getStatusBadgeVariant(
-                      singleSubscription.subscription.status as SubscriptionStatus
-                    )}
-                    className="text-xs"
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>Showing history for</span>
+                  <span className="font-medium text-foreground">
+                    {singleSubscription.clientApp.name}
+                  </span>
+                  {singleSubscription.subscription && (
+                    <Badge
+                      variant={getStatusBadgeVariant(
+                        singleSubscription.subscription.status as SubscriptionStatus
+                      )}
+                      className="text-xs"
+                    >
+                      {singleSubscription.subscription.status}
+                    </Badge>
+                  )}
+                </div>
+                {handleApplyInvoice && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleApplyInvoice(singleSubscription.subscription.id)}
+                    data-testid={`subscription-invoice-button-${singleSubscription.subscription.id}`}
                   >
-                    {singleSubscription.subscription.status}
-                  </Badge>
+                    <FileText className="mr-2 h-4 w-4" />
+                    Invoice
+                  </Button>
                 )}
               </div>
               <UserSubscriptionTimeline

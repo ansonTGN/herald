@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Coins, History, Plus } from 'lucide-react'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { TransactionHistoryTable } from './TransactionHistoryTable'
 import { TransactionFilters } from './TransactionFilters'
 import { PurchaseHistoryList } from '@/components/purchase/purchase-history-list'
@@ -25,6 +25,7 @@ interface UserPointsPageProps {
 }
 
 export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
+  const navigate = useNavigate()
   // TODO: Migrate pagination/filter state to URL search params via parent route
   // (/$realmId/user/points) for link sharing and refresh restoration.
   // Requires adding: tab, transactionsPage, transactionFilters (type/startTime/endTime),
@@ -58,6 +59,7 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
     })
   )
   const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
+  const invoicesVisible = features?.user.invoicesVisible === true
 
   return (
     <div className="space-y-6" data-testid="user-points-page">
@@ -66,13 +68,16 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-semibold">My Points</h1>
           {account && !accountLoading && (
-            <span className="text-2xl font-bold" data-testid="points-balance">
+            <span className="text-2xl font-bold text-emerald-600" data-testid="points-balance">
               {account.balance.toLocaleString()}{' '}
               <span className="text-sm font-normal text-muted-foreground">{account.unit}</span>
             </span>
           )}
           {accountLoading && (
-            <span className="text-2xl font-bold animate-pulse" data-testid="points-balance">
+            <span
+              className="text-2xl font-bold text-emerald-600 animate-pulse"
+              data-testid="points-balance"
+            >
               ---
             </span>
           )}
@@ -154,6 +159,20 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
                 onDetailsClick={(purchaseId) => {
                   setSelectedPurchaseId(purchaseId)
                 }}
+                onApplyInvoice={
+                  invoicesVisible
+                    ? (paymentAttemptId) => {
+                        navigate({
+                          to: '/$realmId/user/invoices/new',
+                          params: { realmId },
+                          search: {
+                            paymentAttemptId,
+                            returnTo: `/${realmId}/user/points`,
+                          },
+                        })
+                      }
+                    : undefined
+                }
               />
             </CardContent>
           </Card>

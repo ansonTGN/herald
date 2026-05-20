@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { render, act, screen } from '@testing-library/react'
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { server } from '@/test/mocks/server'
 import { createTestQueryClient } from '@/test/utils/render'
@@ -141,13 +141,16 @@ function configureRecoveryState(
 /**
  * Provide MSW handlers for ALL queries the page might make.
  */
-function installPageQueryHandlers() {
+function installPageQueryHandlers(paymentStatusDelayMs = 0) {
   server.use(
     http.get('*/api/bill/:realmId/points-packages', () => HttpResponse.json({ packages: [] })),
     http.get('*/api/bill/:realmId/payment-providers', () => HttpResponse.json({ providers: [] })),
     http.get('*/api/third/pay/:realmId/providers', () => HttpResponse.json({ providers: [] })),
-    http.get('*/api/bill/:realmId/purchase/payment-attempts/:attemptId', () =>
-      HttpResponse.json({
+    http.get('*/api/bill/:realmId/purchase/payment-attempts/:attemptId', async () => {
+      if (paymentStatusDelayMs > 0) {
+        await delay(paymentStatusDelayMs)
+      }
+      return HttpResponse.json({
         id: 'attempt-1',
         status: 'Pending',
         targetType: 'points_package',
@@ -160,7 +163,7 @@ function installPageQueryHandlers() {
         fulfillment: null,
         providerStatus: null,
       })
-    )
+    })
   )
 }
 
@@ -175,9 +178,9 @@ import { Route } from '../purchase-points'
  * the event loop time to settle lets MSW responses arrive before
  * we try to assert on the DOM.
  */
-async function renderPage() {
+async function renderPage(options?: { settleMs?: number; paymentStatusDelayMs?: number }) {
   const queryClient = createTestQueryClient()
-  installPageQueryHandlers()
+  installPageQueryHandlers(options?.paymentStatusDelayMs)
   const PageComponent = Route.component as React.ComponentType
 
   // Render inside act and give the event loop time to settle so that
@@ -191,7 +194,7 @@ async function renderPage() {
     )
     // Give MSW + React Query time to resolve the fetch promises.
     // Without this, the first render is blank because queries are still loading.
-    await new Promise((resolve) => setTimeout(resolve, 800))
+    await new Promise((resolve) => setTimeout(resolve, options?.settleMs ?? 800))
   })
 
   return result!
@@ -248,6 +251,21 @@ describe('Purchase-points auto-redirect state machine', () => {
   })
 
   describe('Stripe checkout redirect', () => {
+    it('shows payment status loading content while recovered attempt status is loading', async () => {
+      configureRecoveryState(
+        makePaymentContextForPage({
+          paymentProvider: 'stripe',
+          stripeCheckoutUrl: 'https://checkout.stripe.com/pay/cs_loading',
+        })
+      )
+
+      await renderPage({ settleMs: 0, paymentStatusDelayMs: 2000 })
+
+      await screen.findByTestId('purchase-step-processing', undefined, { timeout: 3000 })
+      expect(screen.getByTestId('payment-status-loading')).toBeVisible()
+      expect(screen.getByText('Checking payment status')).toBeVisible()
+    }, 10000)
+
     it('redirects to stripeCheckoutUrl after 3-second timer', async () => {
       const checkoutUrl = 'https://checkout.stripe.com/pay/cs_test_123'
       configureRecoveryState(

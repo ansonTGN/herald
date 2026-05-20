@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react'
 import { format } from 'date-fns'
-import { ChevronRight, Calendar, Coins, CreditCard, AlertCircle } from 'lucide-react'
+import { ChevronRight, Calendar, Coins, CreditCard, AlertCircle, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -18,68 +18,85 @@ interface PurchaseHistoryListProps {
   isLoading: boolean
   error?: Error
   onDetailsClick: (purchaseId: string) => void
+  onApplyInvoice?: (paymentAttemptId: string) => void
 }
 
 interface HistoryTableRowProps {
   purchase: PurchaseHistoryItemDto
   onDetailsClick: (purchaseId: string) => void
+  onApplyInvoice?: (paymentAttemptId: string) => void
 }
 
-const HistoryTableRow = memo(({ purchase, onDetailsClick }: HistoryTableRowProps) => {
-  const timestamp = useMemo(() => {
-    try {
-      return format(new Date(purchase.createdAt), 'PPp')
-    } catch {
-      return purchase.createdAt
-    }
-  }, [purchase.createdAt])
+const HistoryTableRow = memo(
+  ({ purchase, onDetailsClick, onApplyInvoice }: HistoryTableRowProps) => {
+    const timestamp = useMemo(() => {
+      try {
+        return format(new Date(purchase.createdAt), 'PPp')
+      } catch {
+        return purchase.createdAt
+      }
+    }, [purchase.createdAt])
 
-  return (
-    <TableRow data-testid={`purchase-history-item-${purchase.id}`}>
-      <TableCell className="font-medium">{timestamp}</TableCell>
-      <TableCell>
-        {purchase.pointsPackageId ? (
-          <div>
-            <div className="text-sm font-medium">Package #{purchase.pointsPackageId}</div>
-            <div className="text-xs text-muted-foreground">
-              {purchase.points.toLocaleString()} points
+    return (
+      <TableRow data-testid={`purchase-history-item-${purchase.id}`}>
+        <TableCell className="font-medium">{timestamp}</TableCell>
+        <TableCell>
+          {purchase.pointsPackageId ? (
+            <div>
+              <div className="text-sm font-medium">Package #{purchase.pointsPackageId}</div>
+              <div className="text-xs text-muted-foreground">
+                {purchase.points.toLocaleString()} points
+              </div>
             </div>
+          ) : (
+            <span className="text-sm text-muted-foreground">-</span>
+          )}
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-2">
+            <Coins className="h-4 w-4 text-primary" />
+            <span className="font-medium">{purchase.points.toLocaleString()}</span>
           </div>
-        ) : (
-          <span className="text-sm text-muted-foreground">-</span>
-        )}
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <Coins className="h-4 w-4 text-primary" />
-          <span className="font-medium">{purchase.points.toLocaleString()}</span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="text-sm">
-          {purchase.amount.toFixed(2)} {purchase.currency}
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <CreditCard className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm">{purchase.paymentProvider}</span>
-        </div>
-      </TableCell>
-      <TableCell className="text-right">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onDetailsClick(purchase.id)}
-          data-testid={`purchase-history-details-button-${purchase.id}`}
-        >
-          <ChevronRight className="h-4 w-4" />
-          <span className="sr-only">View details</span>
-        </Button>
-      </TableCell>
-    </TableRow>
-  )
-})
+        </TableCell>
+        <TableCell>
+          <div className="text-sm">
+            {purchase.amount.toFixed(2)} {purchase.currency}
+          </div>
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-2">
+            <CreditCard className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm">{purchase.paymentProvider}</span>
+          </div>
+        </TableCell>
+        <TableCell className="text-right">
+          <div className="flex justify-end gap-1">
+            {onApplyInvoice && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onApplyInvoice(purchase.paymentAttemptId)}
+                data-testid={`purchase-history-invoice-button-${purchase.id}`}
+              >
+                <FileText className="h-4 w-4" />
+                <span className="sr-only">Apply for invoice</span>
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onDetailsClick(purchase.id)}
+              data-testid={`purchase-history-details-button-${purchase.id}`}
+            >
+              <ChevronRight className="h-4 w-4" />
+              <span className="sr-only">View details</span>
+            </Button>
+          </div>
+        </TableCell>
+      </TableRow>
+    )
+  }
+)
 
 HistoryTableRow.displayName = 'HistoryTableRow'
 
@@ -88,6 +105,7 @@ export function PurchaseHistoryList({
   isLoading,
   error,
   onDetailsClick,
+  onApplyInvoice,
 }: PurchaseHistoryListProps) {
   if (isLoading) {
     return (
@@ -148,6 +166,7 @@ export function PurchaseHistoryList({
               key={purchase.id}
               purchase={purchase}
               onDetailsClick={onDetailsClick}
+              onApplyInvoice={onApplyInvoice}
             />
           ))}
         </TableBody>

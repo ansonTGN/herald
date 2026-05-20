@@ -177,6 +177,7 @@ describe('WechatConfigForm', () => {
 
       await waitFor(() => {
         expect(onSubmit).toHaveBeenCalledWith({
+          enabled: true,
           appId: 'wx1234567890abcdef',
           mchId: '1234567890',
           privateKey:
@@ -225,6 +226,7 @@ describe('WechatConfigForm', () => {
       // The parent component is responsible for handling the API call and errors
       await waitFor(() => {
         expect(onSubmit).toHaveBeenCalledWith({
+          enabled: true,
           appId: 'wx1234567890abcdef',
           mchId: '1234567890',
           privateKey:
@@ -273,6 +275,7 @@ describe('WechatConfigForm', () => {
           onSubmit={onSubmit}
           mode="edit"
           initialValues={{
+            enabled: true,
             appId: 'wx1234567890abcdef',
             mchId: '1234567890',
             privateKey:
@@ -295,6 +298,7 @@ describe('WechatConfigForm', () => {
 
       await waitFor(() => {
         expect(onSubmit).toHaveBeenCalledWith({
+          enabled: true,
           appId: 'wx1234567890abcdef',
           mchId: '1234567890',
           privateKey:

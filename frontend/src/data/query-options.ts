@@ -675,7 +675,10 @@ export const subscriptionQueryOptions = (realmId: string, clientAppId: string) =
     queryKey: queryKeys.subscription(realmId, clientAppId),
     queryFn: async () => {
       const response = await getSubscriptionForClientApp({ path: { realmId, clientAppId } })
-      if (response.error) throw response.error
+      if (response.error) {
+        if (response.error.code === 404) return null
+        throw response.error
+      }
       return response.data
     },
     retry: RETRY_COUNT,
@@ -812,7 +815,7 @@ interface PointsAccountsListResponse {
   total: number
   page: number
   pageSize: number
-  data: Array<{
+  items: Array<{
     id: string
     userId: string
     realmId: string
@@ -879,7 +882,7 @@ export const pointsAccountsQueryOptions = (
         total: paginated.total,
         page: paginated.page,
         pageSize: paginated.pageSize,
-        accounts: paginated.data.map((account) => ({
+        accounts: paginated.items.map((account) => ({
           id: account.id,
           userId: account.userId,
           userName: account.userName ?? undefined,

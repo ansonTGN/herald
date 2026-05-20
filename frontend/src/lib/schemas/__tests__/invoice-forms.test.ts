@@ -723,6 +723,26 @@ describe('getApplyFormDefaults', () => {
     })
   })
 
+  it('prefills only paymentAttemptId for payment attempt reference', () => {
+    const defaults = getApplyFormDefaults(null, {
+      type: 'paymentAttempt',
+      id: '11111111-1111-1111-1111-111111111111',
+    })
+
+    expect(defaults.paymentAttemptId).toBe('11111111-1111-1111-1111-111111111111')
+    expect(defaults.subscriptionId).toBeNull()
+  })
+
+  it('prefills only subscriptionId for subscription reference', () => {
+    const defaults = getApplyFormDefaults(null, {
+      type: 'subscription',
+      id: '22222222-2222-2222-2222-222222222222',
+    })
+
+    expect(defaults.paymentAttemptId).toBeNull()
+    expect(defaults.subscriptionId).toBe('22222222-2222-2222-2222-222222222222')
+  })
+
   it('auto-fills dueDate from sellerConfig defaultPaymentTerms "Net 30"', () => {
     const defaults = getApplyFormDefaults({
       defaultPaymentTerms: 'Net 30',

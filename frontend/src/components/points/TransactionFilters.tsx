@@ -82,7 +82,7 @@ export function TransactionFilters({
           <div className="space-y-4">
             <div className="flex flex-wrap items-end gap-4">
               {/* Transaction Type */}
-              <div className="space-y-2 min-w-[160px]">
+              <div className="min-w-[160px]">
                 <form.Field name="transactionType">
                   {(field) => (
                     <>
@@ -112,7 +112,7 @@ export function TransactionFilters({
               </div>
 
               {/* From Date */}
-              <div className="space-y-2">
+              <div className="min-w-[160px]">
                 <form.Field name="startTime">
                   {(field) => (
                     <>
@@ -130,7 +130,7 @@ export function TransactionFilters({
               </div>
 
               {/* To Date */}
-              <div className="space-y-2">
+              <div className="min-w-[160px]">
                 <form.Field name="endTime">
                   {(field) => (
                     <>
@@ -178,8 +178,8 @@ export function TransactionFilters({
                 </div>
               )}
 
-              {/* Action Buttons - same line as filters */}
-              <div className="flex gap-2">
+              {/* Action Buttons - push to right, vertically centered */}
+              <div className="flex gap-2 ml-auto self-center">
                 {hasActiveFilters && (
                   <Button
                     type="button"

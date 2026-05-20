@@ -97,6 +97,7 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
             POINTS_REALM_ADMIN_PASSWORD,
         )
         user_id = _ensure_points_user(realm_admin_opener, logger)
+        _ensure_realm001_user_subscription_permissions(logger)
         _seed_points_data(user_id, logger)
         _ensure_points_package_payment_demo_data(logger)
 
@@ -106,7 +107,7 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
 
         # Ensure subscription data for realm-001 (used by subscription timeline tests)
         _info(logger, "Ensuring subscription data for realm-001...")
-        _ensure_realm001_subscription_data(logger)
+        _ensure_realm001_subscription_data(user_id, logger)
 
         # Ensure realm default points config for admin realm
         _info(logger, "Ensuring admin realm default points config...")
@@ -119,6 +120,10 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         # Ensure Shopify unclaimed subscription for realm-001 (used by subscription claim tests)
         _info(logger, "Ensuring Shopify unclaimed subscription for realm-001...")
         _ensure_shopify_unclaimed_subscription(logger)
+
+        # Ensure invoice seller config for realm-001
+        _info(logger, "Ensuring invoice seller config for realm-001...")
+        _ensure_invoice_seller_config(logger)
 
         _info(logger, "Demo seed data is ready")
         return True
@@ -270,6 +275,80 @@ def _ensure_points_user(opener: urllib.request.OpenerDirector, logger: "Logger |
             f"Failed to update user roles: status={status}, body={json.dumps(body, ensure_ascii=False)}"
         )
     return user_id
+
+
+def _ensure_realm001_user_subscription_permissions(logger: "Logger | None") -> None:
+    """Ensure the realm-001 demo user role can view subscription history dependencies."""
+    sql = f"""
+DO $$
+DECLARE
+    v_user_role_id UUID;
+    v_permission_id UUID;
+    v_permission RECORD;
+BEGIN
+    SELECT id INTO v_user_role_id
+    FROM roles
+    WHERE realm_id = '{POINTS_REALM_ID}' AND name = 'user'
+    LIMIT 1;
+
+    IF v_user_role_id IS NULL THEN
+        RAISE EXCEPTION 'Could not find realm-001 user role';
+    END IF;
+
+    FOR v_permission IN
+        SELECT *
+        FROM (VALUES
+            ('clients.view', 'clients', 'view', 'View client applications for subscription history'),
+            ('billing.view', 'billing', 'view', 'View own billing subscription history')
+        ) AS p(name, resource, action, description)
+    LOOP
+        INSERT INTO permissions (
+            id, name, description, realm_id, resource, action, is_builtin
+        ) VALUES (
+            uuidv7(),
+            v_permission.name,
+            v_permission.description,
+            '{POINTS_REALM_ID}',
+            v_permission.resource,
+            v_permission.action,
+            TRUE
+        )
+        ON CONFLICT (name, realm_id) DO UPDATE
+            SET description = EXCLUDED.description,
+                resource = EXCLUDED.resource,
+                action = EXCLUDED.action,
+                is_builtin = TRUE
+        RETURNING id INTO v_permission_id;
+
+        INSERT INTO role_permissions (id, role_id, permission_id)
+        VALUES (uuidv7(), v_user_role_id, v_permission_id)
+        ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+        INSERT INTO role_policies (id, role_id, realm_id, resource, action, effect)
+        VALUES (
+            uuidv7(),
+            v_user_role_id,
+            '{POINTS_REALM_ID}',
+            v_permission.resource,
+            v_permission.action,
+            TRUE
+        )
+        ON CONFLICT (role_id, resource, action) DO UPDATE
+            SET effect = TRUE,
+                updated_at = NOW();
+    END LOOP;
+END $$;
+"""
+    _sql_exec(sql)
+    _delete_redis_keys(
+        [
+            f"user_roles:{POINTS_REALM_ID}:*",
+            f"role_policies:{POINTS_REALM_ID}:*",
+            f"perm:{POINTS_REALM_ID}:*",
+        ],
+        logger,
+    )
+    _info(logger, "[OK] User subscription history permissions ready for realm-001")
 
 
 def _seed_points_data(user_id: str, logger: "Logger | None") -> None:
@@ -512,11 +591,12 @@ END $$;
     _sql_exec(sql)
 
 
-def _ensure_realm001_subscription_data(logger: "Logger | None") -> None:
+def _ensure_realm001_subscription_data(user_id: str, logger: "Logger | None") -> None:
     """Ensure subscription data exists for realm-001 (subscription timeline tests)."""
     sql = f"""
 DO $$
 DECLARE
+    v_user_id UUID := '{user_id}'::uuid;
     v_client_app_id UUID;
     v_plan_id UUID;
     v_subscription_id UUID;
@@ -579,13 +659,14 @@ BEGIN
     DELETE FROM subscription WHERE client_app_id = v_client_app_id;
 
     INSERT INTO subscription (
-        id, realm_id, external_subscription_id, external_product_id,
+        id, realm_id, user_id, external_subscription_id, external_product_id,
         payment_provider, status, tier, current_period_start,
         current_period_end, plan_id, client_app_id, billing_period
     ) VALUES (
         uuidv7(),
         '{POINTS_REALM_ID}',
-        'sub_realm001_' || uuidv7(),
+        v_user_id,
+        'demo-subscription-202603',
         'prod_realm001_' || uuidv7(),
         'stripe',
         'active',
@@ -1032,6 +1113,22 @@ def _sql_exec(sql: str) -> None:
         raise SeedError(f"SQL execution failed: {output}")
 
 
+def _delete_redis_keys(patterns: list[str], logger: "Logger | None") -> None:
+    for pattern in patterns:
+        code, output = docker.exec_check("cas-demo-redis", ["redis-cli", "--scan", "--pattern", pattern])
+        if code != 0:
+            _info(logger, f"Skipping Redis cache cleanup for {pattern}: {output}")
+            continue
+
+        keys = [line.strip() for line in output.splitlines() if line.strip()]
+        if not keys:
+            continue
+
+        code, output = docker.exec_check("cas-demo-redis", ["redis-cli", "DEL", *keys])
+        if code != 0:
+            _info(logger, f"Skipping Redis cache cleanup for {pattern}: {output}")
+
+
 def _backend_url(path: str) -> str:
     return f"http://localhost:{BACKEND_PORT}{path}"
 
@@ -1063,6 +1160,23 @@ def _info(logger: "Logger | None", message: str) -> None:
 def _error(logger: "Logger | None", message: str) -> None:
     if logger:
         logger.error(message)
+
+
+def _ensure_invoice_seller_config(logger: "Logger | None") -> None:
+    """Ensure invoice_seller_config exists for realm-001 so invoice menu is visible."""
+    sql = f"""
+    INSERT INTO invoice_seller_config (realm_id, seller_name, seller_address, seller_email, seller_phone, seller_tax_id, default_payment_terms)
+    VALUES ('{POINTS_REALM_ID}', 'Herald Demo Corp', '123 Demo Street, Demo City', 'billing@realm-001.demo', '+1-000-000-0000', 'DEMO-TAX-001', 'Net 30')
+    ON CONFLICT (realm_id) DO UPDATE
+        SET seller_name = EXCLUDED.seller_name,
+            seller_address = EXCLUDED.seller_address,
+            seller_email = EXCLUDED.seller_email,
+            seller_phone = EXCLUDED.seller_phone,
+            seller_tax_id = EXCLUDED.seller_tax_id,
+            default_payment_terms = EXCLUDED.default_payment_terms;
+    """
+    _sql_exec(sql)
+    _info(logger, "[OK] Invoice seller config ready for realm-001")
 
 
 def _ensure_shopify_unclaimed_subscription(logger: "Logger | None") -> None:

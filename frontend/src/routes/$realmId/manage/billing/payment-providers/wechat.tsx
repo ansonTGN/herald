@@ -39,6 +39,7 @@ function WechatConfigRoute() {
 
   const initialValues: Partial<WechatConfigForm> | undefined = configData
     ? {
+        enabled: wechatProvider?.enabled ?? true,
         appId: configData.appId || '',
         mchId: configData.mchId || '',
         privateKey: '',

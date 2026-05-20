@@ -14,6 +14,7 @@ interface PasswordFieldProps {
   disabled?: boolean
   helpText?: ReactNode
   required?: boolean
+  showToggle?: boolean
 }
 
 export function PasswordField({
@@ -26,6 +27,7 @@ export function PasswordField({
   disabled = false,
   helpText,
   required = false,
+  showToggle = true,
 }: PasswordFieldProps) {
   const [isVisible, setIsVisible] = React.useState(false)
 
@@ -55,16 +57,18 @@ export function PasswordField({
                 disabled={disabled}
                 className="flex-1"
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={toggleVisibility}
-                data-testid={`${dataTestId}-visibility-toggle`}
-                className="shrink-0"
-              >
-                {isVisible ? 'Hide' : 'Show'}
-              </Button>
+              {showToggle && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={toggleVisibility}
+                  data-testid={`${dataTestId}-visibility-toggle`}
+                  className="shrink-0"
+                >
+                  {isVisible ? 'Hide' : 'Show'}
+                </Button>
+              )}
             </div>
             {helpText ? <p className="text-xs text-muted-foreground">{helpText}</p> : null}
             {(field.state.meta.isTouched || form.state.isSubmitted) &&

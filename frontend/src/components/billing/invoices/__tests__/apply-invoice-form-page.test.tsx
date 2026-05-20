@@ -82,6 +82,26 @@ describe('ApplyInvoiceFormPage', () => {
       expect(screen.getByTestId('apply-invoice-cancel-button')).toBeInTheDocument()
       expect(screen.getByTestId('apply-invoice-back-button')).toBeInTheDocument()
     })
+
+    it('renders read-only reference when payment attempt is prefilled', async () => {
+      renderWithProviders(
+        <ApplyInvoiceFormPage
+          realmId={REALM_ID}
+          prefilledReference={{
+            type: 'paymentAttempt',
+            id: '11111111-1111-1111-1111-111111111111',
+          }}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('apply-prefilled-reference')).toBeInTheDocument()
+      })
+
+      expect(screen.getByText('Points package purchase')).toBeInTheDocument()
+      expect(screen.queryByTestId('apply-payment-attempt-id-input')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('apply-subscription-id-input')).not.toBeInTheDocument()
+    })
   })
 
   // ==================== Validation ====================
@@ -197,6 +217,47 @@ describe('ApplyInvoiceFormPage', () => {
         to: '/$realmId/user/invoices',
         params: { realmId: REALM_ID },
       })
+    })
+
+    it('submits prefilled payment attempt ID without editable reference inputs', async () => {
+      let capturedBody: unknown = null
+
+      server.use(
+        sellerConfigHandler(),
+        http.post(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, async ({ request }) => {
+          capturedBody = await request.json()
+          return HttpResponse.json({ id: 'inv-new' }, { status: 201 })
+        })
+      )
+
+      const user = userEvent.setup()
+      renderWithProviders(
+        <ApplyInvoiceFormPage
+          realmId={REALM_ID}
+          prefilledReference={{
+            type: 'paymentAttempt',
+            id: '11111111-1111-1111-1111-111111111111',
+          }}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('apply-prefilled-reference')).toBeInTheDocument()
+      })
+
+      await user.type(screen.getByTestId('apply-billing-name-input'), 'John Doe')
+      await user.type(screen.getByTestId('apply-billing-address-input'), '123 Billing St')
+      await user.click(screen.getByTestId('apply-invoice-submit-button'))
+
+      await waitFor(() => {
+        expect(capturedBody).not.toBeNull()
+      })
+
+      expect(capturedBody).toMatchObject({
+        paymentAttemptId: '11111111-1111-1111-1111-111111111111',
+        billingName: 'John Doe',
+      })
+      expect(capturedBody).not.toHaveProperty('subscriptionId')
     })
   })
 

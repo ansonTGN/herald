@@ -15,7 +15,6 @@ import {
 } from '@/components/ui/table'
 import { PageHeader } from '@/components/shared/page-header'
 import { ShopifyConfigFields } from './ShopifyConfigDetail'
-import { WechatConfigFields } from './WechatConfigDetail'
 import { DeleteConfirmDialog } from './DeleteConfirmDialog'
 import { Edit, Trash2, Plug2, Plus, ChevronDown, ChevronUp } from 'lucide-react'
 import {
@@ -23,9 +22,7 @@ import {
   getShopifyConfig,
   listPaymentProviders,
   deleteWechatConfig,
-  getWechatConfig,
   type ShopifyConfigResponse,
-  type WechatConfigResponse,
 } from '@/lib/api-generated'
 import { listRealmConfigs, deleteRealmConfig } from '@/lib/api-generated/sdk.gen'
 import { parseStripeConfig } from '@/lib/stripe-config-utils'
@@ -47,12 +44,10 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
   const [shopifyConfigDetails, setShopifyConfigDetails] = useState<ShopifyConfigResponse | null>(
     null
   )
-  const [wechatConfigDetails, setWechatConfigDetails] = useState<WechatConfigResponse | null>(null)
   const [stripeConfigDetails, setStripeConfigDetails] = useState<{ enabled: boolean } | null>(null)
   const [creemConfigDetails, setCreemConfigDetails] = useState<{ enabled: boolean } | null>(null)
-  const [showWechatSecrets, setShowWechatSecrets] = useState(false)
   const [showShopifySecrets, setShowShopifySecrets] = useState(false)
-  const [expandedProvider, setExpandedProvider] = useState<'shopify' | 'wechat' | null>(null)
+  const [expandedProvider, setExpandedProvider] = useState<'shopify' | null>(null)
 
   // Auto-hide Shopify secrets after 5 seconds
   useEffect(() => {
@@ -66,19 +61,6 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
       if (timeoutId) clearTimeout(timeoutId)
     }
   }, [showShopifySecrets])
-
-  // Auto-hide WeChat secrets after 5 seconds
-  useEffect(() => {
-    let timeoutId: ReturnType<typeof setTimeout>
-    if (showWechatSecrets) {
-      timeoutId = setTimeout(() => {
-        setShowWechatSecrets(false)
-      }, 5000)
-    }
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId)
-    }
-  }, [showWechatSecrets])
 
   const { data: providers, isLoading } = useQuery({
     queryKey: ['payment-providers', realmId],
@@ -98,18 +80,6 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
         .catch(() => setShopifyConfigDetails(null))
     }
   }, [providers, realmId])
-
-  useEffect(() => {
-    const wechatProvider = providers?.find((p) => p.platform === 'wechat')
-    if (wechatProvider) {
-      getWechatConfig({
-        path: { realmId },
-        query: { reveal_secrets: showWechatSecrets },
-      })
-        .then((result) => setWechatConfigDetails(result.data as WechatConfigResponse))
-        .catch(() => setWechatConfigDetails(null))
-    }
-  }, [providers, realmId, showWechatSecrets])
 
   // Fetch Stripe and Creem config details from realm configs (shared API call)
   useEffect(() => {
@@ -189,8 +159,8 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
     deleteMutation.mutate()
   }
 
-  const toggleExpand = (provider: 'shopify' | 'wechat') => {
-    setExpandedProvider((prev) => (prev === provider ? null : provider))
+  const toggleExpand = () => {
+    setExpandedProvider((prev) => (prev === 'shopify' ? null : 'shopify'))
   }
 
   if (isLoading) {
@@ -260,7 +230,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => toggleExpand('shopify')}
+                        onClick={() => toggleExpand()}
                         data-testid="toggle-shopify-details-button"
                       >
                         {expandedProvider === 'shopify' ? (
@@ -319,64 +289,40 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
               </>
             )}
 
-            {wechatProvider && wechatConfigDetails && (
-              <>
-                <TableRow data-testid="wechat-provider-row">
-                  <TableCell className="font-medium">WeChat Pay</TableCell>
-                  <TableCell>
-                    <Badge variant="default">Active</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleExpand('wechat')}
-                        data-testid="toggle-wechat-details-button"
-                      >
-                        {expandedProvider === 'wechat' ? (
-                          <ChevronUp className="h-4 w-4" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleNavigate('wechat')}
-                        data-testid="edit-wechat-button"
-                      >
-                        <Edit className="mr-1 h-3 w-3" />
-                        Edit
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setDeleteProviderType('wechat')
-                          setIsDeleteDialogOpen(true)
-                        }}
-                        data-testid="delete-wechat-button"
-                      >
-                        <Trash2 className="mr-1 h-3 w-3" />
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-                {expandedProvider === 'wechat' && (
-                  <TableRow data-testid="wechat-details-row">
-                    <TableCell colSpan={3} className="p-0">
-                      <WechatConfigFields
-                        config={wechatConfigDetails}
-                        showSecrets={showWechatSecrets}
-                        onShowSecrets={() => setShowWechatSecrets(true)}
-                        onHideSecrets={() => setShowWechatSecrets(false)}
-                      />
-                    </TableCell>
-                  </TableRow>
-                )}
-              </>
+            {wechatProvider && (
+              <TableRow data-testid="wechat-provider-row">
+                <TableCell className="font-medium">WeChat Pay</TableCell>
+                <TableCell>
+                  <Badge variant={wechatProvider.enabled ? 'default' : 'secondary'}>
+                    {wechatProvider.enabled ? 'Active' : 'Disabled'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleNavigate('wechat')}
+                      data-testid="edit-wechat-button"
+                    >
+                      <Edit className="mr-1 h-3 w-3" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setDeleteProviderType('wechat')
+                        setIsDeleteDialogOpen(true)
+                      }}
+                      data-testid="delete-wechat-button"
+                    >
+                      <Trash2 className="mr-1 h-3 w-3" />
+                      Delete
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
             )}
 
             {stripeProvider && stripeConfigDetails && (

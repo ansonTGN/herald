@@ -44,6 +44,7 @@ export interface InvoiceCreateData {
 
 export interface InvoiceEditChanges {
   billingName?: string
+  billingTaxId?: string
   sellerName?: string
   lineItems?: InvoiceLineItemData[]
   dueDate?: string
@@ -204,6 +205,13 @@ export async function editInvoice(
   if (changes.billingName) {
     await page.getByTestId('invoice-billing-name').clear()
     await page.getByTestId('invoice-billing-name').fill(changes.billingName)
+  }
+
+  const billingTaxIdInput = page.getByTestId('invoice-billing-tax-id')
+  const billingTaxId = changes.billingTaxId ?? 'N/A'
+  if (changes.billingTaxId || (await billingTaxIdInput.inputValue()) === '') {
+    await billingTaxIdInput.clear()
+    await billingTaxIdInput.fill(billingTaxId)
   }
 
   if (changes.sellerName) {

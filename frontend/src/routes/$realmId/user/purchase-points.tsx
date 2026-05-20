@@ -3,7 +3,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, ArrowRight } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Loader2 } from 'lucide-react'
 import { createPaymentAttempt, cancelPaymentAttempt } from '@/lib/api-generated'
 import type { PaymentAttemptStatusResponse } from '@/lib/api-generated'
 import {
@@ -263,7 +263,7 @@ function PurchasePointsPage() {
       case 'processing':
         return (
           <div className="space-y-6" data-testid="purchase-step-processing">
-            {paymentStatus && attemptId && (
+            {paymentStatus && attemptId ? (
               <PaymentAttemptStatus
                 status={paymentStatus}
                 paymentProvider={paymentProvider}
@@ -273,6 +273,35 @@ function PurchasePointsPage() {
                 isRetrying={createPaymentMutation.isPending}
                 isCancelling={cancelPaymentMutation.isPending}
               />
+            ) : paymentStatusQuery.isError ? (
+              <div className="space-y-4" data-testid="payment-status-error">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="h-8 w-8 text-destructive" />
+                  <div>
+                    <h3 className="text-lg font-semibold">Unable to load payment status</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Please retry or return to payment selection.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={() => paymentStatusQuery.refetch()}>Retry</Button>
+                  <Button variant="outline" onClick={handleRetry}>
+                    Back to Payment
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div
+                className="flex items-center gap-3 text-muted-foreground"
+                data-testid="payment-status-loading"
+              >
+                <Loader2 className="h-8 w-8 animate-spin" />
+                <div>
+                  <h3 className="text-lg font-semibold text-foreground">Checking payment status</h3>
+                  <p className="text-sm">Waiting for the payment provider response.</p>
+                </div>
+              </div>
             )}
           </div>
         )
@@ -328,13 +357,11 @@ function PurchasePointsPage() {
                 Payment
               </span>
               <span>→</span>
-              <span
-                className={
-                  currentStep === 'processing' || currentStep === 'complete'
-                    ? 'font-bold text-primary'
-                    : ''
-                }
-              >
+              <span className={currentStep === 'processing' ? 'font-bold text-primary' : ''}>
+                Processing
+              </span>
+              <span>→</span>
+              <span className={currentStep === 'complete' ? 'font-bold text-primary' : ''}>
                 Complete
               </span>
             </div>

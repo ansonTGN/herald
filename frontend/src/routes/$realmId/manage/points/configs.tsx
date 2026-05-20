@@ -1,11 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { PointsConfigsPage } from '@/components/points/configs/PointsConfigsPage'
+import { createFileRoute, Outlet } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/$realmId/manage/points/configs')({
-  component: PointsConfigsRoute,
+  component: () => <Outlet />,
 })
-
-function PointsConfigsRoute() {
-  const { realmId } = Route.useParams()
-  return <PointsConfigsPage realmId={realmId} />
-}

@@ -20,6 +20,7 @@
  */
 
 import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
+import type { Page } from '@playwright/test'
 import { DEMO_ADMIN, DEMO_USERS } from '../helpers/auth'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 import {
@@ -40,40 +41,88 @@ function futureDueDate(): string {
   return d.toISOString().slice(0, 10)
 }
 
+async function openApplyInvoiceForm(page: Page): Promise<void> {
+  await page.getByTestId('apply-invoice-button').click()
+  await expect(page.getByTestId('apply-form-page')).toBeVisible({
+    timeout: 5000,
+  })
+}
+
+async function submitApplyInvoiceForm(page: Page): Promise<void> {
+  await page.getByTestId('apply-invoice-submit-button').click()
+  await expect(page.getByTestId('invoice-user-page')).toBeVisible({
+    timeout: 10000,
+  })
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(300)
+}
+
 function execPgSql(query: string): string {
-  return execSync(
-    `docker exec -i ${POSTGRES_CONTAINER} psql -U postgres -d herald_demo -t -A`,
-    { input: query, encoding: 'utf-8', timeout: 10000 },
-  ).trim()
+  return execSync(`docker exec -i ${POSTGRES_CONTAINER} psql -U postgres -d herald_demo -t -A`, {
+    input: query,
+    encoding: 'utf-8',
+    timeout: 10000,
+  }).trim()
 }
 
 function seedPaymentAttempt(realmId: string, userEmail: string): string {
   const userId = execPgSql(
-    `SELECT id FROM account WHERE email = '${userEmail}' AND realm_id = '${realmId}'`,
+    `SELECT id FROM account WHERE email = '${userEmail}' AND realm_id = '${realmId}'`
   )
   if (!userId) throw new Error(`User not found: ${userEmail} in realm ${realmId}`)
 
   const paId = randomUUID()
   execPgSql(
     `INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at) ` +
-    `VALUES ('${paId}', '${realmId}', '${userId}', 'stripe', 'subscription_plan', '${randomUUID()}', 1000, 'USD', 'Pending', NOW() + INTERVAL '1 hour')`,
+      `VALUES ('${paId}', '${realmId}', '${userId}', 'stripe', 'subscription_plan', '${randomUUID()}', 1000, 'USD', 'Pending', NOW() + INTERVAL '1 hour')`
   )
   return paId
 }
 
+function seedPointsPackagePurchase(
+  realmId: string,
+  userEmail: string,
+  marker: string
+): { purchaseId: string; paymentAttemptId: string } {
+  const userId = execPgSql(
+    `SELECT id FROM account WHERE email = '${userEmail}' AND realm_id = '${realmId}'`
+  )
+  if (!userId) throw new Error(`User not found: ${userEmail} in realm ${realmId}`)
+
+  const packageId = randomUUID()
+  const paymentAttemptId = randomUUID()
+  const purchaseId = randomUUID()
+  const packageName = `invoice-demo-${marker}`
+
+  execPgSql(
+    `INSERT INTO points_packages (id, realm_id, name, title, points, price, currency, enabled, created_at, updated_at) ` +
+      `VALUES ('${packageId}', '${realmId}', '${packageName}', 'Invoice Demo Package', 100, 1000, 'CNY', true, NOW(), NOW())`
+  )
+  execPgSql(
+    `INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at, completed_at, created_at, updated_at) ` +
+      `VALUES ('${paymentAttemptId}', '${realmId}', '${userId}', 'stripe', 'points_package', '${packageId}', 1000, 'CNY', 'Succeeded', NOW() + INTERVAL '1 hour', NOW(), NOW(), NOW())`
+  )
+  execPgSql(
+    `INSERT INTO points_package_purchases (id, realm_id, user_id, points_package_id, payment_attempt_id, points, amount, currency, payment_provider, created_at, updated_at) ` +
+      `VALUES ('${purchaseId}', '${realmId}', '${userId}', '${packageId}', '${paymentAttemptId}', 100, 1000, 'CNY', 'stripe', NOW(), NOW())`
+  )
+
+  return { purchaseId, paymentAttemptId }
+}
+
 function ensureDemoUser(realmId: string, email: string, password: string): void {
   const existing = execPgSql(
-    `SELECT id FROM account WHERE email = '${email}' AND realm_id = '${realmId}'`,
+    `SELECT id FROM account WHERE email = '${email}' AND realm_id = '${realmId}'`
   )
   if (existing) return
 
   const userId = randomUUID()
   const hash = execPgSql(
-    `SELECT password FROM account WHERE email = 'user1@demo.com' AND realm_id = '${realmId}'`,
+    `SELECT password FROM account WHERE email = 'user1@demo.com' AND realm_id = '${realmId}'`
   )
   execPgSql(
     `INSERT INTO account (id, realm_id, email, username, password, status, created_at, updated_at) ` +
-    `VALUES ('${userId}', '${realmId}', '${email}', '${email.split('@')[0]}', '${hash}', 1, NOW(), NOW())`,
+      `VALUES ('${userId}', '${realmId}', '${email}', '${email.split('@')[0]}', '${hash}', 1, NOW(), NOW())`
   )
 }
 
@@ -127,14 +176,17 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-address-input').fill(sellerAddress)
         await page.getByTestId('seller-config-email-input').fill(sellerEmail)
         await page.getByTestId('seller-config-phone-input').fill(sellerPhone)
-        await page.getByTestId('seller-config-payment-terms-input').fill(paymentTerms)
+        await page.getByTestId('seller-config-payment-terms-input').click()
+        await page.getByRole('option', { name: paymentTerms }).click()
         await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
 
         await page.getByTestId('seller-config-save-button').click()
       })
 
       await test.step('Then: config dialog closes (save successful)', async () => {
-        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({ timeout: 10000 })
+        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
+          timeout: 10000,
+        })
       })
 
       await test.step('Scene 2 - When: reopen seller config to verify and update', async () => {
@@ -156,7 +208,9 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-phone-input').fill(updatedPhone)
 
         await page.getByTestId('seller-config-save-button').click()
-        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({ timeout: 10000 })
+        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
+          timeout: 10000,
+        })
       })
 
       await test.step('And: reopen to verify updated values persist', async () => {
@@ -175,6 +229,68 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
   // ============================================================================
 
   test.describe('US-IV-011: User Applies for Invoice', () => {
+    test('user applies for invoice from purchase history context', async ({
+      page,
+      loginPage,
+      demoLogger,
+      testStartTime,
+    }) => {
+      const sellerName = `Seller-Purchase-${testStartTime}`
+      const user = DEMO_USERS.user1
+      const billingName = `PurchaseInvoice-${testStartTime}`
+      const purchase = seedPointsPackagePurchase(REALM_ID, user.email, String(testStartTime))
+
+      await test.step('Given: admin configures seller info', async () => {
+        await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', REALM_ID)
+        await navigateToInvoiceAdminPage(page, REALM_ID)
+
+        await page.getByTestId('seller-config-button').click()
+        await expect(page.getByTestId('seller-config-form-dialog')).toBeVisible({ timeout: 5000 })
+        await page.getByTestId('seller-config-name-input').fill(sellerName)
+        await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
+        await page.getByTestId('seller-config-save-button').click()
+        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
+          timeout: 10000,
+        })
+      })
+
+      await test.step('When: user opens purchase history', async () => {
+        await page.context().clearCookies()
+        await loginPage.loginAsUser(user.email, user.password, REALM_ID)
+        await page.goto(`/${REALM_ID}/user/points`)
+        await page.getByTestId('points-tab-purchase-history').click()
+        await expect(page.getByTestId(`purchase-history-item-${purchase.purchaseId}`)).toBeVisible({
+          timeout: 10000,
+        })
+      })
+
+      await test.step('And: user clicks invoice action for the purchase', async () => {
+        await page.getByTestId(`purchase-history-invoice-button-${purchase.purchaseId}`).click()
+        await expect(page.getByTestId('apply-form-page')).toBeVisible({
+          timeout: 10000,
+        })
+        await expect(page.getByTestId('apply-prefilled-reference')).toBeVisible()
+        await expect(page.getByTestId('apply-payment-attempt-id-input')).not.toBeVisible()
+      })
+
+      await test.step('And: user fills billing info and submits', async () => {
+        await page.getByTestId('apply-billing-name-input').fill(billingName)
+        await page.getByTestId('apply-billing-address-input').fill('456 User Street')
+        await page.getByTestId('apply-due-date-input').fill(futureDueDate())
+        await page.getByTestId('apply-notes-input').fill(`Context invoice ${testStartTime}`)
+        await submitApplyInvoiceForm(page)
+      })
+
+      await test.step('Then: invoice appears in user invoice list', async () => {
+        const row = page.locator('tr').filter({ hasText: billingName }).first()
+        await expect(row).toBeVisible({ timeout: 10000 })
+      })
+
+      await demoLogger.testCode.log(
+        `User applied from purchase history using payment attempt ${purchase.paymentAttemptId}`
+      )
+    })
+
     test('user applies for invoice and views application status', async ({
       page,
       loginPage,
@@ -195,10 +311,14 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeVisible({ timeout: 5000 })
         await page.getByTestId('seller-config-name-input').fill(sellerName)
-        await page.getByTestId('seller-config-email-input').fill(`seller-apply-${testStartTime}@example.com`)
+        await page
+          .getByTestId('seller-config-email-input')
+          .fill(`seller-apply-${testStartTime}@example.com`)
         await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
         await page.getByTestId('seller-config-save-button').click()
-        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({ timeout: 10000 })
+        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
+          timeout: 10000,
+        })
       })
 
       await test.step('When: switch to regular user session', async () => {
@@ -209,7 +329,9 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
 
       await test.step('And: navigate to user invoices page', async () => {
         await page.goto(`/${REALM_ID}/user/invoices`)
-        await expect(page.getByTestId('invoice-user-page')).toBeVisible({ timeout: 10000 })
+        await expect(page.getByTestId('invoice-user-page')).toBeVisible({
+          timeout: 10000,
+        })
       })
 
       await test.step('Then: user invoice page shows expected elements', async () => {
@@ -220,8 +342,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
       })
 
       await test.step('Scene 1 - When: click Apply for Invoice button', async () => {
-        await page.getByTestId('apply-invoice-button').click()
-        await expect(page.getByTestId('apply-invoice-dialog')).toBeVisible({ timeout: 5000 })
+        await openApplyInvoiceForm(page)
       })
 
       await test.step('And: fill apply form with billing info', async () => {
@@ -232,15 +353,13 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('apply-billing-address-input').fill(billingAddress)
         await page.getByTestId('apply-billing-phone-input').fill('+1-555-0300')
         await page.getByTestId('apply-due-date-input').fill(futureDueDate())
-        await page.getByTestId('apply-notes-input').fill(`Test invoice application at ${testStartTime}`)
+        await page
+          .getByTestId('apply-notes-input')
+          .fill(`Test invoice application at ${testStartTime}`)
       })
 
       await test.step('And: submit the application', async () => {
-        await page.getByTestId('apply-invoice-submit-button').click()
-        await expect(page.getByTestId('apply-invoice-dialog')).toBeHidden({ timeout: 10000 })
-        // Technical delay: allow React Query cache invalidation
-        await page.waitForLoadState('networkidle')
-        await page.waitForTimeout(300)
+        await submitApplyInvoiceForm(page)
       })
 
       await test.step('Scene 2 - Then: user invoice list shows the applied invoice', async () => {
@@ -279,7 +398,9 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-name-input').fill(sellerName)
         await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
         await page.getByTestId('seller-config-save-button').click()
-        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({ timeout: 10000 })
+        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
+          timeout: 10000,
+        })
       })
 
       await test.step('And: user applies for an invoice', async () => {
@@ -287,19 +408,21 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
 
         await page.goto(`/${REALM_ID}/user/invoices`)
-        await expect(page.getByTestId('invoice-user-page')).toBeVisible({ timeout: 10000 })
+        await expect(page.getByTestId('invoice-user-page')).toBeVisible({
+          timeout: 10000,
+        })
 
         const paymentAttemptId = seedPaymentAttempt(REALM_ID, user.email)
 
-        await page.getByTestId('apply-invoice-button').click()
-        await expect(page.getByTestId('apply-invoice-dialog')).toBeVisible({ timeout: 5000 })
+        await openApplyInvoiceForm(page)
         await page.getByTestId('apply-payment-attempt-id-input').fill(paymentAttemptId)
         await page.getByTestId('apply-billing-name-input').fill(billingName)
-        await page.getByTestId('apply-billing-email-input').fill(`review-${testStartTime}@example.com`)
-        await page.getByTestId('apply-invoice-submit-button').click()
-        await expect(page.getByTestId('apply-invoice-dialog')).toBeHidden({ timeout: 10000 })
-        await page.waitForLoadState('networkidle')
-        await page.waitForTimeout(300)
+        await page
+          .getByTestId('apply-billing-email-input')
+          .fill(`review-${testStartTime}@example.com`)
+        await page.getByTestId('apply-billing-address-input').fill('456 User Street')
+        await page.getByTestId('apply-due-date-input').fill(futureDueDate())
+        await submitApplyInvoiceForm(page)
       })
 
       // -- Scene 1: Admin filters by source "Application" --
@@ -331,13 +454,11 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         // Extract invoice number from the row before editing
         const row = page.locator('tr').filter({ hasText: billingName }).first()
         await expect(row).toBeVisible({ timeout: 5000 })
-        issuedInvoiceNumber = await row.locator('td').nth(1).textContent() ?? ''
+        issuedInvoiceNumber = (await row.locator('td').nth(1).textContent()) ?? ''
         const trimmedNumber = issuedInvoiceNumber.trim() || billingName
 
         // Edit to add a line item and due date (backend requires both to issue)
-        const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-          .toISOString()
-          .split('T')[0]
+        const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
         await editInvoice(page, REALM_ID, trimmedNumber, {
           lineItems: [{ name: 'Service Fee', quantity: '1', unitPrice: 10000 }],
           dueDate,
@@ -354,7 +475,9 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await expect(row.getByText('Issued', { exact: true })).toBeVisible()
       })
 
-      await demoLogger.testCode.log('Admin reviewed, issued user application, verified source filter')
+      await demoLogger.testCode.log(
+        'Admin reviewed, issued user application, verified source filter'
+      )
     })
 
     test('admin edits then issues user application', async ({
@@ -378,7 +501,9 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-name-input').fill(sellerName)
         await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
         await page.getByTestId('seller-config-save-button').click()
-        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({ timeout: 10000 })
+        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
+          timeout: 10000,
+        })
       })
 
       await test.step('And: user applies for an invoice', async () => {
@@ -386,19 +511,21 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
 
         await page.goto(`/${REALM_ID}/user/invoices`)
-        await expect(page.getByTestId('invoice-user-page')).toBeVisible({ timeout: 10000 })
+        await expect(page.getByTestId('invoice-user-page')).toBeVisible({
+          timeout: 10000,
+        })
 
         const paymentAttemptId = seedPaymentAttempt(REALM_ID, user.email)
 
-        await page.getByTestId('apply-invoice-button').click()
-        await expect(page.getByTestId('apply-invoice-dialog')).toBeVisible({ timeout: 5000 })
+        await openApplyInvoiceForm(page)
         await page.getByTestId('apply-payment-attempt-id-input').fill(paymentAttemptId)
         await page.getByTestId('apply-billing-name-input').fill(billingName)
-        await page.getByTestId('apply-billing-email-input').fill(`edit-issue-${testStartTime}@example.com`)
-        await page.getByTestId('apply-invoice-submit-button').click()
-        await expect(page.getByTestId('apply-invoice-dialog')).toBeHidden({ timeout: 10000 })
-        await page.waitForLoadState('networkidle')
-        await page.waitForTimeout(300)
+        await page
+          .getByTestId('apply-billing-email-input')
+          .fill(`edit-issue-${testStartTime}@example.com`)
+        await page.getByTestId('apply-billing-address-input').fill('456 User Street')
+        await page.getByTestId('apply-due-date-input').fill(futureDueDate())
+        await submitApplyInvoiceForm(page)
       })
 
       // Scene 4: Admin edits then issues
@@ -414,13 +541,11 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
 
       await test.step('And: extract invoice number and edit the invoice', async () => {
         const row = page.locator('tr').filter({ hasText: billingName }).first()
-        const invoiceNumber = await row.locator('td').nth(1).textContent() ?? ''
+        const invoiceNumber = (await row.locator('td').nth(1).textContent()) ?? ''
         const trimmedNumber = invoiceNumber.trim()
 
         // Edit the invoice - update billing name, add line item and due date
-        const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-          .toISOString()
-          .split('T')[0]
+        const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
         await editInvoice(page, REALM_ID, trimmedNumber || billingName, {
           billingName: updatedBillingName,
           lineItems: [{ name: 'Service Fee', quantity: '1', unitPrice: 10000 }],
@@ -436,7 +561,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
       await test.step('And: admin issues the edited invoice', async () => {
         // Extract invoice number from the updated row
         const row = page.locator('tr').filter({ hasText: updatedBillingName }).first()
-        const invoiceNumber = await row.locator('td').nth(1).textContent() ?? ''
+        const invoiceNumber = (await row.locator('td').nth(1).textContent()) ?? ''
         const trimmedNumber = invoiceNumber.trim()
 
         await issueInvoice(page, trimmedNumber || updatedBillingName)
@@ -451,12 +576,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
       await demoLogger.testCode.log('Admin edited then issued user application verified')
     })
 
-    test('admin voids user application', async ({
-      page,
-      loginPage,
-      demoLogger,
-      testStartTime,
-    }) => {
+    test('admin voids user application', async ({ page, loginPage, demoLogger, testStartTime }) => {
       const sellerName = `Seller-Void-${testStartTime}`
       const user = DEMO_USERS.user1
       const billingName = `Void-${testStartTime}`
@@ -471,7 +591,9 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-name-input').fill(sellerName)
         await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
         await page.getByTestId('seller-config-save-button').click()
-        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({ timeout: 10000 })
+        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
+          timeout: 10000,
+        })
       })
 
       await test.step('And: user applies for an invoice', async () => {
@@ -479,18 +601,18 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
 
         await page.goto(`/${REALM_ID}/user/invoices`)
-        await expect(page.getByTestId('invoice-user-page')).toBeVisible({ timeout: 10000 })
+        await expect(page.getByTestId('invoice-user-page')).toBeVisible({
+          timeout: 10000,
+        })
 
         const paymentAttemptId = seedPaymentAttempt(REALM_ID, user.email)
 
-        await page.getByTestId('apply-invoice-button').click()
-        await expect(page.getByTestId('apply-invoice-dialog')).toBeVisible({ timeout: 5000 })
+        await openApplyInvoiceForm(page)
         await page.getByTestId('apply-payment-attempt-id-input').fill(paymentAttemptId)
         await page.getByTestId('apply-billing-name-input').fill(billingName)
-        await page.getByTestId('apply-invoice-submit-button').click()
-        await expect(page.getByTestId('apply-invoice-dialog')).toBeHidden({ timeout: 10000 })
-        await page.waitForLoadState('networkidle')
-        await page.waitForTimeout(300)
+        await page.getByTestId('apply-billing-address-input').fill('456 User Street')
+        await page.getByTestId('apply-due-date-input').fill(futureDueDate())
+        await submitApplyInvoiceForm(page)
       })
 
       // -- Scene 3: Admin voids the user application --
@@ -504,7 +626,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await expect(row).toBeVisible({ timeout: 10000 })
 
         // Extract invoice number
-        const invoiceNumber = await row.locator('td').nth(1).textContent() ?? ''
+        const invoiceNumber = (await row.locator('td').nth(1).textContent()) ?? ''
         const trimmedNumber = invoiceNumber.trim() || billingName
 
         // Void the invoice
@@ -547,7 +669,9 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-name-input').fill(sellerName)
         await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
         await page.getByTestId('seller-config-save-button').click()
-        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({ timeout: 10000 })
+        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
+          timeout: 10000,
+        })
       })
 
       // Have user apply so invoice appears in user's list
@@ -556,18 +680,18 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
 
         await page.goto(`/${REALM_ID}/user/invoices`)
-        await expect(page.getByTestId('invoice-user-page')).toBeVisible({ timeout: 10000 })
+        await expect(page.getByTestId('invoice-user-page')).toBeVisible({
+          timeout: 10000,
+        })
 
         const paymentAttemptId = seedPaymentAttempt(REALM_ID, user.email)
 
-        await page.getByTestId('apply-invoice-button').click()
-        await expect(page.getByTestId('apply-invoice-dialog')).toBeVisible({ timeout: 5000 })
+        await openApplyInvoiceForm(page)
         await page.getByTestId('apply-payment-attempt-id-input').fill(paymentAttemptId)
         await page.getByTestId('apply-billing-name-input').fill(billingName)
-        await page.getByTestId('apply-invoice-submit-button').click()
-        await expect(page.getByTestId('apply-invoice-dialog')).toBeHidden({ timeout: 10000 })
-        await page.waitForLoadState('networkidle')
-        await page.waitForTimeout(300)
+        await page.getByTestId('apply-billing-address-input').fill('456 User Street')
+        await page.getByTestId('apply-due-date-input').fill(futureDueDate())
+        await submitApplyInvoiceForm(page)
       })
 
       // Scene 1 & 2: User views own invoice list
@@ -628,7 +752,9 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-name-input').fill(sellerName)
         await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
         await page.getByTestId('seller-config-save-button').click()
-        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({ timeout: 10000 })
+        await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
+          timeout: 10000,
+        })
       })
 
       await test.step('And: user1 applies for an invoice', async () => {
@@ -636,18 +762,18 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await loginPage.loginAsUser(user1.email, user1.password, REALM_ID)
 
         await page.goto(`/${REALM_ID}/user/invoices`)
-        await expect(page.getByTestId('invoice-user-page')).toBeVisible({ timeout: 10000 })
+        await expect(page.getByTestId('invoice-user-page')).toBeVisible({
+          timeout: 10000,
+        })
 
         const paymentAttemptId = seedPaymentAttempt(REALM_ID, user1.email)
 
-        await page.getByTestId('apply-invoice-button').click()
-        await expect(page.getByTestId('apply-invoice-dialog')).toBeVisible({ timeout: 5000 })
+        await openApplyInvoiceForm(page)
         await page.getByTestId('apply-payment-attempt-id-input').fill(paymentAttemptId)
         await page.getByTestId('apply-billing-name-input').fill(billingName1)
-        await page.getByTestId('apply-invoice-submit-button').click()
-        await expect(page.getByTestId('apply-invoice-dialog')).toBeHidden({ timeout: 10000 })
-        await page.waitForLoadState('networkidle')
-        await page.waitForTimeout(300)
+        await page.getByTestId('apply-billing-address-input').fill('456 User Street')
+        await page.getByTestId('apply-due-date-input').fill(futureDueDate())
+        await submitApplyInvoiceForm(page)
       })
 
       await test.step('Scene 3 - When: user2 logs in and views their invoices', async () => {
@@ -655,18 +781,20 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await loginPage.loginAsUser(user2.email, user2.password, REALM_ID)
 
         await page.goto(`/${REALM_ID}/user/invoices`)
-        await expect(page.getByTestId('invoice-user-page')).toBeVisible({ timeout: 10000 })
+        await expect(page.getByTestId('invoice-user-page')).toBeVisible({
+          timeout: 10000,
+        })
       })
 
       await test.step('Then: user2 cannot see user1 invoice', async () => {
         await expect(page.getByTestId('invoice-user-table')).toBeVisible()
         // user2 should NOT see user1's billing name in their invoice table
-        await expect(
-          page.locator('tr').filter({ hasText: billingName1 }).first()
-        ).not.toBeVisible()
+        await expect(page.locator('tr').filter({ hasText: billingName1 }).first()).not.toBeVisible()
       })
 
-      await demoLogger.testCode.log('User invoice isolation verified: user2 cannot see user1 invoices')
+      await demoLogger.testCode.log(
+        'User invoice isolation verified: user2 cannot see user1 invoices'
+      )
     })
   })
 })

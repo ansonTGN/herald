@@ -1,21 +1,19 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Settings, Eye, Share2 } from 'lucide-react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { PointsPlanConfigForm } from '../PointsPlanConfigForm'
 import { PointsGuideDialog } from '../PointsGuideDialog'
 import { ShareLinkDialog } from '../ShareLinkDialog'
 import { ExportGuideButton } from '../ExportGuideButton'
-import type { PointsPlanConfigFormData } from '@/lib/schemas/points-forms'
 import {
   pointsPlanConfigsQueryOptions,
   subscriptionPlansQueryOptions,
   queryKeys,
 } from '@/data/query-options'
-import { createPlanConfig, updatePlanConfig, deletePlanConfig } from '@/lib/api-generated'
+import { deletePlanConfig } from '@/lib/api-generated'
 import type { PointsPlanConfigResponse } from '@/lib/api-generated'
 import { toast } from 'sonner'
 import { ConfirmDeleteDialog, PageHeader } from '@/components/shared'
@@ -26,10 +24,9 @@ interface PointsConfigsPageProps {
 
 export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   // UI state
-  const [configFormOpen, setConfigFormOpen] = useState(false)
-  const [editingConfig, setEditingConfig] = useState<PointsPlanConfigResponse | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deletingConfig, setDeletingConfig] = useState<PointsPlanConfigResponse | null>(null)
   const [guideDialogOpen, setGuideDialogOpen] = useState(false)
@@ -52,59 +49,6 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
   }, [plansData?.items])
 
   // Mutations
-  const createConfigMutation = useMutation({
-    mutationFn: async (data: PointsPlanConfigFormData) => {
-      const response = await createPlanConfig({
-        path: { realmId },
-        body: {
-          planId: data.planId,
-          pointsPerPeriod: data.pointsPerPeriod,
-          grantOnSubscribe: data.grantOnSubscribe,
-          grantPeriodType: data.grantPeriodType,
-          maxPeriods: data.maxPeriods,
-          validityDays: data.validityDays,
-        },
-      })
-      if (response.error) throw response.error
-      return response.data
-    },
-    onSuccess: () => {
-      toast.success('Points plan configuration created successfully')
-      setConfigFormOpen(false)
-      setEditingConfig(null)
-      queryClient.invalidateQueries({ queryKey: queryKeys.pointsPlanConfigs(realmId) })
-    },
-    onError: (error: Error) => {
-      toast.error(`Failed to create configuration: ${error.message}`)
-    },
-  })
-
-  const updateConfigMutation = useMutation({
-    mutationFn: async (data: { configId: string; formData: PointsPlanConfigFormData }) => {
-      const response = await updatePlanConfig({
-        path: { realmId, configId: data.configId },
-        body: {
-          points_per_period: data.formData.pointsPerPeriod,
-          grant_on_subscribe: data.formData.grantOnSubscribe,
-          grant_period_type: data.formData.grantPeriodType,
-          max_periods: data.formData.maxPeriods,
-          validity_days: data.formData.validityDays,
-        },
-      })
-      if (response.error) throw response.error
-      return response.data
-    },
-    onSuccess: () => {
-      toast.success('Points plan configuration updated successfully')
-      setConfigFormOpen(false)
-      setEditingConfig(null)
-      queryClient.invalidateQueries({ queryKey: queryKeys.pointsPlanConfigs(realmId) })
-    },
-    onError: (error: Error) => {
-      toast.error(`Failed to update configuration: ${error.message}`)
-    },
-  })
-
   const deleteConfigMutation = useMutation({
     mutationFn: async (configId: string) => {
       const response = await deletePlanConfig({
@@ -126,26 +70,19 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
 
   // Handlers
   function handleCreateConfig() {
-    setEditingConfig(null)
-    setConfigFormOpen(true)
+    navigate({ to: '/$realmId/manage/points/configs/new', params: { realmId } })
   }
 
   function handleEditConfig(config: PointsPlanConfigResponse) {
-    setEditingConfig(config)
-    setConfigFormOpen(true)
+    navigate({
+      to: '/$realmId/manage/points/configs/$configId/edit',
+      params: { realmId, configId: config.configId },
+    })
   }
 
   function handleDeleteConfig(config: PointsPlanConfigResponse) {
     setDeletingConfig(config)
     setDeleteConfirmOpen(true)
-  }
-
-  function handleConfigSubmit(formData: PointsPlanConfigFormData) {
-    if (editingConfig) {
-      updateConfigMutation.mutate({ configId: editingConfig.configId, formData })
-    } else {
-      createConfigMutation.mutate(formData)
-    }
   }
 
   async function confirmDeleteConfig() {
@@ -172,7 +109,7 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
       <PageHeader
         title="Points Rules"
         action={{
-          label: 'Create Configuration',
+          label: 'Create Points Rule',
           onClick: handleCreateConfig,
           testId: 'create-config-button',
         }}
@@ -294,22 +231,6 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
           </CardContent>
         </Card>
       )}
-
-      {/* Config Form Dialog */}
-      <Dialog open={configFormOpen} onOpenChange={setConfigFormOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingConfig ? 'Edit Points Rule' : 'Create Points Rule'}</DialogTitle>
-          </DialogHeader>
-          <PointsPlanConfigForm
-            config={editingConfig}
-            plans={plansData?.items ?? []}
-            onSubmit={handleConfigSubmit}
-            onCancel={() => setConfigFormOpen(false)}
-            isSubmitting={createConfigMutation.isPending || updateConfigMutation.isPending}
-          />
-        </DialogContent>
-      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDeleteDialog

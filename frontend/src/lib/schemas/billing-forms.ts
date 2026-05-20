@@ -241,6 +241,8 @@ export function getProviderMappingDefaults(mapping?: {
 // ==================== WeChat Config Schema ====================
 
 export const wechatConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+
   appId: z.string().min(1, 'App ID is required').regex(/^wx/, 'App ID must start with "wx"').trim(),
 
   mchId: z
@@ -278,6 +280,7 @@ export type WechatConfigForm = z.infer<typeof wechatConfigSchema>
 
 export function getWechatConfigDefaults(config?: Partial<WechatConfigForm>): WechatConfigForm {
   return {
+    enabled: true,
     appId: '',
     mchId: '',
     privateKey: '',

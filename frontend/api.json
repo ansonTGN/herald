@@ -10870,6 +10870,43 @@
         ]
       }
     },
+    "/api/realms/{realmId}/feature-availability": {
+      "get": {
+        "tags": [
+          "realms"
+        ],
+        "operationId": "get_feature_availability",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Feature availability summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureAvailabilityResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
     "/api/roles/{realmId}/define": {
       "get": {
         "tags": [
@@ -13300,6 +13337,45 @@
   },
   "components": {
     "schemas": {
+      "AdminFeatureAvailability": {
+        "type": "object",
+        "required": [
+          "billingVisible",
+          "billingConfigVisible",
+          "productsVisible",
+          "plansVisible",
+          "invoicesVisible",
+          "subscriptionHistoryVisible",
+          "pointsVisible",
+          "pointsPackagesVisible"
+        ],
+        "properties": {
+          "billingConfigVisible": {
+            "type": "boolean"
+          },
+          "billingVisible": {
+            "type": "boolean"
+          },
+          "invoicesVisible": {
+            "type": "boolean"
+          },
+          "plansVisible": {
+            "type": "boolean"
+          },
+          "pointsPackagesVisible": {
+            "type": "boolean"
+          },
+          "pointsVisible": {
+            "type": "boolean"
+          },
+          "productsVisible": {
+            "type": "boolean"
+          },
+          "subscriptionHistoryVisible": {
+            "type": "boolean"
+          }
+        }
+      },
       "AdminUserResponse": {
         "type": "object",
         "description": "Admin user information returned in realm responses",
@@ -15096,6 +15172,68 @@
           },
           "userId": {
             "type": "string"
+          }
+        }
+      },
+      "FeatureAvailabilityFacts": {
+        "type": "object",
+        "required": [
+          "hasPaymentProviders",
+          "hasProducts",
+          "hasPlans",
+          "hasPlanPaymentMappings",
+          "hasPointsPackages",
+          "hasPointsPackagePaymentMappings",
+          "hasInvoiceSellerConfig",
+          "hasInvoices",
+          "hasSubscriptionHistory"
+        ],
+        "properties": {
+          "hasInvoiceSellerConfig": {
+            "type": "boolean"
+          },
+          "hasInvoices": {
+            "type": "boolean"
+          },
+          "hasPaymentProviders": {
+            "type": "boolean"
+          },
+          "hasPlanPaymentMappings": {
+            "type": "boolean"
+          },
+          "hasPlans": {
+            "type": "boolean"
+          },
+          "hasPointsPackagePaymentMappings": {
+            "type": "boolean"
+          },
+          "hasPointsPackages": {
+            "type": "boolean"
+          },
+          "hasProducts": {
+            "type": "boolean"
+          },
+          "hasSubscriptionHistory": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FeatureAvailabilityResponse": {
+        "type": "object",
+        "required": [
+          "admin",
+          "user",
+          "facts"
+        ],
+        "properties": {
+          "admin": {
+            "$ref": "#/components/schemas/AdminFeatureAvailability"
+          },
+          "facts": {
+            "$ref": "#/components/schemas/FeatureAvailabilityFacts"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserFeatureAvailability"
           }
         }
       },
@@ -17610,6 +17748,7 @@
           "realmId",
           "userId",
           "pointsPackageId",
+          "paymentAttemptId",
           "points",
           "amount",
           "currency",
@@ -17628,6 +17767,10 @@
             "type": "string"
           },
           "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "paymentAttemptId": {
             "type": "string",
             "format": "uuid"
           },
@@ -19745,6 +19888,29 @@
           },
           "updatedAt": {
             "type": "string"
+          }
+        }
+      },
+      "UserFeatureAvailability": {
+        "type": "object",
+        "required": [
+          "pointsVisible",
+          "pointsPurchaseVisible",
+          "subscriptionVisible",
+          "invoicesVisible"
+        ],
+        "properties": {
+          "invoicesVisible": {
+            "type": "boolean"
+          },
+          "pointsPurchaseVisible": {
+            "type": "boolean"
+          },
+          "pointsVisible": {
+            "type": "boolean"
+          },
+          "subscriptionVisible": {
+            "type": "boolean"
           }
         }
       },
