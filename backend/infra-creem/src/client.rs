@@ -86,6 +86,16 @@ impl CreemClient {
         &self,
         request: &CreateCheckoutRequest,
     ) -> Result<CheckoutSession, CoreError> {
+        if self.base_url == "mock://creem" {
+            let short_id = &request.product_id[request.product_id.len().saturating_sub(8)..];
+            let id = format!("co_mock_{short_id}");
+            return Ok(CheckoutSession {
+                id: id.clone(),
+                checkout_url: format!("mock://creem/checkout/{id}"),
+                status: "pending".to_string(),
+            });
+        }
+
         let url = format!("{}/v1/checkouts", self.base_url);
 
         let response = self

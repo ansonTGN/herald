@@ -87,6 +87,21 @@ impl StripeClient {
         &self,
         request: &CreateCheckoutRequest,
     ) -> Result<CheckoutSession, CoreError> {
+        if self.base_url == "mock://stripe" {
+            let plan_id = &request.plan_id.to_string();
+            let short_id = &plan_id[plan_id.len().saturating_sub(8)..];
+            let id = format!("cs_mock_{short_id}");
+            return Ok(CheckoutSession {
+                id: id.clone(),
+                url: format!("mock://stripe/checkout/{id}"),
+                customer: None,
+                status: Some("open".to_string()),
+                payment_intent: Some(format!("pi_mock_{short_id}")),
+                subscription: None,
+                metadata: serde_json::to_value(&request.metadata).unwrap_or_default(),
+            });
+        }
+
         let url = format!("{}/v1/checkout/sessions", self.base_url);
 
         // Build metadata for Stripe
@@ -570,6 +585,54 @@ mod tests {
         assert_eq!(result.currency, "USD");
         assert_eq!(result.status.as_deref(), Some("requires_payment_method"));
         assert_eq!(result.metadata["attemptId"], "attempt-123");
+    }
+
+    #[tokio::test]
+    async fn test_create_checkout_session_supports_demo_mock_base_url() {
+        let client = StripeClient::with_base_url(
+            "sk_test_demo".to_string(),
+            "mock://stripe".to_string(),
+            30,
+        )
+        .unwrap();
+
+        let plan_id = uuid::Uuid::now_v7();
+        let plan_id_str = plan_id.to_string();
+        let short_id = &plan_id_str[plan_id_str.len() - 8..];
+
+        let result = client
+            .create_checkout_session(&CreateCheckoutRequest {
+                client_app_id: uuid::Uuid::now_v7(),
+                plan_id,
+                user_id: Some(uuid::Uuid::now_v7()),
+                customer_email: Some("buyer@example.com".to_string()),
+                success_url: "https://example.com/success".to_string(),
+                cancel_url: "https://example.com/cancel".to_string(),
+                billing_period: "monthly".to_string(),
+                trial_days: None,
+                price_amount: 999,
+                currency: "usd".to_string(),
+                plan_name: "Pro Plan".to_string(),
+                realm_id: "realm-1".to_string(),
+                webhook_url: None,
+                metadata: Some(std::collections::HashMap::from([(
+                    "source".to_string(),
+                    "demo".to_string(),
+                )])),
+            })
+            .await
+            .expect("mock checkout session should be created");
+
+        assert_eq!(result.id, format!("cs_mock_{short_id}"));
+        assert_eq!(
+            result.url,
+            format!("mock://stripe/checkout/cs_mock_{short_id}")
+        );
+        assert!(result.customer.is_none());
+        assert_eq!(result.status.as_deref(), Some("open"));
+        assert_eq!(result.payment_intent, Some(format!("pi_mock_{short_id}")));
+        assert!(result.subscription.is_none());
+        assert_eq!(result.metadata["source"], "demo");
     }
 
     #[tokio::test]

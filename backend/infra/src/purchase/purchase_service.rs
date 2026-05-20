@@ -617,7 +617,21 @@ where
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(30);
 
-        CreemClient::new(api_key, timeout)
+        let mock_base_url = sqlx::query_scalar::<_, String>(
+            "SELECT config_value
+             FROM realm_config
+             WHERE realm_id = $1 AND config_type = 'creem' AND config_key = 'mock_base_url' AND enabled = true
+             LIMIT 1",
+        )
+        .bind(realm_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(base_url) = mock_base_url {
+            CreemClient::with_base_url(api_key, base_url, timeout)
+        } else {
+            CreemClient::new(api_key, timeout)
+        }
     }
 
     async fn get_stripe_client_for_realm(&self, realm_id: &str) -> PurchaseResult<StripeClient> {

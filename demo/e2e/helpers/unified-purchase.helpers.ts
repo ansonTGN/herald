@@ -41,10 +41,10 @@ export async function extractPaymentAttemptId(page: Page): Promise<string> {
   await page.waitForTimeout(TEST_DATA.TIMEOUTS.ATTEMPT_CREATION)
 
   const attemptId = await page.evaluate(() => {
-    const state = localStorage.getItem('purchase-flow-storage')
+    const state = localStorage.getItem('cas-purchase-flow')
     if (state) {
       const parsed = JSON.parse(state)
-      return parsed?.state?.paymentAttempt?.attemptId
+      return parsed?.state?.attemptId
     }
     return null
   })
@@ -126,9 +126,9 @@ export async function selectFirstPackageAndProceed(page: Page): Promise<void> {
   await firstPackageButton.first().click()
 
   await expect(page.getByTestId(/^points-package-selected-/)).toBeVisible()
-  await expect(page.getByTestId(SELECTORS.purchasePoints.nextButton)).toBeEnabled()
+  await expect(page.locator(SELECTORS.purchasePoints.nextButton)).toBeEnabled()
 
-  await page.getByTestId(SELECTORS.purchasePoints.nextButton).click()
+  await page.locator(SELECTORS.purchasePoints.nextButton).click()
 }
 
 /**
@@ -141,7 +141,8 @@ export async function selectPaymentMethodAndProceed(
   await page.getByTestId(`payment-method-select-${provider}`).click()
   await expect(page.getByTestId(`payment-method-selected-${provider}`)).toBeVisible()
 
-  await page.getByTestId(SELECTORS.purchasePoints.nextButton).click()
+  await expect(page.locator(SELECTORS.purchasePoints.nextButton)).toBeEnabled()
+  await page.locator(SELECTORS.purchasePoints.nextButton).click()
 }
 
 /**
@@ -153,6 +154,7 @@ export async function initiatePurchaseFlow(
   provider: PaymentProvider,
   realmId: string = TEST_DATA.REALMS.REALM_001
 ): Promise<string> {
+  await page.evaluate(() => localStorage.removeItem('cas-purchase-flow'))
   await page.goto(`/${realmId}/user/purchase-points`)
   await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
 

@@ -674,7 +674,10 @@ BEGIN
         ('{POINTS_REALM_ID}', 'wechat', 'v3_key', 'abcd1234567890abcdef1234567890ab', true, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'wechat', 'private_key', '{wechat_private_key}', true, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'wechat', 'notify_url', 'https://example.com/api/third/pay/{POINTS_REALM_ID}/wechat/webhooks', false, true, '{{}}'::jsonb),
-        ('{POINTS_REALM_ID}', 'wechat', 'mock_base_url', 'mock://wechat', false, true, '{{}}'::jsonb)
+        ('{POINTS_REALM_ID}', 'wechat', 'mock_base_url', 'mock://wechat', false, true, '{{}}'::jsonb),
+        ('{POINTS_REALM_ID}', 'creem', 'api_key', 'creem_test_demo_points_package', true, true, '{{}}'::jsonb),
+        ('{POINTS_REALM_ID}', 'creem', 'webhook_secret', 'creem_whsec_demo_points_package', true, true, '{{}}'::jsonb),
+        ('{POINTS_REALM_ID}', 'creem', 'mock_base_url', 'mock://creem', false, true, '{{}}'::jsonb)
     ON CONFLICT (realm_id, config_type, config_key) DO UPDATE
         SET config_value = EXCLUDED.config_value,
             is_secret = EXCLUDED.is_secret,
@@ -722,6 +725,13 @@ BEGIN
             'wechat',
             true,
             'wx_demo_points_500'
+        ),
+        (
+            uuidv7(),
+            v_package_id,
+            'creem',
+            true,
+            'creem_demo_points_500'
         )
     ON CONFLICT (points_package_id, payment_provider) DO UPDATE
         SET enabled = true,
