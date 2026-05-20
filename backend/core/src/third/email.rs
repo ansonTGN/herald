@@ -372,11 +372,10 @@ impl EmailService {
 
         // Provider-specific required fields
         match cfg.provider.as_str() {
-            "resend" => {
-                if cfg.resend_api_key.as_deref().unwrap_or("").is_empty() {
-                    missing.push("resend_api_key".to_string());
-                }
+            "resend" if cfg.resend_api_key.as_deref().unwrap_or("").is_empty() => {
+                missing.push("resend_api_key".to_string());
             }
+            "resend" => {}
             "smtp" => {
                 if cfg.smtp_host.as_deref().unwrap_or("").is_empty() {
                     missing.push("smtp_host".to_string());

@@ -66,10 +66,7 @@ struct FeatureFacts {
     has_points_package_payment_mappings: bool,
     has_invoice_seller_config: bool,
     has_invoices: bool,
-    has_user_invoices: bool,
     has_subscription_history: bool,
-    has_user_subscription_history: bool,
-    has_user_invoice_sources: bool,
 }
 
 #[utoipa::path(
@@ -97,14 +94,12 @@ pub async fn get_feature_availability(
         has_permission(&state, &realm_id, &user_id, "billing", "view"),
         has_permission(&state, &realm_id, &user_id, "points", "view"),
     )?;
-    let facts = load_feature_facts(&state, &realm_id, user_id).await?;
+    let facts = load_feature_facts(&state, &realm_id).await?;
 
     let admin_billing_visible = can_view_billing;
     let admin_points_visible = can_view_points;
-    let user_subscription_visible =
-        facts.has_user_visible_plans || facts.has_user_subscription_history;
-    let user_invoices_visible = facts.has_invoice_seller_config
-        && (facts.has_user_invoice_sources || facts.has_user_invoices);
+    let user_subscription_visible = facts.has_user_visible_plans || facts.has_subscription_history;
+    let user_invoices_visible = facts.has_invoice_seller_config;
 
     Ok(Json(FeatureAvailabilityResponse {
         admin: AdminFeatureAvailability {
@@ -163,11 +158,7 @@ async fn has_permission(
         })
 }
 
-async fn load_feature_facts(
-    state: &AppState,
-    realm_id: &str,
-    user_id: Uuid,
-) -> Result<FeatureFacts, ApiError> {
+async fn load_feature_facts(state: &AppState, realm_id: &str) -> Result<FeatureFacts, ApiError> {
     let row = sqlx::query(
         r#"
         WITH configured_providers AS (
@@ -231,33 +222,15 @@ async fn load_feature_facts(
             ) AS has_points_package_payment_mappings,
             EXISTS (SELECT 1 FROM invoice_seller_config WHERE realm_id = $1) AS has_invoice_seller_config,
             EXISTS (SELECT 1 FROM invoice WHERE realm_id = $1) AS has_invoices,
-            EXISTS (SELECT 1 FROM invoice WHERE realm_id = $1 AND applicant_user_id = $2) AS has_user_invoices,
-            EXISTS (SELECT 1 FROM subscription_history WHERE realm_id = $1) AS has_subscription_history,
-            EXISTS (
-                SELECT 1
-                FROM subscription s
-                LEFT JOIN subscription_history sh ON sh.subscription_id = s.id
-                WHERE s.realm_id = $1
-                  AND s.user_id = $2
-                  AND (sh.id IS NOT NULL OR s.status IN ('active', 'trialing', 'scheduled_cancel'))
-            ) AS has_user_subscription_history,
-            EXISTS (
-                SELECT 1 FROM payment_attempts
-                WHERE realm_id = $1 AND user_id = $2 AND status = 'Succeeded'
-            ) OR EXISTS (
-                SELECT 1 FROM subscription
-                WHERE realm_id = $1 AND user_id = $2
-            ) AS has_user_invoice_sources
+            EXISTS (SELECT 1 FROM subscription_history WHERE realm_id = $1) AS has_subscription_history
         "#,
     )
     .bind(realm_id)
-    .bind(user_id)
     .fetch_one(&state.pool)
     .await
     .map_err(|e| {
         tracing::error!(
             realm_id = %realm_id,
-            user_id = %user_id,
             error = %e,
             "Failed to load feature availability facts"
         );
@@ -274,9 +247,6 @@ async fn load_feature_facts(
         has_points_package_payment_mappings: row.get("has_points_package_payment_mappings"),
         has_invoice_seller_config: row.get("has_invoice_seller_config"),
         has_invoices: row.get("has_invoices"),
-        has_user_invoices: row.get("has_user_invoices"),
         has_subscription_history: row.get("has_subscription_history"),
-        has_user_subscription_history: row.get("has_user_subscription_history"),
-        has_user_invoice_sources: row.get("has_user_invoice_sources"),
     })
 }

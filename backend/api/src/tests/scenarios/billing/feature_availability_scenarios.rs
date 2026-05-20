@@ -308,14 +308,13 @@ mod tests {
 
     #[test_context(SchemaTestContext)]
     #[tokio::test]
-    async fn test_feature_availability_invoice_requires_seller_config_and_user_source(
+    async fn test_feature_availability_invoice_visible_when_seller_config_exists(
         ctx: &mut SchemaTestContext,
     ) {
         reset_feature_data(ctx).await;
         let (token, user_id) =
             create_admin_session_with_user(ctx, "feature-invoice@test.com", 1800).await;
         grant_permission(ctx, &user_id, "billing", "view").await;
-        let user_uuid = Uuid::parse_str(&user_id).expect("user_id should be a UUID");
 
         let (status_without_config, without_config) = get_feature_availability(ctx, &token).await;
         assert_eq!(status_without_config, StatusCode::OK);
@@ -331,37 +330,9 @@ mod tests {
         .await
         .expect("Failed to create invoice seller config");
 
-        let (status_config_only, config_only) = get_feature_availability(ctx, &token).await;
-        assert_eq!(status_config_only, StatusCode::OK);
-        assert_eq!(config_only["facts"]["hasInvoiceSellerConfig"], true);
-        assert_eq!(config_only["user"]["invoicesVisible"], false);
-
-        let package_id = create_points_package(
-            ctx,
-            &ctx._realm_id.clone(),
-            "feature-invoice-package",
-            "Feature Invoice Package",
-            1000,
-            1000,
-            "USD",
-            true,
-        )
-        .await;
-        sqlx::query(
-            "INSERT INTO payment_attempts
-             (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at)
-             VALUES ($1, $2, $3, 'stripe', 'points_package', $4, 1000, 'USD', 'Succeeded', NOW() + INTERVAL '30 minutes')",
-        )
-        .bind(Uuid::now_v7())
-        .bind(&ctx._realm_id)
-        .bind(user_uuid)
-        .bind(package_id)
-        .execute(&ctx.app_state.pool)
-        .await
-        .expect("Failed to create succeeded payment attempt");
-
-        let (status_with_source, with_source) = get_feature_availability(ctx, &token).await;
-        assert_eq!(status_with_source, StatusCode::OK);
-        assert_eq!(with_source["user"]["invoicesVisible"], true);
+        let (status_with_config, with_config) = get_feature_availability(ctx, &token).await;
+        assert_eq!(status_with_config, StatusCode::OK);
+        assert_eq!(with_config["facts"]["hasInvoiceSellerConfig"], true);
+        assert_eq!(with_config["user"]["invoicesVisible"], true);
     }
 }
