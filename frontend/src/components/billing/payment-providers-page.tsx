@@ -31,6 +31,7 @@ import { listRealmConfigs, deleteRealmConfig } from '@/lib/api-generated/sdk.gen
 import { parseStripeConfig } from '@/lib/stripe-config-utils'
 import { STRIPE_CONFIG_KEYS } from '@/lib/billing-constants'
 import { parseCreemConfig, CREEM_CONFIG_KEYS } from '@/lib/creem-config-utils'
+import { queryKeys } from '@/data/query-options'
 
 interface PaymentProvidersPageProps {
   realmId: string
@@ -167,6 +168,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] })
       queryClient.invalidateQueries({ queryKey: ['realmConfig', realmId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
       toast.success('Payment provider deleted successfully')
       setIsDeleteDialogOpen(false)
     },

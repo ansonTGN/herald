@@ -93,6 +93,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.billingPlans(realmId),
       })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
 
       // 再关闭对话框
       deleteDialog.close()
@@ -148,6 +149,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
       // Invalidate queries and wait for refetch to complete
       await queryClient.invalidateQueries({ queryKey: queryKeys.billingPlans(realmId) })
       await queryClient.invalidateQueries({ queryKey: queryKeys.planAssignmentsList(realmId) })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error: Error) => {
       toast.error(`Failed to assign plan: ${error.message}`)
@@ -214,6 +216,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
   async function invalidateProviderQueries() {
     // Always invalidate subscription plans to refresh payment provider summaries
     await queryClient.invalidateQueries({ queryKey: queryKeys.billingPlans(realmId) })
+    await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
 
     // Also invalidate the specific plan's provider list if we have a selected plan
     if (providerMappingPlanId) {

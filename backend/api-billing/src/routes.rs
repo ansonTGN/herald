@@ -7,6 +7,7 @@ use axum::{
     routing::{get, patch, post},
 };
 
+use crate::feature_availability::get_feature_availability;
 use crate::handlers::{
     add_payment_provider_to_plan, assign_plan_to_client_app, cancel_subscription_for_client_app,
     create_checkout_session, create_plan, create_product, delete_plan, delete_product, get_plan,
@@ -98,6 +99,10 @@ pub fn billing_public_routes() -> Router<AppState> {
 pub fn billing_routes() -> Router<AppState> {
     Router::new()
         // ===== Plan Management =====
+        .route(
+            "/api/realms/{realmId}/feature-availability",
+            get(get_feature_availability),
+        )
         .route(
             "/api/bill/{realmId}/plans",
             get(list_plans).post(create_plan),

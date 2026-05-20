@@ -63,6 +63,7 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
       const action = isEditing ? 'updated' : 'created'
       toast.success(`Subscription Plan "${data?.title}" ${action} successfully`)
       await queryClient.invalidateQueries({ queryKey: queryKeys.billingPlans(realmId) })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
       navigate({
         to: '/$realmId/manage/billing',
         params: { realmId },

@@ -1,29 +1,49 @@
 import { Link, useLocation } from '@tanstack/react-router'
 import { User, Shield, Coins, CreditCard, LogOut, FileText, type LucideIcon } from 'lucide-react'
 import { useCallback, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useRealmId } from '@/stores/auth-store'
 import { logoutFlow } from '@/lib/auth-utils'
+import { featureAvailabilityQueryOptions } from '@/data/query-options'
 
 interface MenuItem {
   name: string
   path: string
   icon: LucideIcon
+  visible?: boolean
 }
 
 export function ProfileSidebar() {
   const location = useLocation()
   const realmId = useRealmId()
+  const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
+  const userFeatures = features?.user
 
   // Memoize menu items to prevent infinite re-renders
   const menuItems: MenuItem[] = useMemo(
     () => [
       { name: 'Profile', path: `/${realmId}/user/profile`, icon: User },
       { name: 'Security', path: `/${realmId}/user/security`, icon: Shield },
-      { name: 'Points', path: `/${realmId}/user/points`, icon: Coins },
-      { name: 'Subscription', path: `/${realmId}/user/subscription-history`, icon: CreditCard },
-      { name: 'Invoices', path: `/${realmId}/user/invoices`, icon: FileText },
+      {
+        name: 'Points',
+        path: `/${realmId}/user/points`,
+        icon: Coins,
+        visible: userFeatures?.pointsVisible ?? true,
+      },
+      {
+        name: 'Subscription',
+        path: `/${realmId}/user/subscription-history`,
+        icon: CreditCard,
+        visible: userFeatures?.subscriptionVisible ?? true,
+      },
+      {
+        name: 'Invoices',
+        path: `/${realmId}/user/invoices`,
+        icon: FileText,
+        visible: userFeatures?.invoicesVisible ?? true,
+      },
     ],
-    [realmId]
+    [realmId, userFeatures]
   )
 
   const isActive = (path: string) => location.pathname === path
@@ -42,19 +62,21 @@ export function ProfileSidebar() {
       </div>
 
       <nav className="flex-1 px-3 space-y-1">
-        {menuItems.map((item) => (
-          <Link
-            key={item.name}
-            to={item.path}
-            data-testid={`profile-menu-${item.name.toLowerCase()}`}
-            className={`flex items-center px-3 py-2 text-sm font-medium rounded-md ${
-              isActive(item.path) ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            <item.icon className="w-5 h-5 mr-3" />
-            {item.name}
-          </Link>
-        ))}
+        {menuItems
+          .filter((item) => item.visible !== false)
+          .map((item) => (
+            <Link
+              key={item.name}
+              to={item.path}
+              data-testid={`profile-menu-${item.name.toLowerCase()}`}
+              className={`flex items-center px-3 py-2 text-sm font-medium rounded-md ${
+                isActive(item.path) ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <item.icon className="w-5 h-5 mr-3" />
+              {item.name}
+            </Link>
+          ))}
       </nav>
 
       <div className="p-3 border-t border-gray-200">

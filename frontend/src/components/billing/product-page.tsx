@@ -63,6 +63,7 @@ export function ProductPage({ realmId }: ProductPageProps) {
       setProductFormOpen(false)
       setEditingProduct(undefined)
       queryClient.invalidateQueries({ queryKey: queryKeys.billingProducts(realmId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error: Error) => {
       toast.error(`Failed to save product: ${error.message}`)
@@ -80,6 +81,7 @@ export function ProductPage({ realmId }: ProductPageProps) {
       setDeleteConfirmOpen(false)
       setDeletingProduct(undefined)
       queryClient.invalidateQueries({ queryKey: queryKeys.billingProducts(realmId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error: Error) => {
       toast.error(`Failed to delete product: ${error.message}`)

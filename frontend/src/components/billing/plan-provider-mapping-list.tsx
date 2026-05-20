@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { DataTable } from '@/components/shared/data-table'
-import { subscriptionPlanProvidersQueryOptions } from '@/data/query-options'
+import { queryKeys, subscriptionPlanProvidersQueryOptions } from '@/data/query-options'
 import { removePaymentProviderFromPlan, togglePlanPaymentProvider } from '@/lib/api-generated'
 import type { SubscriptionPlanPaymentProviderResponse } from '@/lib/api-generated'
 import { toast } from 'sonner'
@@ -156,6 +156,7 @@ export function PlanProviderMappingList({
       queryClient.invalidateQueries({
         queryKey: subscriptionPlanProvidersQueryOptions(realmId, planId).queryKey,
       })
+      queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (err: Error) => {
       toast.error(`Failed to delete mapping: ${err.message}`)
@@ -178,6 +179,7 @@ export function PlanProviderMappingList({
       queryClient.invalidateQueries({
         queryKey: subscriptionPlanProvidersQueryOptions(realmId, planId).queryKey,
       })
+      queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (err: Error) => {
       toast.error(`Failed to toggle mapping: ${err.message}`)

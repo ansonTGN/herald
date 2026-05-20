@@ -1,4 +1,5 @@
-import { queryOptions } from '@tanstack/react-query'
+import { queryOptions, type QueryClient } from '@tanstack/react-query'
+import { redirect } from '@tanstack/react-router'
 import {
   listUsers,
   getUser,
@@ -224,6 +225,7 @@ export const queryKeys = {
   auditDetail: (realmId: string, eventId: string) =>
     [QUERY_KEYS.AUDIT_EVENT, realmId, eventId] as const,
   dashboardStats: (realmId: string) => [QUERY_KEYS.DASHBOARD_STATS, realmId] as const,
+  featureAvailability: (realmId: string) => [QUERY_KEYS.FEATURE_AVAILABILITY, realmId] as const,
 }
 
 function extractNestedArray<T>(response: unknown, key: string): T[] {
@@ -262,6 +264,60 @@ export const realmQueryOptions = (realmId: string) =>
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_5_MIN,
   })
+
+export interface FeatureAvailabilityResponse {
+  admin: {
+    billingVisible: boolean
+    billingConfigVisible: boolean
+    productsVisible: boolean
+    plansVisible: boolean
+    invoicesVisible: boolean
+    subscriptionHistoryVisible: boolean
+    pointsVisible: boolean
+    pointsPackagesVisible: boolean
+  }
+  user: {
+    pointsVisible: boolean
+    pointsPurchaseVisible: boolean
+    subscriptionVisible: boolean
+    invoicesVisible: boolean
+  }
+  facts: {
+    hasPaymentProviders: boolean
+    hasProducts: boolean
+    hasPlans: boolean
+    hasPlanPaymentMappings: boolean
+    hasPointsPackages: boolean
+    hasPointsPackagePaymentMappings: boolean
+    hasInvoiceSellerConfig: boolean
+    hasInvoices: boolean
+    hasSubscriptionHistory: boolean
+  }
+}
+
+export const featureAvailabilityQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.featureAvailability(realmId),
+    queryFn: async () => {
+      const response = await fetch(`/api/realms/${realmId}/feature-availability`)
+      return unwrapFetchResponse<FeatureAvailabilityResponse>(response)
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+    gcTime: GC_TIME_5_MIN,
+  })
+
+export async function requireFeature(
+  queryClient: QueryClient,
+  realmId: string,
+  check: (features: FeatureAvailabilityResponse) => boolean,
+  redirectOptions: { to: string; params?: Record<string, string>; search?: Record<string, unknown> }
+) {
+  const features = await queryClient.ensureQueryData(featureAvailabilityQueryOptions(realmId))
+  if (!check(features)) {
+    throw redirect(redirectOptions)
+  }
+}
 
 export const realmsQueryOptions = (filters: {
   page?: number

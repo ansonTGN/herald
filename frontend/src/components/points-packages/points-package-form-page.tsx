@@ -91,7 +91,7 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
     },
     getSuccessMessage: (data) =>
       `Points package "${data?.title}" ${isCreate ? 'created' : 'updated'} successfully`,
-    invalidateQueries: [queryKeys.pointsPackages(realmId)],
+    invalidateQueries: [queryKeys.pointsPackages(realmId), queryKeys.featureAvailability(realmId)],
     onSuccess: () => {
       navigate({ to: '/$realmId/manage/points-packages', params: { realmId } })
     },

@@ -5,6 +5,7 @@ import {
   subscriptionHistoryQueryOptions,
   clientAppsQueryOptions,
   userSubscriptionsQueryOptions,
+  requireFeature,
 } from '@/data/query-options'
 import { SubscriptionSelector } from '@/components/billing/subscription-selector'
 import { UserSubscriptionTimeline } from '@/components/billing/user-subscription-timeline'
@@ -21,6 +22,11 @@ type SubscriptionWithClientApp = {
 }
 
 export const Route = createFileRoute('/$realmId/user/subscription-history')({
+  beforeLoad: ({ context, params }) =>
+    requireFeature(context.queryClient, params.realmId, (f) => f.user.subscriptionVisible, {
+      to: '/$realmId/user/profile',
+      params: { realmId: params.realmId },
+    }),
   component: SubscriptionHistoryRoute,
 })
 

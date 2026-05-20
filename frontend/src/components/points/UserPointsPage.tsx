@@ -13,6 +13,7 @@ import {
   pointsAccountQueryOptions,
   pointsTransactionsQueryOptions,
   pointsPackagePurchaseHistoryQueryOptions,
+  featureAvailabilityQueryOptions,
 } from '@/data/query-options'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import type { TransactionFilters as TransactionFiltersType } from '@/lib/schemas/points-forms'
@@ -56,6 +57,7 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
       pageSize: DEFAULT_PAGE_SIZE,
     })
   )
+  const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
 
   return (
     <div className="space-y-6" data-testid="user-points-page">
@@ -75,12 +77,14 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
             </span>
           )}
         </div>
-        <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
-          <Button data-testid="purchase-points-button">
-            <Plus className="mr-2 h-4 w-4" />
-            Purchase Points
-          </Button>
-        </Link>
+        {features?.user.pointsPurchaseVisible !== false && (
+          <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
+            <Button data-testid="purchase-points-button">
+              <Plus className="mr-2 h-4 w-4" />
+              Purchase Points
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Transaction History and Purchase History Tabs */}

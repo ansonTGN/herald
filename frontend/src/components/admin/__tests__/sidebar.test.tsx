@@ -16,6 +16,7 @@ vi.mock('@tanstack/react-query', () => ({
 
 vi.mock('@/data/query-options', () => ({
   realmQueryOptions: () => ({ queryKey: ['realm', 'admin'] }),
+  featureAvailabilityQueryOptions: () => ({ queryKey: ['feature-availability', 'admin'] }),
 }))
 
 vi.mock('@tanstack/react-router', () => ({

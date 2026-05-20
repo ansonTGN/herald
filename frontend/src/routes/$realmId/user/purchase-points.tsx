@@ -10,6 +10,7 @@ import {
   pointsPackagesQueryOptions,
   paymentProvidersQueryOptions,
   paymentAttemptStatusQueryOptions,
+  requireFeature,
 } from '@/data/query-options'
 import { PointsPackageSelector } from '@/components/purchase/points-package-selector'
 import { PaymentMethodSelector } from '@/components/purchase/payment-method-selector'
@@ -21,6 +22,11 @@ import { toast } from 'sonner'
 import { formatPrice } from '@/lib/schemas/points-package-forms'
 
 export const Route = createFileRoute('/$realmId/user/purchase-points')({
+  beforeLoad: ({ context, params }) =>
+    requireFeature(context.queryClient, params.realmId, (f) => f.user.pointsPurchaseVisible, {
+      to: '/$realmId/user/points',
+      params: { realmId: params.realmId },
+    }),
   component: PurchasePointsPage,
 })
 

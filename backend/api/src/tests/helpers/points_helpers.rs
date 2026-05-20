@@ -545,7 +545,6 @@ pub async fn consume_points_from_ledger(ctx: &SchemaTestContext, ledger_id: Uuid
     sqlx::query(
         "UPDATE points_credit_ledger
          SET used_amount = used_amount + $1,
-             remaining_amount = remaining_amount - $1,
              updated_at = NOW()
          WHERE id = $2",
     )

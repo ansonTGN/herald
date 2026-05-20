@@ -24,6 +24,7 @@ pub mod webhook_tests;
 // New test modules
 pub mod billing_period_tests;
 pub mod error_recovery_tests;
+pub mod feature_availability_scenarios;
 pub mod integration_e2e_tests;
 pub mod payment_flow_tests;
 pub mod plan_delete_scenarios;

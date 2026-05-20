@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
+import { queryKeys } from '@/data/query-options'
 import { Button } from '@/components/ui/button'
 import {
   shopifyConfigSchema,
@@ -349,6 +350,7 @@ export function ShopifyConfigFormPage({
     onSuccess: async () => {
       toast.success('Shopify configuration created successfully')
       await queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
       navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
     },
     onError: (error: { status?: number; message?: string }) => {
@@ -384,6 +386,7 @@ export function ShopifyConfigFormPage({
     onSuccess: async () => {
       toast.success('Shopify configuration updated successfully')
       await queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
       navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
     },
     onError: (error: { status?: number; message?: string }) => {

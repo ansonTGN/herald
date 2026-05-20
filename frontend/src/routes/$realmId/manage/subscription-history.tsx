@@ -8,12 +8,19 @@ import { SubscriptionHistoryFilter } from '@/components/billing/subscription-his
 import {
   subscriptionPlansQueryOptions,
   globalSubscriptionHistoryQueryOptions,
+  requireFeature,
 } from '@/data/query-options'
 import type { HistoryFilters, SubscriptionHistoryEventWithUser } from '@/types/billing'
 import { toast } from 'sonner'
 import { PageHeader, ListPagination } from '@/components/shared'
 
 export const Route = createFileRoute('/$realmId/manage/subscription-history')({
+  beforeLoad: ({ context, params }) =>
+    requireFeature(context.queryClient, params.realmId, (f) => f.admin.subscriptionHistoryVisible, {
+      to: '/$realmId/manage/billing',
+      params: { realmId: params.realmId },
+      search: { status: 'all' },
+    }),
   component: SubscriptionHistoryRoute,
 })
 

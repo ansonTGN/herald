@@ -4,6 +4,7 @@
 pub(crate) mod webhook_subscription_helpers;
 mod webhooks;
 
+pub mod feature_availability;
 pub mod handlers;
 pub mod handlers_history;
 pub mod invoice_handlers;
@@ -63,6 +64,7 @@ mod handlers_test;
         crate::handlers::toggle_plan_payment_provider,
         crate::handlers::remove_payment_provider_from_plan,
         crate::handlers::webhook_handler,
+        crate::feature_availability::get_feature_availability,
         crate::shopify_claim_handlers::claim_shopify_subscriptions,
         crate::shopify_config_handlers::list_payment_providers,
         crate::shopify_config_handlers::create_shopify_config,
@@ -150,6 +152,10 @@ mod handlers_test;
         crate::wechat_config_types::WechatOrderCreateResponse,
         crate::wechat_config_types::WechatOrderStatusResponse,
         crate::types::CreateSubscriptionPlanPaymentProviderRequest,
+        crate::feature_availability::FeatureAvailabilityResponse,
+        crate::feature_availability::AdminFeatureAvailability,
+        crate::feature_availability::UserFeatureAvailability,
+        crate::feature_availability::FeatureAvailabilityFacts,
         crate::types::SubscriptionPlanPaymentProviderResponse,
         crate::types::UpdateSubscriptionPlanPaymentProviderRequest,
         crate::types::ToggleSubscriptionPlanPaymentProviderRequest,

@@ -19,6 +19,7 @@ import type {
 import { displayPriceToCents } from '@/lib/invoice-utils'
 import { getErrorMessage } from '@/lib/error-utils'
 import { invoiceKeys } from '@/data/invoice-query-options'
+import { queryKeys } from '@/data/query-options'
 
 export function useCreateInvoice(realmId: string) {
   const queryClient = useQueryClient()
@@ -63,6 +64,7 @@ export function useCreateInvoice(realmId: string) {
     onSuccess: () => {
       toast.success('Invoice created')
       queryClient.invalidateQueries({ queryKey: invoiceKeys.all(realmId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error) => {
       const errorMessage = getErrorMessage(error)
@@ -212,6 +214,7 @@ export function useUpsertSellerConfig(realmId: string) {
     onSuccess: () => {
       toast.success('Seller config saved')
       queryClient.invalidateQueries({ queryKey: invoiceKeys.sellerConfig(realmId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error) => {
       const errorMessage = getErrorMessage(error)
@@ -245,6 +248,7 @@ export function useApplyInvoice(realmId: string) {
     onSuccess: () => {
       toast.success('Invoice application submitted')
       queryClient.invalidateQueries({ queryKey: invoiceKeys.myAll(realmId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error) => {
       const errorMessage = getErrorMessage(error)

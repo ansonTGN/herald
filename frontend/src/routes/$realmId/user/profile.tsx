@@ -3,7 +3,11 @@ import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { SubscriptionInfoCard } from '@/components/billing/subscription-info-card'
-import { clientAppsQueryOptions, profileQueryOptions } from '@/data/query-options'
+import {
+  clientAppsQueryOptions,
+  featureAvailabilityQueryOptions,
+  profileQueryOptions,
+} from '@/data/query-options'
 import { PageHeader } from '@/components/shared'
 
 export const Route = createFileRoute('/$realmId/user/profile')({
@@ -13,15 +17,20 @@ export const Route = createFileRoute('/$realmId/user/profile')({
 function ProfileIndex() {
   const { realmId } = Route.useParams()
   const { data: profile, isLoading } = useQuery(profileQueryOptions)
+  const { data: features, isLoading: loadingFeatures } = useQuery(
+    featureAvailabilityQueryOptions(realmId)
+  )
 
   // Query client apps for subscription info
-  const { data: clientAppsResponse, isLoading: loadingApps } = useQuery(
-    clientAppsQueryOptions(realmId, { page: 0, pageSize: 20 })
-  )
+  const subscriptionVisible = features?.user.subscriptionVisible !== false
+  const { data: clientAppsResponse, isLoading: loadingApps } = useQuery({
+    ...clientAppsQueryOptions(realmId, { page: 0, pageSize: 20 }),
+    enabled: subscriptionVisible,
+  })
 
   const clientApps = clientAppsResponse?.items ?? []
 
-  if (isLoading || loadingApps) {
+  if (isLoading || loadingFeatures || (subscriptionVisible && loadingApps)) {
     return <div>Loading...</div>
   }
 
@@ -60,30 +69,31 @@ function ProfileIndex() {
         </CardContent>
       </Card>
 
-      {/* Subscription Status Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Subscription Status</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {clientApps.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {clientApps.map((app) => (
-                <SubscriptionInfoCard
-                  key={app.id}
-                  realmId={realmId}
-                  clientAppId={app.id}
-                  clientAppName={app.name}
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground" data-testid="no-subscriptions-message">
-              You don't have any client apps with subscriptions.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      {subscriptionVisible && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Subscription Status</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {clientApps.length > 0 ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {clientApps.map((app) => (
+                  <SubscriptionInfoCard
+                    key={app.id}
+                    realmId={realmId}
+                    clientAppId={app.id}
+                    clientAppName={app.name}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground" data-testid="no-subscriptions-message">
+                You don't have any client apps with subscriptions.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

@@ -18,7 +18,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/use-auth'
 import { useRealmId } from '@/stores/auth-store'
-import { realmQueryOptions } from '@/data/query-options'
+import { realmQueryOptions, featureAvailabilityQueryOptions } from '@/data/query-options'
 import type { LucideIcon } from 'lucide-react'
 
 interface MenuItem {
@@ -26,6 +26,7 @@ interface MenuItem {
   path?: string
   icon: LucideIcon
   permission: string | null
+  visible?: boolean
   children?: MenuItem[]
 }
 
@@ -33,7 +34,9 @@ export function Sidebar() {
   const realmId = useRealmId()
   const { permissions } = useAuth()
   const { data: realm } = useQuery(realmQueryOptions(realmId))
+  const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
   const [openMenus, setOpenMenus] = useState<Set<string>>(new Set(['Authorization']))
+  const adminFeatures = features?.admin
 
   // Memoize toggle function to prevent unnecessary re-renders
   const toggleMenu = useCallback((name: string) => {
@@ -94,30 +97,37 @@ export function Sidebar() {
             path: `/${realmId}/manage/products`,
             icon: Briefcase,
             permission: 'billing.view',
+            visible: adminFeatures?.productsVisible ?? true,
           },
           {
             name: 'Subscription Plans',
             path: `/${realmId}/manage/billing`,
             icon: CreditCard,
             permission: 'billing.view',
+            visible: adminFeatures?.plansVisible ?? true,
           },
           {
             name: 'Invoices',
             path: `/${realmId}/manage/billing/invoices`,
             icon: FileText,
             permission: 'billing.view',
+            visible:
+              (adminFeatures?.invoicesVisible ?? true) ||
+              features?.facts.hasInvoiceSellerConfig === false,
           },
           {
             name: 'Payment Providers',
             path: `/${realmId}/manage/billing/payment-providers`,
             icon: CreditCard,
             permission: 'billing.view',
+            visible: adminFeatures?.billingConfigVisible ?? true,
           },
           {
             name: 'Subscription History',
             path: `/${realmId}/manage/subscription-history`,
             icon: History,
             permission: 'billing.view',
+            visible: adminFeatures?.subscriptionHistoryVisible ?? true,
           },
         ],
       },
@@ -131,18 +141,21 @@ export function Sidebar() {
             path: `/${realmId}/manage/points/accounts`,
             icon: Users,
             permission: 'points.view',
+            visible: adminFeatures?.pointsVisible ?? true,
           },
           {
             name: 'Points Rules',
             path: `/${realmId}/manage/points/configs`,
             icon: Settings,
             permission: 'points.view',
+            visible: adminFeatures?.pointsVisible ?? true,
           },
           {
             name: 'Points Packages',
             path: `/${realmId}/manage/points-packages`,
             icon: Coins,
             permission: 'points.view',
+            visible: adminFeatures?.pointsPackagesVisible ?? true,
           },
         ],
       },
@@ -154,7 +167,7 @@ export function Sidebar() {
       },
       { name: 'Settings', path: `/${realmId}/manage/settings`, icon: Settings, permission: null },
     ],
-    [realmId]
+    [adminFeatures, realmId, features?.facts?.hasInvoiceSellerConfig]
   )
 
   const filteredMenuItems = menuItems.filter(
@@ -171,10 +184,15 @@ export function Sidebar() {
       return null
     }
 
+    if (item.visible === false) {
+      return null
+    }
+
     // For parent menus, verify at least one child is visible
     const visibleChildren = hasChildren
       ? item.children!.filter(
-          (child) => !child.permission || permissions.includes(child.permission)
+          (child) =>
+            child.visible !== false && (!child.permission || permissions.includes(child.permission))
         )
       : []
 

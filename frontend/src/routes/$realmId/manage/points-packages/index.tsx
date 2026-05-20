@@ -40,6 +40,7 @@ function PointsPackagesPage() {
       setDeleteConfirmOpen(false)
       setDeletingPackage(undefined)
       queryClient.invalidateQueries({ queryKey: queryKeys.pointsPackages(realmId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error: Error) => {
       toast.error(`Failed to delete package: ${error.message}`)

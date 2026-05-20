@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
-import { paymentProviderMappingsQueryOptions } from '@/data/query-options'
+import { paymentProviderMappingsQueryOptions, queryKeys } from '@/data/query-options'
 import {
   createPaymentProviderMapping,
   updatePaymentProviderMapping,
@@ -73,6 +73,7 @@ export function PaymentProviderConfigForm({
       setEditingMapping(undefined)
       setFormData({ paymentProvider: '', externalProductId: '', enabled: true })
       queryClient.invalidateQueries({ queryKey: ['payment-provider-mappings', realmId, packageId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error: Error) => {
       toast.error(`Failed to add mapping: ${error.message}`)
@@ -99,6 +100,7 @@ export function PaymentProviderConfigForm({
       setEditingMapping(undefined)
       setFormData({ paymentProvider: '', externalProductId: '', enabled: true })
       queryClient.invalidateQueries({ queryKey: ['payment-provider-mappings', realmId, packageId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error: Error) => {
       toast.error(`Failed to update mapping: ${error.message}`)
@@ -116,6 +118,7 @@ export function PaymentProviderConfigForm({
     onSuccess: () => {
       toast.success('Payment provider mapping removed')
       queryClient.invalidateQueries({ queryKey: ['payment-provider-mappings', realmId, packageId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error: Error) => {
       toast.error(`Failed to remove mapping: ${error.message}`)

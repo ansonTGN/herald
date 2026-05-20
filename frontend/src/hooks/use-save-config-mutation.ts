@@ -1,12 +1,13 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
+import { queryKeys } from '@/data/query-options'
 
 interface UseSaveConfigMutationProps<T> {
   realmId: string
   mutationFn: (data: T) => Promise<void>
   providerName: string
-  invalidateKeys?: string[][]
+  invalidateKeys?: QueryKey[]
   isEditing: boolean
 }
 
@@ -27,6 +28,7 @@ export function useSaveConfigMutation<T>({
   const defaultInvalidateKeys = [
     ['payment-providers', realmId],
     ['realmConfig', realmId],
+    queryKeys.featureAvailability(realmId),
   ]
 
   const keysToInvalidate = invalidateKeys ?? defaultInvalidateKeys
