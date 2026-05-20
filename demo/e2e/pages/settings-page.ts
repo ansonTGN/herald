@@ -40,6 +40,21 @@ export interface OAuthProviderConfigData {
 }
 
 /**
+ * Email Configuration Form Data
+ * Matches frontend EmailConfigForm schema.
+ */
+export interface EmailConfigFormData {
+  provider: 'resend' | 'smtp'
+  fromAddress: string
+  resendApiKey?: string
+  smtpHost?: string
+  smtpPort?: string
+  smtpEncryption?: 'starttls' | 'ssl'
+  smtpUsername?: string
+  smtpPassword?: string
+}
+
+/**
  * Settings Page Object
  *
  * Represents Settings page at /admin/settings
@@ -84,6 +99,26 @@ export class SettingsPage extends BasePage {
   readonly saveProviderButton: Locator
   readonly cancelProviderButton: Locator
 
+  // Email Configuration elements
+  readonly emailTab: Locator
+  readonly emailStatusBadge: Locator
+  readonly emailStatusError: Locator
+  readonly emailProviderResend: Locator
+  readonly emailProviderSmtp: Locator
+  readonly emailFromAddressInput: Locator
+  readonly emailResendApiKeyInput: Locator
+  readonly emailSmtpHostInput: Locator
+  readonly emailSmtpPortInput: Locator
+  readonly emailSmtpEncryptionSelect: Locator
+  readonly emailSmtpUsernameInput: Locator
+  readonly emailSmtpPasswordInput: Locator
+  readonly emailTestRecipientInput: Locator
+  readonly emailTestButton: Locator
+  readonly emailTestError: Locator
+  readonly emailTestSuccess: Locator
+  readonly emailSaveButton: Locator
+  readonly emailSaveError: Locator
+
   constructor(page: Page, logger?: UnifiedLogger, realmId: string = 'admin') {
     super(page, logger)
     this.realmId = realmId
@@ -123,6 +158,26 @@ export class SettingsPage extends BasePage {
     this.enabledCheckbox = page.getByTestId('oauth-enabled-checkbox')
     this.saveProviderButton = page.getByTestId('oauth-save-provider-button')
     this.cancelProviderButton = page.getByTestId('oauth-cancel-provider-button')
+
+    // Email Configuration - using data-testid selectors
+    this.emailTab = page.getByTestId('email-tab')
+    this.emailStatusBadge = page.getByTestId('email-config-status-badge')
+    this.emailStatusError = page.getByTestId('email-status-error')
+    this.emailProviderResend = page.getByTestId('email-provider-resend')
+    this.emailProviderSmtp = page.getByTestId('email-provider-smtp')
+    this.emailFromAddressInput = page.getByTestId('email-from-address-input')
+    this.emailResendApiKeyInput = page.getByTestId('email-resend-api-key-input')
+    this.emailSmtpHostInput = page.getByTestId('email-smtp-host-input')
+    this.emailSmtpPortInput = page.getByTestId('email-smtp-port-input')
+    this.emailSmtpEncryptionSelect = page.getByTestId('email-smtp-encryption-select')
+    this.emailSmtpUsernameInput = page.getByTestId('email-smtp-username-input')
+    this.emailSmtpPasswordInput = page.getByTestId('email-smtp-password-input')
+    this.emailTestRecipientInput = page.getByTestId('email-test-recipient-input')
+    this.emailTestButton = page.getByTestId('email-test-button')
+    this.emailTestError = page.getByTestId('email-test-error')
+    this.emailTestSuccess = page.getByTestId('email-test-success')
+    this.emailSaveButton = page.getByTestId('email-save-button')
+    this.emailSaveError = page.getByTestId('email-save-error')
   }
 
   /**
@@ -178,6 +233,128 @@ export class SettingsPage extends BasePage {
 
     // Additional wait to ensure React state is fully settled
     await this.page.waitForLoadState('networkidle')
+  }
+
+  // ============================================================================
+  // Email Configuration Methods
+  // ============================================================================
+
+  /**
+   * Switch to Email Tab
+   *
+   * Follows the same pattern as switchToTOTPTab/switchToRegistrationTab.
+   * Waits for the save button to indicate tab content is fully loaded.
+   */
+  async switchToEmailTab(): Promise<void> {
+    await this.smartClick(this.emailTab)
+
+    // Wait for tab content to be visible with longer timeout
+    await expect(this.emailSaveButton).toBeVisible({ timeout: 10000 })
+
+    // Additional wait to ensure React state is fully settled
+    await this.page.waitForLoadState('networkidle')
+  }
+
+  /**
+   * Configure Resend email provider
+   *
+   * Selects the Resend radio and fills the from address and API key fields.
+   */
+  async configureResend(config: EmailConfigFormData): Promise<void> {
+    // Select Resend provider
+    await this.smartClick(this.emailProviderResend)
+
+    // Wait for Resend-specific fields to be visible
+    await expect(this.emailResendApiKeyInput).toBeVisible({ timeout: 5000 })
+
+    // Fill from address
+    await this.fillField(this.emailFromAddressInput, config.fromAddress)
+
+    // Fill API key if provided
+    if (config.resendApiKey) {
+      await this.fillField(this.emailResendApiKeyInput, config.resendApiKey)
+    }
+  }
+
+  /**
+   * Configure SMTP email provider
+   *
+   * Selects the SMTP radio and fills all SMTP fields (host, port, encryption, username, password).
+   */
+  async configureSmtp(config: EmailConfigFormData): Promise<void> {
+    // Select SMTP provider
+    await this.smartClick(this.emailProviderSmtp)
+
+    // Wait for SMTP-specific fields to be visible
+    await expect(this.emailSmtpHostInput).toBeVisible({ timeout: 5000 })
+
+    // Fill from address
+    await this.fillField(this.emailFromAddressInput, config.fromAddress)
+
+    // Fill SMTP fields if provided
+    if (config.smtpHost) {
+      await this.fillField(this.emailSmtpHostInput, config.smtpHost)
+    }
+
+    if (config.smtpPort) {
+      await this.fillField(this.emailSmtpPortInput, config.smtpPort)
+    }
+
+    if (config.smtpEncryption) {
+      // Radix Select: click trigger, then select option from dropdown
+      await this.smartClick(this.emailSmtpEncryptionSelect)
+      const option = this.page.getByRole('option', { name: config.smtpEncryption === 'starttls' ? 'STARTTLS' : 'SSL', exact: true })
+      await this.smartClick(option)
+    }
+
+    if (config.smtpUsername) {
+      await this.fillField(this.emailSmtpUsernameInput, config.smtpUsername)
+    }
+
+    if (config.smtpPassword) {
+      await this.fillField(this.emailSmtpPasswordInput, config.smtpPassword)
+    }
+  }
+
+  /**
+   * Save Email Configuration
+   *
+   * Clicks the save button and waits for the button text to return to 'Save',
+   * matching the pattern used in saveTOTPConfig/saveRegistrationConfig.
+   */
+  async saveEmailConfig(): Promise<void> {
+    await this.smartClick(this.emailSaveButton)
+
+    // Wait for button text to return to "Save" (indicates save completed)
+    await expect(async () => {
+      const buttonText = await this.emailSaveButton.textContent()
+      expect(buttonText).toBe('Save')
+    }).toPass({ timeout: 15000 })
+  }
+
+  /**
+   * Send a test email
+   *
+   * Fills the test recipient input and clicks the send test email button.
+   */
+  async sendTestEmail(recipient: string): Promise<void> {
+    await this.fillField(this.emailTestRecipientInput, recipient)
+    await this.smartClick(this.emailTestButton)
+  }
+
+  /**
+   * Get the text content of the email status badge
+   */
+  async getEmailStatusBadgeText(): Promise<string> {
+    return await this.getText(this.emailStatusBadge)
+  }
+
+  /**
+   * Check if email is configured (based on status badge text)
+   */
+  async isEmailConfigured(): Promise<boolean> {
+    const text = await this.getEmailStatusBadgeText()
+    return text.toLowerCase().includes('configured') && !text.toLowerCase().includes('not configured')
   }
 
   // ============================================================================

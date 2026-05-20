@@ -734,6 +734,39 @@ export const SELECTORS = {
   },
 
   /**
+   * Email Configuration Selectors (Settings > Email tab)
+   * Route: /{realmId}/manage/settings
+   */
+  emailConfig: {
+    // Tab trigger
+    emailTab: '[data-testid="email-tab"]',
+    // Status badge
+    statusBadge: '[data-testid="email-config-status-badge"]',
+    statusError: '[data-testid="email-status-error"]',
+    // Provider selection
+    providerResend: '[data-testid="email-provider-resend"]',
+    providerSmtp: '[data-testid="email-provider-smtp"]',
+    // Common fields
+    fromAddressInput: '[data-testid="email-from-address-input"]',
+    // Resend fields
+    resendApiKeyInput: '[data-testid="email-resend-api-key-input"]',
+    // SMTP fields
+    smtpHostInput: '[data-testid="email-smtp-host-input"]',
+    smtpPortInput: '[data-testid="email-smtp-port-input"]',
+    smtpEncryptionSelect: '[data-testid="email-smtp-encryption-select"]',
+    smtpUsernameInput: '[data-testid="email-smtp-username-input"]',
+    smtpPasswordInput: '[data-testid="email-smtp-password-input"]',
+    // Test email
+    testRecipientInput: '[data-testid="email-test-recipient-input"]',
+    testButton: '[data-testid="email-test-button"]',
+    testError: '[data-testid="email-test-error"]',
+    testSuccess: '[data-testid="email-test-success"]',
+    // Save
+    saveButton: '[data-testid="email-save-button"]',
+    saveError: '[data-testid="email-save-error"]',
+  },
+
+  /**
    * Device Verification Page Selectors
    * Route: /{realmId}/device, /{realmId}/device/{userCode}
    */
