@@ -78,7 +78,9 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
 
       // Navigate to products page and create a product
       await page.goto(`/${realmId}/manage/products`)
-      await expect(page.getByTestId('products-page')).toBeVisible({ timeout: 10000 })
+      await expect(page.getByTestId('products-page')).toBeVisible({
+        timeout: 10000,
+      })
 
       await createProduct(page, {
         code: productCode,
@@ -87,7 +89,9 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
       })
 
       // Verify product appears in table (scoped to table to avoid toast conflict)
-      await expect(page.getByTestId('products-page').getByText(productTitle)).toBeVisible({ timeout: 5000 })
+      await expect(page.getByTestId('products-page').getByText(productTitle)).toBeVisible({
+        timeout: 5000,
+      })
       console.log('✓ Product created successfully')
     })
 
@@ -97,7 +101,9 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
 
     await test.step('When: 创建套餐（不包含支付平台字段）', async () => {
       await page.goto(`/${realmId}/manage/billing`)
-      await expect(page.getByTestId('billing-page')).toBeVisible({ timeout: 10000 })
+      await expect(page.getByTestId('billing-page')).toBeVisible({
+        timeout: 10000,
+      })
 
       // Click "Add Plan" button - navigates to plan creation page
       await page.getByTestId('add-plan-button').click()
@@ -154,8 +160,11 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
       // Click "Manage Providers" button for the plan
       await clickRowMenuItem(page, planName, 'Manage Providers')
 
-      // Provider mapping dialog should open
-      await expect(page.getByTestId('provider-mapping-dialog')).toBeVisible()
+      // Provider mapping page should open
+      await page.waitForURL('**/manage/billing/plans/*/providers', {
+        timeout: 10000,
+      })
+      await expect(page.getByTestId('plan-providers-page')).toBeVisible()
 
       // Click "Add Payment Provider" button
       await page.getByTestId('add-provider-mapping-button').click()
@@ -178,7 +187,9 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
     await test.step('Then: 验证 Stripe 支付平台映射添加成功', async () => {
       // Verify Stripe mapping appears in the list
       const mappingTable = page.getByTestId('provider-mapping-table')
-      await expect(mappingTable.locator('[data-testid^="mapping-provider-name-"]')).toBeVisible({ timeout: 5000 })
+      await expect(mappingTable.locator('[data-testid^="mapping-provider-name-"]')).toBeVisible({
+        timeout: 5000,
+      })
       await expect(mappingTable.getByText(`prod_stripe_${timestamp}`)).toBeVisible()
 
       console.log('✓ Stripe payment provider mapping added successfully')
@@ -189,8 +200,7 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
     // ============================================================================
 
     await test.step('When: 查看套餐详情并编辑基本信息', async () => {
-      // Close provider mapping dialog
-      await page.getByRole('button', { name: 'Close' }).click()
+      await page.getByTestId('back-to-billing-button').click()
 
       // Wait for plan table to be visible
       await expect(page.getByTestId('plans-table')).toBeVisible()
@@ -199,7 +209,9 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
       await clickRowMenuItem(page, planName, 'Edit')
 
       // Plan edit page should load
-      await page.waitForURL('**/manage/billing/plans/*/edit', { timeout: 10000 })
+      await page.waitForURL('**/manage/billing/plans/*/edit', {
+        timeout: 10000,
+      })
       await expect(page.getByTestId('plan-form-page')).toBeVisible()
 
       // Verify provider fields are NOT present (removed in fix-plan-pay)
@@ -217,7 +229,9 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
 
     await test.step('Then: 验证套餐基本信息更新成功', async () => {
       // Verify updated title appears in table (scoped to table to avoid toast conflict)
-      await expect(page.getByTestId('plans-table').getByText(updatedPlanTitle)).toBeVisible({ timeout: 5000 })
+      await expect(page.getByTestId('plans-table').getByText(updatedPlanTitle)).toBeVisible({
+        timeout: 5000,
+      })
 
       console.log('✓ Plan basic information updated successfully (provider fields removed)')
     })
@@ -227,9 +241,12 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
     // ============================================================================
 
     await test.step('When: 禁用 Stripe 支付平台映射', async () => {
-      // Open provider mapping dialog
+      // Open provider mapping page
       await clickRowMenuItem(page, planName, 'Manage Providers')
-      await expect(page.getByTestId('provider-mapping-dialog')).toBeVisible()
+      await page.waitForURL('**/manage/billing/plans/*/providers', {
+        timeout: 10000,
+      })
+      await expect(page.getByTestId('plan-providers-page')).toBeVisible()
 
       // Find Stripe mapping row and click menu button
       const mappingTable = page.getByTestId('provider-mapping-table')
@@ -300,34 +317,23 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
       await page.getByTestId('add-provider-mapping-button').click()
       await expect(page.getByTestId('provider-mapping-form-dialog')).toBeVisible()
 
-      // Try to add Stripe again
-      await page.getByTestId('provider-mapping-provider-select-trigger').click()
-      await page.getByRole('option', { name: 'stripe' }).click()
-
-      await page.getByTestId('provider-mapping-product-id-input').fill(`prod_stripe_duplicate_${timestamp}`)
-      await page.getByTestId('provider-mapping-price-id-input').fill(`price_stripe_duplicate_${timestamp}`)
-
-      // Submit form
-      await page.getByTestId('provider-mapping-submit-button').click()
+      await expect(page.getByTestId('no-providers-message')).toBeVisible()
+      await expect(page.getByTestId('provider-mapping-submit-button')).toBeDisabled()
     })
 
-    await test.step('Then: 验证显示重复支付平台错误', async () => {
-      // Verify error message about duplicate provider
-      await expect(page.getByText(/already configured/i)).toBeVisible({ timeout: 5000 })
-
+    await test.step('Then: 验证已绑定支付平台不会再次出现在创建选项中', async () => {
       // Close form dialog
       await page.getByTestId('provider-mapping-cancel-button').click()
 
-      console.log('✓ Duplicate payment provider error handled correctly')
+      console.log('✓ Already-bound payment providers are filtered from create options')
     })
 
     // ============================================================================
     // Step 7: Close Provider Mapping Dialog and Verify Plan Table (US-BI-007)
     // ============================================================================
 
-    await test.step('When: 关闭支付平台映射对话框并查看套餐列表', async () => {
-      // Close provider mapping dialog
-      await page.getByRole('button', { name: 'Close' }).click()
+    await test.step('When: 返回套餐列表', async () => {
+      await page.getByTestId('back-to-billing-button').click()
 
       // Wait for plan table to be visible
       await expect(page.getByTestId('plans-table')).toBeVisible()
@@ -350,9 +356,12 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
     // ============================================================================
 
     await test.step('When: 编辑支付平台映射', async () => {
-      // Open provider mapping dialog
+      // Open provider mapping page
       await clickRowMenuItem(page, planName, 'Manage Providers')
-      await expect(page.getByTestId('provider-mapping-dialog')).toBeVisible()
+      await page.waitForURL('**/manage/billing/plans/*/providers', {
+        timeout: 10000,
+      })
+      await expect(page.getByTestId('plan-providers-page')).toBeVisible()
 
       // Find Stripe mapping row and click menu button
       const mappingTable = page.getByTestId('provider-mapping-table')
@@ -369,7 +378,9 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
       await expect(page.getByTestId('provider-mapping-form-dialog')).toBeVisible()
 
       // Update external price ID
-      await page.getByTestId('provider-mapping-price-id-input').fill(`price_stripe_updated_${timestamp}`)
+      await page
+        .getByTestId('provider-mapping-price-id-input')
+        .fill(`price_stripe_updated_${timestamp}`)
 
       // Submit form
       await page.getByTestId('provider-mapping-submit-button').click()
@@ -380,7 +391,9 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
 
     await test.step('Then: 验证支付平台映射更新成功', async () => {
       // Verify updated external price ID is visible
-      await expect(page.getByText(`price_stripe_updated_${timestamp}`)).toBeVisible({ timeout: 5000 })
+      await expect(page.getByText(`price_stripe_updated_${timestamp}`)).toBeVisible({
+        timeout: 5000,
+      })
 
       console.log('✓ Payment provider mapping updated successfully')
     })
@@ -390,8 +403,7 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
     // ============================================================================
 
     await test.step('When: 删除套餐', async () => {
-      // Close provider mapping dialog
-      await page.getByRole('button', { name: 'Close' }).click()
+      await page.getByTestId('back-to-billing-button').click()
 
       // Wait for plan table to be visible
       await expect(page.getByTestId('plans-table')).toBeVisible()

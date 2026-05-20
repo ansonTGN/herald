@@ -267,9 +267,12 @@ export const SELECTORS = {
     row: (appId: string) => `[data-app-id="${appId}"]`,
     // Table rows (by client ID)
     rowByClientId: (clientId: string) => `[data-client-id="${clientId}"]`,
-    editButton: (appId: string) => `[data-app-id="${appId}"] [data-testid="edit-client-app-button"]`,
-    deleteButton: (appId: string) => `[data-app-id="${appId}"] [data-testid="delete-client-app-button"]`,
-    enabledSwitch: (appId: string) => `[data-app-id="${appId}"] [data-testid="client-app-enabled-switch"]`,
+    editButton: (appId: string) =>
+      `[data-app-id="${appId}"] [data-testid="edit-client-app-button"]`,
+    deleteButton: (appId: string) =>
+      `[data-app-id="${appId}"] [data-testid="delete-client-app-button"]`,
+    enabledSwitch: (appId: string) =>
+      `[data-app-id="${appId}"] [data-testid="client-app-enabled-switch"]`,
   },
 
   /**
@@ -295,8 +298,7 @@ export const SELECTORS = {
     // Security tab
     enabledSwitch: '[data-testid="client-app-enabled-switch"]',
     sessionTtlInput: '[data-testid="session-ttl-input"]',
-    sessionTtlPreset: (label: string) =>
-      `[data-testid="session-ttl-preset-${label}"]`,
+    sessionTtlPreset: (label: string) => `[data-testid="session-ttl-preset-${label}"]`,
     sessionRenewalTtlInput: '[data-testid="session-renewal-ttl-input"]',
     deviceCodeGrantSwitch: '[data-testid="device-code-grant-switch"]',
     regenerateSecretSwitch: '[data-testid="regenerate-secret-switch"]',
@@ -382,8 +384,16 @@ export const SELECTORS = {
     // Event details dialog
     eventDetailDialog: '[data-testid="event-detail-dialog"]',
     // Event badges (parameterized by event type)
-    eventBadge: (type: 'created' | 'upgraded' | 'downgraded' | 'canceled' | 'renewed' | 'reactivated' | 'expired') =>
-      `[data-testid="event-badge-${type}"]`,
+    eventBadge: (
+      type:
+        | 'created'
+        | 'upgraded'
+        | 'downgraded'
+        | 'canceled'
+        | 'renewed'
+        | 'reactivated'
+        | 'expired'
+    ) => `[data-testid="event-badge-${type}"]`,
   },
 
   /**
@@ -413,17 +423,18 @@ export const SELECTORS = {
     planProductSelectTrigger: '[data-testid="plan-product-select-trigger"]',
     planFormSubmitButton: '[data-testid="plan-form-submit-button"]',
     planFormCancelButton: '[data-testid="plan-form-cancel-button"]',
-    // Provider mapping dialog
-    providerMappingDialog: '[data-testid="provider-mapping-dialog"]',
+    // Provider mapping page
+    providerMappingPage: '[data-testid="plan-providers-page"]',
     providerMappingList: '[data-testid="provider-mapping-list"]',
     addProviderMappingButton: '[data-testid="add-provider-mapping-button"]',
     providerMappingFormDialog: '[data-testid="provider-mapping-form-dialog"]',
-    providerMappingProviderSelectTrigger: '[data-testid="provider-mapping-provider-select-trigger"]',
+    providerMappingProviderSelectTrigger:
+      '[data-testid="provider-mapping-provider-select-trigger"]',
     providerMappingExternalProductIdInput: '[data-testid="provider-mapping-product-id-input"]',
     providerMappingExternalPriceIdInput: '[data-testid="provider-mapping-price-id-input"]',
     providerMappingSubmitButton: '[data-testid="provider-mapping-submit-button"]',
     providerMappingCancelButton: '[data-testid="provider-mapping-cancel-button"]',
-    providerMappingCloseButton: '[data-testid="provider-mapping-close-button"]',
+    providerMappingBackButton: '[data-testid="back-to-billing-button"]',
     // Dynamic provider mapping buttons
     editMappingButton: (id: string) => `[data-testid="edit-mapping-button-${id}"]`,
     toggleMappingButton: (id: string) => `[data-testid="toggle-mapping-button-${id}"]`,
@@ -448,7 +459,8 @@ export const SELECTORS = {
     accountRow: (userId: string) => `[data-testid="account-row-${userId}"]`,
     firstAccountRow: () => '[data-testid^="account-row-"]',
     // Transaction History Section
-    transactionsSection: '[data-testid="transaction-history-table"], [data-testid="no-transactions"]',
+    transactionsSection:
+      '[data-testid="transaction-history-table"], [data-testid="no-transactions"]',
     transactionsTable: '[data-testid="transaction-history-table"]',
     transactionRow: (index: number) => `[data-testid="transaction-row-${index}"]`,
     transactionType: (index: number) => `[data-testid="transaction-type-${index}"]`,
@@ -499,7 +511,8 @@ export const SELECTORS = {
     balanceAmount: '[data-testid="points-balance"]',
     accountStatus: '[data-testid="points-account-status"]',
     // Transaction History
-    transactionsSection: '[data-testid="transaction-history-table"], [data-testid="no-transactions"]',
+    transactionsSection:
+      '[data-testid="transaction-history-table"], [data-testid="no-transactions"]',
     transactionsTable: '[data-testid="transaction-history-table"]',
     transactionRow: (index: number) => `[data-testid="transaction-row-${index}"]`,
     transactionType: (index: number) => `[data-testid="transaction-type-${index}"]`,
@@ -642,8 +655,8 @@ export const SELECTORS = {
    * Unified Purchase - Payment Provider Config Form
    */
   paymentProviderConfig: {
-    dialog: '[data-testid="payment-provider-config-dialog"]',
-    providerSelect: 'select[id="paymentProvider"]',
+    page: '[data-testid="points-package-providers-page"]',
+    providerSelect: '[data-testid="provider-mapping-provider-select-trigger"]',
     // WeChat Pay fields
     wechatAppId: '[data-testid="wechat-app-id"]',
     wechatMerchantId: '[data-testid="wechat-merchant-id"]',
@@ -653,9 +666,9 @@ export const SELECTORS = {
     stripeProductId: '[data-testid="stripe-product-id"]',
     stripePriceId: '[data-testid="stripe-price-id"]',
     // Provider-specific fields
-    externalIdInput: (provider: string) => `[data-testid="payment-provider-external-id-input-${provider}"]`,
-    enabledSwitch: (provider: string) => `[data-testid="payment-provider-enabled-switch-${provider}"]`,
-    addButton: '[data-testid="payment-provider-add-button"]',
+    externalIdInput: () => '[data-testid="provider-mapping-product-id-input"]',
+    enabledSwitch: () => '[data-testid="provider-mapping-enabled-switch"]',
+    addButton: '[data-testid="provider-mapping-submit-button"]',
     // Common fields
     cancelButton: '[data-testid="provider-config-cancel-button"]',
     submitButton: '[data-testid="provider-config-submit-button"]',
@@ -815,4 +828,3 @@ export function getSelector(selector: string | string[]): string {
   }
   return selector
 }
-

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
-import { render, act, screen } from '@testing-library/react'
+import { render, act, screen, cleanup } from '@testing-library/react'
 import { delay, http, HttpResponse } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { server } from '@/test/mocks/server'
@@ -247,6 +247,7 @@ describe('Purchase-points auto-redirect state machine', () => {
   })
 
   afterEach(() => {
+    cleanup()
     restoreWindowLocation()
   })
 
@@ -275,12 +276,14 @@ describe('Purchase-points auto-redirect state machine', () => {
         })
       )
 
-      await renderPage()
+      // Use settleMs: 0 — the auto-redirect timer starts when the recovery
+      // useEffect fires (inside act). With the default 800ms settle, the
+      // timer has been running for ~800ms before our 2900ms wait begins,
+      // causing it to fire before the "not called" assertion.
+      await renderPage({ settleMs: 0 })
 
       // Wait for the recovery useEffect to set currentStep='processing'
       // and the auto-redirect useEffect to schedule the 3s setTimeout.
-      // Use a long timeout because the first render may take time to resolve
-      // React Query fetches via MSW.
       await screen.findByTestId('purchase-step-processing', undefined, { timeout: 3000 })
 
       // Before 3s, no redirect should happen.

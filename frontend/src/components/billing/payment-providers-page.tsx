@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Table,
@@ -24,10 +23,9 @@ import {
   deleteWechatConfig,
   type ShopifyConfigResponse,
 } from '@/lib/api-generated'
-import { listRealmConfigs, deleteRealmConfig } from '@/lib/api-generated/sdk.gen'
-import { parseStripeConfig } from '@/lib/stripe-config-utils'
+import { deleteRealmConfig } from '@/lib/api-generated/sdk.gen'
 import { STRIPE_CONFIG_KEYS } from '@/lib/billing-constants'
-import { parseCreemConfig, CREEM_CONFIG_KEYS } from '@/lib/creem-config-utils'
+import { CREEM_CONFIG_KEYS } from '@/lib/creem-config-utils'
 import { queryKeys } from '@/data/query-options'
 
 interface PaymentProvidersPageProps {
@@ -44,8 +42,6 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
   const [shopifyConfigDetails, setShopifyConfigDetails] = useState<ShopifyConfigResponse | null>(
     null
   )
-  const [stripeConfigDetails, setStripeConfigDetails] = useState<{ enabled: boolean } | null>(null)
-  const [creemConfigDetails, setCreemConfigDetails] = useState<{ enabled: boolean } | null>(null)
   const [showShopifySecrets, setShowShopifySecrets] = useState(false)
   const [expandedProvider, setExpandedProvider] = useState<'shopify' | null>(null)
 
@@ -78,32 +74,6 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
       getShopifyConfig({ path: { realmId } })
         .then((result) => setShopifyConfigDetails(result.data as ShopifyConfigResponse))
         .catch(() => setShopifyConfigDetails(null))
-    }
-  }, [providers, realmId])
-
-  // Fetch Stripe and Creem config details from realm configs (shared API call)
-  useEffect(() => {
-    const stripeProvider = providers?.find((p) => p.platform === 'stripe')
-    const creemProvider = providers?.find((p) => p.platform === 'creem')
-    if (stripeProvider || creemProvider) {
-      listRealmConfigs({ path: { realmId } })
-        .then((result) => {
-          const configs = result.data ?? []
-          if (stripeProvider) {
-            setStripeConfigDetails(parseStripeConfig(configs))
-          } else {
-            setStripeConfigDetails(null)
-          }
-          if (creemProvider) {
-            setCreemConfigDetails({ enabled: parseCreemConfig(configs).enabled })
-          } else {
-            setCreemConfigDetails(null)
-          }
-        })
-        .catch(() => {
-          setStripeConfigDetails(null)
-          setCreemConfigDetails(null)
-        })
     }
   }, [providers, realmId])
 
@@ -211,7 +181,6 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
           <TableHeader>
             <TableRow>
               <TableHead>Provider</TableHead>
-              <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -220,11 +189,6 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
               <>
                 <TableRow data-testid="shopify-provider-row">
                   <TableCell className="font-medium">Shopify</TableCell>
-                  <TableCell>
-                    <Badge variant={shopifyProvider.enabled ? 'default' : 'secondary'}>
-                      {shopifyProvider.enabled ? 'Active' : 'Disabled'}
-                    </Badge>
-                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
                       <Button
@@ -265,7 +229,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                 </TableRow>
                 {expandedProvider === 'shopify' && (
                   <TableRow data-testid="shopify-details-row">
-                    <TableCell colSpan={3} className="p-0">
+                    <TableCell colSpan={2} className="p-0">
                       <ShopifyConfigFields
                         config={{
                           shopDomain:
@@ -292,11 +256,6 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
             {wechatProvider && (
               <TableRow data-testid="wechat-provider-row">
                 <TableCell className="font-medium">WeChat Pay</TableCell>
-                <TableCell>
-                  <Badge variant={wechatProvider.enabled ? 'default' : 'secondary'}>
-                    {wechatProvider.enabled ? 'Active' : 'Disabled'}
-                  </Badge>
-                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-2">
                     <Button
@@ -325,14 +284,9 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
               </TableRow>
             )}
 
-            {stripeProvider && stripeConfigDetails && (
+            {stripeProvider && (
               <TableRow data-testid="stripe-provider-row">
                 <TableCell className="font-medium">Stripe</TableCell>
-                <TableCell>
-                  <Badge variant={stripeConfigDetails.enabled ? 'default' : 'secondary'}>
-                    {stripeConfigDetails.enabled ? 'Active' : 'Disabled'}
-                  </Badge>
-                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-2">
                     <Button
@@ -361,14 +315,9 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
               </TableRow>
             )}
 
-            {creemProvider && creemConfigDetails && (
+            {creemProvider && (
               <TableRow data-testid="creem-provider-row">
                 <TableCell className="font-medium">Creem</TableCell>
-                <TableCell>
-                  <Badge variant={creemConfigDetails.enabled ? 'default' : 'secondary'}>
-                    {creemConfigDetails.enabled ? 'Active' : 'Disabled'}
-                  </Badge>
-                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-2">
                     <Button

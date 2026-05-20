@@ -1,34 +1,18 @@
-import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { useDialogManager } from '@/hooks/use-dialog-state'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Plus } from 'lucide-react'
-import { type SubscriptionPlanResponse, listPaymentProviders } from '@/lib/api-generated'
+import { type SubscriptionPlanResponse } from '@/lib/api-generated'
 import { deletePlan, assignPlanToClientApp, removePlanAssignment } from '@/lib/api-generated'
 import { subscriptionPlansQueryOptions, queryKeys } from '@/data/query-options'
 import { PlanTable } from './plan-table'
 import { PlanAssignmentDialog, type PlanAssignmentSubmitData } from './plan-assignment-dialog'
-import { PlanProviderMappingList } from './plan-provider-mapping-list'
-import { PlanProviderMappingForm } from './plan-provider-mapping-form'
 import { ListPagination } from '@/components/shared'
-import {
-  addPaymentProviderToPlan,
-  updatePlanPaymentProvider,
-  type SubscriptionPlanPaymentProviderResponse,
-} from '@/lib/api-generated'
 import { toast } from 'sonner'
-import { type ProviderMappingFormData } from '@/lib/schemas/billing-forms'
 import { ConfirmDeleteDialog, PageHeader } from '@/components/shared'
 import type { BillingSearchSchema } from '@/routes/$realmId/manage/billing/index'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog'
 
 interface BillingPageProps {
   realmId: string
@@ -60,24 +44,6 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
   // Dialog states
   const assignDialog = useDialogManager<SubscriptionPlanResponse>()
   const deleteDialog = useDialogManager<SubscriptionPlanResponse>()
-
-  // Provider mapping dialog states (interleaved parent/child pattern)
-  const [providerMappingOpen, setProviderMappingOpen] = useState(false)
-  const [providerMappingPlanId, setProviderMappingPlanId] = useState<string | null>(null)
-  const mappingFormDialog = useDialogManager<SubscriptionPlanPaymentProviderResponse>()
-
-  // Fetch available payment providers for the realm
-  const { data: paymentProvidersResponse } = useQuery({
-    queryKey: ['realm-payment-providers', realmId],
-    queryFn: async () => {
-      const response = await listPaymentProviders({ path: { realmId } })
-      if (response.error) throw response.error
-      return response.data
-    },
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const availableProviders = (paymentProvidersResponse?.providers ?? []).map((p) => p.platform)
 
   const deletePlanMutation = useMutation({
     mutationFn: async (planId: string) => {
@@ -156,76 +122,6 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
     },
   })
 
-  // Create provider mapping mutation
-  const createProviderMappingMutation = useMutation({
-    mutationFn: async ({ planId, data }: { planId: string; data: ProviderMappingFormData }) => {
-      const response = await addPaymentProviderToPlan({
-        path: { realmId, planId },
-        body: {
-          paymentProvider: data.paymentProvider,
-          externalProductId: data.externalProductId,
-          externalPriceId: data.externalPriceId ?? null,
-          enabled: data.enabled ?? true,
-        },
-      })
-      if (response.error) throw new Error(response.error.message)
-      return response.data
-    },
-    onSuccess: async () => {
-      toast.success('Payment provider mapping added')
-      closeMappingFormAfterSave()
-      await invalidateProviderQueries()
-    },
-    onError: (error: Error) => {
-      toast.error(`Failed to add provider mapping: ${error.message}`)
-    },
-  })
-
-  // Update provider mapping mutation
-  const updateProviderMappingMutation = useMutation({
-    mutationFn: async ({
-      planId,
-      mappingId,
-      data,
-    }: {
-      planId: string
-      mappingId: string
-      data: ProviderMappingFormData
-    }) => {
-      const response = await updatePlanPaymentProvider({
-        path: { realmId, planId, mappingId },
-        body: {
-          externalProductId: data.externalProductId,
-          externalPriceId: data.externalPriceId ?? null,
-          enabled: data.enabled,
-        },
-      })
-      if (response.error) throw new Error(response.error.message)
-      return response.data
-    },
-    onSuccess: async () => {
-      toast.success('Payment provider mapping updated')
-      closeMappingFormAfterSave()
-      await invalidateProviderQueries()
-    },
-    onError: (error: Error) => {
-      toast.error(`Failed to update provider mapping: ${error.message}`)
-    },
-  })
-
-  async function invalidateProviderQueries() {
-    // Always invalidate subscription plans to refresh payment provider summaries
-    await queryClient.invalidateQueries({ queryKey: queryKeys.billingPlans(realmId) })
-    await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
-
-    // Also invalidate the specific plan's provider list if we have a selected plan
-    if (providerMappingPlanId) {
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.planProviders(realmId, providerMappingPlanId),
-      })
-    }
-  }
-
   function handleCreatePlan() {
     navigate({
       to: '/$realmId/manage/billing/plans/new',
@@ -259,45 +155,10 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
   }
 
   function handleManageProviders(plan: SubscriptionPlanResponse) {
-    setProviderMappingPlanId(plan.id)
-    setProviderMappingOpen(true)
-  }
-
-  function handleAddMapping() {
-    mappingFormDialog.open()
-    setProviderMappingOpen(false)
-  }
-
-  function handleEditMapping(mapping: SubscriptionPlanPaymentProviderResponse) {
-    mappingFormDialog.open(mapping)
-    setProviderMappingOpen(false)
-  }
-
-  function closeMappingFormAfterSave() {
-    mappingFormDialog.close()
-    setProviderMappingOpen(true)
-  }
-
-  function cancelMappingForm() {
-    mappingFormDialog.close()
-    setProviderMappingOpen(true)
-  }
-
-  async function handleMappingSubmit(data: ProviderMappingFormData) {
-    if (!providerMappingPlanId) return
-
-    if (mappingFormDialog.selectedItem) {
-      await updateProviderMappingMutation.mutateAsync({
-        planId: providerMappingPlanId,
-        mappingId: mappingFormDialog.selectedItem.id,
-        data,
-      })
-    } else {
-      await createProviderMappingMutation.mutateAsync({
-        planId: providerMappingPlanId,
-        data,
-      })
-    }
+    navigate({
+      to: '/$realmId/manage/billing/plans/$planId/providers',
+      params: { realmId, planId: plan.id },
+    })
   }
 
   return (
@@ -364,44 +225,6 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
         isPending={deletePlanMutation.isPending}
         confirmTestId="confirm-delete-button"
       />
-
-      {/* Provider Mapping Dialog */}
-      {providerMappingPlanId && (
-        <Dialog open={providerMappingOpen} onOpenChange={setProviderMappingOpen}>
-          <DialogContent
-            className="max-w-6xl max-h-[80vh] overflow-y-auto"
-            data-testid="provider-mapping-dialog"
-          >
-            <DialogHeader>
-              <DialogTitle>Manage Payment Providers</DialogTitle>
-              <DialogDescription>
-                Configure payment providers for this subscription plan
-              </DialogDescription>
-            </DialogHeader>
-            <PlanProviderMappingList
-              planId={providerMappingPlanId}
-              realmId={realmId}
-              onAdd={handleAddMapping}
-              onEdit={handleEditMapping}
-            />
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Provider Mapping Form Dialog */}
-      {providerMappingPlanId && (
-        <PlanProviderMappingForm
-          open={mappingFormDialog.isOpen}
-          onOpenChange={cancelMappingForm}
-          onSubmit={handleMappingSubmit}
-          isSubmitting={
-            createProviderMappingMutation.isPending || updateProviderMappingMutation.isPending
-          }
-          mapping={mappingFormDialog.selectedItem ?? undefined}
-          realmId={realmId}
-          availableProviders={availableProviders}
-        />
-      )}
     </div>
   )
 }

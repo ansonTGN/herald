@@ -7,7 +7,6 @@ import { type PointsPackageResponse, deletePointsPackage } from '@/lib/api-gener
 import { pointsPackagesQueryOptions, queryKeys } from '@/data/query-options'
 import { PointsPackageList } from '@/components/points-packages/points-package-list'
 import { PointsPackageDeleteDialog } from '@/components/points-packages/points-package-delete-dialog'
-import { PaymentProviderConfigForm } from '@/components/points-packages/payment-provider-config-form'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/shared/page-header'
 
@@ -23,9 +22,6 @@ function PointsPackagesPage() {
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deletingPackage, setDeletingPackage] = useState<PointsPackageResponse | undefined>(
-    undefined
-  )
-  const [configuringPackage, setConfiguringPackage] = useState<PointsPackageResponse | undefined>(
     undefined
   )
 
@@ -60,7 +56,10 @@ function PointsPackagesPage() {
   }
 
   function handleConfigureProviders(pkg: PointsPackageResponse) {
-    setConfiguringPackage(pkg)
+    navigate({
+      to: '/$realmId/manage/points-packages/$packageId/providers',
+      params: { realmId, packageId: pkg.id },
+    })
   }
 
   async function confirmDeletePackage() {
@@ -108,15 +107,6 @@ function PointsPackagesPage() {
           onConfirm={confirmDeletePackage}
           isDeleting={deletePackageMutation.isPending}
           hasPurchaseHistory={false} // TODO: Check actual purchase history
-        />
-      )}
-
-      {configuringPackage && (
-        <PaymentProviderConfigForm
-          packageId={configuringPackage.id}
-          realmId={realmId}
-          open={!!configuringPackage}
-          onOpenChange={(open) => !open && setConfiguringPackage(undefined)}
         />
       )}
     </div>

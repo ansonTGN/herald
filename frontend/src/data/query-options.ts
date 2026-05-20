@@ -877,12 +877,15 @@ export const pointsAccountsQueryOptions = (
       if (!data || typeof data !== 'object') {
         throw new Error('Invalid response data')
       }
-      const paginated = data as PointsAccountsListResponse
+      const paginated = data as PointsAccountsListResponse & {
+        data?: PointsAccountsListResponse['items']
+      }
+      const accounts = paginated.items ?? paginated.data ?? []
       return {
         total: paginated.total,
         page: paginated.page,
         pageSize: paginated.pageSize,
-        accounts: paginated.items.map((account) => ({
+        accounts: accounts.map((account) => ({
           id: account.id,
           userId: account.userId,
           userName: account.userName ?? undefined,

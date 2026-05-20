@@ -96,7 +96,7 @@ export function PlanProviderMappingForm({
           <Button
             type="submit"
             form="provider-mapping-form"
-            disabled={isSubmitting}
+            disabled={isSubmitting || (!isEditing && availableProviders.length === 0)}
             data-testid="provider-mapping-submit-button"
           >
             {isSubmitting ? 'Saving...' : isEditing ? 'Update Mapping' : 'Add Provider'}

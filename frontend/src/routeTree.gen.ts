@@ -62,6 +62,7 @@ import { Route as RealmIdManagePointsConfigsIndexRouteImport } from './routes/$r
 import { Route as RealmIdManageBillingPaymentProvidersIndexRouteImport } from './routes/$realmId/manage/billing/payment-providers/index'
 import { Route as RealmIdManageBillingInvoicesIndexRouteImport } from './routes/$realmId/manage/billing/invoices/index'
 import { Route as RealmIdManagePointsConfigsNewRouteImport } from './routes/$realmId/manage/points/configs/new'
+import { Route as RealmIdManagePointsPackagesPackageIdProvidersRouteImport } from './routes/$realmId/manage/points-packages/$packageId/providers'
 import { Route as RealmIdManagePointsPackagesPackageIdEditRouteImport } from './routes/$realmId/manage/points-packages/$packageId.edit'
 import { Route as RealmIdManageClientAppsClientAppIdEditRouteImport } from './routes/$realmId/manage/client-apps/$clientAppId.edit'
 import { Route as RealmIdManageBillingPlansNewRouteImport } from './routes/$realmId/manage/billing/plans/new'
@@ -71,6 +72,7 @@ import { Route as RealmIdManageBillingPaymentProvidersShopifyRouteImport } from 
 import { Route as RealmIdManageBillingPaymentProvidersCreemRouteImport } from './routes/$realmId/manage/billing/payment-providers/creem'
 import { Route as RealmIdManageBillingInvoicesNewRouteImport } from './routes/$realmId/manage/billing/invoices/new'
 import { Route as RealmIdManagePointsConfigsConfigIdEditRouteImport } from './routes/$realmId/manage/points/configs/$configId.edit'
+import { Route as RealmIdManageBillingPlansPlanIdProvidersRouteImport } from './routes/$realmId/manage/billing/plans/$planId/providers'
 import { Route as RealmIdManageBillingPlansPlanIdEditRouteImport } from './routes/$realmId/manage/billing/plans/$planId.edit'
 import { Route as RealmIdManageBillingInvoicesInvoiceIdEditRouteImport } from './routes/$realmId/manage/billing/invoices/$invoiceId.edit'
 
@@ -366,6 +368,12 @@ const RealmIdManagePointsConfigsNewRoute =
     path: '/new',
     getParentRoute: () => RealmIdManagePointsConfigsRoute,
   } as any)
+const RealmIdManagePointsPackagesPackageIdProvidersRoute =
+  RealmIdManagePointsPackagesPackageIdProvidersRouteImport.update({
+    id: '/$packageId/providers',
+    path: '/$packageId/providers',
+    getParentRoute: () => RealmIdManagePointsPackagesRoute,
+  } as any)
 const RealmIdManagePointsPackagesPackageIdEditRoute =
   RealmIdManagePointsPackagesPackageIdEditRouteImport.update({
     id: '/$packageId/edit',
@@ -419,6 +427,12 @@ const RealmIdManagePointsConfigsConfigIdEditRoute =
     id: '/$configId/edit',
     path: '/$configId/edit',
     getParentRoute: () => RealmIdManagePointsConfigsRoute,
+  } as any)
+const RealmIdManageBillingPlansPlanIdProvidersRoute =
+  RealmIdManageBillingPlansPlanIdProvidersRouteImport.update({
+    id: '/$planId/providers',
+    path: '/$planId/providers',
+    getParentRoute: () => RealmIdManageBillingPlansRoute,
   } as any)
 const RealmIdManageBillingPlansPlanIdEditRoute =
   RealmIdManageBillingPlansPlanIdEditRouteImport.update({
@@ -491,12 +505,14 @@ export interface FileRoutesByFullPath {
   '/$realmId/manage/billing/plans/new': typeof RealmIdManageBillingPlansNewRoute
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/$realmId/manage/points-packages/$packageId/edit': typeof RealmIdManagePointsPackagesPackageIdEditRoute
+  '/$realmId/manage/points-packages/$packageId/providers': typeof RealmIdManagePointsPackagesPackageIdProvidersRoute
   '/$realmId/manage/points/configs/new': typeof RealmIdManagePointsConfigsNewRoute
   '/$realmId/manage/billing/invoices/': typeof RealmIdManageBillingInvoicesIndexRoute
   '/$realmId/manage/billing/payment-providers/': typeof RealmIdManageBillingPaymentProvidersIndexRoute
   '/$realmId/manage/points/configs/': typeof RealmIdManagePointsConfigsIndexRoute
   '/$realmId/manage/billing/invoices/$invoiceId/edit': typeof RealmIdManageBillingInvoicesInvoiceIdEditRoute
   '/$realmId/manage/billing/plans/$planId/edit': typeof RealmIdManageBillingPlansPlanIdEditRoute
+  '/$realmId/manage/billing/plans/$planId/providers': typeof RealmIdManageBillingPlansPlanIdProvidersRoute
   '/$realmId/manage/points/configs/$configId/edit': typeof RealmIdManagePointsConfigsConfigIdEditRoute
 }
 export interface FileRoutesByTo {
@@ -547,12 +563,14 @@ export interface FileRoutesByTo {
   '/$realmId/manage/billing/plans/new': typeof RealmIdManageBillingPlansNewRoute
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/$realmId/manage/points-packages/$packageId/edit': typeof RealmIdManagePointsPackagesPackageIdEditRoute
+  '/$realmId/manage/points-packages/$packageId/providers': typeof RealmIdManagePointsPackagesPackageIdProvidersRoute
   '/$realmId/manage/points/configs/new': typeof RealmIdManagePointsConfigsNewRoute
   '/$realmId/manage/billing/invoices': typeof RealmIdManageBillingInvoicesIndexRoute
   '/$realmId/manage/billing/payment-providers': typeof RealmIdManageBillingPaymentProvidersIndexRoute
   '/$realmId/manage/points/configs': typeof RealmIdManagePointsConfigsIndexRoute
   '/$realmId/manage/billing/invoices/$invoiceId/edit': typeof RealmIdManageBillingInvoicesInvoiceIdEditRoute
   '/$realmId/manage/billing/plans/$planId/edit': typeof RealmIdManageBillingPlansPlanIdEditRoute
+  '/$realmId/manage/billing/plans/$planId/providers': typeof RealmIdManageBillingPlansPlanIdProvidersRoute
   '/$realmId/manage/points/configs/$configId/edit': typeof RealmIdManagePointsConfigsConfigIdEditRoute
 }
 export interface FileRoutesById {
@@ -614,12 +632,14 @@ export interface FileRoutesById {
   '/$realmId/manage/billing/plans/new': typeof RealmIdManageBillingPlansNewRoute
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/$realmId/manage/points-packages/$packageId/edit': typeof RealmIdManagePointsPackagesPackageIdEditRoute
+  '/$realmId/manage/points-packages/$packageId/providers': typeof RealmIdManagePointsPackagesPackageIdProvidersRoute
   '/$realmId/manage/points/configs/new': typeof RealmIdManagePointsConfigsNewRoute
   '/$realmId/manage/billing/invoices/': typeof RealmIdManageBillingInvoicesIndexRoute
   '/$realmId/manage/billing/payment-providers/': typeof RealmIdManageBillingPaymentProvidersIndexRoute
   '/$realmId/manage/points/configs/': typeof RealmIdManagePointsConfigsIndexRoute
   '/$realmId/manage/billing/invoices/$invoiceId/edit': typeof RealmIdManageBillingInvoicesInvoiceIdEditRoute
   '/$realmId/manage/billing/plans/$planId/edit': typeof RealmIdManageBillingPlansPlanIdEditRoute
+  '/$realmId/manage/billing/plans/$planId/providers': typeof RealmIdManageBillingPlansPlanIdProvidersRoute
   '/$realmId/manage/points/configs/$configId/edit': typeof RealmIdManagePointsConfigsConfigIdEditRoute
 }
 export interface FileRouteTypes {
@@ -682,12 +702,14 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/plans/new'
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/$realmId/manage/points-packages/$packageId/edit'
+    | '/$realmId/manage/points-packages/$packageId/providers'
     | '/$realmId/manage/points/configs/new'
     | '/$realmId/manage/billing/invoices/'
     | '/$realmId/manage/billing/payment-providers/'
     | '/$realmId/manage/points/configs/'
     | '/$realmId/manage/billing/invoices/$invoiceId/edit'
     | '/$realmId/manage/billing/plans/$planId/edit'
+    | '/$realmId/manage/billing/plans/$planId/providers'
     | '/$realmId/manage/points/configs/$configId/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -738,12 +760,14 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/plans/new'
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/$realmId/manage/points-packages/$packageId/edit'
+    | '/$realmId/manage/points-packages/$packageId/providers'
     | '/$realmId/manage/points/configs/new'
     | '/$realmId/manage/billing/invoices'
     | '/$realmId/manage/billing/payment-providers'
     | '/$realmId/manage/points/configs'
     | '/$realmId/manage/billing/invoices/$invoiceId/edit'
     | '/$realmId/manage/billing/plans/$planId/edit'
+    | '/$realmId/manage/billing/plans/$planId/providers'
     | '/$realmId/manage/points/configs/$configId/edit'
   id:
     | '__root__'
@@ -804,12 +828,14 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/plans/new'
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/$realmId/manage/points-packages/$packageId/edit'
+    | '/$realmId/manage/points-packages/$packageId/providers'
     | '/$realmId/manage/points/configs/new'
     | '/$realmId/manage/billing/invoices/'
     | '/$realmId/manage/billing/payment-providers/'
     | '/$realmId/manage/points/configs/'
     | '/$realmId/manage/billing/invoices/$invoiceId/edit'
     | '/$realmId/manage/billing/plans/$planId/edit'
+    | '/$realmId/manage/billing/plans/$planId/providers'
     | '/$realmId/manage/points/configs/$configId/edit'
   fileRoutesById: FileRoutesById
 }
@@ -1191,6 +1217,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RealmIdManagePointsConfigsNewRouteImport
       parentRoute: typeof RealmIdManagePointsConfigsRoute
     }
+    '/$realmId/manage/points-packages/$packageId/providers': {
+      id: '/$realmId/manage/points-packages/$packageId/providers'
+      path: '/$packageId/providers'
+      fullPath: '/$realmId/manage/points-packages/$packageId/providers'
+      preLoaderRoute: typeof RealmIdManagePointsPackagesPackageIdProvidersRouteImport
+      parentRoute: typeof RealmIdManagePointsPackagesRoute
+    }
     '/$realmId/manage/points-packages/$packageId/edit': {
       id: '/$realmId/manage/points-packages/$packageId/edit'
       path: '/$packageId/edit'
@@ -1253,6 +1286,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/$realmId/manage/points/configs/$configId/edit'
       preLoaderRoute: typeof RealmIdManagePointsConfigsConfigIdEditRouteImport
       parentRoute: typeof RealmIdManagePointsConfigsRoute
+    }
+    '/$realmId/manage/billing/plans/$planId/providers': {
+      id: '/$realmId/manage/billing/plans/$planId/providers'
+      path: '/$planId/providers'
+      fullPath: '/$realmId/manage/billing/plans/$planId/providers'
+      preLoaderRoute: typeof RealmIdManageBillingPlansPlanIdProvidersRouteImport
+      parentRoute: typeof RealmIdManageBillingPlansRoute
     }
     '/$realmId/manage/billing/plans/$planId/edit': {
       id: '/$realmId/manage/billing/plans/$planId/edit'
@@ -1336,6 +1376,7 @@ const RealmIdManageBillingPaymentProvidersRouteWithChildren =
 interface RealmIdManageBillingPlansRouteChildren {
   RealmIdManageBillingPlansNewRoute: typeof RealmIdManageBillingPlansNewRoute
   RealmIdManageBillingPlansPlanIdEditRoute: typeof RealmIdManageBillingPlansPlanIdEditRoute
+  RealmIdManageBillingPlansPlanIdProvidersRoute: typeof RealmIdManageBillingPlansPlanIdProvidersRoute
 }
 
 const RealmIdManageBillingPlansRouteChildren: RealmIdManageBillingPlansRouteChildren =
@@ -1343,6 +1384,8 @@ const RealmIdManageBillingPlansRouteChildren: RealmIdManageBillingPlansRouteChil
     RealmIdManageBillingPlansNewRoute: RealmIdManageBillingPlansNewRoute,
     RealmIdManageBillingPlansPlanIdEditRoute:
       RealmIdManageBillingPlansPlanIdEditRoute,
+    RealmIdManageBillingPlansPlanIdProvidersRoute:
+      RealmIdManageBillingPlansPlanIdProvidersRoute,
   }
 
 const RealmIdManageBillingPlansRouteWithChildren =
@@ -1428,6 +1471,7 @@ interface RealmIdManagePointsPackagesRouteChildren {
   RealmIdManagePointsPackagesNewRoute: typeof RealmIdManagePointsPackagesNewRoute
   RealmIdManagePointsPackagesIndexRoute: typeof RealmIdManagePointsPackagesIndexRoute
   RealmIdManagePointsPackagesPackageIdEditRoute: typeof RealmIdManagePointsPackagesPackageIdEditRoute
+  RealmIdManagePointsPackagesPackageIdProvidersRoute: typeof RealmIdManagePointsPackagesPackageIdProvidersRoute
 }
 
 const RealmIdManagePointsPackagesRouteChildren: RealmIdManagePointsPackagesRouteChildren =
@@ -1437,6 +1481,8 @@ const RealmIdManagePointsPackagesRouteChildren: RealmIdManagePointsPackagesRoute
       RealmIdManagePointsPackagesIndexRoute,
     RealmIdManagePointsPackagesPackageIdEditRoute:
       RealmIdManagePointsPackagesPackageIdEditRoute,
+    RealmIdManagePointsPackagesPackageIdProvidersRoute:
+      RealmIdManagePointsPackagesPackageIdProvidersRoute,
   }
 
 const RealmIdManagePointsPackagesRouteWithChildren =

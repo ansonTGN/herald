@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react'
 
 export interface PageHeaderProps {
   title: string
+  subtitle?: string
   headingTestId?: string
   action?: {
     label: string
@@ -31,7 +32,13 @@ export interface PageHeaderProps {
  * />
  * ```
  */
-export function PageHeader({ title, headingTestId, action, className = '' }: PageHeaderProps) {
+export function PageHeader({
+  title,
+  subtitle,
+  headingTestId,
+  action,
+  className = '',
+}: PageHeaderProps) {
   return (
     <div className={`flex items-center justify-between ${className}`}>
       <div>
@@ -41,6 +48,7 @@ export function PageHeader({ title, headingTestId, action, className = '' }: Pag
         >
           {title}
         </h1>
+        {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
       </div>
       {action && action.show !== false && (
         <Button onClick={action.onClick} data-testid={action.testId}>

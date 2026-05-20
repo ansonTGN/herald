@@ -32,7 +32,8 @@ export const TEST_DATA = {
   } as const,
 } as const
 
-export type PaymentProvider = typeof TEST_DATA.PAYMENT_PROVIDERS[keyof typeof TEST_DATA.PAYMENT_PROVIDERS]
+export type PaymentProvider =
+  (typeof TEST_DATA.PAYMENT_PROVIDERS)[keyof typeof TEST_DATA.PAYMENT_PROVIDERS]
 
 /**
  * Extracts payment attempt ID from localStorage
@@ -103,17 +104,24 @@ export async function configurePaymentProvider(
   externalId: string,
   enabled: boolean = true
 ): Promise<void> {
-  await page.locator('select[id="paymentProvider"]').selectOption(provider)
-  await page.getByTestId(`payment-provider-external-id-input-${provider}`).fill(externalId)
+  await page.getByTestId('add-provider-mapping-button').click()
+  await expect(page.getByTestId('provider-mapping-form-dialog')).toBeVisible()
+  await page.getByTestId('provider-mapping-provider-select-trigger').click()
+  await page
+    .getByRole('option', {
+      name: provider === 'wechat' ? 'WeChat Pay' : 'Stripe',
+    })
+    .click()
+  await page.getByTestId('provider-mapping-product-id-input').fill(externalId)
 
-  const isEnabled = await page.getByTestId(`payment-provider-enabled-switch-${provider}`).isChecked()
+  const isEnabled = await page.getByTestId('provider-mapping-enabled-switch').isChecked()
   if (enabled && !isEnabled) {
-    await page.getByTestId(`payment-provider-enabled-switch-${provider}`).click()
+    await page.getByTestId('provider-mapping-enabled-switch').click()
   } else if (!enabled && isEnabled) {
-    await page.getByTestId(`payment-provider-enabled-switch-${provider}`).click()
+    await page.getByTestId('provider-mapping-enabled-switch').click()
   }
 
-  await page.getByTestId('payment-provider-add-button').click()
+  await page.getByTestId('provider-mapping-submit-button').click()
   await expect(page.getByText('Payment provider mapping added')).toBeVisible()
 }
 
@@ -164,7 +172,7 @@ export async function initiatePurchaseFlow(
   await selectPaymentMethodAndProceed(page, provider)
 
   await expect(page.locator(SELECTORS.purchasePoints.stepProcessing)).toBeVisible({
-    timeout: TEST_DATA.TIMEOUTS.ELEMENT_VISIBLE
+    timeout: TEST_DATA.TIMEOUTS.ELEMENT_VISIBLE,
   })
 
   return extractPaymentAttemptId(page)
@@ -180,7 +188,8 @@ export async function verifyRedirectPromptOrDegraded(
   providerName: string
 ): Promise<void> {
   await expect(
-    page.locator(SELECTORS.paymentProviderUI.redirectPrompt)
+    page
+      .locator(SELECTORS.paymentProviderUI.redirectPrompt)
       .or(page.locator(SELECTORS.paymentProviderUI.contextDegraded))
   ).toBeVisible({ timeout: 5000 })
 

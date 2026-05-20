@@ -55,7 +55,10 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
   })
 
   test.describe('Admin: Points Package Management', () => {
-    test('should create points package and configure payment providers', async ({ page, demoLogger }) => {
+    test('should create points package and configure payment providers', async ({
+      page,
+      demoLogger,
+    }) => {
       await test.step('Admin logs in and navigates to points packages page', async () => {
         // Navigate to login page
         await page.goto(`/${REALM_ID}/auth/login`)
@@ -85,8 +88,12 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
 
         // Fill package form
         await page.locator(SELECTORS.pointsPackageForm.nameInput).fill(packageName)
-        await page.locator(SELECTORS.pointsPackageForm.titleInput).fill(`Test Package ${testStartTime}`)
-        await page.locator(SELECTORS.pointsPackageForm.descriptionInput).fill('Test package for demo')
+        await page
+          .locator(SELECTORS.pointsPackageForm.titleInput)
+          .fill(`Test Package ${testStartTime}`)
+        await page
+          .locator(SELECTORS.pointsPackageForm.descriptionInput)
+          .fill('Test package for demo')
         await page.locator(SELECTORS.pointsPackageForm.pointsInput).fill('1000')
         await page.locator(SELECTORS.pointsPackageForm.priceInput).fill('999')
         await page.locator(SELECTORS.pointsPackageForm.currencySelect).fill('USD')
@@ -114,26 +121,32 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
       await test.step('Admin configures WeChat Pay for the package', async () => {
         const packageRow = page.locator('tr').filter({ hasText: packageName })
         await expect(packageRow).toBeVisible()
-        const configureButton = packageRow.locator('[data-testid^="points-package-configure-button-"]')
+        const configureButton = packageRow.locator(
+          '[data-testid^="points-package-configure-button-"]'
+        )
         await configureButton.click()
 
-        // Wait for provider config dialog
-        await expect(page.getByRole('dialog', { name: 'Configure Payment Providers' })).toBeVisible()
+        await page.waitForURL('**/manage/points-packages/*/providers', {
+          timeout: 10000,
+        })
+        await expect(page.getByTestId('points-package-providers-page')).toBeVisible()
 
         // Select WeChat Pay provider
-        await page.locator('select[id="paymentProvider"]').selectOption('wechat')
+        await page.getByTestId('add-provider-mapping-button').click()
+        await page.getByTestId('provider-mapping-provider-select-trigger').click()
+        await page.getByRole('option', { name: 'WeChat Pay' }).click()
 
         // Fill external product ID
-        await page.getByTestId(`payment-provider-external-id-input-wechat`).fill(`wx-prod-${testStartTime}`)
+        await page.getByTestId('provider-mapping-product-id-input').fill(`wx-prod-${testStartTime}`)
 
         // Ensure enabled switch is checked
-        const isEnabled = await page.getByTestId(`payment-provider-enabled-switch-wechat`).isChecked()
+        const isEnabled = await page.getByTestId('provider-mapping-enabled-switch').isChecked()
         if (!isEnabled) {
-          await page.getByTestId(`payment-provider-enabled-switch-wechat`).click()
+          await page.getByTestId('provider-mapping-enabled-switch').click()
         }
 
         // Submit form
-        await page.getByTestId('payment-provider-add-button').click()
+        await page.getByTestId('provider-mapping-submit-button').click()
 
         // Wait for success message and provider to appear in list
         await expect(page.getByText('Payment provider mapping added')).toBeVisible()
@@ -143,25 +156,28 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
 
       await test.step('Admin configures Stripe for the package', async () => {
         // Add Stripe provider
-        await page.locator('select[id="paymentProvider"]').selectOption('stripe')
+        await page.getByTestId('add-provider-mapping-button').click()
+        await page.getByTestId('provider-mapping-provider-select-trigger').click()
+        await page.getByRole('option', { name: 'Stripe' }).click()
 
         // Fill external product ID
-        await page.getByTestId(`payment-provider-external-id-input-stripe`).fill(`stripe-prod-${testStartTime}`)
+        await page
+          .getByTestId('provider-mapping-product-id-input')
+          .fill(`stripe-prod-${testStartTime}`)
 
         // Ensure enabled switch is checked
-        const isEnabled = await page.getByTestId(`payment-provider-enabled-switch-stripe`).isChecked()
+        const isEnabled = await page.getByTestId('provider-mapping-enabled-switch').isChecked()
         if (!isEnabled) {
-          await page.getByTestId(`payment-provider-enabled-switch-stripe`).click()
+          await page.getByTestId('provider-mapping-enabled-switch').click()
         }
 
         // Submit form
-        await page.getByTestId('payment-provider-add-button').click()
+        await page.getByTestId('provider-mapping-submit-button').click()
 
         // Wait for success message
         await expect(page.getByText('Payment provider mapping added')).toBeVisible()
 
-        // Close dialog
-        await page.keyboard.press('Escape')
+        await page.getByTestId('back-to-points-packages-button').click()
 
         console.log('[Admin] ✓ Stripe configured successfully')
       })
@@ -169,7 +185,11 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
   })
 
   test.describe('User: Purchase Points via WeChat Pay', () => {
-    test('should purchase points package via WeChat Pay and verify fulfillment', async ({ page, request, demoLogger }) => {
+    test('should purchase points package via WeChat Pay and verify fulfillment', async ({
+      page,
+      request,
+      demoLogger,
+    }) => {
       await test.step('User logs in and navigates to purchase points page', async () => {
         // Logout admin first
         await page.goto(`/${REALM_ID}/auth/logout`)
@@ -243,12 +263,13 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
         await expect(page.locator(SELECTORS.purchasePoints.stepProcessing)).toBeVisible()
         await expect(page.locator(SELECTORS.paymentStatus.pending)).toBeVisible()
 
-        const attemptId = await page.waitForFunction(() => {
-          const state = localStorage.getItem('cas-purchase-flow')
-          if (!state) return null
-          const parsed = JSON.parse(state)
-          return parsed?.state?.attemptId ?? null
-        })
+        const attemptId = await page
+          .waitForFunction(() => {
+            const state = localStorage.getItem('cas-purchase-flow')
+            if (!state) return null
+            const parsed = JSON.parse(state)
+            return parsed?.state?.attemptId ?? null
+          })
           .then((handle) => handle.jsonValue())
 
         expect(attemptId).toBeTruthy()
@@ -265,11 +286,15 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
         expect(result.transactionId).toBeTruthy()
         expect(result.points).toBeGreaterThan(0)
 
-        console.log(`[Payment] ✓ WeChat Pay fulfilled: ${result.transactionId}, Points: ${result.points}`)
+        console.log(
+          `[Payment] ✓ WeChat Pay fulfilled: ${result.transactionId}, Points: ${result.points}`
+        )
       })
 
       await test.step('Verify payment status updates to Succeeded', async () => {
-        await expect(page.locator(SELECTORS.purchasePoints.stepComplete)).toBeVisible({ timeout: 15000 })
+        await expect(page.locator(SELECTORS.purchasePoints.stepComplete)).toBeVisible({
+          timeout: 15000,
+        })
         await expect(page.getByText('Purchase Complete!')).toBeVisible()
 
         console.log('[User] ✓ Payment succeeded and points granted')
@@ -307,7 +332,11 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
   })
 
   test.describe('User: Purchase Points via Stripe', () => {
-    test('should purchase points package via Stripe and verify fulfillment', async ({ page, request, demoLogger }) => {
+    test('should purchase points package via Stripe and verify fulfillment', async ({
+      page,
+      request,
+      demoLogger,
+    }) => {
       await test.step('User logs in and navigates to purchase points page', async () => {
         // Logout first
         await page.goto(`/${REALM_ID}/auth/logout`)
@@ -374,12 +403,13 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
         await expect(page.locator(SELECTORS.purchasePoints.stepProcessing)).toBeVisible()
         await expect(page.locator(SELECTORS.paymentStatus.pending)).toBeVisible()
 
-        const attemptId = await page.waitForFunction(() => {
-          const state = localStorage.getItem('cas-purchase-flow')
-          if (!state) return null
-          const parsed = JSON.parse(state)
-          return parsed?.state?.attemptId ?? null
-        })
+        const attemptId = await page
+          .waitForFunction(() => {
+            const state = localStorage.getItem('cas-purchase-flow')
+            if (!state) return null
+            const parsed = JSON.parse(state)
+            return parsed?.state?.attemptId ?? null
+          })
           .then((handle) => handle.jsonValue())
 
         expect(attemptId).toBeTruthy()
@@ -396,11 +426,15 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
         expect(result.transactionId).toBeTruthy()
         expect(result.points).toBeGreaterThan(0)
 
-        console.log(`[Payment] ✓ Stripe fulfilled: ${result.transactionId}, Points: ${result.points}`)
+        console.log(
+          `[Payment] ✓ Stripe fulfilled: ${result.transactionId}, Points: ${result.points}`
+        )
       })
 
       await test.step('Verify payment status updates to Succeeded', async () => {
-        await expect(page.locator(SELECTORS.purchasePoints.stepComplete)).toBeVisible({ timeout: 15000 })
+        await expect(page.locator(SELECTORS.purchasePoints.stepComplete)).toBeVisible({
+          timeout: 15000,
+        })
         await expect(page.getByText('Purchase Complete!')).toBeVisible()
 
         console.log('[User] ✓ Stripe payment succeeded')

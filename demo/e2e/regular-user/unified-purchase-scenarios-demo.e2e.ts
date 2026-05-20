@@ -96,18 +96,27 @@ test.describe('[P0] Admin Operations', () => {
     await test.step('Configure multiple payment providers', async () => {
       const packageRow = page.locator('tr').filter({ hasText: packageName })
       await expect(packageRow).toBeVisible()
-      const configureButton = packageRow.locator('[data-testid^="points-package-configure-button-"]')
+      const configureButton = packageRow.locator(
+        '[data-testid^="points-package-configure-button-"]'
+      )
       await configureButton.click()
-      await expect(page.locator(SELECTORS.paymentProviderConfig.dialog)).toBeVisible()
+      await page.waitForURL('**/manage/points-packages/*/providers', {
+        timeout: 10000,
+      })
+      await expect(page.locator(SELECTORS.paymentProviderConfig.page)).toBeVisible()
 
-      await page.locator('select[id="paymentProvider"]').selectOption('wechat')
-      await page.getByTestId(`payment-provider-external-id-input-wechat`).fill(`wx-${testStartTime}`)
-      await page.getByTestId('payment-provider-add-button').click()
+      await page.getByTestId('add-provider-mapping-button').click()
+      await page.getByTestId('provider-mapping-provider-select-trigger').click()
+      await page.getByRole('option', { name: 'WeChat Pay' }).click()
+      await page.getByTestId('provider-mapping-product-id-input').fill(`wx-${testStartTime}`)
+      await page.getByTestId('provider-mapping-submit-button').click()
       await expect(page.getByText('Payment provider mapping added')).toBeVisible()
 
-      await page.locator('select[id="paymentProvider"]').selectOption('stripe')
-      await page.getByTestId(`payment-provider-external-id-input-stripe`).fill(`stripe-${testStartTime}`)
-      await page.getByTestId('payment-provider-add-button').click()
+      await page.getByTestId('add-provider-mapping-button').click()
+      await page.getByTestId('provider-mapping-provider-select-trigger').click()
+      await page.getByRole('option', { name: 'Stripe' }).click()
+      await page.getByTestId('provider-mapping-product-id-input').fill(`stripe-${testStartTime}`)
+      await page.getByTestId('provider-mapping-submit-button').click()
       await expect(page.getByText('Payment provider mapping added')).toBeVisible()
 
       await expect(page.getByTestId('payment-provider-list')).toBeVisible()
@@ -117,14 +126,19 @@ test.describe('[P0] Admin Operations', () => {
 
     await test.step('Edit points package', async () => {
       await page.goto(`/${REALM_ID}/manage/points-packages`)
-      await page.getByTestId(/^points-package-edit-button-/).first().click()
+      await page
+        .getByTestId(/^points-package-edit-button-/)
+        .first()
+        .click()
       await expect(page.locator(SELECTORS.pointsPackageForm.dialog)).toBeVisible()
 
       await page.locator(SELECTORS.pointsPackageForm.titleInput).fill('Updated Title')
       await page.locator(SELECTORS.pointsPackageForm.priceInput).fill('6.99')
       await page.locator(SELECTORS.pointsPackageForm.submitButton).click()
 
-      await expect(page.getByTestId('points-packages-table').getByText('Updated Title')).toBeVisible()
+      await expect(
+        page.getByTestId('points-packages-table').getByText('Updated Title')
+      ).toBeVisible()
       await expect(page.getByTestId('points-packages-table').getByText('6.99')).toBeVisible()
 
       console.log('[P0] ✓ Points package edited')
@@ -167,21 +181,24 @@ test.describe('[P0] Purchase Flows', () => {
   test('[P0] should complete WeChat Pay and Stripe purchases', async ({ page }) => {
     await test.step('Purchase via WeChat Pay', async () => {
       await page.goto(`/${REALM_ID}/user/purchase-points`)
-      await page.getByTestId(/^points-package-select-button-/).first().click()
+      await page
+        .getByTestId(/^points-package-select-button-/)
+        .first()
+        .click()
       await page.getByRole('button', { name: 'Next' }).click()
 
       await page.getByTestId('payment-method-select-wechat').click()
       await page.getByRole('button', { name: 'Complete Purchase' }).click()
 
       await page.waitForTimeout(2000)
-      const attemptId = await page.evaluate(() => {
+      const attemptId = (await page.evaluate(() => {
         const state = localStorage.getItem('purchase-flow-storage')
         if (state) {
           const parsed = JSON.parse(state)
           return parsed?.state?.paymentAttempt?.attemptId
         }
         return null
-      }) as string
+      })) as string
 
       expect(attemptId).toBeTruthy()
 
@@ -194,21 +211,24 @@ test.describe('[P0] Purchase Flows', () => {
 
     await test.step('Purchase via Stripe', async () => {
       await page.goto(`/${REALM_ID}/user/purchase-points`)
-      await page.getByTestId(/^points-package-select-button-/).first().click()
+      await page
+        .getByTestId(/^points-package-select-button-/)
+        .first()
+        .click()
       await page.getByRole('button', { name: 'Next' }).click()
 
       await page.getByTestId('payment-method-select-stripe').click()
       await page.getByRole('button', { name: 'Complete Purchase' }).click()
 
       await page.waitForTimeout(2000)
-      const attemptId = await page.evaluate(() => {
+      const attemptId = (await page.evaluate(() => {
         const state = localStorage.getItem('purchase-flow-storage')
         if (state) {
           const parsed = JSON.parse(state)
           return parsed?.state?.paymentAttempt?.attemptId
         }
         return null
-      }) as string
+      })) as string
 
       expect(attemptId).toBeTruthy()
 
@@ -256,20 +276,23 @@ test.describe('[P0] Edge Cases', () => {
   test('[P0] should handle page refresh and rapid clicks', async ({ page }) => {
     await test.step('Page refresh during payment', async () => {
       await page.goto(`/${REALM_ID}/user/purchase-points`)
-      await page.getByTestId(/^points-package-select-button-/).first().click()
+      await page
+        .getByTestId(/^points-package-select-button-/)
+        .first()
+        .click()
       await page.getByRole('button', { name: 'Next' }).click()
       await page.getByTestId('payment-method-select-wechat').click()
       await page.getByRole('button', { name: 'Complete Purchase' }).click()
 
       await page.waitForTimeout(2000)
-      const attemptId = await page.evaluate(() => {
+      const attemptId = (await page.evaluate(() => {
         const state = localStorage.getItem('purchase-flow-storage')
         if (state) {
           const parsed = JSON.parse(state)
           return parsed?.state?.paymentAttempt?.attemptId
         }
         return null
-      }) as string
+      })) as string
 
       await page.reload()
 
@@ -277,14 +300,14 @@ test.describe('[P0] Edge Cases', () => {
       await expect(page.locator(SELECTORS.paymentStatus.pending)).toBeVisible()
 
       // Verify attempt ID is preserved
-      const attemptIdAfterRefresh = await page.evaluate(() => {
+      const attemptIdAfterRefresh = (await page.evaluate(() => {
         const state = localStorage.getItem('purchase-flow-storage')
         if (state) {
           const parsed = JSON.parse(state)
           return parsed?.state?.paymentAttempt?.attemptId
         }
         return null
-      }) as string
+      })) as string
 
       expect(attemptIdAfterRefresh).toBe(attemptId)
 
@@ -293,11 +316,16 @@ test.describe('[P0] Edge Cases', () => {
 
     await test.step('Multiple rapid clicks prevention', async () => {
       await page.goto(`/${REALM_ID}/user/purchase-points`)
-      await page.getByTestId(/^points-package-select-button-/).first().click()
+      await page
+        .getByTestId(/^points-package-select-button-/)
+        .first()
+        .click()
       await page.getByRole('button', { name: 'Next' }).click()
       await page.getByTestId('payment-method-select-wechat').click()
 
-      const purchaseButton = page.getByRole('button', { name: 'Complete Purchase' })
+      const purchaseButton = page.getByRole('button', {
+        name: 'Complete Purchase',
+      })
       await purchaseButton.click()
       await purchaseButton.click()
       await purchaseButton.click()
@@ -320,7 +348,10 @@ test.describe('[P0] Edge Cases', () => {
   test('[P0] should verify cross-user state isolation', async ({ page }) => {
     await test.step('Store current user state', async () => {
       await page.goto(`/${REALM_ID}/user/purchase-points`)
-      await page.getByTestId(/^points-package-select-button-/).first().click()
+      await page
+        .getByTestId(/^points-package-select-button-/)
+        .first()
+        .click()
 
       const selectedPackage = await page.evaluate(() => {
         const state = localStorage.getItem('purchase-flow-storage')
@@ -415,7 +446,10 @@ test.describe('[P1] Package Deletion', () => {
       await page.locator(SELECTORS.pointsPackageForm.submitButton).click()
       await expect(page.getByText(tempPackageName)).toBeVisible()
 
-      await page.getByTestId(/^points-package-delete-button-/).first().click()
+      await page
+        .getByTestId(/^points-package-delete-button-/)
+        .first()
+        .click()
       await expect(page.getByTestId('points-package-delete-dialog')).toBeVisible()
       await page.getByTestId('points-package-delete-confirm-button').click()
 
@@ -435,11 +469,19 @@ test.describe('[P1] Package Deletion', () => {
       await page.locator(SELECTORS.pointsPackageForm.currencySelect).fill('USD')
       await page.locator(SELECTORS.pointsPackageForm.submitButton).click()
 
-      await page.getByTestId(/^points-package-configure-button-/).first().click()
-      await page.locator('select[id="paymentProvider"]').selectOption('wechat')
-      await page.getByTestId(`payment-provider-external-id-input-wechat`).fill(`wx-${testStartTime}`)
-      await page.getByTestId('payment-provider-add-button').click()
-      await page.keyboard.press('Escape')
+      await page
+        .getByTestId(/^points-package-configure-button-/)
+        .first()
+        .click()
+      await page.waitForURL('**/manage/points-packages/*/providers', {
+        timeout: 10000,
+      })
+      await page.getByTestId('add-provider-mapping-button').click()
+      await page.getByTestId('provider-mapping-provider-select-trigger').click()
+      await page.getByRole('option', { name: 'WeChat Pay' }).click()
+      await page.getByTestId('provider-mapping-product-id-input').fill(`wx-${testStartTime}`)
+      await page.getByTestId('provider-mapping-submit-button').click()
+      await page.getByTestId('back-to-points-packages-button').click()
 
       console.log('[P1] ✓ Package created for history test')
     })
@@ -487,7 +529,10 @@ test.describe('[P1] Error Handling and Recovery', () => {
   test('[P1] should handle payment expiration and history', async ({ page }) => {
     await test.step('Payment attempt expiration', async () => {
       await page.goto(`/${REALM_ID}/user/purchase-points`)
-      await page.getByTestId(/^points-package-select-button-/).first().click()
+      await page
+        .getByTestId(/^points-package-select-button-/)
+        .first()
+        .click()
       await page.getByRole('button', { name: 'Next' }).click()
       await page.getByTestId('payment-method-select-wechat').click()
       await page.getByRole('button', { name: 'Complete Purchase' }).click()
@@ -527,7 +572,10 @@ test.describe('[P1] Error Handling and Recovery', () => {
   test('[P1] should handle network errors and corrupted state', async ({ page }) => {
     await test.step('Network error during polling', async () => {
       await page.goto(`/${REALM_ID}/user/purchase-points`)
-      await page.getByTestId(/^points-package-select-button-/).first().click()
+      await page
+        .getByTestId(/^points-package-select-button-/)
+        .first()
+        .click()
       await page.getByRole('button', { name: 'Next' }).click()
       await page.getByTestId('payment-method-select-wechat').click()
       await page.getByRole('button', { name: 'Complete Purchase' }).click()
