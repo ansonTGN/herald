@@ -32,8 +32,9 @@
 | US-RU-005 | 查看个人资料 | Regular User | P1 | [03-regular-user](03-regular-user-user-stories.md#故事-5查看个人资料-us-ru-005) |
 | US-RU-006 | 修改个人昵称 | Regular User | P2 | [03-regular-user](03-regular-user-user-stories.md#故事-6修改个人昵称-us-ru-006) |
 | US-RU-007 | 退出登录 | Regular User | P1 | [03-regular-user](03-regular-user-user-stories.md#故事-7退出登录-us-ru-007) |
-| US-RU-008 | 访问第三方应用 | Regular User | P0 | [03-regular-user](03-regular-user-user-stories.md#故事-8访问第三方应用-us-ru-008) |
+| US-RU-008 | 访问第三方应用（SSO） | Regular User | P0 | [03-regular-user](03-regular-user-user-stories.md#故事-8访问第三方应用-us-ru-008) |
 | US-RU-009 | 认证重定向流程 | All Users | P0 | [03-regular-user](03-regular-user-user-stories.md#故事-9认证重定向流程-us-ru-009) |
+| US-RU-010 | 从第三方 Web 应用跳转登录 | Regular User | P0 | [03-regular-user](03-regular-user-user-stories.md#故事-10从第三方-web-应用跳转登录-us-ru-010) |
 | US-TP-001 | OAuth 授权码登录 | Third-Party App | P0 | [04-third-party-app](04-third-party-app-user-stories.md#故事-1oauth-授权码登录-us-tp-001) |
 | US-TP-002 | 验证用户登录状态 | Third-Party App | P0 | [04-third-party-app](04-third-party-app-user-stories.md#故事-2验证用户登录状态-us-tp-002) |
 | US-TP-003 | 检查用户权限 | Third-Party App | P0 | [04-third-party-app](04-third-party-app-user-stories.md#故事-3检查用户权限-us-tp-003) |
@@ -127,8 +128,13 @@
 | US-DC-003 | CLI 工具轮询获取令牌 | Third-Party App | P0 | [15-device-code](15-device-code-user-stories.md#故事-3cli-工具轮询获取令牌-us-dc-003) |
 | US-DC-004 | Realm Admin 配置 Device Code Grant | Realm Admin | P1 | [15-device-code](15-device-code-user-stories.md#故事-4realm-admin-配置-device-code-grant-us-dc-004) |
 | US-DC-005 | 设备验证页面 API | Third-Party App | P1 | [15-device-code](15-device-code-user-stories.md#故事-5设备验证页面-api-us-dc-005) |
+| US-TP-012 | 通过 SDK 管理 Realm | Third-Party App | P1 | [16-sdk-user-stories](16-sdk-user-stories.md#故事-1通过-sdk-管理-realm-us-tp-012) |
+| US-TP-013 | 通过 SDK 管理用户 | Third-Party App | P0 | [16-sdk-user-stories](16-sdk-user-stories.md#故事-2通过-sdk-管理用户-us-tp-013) |
+| US-TP-014 | 通过 SDK 管理 Client App | Third-Party App | P1 | [16-sdk-user-stories](16-sdk-user-stories.md#故事-3通过-sdk-管理-client-app-us-tp-014) |
+| US-TP-015 | 第三方 Web SPA 发起 SSO 登录 | Third-Party App | P0 | [04-third-party-app](04-third-party-app-user-stories.md#故事-15第三方-web-spa-发起-sso-登录-us-tp-015) |
+| US-TP-016 | 第三方后端用授权码换取令牌 | Third-Party App | P0 | [04-third-party-app](04-third-party-app-user-stories.md#故事-16第三方后端用授权码换取令牌-us-tp-016) |
 
-**总计**: 124 个用户故事
+**总计**: 130 个用户故事
 
 ---
 
@@ -138,8 +144,8 @@
 |------|------|-------|---------|
 | Admin Realm 管理员 | [01-admin-realm-user-stories.md](01-admin-realm-user-stories.md) | 4 | [Realm PRD](/docs/prd/core/realm.md) |
 | Realm Admin | [02-realm-admin-user-stories.md](02-realm-admin-user-stories.md), [builtin_protection.md](builtin_protection.md) | 15 | [Users PRD](/docs/prd/core/users.md), [Permissions PRD](/docs/prd/auth/permissions.md), [Client Apps PRD](/docs/prd/integration/client-app.md), [Realm Settings PRD](/docs/prd/core/realm-settings.md), [Dashboard PRD](/docs/prd/core/dashboard-redesign.md) |
-| Regular User | [03-regular-user-user-stories.md](03-regular-user-user-stories.md) | 9 | [Users PRD](/docs/prd/core/users.md) |
-| 第三方应用开发者 | [04-third-party-app-user-stories.md](04-third-party-app-user-stories.md), [client-app-settings.md](client-app-settings.md) | 11 | [OAuth 第三方集成 PRD](/docs/prd/auth/oauth-third-party-integration.md), [Client Apps PRD](/docs/prd/integration/client-app.md) |
+| Regular User | [03-regular-user-user-stories.md](03-regular-user-user-stories.md) | 10 | [Users PRD](/docs/prd/core/users.md), [OAuth 第三方集成 PRD](/docs/prd/auth/oauth-third-party-integration.md) |
+| 第三方应用开发者 | [04-third-party-app-user-stories.md](04-third-party-app-user-stories.md), [client-app-settings.md](client-app-settings.md), [16-sdk-user-stories.md](16-sdk-user-stories.md) | 16 | [OAuth 第三方集成 PRD](/docs/prd/auth/oauth-third-party-integration.md), [Client Apps PRD](/docs/prd/integration/client-app.md), [SDK 增强 PRD](/docs/prd/integration/sdk-improve.md) |
 | TOTP 用户 | [05-totp-user-stories.md](05-totp-user-stories.md) | 7 | [TOTP PRD](/docs/prd/auth/totp.md) |
 | Billing 用户 | [06-billing-user-stories.md](06-billing-user-stories.md) | 8 | [Billing PRD](/docs/prd/billing/billing.md), [Subscription History PRD](/docs/prd/billing/subscription-history.md) |
 | Product Admin | [product-management.md](product-management.md) | 6 | [Product Catalog PRD](/docs/prd/billing/product-catalog.md) |

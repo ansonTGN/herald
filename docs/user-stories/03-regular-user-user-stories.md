@@ -3,7 +3,7 @@
 **角色代码**: RU
 **角色定义**: 普通用户是通过注册或由管理员创建的用户，可以访问第三方应用和 OAuth 登录。
 
-**故事范围**: US-RU-001 ~ US-RU-009
+**故事范围**: US-RU-001 ~ US-RU-010
 **创建时间**: 2025-02-01
 **状态**: Active
 
@@ -303,31 +303,29 @@ Then 系统重定向到登录页面
 ### 故事 8：访问第三方应用 [US-RU-008]
 
 **【用户故事】**
-**作为**：普通用户
-**我希望**：能够使用CAS账号登录第三方应用
-**从而**：单点登录（SSO）体验
+**作为**：普通用户（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：能够使用 Herald 账号登录第三方应用
+**从而**：获得单点登录（SSO）体验
 
 **【验收标准】**
 
-**场景 1：访问第三方应用成功**
-Given 用户已通过Herald登录
-When 用户访问接入realm-1的第三方应用
-Then 第三方应用验证用户身份成功并允许访问
+**场景 1：通过 OAuth 重定向登录第三方应用**
+Given 第三方应用已接入 Herald 的 realm-1
+And 用户在第三方应用页面点击"使用 Herald 登录"
+When 用户被重定向到 Herald 登录页面
+And 用户输入正确的邮箱和密码登录成功
+Then Herald 生成授权码并将用户重定向回第三方应用
+And 第三方应用使用授权码完成认证
 
-**场景 2：第三方应用权限校验**
-Given 用户user@example.com已登录
-When 第三方应用调用`/api/permission/check`验证权限
-Then 返回`{"allowed": true, "user_id": "user-123"}`
-
-**场景 3：用户无权限访问（失败场景）**
-Given 用户user@example.com没有访问资源/api/admin的权限
-When 第三方应用调用`/api/permission/check`验证权限
-Then 返回`{"allowed": false}`
-
-**场景 4：Session过期后重新登录**
-Given 用户的Session Cookie已过期（超过7天）
+**场景 2：Session 过期后重新登录**
+Given 用户的 Session 已过期
 When 用户访问第三方应用
-Then 系统重定向到Herald登录页面
+Then 第三方应用将用户重定向到 Herald 登录页面
+
+**场景 3：已登录用户直接完成 SSO（失败场景）**
+Given 用户已在 Herald 登录
+When 用户从第三方应用跳转到 Herald 授权端点
+Then 用户无需再次输入凭据即可完成认证（需 Herald 支持静默授权，当前版本仍需登录）
 
 ---
 
@@ -391,6 +389,44 @@ Then 清除Session Cookie并重定向到登录页面
    - `realms.create`, `realms.update`
    - `client_apps.view`, `client_apps.create`, `client_apps.update`, `client_apps.delete`
 4. 拥有任意管理权限的用户可访问管理后台，无管理权限的用户将被重定向到个人中心
+
+---
+
+### 故事 10：从第三方 Web 应用跳转登录 [US-RU-010]
+
+**【用户故事】**
+**作为**：普通用户（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：从第三方 Web 应用跳转到 Herald 完成认证后自动返回第三方应用
+**从而**：无需在第三方应用中输入密码，无缝使用第三方服务
+
+**【验收标准】**
+
+**场景 1：从第三方跳转登录成功后自动返回**
+Given 用户在第三方应用页面点击"使用 Herald 登录"
+And Herald 登录页面显示了 OAuth 上下文参数（来源应用名称等）
+When 用户输入正确的邮箱和密码完成登录
+Then 页面自动跳转回第三方应用的 callback 地址
+And 第三方应用完成认证，用户可以正常使用服务
+
+**场景 2：TOTP 二次认证后自动返回第三方**
+Given 用户已启用 TOTP 二次认证
+And 用户从第三方应用跳转到 Herald 登录
+When 用户输入正确的密码后，系统要求输入 TOTP 验证码
+And 用户输入正确的 TOTP 验证码
+Then TOTP 验证通过后页面自动跳转回第三方应用的 callback 地址
+
+**场景 3：登录失败停留在 Herald 登录页**
+Given 用户从第三方应用跳转到 Herald 登录
+When 用户输入错误的密码
+Then 页面停留在 Herald 登录页，显示错误提示
+And OAuth 上下文参数保持不变，用户可以重试
+
+**场景 4：OAuth 参数不完整时显示错误**
+Given 用户通过某种方式访问到 Herald 登录页
+And URL 中只有部分 OAuth 参数（如只有 oauthClientId 但缺少 redirectUri 和 state）
+When 页面加载时
+Then 系统显示错误提示，告知用户 OAuth 参数不完整
+And 不静默降级为普通登录
 
 ---
 

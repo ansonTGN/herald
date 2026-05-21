@@ -1,7 +1,8 @@
 # 第三方应用集成产品需求文档 (PRD)
 
 **创建时间**: 2025-01-15
-**状态**: Implemented
+**最后更新**: 2026-05-21
+**状态**: 🚧 Partially Implemented（从 Implicit Flow 升级到 Authorization Code + PKCE）
 
 ---
 ## 1. 相关用户故事
@@ -11,295 +12,232 @@
 ### 1.1 第三方应用开发者用户故事
 
 - 📄 [docs/user-stories/04-third-party-app-user-stories.md](/docs/user-stories/04-third-party-app-user-stories.md)
-  - **[US-TP-006] 第三方应用授权登录** (P0): 作为第三方应用开发者，我想要使用简化的 OAuth 流程，以便快速集成用户认证
-  - **[US-TP-007] 授权码交换** (P0): 作为第三方应用开发者，我想要验证 Session Token，以便确认用户身份并检查用户权限，以便控制资源访问
+  - **[US-TP-001] OAuth 授权码登录（Authorization Code + PKCE）** (P0): 作为第三方应用，我希望使用 Authorization Code + PKCE 流程验证用户身份，以便安全获取访问令牌
+  - **[US-TP-006] 处理异常情况** (P1): 作为第三方应用，我希望正确处理各种异常情况，以便提供友好体验
+  - **[US-TP-007] 会话管理** (P1): 作为第三方应用，我希望管理用户会话，以便实现 SSO 和登出
+  - **[US-TP-015] 第三方 Web SPA 发起 SSO 登录** (P0): 作为第三方应用开发者，我希望从 Web SPA 发起 Herald SSO 登录，以便用户无需额外后端即可完成认证
+  - **[US-TP-016] 第三方后端用授权码换取令牌** (P0): 作为第三方应用开发者，我希望后端用授权码和 PKCE 验证换取令牌，以便安全完成认证
 
-### 1.2 用户故事优先级汇总
+### 1.2 普通用户用户故事
 
-| 优先级 | 用户故事数量 | 关键故事 |
-|--------|------------|---------|
-| P0 | 3 | 简化的 OAuth 流程、Session Token 验证、权限检查 |
-| P1 | 0 | - |
+- 📄 [docs/user-stories/03-regular-user-user-stories.md](/docs/user-stories/03-regular-user-user-stories.md)
+  - **[US-RU-008] 访问第三方应用** (P0): 作为普通用户，我希望使用 Herald 账号登录第三方应用，以便获得 SSO 体验
+  - **[US-RU-010] 从第三方 Web 应用跳转登录** (P0): 作为普通用户，我希望从第三方应用跳转到 Herald 完成认证后自动返回，以便无缝使用第三方服务
+
+### 1.3 Client App 设置用户故事
+
+- 📄 [docs/user-stories/client-app-settings.md](/docs/user-stories/client-app-settings.md)
+  - **[US-TP-008] 配置 Client App 跳转地址白名单** (P0): redirect_uri 白名单精确匹配
+  - **[US-TP-010] 启用/禁用 Client App** (P0): 禁用的 Client App 拒绝 OAuth 授权
+
+### 1.4 优先级汇总
+
+| 优先级 | 数量 | 关键故事 |
+|--------|------|----------|
+| P0 | 5 | Authorization Code + PKCE 流程、Web SPA SSO、令牌交换、第三方跳转登录、白名单配置 |
+| P1 | 2 | 异常处理、会话管理 |
 | P2 | 0 | - |
 
 ---
-
 ## 2. 范围界定
 
 ### 2.1 包含功能
 
-- ✅ 简化的 OAuth 授权流程（2 步：授权 → 直接使用令牌）
-- ✅ Session Token 通过 URL Fragment 传递（`#token=xxx`）
-- ✅ Session IP 绑定（防止令牌被盗用）
-- ✅ State Token 保护（防止 CSRF 攻击，5分钟有效期）
-- ✅ 灵活的 Session TTL（OAuth 流程 10 分钟，正常登录 30 分钟）
+- ✅ Authorization Code + PKCE 流程（OAuth 2.1 推荐模式）
+- ✅ 第三方 SPA 通过 code_challenge 发起授权请求
+- ✅ 用户在 Herald 登录页完成认证后生成 authorization_code
+- ✅ authorization_code 通过 redirect_uri 查询参数回传第三方（`?code=xxx&state=xxx`）
+- ✅ 第三方后端用 authorization_code + code_verifier 换取 access_token
+- ✅ Redis state 校验（防 CSRF）和 authorization_code 一次性使用（防重放）
+- ✅ redirect_uri 白名单精确匹配（origin + port 一致）
+- ✅ TOTP 二次认证流程中保持 OAuth 上下文
+- ✅ 前端登录页透传 OAuth 参数（oauthClientId、redirectUri、state）
+- ✅ 前端处理后端返回的 redirectTo 跳转第三方 callback
 
 ### 2.2 不包含功能 (Out of Scope)
 
-- ❌ **标准 OAuth 2.0 授权码流程** (原因: 本文档提供简化的替代方案)
-- ❌ **Token Exchange 端点** (原因: 直接返回 Session Token，无需换取 access_token)
 - ❌ **Refresh Token** (原因: 当前不支持令牌刷新)
 - ❌ **Token 撤销** (原因: 当前不支持令牌撤销)
+- ❌ **OAuth 2.0 Scope 管理** (原因: 没有细粒度 scope 授权页面)
+- ❌ **用户主动授权/拒绝授权页面** (原因: 当前授权自动完成，用户无需手动批准)
+- ❌ **Implicit Flow** (原因: 已被 OAuth 2.1 废弃，本方案直接替换)
 
 ### 2.3 依赖项
 
 - ✅ **用户认证系统** (状态: 已实现) - 提供登录和会话管理
-- ✅ **Client App 系统** (状态: 已实现) - OAuth 回调验证
+- ✅ **Client App 系统** (状态: 已实现) - OAuth 回调验证、redirect_uri 白名单
 - ✅ **权限管理系统** (状态: 已实现) - 权限检查 API
-- ✅ **Redis 缓存** (状态: 已实现) - Session Token 存储
+- ✅ **Redis 缓存** (状态: 已实现) - state、authorization_code 存储
+- ✅ **TOTP 系统** (状态: 已实现) - TOTP 二次认证
+- 🚧 **Token 端点** (状态: 待实现) - authorization_code 换取 access_token
 
 ---
-
 ## 3. 需求概述
 
-提供简化的 OAuth 流程，允许第三方应用通过 Herald 系统验证用户身份，而无需实现完整的 OAuth 2.0 授权码流程。
+提供基于 **Authorization Code + PKCE** 的 OAuth 2.1 标准流程，允许第三方 Web 应用通过 Herald 系统验证用户身份。
 
-### 1.1 核心特性
+### 3.1 核心特性
 
-- ✅ **简化流程**：直接返回 Session Token，无需后端 Token Exchange
-- ✅ **URL Fragment 传递**：Token 通过 `#token=xxx` 传递，避免服务器日志泄露
-- ✅ **Session IP 绑定**：Session Token 绑定客户端 IP，防止令牌被盗用
-- ✅ **State Token 保护**：使用 State Token 防止 CSRF 攻击（5分钟有效期）
-- ✅ **灵活的 Session TTL**：OAuth 流程 10 分钟，正常登录 30 分钟
+- **Authorization Code + PKCE**: 第三方 SPA 生成 code_verifier/code_challenge，通过授权码流程安全交换令牌，无需暴露 client_secret 给前端
+- **Redirect 回调模式**: 授权成功后通过 `?code=xxx&state=xxx` 重定向回第三方 callback 地址
+- **State 校验**: Redis 存储 state 关联 client、code_challenge 信息，防止 CSRF 和伪造
+- **精确白名单匹配**: redirect_uri 白名单校验改为 origin + port 完全一致，防止开放重定向绕过
+- **TOTP 兼容**: TOTP 二次认证流程中保持 OAuth 上下文，认证完成后同样返回 redirectTo
 
-### 1.2 与标准 OAuth 2.0 的区别
+### 3.2 与旧 Implicit Flow 的区别
 
-| 特性 | 标准 OAuth 2.0 授权码流程 | 简化 OAuth 流程 |
-|------|------------------------|---------------|
-| 步骤数 | 3 步（授权 → 换取令牌 → 使用令牌） | 2 步（授权 → 直接使用令牌） |
-| Token 获取 | 后端用 code 换取 access_token | 直接在 URL Fragment 中返回 |
-| Token 类型 | JWT (Bearer Token) | Session Token (存储在 Redis) |
-| Token 传递 | Query Parameter (`?code=xxx`) | URL Fragment (`#token=xxx`) |
-| 后端验证 | 需要 Token Exchange 端点 | 直接验证 Session Token |
-| 安全性 | 高（标准流程） | 中高（适用于特定场景） |
+| 特性 | 旧 Implicit Flow | 新 Authorization Code + PKCE |
+|------|-----------------|-------------------------------|
+| 步骤数 | 2 步（授权 → 直接用 token） | 3 步（授权 → 换取令牌 → 使用令牌） |
+| Token 获取 | URL Fragment `#token=xxx` | 查询参数 `?code=xxx`，后端用 code 换 token |
+| 前端是否接触 token | 是（前端直接获得 token） | 否（前端只获得 code，后端换 token） |
+| 安全性 | 中（token 暴露在浏览器） | 高（token 只在服务端交换） |
+| PKCE 保护 | 无 | 有（code_verifier/code_challenge） |
+| OAuth 标准兼容 | OAuth 2.0 Implicit（已废弃） | OAuth 2.1 推荐模式 |
 
-### 1.3 适用场景
+### 3.3 适用场景
 
-**适合使用简化 OAuth 流程的场景**：
-- 单页应用（SPA）
-- 移动应用
-- 快速原型开发
-- 内部工具集成
-- 不需要复杂权限管理的场景
+**适合使用 Authorization Code + PKCE 的场景**：
+- 第三方 SPA（单页应用）
+- 第三方 Web 应用（有后端服务）
+- 需要高安全性的应用
+- 需要 OAuth 2.1 标准兼容的场景
 
-**不适合使用简化 OAuth 流程的场景**：
-- 需要高安全性的金融应用
-- 需要刷新令牌（Refresh Token）的场景
-- 需要撤销令牌的场景
-- 需要标准 OAuth 2.0 兼容性的场景
+**仍可使用 Cookie 共享模式的场景**：
+- 与 Herald 同域的内部应用
+- 参考教程: `docs/tutorials/third-party-integration.md`
 
 ---
-
 ## 4. 当前实现状态
 
-### 8.1 已完成功能 ✅
+### 4.1 已完成功能
 
-#### 后端实现
-- ✅ Session Token 生成和验证
-- ✅ State Token 生成、存储和验证
-- ✅ Session IP 绑定
-- ✅ Redirect URI 白名单验证
-- ✅ URL Fragment Token 传递
+#### 后端（旧 Implicit Flow 雏形，需升级）
+- ✅ Client App CRUD 和 redirect_uri 白名单
+- ✅ authorize 端点（接收 clientId、redirectUri、state、responseType）
+- ✅ Redis state 存储（TTL 5 分钟）
+- ✅ login OAuth 分支（接收 oauthClientId、redirectUri、state）
+- ⚠️ redirect_uri 白名单使用 `starts_with`（有安全隐患，需改为精确匹配）
+- ⚠️ authorize 跳转路径与前端路由不匹配
+- ⚠️ login OAuth 分支直接返回 token（需改为返回 authorization_code）
 
-#### 前端实现
-- ✅ 登录页面 OAuth 参数检测（`$realm_id.login.tsx`）
-- ✅ OAuth 流程自动识别
-- ✅ TypeScript 类型定义
-- ✅ API 调用函数
+#### 前端
+- ✅ 登录页面 OAuth 参数检测（clientId）
+- ⚠️ search schema 缺少 OAuth 上下文字段（oauthClientId、redirectUri、state）
 
-### 8.2 待完成功能 ⏳
+### 4.2 待完成功能
 
-#### 测试
-- ⏳ 后端单元测试（OAuth 授权流程）
-- ⏳ 前端组件测试（OAuth 参数检测）
-- ⏳ E2E 测试（完整 OAuth 流程）
-- ⏳ 性能测试（API 响应时间）
+- ❌ authorize 支持 PKCE 参数（code_challenge、code_challenge_method）
+- ❌ authorize 只接受 `response_type=code`，修正跳转路径
+- ❌ redirect_uri 白名单改为精确匹配
+- ❌ login 加 Redis state 校验 + authorization_code 生成 + JSON redirectTo 返回
+- ❌ TOTP 临时会话加 OAuth 上下文字段
+- ❌ TOTP verify 后返回 redirectTo
+- ❌ 新建 token 端点（authorization_code + code_verifier → access_token）
+- ❌ 前端 search schema 扩展 OAuth 参数
+- ❌ 前端登录提交透传 OAuth 字段
+- ❌ 前端处理 redirectTo 跳转第三方 callback
+- ❌ 第三方 Web SSO 教程
 
-#### 文档
-- ⏳ 集成示例代码
-- ⏳ API 文档更新
-- ⏳ 用户故事更新
+### 4.3 实施计划
+
+参考 `.ai/future/fix_4.md` 中的详细实施方案。
 
 ---
-
 ## 5. 功能需求
 
-### 2.1 OAuth 授权端点
+### 5.1 授权请求（authorize）
 
-#### 2.1.1 发起授权请求
+- 接收第三方 SPA 发起的授权请求，参数包含 client_id、redirect_uri、state、response_type=code、code_challenge、code_challenge_method
+- 校验 Client App 存在、启用且 redirect_uri 在白名单中（精确匹配）
+- 将 state、client_id、redirect_uri、code_challenge 存入 Redis（TTL 5 分钟）
+- 重定向到 Herald 登录页，携带 OAuth 上下文参数
 
-**Query Parameters**:
-- `client_id` (required): Client App 标识符
-- `redirect_uri` (required): 授权成功后的跳转地址（必须在 Client App 配置的白名单中）
-- `state` (required): CSRF 保护令牌（由第三方应用生成）
+### 5.2 用户认证 + 授权码生成
 
-**响应**:
-- **302 重定向**到 Herald 登录页面，携带以下参数：
-  - `client_id`: Client App 标识符
-  - `redirect_uri`: 回调地址
-  - `state`: State Token
+- 用户在 Herald 登录页输入凭据（密码或 TOTP）
+- 登录成功后校验 Redis 中的 state（完整性校验）
+- 生成 authorization_code 存入 Redis（关联 code_challenge、client_id、redirect_uri，TTL 5 分钟）
+- 删除原 state（防重放）
+- 返回 JSON 包含 redirectTo 指向第三方 callback 地址（携带 code 和 state 参数）
 
-**登录页面 URL 示例**:
+### 5.3 令牌交换（token endpoint）
 
-#### 2.1.2 用户登录并授权
+- 接收第三方后端发起的令牌交换请求（authorization_code + code_verifier）
+- 校验 code 有效、未使用、未过期
+- 校验 client_id 和 redirect_uri 匹配
+- 验证 code_verifier 的 SHA256 值匹配存储的 code_challenge（PKCE 校验）
+- 校验通过后创建 session，返回 access_token
+- 使用后删除 authorization_code（防重放）
 
-**流程说明**:
-1. 用户访问登录页面
-2. 用户输入用户名/密码并登录
-3. Herald 系统验证用户凭据
-4. Herald 系统验证 `client_id` 和 `redirect_uri` 是否匹配
-5. Herald 系统生成 Session Token
-6. Herald 系统重定向到 `redirect_uri#token=xxx&state=xxx`
+### 5.4 安全约束
 
-**Session Token 格式**:
+- **redirect_uri 白名单精确匹配**: 只允许 origin + port 完全一致下的路径差异，不允许前缀匹配
+- **authorization_code 一次性使用**: 使用后立即从 Redis 删除
+- **state 一次性使用**: 校验后立即从 Redis 删除
+- **PKCE 校验**: code_verifier 的 SHA256 必须匹配 code_challenge
+- **普通登录不受影响**: 无 OAuth 参数时，行为与现有完全一致
 
-**示例**: `realm-1_0191a2b3c4d5e6f7g8h9i0j1k2l3m4n5_1736899200`
+### 5.5 TOTP + OAuth 流程
 
-#### 2.1.3 Token 传递方式
-
-**重要**: Token 通过 **URL Fragment** 传递，而不是 Query Parameter。
-
-**原因**:
-- URL Fragment 不会发送到服务器
-- 避免 Token 被记录在服务器访问日志中
-- 提高安全性
-
-**回调 URL 示例**:
-
-### 2.2 Session Token 验证
-
-#### 2.2.1 Session Token 结构
-
-**格式**: `{realm-id}_{uuidv7}_{timestamp}`
-
-**组成部分**:
-- `realm-id`: Realm 标识符
-- `uuidv7`: 时间排序的 UUID（用户会话唯一标识）
-- `timestamp`: Unix 时间戳（秒）
-
-**示例**: `realm-1_0191a2b3c4d5e6f7g8h9i0j1k2l3m4n5_1736899200`
-
-#### 2.2.2 Session Token 验证流程
-
-**响应**:
-
-**验证逻辑**:
-1. 从 Redis 中加载 Session（使用 Token 作为 Key）
-2. 验证 Session 是否过期
-3. 验证客户端 IP 是否匹配（IP 绑定）
-4. 验证 `client_id` 是否匹配
-5. 使用 RBAC 验证用户权限
-
-### 2.3 State Token 管理
-
-#### 2.3.1 State Token 生成
-
-**格式**: UUID v7
-
-**存储位置**: Redis
-
-**Key 格式**: `oauth:state:{state_token}`
-
-**Value 格式**:
-
-**过期时间**: 300 秒（5 分钟）
-
-#### 2.3.2 State Token 验证
-
-**验证时机**: 用户登录成功后，在重定向到 `redirect_uri` 之前
-
-**验证逻辑**:
-1. 从 Redis 中获取 State Token 数据
-2. 验证 State Token 是否存在且未过期
-3. 验证 `client_id` 和 `redirect_uri` 是否匹配
-4. 验证成功后立即删除 State Token（一次性使用）
-
-**验证失败处理**: 返回 400 错误，显示 "Invalid or expired state token"
-
-### 2.4 Session 安全机制
-
-#### 2.4.1 Session IP 绑定
-
-**目的**: 防止 Session Token 被盗用
-
-**实现**:
-- Session 创建时记录客户端 IP
-- 每次 Session 验证时检查客户端 IP 是否匹配
-- IP 不匹配时返回 403 Forbidden
-
-**IP 获取优先级**:
-1. `X-Forwarded-For` Header（代理/负载均衡器）
-2. `X-Real-IP` Header（Nginx）
-3. 直接连接的远程 IP
-
-#### 2.4.2 Session TTL 配置
-
-**两种 Session TTL**:
-- **OAuth 流程**: 600 秒（10 分钟）
-- **正常登录**: 1800 秒（30 分钟）
-
-**原因**: OAuth 流程通常用于第三方应用短期授权，使用较短的 TTL 提高安全性。
-
-#### 2.4.3 Session 存储
-
-**存储位置**: Redis
-
-**Key 格式**: `session:{realm_id}:{session_token}`
-
-**Value 格式**:
+- TOTP 临时会话中保存 OAuth 上下文（oauth_client_id、redirect_uri、state）
+- TOTP 验证成功后检查临时会话中的 OAuth 字段
+- 有 OAuth 字段时走同样的 authorization_code 生成 + redirectTo 逻辑
 
 ---
-
 ## 6. API 相关约束
 
 **状态**: 必填
 
-- 仅说明认证、授权、验证、回调或账号绑定等能力边界，不在 PRD 中展开端点、请求响应 schema、状态码矩阵。
-- 必须遵守 realm 隔离、权限边界、凭证脱敏和幂等要求；涉及回调时需满足回调来源校验、重放防护和错误可恢复性。
-- 若存在第三方身份提供商或支付/消息回调，应在技术设计或接口说明中维护详细契约，PRD 只保留业务约束和兼容性要求。
+- 本功能涉及三个关键能力：authorize（授权请求）、login OAuth 分支（认证 + 授权码生成）、token（令牌交换）
+- 必须遵守 realm 隔离、Client App 身份校验、凭证脱敏和防重放要求
+- redirect_uri 校验必须精确匹配白名单（禁止前缀匹配）
+- authorization_code 和 state 必须一次性使用（Redis 删除而非标记）
+- PKCE 的 code_challenge 必须使用 S256 方法（SHA256）
+- 详细端点契约和请求响应 schema 应在技术设计文档中维护
 
 ---
-
 ## 7. 前端/交互约束
 
 **状态**: 必填
 
-- 仅保留页面入口、关键用户路径、状态反馈、权限可见性和异常提示要求，不写组件实现步骤或前端类型定义。
-- 认证相关流程应优先保证成功/失败状态清晰、回跳路径明确、敏感信息不回显，并对首次配置、失效、锁定、重试等场景提供稳定反馈。
+- 登录页 search schema 须支持 OAuth 上下文参数（oauthClientId、redirectUri、state）
+- OAuth 参数完整（三项都存在）时提交登录须一并传给后端
+- OAuth 参数不完整时显示错误提示，不静默降级为普通登录
+- 后端返回 redirectTo 时直接跳转第三方 callback（不经 getSafeRedirect，安全由后端白名单保证）
+- TOTP 完成后同样支持 redirectTo 跳转
+- 无 OAuth 参数时行为与现有普通登录完全一致
 
 ---
-
 ## 8. 技术设计承接
 
 **状态**: 必填
 
-- 接口细节、数据库结构、迁移策略、类型定义、调度方案、SDK 设计和实现步骤，应在 `docs/design/`、`.ai/design/`、接口说明或代码中承接。
-- 如历史实现已经存在，应以现有设计文档、OpenAPI、迁移文件和代码为依据补充，不回写到 PRD 正文。
+- 详细实施方案见 `.ai/future/fix_4.md`
+- 接口细节、Redis key 设计、前端 search schema 变更、路由注册应在技术设计文档中承接
+- 如历史实现已经存在，应以现有代码和 OpenAPI 规范为依据补充
 
 ---
-
 ## 9. 相关文件索引
 
-- 相关实现文件请以本功能对应的 `backend/`、`frontend/`、`demo/` 目录和现有设计文档为准。
-- 若需补充精确文件清单，应在技术设计文档中维护，避免在 PRD 中混入实现级细节。
+### 9.1 后端文件
+- `backend/api-oauth/src/authorize.rs` — 授权端点（需升级）
+- `backend/api-oauth/src/token.rs` — 令牌端点（待新建）
+- `backend/api-oauth/src/lib.rs` — 模块注册
+- `backend/api-auth/src/login.rs` — 登录 OAuth 分支（需修复）
+- `backend/api-auth/src/verify_totp.rs` — TOTP 验证（需加 OAuth 上下文）
+
+### 9.2 前端文件
+- `frontend/src/lib/schemas/search-params.ts` — search schema（需扩展）
+- `frontend/src/routes/$realmId/auth/login.tsx` — 登录页（需透传 OAuth 参数）
 
 ---
-
 ## 10. 参考资料
 
-### 9.1 相关文档
-- **Client Apps 管理**: `docs/prd/client-app.md`
-- **权限验证**: `docs/prd/permissions.md`
-- **OAuth Provider 配置**: `docs/prd/oauth-provider.md`
+- **实施方案**: `.ai/future/fix_4.md`
+- **Client Apps 管理**: [docs/prd/integration/client-app.md](/docs/prd/integration/client-app.md)
+- **权限验证**: [docs/prd/auth/permissions.md](/docs/prd/auth/permissions.md)
+- **OAuth Provider 配置**: [docs/prd/auth/oauth-provider.md](/docs/prd/auth/oauth-provider.md)
+- **TOTP**: [docs/prd/auth/totp.md](/docs/prd/auth/totp.md)
+- **第三方接入教程**: `docs/tutorials/third-party-integration.md`
 - **用户故事**: [docs/user-stories/04-third-party-app-user-stories.md](/docs/user-stories/04-third-party-app-user-stories.md)
-
-### 9.2 实现文件索引
-
-#### 后端文件
-
-#### 前端文件
-- 登录页面: `frontend/src/routes/$realm_id.login.tsx`
-- API 调用: `frontend/src/lib/api.ts`
-- 类型定义: `frontend/src/lib/types/auth.ts`
-- 路由守卫: `frontend/src/lib/route-guards.ts`
-

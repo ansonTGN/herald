@@ -3,23 +3,31 @@
 **角色代码**: TP
 **角色定义**: 第三方应用是接入 Herald 系统的外部应用，使用 OAuth 验证用户身份。
 
-**故事范围**: US-TP-001 ~ US-TP-011
+**故事范围**: US-TP-001 ~ US-TP-016
 **创建时间**: 2025-02-01
 **状态**: Active
 
 ---
 
-## 📋 实施状态 (2025-01-15)
+## 📋 实施状态 (2026-05-21)
 
 ### ✅ 已完成
-- [x] 简化 OAuth 流程实现（后端）
-- [x] OAuth 授权端点 (`/api/{realmId}/oauth/authorize`)
+- [x] OAuth 授权端点（Implicit Flow 雏形）
 - [x] 登录端点支持 OAuth 参数
 - [x] Session Token 生成和验证
 - [x] State Token CSRF 保护
 - [x] Session IP 绑定
 - [x] 权限验证端点 (`/api/permission/check`)
 - [x] 前端登录页面 OAuth 参数检测
+- [x] Client App 设置（白名单、图标、启用/禁用、Session 策略）
+
+### 🚧 进行中（Authorization Code + PKCE 升级）
+- [ ] authorize 端点支持 PKCE 参数和精确白名单匹配
+- [ ] login OAuth 分支改为 authorization_code + redirectTo
+- [ ] 新建 token 端点
+- [ ] TOTP 临时会话保存 OAuth 上下文
+- [ ] 前端 search schema 扩展和 OAuth 透传
+- [ ] 第三方 Web SSO 教程
 
 ### 📖 相关文档
 - **产品需求文档**: [docs/prd/auth/oauth-third-party-integration.md](/docs/prd/auth/oauth-third-party-integration.md)
@@ -40,57 +48,68 @@
 
 ## 用户故事
 
-### 故事 1：OAuth 授权码登录 [US-TP-001]
+### 故事 1：OAuth 授权码登录（Authorization Code + PKCE） [US-TP-001]
 
 **【用户故事】**
-**作为**：第三方应用
-**我希望**：能够使用OAuth授权码流程验证用户身份
-**从而**：安全地获取用户访问令牌
+**作为**：第三方应用（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：能够使用 Authorization Code + PKCE 流程验证用户身份
+**从而**：安全地获取用户访问令牌，无需将 client_secret 暴露给前端
 
 **【验收标准】**
 
-**场景 1：发起授权请求**
-Given 第三方应用"my-app"已接入realm-1
-When 用户访问第三方应用
-And 第三方应用重定向用户到`/api/realm-1/oauth/authorize?clientrid=my-app&responsertype=code&redirectruri=https://myapp.com/callback&state=STATErTOKEN`
-Then Herald系统显示授权页面，要求用户登录并授权
+**场景 1：发起授权请求（含 PKCE 参数）**
+Given 第三方应用 "my-app" 已接入 realm-1
+And 第三方前端生成了 code_verifier 和对应的 code_challenge（S256 方法）
+When 第三方前端将用户重定向到 Herald 授权端点，携带 client_id、redirect_uri、state、response_type=code、code_challenge 和 code_challenge_method=S256
+Then Herald 校验 Client App 存在且启用、redirect_uri 在白名单中
+And Herald 临时存储 state、client_id、redirect_uri、code_challenge（5 分钟有效）
+And Herald 将用户重定向到登录页面，携带 OAuth 上下文参数
 
-**场景 2：用户授权成功**
-Given 用户在CAS授权页面点击"授权"
-When Herald系统生成授权码code
-And 重定向到`https://myapp.com/callback?code=AUTHrCODE&state=STATErTOKEN`
-Then 第三方应用接收到授权码
+**场景 2：用户登录成功，获取授权码**
+Given 用户在 Herald 登录页面输入正确的邮箱和密码
+And 登录请求中包含完整的 OAuth 参数（oauthClientId、redirectUri、state）
+When Herald 校验临时存储的 state 匹配（client、redirectUri、code_challenge 一致）
+Then Herald 生成一次性授权码（关联 code_challenge、client_id、redirect_uri，5 分钟有效）
+And Herald 删除原 state（防止重放）
+And Herald 返回登录成功响应，包含 redirectTo 字段，指向第三方 callback 地址（附带 code 和 state 参数）
 
-**场景 3：使用授权码换取访问令牌**
-Given 第三方应用获得授权码AUTHrCODE
-When 第三方应用调用`POST /api/realm-1/oauth/token`
-And 请求体包含`grantrtype=authorizationrcode&code=AUTHrCODE&clientrid=my-app&clientrsecret=SECRET`
-Then Herald系统返回访问令牌：`{"accessrtoken": "JWTrTOKEN", "tokenrtype": "Bearer", "expiresrin": 604800}`
+**场景 3：使用授权码 + PKCE code_verifier 换取令牌**
+Given 第三方后端获得了 authorization_code 和用户原始的 code_verifier
+When 第三方后端向 Herald 令牌端点提交 authorization_code、redirect_uri、client_id 和 code_verifier
+And Herald 校验 code 有效且未使用
+And Herald 验证 code_verifier 的 SHA256 值与存储的 code_challenge 匹配
+Then Herald 创建 session 并返回 access_token
+And Herald 删除该 authorization_code（一次性使用）
 
-**场景 4：授权码已使用（失败场景）**
-Given 第三方应用已使用授权码AUTHrCODE换取令牌
-When 第三方应用再次使用相同授权码请求令牌
-Then 系统返回400错误：`{"error": "invalidrgrant"}`
+**场景 4：授权码重放被拒绝（失败场景）**
+Given 第三方后端已使用 authorization_code 成功换取令牌
+When 第三方后端再次使用相同的 authorization_code 请求令牌
+Then Herald 返回错误，提示授权码无效或已使用
 
 **场景 5：授权码过期（失败场景）**
-Given 授权码AUTHrCODE已超过10分钟有效期
-When 第三方应用使用该授权码请求令牌
-Then 系统返回400错误：`{"error": "invalidrgrant", "errorrdescription": "Authorization code expired"}`
+Given authorization_code 已超过 5 分钟有效期
+When 第三方后端使用该授权码请求令牌
+Then Herald 返回错误，提示授权码已过期
 
-**场景 6：Client ID或Secret错误（失败场景）**
-Given 第三方应用使用错误的clientrsecret
-When 调用`/api/realm-1/oauth/token`
-Then 系统返回401错误：`{"error": "invalidrclient"}`
+**场景 6：PKCE 校验失败（失败场景）**
+Given 第三方后端提交的 code_verifier 与授权时提交的 code_challenge 不匹配
+When 第三方后端请求令牌
+Then Herald 返回错误，提示 PKCE 验证失败
 
-**场景 7：State Token验证失败（失败场景）**
-Given 第三方应用发起授权请求时传递了state参数
-When OAuth回调时state token不匹配或已过期
-Then 系统返回400错误：`{"error": "invalidrstate"}`
+**场景 7：State 不存在或不匹配（失败场景）**
+Given 用户登录时提交的 state 不存在或参数不匹配
+When Herald 校验 state
+Then Herald 返回错误，登录失败
 
-**场景 8：回调URL不匹配（失败场景）**
-Given Client App配置的回调URL为`https://myapp.com/callback`
-When OAuth请求中的redirectruri参数为`https://evil.com/callback`
-Then Herald系统拒绝授权请求并返回400错误
+**场景 8：回调地址不在白名单（失败场景）**
+Given Client App 配置的白名单为 `https://myapp.com/callback`
+When 授权请求中的 redirect_uri 为 `https://evil.com/callback`
+Then Herald 拒绝授权请求并返回错误
+
+**场景 9：redirect_uri 前缀绕过被拒绝（失败场景）**
+Given Client App 配置的白名单为 `https://myapp.com/callback`
+When 授权请求中的 redirect_uri 为 `https://myapp.com.evil.com/callback`
+Then Herald 拒绝授权请求（白名单精确匹配，不允许前缀绕过）
 
 ---
 
@@ -301,12 +320,12 @@ Then 提示用户重新登录以获取新令牌
 
 **【用户故事】**
 **作为**：第三方应用
-**我希望**：能够使用 API Key 认证调用 Herald 第三方接口
+**我希望**：能够使用 API Key 认证与 Herald 第三方 API 安全交互
 **从而**：安全地集成 Herald 系统，验证用户权限和查询订阅状态
 
 **【验收标准】**
 
-**场景 1：使用有效 API Key 调用接口**
+**场景 1：使用有效 API Key 完成认证**
 Given 第三方应用拥有有效的 API Key
 When 调用`POST /api/ext/permission/check`
 And 请求头包含`X-API-Key: valid-api-key`
@@ -526,23 +545,29 @@ Then 返回相应的套餐信息：
 | **普通用户** | 通过第三方应用访问资源，使用Herald登录 |
 | **第三方应用** | 接入Herald系统，验证用户身份和权限 |
 
-### 集成流程示例
+### 集成流程示例（Authorization Code + PKCE）
 ```mermaid
 sequenceDiagram
     participant User as 用户
-    participant App as 第三方应用
+    participant SPA as 第三方 SPA
+    participant Backend as 第三方后端
     participant Herald as Herald系统
 
-    User->>App: 访问应用
-    App->>Herald: 重定向到 /oauth/authorize
+    SPA->>SPA: 生成 code_verifier + code_challenge
+    User->>SPA: 访问应用
+    SPA->>Herald: 重定向到授权端点（含 code_challenge）
+    Herald->>Herald: 校验 client_id、redirect_uri 白名单、存储 state+code_challenge
     Herald->>User: 显示登录页面
-    User->>Herald: 输入凭据并授权
-    Herald->>App: 重定向到回调URL（带授权码）
-    App->>Herald: 使用授权码换取令牌
-    Herald->>App: 返回访问令牌
-    App->>Herald: 验证用户权限（/permission/check）
-    Herald->>App: 返回权限检查结果
-    App->>User: 允许访问资源
+    User->>Herald: 输入凭据登录
+    Herald->>Herald: 校验 state、生成 authorization_code
+    Herald->>SPA: 重定向到 callback（含 code + state）
+    SPA->>SPA: 校验 state 一致性
+    SPA->>Backend: 发送 code
+    Backend->>Herald: 用 code + code_verifier 换取令牌
+    Herald->>Herald: 校验 code 有效、PKCE 匹配
+    Herald->>Backend: 返回 access_token
+    Backend->>SPA: 返回认证成功
+    SPA->>User: 允许访问资源
 ```
 
 ---
@@ -563,6 +588,82 @@ sequenceDiagram
 - **第三方 API**: [docs/prd/integration/third-party-api.md](/docs/prd/integration/third-party-api.md)
 - **权限验证**: [docs/prd/auth/permissions.md](/docs/prd/auth/permissions.md)
 - **计费系统**: [docs/prd/billing/billing.md](/docs/prd/billing/billing.md)
+
+---
+
+### 故事 15：第三方 Web SPA 发起 SSO 登录 [US-TP-015]
+
+**【用户故事】**
+**作为**：第三方应用开发者（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：从 Web SPA 直接发起 Herald SSO 登录（Authorization Code + PKCE）
+**从而**：前端用户无需额外后端参与即可完成认证流程的发起
+
+**【验收标准】**
+
+**场景 1：SPA 生成 PKCE 参数并跳转 Herald 登录**
+Given 第三方 SPA 已在 Herald 注册 Client App "my-app"
+When SPA 在浏览器中生成随机 code_verifier
+And 计算 code_challenge（SHA256 哈希 + Base64url 编码）
+And 将用户重定向到 Herald 授权端点，携带 client_id、redirect_uri、state、response_type=code、code_challenge、code_challenge_method=S256
+Then Herald 校验参数通过，将用户重定向到登录页面
+
+**场景 2：SPA 回调页面接收授权码**
+Given 用户在 Herald 完成登录
+When Herald 将用户重定向回 SPA 的 callback 地址
+Then 回调 URL 的查询参数中包含 code（授权码）和 state
+And SPA 校验返回的 state 与发起时一致
+
+**场景 3：SPA 将授权码发送给后端**
+Given SPA 在回调页面获得了 code 和 state
+When SPA 将 code 发送给自己的后端服务
+And 后端使用 code 和之前保存的 code_verifier 向 Herald 令牌端点请求令牌
+Then 后端获得 access_token 并完成认证
+
+**场景 4：OAuth 参数不完整时 SPA 显示错误（失败场景）**
+Given SPA 生成的 PKCE 参数中缺少 code_challenge
+When SPA 尝试跳转到 Herald 授权端点
+Then 授权请求被拒绝，提示参数不完整
+
+**场景 5：state 不匹配时 SPA 拒绝授权码（失败场景）**
+Given SPA 发起授权时使用了 state="abc123"
+When Herald 回调时返回的 state="xyz789"
+Then SPA 拒绝接受该授权码，提示可能的安全风险
+
+---
+
+### 故事 16：第三方后端用授权码换取令牌 [US-TP-016]
+
+**【用户故事】**
+**作为**：第三方应用开发者（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：后端使用授权码和 PKCE code_verifier 向 Herald 换取 access_token
+**从而**：安全地完成用户认证，token 不经过用户浏览器
+
+**【验收标准】**
+
+**场景 1：成功换取令牌**
+Given 第三方后端拥有有效的 authorization_code 和原始 code_verifier
+When 后端向 Herald 令牌端点提交 grant_type=authorization_code、code、redirect_uri、client_id 和 code_verifier
+Then Herald 校验全部通过，返回 access_token、token_type=Bearer 和 expires_in
+
+**场景 2：code_verifier 不匹配（失败场景）**
+Given 第三方后端提交的 code_verifier 与授权时存储的 code_challenge 不对应
+When 后端请求换取令牌
+Then Herald 返回错误，提示 PKCE 验证失败
+
+**场景 3：client_id 不匹配（失败场景）**
+Given 授权码是为 client_id="my-app" 生成的
+When 后端使用 client_id="other-app" 请求令牌
+Then Herald 返回错误，提示客户端不匹配
+
+**场景 4：redirect_uri 不匹配（失败场景）**
+Given 授权时使用的 redirect_uri 为 `https://myapp.com/callback`
+When 后端提交不同的 redirect_uri 请求令牌
+Then Herald 返回错误，提示回调地址不匹配
+
+**场景 5：授权码已使用（失败场景）**
+Given 同一个授权码已被成功使用一次
+When 后端再次使用该授权码请求令牌
+Then Herald 返回错误，提示授权码无效
 
 ---
 

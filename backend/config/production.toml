@@ -25,7 +25,7 @@ app_env = "production"
 url = "http://localhost:3000"
 # Serve frontend SPA from this directory inside the container.
 # The Docker image bundles frontend/dist at this path.
-static_dir = "/app/frontend/dis"
+static_dir = "/app/frontend/dist"
 
 [jwt]
 # MUST be overridden at deploy time. Use: openssl rand -base64 48

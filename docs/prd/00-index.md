@@ -42,7 +42,7 @@ docs/
 | PRD 文档 | 标题 | 状态 | 相关角色 | 最后更新 |
 |---------|------|------|---------|---------|
 | [oauth-provider.md](auth/oauth-provider.md) | OAuth 提供商 | ✅ Implemented | Realm Admin, Regular User | - |
-| [oauth-third-party-integration.md](auth/oauth-third-party-integration.md) | OAuth 第三方集成 | ✅ Implemented | Regular User, Third-Party App | - |
+| [oauth-third-party-integration.md](auth/oauth-third-party-integration.md) | OAuth 第三方集成（Authorization Code + PKCE） | 🚧 Partially Implemented | Regular User, Third-Party App | 2026-05-21 |
 | [wechat-oauth.md](auth/wechat-oauth.md) | 微信 OAuth 集成 | ✅ Implemented | Realm Admin, Regular User | 2026-03-03 |
 | [totp.md](auth/totp.md) | TOTP 二次认证 | ✅ Implemented | TOTP User, Realm Admin | - |
 | [permissions.md](auth/permissions.md) | 权限管理 | ✅ Implemented | Realm Admin | - |
@@ -69,6 +69,7 @@ docs/
 |---------|------|------|---------|---------|
 | [client-app.md](integration/client-app.md) | Client App 管理 | ✅ Implemented | Realm Admin, Third-Party App | - |
 | [third-party-api.md](integration/third-party-api.md) | 第三方 API | ✅ Implemented | - | - |
+| [sdk-improve.md](integration/sdk-improve.md) | SDK 增强 — 资源管理 | 📝 Draft | Third-Party App | 2026-05-21 |
 
 ## 状态说明
 
