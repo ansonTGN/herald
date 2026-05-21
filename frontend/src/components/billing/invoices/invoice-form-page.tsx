@@ -124,7 +124,10 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
   }, [navigate, realmId])
 
   return (
-    <div className="space-y-6" data-testid="invoice-form-page">
+    <div
+      className="container max-w-4xl mx-auto py-6 px-6 space-y-6"
+      data-testid="invoice-form-page"
+    >
       <div className="flex items-center gap-4">
         <Button
           type="button"

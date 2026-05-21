@@ -1,7 +1,6 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::HeaderMap,
 };
 use axum_valid::Valid;
 use serde::{Deserialize, Serialize};
@@ -9,7 +8,7 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 use herald_api_base::application::http::auth::util::{
-    extract_ip, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
+    ClientIp, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
 };
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
@@ -54,10 +53,9 @@ pub struct VerifyEmailTriggerResponse {
 pub async fn trigger(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
-    headers: HeaderMap,
+    ClientIp(ip): ClientIp,
     Valid(Json(payload)): Valid<Json<VerifyEmailTriggerRequest>>,
 ) -> Result<ApiResult<VerifyEmailTriggerResponse>, ApiError> {
-    let ip = extract_ip(&headers);
     let email = normalize_email(&payload.email);
 
     // turnstile 校验（根据 realm 配置动态判断）

@@ -691,10 +691,10 @@ BEGIN
         v_subscription_id,
         'created',
         v_test_timestamp - INTERVAL '25 days',
-        'admin@realm-001.com',
-        '{{"tier": ["free", "professional"]}}'::jsonb,
-        '{{"status": "inactive", "tier": "free"}}'::jsonb,
-        '{{"status": "active", "tier": "professional"}}'::jsonb,
+        'webhook',
+        NULL,
+        NULL,
+        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
         '{POINTS_REALM_ID}'
     ),
     (
@@ -702,10 +702,10 @@ BEGIN
         v_subscription_id,
         'upgraded',
         v_test_timestamp - INTERVAL '15 days',
-        'admin@realm-001.com',
-        '{{"tier": ["starter", "professional"]}}'::jsonb,
-        '{{"tier": "starter"}}'::jsonb,
-        '{{"tier": "professional"}}'::jsonb,
+        'webhook',
+        '{{"changed_fields": ["tier"], "previous_tier": "starter", "new_tier": "professional"}}'::jsonb,
+        '{{"status": "active", "tier": "starter", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
+        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
         '{POINTS_REALM_ID}'
     ),
     (
@@ -714,9 +714,9 @@ BEGIN
         'renewed',
         v_test_timestamp - INTERVAL '5 days',
         'system',
-        '{{"renewal_count": [1, 2]}}'::jsonb,
-        '{{"renewal_count": 1}}'::jsonb,
-        '{{"renewal_count": 2}}'::jsonb,
+        NULL,
+        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
+        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
         '{POINTS_REALM_ID}'
     );
 
@@ -1025,10 +1025,10 @@ BEGIN
         v_subscription_id,
         'created',
         v_test_timestamp - INTERVAL '25 days',
-        'admin@cas.com',
-        '{{"tier": ["free", "professional"]}}'::jsonb,
-        '{{"status": "inactive", "tier": "free"}}'::jsonb,
-        '{{"status": "active", "tier": "professional"}}'::jsonb,
+        'webhook',
+        NULL,
+        NULL,
+        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
         '{ADMIN_REALM}'
     ),
     (
@@ -1036,10 +1036,10 @@ BEGIN
         v_subscription_id,
         'upgraded',
         v_test_timestamp - INTERVAL '15 days',
-        'admin@cas.com',
-        '{{"tier": ["starter", "professional"]}}'::jsonb,
-        '{{"tier": "starter"}}'::jsonb,
-        '{{"tier": "professional"}}'::jsonb,
+        'webhook',
+        '{{"changed_fields": ["tier"], "previous_tier": "starter", "new_tier": "professional"}}'::jsonb,
+        '{{"status": "active", "tier": "starter", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
+        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
         '{ADMIN_REALM}'
     ),
     (
@@ -1048,9 +1048,9 @@ BEGIN
         'renewed',
         v_test_timestamp - INTERVAL '5 days',
         'system',
-        '{{"renewal_count": [1, 2]}}'::jsonb,
-        '{{"renewal_count": 1}}'::jsonb,
-        '{{"renewal_count": 2}}'::jsonb,
+        NULL,
+        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
+        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
         '{ADMIN_REALM}'
     );
 

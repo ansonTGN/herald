@@ -463,9 +463,12 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
     let listener = tokio::net::TcpListener::bind(&config.server.bind_address).await?;
     tracing::info!("Server listening on {}", config.server.bind_address);
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     tracing::info!("Server shutdown complete");
 

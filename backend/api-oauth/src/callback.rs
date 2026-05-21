@@ -12,7 +12,7 @@ use validator::Validate;
 
 use crate::helper::handle_oauth_callback;
 use herald_api_base::application::http::auth::util::{
-    SessionData, build_set_cookie, extract_ip, renewal_ttl_seconds_from_i32, store_session,
+    ClientIp, SessionData, build_set_cookie, renewal_ttl_seconds_from_i32, store_session,
 };
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
@@ -53,25 +53,28 @@ pub struct OAuthCallbackResponse {
 )]
 pub async fn oauth_callback(
     State(state): State<AppState>,
+    ClientIp(client_ip): ClientIp,
     headers: HeaderMap,
     Path((realm_id, provider)): Path<(String, String)>,
     Query(query): Query<OAuthCallbackQuery>,
 ) -> Result<Response, ApiError> {
-    oauth_callback_inner(state, headers, realm_id, provider, query).await
+    oauth_callback_inner(state, headers, client_ip, realm_id, provider, query).await
 }
 
 pub async fn oauth_callback_form(
     State(state): State<AppState>,
+    ClientIp(client_ip): ClientIp,
     headers: HeaderMap,
     Path((realm_id, provider)): Path<(String, String)>,
     Form(query): Form<OAuthCallbackQuery>,
 ) -> Result<Response, ApiError> {
-    oauth_callback_inner(state, headers, realm_id, provider, query).await
+    oauth_callback_inner(state, headers, client_ip, realm_id, provider, query).await
 }
 
 async fn oauth_callback_inner(
     state: AppState,
     headers: HeaderMap,
+    client_ip: String,
     realm_id: String,
     provider: String,
     query: OAuthCallbackQuery,
@@ -109,7 +112,7 @@ async fn oauth_callback_inner(
         realm_id: realm_id.clone(),
         client_id,
         user_id: user_id.to_string(),
-        client_ip: extract_ip(&headers),
+        client_ip,
         renewal_ttl_seconds: session_config.renewal_ttl_seconds,
     };
 

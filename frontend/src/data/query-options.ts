@@ -848,7 +848,8 @@ export const pointsWalletsQueryOptions = (
 export const pointsWalletQueryOptions = (realmId: string, userId: string) =>
   queryOptions({
     queryKey: queryKeys.pointsWallet(realmId, userId),
-    queryFn: async () => handleApiResponse(await getWallet({ path: { realmId, userId } })) as PointsWalletResponse,
+    queryFn: async () =>
+      handleApiResponse(await getWallet({ path: { realmId, userId } })) as PointsWalletResponse,
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
   })

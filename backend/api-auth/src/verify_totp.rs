@@ -1,7 +1,7 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::{HeaderMap, header::SET_COOKIE},
+    http::header::SET_COOKIE,
     response::IntoResponse,
 };
 use axum_valid::Valid;
@@ -12,7 +12,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 use herald_api_base::application::http::auth::util::{
-    SessionData, build_set_cookie, epoch_seconds, extract_ip, rate_limit_hit,
+    ClientIp, SessionData, build_set_cookie, epoch_seconds, rate_limit_hit,
     renewal_ttl_seconds_from_i32, store_session,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
@@ -119,11 +119,9 @@ struct TempSessionData {
 pub async fn handle_verify_totp(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
-    headers: HeaderMap,
+    ClientIp(client_ip): ClientIp,
     Valid(Json(req)): Valid<Json<VerifyTotpRequest>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let client_ip = extract_ip(&headers);
-
     // 1. Validate and retrieve temp session from Redis
     let temp_key = format!("totp:temp:{}", req.temp_token);
     let mut conn = state

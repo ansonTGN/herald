@@ -53,9 +53,9 @@ async fn fetch_audit_events_raw(
     pool: &sqlx::PgPool,
     realm_id: &str,
     action: &str,
-) -> Vec<(String, String, String, String, String)> {
-    sqlx::query_as::<_, (String, String, String, String, String)>(
-        "SELECT category, action, actor_id, target_id, result
+) -> Vec<(String, String, String, String, Option<String>, String)> {
+    sqlx::query_as::<_, (String, String, String, String, Option<String>, String)>(
+        "SELECT category, action, actor_id, target_id, target_name, result
          FROM audit_events
          WHERE realm_id = $1 AND action = $2
          ORDER BY created_at DESC",
@@ -146,7 +146,7 @@ async fn test_scenario_user_create_produces_audit_event(ctx: &mut TestContext) {
         "Category should be user_management"
     );
     assert_eq!(event.1, "user.create", "Action should be user.create");
-    assert_eq!(event.4, "success", "Result should be success");
+    assert_eq!(event.5, "success", "Result should be success");
 
     // The target_id should match the newly created user
     assert_eq!(
@@ -228,7 +228,7 @@ async fn test_scenario_user_update_produces_audit_event(ctx: &mut TestContext) {
         "Category should be user_management"
     );
     assert_eq!(event.1, "user.update", "Action should be user.update");
-    assert_eq!(event.4, "success", "Result should be success");
+    assert_eq!(event.5, "success", "Result should be success");
     assert_eq!(
         event.3,
         target_user_id.to_string(),
@@ -299,7 +299,7 @@ async fn test_scenario_user_delete_produces_audit_event(ctx: &mut TestContext) {
         "Category should be user_management"
     );
     assert_eq!(event.1, "user.delete", "Action should be user.delete");
-    assert_eq!(event.4, "success", "Result should be success");
+    assert_eq!(event.5, "success", "Result should be success");
     assert_eq!(
         event.3,
         target_user_id.to_string(),
@@ -435,12 +435,17 @@ async fn test_scenario_login_success_produces_audit_event(ctx: &mut TestContext)
 
     let event = &events[0];
     assert_eq!(event.0, "auth", "Category should be auth");
-    assert_eq!(event.4, "success", "Result should be success");
+    assert_eq!(event.5, "success", "Result should be success");
     // The actor_id should be the user who logged in
     assert_eq!(
         event.2,
         user_id.to_string(),
         "actor_id should match the logged-in user's ID"
+    );
+    assert_eq!(
+        event.4,
+        Some(email),
+        "target_name should identify the logged-in user for audit display"
     );
 }
 
@@ -508,5 +513,5 @@ async fn test_scenario_login_failure_produces_audit_event(ctx: &mut TestContext)
 
     let event = &events[0];
     assert_eq!(event.0, "auth", "Category should be auth");
-    assert_eq!(event.4, "failure", "Result should be failure");
+    assert_eq!(event.5, "failure", "Result should be failure");
 }

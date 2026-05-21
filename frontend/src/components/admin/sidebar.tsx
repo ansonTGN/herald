@@ -139,9 +139,7 @@ export function Sidebar() {
             path: `/${realmId}/manage/billing/invoices`,
             icon: FileText,
             permission: 'billing.view',
-            visible:
-              (adminFeatures?.invoicesVisible ?? true) ||
-              features?.facts.hasInvoiceSellerConfig === false,
+            visible: adminFeatures?.invoicesVisible ?? true,
           },
           {
             name: 'Subscription History',
@@ -167,7 +165,7 @@ export function Sidebar() {
       },
       { name: 'Settings', path: `/${realmId}/manage/settings`, icon: Settings, permission: null },
     ],
-    [adminFeatures, realmId, features?.facts?.hasInvoiceSellerConfig]
+    [adminFeatures, realmId]
   )
 
   const filteredMenuItems = menuItems.filter(

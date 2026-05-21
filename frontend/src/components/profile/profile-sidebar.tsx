@@ -28,19 +28,19 @@ export function ProfileSidebar() {
         name: 'Points',
         path: `/${realmId}/user/points`,
         icon: Coins,
-        visible: userFeatures?.pointsVisible ?? true,
+        visible: userFeatures?.pointsVisible === true,
       },
       {
         name: 'Subscription',
         path: `/${realmId}/user/subscription-history`,
         icon: CreditCard,
-        visible: userFeatures?.subscriptionVisible ?? true,
+        visible: userFeatures?.subscriptionVisible === true,
       },
       {
         name: 'Invoices',
         path: `/${realmId}/user/invoices`,
         icon: FileText,
-        visible: userFeatures?.invoicesVisible ?? true,
+        visible: userFeatures?.invoicesVisible === true,
       },
     ],
     [realmId, userFeatures]

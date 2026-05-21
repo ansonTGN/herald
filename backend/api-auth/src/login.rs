@@ -11,7 +11,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use herald_api_base::application::http::auth::util::{
-    build_set_cookie, extract_ip, normalize_email, rate_limit_hit, renewal_ttl_seconds_from_i32,
+    ClientIp, build_set_cookie, normalize_email, rate_limit_hit, renewal_ttl_seconds_from_i32,
     verify_turnstile_for_realm,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
@@ -87,10 +87,10 @@ pub struct LoginResponse {
 pub async fn login(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<LoginRequestPayload>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ip = extract_ip(&headers);
     let user_agent = headers
         .get("user-agent")
         .and_then(|v| v.to_str().ok())
@@ -298,7 +298,7 @@ pub async fn login(
                 actor_name: Some(user.email.clone()),
                 target_type: AuditTargetType::User,
                 target_id: user.id.to_string(),
-                target_name: None,
+                target_name: Some(user.email.clone()),
                 result: AuditResult::Success,
                 details: Some(serde_json::json!({"method": "password", "totp_required": true})),
                 ip_address: Some(ip.clone()),
@@ -391,7 +391,7 @@ pub async fn login(
             actor_name: Some(user.email.clone()),
             target_type: AuditTargetType::User,
             target_id: user.id.to_string(),
-            target_name: None,
+            target_name: Some(user.email.clone()),
             result: AuditResult::Success,
             details: Some(serde_json::json!({"method": "password"})),
             ip_address: Some(ip.clone()),

@@ -609,6 +609,12 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 仅保留管理入口、关键操作路径、筛选/查看/变更的交互约束和状态反馈，不写组件实现、数据层封装或代码结构。
 - 计费与积分场景必须突出金额/积分变化、变更影响范围、不可逆风险提示和回调同步中的状态说明。
 
+**导航与可见性约束**：
+
+- 管理后台入口只按权限控制：拥有 `billing.view` 的用户可看到 Billing 相关管理入口，包括 Products、Payment Providers、Subscription Plans、Invoices 和 Subscription History；不再因为当前 Realm 尚未配置产品、套餐、发票或订阅历史而隐藏管理入口。
+- 个人中心的 Subscription 入口按 Realm 能力开通状态显示：当 Realm 下存在已启用的订阅 Plan 时显示；仅存在历史订阅记录但没有已启用 Plan 时，不单独作为显示入口的依据。
+- 订阅购买按钮或 checkout 流程的可用性独立于 Subscription 入口：只有当 Plan 已配置启用的支付平台映射，并且对应支付平台已在 Realm 中启用时，才允许用户发起购买；否则在订阅页面内显示不可购买状态或禁用购买操作。
+
 **多支付平台相关交互约束**：
 
 **套餐创建流程**：
@@ -680,4 +686,3 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 前端开发指南: `../../spec/frontend/development.md`
 - 权限管理: `docs/prd/permissions.md`
 - Client App 管理: `docs/prd/client-app.md`
-

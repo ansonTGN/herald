@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 use herald_api_base::application::http::auth::util::{
-    epoch_seconds, extract_ip, normalize_email, rate_limit_hit, require_session,
+    ClientIp, epoch_seconds, normalize_email, rate_limit_hit, require_session,
 };
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
@@ -53,10 +53,10 @@ pub struct ChangeEmailResponse {
 pub async fn request(
     Path(_realm_id): Path<String>,
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<ChangeEmailRequest>>,
 ) -> Result<ApiResult<ChangeEmailResponse>, ApiError> {
-    let ip = extract_ip(&headers);
     let (_token, sess) = require_session(&state, &headers).await?;
     let new_email = normalize_email(&payload.new_email);
 

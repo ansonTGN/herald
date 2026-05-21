@@ -72,7 +72,7 @@ describe('Sidebar navigation', () => {
     useAuthStore.getState().reset()
   })
 
-  it('highlights subscription plans on the billing page (under Products & Payments)', async () => {
+  it('highlights subscription plans on the billing page', async () => {
     currentPath = '/admin/manage/billing?page=0&pageSize=20&status=all'
     const user = userEvent.setup()
     render(<Sidebar />)
@@ -80,10 +80,10 @@ describe('Sidebar navigation', () => {
     await user.click(screen.getByTestId('sidebar-menu-products-&-payments'))
 
     const subscriptionPlansLink = screen.getByTestId('sidebar-menu-subscription-plans')
-    const productsLink = screen.getByTestId('sidebar-menu-products')
+    const paymentProvidersLink = screen.getByTestId('sidebar-menu-payment-providers')
 
     expect(subscriptionPlansLink).toHaveClass('font-semibold')
-    expect(productsLink).not.toHaveClass('font-semibold')
+    expect(paymentProvidersLink).not.toHaveClass('font-semibold')
   })
 
   it('highlights invoices on the invoices page (under Transactions)', async () => {

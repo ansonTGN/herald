@@ -60,8 +60,8 @@ struct FeatureFacts {
     has_payment_providers: bool,
     has_products: bool,
     has_plans: bool,
+    has_active_plans: bool,
     has_plan_payment_mappings: bool,
-    has_user_visible_plans: bool,
     has_points_packages: bool,
     has_points_package_payment_mappings: bool,
     has_invoice_seller_config: bool,
@@ -98,7 +98,8 @@ pub async fn get_feature_availability(
 
     let admin_billing_visible = can_view_billing;
     let admin_points_visible = can_view_points;
-    let user_subscription_visible = facts.has_user_visible_plans || facts.has_subscription_history;
+    let user_subscription_visible = facts.has_active_plans;
+    let user_points_visible = facts.has_points_packages;
     let user_invoices_visible = facts.has_invoice_seller_config;
 
     Ok(Json(FeatureAvailabilityResponse {
@@ -106,16 +107,14 @@ pub async fn get_feature_availability(
             billing_visible: admin_billing_visible,
             billing_config_visible: admin_billing_visible,
             products_visible: admin_billing_visible,
-            plans_visible: admin_billing_visible && facts.has_products,
-            invoices_visible: admin_billing_visible
-                && (facts.has_invoice_seller_config || facts.has_invoices),
-            subscription_history_visible: admin_billing_visible
-                && (facts.has_plans || facts.has_subscription_history),
+            plans_visible: admin_billing_visible,
+            invoices_visible: admin_billing_visible,
+            subscription_history_visible: admin_billing_visible,
             points_visible: admin_points_visible,
             points_packages_visible: admin_points_visible,
         },
         user: UserFeatureAvailability {
-            points_visible: true,
+            points_visible: user_points_visible,
             points_purchase_visible: facts.has_points_package_payment_mappings,
             subscription_visible: user_subscription_visible,
             invoices_visible: user_invoices_visible,
@@ -192,6 +191,7 @@ async fn load_feature_facts(state: &AppState, realm_id: &str) -> Result<FeatureF
             EXISTS (SELECT 1 FROM configured_providers) AS has_payment_providers,
             EXISTS (SELECT 1 FROM products WHERE realm_id = $1) AS has_products,
             EXISTS (SELECT 1 FROM subscription_plan WHERE realm_id = $1) AS has_plans,
+            EXISTS (SELECT 1 FROM subscription_plan WHERE realm_id = $1 AND active = true) AS has_active_plans,
             EXISTS (
                 SELECT 1
                 FROM subscription_plan_payment_provider spp
@@ -199,20 +199,7 @@ async fn load_feature_facts(state: &AppState, realm_id: &str) -> Result<FeatureF
                 JOIN configured_providers cp ON cp.provider = spp.payment_provider
                 WHERE sp.realm_id = $1 AND spp.enabled = true
             ) AS has_plan_payment_mappings,
-            EXISTS (
-                SELECT 1
-                FROM subscription_plan sp
-                JOIN subscription_plan_payment_provider spp ON spp.plan_id = sp.id
-                JOIN configured_providers cp ON cp.provider = spp.payment_provider
-                JOIN client_app_subscription_plan casp ON casp.plan_id = sp.id
-                JOIN client_app ca ON ca.id = casp.client_app_id
-                WHERE sp.realm_id = $1
-                  AND sp.active = true
-                  AND spp.enabled = true
-                  AND casp.enabled = true
-                  AND ca.enabled = true
-            ) AS has_user_visible_plans,
-            EXISTS (SELECT 1 FROM points_packages WHERE realm_id = $1) AS has_points_packages,
+            EXISTS (SELECT 1 FROM points_packages WHERE realm_id = $1 AND enabled = true) AS has_points_packages,
             EXISTS (
                 SELECT 1
                 FROM points_package_payment_providers ppp
@@ -241,8 +228,8 @@ async fn load_feature_facts(state: &AppState, realm_id: &str) -> Result<FeatureF
         has_payment_providers: row.get("has_payment_providers"),
         has_products: row.get("has_products"),
         has_plans: row.get("has_plans"),
+        has_active_plans: row.get("has_active_plans"),
         has_plan_payment_mappings: row.get("has_plan_payment_mappings"),
-        has_user_visible_plans: row.get("has_user_visible_plans"),
         has_points_packages: row.get("has_points_packages"),
         has_points_package_payment_mappings: row.get("has_points_package_payment_mappings"),
         has_invoice_seller_config: row.get("has_invoice_seller_config"),

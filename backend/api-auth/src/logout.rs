@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use herald_api_base::application::http::auth::util::{
-    build_clear_cookie, delete_session, extract_ip, get_cookie,
+    ClientIp, build_clear_cookie, delete_session, get_cookie,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -40,9 +40,9 @@ pub struct LogoutResponse {
 pub async fn logout(
     Path(_realm_id): Path<String>,
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ip = extract_ip(&headers);
     let user_agent = headers
         .get("user-agent")
         .and_then(|v| v.to_str().ok())

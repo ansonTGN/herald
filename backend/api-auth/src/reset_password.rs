@@ -1,7 +1,6 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::HeaderMap,
 };
 use axum_valid::Valid;
 use serde::{Deserialize, Serialize};
@@ -9,7 +8,7 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 use herald_api_base::application::http::auth::util::{
-    extract_ip, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
+    ClientIp, normalize_email, rate_limit_hit, verify_turnstile_for_realm,
 };
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
@@ -57,10 +56,9 @@ pub struct ResetPasswordRequestResponse {
 pub async fn request(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
-    headers: HeaderMap,
+    ClientIp(ip): ClientIp,
     Valid(Json(payload)): Valid<Json<ResetPasswordRequestRequest>>,
 ) -> Result<ApiResult<ResetPasswordRequestResponse>, ApiError> {
-    let ip = extract_ip(&headers);
     let email = normalize_email(&payload.email);
 
     // turnstile 校验（根据 realm 配置动态判断）
@@ -155,12 +153,10 @@ pub struct ResetPasswordConfirmResponse {
 )]
 pub async fn confirm(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    ClientIp(ip): ClientIp,
     Path((realm_id, code)): Path<(String, String)>,
     Valid(Json(payload)): Valid<Json<ResetPasswordConfirmRequest>>,
 ) -> Result<ApiResult<ResetPasswordConfirmResponse>, ApiError> {
-    let ip = extract_ip(&headers);
-
     // turnstile 校验（根据 realm 配置动态判断）
     verify_turnstile_for_realm(
         &state,

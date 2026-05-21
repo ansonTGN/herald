@@ -5,7 +5,9 @@ export function Devtools() {
   return (
     <>
       <ReactQueryDevtools buttonPosition="bottom-right" />
-      <TanStackRouterDevtools />
+      <div className="fixed bottom-0 left-0 z-50">
+        <TanStackRouterDevtools panelProps={{ style: { overflow: 'hidden' } }} />
+      </div>
     </>
   )
 }

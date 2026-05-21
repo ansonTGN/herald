@@ -32,7 +32,8 @@
 ```gherkin
 Given 我是已登录用户
 And 当前 Realm 已配置微信支付
-And 已存在积分包 "credits-500"（500 积分，¥50）
+And 已存在 enabled 积分包 "credits-500"（500 积分，¥50）
+And 该积分包已配置 enabled 微信支付映射
 When 我访问积分购买页面
 And 我选择积分包 "500 积分包"
 And 我点击 "微信支付" 按钮
@@ -53,7 +54,8 @@ And 系统不创建订阅记录
 ```gherkin
 Given 我是已登录用户
 And 当前 Realm 已配置 Stripe 支付
-And 已存在积分包 "credits-1000"（1000 积分，$10）
+And 已存在 enabled 积分包 "credits-1000"（1000 积分，$10）
+And 该积分包已配置 enabled Stripe 支付映射
 When 我访问积分购买页面
 And 我选择积分包 "1000 积分包"
 And 我点击 "Stripe 支付" 按钮
@@ -90,15 +92,27 @@ Then 系统关闭旧的 PaymentAttempt 并生成新的二维码
 **场景 5：未配置支付平台时禁用按钮**
 ```gherkin
 Given 我是已登录用户
+And 已存在 enabled 积分包 "credits-500"
 And 当前 Realm 未配置微信支付
 When 我查看积分包 "credits-500"
 Then "微信支付" 按钮为禁用状态
 And 显示提示 "该支付方式暂未开通"
 ```
 
-**场景 6：查看可用积分包列表**
+**场景 6：个人中心 Points 入口按 enabled 积分包显示**
 ```gherkin
 Given 我是已登录用户
+And 当前 Realm 已存在 enabled 积分包
+When 我打开个人中心
+Then 侧边栏显示 "Points" 菜单
+When 当前 Realm 不存在 enabled 积分包
+Then 侧边栏不显示 "Points" 菜单
+```
+
+**场景 7：查看可用积分包列表**
+```gherkin
+Given 我是已登录用户
+And 当前 Realm 已存在 enabled 积分包
 When 我访问积分购买页面
 Then 我看到所有可用的积分包：
   | 积分包名称  | 积分数 | 价格    | 可用支付平台       |
@@ -107,6 +121,17 @@ Then 我看到所有可用的积分包：
   | 2000 积分包 | 2000   | ¥170.00 | Stripe            |
 And 我可以看到每个积分包的性价比（积分/价格比）
 And 我可以选择购买任意积分包
+```
+
+**场景 8：存在积分包但无可用支付平台映射**
+```gherkin
+Given 我是已登录用户
+And 当前 Realm 已存在 enabled 积分包 "credits-500"
+And 该积分包没有 enabled 支付平台映射
+When 我访问积分购买页面
+Then 我可以看到 "credits-500"
+And 购买按钮为禁用状态
+And 系统提示 "该积分包暂无可用支付方式"
 ```
 
 ---

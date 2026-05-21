@@ -338,9 +338,20 @@ Then 系统提示 "Only issued or overdue invoices can be marked as paid"
 
 ```gherkin
 Given 我是普通用户 user@example.com
+And Realm 已配置销售方信息
 When 我访问我的发票页面
 Then 我看到所有开给我的发票列表
 And 列表包含：编号、金额、状态、到期日
+```
+
+**场景 1b：未配置销售方信息时隐藏个人发票入口**
+
+```gherkin
+Given 我是普通用户 user@example.com
+And Realm 尚未配置销售方信息
+When 我打开个人中心
+Then 侧边栏不显示 "My Invoices" 菜单
+And 我直接访问我的发票页面时被引导回个人资料页
 ```
 
 **场景 2：查看发票详情**
@@ -473,6 +484,16 @@ And 销售方信息自动从 Realm 配置填充
 And 我看到提示 "Invoice application submitted, pending review"
 ```
 
+**场景 1b：未配置销售方信息时不展示购买记录发票入口**
+
+```gherkin
+Given 我是普通用户 user@example.com
+And 我的购买历史中有已完成的积分包购买记录
+And Realm 尚未配置销售方信息
+When 我进入 My Points 的 Purchase History
+Then 对应购买记录不显示 "Invoice" 按钮
+```
+
 **场景 2：从订阅历史申请发票**
 
 ```gherkin
@@ -488,6 +509,16 @@ And 我填写开票抬头信息（名称、地址、邮箱、税号）
 Then 系统创建草稿发票，状态为 "draft"
 And 销售方信息自动从 Realm 配置填充
 And 我看到提示 "Invoice application submitted, pending review"
+```
+
+**场景 2b：未配置销售方信息时不展示订阅发票入口**
+
+```gherkin
+Given 我是普通用户 user@example.com
+And 我有订阅记录
+And Realm 尚未配置销售方信息
+When 我进入 Subscription History
+Then 对应订阅不显示 "Invoice" 按钮
 ```
 
 **场景 3：查看我的发票申请状态**

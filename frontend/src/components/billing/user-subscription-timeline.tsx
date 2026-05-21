@@ -17,8 +17,20 @@ interface EventCardProps {
   onToggle: () => void
 }
 
+function StateDetail({ label, value }: { label: string; value: string | undefined }) {
+  if (!value) return null
+  return (
+    <div>
+      <span className="text-muted-foreground">{label}: </span>
+      {value}
+    </div>
+  )
+}
+
 function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
   const timestamp = format(new Date(event.timestamp), 'PPp')
+
+  const hasDetails = event.previousState || event.newState
 
   return (
     <div
@@ -34,7 +46,7 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
             <HistoryEventBadge eventType={event.eventType} />
             <span className="text-sm text-muted-foreground">{timestamp}</span>
           </div>
-          {(event.previousState || event.newState) && (
+          {hasDetails && (
             <Button
               variant="ghost"
               size="sm"
@@ -73,7 +85,7 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
           )}
 
           {/* Expandable details */}
-          {isExpanded && (event.previousState || event.newState) && (
+          {isExpanded && hasDetails && (
             <div className="mt-3 space-y-3 p-3 bg-muted/30 rounded-lg">
               {event.previousState && (
                 <div className="space-y-2">
@@ -81,21 +93,18 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
                     Previous State
                   </p>
                   <div className="space-y-1 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Status: </span>
-                      {event.previousState.status}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Tier: </span>
-                      {event.previousState.tier}
-                    </div>
-                    {event.previousState.currentPeriodStart && (
-                      <div>
-                        <span className="text-muted-foreground">Period: </span>
-                        {event.previousState.currentPeriodEnd &&
-                          `${new Date(event.previousState.currentPeriodStart).toLocaleDateString()} - ${new Date(event.previousState.currentPeriodEnd).toLocaleDateString()}`}
-                      </div>
-                    )}
+                    <StateDetail label="Status" value={event.previousState.status} />
+                    <StateDetail label="Tier" value={event.previousState.tier} />
+                    {event.previousState.currentPeriodStart &&
+                      event.previousState.currentPeriodEnd && (
+                        <div>
+                          <span className="text-muted-foreground">Period: </span>
+                          {new Date(
+                            event.previousState.currentPeriodStart
+                          ).toLocaleDateString()} -{' '}
+                          {new Date(event.previousState.currentPeriodEnd).toLocaleDateString()}
+                        </div>
+                      )}
                   </div>
                 </div>
               )}
@@ -106,19 +115,13 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
                     New State
                   </p>
                   <div className="space-y-1 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Status: </span>
-                      {event.newState.status}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Tier: </span>
-                      {event.newState.tier}
-                    </div>
-                    {event.newState.currentPeriodStart && (
+                    <StateDetail label="Status" value={event.newState.status} />
+                    <StateDetail label="Tier" value={event.newState.tier} />
+                    {event.newState.currentPeriodStart && event.newState.currentPeriodEnd && (
                       <div>
                         <span className="text-muted-foreground">Period: </span>
-                        {event.newState.currentPeriodEnd &&
-                          `${new Date(event.newState.currentPeriodStart).toLocaleDateString()} - ${new Date(event.newState.currentPeriodEnd).toLocaleDateString()}`}
+                        {new Date(event.newState.currentPeriodStart).toLocaleDateString()} -{' '}
+                        {new Date(event.newState.currentPeriodEnd).toLocaleDateString()}
                       </div>
                     )}
                   </div>

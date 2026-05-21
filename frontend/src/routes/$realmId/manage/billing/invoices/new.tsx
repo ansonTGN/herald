@@ -16,19 +16,14 @@ function NewInvoicePage() {
   const { realmId } = Route.useParams()
 
   return (
-    <div className="container max-w-4xl mx-auto py-6 px-6">
-      <Suspense
-        fallback={
-          <div
-            className="flex items-center justify-center py-12"
-            data-testid="invoice-form-loading"
-          >
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        }
-      >
-        <InvoiceFormPage mode="create" realmId={realmId} />
-      </Suspense>
-    </div>
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-12" data-testid="invoice-form-loading">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <InvoiceFormPage mode="create" realmId={realmId} />
+    </Suspense>
   )
 }

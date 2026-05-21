@@ -82,7 +82,7 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
             </span>
           )}
         </div>
-        {features?.user.pointsPurchaseVisible !== false && (
+        {features?.user.pointsPurchaseVisible === true && (
           <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
             <Button data-testid="purchase-points-button">
               <Plus className="mr-2 h-4 w-4" />

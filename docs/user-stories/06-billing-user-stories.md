@@ -646,9 +646,21 @@ And 对话框显示：
 
 **【验收标准】**
 
+**场景 0：个人中心 Subscription 入口按 active Plan 显示**
+```gherkin
+Given 我是 regular-user-1
+And 当前 Realm 存在 active Plan
+When 我打开个人中心
+Then 侧边栏显示 "Subscription" 菜单
+When 当前 Realm 不存在 active Plan
+Then 侧边栏不显示 "Subscription" 菜单
+And 我直接访问订阅历史页面时被引导回个人资料页
+```
+
 **场景 1：查看订阅历史时间线**
 ```gherkin
 Given 我是 regular-user-1
+And 当前 Realm 存在 active Plan
 And 我有活跃订阅 "sub_1234567890"
 When 我访问我的订阅详情页面
 And 我点击 "History" 标签

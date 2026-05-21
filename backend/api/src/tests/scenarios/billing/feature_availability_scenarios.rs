@@ -221,11 +221,11 @@ mod tests {
         assert_eq!(json["admin"]["billingVisible"], true);
         assert_eq!(json["admin"]["billingConfigVisible"], true);
         assert_eq!(json["admin"]["productsVisible"], true);
-        assert_eq!(json["admin"]["plansVisible"], false);
-        assert_eq!(json["admin"]["subscriptionHistoryVisible"], false);
+        assert_eq!(json["admin"]["plansVisible"], true);
+        assert_eq!(json["admin"]["subscriptionHistoryVisible"], true);
         assert_eq!(json["admin"]["pointsVisible"], true);
         assert_eq!(json["admin"]["pointsPackagesVisible"], true);
-        assert_eq!(json["user"]["pointsVisible"], true);
+        assert_eq!(json["user"]["pointsVisible"], false);
         assert_eq!(json["user"]["pointsPurchaseVisible"], false);
         assert_eq!(json["user"]["subscriptionVisible"], false);
         assert_eq!(json["user"]["invoicesVisible"], false);
@@ -254,6 +254,13 @@ mod tests {
         assert_eq!(after_product["user"]["subscriptionVisible"], false);
 
         let plan_id = create_test_plan(ctx, &ctx._realm_id.clone(), "feature-visible-plan").await;
+
+        let (status_after_active_plan, after_active_plan) =
+            get_feature_availability(ctx, &token).await;
+        assert_eq!(status_after_active_plan, StatusCode::OK);
+        assert_eq!(after_active_plan["facts"]["hasPlans"], true);
+        assert_eq!(after_active_plan["user"]["subscriptionVisible"], true);
+
         create_stripe_api_key(ctx).await;
         create_plan_payment_mapping(ctx, plan_id).await;
         assign_plan_to_default_client_app(ctx, plan_id).await;
@@ -292,6 +299,7 @@ mod tests {
         let (status_without_mapping, without_mapping) = get_feature_availability(ctx, &token).await;
         assert_eq!(status_without_mapping, StatusCode::OK);
         assert_eq!(without_mapping["facts"]["hasPointsPackages"], true);
+        assert_eq!(without_mapping["user"]["pointsVisible"], true);
         assert_eq!(without_mapping["user"]["pointsPurchaseVisible"], false);
 
         create_stripe_api_key(ctx).await;
@@ -303,6 +311,7 @@ mod tests {
             with_mapping["facts"]["hasPointsPackagePaymentMappings"],
             true
         );
+        assert_eq!(with_mapping["user"]["pointsVisible"], true);
         assert_eq!(with_mapping["user"]["pointsPurchaseVisible"], true);
     }
 

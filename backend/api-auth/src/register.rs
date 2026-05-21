@@ -1,11 +1,10 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::HeaderMap,
 };
 use axum_valid::Valid;
 use herald_api_base::application::http::auth::util::{
-    extract_ip, is_email_verification_required, is_registration_enabled, normalize_email,
+    ClientIp, is_email_verification_required, is_registration_enabled, normalize_email,
     rate_limit_hit, verify_turnstile_for_realm,
 };
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -61,7 +60,7 @@ pub struct RegisterResponse {
 pub async fn register(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
-    headers: HeaderMap,
+    ClientIp(ip): ClientIp,
     Valid(Json(payload)): Valid<Json<RegisterRequest>>,
 ) -> Result<ApiResult<RegisterResponse>, ApiError> {
     let email = normalize_email(&payload.email);
@@ -84,7 +83,7 @@ pub async fn register(
         ));
     }
 
-    let ip = extract_ip(&headers);
+    // ip comes from ClientIp extractor
     // turnstile 校验（根据 realm 配置动态判断）
     verify_turnstile_for_realm(
         &state,

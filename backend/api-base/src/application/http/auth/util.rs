@@ -1,3 +1,4 @@
+use axum::extract::FromRequestParts;
 use axum::http::HeaderMap;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
@@ -10,16 +11,52 @@ use herald_core::domain::authorization::permission_service::PermissionService;
 // Re-export rate limiting functions from the dedicated module
 pub use crate::application::http::rate_limit::rate_limit_hit;
 
-pub fn extract_ip(headers: &HeaderMap) -> String {
-    headers
-        .get("X-Forwarded-For")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or_default()
-        .split(',')
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .to_string()
+/// Extract client IP from request with three-level fallback:
+/// 1. X-Real-IP header (set by nginx/traefik)
+/// 2. X-Forwarded-For header (first entry)
+/// 3. ConnectInfo<SocketAddr> (direct connection)
+///
+/// Usage in handlers: `client_ip: ClientIp` then `client_ip.0` for the IP string.
+pub struct ClientIp(pub String);
+
+impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        let headers = &parts.headers;
+
+        // 1. Prefer X-Real-IP header (set by nginx/traefik)
+        if let Some(real_ip) = headers
+            .get("X-Real-IP")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.trim().parse::<std::net::IpAddr>().ok())
+        {
+            return Ok(ClientIp(real_ip.to_string()));
+        }
+
+        // 2. Fall back to first entry in X-Forwarded-For
+        if let Some(xff) = headers.get("X-Forwarded-For").and_then(|v| v.to_str().ok())
+            && let Some(first) = xff.split(',').next()
+        {
+            let trimmed = first.trim();
+            if !trimmed.is_empty() {
+                return Ok(ClientIp(trimmed.to_string()));
+            }
+        }
+
+        // 3. Fall back to direct connection IP (ConnectInfo<SocketAddr>)
+        if let Some(connect_info) = parts
+            .extensions
+            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        {
+            return Ok(ClientIp(connect_info.0.ip().to_string()));
+        }
+
+        Ok(ClientIp(String::new()))
+    }
 }
 
 pub fn normalize_email(email: &str) -> String {
@@ -224,7 +261,17 @@ pub async fn load_session_with_ip_validation(
 
     // Validate client IP if headers are provided
     if let Some(hdrs) = headers {
-        let client_ip = extract_ip(hdrs);
+        let client_ip = hdrs
+            .get("X-Real-IP")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.trim().parse::<std::net::IpAddr>().ok())
+            .map(|ip| ip.to_string())
+            .or_else(|| {
+                hdrs.get("X-Forwarded-For")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|xff| xff.split(',').next().map(|s| s.trim().to_string()))
+            })
+            .unwrap_or_default();
         if !client_ip.is_empty() && client_ip != data.client_ip {
             tracing::warn!(
                 token = %token,
