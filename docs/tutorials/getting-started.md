@@ -45,7 +45,7 @@ uv run scripts/dev-start.py
 
 ## 配置
 
-后端配置文件在 `backend/config.toml`，通过环境变量 `HERALD_CONFIG` 指定路径，不设就默认读当前目录下的 `config.toml`。
+后端配置文件在 `backend/config/config.toml`，通过环境变量 `HERALD_CONFIG` 指定路径，不设就默认读 `config/config.toml`。
 
 开发环境的默认配置：
 

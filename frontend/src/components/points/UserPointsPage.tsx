@@ -10,7 +10,7 @@ import { TransactionFilters } from './TransactionFilters'
 import { PurchaseHistoryList } from '@/components/purchase/purchase-history-list'
 import { PurchaseDetailsDialog } from '@/components/purchase/purchase-details-dialog'
 import {
-  pointsAccountQueryOptions,
+  pointsWalletQueryOptions,
   pointsTransactionsQueryOptions,
   pointsPackagePurchaseHistoryQueryOptions,
   featureAvailabilityQueryOptions,
@@ -38,8 +38,8 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
   // Dialog open state is derived from selectedPurchaseId
   const purchaseDetailsOpen = selectedPurchaseId !== null
 
-  const { data: account, isLoading: accountLoading } = useQuery(
-    pointsAccountQueryOptions(realmId, userId)
+  const { data: wallet, isLoading: walletLoading } = useQuery(
+    pointsWalletQueryOptions(realmId, userId)
   )
 
   const { data: transactionsData, isLoading: transactionsLoading } = useQuery(
@@ -67,13 +67,13 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-semibold">My Points</h1>
-          {account && !accountLoading && (
+          {wallet && !walletLoading && (
             <span className="text-2xl font-bold text-emerald-600" data-testid="points-balance">
-              {account.balance.toLocaleString()}{' '}
-              <span className="text-sm font-normal text-muted-foreground">{account.unit}</span>
+              {wallet.balance.toLocaleString()}{' '}
+              <span className="text-sm font-normal text-muted-foreground">{wallet.unit}</span>
             </span>
           )}
-          {accountLoading && (
+          {walletLoading && (
             <span
               className="text-2xl font-bold text-emerald-600 animate-pulse"
               data-testid="points-balance"

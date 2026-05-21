@@ -451,8 +451,8 @@ mod tests {
         )
         .await;
 
-        // Create points account for the user (required for subscription.paid webhook)
-        create_points_account(ctx, test_user_id, &realm_id).await;
+        // Create points wallet for the user (required for subscription.paid webhook)
+        create_points_wallet(ctx, test_user_id, &realm_id).await;
 
         let subscription_payload = build_subscription_paid_event_with_client(
             subscription_event_id.clone(),
@@ -552,8 +552,8 @@ mod tests {
         )
         .await;
 
-        // Create points account for the user (required for subscription.paid webhook)
-        create_points_account(ctx, test_user_id, &realm_id).await;
+        // Create points wallet for the user (required for subscription.paid webhook)
+        create_points_wallet(ctx, test_user_id, &realm_id).await;
 
         let subscription_payload = build_subscription_paid_event_full(
             subscription_event_id.clone(),
@@ -658,8 +658,8 @@ mod tests {
         let test_user_id =
             create_test_user(&ctx.app_state.pool, &realm_id, "test-trial-sub@example.com").await;
 
-        // Create points account for the user (required for subscription.paid webhook)
-        create_points_account(ctx, test_user_id, &realm_id).await;
+        // Create points wallet for the user (required for subscription.paid webhook)
+        create_points_wallet(ctx, test_user_id, &realm_id).await;
 
         let subscription_payload = build_subscription_paid_event_with_client_and_status(
             subscription_event_id.clone(),
@@ -773,8 +773,8 @@ mod tests {
         )
         .await;
 
-        // Create points account for the user (required for subscription.paid webhook)
-        create_points_account(ctx, test_user_id, &realm_id).await;
+        // Create points wallet for the user (required for subscription.paid webhook)
+        create_points_wallet(ctx, test_user_id, &realm_id).await;
 
         let subscription_payload = build_subscription_paid_event_with_client(
             subscription_event_id.clone(),

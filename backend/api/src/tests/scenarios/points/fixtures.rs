@@ -9,7 +9,7 @@
 // use crate::tests::scenarios::points::fixtures::*;
 //
 // let user_id = create_test_user(&pool, &realm_id, "test@example.com").await;
-// let account_id = create_test_points_account(&pool, user_id, 1000).await;
+// let wallet_id = create_test_points_wallet(&pool, user_id, 1000).await;
 // ```
 //
 // =============================================================================
@@ -127,9 +127,9 @@ pub async fn create_test_admin(pool: &PgPool, realm_id: &str, email: &str) -> Uu
 ///
 /// Returns the account ID
 ///
-/// NOTE: This creates both the points_accounts entry and the corresponding
+/// NOTE: This creates both the points_wallets entry and the corresponding
 /// points_credit_ledger entries to support the new ledger-based points system.
-pub async fn create_test_points_account(pool: &PgPool, user_id: Uuid, balance: i64) -> Uuid {
+pub async fn create_test_points_wallet(pool: &PgPool, user_id: Uuid, balance: i64) -> Uuid {
     // Get user's realm_id
     let realm_id: String = sqlx::query_scalar("SELECT realm_id FROM account WHERE id = $1")
         .bind(user_id)
@@ -137,15 +137,15 @@ pub async fn create_test_points_account(pool: &PgPool, user_id: Uuid, balance: i
         .await
         .expect("Failed to get user realm_id");
 
-    let account_id = Uuid::now_v7();
+    let wallet_id = Uuid::now_v7();
 
-    // Create the points_accounts entry with subscription_balance
+    // Create the points_wallets entry with subscription_balance
     // (total_balance is computed as topup_balance + subscription_balance)
     sqlx::query(
-        "INSERT INTO points_accounts (id, user_id, realm_id, subscription_balance, total_subscription_granted, topup_balance, total_topup_granted, total_recharged, total_consumed, status)
+        "INSERT INTO points_wallets (id, user_id, realm_id, subscription_balance, total_subscription_granted, topup_balance, total_topup_granted, total_recharged, total_consumed, status)
          VALUES ($1, $2, $3, $4, $4, 0, 0, 0, 0, 'active')",
     )
-    .bind(account_id)
+    .bind(wallet_id)
     .bind(user_id)
     .bind(&realm_id)
     .bind(balance)
@@ -163,13 +163,13 @@ pub async fn create_test_points_account(pool: &PgPool, user_id: Uuid, balance: i
     .bind(ledger_id)
     .bind(user_id)
     .bind(&realm_id)
-    .bind(format!("test-grant-{}", account_id))
+    .bind(format!("test-grant-{}", wallet_id))
     .bind(balance)
     .execute(pool)
     .await
     .expect("Failed to create credit ledger entry");
 
-    account_id
+    wallet_id
 }
 
 /// Create a test transaction
@@ -178,7 +178,7 @@ pub async fn create_test_points_account(pool: &PgPool, user_id: Uuid, balance: i
 #[allow(clippy::too_many_arguments)]
 pub async fn create_test_transaction(
     pool: &PgPool,
-    account_id: Uuid,
+    wallet_id: Uuid,
     user_id: Uuid,
     transaction_type: &str,
     amount: i64,
@@ -186,8 +186,8 @@ pub async fn create_test_transaction(
     description: Option<&str>,
     client_app_id: Option<Uuid>,
 ) -> Uuid {
-    let realm_id: String = sqlx::query_scalar("SELECT realm_id FROM points_accounts WHERE id = $1")
-        .bind(account_id)
+    let realm_id: String = sqlx::query_scalar("SELECT realm_id FROM points_wallets WHERE id = $1")
+        .bind(wallet_id)
         .fetch_one(pool)
         .await
         .expect("Failed to get account realm_id");
@@ -195,11 +195,11 @@ pub async fn create_test_transaction(
     let transaction_id = Uuid::now_v7();
 
     sqlx::query(
-        "INSERT INTO points_transactions (id, account_id, user_id, realm_id, type, amount, balance_after, description, client_app_id)
+        "INSERT INTO points_transactions (id, wallet_id, user_id, realm_id, type, amount, balance_after, description, client_app_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
     )
     .bind(transaction_id)
-    .bind(account_id)
+    .bind(wallet_id)
     .bind(user_id)
     .bind(&realm_id)
     .bind(transaction_type)

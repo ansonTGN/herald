@@ -5,34 +5,19 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { History, Search } from 'lucide-react'
 import { TransactionHistoryTable } from '../TransactionHistoryTable'
-import { pointsAccountsQueryOptions, pointsTransactionsQueryOptions } from '@/data/query-options'
+import { pointsWalletsQueryOptions, pointsTransactionsQueryOptions } from '@/data/query-options'
 import type { TransactionFilters } from '@/lib/schemas/points-forms'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import { PageHeader, ListPagination } from '@/components/shared'
 
-type PointsAccountListItem = {
-  id: string
-  userId: string
-  userName?: string
-  userEmail?: string
-  realmId: string
-  balance: number
-  totalRecharged: number
-  totalConsumed: number
-  status: string
-  createdAt: string
-  updatedAt: string
-  unit: string
-}
-
-interface PointsAccountsPageProps {
+interface PointsWalletsPageProps {
   realmId: string
 }
 
-export function PointsAccountsPage({ realmId }: PointsAccountsPageProps) {
+export function PointsWalletsPage({ realmId }: PointsWalletsPageProps) {
   // TODO: Migrate search/pagination/filter state to URL search params via parent route
-  // (/$realmId/manage/points/accounts) for link sharing and refresh restoration.
-  // Requires adding: selectedUserId, searchQuery, accountsPage, transactionsPage,
+  // (/$realmId/manage/points/wallets) for link sharing and refresh restoration.
+  // Requires adding: selectedUserId, searchQuery, walletsPage, transactionsPage,
   // and transactionFilters to the parent route's validateSearch.
   // UI state
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
@@ -42,13 +27,13 @@ export function PointsAccountsPage({ realmId }: PointsAccountsPageProps) {
   const [transactionFilters, setTransactionFilters] = useState<TransactionFilters>({})
 
   // Pagination
-  const [accountsPage, setAccountsPage] = useState(1)
+  const [walletsPage, setWalletsPage] = useState(1)
   const [transactionsPage, setTransactionsPage] = useState(1)
 
   // Queries
-  const { data: accountsData, isLoading: accountsLoading } = useQuery(
-    pointsAccountsQueryOptions(realmId, {
-      page: accountsPage,
+  const { data: walletsData, isLoading: walletsLoading } = useQuery(
+    pointsWalletsQueryOptions(realmId, {
+      page: walletsPage,
       pageSize: DEFAULT_PAGE_SIZE,
       search: searchQuery,
     })
@@ -70,51 +55,48 @@ export function PointsAccountsPage({ realmId }: PointsAccountsPageProps) {
   }
 
   return (
-    <div className="space-y-6" data-testid="points-accounts-page">
-      <PageHeader title="User Accounts" />
+    <div className="space-y-6" data-testid="points-wallets-page">
+      <PageHeader title="Points Wallets" />
 
-      {/* User Accounts List */}
+      {/* Points Wallets List */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>User Points Accounts</CardTitle>
+            <CardTitle>Points Wallets</CardTitle>
             <div className="relative w-80">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by name, email, or user ID..."
+                placeholder="Search by user ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10"
-                data-testid="accounts-search-input"
+                data-testid="wallets-search-input"
               />
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          {accountsLoading ? (
-            <div className="text-center py-8">Loading accounts...</div>
-          ) : accountsData?.accounts && accountsData.accounts.length > 0 ? (
+          {walletsLoading ? (
+            <div className="text-center py-8">Loading wallets...</div>
+          ) : walletsData?.wallets && walletsData.wallets.length > 0 ? (
             <div className="space-y-2">
-              {accountsData.accounts.map((account: PointsAccountListItem) => (
+              {walletsData.wallets.map((wallet) => (
                 <div
-                  key={account.id}
+                  key={wallet.id}
                   className={`p-4 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors ${
-                    selectedUserId === account.userId ? 'bg-muted border-primary' : ''
+                    selectedUserId === wallet.userId ? 'bg-muted border-primary' : ''
                   }`}
-                  onClick={() => handleUserSelect(account.userId)}
-                  data-testid={`account-row-${account.userId}`}
+                  onClick={() => handleUserSelect(wallet.userId)}
+                  data-testid={`wallet-row-${wallet.userId}`}
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="font-medium">{account.userName || account.userId}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {account.userEmail || 'No email'}
-                      </div>
+                      <div className="font-medium">{wallet.userId}</div>
                     </div>
                     <div className="text-right">
-                      <div className="text-2xl font-bold">{account.balance.toLocaleString()}</div>
-                      <Badge variant={account.status === 'active' ? 'default' : 'secondary'}>
-                        {account.status}
+                      <div className="text-2xl font-bold">{wallet.balance.toLocaleString()}</div>
+                      <Badge variant={wallet.status === 'active' ? 'default' : 'secondary'}>
+                        {wallet.status}
                       </Badge>
                     </div>
                   </div>
@@ -122,18 +104,18 @@ export function PointsAccountsPage({ realmId }: PointsAccountsPageProps) {
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">No points accounts found</div>
+            <div className="text-center py-8 text-muted-foreground">No points wallets found</div>
           )}
         </CardContent>
       </Card>
 
-      {accountsData && accountsData.total > 0 && (
+      {walletsData && walletsData.total > 0 && (
         <ListPagination
-          page={accountsPage - 1}
+          page={walletsPage - 1}
           pageSize={DEFAULT_PAGE_SIZE}
-          total={accountsData.total}
-          onPageChange={(page) => setAccountsPage(page + 1)}
-          testIdPrefix="accounts-pagination"
+          total={walletsData.total}
+          onPageChange={(page) => setWalletsPage(page + 1)}
+          testIdPrefix="wallets-pagination"
         />
       )}
 

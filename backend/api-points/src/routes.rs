@@ -5,7 +5,6 @@ use axum::{Router, routing};
 use herald_api_base::application::http::state::AppState;
 
 use super::{
-    accounts::{get_account, list_accounts},
     plan_configs::{create_plan_config, delete_plan_config, list_plan_configs, update_plan_config},
     realm_configs::{
         create_realm_default_config, get_free_user_statistics, get_realm_default_config,
@@ -13,6 +12,7 @@ use super::{
     },
     transactions::list_transactions,
     user_configs::get_user_points_config,
+    wallets::{get_wallet, list_wallets},
 };
 
 /// Points router with flexible authentication (session or API key)
@@ -20,8 +20,8 @@ use super::{
 /// This router is meant to be nested under `/api/points/{realmId}` in server/mod.rs.
 ///
 /// Routes (when nested under /api/points/{realmId}):
-/// - GET /api/points/{realmId}/accounts - List accounts (admin, session or API key)
-/// - GET /api/points/{realmId}/accounts/{userId} - Get account (session or API key)
+/// - GET /api/points/{realmId}/wallets - List wallets (admin, session or API key)
+/// - GET /api/points/{realmId}/wallets/{userId} - Get wallet (session or API key)
 /// - GET /api/points/{realmId}/transactions - List transactions (session or API key)
 /// - GET /api/points/{realmId}/plan-configs - List plan configs (admin session only)
 /// - POST /api/points/{realmId}/plan-configs - Create plan config (admin session only)
@@ -36,8 +36,8 @@ use super::{
 /// Note: Balance and consume endpoints have been moved to /api/ext/points/ for SDK compatibility.
 pub fn points_router() -> Router<AppState> {
     Router::new()
-        .route("/accounts", routing::get(list_accounts))
-        .route("/accounts/{userId}", routing::get(get_account))
+        .route("/wallets", routing::get(list_wallets))
+        .route("/wallets/{userId}", routing::get(get_wallet))
         .route("/transactions", routing::get(list_transactions))
         .route(
             "/plan-configs",

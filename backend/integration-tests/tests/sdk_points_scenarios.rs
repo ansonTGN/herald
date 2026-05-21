@@ -12,7 +12,7 @@ use test_context::test_context;
 use uuid::Uuid;
 
 /// Helper function to create a points account with initial balance
-async fn create_points_account_with_balance(
+async fn create_points_wallet_with_balance(
     ctx: &mut SchemaTestContext,
     user_id: &str,
     initial_balance: i64,
@@ -20,7 +20,7 @@ async fn create_points_account_with_balance(
     let account_uuid = Uuid::now_v7();
     let user_uuid = Uuid::parse_str(user_id).expect("Invalid user_id UUID format");
     query(
-        "INSERT INTO points_accounts (
+        "INSERT INTO points_wallets (
             id, user_id, realm_id,
             topup_balance, subscription_balance,
             total_topup_granted, total_subscription_granted,
@@ -85,7 +85,7 @@ async fn test_scenario_sdk_get_balance_success(ctx: &mut SchemaTestContext) {
         herald_test_support::helpers::create_test_api_key(ctx, "SDK Test Key", true, None).await;
 
     // 4. Create points account with initial balance
-    create_points_account_with_balance(ctx, &user_id, 1000).await;
+    create_points_wallet_with_balance(ctx, &user_id, 1000).await;
 
     // 5. Create SDK client and get balance
     let client = Client::new(base_url, api_key, None);
@@ -133,7 +133,7 @@ async fn test_scenario_sdk_consume_points_success(ctx: &mut SchemaTestContext) {
         herald_test_support::helpers::create_test_api_key(ctx, "SDK Test Key", true, None).await;
 
     // 4. Create points account with initial balance
-    create_points_account_with_balance(ctx, &user_id, 500).await;
+    create_points_wallet_with_balance(ctx, &user_id, 500).await;
 
     // 5. Create SDK client and consume points
     let client = Client::new(base_url, api_key, None);
@@ -190,7 +190,7 @@ async fn test_scenario_sdk_consume_points_insufficient(ctx: &mut SchemaTestConte
         herald_test_support::helpers::create_test_api_key(ctx, "SDK Test Key", true, None).await;
 
     // 4. Create points account with small balance
-    create_points_account_with_balance(ctx, &user_id, 50).await;
+    create_points_wallet_with_balance(ctx, &user_id, 50).await;
 
     // 5. Create SDK client and try to consume more than available
     let client = Client::new(base_url, api_key, None);

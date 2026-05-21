@@ -124,7 +124,7 @@ impl WechatSubscriptionService {
         let account_row = sqlx::query(
             r#"
             SELECT id, subscription_balance
-            FROM points_accounts
+            FROM points_wallets
             WHERE user_id = $1 AND realm_id = $2
             "#,
         )
@@ -156,7 +156,7 @@ impl WechatSubscriptionService {
                 subscription_id = %subscription_id,
                 user_id = %user_id,
                 error = %e,
-                "Failed to read account id from points_accounts row"
+                "Failed to read account id from points_wallets row"
             );
             CoreError::DatabaseError(format!("Failed to read account id: {}", e))
         })?;
@@ -165,7 +165,7 @@ impl WechatSubscriptionService {
                 tracing::warn!(
                     subscription_id = %subscription_id,
                     user_id = %user_id,
-                    "Failed to read subscription_balance from points_accounts row, defaulting to 0"
+                    "Failed to read subscription_balance from points_wallets row, defaulting to 0"
                 );
                 0
             },
@@ -203,7 +203,7 @@ impl WechatSubscriptionService {
         // Update points account balance (total_balance is auto-computed)
         sqlx::query(
             r#"
-            UPDATE points_accounts
+            UPDATE points_wallets
             SET subscription_balance = subscription_balance + $1,
                 total_subscription_granted = total_subscription_granted + $1,
                 updated_at = $2

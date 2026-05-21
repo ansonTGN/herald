@@ -62,7 +62,7 @@ mod tests {
         .await;
 
         // And: Create a user with a points account
-        create_points_account(ctx, user_id, &realm_id).await;
+        create_points_wallet(ctx, user_id, &realm_id).await;
 
         // When: Create payment attempt
         let payment_attempt_id = create_payment_attempt(
@@ -97,9 +97,9 @@ mod tests {
         assert!(response1.is_ok(), "First fulfillment should succeed");
 
         // And: User has 1000 topup_credit points
-        let account = get_points_account_by_user(ctx, user_id).await;
+        let account = get_points_wallet_by_user(ctx, user_id).await;
         assert!(account.is_some());
-        let (_account_id, _total_balance, topup_balance, subscription_balance) = account.unwrap();
+        let (_wallet_id, _total_balance, topup_balance, subscription_balance) = account.unwrap();
         assert_eq!(
             topup_balance, 1000,
             "User should have 1000 topup_credit after first webhook"
@@ -130,9 +130,9 @@ mod tests {
         );
 
         // And: User still has exactly 1000 topup_credit points (NOT 2000)
-        let account = get_points_account_by_user(ctx, user_id).await;
+        let account = get_points_wallet_by_user(ctx, user_id).await;
         assert!(account.is_some());
-        let (_account_id, _total_balance, topup_balance, subscription_balance) = account.unwrap();
+        let (_wallet_id, _total_balance, topup_balance, subscription_balance) = account.unwrap();
         assert_eq!(
             topup_balance, 1000,
             "User should still have 1000 topup_credit after second webhook (idempotency)"
@@ -187,7 +187,7 @@ mod tests {
         .await;
 
         // And: Create a user with a points account
-        create_points_account(ctx, user_id, &realm_id).await;
+        create_points_wallet(ctx, user_id, &realm_id).await;
 
         // When: Create payment attempt and fulfill it
         let payment_attempt_id = create_payment_attempt(
@@ -222,7 +222,7 @@ mod tests {
 
         // DEBUG: Check balance right after webhook
         let account_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM points_accounts WHERE user_id = $1")
+            sqlx::query_scalar("SELECT COUNT(*) FROM points_wallets WHERE user_id = $1")
                 .bind(user_id)
                 .fetch_one(&ctx.app_state.pool)
                 .await
@@ -230,7 +230,7 @@ mod tests {
         println!("DEBUG: Number of accounts for user: {}", account_count);
 
         let balances: Vec<(Uuid, i64)> = sqlx::query_as(
-            "SELECT id, topup_balance FROM points_accounts WHERE user_id = $1 ORDER BY created_at",
+            "SELECT id, topup_balance FROM points_wallets WHERE user_id = $1 ORDER BY created_at",
         )
         .bind(user_id)
         .fetch_all(&ctx.app_state.pool)
@@ -239,9 +239,9 @@ mod tests {
         println!("DEBUG: All balances for user: {:?}", balances);
 
         // And: User has exactly 500 topup_credit points
-        let account = get_points_account_by_user(ctx, user_id).await;
+        let account = get_points_wallet_by_user(ctx, user_id).await;
         assert!(account.is_some());
-        let (_account_id, _total_balance, topup_balance, subscription_balance) = account.unwrap();
+        let (_wallet_id, _total_balance, topup_balance, subscription_balance) = account.unwrap();
         assert_eq!(topup_balance, 500, "User should have 500 topup_credit");
         assert_eq!(
             subscription_balance, 0,
@@ -306,7 +306,7 @@ mod tests {
         .await;
 
         // And: Create a user with a points account
-        let account_id = create_points_account(ctx, user_id, &realm_id).await;
+        let wallet_id = create_points_wallet(ctx, user_id, &realm_id).await;
 
         // When: Create payment attempt
         let payment_attempt_id = create_payment_attempt(
@@ -341,7 +341,7 @@ mod tests {
         assert!(response.is_ok(), "Fulfillment should succeed");
 
         // And: User has 2000 topup_credit points
-        assert_points_balance(ctx, account_id, 2000, 2000, 0).await;
+        assert_points_balance(ctx, wallet_id, 2000, 2000, 0).await;
 
         // And: Purchase record exists
         let purchase_count: i64 = sqlx::query_scalar(
@@ -376,7 +376,7 @@ mod tests {
         let user_id = Uuid::now_v7();
 
         // Given: Create user and account
-        create_points_account(ctx, user_id, &realm_id).await;
+        create_points_wallet(ctx, user_id, &realm_id).await;
 
         // And: Create two points packages
         let package1_id = create_points_package(
@@ -507,7 +507,7 @@ mod tests {
         )
         .await;
 
-        create_points_account(ctx, user_id, &realm_id).await;
+        create_points_wallet(ctx, user_id, &realm_id).await;
 
         let attempt_id = create_payment_attempt(
             ctx,
@@ -573,7 +573,7 @@ mod tests {
         assert_eq!(purchase.2, "USD");
         assert!(purchase.3.is_some(), "Purchase should link transaction id");
 
-        let account = get_points_account_by_user(ctx, user_id).await.unwrap();
+        let account = get_points_wallet_by_user(ctx, user_id).await.unwrap();
         assert_eq!(account.2, 750, "Webhook should grant topup credits once");
         assert_eq!(account.3, 0, "Webhook must not grant subscription credits");
     }

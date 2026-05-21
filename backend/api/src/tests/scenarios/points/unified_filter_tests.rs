@@ -6,7 +6,7 @@
 // a unified framework with parameterized test cases.
 //
 // **User Stories Covered**:
-// - US-PO-02 (View All User Points Accounts)
+// - US-PO-02 (View All User Wallets)
 // - US-PU-03 (Filter Transaction Records)
 //
 // **Test Cases Consolidated**:
@@ -91,10 +91,8 @@ impl FilterTestCase {
     /// Get the user story for this test case
     pub fn user_story(&self) -> &'static str {
         match self {
-            FilterTestCase::AccountByStatus { .. } => "US-PO-02 (View All User Points Accounts)",
-            FilterTestCase::AccountByEmailSearch { .. } => {
-                "US-PO-02 (View All User Points Accounts)"
-            }
+            FilterTestCase::AccountByStatus { .. } => "US-PO-02 (View All User Wallets)",
+            FilterTestCase::AccountByEmailSearch { .. } => "US-PO-02 (View All User Wallets)",
             FilterTestCase::TransactionByType { .. } => "US-PU-03 (Filter Transaction Records)",
             FilterTestCase::TransactionByTimeRange { .. } => {
                 "US-PU-03 (Filter Transaction Records)"
@@ -294,10 +292,10 @@ async fn setup_account_status_filter_data(
     for i in 0..active_count {
         let email = format!("user_active_{}@example.com", i);
         let user_id = create_test_user(&ctx._app_state.pool, &ctx._realm_id, &email).await;
-        let account_id = create_test_points_account(&ctx._app_state.pool, user_id, 1000).await;
+        let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, 1000).await;
 
-        sqlx::query("UPDATE points_accounts SET status = 'active' WHERE id = $1")
-            .bind(account_id)
+        sqlx::query("UPDATE points_wallets SET status = 'active' WHERE id = $1")
+            .bind(wallet_id)
             .execute(&ctx._app_state.pool)
             .await
             .expect("Failed to set account status");
@@ -307,10 +305,10 @@ async fn setup_account_status_filter_data(
     for i in 0..frozen_count {
         let email = format!("user_frozen_{}@example.com", i);
         let user_id = create_test_user(&ctx._app_state.pool, &ctx._realm_id, &email).await;
-        let account_id = create_test_points_account(&ctx._app_state.pool, user_id, 1000).await;
+        let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, 1000).await;
 
-        sqlx::query("UPDATE points_accounts SET status = 'frozen' WHERE id = $1")
-            .bind(account_id)
+        sqlx::query("UPDATE points_wallets SET status = 'frozen' WHERE id = $1")
+            .bind(wallet_id)
             .execute(&ctx._app_state.pool)
             .await
             .expect("Failed to set account status");
@@ -322,7 +320,7 @@ async fn setup_account_status_filter_data(
 /// Setup test data for transaction type filter test
 async fn setup_transaction_type_filter_data(
     ctx: &mut TestContext,
-    account_id: Uuid,
+    wallet_id: Uuid,
     user_id: Uuid,
     recharge_count: usize,
     consume_count: usize,
@@ -336,7 +334,7 @@ async fn setup_transaction_type_filter_data(
     for i in 1..=recharge_count {
         create_test_transaction(
             &ctx._app_state.pool,
-            account_id,
+            wallet_id,
             user_id,
             "recharge",
             1000 * i as i64,
@@ -351,7 +349,7 @@ async fn setup_transaction_type_filter_data(
     for i in 1..=consume_count {
         create_test_transaction(
             &ctx._app_state.pool,
-            account_id,
+            wallet_id,
             user_id,
             "consume",
             -100 * i as i64,
@@ -371,7 +369,7 @@ async fn setup_transaction_type_filter_data(
 /// Setup test data for time range filter test
 async fn setup_time_range_filter_data(
     ctx: &mut TestContext,
-    account_id: Uuid,
+    wallet_id: Uuid,
     user_id: Uuid,
     recent_count: usize,
     old_count: usize,
@@ -387,11 +385,11 @@ async fn setup_time_range_filter_data(
     // Create recent transactions (within threshold days)
     for i in 1..=recent_count {
         sqlx::query(
-            "INSERT INTO points_transactions (id, account_id, user_id, realm_id, type, amount, balance_after, description, created_at)
+            "INSERT INTO points_transactions (id, wallet_id, user_id, realm_id, type, amount, balance_after, description, created_at)
              VALUES ($1, $2, $3, $4, 'recharge', 1000, 6000, $5, $6)",
         )
         .bind(Uuid::now_v7())
-        .bind(account_id)
+        .bind(wallet_id)
         .bind(user_id)
         .bind(&ctx._realm_id)
         .bind(format!("Recent transaction {}", i))
@@ -404,11 +402,11 @@ async fn setup_time_range_filter_data(
     // Create old transactions (older than threshold days)
     for i in 1..=old_count {
         sqlx::query(
-            "INSERT INTO points_transactions (id, account_id, user_id, realm_id, type, amount, balance_after, description, created_at)
+            "INSERT INTO points_transactions (id, wallet_id, user_id, realm_id, type, amount, balance_after, description, created_at)
              VALUES ($1, $2, $3, $4, 'recharge', 1000, 6000, $5, $6)",
         )
         .bind(Uuid::now_v7())
-        .bind(account_id)
+        .bind(wallet_id)
         .bind(user_id)
         .bind(&ctx._realm_id)
         .bind(format!("Old transaction {}", i))
@@ -427,7 +425,7 @@ async fn setup_time_range_filter_data(
 /// Setup test data for client app filter test
 async fn setup_client_app_filter_data(
     ctx: &mut TestContext,
-    account_id: Uuid,
+    wallet_id: Uuid,
     user_id: Uuid,
     app_a_count: usize,
     app_b_count: usize,
@@ -444,7 +442,7 @@ async fn setup_client_app_filter_data(
     for i in 1..=app_a_count {
         create_test_transaction(
             &ctx._app_state.pool,
-            account_id,
+            wallet_id,
             user_id,
             "consume",
             -100,
@@ -459,7 +457,7 @@ async fn setup_client_app_filter_data(
     for i in 1..=app_b_count {
         create_test_transaction(
             &ctx._app_state.pool,
-            account_id,
+            wallet_id,
             user_id,
             "consume",
             -100,
@@ -480,7 +478,7 @@ async fn setup_client_app_filter_data(
 /// Setup test data for pagination test
 async fn setup_pagination_data(
     ctx: &mut TestContext,
-    account_id: Uuid,
+    wallet_id: Uuid,
     user_id: Uuid,
     count: usize,
 ) {
@@ -492,7 +490,7 @@ async fn setup_pagination_data(
     for i in 1..=count {
         create_test_transaction(
             &ctx._app_state.pool,
-            account_id,
+            wallet_id,
             user_id,
             "consume",
             -100,
@@ -584,14 +582,14 @@ async fn execute_filter_test_case(ctx: &mut TestContext, test_case: FilterTestCa
 
             let user_id =
                 create_test_user(&ctx._app_state.pool, &ctx._realm_id, search_email).await;
-            create_test_points_account(&ctx._app_state.pool, user_id, 5000).await;
+            create_test_points_wallet(&ctx._app_state.pool, user_id, 5000).await;
 
             // Create other users to ensure search works correctly
             for i in 0..5 {
                 let other_email = format!("other_{}@example.com", i);
                 let other_user_id =
                     create_test_user(&ctx._app_state.pool, &ctx._realm_id, &other_email).await;
-                create_test_points_account(&ctx._app_state.pool, other_user_id, 1000).await;
+                create_test_points_wallet(&ctx._app_state.pool, other_user_id, 1000).await;
             }
 
             println!(
@@ -646,8 +644,8 @@ async fn execute_filter_test_case(ctx: &mut TestContext, test_case: FilterTestCa
             // Given: Create user with mixed transaction types
             println!("[Step 1] Given: User with mixed transaction types");
             let (user_id, token) = create_user_and_login(ctx, user_email, "password123").await;
-            let account_id = create_test_points_account(&ctx._app_state.pool, user_id, 5000).await;
-            setup_transaction_type_filter_data(ctx, account_id, user_id, 3, 2).await;
+            let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, 5000).await;
+            setup_transaction_type_filter_data(ctx, wallet_id, user_id, 3, 2).await;
 
             // When: User filters by transaction type
             println!("[Step 2] When: User filters by transaction type");
@@ -698,8 +696,8 @@ async fn execute_filter_test_case(ctx: &mut TestContext, test_case: FilterTestCa
             // Given: Create user with transactions from various dates
             println!("[Step 1] Given: User with transactions from various dates");
             let (user_id, token) = create_user_and_login(ctx, user_email, "password123").await;
-            let account_id = create_test_points_account(&ctx._app_state.pool, user_id, 5000).await;
-            setup_time_range_filter_data(ctx, account_id, user_id, 5, 10, days_ago).await;
+            let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, 5000).await;
+            setup_time_range_filter_data(ctx, wallet_id, user_id, 5, 10, days_ago).await;
 
             // When: User filters by time range
             println!("[Step 2] When: User filters by time range");
@@ -746,10 +744,10 @@ async fn execute_filter_test_case(ctx: &mut TestContext, test_case: FilterTestCa
 
             let user_id =
                 create_test_user(&ctx._app_state.pool, &ctx._realm_id, "user@example.com").await;
-            let account_id = create_test_points_account(&ctx._app_state.pool, user_id, 5000).await;
+            let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, 5000).await;
 
             let (client_app_a_id, _client_app_b_id) =
-                setup_client_app_filter_data(ctx, account_id, user_id, 3, 2).await;
+                setup_client_app_filter_data(ctx, wallet_id, user_id, 3, 2).await;
 
             // When: Admin logs in and filters by client app
             println!("[Step 2] When: Admin logs in and filters by client app");
@@ -805,8 +803,8 @@ async fn execute_filter_test_case(ctx: &mut TestContext, test_case: FilterTestCa
                 total_transactions
             );
             let (user_id, token) = create_user_and_login(ctx, user_email, "password123").await;
-            let account_id = create_test_points_account(&ctx._app_state.pool, user_id, 5000).await;
-            setup_pagination_data(ctx, account_id, user_id, total_transactions).await;
+            let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, 5000).await;
+            setup_pagination_data(ctx, wallet_id, user_id, total_transactions).await;
 
             // When: User requests specific page
             println!(

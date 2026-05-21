@@ -43,14 +43,14 @@ async fn test_scenario_consume_invalid_amount(ctx: &mut TestContext) {
         create_test_user(&ctx._app_state.pool, &ctx._realm_id, "user10@example.com").await;
     let balance = 5000;
 
-    let account_id = create_test_points_account(&ctx._app_state.pool, user_id, balance).await;
+    let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, balance).await;
 
     let client_app_id = create_test_client_app(&ctx._app_state.pool, &ctx._realm_id).await;
     let api_key = create_test_api_key(&ctx._app_state.pool, &ctx._realm_id, client_app_id).await;
 
     println!(
         "[Step 1] ✓ Test data created: user={}, account={}",
-        user_id, account_id
+        user_id, wallet_id
     );
 
     println!("[Step 2] Attempt to consume with negative amount");

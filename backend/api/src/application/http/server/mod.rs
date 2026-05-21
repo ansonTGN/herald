@@ -78,7 +78,7 @@ pub struct HealthCheckResponse {
     components(
         schemas(
             api_entities::ErrorResponse,
-            api_entities::PageResponse<points::types::PointsAccountResponse>,
+            api_entities::PageResponse<points::types::PointsWalletResponse>,
             api_entities::PageResponse<points::types::PointsTransactionResponse>,
             api_entities::PageResponse<realm::RealmResponse>,
             user::profile::ChangePasswordRequest,

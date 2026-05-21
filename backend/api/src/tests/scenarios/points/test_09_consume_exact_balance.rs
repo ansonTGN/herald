@@ -41,8 +41,7 @@ async fn test_scenario_consume_exact_single_ledger(ctx: &mut TestContext) {
         create_test_user(&ctx._app_state.pool, &ctx._realm_id, "exact1@example.com").await;
     let initial_balance = 5000;
 
-    let account_id =
-        create_test_points_account(&ctx._app_state.pool, user_id, initial_balance).await;
+    let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, initial_balance).await;
 
     let client_app_id = create_test_client_app(&ctx._app_state.pool, &ctx._realm_id).await;
     let api_key = create_test_api_key(&ctx._app_state.pool, &ctx._realm_id, client_app_id).await;
@@ -87,8 +86,8 @@ async fn test_scenario_consume_exact_single_ledger(ctx: &mut TestContext) {
 
     // Verify account balance in database is 0
     let (db_balance, db_consumed): (i64, i64) =
-        sqlx::query_as("SELECT total_balance, total_consumed FROM points_accounts WHERE id = $1")
-            .bind(account_id)
+        sqlx::query_as("SELECT total_balance, total_consumed FROM points_wallets WHERE id = $1")
+            .bind(wallet_id)
             .fetch_one(&ctx._app_state.pool)
             .await
             .expect("Failed to fetch account");
@@ -142,7 +141,7 @@ async fn test_scenario_consume_exact_mixed_ledgers(ctx: &mut TestContext) {
     let user_id = create_test_user(&ctx._app_state.pool, &realm_id, "exact2@example.com").await;
     let plan_id = Uuid::now_v7();
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     let sub_ledger_id = create_credit_ledger_entry_v2(
         ctx,
@@ -208,7 +207,7 @@ async fn test_scenario_consume_exact_mixed_ledgers(ctx: &mut TestContext) {
     assert_eq!(topup_ledger.used_amount, 2000);
 
     // Verify account balance is 0
-    let account = get_points_account_by_user(ctx, user_id)
+    let account = get_points_wallet_by_user(ctx, user_id)
         .await
         .expect("Account should exist");
     let (_, total_balance, _, _) = account;
@@ -239,7 +238,7 @@ async fn test_scenario_consume_after_balance_zero_rejected(ctx: &mut TestContext
         create_test_user(&ctx._app_state.pool, &ctx._realm_id, "exact3@example.com").await;
     let initial_balance = 5000;
 
-    create_test_points_account(&ctx._app_state.pool, user_id, initial_balance).await;
+    create_test_points_wallet(&ctx._app_state.pool, user_id, initial_balance).await;
 
     let client_app_id = create_test_client_app(&ctx._app_state.pool, &ctx._realm_id).await;
     let api_key = create_test_api_key(&ctx._app_state.pool, &ctx._realm_id, client_app_id).await;
@@ -307,7 +306,7 @@ async fn test_scenario_consume_after_balance_zero_rejected(ctx: &mut TestContext
 
     // Verify balance is still 0
     let (db_balance,): (i64,) =
-        sqlx::query_as("SELECT total_balance FROM points_accounts WHERE user_id = $1")
+        sqlx::query_as("SELECT total_balance FROM points_wallets WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&ctx._app_state.pool)
             .await
@@ -332,7 +331,7 @@ async fn test_scenario_recharge_after_balance_exhausted(ctx: &mut TestContext) {
     let realm_id = ctx._realm_id.clone();
     let user_id = create_test_user(&ctx._app_state.pool, &realm_id, "exact4@example.com").await;
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     // Initial subscription credit: 5000
     let sub_ledger_id = create_credit_ledger_entry_v2(
@@ -365,7 +364,7 @@ async fn test_scenario_recharge_after_balance_exhausted(ctx: &mut TestContext) {
     assert_eq!(drain_result.unwrap().balance_after, 0);
 
     // Verify balance is 0
-    let account = get_points_account_by_user(ctx, user_id)
+    let account = get_points_wallet_by_user(ctx, user_id)
         .await
         .expect("Account should exist");
     let (_, total_before_topup, _, _) = account;
@@ -421,7 +420,7 @@ async fn test_scenario_recharge_after_balance_exhausted(ctx: &mut TestContext) {
     assert_eq!(topup_ledger.used_amount, 1000);
 
     // Verify final account balance
-    let account = get_points_account_by_user(ctx, user_id)
+    let account = get_points_wallet_by_user(ctx, user_id)
         .await
         .expect("Account should exist");
     let (_, total_final, topup_final, _) = account;

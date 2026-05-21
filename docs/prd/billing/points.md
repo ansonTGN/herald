@@ -112,7 +112,7 @@
 **实现说明**：
 
 - ✅ **后端数据库表完整**：
-  - `points_accounts`, `points_transactions`, `points_credit_ledger`
+  - `points_wallets`, `points_transactions`, `points_credit_ledger`
   - `points_consumption_allocations`, `points_revocation_records`
   - `points_plan_configs`, `realm_default_configs`, `user_points_configs`
   - `points_grant_schedules`, `points_grant_records`, `idempotency_keys`
@@ -394,7 +394,7 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 
 **数据存储**：
 - `points_credit_ledger` 表的 `credit_type` 字段：topup_credit / subscription_credit / registration_credit / free_periodic_credit
-- `points_accounts` 表的聚合字段：`topup_balance`、`subscription_balance`、`registration_balance`、`free_periodic_balance`
+- `points_wallets` 表的聚合字段：`topup_balance`、`subscription_balance`、`registration_balance`、`free_periodic_balance`
 - `points_transactions` 表的 `credit_type` 字段：记录每笔交易涉及的积分类型
 
 #### 5.6.3 业务规则

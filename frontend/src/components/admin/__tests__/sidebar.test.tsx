@@ -72,12 +72,12 @@ describe('Sidebar navigation', () => {
     useAuthStore.getState().reset()
   })
 
-  it('highlights billing plans on the billing page (under Billing)', async () => {
+  it('highlights subscription plans on the billing page (under Products & Payments)', async () => {
     currentPath = '/admin/manage/billing?page=0&pageSize=20&status=all'
     const user = userEvent.setup()
     render(<Sidebar />)
 
-    await user.click(screen.getByTestId('sidebar-menu-billing'))
+    await user.click(screen.getByTestId('sidebar-menu-products-&-payments'))
 
     const subscriptionPlansLink = screen.getByTestId('sidebar-menu-subscription-plans')
     const productsLink = screen.getByTestId('sidebar-menu-products')
@@ -86,32 +86,32 @@ describe('Sidebar navigation', () => {
     expect(productsLink).not.toHaveClass('font-semibold')
   })
 
-  it('highlights invoices on the invoices page (under Billing)', async () => {
+  it('highlights invoices on the invoices page (under Transactions)', async () => {
     currentPath = '/admin/manage/billing/invoices'
     const user = userEvent.setup()
     render(<Sidebar />)
 
-    await user.click(screen.getByTestId('sidebar-menu-billing'))
+    await user.click(screen.getByTestId('sidebar-menu-transactions'))
 
     const invoicesLink = screen.getByTestId('sidebar-menu-invoices')
-    const providersLink = screen.getByTestId('sidebar-menu-payment-providers')
+    const subscriptionHistoryLink = screen.getByTestId('sidebar-menu-subscription-history')
 
     expect(invoicesLink).toHaveClass('font-semibold')
-    expect(providersLink).not.toHaveClass('font-semibold')
+    expect(subscriptionHistoryLink).not.toHaveClass('font-semibold')
   })
 
-  it('highlights only payment providers on the payment providers page (under Billing)', async () => {
+  it('highlights only payment providers on the payment providers page (under Products & Payments)', async () => {
     currentPath = '/admin/manage/billing/payment-providers'
     const user = userEvent.setup()
     render(<Sidebar />)
 
-    await user.click(screen.getByTestId('sidebar-menu-billing'))
+    await user.click(screen.getByTestId('sidebar-menu-products-&-payments'))
 
     const providersLink = screen.getByTestId('sidebar-menu-payment-providers')
-    const invoicesLink = screen.getByTestId('sidebar-menu-invoices')
+    const productsLink = screen.getByTestId('sidebar-menu-products')
 
     expect(providersLink).toHaveClass('font-semibold')
-    expect(invoicesLink).not.toHaveClass('font-semibold')
+    expect(productsLink).not.toHaveClass('font-semibold')
   })
 
   it('keeps sidebar navigation in its own scroll container when group expands', async () => {
@@ -119,7 +119,7 @@ describe('Sidebar navigation', () => {
     const user = userEvent.setup()
     render(<Sidebar />)
 
-    await user.click(screen.getByTestId('sidebar-menu-billing'))
+    await user.click(screen.getByTestId('sidebar-menu-products-&-payments'))
 
     const sidebar = screen.getByTestId('admin-sidebar')
     const nav = screen.getByTestId('sidebar-nav')

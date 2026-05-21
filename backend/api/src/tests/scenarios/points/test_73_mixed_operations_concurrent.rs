@@ -35,7 +35,7 @@ async fn test_scenario_mixed_operations_concurrent_no_corruption(ctx: &mut Schem
 
     ctx.with_creem_config(&realm_id, None, None, None).await;
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     let payment_id = format!("payment_{}", Uuid::now_v7());
 
@@ -56,7 +56,7 @@ async fn test_scenario_mixed_operations_concurrent_no_corruption(ctx: &mut Schem
 
     // Also update account total_consumed to match
     sqlx::query(
-        "UPDATE points_accounts SET total_consumed = total_consumed + $1 WHERE user_id = $2 AND realm_id = $3",
+        "UPDATE points_wallets SET total_consumed = total_consumed + $1 WHERE user_id = $2 AND realm_id = $3",
     )
     .bind(2000i64)
     .bind(user_id)

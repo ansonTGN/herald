@@ -66,7 +66,7 @@ mod tests {
         )
         .await;
         let realm_id = ctx._realm_id.clone();
-        crate::tests::helpers::points_helpers::create_points_account(ctx, user_id, &realm_id).await;
+        crate::tests::helpers::points_helpers::create_points_wallet(ctx, user_id, &realm_id).await;
 
         // Given: Setup plan config for the test
         setup_test_plan_config(ctx, &ctx._realm_id, plan_id).await;

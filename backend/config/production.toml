@@ -1,0 +1,32 @@
+# Herald Production Configuration
+# This file is used as the default config inside Docker images.
+# Override at runtime via volume mount: -v /path/to/your-config.toml:/app/config.toml:ro
+
+[database]
+# Connection pool settings for production workloads.
+# URL is typically overridden by environment variable at deploy time.
+url = "postgresql://herald:herald@db:5432/herald"
+max_connections = 50
+acquire_timeout_secs = 10
+idle_timeout_secs = 300
+max_lifetime_secs = 1800
+connect_timeout_secs = 5
+
+[redis]
+url = "redis://redis:6379"
+
+[server]
+bind_address = "0.0.0.0:3000"
+log_level = "info"
+app_env = "production"
+
+[frontend]
+# CORS allowlist origin. Change to your actual domain in production.
+url = "http://localhost:3000"
+# Serve frontend SPA from this directory inside the container.
+# The Docker image bundles frontend/dist at this path.
+static_dir = "/app/frontend/dis"
+
+[jwt]
+# MUST be overridden at deploy time. Use: openssl rand -base64 48
+secret = "change-me-in-production"

@@ -2,7 +2,7 @@
 // Points System Scenario Test 1: Account Creation
 // =============================================================================
 //
-// **User Story**: US-PU-01 (View My Points Balance), US-PO-02 (View All User Points Accounts)
+// **User Story**: US-PU-01 (View My Points Balance), US-PO-02 (View All User Wallets)
 // **Priority**: P0
 //
 // **Scenario**: Create Account When User First Recharges
@@ -95,7 +95,7 @@ async fn test_scenario_account_creation_on_subscribe(ctx: &mut TestContext) {
 
     // Verify account was created in database
     let account: (Uuid, String, i64, String) = sqlx::query_as(
-        "SELECT id, user_id::text, total_balance, status FROM points_accounts WHERE user_id = $1",
+        "SELECT id, user_id::text, total_balance, status FROM points_wallets WHERE user_id = $1",
     )
     .bind(user_id)
     .fetch_one(&ctx._app_state.pool)

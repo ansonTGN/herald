@@ -16,18 +16,18 @@ pub mod user_config;
 
 // Re-export commonly used types
 pub use entities::{
-    AccountStatus, CreditLedgerStatus, CreditSourceType, CreditType, IdempotencyKey,
-    IdempotencyResult, IdempotencyStatus, PointsAccount, PointsBalance,
-    PointsConsumptionAllocation, PointsCreditLedger, PointsPlanConfig, PointsRevocationRecord,
-    PointsTransaction, RechargeType, RevocationType, SafeArithmetics, TransactionType,
+    CreditLedgerStatus, CreditSourceType, CreditType, IdempotencyKey, IdempotencyResult,
+    IdempotencyStatus, PointsBalance, PointsConsumptionAllocation, PointsCreditLedger,
+    PointsPlanConfig, PointsRevocationRecord, PointsTransaction, PointsWallet, RechargeType,
+    RevocationType, SafeArithmetics, TransactionType, WalletStatus,
 };
 pub use errors::PointsErrorExt;
 pub use expiration_service::{ExpirationService, ExpirationSummary};
 pub use idempotency_service::{IdempotencyService, IdempotencyStore};
 pub use policies::PointsPolicy;
 pub use ports::{
-    AccountFilters, AccountUpdate, GrantScheduleUpdate, LedgerFilters, LedgerUpdate, Pagination,
-    PointsRepository, TransactionFilters, UserConfigUpdate,
+    GrantScheduleUpdate, LedgerFilters, LedgerUpdate, Pagination, PointsRepository,
+    TransactionFilters, UserConfigUpdate, WalletFilters, WalletUpdate,
 };
 pub use service::PointsService;
 pub use subscription_service::{CancelMode, SubscriptionService};

@@ -1,6 +1,7 @@
 // Herald API Billing Module
 // Handles billing, subscriptions, payments, webhooks
 
+pub(crate) mod webhook_common;
 pub(crate) mod webhook_subscription_helpers;
 mod webhooks;
 

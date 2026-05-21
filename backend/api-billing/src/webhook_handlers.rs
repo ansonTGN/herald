@@ -10,6 +10,7 @@ use serde_json::Value;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
+use crate::webhook_common::create_placeholder_transaction;
 use crate::webhook_subscription_helpers::{
     SyncSubscriptionInput, save_subscription_history, sync_subscription,
 };
@@ -842,32 +843,6 @@ async fn handle_refund_created(
         realm_id,
         TransactionType::RefundRevoke,
     ))
-}
-
-/// Create a placeholder transaction for testing
-pub fn create_placeholder_transaction(
-    user_id: uuid::Uuid,
-    realm_id: &str,
-    transaction_type: TransactionType,
-) -> PointsTransaction {
-    let description = format!("Placeholder for {:?}", transaction_type);
-    PointsTransaction {
-        id: uuid::Uuid::now_v7(),
-        account_id: uuid::Uuid::now_v7(),
-        user_id,
-        realm_id: realm_id.to_string(),
-        transaction_type,
-        amount: 0,
-        balance_after: 0,
-        topup_balance_after: Some(0),
-        subscription_balance_after: Some(0),
-        credit_type: None,
-        description: Some(description),
-        client_app_id: None,
-        subscription_id: None,
-        external_ref_id: None,
-        created_at: Utc::now(),
-    }
 }
 
 // ============================================================================

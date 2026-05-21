@@ -87,7 +87,7 @@ pub async fn list_transactions(
                 .into_iter()
                 .map(|transaction| PointsTransactionResponse {
                     id: transaction.id,
-                    account_id: transaction.account_id,
+                    wallet_id: transaction.wallet_id,
                     user_id: transaction.user_id,
                     realm_id: transaction.realm_id,
                     transaction_type: transaction.transaction_type.as_str().to_string(),

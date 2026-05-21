@@ -56,8 +56,7 @@ async fn test_scenario_consume_points_success(ctx: &mut TestContext) {
     let user_id = create_test_user(&ctx._app_state.pool, &ctx._realm_id, "user8@example.com").await;
     let initial_balance = 5000;
 
-    let account_id =
-        create_test_points_account(&ctx._app_state.pool, user_id, initial_balance).await;
+    let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, initial_balance).await;
 
     let client_app_id = create_test_client_app(&ctx._app_state.pool, &ctx._realm_id).await;
     let api_key = create_test_api_key(&ctx._app_state.pool, &ctx._realm_id, client_app_id).await;
@@ -67,7 +66,7 @@ async fn test_scenario_consume_points_success(ctx: &mut TestContext) {
 
     println!(
         "[Step 1] ✓ Test data created: user={}, account={}, client_app={}, api_key={}",
-        user_id, account_id, client_app_id, api_key
+        user_id, wallet_id, client_app_id, api_key
     );
 
     // ============================================================================
@@ -134,8 +133,8 @@ async fn test_scenario_consume_points_success(ctx: &mut TestContext) {
     println!("[Step 4] Verify database state");
 
     let (new_balance, total_consumed): (i64, i64) =
-        sqlx::query_as("SELECT total_balance, total_consumed FROM points_accounts WHERE id = $1")
-            .bind(account_id)
+        sqlx::query_as("SELECT total_balance, total_consumed FROM points_wallets WHERE id = $1")
+            .bind(wallet_id)
             .fetch_one(&ctx._app_state.pool)
             .await
             .expect("Failed to fetch account");

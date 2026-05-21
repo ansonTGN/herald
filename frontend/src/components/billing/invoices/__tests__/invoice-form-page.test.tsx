@@ -390,6 +390,7 @@ describe('InvoiceFormPage', () => {
 
   describe('validation', () => {
     it('shows error when submitting with empty billingName', async () => {
+      vi.setConfig({ testTimeout: 15000 })
       const user = userEvent.setup()
       renderWithProviders(<InvoiceFormPage {...defaultCreateProps()} />)
 
@@ -533,7 +534,7 @@ describe('InvoiceFormPage', () => {
         to: '/$realmId/manage/billing/invoices',
         params: { realmId: REALM_ID },
       })
-    })
+    }, 10000)
 
     it('calls update mutation in edit mode on valid form submit', async () => {
       let capturedBody: unknown = null

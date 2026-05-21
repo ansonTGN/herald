@@ -31,7 +31,7 @@ async fn test_scenario_concurrent_consume_recharge_final_balance(ctx: &mut Schem
     let realm_id = ctx._realm_id.clone();
     let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user71@example.com").await;
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     let payment_id = format!("payment_{}", Uuid::now_v7());
 

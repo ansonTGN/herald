@@ -20,7 +20,7 @@ async fn test_scenario_concurrent_consumption_prevents_overspending(ctx: &mut Te
     let user_id =
         create_test_user(&ctx._app_state.pool, &ctx._realm_id, "user13@example.com").await;
     let balance = 100;
-    let account_id = create_test_points_account(&ctx._app_state.pool, user_id, balance).await;
+    let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, balance).await;
 
     let client_app_id = create_test_client_app(&ctx._app_state.pool, &ctx._realm_id).await;
     let api_key = create_test_api_key(&ctx._app_state.pool, &ctx._realm_id, client_app_id).await;
@@ -73,8 +73,8 @@ async fn test_scenario_concurrent_consumption_prevents_overspending(ctx: &mut Te
     );
 
     let (final_balance,): (i64,) =
-        sqlx::query_as("SELECT total_balance FROM points_accounts WHERE id = $1")
-            .bind(account_id)
+        sqlx::query_as("SELECT total_balance FROM points_wallets WHERE id = $1")
+            .bind(wallet_id)
             .fetch_one(&ctx._app_state.pool)
             .await
             .expect("Failed to fetch account");
@@ -107,8 +107,8 @@ async fn test_scenario_concurrent_consumption_prevents_overspending(ctx: &mut Te
     );
 
     let (negative_balance_count,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM points_accounts WHERE id = $1 AND total_balance < 0")
-            .bind(account_id)
+        sqlx::query_as("SELECT COUNT(*) FROM points_wallets WHERE id = $1 AND total_balance < 0")
+            .bind(wallet_id)
             .fetch_one(&ctx._app_state.pool)
             .await
             .expect("Failed to verify final balance");

@@ -53,7 +53,7 @@ async fn test_scenario_user_cannot_view_other_user_balance(ctx: &mut TestContext
         create_test_user(&ctx._app_state.pool, &ctx._realm_id, "user3b@example.com").await;
     let balance_b = 5000;
 
-    let account_b_id = create_test_points_account(&ctx._app_state.pool, user_b_id, balance_b).await;
+    let account_b_id = create_test_points_wallet(&ctx._app_state.pool, user_b_id, balance_b).await;
 
     println!(
         "[Step 1] ✓ Test data created: user_a={}, user_b={}, account_b={}",

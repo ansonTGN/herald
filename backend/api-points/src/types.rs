@@ -8,7 +8,7 @@ use uuid::Uuid;
 /// Points account response
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PointsAccountResponse {
+pub struct PointsWalletResponse {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
@@ -40,7 +40,7 @@ pub struct PointsBalanceResponse {
 #[serde(rename_all = "camelCase")]
 pub struct PointsTransactionResponse {
     pub id: Uuid,
-    pub account_id: Uuid,
+    pub wallet_id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
     pub transaction_type: String,
@@ -91,7 +91,7 @@ pub struct ConsumePointsRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ConsumePointsResponse {
     pub transaction_id: Uuid,
-    pub account_id: Uuid,
+    pub wallet_id: Uuid,
     pub user_id: Uuid,
     pub amount: i64,
     pub balance_after: i64,
@@ -137,7 +137,7 @@ pub struct ListTransactionsQuery {
 /// Query parameters for listing accounts
 #[derive(Debug, Clone, Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ListAccountsQuery {
+pub struct ListWalletsQuery {
     pub status: Option<String>,
     pub search: Option<String>,
     pub page: Option<u64>,
@@ -229,8 +229,8 @@ mod tests {
     use serde_json;
 
     #[test]
-    fn test_points_account_response_camelcase() {
-        let account = PointsAccountResponse {
+    fn test_points_wallet_response_camelcase() {
+        let account = PointsWalletResponse {
             id: uuid::Uuid::now_v7(),
             user_id: uuid::Uuid::now_v7(),
             realm_id: "test-realm".to_string(),
@@ -360,7 +360,7 @@ mod tests {
     fn test_points_transaction_response_camelcase() {
         let transaction = PointsTransactionResponse {
             id: uuid::Uuid::now_v7(),
-            account_id: uuid::Uuid::now_v7(),
+            wallet_id: uuid::Uuid::now_v7(),
             user_id: uuid::Uuid::now_v7(),
             realm_id: "test-realm".to_string(),
             transaction_type: "recharge".to_string(),
@@ -378,8 +378,8 @@ mod tests {
 
         // Verify camelCase conversion
         assert!(
-            json.contains("\"accountId\""),
-            "Should contain camelCase 'accountId'"
+            json.contains("\"walletId\""),
+            "Should contain camelCase 'walletId'"
         );
         assert!(
             json.contains("\"userId\""),
@@ -420,8 +420,8 @@ mod tests {
 
         // Verify snake_case is not present
         assert!(
-            !json.contains("\"account_id\""),
-            "Should not contain snake_case 'account_id'"
+            !json.contains("\"wallet_id\""),
+            "Should not contain snake_case 'wallet_id'"
         );
         assert!(
             !json.contains("\"user_id\""),
@@ -565,7 +565,7 @@ mod tests {
     fn test_consume_points_response_camelcase() {
         let response = ConsumePointsResponse {
             transaction_id: uuid::Uuid::now_v7(),
-            account_id: uuid::Uuid::now_v7(),
+            wallet_id: uuid::Uuid::now_v7(),
             user_id: uuid::Uuid::now_v7(),
             amount: 50,
             balance_after: 50,
@@ -580,8 +580,8 @@ mod tests {
             "Should contain camelCase 'transactionId'"
         );
         assert!(
-            json.contains("\"accountId\""),
-            "Should contain camelCase 'accountId'"
+            json.contains("\"walletId\""),
+            "Should contain camelCase 'walletId'"
         );
         assert!(
             json.contains("\"userId\""),
@@ -598,8 +598,8 @@ mod tests {
             "Should not contain snake_case 'transaction_id'"
         );
         assert!(
-            !json.contains("\"account_id\""),
-            "Should not contain snake_case 'account_id'"
+            !json.contains("\"wallet_id\""),
+            "Should not contain snake_case 'wallet_id'"
         );
         assert!(
             !json.contains("\"user_id\""),

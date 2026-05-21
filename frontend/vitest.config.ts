@@ -19,6 +19,7 @@ export default defineConfig({
     tanstackRouter({
       target: 'react',
       autoCodeSplitting: true,
+      routeFileIgnorePattern: '__tests__',
     }),
     react(),
   ],
@@ -36,6 +37,9 @@ export default defineConfig({
 
     // Enable global test utilities
     globals: true,
+
+    // Minimal reporter: only failed tests and errors, optimized for AI agents
+    reporters: ['minimal'],
 
     // Reduce timeout (no browser overhead)
     testTimeout: 5000,

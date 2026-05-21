@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: Uuid,
-    pub account_id: Uuid,
+    pub wallet_id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
     pub r#type: String,
@@ -29,16 +29,16 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::points_account::Entity",
-        from = "Column::AccountId",
-        to = "super::points_account::Column::Id"
+        belongs_to = "super::points_wallet::Entity",
+        from = "Column::WalletId",
+        to = "super::points_wallet::Column::Id"
     )]
-    PointsAccount,
+    PointsWallet,
 }
 
-impl Related<super::points_account::Entity> for Entity {
+impl Related<super::points_wallet::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::PointsAccount.def()
+        Relation::PointsWallet.def()
     }
 }
 

@@ -42,7 +42,7 @@ async fn test_subscription_upgrade_grants_difference(ctx: &mut SchemaTestContext
     setup_test_plan_config_with_points(ctx, &realm_id, basic_plan_id, 5000).await;
     setup_test_plan_config_with_points(ctx, &realm_id, premium_plan_id, 10000).await;
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     // User currently has Basic Plan (5000 points)
     create_credit_ledger_entry_v2(
@@ -149,7 +149,7 @@ async fn test_subscription_upgrade_idempotency(ctx: &mut SchemaTestContext) {
     setup_test_plan_config_with_points(ctx, &realm_id, basic_plan_id, 5000).await;
     setup_test_plan_config_with_points(ctx, &realm_id, premium_plan_id, 10000).await;
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     // User currently has Basic Plan (5000 points)
     create_credit_ledger_entry_v2(

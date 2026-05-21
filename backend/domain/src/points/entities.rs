@@ -56,40 +56,40 @@ where
 /// Account status enum
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum AccountStatus {
+pub enum WalletStatus {
     Active,
     Frozen,
     Closed,
 }
 
-impl AccountStatus {
+impl WalletStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
-            AccountStatus::Active => "active",
-            AccountStatus::Frozen => "frozen",
-            AccountStatus::Closed => "closed",
+            WalletStatus::Active => "active",
+            WalletStatus::Frozen => "frozen",
+            WalletStatus::Closed => "closed",
         }
     }
 }
 
-impl std::str::FromStr for AccountStatus {
+impl std::str::FromStr for WalletStatus {
     type Err = CoreError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         parse_enum(
             s.to_lowercase().as_str(),
-            "Invalid account status",
+            "Invalid wallet status",
             |s| match s {
-                "active" => Some(AccountStatus::Active),
-                "frozen" => Some(AccountStatus::Frozen),
-                "closed" => Some(AccountStatus::Closed),
+                "active" => Some(WalletStatus::Active),
+                "frozen" => Some(WalletStatus::Frozen),
+                "closed" => Some(WalletStatus::Closed),
                 _ => None,
             },
         )
     }
 }
 
-impl std::fmt::Display for AccountStatus {
+impl std::fmt::Display for WalletStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
     }
@@ -248,7 +248,7 @@ impl CreditType {
     /// Returns the (topup_delta, subscription_delta) balance deltas for this credit type.
     ///
     /// Subscription credits count toward subscription balance, all other credits count toward topup balance.
-    pub fn account_balance_delta(&self, amount: i64) -> (i64, i64) {
+    pub fn wallet_balance_delta(&self, amount: i64) -> (i64, i64) {
         match self {
             CreditType::SubscriptionCredit => (0, amount),
             CreditType::TopupCredit
@@ -496,9 +496,9 @@ pub struct PointsRevocationRecord {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Points Account entity
+/// Points Wallet entity
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PointsAccount {
+pub struct PointsWallet {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
@@ -509,7 +509,7 @@ pub struct PointsAccount {
     pub total_subscription_granted: i64,
     pub total_recharged: i64,
     pub total_consumed: i64,
-    pub status: AccountStatus,
+    pub status: WalletStatus,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -518,7 +518,7 @@ pub struct PointsAccount {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PointsTransaction {
     pub id: Uuid,
-    pub account_id: Uuid,
+    pub wallet_id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
     pub transaction_type: TransactionType,
@@ -561,8 +561,8 @@ pub struct PointsBalance {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-impl From<PointsAccount> for PointsBalance {
-    fn from(account: PointsAccount) -> Self {
+impl From<PointsWallet> for PointsBalance {
+    fn from(account: PointsWallet) -> Self {
         PointsBalance {
             user_id: account.user_id,
             balance: account.total_balance,
@@ -653,18 +653,18 @@ mod tests {
     #[test]
     fn test_account_status_from_str() {
         assert_eq!(
-            "active".parse::<AccountStatus>().unwrap(),
-            AccountStatus::Active
+            "active".parse::<WalletStatus>().unwrap(),
+            WalletStatus::Active
         );
         assert_eq!(
-            "frozen".parse::<AccountStatus>().unwrap(),
-            AccountStatus::Frozen
+            "frozen".parse::<WalletStatus>().unwrap(),
+            WalletStatus::Frozen
         );
         assert_eq!(
-            "closed".parse::<AccountStatus>().unwrap(),
-            AccountStatus::Closed
+            "closed".parse::<WalletStatus>().unwrap(),
+            WalletStatus::Closed
         );
-        assert!("invalid".parse::<AccountStatus>().is_err());
+        assert!("invalid".parse::<WalletStatus>().is_err());
     }
 
     #[test]

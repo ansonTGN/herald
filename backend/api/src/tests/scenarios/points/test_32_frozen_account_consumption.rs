@@ -6,7 +6,7 @@
 // Covers: US-PU-01 scenario 3 - frozen account cannot consume points,
 //         and US-PA-02 scenario 3 - admin can view frozen status.
 //
-// AccountStatus enum has three variants: Active, Frozen, Closed.
+// WalletStatus enum has three variants: Active, Frozen, Closed.
 // The service layer blocks both consume and recharge for non-Active accounts.
 //
 // Scenarios covered:
@@ -43,11 +43,11 @@ async fn test_scenario_frozen_account_cannot_consume(ctx: &mut TestContext) {
     .await;
     let balance = 1000;
 
-    let account_id = create_test_points_account(&ctx._app_state.pool, user_id, balance).await;
+    let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, balance).await;
 
     // Set account status to frozen
-    sqlx::query("UPDATE points_accounts SET status = 'frozen' WHERE id = $1")
-        .bind(account_id)
+    sqlx::query("UPDATE points_wallets SET status = 'frozen' WHERE id = $1")
+        .bind(wallet_id)
         .execute(&ctx._app_state.pool)
         .await
         .expect("Failed to set account status to frozen");
@@ -109,18 +109,18 @@ async fn test_scenario_unfreeze_restores_consume(ctx: &mut TestContext) {
     .await;
     let balance = 1000;
 
-    let account_id = create_test_points_account(&ctx._app_state.pool, user_id, balance).await;
+    let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, balance).await;
 
     // Freeze the account
-    sqlx::query("UPDATE points_accounts SET status = 'frozen' WHERE id = $1")
-        .bind(account_id)
+    sqlx::query("UPDATE points_wallets SET status = 'frozen' WHERE id = $1")
+        .bind(wallet_id)
         .execute(&ctx._app_state.pool)
         .await
         .expect("Failed to set account status to frozen");
 
     // Unfreeze: set back to active
-    sqlx::query("UPDATE points_accounts SET status = 'active' WHERE id = $1")
-        .bind(account_id)
+    sqlx::query("UPDATE points_wallets SET status = 'active' WHERE id = $1")
+        .bind(wallet_id)
         .execute(&ctx._app_state.pool)
         .await
         .expect("Failed to set account status back to active");
@@ -153,8 +153,8 @@ async fn test_scenario_unfreeze_restores_consume(ctx: &mut TestContext) {
 
     // Verify balance was deducted
     let remaining_balance: i64 =
-        sqlx::query_scalar("SELECT total_balance FROM points_accounts WHERE id = $1")
-            .bind(account_id)
+        sqlx::query_scalar("SELECT total_balance FROM points_wallets WHERE id = $1")
+            .bind(wallet_id)
             .fetch_one(&ctx._app_state.pool)
             .await
             .expect("Failed to get remaining balance");

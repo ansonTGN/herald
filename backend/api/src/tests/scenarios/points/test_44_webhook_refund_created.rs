@@ -36,7 +36,7 @@ async fn test_refund_topup_proportional_recovery(ctx: &mut SchemaTestContext) {
     let refund_id = format!("refund_{}", Uuid::now_v7());
     let payment_id = format!("payment_{}", Uuid::now_v7());
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     // Configure Creem webhook for this realm
     ctx.with_creem_config(&realm_id, None, None, None).await;
@@ -121,7 +121,7 @@ async fn test_refund_subscription_only_unused(ctx: &mut SchemaTestContext) {
     let refund_id = format!("refund_{}", Uuid::now_v7());
     let payment_id = format!("payment_{}", Uuid::now_v7());
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     // Configure Creem webhook for this realm
     ctx.with_creem_config(&realm_id, None, None, None).await;
@@ -232,7 +232,7 @@ async fn test_refund_created_idempotency(ctx: &mut SchemaTestContext) {
     let refund_id = format!("refund_{}", Uuid::now_v7());
     let payment_id = format!("payment_{}", Uuid::now_v7());
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     // Configure Creem webhook for this realm
     ctx.with_creem_config(&realm_id, None, None, None).await;

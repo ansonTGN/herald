@@ -57,22 +57,22 @@ async fn test_scenario_user_view_own_balance(ctx: &mut TestContext) {
     let total_recharged = 10000;
     let total_consumed = 5000;
 
-    let account_id = create_test_points_account(&ctx._app_state.pool, user_id, balance).await;
+    let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, balance).await;
 
     // Update total_recharged and total_consumed
     sqlx::query(
-        "UPDATE points_accounts SET total_recharged = $1, total_consumed = $2 WHERE id = $3",
+        "UPDATE points_wallets SET total_recharged = $1, total_consumed = $2 WHERE id = $3",
     )
     .bind(total_recharged)
     .bind(total_consumed)
-    .bind(account_id)
+    .bind(wallet_id)
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to update account totals");
 
     println!(
         "[Step 1] ✓ Test data created: user={}, account={}, balance={}, recharged={}, consumed={}",
-        user_id, account_id, balance, total_recharged, total_consumed
+        user_id, wallet_id, balance, total_recharged, total_consumed
     );
 
     // ============================================================================

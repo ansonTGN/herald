@@ -41,14 +41,14 @@ async fn test_scenario_api_key_validation(ctx: &mut TestContext) {
         create_test_user(&ctx._app_state.pool, &ctx._realm_id, "user14@example.com").await;
     let balance = 5000;
 
-    let account_id = create_test_points_account(&ctx._app_state.pool, user_id, balance).await;
+    let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, balance).await;
 
     let client_app_id = create_test_client_app(&ctx._app_state.pool, &ctx._realm_id).await;
     let invalid_api_key = "invalid-api-key-12345";
 
     println!(
         "[Step 1] ✓ Test data created: user={}, account={}, balance={}",
-        user_id, account_id, balance
+        user_id, wallet_id, balance
     );
 
     println!("[Step 2] Attempt to consume with invalid API Key");
@@ -75,8 +75,8 @@ async fn test_scenario_api_key_validation(ctx: &mut TestContext) {
     println!("[Step 3] Verify no points were deducted");
 
     let (current_balance, total_consumed): (i64, i64) =
-        sqlx::query_as("SELECT total_balance, total_consumed FROM points_accounts WHERE id = $1")
-            .bind(account_id)
+        sqlx::query_as("SELECT total_balance, total_consumed FROM points_wallets WHERE id = $1")
+            .bind(wallet_id)
             .fetch_one(&ctx._app_state.pool)
             .await
             .expect("Failed to fetch account");

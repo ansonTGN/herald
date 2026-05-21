@@ -30,7 +30,7 @@ backend/
 └── integration-tests/   # 集成测试
 
 frontend/                # React 管理前端
-docker/                  # Dockerfile、docker-compose.yml
+docker/                  # Dockerfile
 ```
 
 ## 技术栈
@@ -42,7 +42,7 @@ docker/                  # Dockerfile、docker-compose.yml
 
 - **Axum** 而不是 actix-web：tokio 原生，和 tower 中间件生态无缝衔接，trait-based handler 写起来更干净。
 - **SeaORM + sqlx 并存**：SeaORM 处理常规 CRUD（entity crate 自动生成），sqlx 处理复杂查询和迁移。两套连接池指向同一个 PostgreSQL，SeaORM 底层用的就是 sqlx。
-- **Redis**：session 存储、权限缓存（Casbin 策略缓存）、限流（Redis Functions）、幂等键。用自建的 `RedisConnectionManager` 包装，测试时自动切到 DB 1 隔离数据。
+- **Redis**：session 存储、权限缓存、限流（Redis Functions）、幂等键。用自建的 `RedisConnectionManager` 包装，测试时自动切到 DB 1 隔离数据。
 - **TanStack Router**：类型安全的文件路由，`$realmId` 这类路径参数直接推导类型。比 react-router 的运行时匹配靠谱。
 - **API 类型生成**：后端用 utoipa 导出 OpenAPI JSON，前端用 `@hey-api/openapi-ts` 生成 TypeScript client 和类型。后端接口变了，`npm run generate-api` 一条命令同步。
 
@@ -63,7 +63,7 @@ HTTP Request
 
 Handler 不直接写 SQL。它调 Domain Service 的方法，Service 通过 trait（port）抽象数据访问，infra 层提供具体实现。这是六边形架构的核心约束：`domain/` crate 的 `Cargo.toml` 里没有任何数据库或 HTTP 依赖，只有纯 Rust 类型。
 
-权限检查走的另一条线：Handler → `RedisPermissionChecker` → Redis 缓存 → PostgreSQL（缓存 miss 时）。RBAC 模型定义在 `backend/api/config/rbac_model.conf`，四元组 `(domain, subject, object, action)` 匹配，domain 是 client_app ID 或通配符 `*`。
+权限检查走的另一条线：Handler → `RedisPermissionChecker` → Redis 缓存 → PostgreSQL（缓存 miss 时）。RBAC 模型通过四元组 `(domain, subject, object, action)` 匹配，domain 是 client_app ID 或通配符 `*`。
 
 ## 模块说明
 
@@ -101,7 +101,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 
 除了数据库仓库，还有：
 - `redis/` — `RedisConnectionManager`，连接池 + 测试隔离
-- `authorization/` — `RedisPermissionChecker`，Casbin 风格的权限缓存
+- `authorization/` — `RedisPermissionChecker`，权限缓存
 - `billing/` — 发票 PDF 生成（IronPress）、加密密钥管理
 
 支付渠道客户端是独立的 crate（`infra-creem`、`infra-stripe`、`infra-wechat`、`infra-shopify`），不放在主 `infra` 里。原因是避免引入不需要的支付 SDK 依赖——如果你只用 Stripe，不会把微信支付的 SDK 也编译进去。

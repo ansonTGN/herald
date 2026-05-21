@@ -15,6 +15,7 @@ log_level = "info"
 
 [frontend]
 url = "http://localhost:3000"
+# static_dir = "../frontend/dist"
 
 [jwt]
 secret = "change-me-to-a-secure-random-base64-string"

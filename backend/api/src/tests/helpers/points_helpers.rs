@@ -3,7 +3,7 @@
 // =============================================================================
 //
 // Shared helpers for points-related API tests.
-// Provides functions for creating points accounts, transactions, and assertions.
+// Provides functions for creating points wallets, transactions, and assertions.
 //
 // =============================================================================
 
@@ -18,34 +18,34 @@ use sqlx::Row;
 use uuid::Uuid;
 
 /// ============================================================================
-/// Points Account Creation Helpers
+/// Points Wallet Creation Helpers
 /// ============================================================================
-/// Create a points account for a user
+/// Create a points wallet for a user
 ///
-/// Returns the account_id
-pub async fn create_points_account(
+/// Returns the wallet_id
+pub async fn create_points_wallet(
     ctx: &mut SchemaTestContext,
     user_id: Uuid,
     realm_id: &str,
 ) -> Uuid {
-    let account_id = Uuid::now_v7();
+    let wallet_id = Uuid::now_v7();
 
     sqlx::query(
-        "INSERT INTO points_accounts (id, user_id, realm_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+        "INSERT INTO points_wallets (id, user_id, realm_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
          VALUES ($1, $2, $3, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())"
     )
-    .bind(account_id)
+    .bind(wallet_id)
     .bind(user_id)
     .bind(realm_id)
     .execute(&ctx.app_state.pool)
     .await
-    .expect("Failed to create points account");
+    .expect("Failed to create points wallet");
 
-    account_id
+    wallet_id
 }
 
-/// Create a points account with initial balance
-pub async fn create_points_account_with_balance(
+/// Create a points wallet with initial balance
+pub async fn create_points_wallet_with_balance(
     ctx: &mut SchemaTestContext,
     user_id: Uuid,
     realm_id: &str,
@@ -53,22 +53,22 @@ pub async fn create_points_account_with_balance(
     topup_balance: i64,
     subscription_balance: i64,
 ) -> Uuid {
-    let account_id = Uuid::now_v7();
+    let wallet_id = Uuid::now_v7();
 
     sqlx::query(
-        "INSERT INTO points_accounts (id, user_id, realm_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+        "INSERT INTO points_wallets (id, user_id, realm_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $4, $5, 0, 0, 'active', NOW(), NOW())"
     )
-    .bind(account_id)
+    .bind(wallet_id)
     .bind(user_id)
     .bind(realm_id)
     .bind(topup_balance)
     .bind(subscription_balance)
     .execute(&ctx.app_state.pool)
     .await
-    .expect("Failed to create points account with balance");
+    .expect("Failed to create points wallet with balance");
 
-    account_id
+    wallet_id
 }
 
 /// ============================================================================
@@ -77,7 +77,7 @@ pub async fn create_points_account_with_balance(
 /// Create a points transaction record
 pub async fn create_points_transaction(
     ctx: &mut SchemaTestContext,
-    account_id: Uuid,
+    wallet_id: Uuid,
     user_id: Uuid,
     realm_id: &str,
     transaction_type: TransactionType,
@@ -91,12 +91,12 @@ pub async fn create_points_transaction(
     let transaction_id = Uuid::now_v7();
 
     sqlx::query(
-        "INSERT INTO points_transactions (id, account_id, user_id, realm_id, type, amount, balance_after,
+        "INSERT INTO points_transactions (id, wallet_id, user_id, realm_id, type, amount, balance_after,
          topup_balance_after, subscription_balance_after, credit_type, description, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())"
     )
     .bind(transaction_id)
-    .bind(account_id)
+    .bind(wallet_id)
     .bind(user_id)
     .bind(realm_id)
     .bind(transaction_type.to_string())
@@ -119,18 +119,18 @@ pub async fn create_points_transaction(
 /// Create a credit ledger entry (for tracking credit grants)
 pub async fn create_credit_ledger_entry(
     ctx: &mut SchemaTestContext,
-    account_id: Uuid,
+    wallet_id: Uuid,
     transaction_id: Uuid,
     credit_type: CreditType,
     amount: i64,
     expires_at: Option<chrono::DateTime<chrono::Utc>>,
 ) {
     sqlx::query(
-        "INSERT INTO points_credit_ledger (id, account_id, transaction_id, credit_type, amount, remaining_amount, expires_at, created_at)
+        "INSERT INTO points_credit_ledger (id, wallet_id, transaction_id, credit_type, amount, remaining_amount, expires_at, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())"
     )
     .bind(Uuid::now_v7())
-    .bind(account_id)
+    .bind(wallet_id)
     .bind(transaction_id)
     .bind(credit_type.to_string())
     .bind(amount)
@@ -144,15 +144,15 @@ pub async fn create_credit_ledger_entry(
 /// ============================================================================
 /// Query Helpers
 /// ============================================================================
-/// Get points account by user ID
+/// Get points wallet by user ID
 ///
-/// Returns (account_id, balance, topup_balance, subscription_balance)
-pub async fn get_points_account_by_user(
+/// Returns (wallet_id, balance, topup_balance, subscription_balance)
+pub async fn get_points_wallet_by_user(
     ctx: &SchemaTestContext,
     user_id: Uuid,
 ) -> Option<(Uuid, i64, i64, i64)> {
     sqlx::query(
-        "SELECT id, total_balance, topup_balance, subscription_balance FROM points_accounts WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1"
+        "SELECT id, total_balance, topup_balance, subscription_balance FROM points_wallets WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1"
     )
     .bind(user_id)
     .fetch_optional(&ctx.app_state.pool)
@@ -166,15 +166,15 @@ pub async fn get_points_account_by_user(
     ))
 }
 
-/// Get points account balance
+/// Get points wallet balance
 pub async fn get_points_balance(
     ctx: &SchemaTestContext,
-    account_id: Uuid,
+    wallet_id: Uuid,
 ) -> Option<(i64, i64, i64)> {
     sqlx::query(
-        "SELECT total_balance, topup_balance, subscription_balance FROM points_accounts WHERE id = $1"
+        "SELECT total_balance, topup_balance, subscription_balance FROM points_wallets WHERE id = $1"
     )
-    .bind(account_id)
+    .bind(wallet_id)
     .fetch_optional(&ctx.app_state.pool)
     .await
     .unwrap()
@@ -263,15 +263,15 @@ pub async fn count_transactions_by_type(
 /// ============================================================================
 /// Assertion Helpers
 /// ============================================================================
-/// Assert points account balance matches expected values
+/// Assert points wallet balance matches expected values
 pub async fn assert_points_balance(
     ctx: &SchemaTestContext,
-    account_id: Uuid,
+    wallet_id: Uuid,
     expected_total: i64,
     expected_topup: i64,
     expected_subscription: i64,
 ) {
-    let balance = get_points_balance(ctx, account_id).await;
+    let balance = get_points_balance(ctx, wallet_id).await;
 
     if let Some((total, topup, subscription)) = balance {
         assert_eq!(
@@ -290,7 +290,7 @@ pub async fn assert_points_balance(
             expected_subscription, subscription
         );
     } else {
-        panic!("Points account not found");
+        panic!("Points wallet not found");
     }
 }
 
@@ -350,7 +350,7 @@ pub async fn cleanup_user_points(ctx: &mut SchemaTestContext, user_id: Uuid) {
         .unwrap();
 
     // Delete account
-    sqlx::query("DELETE FROM points_accounts WHERE user_id = $1")
+    sqlx::query("DELETE FROM points_wallets WHERE user_id = $1")
         .bind(user_id)
         .execute(&ctx.app_state.pool)
         .await
@@ -358,24 +358,24 @@ pub async fn cleanup_user_points(ctx: &mut SchemaTestContext, user_id: Uuid) {
 }
 
 /// Delete all points data for an account
-pub async fn cleanup_account_points(ctx: &mut SchemaTestContext, account_id: Uuid) {
+pub async fn cleanup_wallet_points(ctx: &mut SchemaTestContext, wallet_id: Uuid) {
     // Delete transactions
-    sqlx::query("DELETE FROM points_transactions WHERE account_id = $1")
-        .bind(account_id)
+    sqlx::query("DELETE FROM points_transactions WHERE wallet_id = $1")
+        .bind(wallet_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();
 
     // Delete credit ledger entries
-    sqlx::query("DELETE FROM points_credit_ledger WHERE account_id IN (SELECT id FROM points_accounts WHERE id = $1)")
-        .bind(account_id)
+    sqlx::query("DELETE FROM points_credit_ledger WHERE wallet_id IN (SELECT id FROM points_wallets WHERE id = $1)")
+        .bind(wallet_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();
 
     // Delete account
-    sqlx::query("DELETE FROM points_accounts WHERE id = $1")
-        .bind(account_id)
+    sqlx::query("DELETE FROM points_wallets WHERE id = $1")
+        .bind(wallet_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();
@@ -431,7 +431,7 @@ pub async fn create_credit_ledger_entry_v2(
     // This is necessary for tests that later revoke points
     // Note: total_balance is a GENERATED column (topup_balance + subscription_balance)
     sqlx::query(
-        "UPDATE points_accounts
+        "UPDATE points_wallets
          SET topup_balance = topup_balance + $1,
              subscription_balance = subscription_balance + $2,
              updated_at = NOW()
@@ -695,7 +695,7 @@ pub async fn assert_balances_non_negative(
     realm_id: &str,
 ) -> (i64, i64, i64) {
     let account = sqlx::query(
-        "SELECT total_balance, topup_balance, subscription_balance FROM points_accounts WHERE user_id = $1 AND realm_id = $2",
+        "SELECT total_balance, topup_balance, subscription_balance FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
     )
     .bind(user_id)
     .bind(realm_id)

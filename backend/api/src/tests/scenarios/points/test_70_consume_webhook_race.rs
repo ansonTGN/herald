@@ -42,7 +42,7 @@ async fn assert_account_balance_matches_ledger_remaining(
     };
 
     let account_balance: i64 = sqlx::query_scalar(&format!(
-        "SELECT {} FROM points_accounts WHERE user_id = $1 AND realm_id = $2",
+        "SELECT {} FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
         account_column
     ))
     .bind(user_id)
@@ -91,7 +91,7 @@ async fn test_scenario_consume_refund_race_balance_not_negative(ctx: &mut Schema
 
     ctx.with_creem_config(&realm_id, None, None, None).await;
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     let ledger_id = create_credit_ledger_entry_v2(
         ctx,
@@ -110,7 +110,7 @@ async fn test_scenario_consume_refund_race_balance_not_negative(ctx: &mut Schema
 
     // Also update account total_consumed to match
     sqlx::query(
-        "UPDATE points_accounts SET total_consumed = total_consumed + $1 WHERE user_id = $2 AND realm_id = $3",
+        "UPDATE points_wallets SET total_consumed = total_consumed + $1 WHERE user_id = $2 AND realm_id = $3",
     )
     .bind(3000i64)
     .bind(user_id)
@@ -160,7 +160,7 @@ async fn test_scenario_consume_refund_race_balance_not_negative(ctx: &mut Schema
 
     // 1. Balance must never go negative
     let account = sqlx::query(
-        "SELECT total_balance, topup_balance, subscription_balance FROM points_accounts WHERE user_id = $1 AND realm_id = $2",
+        "SELECT total_balance, topup_balance, subscription_balance FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
     )
     .bind(user_id)
     .bind(&realm_id)
@@ -251,7 +251,7 @@ async fn test_scenario_consume_cancel_race_balance_not_negative(ctx: &mut Schema
     ctx.with_creem_config(&realm_id, None, None, None).await;
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     let ledger_id = create_credit_ledger_entry_v2(
         ctx,
@@ -305,7 +305,7 @@ async fn test_scenario_consume_cancel_race_balance_not_negative(ctx: &mut Schema
 
     // 1. Balance must never go negative
     let account = sqlx::query(
-        "SELECT total_balance, topup_balance, subscription_balance FROM points_accounts WHERE user_id = $1 AND realm_id = $2",
+        "SELECT total_balance, topup_balance, subscription_balance FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
     )
     .bind(user_id)
     .bind(&realm_id)
@@ -399,7 +399,7 @@ async fn test_scenario_multi_consume_refund_race_no_overspending(ctx: &mut Schem
 
     ctx.with_creem_config(&realm_id, None, None, None).await;
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     let ledger_id = create_credit_ledger_entry_v2(
         ctx,
@@ -472,7 +472,7 @@ async fn test_scenario_multi_consume_refund_race_no_overspending(ctx: &mut Schem
 
     // 2. Balance must never go negative
     let account = sqlx::query(
-        "SELECT total_balance, topup_balance, subscription_balance FROM points_accounts WHERE user_id = $1 AND realm_id = $2",
+        "SELECT total_balance, topup_balance, subscription_balance FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
     )
     .bind(user_id)
     .bind(&realm_id)

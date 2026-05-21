@@ -39,7 +39,7 @@ async fn test_subscription_paid_initial_grant(ctx: &mut SchemaTestContext) {
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
 
     // Create points account for user
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     // Build subscription.paid event (is_renewal = false)
     let event = build_subscription_paid_event(
@@ -105,7 +105,7 @@ async fn test_subscription_paid_renewal_grant(ctx: &mut SchemaTestContext) {
     // Setup plan config for the test
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     // Build subscription.paid event (is_renewal = true)
     let event = build_subscription_paid_event(
@@ -163,7 +163,7 @@ async fn test_subscription_paid_idempotency(ctx: &mut SchemaTestContext) {
     // Setup plan config for the test
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     // Build subscription.paid event with a shared event_id
     let event = build_subscription_paid_event(

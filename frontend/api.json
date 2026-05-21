@@ -9064,202 +9064,6 @@
         }
       }
     },
-    "/api/points/{realmId}/accounts": {
-      "get": {
-        "tags": [
-          "Points"
-        ],
-        "summary": "List all points accounts in a realm (admin only)",
-        "operationId": "list_accounts",
-        "parameters": [
-          {
-            "name": "realmId",
-            "in": "path",
-            "description": "Realm ID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "description": "Filter by account status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "search",
-            "in": "query",
-            "description": "Search by user ID",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "description": "Page number (0-based, default: 0)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 0
-            }
-          },
-          {
-            "name": "pageSize",
-            "in": "query",
-            "description": "Page size (default: 20, max: 100)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accounts retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PageResponse_PointsAccountResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/points/{realmId}/accounts/{userId}": {
-      "get": {
-        "tags": [
-          "Points"
-        ],
-        "summary": "Get points account for a specific user",
-        "operationId": "get_account",
-        "parameters": [
-          {
-            "name": "realmId",
-            "in": "path",
-            "description": "Realm ID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "userId",
-            "in": "path",
-            "description": "User ID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Account retrieved successfully"
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/points/{realmId}/default-config": {
       "get": {
         "tags": [
@@ -10083,6 +9887,202 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UserPointsConfigResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/points/{realmId}/wallets": {
+      "get": {
+        "tags": [
+          "Points"
+        ],
+        "summary": "List all points wallets in a realm (admin only)",
+        "operationId": "list_wallets",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by wallet status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Search by user ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (0-based, default: 0)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "Page size (default: 20, max: 100)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accounts retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponse_PointsWalletResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/points/{realmId}/wallets/{userId}": {
+      "get": {
+        "tags": [
+          "Points"
+        ],
+        "summary": "Get points wallet for a specific user",
+        "operationId": "get_wallet",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account retrieved successfully"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -14121,16 +14121,12 @@
         "description": "Consume points response",
         "required": [
           "transactionId",
-          "accountId",
+          "walletId",
           "userId",
           "amount",
           "balanceAfter"
         ],
         "properties": {
-          "accountId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "amount": {
             "type": "integer",
             "format": "int64"
@@ -14144,6 +14140,10 @@
             "format": "uuid"
           },
           "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "walletId": {
             "type": "string",
             "format": "uuid"
           }
@@ -15111,15 +15111,12 @@
         "description": "Consume points response (SDK-compatible)",
         "required": [
           "transactionId",
-          "accountId",
+          "walletId",
           "userId",
           "amount",
           "balanceAfter"
         ],
         "properties": {
-          "accountId": {
-            "type": "string"
-          },
           "amount": {
             "type": "integer",
             "format": "int64"
@@ -15132,6 +15129,9 @@
             "type": "string"
           },
           "userId": {
+            "type": "string"
+          },
+          "walletId": {
             "type": "string"
           }
         }
@@ -15970,40 +15970,6 @@
           }
         }
       },
-      "ListAccountsQuery": {
-        "type": "object",
-        "description": "Query parameters for listing accounts",
-        "properties": {
-          "page": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "minimum": 0
-          },
-          "pageSize": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "minimum": 0
-          },
-          "search": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
       "ListPaymentProviderMappingsResponse": {
         "type": "object",
         "required": [
@@ -16217,6 +16183,40 @@
             ]
           },
           "userId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ListWalletsQuery": {
+        "type": "object",
+        "description": "Query parameters for listing accounts",
+        "properties": {
+          "page": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "pageSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
             "type": [
               "string",
               "null"
@@ -16568,7 +16568,104 @@
           }
         }
       },
-      "PageResponse_PointsAccountResponse": {
+      "PageResponse_PointsTransactionResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "Points transaction response",
+              "required": [
+                "id",
+                "walletId",
+                "userId",
+                "realmId",
+                "transactionType",
+                "amount",
+                "balanceAfter",
+                "createdAt"
+              ],
+              "properties": {
+                "amount": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "balanceAfter": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "clientAppId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "externalRefId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "realmId": {
+                  "type": "string"
+                },
+                "subscriptionId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "transactionType": {
+                  "type": "string"
+                },
+                "userId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "walletId": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PageResponse_PointsWalletResponse": {
         "type": "object",
         "required": [
           "items",
@@ -16628,103 +16725,6 @@
                   "type": "string"
                 },
                 "updatedAt": {
-                  "type": "string"
-                },
-                "userId": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              }
-            }
-          },
-          "page": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "pageSize": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "total": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
-      "PageResponse_PointsTransactionResponse": {
-        "type": "object",
-        "required": [
-          "items",
-          "page",
-          "pageSize",
-          "total"
-        ],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "description": "Points transaction response",
-              "required": [
-                "id",
-                "accountId",
-                "userId",
-                "realmId",
-                "transactionType",
-                "amount",
-                "balanceAfter",
-                "createdAt"
-              ],
-              "properties": {
-                "accountId": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "amount": {
-                  "type": "integer",
-                  "format": "int64"
-                },
-                "balanceAfter": {
-                  "type": "integer",
-                  "format": "int64"
-                },
-                "clientAppId": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "format": "uuid"
-                },
-                "createdAt": {
-                  "type": "string"
-                },
-                "description": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "externalRefId": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "id": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "realmId": {
-                  "type": "string"
-                },
-                "subscriptionId": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "format": "uuid"
-                },
-                "transactionType": {
                   "type": "string"
                 },
                 "userId": {
@@ -17302,63 +17302,6 @@
           }
         }
       },
-      "PointsAccountResponse": {
-        "type": "object",
-        "description": "Points account response",
-        "required": [
-          "id",
-          "userId",
-          "realmId",
-          "balance",
-          "totalRecharged",
-          "totalConsumed",
-          "status",
-          "createdAt",
-          "updatedAt",
-          "unit",
-          "currency"
-        ],
-        "properties": {
-          "balance": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "createdAt": {
-            "type": "string"
-          },
-          "currency": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "realmId": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "totalConsumed": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "totalRecharged": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "unit": {
-            "type": "string"
-          },
-          "updatedAt": {
-            "type": "string"
-          },
-          "userId": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      },
       "PointsBalanceResponse": {
         "type": "object",
         "description": "Points balance response",
@@ -17524,7 +17467,7 @@
         "description": "Points transaction response",
         "required": [
           "id",
-          "accountId",
+          "walletId",
           "userId",
           "realmId",
           "transactionType",
@@ -17533,10 +17476,6 @@
           "createdAt"
         ],
         "properties": {
-          "accountId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "amount": {
             "type": "integer",
             "format": "int64"
@@ -17582,6 +17521,67 @@
             "format": "uuid"
           },
           "transactionType": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "walletId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "PointsWalletResponse": {
+        "type": "object",
+        "description": "Points account response",
+        "required": [
+          "id",
+          "userId",
+          "realmId",
+          "balance",
+          "totalRecharged",
+          "totalConsumed",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "unit",
+          "currency"
+        ],
+        "properties": {
+          "balance": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "realmId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "totalConsumed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalRecharged": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "updatedAt": {
             "type": "string"
           },
           "userId": {

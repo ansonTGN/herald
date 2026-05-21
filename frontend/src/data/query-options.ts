@@ -28,8 +28,8 @@ import {
   getSubscriptionForClientApp,
   listPlanAssignments,
   listPlanAssignmentsBatch,
-  listAccounts,
-  getAccount,
+  listWallets,
+  getWallet,
   listTransactions,
   listPlanConfigs,
   getRealmDefaultConfig,
@@ -53,7 +53,7 @@ import type {
   OAuthConfigResponse,
   SubscriptionPlanResponse,
   PaymentAttemptStatusResponse,
-  PointsAccountResponse,
+  PointsWalletResponse,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -201,10 +201,10 @@ export const queryKeys = {
   ) => [QUERY_KEYS.GLOBAL_SUBSCRIPTION_HISTORY, realmId, filters, page, pageSize] as const,
   userSubscriptions: (realmId: string, clientAppIds: string) =>
     [QUERY_KEYS.USER_SUBSCRIPTIONS, realmId, clientAppIds] as const,
-  pointsAccounts: (realmId: string, filters: Record<string, unknown>) =>
-    [QUERY_KEYS.POINTS_ACCOUNTS, realmId, filters] as const,
-  pointsAccount: (realmId: string, userId: string) =>
-    [QUERY_KEYS.POINTS_ACCOUNT, realmId, userId] as const,
+  pointsWallets: (realmId: string, filters: Record<string, unknown>) =>
+    [QUERY_KEYS.POINTS_WALLETS, realmId, filters] as const,
+  pointsWallet: (realmId: string, userId: string) =>
+    [QUERY_KEYS.POINTS_WALLET, realmId, userId] as const,
   pointsTransactions: (realmId: string, filters: Record<string, unknown>) =>
     [QUERY_KEYS.POINTS_TRANSACTIONS, realmId, filters] as const,
   pointsPlanConfigs: (realmId: string) => [QUERY_KEYS.POINTS_PLAN_CONFIGS, realmId] as const,
@@ -811,47 +811,7 @@ export const globalSubscriptionHistoryQueryOptions = (
 
 // ==================== Points ====================
 
-interface PointsAccountsListResponse {
-  total: number
-  page: number
-  pageSize: number
-  items: Array<{
-    id: string
-    userId: string
-    realmId: string
-    balance: number
-    totalRecharged: number
-    totalConsumed: number
-    status: string
-    createdAt: string
-    updatedAt: string
-    currency: string
-    userName?: string | null
-    userEmail?: string | null
-  }>
-}
-
-interface PointsTransactionsListResponse {
-  total: number
-  page: number
-  pageSize: number
-  items: Array<{
-    id: string
-    accountId: string
-    userId: string
-    realmId: string
-    transactionType: string
-    amount: number
-    balanceAfter: number
-    description: string | null
-    clientAppId: string | null
-    subscriptionId: string | null
-    externalRefId: string | null
-    createdAt: string
-  }>
-}
-
-export const pointsAccountsQueryOptions = (
+export const pointsWalletsQueryOptions = (
   realmId: string,
   filters: {
     page?: number
@@ -861,62 +821,34 @@ export const pointsAccountsQueryOptions = (
   }
 ) =>
   queryOptions({
-    queryKey: queryKeys.pointsAccounts(realmId, filters),
+    queryKey: queryKeys.pointsWallets(realmId, filters),
     queryFn: async () => {
-      const response = await listAccounts({
-        path: { realmId },
-        query: {
-          page: filters.page,
-          pageSize: filters.pageSize,
-          search: filters.search,
-          status: filters.status,
-        },
-      })
-      if (response.error) throw response.error
-      const data = response.data as unknown
-      if (!data || typeof data !== 'object') {
-        throw new Error('Invalid response data')
-      }
-      const paginated = data as PointsAccountsListResponse & {
-        data?: PointsAccountsListResponse['items']
-      }
-      const accounts = paginated.items ?? paginated.data ?? []
+      const data = handleApiResponse(
+        await listWallets({
+          path: { realmId },
+          query: {
+            page: filters.page,
+            pageSize: filters.pageSize,
+            search: filters.search,
+            status: filters.status,
+          },
+        })
+      )
       return {
-        total: paginated.total,
-        page: paginated.page,
-        pageSize: paginated.pageSize,
-        accounts: accounts.map((account) => ({
-          id: account.id,
-          userId: account.userId,
-          userName: account.userName ?? undefined,
-          userEmail: account.userEmail ?? undefined,
-          realmId: account.realmId,
-          balance: account.balance,
-          totalRecharged: account.totalRecharged,
-          totalConsumed: account.totalConsumed,
-          status: account.status,
-          createdAt: account.createdAt,
-          updatedAt: account.updatedAt,
-          unit: account.currency,
-        })),
+        total: data.total,
+        page: data.page,
+        pageSize: data.pageSize,
+        wallets: data.items,
       }
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
   })
 
-export const pointsAccountQueryOptions = (realmId: string, userId: string) =>
+export const pointsWalletQueryOptions = (realmId: string, userId: string) =>
   queryOptions({
-    queryKey: queryKeys.pointsAccount(realmId, userId),
-    queryFn: async () => {
-      const response = await getAccount({ path: { realmId, userId } })
-      if (response.error) throw response.error
-      const data = response.data as unknown
-      if (!data || typeof data !== 'object') {
-        return null
-      }
-      return data as PointsAccountResponse | null
-    },
+    queryKey: queryKeys.pointsWallet(realmId, userId),
+    queryFn: async () => handleApiResponse(await getWallet({ path: { realmId, userId } })) as PointsWalletResponse,
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
   })
@@ -937,30 +869,26 @@ export const pointsTransactionsQueryOptions = (
   queryOptions({
     queryKey: queryKeys.pointsTransactions(realmId, filters),
     queryFn: async () => {
-      const response = await listTransactions({
-        path: { realmId },
-        query: {
-          userId: filters.userId,
-          clientAppId: filters.clientAppId,
-          subscriptionId: filters.subscriptionId,
-          transactionType: filters.transactionType,
-          startTime: filters.startTime,
-          endTime: filters.endTime,
-          page: filters.page,
-          pageSize: filters.pageSize,
-        },
-      })
-      if (response.error) throw response.error
-      const data = response.data as unknown
-      if (!data || typeof data !== 'object') {
-        throw new Error('Invalid response data')
-      }
-      const paginated = data as PointsTransactionsListResponse
+      const data = handleApiResponse(
+        await listTransactions({
+          path: { realmId },
+          query: {
+            userId: filters.userId,
+            clientAppId: filters.clientAppId,
+            subscriptionId: filters.subscriptionId,
+            transactionType: filters.transactionType,
+            startTime: filters.startTime,
+            endTime: filters.endTime,
+            page: filters.page,
+            pageSize: filters.pageSize,
+          },
+        })
+      )
       return {
-        total: paginated.total,
-        page: paginated.page,
-        pageSize: paginated.pageSize,
-        transactions: paginated.items,
+        total: data.total,
+        page: data.page,
+        pageSize: data.pageSize,
+        transactions: data.items,
       }
     },
     retry: RETRY_COUNT,

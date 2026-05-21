@@ -30,7 +30,7 @@ backend/
 └── integration-tests/   # Integration tests
 
 frontend/                # React admin frontend
-docker/                  # Dockerfile, docker-compose.yml
+docker/                  # Dockerfile
 ```
 
 ## Tech Stack
@@ -42,7 +42,7 @@ These aren't picked to follow trends. Each choice solves a concrete problem:
 
 - **Axum over actix-web**: native tokio runtime, clean integration with the tower middleware ecosystem, and trait-based handlers that read better than macro-based routing.
 - **SeaORM alongside sqlx**: SeaORM handles routine CRUD (the entity crate is auto-generated), while sqlx deals with complex queries and migrations. Both point at the same PostgreSQL — SeaORM sits on top of sqlx under the hood.
-- **Redis**: session storage, permission caching (Casbin policy cache), rate limiting (Redis Functions), idempotency keys. Wrapped in a custom `RedisConnectionManager` that automatically switches to DB 1 during tests for data isolation.
+- **Redis**: session storage, permission caching, rate limiting (Redis Functions), idempotency keys. Wrapped in a custom `RedisConnectionManager` that automatically switches to DB 1 during tests for data isolation.
 - **TanStack Router**: file-based routing with type safety. Path parameters like `$realmId` get their types inferred at compile time. More reliable than react-router's runtime matching.
 - **API type generation**: the backend exports OpenAPI JSON via utoipa, and the frontend generates TypeScript clients and types with `@hey-api/openapi-ts`. When the backend API changes, one command — `npm run generate-api` — brings the frontend types back in sync.
 
@@ -63,7 +63,7 @@ HTTP Request
 
 Handlers never write SQL. They call methods on Domain Services, which access data through trait-based ports. The infra layer provides concrete implementations. This is the central constraint of hexagonal architecture: `domain/` has no database or HTTP dependencies in its `Cargo.toml` — just plain Rust types.
 
-Permission checks follow a separate path: Handler → `RedisPermissionChecker` → Redis cache → PostgreSQL (on cache miss). The RBAC model is defined in `backend/api/config/rbac_model.conf` using four-tuple matching `(domain, subject, object, action)`, where domain is a client_app ID or the wildcard `*`.
+Permission checks follow a separate path: Handler → `RedisPermissionChecker` → Redis cache → PostgreSQL (on cache miss). The RBAC model uses four-tuple matching `(domain, subject, object, action)`, where domain is a client_app ID or the wildcard `*`.
 
 ## Module Breakdown
 
@@ -101,7 +101,7 @@ Concrete implementations of domain layer traits, named `PostgresXxxRepository` �
 
 Beyond database repositories:
 - `redis/` — `RedisConnectionManager`, connection pool with test isolation
-- `authorization/` — `RedisPermissionChecker`, Casbin-style permission caching
+- `authorization/` — `RedisPermissionChecker`, permission caching
 - `billing/` — invoice PDF generation (IronPress), encryption key management
 
 Payment channel clients live in separate crates (`infra-creem`, `infra-stripe`, `infra-wechat`, `infra-shopify`) rather than inside the main `infra` crate. The reason is to avoid pulling in payment SDKs you don't need — if you only use Stripe, the WeChat Pay SDK won't get compiled.

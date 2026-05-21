@@ -130,7 +130,7 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
     assert_eq!(periodic_balance, 50, "Periodic credit should be 50");
 
     let total_balance_before: i64 =
-        sqlx::query_scalar("SELECT total_balance FROM points_accounts WHERE user_id = $1")
+        sqlx::query_scalar("SELECT total_balance FROM points_wallets WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&ctx._app_state.pool)
             .await
@@ -236,7 +236,7 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
 
     // Verify total balance
     let total_balance_after: i64 =
-        sqlx::query_scalar("SELECT total_balance FROM points_accounts WHERE user_id = $1")
+        sqlx::query_scalar("SELECT total_balance FROM points_wallets WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&ctx._app_state.pool)
             .await
@@ -480,7 +480,7 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
 
     // Verify total balance
     let total_balance_after: i64 =
-        sqlx::query_scalar("SELECT total_balance FROM points_accounts WHERE user_id = $1")
+        sqlx::query_scalar("SELECT total_balance FROM points_wallets WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&ctx._app_state.pool)
             .await

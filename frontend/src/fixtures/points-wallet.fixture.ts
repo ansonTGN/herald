@@ -1,6 +1,6 @@
-import type { PointsAccountResponse } from '@/lib/api-generated'
+import type { PointsWalletResponse } from '@/lib/api-generated'
 
-export const mockPointsAccount: PointsAccountResponse = {
+export const mockPointsWallet: PointsWalletResponse = {
   id: 'acc-123',
   userId: 'user-123',
   realmId: 'realm-123',
@@ -14,16 +14,16 @@ export const mockPointsAccount: PointsAccountResponse = {
   updatedAt: '2025-03-15T00:00:00Z',
 }
 
-export const mockPointsAccountFrozen: PointsAccountResponse = {
-  ...mockPointsAccount,
+export const mockPointsWalletFrozen: PointsWalletResponse = {
+  ...mockPointsWallet,
   id: 'acc-456',
   userId: 'user-456',
   status: 'frozen',
   balance: 2500,
 }
 
-export const mockPointsAccountClosed: PointsAccountResponse = {
-  ...mockPointsAccount,
+export const mockPointsWalletClosed: PointsWalletResponse = {
+  ...mockPointsWallet,
   id: 'acc-789',
   userId: 'user-789',
   status: 'closed',
@@ -32,8 +32,8 @@ export const mockPointsAccountClosed: PointsAccountResponse = {
   totalConsumed: 1000,
 }
 
-export const mockPointsAccountsList = [
-  mockPointsAccount,
-  mockPointsAccountFrozen,
-  mockPointsAccountClosed,
+export const mockPointsWalletsList = [
+  mockPointsWallet,
+  mockPointsWalletFrozen,
+  mockPointsWalletClosed,
 ]

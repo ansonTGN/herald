@@ -9,12 +9,12 @@ use crate::common::policies::ensure_policy;
 use crate::points::{
     dtos::{ConsumePointsInput, CreatePlanConfigInput, RevokePointsOutput, UpdatePlanConfigInput},
     entities::{
-        AccountStatus, CreditSourceType, CreditType, Paginated, PointsAccount, PointsBalance,
-        PointsPlanConfig, PointsTransaction, RechargeType, RevocationType,
+        CreditSourceType, CreditType, Paginated, PointsBalance, PointsPlanConfig,
+        PointsTransaction, PointsWallet, RechargeType, RevocationType, WalletStatus,
     },
     errors::PointsErrorExt,
     policies::PointsPolicy,
-    ports::{AccountFilters, PointsRepository, TransactionFilters},
+    ports::{PointsRepository, TransactionFilters, WalletFilters},
 };
 
 /// Points Service - Business logic for points management
@@ -40,19 +40,19 @@ where
 
     // ===== Account Management =====
 
-    /// Get points account for a user
-    pub async fn get_account(
+    /// Get points wallet for a user
+    pub async fn get_wallet(
         &self,
         identity: Identity,
         realm_id: &str,
         user_id: Uuid,
-    ) -> Result<PointsAccount, CoreError> {
+    ) -> Result<PointsWallet, CoreError> {
         // Check view permissions
         ensure_policy(
             self.policy
                 .can_view_points(identity.clone(), Some(user_id))
                 .await,
-            "Insufficient permissions to view points account",
+            "Insufficient permissions to view points wallet",
         )?;
 
         // Check realm boundary
@@ -67,8 +67,8 @@ where
             Some(account) => Ok(account),
             None => {
                 // Auto-create account if it doesn't exist
-                tracing::info!("Auto-creating points account for user {}", user_id);
-                let new_account = self.create_account_internal(realm_id, user_id).await?;
+                tracing::info!("Auto-creating points wallet for user {}", user_id);
+                let new_account = self.create_wallet_internal(realm_id, user_id).await?;
                 Ok(new_account)
             }
         }
@@ -81,21 +81,21 @@ where
         realm_id: &str,
         user_id: Uuid,
     ) -> Result<PointsBalance, CoreError> {
-        let account = self.get_account(identity, realm_id, user_id).await?;
+        let account = self.get_wallet(identity, realm_id, user_id).await?;
         Ok(account.into())
     }
 
     /// List all accounts in a realm (admin only)
-    pub async fn list_accounts(
+    pub async fn list_wallets(
         &self,
         identity: Identity,
         realm_id: &str,
-        filters: AccountFilters,
-    ) -> Result<Paginated<PointsAccount>, CoreError> {
+        filters: WalletFilters,
+    ) -> Result<Paginated<PointsWallet>, CoreError> {
         // Check manage permissions
         ensure_policy(
             self.policy.can_manage_points(identity.clone()).await,
-            "Insufficient permissions to list accounts",
+            "Insufficient permissions to list wallets",
         )?;
 
         // Check realm boundary
@@ -105,7 +105,7 @@ where
             ));
         }
 
-        self.repository.list_accounts(realm_id, filters).await
+        self.repository.list_wallets(realm_id, filters).await
     }
 
     // ===== Helper Methods =====
@@ -143,14 +143,14 @@ where
             Some(account) => account,
             None => {
                 // Auto-create account
-                self.create_account_internal(realm_id, user_id).await?
+                self.create_wallet_internal(realm_id, user_id).await?
             }
         };
 
-        // Check account status
-        if account.status != AccountStatus::Active {
+        // Check wallet status
+        if account.status != WalletStatus::Active {
             return Err(CoreError::BadRequest(format!(
-                "Cannot consume points from {} account",
+                "Cannot consume points from {} wallet",
                 account.status.as_str()
             )));
         }
@@ -441,13 +441,13 @@ where
 
     // ===== Internal Methods =====
 
-    /// Create a new points account (internal use)
-    async fn create_account_internal(
+    /// Create a new points wallet (internal use)
+    async fn create_wallet_internal(
         &self,
         realm_id: &str,
         user_id: Uuid,
-    ) -> Result<PointsAccount, CoreError> {
-        let account = PointsAccount {
+    ) -> Result<PointsWallet, CoreError> {
+        let account = PointsWallet {
             id: Uuid::now_v7(),
             user_id,
             realm_id: realm_id.to_string(),
@@ -458,12 +458,12 @@ where
             total_subscription_granted: 0,
             total_recharged: 0,
             total_consumed: 0,
-            status: AccountStatus::Active,
+            status: WalletStatus::Active,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
 
-        self.repository.create_account(account).await
+        self.repository.create_wallet(account).await
     }
 
     /// Recharge points for a user (internal method for billing webhooks)

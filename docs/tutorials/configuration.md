@@ -7,12 +7,12 @@ Herald 通过一个 TOML 文件管理所有运行时配置。应用启动时读�
 启动时按以下顺序决定配置文件路径：
 
 1. 读取环境变量 `HERALD_CONFIG`，如果有值则作为文件路径
-2. 未设置则默认读取工作目录下的 `config.toml`
+2. 未设置则默认读取 `config/config.toml`
 
 代码入口在 `backend/app/src/main.rs`：
 
 ```rust
-let config_path = env::var("HERALD_CONFIG").unwrap_or("config.toml".to_owned());
+let config_path = env::var("HERALD_CONFIG").unwrap_or("config/config.toml".to_owned());
 let config = ApiConfig::load(&config_path)?;
 ```
 
@@ -22,14 +22,14 @@ let config = ApiConfig::load(&config_path)?;
 
 | 变量名 | 默认值 | 必填 | 说明 |
 |---|---|---|---|
-| `HERALD_CONFIG` | `config.toml` | 否 | 配置文件路径 |
+| `HERALD_CONFIG` | `config/config.toml` | 否 | 配置文件路径 |
 | `RUST_LOG` | 由 `server.log_level` 决定 | 否 | tracing 日志级别，优先级高于配置文件中的 `log_level` |
 
 `RUST_LOG` 在应用启动时由 `tracing_subscriber::EnvFilter::try_from_default_env()` 读取。如果设置了该环境变量，它会覆盖配置文件中的 `log_level`。没设置则回退到配置文件的值。
 
 ## 配置文件段
 
-完整示例见 `backend/api/config/config.toml`。
+完整示例见 `backend/config/config.toml`。
 
 ### [database]
 
@@ -129,32 +129,4 @@ openssl rand -base64 48
 
 ## RBAC 配置
 
-RBAC 策略不在主配置文件中，而是通过数据库中的 `role_policies` 表存储。系统初始化时，`RealmInitializationService` 会为每个 realm 创建默认角色和权限。
-
-策略模型定义在 `backend/api/config/rbac_model.conf`：
-
-```ini
-[request_definition]
-r = dom, sub, obj, act
-
-[policy_definition]
-p = dom, sub, obj, act
-
-[role_definition]
-g = _, _, _
-
-[policy_effect]
-e = some(where (p.eft == allow))
-
-[matchers]
-m = (g(r.dom, r.sub, p.sub) || r.sub == p.sub) && (r.dom == p.dom || p.dom == "*") && r.obj == p.obj && r.act == p.act
-```
-
-这个文件定义了 Casbin 风格的 RBAC 模型，四个字段含义：
-
-- **dom** — 域（realm ID），支持多租户隔离
-- **sub** — 主体（用户 ID 或角色 ID）
-- **obj** — 对象（资源标识）
-- **act** — 动作（操作类型）
-
-匹配器中的 `p.dom == "*"` 表示支持跨域通配策略。角色定义 `g = _, _, _` 的三段式格式为 `域, 用户, 角色`，角色本身用 UUID 而非名称标识。
+RBAC 策略不在主配置文件中，而是通过数据库中的 `role_policies` 表存储。系统初始化时，`RealmInitializationService` 会为每个 realm 创建默认角色和权限。权限检查由 `RedisPermissionChecker` 完成，先查 Redis 缓存，缓存 miss 时回源 PostgreSQL。

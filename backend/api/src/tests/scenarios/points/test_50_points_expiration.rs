@@ -32,7 +32,7 @@ async fn test_expired_points_cannot_consume(ctx: &mut SchemaTestContext) {
     let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user@example.com").await;
     let plan_id = Uuid::now_v7();
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     // Expired subscription credit (but not yet marked as expired in database)
     let expired_at = Utc::now() - Duration::days(10);

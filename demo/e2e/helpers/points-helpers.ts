@@ -135,7 +135,7 @@ export interface PointsPlanConfig {
   maxAccumulation: number
 }
 
-export interface PointsAccountInfo {
+export interface PointsWalletInfo {
   userId: string
   email: string
   balance: number
@@ -347,7 +347,7 @@ export async function resetTransactionFilters(page: Page): Promise<void> {
 export async function getUserAccountInfo(
   page: Page,
   userId: string
-): Promise<PointsAccountInfo> {
+): Promise<PointsWalletInfo> {
   const row = page.locator(SELECTORS.pointsAdmin.accountRow(userId))
 
   const [nameText, email, balanceText, status] = await Promise.all([
@@ -426,7 +426,7 @@ export async function getUserBalance(page: Page): Promise<number> {
 /**
  * Get account status from balance card
  */
-export async function getAccountStatus(page: Page): Promise<string> {
+export async function getWalletStatus(page: Page): Promise<string> {
   return await page.locator(SELECTORS.pointsUser.accountStatus).textContent() || ''
 }
 

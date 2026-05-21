@@ -1,9 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Wallet } from 'lucide-react'
-import type { PointsAccountResponse } from '@/lib/api-generated'
+import type { PointsWalletResponse } from '@/lib/api-generated'
 
 interface PointsBalanceCardProps {
-  account: PointsAccountResponse | null
+  account: PointsWalletResponse | null
   loading?: boolean
 }
 
@@ -43,7 +43,7 @@ export function PointsBalanceCard({ account, loading }: PointsBalanceCardProps) 
           <CardTitle>Points Balance</CardTitle>
           <span
             className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}
-            data-testid="points-account-status"
+            data-testid="points-wallet-status"
           >
             {status.label}
           </span>

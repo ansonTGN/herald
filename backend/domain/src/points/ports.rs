@@ -8,9 +8,9 @@ use crate::common::entities::app_errors::CoreError;
 use crate::points::dtos::RevokePointsOutput;
 use crate::points::entities::CreditSourceType;
 use crate::points::entities::{
-    CreditLedgerStatus, CreditType, Paginated, PointsAccount, PointsConsumptionAllocation,
-    PointsCreditLedger, PointsPlanConfig, PointsRevocationRecord, PointsTransaction,
-    RevocationType, TransactionType,
+    CreditLedgerStatus, CreditType, Paginated, PointsConsumptionAllocation, PointsCreditLedger,
+    PointsPlanConfig, PointsRevocationRecord, PointsTransaction, PointsWallet, RevocationType,
+    TransactionType,
 };
 use crate::points::services::realm_config_service::FreeUserStatistics;
 use crate::points::{
@@ -34,7 +34,7 @@ pub struct TransactionFilters {
 
 /// Account filters
 #[derive(Debug, Clone, Default)]
-pub struct AccountFilters {
+pub struct WalletFilters {
     pub status: Option<String>,
     pub search: Option<String>,
     pub page: Option<u64>,
@@ -78,7 +78,7 @@ pub enum LedgerUpdate {
 
 /// Account update type
 #[derive(Debug, Clone)]
-pub enum AccountUpdate {
+pub enum WalletUpdate {
     Consumption {
         total: i64,
         topup: i64,
@@ -112,24 +112,24 @@ pub enum GrantScheduleUpdate {
 
 /// Repository for points operations
 pub trait PointsRepository: Send + Sync {
-    /// Find points account by user ID
+    /// Find points wallet by user ID
     fn find_by_user_id(
         &self,
         realm_id: &str,
         user_id: Uuid,
-    ) -> impl Future<Output = Result<Option<PointsAccount>, CoreError>> + Send;
+    ) -> impl Future<Output = Result<Option<PointsWallet>, CoreError>> + Send;
 
-    /// Find points account by ID
+    /// Find points wallet by ID
     fn find_by_id(
         &self,
         id: Uuid,
-    ) -> impl Future<Output = Result<Option<PointsAccount>, CoreError>> + Send;
+    ) -> impl Future<Output = Result<Option<PointsWallet>, CoreError>> + Send;
 
-    /// Create a new points account
-    fn create_account(
+    /// Create a new points wallet
+    fn create_wallet(
         &self,
-        account: PointsAccount,
-    ) -> impl Future<Output = Result<PointsAccount, CoreError>> + Send;
+        account: PointsWallet,
+    ) -> impl Future<Output = Result<PointsWallet, CoreError>> + Send;
 
     /// Update account balance with optimistic locking
     ///
@@ -137,10 +137,10 @@ pub trait PointsRepository: Send + Sync {
     /// concurrent modifications and overspending.
     fn update_balance(
         &self,
-        account_id: Uuid,
+        wallet_id: Uuid,
         new_balance: i64,
         delta: i64,
-    ) -> impl Future<Output = Result<PointsAccount, CoreError>> + Send;
+    ) -> impl Future<Output = Result<PointsWallet, CoreError>> + Send;
 
     /// Atomically update balance with balance check
     ///
@@ -148,17 +148,17 @@ pub trait PointsRepository: Send + Sync {
     /// balance never goes negative (prevents overspending)
     fn update_balance_atomic(
         &self,
-        account_id: Uuid,
+        wallet_id: Uuid,
         delta: i64,
-    ) -> impl Future<Output = Result<PointsAccount, CoreError>> + Send;
+    ) -> impl Future<Output = Result<PointsWallet, CoreError>> + Send;
 
     /// Get account for update (SELECT FOR UPDATE)
     ///
     /// Locks the account row for update, preventing concurrent modifications
-    fn get_account_for_update(
+    fn get_wallet_for_update(
         &self,
-        account_id: Uuid,
-    ) -> impl Future<Output = Result<PointsAccount, CoreError>> + Send;
+        wallet_id: Uuid,
+    ) -> impl Future<Output = Result<PointsWallet, CoreError>> + Send;
 
     /// Create a points transaction
     fn create_transaction(
@@ -254,17 +254,17 @@ pub trait PointsRepository: Send + Sync {
     fn delete_plan_config(&self, id: Uuid) -> impl Future<Output = Result<(), CoreError>> + Send;
 
     /// List accounts with filters
-    fn list_accounts(
+    fn list_wallets(
         &self,
         realm_id: &str,
-        filters: AccountFilters,
-    ) -> impl Future<Output = Result<Paginated<PointsAccount>, CoreError>> + Send;
+        filters: WalletFilters,
+    ) -> impl Future<Output = Result<Paginated<PointsWallet>, CoreError>> + Send;
 
     /// Count accounts for pagination
-    fn count_accounts(
+    fn count_wallets(
         &self,
         realm_id: &str,
-        filters: &AccountFilters,
+        filters: &WalletFilters,
     ) -> impl Future<Output = Result<u64, CoreError>> + Send;
 
     // ========== Ledger Management ==========
@@ -342,11 +342,11 @@ pub trait PointsRepository: Send + Sync {
     // ========== Account Management ==========
 
     /// Update account balance (consumption or grant)
-    fn update_account(
+    fn update_wallet(
         &self,
-        account_id: Uuid,
-        updates: AccountUpdate,
-    ) -> impl Future<Output = Result<PointsAccount, CoreError>> + Send;
+        wallet_id: Uuid,
+        updates: WalletUpdate,
+    ) -> impl Future<Output = Result<PointsWallet, CoreError>> + Send;
 
     /// Find expired ledgers for cleanup
     fn find_expired_ledgers(

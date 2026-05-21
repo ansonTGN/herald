@@ -3,7 +3,7 @@
  *
  * User Stories:
  * - US-PO-01: Configure Points Plans
- * - US-PO-02: View All User Points Accounts
+ * - US-PO-02: View All User Wallets
  * - US-PO-03: View User Points Transaction History
  * - US-PO-04: Manage Points Plan Configurations
  * - US-PO-05: View Plan Recharge Guide
@@ -191,17 +191,17 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
   })
 
   // ============================================================================
-  // User Story US-PO-02: View All User Points Accounts
+  // User Story US-PO-02: View All User Wallets
   // ============================================================================
 
-  test.describe('US-PO-02: View All User Points Accounts', () => {
+  test.describe('US-PO-02: View All User Wallets', () => {
     test('should view and search user points accounts', async ({ page, loginPage }) => {
       await test.step('Given: 管理员已登录', async () => {
         await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', DEMO_ADMIN.realmId)
       })
 
       await test.step('When: 访问用户积分账户页面', async () => {
-        await page.goto(`/${DEMO_ADMIN.realmId}/manage/points/accounts`)
+        await page.goto(`/${DEMO_ADMIN.realmId}/manage/points/wallets`)
         await expect(page.locator(SELECTORS.pointsAdmin.accountsPage)).toBeVisible()
       })
 
@@ -239,7 +239,7 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
       })
 
       await test.step('When: 访问用户积分账户页面', async () => {
-        await page.goto(`/${DEMO_ADMIN.realmId}/manage/points/accounts`)
+        await page.goto(`/${DEMO_ADMIN.realmId}/manage/points/wallets`)
         await expect(page.locator(SELECTORS.pointsAdmin.accountsPage)).toBeVisible()
       })
 

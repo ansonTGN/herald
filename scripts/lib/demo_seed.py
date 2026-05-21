@@ -358,7 +358,7 @@ DO $$
 DECLARE
     v_user_id UUID := '{user_id}'::uuid;
     v_client_app_id UUID;
-    v_account_id UUID := uuidv7();
+    v_wallet_id UUID := uuidv7();
     v_subscription_ledger_id UUID := uuidv7();
     v_topup_ledger_id UUID := uuidv7();
     v_tx_subscription UUID := uuidv7();
@@ -390,9 +390,9 @@ BEGIN
     DELETE FROM points_revocation_records WHERE user_id = v_user_id;
     DELETE FROM points_transactions WHERE user_id = v_user_id;
     DELETE FROM points_credit_ledger WHERE user_id = v_user_id;
-    DELETE FROM points_accounts WHERE user_id = v_user_id;
+    DELETE FROM points_wallets WHERE user_id = v_user_id;
 
-    INSERT INTO points_accounts (
+    INSERT INTO points_wallets (
         id,
         user_id,
         realm_id,
@@ -406,7 +406,7 @@ BEGIN
         created_at,
         updated_at
     ) VALUES (
-        v_account_id,
+        v_wallet_id,
         v_user_id,
         '{POINTS_REALM_ID}',
         3000,
@@ -482,7 +482,7 @@ BEGIN
 
     INSERT INTO points_transactions (
         id,
-        account_id,
+        wallet_id,
         user_id,
         realm_id,
         type,
@@ -497,7 +497,7 @@ BEGIN
     ) VALUES
     (
         v_tx_subscription,
-        v_account_id,
+        v_wallet_id,
         v_user_id,
         '{POINTS_REALM_ID}',
         'recharge',
@@ -512,7 +512,7 @@ BEGIN
     ),
     (
         v_tx_topup,
-        v_account_id,
+        v_wallet_id,
         v_user_id,
         '{POINTS_REALM_ID}',
         'recharge',
@@ -527,7 +527,7 @@ BEGIN
     ),
     (
         v_tx_consume_1,
-        v_account_id,
+        v_wallet_id,
         v_user_id,
         '{POINTS_REALM_ID}',
         'consume',
@@ -542,7 +542,7 @@ BEGIN
     ),
     (
         v_tx_consume_2,
-        v_account_id,
+        v_wallet_id,
         v_user_id,
         '{POINTS_REALM_ID}',
         'consume',

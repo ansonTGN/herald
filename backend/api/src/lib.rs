@@ -80,7 +80,7 @@ struct Args {
 /// Run the Herald API server with default configuration
 ///
 /// This function loads configuration from the HERALD_CONFIG environment variable
-/// or defaults to "config.toml", then starts the API server.
+/// or defaults to "config/config.toml", then starts the API server.
 ///
 /// For use by the app crate.
 pub async fn run() -> Result<()> {
@@ -93,7 +93,7 @@ pub async fn run() -> Result<()> {
     }
 
     // Load configuration from file
-    let config_path = env::var("HERALD_CONFIG").unwrap_or("config.toml".to_owned());
+    let config_path = env::var("HERALD_CONFIG").unwrap_or("config/config.toml".to_owned());
     let config = config::ApiConfig::load(&config_path)?;
 
     run_with_config(config).await

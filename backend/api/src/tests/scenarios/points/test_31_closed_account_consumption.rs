@@ -42,11 +42,11 @@ async fn test_scenario_closed_account_cannot_consume(ctx: &mut TestContext) {
         create_test_user(&ctx._app_state.pool, &ctx._realm_id, "user31@example.com").await;
     let balance = 1000;
 
-    let account_id = create_test_points_account(&ctx._app_state.pool, user_id, balance).await;
+    let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, balance).await;
 
     // Set account status to closed
-    sqlx::query("UPDATE points_accounts SET status = 'closed' WHERE id = $1")
-        .bind(account_id)
+    sqlx::query("UPDATE points_wallets SET status = 'closed' WHERE id = $1")
+        .bind(wallet_id)
         .execute(&ctx._app_state.pool)
         .await
         .expect("Failed to set account status to closed");

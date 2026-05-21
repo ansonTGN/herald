@@ -449,15 +449,15 @@ export const SELECTORS = {
    */
   pointsAdmin: {
     // Page containers
-    accountsPage: '[data-testid="points-accounts-page"]',
+    accountsPage: '[data-testid="points-wallets-page"]',
     configsPage: '[data-testid="points-configs-page"]',
     heading: 'h1:has-text("Points Management")',
-    // User Accounts Section
-    accountsSection: '[data-testid="points-accounts-page"]',
-    accountsTable: '[data-testid="points-accounts-page"]',
-    accountsSearch: '[data-testid="accounts-search-input"]',
-    accountRow: (userId: string) => `[data-testid="account-row-${userId}"]`,
-    firstAccountRow: () => '[data-testid^="account-row-"]',
+    // User Wallets Section
+    accountsSection: '[data-testid="points-wallets-page"]',
+    accountsTable: '[data-testid="points-wallets-page"]',
+    accountsSearch: '[data-testid="wallets-search-input"]',
+    accountRow: (userId: string) => `[data-testid="wallet-row-${userId}"]`,
+    firstAccountRow: () => '[data-testid^="wallet-row-"]',
     // Transaction History Section
     transactionsSection:
       '[data-testid="transaction-history-table"], [data-testid="no-transactions"]',
@@ -509,7 +509,7 @@ export const SELECTORS = {
     // Balance Card
     balanceCard: '[data-testid="points-balance-card"]',
     balanceAmount: '[data-testid="points-balance"]',
-    accountStatus: '[data-testid="points-account-status"]',
+    accountStatus: '[data-testid="points-wallet-status"]',
     // Transaction History
     transactionsSection:
       '[data-testid="transaction-history-table"], [data-testid="no-transactions"]',

@@ -7,12 +7,12 @@ Herald manages all runtime configuration through a single TOML file. The file is
 At startup, Herald determines the config file path in this order:
 
 1. Read the `HERALD_CONFIG` environment variable. If set, use its value as the file path.
-2. If not set, fall back to `config.toml` in the current working directory.
+2. If not set, fall back to `config/config.toml`.
 
 The entry point is in `backend/app/src/main.rs`:
 
 ```rust
-let config_path = env::var("HERALD_CONFIG").unwrap_or("config.toml".to_owned());
+let config_path = env::var("HERALD_CONFIG").unwrap_or("config/config.toml".to_owned());
 let config = ApiConfig::load(&config_path)?;
 ```
 
@@ -22,14 +22,14 @@ The path can be relative or absolute. Relative paths are resolved against the pr
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
-| `HERALD_CONFIG` | `config.toml` | No | Path to the config file |
+| `HERALD_CONFIG` | `config/config.toml` | No | Path to the config file |
 | `RUST_LOG` | Set by `server.log_level` | No | tracing log level; overrides `log_level` in the config file |
 
 `RUST_LOG` is read at startup via `tracing_subscriber::EnvFilter::try_from_default_env()`. When set, it takes precedence over the `log_level` field in the config file. When unset, the config file value is used.
 
 ## Config File Sections
 
-A complete example lives at `backend/api/config/config.toml`.
+A complete example lives at `backend/config/config.toml`.
 
 ### [database]
 
@@ -129,32 +129,4 @@ openssl rand -base64 48
 
 ## RBAC Configuration
 
-RBAC policies are not stored in the main config file. They live in the `role_policies` database table. During initialization, `RealmInitializationService` creates default roles and permissions for each realm.
-
-The policy model is defined in `backend/api/config/rbac_model.conf`:
-
-```ini
-[request_definition]
-r = dom, sub, obj, act
-
-[policy_definition]
-p = dom, sub, obj, act
-
-[role_definition]
-g = _, _, _
-
-[policy_effect]
-e = some(where (p.eft == allow))
-
-[matchers]
-m = (g(r.dom, r.sub, p.sub) || r.sub == p.sub) && (r.dom == p.dom || p.dom == "*") && r.obj == p.obj && r.act == p.act
-```
-
-This file defines a Casbin-style RBAC model. The four fields:
-
-- **dom** -- domain (realm ID), enabling multi-tenant isolation
-- **sub** -- subject (user ID or role ID)
-- **obj** -- object (resource identifier)
-- **act** -- action (operation type)
-
-The matcher `p.dom == "*"` allows cross-domain wildcard policies. The role definition `g = _, _, _` uses a three-part format: `domain, user, role`, where roles themselves are identified by UUID rather than name.
+RBAC policies are not stored in the main config file. They live in the `role_policies` database table. During initialization, `RealmInitializationService` creates default roles and permissions for each realm. Permission checks are handled by `RedisPermissionChecker`, which checks Redis cache first and falls back to PostgreSQL on cache miss.

@@ -48,7 +48,7 @@ COMMENT ON COLUMN subscription_history.created_at IS 'When this history record w
 -- ====================================
 -- Points Accounts
 -- ====================================
-CREATE TABLE points_accounts (
+CREATE TABLE points_wallets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,
     realm_id TEXT NOT NULL,
@@ -64,32 +64,32 @@ CREATE TABLE points_accounts (
     status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'frozen', 'closed')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uk_points_accounts_user_id UNIQUE (user_id)
+    CONSTRAINT uk_points_wallets_user_id UNIQUE (user_id)
 );
 
-CREATE INDEX idx_points_accounts_user_id ON points_accounts(user_id);
-CREATE INDEX idx_points_accounts_realm_id ON points_accounts(realm_id);
-CREATE INDEX idx_points_accounts_status ON points_accounts(status);
+CREATE INDEX idx_points_wallets_user_id ON points_wallets(user_id);
+CREATE INDEX idx_points_wallets_realm_id ON points_wallets(realm_id);
+CREATE INDEX idx_points_wallets_status ON points_wallets(status);
 
-COMMENT ON TABLE points_accounts IS 'User-level points accounts tracking balance, recharges, and consumption';
-COMMENT ON COLUMN points_accounts.id IS 'Unique account identifier';
-COMMENT ON COLUMN points_accounts.user_id IS 'Reference to user who owns this account';
-COMMENT ON COLUMN points_accounts.realm_id IS 'Realm ID for permission isolation';
-COMMENT ON COLUMN points_accounts.topup_balance IS 'Current balance of topup credits (purchased points)';
-COMMENT ON COLUMN points_accounts.subscription_balance IS 'Current balance of subscription credits (from subscriptions)';
-COMMENT ON COLUMN points_accounts.total_balance IS 'Computed total balance: topup_balance + subscription_balance';
-COMMENT ON COLUMN points_accounts.total_recharged IS 'Total points ever recharged (for analytics)';
-COMMENT ON COLUMN points_accounts.total_consumed IS 'Total points ever consumed (for analytics)';
-COMMENT ON COLUMN points_accounts.total_topup_granted IS 'Total purchased points ever granted';
-COMMENT ON COLUMN points_accounts.total_subscription_granted IS 'Total subscription points ever granted';
-COMMENT ON COLUMN points_accounts.status IS 'Account status: active (normal operations), frozen (temporarily disabled), closed (permanently disabled)';
+COMMENT ON TABLE points_wallets IS 'User-level points wallets tracking balance, recharges, and consumption';
+COMMENT ON COLUMN points_wallets.id IS 'Unique wallet identifier';
+COMMENT ON COLUMN points_wallets.user_id IS 'Reference to user who owns this wallet';
+COMMENT ON COLUMN points_wallets.realm_id IS 'Realm ID for permission isolation';
+COMMENT ON COLUMN points_wallets.topup_balance IS 'Current balance of topup credits (purchased points)';
+COMMENT ON COLUMN points_wallets.subscription_balance IS 'Current balance of subscription credits (from subscriptions)';
+COMMENT ON COLUMN points_wallets.total_balance IS 'Computed total balance: topup_balance + subscription_balance';
+COMMENT ON COLUMN points_wallets.total_recharged IS 'Total points ever recharged (for analytics)';
+COMMENT ON COLUMN points_wallets.total_consumed IS 'Total points ever consumed (for analytics)';
+COMMENT ON COLUMN points_wallets.total_topup_granted IS 'Total purchased points ever granted';
+COMMENT ON COLUMN points_wallets.total_subscription_granted IS 'Total subscription points ever granted';
+COMMENT ON COLUMN points_wallets.status IS 'Wallet status: active (normal operations), frozen (temporarily disabled), closed (permanently disabled)';
 
 -- ====================================
 -- Points Transactions
 -- ====================================
 CREATE TABLE points_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id UUID NOT NULL REFERENCES points_accounts(id) ON DELETE CASCADE,
+    wallet_id UUID NOT NULL REFERENCES points_wallets(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,
     realm_id TEXT NOT NULL,
     type VARCHAR(32) NOT NULL CHECK (type IN (
@@ -126,7 +126,7 @@ CREATE TABLE points_transactions (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_points_transactions_account_id ON points_transactions(account_id);
+CREATE INDEX idx_points_transactions_wallet_id ON points_transactions(wallet_id);
 CREATE INDEX idx_points_transactions_user_id ON points_transactions(user_id);
 CREATE INDEX idx_points_transactions_realm_id ON points_transactions(realm_id);
 CREATE INDEX idx_points_transactions_type ON points_transactions(type);

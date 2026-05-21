@@ -33,7 +33,7 @@ async fn test_scenario_mixed_credit_concurrent_consume_one_succeeds(ctx: &mut Sc
     let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user72@example.com").await;
     let plan_id = Uuid::now_v7();
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     let topup_ledger_id = create_credit_ledger_entry_v2(
         ctx,

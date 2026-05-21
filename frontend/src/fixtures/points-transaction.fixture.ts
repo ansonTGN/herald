@@ -2,7 +2,7 @@ import type { PointsTransactionResponse } from '@/lib/api-generated'
 
 export const mockRechargeTransaction: PointsTransactionResponse = {
   id: 'txn-123',
-  accountId: 'acc-123',
+  walletId: 'acc-123',
   userId: 'user-123',
   realmId: 'realm-123',
   amount: 1000,
@@ -17,7 +17,7 @@ export const mockRechargeTransaction: PointsTransactionResponse = {
 
 export const mockConsumeTransaction: PointsTransactionResponse = {
   id: 'txn-456',
-  accountId: 'acc-123',
+  walletId: 'acc-123',
   userId: 'user-123',
   realmId: 'realm-123',
   amount: -500,

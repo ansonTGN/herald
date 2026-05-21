@@ -77,9 +77,9 @@ COPY --from=backend-builder /app/target/release/herald-app /app/herald-app
 # Copy frontend static files
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 
-# Copy migrations and config
+# Copy migrations and production config
 COPY backend/app/migrations /app/migrations
-COPY backend/api/config /app/config
+COPY backend/config/production.toml /app/config.toml
 
 # Set proper permissions
 RUN chown -R herald:herald /app && \
@@ -95,8 +95,8 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 
-# Set default config (can be overridden)
-ENV HERALD_CONFIG=/app/config/config.toml
+# Config path — override at runtime by mounting a custom config or setting HERALD_CONFIG
+ENV HERALD_CONFIG=/app/config.toml
 
 # Run the server
 CMD ["./herald-app"]

@@ -13,15 +13,15 @@ use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::points::{
     dtos::RevokePointsOutput,
     entities::{
-        AccountStatus, CreditLedgerStatus, CreditSourceType, CreditType, Paginated, PointsAccount,
-        PointsConsumptionAllocation, PointsCreditLedger, PointsPlanConfig, PointsRevocationRecord,
-        PointsTransaction, RevocationType, TransactionType,
+        CreditLedgerStatus, CreditSourceType, CreditType, Paginated, PointsConsumptionAllocation,
+        PointsCreditLedger, PointsPlanConfig, PointsRevocationRecord, PointsTransaction,
+        PointsWallet, RevocationType, TransactionType, WalletStatus,
     },
     errors::PointsErrorExt,
     expiration_service::ExpirationSummary,
     ports::{
-        AccountFilters, AccountUpdate, LedgerFilters, LedgerUpdate, PointsRepository,
-        TransactionFilters,
+        LedgerFilters, LedgerUpdate, PointsRepository, TransactionFilters, WalletFilters,
+        WalletUpdate,
     },
 };
 // Import mapping functions for ORM conversions
@@ -31,15 +31,15 @@ use crate::points::{
     points_revocation_record_from_model, points_revocation_record_to_active_model,
 };
 use herald_entity::{
-    account, points_account, points_consumption_allocation, points_credit_ledger,
-    points_grant_record, points_grant_schedule, points_plan_config, points_revocation_record,
-    points_transaction, realm_default_config, user_points_config,
+    account, points_consumption_allocation, points_credit_ledger, points_grant_record,
+    points_grant_schedule, points_plan_config, points_revocation_record, points_transaction,
+    points_wallet, realm_default_config, user_points_config,
 };
 
-/// Custom struct for SQLx query results from points_accounts table
+/// Custom struct for SQLx query results from points_wallets table
 /// Implements FromRow to work with sqlx::query_as
 #[derive(Debug, FromRow)]
-struct PointsAccountRow {
+struct PointsWalletRow {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
@@ -62,7 +62,7 @@ struct PointsAccountRow {
 struct PointsTransactionRow {
     pub id: Uuid,
     pub realm_id: String,
-    pub account_id: Uuid,
+    pub wallet_id: Uuid,
     pub user_id: Uuid,
     pub r#type: String,
     pub amount: i64,
@@ -105,7 +105,7 @@ pub struct PostgresPointsRepository {
 
 /// Unique constraint names in the database
 mod constraints {
-    pub const UK_POINTS_ACCOUNTS_USER_ID: &str = "uk_points_accounts_user_id";
+    pub const UK_POINTS_WALLETS_USER_ID: &str = "uk_points_wallets_user_id";
     pub const UK_POINTS_PLAN_CONFIGS_PLAN_ID: &str = "uk_points_plan_configs_plan_id";
 }
 
@@ -114,9 +114,9 @@ impl PostgresPointsRepository {
         Self { db, pool }
     }
 
-    /// Convert database model to domain PointsAccount
-    fn model_to_points_account(model: points_account::Model) -> Result<PointsAccount, CoreError> {
-        Ok(PointsAccount {
+    /// Convert database model to domain PointsWallet
+    fn model_to_points_wallet(model: points_wallet::Model) -> Result<PointsWallet, CoreError> {
+        Ok(PointsWallet {
             id: model.id,
             user_id: model.user_id,
             realm_id: model.realm_id,
@@ -133,15 +133,14 @@ impl PostgresPointsRepository {
         })
     }
 
-    /// Convert PointsAccountRow to domain PointsAccount
-    fn row_to_points_account(row: PointsAccountRow) -> Result<PointsAccount, CoreError> {
-        use herald_domain::points::entities::AccountStatus;
+    /// Convert PointsWalletRow to domain PointsWallet
+    fn row_to_points_wallet(row: PointsWalletRow) -> Result<PointsWallet, CoreError> {
+        use herald_domain::points::entities::WalletStatus;
 
-        let status = AccountStatus::from_str(&row.status).map_err(|_| {
-            CoreError::BadRequest(format!("Invalid account status: {}", row.status))
-        })?;
+        let status = WalletStatus::from_str(&row.status)
+            .map_err(|_| CoreError::BadRequest(format!("Invalid wallet status: {}", row.status)))?;
 
-        Ok(PointsAccount {
+        Ok(PointsWallet {
             id: row.id,
             user_id: row.user_id,
             realm_id: row.realm_id,
@@ -158,9 +157,9 @@ impl PostgresPointsRepository {
         })
     }
 
-    /// Convert domain PointsAccount to database active model
-    fn points_account_to_active_model(account: PointsAccount) -> points_account::ActiveModel {
-        points_account::ActiveModel {
+    /// Convert domain PointsWallet to database active model
+    fn points_wallet_to_active_model(account: PointsWallet) -> points_wallet::ActiveModel {
+        points_wallet::ActiveModel {
             id: Set(account.id),
             user_id: Set(account.user_id),
             realm_id: Set(account.realm_id.clone()),
@@ -195,7 +194,7 @@ impl PostgresPointsRepository {
 
         Ok(PointsTransaction {
             id: model.id,
-            account_id: model.account_id,
+            wallet_id: model.wallet_id,
             user_id: model.user_id,
             realm_id: model.realm_id,
             transaction_type: model.r#type.parse()?,
@@ -225,7 +224,7 @@ impl PostgresPointsRepository {
 
         Ok(PointsTransaction {
             id: row.id,
-            account_id: row.account_id,
+            wallet_id: row.wallet_id,
             user_id: row.user_id,
             realm_id: row.realm_id,
             transaction_type: row.r#type.parse()?,
@@ -253,7 +252,7 @@ impl PostgresPointsRepository {
 
         points_transaction::ActiveModel {
             id: Set(transaction.id),
-            account_id: Set(transaction.account_id),
+            wallet_id: Set(transaction.wallet_id),
             user_id: Set(transaction.user_id),
             realm_id: Set(transaction.realm_id),
             r#type: Set(transaction.transaction_type.as_str().to_string()),
@@ -415,6 +414,41 @@ impl PostgresPointsRepository {
 
         query
     }
+
+    async fn apply_wallet_filters(
+        &self,
+        mut query: sea_orm::Select<points_wallet::Entity>,
+        realm_id: &str,
+        filters: &WalletFilters,
+    ) -> Result<Option<sea_orm::Select<points_wallet::Entity>>, CoreError> {
+        if let Some(status) = &filters.status {
+            query = query.filter(points_wallet::Column::Status.eq(status.clone()));
+        }
+
+        if let Some(search) = &filters.search {
+            if let Ok(user_id) = Uuid::parse_str(search) {
+                query = query.filter(points_wallet::Column::UserId.eq(user_id));
+            } else {
+                let user_id: Option<Uuid> = account::Entity::find()
+                    .select_only()
+                    .column(account::Column::Id)
+                    .filter(account::Column::RealmId.eq(realm_id.to_string()))
+                    .filter(account::Column::Email.eq(search.clone()))
+                    .into_tuple::<Uuid>()
+                    .one(&*self.db)
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+                if let Some(uid) = user_id {
+                    query = query.filter(points_wallet::Column::UserId.eq(uid));
+                } else {
+                    return Ok(None);
+                }
+            }
+        }
+
+        Ok(Some(query))
+    }
     fn row_to_points_credit_ledger(
         row: PointsCreditLedgerRow,
     ) -> Result<PointsCreditLedger, CoreError> {
@@ -440,10 +474,10 @@ impl PostgresPointsRepository {
         tx: &mut Transaction<'_, Postgres>,
         realm_id: &str,
         user_id: Uuid,
-    ) -> Result<Option<PointsAccount>, CoreError> {
-        let row = sqlx::query_as::<_, PointsAccountRow>(
+    ) -> Result<Option<PointsWallet>, CoreError> {
+        let row = sqlx::query_as::<_, PointsWalletRow>(
             r#"
-            SELECT * FROM points_accounts
+            SELECT * FROM points_wallets
             WHERE realm_id = $1 AND user_id = $2
             FOR UPDATE
             "#,
@@ -454,17 +488,17 @@ impl PostgresPointsRepository {
         .await
         .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        row.map(Self::row_to_points_account).transpose()
+        row.map(Self::row_to_points_wallet).transpose()
     }
 
-    async fn create_account_in_tx(
+    async fn create_wallet_in_tx(
         tx: &mut Transaction<'_, Postgres>,
         realm_id: &str,
         user_id: Uuid,
-    ) -> Result<PointsAccount, CoreError> {
-        let row = sqlx::query_as::<_, PointsAccountRow>(
+    ) -> Result<PointsWallet, CoreError> {
+        let row = sqlx::query_as::<_, PointsWalletRow>(
             r#"
-            INSERT INTO points_accounts (
+            INSERT INTO points_wallets (
                 id, user_id, realm_id, topup_balance, subscription_balance,
                 total_recharged, total_consumed, total_topup_granted,
                 total_subscription_granted, status, created_at, updated_at
@@ -481,7 +515,7 @@ impl PostgresPointsRepository {
         .await
         .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        Self::row_to_points_account(row)
+        Self::row_to_points_wallet(row)
     }
 
     fn determine_transaction_type(
@@ -508,10 +542,10 @@ impl PostgresPointsRepository {
         tx: &mut Transaction<'_, Postgres>,
         realm_id: &str,
         user_id: Uuid,
-    ) -> Result<PointsAccount, CoreError> {
+    ) -> Result<PointsWallet, CoreError> {
         match Self::find_account_by_user_for_update(tx, realm_id, user_id).await? {
             Some(account) => Ok(account),
-            None => Self::create_account_in_tx(tx, realm_id, user_id).await,
+            None => Self::create_wallet_in_tx(tx, realm_id, user_id).await,
         }
     }
 
@@ -599,19 +633,19 @@ impl PostgresPointsRepository {
             .collect()
     }
 
-    async fn update_account_in_tx(
+    async fn update_wallet_in_tx(
         tx: &mut Transaction<'_, Postgres>,
-        account_id: Uuid,
-        updates: AccountUpdate,
-    ) -> Result<PointsAccount, CoreError> {
-        let account = sqlx::query_as::<_, PointsAccountRow>(
-            "SELECT * FROM points_accounts WHERE id = $1 FOR UPDATE",
+        wallet_id: Uuid,
+        updates: WalletUpdate,
+    ) -> Result<PointsWallet, CoreError> {
+        let account = sqlx::query_as::<_, PointsWalletRow>(
+            "SELECT * FROM points_wallets WHERE id = $1 FOR UPDATE",
         )
-        .bind(account_id)
+        .bind(wallet_id)
         .fetch_optional(&mut **tx)
         .await
         .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-        .map(Self::row_to_points_account)
+        .map(Self::row_to_points_wallet)
         .transpose()?
         .ok_or(CoreError::NotFound)?;
 
@@ -623,7 +657,7 @@ impl PostgresPointsRepository {
             total_topup_granted,
             total_subscription_granted,
         ) = match updates {
-            AccountUpdate::Consumption {
+            WalletUpdate::Consumption {
                 total,
                 topup,
                 subscription,
@@ -635,7 +669,7 @@ impl PostgresPointsRepository {
                 account.total_topup_granted,
                 account.total_subscription_granted,
             ),
-            AccountUpdate::Grant {
+            WalletUpdate::Grant {
                 topup,
                 subscription,
             } => (
@@ -646,7 +680,7 @@ impl PostgresPointsRepository {
                 account.total_topup_granted + topup,
                 account.total_subscription_granted + subscription,
             ),
-            AccountUpdate::Revocation {
+            WalletUpdate::Revocation {
                 topup,
                 subscription,
             } => (
@@ -663,9 +697,9 @@ impl PostgresPointsRepository {
             return Err(CoreError::concurrent_modification());
         }
 
-        let row = sqlx::query_as::<_, PointsAccountRow>(
+        let row = sqlx::query_as::<_, PointsWalletRow>(
             r#"
-            UPDATE points_accounts
+            UPDATE points_wallets
             SET topup_balance = $2,
                 subscription_balance = $3,
                 total_recharged = $4,
@@ -677,7 +711,7 @@ impl PostgresPointsRepository {
             RETURNING *
             "#,
         )
-        .bind(account_id)
+        .bind(wallet_id)
         .bind(topup_balance)
         .bind(subscription_balance)
         .bind(total_recharged)
@@ -688,15 +722,15 @@ impl PostgresPointsRepository {
         .await
         .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        Self::row_to_points_account(row)
+        Self::row_to_points_wallet(row)
     }
 
     async fn refresh_account_balances_from_ledgers_in_tx(
         tx: &mut Transaction<'_, Postgres>,
-        account_id: Uuid,
+        wallet_id: Uuid,
         realm_id: &str,
         user_id: Uuid,
-    ) -> Result<PointsAccount, CoreError> {
+    ) -> Result<PointsWallet, CoreError> {
         let (topup_balance, subscription_balance): (i64, i64) = sqlx::query_as(
             r#"
             SELECT
@@ -717,9 +751,9 @@ impl PostgresPointsRepository {
         .await
         .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        let row = sqlx::query_as::<_, PointsAccountRow>(
+        let row = sqlx::query_as::<_, PointsWalletRow>(
             r#"
-            UPDATE points_accounts
+            UPDATE points_wallets
             SET topup_balance = $2,
                 subscription_balance = $3,
                 updated_at = NOW()
@@ -727,14 +761,14 @@ impl PostgresPointsRepository {
             RETURNING *
             "#,
         )
-        .bind(account_id)
+        .bind(wallet_id)
         .bind(topup_balance)
         .bind(subscription_balance)
         .fetch_one(&mut **tx)
         .await
         .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        Self::row_to_points_account(row)
+        Self::row_to_points_wallet(row)
     }
 
     async fn update_ledger_in_tx(
@@ -833,7 +867,7 @@ impl PostgresPointsRepository {
         let row = sqlx::query_as::<_, PointsTransactionRow>(
             r#"
             INSERT INTO points_transactions (
-                id, account_id, user_id, realm_id, type, amount, balance_after,
+                id, wallet_id, user_id, realm_id, type, amount, balance_after,
                 topup_balance_after, subscription_balance_after, credit_type, description,
                 client_app_id, subscription_id, external_ref_id, created_at, updated_at
             ) VALUES (
@@ -841,14 +875,14 @@ impl PostgresPointsRepository {
                 $8, $9, $10, $11,
                 $12, $13, $14, $15, NOW()
             )
-            RETURNING id, realm_id, account_id, user_id, type, amount, balance_after,
+            RETURNING id, realm_id, wallet_id, user_id, type, amount, balance_after,
                       topup_balance_after, subscription_balance_after, credit_type,
                       description, client_app_id, subscription_id, external_ref_id,
                       created_at, updated_at, expires_at
             "#,
         )
         .bind(transaction.id)
-        .bind(transaction.account_id)
+        .bind(transaction.wallet_id)
         .bind(transaction.user_id)
         .bind(transaction.realm_id)
         .bind(transaction.transaction_type.as_str())
@@ -1048,49 +1082,49 @@ impl PointsRepository for PostgresPointsRepository {
         &self,
         realm_id: &str,
         user_id: Uuid,
-    ) -> Result<Option<PointsAccount>, CoreError> {
-        let result = points_account::Entity::find()
-            .filter(points_account::Column::RealmId.eq(realm_id))
-            .filter(points_account::Column::UserId.eq(user_id))
+    ) -> Result<Option<PointsWallet>, CoreError> {
+        let result = points_wallet::Entity::find()
+            .filter(points_wallet::Column::RealmId.eq(realm_id))
+            .filter(points_wallet::Column::UserId.eq(user_id))
             .one(&*self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        result.map(Self::model_to_points_account).transpose()
+        result.map(Self::model_to_points_wallet).transpose()
     }
 
-    async fn find_by_id(&self, id: Uuid) -> Result<Option<PointsAccount>, CoreError> {
-        let result = points_account::Entity::find_by_id(id)
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<PointsWallet>, CoreError> {
+        let result = points_wallet::Entity::find_by_id(id)
             .one(&*self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        result.map(Self::model_to_points_account).transpose()
+        result.map(Self::model_to_points_wallet).transpose()
     }
 
-    async fn create_account(&self, account: PointsAccount) -> Result<PointsAccount, CoreError> {
-        let active_model = Self::points_account_to_active_model(account);
+    async fn create_wallet(&self, account: PointsWallet) -> Result<PointsWallet, CoreError> {
+        let active_model = Self::points_wallet_to_active_model(account);
 
         let result = active_model.insert(&*self.db).await.map_err(|e| {
             // Check for unique constraint violation
             if e.to_string()
-                .contains(constraints::UK_POINTS_ACCOUNTS_USER_ID)
+                .contains(constraints::UK_POINTS_WALLETS_USER_ID)
             {
-                CoreError::BadRequest("Points account already exists for this user".to_string())
+                CoreError::BadRequest("Points wallet already exists for this user".to_string())
             } else {
                 CoreError::DatabaseError(e.to_string())
             }
         })?;
 
-        Self::model_to_points_account(result)
+        Self::model_to_points_wallet(result)
     }
 
     async fn update_balance(
         &self,
-        account_id: Uuid,
+        wallet_id: Uuid,
         new_balance: i64,
         delta: i64,
-    ) -> Result<PointsAccount, CoreError> {
+    ) -> Result<PointsWallet, CoreError> {
         // NOTE: With the new ledger system, direct balance updates are not supported.
         // This function is kept for backward compatibility but only updates tracking fields.
         // The actual balance fields (topup_balance, subscription_balance) are managed by the ledger.
@@ -1101,13 +1135,13 @@ impl PointsRepository for PostgresPointsRepository {
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
         // Find and lock the account
-        let account_opt = points_account::Entity::find_by_id(account_id)
+        let account_opt = points_wallet::Entity::find_by_id(wallet_id)
             .one(&txn)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
         let account =
-            account_opt.ok_or_else(|| CoreError::account_not_found(&account_id.to_string()))?;
+            account_opt.ok_or_else(|| CoreError::wallet_not_found(&wallet_id.to_string()))?;
 
         // Optimistic locking: Check if balance changed
         if account.total_balance != new_balance - delta {
@@ -1118,7 +1152,7 @@ impl PointsRepository for PostgresPointsRepository {
         }
 
         // Update tracking fields only - total_balance is a generated column
-        let mut active_model: points_account::ActiveModel = account.clone().into_active_model();
+        let mut active_model: points_wallet::ActiveModel = account.clone().into_active_model();
         // total_balance is GENERATED ALWAYS - cannot be set directly
         active_model.total_balance = NotSet;
 
@@ -1144,19 +1178,19 @@ impl PointsRepository for PostgresPointsRepository {
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        Self::model_to_points_account(updated)
+        Self::model_to_points_wallet(updated)
     }
 
     async fn update_balance_atomic(
         &self,
-        account_id: Uuid,
+        wallet_id: Uuid,
         delta: i64,
-    ) -> Result<PointsAccount, CoreError> {
+    ) -> Result<PointsWallet, CoreError> {
         // NOTE: With the new ledger system, balance updates should happen through the ledger.
         // This function is kept for backward compatibility but only updates tracking fields.
         // The actual balance fields (topup_balance, subscription_balance) are managed by the ledger.
         let query = r#"
-            UPDATE points_accounts
+            UPDATE points_wallets
             SET
                 total_recharged = total_recharged + CASE WHEN $1 > 0 THEN $1 ELSE 0 END,
                 total_consumed = total_consumed + CASE WHEN $1 < 0 THEN ABS($1) ELSE 0 END,
@@ -1165,18 +1199,18 @@ impl PointsRepository for PostgresPointsRepository {
             RETURNING *
         "#;
 
-        let result = sqlx::query_as::<_, PointsAccountRow>(query)
+        let result = sqlx::query_as::<_, PointsWalletRow>(query)
             .bind(delta)
-            .bind(account_id)
+            .bind(wallet_id)
             .fetch_optional(&self.pool)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
         match result {
-            Some(row) => Self::row_to_points_account(row),
+            Some(row) => Self::row_to_points_wallet(row),
             None => {
                 // Either account not found or balance would go negative
-                let account = self.find_by_id(account_id).await?;
+                let account = self.find_by_id(wallet_id).await?;
                 match account {
                     Some(acc) => {
                         // Account exists but insufficient balance
@@ -1185,28 +1219,28 @@ impl PointsRepository for PostgresPointsRepository {
                             acc.total_balance,
                         ))
                     }
-                    None => Err(CoreError::account_not_found(&account_id.to_string())),
+                    None => Err(CoreError::wallet_not_found(&wallet_id.to_string())),
                 }
             }
         }
     }
 
-    async fn get_account_for_update(&self, account_id: Uuid) -> Result<PointsAccount, CoreError> {
+    async fn get_wallet_for_update(&self, wallet_id: Uuid) -> Result<PointsWallet, CoreError> {
         let query = r#"
-            SELECT * FROM points_accounts
+            SELECT * FROM points_wallets
             WHERE id = $1
             FOR UPDATE
         "#;
 
-        let result = sqlx::query_as::<_, PointsAccountRow>(query)
-            .bind(account_id)
+        let result = sqlx::query_as::<_, PointsWalletRow>(query)
+            .bind(wallet_id)
             .fetch_optional(&self.pool)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
         result
-            .map(Self::row_to_points_account)
-            .ok_or_else(|| CoreError::account_not_found(&account_id.to_string()))?
+            .map(Self::row_to_points_wallet)
+            .ok_or_else(|| CoreError::wallet_not_found(&wallet_id.to_string()))?
     }
 
     async fn create_transaction(
@@ -1246,7 +1280,7 @@ impl PointsRepository for PostgresPointsRepository {
         // Use raw SQL to find expired recharge transactions
         // We need to filter by expires_at < NOW() which is not easily expressed in SeaORM
         let query = r#"
-            SELECT id, realm_id, account_id, user_id, type, amount, balance_after,
+            SELECT id, realm_id, wallet_id, user_id, type, amount, balance_after,
                    topup_balance_after, subscription_balance_after, credit_type,
                    description, client_app_id, subscription_id, external_ref_id,
                    created_at, updated_at, expires_at
@@ -1525,47 +1559,30 @@ impl PointsRepository for PostgresPointsRepository {
         Ok(())
     }
 
-    async fn list_accounts(
+    async fn list_wallets(
         &self,
         realm_id: &str,
-        filters: AccountFilters,
-    ) -> Result<Paginated<PointsAccount>, CoreError> {
+        filters: WalletFilters,
+    ) -> Result<Paginated<PointsWallet>, CoreError> {
         let page = filters.page.unwrap_or(1);
         let page_size = filters.page_size.unwrap_or(20).min(100);
 
-        let mut query =
-            points_account::Entity::find().filter(points_account::Column::RealmId.eq(realm_id));
+        let query =
+            points_wallet::Entity::find().filter(points_wallet::Column::RealmId.eq(realm_id));
 
-        // Apply filters
-        if let Some(status) = filters.status {
-            query = query.filter(points_account::Column::Status.eq(status));
-        }
+        let query = self.apply_wallet_filters(query, realm_id, &filters).await?;
 
-        if let Some(search) = filters.search {
-            // Search by user_id or email
-            if let Ok(user_id) = Uuid::parse_str(&search) {
-                // Search by exact user_id match
-                query = query.filter(points_account::Column::UserId.eq(user_id));
-            } else {
-                // Search by email (join with account table)
-                let user_ids: Vec<Uuid> = account::Entity::find()
-                    .select_only()
-                    .column(account::Column::Id)
-                    .filter(account::Column::RealmId.eq(realm_id.to_string()))
-                    .filter(account::Column::Email.eq(search.clone()))
-                    .into_tuple::<Uuid>()
-                    .all(&*self.db)
-                    .await
-                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-                if !user_ids.is_empty() {
-                    query = query.filter(points_account::Column::UserId.is_in(user_ids));
-                } else {
-                    // If email not found, return empty result
-                    query = query.filter(points_account::Column::UserId.eq(Uuid::nil()));
-                }
+        let mut query = match query {
+            Some(q) => q,
+            None => {
+                return Ok(Paginated {
+                    total: 0,
+                    page,
+                    page_size,
+                    data: vec![],
+                });
             }
-        }
+        };
 
         // Get total count
         let total = query
@@ -1575,7 +1592,7 @@ impl PointsRepository for PostgresPointsRepository {
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
         // Order by created_at DESC
-        query = query.order_by_desc(points_account::Column::CreatedAt);
+        query = query.order_by_desc(points_wallet::Column::CreatedAt);
 
         // Apply pagination
         let results = query
@@ -1586,7 +1603,7 @@ impl PointsRepository for PostgresPointsRepository {
 
         let accounts = results
             .into_iter()
-            .map(Self::model_to_points_account)
+            .map(Self::model_to_points_wallet)
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Paginated {
@@ -1597,44 +1614,20 @@ impl PointsRepository for PostgresPointsRepository {
         })
     }
 
-    async fn count_accounts(
+    async fn count_wallets(
         &self,
         realm_id: &str,
-        filters: &AccountFilters,
+        filters: &WalletFilters,
     ) -> Result<u64, CoreError> {
-        let mut query =
-            points_account::Entity::find().filter(points_account::Column::RealmId.eq(realm_id));
+        let query =
+            points_wallet::Entity::find().filter(points_wallet::Column::RealmId.eq(realm_id));
 
-        // Apply filters (same as list_accounts)
-        if let Some(status) = &filters.status {
-            query = query.filter(points_account::Column::Status.eq(status.clone()));
-        }
+        let query = self.apply_wallet_filters(query, realm_id, filters).await?;
 
-        if let Some(search) = &filters.search {
-            // Search by user_id or email
-            if let Ok(user_id) = Uuid::parse_str(search) {
-                // Search by exact user_id match
-                query = query.filter(points_account::Column::UserId.eq(user_id));
-            } else {
-                // Search by email (join with account table)
-                let user_ids: Vec<Uuid> = account::Entity::find()
-                    .select_only()
-                    .column(account::Column::Id)
-                    .filter(account::Column::RealmId.eq(realm_id.to_string()))
-                    .filter(account::Column::Email.eq(search.clone()))
-                    .into_tuple::<Uuid>()
-                    .all(&*self.db)
-                    .await
-                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-                if !user_ids.is_empty() {
-                    query = query.filter(points_account::Column::UserId.is_in(user_ids));
-                } else {
-                    // If email not found, return 0 count
-                    return Ok(0);
-                }
-            }
-        }
+        let query = match query {
+            Some(q) => q,
+            None => return Ok(0),
+        };
 
         let count = query
             .count(&*self.db)
@@ -2153,23 +2146,23 @@ impl PointsRepository for PostgresPointsRepository {
 
     // ========== Account Management ==========
 
-    fn update_account(
+    fn update_wallet(
         &self,
-        account_id: Uuid,
-        updates: AccountUpdate,
-    ) -> impl std::future::Future<Output = Result<PointsAccount, CoreError>> + Send {
+        wallet_id: Uuid,
+        updates: WalletUpdate,
+    ) -> impl std::future::Future<Output = Result<PointsWallet, CoreError>> + Send {
         let db = self.db.clone();
         async move {
-            let account = points_account::Entity::find_by_id(account_id)
+            let account = points_wallet::Entity::find_by_id(wallet_id)
                 .one(&*db)
                 .await
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?
                 .ok_or(CoreError::NotFound)?;
 
-            let mut active: points_account::ActiveModel = account.into();
+            let mut active: points_wallet::ActiveModel = account.into();
 
             match updates {
-                AccountUpdate::Consumption {
+                WalletUpdate::Consumption {
                     total,
                     topup,
                     subscription,
@@ -2185,7 +2178,7 @@ impl PointsRepository for PostgresPointsRepository {
                     active.subscription_balance = Set(new_subscription);
                     active.total_consumed = Set(new_consumed);
                 }
-                AccountUpdate::Grant {
+                WalletUpdate::Grant {
                     topup,
                     subscription,
                 } => {
@@ -2211,7 +2204,7 @@ impl PointsRepository for PostgresPointsRepository {
                     active.total_subscription_granted = Set(new_subscription_granted);
                     active.total_recharged = Set(new_recharged);
                 }
-                AccountUpdate::Revocation {
+                WalletUpdate::Revocation {
                     topup,
                     subscription,
                 } => {
@@ -2232,7 +2225,7 @@ impl PointsRepository for PostgresPointsRepository {
                 .await
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-            Self::model_to_points_account(result)
+            Self::model_to_points_wallet(result)
         }
     }
 
@@ -3243,10 +3236,10 @@ impl PointsRepository for PostgresPointsRepository {
                 return Err(CoreError::insufficient_points(amount, amount - remaining));
             }
 
-            let updated_account = Self::update_account_in_tx(
+            let updated_account = Self::update_wallet_in_tx(
                 &mut tx,
                 account.id,
-                AccountUpdate::Consumption {
+                WalletUpdate::Consumption {
                     total: amount,
                     topup: topup_consumed,
                     subscription: subscription_consumed,
@@ -3258,7 +3251,7 @@ impl PointsRepository for PostgresPointsRepository {
                 &mut tx,
                 PointsTransaction {
                     id: transaction_id,
-                    account_id: updated_account.id,
+                    wallet_id: updated_account.id,
                     user_id,
                     realm_id: realm_id.clone(),
                     transaction_type: TransactionType::Consume,
@@ -3377,11 +3370,11 @@ impl PointsRepository for PostgresPointsRepository {
             }
 
             if total_revoked > 0 {
-                let (topup, subscription) = credit_type.account_balance_delta(total_revoked);
-                let _ = Self::update_account_in_tx(
+                let (topup, subscription) = credit_type.wallet_balance_delta(total_revoked);
+                let _ = Self::update_wallet_in_tx(
                     &mut tx,
                     account.id,
-                    AccountUpdate::Revocation {
+                    WalletUpdate::Revocation {
                         topup,
                         subscription,
                     },
@@ -3519,7 +3512,7 @@ impl PointsRepository for PostgresPointsRepository {
 
             if let Some(existing) = sqlx::query_as::<_, PointsTransactionRow>(
                 r#"
-                SELECT id, realm_id, account_id, user_id, type, amount, balance_after,
+                SELECT id, realm_id, wallet_id, user_id, type, amount, balance_after,
                        topup_balance_after, subscription_balance_after, credit_type,
                        description, client_app_id, subscription_id, external_ref_id,
                        created_at, updated_at, expires_at
@@ -3553,10 +3546,10 @@ impl PointsRepository for PostgresPointsRepository {
 
             let subscription_delta = refund_amount.min(account.subscription_balance);
             let topup_delta = refund_amount - subscription_delta;
-            let updated_account = Self::update_account_in_tx(
+            let updated_account = Self::update_wallet_in_tx(
                 &mut tx,
                 account.id,
-                AccountUpdate::Revocation {
+                WalletUpdate::Revocation {
                     topup: topup_delta,
                     subscription: subscription_delta,
                 },
@@ -3567,7 +3560,7 @@ impl PointsRepository for PostgresPointsRepository {
                 &mut tx,
                 PointsTransaction {
                     id: Uuid::now_v7(),
-                    account_id: account.id,
+                    wallet_id: account.id,
                     user_id,
                     realm_id: realm_id.clone(),
                     transaction_type: TransactionType::Refund,
@@ -3629,11 +3622,11 @@ impl PointsRepository for PostgresPointsRepository {
                 updated_at: now,
             };
             let created_ledger = Self::create_ledger_in_tx(&mut tx, &ledger).await?;
-            let (topup, subscription) = credit_type.account_balance_delta(amount);
-            let updated_account = Self::update_account_in_tx(
+            let (topup, subscription) = credit_type.wallet_balance_delta(amount);
+            let updated_account = Self::update_wallet_in_tx(
                 &mut tx,
                 account.id,
-                AccountUpdate::Grant {
+                WalletUpdate::Grant {
                     topup,
                     subscription,
                 },
@@ -3644,7 +3637,7 @@ impl PointsRepository for PostgresPointsRepository {
                 &mut tx,
                 PointsTransaction {
                     id: Uuid::now_v7(),
-                    account_id: account.id,
+                    wallet_id: account.id,
                     user_id,
                     realm_id: realm_id.clone(),
                     transaction_type,
@@ -3693,9 +3686,9 @@ impl PointsRepository for PostgresPointsRepository {
 
             let account = Self::ensure_account_in_tx(&mut tx, &realm_id, user_id).await?;
 
-            if account.status != AccountStatus::Active {
+            if account.status != WalletStatus::Active {
                 return Err(CoreError::BadRequest(format!(
-                    "Cannot recharge points to {} account",
+                    "Cannot recharge points to {} wallet",
                     account.status.as_str()
                 )));
             }
@@ -3726,11 +3719,11 @@ impl PointsRepository for PostgresPointsRepository {
 
             Self::create_ledger_in_tx(&mut tx, &ledger).await?;
 
-            let (topup, subscription) = credit_type.account_balance_delta(amount);
-            let updated_account = Self::update_account_in_tx(
+            let (topup, subscription) = credit_type.wallet_balance_delta(amount);
+            let updated_account = Self::update_wallet_in_tx(
                 &mut tx,
                 account.id,
-                AccountUpdate::Grant {
+                WalletUpdate::Grant {
                     topup,
                     subscription,
                 },
@@ -3743,7 +3736,7 @@ impl PointsRepository for PostgresPointsRepository {
                 &mut tx,
                 PointsTransaction {
                     id: Uuid::now_v7(),
-                    account_id: account.id,
+                    wallet_id: account.id,
                     user_id,
                     realm_id: realm_id.clone(),
                     transaction_type,
@@ -3881,10 +3874,10 @@ impl PointsRepository for PostgresPointsRepository {
                     Self::create_revocation_record_in_tx(&mut tx, &record).await?;
                 }
                 if total_revoked > 0 {
-                    let _ = Self::update_account_in_tx(
+                    let _ = Self::update_wallet_in_tx(
                         &mut tx,
                         account.id,
-                        AccountUpdate::Revocation {
+                        WalletUpdate::Revocation {
                             topup: total_revoked,
                             subscription: 0,
                         },
@@ -3912,10 +3905,10 @@ impl PointsRepository for PostgresPointsRepository {
                 updated_at: now,
             };
             let created_ledger = Self::create_ledger_in_tx(&mut tx, &ledger).await?;
-            let updated_account = Self::update_account_in_tx(
+            let updated_account = Self::update_wallet_in_tx(
                 &mut tx,
                 account.id,
-                AccountUpdate::Grant {
+                WalletUpdate::Grant {
                     topup: 0,
                     subscription: points_amount,
                 },
@@ -3925,7 +3918,7 @@ impl PointsRepository for PostgresPointsRepository {
                 &mut tx,
                 PointsTransaction {
                     id: Uuid::now_v7(),
-                    account_id: account.id,
+                    wallet_id: account.id,
                     user_id,
                     realm_id: realm_id.clone(),
                     transaction_type: if source_type == CreditSourceType::SubscriptionRenewal {
@@ -4020,11 +4013,11 @@ impl PointsRepository for PostgresPointsRepository {
                 )
                 .await?
                 .ok_or(CoreError::NotFound)?;
-                let (topup, subscription) = ledger.credit_type.account_balance_delta(amount);
-                let _ = Self::update_account_in_tx(
+                let (topup, subscription) = ledger.credit_type.wallet_balance_delta(amount);
+                let _ = Self::update_wallet_in_tx(
                     &mut tx,
                     account.id,
-                    AccountUpdate::Revocation {
+                    WalletUpdate::Revocation {
                         topup,
                         subscription,
                     },
@@ -4050,7 +4043,7 @@ mod tests {
 
     #[test]
     fn test_model_conversion() {
-        let model = points_account::Model {
+        let model = points_wallet::Model {
             id: Uuid::now_v7(),
             user_id: Uuid::now_v7(),
             realm_id: "test-realm".to_string(),
@@ -4066,7 +4059,7 @@ mod tests {
             updated_at: sea_orm::prelude::DateTimeWithTimeZone::from(chrono::Utc::now()),
         };
 
-        let result = PostgresPointsRepository::model_to_points_account(model);
+        let result = PostgresPointsRepository::model_to_points_wallet(model);
         assert!(result.is_ok());
         let account = result.unwrap();
         assert_eq!(account.total_balance, 100);

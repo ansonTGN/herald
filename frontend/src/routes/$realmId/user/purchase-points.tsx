@@ -10,6 +10,7 @@ import {
   pointsPackagesQueryOptions,
   paymentProvidersQueryOptions,
   paymentAttemptStatusQueryOptions,
+  queryKeys,
   requireFeature,
 } from '@/data/query-options'
 import { PointsPackageSelector } from '@/components/purchase/points-package-selector'
@@ -99,7 +100,9 @@ function PurchasePointsPage() {
       if (paymentStatus.status === 'Succeeded') {
         setCurrentStep('complete')
         clearPurchaseState()
-        queryClient.invalidateQueries({ queryKey: ['points-account', realmId, user?.id] })
+        if (user?.id) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.pointsWallet(realmId, user.id) })
+        }
         queryClient.invalidateQueries({ queryKey: ['points-package-purchases', realmId] })
       } else if (
         paymentStatus.status === 'Failed' ||

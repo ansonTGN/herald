@@ -53,15 +53,15 @@ async fn test_scenario_expired_points_are_deducted(ctx: &mut TestContext) {
     .expect("Failed to create user");
 
     // Create points account with expired points
-    let account_id = Uuid::now_v7();
+    let wallet_id = Uuid::now_v7();
     let expired_amount = 500;
     let valid_amount = 1000;
 
     sqlx::query(
-        "INSERT INTO points_accounts (id, realm_id, user_id, topup_balance, subscription_balance, status, created_at, updated_at)
+        "INSERT INTO points_wallets (id, realm_id, user_id, topup_balance, subscription_balance, status, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, 'active', NOW(), NOW())",
     )
-    .bind(account_id)
+    .bind(wallet_id)
     .bind(&ctx._realm_id)
     .bind(user_id)
     .bind(valid_amount + expired_amount)
@@ -73,13 +73,13 @@ async fn test_scenario_expired_points_are_deducted(ctx: &mut TestContext) {
     // Create expired points transaction (expired yesterday)
     let expired_transaction_id = Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO points_transactions (id, realm_id, account_id, user_id, type, amount, balance_after,
+        "INSERT INTO points_transactions (id, realm_id, wallet_id, user_id, type, amount, balance_after,
                                           expires_at, created_at, updated_at)
          VALUES ($1, $2, $3, $4, 'recharge', $5, $6, $7, NOW(), NOW())",
     )
     .bind(expired_transaction_id)
     .bind(&ctx._realm_id)
-    .bind(account_id)
+    .bind(wallet_id)
     .bind(user_id)
     .bind(expired_amount)
     .bind(valid_amount + expired_amount)
@@ -91,13 +91,13 @@ async fn test_scenario_expired_points_are_deducted(ctx: &mut TestContext) {
     // Create valid points transaction (expires in future)
     let valid_transaction_id = Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO points_transactions (id, realm_id, account_id, user_id, type, amount, balance_after,
+        "INSERT INTO points_transactions (id, realm_id, wallet_id, user_id, type, amount, balance_after,
                                           expires_at, created_at, updated_at)
          VALUES ($1, $2, $3, $4, 'recharge', $5, $6, $7, NOW(), NOW())",
     )
     .bind(valid_transaction_id)
     .bind(&ctx._realm_id)
-    .bind(account_id)
+    .bind(wallet_id)
     .bind(user_id)
     .bind(valid_amount)
     .bind(valid_amount + expired_amount)
@@ -142,7 +142,7 @@ async fn test_scenario_expired_points_are_deducted(ctx: &mut TestContext) {
 
     // Check final balance
     let (final_balance,): (i64,) = sqlx::query_as(
-        "SELECT total_balance FROM points_accounts WHERE user_id = $1"
+        "SELECT total_balance FROM points_wallets WHERE user_id = $1"
     )
     .bind(user_id)
     .fetch_one(&ctx._app_state.pool)

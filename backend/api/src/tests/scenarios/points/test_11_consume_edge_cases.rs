@@ -27,17 +27,17 @@ use test_context::test_context;
 use tower::ServiceExt;
 
 /// Helper: create standard test fixtures (user, account, client app, API key)
-/// Returns (user_id, account_id, client_app_id, api_key).
+/// Returns (user_id, wallet_id, client_app_id, api_key).
 async fn setup_consume_fixtures(
     ctx: &TestContext,
     email: &str,
     balance: i64,
 ) -> (uuid::Uuid, uuid::Uuid, uuid::Uuid, String) {
     let user_id = create_test_user(&ctx._app_state.pool, &ctx._realm_id, email).await;
-    let account_id = create_test_points_account(&ctx._app_state.pool, user_id, balance).await;
+    let wallet_id = create_test_points_wallet(&ctx._app_state.pool, user_id, balance).await;
     let client_app_id = create_test_client_app(&ctx._app_state.pool, &ctx._realm_id).await;
     let api_key = create_test_api_key(&ctx._app_state.pool, &ctx._realm_id, client_app_id).await;
-    (user_id, account_id, client_app_id, api_key)
+    (user_id, wallet_id, client_app_id, api_key)
 }
 
 /// Helper: build a consume request with custom JSON body.
@@ -75,7 +75,7 @@ async fn test_scenario_consume_zero_amount_rejected(ctx: &mut TestContext) {
     let app = ctx.create_unified_test_router();
 
     // Given: user with balance 5000
-    let (user_id, account_id, client_app_id, api_key) =
+    let (user_id, wallet_id, client_app_id, api_key) =
         setup_consume_fixtures(ctx, "edge-zero@example.com", 5000).await;
 
     // When: consume with amount=0
@@ -111,8 +111,8 @@ async fn test_scenario_consume_zero_amount_rejected(ctx: &mut TestContext) {
 
     // Verify balance unchanged
     let (balance,): (i64,) =
-        sqlx::query_as("SELECT total_balance FROM points_accounts WHERE id = $1")
-            .bind(account_id)
+        sqlx::query_as("SELECT total_balance FROM points_wallets WHERE id = $1")
+            .bind(wallet_id)
             .fetch_one(&ctx._app_state.pool)
             .await
             .unwrap();
@@ -143,7 +143,7 @@ async fn test_scenario_consume_amount_one_succeeds(ctx: &mut TestContext) {
     let app = ctx.create_unified_test_router();
 
     // Given: user with balance 5000
-    let (user_id, _account_id, client_app_id, api_key) =
+    let (user_id, _wallet_id, client_app_id, api_key) =
         setup_consume_fixtures(ctx, "edge-one@example.com", 5000).await;
 
     // When: consume amount=1
@@ -203,7 +203,7 @@ async fn test_scenario_consume_oversized_amount_insufficient_balance(ctx: &mut T
     let app = ctx.create_unified_test_router();
 
     // Given: user with balance 5000
-    let (user_id, account_id, client_app_id, api_key) =
+    let (user_id, wallet_id, client_app_id, api_key) =
         setup_consume_fixtures(ctx, "edge-oversize@example.com", 5000).await;
 
     // When: consume with amount far exceeding balance (999_999_999_999)
@@ -234,8 +234,8 @@ async fn test_scenario_consume_oversized_amount_insufficient_balance(ctx: &mut T
 
     // Verify balance unchanged
     let (balance,): (i64,) =
-        sqlx::query_as("SELECT total_balance FROM points_accounts WHERE id = $1")
-            .bind(account_id)
+        sqlx::query_as("SELECT total_balance FROM points_wallets WHERE id = $1")
+            .bind(wallet_id)
             .fetch_one(&ctx._app_state.pool)
             .await
             .unwrap();

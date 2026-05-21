@@ -18,7 +18,7 @@
 //
 // **User Stories Covered**:
 // - US-PO-01: Configure Points Plans (P0)
-// - US-PO-02: View All User Points Accounts (P1)
+// - US-PO-02: View All User Wallets (P1)
 // - US-PO-03: View User Points Transaction History (P1)
 // - US-PO-04: Manage Points Plan Configurations (P2)
 // - US-PU-01: View My Points Balance (P0)

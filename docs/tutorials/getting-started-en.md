@@ -45,7 +45,7 @@ Each run stops and removes the old `cas-dev-postgres` and `cas-dev-redis` contai
 
 ## Configuration
 
-Backend config lives in `backend/config.toml`. The file path is set via the `HERALD_CONFIG` environment variable; if unset, it defaults to `config.toml` in the current directory.
+Backend config lives in `backend/config/config.toml`. The file path is set via the `HERALD_CONFIG` environment variable; if unset, it defaults to `config/config.toml`.
 
 Default development config:
 

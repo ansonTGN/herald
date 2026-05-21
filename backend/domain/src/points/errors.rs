@@ -4,8 +4,8 @@ use crate::common::entities::app_errors::CoreError;
 
 /// Trait for Points-specific error extensions
 pub trait PointsErrorExt {
-    /// Points account not found
-    fn account_not_found(user_id: &str) -> Self;
+    /// Points wallet not found
+    fn wallet_not_found(user_id: &str) -> Self;
 
     /// Insufficient points balance
     fn insufficient_points(required: i64, available: i64) -> Self;
@@ -28,9 +28,9 @@ pub trait PointsErrorExt {
 
 /// Points-specific error variants that extend CoreError
 impl PointsErrorExt for CoreError {
-    /// Points account not found
-    fn account_not_found(user_id: &str) -> Self {
-        tracing::debug!("Points account not found for user: {}", user_id);
+    /// Points wallet not found
+    fn wallet_not_found(user_id: &str) -> Self {
+        tracing::debug!("Points wallet not found for user: {}", user_id);
         CoreError::NotFound
     }
 
@@ -61,9 +61,9 @@ impl PointsErrorExt for CoreError {
 
     /// Concurrent modification (optimistic lock)
     fn concurrent_modification() -> Self {
-        tracing::debug!("Concurrent modification detected in points account");
+        tracing::debug!("Concurrent modification detected in points wallet");
         CoreError::Conflict(
-            "Account was modified by another transaction. Please try again.".to_string(),
+            "Wallet was modified by another transaction. Please try again.".to_string(),
         )
     }
 
@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn test_error_creation() {
-        let err = CoreError::account_not_found("user123");
+        let err = CoreError::wallet_not_found("user123");
         assert!(matches!(err, CoreError::NotFound));
 
         let err = CoreError::insufficient_points(100, 50);

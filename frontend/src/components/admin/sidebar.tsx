@@ -88,9 +88,9 @@ export function Sidebar() {
         ],
       },
       {
-        name: 'Billing',
-        icon: CreditCard,
-        permission: 'billing.view',
+        name: 'Products & Payments',
+        icon: Briefcase,
+        permission: null,
         children: [
           {
             name: 'Products',
@@ -100,12 +100,40 @@ export function Sidebar() {
             visible: adminFeatures?.productsVisible ?? true,
           },
           {
+            name: 'Payment Providers',
+            path: `/${realmId}/manage/billing/payment-providers`,
+            icon: CreditCard,
+            permission: 'billing.view',
+            visible: adminFeatures?.billingConfigVisible ?? true,
+          },
+          {
             name: 'Subscription Plans',
             path: `/${realmId}/manage/billing`,
             icon: CreditCard,
             permission: 'billing.view',
             visible: adminFeatures?.plansVisible ?? true,
           },
+          {
+            name: 'Points Packages',
+            path: `/${realmId}/manage/points-packages`,
+            icon: Coins,
+            permission: 'points.view',
+            visible: adminFeatures?.pointsPackagesVisible ?? true,
+          },
+          {
+            name: 'Points Rules',
+            path: `/${realmId}/manage/points/configs`,
+            icon: Settings,
+            permission: 'points.view',
+            visible: adminFeatures?.pointsVisible ?? true,
+          },
+        ],
+      },
+      {
+        name: 'Transactions',
+        icon: FileText,
+        permission: null,
+        children: [
           {
             name: 'Invoices',
             path: `/${realmId}/manage/billing/invoices`,
@@ -116,46 +144,18 @@ export function Sidebar() {
               features?.facts.hasInvoiceSellerConfig === false,
           },
           {
-            name: 'Payment Providers',
-            path: `/${realmId}/manage/billing/payment-providers`,
-            icon: CreditCard,
-            permission: 'billing.view',
-            visible: adminFeatures?.billingConfigVisible ?? true,
-          },
-          {
             name: 'Subscription History',
             path: `/${realmId}/manage/subscription-history`,
             icon: History,
             permission: 'billing.view',
             visible: adminFeatures?.subscriptionHistoryVisible ?? true,
           },
-        ],
-      },
-      {
-        name: 'Points',
-        icon: Coins,
-        permission: 'points.view',
-        children: [
           {
-            name: 'User Accounts',
-            path: `/${realmId}/manage/points/accounts`,
+            name: 'Points Wallets',
+            path: `/${realmId}/manage/points/wallets`,
             icon: Users,
             permission: 'points.view',
             visible: adminFeatures?.pointsVisible ?? true,
-          },
-          {
-            name: 'Points Rules',
-            path: `/${realmId}/manage/points/configs`,
-            icon: Settings,
-            permission: 'points.view',
-            visible: adminFeatures?.pointsVisible ?? true,
-          },
-          {
-            name: 'Points Packages',
-            path: `/${realmId}/manage/points-packages`,
-            icon: Coins,
-            permission: 'points.view',
-            visible: adminFeatures?.pointsPackagesVisible ?? true,
           },
         ],
       },

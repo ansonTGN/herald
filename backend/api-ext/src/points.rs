@@ -49,7 +49,7 @@ pub struct ExtConsumePointsRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ExtConsumePointsResponse {
     pub transaction_id: String,
-    pub account_id: String,
+    pub wallet_id: String,
     pub user_id: String,
     pub amount: i64,
     pub balance_after: i64,
@@ -146,7 +146,7 @@ pub async fn get_balance_ext(
                     json_error(StatusCode::FORBIDDEN, ErrorCode::Forbidden)
                 }
                 herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
-                    json_error(StatusCode::NOT_FOUND, ErrorCode::AccountNotFound)
+                    json_error(StatusCode::NOT_FOUND, ErrorCode::WalletNotFound)
                 }
                 _ => json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError),
             };
@@ -311,7 +311,7 @@ pub async fn consume_points_ext(
                 // Return cached response
                 let response = ExtConsumePointsResponse {
                     transaction_id: transaction.id.to_string(),
-                    account_id: transaction.account_id.to_string(),
+                    wallet_id: transaction.wallet_id.to_string(),
                     user_id: transaction.user_id.to_string(),
                     amount: transaction.amount,
                     balance_after: transaction.balance_after,
@@ -392,13 +392,13 @@ pub async fn consume_points_ext(
                     json_error(StatusCode::FORBIDDEN, ErrorCode::Forbidden)
                 }
                 herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
-                    json_error(StatusCode::NOT_FOUND, ErrorCode::AccountNotFound)
+                    json_error(StatusCode::NOT_FOUND, ErrorCode::WalletNotFound)
                 }
                 herald_core::domain::common::entities::app_errors::CoreError::BadRequest(msg) => {
                     if msg.contains("Insufficient points") {
                         json_error(StatusCode::BAD_REQUEST, ErrorCode::InsufficientPoints)
                     } else if msg.contains("Cannot consume points from") {
-                        json_error(StatusCode::BAD_REQUEST, ErrorCode::AccountFrozenOrClosed)
+                        json_error(StatusCode::BAD_REQUEST, ErrorCode::WalletFrozenOrClosed)
                     } else {
                         json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidAmount)
                     }
@@ -414,7 +414,7 @@ pub async fn consume_points_ext(
     // 7. Build response
     let response = ExtConsumePointsResponse {
         transaction_id: transaction.id.to_string(),
-        account_id: transaction.account_id.to_string(),
+        wallet_id: transaction.wallet_id.to_string(),
         user_id: transaction.user_id.to_string(),
         amount: transaction.amount,
         balance_after: transaction.balance_after,
@@ -453,7 +453,7 @@ pub async fn consume_points_ext(
 #[serde(rename_all = "camelCase")]
 pub struct ExtTransactionResponse {
     pub transaction_id: String,
-    pub account_id: String,
+    pub wallet_id: String,
     pub user_id: String,
     pub transaction_type: String,
     pub amount: i64,
@@ -563,7 +563,7 @@ pub async fn get_transaction_ext(
     // 4. Build response
     let response = ExtTransactionResponse {
         transaction_id: transaction.id.to_string(),
-        account_id: transaction.account_id.to_string(),
+        wallet_id: transaction.wallet_id.to_string(),
         user_id: transaction.user_id.to_string(),
         transaction_type: transaction.transaction_type.to_string(),
         amount: transaction.amount,

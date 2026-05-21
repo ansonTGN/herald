@@ -447,7 +447,7 @@ mod tests {
             )
             .await;
         let user_id = Uuid::parse_str(&user_id).unwrap();
-        crate::tests::helpers::points_helpers::create_points_account(ctx, user_id, &realm_id).await;
+        crate::tests::helpers::points_helpers::create_points_wallet(ctx, user_id, &realm_id).await;
 
         set_webhook_secret_for_realm(ctx, webhook_secret).await;
         crate::tests::helpers::webhook_helpers::setup_test_plan_config(ctx, &realm_id, plan_id)
@@ -535,7 +535,7 @@ mod tests {
             )
             .await;
         let user_id_uuid = Uuid::parse_str(&user_id).unwrap();
-        crate::tests::helpers::points_helpers::create_points_account(ctx, user_id_uuid, &realm_id)
+        crate::tests::helpers::points_helpers::create_points_wallet(ctx, user_id_uuid, &realm_id)
             .await;
 
         // Set Stripe webhook secret in database

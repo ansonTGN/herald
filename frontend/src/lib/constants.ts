@@ -8,8 +8,8 @@
 export const DEFAULT_PAGE_SIZE = 20
 
 /**
- * Low balance threshold for points accounts
- * Accounts with balance below this value may trigger warnings
+ * Low balance threshold for points wallets
+ * Wallets with balance below this value may trigger warnings
  */
 export const LOW_POINTS_THRESHOLD = 100
 
@@ -57,8 +57,8 @@ export const QUERY_KEYS = {
   PLAN_ASSIGNMENTS: 'subscription-plan-assignments',
   SUBSCRIPTION_HISTORY: 'subscription-history',
   GLOBAL_SUBSCRIPTION_HISTORY: 'global-subscription-history',
-  POINTS_ACCOUNTS: 'points-accounts',
-  POINTS_ACCOUNT: 'points-account',
+  POINTS_WALLETS: 'points-wallets',
+  POINTS_WALLET: 'points-wallet',
   POINTS_TRANSACTIONS: 'points-transactions',
   POINTS_PLAN_CONFIGS: 'points-plan-configs',
   POINTS_PACKAGES: 'points-packages',

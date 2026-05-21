@@ -42,7 +42,7 @@ async fn test_subscription_cancel_default_retains_points(ctx: &mut SchemaTestCon
     // Setup plan config for the test
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     create_credit_ledger_entry_v2(
         ctx,
@@ -115,7 +115,7 @@ async fn test_subscription_cancel_immediate_revokes_unused(ctx: &mut SchemaTestC
     // Setup plan config for the test
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     create_credit_ledger_entry_v2(
         ctx,
@@ -184,7 +184,7 @@ async fn test_subscription_cancel_idempotency(ctx: &mut SchemaTestContext) {
     // Setup plan config for the test
     setup_test_plan_config(ctx, &realm_id, plan_id).await;
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     create_credit_ledger_entry_v2(
         ctx,

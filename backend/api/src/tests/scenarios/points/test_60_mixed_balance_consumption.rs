@@ -33,7 +33,7 @@ async fn test_mixed_balance_fifo_consumption(ctx: &mut SchemaTestContext) {
     let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user@example.com").await;
     let plan_id = Uuid::now_v7();
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     // Grant 5000 subscription credits
     let sub_ledger_id = create_credit_ledger_entry_v2(
@@ -132,7 +132,7 @@ async fn test_mixed_balance_insufficient_funds(ctx: &mut SchemaTestContext) {
     let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user@example.com").await;
     let plan_id = Uuid::now_v7();
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     // Grant 5000 subscription credits
     let sub_ledger_id = create_credit_ledger_entry_v2(
@@ -234,7 +234,7 @@ async fn test_mixed_balance_multiple_topup_ledgers(ctx: &mut SchemaTestContext) 
     let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user@example.com").await;
     let plan_id = Uuid::now_v7();
 
-    create_points_account(ctx, user_id, &realm_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
 
     // Grant 3000 subscription credits
     let sub_ledger_id = create_credit_ledger_entry_v2(

@@ -220,7 +220,7 @@ mod tests {
 
         // Verify points were granted (check credit ledger)
         let user_points: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(subscription_balance, 0) FROM points_accounts
+            "SELECT COALESCE(subscription_balance, 0) FROM points_wallets
              WHERE user_id = $1 AND realm_id = $2",
         )
         .bind(user_id)
@@ -313,7 +313,7 @@ mod tests {
         );
 
         let unclaimed_points: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM points_accounts
+            "SELECT COUNT(*) FROM points_wallets
              WHERE realm_id = $1",
         )
         .bind(&realm_id)
@@ -416,7 +416,7 @@ mod tests {
 
         // Verify points were only granted once
         let user_points: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(subscription_balance, 0) FROM points_accounts
+            "SELECT COALESCE(subscription_balance, 0) FROM points_wallets
              WHERE user_id = $1 AND realm_id = $2",
         )
         .bind(user_id)
@@ -589,7 +589,7 @@ mod tests {
 
         // Get initial points
         let initial_points: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(subscription_balance, 0) FROM points_accounts
+            "SELECT COALESCE(subscription_balance, 0) FROM points_wallets
              WHERE user_id = $1 AND realm_id = $2",
         )
         .bind(user_id)
@@ -632,7 +632,7 @@ mod tests {
                 .expect("Subscription not found");
 
             final_points = sqlx::query_scalar(
-                "SELECT COALESCE(subscription_balance, 0) FROM points_accounts
+                "SELECT COALESCE(subscription_balance, 0) FROM points_wallets
                  WHERE user_id = $1 AND realm_id = $2",
             )
             .bind(user_id)
@@ -821,7 +821,7 @@ mod tests {
 
         // Get initial points
         let initial_points: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(subscription_balance, 0) FROM points_accounts
+            "SELECT COALESCE(subscription_balance, 0) FROM points_wallets
              WHERE user_id = $1 AND realm_id = $2",
         )
         .bind(user_id)
@@ -857,7 +857,7 @@ mod tests {
 
         // Verify renewal points were granted
         let final_points: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(subscription_balance, 0) FROM points_accounts
+            "SELECT COALESCE(subscription_balance, 0) FROM points_wallets
              WHERE user_id = $1 AND realm_id = $2",
         )
         .bind(user_id)
@@ -1001,7 +1001,7 @@ mod tests {
 
         // Verify points were NOT revoked
         let user_points: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(subscription_balance, 0) FROM points_accounts
+            "SELECT COALESCE(subscription_balance, 0) FROM points_wallets
              WHERE user_id = $1 AND realm_id = $2",
         )
         .bind(user_id)
@@ -1098,7 +1098,7 @@ mod tests {
 
         // Verify initial points
         let initial_points: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(subscription_balance, 0) FROM points_accounts
+            "SELECT COALESCE(subscription_balance, 0) FROM points_wallets
              WHERE user_id = $1 AND realm_id = $2",
         )
         .bind(user_id)
@@ -1136,7 +1136,7 @@ mod tests {
 
         // Verify points were revoked
         let final_points: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(subscription_balance, 0) FROM points_accounts
+            "SELECT COALESCE(subscription_balance, 0) FROM points_wallets
              WHERE user_id = $1 AND realm_id = $2",
         )
         .bind(user_id)

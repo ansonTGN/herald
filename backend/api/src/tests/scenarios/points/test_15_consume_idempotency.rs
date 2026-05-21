@@ -77,8 +77,8 @@ async fn test_scenario_consume_idempotency_same_key_returns_cached(ctx: &mut Tes
     let user_id =
         create_test_user(&ctx._app_state.pool, &ctx._realm_id, "user15a@example.com").await;
     let initial_balance: i64 = 5000;
-    let _account_id =
-        create_test_points_account(&ctx._app_state.pool, user_id, initial_balance).await;
+    let _wallet_id =
+        create_test_points_wallet(&ctx._app_state.pool, user_id, initial_balance).await;
 
     let client_app_id = create_test_client_app(&ctx._app_state.pool, &ctx._realm_id).await;
     let api_key = create_test_api_key(&ctx._app_state.pool, &ctx._realm_id, client_app_id).await;
@@ -156,7 +156,7 @@ async fn test_scenario_consume_idempotency_same_key_returns_cached(ctx: &mut Tes
 
     // Then: balance is still 4900 and only one consume transaction exists
     let (final_balance,): (i64,) =
-        sqlx::query_as("SELECT total_balance FROM points_accounts WHERE user_id = $1")
+        sqlx::query_as("SELECT total_balance FROM points_wallets WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&ctx._app_state.pool)
             .await
@@ -197,8 +197,8 @@ async fn test_scenario_consume_idempotency_different_keys_independent(ctx: &mut 
     let user_id =
         create_test_user(&ctx._app_state.pool, &ctx._realm_id, "user15b@example.com").await;
     let initial_balance: i64 = 5000;
-    let _account_id =
-        create_test_points_account(&ctx._app_state.pool, user_id, initial_balance).await;
+    let _wallet_id =
+        create_test_points_wallet(&ctx._app_state.pool, user_id, initial_balance).await;
 
     let client_app_id = create_test_client_app(&ctx._app_state.pool, &ctx._realm_id).await;
     let api_key = create_test_api_key(&ctx._app_state.pool, &ctx._realm_id, client_app_id).await;
@@ -248,7 +248,7 @@ async fn test_scenario_consume_idempotency_different_keys_independent(ctx: &mut 
 
     // Then: balance is 4700 and two consume transactions exist
     let (final_balance,): (i64,) =
-        sqlx::query_as("SELECT total_balance FROM points_accounts WHERE user_id = $1")
+        sqlx::query_as("SELECT total_balance FROM points_wallets WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&ctx._app_state.pool)
             .await
@@ -287,8 +287,8 @@ async fn test_scenario_consume_idempotency_no_key_normal_consumption(ctx: &mut T
     let user_id =
         create_test_user(&ctx._app_state.pool, &ctx._realm_id, "user15c@example.com").await;
     let initial_balance: i64 = 5000;
-    let _account_id =
-        create_test_points_account(&ctx._app_state.pool, user_id, initial_balance).await;
+    let _wallet_id =
+        create_test_points_wallet(&ctx._app_state.pool, user_id, initial_balance).await;
 
     let client_app_id = create_test_client_app(&ctx._app_state.pool, &ctx._realm_id).await;
     let api_key = create_test_api_key(&ctx._app_state.pool, &ctx._realm_id, client_app_id).await;
@@ -335,7 +335,7 @@ async fn test_scenario_consume_idempotency_no_key_normal_consumption(ctx: &mut T
 
     // Then: balance is 4800 and two consume transactions exist
     let (final_balance,): (i64,) =
-        sqlx::query_as("SELECT total_balance FROM points_accounts WHERE user_id = $1")
+        sqlx::query_as("SELECT total_balance FROM points_wallets WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&ctx._app_state.pool)
             .await

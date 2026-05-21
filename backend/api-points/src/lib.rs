@@ -1,7 +1,6 @@
 // Herald API Points Module
-// Points, accounts, transactions, plan configs, realm configs
+// Points, wallets, transactions, plan configs, realm configs
 
-pub mod accounts;
 pub mod auth_middleware;
 pub mod plan_configs;
 pub mod realm_configs;
@@ -9,13 +8,14 @@ pub mod routes;
 pub mod transactions;
 pub mod types;
 pub mod user_configs;
+pub mod wallets;
 
 /// OpenAPI specification for points module
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(
-        crate::accounts::list_accounts,
-        crate::accounts::get_account,
+        crate::wallets::list_wallets,
+        crate::wallets::get_wallet,
         crate::transactions::list_transactions,
         crate::plan_configs::list_plan_configs,
         crate::plan_configs::create_plan_config,
@@ -33,8 +33,8 @@ pub mod user_configs;
         crate::types::CreatePlanConfigRequest,
         crate::types::UpdatePlanConfigRequest,
         crate::types::ListTransactionsQuery,
-        crate::types::ListAccountsQuery,
-        crate::types::PointsAccountResponse,
+        crate::types::ListWalletsQuery,
+        crate::types::PointsWalletResponse,
         crate::types::PointsBalanceResponse,
         crate::types::PointsTransactionResponse,
         crate::types::PointsPlanConfigResponse,

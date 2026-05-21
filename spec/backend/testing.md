@@ -45,7 +45,7 @@ uv run scripts/test-stop.py
 - PgDog: `localhost:16432`（后端测试默认数据库入口，代理到测试 PostgreSQL）
 - PostgreSQL: `localhost:15433`（供 PgDog 代理使用，必要时用于专项排障）
 - Redis: `localhost:6380`
-- 配置文件: `backend/config.toml`（测试配置）
+- 配置文件: `backend/config/config.toml`（测试配置）
 - nextest recording: `backend/.config/nextest.toml` 已启用 `[experimental].record = true` 和 `[record].enabled = true`
 - nextest 版本要求: `-R latest` / `--rerun latest` 需要 `cargo-nextest >= 0.9.123`
 
