@@ -2,7 +2,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Copy, Check } from 'lucide-react'
-import { useState } from 'react'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 
 interface ShareLinkDialogProps {
   open: boolean
@@ -11,12 +11,10 @@ interface ShareLinkDialogProps {
 }
 
 export function ShareLinkDialog({ open, onClose, guideUrl }: ShareLinkDialogProps) {
-  const [copied, setCopied] = useState(false)
+  const { copied, copyToClipboard } = useCopyToClipboard()
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(guideUrl)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    await copyToClipboard(guideUrl)
   }
 
   return (

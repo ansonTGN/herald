@@ -1,23 +1,19 @@
-import { useState, useCallback } from 'react'
+import { useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Copy, Check } from 'lucide-react'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 
 interface BackupCodesDisplayProps {
   backupCodes: string[]
 }
 
-const COPY_FEEDBACK_DURATION_MS = 2000
-
 export function BackupCodesDisplay({ backupCodes }: BackupCodesDisplayProps) {
-  const [allCopied, setAllCopied] = useState(false)
+  const { copied: allCopied, copyToClipboard } = useCopyToClipboard()
 
   const handleCopyAll = useCallback(async () => {
-    const allCodesText = backupCodes.join('\n')
-    await navigator.clipboard.writeText(allCodesText)
-    setAllCopied(true)
-    setTimeout(() => setAllCopied(false), COPY_FEEDBACK_DURATION_MS)
-  }, [backupCodes])
+    await copyToClipboard(backupCodes.join('\n'))
+  }, [backupCodes, copyToClipboard])
 
   return (
     <Card data-testid="backup-codes-display">

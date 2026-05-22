@@ -85,6 +85,12 @@ export function Sidebar() {
             icon: Shield,
             permission: 'roles.view',
           },
+          {
+            name: 'API Keys',
+            path: `/${realmId}/manage/api-keys`,
+            icon: Key,
+            permission: 'api_keys.manage',
+          },
         ],
       },
       {

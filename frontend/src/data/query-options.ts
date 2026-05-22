@@ -47,6 +47,8 @@ import {
   getAuditEvent,
   getDashboardStats,
   emailStatus,
+  listApiKeys,
+  getApiKey,
 } from '@/lib/api-generated'
 import { handleApiResponse } from '@/lib/api-utils'
 import type {
@@ -226,6 +228,10 @@ export const queryKeys = {
     [QUERY_KEYS.AUDIT_EVENT, realmId, eventId] as const,
   dashboardStats: (realmId: string) => [QUERY_KEYS.DASHBOARD_STATS, realmId] as const,
   featureAvailability: (realmId: string) => [QUERY_KEYS.FEATURE_AVAILABILITY, realmId] as const,
+  apiKeys: (realmId: string, filters: { page?: number; pageSize?: number }) =>
+    [QUERY_KEYS.API_KEYS, realmId, filters] as const,
+  apiKeysList: (realmId: string) => [QUERY_KEYS.API_KEYS, realmId] as const,
+  apiKey: (realmId: string, id: string) => [QUERY_KEYS.API_KEY, realmId, id] as const,
 }
 
 function extractNestedArray<T>(response: unknown, key: string): T[] {
@@ -1186,4 +1192,37 @@ export const emailStatusQueryOptions = (realmId: string) =>
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
+  })
+
+// ==================== API Keys ====================
+
+export const apiKeysQueryOptions = (
+  realmId: string,
+  filters: {
+    page?: number
+    pageSize?: number
+  }
+) =>
+  queryOptions({
+    queryKey: queryKeys.apiKeys(realmId, filters),
+    queryFn: async () =>
+      handleApiResponse(
+        await listApiKeys({
+          path: { realmId },
+          query: {
+            page: filters.page ?? 0,
+            pageSize: filters.pageSize ?? 20,
+          },
+        })
+      ),
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+
+export const apiKeyQueryOptions = (realmId: string, id: string) =>
+  queryOptions({
+    queryKey: queryKeys.apiKey(realmId, id),
+    queryFn: async () => handleApiResponse(await getApiKey({ path: { realmId, apiKeyId: id } })),
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
   })

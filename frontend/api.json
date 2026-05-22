@@ -14,6 +14,437 @@
     "version": "0.1.5"
   },
   "paths": {
+    "/api/api-keys/{realmId}": {
+      "get": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "List all API Keys for a realm",
+        "description": "Returns a paginated list of API keys. Hash and plaintext are never exposed.",
+        "operationId": "list_api_keys",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (0-based, default 0)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "Page size (default 20)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API Key list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponse_ApiKeyListItem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Create a new API Key",
+        "description": "Generates a new API key for the specified realm. The plaintext key is returned\nonly in this response and cannot be retrieved later.",
+        "operationId": "create_api_key",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApiKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "API Key created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateApiKeyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/api-keys/{realmId}/{apiKeyId}": {
+      "get": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Get a specific API Key by ID",
+        "description": "Retrieves details of an API key. Hash and plaintext are never exposed.",
+        "operationId": "get_api_key",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "apiKeyId",
+            "in": "path",
+            "description": "API Key ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API Key details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyListItem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API Key not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Update an API Key",
+        "description": "Partially updates an API key's name, enabled status, or expiration.",
+        "operationId": "update_api_key",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "apiKeyId",
+            "in": "path",
+            "description": "API Key ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateApiKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "API Key updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyListItem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API Key not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Delete an API Key",
+        "description": "Permanently deletes an API key.",
+        "operationId": "delete_api_key",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "apiKeyId",
+            "in": "path",
+            "description": "API Key ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "API Key deleted"
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API Key not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/api-keys/{realmId}/{apiKeyId}/rotate": {
+      "post": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Rotate an API Key",
+        "description": "Generates a new key for the API key, replacing the old hash.\nThe old key is immediately invalidated. Returns the new plaintext key (shown once).",
+        "operationId": "rotate_api_key",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "apiKeyId",
+            "in": "path",
+            "description": "API Key ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API Key rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateApiKeyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API Key not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/audit/{realmId}": {
       "get": {
         "tags": [
@@ -14246,6 +14677,59 @@
           }
         }
       },
+      "ApiKeyListItem": {
+        "type": "object",
+        "description": "API Key list item (never exposes hash or plaintext)",
+        "required": [
+          "id",
+          "name",
+          "realmId",
+          "enabled",
+          "usageCount",
+          "createdAt"
+        ],
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "description": "Creation time (ISO 8601)"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the API key is enabled"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional expiration time (ISO 8601)"
+          },
+          "id": {
+            "type": "string",
+            "description": "API Key UUID"
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Last usage time (ISO 8601)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable name"
+          },
+          "realmId": {
+            "type": "string",
+            "description": "Realm this API key belongs to"
+          },
+          "usageCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Total usage count"
+          }
+        }
+      },
       "ApplyInvoiceRequest": {
         "type": "object",
         "required": [
@@ -15096,6 +15580,73 @@
           "walletId": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "CreateApiKeyRequest": {
+        "type": "object",
+        "description": "Request to create a new API Key",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional expiration time (ISO 8601 string)",
+            "example": "2026-12-31T23:59:59Z"
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable name for the API key (1-100 characters)",
+            "example": "Production API Key"
+          }
+        }
+      },
+      "CreateApiKeyResponse": {
+        "type": "object",
+        "description": "Response after creating an API Key (plaintext key shown once)",
+        "required": [
+          "id",
+          "name",
+          "key",
+          "realmId",
+          "enabled",
+          "createdAt"
+        ],
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "description": "Creation time (ISO 8601)"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the API key is enabled"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional expiration time (ISO 8601)"
+          },
+          "id": {
+            "type": "string",
+            "description": "API Key UUID"
+          },
+          "key": {
+            "type": "string",
+            "description": "Plaintext API key (shown only once, store securely)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable name"
+          },
+          "realmId": {
+            "type": "string",
+            "description": "Realm this API key belongs to"
           }
         }
       },
@@ -17472,6 +18023,85 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "PageResponse_ApiKeyListItem": {
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "API Key list item (never exposes hash or plaintext)",
+              "required": [
+                "id",
+                "name",
+                "realmId",
+                "enabled",
+                "usageCount",
+                "createdAt"
+              ],
+              "properties": {
+                "createdAt": {
+                  "type": "string",
+                  "description": "Creation time (ISO 8601)"
+                },
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether the API key is enabled"
+                },
+                "expiresAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Optional expiration time (ISO 8601)"
+                },
+                "id": {
+                  "type": "string",
+                  "description": "API Key UUID"
+                },
+                "lastUsedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Last usage time (ISO 8601)"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Human-readable name"
+                },
+                "realmId": {
+                  "type": "string",
+                  "description": "Realm this API key belongs to"
+                },
+                "usageCount": {
+                  "type": "integer",
+                  "format": "int32",
+                  "description": "Total usage count"
+                }
+              }
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -20400,6 +21030,33 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "UpdateApiKeyRequest": {
+        "type": "object",
+        "description": "Request to update an existing API Key",
+        "properties": {
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the API key is enabled"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional expiration time (ISO 8601 string, or null to clear)"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable name (1-100 characters)"
           }
         }
       },
