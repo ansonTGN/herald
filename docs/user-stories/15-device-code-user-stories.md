@@ -212,6 +212,12 @@ Then 系统返回错误
 - Device Code Grant 作为新增 grant_type，不影响现有授权码流程
 - 验证页面是 Herald 前端新增的独立页面
 
+---
+
+## 📖 相关PRD
+
+- **Device Code**: [docs/prd/auth/device-code.md](/docs/prd/auth/device-code.md)
+
 ### 相关 PRD
 - OAuth 第三方集成: [docs/prd/auth/oauth-third-party-integration.md](/docs/prd/auth/oauth-third-party-integration.md)
 - Client App 管理: [docs/prd/integration/client-app.md](/docs/prd/integration/client-app.md)

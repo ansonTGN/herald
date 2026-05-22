@@ -2152,6 +2152,7 @@ dependencies = [
  "anyhow",
  "axum",
  "herald-api",
+ "herald-core",
  "herald-sdk",
  "herald-test-support",
  "serde",

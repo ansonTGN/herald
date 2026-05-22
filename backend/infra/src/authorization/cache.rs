@@ -169,50 +169,99 @@ impl RedisCache {
         }
     }
 
-    /// Delete multiple keys matching a pattern
-    ///
-    /// # Arguments
-    /// * `pattern` - Key pattern (e.g., "user_roles:realm1:*")
-    ///
-    /// # Notes
-    /// Uses KEYS command which is O(N) - use with caution in production
-    /// For large datasets, consider using SCAN with cursor
-    pub async fn delete_pattern(
+    /// Iterate keys matching a pattern using cursor-based SCAN.
+    async fn scan_keys(
         &self,
         pattern: &str,
-    ) -> Result<(), herald_domain::common::entities::app_errors::CoreError> {
+    ) -> Result<Vec<String>, herald_domain::common::entities::app_errors::CoreError> {
         let mut conn = match self.get_connection().await {
             Ok(conn) => conn,
             Err(e) => {
-                tracing::warn!(error = %e, pattern = %pattern, "Redis unavailable, skipping cache delete");
-                return Ok(()); // Return Ok to allow operation to continue
+                tracing::warn!(error = %e, pattern = %pattern, "Redis unavailable, skipping scan_keys");
+                return Ok(Vec::new());
             }
         };
 
-        // Use KEYS to find matching keys
-        let keys: Vec<String> = match redis::cmd("KEYS").arg(pattern).query_async(&mut conn).await {
-            Ok(keys) => keys,
+        let mut cursor = 0u64;
+        let mut all_keys = Vec::new();
+        loop {
+            let result: Result<(u64, Vec<String>), _> = redis::cmd("SCAN")
+                .arg(cursor)
+                .arg("MATCH")
+                .arg(pattern)
+                .arg("COUNT")
+                .arg(100)
+                .query_async(&mut conn)
+                .await;
+            let (new_cursor, keys) = match result {
+                Ok(pair) => pair,
+                Err(e) => {
+                    tracing::warn!(error = %e, pattern = %pattern, "Failed to execute SCAN, returning keys collected so far");
+                    break;
+                }
+            };
+            all_keys.extend(keys);
+            if new_cursor == 0 {
+                break;
+            }
+            cursor = new_cursor;
+        }
+
+        Ok(all_keys)
+    }
+
+    /// Find keys matching a pattern using cursor-based SCAN.
+    pub async fn find_keys(
+        &self,
+        pattern: &str,
+    ) -> Result<Vec<String>, herald_domain::common::entities::app_errors::CoreError> {
+        self.scan_keys(pattern).await
+    }
+
+    pub async fn delete_keys(
+        &self,
+        keys: &[String],
+    ) -> Result<(), herald_domain::common::entities::app_errors::CoreError> {
+        if keys.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = match self.get_connection().await {
+            Ok(conn) => conn,
             Err(e) => {
-                tracing::warn!(error = %e, pattern = %pattern, "Failed to execute KEYS command, continuing");
+                tracing::warn!(error = %e, "Redis unavailable, skipping cache delete_keys");
                 return Ok(());
             }
         };
 
-        if !keys.is_empty() {
-            // del returns usize (count of deleted keys), but we don't need it
-            match AsyncCommands::del::<&Vec<String>, usize>(&mut conn, &keys).await {
-                Ok(_) => {
-                    tracing::debug!(pattern = %pattern, count = keys.len(), "Deleted cached values");
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, pattern = %pattern, "Failed to delete keys, continuing");
-                }
+        match AsyncCommands::del::<&[String], usize>(&mut conn, keys).await {
+            Ok(_) => {
+                tracing::debug!(count = keys.len(), "Deleted cached keys");
             }
-        } else {
-            tracing::debug!(pattern = %pattern, "No keys matched pattern");
+            Err(e) => {
+                tracing::warn!(error = %e, count = keys.len(), "Failed to delete keys, continuing");
+            }
         }
 
         Ok(())
+    }
+
+    /// Delete multiple keys matching a pattern using cursor-based SCAN.
+    ///
+    /// # Arguments
+    /// * `pattern` - Key pattern (e.g., "user_roles:realm1:*")
+    pub async fn delete_pattern(
+        &self,
+        pattern: &str,
+    ) -> Result<(), herald_domain::common::entities::app_errors::CoreError> {
+        let keys = self.scan_keys(pattern).await?;
+
+        if keys.is_empty() {
+            tracing::debug!(pattern = %pattern, "No keys matched pattern");
+            return Ok(());
+        }
+
+        self.delete_keys(&keys).await
     }
 }
 

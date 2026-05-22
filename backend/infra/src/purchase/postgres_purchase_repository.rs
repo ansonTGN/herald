@@ -128,7 +128,7 @@ impl PurchaseRepository for PostgresPurchaseRepository {
         limit: Option<u64>,
         offset: Option<u64>,
     ) -> Result<Vec<PointsPackagePurchase>, CoreError> {
-        let limit = limit.unwrap_or(50).min(100); // Max 100 records
+        let limit = limit.unwrap_or(20).min(100); // Max 100 records
         let offset = offset.unwrap_or(0);
 
         let query = if let Some(provider) = payment_provider {

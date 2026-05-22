@@ -39,7 +39,7 @@ impl ListRealmsPaginatedQuery {
         herald_core::domain::realm::ListRealmsFilters {
             search: self.search.clone(),
             page: self.page.unwrap_or(0).max(0) as u64,
-            page_size: self.page_size.unwrap_or(25).clamp(1, 100) as u64,
+            page_size: self.page_size.unwrap_or(20).clamp(1, 100) as u64,
             sort_by: self
                 .sort_by
                 .clone()

@@ -313,10 +313,14 @@ pub trait AuthorizationService: Send + Sync {
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }
 
+pub mod principal;
+
 // Service implementations
 pub mod permission_service;
 pub mod services;
 
 // Re-exports
 pub use permission_service::{PermissionService, Policy};
+pub use principal::PrincipalRef;
+pub use principal::principal_types;
 pub use services::PermissionServiceImpl as PermissionCrudServiceImpl;

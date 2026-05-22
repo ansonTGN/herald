@@ -1,7 +1,10 @@
 // Identity enum - represents authenticated caller (User or Client)
 
 use crate::{
-    client::entities::ClientApp, client_api_keys::entities::ClientApiKey, user::entities::User,
+    authorization::{PrincipalRef, principal::principal_types},
+    client::entities::ClientApp,
+    client_api_keys::entities::ClientApiKey,
+    user::entities::User,
 };
 use std::fmt;
 
@@ -124,6 +127,31 @@ impl Identity {
     /// Check if this identity represents a third-party API key
     pub fn is_third_party(&self) -> bool {
         matches!(self, Self::ThirdParty(_))
+    }
+
+    /// Derive the lightweight PrincipalRef for authorization checks.
+    ///
+    /// - User callers: `principal_type = principal_types::USER`, `principal_id = user_id`.
+    /// - API-key callers: `principal_type = principal_types::API_KEY`, `principal_id = client_api_keys.id`.
+    /// - OAuth Client callers: `principal_type = principal_types::CLIENT`, `principal_id = client_app.id`.
+    pub fn principal_ref(&self) -> PrincipalRef {
+        match self {
+            Self::User(user) => PrincipalRef {
+                principal_type: principal_types::USER,
+                principal_id: user.id.to_string(),
+                realm_id: user.realm_id.clone(),
+            },
+            Self::Client(client) => PrincipalRef {
+                principal_type: principal_types::CLIENT,
+                principal_id: client.id.to_string(),
+                realm_id: client.realm_id.clone(),
+            },
+            Self::ThirdParty(api_key) => PrincipalRef {
+                principal_type: principal_types::API_KEY,
+                principal_id: api_key.id.clone(),
+                realm_id: api_key.realm_id.clone(),
+            },
+        }
     }
 }
 

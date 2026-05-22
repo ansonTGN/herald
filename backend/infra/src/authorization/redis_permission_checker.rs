@@ -9,6 +9,7 @@
 //
 // =============================================================================
 use herald_domain::authorization::permission_service::{PermissionService, Policy};
+use herald_domain::authorization::principal_types;
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_entity::{role_policies, user_roles};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
@@ -22,14 +23,26 @@ use super::cache::RedisCache;
 struct CacheKey;
 
 impl CacheKey {
-    /// Build a permission check result cache key
-    fn permission(realm_id: &str, user_id: &str, resource: &str, action: &str) -> String {
-        format!("perm:{}:{}:{}:{}", realm_id, user_id, resource, action)
+    /// Build a principal permission check result cache key
+    fn principal_permission(
+        realm_id: &str,
+        principal_type: &str,
+        principal_id: &str,
+        resource: &str,
+        action: &str,
+    ) -> String {
+        format!(
+            "principal_perm:{}:{}:{}:{}:{}",
+            realm_id, principal_type, principal_id, resource, action
+        )
     }
 
-    /// Build a user roles cache key
-    fn user_roles(realm_id: &str, user_id: &str) -> String {
-        format!("user_roles:{}:{}", realm_id, user_id)
+    /// Build a principal role bindings cache key
+    fn principal_role_bindings(realm_id: &str, principal_type: &str, principal_id: &str) -> String {
+        format!(
+            "principal_role_bindings:{}:{}:{}",
+            realm_id, principal_type, principal_id
+        )
     }
 
     /// Build a role policies cache key
@@ -42,11 +55,30 @@ impl CacheKey {
         format!("user_roles:{}:*", realm_id)
     }
 
+    /// Build a principal role bindings invalidation pattern
+    fn principal_role_bindings_pattern(realm_id: &str) -> String {
+        format!("principal_role_bindings:{}:*", realm_id)
+    }
+
     /// Build a permission cache invalidation pattern
     fn permission_pattern(realm_id: &str, user_id: Option<&str>) -> String {
         match user_id {
             Some(uid) => format!("perm:{}:{}:*", realm_id, uid),
             None => format!("perm:{}:*", realm_id),
+        }
+    }
+
+    /// Build a principal permission cache invalidation pattern
+    fn principal_permission_pattern(
+        realm_id: &str,
+        principal_type: Option<&str>,
+        principal_id: Option<&str>,
+    ) -> String {
+        match (principal_type, principal_id) {
+            (Some(pt), Some(pid)) => {
+                format!("principal_perm:{}:{}:{}:*", realm_id, pt, pid)
+            }
+            _ => format!("principal_perm:{}:*", realm_id),
         }
     }
 
@@ -83,18 +115,9 @@ impl RedisPermissionChecker {
 }
 
 impl PermissionService for RedisPermissionChecker {
-    /// Check if a user has permission to access a resource
+    /// Check if a user has permission to access a resource.
     ///
-    /// # Arguments
-    /// * `realm_id` - Realm ID for multi-tenant isolation
-    /// * `user_id` - User ID to check permissions for
-    /// * `resource` - Resource identifier (e.g., "users", "clients")
-    /// * `action` - Action identifier (e.g., "view", "manage")
-    ///
-    /// # Returns
-    /// * `Ok(true)` if permission is granted
-    /// * `Ok(false)` if permission is denied
-    /// * `Err(CoreError)` if an error occurs
+    /// Delegates to `check_principal_permission` with `principal_type = "user"`.
     async fn check_permission(
         &self,
         realm_id: &str,
@@ -102,70 +125,20 @@ impl PermissionService for RedisPermissionChecker {
         resource: &str,
         action: &str,
     ) -> Result<bool, CoreError> {
-        debug!(
-            realm_id = %realm_id,
-            user_id = %user_id,
-            resource = %resource,
-            action = %action,
-            "Checking permission"
-        );
-
-        // 1. Check permission result cache
-        let cache_key = CacheKey::permission(realm_id, user_id, resource, action);
-        if let Some(cached) = self.get_cached_result(&cache_key).await {
-            debug!(cached = cached, "Permission check result from cache");
-            return Ok(cached);
-        }
-
-        // 2. Query user's roles
-        let roles = self.get_user_roles(realm_id, user_id).await?;
-
-        if roles.is_empty() {
-            debug!("User has no roles, permission denied");
-            self.cache_result(&cache_key, false, cache_ttl::DENIAL)
-                .await;
-            return Ok(false);
-        }
-
-        debug!(count = roles.len(), "Found roles for user");
-
-        // 3. Check role policies for permission match
-        let has_permission = self
-            .check_roles_policies(&roles, realm_id, user_id, resource, action)
-            .await?;
-
-        // 4. Cache and return result
-        self.cache_result(&cache_key, has_permission, cache_ttl::PERMISSION)
-            .await;
-        Ok(has_permission)
+        self.check_principal_permission(realm_id, principal_types::USER, user_id, resource, action)
+            .await
     }
 
-    /// Get all roles for a user (with caching)
+    /// Get all roles for a user.
     ///
-    /// # Caching
-    /// * TTL: 5 minutes (300 seconds)
-    /// * Invalidated on: user role assignment changes
+    /// Delegates to `get_principal_roles` with `principal_type = "user"`.
     async fn get_user_roles(
         &self,
         realm_id: &str,
         user_id: &str,
     ) -> Result<Vec<String>, CoreError> {
-        let cache_key = CacheKey::user_roles(realm_id, user_id);
-
-        // Return cached roles if available
-        if let Some(cached) = self.get_cached::<Vec<String>>(&cache_key).await {
-            debug!("User roles from cache");
-            return Ok(cached);
-        }
-
-        // Query from database
-        let roles = self.query_user_roles_from_db(realm_id, user_id).await?;
-
-        // Cache for 5 minutes
-        self.cache(&cache_key, &roles, cache_ttl::USER_ROLES).await;
-        debug!(count = roles.len(), "User roles from database");
-
-        Ok(roles)
+        self.get_principal_roles(realm_id, principal_types::USER, user_id)
+            .await
     }
 
     /// Get all policies for a role (with caching)
@@ -219,22 +192,24 @@ impl PermissionService for RedisPermissionChecker {
 
     /// Invalidate user role cache
     ///
-    /// Call this when a user's roles are assigned/removed
+    /// Call this when a user's roles are assigned/removed.
+    /// Also invalidates the principal-oriented caches for the same user.
     async fn invalidate_user_role_cache(
         &self,
         realm_id: &str,
         user_id: &str,
     ) -> Result<(), CoreError> {
-        let pattern = CacheKey::user_roles_pattern(realm_id);
-        if let Err(e) = self.cache.write().await.delete_pattern(&pattern).await {
-            warn!(error = %e, "Failed to invalidate user role cache");
-        }
-
-        // Also invalidate related permission caches
-        let perm_pattern = CacheKey::permission_pattern(realm_id, Some(user_id));
-        if let Err(e) = self.cache.write().await.delete_pattern(&perm_pattern).await {
-            warn!(error = %e, "Failed to invalidate permission cache");
-        }
+        let patterns = vec![
+            CacheKey::user_roles_pattern(realm_id),
+            CacheKey::permission_pattern(realm_id, Some(user_id)),
+            CacheKey::principal_role_bindings_pattern(realm_id),
+            CacheKey::principal_permission_pattern(
+                realm_id,
+                Some(principal_types::USER),
+                Some(user_id),
+            ),
+        ];
+        self.invalidate_patterns(&patterns).await;
 
         info!(
             realm_id = %realm_id,
@@ -253,16 +228,12 @@ impl PermissionService for RedisPermissionChecker {
         realm_id: &str,
         role_id: &str,
     ) -> Result<(), CoreError> {
-        let pattern = CacheKey::role_policies(realm_id, role_id);
-        if let Err(e) = self.cache.write().await.delete_pattern(&pattern).await {
-            warn!(error = %e, "Failed to invalidate role policy cache");
-        }
-
-        // Invalidate all permission caches for this realm
-        let perm_pattern = CacheKey::permission_pattern(realm_id, None);
-        if let Err(e) = self.cache.write().await.delete_pattern(&perm_pattern).await {
-            warn!(error = %e, "Failed to invalidate permission cache");
-        }
+        let patterns = vec![
+            CacheKey::role_policies(realm_id, role_id),
+            CacheKey::permission_pattern(realm_id, None),
+            CacheKey::principal_permission_pattern(realm_id, None, None),
+        ];
+        self.invalidate_patterns(&patterns).await;
 
         info!(
             realm_id = %realm_id,
@@ -278,38 +249,18 @@ impl PermissionService for RedisPermissionChecker {
     /// Call this when a realm's RBAC configuration is initialized or updated
     /// This invalidates:
     /// - All user role caches for the realm
+    /// - All principal role binding caches for the realm
     /// - All role policy caches for the realm
     /// - All permission check result caches for the realm
     async fn invalidate_realm_cache(&self, realm_id: &str) -> Result<(), CoreError> {
-        // Invalidate all user roles for this realm
-        let user_roles_pattern = CacheKey::user_roles_pattern(realm_id);
-        if let Err(e) = self
-            .cache
-            .write()
-            .await
-            .delete_pattern(&user_roles_pattern)
-            .await
-        {
-            warn!(error = %e, "Failed to invalidate user roles cache for realm");
-        }
-
-        // Invalidate all role policies for this realm
-        let role_policies_pattern = CacheKey::role_policies_pattern(realm_id);
-        if let Err(e) = self
-            .cache
-            .write()
-            .await
-            .delete_pattern(&role_policies_pattern)
-            .await
-        {
-            warn!(error = %e, "Failed to invalidate role policies cache for realm");
-        }
-
-        // Invalidate all permission check results for this realm
-        let perm_pattern = CacheKey::permission_pattern(realm_id, None);
-        if let Err(e) = self.cache.write().await.delete_pattern(&perm_pattern).await {
-            warn!(error = %e, "Failed to invalidate permission cache for realm");
-        }
+        let patterns = vec![
+            CacheKey::user_roles_pattern(realm_id),
+            CacheKey::principal_role_bindings_pattern(realm_id),
+            CacheKey::role_policies_pattern(realm_id),
+            CacheKey::permission_pattern(realm_id, None),
+            CacheKey::principal_permission_pattern(realm_id, None, None),
+        ];
+        self.invalidate_patterns(&patterns).await;
 
         info!(
             realm_id = %realm_id,
@@ -410,9 +361,93 @@ impl PermissionService for RedisPermissionChecker {
 
         Ok(unique_permissions)
     }
+
+    /// Check if a principal has permission to access a resource
+    ///
+    /// Generalized permission check for any principal type (user, api_key, client).
+    async fn check_principal_permission(
+        &self,
+        realm_id: &str,
+        principal_type: &str,
+        principal_id: &str,
+        resource: &str,
+        action: &str,
+    ) -> Result<bool, CoreError> {
+        debug!(
+            realm_id = %realm_id,
+            principal_type = %principal_type,
+            principal_id = %principal_id,
+            resource = %resource,
+            action = %action,
+            "Checking principal permission"
+        );
+
+        // 1. Check permission result cache
+        let cache_key = CacheKey::principal_permission(
+            realm_id,
+            principal_type,
+            principal_id,
+            resource,
+            action,
+        );
+        if let Some(cached) = self.get_cached_result(&cache_key).await {
+            debug!(
+                cached = cached,
+                "Principal permission check result from cache"
+            );
+            return Ok(cached);
+        }
+
+        // 2. Query principal's roles
+        let roles = self
+            .get_principal_roles(realm_id, principal_type, principal_id)
+            .await?;
+
+        if roles.is_empty() {
+            debug!("Principal has no roles, permission denied");
+            self.cache_result(&cache_key, false, cache_ttl::DENIAL)
+                .await;
+            return Ok(false);
+        }
+
+        debug!(count = roles.len(), "Found roles for principal");
+
+        // 3. Check role policies for permission match
+        let has_permission = self
+            .check_roles_policies(&roles, realm_id, principal_id, resource, action)
+            .await?;
+
+        // 4. Cache and return result
+        self.cache_result(&cache_key, has_permission, cache_ttl::PERMISSION)
+            .await;
+        Ok(has_permission)
+    }
 }
 
 impl RedisPermissionChecker {
+    /// Batch-delete cache entries matching multiple patterns under a single write lock.
+    ///
+    /// Acquires the write lock once, collects all matching keys, and deletes them
+    /// in a single `DEL` call.  This avoids repeated lock acquisition when several
+    /// patterns need invalidation (e.g. on role-policy change).
+    async fn invalidate_patterns(&self, patterns: &[String]) {
+        let cache = self.cache.write().await;
+        let mut all_keys = Vec::new();
+        for pattern in patterns {
+            match cache.find_keys(pattern).await {
+                Ok(keys) => all_keys.extend(keys),
+                Err(e) => {
+                    warn!(error = %e, pattern = %pattern, "Failed to find keys for pattern");
+                }
+            }
+        }
+        if !all_keys.is_empty()
+            && let Err(e) = cache.delete_keys(&all_keys).await
+        {
+            warn!(error = %e, count = all_keys.len(), "Failed to delete batch keys");
+        }
+    }
+
     /// Check if any role grants the requested permission
     ///
     /// Iterates through all roles and their policies to find a matching permission.
@@ -446,25 +481,53 @@ impl RedisPermissionChecker {
         Ok(false)
     }
 
-    /// Query user roles from database
+    /// Get all roles for a principal (with caching)
     ///
-    /// Helper method to encapsulate database query logic
-    async fn query_user_roles_from_db(
+    /// Queries by (realm_id, principal_type, principal_id).
+    async fn get_principal_roles(
         &self,
         realm_id: &str,
-        user_id: &str,
+        principal_type: &str,
+        principal_id: &str,
     ) -> Result<Vec<String>, CoreError> {
-        let user_uuid = uuid::Uuid::parse_str(user_id)
-            .map_err(|_| CoreError::BadRequest(format!("Invalid user_id UUID: {}", user_id)))?;
+        let cache_key = CacheKey::principal_role_bindings(realm_id, principal_type, principal_id);
 
+        // Return cached roles if available
+        if let Some(cached) = self.get_cached::<Vec<String>>(&cache_key).await {
+            debug!("Principal roles from cache");
+            return Ok(cached);
+        }
+
+        // Query from database
+        let roles = self
+            .query_principal_roles_from_db(realm_id, principal_type, principal_id)
+            .await?;
+
+        // Cache for 5 minutes
+        self.cache(&cache_key, &roles, cache_ttl::USER_ROLES).await;
+        debug!(count = roles.len(), "Principal roles from database");
+
+        Ok(roles)
+    }
+
+    /// Query principal roles from database
+    ///
+    /// Queries by (realm_id, principal_type, principal_id).
+    async fn query_principal_roles_from_db(
+        &self,
+        realm_id: &str,
+        principal_type: &str,
+        principal_id: &str,
+    ) -> Result<Vec<String>, CoreError> {
         Ok(user_roles::Entity::find()
             .filter(user_roles::Column::RealmId.eq(realm_id))
-            .filter(user_roles::Column::UserId.eq(user_uuid))
+            .filter(user_roles::Column::PrincipalType.eq(principal_type))
+            .filter(user_roles::Column::PrincipalId.eq(principal_id))
             .all(&*self.db)
             .await
             .map_err(|e| {
-                error!(error = %e, "Failed to query user roles");
-                CoreError::DatabaseError(format!("Failed to query user roles: {}", e))
+                error!(error = %e, "Failed to query principal roles");
+                CoreError::DatabaseError(format!("Failed to query principal roles: {}", e))
             })?
             .into_iter()
             .map(|r| r.role_id.to_string())
@@ -515,10 +578,10 @@ impl RedisPermissionChecker {
         }
 
         // Hierarchical checks
-        // Permission hierarchy: manage > view
-        // Custom actions (admin, create) require exact match
+        // Permission hierarchy: manage > create > view
+        // Custom actions (admin) require exact match
         match granted_action {
-            "manage" => matches!(requested_action, "view" | "manage"),
+            "manage" => matches!(requested_action, "view" | "manage" | "create"),
             "view" => requested_action == "view",
             _ => false,
         }
@@ -526,7 +589,7 @@ impl RedisPermissionChecker {
 
     /// Check if an action is a custom (non-hierarchical) action
     fn is_custom_action(action: &str) -> bool {
-        matches!(action, "admin" | "create")
+        matches!(action, "admin")
     }
 
     /// Get cached value with error handling (fallback to None on error)
@@ -627,15 +690,13 @@ mod tests {
                 }
 
                 // Custom actions require exact match
-                if matches!(granted_action, "admin" | "create")
-                    || matches!(requested_action, "admin" | "create")
-                {
+                if matches!(granted_action, "admin") || matches!(requested_action, "admin") {
                     return false;
                 }
 
                 // Hierarchical checks
                 match granted_action {
-                    "manage" => matches!(requested_action, "view" | "manage"),
+                    "manage" => matches!(requested_action, "view" | "manage" | "create"),
                     "view" => requested_action == "view",
                     _ => false,
                 }
@@ -698,11 +759,23 @@ mod tests {
 
         // Given: User has users:create permission
         // When: Checking users:view permission
-        // Then: Should NOT be granted (create requires exact match)
+        // Then: Should NOT be granted (create only covers itself)
         assert!(!test_action_hierarchy("create", "view"));
 
         // When: Checking users:create permission
         // Then: Should be granted (exact match)
         assert!(test_action_hierarchy("create", "create"));
+    }
+
+    #[test]
+    fn test_manage_covers_create() {
+        // Given: User has users:manage permission
+        // When: Checking users:create permission
+        // Then: Should be granted (manage covers create in hierarchy)
+        assert!(test_action_hierarchy("manage", "create"));
+
+        // manage still covers view and itself
+        assert!(test_action_hierarchy("manage", "view"));
+        assert!(test_action_hierarchy("manage", "manage"));
     }
 }

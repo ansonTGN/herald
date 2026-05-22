@@ -7456,6 +7456,750 @@
         ]
       }
     },
+    "/api/ext/realms": {
+      "get": {
+        "tags": [
+          "ext"
+        ],
+        "summary": "List realms",
+        "description": "Returns all realms visible to the caller. Principals in the admin realm see all realms;\nothers see only their own realm.\n\n# Authentication\nRequires valid API Key via X-API-Key header\n\n# Authorization\nThe caller must have `realm:list` permission in their own realm.",
+        "operationId": "list_realms",
+        "responses": {
+          "200": {
+            "description": "Realms listed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RealmListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing API Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "ext"
+        ],
+        "summary": "Create a new realm",
+        "description": "Creates a new realm in the system. Only principals with `realm:create` permission\nin the admin realm may invoke this endpoint.\n\n# Authentication\nRequires valid API Key via X-API-Key header\n\n# Authorization\nThe caller must have `realm:create` permission in the `admin` realm.",
+        "operationId": "create_realm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRealmExtRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Realm created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RealmInfoResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing API Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/ext/realms/{realmId}": {
+      "get": {
+        "tags": [
+          "ext"
+        ],
+        "summary": "Get a single realm by ID",
+        "description": "Returns detailed information for the specified realm.\n\n# Authentication\nRequires valid API Key via X-API-Key header\n\n# Authorization\nThe caller must have `realm:view` permission in the target realm.\nNon-admin principals may only view their own realm.",
+        "operationId": "get_realm",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Realm retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RealmInfoResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing API Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Cross-realm access or permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Realm not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/ext/realms/{realmId}/client-apps": {
+      "get": {
+        "tags": [
+          "ext"
+        ],
+        "summary": "List client apps in a realm",
+        "description": "Returns all client apps in the specified realm.\n\n# Authentication\nRequires valid API Key via X-API-Key header\n\n# Authorization\nThe caller must have `clients:view` permission in the target realm.",
+        "operationId": "list_client_apps",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Client apps listed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientAppListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing API Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Cross-realm access or permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "ext"
+        ],
+        "summary": "Create a new client app in a realm",
+        "description": "Creates a client app in the specified realm. Only principals with `clients:create` permission\nin the target realm may invoke this endpoint.\n\n# Authentication\nRequires valid API Key via X-API-Key header\n\n# Authorization\nThe caller must have `clients:create` permission in the target realm.",
+        "operationId": "create_client_app",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClientAppExtRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Client app created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientAppInfoResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing API Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Cross-realm access or permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/ext/realms/{realmId}/client-apps/{clientAppId}": {
+      "get": {
+        "tags": [
+          "ext"
+        ],
+        "summary": "Get a single client app by ID within a realm",
+        "description": "Returns detailed information for the specified client app.\n\n# Authentication\nRequires valid API Key via X-API-Key header\n\n# Authorization\nThe caller must have `clients:view` permission in the target realm.",
+        "operationId": "get_client_app",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "clientAppId",
+            "in": "path",
+            "description": "Client App ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Client app retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientAppInfoResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid client app ID format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing API Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Cross-realm access or permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client app not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/ext/realms/{realmId}/users": {
+      "get": {
+        "tags": [
+          "ext"
+        ],
+        "summary": "List users in a realm",
+        "description": "Returns a paginated list of users in the specified realm.\nDefault page_size is 100, maximum is 500.\n\n# Authentication\nRequires valid API Key via X-API-Key header\n\n# Authorization\nThe caller must have `users:view` permission in the target realm.",
+        "operationId": "list_users",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (1-based, default 1)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "Page size (default 100, max 500)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users listed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing API Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Cross-realm access or permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "ext"
+        ],
+        "summary": "Create a new user in a realm",
+        "description": "Creates a user in the specified realm. Only principals with `users:create` permission\nin the target realm may invoke this endpoint.\n\n# Authentication\nRequires valid API Key via X-API-Key header\n\n# Authorization\nThe caller must have `users:create` permission in the target realm.",
+        "operationId": "create_user",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserExtRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "User created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserInfoResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing API Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Cross-realm access or permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/ext/realms/{realmId}/users/{userId}": {
+      "get": {
+        "tags": [
+          "ext"
+        ],
+        "summary": "Get a single user by ID within a realm",
+        "description": "Returns detailed information for the specified user.\n\n# Authentication\nRequires valid API Key via X-API-Key header\n\n# Authorization\nThe caller must have `users:view` permission in the target realm.",
+        "operationId": "get_user",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserInfoResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid user ID format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing API Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Cross-realm access or permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
     "/api/ext/subscription/{clientAppId}": {
       "get": {
         "tags": [
@@ -13445,6 +14189,43 @@
           }
         }
       },
+      "AdminUserInput": {
+        "type": "object",
+        "description": "Admin user credentials for realm creation",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8
+          }
+        }
+      },
+      "AdminUserOutput": {
+        "type": "object",
+        "description": "Admin user info returned as part of realm detail",
+        "required": [
+          "id",
+          "email",
+          "role"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
       "AdminUserResponse": {
         "type": "object",
         "description": "Admin user information returned in realm responses",
@@ -13976,6 +14757,53 @@
           }
         }
       },
+      "ClientAppInfoResponse": {
+        "type": "object",
+        "description": "Client app detail response for create/get endpoints",
+        "required": [
+          "id",
+          "clientId",
+          "name",
+          "redirectUris",
+          "enabled",
+          "createdAt"
+        ],
+        "properties": {
+          "clientId": {
+            "type": "string"
+          },
+          "clientSecret": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "redirectUris": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "ClientAppItem": {
         "type": "object",
         "required": [
@@ -14067,6 +14895,49 @@
             "format": "int32",
             "description": "Session TTL in seconds\n\nAfter this period, the user must re-authenticate.",
             "example": "3600"
+          }
+        }
+      },
+      "ClientAppListItem": {
+        "type": "object",
+        "description": "Single client app item in list responses",
+        "required": [
+          "id",
+          "clientId",
+          "name",
+          "enabled",
+          "createdAt"
+        ],
+        "properties": {
+          "clientId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ClientAppListResponse": {
+        "type": "object",
+        "description": "List of client apps in a realm",
+        "required": [
+          "clientApps"
+        ],
+        "properties": {
+          "clientApps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClientAppListItem"
+            }
           }
         }
       },
@@ -14263,6 +15134,31 @@
           "planId": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "CreateClientAppExtRequest": {
+        "type": "object",
+        "description": "Request body for creating a client app via the ext API",
+        "required": [
+          "name",
+          "redirectUris"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "redirectUris": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -14688,6 +15584,30 @@
           }
         }
       },
+      "CreateRealmExtRequest": {
+        "type": "object",
+        "description": "Request body for creating a realm via the ext API",
+        "required": [
+          "name",
+          "adminUser"
+        ],
+        "properties": {
+          "adminUser": {
+            "$ref": "#/components/schemas/AdminUserInput"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 3
+          }
+        }
+      },
       "CreateRealmValidator": {
         "type": "object",
         "required": [
@@ -14799,6 +15719,28 @@
             "format": "int32"
           },
           "type": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateUserExtRequest": {
+        "type": "object",
+        "description": "Request body for creating a user via the ext API",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password": {
             "type": "string"
           }
         }
@@ -17986,6 +18928,91 @@
           }
         }
       },
+      "RealmInfoResponse": {
+        "type": "object",
+        "description": "Realm detail response for create/get endpoints",
+        "required": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "adminUser": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminUserOutput"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "RealmListItem": {
+        "type": "object",
+        "description": "Single realm item in list responses",
+        "required": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "RealmListResponse": {
+        "type": "object",
+        "description": "Paginated list of realms",
+        "required": [
+          "realms"
+        ],
+        "properties": {
+          "realms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RealmListItem"
+            }
+          }
+        }
+      },
       "RealmResponse": {
         "type": "object",
         "description": "Realm response DTO for API responses",
@@ -20045,6 +21072,69 @@
           },
           "subscriptionVisible": {
             "type": "boolean"
+          }
+        }
+      },
+      "UserInfoResponse": {
+        "type": "object",
+        "description": "User info returned in responses",
+        "required": [
+          "id",
+          "email",
+          "status",
+          "createdAt"
+        ],
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "UserListResponse": {
+        "type": "object",
+        "description": "Paginated list of users in a realm",
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserInfoResponse"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

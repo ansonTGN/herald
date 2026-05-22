@@ -443,7 +443,7 @@ pub async fn get_points_package_purchase_history(
         return Err(ApiError::bad_request("Invalid payment_provider"));
     }
 
-    let limit = filters.limit.unwrap_or(50).min(100);
+    let limit = filters.limit.unwrap_or(20).min(100);
 
     let purchases = state
         .purchase_service

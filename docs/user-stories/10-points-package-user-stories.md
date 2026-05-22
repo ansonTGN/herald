@@ -303,7 +303,7 @@ And 我必须点击 "Confirm" 才能执行删除
 
 ## 相关文档
 
-- **PRD**: `docs/prd/billing/unified-purchase.md` - 统一购买架构产品需求文档（待创建）
+- **PRD**: `docs/prd/billing/unified-purchase.md` - 统一购买架构产品需求文档
 - **PRD**: `docs/prd/billing/points.md` - 积分系统产品需求文档
 - **用户故事**: `points-admin-manage.md` - 积分管理用户故事
 - **用户故事**: `points-user-view.md` - 积分查询用户故事

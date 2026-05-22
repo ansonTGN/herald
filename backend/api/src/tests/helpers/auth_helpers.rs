@@ -24,6 +24,7 @@
 use crate::application::http::auth::util::{SessionData, store_session};
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use herald_core::domain::authorization::permission_service::PermissionService;
+use herald_core::domain::authorization::principal_types;
 
 /// ============================================================================
 /// 会话管理
@@ -231,15 +232,16 @@ pub async fn grant_realm_admin_role(ctx: &TestContext, user_id: &str) {
     let role_uuid =
         uuid::Uuid::parse_str(&realm_admin_role_id).expect("Failed to parse role_id as UUID");
     sqlx::query(
-        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (user_id, role_id, realm_id) DO NOTHING",
+        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $2::text)
+         ON CONFLICT DO NOTHING",
     )
     .bind(user_role_id)
     .bind(user_uuid)
     .bind(role_uuid)
     .bind(&ctx._realm_id)
     .bind(&ctx._client_id)
+    .bind(principal_types::USER)
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to add user to realm-admin role");

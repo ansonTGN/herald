@@ -277,7 +277,7 @@ And 系统显示订阅信息和下次续费时间
 
 ## 相关文档
 
-- **PRD**: `docs/prd/billing/unified-purchase.md` - 统一购买架构产品需求文档（待创建）
+- **PRD**: `docs/prd/billing/unified-purchase.md` - 统一购买架构产品需求文档
 - **PRD**: `docs/prd/billing/points.md` - 积分系统产品需求文档
 - **用户故事**: `10-points-package-user-stories.md` - 积分包管理用户故事
 - **用户故事**: `points-user-view.md` - 积分查询用户故事

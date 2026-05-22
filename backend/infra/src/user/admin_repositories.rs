@@ -13,6 +13,7 @@ use herald_domain::user::{
     UserAdminError, UserAdminResult, UserRoleRepository,
 };
 
+use herald_domain::authorization::principal_types;
 use herald_domain::common::entities::generate_uuid_v7;
 
 // ============================================================================
@@ -417,8 +418,8 @@ impl UserRoleRepository for PostgresUserRoleRepository {
             let user_role_id = generate_uuid_v7();
             sqlx::query(
                 r#"
-                INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $2::text)
                 "#,
             )
             .bind(user_role_id)
@@ -426,6 +427,7 @@ impl UserRoleRepository for PostgresUserRoleRepository {
             .bind(role_id)
             .bind(realm_id)
             .bind(client_id)
+            .bind(principal_types::USER)
             .execute(&mut *tx)
             .await
             .map_err(|e| {
@@ -521,8 +523,8 @@ impl UserRoleRepository for PostgresUserRoleRepository {
 
         sqlx::query(
             r#"
-            INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $2::text)
             "#,
         )
         .bind(user_role_id)
@@ -530,6 +532,7 @@ impl UserRoleRepository for PostgresUserRoleRepository {
         .bind(role_id)
         .bind(realm_id)
         .bind(client_id)
+        .bind(principal_types::USER)
         .execute(&self.pool)
         .await
         .map_err(|e| {

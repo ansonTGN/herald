@@ -11,6 +11,7 @@
 
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use chrono::{Duration, Utc};
+use herald_core::domain::authorization::principal_types;
 use herald_core::domain::client_api_keys::entities::ClientApiKey;
 use herald_core::domain::client_api_keys::services::ClientApiKeyService;
 use uuid::Uuid;
@@ -156,13 +157,14 @@ pub async fn create_test_user_with_permissions(
 
     // 4. 将用户分配到角色（插入 user_roles 表）
     sqlx::query(
-        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id) VALUES ($1, $2, $3, $4, $5)"
+        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id) VALUES ($1, $2, $3, $4, $5, $6, $2::text)"
     )
     .bind(Uuid::now_v7())
     .bind(user_id)
     .bind(role_id)
     .bind(&ctx._realm_id)
     .bind(&ctx._client_id)
+    .bind(principal_types::USER)
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to assign role to user");

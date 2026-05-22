@@ -25,6 +25,7 @@ use herald_api_base::application::http::server::api_entities::{ApiError, ApiResu
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::permission_service::PermissionService;
+use herald_core::domain::authorization::principal_types;
 use herald_core::entity::{account, roles, user_roles};
 
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
@@ -256,9 +257,11 @@ pub async fn assign_roles_to_user(
         let user_role = user_roles::ActiveModel {
             id: ActiveValue::Set(Uuid::now_v7()),
             realm_id: ActiveValue::Set(realm_id.clone()),
-            user_id: ActiveValue::Set(user_id),
+            user_id: ActiveValue::Set(Some(user_id)),
             role_id: ActiveValue::Set(*role_id),
-            client_id: ActiveValue::Set(identity.client_id()),
+            client_id: ActiveValue::Set(Some(identity.client_id())),
+            principal_type: ActiveValue::Set(principal_types::USER.to_string()),
+            principal_id: ActiveValue::Set(user_id.to_string()),
             created_at: ActiveValue::Set(chrono::Utc::now().into()),
         };
 

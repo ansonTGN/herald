@@ -144,7 +144,10 @@ impl AsyncTestContext for SchemaTestContext {
             .expect("Failed to initialize admin user");
 
         // 11. 获取 realm_id 和 client_id（用于测试）
-        let realm_id: String = sqlx::query("select id from realm limit 1")
+        // NOTE: init_admin_realm_rbac inserts the "admin" realm, so a bare
+        // `LIMIT 1` is non-deterministic.  Filter out the admin realm so the
+        // returned realm_id is always the default (non-admin) test realm.
+        let realm_id: String = sqlx::query("select id from realm where id != 'admin' limit 1")
             .fetch_one(&pool_with_schema)
             .await
             .map(|x| x.get("id"))

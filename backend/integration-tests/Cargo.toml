@@ -12,6 +12,7 @@ license.workspace = true
 herald-sdk = { path = "../sdk" }
 herald-test-support = { path = "../test-support" }
 herald-api = { path = "../api" }
+herald-core = { path = "../core" }
 
 # Workspace dependencies
 tokio = { workspace = true, features = ["full"] }

@@ -24,6 +24,12 @@ pub enum ErrorCode {
     TransactionNotFound,
     ClientAppNotFound,
     SubscriptionNotFound,
+    PermissionDenied,
+    RealmNotFound,
+    UserNotFound,
+    EmailAlreadyExists,
+    PlatformPermissionRequired,
+    ValidationError,
 }
 
 impl ErrorCode {
@@ -51,6 +57,12 @@ impl ErrorCode {
             ErrorCode::TransactionNotFound => "transaction_not_found",
             ErrorCode::ClientAppNotFound => "client_app_not_found",
             ErrorCode::SubscriptionNotFound => "subscription_not_found",
+            ErrorCode::PermissionDenied => "permission_denied",
+            ErrorCode::RealmNotFound => "realm_not_found",
+            ErrorCode::UserNotFound => "user_not_found",
+            ErrorCode::EmailAlreadyExists => "email_already_exists",
+            ErrorCode::PlatformPermissionRequired => "platform_permission_required",
+            ErrorCode::ValidationError => "validation_error",
         }
     }
 
@@ -78,6 +90,12 @@ impl ErrorCode {
             ErrorCode::ClientAppNotFound => 30005,
             ErrorCode::SubscriptionNotFound => 20006,
             ErrorCode::RateLimitExceeded => 42901,
+            ErrorCode::PermissionDenied => 30006,
+            ErrorCode::RealmNotFound => 30008,
+            ErrorCode::UserNotFound => 30009,
+            ErrorCode::EmailAlreadyExists => 30010,
+            ErrorCode::PlatformPermissionRequired => 30011,
+            ErrorCode::ValidationError => 10006,
         }
     }
 }

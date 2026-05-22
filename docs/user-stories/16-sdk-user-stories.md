@@ -180,3 +180,10 @@ Given SDK 使用的 API Key Principal 缺少 `clients:create`
 When 调用 SDK 创建或查询 Client App
 Then 返回权限不足错误
 ```
+
+---
+
+## 📖 相关PRD
+
+- **SDK 增强**: [docs/prd/integration/sdk-improve.md](/docs/prd/integration/sdk-improve.md)
+- **Client App 管理**: [docs/prd/integration/client-app.md](/docs/prd/integration/client-app.md)

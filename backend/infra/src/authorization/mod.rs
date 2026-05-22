@@ -5,7 +5,7 @@ use uuid::Uuid;
 use herald_domain::authorization::{
     AssignRoleToUserRequest, AuthorizationRepository, CreatePermissionRequest, CreateRoleRequest,
     Permission, PermissionRepository, PermissionService, PolicyCheck, Role,
-    RolePermissionRepository, RoleRepository, UserRoleRepository,
+    RolePermissionRepository, RoleRepository, UserRoleRepository, principal_types,
 };
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_entity::{permissions, role_permissions, roles, user_roles};
@@ -369,9 +369,11 @@ impl UserRoleRepository for PostgresUserRoleRepository {
             let user_role = user_roles::ActiveModel {
                 id: sea_orm::Set(id),
                 realm_id: sea_orm::Set(request.realm_id.clone()),
-                user_id: sea_orm::Set(request.user_id),
+                user_id: sea_orm::Set(Some(request.user_id)),
                 role_id: sea_orm::Set(request.role_id),
-                client_id: sea_orm::Set(request.client_id),
+                client_id: sea_orm::Set(Some(request.client_id)),
+                principal_type: sea_orm::Set(principal_types::USER.to_string()),
+                principal_id: sea_orm::Set(request.user_id.to_string()),
                 created_at: sea_orm::Set(chrono::Utc::now().into()),
             };
 

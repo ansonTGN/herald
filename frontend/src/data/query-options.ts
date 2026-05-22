@@ -1,7 +1,7 @@
 import { queryOptions, type QueryClient } from '@tanstack/react-query'
 import { redirect } from '@tanstack/react-router'
 import {
-  listUsers,
+  listUsers2,
   getUser,
   listPermissions,
   getPermission,
@@ -358,7 +358,7 @@ export const usersQueryOptions = (
     queryKey: queryKeys.users(realmId, filters),
     queryFn: async () =>
       handleApiResponse(
-        await listUsers({
+        await listUsers2({
           path: { realmId },
           query: {
             page: filters.page ?? 0,

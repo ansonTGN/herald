@@ -35,7 +35,7 @@ docs/
 | [users.md](core/users.md) | 用户管理 | ✅ Implemented | Realm Admin, Regular User | - |
 | [realm-settings.md](core/realm-settings.md) | Realm 设置 | 🚧 Partially Implemented | Realm Admin | 2026-05-19 |
 | [audit.md](core/audit.md) | Audit 审计日志 | 📝 Draft | Realm Admin, Admin Realm | 2026-05-13 |
-| [dashboard-redesign.md](core/dashboard-redesign.md) | Dashboard 重设计 | 📝 Draft | Realm Admin | 2026-05-16 |
+| [dashboard-redesign.md](core/dashboard-redesign.md) | Dashboard 重设计 | 🚧 Partially Implemented | Realm Admin | 2026-05-22 |
 
 ### Auth 认证与授权
 
@@ -46,7 +46,7 @@ docs/
 | [wechat-oauth.md](auth/wechat-oauth.md) | 微信 OAuth 集成 | ✅ Implemented | Realm Admin, Regular User | 2026-03-03 |
 | [totp.md](auth/totp.md) | TOTP 二次认证 | ✅ Implemented | TOTP User, Realm Admin | - |
 | [permissions.md](auth/permissions.md) | 权限管理 | ✅ Implemented | Realm Admin | - |
-| [device-code.md](auth/device-code.md) | Device Code 登录 | 📝 Draft | Third-Party App, Regular User, Realm Admin | 2026-05-14 |
+| [device-code.md](auth/device-code.md) | Device Code 登录 | 🚧 Partially Implemented | Third-Party App, Regular User, Realm Admin | 2026-05-22 |
 
 ### Billing 计费与订阅
 
@@ -69,15 +69,15 @@ docs/
 |---------|------|------|---------|---------|
 | [client-app.md](integration/client-app.md) | Client App 管理 | ✅ Implemented | Realm Admin, Third-Party App | - |
 | [third-party-api.md](integration/third-party-api.md) | 第三方 API | ✅ Implemented | - | - |
-| [sdk-improve.md](integration/sdk-improve.md) | SDK 增强 — 资源管理 | 📝 Draft | Third-Party App | 2026-05-21 |
+| [sdk-improve.md](integration/sdk-improve.md) | SDK 增强 — 资源管理 | 🚧 Partially Implemented | Third-Party App | 2026-05-22 |
 
 ## 状态说明
 
 | 状态 | 说明 | 示例 |
 |------|------|------|
 | ✅ Implemented | 已完全实现并通过测试 | permissions.md, users.md |
-| 🚧 Partially Implemented | 部分实现（核心功能完成，边缘功能待实现） | billing.md, realm-settings.md |
-| 📝 Draft | 草稿阶段（待评审或实现） | device-code.md |
+| 🚧 Partially Implemented | 部分实现（核心功能完成，边缘功能待实现） | billing.md, device-code.md, sdk-improve.md |
+| 📝 Draft | 草稿阶段（待评审或实现） | — |
 
 ## 相关文档
 

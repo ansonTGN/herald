@@ -2,11 +2,15 @@
 // External API handlers (API Key authentication)
 
 pub mod api_key_auth;
+pub mod authz;
 pub mod billing;
+pub mod client_app;
 pub mod client_helper;
 pub mod permission;
 pub mod points;
+pub mod realm;
 pub mod subscription;
+pub mod user;
 
 #[cfg(test)]
 mod api_key_auth_test;
@@ -26,6 +30,15 @@ use herald_api_base::application::http::state::AppState;
         crate::billing::list_plan_assignments_batch,
         crate::points::get_balance_ext,
         crate::points::consume_points_ext,
+        crate::realm::create_realm,
+        crate::realm::list_realms,
+        crate::realm::get_realm,
+        crate::user::create_user,
+        crate::user::list_users,
+        crate::user::get_user,
+        crate::client_app::create_client_app,
+        crate::client_app::list_client_apps,
+        crate::client_app::get_client_app,
     ),
     components(schemas(
         crate::permission::PermissionCheckRequest,
@@ -39,6 +52,19 @@ use herald_api_base::application::http::state::AppState;
         crate::points::ExtPointsBalanceResponse,
         crate::points::ExtConsumePointsRequest,
         crate::points::ExtConsumePointsResponse,
+        crate::realm::CreateRealmExtRequest,
+        crate::realm::AdminUserInput,
+        crate::realm::RealmInfoResponse,
+        crate::realm::AdminUserOutput,
+        crate::realm::RealmListItem,
+        crate::realm::RealmListResponse,
+        crate::user::CreateUserExtRequest,
+        crate::user::UserInfoResponse,
+        crate::user::UserListResponse,
+        crate::client_app::CreateClientAppExtRequest,
+        crate::client_app::ClientAppInfoResponse,
+        crate::client_app::ClientAppListItem,
+        crate::client_app::ClientAppListResponse,
     ))
 )]
 pub struct ApiDoc;
@@ -86,6 +112,27 @@ pub fn create_router(state: AppState) -> Router<AppState> {
         .route(
             "/points/{realmId}/transactions/{transactionId}",
             axum::routing::get(points::get_transaction_ext),
+        )
+        .route(
+            "/realms",
+            axum::routing::post(realm::create_realm).get(realm::list_realms),
+        )
+        .route("/realms/{realmId}", axum::routing::get(realm::get_realm))
+        .route(
+            "/realms/{realmId}/users",
+            axum::routing::post(user::create_user).get(user::list_users),
+        )
+        .route(
+            "/realms/{realmId}/users/{userId}",
+            axum::routing::get(user::get_user),
+        )
+        .route(
+            "/realms/{realmId}/client-apps",
+            axum::routing::post(client_app::create_client_app).get(client_app::list_client_apps),
+        )
+        .route(
+            "/realms/{realmId}/client-apps/{clientAppId}",
+            axum::routing::get(client_app::get_client_app),
         )
         .layer(api_key_middleware)
 }

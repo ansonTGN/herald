@@ -41,15 +41,22 @@ impl PermissionBasedRealmPolicy {
 impl RealmPolicy for PermissionBasedRealmPolicy {
     fn can_create_realm(&self, identity: Identity) -> impl Future<Output = bool> + Send {
         let checker = self.permission_checker.clone();
-        let user_id = identity.user_id();
+        let principal = identity.principal_ref();
         async move {
             match checker
-                .check_permission("admin", &user_id, "realm", "create")
+                .check_principal_permission(
+                    "admin",
+                    principal.principal_type,
+                    &principal.principal_id,
+                    "realm",
+                    "create",
+                )
                 .await
             {
                 Ok(has_permission) => {
                     tracing::debug!(
-                        user_id = %user_id,
+                        principal_type = %principal.principal_type,
+                        principal_id = %principal.principal_id,
                         has_permission,
                         "Checked realm.create permission"
                     );
@@ -58,7 +65,8 @@ impl RealmPolicy for PermissionBasedRealmPolicy {
                 Err(e) => {
                     tracing::error!(
                         error = %e,
-                        user_id = %user_id,
+                        principal_type = %principal.principal_type,
+                        principal_id = %principal.principal_id,
                         "Failed to check realm.create permission"
                     );
                     false
@@ -69,15 +77,16 @@ impl RealmPolicy for PermissionBasedRealmPolicy {
 
     fn can_read_realm(&self, identity: Identity) -> impl Future<Output = bool> + Send {
         let checker = self.permission_checker.clone();
-        let user_id = identity.user_id();
-        let realm_id = identity.realm_id();
+        let principal = identity.principal_ref();
         async move {
-            if realm_id != "admin" {
-                return false;
-            }
-
             checker
-                .check_permission(&realm_id, &user_id, "realm", "create")
+                .check_principal_permission(
+                    &principal.realm_id,
+                    principal.principal_type,
+                    &principal.principal_id,
+                    "realm",
+                    "view",
+                )
                 .await
                 .unwrap_or_default()
         }
@@ -85,10 +94,16 @@ impl RealmPolicy for PermissionBasedRealmPolicy {
 
     fn can_update_realm(&self, identity: Identity) -> impl Future<Output = bool> + Send {
         let checker = self.permission_checker.clone();
-        let user_id = identity.user_id();
+        let principal = identity.principal_ref();
         async move {
             checker
-                .check_permission("admin", &user_id, "realm", "create")
+                .check_principal_permission(
+                    "admin",
+                    principal.principal_type,
+                    &principal.principal_id,
+                    "realm",
+                    "create",
+                )
                 .await
                 .unwrap_or_default()
         }
@@ -96,10 +111,16 @@ impl RealmPolicy for PermissionBasedRealmPolicy {
 
     fn can_delete_realm(&self, identity: Identity) -> impl Future<Output = bool> + Send {
         let checker = self.permission_checker.clone();
-        let user_id = identity.user_id();
+        let principal = identity.principal_ref();
         async move {
             checker
-                .check_permission("admin", &user_id, "realm", "create")
+                .check_principal_permission(
+                    "admin",
+                    principal.principal_type,
+                    &principal.principal_id,
+                    "realm",
+                    "create",
+                )
                 .await
                 .unwrap_or_default()
         }
@@ -107,15 +128,16 @@ impl RealmPolicy for PermissionBasedRealmPolicy {
 
     fn can_list_realms(&self, identity: Identity) -> impl Future<Output = bool> + Send {
         let checker = self.permission_checker.clone();
-        let user_id = identity.user_id();
-        let realm_id = identity.realm_id();
+        let principal = identity.principal_ref();
         async move {
-            if realm_id != "admin" {
-                return false;
-            }
-
             checker
-                .check_permission(&realm_id, &user_id, "realm", "create")
+                .check_principal_permission(
+                    &principal.realm_id,
+                    principal.principal_type,
+                    &principal.principal_id,
+                    "realm",
+                    "list",
+                )
                 .await
                 .unwrap_or_default()
         }
@@ -146,11 +168,16 @@ impl PermissionBasedClientPolicy {
 impl ClientPolicy for PermissionBasedClientPolicy {
     fn can_create_client(&self, identity: Identity) -> impl Future<Output = bool> + Send {
         let checker = self.permission_checker.clone();
-        let user_id = identity.user_id();
-        let realm_id = identity.realm_id();
+        let principal = identity.principal_ref();
         async move {
             checker
-                .check_permission(&realm_id, &user_id, "clients", "manage")
+                .check_principal_permission(
+                    &principal.realm_id,
+                    principal.principal_type,
+                    &principal.principal_id,
+                    "clients",
+                    "create",
+                )
                 .await
                 .unwrap_or_default()
         }
@@ -158,11 +185,16 @@ impl ClientPolicy for PermissionBasedClientPolicy {
 
     fn can_read_client(&self, identity: Identity) -> impl Future<Output = bool> + Send {
         let checker = self.permission_checker.clone();
-        let user_id = identity.user_id();
-        let realm_id = identity.realm_id();
+        let principal = identity.principal_ref();
         async move {
             checker
-                .check_permission(&realm_id, &user_id, "clients", "view")
+                .check_principal_permission(
+                    &principal.realm_id,
+                    principal.principal_type,
+                    &principal.principal_id,
+                    "clients",
+                    "view",
+                )
                 .await
                 .unwrap_or_default()
         }
@@ -170,11 +202,16 @@ impl ClientPolicy for PermissionBasedClientPolicy {
 
     fn can_update_client(&self, identity: Identity) -> impl Future<Output = bool> + Send {
         let checker = self.permission_checker.clone();
-        let user_id = identity.user_id();
-        let realm_id = identity.realm_id();
+        let principal = identity.principal_ref();
         async move {
             checker
-                .check_permission(&realm_id, &user_id, "clients", "manage")
+                .check_principal_permission(
+                    &principal.realm_id,
+                    principal.principal_type,
+                    &principal.principal_id,
+                    "clients",
+                    "manage",
+                )
                 .await
                 .unwrap_or_default()
         }
@@ -182,11 +219,16 @@ impl ClientPolicy for PermissionBasedClientPolicy {
 
     fn can_delete_client(&self, identity: Identity) -> impl Future<Output = bool> + Send {
         let checker = self.permission_checker.clone();
-        let user_id = identity.user_id();
-        let realm_id = identity.realm_id();
+        let principal = identity.principal_ref();
         async move {
             checker
-                .check_permission(&realm_id, &user_id, "clients", "manage")
+                .check_principal_permission(
+                    &principal.realm_id,
+                    principal.principal_type,
+                    &principal.principal_id,
+                    "clients",
+                    "manage",
+                )
                 .await
                 .unwrap_or_default()
         }
@@ -194,11 +236,16 @@ impl ClientPolicy for PermissionBasedClientPolicy {
 
     fn can_list_clients(&self, identity: Identity) -> impl Future<Output = bool> + Send {
         let checker = self.permission_checker.clone();
-        let user_id = identity.user_id();
-        let realm_id = identity.realm_id();
+        let principal = identity.principal_ref();
         async move {
             checker
-                .check_permission(&realm_id, &user_id, "clients", "view")
+                .check_principal_permission(
+                    &principal.realm_id,
+                    principal.principal_type,
+                    &principal.principal_id,
+                    "clients",
+                    "view",
+                )
                 .await
                 .unwrap_or_default()
         }

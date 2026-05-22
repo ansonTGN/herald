@@ -128,6 +128,158 @@ pub struct ConsumePointsResponse {
     pub balance_after: i64,
 }
 
+// ============================================================================
+// Realm types
+// ============================================================================
+
+/// Request body for creating a realm
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRealmSdkRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub admin_user: AdminUserSdkInput,
+}
+
+/// Admin user input for realm creation
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminUserSdkInput {
+    pub email: String,
+    pub password: String,
+}
+
+/// Admin user output in realm detail
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminUserSdkOutput {
+    pub id: String,
+    pub email: String,
+    pub role: String,
+}
+
+/// Realm detail (create/get response)
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RealmInfo {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub admin_user: Option<AdminUserSdkOutput>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Realm list item
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RealmItem {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+// ============================================================================
+// User types
+// ============================================================================
+
+/// Request body for creating a user
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateUserSdkRequest {
+    pub email: String,
+    pub password: String,
+    pub nickname: Option<String>,
+}
+
+/// User info (create/get/list response)
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UserInfo {
+    pub id: String,
+    pub email: String,
+    pub nickname: Option<String>,
+    pub status: i32,
+    pub created_at: String,
+}
+
+// ============================================================================
+// Client App types
+// ============================================================================
+
+/// Request body for creating a client app
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateClientAppSdkRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub redirect_uris: Vec<String>,
+}
+
+/// Client app detail (create/get response)
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientAppInfo {
+    pub id: String,
+    pub client_id: String,
+    pub client_secret: Option<String>,
+    pub name: String,
+    pub description: Option<String>,
+    pub redirect_uris: Vec<String>,
+    pub enabled: bool,
+    pub created_at: String,
+}
+
+/// Client app list item
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientAppItem {
+    pub id: String,
+    pub client_id: String,
+    pub name: String,
+    pub enabled: bool,
+    pub created_at: String,
+}
+
+// Wrapper types for list API responses (single-pass deserialization)
+#[derive(Debug, Deserialize)]
+struct RealmListResponse {
+    #[serde(rename = "realms")]
+    items: Vec<RealmItem>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UserListResponse {
+    items: Vec<UserInfo>,
+    #[allow(dead_code)]
+    page: u64,
+    #[allow(dead_code)]
+    page_size: u64,
+    #[allow(dead_code)]
+    total: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClientAppListResponse {
+    #[serde(rename = "clientApps")]
+    items: Vec<ClientAppItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlanListResponse {
+    #[serde(rename = "plans")]
+    items: Vec<SubscriptionPlan>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlanAssignmentListResponse {
+    #[serde(rename = "assignments")]
+    items: Vec<SubscriptionPlanAssignment>,
+}
+
 type TokenIndex = Arc<DashMap<String, Vec<PermissionCheckRequest>>>;
 
 async fn handle_response<T>(response: reqwest::Response) -> Result<T, Error>
@@ -311,10 +463,9 @@ impl Client {
         let response = self.build_request(Method::GET, &url).send().await?;
 
         let status = response.status();
-        let resp: Result<serde_json::Value, Error> = handle_response(response).await;
+        let resp: Result<PlanListResponse, Error> = handle_response(response).await;
         debug!(status = %status, "API Response for list_plans: {:?}", resp);
-        let json_value = resp?;
-        serde_json::from_value(json_value["plans"].clone()).map_err(Error::SerdeJson)
+        Ok(resp?.items)
     }
 
     /// List plan assignments for a client app
@@ -339,10 +490,9 @@ impl Client {
         let response = self.build_request(Method::GET, &url).send().await?;
 
         let status = response.status();
-        let resp: Result<serde_json::Value, Error> = handle_response(response).await;
+        let resp: Result<PlanAssignmentListResponse, Error> = handle_response(response).await;
         debug!(status = %status, "API Response for list_plan_assignments: {:?}", resp);
-        let json_value = resp?;
-        serde_json::from_value(json_value["assignments"].clone()).map_err(Error::SerdeJson)
+        Ok(resp?.items)
     }
 
     /// Get user points balance
@@ -431,6 +581,147 @@ impl Client {
         let status = response.status();
         let resp = handle_response(response).await;
         debug!(status = %status, "API Response for consume_points: {:?}", resp);
+        resp
+    }
+
+    // ========================================================================
+    // Realm methods
+    // ========================================================================
+
+    /// Create a new realm
+    pub async fn create_realm(&self, request: CreateRealmSdkRequest) -> Result<RealmInfo, Error> {
+        let url = format!("{}/api/ext/realms", self.base_url);
+        let response = self
+            .build_request(Method::POST, &url)
+            .json(&request)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let resp = handle_response(response).await;
+        debug!(status = %status, "API Response for create_realm: {:?}", resp);
+        resp
+    }
+
+    /// List all realms visible to the caller
+    pub async fn list_realms(&self) -> Result<Vec<RealmItem>, Error> {
+        let url = format!("{}/api/ext/realms", self.base_url);
+        let response = self.build_request(Method::GET, &url).send().await?;
+
+        let status = response.status();
+        let resp: Result<RealmListResponse, Error> = handle_response(response).await;
+        debug!(status = %status, "API Response for list_realms: {:?}", resp);
+        Ok(resp?.items)
+    }
+
+    /// Get a single realm by ID
+    pub async fn get_realm(&self, realm_id: &str) -> Result<RealmInfo, Error> {
+        let url = format!("{}/api/ext/realms/{}", self.base_url, realm_id);
+        let response = self.build_request(Method::GET, &url).send().await?;
+
+        let status = response.status();
+        let resp = handle_response(response).await;
+        debug!(status = %status, "API Response for get_realm: {:?}", resp);
+        resp
+    }
+
+    // ========================================================================
+    // User methods
+    // ========================================================================
+
+    /// Create a new user in a realm
+    pub async fn create_user(
+        &self,
+        realm_id: &str,
+        request: CreateUserSdkRequest,
+    ) -> Result<UserInfo, Error> {
+        let url = format!("{}/api/ext/realms/{}/users", self.base_url, realm_id);
+        let response = self
+            .build_request(Method::POST, &url)
+            .json(&request)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let resp = handle_response(response).await;
+        debug!(status = %status, "API Response for create_user: {:?}", resp);
+        resp
+    }
+
+    /// List all users in a realm
+    pub async fn list_users(&self, realm_id: &str) -> Result<Vec<UserInfo>, Error> {
+        let url = format!("{}/api/ext/realms/{}/users", self.base_url, realm_id);
+        let response = self.build_request(Method::GET, &url).send().await?;
+
+        let status = response.status();
+        let resp: Result<UserListResponse, Error> = handle_response(response).await;
+        debug!(status = %status, "API Response for list_users: {:?}", resp);
+        Ok(resp?.items)
+    }
+
+    /// Get a single user by ID within a realm
+    pub async fn get_user(&self, realm_id: &str, user_id: &str) -> Result<UserInfo, Error> {
+        let url = format!(
+            "{}/api/ext/realms/{}/users/{}",
+            self.base_url, realm_id, user_id
+        );
+        let response = self.build_request(Method::GET, &url).send().await?;
+
+        let status = response.status();
+        let resp = handle_response(response).await;
+        debug!(status = %status, "API Response for get_user: {:?}", resp);
+        resp
+    }
+
+    // ========================================================================
+    // Client App methods
+    // ========================================================================
+
+    /// Create a new client app in a realm
+    pub async fn create_client_app(
+        &self,
+        realm_id: &str,
+        request: CreateClientAppSdkRequest,
+    ) -> Result<ClientAppInfo, Error> {
+        let url = format!("{}/api/ext/realms/{}/client-apps", self.base_url, realm_id);
+        let response = self
+            .build_request(Method::POST, &url)
+            .json(&request)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let resp = handle_response(response).await;
+        debug!(status = %status, "API Response for create_client_app: {:?}", resp);
+        resp
+    }
+
+    /// List all client apps in a realm
+    pub async fn list_client_apps(&self, realm_id: &str) -> Result<Vec<ClientAppItem>, Error> {
+        let url = format!("{}/api/ext/realms/{}/client-apps", self.base_url, realm_id);
+        let response = self.build_request(Method::GET, &url).send().await?;
+
+        let status = response.status();
+        let resp: Result<ClientAppListResponse, Error> = handle_response(response).await;
+        debug!(status = %status, "API Response for list_client_apps: {:?}", resp);
+        Ok(resp?.items)
+    }
+
+    /// Get a single client app by ID within a realm
+    pub async fn get_client_app(
+        &self,
+        realm_id: &str,
+        client_app_id: &str,
+    ) -> Result<ClientAppInfo, Error> {
+        let url = format!(
+            "{}/api/ext/realms/{}/client-apps/{}",
+            self.base_url, realm_id, client_app_id
+        );
+        let response = self.build_request(Method::GET, &url).send().await?;
+
+        let status = response.status();
+        let resp = handle_response(response).await;
+        debug!(status = %status, "API Response for get_client_app: {:?}", resp);
         resp
     }
 }
@@ -766,5 +1057,510 @@ mod tests {
         let result = client.get_subscription("realm1", "client1").await;
 
         assert!(result.is_err(), "Timeout should return error");
+    }
+
+    // ========================================================================
+    // Realm API Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_create_realm_success() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        let realm_response = json!({
+            "id": "realm-001",
+            "name": "test-realm",
+            "description": "A test realm",
+            "adminUser": {
+                "id": "user-001",
+                "email": "admin@test.com",
+                "role": "admin"
+            },
+            "createdAt": "2025-01-01T00:00:00Z",
+            "updatedAt": "2025-01-01T00:00:00Z"
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/api/ext/realms"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&realm_response))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let request = CreateRealmSdkRequest {
+            name: "test-realm".to_string(),
+            description: Some("A test realm".to_string()),
+            admin_user: AdminUserSdkInput {
+                email: "admin@test.com".to_string(),
+                password: "password123".to_string(),
+            },
+        };
+
+        let result = client.create_realm(request).await;
+        assert!(
+            result.is_ok(),
+            "create_realm should succeed, got: {:?}",
+            result
+        );
+        let realm = result.unwrap();
+        assert_eq!(realm.id, "realm-001");
+        assert_eq!(realm.name, "test-realm");
+        assert!(realm.admin_user.is_some());
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_list_realms_success() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        let list_response = json!({
+            "realms": [
+                {
+                    "id": "realm-001",
+                    "name": "realm-a",
+                    "description": null,
+                    "createdAt": "2025-01-01T00:00:00Z",
+                    "updatedAt": "2025-01-01T00:00:00Z"
+                },
+                {
+                    "id": "realm-002",
+                    "name": "realm-b",
+                    "description": "Second realm",
+                    "createdAt": "2025-02-01T00:00:00Z",
+                    "updatedAt": "2025-02-01T00:00:00Z"
+                }
+            ]
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/api/ext/realms"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&list_response))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.list_realms().await;
+        assert!(
+            result.is_ok(),
+            "list_realms should succeed, got: {:?}",
+            result
+        );
+        let realms = result.unwrap();
+        assert_eq!(realms.len(), 2);
+        assert_eq!(realms[0].name, "realm-a");
+        assert_eq!(realms[1].name, "realm-b");
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_get_realm_success() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        let realm_response = json!({
+            "id": "realm-001",
+            "name": "test-realm",
+            "description": "A test realm",
+            "adminUser": {
+                "id": "user-001",
+                "email": "admin@test.com",
+                "role": "admin"
+            },
+            "createdAt": "2025-01-01T00:00:00Z",
+            "updatedAt": "2025-01-01T00:00:00Z"
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/api/ext/realms/realm-001"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&realm_response))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.get_realm("realm-001").await;
+        assert!(
+            result.is_ok(),
+            "get_realm should succeed, got: {:?}",
+            result
+        );
+        let realm = result.unwrap();
+        assert_eq!(realm.id, "realm-001");
+        assert_eq!(realm.name, "test-realm");
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_get_realm_not_found() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        Mock::given(method("GET"))
+            .and(path("/api/ext/realms/nonexistent"))
+            .respond_with(ResponseTemplate::new(404))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.get_realm("nonexistent").await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::NotFound(_) => {}
+            other => panic!("Expected NotFound, got: {:?}", other),
+        }
+
+        server.verify().await;
+    }
+
+    // ========================================================================
+    // User API Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_create_user_success() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        let user_response = json!({
+            "id": "user-001",
+            "email": "test@example.com",
+            "nickname": "testuser",
+            "status": 1,
+            "createdAt": "2025-01-01T00:00:00Z"
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/api/ext/realms/realm-001/users"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&user_response))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let request = CreateUserSdkRequest {
+            email: "test@example.com".to_string(),
+            password: "password123".to_string(),
+            nickname: Some("testuser".to_string()),
+        };
+
+        let result = client.create_user("realm-001", request).await;
+        assert!(
+            result.is_ok(),
+            "create_user should succeed, got: {:?}",
+            result
+        );
+        let user = result.unwrap();
+        assert_eq!(user.id, "user-001");
+        assert_eq!(user.email, "test@example.com");
+        assert_eq!(user.nickname, Some("testuser".to_string()));
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_list_users_success() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        let list_response = json!({
+            "users": [
+                {
+                    "id": "user-001",
+                    "email": "a@example.com",
+                    "nickname": null,
+                    "status": 1,
+                    "createdAt": "2025-01-01T00:00:00Z"
+                },
+                {
+                    "id": "user-002",
+                    "email": "b@example.com",
+                    "nickname": "bob",
+                    "status": 1,
+                    "createdAt": "2025-02-01T00:00:00Z"
+                }
+            ]
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/api/ext/realms/realm-001/users"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&list_response))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.list_users("realm-001").await;
+        assert!(
+            result.is_ok(),
+            "list_users should succeed, got: {:?}",
+            result
+        );
+        let users = result.unwrap();
+        assert_eq!(users.len(), 2);
+        assert_eq!(users[0].email, "a@example.com");
+        assert_eq!(users[1].email, "b@example.com");
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_get_user_success() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        let user_response = json!({
+            "id": "user-001",
+            "email": "test@example.com",
+            "nickname": "testuser",
+            "status": 1,
+            "createdAt": "2025-01-01T00:00:00Z"
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/api/ext/realms/realm-001/users/user-001"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&user_response))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.get_user("realm-001", "user-001").await;
+        assert!(result.is_ok(), "get_user should succeed, got: {:?}", result);
+        let user = result.unwrap();
+        assert_eq!(user.id, "user-001");
+        assert_eq!(user.email, "test@example.com");
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_create_user_forbidden() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        Mock::given(method("POST"))
+            .and(path("/api/ext/realms/realm-001/users"))
+            .respond_with(ResponseTemplate::new(403))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let request = CreateUserSdkRequest {
+            email: "test@example.com".to_string(),
+            password: "password123".to_string(),
+            nickname: None,
+        };
+
+        let result = client.create_user("realm-001", request).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::Forbidden(_) => {}
+            other => panic!("Expected Forbidden, got: {:?}", other),
+        }
+
+        server.verify().await;
+    }
+
+    // ========================================================================
+    // Client App API Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_create_client_app_success() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        let app_response = json!({
+            "id": "app-001",
+            "clientId": "client-abc",
+            "clientSecret": "secret-xyz",
+            "name": "My App",
+            "description": "A test app",
+            "redirectUris": ["https://example.com/callback"],
+            "enabled": true,
+            "createdAt": "2025-01-01T00:00:00Z"
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/api/ext/realms/realm-001/client-apps"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&app_response))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let request = CreateClientAppSdkRequest {
+            name: "My App".to_string(),
+            description: Some("A test app".to_string()),
+            redirect_uris: vec!["https://example.com/callback".to_string()],
+        };
+
+        let result = client.create_client_app("realm-001", request).await;
+        assert!(
+            result.is_ok(),
+            "create_client_app should succeed, got: {:?}",
+            result
+        );
+        let app = result.unwrap();
+        assert_eq!(app.id, "app-001");
+        assert_eq!(app.client_id, "client-abc");
+        assert_eq!(app.name, "My App");
+        assert!(app.enabled);
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_list_client_apps_success() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        let list_response = json!({
+            "clientApps": [
+                {
+                    "id": "app-001",
+                    "clientId": "client-abc",
+                    "name": "App A",
+                    "enabled": true,
+                    "createdAt": "2025-01-01T00:00:00Z"
+                },
+                {
+                    "id": "app-002",
+                    "clientId": "client-def",
+                    "name": "App B",
+                    "enabled": false,
+                    "createdAt": "2025-02-01T00:00:00Z"
+                }
+            ]
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/api/ext/realms/realm-001/client-apps"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&list_response))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.list_client_apps("realm-001").await;
+        assert!(
+            result.is_ok(),
+            "list_client_apps should succeed, got: {:?}",
+            result
+        );
+        let apps = result.unwrap();
+        assert_eq!(apps.len(), 2);
+        assert_eq!(apps[0].name, "App A");
+        assert_eq!(apps[1].name, "App B");
+        assert!(apps[0].enabled);
+        assert!(!apps[1].enabled);
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_get_client_app_success() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        let app_response = json!({
+            "id": "app-001",
+            "clientId": "client-abc",
+            "clientSecret": null,
+            "name": "My App",
+            "description": "A test app",
+            "redirectUris": ["https://example.com/callback"],
+            "enabled": true,
+            "createdAt": "2025-01-01T00:00:00Z"
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/api/ext/realms/realm-001/client-apps/app-001"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&app_response))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.get_client_app("realm-001", "app-001").await;
+        assert!(
+            result.is_ok(),
+            "get_client_app should succeed, got: {:?}",
+            result
+        );
+        let app = result.unwrap();
+        assert_eq!(app.id, "app-001");
+        assert_eq!(app.client_id, "client-abc");
+        assert!(app.enabled);
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_get_client_app_not_found() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        Mock::given(method("GET"))
+            .and(path("/api/ext/realms/realm-001/client-apps/nonexistent"))
+            .respond_with(ResponseTemplate::new(404))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.get_client_app("realm-001", "nonexistent").await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::NotFound(_) => {}
+            other => panic!("Expected NotFound, got: {:?}", other),
+        }
+
+        server.verify().await;
+    }
+
+    // ========================================================================
+    // Cross-cutting error tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_realm_unauthorized() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        Mock::given(method("GET"))
+            .and(path("/api/ext/realms"))
+            .respond_with(ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.list_realms().await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::Unauthorized(_) => {}
+            other => panic!("Expected Unauthorized, got: {:?}", other),
+        }
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_user_forbidden() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        Mock::given(method("GET"))
+            .and(path("/api/ext/realms/realm-001/users"))
+            .respond_with(ResponseTemplate::new(403))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.list_users("realm-001").await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::Forbidden(_) => {}
+            other => panic!("Expected Forbidden, got: {:?}", other),
+        }
+
+        server.verify().await;
     }
 }

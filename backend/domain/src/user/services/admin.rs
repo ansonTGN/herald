@@ -23,6 +23,36 @@ use super::super::{
 };
 
 // ============================================================================
+// Shared permission check helper
+// ============================================================================
+
+async fn require_permission<P: PermissionService>(
+    permission_checker: &P,
+    identity: &Identity,
+    realm_id: &str,
+    resource: &str,
+    action: &str,
+    policy_msg: &str,
+) -> UserAdminResult<()> {
+    let principal = identity.principal_ref();
+    let allowed = permission_checker
+        .check_principal_permission(
+            realm_id,
+            principal.principal_type,
+            &principal.principal_id,
+            resource,
+            action,
+        )
+        .await
+        .map_err(|e| UserAdminError::InternalError(format!("Permission check failed: {}", e)))?;
+
+    ensure_policy(allowed, policy_msg).map_err(|e| match e {
+        CoreError::Forbidden(msg) => UserAdminError::PermissionDenied(msg),
+        _ => UserAdminError::InternalError(format!("Policy check error: {:?}", e)),
+    })
+}
+
+// ============================================================================
 // Admin User Service Implementation
 // ============================================================================
 
@@ -73,21 +103,15 @@ where
         realm_id: &str,
         request: CreateUserWithRolesRequest,
     ) -> UserAdminResult<AdminUser> {
-        // Permission check
-        let allowed = self
-            .permission_checker
-            .check_permission(realm_id, &identity.user_id(), "users", "manage")
-            .await
-            .map_err(|e| {
-                UserAdminError::InternalError(format!("Permission check failed: {}", e))
-            })?;
-
-        ensure_policy(allowed, "Insufficient permissions to create users").map_err(
-            |e| match e {
-                CoreError::Forbidden(msg) => UserAdminError::PermissionDenied(msg),
-                _ => UserAdminError::InternalError(format!("Policy check error: {:?}", e)),
-            },
-        )?;
+        require_permission(
+            &*self.permission_checker,
+            &identity,
+            realm_id,
+            "users",
+            "create",
+            "Insufficient permissions to create users",
+        )
+        .await?;
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
@@ -172,21 +196,15 @@ where
         user_id: Uuid,
         request: UpdateUserAdminRequest,
     ) -> UserAdminResult<AdminUser> {
-        // Permission check
-        let allowed = self
-            .permission_checker
-            .check_permission(realm_id, &identity.user_id(), "users", "manage")
-            .await
-            .map_err(|e| {
-                UserAdminError::InternalError(format!("Permission check failed: {}", e))
-            })?;
-
-        ensure_policy(allowed, "Insufficient permissions to update users").map_err(
-            |e| match e {
-                CoreError::Forbidden(msg) => UserAdminError::PermissionDenied(msg),
-                _ => UserAdminError::InternalError(format!("Policy check error: {:?}", e)),
-            },
-        )?;
+        require_permission(
+            &*self.permission_checker,
+            &identity,
+            realm_id,
+            "users",
+            "manage",
+            "Insufficient permissions to update users",
+        )
+        .await?;
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
@@ -254,19 +272,15 @@ where
         realm_id: &str,
         user_id: Uuid,
     ) -> UserAdminResult<AdminUser> {
-        // Permission check
-        let allowed = self
-            .permission_checker
-            .check_permission(realm_id, &identity.user_id(), "users", "view")
-            .await
-            .map_err(|e| {
-                UserAdminError::InternalError(format!("Permission check failed: {}", e))
-            })?;
-
-        ensure_policy(allowed, "Insufficient permissions to read users").map_err(|e| match e {
-            CoreError::Forbidden(msg) => UserAdminError::PermissionDenied(msg),
-            _ => UserAdminError::InternalError(format!("Policy check error: {:?}", e)),
-        })?;
+        require_permission(
+            &*self.permission_checker,
+            &identity,
+            realm_id,
+            "users",
+            "view",
+            "Insufficient permissions to read users",
+        )
+        .await?;
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
@@ -297,21 +311,15 @@ where
         realm_id: &str,
         user_id: Uuid,
     ) -> UserAdminResult<()> {
-        // Permission check
-        let allowed = self
-            .permission_checker
-            .check_permission(realm_id, &identity.user_id(), "users", "manage")
-            .await
-            .map_err(|e| {
-                UserAdminError::InternalError(format!("Permission check failed: {}", e))
-            })?;
-
-        ensure_policy(allowed, "Insufficient permissions to delete users").map_err(
-            |e| match e {
-                CoreError::Forbidden(msg) => UserAdminError::PermissionDenied(msg),
-                _ => UserAdminError::InternalError(format!("Policy check error: {:?}", e)),
-            },
-        )?;
+        require_permission(
+            &*self.permission_checker,
+            &identity,
+            realm_id,
+            "users",
+            "manage",
+            "Insufficient permissions to delete users",
+        )
+        .await?;
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
@@ -360,21 +368,15 @@ where
         realm_id: &str,
         user_id: Uuid,
     ) -> UserAdminResult<String> {
-        // Permission check
-        let allowed = self
-            .permission_checker
-            .check_permission(realm_id, &identity.user_id(), "users", "manage")
-            .await
-            .map_err(|e| {
-                UserAdminError::InternalError(format!("Permission check failed: {}", e))
-            })?;
-
-        ensure_policy(allowed, "Insufficient permissions to manage users").map_err(
-            |e| match e {
-                CoreError::Forbidden(msg) => UserAdminError::PermissionDenied(msg),
-                _ => UserAdminError::InternalError(format!("Policy check error: {:?}", e)),
-            },
-        )?;
+        require_permission(
+            &*self.permission_checker,
+            &identity,
+            realm_id,
+            "users",
+            "manage",
+            "Insufficient permissions to manage users",
+        )
+        .await?;
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
@@ -405,29 +407,12 @@ where
 
 /// Generate random password (alphanumeric, 16 characters)
 fn generate_random_password() -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    use std::time::SystemTime;
-
-    // Use system time for entropy
-    let mut hasher = DefaultHasher::new();
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos()
-        .hash(&mut hasher);
-
-    // Generate random-like password
-    let chars = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let seed = hasher.finish();
-    let mut password = String::with_capacity(16);
-
-    for i in 0..16 {
-        let index = ((seed >> (i * 4)) % 64) as usize;
-        password.push(chars[index % chars.len()] as char);
-    }
-
-    password
+    use rand::Rng;
+    const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let mut rng = rand::thread_rng();
+    (0..16)
+        .map(|_| CHARSET[rng.gen_range(0..CHARSET.len())] as char)
+        .collect()
 }
 
 // ============================================================================
@@ -510,21 +495,15 @@ where
         realm_id: &str,
         user_id: Uuid,
     ) -> UserAdminResult<Vec<RoleDetail>> {
-        // Permission check
-        let allowed = self
-            .permission_checker
-            .check_permission(realm_id, &identity.user_id(), "users", "view")
-            .await
-            .map_err(|e| {
-                UserAdminError::InternalError(format!("Permission check failed: {}", e))
-            })?;
-
-        ensure_policy(allowed, "Insufficient permissions to read user roles").map_err(
-            |e| match e {
-                CoreError::Forbidden(msg) => UserAdminError::PermissionDenied(msg),
-                _ => UserAdminError::InternalError(format!("Policy check error: {:?}", e)),
-            },
-        )?;
+        require_permission(
+            &*self.permission_checker,
+            &identity,
+            realm_id,
+            "users",
+            "view",
+            "Insufficient permissions to read user roles",
+        )
+        .await?;
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
@@ -551,10 +530,17 @@ where
         realm_id: &str,
         role_ids: &[Uuid],
     ) -> UserAdminResult<bool> {
-        // Check if user has roles.manage permission
+        // Check if principal has roles.manage permission
+        let principal = identity.principal_ref();
         let can_manage_roles = self
             .permission_checker
-            .check_permission(realm_id, &identity.user_id(), "roles", "manage")
+            .check_principal_permission(
+                realm_id,
+                principal.principal_type,
+                &principal.principal_id,
+                "roles",
+                "manage",
+            )
             .await
             .unwrap_or(false);
 
@@ -626,21 +612,15 @@ where
         realm_id: &str,
         user_id: Uuid,
     ) -> UserAdminResult<Vec<PermissionDetail>> {
-        // Permission check
-        let allowed = self
-            .permission_checker
-            .check_permission(realm_id, &identity.user_id(), "users", "view")
-            .await
-            .map_err(|e| {
-                UserAdminError::InternalError(format!("Permission check failed: {}", e))
-            })?;
-
-        ensure_policy(allowed, "Insufficient permissions to read user permissions").map_err(
-            |e| match e {
-                CoreError::Forbidden(msg) => UserAdminError::PermissionDenied(msg),
-                _ => UserAdminError::InternalError(format!("Policy check error: {:?}", e)),
-            },
-        )?;
+        require_permission(
+            &*self.permission_checker,
+            &identity,
+            realm_id,
+            "users",
+            "view",
+            "Insufficient permissions to read user permissions",
+        )
+        .await?;
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
@@ -732,23 +712,15 @@ where
         user_id: Uuid,
         policy_id: Uuid,
     ) -> UserAdminResult<()> {
-        // Permission check
-        let allowed = self
-            .permission_checker
-            .check_permission(realm_id, &identity.user_id(), "permissions", "manage")
-            .await
-            .map_err(|e| {
-                UserAdminError::InternalError(format!("Permission check failed: {}", e))
-            })?;
-
-        ensure_policy(
-            allowed,
+        require_permission(
+            &*self.permission_checker,
+            &identity,
+            realm_id,
+            "permissions",
+            "manage",
             "Insufficient permissions to assign direct permissions",
         )
-        .map_err(|e| match e {
-            CoreError::Forbidden(msg) => UserAdminError::PermissionDenied(msg),
-            _ => UserAdminError::InternalError(format!("Policy check error: {:?}", e)),
-        })?;
+        .await?;
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
@@ -777,23 +749,15 @@ where
         user_id: Uuid,
         policy_id: Uuid,
     ) -> UserAdminResult<()> {
-        // Permission check
-        let allowed = self
-            .permission_checker
-            .check_permission(realm_id, &identity.user_id(), "permissions", "manage")
-            .await
-            .map_err(|e| {
-                UserAdminError::InternalError(format!("Permission check failed: {}", e))
-            })?;
-
-        ensure_policy(
-            allowed,
+        require_permission(
+            &*self.permission_checker,
+            &identity,
+            realm_id,
+            "permissions",
+            "manage",
             "Insufficient permissions to remove direct permissions",
         )
-        .map_err(|e| match e {
-            CoreError::Forbidden(msg) => UserAdminError::PermissionDenied(msg),
-            _ => UserAdminError::InternalError(format!("Policy check error: {:?}", e)),
-        })?;
+        .await?;
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
@@ -867,21 +831,16 @@ where
         resource: Option<String>,
         action: Option<String>,
     ) -> UserAdminResult<()> {
-        // Permission check
-        let allowed = self
-            .permission_checker
-            .check_permission(realm_id, &identity.user_id(), "policies", "manage")
-            .await
-            .map_err(|e| {
-                UserAdminError::InternalError(format!("Permission check failed: {}", e))
-            })?;
-
-        ensure_policy(allowed, "Insufficient permissions to manage policies").map_err(
-            |e| match e {
-                CoreError::Forbidden(msg) => UserAdminError::PermissionDenied(msg),
-                _ => UserAdminError::InternalError(format!("Policy check error: {:?}", e)),
-            },
-        )?;
+        // Principal-based permission check: policies:manage
+        require_permission(
+            &*self.permission_checker,
+            &identity,
+            realm_id,
+            "policies",
+            "manage",
+            "Insufficient permissions to manage policies",
+        )
+        .await?;
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
@@ -930,20 +889,15 @@ where
         resource: Option<String>,
         action: Option<String>,
     ) -> UserAdminResult<()> {
-        let allowed = self
-            .permission_checker
-            .check_permission(realm_id, &identity.user_id(), "policies", "manage")
-            .await
-            .map_err(|e| {
-                UserAdminError::InternalError(format!("Permission check failed: {}", e))
-            })?;
-
-        ensure_policy(allowed, "Insufficient permissions to manage policies").map_err(
-            |e| match e {
-                CoreError::Forbidden(msg) => UserAdminError::PermissionDenied(msg),
-                _ => UserAdminError::InternalError(format!("Policy check error: {:?}", e)),
-            },
-        )?;
+        require_permission(
+            &*self.permission_checker,
+            &identity,
+            realm_id,
+            "policies",
+            "manage",
+            "Insufficient permissions to manage policies",
+        )
+        .await?;
 
         if identity.realm_id() != realm_id {
             return Err(UserAdminError::PermissionDenied(

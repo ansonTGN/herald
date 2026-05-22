@@ -1,3 +1,4 @@
+use herald_domain::authorization::principal_types;
 use herald_domain::security_constants::DEFAULT_BCRYPT_COST;
 use sqlx::{PgPool, Row};
 use std::env;
@@ -103,13 +104,14 @@ pub async fn init_admin_user(pool: &PgPool, app_env: &str) -> anyhow::Result<()>
 
         // Assign realm-admin role to admin user using user_roles table within transaction
         sqlx::query(
-            "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id) VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id) VALUES ($1, $2, $3, $4, $5, $6, $2::text)"
         )
         .bind(Uuid::now_v7())
         .bind(user_id)
         .bind(realm_admin_role_id)
         .bind(&realm_id)
         .bind(&client_id)
+        .bind(principal_types::USER)
         .execute(&mut *tx)
         .await?;
 

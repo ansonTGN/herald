@@ -11,6 +11,7 @@ use axum::{
 };
 use herald_api::application::http::role_definitions::types::RoleCreateRequest;
 use herald_core::domain::authorization::permission_service::PermissionService;
+use herald_core::domain::authorization::principal_types;
 use serde_json::json;
 use tower::ServiceExt;
 
@@ -56,7 +57,7 @@ pub async fn create_role(
 
 /// 为用户分配角色（通过 user_roles 表）
 ///
-/// user_roles 格式: {user_id}, {role_id}, {realm_id}, {client_id}
+/// user_roles 格式: {user_id}, {role_id}, {realm_id}, {client_id}, {principal_type}, {principal_id}
 ///
 pub async fn assign_role_to_user(
     ctx: &TestContext,
@@ -67,14 +68,16 @@ pub async fn assign_role_to_user(
 ) {
     let user_role_id = uuid::Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id)
-         VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(user_role_id)
     .bind(user_id)
     .bind(role_id)
     .bind(realm_id)
     .bind(&ctx._client_id)
+    .bind(principal_types::USER)
+    .bind(user_id.to_string())
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to add role to user");
