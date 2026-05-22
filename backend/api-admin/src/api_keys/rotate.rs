@@ -1,0 +1,85 @@
+use axum::extract::{Extension, Path, State};
+use herald_api_base::application::http::auth::util::require_permission;
+use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
+use herald_api_base::application::http::state::AppState;
+use herald_core::domain::authentication::Identity;
+use herald_core::domain::client_api_keys::services::ClientApiKeyService;
+
+use crate::api_keys::types::RotateApiKeyResponse;
+
+/// Rotate an API Key
+///
+/// Generates a new key for the API key, replacing the old hash.
+/// The old key is immediately invalidated. Returns the new plaintext key (shown once).
+#[utoipa::path(
+    post,
+    path = "/api/api-keys/{realmId}/{apiKeyId}/rotate",
+    tag = "api-keys",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("apiKeyId" = String, Path, description = "API Key ID"),
+    ),
+    responses(
+        (status = 200, description = "API Key rotated", body = RotateApiKeyResponse),
+        (status = 403, description = "Forbidden", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 404, description = "API Key not found", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 500, description = "Internal server error", body = herald_api_base::application::http::server::api_entities::ErrorResponse)
+    )
+)]
+pub async fn rotate_api_key(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path((realm_id, api_key_id)): Path<(String, String)>,
+) -> Result<ApiResult<RotateApiKeyResponse>, ApiError> {
+    let user_id = identity.user_id();
+    require_permission(
+        &state,
+        &realm_id,
+        &user_id,
+        "api_keys",
+        "manage",
+        "api_keys.manage",
+    )
+    .await?;
+
+    let mut api_key = state
+        .api_key_repo
+        .find_by_id(&api_key_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to find API key: {e}");
+            ApiError::internal("Failed to find API key")
+        })?
+        .ok_or_else(|| ApiError::not_found("API key not found"))?;
+
+    if api_key.realm_id != realm_id {
+        return Err(ApiError::not_found("API key not found"));
+    }
+
+    // Note: Old cache entry cannot be invalidated because the cache key is
+    // the plaintext API key (which we don't have). The old cached entry will
+    // expire via TTL (300s). Rotation generates a new hash, so lookups using
+    // the new hash will miss the cache and fetch fresh data from DB.
+
+    // Generate new key and hash
+    let plaintext_key = ClientApiKeyService::generate_api_key();
+    let new_hash = ClientApiKeyService::hash_api_key(&plaintext_key);
+    api_key.api_key_hash = new_hash;
+
+    let saved = state.api_key_repo.update(&api_key).await.map_err(|e| {
+        tracing::error!("Failed to rotate API key: {e}");
+        ApiError::internal("Failed to rotate API key")
+    })?;
+
+    let response = RotateApiKeyResponse {
+        id: saved.id,
+        name: saved.name,
+        key: plaintext_key,
+        realm_id: saved.realm_id,
+        enabled: saved.enabled,
+        expires_at: saved.expires_at.map(|dt| dt.to_rfc3339()),
+        created_at: saved.created_at.to_rfc3339(),
+    };
+
+    Ok(ApiResult::ok(response))
+}

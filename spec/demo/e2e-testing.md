@@ -62,7 +62,6 @@ uv run scripts/demo-stop.py
 ```
 
 注意：
-- AI 默认不启动 `dev-start.py`。
 - Demo 环境与开发环境端口冲突，不能并行。
 - 验证运行不要依赖 `page.pause()`、Inspector 或有界面选择器工具。
 

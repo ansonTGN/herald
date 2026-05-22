@@ -43,8 +43,8 @@
 - ✅ 前端角色管理页面
 - ✅ 前端权限管理页面
 - ✅ 权限检查集成（Service 层集成）
-- ✅ 默认角色（realm-admin、user）
-- ✅ 默认权限定义（17 项 realm-admin 权限）
+- ✅ 默认角色（`realm-admin`、`user`）
+- ✅ 默认权限定义（见下方权限清单）
 
 ### 2.2 不包含功能 (Out of Scope)
 
@@ -69,6 +69,70 @@ Herald 系统实现了完整的 RBAC (基于角色的访问控制) 权限管理�
 2. **自研权限运行时层** - 实际权限检查和用户角色分配（Redis 缓存 + PostgreSQL）
 
 **架构说明**: RBAC 元数据层用于管理（如创建角色定义），自研运行时层用于运行时权限检查（如用户是否有权限访问某个资源）。
+
+### 4.1 内置角色
+
+| 角色 | 技术标识 | 说明 |
+|------|----------|------|
+| Realm Admin | `realm-admin` | Realm 管理员，拥有该 Realm 的完整管理权限 |
+| User | `user` | 普通用户，仅拥有基本权限 |
+
+### 4.2 realm-admin 权限清单
+
+#### Admin Realm（realm_id = "admin"）
+
+| 权限项 | 资源 | 动作 | 说明 |
+|--------|------|------|------|
+| realm.view | realm | view | 查看 Realm 信息 |
+| realm.admin | realm | admin | Realm 管理 |
+| realm.create | realm | create | 创建新 Realm |
+| users.view | users | view | 查看用户 |
+| users.manage | users | manage | 用户管理 |
+| clients.view | clients | view | 查看客户端应用 |
+| clients.manage | clients | manage | 客户端应用管理 |
+| roles.view | roles | view | 查看角色 |
+| roles.manage | roles | manage | 角色管理 |
+| permissions.view | permissions | view | 查看权限 |
+| permissions.manage | permissions | manage | 权限管理 |
+| policies.view | policies | view | 查看策略 |
+| policies.manage | policies | manage | 策略管理 |
+| settings.view | settings | view | 查看设置 |
+| settings.manage | settings | manage | 设置管理 |
+| api_keys.manage | api_keys | manage | API Key 管理 |
+| billing.view | billing | view | 查看账单 |
+| billing.manage | billing | manage | 账单管理 |
+| points.view | points | view | 查看积分 |
+| points.manage | points | manage | 积分管理 |
+
+#### 普通 Realm
+
+与 Admin Realm 相同，但**不含** `realm.create` 权限。
+
+### 4.3 user 权限清单
+
+| 权限项 | 资源 | 动作 | 说明 |
+|--------|------|------|------|
+| points.view | points | view | 查看自己的积分余额 |
+
+> 用户修改自己的 profile 和 password 在业务逻辑层处理，不需要权限检查。
+
+### 4.4 权限层级
+
+运行时权限检查实现了 action 层级匹配：`manage > create > view`。拥有 `manage` 自动包含 `create` 和 `view`。自定义 action（如 `admin`、`consume`）需要精确匹配，不参与层级。
+
+### 4.5 Principal Types
+
+权限系统通过 Principal Type 识别请求方：
+
+| Principal Type | 标识 | 说明 |
+|---------------|------|------|
+| User | `user` | 已登录用户 |
+| API Key | `api_key` | API Key 凭证 |
+| Client | `client` | OAuth 客户端应用 |
+
+### 4.6 特殊策略
+
+每个 Realm 初始化时会为 `realm-admin` 角色创建 `realm.admin:{realm_id}` 策略（action 为 `admin`），用于 `require_realm_admin` 中间件的身份验证。
 
 ---
 

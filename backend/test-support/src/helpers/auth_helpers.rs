@@ -185,8 +185,11 @@ pub async fn grant_realm_admin_role(ctx: &TestContext, user_id: &str) {
                 ("policies", "manage"),
                 ("settings", "view"),
                 ("settings", "manage"),
+                ("api_keys", "manage"),
                 ("billing", "view"),
                 ("billing", "manage"),
+                ("points", "view"),
+                ("points", "manage"),
             ];
 
             // 只有 admin realm 才有创建新 Realm 的权限
@@ -213,7 +216,7 @@ pub async fn grant_realm_admin_role(ctx: &TestContext, user_id: &str) {
                 .expect("Failed to add policy for realm-admin role");
             }
 
-            let permission_count = if ctx._realm_id == "admin" { 15 } else { 14 };
+            let permission_count = if ctx._realm_id == "admin" { 20 } else { 19 };
             tracing::debug!(
                 realm_id = %ctx._realm_id,
                 role_id = %role_id,

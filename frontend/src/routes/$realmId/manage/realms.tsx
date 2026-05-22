@@ -10,6 +10,7 @@ import { ListPagination } from '@/components/shared'
 import { CreateRealmDialog } from '@/components/realms/create-realm-dialog'
 import { RealmDetailDialog } from '@/components/realms/realm-detail-dialog'
 import { useAuth } from '@/hooks/use-auth'
+import { PERMISSION } from '@/lib/constants/auth-constants'
 import { Plus } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared'
@@ -27,7 +28,7 @@ function RealmsPage() {
 
   // Get permissions
   const { permissions } = useAuth()
-  const canCreateRealm = permissions.includes('realm.create')
+  const canCreateRealm = permissions.includes(PERMISSION.REALM_CREATE)
 
   const { data, isLoading, error } = useQuery(
     realmsQueryOptions({

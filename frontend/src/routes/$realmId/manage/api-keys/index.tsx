@@ -10,6 +10,7 @@ import { useDialogManager } from '@/hooks/use-dialog-state'
 import { deleteApiKey, updateApiKey } from '@/lib/api-generated'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { usePermission } from '@/hooks/use-permission'
+import { PERMISSION } from '@/lib/constants/auth-constants'
 import type { ApiKeyListItem } from '@/lib/api-generated'
 import type { ApiKeysSearchParams } from '@/lib/schemas/search-params'
 import { Card, CardContent } from '@/components/ui/card'
@@ -32,7 +33,7 @@ function ApiKeysPage() {
   const search = Route.useSearch()
   const { hasPermission } = usePermission()
 
-  const canManage = hasPermission('api_keys.manage')
+  const canManage = hasPermission(PERMISSION.API_KEYS_MANAGE)
 
   const deleteDialog = useDialogManager<ApiKeyListItem>()
 

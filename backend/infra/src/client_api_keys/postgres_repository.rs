@@ -6,7 +6,8 @@ use chrono::{DateTime, Utc};
 use herald_domain::client_api_keys::entities::ClientApiKey;
 use herald_entity::client_api_key;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QuerySelect, Set,
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -232,6 +233,53 @@ impl ClientApiKeyRepository {
         active_model.update(self.db.as_ref()).await?;
 
         Ok(())
+    }
+
+    /// Count API keys for a realm
+    ///
+    /// # Arguments
+    /// * `realm_id` - The realm ID
+    ///
+    /// # Returns
+    /// * `Ok(count)` - Number of API keys in the realm
+    /// * `Err(ClientApiKeyRepositoryError)` if query fails
+    pub async fn count(&self, realm_id: &str) -> Result<u64, ClientApiKeyRepositoryError> {
+        let count = client_api_key::Entity::find()
+            .filter(client_api_key::Column::RealmId.eq(realm_id))
+            .count(self.db.as_ref())
+            .await?;
+
+        Ok(count)
+    }
+
+    /// Update an API key's mutable fields
+    ///
+    /// Updates name, enabled, expires_at, and api_key_hash (for rotation).
+    /// Returns the updated entity.
+    ///
+    /// # Arguments
+    /// * `api_key` - The updated API key entity (id must match an existing record)
+    ///
+    /// # Returns
+    /// * `Ok(updated_api_key)` if successful
+    /// * `Err(ClientApiKeyRepositoryError)` if update fails
+    pub async fn update(
+        &self,
+        api_key: &ClientApiKey,
+    ) -> Result<ClientApiKey, ClientApiKeyRepositoryError> {
+        let existing = self
+            .find_by_id(&api_key.id)
+            .await?
+            .ok_or_else(|| ClientApiKeyRepositoryError::NotFound(api_key.id.clone()))?;
+
+        let mut active_model = Self::entity_to_active_model(existing);
+        active_model.name = Set(api_key.name.clone());
+        active_model.enabled = Set(api_key.enabled);
+        active_model.expires_at = Set(api_key.expires_at.map(|dt| dt.into()));
+        active_model.api_key_hash = Set(api_key.api_key_hash.clone());
+
+        let updated = active_model.update(self.db.as_ref()).await?;
+        Ok(Self::model_to_entity(updated))
     }
 
     /// Delete an API key

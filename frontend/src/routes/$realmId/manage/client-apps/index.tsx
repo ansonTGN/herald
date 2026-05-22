@@ -10,6 +10,7 @@ import { useDialogManager } from '@/hooks/use-dialog-state'
 import { deleteClientApp, updateClientApp } from '@/lib/api-generated'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { usePermission } from '@/hooks/use-permission'
+import { PERMISSION } from '@/lib/constants/auth-constants'
 import type { ClientAppItem } from '@/lib/api-generated'
 import type { ClientAppsSearchParams } from '@/lib/schemas/search-params'
 import { Card, CardContent } from '@/components/ui/card'
@@ -32,9 +33,9 @@ function ClientAppsPage() {
   const search = Route.useSearch()
   const { hasPermission } = usePermission()
 
-  const canCreate = hasPermission('clients.manage')
-  const canUpdate = hasPermission('clients.manage')
-  const canDelete = hasPermission('clients.manage')
+  const canCreate = hasPermission(PERMISSION.CLIENTS_MANAGE)
+  const canUpdate = hasPermission(PERMISSION.CLIENTS_MANAGE)
+  const canDelete = hasPermission(PERMISSION.CLIENTS_MANAGE)
 
   const deleteDialog = useDialogManager<ClientAppItem>()
 

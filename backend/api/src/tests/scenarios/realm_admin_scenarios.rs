@@ -219,14 +219,15 @@ async fn test_scenario_realm_admin_can_access_users(ctx: &mut TestContext) {
     {
         let user_role_id = uuid::Uuid::now_v7();
         sqlx::query(
-            "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id)
-             VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $2::text)"
         )
         .bind(user_role_id)
         .bind(realm_admin_user_id)
         .bind(realm_admin_role_id)
         .bind(&new_realm_id)
         .bind(&new_client_id)
+        .bind(herald_core::domain::authorization::principal_types::USER)
         .execute(&ctx._app_state.pool)
         .await
         .expect("Failed to assign realm-admin role to user");

@@ -73,7 +73,7 @@
 |------|------|
 | `scripts/demo-test-runner.py` | 运行 Demo 测试⭐推荐 |
 | `scripts/test-start.py` / `scripts/test-stop.py` | 后端测试环境 |
-| `scripts/dev-start.py` / `scripts/dev-stop.py` | 开发环境 |
+
 
 ## 文档位置
 

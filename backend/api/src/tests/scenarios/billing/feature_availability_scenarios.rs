@@ -64,14 +64,15 @@ mod tests {
         .expect("Failed to insert feature availability test policy");
 
         sqlx::query(
-            "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id)
-             VALUES ($1, $2, $3, $4, $5)",
+            "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $2::text)",
         )
         .bind(Uuid::now_v7())
         .bind(user_uuid)
         .bind(role_uuid)
         .bind(&ctx._realm_id)
         .bind(&ctx._client_id)
+        .bind(herald_core::domain::authorization::principal_types::USER)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to assign feature availability test role");

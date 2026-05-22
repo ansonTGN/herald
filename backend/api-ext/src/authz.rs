@@ -4,10 +4,9 @@
 // These helpers resolve Identity -> PrincipalRef and call the RBAC system.
 
 use axum::http::StatusCode;
-use axum::response::Response;
 
 use herald_api_base::application::http::common::error_codes::ErrorCode;
-use herald_api_base::application::http::common::error_helpers::json_error;
+use herald_api_base::application::http::server::api_entities::api_error::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::permission_service::PermissionService;
@@ -24,7 +23,7 @@ pub fn require_realm_membership(
     identity: &Identity,
     realm_id: &str,
     operation: &str,
-) -> Result<(), Response> {
+) -> Result<(), ApiError> {
     let identity_realm = identity.realm_id();
     if identity_realm == "admin" || identity_realm == realm_id {
         Ok(())
@@ -34,9 +33,10 @@ pub fn require_realm_membership(
             target_realm = %realm_id,
             "Cross-realm {operation} attempt blocked"
         );
-        Err(json_error(
+        Err(ApiError::with_code(
             StatusCode::FORBIDDEN,
-            ErrorCode::CrossRealmAccessForbidden,
+            ErrorCode::CrossRealmAccessForbidden.as_u32(),
+            ErrorCode::CrossRealmAccessForbidden.as_str(),
         ))
     }
 }
@@ -54,7 +54,7 @@ pub async fn require_principal_permission(
     realm_id: &str,
     resource: &str,
     action: &str,
-) -> Result<(), Response> {
+) -> Result<(), ApiError> {
     let principal = identity.principal_ref();
     let allowed = state
         .permission_checker
@@ -71,9 +71,10 @@ pub async fn require_principal_permission(
     if allowed {
         Ok(())
     } else {
-        Err(json_error(
+        Err(ApiError::with_code(
             StatusCode::FORBIDDEN,
-            ErrorCode::PermissionDenied,
+            ErrorCode::PermissionDenied.as_u32(),
+            ErrorCode::PermissionDenied.as_str(),
         ))
     }
 }

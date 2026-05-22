@@ -7,6 +7,7 @@ import { RegistrationConfigForm as RegistrationConfigFormComponent } from '@/com
 import { EmailConfigForm as EmailConfigFormComponent } from '@/components/realm-config/email-config-form'
 import { ProviderConfigPage } from '@/components/oauth-config/provider-config-page'
 import { useAuth } from '@/hooks/use-auth'
+import { PERMISSION } from '@/lib/constants/auth-constants'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type {
@@ -42,7 +43,7 @@ export const Route = createFileRoute('/$realmId/manage/settings')({
 function GeneralTab({ realmId }: { realmId: string }) {
   const { data: realm, isLoading } = useQuery(realmQueryOptions(realmId))
   const auth = useAuth()
-  const canUpdate = auth.permissions?.includes('settings.manage') ?? true
+  const canUpdate = auth.permissions?.includes(PERMISSION.SETTINGS_MANAGE) ?? true
 
   const { isSubmitting, mutate } = useFormMutation({
     mutationFn: (data: UpdateRealmFormData) => updateRealm({ path: { realmId }, body: data }),
@@ -133,8 +134,8 @@ function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general')
 
   // Permission checks
-  const canViewConfig = auth.permissions?.includes('settings.view') ?? true // Temporary default
-  const canUpdateConfig = auth.permissions?.includes('settings.manage') ?? true // Temporary default
+  const canViewConfig = auth.permissions?.includes(PERMISSION.SETTINGS_VIEW) ?? true // Temporary default
+  const canUpdateConfig = auth.permissions?.includes(PERMISSION.SETTINGS_MANAGE) ?? true // Temporary default
 
   // Get realm configuration list
   const {

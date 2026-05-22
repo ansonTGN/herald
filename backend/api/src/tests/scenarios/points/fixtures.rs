@@ -63,15 +63,16 @@ pub async fn create_test_user_with_auth(
 
         if let Some(client_id) = client_id {
             sqlx::query(
-                "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id)
-                 VALUES ($1, $2, $3, $4, $5)
-                 ON CONFLICT (user_id, role_id, realm_id) DO NOTHING",
+                "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $2::text)
+                 ON CONFLICT DO NOTHING",
             )
             .bind(Uuid::now_v7())
             .bind(user_uuid)
             .bind(role_id)
             .bind(realm_id)
             .bind(&client_id)
+            .bind(herald_core::domain::authorization::principal_types::USER)
             .execute(pool)
             .await
             .expect("Failed to assign user role");
@@ -110,12 +111,13 @@ pub async fn create_test_admin(pool: &PgPool, realm_id: &str, email: &str) -> Uu
             .await
             .expect("Failed to find realm-admin role");
 
-    sqlx::query("INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id) VALUES ($1, $2, $3, $4, $5)")
+    sqlx::query("INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id) VALUES ($1, $2, $3, $4, $5, $6, $2::text)")
         .bind(Uuid::now_v7())
         .bind(user_id)
         .bind(role_id)
         .bind(realm_id)
-        .bind(&client_id)  // Use the correct client_id for admin role
+        .bind(&client_id)
+        .bind(herald_core::domain::authorization::principal_types::USER)
         .execute(pool)
         .await
         .expect("Failed to assign realm-admin role");

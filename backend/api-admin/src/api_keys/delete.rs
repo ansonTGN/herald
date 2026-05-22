@@ -1,0 +1,65 @@
+use axum::extract::{Extension, Path, State};
+use herald_api_base::application::http::auth::util::require_permission;
+use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
+use herald_api_base::application::http::state::AppState;
+use herald_core::domain::authentication::Identity;
+
+/// Delete an API Key
+///
+/// Permanently deletes an API key.
+#[utoipa::path(
+    delete,
+    path = "/api/api-keys/{realmId}/{apiKeyId}",
+    tag = "api-keys",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("apiKeyId" = String, Path, description = "API Key ID"),
+    ),
+    responses(
+        (status = 204, description = "API Key deleted"),
+        (status = 403, description = "Forbidden", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 404, description = "API Key not found", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 500, description = "Internal server error", body = herald_api_base::application::http::server::api_entities::ErrorResponse)
+    )
+)]
+pub async fn delete_api_key(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path((realm_id, api_key_id)): Path<(String, String)>,
+) -> Result<ApiResult<()>, ApiError> {
+    let user_id = identity.user_id();
+    require_permission(
+        &state,
+        &realm_id,
+        &user_id,
+        "api_keys",
+        "manage",
+        "api_keys.manage",
+    )
+    .await?;
+
+    let api_key = state
+        .api_key_repo
+        .find_by_id(&api_key_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to find API key: {e}");
+            ApiError::internal("Failed to find API key")
+        })?
+        .ok_or_else(|| ApiError::not_found("API key not found"))?;
+
+    if api_key.realm_id != realm_id {
+        return Err(ApiError::not_found("API key not found"));
+    }
+
+    state.api_key_repo.delete(&api_key_id).await.map_err(|e| {
+        tracing::error!("Failed to delete API key: {e}");
+        ApiError::internal("Failed to delete API key")
+    })?;
+
+    // Note: Cache invalidation is not possible here because the cache key
+    // is the plaintext API key (which we don't have). The cached entry will
+    // expire via TTL (300s) automatically.
+
+    Ok(ApiResult::no_content())
+}

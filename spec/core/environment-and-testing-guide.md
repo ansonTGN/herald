@@ -11,7 +11,7 @@
 
 | 任务 | 推荐环境 | 入口命令 | 详细说明 |
 |---|---|---|---|
-| 人类开发者日常开发 | 开发环境 | `uv run scripts/dev-start.py` | [AGENTS.md 环境规则](/AGENTS.md) |
+| 人类开发者日常开发 | 开发环境 | 手动启动 PostgreSQL + Redis + cargo run + npm run dev | — |
 | AI 运行 Demo/E2E | Demo 环境 | `uv run scripts/demo-test-runner.py demo/e2e/[test].ts` | [Demo 测试指南](/spec/demo/e2e-testing.md#4-标准命令) |
 | 后端场景测试 | 后端测试环境 | `uv run scripts/backend-test.py` | [后端测试指南](/spec/backend/testing.md#环境启动) |
 | 前端组件测试 | 无需后端环境 | `cd frontend && npm run test:run` | [前端测试指南](/spec/frontend/testing.md) |

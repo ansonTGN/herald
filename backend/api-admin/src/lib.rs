@@ -2,6 +2,7 @@
 // Admin handlers, role definitions, permission management
 
 pub mod admin;
+pub mod api_keys;
 pub mod audit;
 pub mod client_apps;
 pub mod dashboard;
@@ -48,6 +49,12 @@ pub use admin::admin_router_with_middleware;
         crate::client_apps::get::get_client_app,
         crate::client_apps::update::update_client_app,
         crate::client_apps::delete::delete_client_app,
+        crate::api_keys::list::list_api_keys,
+        crate::api_keys::create::create_api_key,
+        crate::api_keys::get::get_api_key,
+        crate::api_keys::update::update_api_key,
+        crate::api_keys::delete::delete_api_key,
+        crate::api_keys::rotate::rotate_api_key,
     ),
     components(schemas(
         crate::role_definitions::types::RoleCreateRequest,
@@ -73,8 +80,13 @@ pub use admin::admin_router_with_middleware;
         crate::client_apps::types::ClientAppCreateRequest,
         crate::client_apps::types::ClientAppUpdateRequest,
         crate::client_apps::types::ClientAppItem,
+        crate::api_keys::types::CreateApiKeyRequest,
+        crate::api_keys::types::CreateApiKeyResponse,
+        crate::api_keys::types::ApiKeyListItem,
+        crate::api_keys::types::UpdateApiKeyRequest,
         herald_api_base::application::http::common::pagination::PaginationMeta,
         herald_api_base::application::http::server::api_entities::PageResponse<crate::client_apps::types::ClientAppItem>,
+        herald_api_base::application::http::server::api_entities::PageResponse<crate::api_keys::types::ApiKeyListItem>,
     ))
 )]
 pub struct ApiDoc;

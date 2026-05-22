@@ -6,29 +6,52 @@
  * that were previously duplicated across multiple files.
  */
 
-// Admin permissions list - centralized definition
+// Permission string constants - single source of truth matching backend rbac_init/services.rs
+export const PERMISSION = {
+  REALM_VIEW: 'realm.view',
+  REALM_ADMIN: 'realm.admin',
+  REALM_CREATE: 'realm.create',
+  USERS_VIEW: 'users.view',
+  USERS_MANAGE: 'users.manage',
+  CLIENTS_VIEW: 'clients.view',
+  CLIENTS_MANAGE: 'clients.manage',
+  ROLES_VIEW: 'roles.view',
+  ROLES_MANAGE: 'roles.manage',
+  PERMISSIONS_VIEW: 'permissions.view',
+  PERMISSIONS_MANAGE: 'permissions.manage',
+  POLICIES_VIEW: 'policies.view',
+  POLICIES_MANAGE: 'policies.manage',
+  SETTINGS_VIEW: 'settings.view',
+  SETTINGS_MANAGE: 'settings.manage',
+  API_KEYS_MANAGE: 'api_keys.manage',
+  BILLING_VIEW: 'billing.view',
+  BILLING_MANAGE: 'billing.manage',
+  POINTS_VIEW: 'points.view',
+  POINTS_MANAGE: 'points.manage',
+} as const
+
+// Admin permissions - used by hasAdminPermission to determine admin vs regular user
+// Note: POINTS_VIEW excluded because it's also assigned to the `user` role
 export const ADMIN_PERMISSIONS = [
-  'users.view',
-  'users.create',
-  'users.update',
-  'users.delete',
-  'roles.view',
-  'roles.create',
-  'roles.update',
-  'roles.delete',
-  'permissions.view',
-  'permissions.create',
-  'permissions.update',
-  'permissions.delete',
-  'clients.view',
-  'clients.create',
-  'clients.update',
-  'clients.delete',
-  'realms.create',
-  'realms.update',
-  'billing.view',
-  'billing.manage',
-  'points.manage',
+  PERMISSION.REALM_VIEW,
+  PERMISSION.REALM_ADMIN,
+  PERMISSION.REALM_CREATE,
+  PERMISSION.USERS_VIEW,
+  PERMISSION.USERS_MANAGE,
+  PERMISSION.CLIENTS_VIEW,
+  PERMISSION.CLIENTS_MANAGE,
+  PERMISSION.ROLES_VIEW,
+  PERMISSION.ROLES_MANAGE,
+  PERMISSION.PERMISSIONS_VIEW,
+  PERMISSION.PERMISSIONS_MANAGE,
+  PERMISSION.POLICIES_VIEW,
+  PERMISSION.POLICIES_MANAGE,
+  PERMISSION.SETTINGS_VIEW,
+  PERMISSION.SETTINGS_MANAGE,
+  PERMISSION.API_KEYS_MANAGE,
+  PERMISSION.BILLING_VIEW,
+  PERMISSION.BILLING_MANAGE,
+  PERMISSION.POINTS_MANAGE,
 ] as const
 
 /**

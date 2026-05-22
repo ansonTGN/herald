@@ -111,12 +111,12 @@ pub async fn create_client_app(
     if let Err(resp) =
         require_principal_permission(&state, &identity, &realm_id, "clients", "create").await
     {
-        return resp;
+        return resp.into_response();
     }
 
     // 2. Cross-realm ownership check
     if let Err(resp) = require_realm_membership(&identity, &realm_id, "client app creation") {
-        return resp;
+        return resp.into_response();
     }
 
     // 3. Validate input
@@ -205,12 +205,12 @@ pub async fn list_client_apps(
     if let Err(resp) =
         require_principal_permission(&state, &identity, &realm_id, "clients", "view").await
     {
-        return resp;
+        return resp.into_response();
     }
 
     // 2. Cross-realm ownership check
     if let Err(resp) = require_realm_membership(&identity, &realm_id, "client app list") {
-        return resp;
+        return resp.into_response();
     }
 
     tracing::info!(
@@ -280,12 +280,12 @@ pub async fn get_client_app(
     if let Err(resp) =
         require_principal_permission(&state, &identity, &realm_id, "clients", "view").await
     {
-        return resp;
+        return resp.into_response();
     }
 
     // 2. Cross-realm ownership check
     if let Err(resp) = require_realm_membership(&identity, &realm_id, "client app access") {
-        return resp;
+        return resp.into_response();
     }
 
     // 3. Parse client app ID

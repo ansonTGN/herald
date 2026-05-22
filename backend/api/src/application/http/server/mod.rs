@@ -27,8 +27,8 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::application::http::auth::identity_middleware::inject_identity;
 use crate::application::http::state::AppState;
 use crate::application::http::{
-    admin, audit, auth, billing, client_apps, dashboard, oauth, permission, points, public_config,
-    realm, realm_config, user, users,
+    admin, api_keys, audit, auth, billing, client_apps, dashboard, oauth, permission, points,
+    public_config, realm, realm_config, user, users,
 };
 
 /// Health check response schema
@@ -325,6 +325,10 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
         .nest(
             "/api/client/{realmId}",
             client_apps::router().layer(from_fn_with_state((*state).clone(), inject_identity)),
+        )
+        .nest(
+            "/api/api-keys/{realmId}",
+            api_keys::router().layer(from_fn_with_state((*state).clone(), inject_identity)),
         )
         .nest("/api/roles", admin_routes)
         // Personal center routes (tag = "user") - no realmId in prefix

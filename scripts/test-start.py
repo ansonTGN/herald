@@ -224,6 +224,7 @@ def main() -> int:
         "docker", "exec", "cas-test-postgres",
         "psql",
         "-U", "postgres",
+        "-h", "localhost",
         "-d", "postgres",
         "-c",
         """DO $$

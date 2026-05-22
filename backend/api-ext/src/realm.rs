@@ -154,7 +154,7 @@ pub async fn create_realm(
     if let Err(resp) =
         require_principal_permission(&state, &identity, "admin", "realm", "create").await
     {
-        return resp;
+        return resp.into_response();
     }
 
     // 2. Validate input
@@ -212,7 +212,7 @@ pub async fn create_realm(
 /// Requires valid API Key via X-API-Key header
 ///
 /// # Authorization
-/// The caller must have `realm:list` permission in their own realm.
+/// The caller must have `realm:view` permission in their own realm.
 #[utoipa::path(
     get,
     path = "/api/ext/realms",
@@ -231,11 +231,11 @@ pub async fn list_realms(
 ) -> Response {
     let identity_realm = identity.realm_id();
 
-    // 1. Authorization: requires realm:list in the caller's realm
+    // 1. Authorization: requires realm:view in the caller's realm
     if let Err(resp) =
-        require_principal_permission(&state, &identity, &identity_realm, "realm", "list").await
+        require_principal_permission(&state, &identity, &identity_realm, "realm", "view").await
     {
-        return resp;
+        return resp.into_response();
     }
 
     tracing::info!(
@@ -308,12 +308,12 @@ pub async fn get_realm(
     if let Err(resp) =
         require_principal_permission(&state, &identity, &identity_realm, "realm", "view").await
     {
-        return resp;
+        return resp.into_response();
     }
 
     // 2. Cross-realm ownership check: non-admin principals may only view their own realm
     if let Err(resp) = require_realm_membership(&identity, &realm_id, "realm access") {
-        return resp;
+        return resp.into_response();
     }
 
     tracing::info!(

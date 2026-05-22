@@ -43,14 +43,10 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            backend/target
-          key: ${{ runner.os }}-cargo-demo-${{ hashFiles('backend/Cargo.lock') }}
+          workspaces: backend -> target
 
       - name: Start demo environment
         run: python scripts/demo-start.py --timeout 300

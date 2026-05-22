@@ -283,14 +283,15 @@ async fn test_scenario_all_permission_no_longer_matches(ctx: &mut TestContext) {
     let user_role_id = uuid::Uuid::now_v7();
     let user_uuid = uuid::Uuid::parse_str(&user_id).expect("Failed to parse user_id");
     sqlx::query(
-        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id)
-         VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $2::text)",
     )
     .bind(user_role_id)
     .bind(user_uuid)
     .bind(role_uuid)
     .bind(&ctx._realm_id)
     .bind(&ctx._client_id)
+    .bind(herald_core::domain::authorization::principal_types::USER)
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to add user to role");

@@ -136,7 +136,7 @@ impl RealmPolicy for PermissionBasedRealmPolicy {
                     principal.principal_type,
                     &principal.principal_id,
                     "realm",
-                    "list",
+                    "view",
                 )
                 .await
                 .unwrap_or_default()
@@ -642,7 +642,7 @@ impl PointsPolicy for PermissionBasedPointsPolicy {
 
             let realm_id = identity.realm_id();
             match checker
-                .check_permission(&realm_id, &user_id, "points_configs", "view")
+                .check_permission(&realm_id, &user_id, "points", "view")
                 .await
             {
                 Ok(has_permission) => {
@@ -650,7 +650,7 @@ impl PointsPolicy for PermissionBasedPointsPolicy {
                         user_id = %user_id,
                         realm_id = %realm_id,
                         has_permission,
-                        "Checked points_configs.view permission"
+                        "Checked points.view permission (for configs)"
                     );
                     has_permission
                 }
@@ -659,7 +659,7 @@ impl PointsPolicy for PermissionBasedPointsPolicy {
                         error = %e,
                         user_id = %user_id,
                         realm_id = %realm_id,
-                        "Failed to check points_configs.view permission"
+                        "Failed to check points.view permission"
                     );
                     false
                 }
@@ -677,7 +677,7 @@ impl PointsPolicy for PermissionBasedPointsPolicy {
 
             let realm_id = identity.realm_id();
             match checker
-                .check_permission(&realm_id, &user_id, "points_configs", "manage")
+                .check_permission(&realm_id, &user_id, "points", "manage")
                 .await
             {
                 Ok(has_permission) => {
@@ -685,7 +685,7 @@ impl PointsPolicy for PermissionBasedPointsPolicy {
                         user_id = %user_id,
                         realm_id = %realm_id,
                         has_permission,
-                        "Checked points_configs.manage permission"
+                        "Checked points.manage permission (for configs)"
                     );
                     has_permission
                 }
@@ -694,7 +694,7 @@ impl PointsPolicy for PermissionBasedPointsPolicy {
                         error = %e,
                         user_id = %user_id,
                         realm_id = %realm_id,
-                        "Failed to check points_configs.manage permission"
+                        "Failed to check points.manage permission"
                     );
                     false
                 }

@@ -111,12 +111,12 @@ pub async fn create_user(
     if let Err(resp) =
         require_principal_permission(&state, &identity, &realm_id, "users", "create").await
     {
-        return resp;
+        return resp.into_response();
     }
 
     // 2. Cross-realm ownership check
     if let Err(resp) = require_realm_membership(&identity, &realm_id, "user creation") {
-        return resp;
+        return resp.into_response();
     }
 
     // 3. Validate input
@@ -204,12 +204,12 @@ pub async fn list_users(
     if let Err(resp) =
         require_principal_permission(&state, &identity, &realm_id, "users", "view").await
     {
-        return resp;
+        return resp.into_response();
     }
 
     // 2. Cross-realm ownership check
     if let Err(resp) = require_realm_membership(&identity, &realm_id, "user list") {
-        return resp;
+        return resp.into_response();
     }
 
     // 3. Normalize pagination: default page=1, page_size=20, max 100
@@ -290,12 +290,12 @@ pub async fn get_user(
     if let Err(resp) =
         require_principal_permission(&state, &identity, &realm_id, "users", "view").await
     {
-        return resp;
+        return resp.into_response();
     }
 
     // 2. Cross-realm ownership check
     if let Err(resp) = require_realm_membership(&identity, &realm_id, "user access") {
-        return resp;
+        return resp.into_response();
     }
 
     // 3. Parse user ID

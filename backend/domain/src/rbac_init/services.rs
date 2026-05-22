@@ -129,12 +129,11 @@ where
                 ("policies.manage", "Policy management"),
                 ("settings.view", "View settings"),
                 ("settings.manage", "Settings management"),
+                ("api_keys.manage", "API Key management"),
                 ("billing.view", "View billing plans"),
                 ("billing.manage", "Manage billing plans"),
                 ("points.view", "View points accounts and transactions"),
                 ("points.manage", "Manage points accounts and transactions"),
-                ("points_configs.view", "View points plan configurations"),
-                ("points_configs.manage", "Manage points plan configurations"),
             ]
         } else {
             vec![
@@ -152,12 +151,11 @@ where
                 ("policies.manage", "Policy management"),
                 ("settings.view", "View settings"),
                 ("settings.manage", "Settings management"),
+                ("api_keys.manage", "API Key management"),
                 ("billing.view", "View billing plans"),
                 ("billing.manage", "Manage billing plans"),
                 ("points.view", "View points accounts and transactions"),
                 ("points.manage", "Manage points accounts and transactions"),
-                ("points_configs.view", "View points plan configurations"),
-                ("points_configs.manage", "Manage points plan configurations"),
             ]
         };
 
@@ -248,12 +246,11 @@ where
                 ("policies", "manage"),
                 ("settings", "view"),
                 ("settings", "manage"),
+                ("api_keys", "manage"),
                 ("billing", "view"),
                 ("billing", "manage"),
                 ("points", "view"),
                 ("points", "manage"),
-                ("points_configs", "view"),
-                ("points_configs", "manage"),
             ]
         } else {
             vec![
@@ -271,12 +268,11 @@ where
                 ("policies", "manage"),
                 ("settings", "view"),
                 ("settings", "manage"),
+                ("api_keys", "manage"),
                 ("billing", "view"),
                 ("billing", "manage"),
                 ("points", "view"),
                 ("points", "manage"),
-                ("points_configs", "view"),
-                ("points_configs", "manage"),
             ]
         };
 
