@@ -8,6 +8,9 @@ export const paginationSchema = z.object({
 export const loginSearchSchema = z.object({
   redirect: z.string().optional(),
   clientId: z.string().optional(),
+  oauthClientId: z.string().optional(),
+  redirectUri: z.string().optional(),
+  state: z.string().optional(),
 })
 
 export const usersSearchSchema = z.object({

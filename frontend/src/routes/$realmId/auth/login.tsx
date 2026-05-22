@@ -1,7 +1,7 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useForm } from '@tanstack/react-form'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import type { LoginRequestPayload } from '@/lib/api-generated'
+import type { LoginRequestPayload, VerifyTotpResponse } from '@/lib/api-generated'
 import { loginSchema } from '@/lib/schemas/common'
 import { loginSearchSchema, type LoginSearchParams } from '@/lib/schemas/search-params'
 import { getErrorMessage, getFieldErrorMessage } from '@/lib/error-utils'
@@ -10,6 +10,7 @@ import {
   completeLoginAfterTotp,
   getSafeRedirect,
   checkAdminPermission,
+  validateOAuthParams,
   type LoginFlowResult,
 } from '@/lib/auth-utils'
 import { Button } from '@/components/ui/button'
@@ -51,11 +52,11 @@ function LoginPage() {
   const oauthProviders = publicConfig?.oauthProviders ?? []
   const isRegistrationEnabled = publicConfig?.registration?.allowed === true
 
+  const { oauthParams, hasPartialOAuth } = validateOAuthParams(search)
+
   const loginMutation = useMutation({
     mutationFn: async (values: { username: string; password: string }) => {
       const isEmail = values.username.includes('@')
-
-      // Use clientId from search params if provided, otherwise use default
       const clientId = search.clientId || DEFAULT_CLIENT_ID
 
       const loginData: LoginRequestPayload = {
@@ -63,45 +64,32 @@ function LoginPage() {
         email: isEmail ? values.username : undefined,
         username: isEmail ? undefined : values.username,
         password: values.password,
+        ...(oauthParams ?? {}),
       }
 
-      // Use loginFlow which handles API call and Zustand state update synchronously
-      const result = await loginFlow(realmId, loginData)
-      return result
+      return await loginFlow(realmId, loginData)
     },
     onSuccess: async (data: LoginFlowResult) => {
-      console.log('[login.tsx onSuccess] Entering onSuccess handler')
-      console.log('[login.tsx onSuccess] LoginFlowResult:', data)
-
       setGlobalError(null)
 
       if (data.response.requiresTotp && data.response.tempToken) {
-        console.log('[login.tsx onSuccess] TOTP required, setting totp step')
         setTotpStep({ tempToken: data.response.tempToken })
+      } else if (data.response.redirectTo) {
+        window.location.href = data.response.redirectTo
+        return
       } else {
-        console.log('[login.tsx onSuccess] Login successful, processing redirect')
         toast.success('Login successful')
 
-        // Get the user's actual realm from the response
         const userRealmId = data.response.realmId || realmId
-        console.log('[login.tsx onSuccess] User realm ID:', userRealmId)
-
-        // Use the redirect path returned from loginFlow (calculated with fresh permissions)
         let redirectPath = search.redirect || data.redirectPath
-        console.log('[login.tsx onSuccess] Redirect path (from search or loginFlow):', redirectPath)
 
-        // Use safe redirect to prevent open redirect attacks
+        // Prevent open redirect attacks
         redirectPath = getSafeRedirect(redirectPath)
-        console.log('[login.tsx onSuccess] Safe redirect path:', redirectPath)
 
-        // Handle the `/` redirect path based on user permissions
         if (redirectPath === '/') {
           redirectPath = checkAdminPermission() ? '/manage' : '/user/profile'
-          console.log('[login.tsx onSuccess] Adjusted redirect path for "/":', redirectPath)
         }
 
-        // Always navigate using the $realmId route pattern
-        console.log('[login.tsx onSuccess] Navigating to:', `/${userRealmId}${redirectPath}`)
         await router.navigate({
           to: `/${userRealmId}${redirectPath}`,
           params: { realmId: userRealmId },
@@ -114,6 +102,7 @@ function LoginPage() {
     defaultValues: { username: '', password: '' },
     onSubmit: async ({ value }) => {
       setGlobalError(null)
+      if (hasPartialOAuth) return
       loginMutation.mutate(value, {
         onError: (error: unknown) => {
           const message = getErrorMessage(error)
@@ -124,21 +113,23 @@ function LoginPage() {
     },
   })
 
-  async function handleTotpSuccess(): Promise<void> {
-    // Complete login after TOTP verification
+  async function handleTotpSuccess(verifyResponse: VerifyTotpResponse): Promise<void> {
     toast.success('Login successful')
 
-    const redirectPath = await completeLoginAfterTotp(realmId)
+    const { redirectPath, redirectTo } = await completeLoginAfterTotp(realmId, verifyResponse)
 
-    // Use safe redirect to prevent open redirect attacks
+    if (redirectTo) {
+      window.location.href = redirectTo
+      return
+    }
+
+    // Prevent open redirect attacks
     let safeRedirectPath = getSafeRedirect(search.redirect, redirectPath)
 
-    // Handle the `/` redirect path based on user permissions
     if (safeRedirectPath === '/') {
       safeRedirectPath = checkAdminPermission() ? '/manage' : '/user/profile'
     }
 
-    // Always navigate using the $realmId route pattern
     await router.navigate({
       to: `/${realmId}${safeRedirectPath}`,
       params: { realmId },
@@ -176,6 +167,15 @@ function LoginPage() {
               data-testid="login-error-message"
             >
               {globalError}
+            </div>
+          )}
+
+          {hasPartialOAuth && (
+            <div
+              className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm"
+              data-testid="oauth-incomplete-error"
+            >
+              OAuth 参数不完整。请通过正确的 OAuth 链接访问此页面。
             </div>
           )}
 
@@ -233,7 +233,7 @@ function LoginPage() {
 
             <Button
               type="submit"
-              disabled={loginMutation.isPending}
+              disabled={loginMutation.isPending || hasPartialOAuth}
               className="w-full"
               data-testid="login-submit-button"
             >

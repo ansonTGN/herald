@@ -23,7 +23,7 @@ const backupCodeSchema = z.object({
 interface TotpVerificationFormProps {
   realmId: string
   tempToken: string
-  onSuccess: (token: string) => void
+  onSuccess: (response: VerifyTotpResponse) => void
   onBack?: () => void
 }
 
@@ -85,7 +85,7 @@ export function TotpVerificationForm({
       return response.data as VerifyTotpResponse
     },
     onSuccess: (data) => {
-      onSuccess(data.token)
+      onSuccess(data)
     },
     onError: (err: unknown) => {
       setAttempts((prev) => prev + 1)

@@ -6,7 +6,7 @@
  * to provide convenient APIs for authentication operations.
  */
 
-import type { LoginRequestPayload, LoginResponse } from '@/lib/api-generated'
+import type { LoginRequestPayload, LoginResponse, VerifyTotpResponse } from '@/lib/api-generated'
 import { fetchAuthData, performLogin, performLogout } from '@/lib/auth-service'
 import { useAuthStore, clearAuthStorage } from '@/stores/auth-store'
 import {
@@ -106,27 +106,23 @@ export async function loginFlow(
     // Perform login API call
     const loginResponse = await performLogin(realmId, credentials)
 
-    // Check if TOTP is required
     if (loginResponse.requiresTotp) {
-      // Return early - caller should handle TOTP verification
       return { response: loginResponse, redirectPath: DEFAULT_USER_REDIRECT }
     }
 
-    // Get the user's actual realm from the response
-    const userRealmId = loginResponse.realmId || realmId
+    // Session is created on the token endpoint, not in the browser
+    if (loginResponse.redirectTo) {
+      return { response: loginResponse, redirectPath: DEFAULT_USER_REDIRECT }
+    }
 
-    // Update store with login state
+    const userRealmId = loginResponse.realmId || realmId
     store.login(userRealmId)
 
-    // Fetch and populate auth data
     const { authStatus, userPermissions, userProfile } = await fetchAuthData(userRealmId)
-
-    // Update store with fetched data
     store.setAuthStatus(authStatus.authenticated, authStatus.realmId || userRealmId)
     store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
     store.setUserProfile(userProfile)
 
-    // Determine redirect path based on permissions (using the freshly fetched data)
     const redirectPath = hasAdminPermission(userPermissions.permissions)
       ? DEFAULT_ADMIN_REDIRECT
       : DEFAULT_USER_REDIRECT
@@ -194,14 +190,6 @@ export function getRedirectPath(): string {
 
 /**
  * Get safe redirect path
- * Validates the redirect path and returns a safe fallback if invalid
- *
- * @param redirectPath - The requested redirect path
- * @param fallback - The fallback path (defaults to user profile)
- * @returns The safe redirect path
- */
-/**
- * Get safe redirect path
  * Validates redirect path and returns a safe fallback if invalid
  *
  * @param redirectPath - The requested redirect path
@@ -217,26 +205,60 @@ export function getSafeRedirect(
 
 /**
  * Complete login after TOTP verification
- * Should be called after successful TOTP verification
  *
  * @param realmId - The realm ID
+ * @param verifyResponse - The TOTP verification response from the API
  */
-export async function completeLoginAfterTotp(realmId: string): Promise<string> {
+export async function completeLoginAfterTotp(
+  realmId: string,
+  verifyResponse: VerifyTotpResponse
+): Promise<{ redirectPath?: string; redirectTo?: string | null }> {
+  // OAuth flow: when redirectTo is present, return it without updating store
+  if (verifyResponse.redirectTo) {
+    return { redirectTo: verifyResponse.redirectTo }
+  }
+
   const store = useAuthStore.getState()
 
   try {
-    // Fetch and populate auth data
     const { authStatus, userPermissions, userProfile } = await fetchAuthData(realmId)
-
-    // Update store with fetched data
     store.setAuthStatus(authStatus.authenticated, authStatus.realmId || realmId)
     store.setUserPermissions(userPermissions.permissions, userPermissions.roles)
     store.setUserProfile(userProfile)
 
-    // Determine redirect path based on permissions
-    return getRedirectPath()
+    return { redirectPath: getRedirectPath() }
   } catch (error) {
     store.logout()
     throw error
   }
+}
+
+/**
+ * Validate OAuth search params for completeness
+ *
+ * All 3 params (oauthClientId, redirectUri, state) must be present together.
+ * Partial params indicate a misconfigured OAuth flow.
+ *
+ * @param search - Search params from URL
+ * @returns oauthParams if complete, hasPartialOAuth flag for error display
+ */
+export function validateOAuthParams(search: {
+  oauthClientId?: string
+  redirectUri?: string
+  state?: string
+}): {
+  oauthParams: { oauthClientId: string; redirectUri: string; state: string } | null
+  hasPartialOAuth: boolean
+} {
+  const oauthParams =
+    search.oauthClientId && search.redirectUri && search.state
+      ? {
+          oauthClientId: search.oauthClientId,
+          redirectUri: search.redirectUri,
+          state: search.state,
+        }
+      : null
+  const hasPartialOAuth =
+    !oauthParams && (!!search.oauthClientId || !!search.redirectUri || !!search.state)
+  return { oauthParams, hasPartialOAuth }
 }
