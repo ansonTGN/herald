@@ -20,10 +20,10 @@
 
 **【验收标准】**
 
-**场景 1：Admin Realm 管理员拥有 realm.create 权限**
+**场景 1：Admin Realm 管理员拥有 realm.manage 权限**
 ```gherkin
 Given 我是 Admin Realm 的管理员
-And 我拥有 `realm.create` 权限
+And 我拥有 `realm.manage` 权限
 When 我在 Realms 管理页面点击 "Create Realm" 按钮
 And 我填写 Realm 信息：
   | Realm ID | myapp                  |
@@ -42,7 +42,7 @@ And 提供的管理员用户自动分配 realm-admin 角色
 **场景 2：Realm ID 必填验证**
 ```gherkin
 Given 我是 Admin Realm 的管理员
-And 我拥有 `realm.create` 权限
+And 我拥有 `realm.manage` 权限
 When 我在创建 Realm 表单中留空 "Realm ID" 字段
 And 我填写其他必填字段并提交
 Then 系统显示验证错误："Realm ID is required"
@@ -166,23 +166,23 @@ And 页面显示以下信息：
 
 **【用户故事】**
 **作为**：系统
-**我希望**：只有拥有 `realm.create` 权限的用户才能创建新 Realm
+**我希望**：只有拥有 `realm.manage` 权限的 Admin Realm 用户才能创建新 Realm
 **从而**：防止未授权用户创建 Realm，保证系统安全
 
 **【验收标准】**
 
-**场景 1：Admin Realm 管理员拥有 realm.create 权限**
+**场景 1：Admin Realm 管理员拥有 realm.manage 权限**
 ```gherkin
 Given 我是 Admin Realm 的管理员
-And 我拥有 `realm.create` 权限
+And 我拥有 `realm.manage` 权限
 When 我尝试创建新 Realm
 Then Realm 创建成功
 ```
 
-**场景 2：Realm Admin 缺少 realm.create 权限**
+**场景 2：Realm Admin 缺少 realm.manage 权限**
 ```gherkin
 Given 我是 Realm Admin（来自 realm-1，非 admin realm）
-And 我没有 `realm.create` 权限
+And 我没有 `realm.manage` 权限
 When 我尝试通过管理界面创建新 Realm
 Then 系统显示错误："权限不足"
 And 我无法访问创建 Realm 功能
@@ -191,7 +191,7 @@ And 我无法访问创建 Realm 功能
 **场景 3：Realms 导航菜单权限控制**
 ```gherkin
 Given 我是 Realm Admin（非 admin realm）
-And 我没有 `realm.create` 权限
+And 我没有 `realm.manage` 权限
 When 我登录系统
 Then 左侧导航菜单中不显示 "Realms" 菜单项
 ```
@@ -199,7 +199,7 @@ Then 左侧导航菜单中不显示 "Realms" 菜单项
 **场景 4：直接访问 URL 权限检查**
 ```gherkin
 Given 我是 Realm Admin（非 admin realm）
-And 我没有 `realm.create` 权限
+And 我没有 `realm.manage` 权限
 When 我直接访问 Realms 管理页面
 Then 系统返回权限不足提示或重定向到无权限页面
 ```
@@ -220,7 +220,7 @@ Then 系统返回权限不足提示或重定向到无权限页面
 **场景 1：创建 Realm 后访问其 Dashboard**
 ```gherkin
 Given 我是 Admin Realm 的管理员
-And 我拥有 `realm.create` 权限
+And 我拥有 `realm.manage` 权限
 When 我创建了新 Realm "test-realm-123"
 And 我使用该 Realm 的管理员账号登录
   | Email           | admin@test-realm-123.com |
@@ -235,6 +235,7 @@ And 我可以访问该 Realm 的管理功能
 **场景 2：验证新 Realm 自动创建的 RBAC**
 ```gherkin
 Given 我是 Admin Realm 的管理员
+And 我拥有 `realm.manage` 权限
 And 我创建了新 Realm "myapp"
 And 我使用该 Realm 的管理员账号登录
 When 我访问该 Realm 的角色管理页面

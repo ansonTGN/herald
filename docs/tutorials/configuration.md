@@ -29,54 +29,54 @@ let config = ApiConfig::load(&config_path)?;
 
 ## 配置文件段
 
-完整示例见 `backend/config/config.toml`。
+Docker 镜像内置了一份生产配置（`backend/config/production.toml`），以下默认值以该文件为准。本地开发可以按需覆盖。
 
 ### [database]
 
 PostgreSQL 连接池配置。`url` 是唯一必填项，其余都有内置默认值。
 
-| 参数 | 类型 | 默认值 | 必填 | 说明 |
+| 参数 | 类型 | 默认值（Docker） | 必填 | 说明 |
 |---|---|---|---|---|
 | `url` | string | — | 是 | PostgreSQL 连接字符串 |
-| `max_connections` | u32 | 100 | 否 | 连接池最大连接数 |
-| `acquire_timeout_secs` | u64 | 30 | 否 | 从连接池获取连接的超时（秒） |
-| `idle_timeout_secs` | u64 | 600 | 否 | 空闲连接存活时间（秒） |
+| `max_connections` | u32 | 50 | 否 | 连接池最大连接数 |
+| `acquire_timeout_secs` | u64 | 10 | 否 | 从连接池获取连接的超时（秒） |
+| `idle_timeout_secs` | u64 | 300 | 否 | 空闲连接存活时间（秒） |
 | `max_lifetime_secs` | u64 | 1800 | 否 | 单个连接最大生命周期（秒） |
-| `connect_timeout_secs` | u64 | 10 | 否 | 建立 TCP 连接的超时（秒） |
+| `connect_timeout_secs` | u64 | 5 | 否 | 建立 TCP 连接的超时（秒） |
 
 连接字符串格式：`postgresql://用户名:密码@主机:端口/数据库名`
 
-开发环境通常只需要填 `url`：
+Docker 环境中主机名使用容器名（如 `db` 或 `herald-postgres`）：
 
 ```toml
 [database]
-url = "postgresql://herald:herald@localhost:5432/herald"
+url = "postgresql://herald:herald@db:5432/herald"
 ```
 
-生产环境建议降低 `max_lifetime_secs`（避免连接被数据库侧主动断断），并根据实际并发量调整 `max_connections`。连接池实现基于 SeaORM 的 `ConnectOptions`。
+生产环境建议根据实际并发量调整 `max_connections`。连接池实现基于 SeaORM 的 `ConnectOptions`。
 
 ### [redis]
 
-| 参数 | 类型 | 默认值 | 必填 | 说明 |
+| 参数 | 类型 | 默认值（Docker） | 必填 | 说明 |
 |---|---|---|---|---|
-| `url` | string | `redis://127.0.0.1:6379` | 否 | Redis 连接地址 |
+| `url` | string | `redis://redis:6379` | 否 | Redis 连接地址 |
 
-Redis 用于权限检查缓存和 session 存储。本地开发不写这个段也可以，会连默认的本地 Redis。
+Redis 用于权限检查缓存和 session 存储。Docker 环境中使用容器名作为主机名。
 
 ```toml
 [redis]
-url = "redis://localhost:6379"
+url = "redis://redis:6379"
 ```
 
 ### [server]
 
 HTTP 服务器和日志配置。
 
-| 参数 | 类型 | 默认值 | 必填 | 说明 |
+| 参数 | 类型 | 默认值（Docker） | 必填 | 说明 |
 |---|---|---|---|---|
 | `bind_address` | string | `0.0.0.0:3000` | 否 | 监听地址，格式为 `ip:port` |
 | `log_level` | string | `info` | 否 | 日志级别（trace/debug/info/warn/error） |
-| `app_env` | string | `development` | 否 | 运行环境标识 |
+| `app_env` | string | `production` | 否 | 运行环境标识 |
 
 `app_env` 目前是一个标识字段，代码中不直接用它做分支逻辑。`bind_address` 用 `0.0.0.0` 表示监听所有网卡。
 
@@ -89,20 +89,20 @@ app_env = "production"
 
 ### [frontend]
 
-前端应用相关的配置，主要影响 CORS 和可选的静态文件托管。
+前端应用相关的配置，主要影响 CORS 和静态文件托管。
 
-| 参数 | 类型 | 默认值 | 必填 | 说明 |
+| 参数 | 类型 | 默认值（Docker） | 必填 | 说明 |
 |---|---|---|---|---|
-| `url` | string | `http://localhost:5173` | 否 | 前端应用地址，用于 CORS 白名单 |
-| `static_dir` | string | — | 否 | 静态文件目录路径，设置后由后端托管 SPA |
+| `url` | string | `http://localhost:3000` | 否 | 前端应用地址，用于 CORS 白名单 |
+| `static_dir` | string | `/app/frontend/dist` | 否 | 静态文件目录路径，设置后由后端托管 SPA |
 
-`url` 的默认值 `http://localhost:5173` 是 Vite 开发服务器的地址。生产部署时改成实际前端地址。
+`url` 在 Docker 环境中默认为 `http://localhost:3000`，因为后端在同一端口上同时提供 API 和前端静态文件。部署到域名时改为实际地址（如 `https://your-domain.com`）。
 
-`static_dir` 不设置时后端不提供静态文件服务，前端需要单独部署。设置后，后端会从指定目录提供静态文件，适合单体部署场景。
+`static_dir` 在 Docker 镜像中默认指向 `/app/frontend/dist`，前端产物在构建时已打包到该路径。
 
 ```toml
 [frontend]
-url = "http://localhost:3000"
+url = "https://your-domain.com"
 static_dir = "/app/frontend/dist"
 ```
 
@@ -110,11 +110,11 @@ static_dir = "/app/frontend/dist"
 
 JWT 密钥配置，用于设备码授权（RFC 8628）和第三方 OAuth 登录流程中生成访问令牌。
 
-| 参数 | 类型 | 默认值 | 必填 | 说明 |
+| 参数 | 类型 | 默认值（Docker） | 必填 | 说明 |
 |---|---|---|---|---|
-| `secret` | string | — | 是* | JWT 签名密钥 |
+| `secret` | string | — | 是 | JWT 签名密钥 |
 
-*未配置时设备码令牌轮询和 OAuth 登录将返回 500 错误。生产环境应使用足够长的随机字符串（建议 32 字节以上的 Base64 编码）。
+Docker 镜像内置了一个占位值 `change-me-in-production`，部署时必须覆盖为安全的随机字符串。
 
 ```toml
 [jwt]
@@ -130,3 +130,5 @@ openssl rand -base64 48
 ## RBAC 配置
 
 RBAC 策略不在主配置文件中，而是通过数据库中的 `role_policies` 表存储。系统初始化时，`RealmInitializationService` 会为每个 realm 创建默认角色和权限。权限检查由 `RedisPermissionChecker` 完成，先查 Redis 缓存，缓存 miss 时回源 PostgreSQL。
+
+权限模型使用 `resource:action` 对（如 `product:read`、`device:manage`），通过 `realm_id` 和 `client_id` 确定作用域。action 有层级关系：`manage` 覆盖 `view`、`create` 和 `manage` 本身；`create` 和 `view` 只覆盖自身。自定义 action（如 `admin`）只匹配自身，不参与层级。

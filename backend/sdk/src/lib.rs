@@ -122,7 +122,7 @@ pub struct ConsumePointsRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ConsumePointsResponse {
     pub transaction_id: String,
-    pub account_id: String,
+    pub wallet_id: String,
     pub user_id: String,
     pub amount: i64,
     pub balance_after: i64,
@@ -1266,7 +1266,7 @@ mod tests {
         let client = Client::new(server.uri(), "test-api-key".to_string(), None);
 
         let list_response = json!({
-            "users": [
+            "items": [
                 {
                     "id": "user-001",
                     "email": "a@example.com",
@@ -1281,7 +1281,10 @@ mod tests {
                     "status": 1,
                     "createdAt": "2025-02-01T00:00:00Z"
                 }
-            ]
+            ],
+            "page": 1,
+            "pageSize": 20,
+            "total": 2
         });
 
         Mock::given(method("GET"))

@@ -47,7 +47,7 @@ docs/
 | [oauth.md](auth/oauth.md) | OAuth 与第三方集成 | 🚧 Partially Implemented | Realm Admin, Regular User, Third-Party App |
 | [wechat-oauth.md](auth/wechat-oauth.md) | 微信 OAuth 集成 | ✅ Implemented | Realm Admin, Regular User |
 | [totp.md](auth/totp.md) | TOTP 二次认证 | ✅ Implemented | TOTP User, Realm Admin |
-| [permissions.md](auth/permissions.md) | 权限管理 | ✅ Implemented | Realm Admin |
+| [permissions.md](auth/permissions.md) | 权限管理 | 🚧 Partially Implemented | Realm Admin |
 | [device-code.md](auth/device-code.md) | Device Code 登录 | 🚧 Partially Implemented | Third-Party App, Regular User, Realm Admin |
 
 ### Billing 计费与订阅

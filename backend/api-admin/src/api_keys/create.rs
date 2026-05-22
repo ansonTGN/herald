@@ -57,6 +57,7 @@ pub async fn create_api_key(
     let expires_at = payload
         .expires_at
         .as_deref()
+        .filter(|s| !s.is_empty())
         .map(|s| {
             chrono::DateTime::parse_from_rfc3339(s)
                 .map(|dt| dt.with_timezone(&Utc))

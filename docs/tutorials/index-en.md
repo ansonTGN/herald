@@ -18,3 +18,4 @@ Developers with Rust or React experience, in their first two weeks on the projec
 - [Architecture](architecture-en.md) — Project structure and technology choices
 - [Configuration](configuration-en.md) — Configuration reference
 - [Deployment](deployment-en.md) — Docker production deployment
+- [Third-Party Integration](third-party-integration-en.md) — Integrate with Herald using the SDK for auth, permissions, points, and subscriptions

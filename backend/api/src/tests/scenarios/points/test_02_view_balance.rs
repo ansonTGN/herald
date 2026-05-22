@@ -115,10 +115,7 @@ async fn test_scenario_user_view_own_balance(ctx: &mut TestContext) {
 
     let request = Request::builder()
         .method("GET")
-        .uri(format!(
-            "/api/points/{}/accounts/{}",
-            ctx._realm_id, user_id
-        ))
+        .uri(format!("/api/points/{}/wallets/{}", ctx._realm_id, user_id))
         .header("cookie", format!("X-Auth={}", token))
         .body(Body::empty())
         .unwrap();

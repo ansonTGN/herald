@@ -1,7 +1,8 @@
 # 权限与角色管理产品需求文档 (PRD)
 
 **创建时间**: 2025-01-10
-**状态**: Implemented
+**最后更新**: 2026-05-22
+**状态**: 🚧 Partially Implemented
 
 ---
 ## 1. 相关用户故事
@@ -11,24 +12,38 @@
 ### 1.1 Realm Admin 用户故事
 
 - 📄 [docs/user-stories/core/realm-admin.md](/docs/user-stories/core/realm-admin.md)
-  - **[US-RA-002] 角色定义管理** (P0): 作为 Realm Admin，我想要管理角色定义，以便定义不同的用户角色
-  - **[US-RA-003] 权限定义管理** (P0): 作为 Realm Admin，我想要管理权限定义，以便定义系统权限
-  - **[US-RA-004] 为角色分配权限** (P0): 作为 Realm Admin，我想要为角色分配权限，以便控制角色可访问的资源
-  - **[US-RA-005] 查看角色权限** (P0): 作为 Realm Admin，我想要查看角色的权限，以便了解角色能力
-  - **[US-RA-006] 用户角色分配** (P0): 作为 Realm Admin，我想要为用户分配角色，以便控制用户权限
-  - **[US-RA-007] 权限策略管理** (P0): 作为 Realm Admin，我想要管理权限策略，以便定义资源访问规则
+  - **[US-RA-001] Realm 隔离访问** (P0): 作为 Realm Admin，我只能访问自己 Realm 的资源
+  - **[US-RA-002] 角色定义管理** (P0): 作为 Realm Admin，我想要管理角色定义
+  - **[US-RA-003] 权限定义管理** (P0): 作为 Realm Admin，我想要管理权限定义
+  - **[US-RA-004] 为角色分配权限** (P0): 作为 Realm Admin，我想要为角色分配权限
+  - **[US-RA-005] 查看角色权限** (P0): 作为 Realm Admin，我想要查看角色的权限
+  - **[US-RA-006] 用户角色分配** (P0): 作为 Realm Admin，我想要为用户分配角色
+  - **[US-RA-007] 权限策略管理** (P0): 作为 Realm Admin，我想要管理权限策略
+  - **[US-RA-009] 权限层级验证** (P0): 作为 Realm Admin，系统应自动应用权限层级规则
+  - **[US-RA-010] 查看 Dashboard 用户活跃概览** (P1)
+  - **[US-RA-011] 查看 Dashboard 认证趋势图** (P1)
+  - **[US-RA-012] 通过 Dashboard 快捷导航跳转** (P1)
 
 ### 1.2 内置保护用户故事
 
 - 📄 [docs/user-stories/core/builtin-protection.md](/docs/user-stories/core/builtin-protection.md)
-  - **默认角色和权限保护** (P0): 作为系统管理员，我希望默认的角色和权限不能被删除或修改，以便确保系统核心功能不受误操作影响
+  - **[US-BP-001] 默认角色和权限保护** (P0): 默认的角色和权限不能被删除或修改
 
-### 1.3 用户故事优先级汇总
+### 1.3 审计日志用户故事
+
+- 📄 [docs/user-stories/core/audit.md](/docs/user-stories/core/audit.md)
+  - **[US-AU-001] 查看 Realm 审计日志** (P0)
+  - **[US-AU-002] 按条件筛选审计日志** (P0)
+  - **[US-AU-003] 查看审计日志详情** (P1)
+  - **[US-AU-004] 查看 Admin Realm 审计日志** (P0)
+  - **[US-AU-005] 系统自动记录核心操作** (P0)
+
+### 1.4 用户故事优先级汇总
 
 | 优先级 | 用户故事数量 | 关键故事 |
 |--------|------------|---------|
-| P0 | 7 | 角色定义管理、权限定义管理、为角色分配权限、用户角色分配、权限策略管理、默认角色和权限保护 |
-| P1 | 0 | - |
+| P0 | 13 | Realm 隔离访问、角色定义管理、权限定义管理、为角色分配权限、查看角色权限、用户角色分配、权限策略管理、权限层级验证、默认角色和权限保护、审计日志查看/筛选/Admin Realm/自动记录 |
+| P1 | 4 | Dashboard 活跃概览、认证趋势图、快捷导航、审计详情 |
 | P2 | 0 | - |
 
 ---
@@ -45,12 +60,14 @@
 - ✅ 权限检查集成（Service 层集成）
 - ✅ 默认角色（`realm-admin`、`user`）
 - ✅ 默认权限定义（见下方权限清单）
+- 🚧 菜单级和按钮级前端权限控制（对齐后端权限）
 
 ### 2.2 不包含功能 (Out of Scope)
 
 - ❌ **权限策略可视化** (原因: 前端没有权限策略可视化工具)
 - ❌ **权限冲突检测** (原因: 没有自动检测权限冲突的功能)
-- ❌ **权限审计日志** (原因: 没有记录权限变更的审计日志)
+- ❌ **通配符或全局隐式权限** (原因: 所有权限必须精确匹配，不引入 `*` 或 `admin` 动作)
+- ❌ **历史数据迁移** (原因: 项目尚未上线)
 
 ### 2.3 依赖项
 
@@ -70,22 +87,74 @@ Herald 系统实现了完整的 RBAC (基于角色的访问控制) 权限管理�
 
 **架构说明**: RBAC 元数据层用于管理（如创建角色定义），自研运行时层用于运行时权限检查（如用户是否有权限访问某个资源）。
 
-### 4.1 内置角色
+### 3.1 权限模型
+
+权限格式为 `resource.action`，遵循以下规则：
+
+- `resource` 必须精确匹配（不支持通配符）。
+- `manage` 是唯一具有向下隐含能力的 action，覆盖同一 resource 下的 `view`、`create` 和 `manage`。
+- `create` 仅匹配自身，不隐含 `view`。
+- `view` 仅匹配自身。
+- 所有层级规则仅在**同一 resource 内**生效。
+- 不使用 `admin` action，不引入特殊 `resource:action` 组合。
+- 不引入隐式全局权限。
+
+### 3.2 Principal Types
+
+| Principal Type | 标识 | 说明 |
+|---------------|------|------|
+| User | `user` | 已登录用户 |
+| API Key | `api_key` | API Key 凭证 |
+| Client | `client` | OAuth 客户端应用 |
+
+---
+
+## 4. 当前实现状态
+
+| 功能模块 | 状态 | 备注 |
+|---------|------|------|
+| 后端实体层 | ✅ | Role、Permission、RolePermission 实体定义 |
+| 后端 Repository 层 | ✅ | 角色、权限数据库操作接口和实现 |
+| 后端 Service 层 | ✅ | 角色、权限业务逻辑和权限检查 |
+| 后端 HTTP API | ✅ | 角色、权限 CRUD RESTful API |
+| 权限运行时 | ✅ | Redis 缓存 + PostgreSQL 存储的两层架构 |
+| 前端数据层 | ✅ | 角色、权限 API 调用函数 |
+| 前端类型定义 | ✅ | TypeScript 类型定义 |
+| 前端角色管理页面 | ✅ | 角色列表、创建、编辑、删除 |
+| 前端权限管理页面 | ✅ | 权限列表、创建、编辑、删除 |
+| 权限检查集成 | ✅ | Service 层集成权限检查 |
+| 演示测试 | ✅ | permission-management-demo.e2e.ts |
+| 移除 `admin` action | ❌ | `realm.admin` 及 `realm.admin:{realm_id}` 待清理 |
+| 新增 `dashboard.view` | ❌ | Dashboard 独立权限 |
+| 新增 `audit.view` | ❌ | Audit Log 独立权限 |
+| 新增 `api_keys.view` | ❌ | API Key 只读权限 |
+| `realm.create` → `realm.manage` | ❌ | 统一 Realm 管理权限 |
+| 前端菜单/按钮权限对齐 | ❌ | Sidebar 和 QuickNav 按目标权限显示/隐藏 |
+
+**说明**：
+- 权限系统采用两层架构：RBAC 元数据层用于定义角色和权限，自研运行时层用于实际权限检查
+- 权限检查通过 Policy trait 实现，Service 层使用 `ensure_policy` 辅助函数进行权限验证
+- 权限运行时使用 Redis 缓存提升性能，P95 < 50ms
+
+---
+
+## 5. 功能需求
+
+### 5.1 内置角色
 
 | 角色 | 技术标识 | 说明 |
 |------|----------|------|
 | Realm Admin | `realm-admin` | Realm 管理员，拥有该 Realm 的完整管理权限 |
 | User | `user` | 普通用户，仅拥有基本权限 |
 
-### 4.2 realm-admin 权限清单
+### 5.2 realm-admin 权限清单
 
-#### Admin Realm（realm_id = "admin"）
+#### 所有 Realm
 
 | 权限项 | 资源 | 动作 | 说明 |
 |--------|------|------|------|
+| dashboard.view | dashboard | view | 查看 Dashboard 统计 |
 | realm.view | realm | view | 查看 Realm 信息 |
-| realm.admin | realm | admin | Realm 管理 |
-| realm.create | realm | create | 创建新 Realm |
 | users.view | users | view | 查看用户 |
 | users.manage | users | manage | 用户管理 |
 | clients.view | clients | view | 查看客户端应用 |
@@ -98,17 +167,21 @@ Herald 系统实现了完整的 RBAC (基于角色的访问控制) 权限管理�
 | policies.manage | policies | manage | 策略管理 |
 | settings.view | settings | view | 查看设置 |
 | settings.manage | settings | manage | 设置管理 |
-| api_keys.manage | api_keys | manage | API Key 管理 |
-| billing.view | billing | view | 查看账单 |
-| billing.manage | billing | manage | 账单管理 |
-| points.view | points | view | 查看积分 |
-| points.manage | points | manage | 积分管理 |
+| api_keys.view | api_keys | view | 查看 API Key 列表和详情 |
+| api_keys.manage | api_keys | manage | API Key 创建、更新、删除、轮换 |
+| billing.view | billing | view | 查看账单、订阅历史、支付配置 |
+| billing.manage | billing | manage | 账单管理、支付 Provider 配置管理 |
+| points.view | points | view | 查看积分、积分包、积分规则 |
+| points.manage | points | manage | 积分管理、积分包管理、Provider 映射管理 |
+| audit.view | audit | view | 查看审计日志列表和详情 |
 
-#### 普通 Realm
+#### Admin Realm 额外权限
 
-与 Admin Realm 相同，但**不含** `realm.create` 权限。
+| 权限项 | 资源 | 动作 | 说明 |
+|--------|------|------|------|
+| realm.manage | realm | manage | Realm 创建、更新、删除（仅 admin realm） |
 
-### 4.3 user 权限清单
+### 5.3 user 权限清单
 
 | 权限项 | 资源 | 动作 | 说明 |
 |--------|------|------|------|
@@ -116,58 +189,78 @@ Herald 系统实现了完整的 RBAC (基于角色的访问控制) 权限管理�
 
 > 用户修改自己的 profile 和 password 在业务逻辑层处理，不需要权限检查。
 
-### 4.4 权限层级
+### 5.4 权限层级
 
-运行时权限检查实现了 action 层级匹配：`manage > create > view`。拥有 `manage` 自动包含 `create` 和 `view`。自定义 action（如 `admin`、`consume`）需要精确匹配，不参与层级。
+| 已授予的 action | 可通过的请求 action | 说明 |
+|---|---|---|
+| `manage` | `view`、`create`、`manage` | 唯一的层级 action，向下覆盖 |
+| `create` | `create` | 仅自身 |
+| `view` | `view` | 仅自身 |
 
-### 4.5 Principal Types
+**关键规则**：
 
-权限系统通过 Principal Type 识别请求方：
+1. `manage` 是唯一具有向下隐含能力的 action。授予某资源 `manage` 后，无需再单独授予该资源的 `view` 或 `create`。
+2. `create` 不隐含 `view`。如需同时创建和查看，必须分别授予 `create` 和 `view`，或直接授予 `manage`。
+3. 所有层级规则仅在**同一 resource 内**生效。`users.manage` 不会授予 `clients.view`。
+4. 不使用 `admin` action，不引入特殊 `resource:action` 组合（如 `realm.admin:{realm_id}`）。
 
-| Principal Type | 标识 | 说明 |
-|---------------|------|------|
-| User | `user` | 已登录用户 |
-| API Key | `api_key` | API Key 凭证 |
-| Client | `client` | OAuth 客户端应用 |
+### 5.5 已移除的权限
 
-### 4.6 特殊策略
+以下权限已废弃，不再初始化和使用：
 
-每个 Realm 初始化时会为 `realm-admin` 角色创建 `realm.admin:{realm_id}` 策略（action 为 `admin`），用于 `require_realm_admin` 中间件的身份验证。
+| 权限项 | 原用途 | 替代方案 |
+|--------|--------|---------|
+| `realm.admin` | 宽泛的管理端权限 | 各模块具体的 `resource.view` / `resource.manage` |
+| `realm.create` | Realm 创建 | `realm.manage`（统一管理权限） |
+| `realm.admin:{realm_id}` 特殊策略 | 判断是否能进入管理端 | 具体权限检查 + `Identity::has_access_to_realm` |
 
----
+### 5.6 前端菜单权限映射
 
-## 4. 当前实现状态
+| 菜单 | 权限 |
+|-------|------|
+| Dashboard | `dashboard.view` |
+| Realms | `realm.view` |
+| Clients | `clients.view` |
+| Users | `users.view` |
+| Permissions | `permissions.view` |
+| Roles | `roles.view` |
+| API Keys | `api_keys.view` |
+| Products | `billing.view` |
+| Payment Providers | `billing.view` |
+| Subscription Plans | `billing.view` |
+| Points Packages | `points.view` |
+| Points Rules | `points.view` |
+| Invoices | `billing.view` |
+| Subscription History | `billing.view` |
+| Points Wallets | `points.view` |
+| Audit Log | `audit.view` |
+| Settings | `settings.view` |
 
-### 2.1 已实现功能
+### 5.7 按钮级权限
 
-- ✅ **后端实体层**：Role、Permission、RolePermission 实体定义
-- ✅ **后端 Repository 层**：角色、权限数据库操作接口和实现
-- ✅ **后端 Service 层**：角色、权限业务逻辑和权限检查
-- ✅ **后端 HTTP API**：角色、权限 CRUD RESTful API
-- ✅ **权限运行时**：Redis 缓存 + PostgreSQL 存储的两层架构
-- ✅ **前端数据层**：角色、权限 API 调用函数
-- ✅ **前端类型定义**：TypeScript 类型定义
-- ✅ **前端角色管理页面**：角色列表、创建、编辑、删除
-- ✅ **前端权限管理页面**：权限列表、创建、编辑、删除
-- ✅ **权限检查集成**：Service 层集成权限检查
-- ✅ **演示测试**：permission-management-demo.e2e.ts
+| 页面 | 查看 | 新增/编辑/删除 |
+|------|------|---------------|
+| Realms | `realm.view` | `realm.manage` |
+| Clients | `clients.view` | `clients.manage` |
+| Users | `users.view` | `users.manage` |
+| Permissions | `permissions.view` | `permissions.manage` |
+| Roles | `roles.view` | `roles.manage` |
+| Role policy assignment | `roles.view` | `roles.manage` |
+| User role assignment | `users.view` | `roles.manage` |
+| API Keys | `api_keys.view` | `api_keys.manage` |
+| Products / Plans / Invoices / Providers | `billing.view` | `billing.manage` |
+| Points Packages / Rules / Wallets | `points.view` | `points.manage` |
+| Settings | `settings.view` | `settings.manage` |
 
-### 2.2 未实现功能
+### 5.8 Realm 操作权限
 
-- ❌ **权限策略可视化**：前端没有权限策略可视化工具
-- ❌ **权限冲突检测**：没有自动检测权限冲突的功能
-- ❌ **权限审计日志**：没有记录权限变更的审计日志
-
-**说明**：
-- 权限系统采用两层架构：RBAC 元数据层用于定义角色和权限，自研运行时层用于实际权限检查
-- 权限检查通过 Policy trait 实现，Service 层使用 `ensure_policy` 辅助函数进行权限验证
-- 权限运行时使用 Redis 缓存提升性能，P95 < 50ms
-
----
-
-## 5. 功能需求
-
-- 需结合现有用户故事、PRD 索引和实现状态进一步补充本功能的核心需求、关键业务规则和验收目标。
+| 操作 | 权限 |
+|------|------|
+| List realms | `realm.view` |
+| View realm detail | `realm.view` |
+| Create realm | `realm.manage` in admin realm |
+| Update realm metadata | `settings.manage` for own realm, or `realm.manage` in admin realm |
+| Delete realm | `realm.manage` in admin realm |
 
 ---
 
@@ -175,9 +268,12 @@ Herald 系统实现了完整的 RBAC (基于角色的访问控制) 权限管理�
 
 **状态**: 必填
 
-- 仅说明认证、授权、验证、回调或账号绑定等能力边界，不在 PRD 中展开端点、请求响应 schema、状态码矩阵。
-- 必须遵守 realm 隔离、权限边界、凭证脱敏和幂等要求；涉及回调时需满足回调来源校验、重放防护和错误可恢复性。
-- 若存在第三方身份提供商或支付/消息回调，应在技术设计或接口说明中维护详细契约，PRD 只保留业务约束和兼容性要求。
+- 每个 API 端点检查具体的 `resource.action` 权限，不使用宽泛的 `realm.admin` 或特殊策略。
+- Realm 隔离：权限属于 Realm 级别，跨 Realm 访问必须拒绝。
+- 权限层级遵循 5.4 节规则，`manage` 隐含 `view` 和 `create`。
+- 只读操作（list、get）检查 `view` 权限；写操作（create、update、delete）检查 `manage` 权限。
+- Realm 创建、更新、删除在 admin realm 内检查 `realm.manage`。
+- 必须遵守 realm 隔离、权限边界、凭证脱敏和幂等要求。
 
 ---
 
@@ -185,8 +281,12 @@ Herald 系统实现了完整的 RBAC (基于角色的访问控制) 权限管理�
 
 **状态**: 必填
 
-- 仅保留页面入口、关键用户路径、状态反馈、权限可见性和异常提示要求，不写组件实现步骤或前端类型定义。
-- 认证相关流程应优先保证成功/失败状态清晰、回跳路径明确、敏感信息不回显，并对首次配置、失效、锁定、重试等场景提供稳定反馈。
+- 管理端侧边栏菜单根据用户权限动态显示/隐藏，每个菜单项对应明确的 `resource.view` 权限。
+- Dashboard 快捷导航根据权限过滤，避免导向无权限页面。
+- 按钮级权限控制新增、编辑、删除操作；仅有 `view` 权限时管理按钮不可用。
+- Settings 页面：无 `settings.view` 时不可访问；有 `settings.view` 但无 `settings.manage` 时表单只读。
+- API Keys 页面：有 `api_keys.view` 但无 `api_keys.manage` 时能查看列表，管理按钮不可用。
+- 前端不做 `*` 或其他前端特例判断，权限检查结果以后端为准。
 
 ---
 
@@ -194,7 +294,8 @@ Herald 系统实现了完整的 RBAC (基于角色的访问控制) 权限管理�
 
 **状态**: 必填
 
-- 接口细节、数据库结构、迁移策略、类型定义、调度方案、SDK 设计和实现步骤，应在 `docs/design/`、`.ai/design/`、接口说明或代码中承接。
+- 后端 RBAC 初始化、权限检查中间件、前端权限常量和测试的具体改动方案，参见 `.ai/future/permission_1.md`。
+- 接口细节、数据库结构、迁移策略、类型定义和实现步骤，应在 `docs/design/` 或 `.ai/design/` 中承接。
 - 如历史实现已经存在，应以现有设计文档、OpenAPI、迁移文件和代码为依据补充，不回写到 PRD 正文。
 
 ---
@@ -209,6 +310,8 @@ Herald 系统实现了完整的 RBAC (基于角色的访问控制) 权限管理�
 ## 10. 参考资料
 
 - 前端开发指南: `../../spec/frontend/development.md`
-- Realm Settings 文档: `docs/prd/realm-settings.md`
-- OAuth 文档: `docs/prd/auth/oauth.md`
-
+- Realm Settings 文档: [docs/prd/core/realm-settings.md](/docs/prd/core/realm-settings.md)
+- OAuth 文档: [docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)
+- Dashboard 文档: [docs/prd/core/dashboard.md](/docs/prd/core/dashboard.md)
+- Audit 文档: [docs/prd/core/audit.md](/docs/prd/core/audit.md)
+- 权限修复方案: `.ai/future/permission_1.md`

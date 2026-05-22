@@ -153,8 +153,9 @@ impl AsyncTestContext for SchemaTestContext {
             .map(|x| x.get("id"))
             .expect("Failed to get realm_id");
         let (client_id, client_app_id): (String, String) = sqlx::query_as(
-            "select client_id, id::text from client_app where client_id = 'admin-web-console' limit 1"
+            "select client_id, id::text from client_app where client_id = 'admin-web-console' and realm_id = $1 limit 1"
         )
+            .bind(&realm_id)
             .fetch_one(&pool_with_schema)
             .await
             .expect("Failed to get admin-web-console client_id and UUID");

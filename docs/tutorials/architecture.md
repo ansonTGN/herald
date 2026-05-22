@@ -63,7 +63,7 @@ HTTP Request
 
 Handler 不直接写 SQL。它调 Domain Service 的方法，Service 通过 trait（port）抽象数据访问，infra 层提供具体实现。这是六边形架构的核心约束：`domain/` crate 的 `Cargo.toml` 里没有任何数据库或 HTTP 依赖，只有纯 Rust 类型。
 
-权限检查走的另一条线：Handler → `RedisPermissionChecker` → Redis 缓存 → PostgreSQL（缓存 miss 时）。RBAC 模型通过四元组 `(domain, subject, object, action)` 匹配，domain 是 client_app ID 或通配符 `*`。
+权限检查走的另一条线：Handler → `RedisPermissionChecker` → Redis 缓存 → PostgreSQL（缓存 miss 时）。权限模型使用 `resource:action` 对（如 `product:read`），通过 `realm_id` 和 `client_id` 确定作用域。action 有层级关系：`manage` 覆盖 `view`、`create` 和 `manage` 本身；`create` 和 `view` 只覆盖自身。
 
 ## 模块说明
 
@@ -90,8 +90,17 @@ SeaORM 自动生成的实体定义。覆盖用户、角色、权限、订阅、�
 | `payment_attempt` | 统一支付尝试（抽象不同支付渠道） |
 | `purchase` | 购买履约（积分包充值 or 订阅开通） |
 | `realm` | 租户管理 |
+| `realm_config` | 租户配置（支付渠道密钥等） |
 | `client` | 第三方应用管理 |
+| `client_app` | Client App 实体与逻辑 |
+| `client_api_keys` | API Key 管理 |
 | `oauth` | OAuth 提供商配置 |
+| `user` | 用户实体与查询 |
+| `user_totp` | TOTP 二次认证 |
+| `totp_key_management` | TOTP 密钥管理 |
+| `rbac_init` | Realm 初始化时创建默认角色和权限 |
+| `dashboard` | 仪表盘数据聚合 |
+| `common` | 共享领域工具类型 |
 
 每个子模块内部有 `ports/`（trait 定义）、`entities/`（领域实体）、`service.rs`（业务逻辑）。Ports 是 Repository trait，定义了 `find_by_id`、`save`、`update` 这类接口，但不关心底层是 PostgreSQL 还是内存。
 
@@ -175,7 +184,10 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 $realmId/
 ├── auth/          # 登录、注册、邮箱验证
 ├── user/          # 用户个人中心（资料、安全、积分、订阅、发票）
-└── manage/        # 管理后台（用户、角色、权限、套餐、计费、积分、审计日志、Client App、设置）
+├── manage/        # 管理后台（用户、角色、权限、套餐、计费、积分、审计日志、Client App、设置）
+├── points/        # 积分余额和交易历史
+├── subscription/  # 用户订阅状态
+└── device/        # Device Code 授权页面
 ```
 
 API 调用全部走 `frontend/src/lib/api-generated/` 里自动生成的 client。后端接口变更后，跑 `npm run generate-api`（先导出 OpenAPI JSON，再跑 openapi-ts 生成 TypeScript 类型）重新生成。

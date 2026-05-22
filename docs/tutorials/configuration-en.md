@@ -29,54 +29,54 @@ The path can be relative or absolute. Relative paths are resolved against the pr
 
 ## Config File Sections
 
-A complete example lives at `backend/config/config.toml`.
+The Docker image includes a production config (`backend/config/production.toml`). Defaults below are based on that file. Override as needed for local development.
 
 ### [database]
 
 PostgreSQL connection pool settings. `url` is the only required field; everything else has a built-in default.
 
-| Parameter | Type | Default | Required | Description |
+| Parameter | Type | Default (Docker) | Required | Description |
 |---|---|---|---|---|
 | `url` | string | — | Yes | PostgreSQL connection string |
-| `max_connections` | u32 | 100 | No | Maximum number of connections in the pool |
-| `acquire_timeout_secs` | u64 | 30 | No | Timeout (seconds) waiting to acquire a connection from the pool |
-| `idle_timeout_secs` | u64 | 600 | No | How long an idle connection stays alive (seconds) |
+| `max_connections` | u32 | 50 | No | Maximum number of connections in the pool |
+| `acquire_timeout_secs` | u64 | 10 | No | Timeout (seconds) waiting to acquire a connection from the pool |
+| `idle_timeout_secs` | u64 | 300 | No | How long an idle connection stays alive (seconds) |
 | `max_lifetime_secs` | u64 | 1800 | No | Maximum lifetime of a single connection (seconds) |
-| `connect_timeout_secs` | u64 | 10 | No | TCP connection establishment timeout (seconds) |
+| `connect_timeout_secs` | u64 | 5 | No | TCP connection establishment timeout (seconds) |
 
 Connection string format: `postgresql://user:password@host:port/database`
 
-For development, usually only `url` is needed:
+In Docker, the host is the container name (e.g., `db` or `herald-postgres`):
 
 ```toml
 [database]
-url = "postgresql://herald:herald@localhost:5432/herald"
+url = "postgresql://herald:herald@db:5432/herald"
 ```
 
-In production, consider lowering `max_lifetime_secs` to avoid connections being dropped by the database side, and tune `max_connections` to match actual concurrency. The pool is implemented through SeaORM's `ConnectOptions`.
+Tune `max_connections` based on actual concurrency in production. The pool is implemented through SeaORM's `ConnectOptions`.
 
 ### [redis]
 
-| Parameter | Type | Default | Required | Description |
+| Parameter | Type | Default (Docker) | Required | Description |
 |---|---|---|---|---|
-| `url` | string | `redis://127.0.0.1:6379` | No | Redis connection URL |
+| `url` | string | `redis://redis:6379` | No | Redis connection URL |
 
-Redis is used for permission-check caching and session storage. You can omit this section entirely in local development -- Herald will connect to the default local Redis.
+Redis is used for permission-check caching and session storage. In Docker, the host is the container name.
 
 ```toml
 [redis]
-url = "redis://localhost:6379"
+url = "redis://redis:6379"
 ```
 
 ### [server]
 
 HTTP server and logging settings.
 
-| Parameter | Type | Default | Required | Description |
+| Parameter | Type | Default (Docker) | Required | Description |
 |---|---|---|---|---|
 | `bind_address` | string | `0.0.0.0:3000` | No | Listen address, format `ip:port` |
 | `log_level` | string | `info` | No | Log level (trace/debug/info/warn/error) |
-| `app_env` | string | `development` | No | Runtime environment identifier |
+| `app_env` | string | `production` | No | Runtime environment identifier |
 
 `app_env` is currently a label only -- the codebase does not branch on it. Using `0.0.0.0` for `bind_address` means listening on all network interfaces.
 
@@ -89,20 +89,20 @@ app_env = "production"
 
 ### [frontend]
 
-Settings for the frontend application, primarily affecting CORS and optional static file serving.
+Settings for the frontend application, primarily affecting CORS and static file serving.
 
-| Parameter | Type | Default | Required | Description |
+| Parameter | Type | Default (Docker) | Required | Description |
 |---|---|---|---|---|
-| `url` | string | `http://localhost:5173` | No | Frontend application URL, used for CORS allowlisting |
-| `static_dir` | string | — | No | Path to a static files directory; when set, the backend serves the SPA |
+| `url` | string | `http://localhost:3000` | No | Frontend application URL, used for CORS allowlisting |
+| `static_dir` | string | `/app/frontend/dist` | No | Path to a static files directory; when set, the backend serves the SPA |
 
-The default `url` value of `http://localhost:5173` matches the Vite dev server. Change it to the actual frontend address in production.
+In Docker, `url` defaults to `http://localhost:3000` because the backend serves both API and frontend static files on the same port. Change it to the actual domain (e.g., `https://your-domain.com`) when deploying with a domain name.
 
-When `static_dir` is unset, the backend does not serve static files and the frontend must be deployed separately. Setting it enables the backend to serve files from that directory, which suits single-process deployments.
+`static_dir` in the Docker image defaults to `/app/frontend/dist`, where frontend assets are bundled at build time.
 
 ```toml
 [frontend]
-url = "http://localhost:3000"
+url = "https://your-domain.com"
 static_dir = "/app/frontend/dist"
 ```
 
@@ -110,11 +110,11 @@ static_dir = "/app/frontend/dist"
 
 JWT secret key configuration, used to generate access tokens in the device code authorization flow (RFC 8628) and third-party OAuth login flows.
 
-| Parameter | Type | Default | Required | Description |
+| Parameter | Type | Default (Docker) | Required | Description |
 |---|---|---|---|---|
-| `secret` | string | — | Yes* | JWT signing secret key |
+| `secret` | string | — | Yes | JWT signing secret key |
 
-*When unconfigured, device code token polling and OAuth login will return 500 errors. Use a sufficiently long random string in production (32+ bytes, Base64-encoded recommended).
+The Docker image includes a placeholder value `change-me-in-production`. You must override this with a secure random string at deploy time.
 
 ```toml
 [jwt]
@@ -130,3 +130,5 @@ openssl rand -base64 48
 ## RBAC Configuration
 
 RBAC policies are not stored in the main config file. They live in the `role_policies` database table. During initialization, `RealmInitializationService` creates default roles and permissions for each realm. Permission checks are handled by `RedisPermissionChecker`, which checks Redis cache first and falls back to PostgreSQL on cache miss.
+
+The permission model uses `resource:action` pairs (e.g., `product:read`, `device:manage`), scoped by `realm_id` and `client_id`. Actions have a hierarchy: `manage` covers `view`, `create`, and `manage` itself; `create` and `view` only cover themselves. Custom actions (e.g., `admin`) only match themselves and don't participate in the hierarchy.

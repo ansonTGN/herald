@@ -8,7 +8,7 @@
 ## 角色层级关系
 
 ```
-Admin Realm 管理员 (realm-admin 角色 + realm.create)
+Admin Realm 管理员 (realm-admin 角色 + realm.manage in admin realm)
     ├── 平台级别权限（仅限 Realm 创建和管理）
     └── ❌ 不能访问其他 Realm 内部资源
 
@@ -40,7 +40,7 @@ Herald 系统（System Actor，非角色）
 
 | 角色 | 技术标识 | 权限范围 | 初始化/创建方式 |
 |------|----------|----------|----------------|
-| Admin Realm 管理员 | `realm-admin` | 平台级别（Realm管理）+ Admin Realm内部 | 系统初始化创建 `admin@cas.com` |
+| Admin Realm 管理员 | `realm-admin` | 平台级别（Realm管理 via `realm.manage`）+ Admin Realm内部 | 系统初始化创建 `admin@cas.com` |
 | Realm Admin | `realm-admin` | 仅本 Realm | 由 Admin Realm 管理员创建 Realm 时指定 |
 | Regular User | `user` | 个人资源 | 用户注册或由管理员创建 |
 | Third-party App | — | 客户端凭证认证（Principal Type: `CLIENT`） | 在管理后台注册客户端应用 |
@@ -61,9 +61,9 @@ Herald 系统（System Actor，非角色）
 
 | 权限项 | 说明 |
 |--------|------|
+| dashboard.view | 查看 Dashboard 统计 |
 | realm.view | 查看 Realm 信息 |
-| realm.admin | Realm 管理（特殊策略 `realm.admin:admin`） |
-| realm.create | 创建新 Realm（仅 admin realm 拥有） |
+| realm.manage | Realm 创建、更新、删除（仅 admin realm） |
 | users.view | 查看用户 |
 | users.manage | 用户管理（CRUD） |
 | clients.view | 查看客户端应用 |
@@ -76,24 +76,28 @@ Herald 系统（System Actor，非角色）
 | policies.manage | 策略管理 |
 | settings.view | 查看设置 |
 | settings.manage | 设置管理 |
-| api_keys.manage | API Key 管理 |
-| billing.view | 查看账单 |
-| billing.manage | 账单管理 |
-| points.view | 查看积分 |
-| points.manage | 积分管理 |
+| api_keys.view | 查看 API Key 列表和详情 |
+| api_keys.manage | API Key 创建、更新、删除、轮换 |
+| billing.view | 查看账单、订阅历史、支付配置 |
+| billing.manage | 账单管理、支付 Provider 配置管理 |
+| points.view | 查看积分、积分包、积分规则 |
+| points.manage | 积分管理、积分包管理、Provider 映射管理 |
+| audit.view | 查看审计日志列表和详情 |
 
 **边界约束**：
 - ❌ 不能访问其他 Realm 内部资源（用户、角色、配置、客户端应用）
 - ❌ 不能创建跨 Realm 策略
 - ❌ 不能管理其他 Realm 的 RBAC 元数据
-- ✅ 仅负责平台级别的 Realm 生命周期管理
+- ✅ 仅负责平台级别的 Realm 生命周期管理（通过 `realm.manage` in admin realm）
 - ✅ Realm 创建后，内部管理由该 Realm 的 Realm Admin 负责
 - ✅ 可以访问 admin realm 的所有内部资源
 
 **关键变更说明**：
 - ❌ 已移除旧的 "Super Admin" 概念和跨 Realm 权限
+- ❌ 已移除 `realm.admin` action 和 `realm.admin:{realm_id}` 特殊策略
+- ❌ 已移除 `realm.create`，统一为 `realm.manage`
 - ✅ Admin Realm 管理员本质上是一个特殊的 Realm Admin
-- ✅ 拥有特殊的平台级权限（创建 Realm）
+- ✅ 拥有特殊的平台级权限（通过 `realm.manage` in admin realm）
 - ✅ 严格遵循 Realm 隔离原则
 
 ---
@@ -107,8 +111,8 @@ Herald 系统（System Actor，非角色）
 
 | 权限项 | 说明 |
 |--------|------|
+| dashboard.view | 查看 Dashboard 统计 |
 | realm.view | 查看 Realm 信息 |
-| realm.admin | Realm 管理（特殊策略 `realm.admin:{realm_id}`） |
 | users.view | 查看用户 |
 | users.manage | 用户管理（CRUD） |
 | clients.view | 查看客户端应用 |
@@ -121,13 +125,15 @@ Herald 系统（System Actor，非角色）
 | policies.manage | 策略管理 |
 | settings.view | 查看设置 |
 | settings.manage | 设置管理 |
-| api_keys.manage | API Key 管理 |
-| billing.view | 查看账单 |
-| billing.manage | 账单管理 |
-| points.view | 查看积分 |
-| points.manage | 积分管理 |
+| api_keys.view | 查看 API Key 列表和详情 |
+| api_keys.manage | API Key 创建、更新、删除、轮换 |
+| billing.view | 查看账单、订阅历史、支付配置 |
+| billing.manage | 账单管理、支付 Provider 配置管理 |
+| points.view | 查看积分、积分包、积分规则 |
+| points.manage | 积分管理、积分包管理、Provider 映射管理 |
+| audit.view | 查看审计日志列表和详情 |
 
-> **与 Admin Realm 管理员的差异**：Realm Admin 缺少 `realm.create` 权限，其余权限相同。
+> **与 Admin Realm 管理员的差异**：Realm Admin 缺少 `realm.manage` in admin realm 权限，其余权限相同。
 
 **边界约束**：
 - 无法创建 `resource: "All"` 策略
@@ -203,8 +209,8 @@ Herald 系统（System Actor，非角色）
 
 | 用户故事角色 | 后端内置角色 | 后端 Principal Type | 后端校验方式 |
 |--------------|-------------|---------------------|-------------|
-| Admin Realm 管理员 | `realm-admin`（+ `realm.create` 策略） | `USER` | `realm.admin:admin` 策略 + `realm.create` 权限 |
-| Realm Admin | `realm-admin` | `USER` | `realm.admin:{realm_id}` 策略 |
+| Admin Realm 管理员 | `realm-admin`（+ `realm.manage` in admin realm） | `USER` | 具体权限检查 + `Identity::has_access_to_realm` |
+| Realm Admin | `realm-admin` | `USER` | 具体权限检查 + `Identity::has_access_to_realm` |
 | Regular User | `user` | `USER` | 业务逻辑层处理 |
 | Third-party App | — | `CLIENT` | 客户端凭证流程（`/oauth/token`） |
 | API Key | — | `API_KEY` | API Key 凭证流程 |
@@ -230,32 +236,36 @@ Herald 系统（System Actor，非角色）
 运行时权限检查实现了 action 层级匹配：
 
 ```
-manage > create > view
+manage > create, view
 ```
 
 - 拥有 `manage` action 自动包含 `create` 和 `view`
-- 拥有 `create` action 自动包含 `view`
-- 自定义 action（如 `admin`、`consume`）需要精确匹配，不参与层级
+- 拥有 `create` action 仅匹配自身，不隐含 `view`
+- 拥有 `view` action 仅匹配自身
+- 所有层级规则仅在**同一 resource 内**生效
+- 不使用 `admin` action，不引入特殊 `resource:action` 组合
+- 不引入隐式全局权限
 
 示例：`realm-admin` 同时拥有 `users.view` 和 `users.manage`，即使层级规则使 `users.manage` 隐含 `users.view`，两者在 RBAC 元数据层都会被创建和存储。
 
 ---
 
-## 特殊策略
+## 已移除的策略
 
-### `realm.admin:{realm_id}` 策略
+### ~~`realm.admin:{realm_id}` 策略~~（已废弃）
 
-用于 `require_realm_admin` 中间件的身份验证。格式为 `realm.admin:{realm_id}`，action 为 `admin`。
+旧系统中用于 `require_realm_admin` 中间件的身份验证。格式为 `realm.admin:{realm_id}`，action 为 `admin`。
 
-- 每个 Realm 初始化时会为 `realm-admin` 角色自动创建该策略
-- Admin Realm 管理员拥有 `realm.admin:admin`
-- 普通 Realm Admin 拥有 `realm.admin:{自己的 realm_id}`
+**替代方案**：
+- 判断是否能进入管理端：使用前端权限检查和后端具体 API 权限
+- 判断 Realm 边界：使用 `Identity::has_access_to_realm`
+- 判断具体能力：检查对应 `resource.action`
 
-### `realm.create` 权限
+### ~~`realm.create` 权限~~（已废弃）
 
-- 仅在 admin realm 初始化时创建（`is_admin_realm == true`）
-- 用于控制平台级 Realm 创建权限
-- 普通 Realm Admin 不具备此权限
+旧系统中仅在 admin realm 初始化时创建，用于控制平台级 Realm 创建权限。
+
+**替代方案**：统一使用 `realm.manage`，覆盖 Realm 创建、更新、删除操作。
 
 ---
 
@@ -299,15 +309,15 @@ Super Admin (跨 Realm 权限)
 ### 当前架构
 
 ```
-Admin Realm 管理员 (realm-admin 角色 + realm.create 策略)
-    ├── 平台级权限（创建 Realm）
-    ├── Admin Realm 内部权限（realm.admin:admin 策略）
+Admin Realm 管理员 (realm-admin 角色 + realm.manage in admin realm)
+    ├── 平台级权限（创建、更新、删除 Realm via realm.manage）
+    ├── Admin Realm 内部权限（具体 resource.action 检查）
     └── ❌ 不能访问其他 Realm 内部资源
 
-Realm-1 Admin (realm-admin 角色 + realm.admin:realm-1 策略)
+Realm-1 Admin (realm-admin 角色，具体 resource.action 检查 + Identity::has_access_to_realm)
     └── 仅能访问 realm-1
 
-Realm-2 Admin (realm-admin 角色 + realm.admin:realm-2 策略)
+Realm-2 Admin (realm-admin 角色，具体 resource.action 检查 + Identity::has_access_to_realm)
     └── 仅能访问 realm-2
 
 User (user 角色)

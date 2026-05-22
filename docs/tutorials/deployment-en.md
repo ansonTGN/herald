@@ -100,7 +100,7 @@ docker run -d \
     -e POSTGRES_PASSWORD=YOUR_PASSWORD \
     -e POSTGRES_DB=herald \
     -v pgdata:/var/lib/postgresql/data \
-    postgres:16-alpine
+    postgres:18-alpine
 ```
 
 Verify:
@@ -119,7 +119,7 @@ docker run -d \
     --network herald-net \
     --restart unless-stopped \
     -v redisdata:/data \
-    redis:7-alpine \
+    redis:8.4-alpine \
     redis-server --appendonly yes
 ```
 

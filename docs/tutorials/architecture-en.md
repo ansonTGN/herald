@@ -63,7 +63,7 @@ HTTP Request
 
 Handlers never write SQL. They call methods on Domain Services, which access data through trait-based ports. The infra layer provides concrete implementations. This is the central constraint of hexagonal architecture: `domain/` has no database or HTTP dependencies in its `Cargo.toml` — just plain Rust types.
 
-Permission checks follow a separate path: Handler → `RedisPermissionChecker` → Redis cache → PostgreSQL (on cache miss). The RBAC model uses four-tuple matching `(domain, subject, object, action)`, where domain is a client_app ID or the wildcard `*`.
+Permission checks follow a separate path: Handler → `RedisPermissionChecker` → Redis cache → PostgreSQL (on cache miss). The permission model uses `resource:action` pairs (e.g., `product:read`), scoped by `realm_id` and `client_id`. Actions have a hierarchy: `manage` covers `view`, `create`, and `manage` itself; `create` and `view` only cover themselves.
 
 ## Module Breakdown
 
@@ -90,8 +90,17 @@ Key submodules:
 | `payment_attempt` | Unified payment attempts (abstracting over payment channels) |
 | `purchase` | Purchase fulfillment (points package top-up or subscription activation) |
 | `realm` | Tenant management |
+| `realm_config` | Tenant configuration (payment provider secrets, etc.) |
 | `client` | Third-party application management |
+| `client_app` | Client App entity and logic |
+| `client_api_keys` | API Key management |
 | `oauth` | OAuth provider configuration |
+| `user` | User entity and queries |
+| `user_totp` | TOTP two-factor authentication |
+| `totp_key_management` | TOTP key management |
+| `rbac_init` | Default roles and permissions for new realms |
+| `dashboard` | Dashboard data aggregation |
+| `common` | Shared domain utility types |
 
 Each submodule contains `ports/` (trait definitions), `entities/` (domain entities), and `service.rs` (business logic). Ports define Repository traits with methods like `find_by_id`, `save`, and `update` — without caring whether the backing store is PostgreSQL or in-memory.
 
@@ -175,7 +184,10 @@ File-based routing via TanStack Router. The route structure mirrors the `fronten
 $realmId/
 ├── auth/          # Login, registration, email verification
 ├── user/          # User profile (settings, security, points, subscriptions, invoices)
-└── manage/        # Admin panel (users, roles, permissions, plans, billing, points, audit logs, Client Apps, settings)
+├── manage/        # Admin panel (users, roles, permissions, plans, billing, points, audit logs, Client Apps, settings)
+├── points/        # Points balance and transaction history
+├── subscription/  # User subscription status
+└── device/        # Device Code authorization page
 ```
 
 All API calls go through auto-generated clients in `frontend/src/lib/api-generated/`. When backend endpoints change, run `npm run generate-api` (which exports OpenAPI JSON, then runs openapi-ts to generate TypeScript types) to regenerate.

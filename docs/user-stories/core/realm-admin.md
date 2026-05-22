@@ -131,7 +131,7 @@ Then 权限定义创建成功
 Given 我是 realm-1 的管理员
 When 我访问权限管理页面
 Then 我看到权限定义列表
-And 列表包含默认权限（realm-admin 的 17 项权限）
+And 列表包含默认权限（realm-admin 的全部权限）
 And 列表包含我创建的自定义权限
 ```
 
@@ -208,15 +208,17 @@ And "viewer" 角色不能访问：
 And "viewer" 角色不能执行任何修改操作（编辑、删除、创建等）
 ```
 
-**场景 6：特殊权限不参与层级**
+**场景 6：不同资源的权限互不影响**
 ```gherkin
 Given 我是 realm-1 的管理员
-And 已存在角色 "super-admin"
-When 我为该角色仅分配 "users.admin" 权限
-Then 该角色仅拥有：
-  | users.admin |
-And 该角色不能访问：
-  | users.view |
+And 已存在角色 "user-and-client-admin"
+When 我为该角色仅分配 "users.manage" 权限
+Then 该角色仅拥有 users 域的权限：
+  | users.view   |
+  | users.manage |
+And 该角色不能访问其他资源：
+  | clients.view |
+  | clients.manage |
 ```
 
 
@@ -240,7 +242,7 @@ And 页面显示：
   | 字段         | 内容                         |
   | Name         | realm-admin                  |
   | Description  | Realm 管理员                  |
-  | Permissions  | 17 项权限列表                |
+  | Permissions  | 全部权限列表                |
 ```
 
 **场景 2：批量查看所有角色的权限**
@@ -338,9 +340,7 @@ And 拥有 "user-admin" 角色的用户可以管理用户资源
 Given 我是 realm-1 的管理员
 When 我访问权限策略页面
 Then 我看到权限策略列表
-And 列表包含默认策略：
-  | Role         | Resource | Action  |
-  | realm-admin  | *        | *       |
+And 列表包含 realm-admin 角色的默认策略（每个 resource.action 一条）
 And 列表包含我创建的自定义策略
 ```
 
@@ -445,16 +445,16 @@ When 该用户尝试执行以下操作：
 Then 只有查看操作能正常执行
 ```
 
-**场景 3：特殊权限不参与层级**
+**场景 3：create 不隐含 view**
 ```gherkin
 Given 我是 realm-1 的管理员
-And 已存在角色 "realm-creator"
-And 我为该角色仅分配 "realm.create" 权限
-And 用户拥有 "realm-creator" 角色
+And 已存在角色 "user-creator"
+And 我为该角色仅分配 "users.create" 权限
+And 用户拥有 "user-creator" 角色
 When 该用户尝试执行以下操作：
   | 操作 | 预期结果 |
-  | 创建新 Realm | ✅ 成功 |
-  | 查看 Realm 列表 | ❌ 失败 (create 不包含 view) |
+  | 创建用户 | ✅ 成功 |
+  | 查看用户列表 | ❌ 失败 (create 不包含 view) |
 Then 只有创建操作能正常执行
 ```
 

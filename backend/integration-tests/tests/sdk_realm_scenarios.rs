@@ -317,16 +317,16 @@ async fn test_scenario_sdk_realm_create_validation_error(ctx: &mut SchemaTestCon
 // ---------------------------------------------------------------------------
 
 // User Story: docs/user-stories/16-sdk-user-stories.md - US-TP-012 Scenario 2
-// Covers: Admin-realm key with realm:list -> sees all realms
+// Covers: Admin-realm key with realm:view -> sees all realms
 
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_scenario_sdk_realm_list_admin(ctx: &mut SchemaTestContext) {
     ensure_admin_realm(ctx).await;
 
-    // Given: admin-realm API key with realm:list
+    // Given: admin-realm API key with realm:view
     let (api_key, _, _) =
-        setup_api_key_with_permissions(ctx, "admin", &ctx._client_id, &[("realm", "list")]).await;
+        setup_api_key_with_permissions(ctx, "admin", &ctx._client_id, &[("realm", "view")]).await;
 
     let (base_url, handle) = start_test_server(ctx).await;
     let client = Client::new(base_url, api_key, None);
@@ -358,16 +358,16 @@ async fn test_scenario_sdk_realm_list_admin(ctx: &mut SchemaTestContext) {
 // ---------------------------------------------------------------------------
 
 // User Story: docs/user-stories/16-sdk-user-stories.md - US-TP-012 Scenario 2
-// Covers: Non-admin key with realm:list -> sees own realm only
+// Covers: Non-admin key with realm:view -> sees own realm only
 
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_scenario_sdk_realm_list_non_admin_own_only(ctx: &mut SchemaTestContext) {
     ensure_admin_realm(ctx).await;
 
-    // Given: API key in default (non-admin) realm with realm:list
+    // Given: API key in default (non-admin) realm with realm:view
     let (api_key, _, _) =
-        setup_api_key_with_permissions(ctx, &ctx._realm_id, &ctx._client_id, &[("realm", "list")])
+        setup_api_key_with_permissions(ctx, &ctx._realm_id, &ctx._client_id, &[("realm", "view")])
             .await;
 
     let (base_url, handle) = start_test_server(ctx).await;

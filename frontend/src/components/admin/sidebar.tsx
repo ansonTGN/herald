@@ -60,7 +60,7 @@ export function Sidebar() {
         name: 'Realms',
         path: `/${realmId}/manage/realms`,
         icon: Globe,
-        permission: PERMISSION.REALM_CREATE,
+        permission: PERMISSION.REALM_VIEW,
       },
       {
         name: 'Clients',
@@ -95,6 +95,7 @@ export function Sidebar() {
             name: 'API Keys',
             path: `/${realmId}/manage/api-keys`,
             icon: Key,
+            // NOTE: Uses manage because backend only defines api_keys.manage, no api_keys.view exists yet
             permission: PERMISSION.API_KEYS_MANAGE,
           },
         ],
@@ -173,9 +174,15 @@ export function Sidebar() {
         name: 'Audit Log',
         path: `/${realmId}/manage/audit`,
         icon: ScrollText,
-        permission: PERMISSION.USERS_VIEW,
+        // NOTE: Uses realm.admin to match backend audit API which checks realm:admin permission
+        permission: PERMISSION.REALM_ADMIN,
       },
-      { name: 'Settings', path: `/${realmId}/manage/settings`, icon: Settings, permission: null },
+      {
+        name: 'Settings',
+        path: `/${realmId}/manage/settings`,
+        icon: Settings,
+        permission: PERMISSION.SETTINGS_VIEW,
+      },
     ],
     [adminFeatures, realmId]
   )

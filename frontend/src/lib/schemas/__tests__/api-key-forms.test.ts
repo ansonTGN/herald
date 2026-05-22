@@ -33,7 +33,34 @@ describe('createApiKeySchema', () => {
 
       expect(result.success).toBe(true)
       if (result.success) {
-        expect(result.data.expiresAt).toBe('2099-12-31T23:59:59Z')
+        // transform converts to full ISO string via Date.toISOString()
+        expect(result.data.expiresAt).toBe('2099-12-31T23:59:59.000Z')
+      }
+    })
+
+    it('should strip empty string expiresAt to undefined', () => {
+      const result = createApiKeySchema.safeParse({
+        name: 'No Expiry Key',
+        expiresAt: '',
+      })
+
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data.expiresAt).toBeUndefined()
+      }
+    })
+
+    it('should convert datetime-local value to RFC 3339 format', () => {
+      // datetime-local input produces values like "2026-12-31T23:59"
+      const result = createApiKeySchema.safeParse({
+        name: 'Local DateTime Key',
+        expiresAt: '2026-12-31T23:59',
+      })
+
+      expect(result.success).toBe(true)
+      if (result.success) {
+        // Should be a valid ISO 8601 / RFC 3339 string
+        expect(result.data.expiresAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
       }
     })
   })
@@ -95,7 +122,21 @@ describe('updateApiKeySchema', () => {
       if (result.success) {
         expect(result.data.name).toBe('Updated Key')
         expect(result.data.enabled).toBe(true)
-        expect(result.data.expiresAt).toBe('2099-12-31T23:59:59Z')
+        // transform converts to full ISO string via Date.toISOString()
+        expect(result.data.expiresAt).toBe('2099-12-31T23:59:59.000Z')
+      }
+    })
+
+    it('should convert datetime-local value to RFC 3339 in update', () => {
+      const result = updateApiKeySchema.safeParse({
+        name: 'Updated Key',
+        enabled: true,
+        expiresAt: '2026-12-31T23:59',
+      })
+
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data.expiresAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
       }
     })
 

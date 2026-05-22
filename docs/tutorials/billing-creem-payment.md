@@ -28,7 +28,7 @@ Plan 本身不绑定支付平台。你需要单独配置 **Plan Payment Provider
 
 ## Step 1: 创建产品
 
-1. 在左侧菜单找到 **Billing**，点击 **Products**
+1. 在左侧菜单找到 **Products & Payments** 分组，点击 **Products**
 2. 点击 **Add Product** 按钮
 3. 填写表单：
    - **Code**（必填）：产品的唯一标识，只能用小写字母、数字、横线。比如 `ai-writing`
@@ -42,7 +42,7 @@ Plan 本身不绑定支付平台。你需要单独配置 **Plan Payment Provider
 
 ## Step 2: 创建订阅套餐
 
-1. 在左侧菜单点击 **Subscription Plans**
+1. 在左侧菜单 **Products & Payments** 分组下点击 **Subscription Plans**
 2. 点击 **Add Subscription Plan** 按钮，进入创建页面
 3. 填写表单：
    - **Product**（必填）：下拉选择刚创建的产品，比如 "AI Writing Assistant"
@@ -63,36 +63,16 @@ Plan 本身不绑定支付平台。你需要单独配置 **Plan Payment Provider
 
 ## Step 3: 配置 Creem API Key
 
-这一步在数据库里配置 Creem 的 API Key。目前前端 Payment Providers 页面还没有 Creem 的配置表单（只有 Shopify、WeChat Pay、Stripe），所以需要通过 realm_config API 或直接操作数据库完成。
+在 Herald 管理后台配置 Creem 的连接信息。
 
-通过 API 配置，发送以下请求：
-
-```
-PUT /api/realms/{realmId}/config
-```
-
-```json
-{
-  "configs": [
-    {
-      "config_type": "creem",
-      "config_key": "api_key",
-      "config_value": "ck_test_你的测试密钥",
-      "is_secret": true,
-      "enabled": true
-    }
-  ]
-}
-```
-
-把 `ck_test_你的测试密钥` 替换成你在 Creem 后台拿到的 API Key。测试环境用 `ck_test_` 开头的 key，生产环境用正式 key。
-
-如果你有数据库访问权限，也可以直接执行 SQL：
-
-```sql
-INSERT INTO realm_config (realm_id, config_type, config_key, config_value, is_secret, enabled)
-VALUES ('你的realm_id', 'creem', 'api_key', 'ck_test_你的测试密钥', true, true);
-```
+1. 在左侧菜单 **Products & Payments** 分组下点击 **Payment Providers**
+2. 在未配置的支付渠道列表中找到 **Creem**，点击 **Configure**
+3. 填写配置表单：
+   - **Enable Creem**：打开开关
+   - **API Key**（必填）：填入在 Creem 后台拿到的 API Key，测试环境用 `ck_test_` 开头的 key
+   - **Timeout**（可选）：请求超时时间（秒）
+   - **Webhook Secret**（可选）：Webhook 签名验证密钥
+4. 点击 **Save**
 
 配置完成后，系统创建 Checkout Session 时会自动读取这个 key 来调用 Creem API。
 
@@ -148,7 +128,7 @@ VALUES ('你的realm_id', 'creem', 'api_key', 'ck_test_你的测试密钥', true
 
 ### 查看订阅状态
 
-1. 在左侧菜单点击 **Subscription History**
+1. 在左侧菜单 **Transactions** 分组下点击 **Subscription History**
 2. 查看订阅记录，确认状态为 Active
 
 ### 查看支付映射状态
@@ -209,7 +189,7 @@ Creem 的 API Key 前缀决定了请求发到哪里：
 
 - [ ] 创建了至少一个 Product
 - [ ] 在 Product 下创建了 Plan（月付或年付）
-- [ ] realm_config 中配置了 Creem API Key（config_type=creem, config_key=api_key, enabled=true）
+- [ ] Payment Providers 页面配置了 Creem（API Key 已填入并启用）
 - [ ] 为 Plan 添加了 Creem 支付映射（External Product ID 填了 Creem 的 Product ID）
 - [ ] 映射状态为 Enabled
 - [ ] 把 Plan 分配给了 Client App

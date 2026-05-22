@@ -81,7 +81,11 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
           expiresAt: apiKey?.expiresAt ?? null,
         } as UpdateApiKeyFormData),
     onSubmit: async ({ value }) => {
-      await mutate(value)
+      // Parse through schema to apply transforms (e.g. empty string -> undefined,
+      // datetime-local -> RFC 3339)
+      const schema = isCreate ? createApiKeySchema : updateApiKeySchema
+      const parsed = schema.parse(value)
+      await mutate(parsed)
     },
   })
 
