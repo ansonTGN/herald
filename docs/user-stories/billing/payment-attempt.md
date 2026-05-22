@@ -339,7 +339,6 @@ And 前端提供"重新支付"按钮
 ## 相关文档
 
 - **PRD**: `docs/prd/billing/unified-purchase.md` - 统一购买架构产品需求文档（待创建）
-- **技术方案**: `.ai/future/order.md` - 统一购买架构技术方案
 - **用户故事**: `billing/wechat-pay.md` - 微信支付用户故事
 - **用户故事**: `billing/points-package.md` - 积分包管理用户故事
 - **用户故事**: `11-points-package-purchase-user-stories.md` - 积分包购买用户故事

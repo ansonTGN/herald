@@ -522,7 +522,7 @@ Then 趋势图区域显示"暂无数据"提示
 
 **【用户故事】**
 **作为**：Realm Admin
-**我希望**：在 Dashboard 下方保留原有的管理功能导航入口
+**我希望**：在 Dashboard 下方保留管理功能导航入口
 **从而**：从 Dashboard 快速跳转到用户管理、角色管理等子页面
 
 **【验收标准】**
@@ -535,12 +535,12 @@ Then 页面下方显示快捷导航入口（Users、Roles、Permissions、Client
 And 点击任一导航项可跳转到对应管理页面
 ```
 
-**场景 2：原有导航入口不丢失**
+**场景 2：导航入口不丢失**
 ```gherkin
-Given Dashboard 重设计前已有 6 张导航卡片
-When Dashboard 重设计上线后
-Then 所有原有导航入口仍可通过页面下方快捷导航区域访问
-And 每个导航入口的跳转目标不变
+Given Dashboard 页面底部包含快捷导航区域
+When 管理员查看快捷导航
+Then 可看到 Users、Roles、Permissions、Client Apps、Realms、Settings 6 个导航入口
+And 每个导航入口的跳转目标正确
 ```
 
 
@@ -700,8 +700,6 @@ And 后续用户注册不再要求邮箱验证
 
 - **PRD**: `docs/prd/auth/permissions.md` - 权限与角色管理产品需求文档
 - **PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档
-- **技术设计**: `.ai/design/fix-permission-and-sdk-impl.md` - Realm 创建权限修复技术设计
 - **用户故事**: `docs/user-stories/core/builtin-protection.md` - 默认角色和权限保护
 - **PRD**: `docs/prd/core/dashboard.md` - Dashboard 重设计产品需求文档
 - **PRD**: `docs/prd/core/realm-settings.md` - Realm Settings 产品需求文档（含邮件配置）
-- **技术设计**: `.ai/design/realm-email-config.md` - Per-Realm 邮件配置与功能开关技术设计

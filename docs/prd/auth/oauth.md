@@ -532,7 +532,6 @@
 
 #### 实施计划
 
-参考 `.ai/future/fix_4.md` 中的详细实施方案。
 
 ### 6.3 第三方 API 接入
 
@@ -573,22 +572,10 @@
 - 无 OAuth 参数时行为与现有普通登录完全一致
 - 涉及第三方接入时，需明确哪些流程由 Herald 后台完成，哪些流程在第三方应用或外部平台完成
 
----
 
-## 9. 技术设计承接
+## 9. 相关文件索引
 
-**状态**: 必填
-
-- 接口细节、数据库结构、迁移策略、类型定义、调度方案、SDK 设计和实现步骤，应在 `docs/design/`、`.ai/design/`、接口说明或代码中承接。
-- 如历史实现已经存在，应以现有设计文档、OpenAPI、迁移文件和代码为依据补充，不回写到 PRD 正文。
-- 详细实施方案见 `.ai/future/fix_4.md`
-- Redis key 设计、前端 search schema 变更、路由注册应在技术设计文档中承接
-
----
-
-## 10. 相关文件索引
-
-### 10.1 OAuth Provider 配置
+### 9.1 OAuth Provider 配置
 
 - OAuth 实体定义: `core/src/domain/oauth/entities.rs`
 - OAuth Service: `core/src/domain/oauth/config_service.rs`
@@ -597,7 +584,7 @@
 - 前端 OAuth 配置表单: `frontend/src/features/settings/oauth-config-form.tsx`
 - 登录页面 OAuth 实现: `frontend/src/routes/$realm_id.login.tsx`
 
-### 10.2 第三方应用 OAuth 集成
+### 9.2 第三方应用 OAuth 集成
 
 **后端文件:**
 - `backend/api-oauth/src/authorize.rs` — 授权端点（需升级）
@@ -610,7 +597,7 @@
 - `frontend/src/lib/schemas/search-params.ts` — search schema（需扩展）
 - `frontend/src/routes/$realmId/auth/login.tsx` — 登录页（需透传 OAuth 参数）
 
-### 10.3 第三方 API 接入
+### 9.3 第三方 API 接入
 
 **后端文件:**
 - 状态: ✅ 已创建
@@ -626,19 +613,14 @@
 
 ---
 
-## 11. 参考资料
+## 10. 参考资料
 
-- 前端开发指南: `../../spec/frontend/development.md`
 - Realm Settings 文档: `docs/prd/realm-settings.md`
-- **实施方案**: `.ai/future/fix_4.md`
 - **Client Apps 管理**: [docs/prd/integration/client-app.md](/docs/prd/integration/client-app.md)
 - **权限验证**: [docs/prd/auth/permissions.md](/docs/prd/auth/permissions.md)
 - **TOTP**: [docs/prd/auth/totp.md](/docs/prd/auth/totp.md)
 - **第三方接入教程**: `docs/tutorials/third-party-integration.md`
 - **用户故事**: [docs/user-stories/auth/third-party-app.md](/docs/user-stories/auth/third-party-app.md)
-- **后端开发指南**: [spec/backend/development.md](/spec/backend/development.md)
-- **测试指南**: [spec/backend/testing.md](/spec/backend/testing.md)
-- **设计文档**: `../../.ai/future/third.md`（待补充）
 - **类似系统**:
   - Keycloak Admin API: https://www.keycloak.org/docs-api/latest/rest_api/
   - Stripe API: https://stripe.com/docs/api

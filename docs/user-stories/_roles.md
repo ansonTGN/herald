@@ -92,14 +92,6 @@ Herald 系统（System Actor，非角色）
 - ✅ Realm 创建后，内部管理由该 Realm 的 Realm Admin 负责
 - ✅ 可以访问 admin realm 的所有内部资源
 
-**关键变更说明**：
-- ❌ 已移除旧的 "Super Admin" 概念和跨 Realm 权限
-- ❌ 已移除 `realm.admin` action 和 `realm.admin:{realm_id}` 特殊策略
-- ❌ 已移除 `realm.create`，统一为 `realm.manage`
-- ✅ Admin Realm 管理员本质上是一个特殊的 Realm Admin
-- ✅ 拥有特殊的平台级权限（通过 `realm.manage` in admin realm）
-- ✅ 严格遵循 Realm 隔离原则
-
 ---
 
 ### Realm Admin（Realm 管理员）
@@ -250,25 +242,6 @@ manage > create, view
 
 ---
 
-## 已移除的策略
-
-### ~~`realm.admin:{realm_id}` 策略~~（已废弃）
-
-旧系统中用于 `require_realm_admin` 中间件的身份验证。格式为 `realm.admin:{realm_id}`，action 为 `admin`。
-
-**替代方案**：
-- 判断是否能进入管理端：使用前端权限检查和后端具体 API 权限
-- 判断 Realm 边界：使用 `Identity::has_access_to_realm`
-- 判断具体能力：检查对应 `resource.action`
-
-### ~~`realm.create` 权限~~（已废弃）
-
-旧系统中仅在 admin realm 初始化时创建，用于控制平台级 Realm 创建权限。
-
-**替代方案**：统一使用 `realm.manage`，覆盖 Realm 创建、更新、删除操作。
-
----
-
 ## 使用指南
 
 编写新用户故事时：
@@ -289,22 +262,7 @@ manage > create, view
 
 ---
 
-## 架构迁移说明
-
-### 旧架构（已废弃）
-
-```
-Super Admin (跨 Realm 权限)
-    ├── admin realm
-    ├── realm-1
-    ├── realm-2
-    └── ❌ 可以访问所有 Realm 的内部资源（违反隔离原则）
-```
-
-**问题**：
-- ❌ Super Admin 概念破坏了 Realm 隔离
-- ❌ "All" 权限策略作为通配符，违反精确匹配原则
-- ❌ 跨 Realm 权限导致安全和审计问题
+## 架构设计约束
 
 ### 当前架构
 

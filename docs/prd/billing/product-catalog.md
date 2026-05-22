@@ -214,7 +214,7 @@ Product 是 Realm 下的正式业务对象，具有以下特征：
 
 换言之，Product 编目管理的当前目标是先解决“产品线编目”和“Plan 归属语义”问题，而不是同步改写 Points 的整套分层规则系统。
 
-### 11.1 权限要求
+### 10.1 权限要求
 
 | 操作 | 需要权限 | 说明 |
 |------|---------|------|
@@ -224,7 +224,7 @@ Product 是 Realm 下的正式业务对象，具有以下特征：
 | 删除 Product | `billing.manage` | Realm Admin |
 | 管理 Product 下的 Plan | `billing.manage` | Realm Admin |
 
-### 11.2 数据安全
+### 10.2 数据安全
 
 **Realm 隔离**：
 - Product 属于 Realm，跨 Realm 不可见
@@ -257,33 +257,20 @@ Product 是 Realm 下的正式业务对象，具有以下特征：
 - 仅保留管理入口、关键操作路径、筛选/查看/变更的交互约束和状态反馈，不写组件实现、数据层封装或代码结构。
 - 计费与积分场景必须突出金额/积分变化、变更影响范围、不可逆风险提示和回调同步中的状态说明。
 
----
 
-## 8. 技术设计承接
-
-**状态**: 必填
-
-- 接口细节、数据库结构、迁移策略、类型定义、调度方案、SDK 设计和实现步骤，应在 `docs/design/`、`.ai/design/`、接口说明或代码中承接。
-- 如历史实现已经存在，应以现有设计文档、OpenAPI、迁移文件和代码为依据补充，不回写到 PRD 正文。
-
----
-
-## 9. 相关文件索引
+## 8. 相关文件索引
 
 - **用户故事**: [docs/user-stories/billing/product-management.md](/docs/user-stories/billing/product-management.md)
 - **Billing PRD**: [docs/prd/billing/subscription.md](billing.md) - Billing 订阅计费产品需求文档
 - **Points PRD**: [docs/prd/billing/points.md](points.md) - Points 积分系统产品需求文档（当前仍以 Plan 级配置为主）
 - **用户故事**: [docs/user-stories/billing/subscription.md](/docs/user-stories/billing/subscription.md) - Billing 原有用户故事
-- **后端开发指南**: [../../spec/backend/development.md](/spec/backend/development.md)
-- **前端开发指南**: [../../spec/frontend/development.md](/spec/frontend/development.md)
 - **权限管理**: [docs/prd/auth/permissions.md](/docs/prd/auth/permissions.md)
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
 - 用户故事：请参考对应的 `docs/user-stories/` 文档。
 - 相关 PRD：请参考 `docs/prd/index.md` 与相邻业务域文档。
-- 技术设计：如需实现细节，请补充或引用 `docs/design/`、`.ai/design/` 或接口说明。
 - 本文档已按最新 `/t-prd` 分层要求收敛：PRD 仅保留业务语义、范围、规则、约束与验收目标。
 

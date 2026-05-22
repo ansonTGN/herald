@@ -367,46 +367,10 @@ Herald 当前已在 Billing 领域引入了多支付平台支持，但不同平�
 - 支付状态标识使用图标+文字组合
 - 支持高对比度模式
 
----
 
-## 8. 技术设计承接
+## 8. 相关文件索引
 
-**状态**: 必填
-
-详细接口契约、数据库结构和实现方案请参考以下文档：
-
-### 8.1 技术设计文档
-
-- **统一购买架构技术方案**：`.ai/future/order.md` - 详细的技术方案设计
-
-### 8.2 数据模型设计
-
-**核心数据模型**
-
-系统需要支持以下数据模型（具体实现见技术设计文档）：
-
-- **积分包（PointsPackage）**：定义积分包商品的基本信息
-  - 包含积分数、价格、货币、状态等属性
-  - 支持多支付平台映射配置
-
-- **支付尝试（PaymentAttempt）**：记录发起式支付平台的支付尝试
-  - 支持多种购买对象类型（订阅套餐、积分包）
-  - 记录支付状态和平台参考信息
-  - 支持过期和取消机制
-
-- **购买对象（PurchasableTarget）**：区分不同的购买类型
-  - 订阅套餐购买：创建订阅并发放会员积分
-  - 积分包购买：仅发放充值积分
-
-- **积分包支付平台映射（PointsPackagePaymentProvider）**：配置积分包在不同支付平台的可售性
-  - 支持启用/禁用控制
-  - 存储外部平台商品标识
-
----
-
-## 9. 相关文件索引
-
-### 9.1 后端文件
+### 8.1 后端文件
 
 **待实现**
 - `backend/core/src/domain/points_package/` - 积分包领域模型与服务
@@ -429,7 +393,7 @@ Herald 当前已在 Billing 领域引入了多支付平台支持，但不同平�
 - `backend/api/src/application/http/billing/shopify_webhook_handlers.rs` - Shopify webhook 入口
 - `backend/core/src/entity/payment_event.rs` - 支付事件审计表
 
-### 9.2 前端文件
+### 8.2 前端文件
 
 **待实现**
 - `frontend/src/routes/$realmId/manage/points-packages.tsx` - 积分包管理页面路由
@@ -446,15 +410,15 @@ Herald 当前已在 Billing 领域引入了多支付平台支持，但不同平�
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
-### 10.1 用户故事
+### 9.1 用户故事
 
 - 积分包管理：`docs/user-stories/billing/points-package.md`
 - 积分包购买：`docs/user-stories/billing/points-package-purchase.md`
 - PaymentAttempt：`docs/user-stories/billing/payment-attempt.md`
 
-### 10.2 相关 PRD
+### 9.2 相关 PRD
 
 - Billing 订阅计费：`docs/prd/billing/subscription.md`
 - Product 编目管理：`docs/prd/billing/product-catalog.md`
@@ -462,13 +426,5 @@ Herald 当前已在 Billing 领域引入了多支付平台支持，但不同平�
 - 微信支付集成：`docs/prd/billing/wechat-pay.md`
 - Shopify Pay 支付集成：`docs/prd/billing/shopify-pay.md`
 
-### 10.3 技术方案
+### 9.3 规范文档
 
-- 统一购买架构技术方案：`.ai/future/order.md`
-
-### 10.4 规范文档
-
-- 后端开发规范：`spec/backend/development.md`
-- 前端开发规范：`spec/frontend/development.md`
-- 环境与测试指南：`spec/core/environment-and-testing-guide.md`
-- 质量要求：`spec/core/quality.md`

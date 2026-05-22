@@ -656,6 +656,5 @@ And Herald 发放初始订阅积分
 
 ## 相关文档
 
-- **技术规范**: `.ai/future/shopify_pay_codex.md` - Shopify 支付接入技术方案（包含平台对比、错误码定义、API 设计等实现细节）
 - **PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档
 - **用户故事**: `docs/user-stories/billing/payment-provider.md` - 其他支付平台用户故事

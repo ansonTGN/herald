@@ -426,7 +426,6 @@ And 如果未支付，执行关单操作
 ## 相关文档
 
 - **PRD**: `docs/prd/billing/wechat-pay.md` - 微信支付集成产品需求文档
-- **技术背景**: `.ai/future/wechat.md` - 微信支付技术背景调研
 - **通用支付平台配置**: `docs/user-stories/billing/payment-provider.md`
 - **PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档
 - **PRD**: `docs/prd/billing/stripe-payment.md` - Stripe 支付集成产品需求文档

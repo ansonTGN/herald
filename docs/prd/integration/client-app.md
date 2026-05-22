@@ -230,27 +230,16 @@ Client Apps 列表页面应包含以下元素：
 - Session Renewal TTL 字段允许设置为 null 或留空，表示禁止续期；设置值必须 >= Session TTL。
 - 续期行为由后端中间件自动完成，前端无需主动调用续期接口。
 
----
 
-## 8. 技术设计承接
-
-**状态**: 必填
-
-- 接口细节、数据库结构、迁移策略、类型定义、调度方案、SDK 设计和实现步骤，应在 `docs/design/`、`.ai/design/`、接口说明或代码中承接。
-- 如历史实现已经存在，应以现有设计文档、OpenAPI、迁移文件和代码为依据补充，不回写到 PRD 正文。
-
----
-
-## 9. 相关文件索引
+## 8. 相关文件索引
 
 - 相关实现文件请以本功能对应的 `backend/`、`frontend/`、`demo/` 目录和现有设计文档为准。
 - 若需补充精确文件清单，应在技术设计文档中维护，避免在 PRD 中混入实现级细节。
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
-- 前端开发指南: `../../spec/frontend/development.md`
 - Client App 实体定义: `core/src/domain/client/entities.rs`
 - Client App API 实现: `api/src/application/http/admin/client_app.rs`
 - Users 功能参考: `docs/frontend/users.md`

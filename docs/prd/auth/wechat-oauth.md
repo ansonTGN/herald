@@ -198,20 +198,10 @@ Herald 项目需要接入微信账号体系，支持两种登录方式：
 - 仅保留页面入口、关键用户路径、状态反馈、权限可见性和异常提示要求，不写组件实现步骤或前端类型定义。
 - 认证相关流程应优先保证成功/失败状态清晰、回跳路径明确、敏感信息不回显，并对首次配置、失效、锁定、重试等场景提供稳定反馈。
 
----
 
-## 8. 技术设计承接
+## 8. 相关文件索引
 
-**状态**: 必填
-
-- 接口细节、数据库结构、迁移策略、类型定义、调度方案、SDK 设计和实现步骤，应在 `docs/design/`、`.ai/design/`、接口说明或代码中承接。
-- 如历史实现已经存在，应以现有设计文档、OpenAPI、迁移文件和代码为依据补充，不回写到 PRD 正文。
-
----
-
-## 9. 相关文件索引
-
-### 10.1 后端文件
+### 9.1 后端文件
 - `backend/core/src/domain/oauth/entities.rs` - ❌ 待添加 WeChat ProviderType
 - `backend/core/src/domain/oauth/providers/wechat.rs` - ❌ 待创建（网站应用微信登录实现）
 - `backend/core/src/domain/oauth/providers/wechat_miniprogram.rs` - ❌ 待创建（小程序登录实现）
@@ -220,23 +210,18 @@ Herald 项目需要接入微信账号体系，支持两种登录方式：
 - `backend/core/src/domain/oauth/ports.rs` - ❌ 待添加 find_by_union_id
 - `backend/core/src/domain/oauth/value_objects.rs` - ❌ 待更新 OAuthUserInfo
 
-### 10.2 前端文件
+### 9.2 前端文件
 - `frontend/src/routes/$realmId/auth/login.tsx` - ❌ 不适用（用户选择不需要前端实现）
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
 - 相关用户故事:
   - [oauth-extension.md](/docs/user-stories/auth/oauth-extension.md)
   - [regular-user.md](/docs/user-stories/core/regular-user.md)
   - [wechat-oauth.md](/docs/user-stories/auth/wechat-oauth.md)
-- 相关设计文档: `.ai/future/wechat.md`
 - 微信开放平台文档: https://open.weixin.qq.com/cgi-bin/showdocument?action=dir_list&t=resource/res_list&verify=1&id=open1419316505&token=&lang=zh_CN
 - 微信小程序登录文档: https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/user-info/phone-number/getPhoneNumber.html
 
-**下一步建议**:
-1. 使用 `/t-design` 进行技术设计
-2. 使用 `/t-task` 生成任务规划
-3. 使用 `/t-prd-check wechat-oauth` 验证文档完整性
 

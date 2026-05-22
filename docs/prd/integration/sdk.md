@@ -153,34 +153,22 @@
 
 本次变更仅涉及 SDK 和后端 ext API，无前端页面变更。
 
----
 
-## 8. 技术设计承接
+## 8. 相关文件索引
 
-**状态**: 必填
-
-需要 `/t-design sdk-improve` 产出技术设计文档，涵盖：
-- 后端 ext API 端点定义和路由规划
-- SDK 新增方法的签名和类型定义
-- 认证与权限校验方案（特别是 API Key Principal -> RBAC permission 与 Realm 创建的权限模型）
-
----
-
-## 9. 相关文件索引
-
-### 9.1 后端文件
+### 8.1 后端文件
 
 - `backend/sdk/src/lib.rs` — SDK 主文件，需新增 Realm/User/Client App 方法
 - `backend/api-ext/src/` — 外部 API 模块，需新增 handler 和路由
 - `backend/sdk/README.md` — SDK 文档，需更新使用示例
 
-### 9.2 前端文件
+### 8.2 前端文件
 
 - 不适用
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
 - 用户故事：`docs/user-stories/integration/sdk.md`
 - 相关 PRD：`docs/prd/auth/oauth.md`（现有 ext API）

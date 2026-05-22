@@ -608,4 +608,3 @@ Then 发票更新并开具成功
 
 - **PRD**: `docs/prd/billing/invoice.md` - Invoice 发票产品需求文档
 - **相关 PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档
-- **参考资料**: `.ai/future/invoice.md` - Invoice 功能设计参考

@@ -269,4 +269,3 @@ And 系统立即发放付费积分
 - **PRD**: `docs/prd/billing/points.md` - 积分系统产品需求文档
 - **用户故事**: `points-admin-manage.md` - 管理员积分管理用户故事
 - **用户故事**: `points-user-view.md` - 用户积分查询用户故事
-- **实施计划**: `.ai/future/credits_plan_split.md` - 积分系统解耦实施计划

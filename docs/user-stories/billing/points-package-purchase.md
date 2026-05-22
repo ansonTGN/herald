@@ -281,4 +281,3 @@ And 系统显示订阅信息和下次续费时间
 - **PRD**: `docs/prd/billing/points.md` - 积分系统产品需求文档
 - **用户故事**: `billing/points-package.md` - 积分包管理用户故事
 - **用户故事**: `points-user-view.md` - 积分查询用户故事
-- **技术方案**: `.ai/future/order.md` - 统一购买架构技术方案

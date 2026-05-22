@@ -176,7 +176,6 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 ### 4.4 待重构内容
 
-**多支付平台重构**（详见 `.ai/future/plan_pay_problem.md`）：
 
 **当前问题**：
 - Plan 模型将支付平台映射直接内嵌在主表中（payment_provider、external_product_id、external_price_id）
@@ -777,44 +776,19 @@ Realm Admin 可以查询 Realm 内所有订阅的历史记录，支持多维度�
 - 删除支付平台映射时提示活跃订阅数量："Cannot delete mapping with X active subscriptions"
 - 禁用支付平台映射时提示："Existing subscriptions will continue to work, new users cannot select this provider"
 
----
 
-## 10. 技术设计承接
-
-**状态**: 必填
-
-- 接口细节、数据库结构、迁移策略、类型定义、调度方案、SDK 设计和实现步骤，应在 `docs/design/`、`.ai/design/`、接口说明或代码中承接。
-- 如历史实现已经存在，应以现有设计文档、OpenAPI、迁移文件和代码为依据补充，不回写到 PRD 正文。
-
-**多支付平台重构技术设计**：
-本次模型升级需要专门的技术设计文档，应包含：
-- Plan Payment Provider 映射表的数据库结构和索引设计
-- Plan API 与支付平台映射 API 的边界划分
-- Checkout 请求与响应契约（plan_id + payment_provider）
-- Webhook 到 Plan 和支付平台映射的解析路径
-- 前端套餐管理与支付平台配置的交互设计
-- 数据迁移策略（现有 Plan 支付平台数据回填到新表）
-- 迁移过程中的数据校验和回滚方案
-- 测试覆盖范围与关键验收场景
-
-相关参考文档：
-- `.ai/future/plan_pay_problem.md` - 多支付平台支持问题分析
-- `.ai/design/fix-plan-pay.md` - 多支付平台重构技术设计（待创建）
-
----
-
-## 11. 相关文件索引
+## 10. 相关文件索引
 
 - 相关实现文件请以本功能对应的 `backend/`、`frontend/`、`demo/` 目录和现有设计文档为准。
 - 若需补充精确文件清单，应在技术设计文档中维护，避免在 PRD 中混入实现级细节。
 
-### 11.1 后端文件（待创建）
+### 10.1 后端文件（待创建）
 
 | 文件路径 | 说明 | 状态 |
 |---------|------|------|
 | `backend/core/src/entity/subscription_history.rs` | Entity 模型 | ❌ 未创建 |
 
-### 11.2 前端文件（待创建）
+### 10.2 前端文件（待创建）
 
 | 文件路径 | 说明 | 状态 |
 |---------|------|------|
@@ -825,7 +799,7 @@ Realm Admin 可以查询 Realm 内所有订阅的历史记录，支持多维度�
 | `frontend/src/components/billing/subscription-timeline.tsx` | 时间线组件 | ❌ 未创建 |
 | `frontend/src/components/billing/history-event-badge.tsx` | 事件标签组件 | ❌ 未创建 |
 
-### 11.3 测试文件（待创建）
+### 10.3 测试文件（待创建）
 
 | 文件路径 | 说明 | 状态 |
 |---------|------|------|
@@ -834,11 +808,9 @@ Realm Admin 可以查询 Realm 内所有订阅的历史记录，支持多维度�
 
 ---
 
-## 12. 参考资料
+## 11. 参考资料
 
 - 用户故事: `docs/user-stories/billing/subscription.md`
-- 后端开发指南: `../../spec/backend/development.md`
-- 前端开发指南: `../../spec/frontend/development.md`
 - 权限管理: `docs/prd/permissions.md`
 - Client App 管理: `docs/prd/client-app.md`
 - 现有订阅模型: `backend/core/src/entity/subscription.rs`

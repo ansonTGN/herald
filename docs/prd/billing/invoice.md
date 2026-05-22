@@ -225,33 +225,21 @@
   - 状态不合法时禁用按钮并提示原因
   - 金额变动后实时更新汇总区域
 
----
 
-## 8. 技术设计承接
+## 8. 相关文件索引
 
-**状态**: 必填
-
-- 数据库表结构、迁移方案、状态机实现、金额计算逻辑、编号生成策略、定时任务调度等详细设计应在 `.ai/design/invoice.md` 中承接
-- 参考设计来源：`.ai/future/invoice.md`
-- 相关模块：billing domain、api-billing crate、worker 定时任务
-
----
-
-## 9. 相关文件索引
-
-### 9.1 后端文件
+### 8.1 后端文件
 
 - `backend/` 相关实现文件待技术设计文档确定后补充
 
-### 9.2 前端文件
+### 8.2 前端文件
 
 - `frontend/` 相关实现文件待技术设计文档确定后补充
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
 - 用户故事：`docs/user-stories/billing/invoice.md`
-- 设计参考：`.ai/future/invoice.md`
 - 相关 PRD：`docs/prd/billing/subscription.md`
 - 角色：`docs/user-stories/_roles.md`

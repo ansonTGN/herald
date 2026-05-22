@@ -399,27 +399,16 @@ Realm（域）是 Herald 系统中的多租户隔离单位，每个用户、客�
 - 仅保留菜单入口、页面可见性、表单校验期望、操作反馈和角色差异，不写路由代码、组件实现或类型定义。
 - 核心管理流程需确保敏感操作有明确确认与结果反馈，且不同角色看到的操作入口和数据范围保持一致。
 
----
 
-## 8. 技术设计承接
-
-**状态**: 必填
-
-- 接口细节、数据库结构、迁移策略、类型定义、调度方案、SDK 设计和实现步骤，应在 `docs/design/`、`.ai/design/`、接口说明或代码中承接。
-- 如历史实现已经存在，应以现有设计文档、OpenAPI、迁移文件和代码为依据补充，不回写到 PRD 正文。
-
----
-
-## 9. 相关文件索引
+## 8. 相关文件索引
 
 - 相关实现文件请以本功能对应的 `backend/`、`frontend/`、`demo/` 目录和现有设计文档为准。
 - 若需补充精确文件清单，应在技术设计文档中维护，避免在 PRD 中混入实现级细节。
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
-- 前端开发指南: `../../spec/frontend/development.md`
 - Realm 实体定义: `core/src/entity/realm.rs`
 - Realm Service: `core/src/domain/realm/services.rs`
 - Realm Repository: `core/src/infrastructure/realm/mod.rs`

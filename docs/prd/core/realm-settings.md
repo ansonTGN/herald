@@ -122,7 +122,6 @@
 - 支持 Resend API（HTTP）和标准 SMTP（STARTTLS/SSL）两种方式
 - 邮件相关功能（邮箱验证、密码重置、更换邮箱）仅在邮件配置完整后才可开启
 - 密码/密钥类字段标记 `is_secret = true`，前端读取时脱敏显示
-- 技术设计详见 `.ai/design/realm-email-config.md`
 - ✅ 完整的错误处理和用户反馈
 
 **实现说明**：
@@ -324,27 +323,16 @@ Settings 页面采用分组卡片布局，每个配置类型对应一个独立�
 - 仅保留菜单入口、页面可见性、表单校验期望、操作反馈和角色差异，不写路由代码、组件实现或类型定义。
 - 核心管理流程需确保敏感操作有明确确认与结果反馈，且不同角色看到的操作入口和数据范围保持一致。
 
----
 
-## 8. 技术设计承接
-
-**状态**: 必填
-
-- 接口细节、数据库结构、迁移策略、类型定义、调度方案、SDK 设计和实现步骤，应在 `docs/design/`、`.ai/design/`、接口说明或代码中承接。
-- 如历史实现已经存在，应以现有设计文档、OpenAPI、迁移文件和代码为依据补充，不回写到 PRD 正文。
-
----
-
-## 9. 相关文件索引
+## 8. 相关文件索引
 
 - 相关实现文件请以本功能对应的 `backend/`、`frontend/`、`demo/` 目录和现有设计文档为准。
 - 若需补充精确文件清单，应在技术设计文档中维护，避免在 PRD 中混入实现级细节。
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
-- 前端开发指南: `../../spec/frontend/development.md`
 - Realm Config 实体定义: `core/src/domain/realm_config/entities.rs`
 - Realm Config API 定义: `api/src/application/http/realm_config/mod.rs`
 - Realm Config Service: `core/src/domain/realm_config/service.rs`

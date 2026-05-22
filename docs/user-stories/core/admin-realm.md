@@ -260,7 +260,6 @@ And 我看到默认权限配置正确
 ## 相关文档
 
 - **PRD**: `docs/prd/core/realm.md` - Realm 管理产品需求文档
-- **技术设计**: `.ai/design/fix-permission-and-sdk-impl.md` - Realm 创建权限修复技术设计
 - **权限系统**: `docs/prd/auth/permissions.md` - RBAC 权限系统文档
 
 ---

@@ -254,20 +254,10 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 - 仅保留管理入口、关键操作路径、筛选/查看/变更的交互约束和状态反馈，不写组件实现、数据层封装或代码结构。
 - 计费与积分场景必须突出金额/积分变化、变更影响范围、不可逆风险提示和回调同步中的状态说明。
 
----
 
-## 8. 技术设计承接
+## 8. 相关文件索引
 
-**状态**: 必填
-
-- 接口细节、数据库结构、迁移策略、类型定义、调度方案、SDK 设计和实现步骤，应在 `docs/design/`、`.ai/design/`、接口说明或代码中承接。
-- 如历史实现已经存在，应以现有设计文档、OpenAPI、迁移文件和代码为依据补充，不回写到 PRD 正文。
-
----
-
-## 9. 相关文件索引
-
-### 10.1 后端文件
+### 9.1 后端文件
 
 **领域层**:
 - `backend/core/src/domain/billing/mod.rs` - 支付平台模块导出
@@ -281,7 +271,7 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 
 **数据库**:
 
-### 10.2 前端文件
+### 9.2 前端文件
 
 **页面组件**:
 - `frontend/src/routes/$realmId/billing/payment-providers.tsx` - 支付平台配置管理页面
@@ -304,7 +294,7 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 - `frontend/src/stores/payment-provider-store.ts` - 支付平台配置状态管理
 - `frontend/src/stores/payment-store.ts` - 支付流程状态管理
 
-### 10.3 测试文件
+### 9.3 测试文件
 
 **后端场景测试**:
 
@@ -318,7 +308,7 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 - `demo/e2e/billing/payment-provider-config.spec.ts` - 支付平台配置 E2E 测试
 - `demo/e2e/billing/stripe-payment-flow.spec.ts` - Stripe 支付流程 E2E 测试
 
-### 10.4 SDK 集成
+### 9.4 SDK 集成
 
 - `backend/sdk/src/lib.rs` - 主 SDK 入口
 - `backend/sdk/src/payments.rs` - 支付相关 SDK 方法
@@ -326,21 +316,21 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
-### 11.1 Stripe 官方文档
+### 10.1 Stripe 官方文档
 - [Stripe API 文档](https://stripe.com/docs/api)
 - [Webhooks 指南](https://stripe.com/docs/webhooks)
 - [Stripe.js 文档](https://stripe.com/docs/js)
 
-### 11.2 相关用户故事
+### 10.2 相关用户故事
 - 📄 [docs/user-stories/billing/payment-provider.md](/docs/user-stories/billing/payment-provider.md) - 支付平台配置用户故事
 
-### 11.3 相关 PRD
+### 10.3 相关 PRD
 - [Billing 订阅计费 PRD](/docs/prd/billing/subscription.md) - 现有订阅计费系统
 - [Subscription History PRD](/docs/prd/billing/subscription.md) - 订阅变更历史
 
-### 11.4 技术资源
+### 10.4 技术资源
 - [Stripe Rust SDK](https://docs.rs/stripe-rust/)
 - [Stripe React SDK](https://stripe.com/docs/stripe-js/react)
 

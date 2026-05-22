@@ -335,49 +335,10 @@ subscription_id -> points_credit_ledger -> user_id  ❌
 - 必须突出敏感信息的脱敏显示和加密存储说明。
 - 删除配置前必须提示活跃订阅数量和影响范围。
 
----
 
-## 8. 技术设计承接
+## 8. 相关文件索引
 
-**状态**: 必填
-
-- 接口细节、数据库结构、迁移策略、类型定义、SDK 设计和实现步骤，应在 `.ai/future/shopify_pay_codex.md`、技术设计文档或代码中承接。
-
-### 8.1 数据模型扩展
-
-**subscription 表调整**：
-- 新增字段：user_id UUID（可为 NULL，用于支持"先购买、后认领"）
-- 新增索引：idx_subscription_user_id, idx_subscription_realm_user_id
-
-**shopify_user_binding 表（新增）**：
-- 职责：保存 Shopify Customer 与 Herald User 的正式绑定关系
-- 关键字段：
-  - realm_id, shop_domain, shopify_customer_id（唯一约束）
-  - user_id（绑定到的 Herald 用户）
-  - status（active/inactive）
-- 用途：支持 webhook 缺失 casUserId 时通过 customer_id 查到用户
-
-**shopify_subscription_binding 表（保持单一职责）**：
-- 职责：仅负责 contract_id/order_id/billing_attempt_id → subscription_id 的映射
-- 不新增用户字段，不承担用户归属职责
-
-**points_credit_ledger 表（职责明确）**：
-- 仅用于记录积分授予、消耗、回收
-- 不承担身份归属查询
-- 删除 subscription_id 字段（如果存在）
-
-**通用模型扩展**：
-- 新增 `ConfigType::Shopify` 到 `realm_config` 表
-- 复用现有 `plan`、`subscription`、`payment_event`、`subscription_history` 表
-- Webhook 处理逻辑详见技术方案第 10 节
-- 状态映射规则详见技术方案第 11 节
-- 补偿与一致性处理详见技术方案第 12 节
-
----
-
-## 9. 相关文件索引
-
-### 9.1 后端文件
+### 8.1 后端文件
 
 **领域层**:
 - `backend/core/src/domain/billing/entities.rs` - 支付实体定义（复用现有 Plan、Subscription、PaymentEvent）
@@ -399,7 +360,7 @@ subscription_id -> points_credit_ledger -> user_id  ❌
 - `backend/app/migrations/20260402_add_subscription_id_to_credit_ledger.sql` - 积分账本调整
 - `backend/app/migrations/20260403_add_shopify_user_binding.sql` - 用户绑定表（新增）
 
-### 9.2 前端文件
+### 8.2 前端文件
 
 **页面组件**:
 - `frontend/src/routes/$realmId/billing/payment-providers.tsx` - 支付平台配置管理页面（修改）
@@ -409,7 +370,7 @@ subscription_id -> points_credit_ledger -> user_id  ❌
 - `frontend/src/lib/billing-constants.ts` - 支付平台常量（新增 Shopify）
 - `frontend/src/lib/schemas/billing-forms.ts` - 支付表单 schema（新增 Shopify）
 
-### 9.3 测试文件
+### 8.3 测试文件
 
 **后端场景测试**:
 - `backend/tests/scenarios/billing/shopify_provider.rs` - Shopify provider 场景测试（新增）
@@ -418,15 +379,11 @@ subscription_id -> points_credit_ledger -> user_id  ❌
 **E2E Demo 测试**:
 - `demo/e2e/billing/shopify-payment-flow.spec.ts` - Shopify 支付流程 E2E 测试（新增，可选）
 
-### 9.4 技术方案文档
-
-- `.ai/future/shopify_pay_codex.md` - Shopify 支付接入技术方案（参考）
-
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
-### 10.1 Shopify 官方文档
+### 9.1 Shopify 官方文档
 - [Shopify Webhooks Guide](https://shopify.dev/docs/apps/build/webhooks)
 - [Shopify Webhook Subscription Management](https://shopify.dev/docs/apps/build/webhooks/subscribe)
 - [Shopify HTTPS Webhook Verification](https://shopify.dev/docs/apps/build/webhooks/subscribe/https)
@@ -434,15 +391,15 @@ subscription_id -> points_credit_ledger -> user_id  ❌
 - [Shopify Admin API Reference](https://shopify.dev/docs/api/admin-graphql)
 - [Shopify Storefront API Reference](https://shopify.dev/docs/api/storefront)
 
-### 10.2 相关用户故事
+### 9.2 相关用户故事
 - 📄 [docs/user-stories/billing/shopify-pay.md](/docs/user-stories/billing/shopify-pay.md) - Shopify Pay 用户故事
 - 📄 [docs/user-stories/billing/payment-provider.md](/docs/user-stories/billing/payment-provider.md) - 通用支付平台配置用户故事
 
-### 10.3 相关 PRD
+### 9.3 相关 PRD
 - [Billing 订阅计费 PRD](/docs/prd/billing/subscription.md) - 现有订阅计费系统
 - [Points 积分系统 PRD](/docs/prd/billing/points.md) - 积分发放和回收逻辑
 - [Subscription History PRD](/docs/prd/billing/subscription.md) - 订阅变更历史
 - [Stripe Payment PRD](/docs/prd/billing/stripe-payment.md) - Stripe 支付集成参考
 
-### 10.4 技术资源
+### 9.4 技术资源
 - [Shopify Rust SDK](https://github.com/sinha-sahil/shopify-rust-client)

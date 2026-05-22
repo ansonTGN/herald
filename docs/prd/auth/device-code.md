@@ -152,7 +152,6 @@ CLI 工具                          Herald                      用户浏览器
 - 高强度随机性，不可猜测或枚举
 - 有效期：默认 900 秒（15 分钟），过期后不可使用
 - 状态由 pending 转为终态（authorized / denied / expired）后不可逆
-- 存储与数据结构设计详见 `.ai/design/device-code.md`
 
 ---
 
@@ -192,32 +191,21 @@ CLI 工具                          Herald                      用户浏览器
 - 在现有 Client App 设置页面中新增 Device Code Grant 启用/禁用开关
 - 默认为禁用状态
 
----
 
-## 8. 技术设计承接
+## 8. 相关文件索引
 
-**状态**: 必填
-
-- 接口细节（端点路径、请求/响应参数、数据存储结构）应在 `.ai/design/device-code.md` 中承接
-- 数据库变更（Client App 表新增字段）应在技术设计中说明
-- 实现步骤和代码结构应在技术设计中规划
-
----
-
-## 9. 相关文件索引
-
-### 9.1 后端文件（现有参考）
+### 8.1 后端文件（现有参考）
 - OAuth 授权处理: `backend/api/src/application/http/oauth/`
 - Client App 实体: `backend/domain/src/client/`
 - Session 管理: 复用现有 session 机制
 
-### 9.2 前端文件（现有参考）
+### 8.2 前端文件（现有参考）
 - 登录页面: `frontend/src/routes/$realm_id.login.tsx`
 - Client App 设置: `frontend/src/features/settings/`
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
 - 用户故事：`docs/user-stories/auth/device-code.md`
 - RFC 8628 — OAuth 2.0 Device Authorization Grant: https://datatracker.ietf.org/doc/html/rfc8628

@@ -293,81 +293,50 @@
 - 支付过程中用户可 "取消支付" 返回套餐选择
 - 金额单位转换为用户友好的显示格式（分 → 元）
 
----
 
-## 8. 技术设计承接
+## 8. 相关文件索引
 
-**状态**: 必填
-
-- 接口细节、数据库结构、迁移策略、类型定义、SDK 设计和实现步骤，应在 `.ai/design/`、技术设计文档或代码中承接。
-- 微信支付 Rust SDK 选型和技术细节参见 `.ai/future/wechat.md`。
-- 前端二维码组件选型参见 `.ai/future/wechat.md` 第 6 节。
-
-### 8.1 数据模型扩展
-
-- 在现有 Realm 配置体系中新增微信支付配置类型
-- 复用现有订阅、支付事件、订阅历史等数据模型
-- 微信支付订单与 Herald 订单映射关系由技术设计定义
-
-### 8.2 基础设施层
-
-- 新增微信支付 API 调用模块，封装统一下单、查询、关单等能力
-- SDK 选型和技术细节参见 `.ai/future/wechat.md`
-
-### 8.3 前端组件
-
-- 新增二维码渲染组件
-- 新增支付状态轮询能力
-
----
-
-## 9. 相关文件索引
-
-### 9.1 后端文件
+### 8.1 后端文件
 
 - 领域层：复用现有 Billing/Realm Config 实体
 - 基础设施层：新增微信支付 API 客户端模块
 - 应用层：新增微信支付 Webhook 处理器和路由
 - 数据库迁移：待技术设计文档定义
 
-### 9.2 前端文件
+### 8.2 前端文件
 
 - 支付平台配置管理页面（修改现有页面）
 - 微信支付二维码组件（新增）
 - 支付平台配置表单（扩展微信支付支持）
 
-### 9.3 测试文件
+### 8.3 测试文件
 
 - 微信支付配置场景测试（新增）
 - 微信支付 Webhook 场景测试（新增）
 - 微信支付流程 E2E 测试（新增，可选）
 
-### 9.4 技术方案文档
-
-- `.ai/future/wechat.md` - 微信支付技术背景调研
-
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
-### 10.1 微信支付官方文档
+### 9.1 微信支付官方文档
 - [微信支付 API v3 文档](https://pay.weixin.qq.com/wiki/doc/apiv3/wxpay/pages/index.shtml)
 - [Native 支付接入指南](https://pay.weixin.qq.com/wiki/doc/apiv3/open/pay/chapter2_7_2.shtml)
 - [签名验证指南](https://pay.weixin.qq.com/wiki/doc/apiv3/wechatpay/wechatpay4_1.shtml)
 - [回调通知处理](https://pay.weixin.qq.com/wiki/doc/apiv3/wechatpay/wechatpay4_5.shtml)
 
-### 10.2 SDK 文档
+### 9.2 SDK 文档
 - [wechat-pay-rust-sdk](https://github.com/dounine/wechat-pay-rust-sdk) - Rust 微信支付 SDK
 
-### 10.3 相关用户故事
+### 9.3 相关用户故事
 - 📄 [docs/user-stories/billing/wechat-pay.md](/docs/user-stories/billing/wechat-pay.md) - 微信支付用户故事
 - 📄 [docs/user-stories/billing/payment-provider.md](/docs/user-stories/billing/payment-provider.md) - 通用支付平台配置用户故事
 
-### 10.4 相关 PRD
+### 9.4 相关 PRD
 - [Billing 订阅计费 PRD](/docs/prd/billing/subscription.md) - 现有订阅计费系统
 - [Points 积分系统 PRD](/docs/prd/billing/points.md) - 积分发放和回收逻辑
 - [Subscription History PRD](/docs/prd/billing/subscription.md) - 订阅变更历史
 - [Stripe Payment PRD](/docs/prd/billing/stripe-payment.md) - Stripe 支付集成参考
 - [Shopify Pay PRD](/docs/prd/billing/shopify-pay.md) - Shopify Pay 支付集成参考
 
-### 10.5 技术资源
+### 9.5 技术资源

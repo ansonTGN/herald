@@ -147,33 +147,22 @@ Herald 系统需要为所有核心操作提供可追溯的审计能力。当前�
 - 支持点击单条记录查看详情（P1）
 - 无数据时显示空状态提示
 
----
 
-## 8. 技术设计承接
+## 8. 相关文件索引
 
-**状态**: 必填
-
-- 数据库存储方案、迁移脚本、实体定义和查询优化策略应在 `.ai/design/audit.md` 中承接
-- 审计事件模型设计应复用并扩展现有 `backend/domain/src/audit/` 模块
-- 接口明细应在技术设计文档中维护
-
----
-
-## 9. 相关文件索引
-
-### 9.1 后端文件
+### 8.1 后端文件
 
 - `backend/domain/src/audit/mod.rs` - 审计模块入口（已存在）
 - `backend/domain/src/audit/rbac_audit.rs` - RBAC 审计日志记录器（已存在，需扩展）
 - `backend/domain/src/realm/services.rs` - Realm 服务（已集成 RBAC 初始化审计）
 
-### 9.2 前端文件
+### 8.2 前端文件
 
 - 暂无，待实现
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
 - 用户故事：`docs/user-stories/core/audit.md`
 - 权限管理 PRD：`docs/prd/auth/permissions.md`（审计日志原在 Out of Scope 中）

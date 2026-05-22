@@ -223,20 +223,10 @@ Herald 系统支持在 Realm 级别和用户级别配置 TOTP：
 - 仅保留页面入口、关键用户路径、状态反馈、权限可见性和异常提示要求，不写组件实现步骤或前端类型定义。
 - 认证相关流程应优先保证成功/失败状态清晰、回跳路径明确、敏感信息不回显，并对首次配置、失效、锁定、重试等场景提供稳定反馈。
 
----
 
-## 8. 技术设计承接
+## 8. 相关文件索引
 
-**状态**: 必填
-
-- 接口细节、数据库结构、迁移策略、类型定义、调度方案、SDK 设计和实现步骤，应在 `docs/design/`、`.ai/design/`、接口说明或代码中承接。
-- 如历史实现已经存在，应以现有设计文档、OpenAPI、迁移文件和代码为依据补充，不回写到 PRD 正文。
-
----
-
-## 9. 相关文件索引
-
-### 9.1 后端文件
+### 8.1 后端文件
 
 - `backend/core/src/entity/user_totp_config.rs` - TOTP 实体定义 ✅
 - `backend/core/src/entity/user_totp_backup_codes.rs` - 备份码实体定义 ✅
@@ -246,7 +236,7 @@ Herald 系统支持在 Realm 级别和用户级别配置 TOTP：
 - `backend/core/src/infrastructure/user_totp/repositories.rs` - TOTP Repository 实现 ✅
 - **状态**: ✅ 已实施
 
-### 9.2 前端文件
+### 8.2 前端文件
 
 - `frontend/src/lib/types/totp.ts` - TOTP 类型定义 ✅
 - `frontend/src/lib/api.ts` - TOTP API 调用 ✅
@@ -260,7 +250,7 @@ Herald 系统支持在 Realm 级别和用户级别配置 TOTP：
 
 - **状态**: ✅ 已实施
 
-### 9.4 演示测试
+### 8.4 演示测试
 
 - `demo/e2e/realm-admin/realm-admin-totp-config-demo.e2e.ts` - Realm Admin TOTP 配置测试 ✅
 - `demo/e2e/regular-user/regular-user-totp-comprehensive-demo.e2e.ts` - 普通 TOTP 综合测试 ✅
@@ -269,7 +259,7 @@ Herald 系统支持在 Realm 级别和用户级别配置 TOTP：
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
 - **相关用户故事**: [docs/user-stories/auth/totp.md](/docs/user-stories/auth/totp.md)
 - **RFC 6238**: TOTP 标准规范

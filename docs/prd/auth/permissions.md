@@ -288,30 +288,17 @@ Herald 系统实现了完整的 RBAC (基于角色的访问控制) 权限管理�
 - API Keys 页面：有 `api_keys.view` 但无 `api_keys.manage` 时能查看列表，管理按钮不可用。
 - 前端不做 `*` 或其他前端特例判断，权限检查结果以后端为准。
 
----
 
-## 8. 技术设计承接
-
-**状态**: 必填
-
-- 后端 RBAC 初始化、权限检查中间件、前端权限常量和测试的具体改动方案，参见 `.ai/future/permission_1.md`。
-- 接口细节、数据库结构、迁移策略、类型定义和实现步骤，应在 `docs/design/` 或 `.ai/design/` 中承接。
-- 如历史实现已经存在，应以现有设计文档、OpenAPI、迁移文件和代码为依据补充，不回写到 PRD 正文。
-
----
-
-## 9. 相关文件索引
+## 8. 相关文件索引
 
 - 相关实现文件请以本功能对应的 `backend/`、`frontend/`、`demo/` 目录和现有设计文档为准。
 - 若需补充精确文件清单，应在技术设计文档中维护，避免在 PRD 中混入实现级细节。
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
-- 前端开发指南: `../../spec/frontend/development.md`
 - Realm Settings 文档: [docs/prd/core/realm-settings.md](/docs/prd/core/realm-settings.md)
 - OAuth 文档: [docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)
 - Dashboard 文档: [docs/prd/core/dashboard.md](/docs/prd/core/dashboard.md)
 - Audit 文档: [docs/prd/core/audit.md](/docs/prd/core/audit.md)
-- 权限修复方案: `.ai/future/permission_1.md`

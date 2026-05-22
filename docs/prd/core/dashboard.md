@@ -118,7 +118,6 @@
 - 新增 Dashboard Stats 单端点，一次性返回所有指标数据（用户指标 + 趋势数据）
 - 访问控制：复用现有 Realm Admin 权限检查，不新增独立权限
 - 租户边界：所有查询强制 `realm_id` 过滤
-- 技术设计详见 `.ai/design/dashboard.md`
 
 ---
 
@@ -131,44 +130,32 @@
 - 关键交互：页面加载自动拉取数据；"Total Users" 卡片可点击跳转用户管理页
 - 状态反馈：加载中 Skeleton、空态显示 0 / "暂无数据"、错误使用现有错误处理模式
 - 图表组件：使用 shadcn chart（底层 recharts），通过 `npx shadcn@latest add chart` 安装
-- 技术设计详见 `.ai/design/dashboard.md`
 
----
 
-## 8. 技术设计承接
+## 8. 相关文件索引
 
-**状态**: 必填
-
-- 技术设计文档：`.ai/design/dashboard.md`
-- 包含 API 接口设计、数据库索引变更、前端组件设计、测试策略
-
----
-
-## 9. 相关文件索引
-
-### 9.1 后端文件
+### 8.1 后端文件
 
 - `backend/api/src/application/http/` — 新增 dashboard 模块
 - `backend/api/src/application/http/server/mod.rs` — 注册新路由
 - `backend/infra/src/audit/` — 审计事件仓储（数据来源）
 - `backend/domain/src/audit/event_types.rs` — 审计事件类型定义
 
-### 9.2 前端文件
+### 8.2 前端文件
 
 - `frontend/src/routes/$realmId/manage/index.tsx` — 重写 Dashboard 页面
 - `frontend/src/data/query-options.ts` — 新增 dashboard query
 - `frontend/src/lib/constants.ts` — 新增 QUERY_KEYS 常量
 
-### 9.3 用户故事文件
+### 8.3 用户故事文件
 
 - `docs/user-stories/core/realm-admin.md` — US-RA-010 ~ US-RA-012
 
 ---
 
-## 10. 参考资料
+## 9. 参考资料
 
 - 用户故事：`docs/user-stories/core/realm-admin.md`
 - 相关 PRD：`docs/prd/core/audit.md`（审计日志，Dashboard 聚合其数据）
 - 相关 PRD：`docs/prd/auth/totp.md`（TOTP 统计模式可复用）
-- 技术设计：`.ai/design/dashboard.md`
 - IAM Dashboard 行业参考：Cloudeagle IAM Key Metrics、Reddit r/ProductManagement KPI 讨论

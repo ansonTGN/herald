@@ -798,20 +798,10 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - 仅保留管理入口、关键操作路径、筛选/查看/变更的交互约束和状态反馈，不写组件实现、数据层封装或代码结构。
 - 计费与积分场景必须突出金额/积分变化、变更影响范围、不可逆风险提示和回调同步中的状态说明。
 
----
 
-## 9. 技术设计承接
+## 9. 相关文件索引
 
-**状态**: 必填
-
-- 接口细节、数据库结构、迁移策略、类型定义、调度方案、SDK 设计和实现步骤，应在 `docs/design/`、`.ai/design/`、接口说明或代码中承接。
-- 如历史实现已经存在，应以现有设计文档、OpenAPI、迁移文件和代码为依据补充，不回写到 PRD 正文。
-
----
-
-## 10. 相关文件索引
-
-### 10.1 后端文件
+### 9.1 后端文件
 
 | 文件路径 | 状态 | 说明 |
 |---------|------|------|
@@ -825,7 +815,7 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 | `backend/core/src/services/free_points_service.rs` | ❌ | 免费积分业务逻辑 |
 | `backend/worker/src/jobs/free_points_grant_job.rs` | ❌ | 免费积分定时任务 |
 
-### 10.2 前端文件
+### 9.2 前端文件
 
 | 文件路径 | 状态 | 说明 |
 |---------|------|------|
@@ -840,12 +830,9 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 
 ---
 
-## 11. 参考资料
+## 10. 参考资料
 
 - **PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档（依赖）
 - **用户故事**: `docs/user-stories/billing/points-admin.md` - Tenant Admin 积分管理用户故事
 - **用户故事**: `docs/user-stories/billing/points-user.md` - Tenant User 积分查询用户故事
 - **用户故事**: `docs/user-stories/billing/points-free-user.md` - 免费用户积分用户故事
-- **实施计划**: `.ai/future/credits_plan_split.md` - 积分系统解耦实施计划
-- **规范**: `spec/backend/development.md` - 后端开发规范
-- **规范**: `spec/frontend/development.md` - 前端开发规范

@@ -732,4 +732,3 @@ And 我无法查看其他用户的历史记录
 - **PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档
 - **PRD**: `docs/prd/billing/subscription.md` - Subscription History 订阅变更历史产品需求文档
 - **SDK 文档**: `backend/sdk/src/lib.rs` - Rust SDK 源码
-- **技术设计**: `.ai/design/fix-permission-and-sdk-impl.md` - SDK API 扩展技术设计
