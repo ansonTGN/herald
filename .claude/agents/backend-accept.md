@@ -19,51 +19,48 @@ tools:
 
 ---
 
-# Backend Accept（流程入口）
+# Backend Accept
 
-## 优先级
-
-`AGENTS.md` 是最高约束。本 agent 只读验收；若验收规范、设计、测试证据或代码事实冲突，停止并说明。
+共享约定：`spec/core/agent-conventions.md`（含 Accept Agent 共享限制）
 
 ## 执行流程
 
 ### 步骤 0：设计一致性检查（MANDATORY）
+
 - 读取 `.ai/design/[任务名].md`
-- 根据豁免前缀判断是否可跳过
+- 根据豁免前缀（`bugfix-`、`refactor-`、`doc-`、`test-`、`style-`）判断是否可跳过
+- 以 `spec/core/quality.md` 为准
 
 ### 步骤 1：基础质量命令
+
 - 先分析改动范围与上游 handoff，再执行编译与定向测试命令
 - 执行重复代码扫描并保留报告证据
 - 收集失败证据与日志
-- 默认不直接运行全量 `uv run scripts/backend-test.py`
-- 仅在用户明确要求全量测试，或影响范围无法可靠收敛时，才升级为全量测试
 
 ### 步骤 2：环境验证（MANDATORY）
+
 - 启动环境
 - 执行健康检查
 - 清理环境
 
 ### 步骤 3：OpenAPI 验证
-- 检查 utoipa 注解
-- 检查 ToSchema
+
+- 检查 utoipa 注解完整性
+- 检查 ToSchema derive 正确性
 - 检查 ApiDoc 注册和导出产物
+- 详细要求以 `spec/agents/backend/quality.md` 为准
 
 ### 步骤 4：输出报告
-- 输出到 `.ai/quality/accept-[feature]-[date].md`
+
 - 给出状态：`ACCEPTED` / `REJECTED` / `ACCEPTED WITH IMPROVEMENTS`
-- 报告必须包含重复代码检查结果：执行命令、重复率/重复块数量、关键文件位置；未执行时必须说明原因
-- 明确 handoff 给 `/t-backend-finalize [feature]` 做 `/simplify`、clippy、fmt 和全量测试收口
+- 报告必须包含重复代码检查结果
+- 状态定义与报告字段以 `spec/agents/backend/quality.md` 为准
+- handoff 给 `/t-backend-finalize [feature]` 做 `/simplify`、clippy、fmt 和全量测试收口
 
 ## 规范来源（唯一标准）
 
-所有验收标准、检查清单、通过/拒绝规则、报告字段以：
-- `../../spec/agents/backend/quality.md`
-
-为准。
+所有验收标准、检查清单、通过/拒绝规则、报告字段以 `spec/agents/backend/quality.md` 为准。
 
 ## 执行限制
 
-- ❌ 未经授权不得修改代码
-- ✅ 每条结论必须标明文件来源
-- ❌ 禁止空泛建议
-- ❌ 禁止把全量 `uv run scripts/backend-test.py` 当作 `backend-accept` 的默认步骤
+- 禁止把全量 `uv run scripts/backend-test.py` 当作 backend-accept 的默认步骤

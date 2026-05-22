@@ -16,7 +16,7 @@ allowed-tools:
 
 ## 优先级
 
-`AGENTS.md` 是最高约束。本 skill 只定义 PRD 维护流程；若与用户当前指令、spec、docs 或代码事实冲突，停止并说明冲突，不要自行折中。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 适用范围
 

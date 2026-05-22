@@ -12,9 +12,7 @@ allowed-tools:
 
 # Demo 测试验收
 
-## 优先级
-
-`AGENTS.md` 是最高约束。本命令只读验收；若 User Story、验收规范、测试证据或实现事实冲突，停止并说明。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 目标
 - 验证测试是否覆盖用户故事。

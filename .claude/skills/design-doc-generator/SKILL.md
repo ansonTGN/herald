@@ -16,7 +16,7 @@ allowed-tools:
 
 ## 优先级
 
-`AGENTS.md` 是最高约束。本 skill 只定义设计文档生成流程；设计内容必须保持当前必需、简单、可追溯。若需求、spec、代码或本 skill 冲突，停止并说明冲突。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 适用范围
 

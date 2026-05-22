@@ -16,9 +16,7 @@ allowed-tools:
 
 # 后端收口执行
 
-## 优先级
-
-`AGENTS.md` 是最高约束。本命令是后端验收后的收口流程；若收口步骤与当前用户指令、仓库状态或失败证据冲突，停止并说明。
+共享约定：`spec/core/agent-conventions.md`
 
 ## Purpose
 - 读取 `.ai/task/[feature]/.state.json` 和 `backend/finalize.md`。

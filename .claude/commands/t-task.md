@@ -15,9 +15,7 @@ allowed-tools:
 
 # 任务规划生成
 
-## 优先级
-
-`AGENTS.md` 是最高约束。任务拆分必须服务于简单、外科式、可验证的执行；如果本命令、task-planner、spec、设计文档冲突，停止并说明冲突。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 使用方式
 

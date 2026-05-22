@@ -22,7 +22,7 @@ tools:
 
 ## 优先级
 
-`AGENTS.md` 是最高约束。本 skill 是 `/t-task` 的详细事实源，但任务拆分必须服务于简单、外科式、可验证的执行；若与用户当前指令、设计文档、spec 或代码事实冲突，停止并说明冲突。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 概述
 - 作用：把 `.ai/design/[feature].md` 转换为可执行任务目录。

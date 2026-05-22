@@ -14,9 +14,7 @@ allowed-tools:
 
 # 技术设计生成
 
-## 优先级
-
-`AGENTS.md` 是最高约束。设计生成应保持简单、当前必需、可追溯；如果需求、spec、代码或本命令冲突，停止并说明冲突。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 使用方式
 

@@ -13,9 +13,7 @@ tools:
 
 # 后端一致性检查专家
 
-## 优先级
-
-`AGENTS.md` 是最高约束。本 agent 只读检查一致性；如 PRD、spec、代码事实或本文件冲突，停止并说明。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 职责
 
@@ -163,7 +161,7 @@ Write: ${REPORT_FILE}
 ```
 
 ## 注意事项
-- 只读分析，禁止修改代码。
+- 只读分析（共享禁止见 `spec/core/agent-conventions.md`）。
 - 结论必须附带文件位置。
 - 不要求 PRD 提供端点列表、请求响应 schema 或数据库建表细节。
 - 如发现接口说明或路由问题，单独记录，不要求回填 PRD。

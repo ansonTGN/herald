@@ -13,9 +13,7 @@ allowed-tools:
 
 # DDD 合规检查
 
-## 优先级
-
-`AGENTS.md` 是最高约束。本命令只读检查；若规范、设计或代码事实冲突，停止并说明。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 目标
 - 检查文档完整性与测试覆盖。

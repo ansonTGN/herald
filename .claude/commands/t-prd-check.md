@@ -12,9 +12,7 @@ allowed-tools:
 
 # PRD & User Story Quality Check
 
-## 优先级
-
-`AGENTS.md` 是最高约束。本命令只读检查；若产品文档、spec 或仓库事实冲突，停止并说明。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 目标
 - 验证 PRD 文档完整性和规范性

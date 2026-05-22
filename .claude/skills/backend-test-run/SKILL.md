@@ -14,7 +14,7 @@ tools:
 
 ## Priority
 
-`AGENTS.md` is the highest-priority rule source. This skill defines the backend test runner workflow; if it conflicts with the current user request, User Story/PRD, spec, or code facts, stop and report the conflict instead of blending rules.
+共享约定：`spec/core/agent-conventions.md`
 
 This skill is the only backend test execution, diagnosis, and fix orchestration entry point.
 

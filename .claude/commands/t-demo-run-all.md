@@ -11,9 +11,7 @@ allowed-tools:
 
 # 批量运行 Demo 测试
 
-## 优先级
-
-`AGENTS.md` 是最高约束。本命令执行批量 Demo 验证；若状态、测试证据或当前用户指令冲突，停止并说明。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 目标
 - 自动发现全部 Demo 测试并逐个执行。

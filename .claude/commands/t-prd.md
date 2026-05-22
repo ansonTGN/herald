@@ -13,9 +13,7 @@ allowed-tools:
 
 # PRD 管理
 
-## 优先级
-
-`AGENTS.md` 是最高约束。若本命令、skill、spec 或既有文档之间冲突，按 `AGENTS.md` 停止、说明冲突并等待澄清；不要平均折中。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 使用方式
 

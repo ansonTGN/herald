@@ -19,54 +19,42 @@ tools:
 
 ---
 
-# Demo Accept（流程入口）
+# Demo Accept
 
-## 优先级
-
-`AGENTS.md` 是最高约束。本 agent 只读验收；若验收规范、User Story、测试证据或实现事实冲突，停止并说明。
+共享约定：`spec/core/agent-conventions.md`（含 Accept Agent 共享限制）
 
 ## 执行流程
 
 ### 阶段 1：用户故事一致性检查（MANDATORY）
+
 - 识别测试文件对应用户故事
 - 校验场景、角色、断言匹配
 
-### 阶段 2：编译验证（MANDATORY）
-- 执行 demo 编译
-- 记录编译错误
+### 阶段 2：编译检查
 
-### 阶段 3：执行验证（MANDATORY）
-- 执行 demo 测试
-- 记录失败、超时、日志位置
+```bash
+cd demo && npx playwright install --with-deps 2>/dev/null
+```
 
-### 阶段 4：代码质量检查
-- 检查隔离、日志系统、延迟、选择器、等待模式
-- 执行重复代码扫描并保留报告证据
-- **检查测试数据构造方式（MANDATORY）**
-  - 验证不使用 `api-test-data.helpers.ts`
-  - 验证不使用 `db-test-data.helpers.ts`
-  - 验证不使用 `subscription-creation.helpers.ts`
-  - 验证所有业务数据使用 Demo Seed 或用户端 UI 操作
-  - 验证不进行管理端 UI 操作
+### 阶段 3：Demo 测试执行
 
-### 阶段 5：覆盖率验证
-- 计算场景覆盖率
-- 判定是否达标
+按 `spec/demo/e2e-testing.md` 执行。
+
+### 阶段 4：测试数据构建验证
+
+- 检查测试数据是否带时间戳或可追踪标记
+- 检查 afterEach 清理完整性
+
+### 阶段 5：覆盖计算
+
+- 计算用户故事场景覆盖度
 
 ### 阶段 6：输出报告
+
 - 单文件报告：`.ai/quality/demo-accept-[feature]-[date].md`
 - 批量验收输出汇总报告
-- 单文件报告和批量汇总报告必须包含重复代码检查结果：执行命令、重复率/重复块数量、关键文件位置；未执行时必须说明原因
+- 状态以 `spec/agents/demo/quality.md` 为准
 
 ## 规范来源（唯一标准）
 
-所有验收标准、评分公式、拒绝条件、报告模板以：
-- `../../spec/agents/demo/quality.md`
-
-为准。
-
-## 执行限制
-
-- ❌ 未经授权不得修改代码
-- ✅ 每条结论必须标明文件来源
-- ❌ 禁止空泛建议
+所有验收标准、评分公式、拒绝条件、报告模板以 `spec/agents/demo/quality.md` 为准。

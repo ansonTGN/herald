@@ -64,3 +64,8 @@ DDD 检查最小要求：
 - 需求语义冲突时，以 `docs/`（PRD + User Stories）为准
 - 执行流程与测试约束，以 `spec/` 与 `AGENTS.md` 为准
 - 未经授权不得修改与当前任务无关的文件
+
+## 6. Agent 共享约定
+
+- 共享优先级与禁止规则：`spec/core/agent-conventions.md`
+- 任务输出结构：`.claude/protocols/task-output-contract.md`

@@ -26,51 +26,23 @@ tools:
 
 # Herald 前端测试专家
 
-## 优先级
-
-`AGENTS.md` 是最高约束。本 agent 只定义前端测试执行边界；测试价值和写法以 `spec/frontend/testing.md` 与现有测试为准。若与当前任务或 Demo-first 策略冲突，停止并说明。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 先读什么
 
-执行前按这个顺序读取：
-
-1. `docs/user-stories/00-index.md`
-2. `spec/core/environment-and-testing-guide.md`
-3. `spec/frontend/index.md`
-4. 按需进入：
-   - `spec/frontend/testing.md`
-   - `spec/agents/frontend/testid-standards.md`
-   - `spec/agents/frontend/validation.md`
-   - `spec/agents/frontend/quality.md`
-5. 若任务有设计文档，再读 `.ai/design/[任务名].md`
+1. 任务 item、上游 handoff。
+2. 对应 User Story 与 PRD。
+3. `spec/frontend/testing.md` → 按导航进入对应细页。
+4. 现有同类测试和 helper。
 
 规则：
-- `spec/frontend/testing.md` 是测试 how-to 主入口
-- agent 文档只负责“何时写、写到哪、门禁是什么”
+- 测试策略、MSW 规则、查询优先级以 `spec/frontend/testing.md` 为准。
+- agent 不重复定义测试教程。
 
 ## 测试边界
 
-优先写 Vitest 的场景：
-- hooks、纯函数、schema、数据转换、权限判断
-- 组件内部状态机、分支逻辑、异常路径
-- Demo 难稳定覆盖的前端边界
-- 需要快速反馈的局部回归
-- schema 的边界值、required field、非法 enum、cross-field 约束、transform/default 行为
-- React Query 的数据转换、cache key 隔离、filter 参数传递、自定义错误处理或分页/polling 逻辑
-- callback 中存在 payload 组装、条件性调用、状态跳转或多个 callback 交互
-
-默认不由本 agent 承担的场景：
-- Playwright Demo / E2E
-- 已被 Demo 稳定覆盖的整条用户故事 happy-path
-- 视觉回归、性能预算、a11y 全量验收
-- `renders X` 静态文本存在性断言
-- CSS class、Tailwind class 或 DOM 结构断言
-- help text、label、placeholder 这类组件库职责的展示断言
-- zod、React Query、React、浏览器和 TypeScript 已保证的框架行为
-- 组件只是原样转发 prop callback 时的 `clicking X calls vi.fn()`
-- 纯 UI 包装组件、常量文件、纯类型导出文件
-
-Demo 相关测试由 `demo-dev` 负责。
+- Vitest 适用场景与排除场景以 `spec/frontend/testing.md` 为准。
+- Demo/E2E 测试归 demo-dev，不在本 agent 范围。
 
 ## 必做门禁
 
@@ -79,47 +51,29 @@ Demo 相关测试由 `demo-dev` 负责。
 - 非 `bugfix-`、`refactor-`、`doc-`、`test-`、`style-` 前缀任务，先确认设计文档存在
 - 以 `spec/core/quality.md` 为准
 
-### 实现前检查
+### 完成前验证
 
-- 先确认目标是否真的需要 Vitest，而不是应该交给 Demo
-- 涉及 UI 查询时，先检查 `data-testid` 是否符合 `spec/agents/frontend/testid-standards.md`
-- 优先沿用 `frontend/src/test/` 下现有 setup、mocks、helpers
-
-### 运行命令
+必须执行：
 
 ```bash
 cd frontend && npm run test:run
-cd frontend && npm run test:run -- [pattern]
-```
-
-按需执行：
-
-```bash
 cd frontend && npm run type-check
-cd frontend && npm run lint
 ```
 
-## 编写约束
+详细门禁以 `spec/agents/frontend/validation.md` 和 `spec/agents/frontend/quality.md` 为准。
 
-- 测试策略、MSW 规则、查询优先级以 `spec/frontend/testing.md` 为准
-- 使用 `@testing-library/react` 和 `userEvent`
-- API mock 使用 MSW，不打真实后端
-- 测试行为，不测试第三方库实现细节
-- 不为 Demo 已覆盖的完整故事重复补一条同路径 Vitest
-- 按用户场景组织 `describe`，不要默认按 rendering/state/callbacks 这类实现细节分组
-- 用工厂函数构造测试数据，避免散落硬编码 fixture
-- 同类 enum、边界值和非法输入用 `it.each` 合并
-- 验证 request body 时优先通过 MSW handler 观察请求，不 mock 内部 API 函数
+## Context7 常用库
 
-Context7 常用库 ID：
-- `/vitest-dev/vitest`
-- `/testing-library/testing-library-docs`
-- `/tanstack/query`
+`/testing-library/react-testing-library`、`/mswjs/msw`、`/vitest`、`/zodjs/zod`
 
-## 禁止事项
+## 输出
 
-- 不编写 Playwright E2E 测试
-- 不硬编码等待或用 `setTimeout` 代替测试库等待
-- 不混用真实 API 与 MSW 假数据
-- 不写只验证静态渲染、样式类名、DOM 层级或 prop 原样转发的低价值测试
-- 不在 agent 文档里重复 `spec/frontend/testing.md` 的长篇教程
+遵循 `.claude/protocols/task-output-contract.md`。
+
+## Shared References
+
+- `spec/core/agent-conventions.md`
+- `.claude/protocols/task-output-contract.md`
+- `spec/frontend/testing.md`
+- `spec/agents/frontend/validation.md`
+- `spec/agents/frontend/quality.md`

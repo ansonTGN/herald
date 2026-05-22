@@ -1,8 +1,6 @@
 # 诊断报告协议 v3.0 - 极简版
 
-## 优先级
-
-`AGENTS.md` 是最高约束。本协议只定义诊断报告格式；如报告格式、测试证据、代码事实或 User Story/PRD 冲突，停止并说明。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 目的
 

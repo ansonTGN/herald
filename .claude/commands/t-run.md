@@ -18,9 +18,7 @@ allowed-tools:
 
 # 任务执行
 
-## 优先级
-
-`AGENTS.md` 是最高约束。执行时以当前 item 的成功标准和最小必要验证为目标；遇到冲突、缺失上下文或无法判断的语义问题时停止并说明。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 使用方式
 

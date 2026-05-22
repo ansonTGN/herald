@@ -14,9 +14,7 @@ allowed-tools:
 
 # 后端一致性检查
 
-## 优先级
-
-`AGENTS.md` 是最高约束。本命令只读检查；若 PRD、spec、代码事实或检查结论冲突，停止并说明。
+共享约定：`spec/core/agent-conventions.md`
 
 ## 目标
 - 对比 PRD 与后端实现。
