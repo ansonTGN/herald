@@ -2,7 +2,7 @@
 
 use axum::{
     Router,
-    routing::get,
+    routing::{get, post},
 };
 use herald_core::domain::authentication::ports::AuthenticationService;
 use herald_core::domain::oauth::ports::{OAuthConfigService, OAuthRepository};
@@ -13,6 +13,7 @@ use crate::{
     authorize::oauth_authorize,
     callback::{oauth_callback, oauth_callback_form},
     login::oauth_login,
+    token::oauth_token,
 };
 
 pub fn oauth_router<R, C, U, A>() -> Router<()>
@@ -24,6 +25,7 @@ where
 {
     Router::new()
         .route("/authorize", get(oauth_authorize))
+        .route("/token", post(oauth_token))
         .route("/{provider}/login", get(oauth_login))
         .route(
             "/{provider}/callback",

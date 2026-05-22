@@ -10,13 +10,13 @@
 
 ### 1.1 Realm Admin 用户故事
 
-- 📄 [docs/user-stories/06-billing-user-stories.md](/docs/user-stories/06-billing-user-stories.md#故事-7查看订阅变更历史-us-bi-007)
-  - **[US-BI-007] 查看订阅变更历史** (P1): 作为 Realm Admin，我想要查看所有用户的订阅变更历史，以便监控和管理订阅情况
+- 📄 [docs/user-stories/06-billing-user-stories.md](/docs/user-stories/06-billing-user-stories.md#故事-8查看订阅变更历史-us-bi-008)
+  - **[US-BI-008] 查看订阅变更历史** (P1): 作为 Realm Admin，我想要查看所有用户的订阅变更历史，以便监控和管理订阅情况
 
 ### 1.2 Regular User 用户故事
 
-- 📄 [docs/user-stories/06-billing-user-stories.md](/docs/user-stories/06-billing-user-stories.md#故事-8查看自己的订阅变更历史-us-bi-008)
-  - **[US-BI-008] 查看自己的订阅变更历史** (P1): 作为 Regular User，我想要查看我的订阅变更历史，以便了解订阅的变更轨迹
+- 📄 [docs/user-stories/06-billing-user-stories.md](/docs/user-stories/06-billing-user-stories.md#故事-9查看自己的订阅变更历史-us-bi-009)
+  - **[US-BI-009] 查看自己的订阅变更历史** (P1): 作为 Regular User，我想要查看我的订阅变更历史，以便了解订阅的变更轨迹
 
 ### 1.3 用户故事优先级汇总
 

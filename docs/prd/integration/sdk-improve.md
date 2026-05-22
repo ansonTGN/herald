@@ -42,7 +42,7 @@
 - SDK 新增 Client App 管理方法：创建、查询列表、查询详情
 - 后端 api-ext 模块新增对应的外部 API 端点
 - SDK 方法保持与现有风格一致：基于 reqwest、使用 X-API-Key 认证、统一的错误处理
-- 新增资源管理端点要求 API Key 具备 `management` scope
+- 新增资源管理端点要求 API Key Principal 具备对应 RBAC 权限
 
 ### 2.2 不包含功能 (Out of Scope)
 
@@ -75,7 +75,7 @@
 - **用户管理**：创建、查询列表、查询详情（P0）
 - **Client App 管理**：创建、查询列表、查询详情
 - **与现有 SDK 风格一致**：共享 Client 实例、统一错误类型、API Key 认证
-- **统一 API Key 权限语义**：API Key 代表第三方服务端机器凭据；能力由 scope 决定，资源边界由 Realm 隔离决定
+- **统一 Principal 权限语义**：API Key 代表第三方服务端机器凭据；API Key 自身作为 Principal 参与授权，能力由角色/权限决定，资源边界由 Realm 隔离决定
 
 ---
 
@@ -116,8 +116,8 @@
 - 3 个用户故事的全部验收场景通过
 - SDK 新增方法与现有方法风格一致（方法命名、错误处理、参数模式）
 - 所有新增 ext 端点遵循 Realm 隔离原则：API Key 只能操作所属 Realm 的资源
-- 所有新增资源管理端点要求 API Key 具备 `management` scope
-- Realm 创建需额外校验 API Key 属于 admin realm
+- 所有新增资源管理端点要求 API Key Principal 具备对应权限
+- Realm 创建需额外校验 API Key Principal 属于 admin realm 且具备 `realm:create`
 - SDK 单元测试覆盖全部新增方法（使用 wiremock mock）
 - 后端集成测试覆盖关键场景（创建成功、重复邮箱、跨 Realm 拒绝）
 
@@ -130,18 +130,18 @@
 ### 访问控制原则
 
 - 所有新增端点使用现有 API Key 认证机制（`X-API-Key` 请求头）
-- **API Key 语义**：API Key 只有一种身份语义，代表第三方服务端机器凭据；能力由 scope 决定，不按 Key 类型拆分。
-- **Scope 组**：本次只定义 `runtime` 与 `management` 两组。既有登录态/权限判定、订阅、积分等运行时能力使用 `runtime`；本次新增的 Realm/User/Client App 资源管理能力使用 `management`。
+- **API Key 语义**：API Key 只有一种身份语义，代表第三方服务端机器凭据；API Key 自身作为 Principal 参与授权，不按 Key 类型拆分。
+- **权限模型**：本次使用统一 Principal + RBAC 模型。API Key 不携带 `runtime` / `management` scope；能力由 Principal 的角色和 role policy 决定。
 - **Realm 隔离**：用户和 Client App 操作仅限 API Key 所属 Realm
-- **Realm 创建特权**：创建 Realm 的端点需校验 API Key 具备 `management` scope 且属于 admin realm，普通 Realm 的 API Key 不可创建 Realm
-- **Scope 持久化**：`ClientApiKey` 实体新增 `scope` 字段（`ApiKeyScope` 枚举：`Runtime` / `Management`），通过数据库 migration 落库。创建 API Key 时显式指定 scope，不再依赖 `client_app_id` 的有无来隐式推断。
+- **Realm 创建特权**：创建 Realm 的端点需校验 API Key Principal 在 admin realm 具备 `realm:create` 权限，普通 Realm 的 API Key 不可创建 Realm
+- **Principal 绑定**：API Key 以自身唯一标识作为 Principal ID，复用现有角色绑定机制，不引入独立的 Principal 管理表。
 - 复用现有 `handle_response` 统一错误处理模式
 
 ### 接口能力边界
 
-- Realm：创建、列表、详情（需 `management`；创建还需 admin realm）
-- User：创建、列表、详情（需 `management`，限本 Realm）
-- Client App：创建、列表、详情（需 `management`，限本 Realm）
+- Realm：创建、列表、详情（需 `realm:create/list/view`；创建还需 admin realm 权限）
+- User：创建、列表、详情（需 `users:create/view`，限本 Realm）
+- Client App：创建、列表、详情（需 `clients:create/view`，限本 Realm）
 
 具体端点设计由 `/t-design sdk-improve` 产出。
 
@@ -162,7 +162,7 @@
 需要 `/t-design sdk-improve` 产出技术设计文档，涵盖：
 - 后端 ext API 端点定义和路由规划
 - SDK 新增方法的签名和类型定义
-- 认证与权限校验方案（特别是 `runtime` / `management` scope 与 Realm 创建的权限模型）
+- 认证与权限校验方案（特别是 API Key Principal -> RBAC permission 与 Realm 创建的权限模型）
 
 ---
 

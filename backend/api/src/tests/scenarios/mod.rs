@@ -53,6 +53,9 @@ pub mod unified_oauth_scenarios;
 // Device code authorization scenarios
 pub mod device_code_scenarios;
 
+// OAuth PKCE (Authorization Code + PKCE) scenarios
+pub mod oauth_pkce_scenarios;
+
 // Unified permission hierarchy scenarios
 pub mod unified_permission_hierarchy_scenarios;
 

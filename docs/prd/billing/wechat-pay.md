@@ -371,4 +371,3 @@
 - [Shopify Pay PRD](/docs/prd/billing/shopify-pay.md) - Shopify Pay 支付集成参考
 
 ### 10.5 技术资源
-- [微信支付技术背景调研](/.ai/future/wechat.md) - SDK 选型、API 特征、兼容性分析

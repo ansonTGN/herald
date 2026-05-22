@@ -10,6 +10,7 @@ pub mod device_token;
 pub mod device_verify;
 pub mod helper;
 pub mod login;
+pub mod token;
 pub mod wechat;
 pub mod wechat_miniprogram;
 
@@ -21,6 +22,7 @@ pub use device_confirm::*;
 pub use device_token::*;
 pub use device_verify::*;
 pub use login::*;
+pub use token::*;
 pub use wechat::*;
 pub use wechat_miniprogram::*;
 
@@ -43,6 +45,7 @@ pub use wechat_miniprogram::*;
         crate::device_token::device_token,
         crate::device_verify::device_verify,
         crate::device_confirm::device_confirm,
+        crate::token::oauth_token,
     ),
     components(schemas(
         crate::login::OAuthLoginRequest,
@@ -67,6 +70,8 @@ pub use wechat_miniprogram::*;
         crate::device_confirm::DeviceConfirmRequest,
         crate::device_confirm::DeviceConfirmResponse,
         crate::device_confirm::DeviceConfirmErrorResponse,
+        crate::token::TokenRequest,
+        crate::token::TokenResponse,
     ))
 )]
 pub struct ApiDoc;

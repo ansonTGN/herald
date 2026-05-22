@@ -1,14 +1,15 @@
-//! OAuth authorization endpoint for third-party application integration
+//! OAuth authorization endpoint for third-party application integration (Authorization Code + PKCE)
 //!
-//! This is a simplified OAuth flow that:
-//! 1. Validates client_id and redirect_uri
-//! 2. Stores state token in Redis (CSRF protection)
-//! 3. Redirects to login page with OAuth parameters
-//! 4. After login, redirects back with token in URL fragment
+//! This endpoint implements the first step of the OAuth 2.1 Authorization Code + PKCE flow:
+//! 1. Validates client_id, redirect_uri, and PKCE code_challenge
+//! 2. Stores state token with PKCE parameters in Redis (CSRF protection)
+//! 3. Redirects to the Herald login page with OAuth parameters
+//! 4. After login, an authorization_code is generated for token exchange
 
 use axum::{
     extract::{Path, Query, State},
-    response::Redirect,
+    http::StatusCode,
+    response::IntoResponse,
 };
 use redis::AsyncCommands;
 use serde::Deserialize;
@@ -16,39 +17,43 @@ use utoipa::ToSchema;
 
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::security_constants::OAUTH_STATE_TTL_SECONDS;
 
 #[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct AuthorizeQueryParams {
     pub client_id: String,
     pub redirect_uri: String,
     pub state: String,
     #[serde(default = "default_response_type")]
     pub response_type: String,
+    pub code_challenge: String,
+    pub code_challenge_method: Option<String>,
 }
 
 fn default_response_type() -> String {
-    "token".to_string()
+    "code".to_string()
 }
 
-/// OAuth authorize endpoint
+/// OAuth authorize endpoint (Authorization Code + PKCE)
 ///
-/// Initiates the simplified OAuth flow:
+/// Initiates the Authorization Code + PKCE flow:
 /// 1. Validates client_id exists and is enabled
-/// 2. Validates redirect_uri is in whitelist
-/// 3. Stores state token in Redis (5 minutes TTL)
-/// 4. Redirects to login page with OAuth parameters
+/// 2. Validates redirect_uri is in whitelist (exact match only)
+/// 3. Validates PKCE code_challenge_method (must be S256 if provided)
+/// 4. Stores state token with PKCE parameters in Redis (5 minutes TTL)
+/// 5. Redirects to login page with OAuth parameters
 ///
 /// # Arguments
 /// * `realm_id` - Realm identifier
-/// * `params` - OAuth query parameters (client_id, redirect_uri, state, response_type)
+/// * `params` - OAuth query parameters (client_id, redirect_uri, state, response_type, code_challenge, code_challenge_method)
 ///
 /// # Returns
 /// * 302 redirect to login page with OAuth parameters
 ///
 /// # Errors
-/// * 400 - Invalid parameters (missing client_id, redirect_uri, or state)
-/// * 400 - Invalid response_type (must be "token")
+/// * 400 - Invalid parameters (missing client_id, redirect_uri, state, or code_challenge)
+/// * 400 - Invalid response_type (must be "code")
+/// * 400 - Unsupported code_challenge_method (must be "S256")
 /// * 404 - Client not found or disabled
 /// * 400 - Redirect URI not in whitelist
 #[utoipa::path(
@@ -58,12 +63,14 @@ fn default_response_type() -> String {
     params(
         ("realmId" = String, Path, description = "Realm ID"),
         ("client_id" = String, Query, description = "OAuth Client ID"),
-        ("redirect_uri" = String, Query, description = "Redirect URI (must be in whitelist)"),
+        ("redirect_uri" = String, Query, description = "Redirect URI (must be in whitelist, exact match)"),
         ("state" = String, Query, description = "State token (CSRF protection)"),
-        ("response_type" = String, Query, description = "Response type (must be 'token')")
+        ("response_type" = String, Query, description = "Response type (must be 'code')"),
+        ("code_challenge" = String, Query, description = "PKCE code challenge (SHA256 + Base64url)"),
+        ("code_challenge_method" = Option<String>, Query, description = "PKCE method (must be 'S256' if provided, defaults to S256)")
     ),
     responses(
-        (status = 302, description = "Redirect to login page"),
+        (status = 302, description = "Redirect to /{realmId}/auth/login with OAuth parameters"),
         (status = 400, description = "Bad request", body = ErrorResponse),
         (status = 404, description = "Client not found", body = ErrorResponse)
     )
@@ -72,18 +79,28 @@ pub async fn oauth_authorize(
     Path(realm_id): Path<String>,
     Query(params): Query<AuthorizeQueryParams>,
     State(state): State<AppState>,
-) -> Result<Redirect, ApiError> {
-    // Validate response_type (must be "token")
-    if params.response_type != "token" {
+) -> Result<impl IntoResponse, ApiError> {
+    // Validate response_type (must be "code" for Authorization Code + PKCE)
+    if params.response_type != "code" {
         return Err(ApiError::bad_request(format!(
-            "Invalid response_type '{}'. Only 'token' is supported in simplified OAuth flow.",
+            "Invalid response_type '{}'. Only 'code' is supported.",
             params.response_type
+        )));
+    }
+
+    // Validate code_challenge_method (only S256 is supported)
+    if let Some(ref method) = params.code_challenge_method
+        && method != "S256"
+    {
+        return Err(ApiError::bad_request(format!(
+            "Unsupported code_challenge_method '{}'. Only 'S256' is supported.",
+            method
         )));
     }
 
     // Validate client_id and redirect_uri
     let client_row = sqlx::query_as::<_, (String, String, bool)>(
-        "SELECT id::text, redirect_uris, enabled FROM client_app
+        "SELECT id::text, redirect_uris::text, enabled FROM client_app
          WHERE realm_id = $1 AND client_id = $2",
     )
     .bind(&realm_id)
@@ -132,16 +149,7 @@ pub async fn oauth_authorize(
     )
     .map_err(|e| ApiError::bad_request(format!("Invalid redirect_uri: {}", e)))?;
 
-    let is_whitelisted = allowed_uris.iter().any(|uri| {
-        // Exact match or path match
-        if params.redirect_uri == *uri {
-            return true;
-        }
-        if params.redirect_uri.starts_with(uri) {
-            return true;
-        }
-        false
-    });
+    let is_whitelisted = allowed_uris.contains(&params.redirect_uri);
 
     if !is_whitelisted {
         tracing::debug!(
@@ -156,12 +164,14 @@ pub async fn oauth_authorize(
         )));
     }
 
-    // Store state token in Redis (5 minutes TTL, CSRF protection)
+    // Store state token in Redis with PKCE parameters (5 minutes TTL, CSRF protection)
     let state_key = format!("oauth:state:{}", params.state);
     let state_value = serde_json::json!({
         "client_id": params.client_id,
         "realm_id": realm_id,
         "redirect_uri": params.redirect_uri,
+        "code_challenge": params.code_challenge,
+        "code_challenge_method": params.code_challenge_method.as_deref().unwrap_or("S256"),
     })
     .to_string();
 
@@ -171,7 +181,7 @@ pub async fn oauth_authorize(
         .await
         .map_err(|_| ApiError::internal("Internal server error".to_string()))?;
     let _: () = conn
-        .set_ex(state_key, state_value, 300) // 5 minutes
+        .set_ex(state_key, state_value, OAUTH_STATE_TTL_SECONDS)
         .await
         .map_err(|_| ApiError::internal("Internal server error".to_string()))?;
 
@@ -182,16 +192,20 @@ pub async fn oauth_authorize(
         "OAuth authorize successful: redirecting to login"
     );
 
-    // Redirect to login page with OAuth parameters
+    // Redirect to login page with OAuth parameters (camelCase query params matching frontend route)
     let login_url = format!(
-        "/{}/login?client_id={}&redirect_uri={}&state={}",
+        "/{}/auth/login?clientId=admin-web-console&oauthClientId={}&redirectUri={}&state={}",
         urlencoding::encode(&realm_id),
         urlencoding::encode(&params.client_id),
         urlencoding::encode(&params.redirect_uri),
         urlencoding::encode(&params.state)
     );
 
-    Ok(Redirect::temporary(&login_url))
+    Ok((
+        StatusCode::FOUND,
+        [(axum::http::header::LOCATION, login_url)],
+    )
+        .into_response())
 }
 
 #[cfg(test)]
@@ -200,6 +214,6 @@ mod tests {
 
     #[test]
     fn test_default_response_type() {
-        assert_eq!(default_response_type(), "token");
+        assert_eq!(default_response_type(), "code");
     }
 }

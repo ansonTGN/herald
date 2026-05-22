@@ -2,7 +2,7 @@ use axum::{
     Json,
     extract::{Path, State},
     http::{HeaderMap, header::SET_COOKIE},
-    response::{IntoResponse, Redirect},
+    response::IntoResponse,
 };
 use axum_valid::Valid;
 use redis::AsyncCommands;
@@ -25,6 +25,7 @@ use herald_core::domain::authentication::ports::AuthenticationService;
 use herald_core::domain::client::ports::ClientService;
 use herald_core::domain::security_constants::{
     DEFAULT_OAUTH_SESSION_TTL_SECONDS, LOGIN_IDENTIFIER_RATE_LIMIT, LOGIN_IP_RATE_LIMIT,
+    OAUTH_STATE_TTL_SECONDS,
 };
 use herald_core::domain::user::ports::UserService;
 use herald_core::domain::user::value_objects::LoginRequest as DomainLoginRequest;
@@ -61,6 +62,9 @@ pub struct LoginResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temp_token: Option<String>,
     pub expires_in_seconds: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(required = false)]
+    pub redirect_to: Option<String>,
 }
 
 /// Authenticate user with email/username and password
@@ -268,12 +272,22 @@ pub async fn login(
         let temp_token = format!("totp_login_{}", Uuid::now_v7());
         let temp_key = format!("totp:temp:{}", temp_token);
 
-        let temp_session_data = serde_json::json!({
+        // Build temp session data, preserving OAuth context if present
+        let mut temp_session_data = serde_json::json!({
             "user_id": user.id,
             "realm_id": realm_id,
             "client_id": payload.client_id,
             "client_ip": ip,
         });
+        if let Some(ref oauth_client_id) = payload.oauth_client_id {
+            temp_session_data["oauth_client_id"] = serde_json::json!(oauth_client_id);
+        }
+        if let Some(ref redirect_uri) = payload.redirect_uri {
+            temp_session_data["redirect_uri"] = serde_json::json!(redirect_uri);
+        }
+        if let Some(ref oauth_state) = payload.state {
+            temp_session_data["state"] = serde_json::json!(oauth_state);
+        }
 
         let mut conn = state
             .redis_manager
@@ -318,6 +332,7 @@ pub async fn login(
             requires_totp: Some(true),
             temp_token: Some(temp_token),
             expires_in_seconds: 300,
+            redirect_to: None,
         })
         .into_response());
     }
@@ -330,23 +345,144 @@ pub async fn login(
         "Login successful (no TOTP)"
     );
 
-    // cookie: X-Auth: ${realm-id_uuid_time}, 有效期
-    // For OAuth flow: 600 seconds (10 minutes)
-    // For normal login: 1800 seconds (30 minutes)
+    // Determine OAuth flow presence before any session creation
     let is_oauth_flow = payload.oauth_client_id.is_some()
         && payload.redirect_uri.is_some()
         && payload.state.is_some();
 
-    let ttl = if is_oauth_flow {
-        DEFAULT_OAUTH_SESSION_TTL_SECONDS
-    } else {
-        client_app.session_ttl_seconds as u64
-    };
-    let renewal_ttl_seconds = if is_oauth_flow {
-        None
-    } else {
-        renewal_ttl_seconds_from_i32(client_app.session_renewal_ttl_seconds)?
-    };
+    // OAuth flow: validate Redis state, generate authorization code, return JSON redirect
+    if is_oauth_flow {
+        let oauth_client_id = payload.oauth_client_id.as_deref().ok_or_else(|| {
+            ApiError::bad_request("oauth_client_id is required for OAuth flow".to_string())
+        })?;
+        let redirect_uri = payload.redirect_uri.as_deref().ok_or_else(|| {
+            ApiError::bad_request("redirect_uri is required for OAuth flow".to_string())
+        })?;
+        let state_param = payload
+            .state
+            .as_deref()
+            .ok_or_else(|| ApiError::bad_request("state is required for OAuth flow".to_string()))?;
+
+        // Validate Redis state (atomic GET+DELETE for one-time use)
+        let state_key = format!("oauth:state:{}", state_param);
+        let mut conn = state
+            .redis_manager
+            .get()
+            .await
+            .map_err(|_| ApiError::internal("Internal server error".to_string()))?;
+
+        let state_json: Option<String> = redis::cmd("GETDEL")
+            .arg(&state_key)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Redis GETDEL failed for OAuth state");
+                ApiError::internal("Internal server error".to_string())
+            })?;
+
+        let state_json = state_json.ok_or_else(|| {
+            ApiError::bad_request(
+                "OAuth state not found or already used. Please restart the authorization flow."
+                    .to_string(),
+            )
+        })?;
+
+        let state_data: serde_json::Value = serde_json::from_str(&state_json).map_err(|e| {
+            tracing::error!(error = %e, "Failed to parse OAuth state JSON");
+            ApiError::internal("Internal server error".to_string())
+        })?;
+
+        // Validate that Redis state fields match the request payload
+        let stored_client_id = state_data["client_id"].as_str().unwrap_or("");
+        let stored_realm_id = state_data["realm_id"].as_str().unwrap_or("");
+        let stored_redirect_uri = state_data["redirect_uri"].as_str().unwrap_or("");
+
+        if stored_client_id != oauth_client_id {
+            return Err(ApiError::bad_request(
+                "OAuth state client_id mismatch".to_string(),
+            ));
+        }
+        if stored_realm_id != realm_id {
+            return Err(ApiError::bad_request(
+                "OAuth state realm_id mismatch".to_string(),
+            ));
+        }
+        if stored_redirect_uri != redirect_uri {
+            return Err(ApiError::bad_request(
+                "OAuth state redirect_uri mismatch".to_string(),
+            ));
+        }
+
+        // Generate authorization code
+        let auth_code = format!("ac_{}", Uuid::now_v7());
+        let code_challenge = state_data["code_challenge"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+
+        // Store authorization code in Redis
+        let code_key = format!("oauth:code:{}", auth_code);
+        let code_value = serde_json::json!({
+            "code_challenge": code_challenge,
+            "client_id": oauth_client_id,
+            "redirect_uri": redirect_uri,
+            "user_id": user.id.to_string(),
+            "realm_id": realm_id,
+        })
+        .to_string();
+
+        let _: () = conn
+            .set_ex(&code_key, code_value, OAUTH_STATE_TTL_SECONDS)
+            .await
+            .map_err(|_| ApiError::internal("Internal server error".to_string()))?;
+
+        // Record login success audit event
+        if let Err(audit_err) = state
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm_id.clone(),
+                category: AuditCategory::Auth,
+                action: AuditAction::AuthLogin,
+                actor_id: user.id.to_string(),
+                actor_type: Some(ActorType::User),
+                actor_name: Some(user.email.clone()),
+                target_type: AuditTargetType::User,
+                target_id: user.id.to_string(),
+                target_name: Some(user.email.clone()),
+                result: AuditResult::Success,
+                details: Some(serde_json::json!({"method": "password", "oauth": true})),
+                ip_address: Some(ip.clone()),
+                user_agent: user_agent.clone(),
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %audit_err, "Failed to record audit event");
+        }
+
+        tracing::debug!(
+            auth_code = %auth_code,
+            redirect_uri = %redirect_uri,
+            "OAuth authorization code generated"
+        );
+
+        let redirect_to = format!("{}?code={}&state={}", redirect_uri, auth_code, state_param);
+
+        return Ok(Json(LoginResponse {
+            message: "ok".to_string(),
+            user_id: user.id,
+            realm_id: realm_id.clone(),
+            requires_totp: Some(false),
+            temp_token: None,
+            expires_in_seconds: DEFAULT_OAUTH_SESSION_TTL_SECONDS as i64,
+            redirect_to: Some(redirect_to),
+        })
+        .into_response());
+    }
+
+    // Normal login flow: create session
+    let ttl = client_app.session_ttl_seconds as u64;
+    let renewal_ttl_seconds = renewal_ttl_seconds_from_i32(client_app.session_renewal_ttl_seconds)?;
 
     tracing::debug!(
         "Creating session with user_id: {}, realm_id: {}, client_id: {}",
@@ -403,43 +539,6 @@ pub async fn login(
         tracing::warn!(error = %audit_err, "Failed to record audit event");
     }
 
-    // OAuth flow: redirect with token in URL fragment
-    if is_oauth_flow {
-        let redirect_uri = payload.redirect_uri.ok_or_else(|| {
-            ApiError::bad_request("redirect_uri is required for OAuth flow".to_string())
-        })?;
-        let state_param = payload
-            .state
-            .ok_or_else(|| ApiError::bad_request("state is required for OAuth flow".to_string()))?;
-
-        // Build URL fragment with token and state
-        // Using fragment (#token=xxx) instead of query parameter (?token=xxx)
-        // to prevent token from appearing in server logs
-        let fragment = format!("#token={}&state={}", token, state_param);
-        let redirect_url = if redirect_uri.contains('#') {
-            redirect_uri
-        } else {
-            format!("{}{}", redirect_uri, fragment)
-        };
-
-        tracing::debug!(
-            redirect_url = %redirect_url,
-            "OAuth login redirect"
-        );
-
-        // Return 302 redirect
-        let response = (
-            [(
-                SET_COOKIE,
-                build_set_cookie("X-Auth", &token, ttl as i64, state.app_env == "production"),
-            )],
-            Redirect::temporary(&redirect_url),
-        )
-            .into_response();
-        return Ok(response);
-    }
-
-    // Normal login flow
     let ttl = ttl as i64;
     let is_production = state.app_env == "production";
     let set_cookie = build_set_cookie("X-Auth", &token, ttl, is_production);
@@ -452,6 +551,7 @@ pub async fn login(
             requires_totp: Some(false),
             temp_token: None,
             expires_in_seconds: ttl,
+            redirect_to: None,
         }),
     )
         .into_response();

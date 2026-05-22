@@ -240,6 +240,7 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
             "/api/oauth/{realmId}/authorize",
             get(oauth::oauth_authorize),
         )
+        .route("/api/oauth/{realmId}/token", post(oauth::oauth_token))
         .route(
             "/api/oauth/{realmId}/{provider}/login",
             get(oauth::oauth_login),

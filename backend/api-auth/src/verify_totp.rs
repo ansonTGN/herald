@@ -20,7 +20,8 @@ pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::client::ports::ClientService;
 use herald_core::domain::security_constants::{
-    TOTP_LOCKOUT_SECONDS, TOTP_MAX_FAILURES, TOTP_VERIFY_IP_RATE_LIMIT, TOTP_VERIFY_USER_RATE_LIMIT,
+    OAUTH_STATE_TTL_SECONDS, TOTP_LOCKOUT_SECONDS, TOTP_MAX_FAILURES, TOTP_VERIFY_IP_RATE_LIMIT,
+    TOTP_VERIFY_USER_RATE_LIMIT,
 };
 use herald_core::domain::user_totp::{
     TotpVerificationResultWithBackup, UserTotpRepository, UserTotpService,
@@ -86,6 +87,8 @@ pub struct VerifyTotpResponse {
     pub user_id: String,
     pub token: String,
     pub expires_in_seconds: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect_to: Option<String>,
 }
 
 /// Temporary session data for TOTP verification
@@ -95,6 +98,12 @@ struct TempSessionData {
     realm_id: String,
     client_id: String,
     client_ip: String,
+    #[serde(default)]
+    oauth_client_id: Option<String>,
+    #[serde(default)]
+    redirect_uri: Option<String>,
+    #[serde(default)]
+    state: Option<String>,
 }
 
 /// Verify TOTP code for two-factor authentication
@@ -323,7 +332,110 @@ pub async fn handle_verify_totp(
     updated_config.update_last_used();
     totp_repo.update_config(updated_config).await?;
 
-    // 8. Create permanent session
+    // 8. Check for OAuth context
+    let has_oauth = temp_session.oauth_client_id.is_some()
+        && temp_session.redirect_uri.is_some()
+        && temp_session.state.is_some();
+
+    if has_oauth {
+        let oauth_client_id = temp_session
+            .oauth_client_id
+            .as_ref()
+            .expect("checked above");
+        let redirect_uri = temp_session.redirect_uri.as_ref().expect("checked above");
+        let state_param = temp_session.state.as_ref().expect("checked above");
+
+        // Validate Redis state (atomic GET+DELETE for one-time use)
+        let state_key = format!("oauth:state:{}", state_param);
+        let state_json: Option<String> = redis::cmd("GETDEL")
+            .arg(&state_key)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Redis GETDEL failed for OAuth state");
+                ApiError::internal("Redis operation error".to_string())
+            })?;
+
+        let state_json = state_json.ok_or_else(|| {
+            ApiError::bad_request(
+                "OAuth state not found or already used. Please restart the authorization flow."
+                    .to_string(),
+            )
+        })?;
+
+        let state_data: serde_json::Value = serde_json::from_str(&state_json).map_err(|e| {
+            tracing::error!(error = %e, "Failed to parse OAuth state JSON");
+            ApiError::internal("Redis operation error".to_string())
+        })?;
+
+        // Validate that Redis state fields match the temp session
+        let stored_client_id = state_data["client_id"].as_str().unwrap_or("");
+        let stored_realm_id = state_data["realm_id"].as_str().unwrap_or("");
+        let stored_redirect_uri = state_data["redirect_uri"].as_str().unwrap_or("");
+
+        if stored_client_id != oauth_client_id {
+            return Err(ApiError::bad_request(
+                "OAuth state client_id mismatch".to_string(),
+            ));
+        }
+        if stored_realm_id != temp_session.realm_id {
+            return Err(ApiError::bad_request(
+                "OAuth state realm_id mismatch".to_string(),
+            ));
+        }
+        if stored_redirect_uri != redirect_uri {
+            return Err(ApiError::bad_request(
+                "OAuth state redirect_uri mismatch".to_string(),
+            ));
+        }
+
+        // Generate authorization code
+        let auth_code = format!("ac_{}", Uuid::now_v7());
+        let code_challenge = state_data["code_challenge"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+
+        // Store authorization code in Redis
+        let code_key = format!("oauth:code:{}", auth_code);
+        let code_value = serde_json::json!({
+            "code_challenge": code_challenge,
+            "client_id": oauth_client_id,
+            "redirect_uri": redirect_uri,
+            "user_id": temp_session.user_id,
+            "realm_id": temp_session.realm_id,
+        })
+        .to_string();
+
+        let _: () = conn
+            .set_ex(&code_key, code_value, OAUTH_STATE_TTL_SECONDS)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to store OAuth authorization code");
+                ApiError::internal("Redis operation error".to_string())
+            })?;
+
+        let redirect_to = format!("{}?code={}&state={}", redirect_uri, auth_code, state_param);
+
+        tracing::debug!(
+            auth_code = %auth_code,
+            redirect_uri = %redirect_uri,
+            "OAuth authorization code generated via TOTP verification"
+        );
+
+        let response = Json(VerifyTotpResponse {
+            message: "ok".to_string(),
+            user_id: temp_session.user_id,
+            token: String::new(),
+            expires_in_seconds: 0,
+            redirect_to: Some(redirect_to),
+        })
+        .into_response();
+
+        return Ok(response);
+    }
+
+    // 9. Create permanent session (normal flow, no OAuth)
     let token = format!("{}_{}_{}", realm_id, temp_session.user_id, epoch_seconds());
 
     let session_data = SessionData {
@@ -336,7 +448,7 @@ pub async fn handle_verify_totp(
 
     store_session(&state, &token, &session_data, session_ttl).await?;
 
-    // 9. Build response with session cookie
+    // 10. Build response with session cookie
     let cookie_header = build_set_cookie(
         "X-Auth",
         &token,
@@ -350,6 +462,7 @@ pub async fn handle_verify_totp(
             user_id: temp_session.user_id,
             token,
             expires_in_seconds: session_ttl as i64,
+            redirect_to: None,
         }),
     )
         .into_response();

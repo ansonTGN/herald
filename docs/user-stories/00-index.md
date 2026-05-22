@@ -35,7 +35,7 @@
 | US-RU-008 | 访问第三方应用（SSO） | Regular User | P0 | [03-regular-user](03-regular-user-user-stories.md#故事-8访问第三方应用-us-ru-008) |
 | US-RU-009 | 认证重定向流程 | All Users | P0 | [03-regular-user](03-regular-user-user-stories.md#故事-9认证重定向流程-us-ru-009) |
 | US-RU-010 | 从第三方 Web 应用跳转登录 | Regular User | P0 | [03-regular-user](03-regular-user-user-stories.md#故事-10从第三方-web-应用跳转登录-us-ru-010) |
-| US-TP-001 | OAuth 授权码登录 | Third-Party App | P0 | [04-third-party-app](04-third-party-app-user-stories.md#故事-1oauth-授权码登录-us-tp-001) |
+| US-TP-001 | OAuth 授权码登录 | Third-Party App | P0 | [04-third-party-app](04-third-party-app-user-stories.md#故事-1oauth-授权码登录authorization-code-pkce-us-tp-001) |
 | US-TP-002 | 验证用户登录状态 | Third-Party App | P0 | [04-third-party-app](04-third-party-app-user-stories.md#故事-2验证用户登录状态-us-tp-002) |
 | US-TP-003 | 检查用户权限 | Third-Party App | P0 | [04-third-party-app](04-third-party-app-user-stories.md#故事-3检查用户权限-us-tp-003) |
 | US-TP-004 | 获取用户信息 | Third-Party App | P0 | [04-third-party-app](04-third-party-app-user-stories.md#故事-4获取用户信息-us-tp-004) |
@@ -55,12 +55,13 @@
 | US-TO-007 | 用户查看 TOTP 使用情况 | TOTP User | P2 | [05-totp](05-totp-user-stories.md#故事-7用户查看-totp-使用情况-us-to-007) |
 | US-BI-001 | 创建订阅套餐 | Billing User | P0 | [06-billing](06-billing-user-stories.md#故事-1创建订阅套餐-us-bi-001) |
 | US-BI-002 | 编辑订阅套餐 | Billing User | P0 | [06-billing](06-billing-user-stories.md#故事-2编辑订阅套餐-us-bi-002) |
-| US-BI-003 | 删除订阅套餐 | Billing User | P0 | [06-billing](06-billing-user-stories.md#故事-3删除订阅套餐-us-bi-003) |
-| US-BI-004 | 分配套餐到 Client App | Billing User | P0 | [06-billing](06-billing-user-stories.md#故事-4分配套餐到-client-app-us-bi-004) |
-| US-BI-005 | 查看订阅列表 | Billing User | P0 | [06-billing](06-billing-user-stories.md#故事-5查看订阅列表-us-bi-005) |
-| US-BI-006 | 第三方应用查询套餐状态（SDK 集成） | Billing User | P0 | [06-billing](06-billing-user-stories.md#故事-6第三方应用查询套餐状态sdk-集成-us-bi-006) |
-| US-BI-007 | 查看订阅变更历史 | Billing User | P1 | [06-billing](06-billing-user-stories.md#故事-7查看订阅变更历史-us-bi-007) |
-| US-BI-008 | 查看自己的订阅变更历史 | Billing User | P1 | [06-billing](06-billing-user-stories.md#故事-8查看自己的订阅变更历史-us-bi-008) |
+| US-BI-003 | 配置 Plan 的支付平台映射 | Billing User | P0 | [06-billing](06-billing-user-stories.md#故事-3配置-plan-的支付平台映射-us-bi-003) |
+| US-BI-004 | 删除订阅套餐 | Billing User | P0 | [06-billing](06-billing-user-stories.md#故事-4删除订阅套餐-us-bi-004) |
+| US-BI-005 | 分配套餐到 Client App | Billing User | P0 | [06-billing](06-billing-user-stories.md#故事-5分配套餐到-client-app-us-bi-005) |
+| US-BI-006 | 查看订阅列表 | Billing User | P0 | [06-billing](06-billing-user-stories.md#故事-6查看订阅列表-us-bi-006) |
+| US-BI-007 | 第三方应用查询套餐状态（SDK 集成） | Billing User | P0 | [06-billing](06-billing-user-stories.md#故事-7第三方应用查询套餐状态sdk-集成-us-bi-007) |
+| US-BI-008 | 查看订阅变更历史 | Billing User | P1 | [06-billing](06-billing-user-stories.md#故事-8查看订阅变更历史-us-bi-008) |
+| US-BI-009 | 查看自己的订阅变更历史 | Billing User | P1 | [06-billing](06-billing-user-stories.md#故事-9查看自己的订阅变更历史-us-bi-009) |
 | US-PR-001 | 创建 Product | Realm Admin | P0 | [product-management](product-management.md#故事-1创建-product-us-pr-001) |
 | US-PR-002 | 编辑 Product | Realm Admin | P0 | [product-management](product-management.md#故事-2编辑-product-us-pr-002) |
 | US-PR-003 | 查看 Product 列表 | Realm Admin | P0 | [product-management](product-management.md#故事-3查看-product-列表-us-pr-003) |

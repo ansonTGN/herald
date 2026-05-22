@@ -11,7 +11,7 @@
       "name": "Apache-2.0",
       "identifier": "Apache-2.0"
     },
-    "version": "0.1.4"
+    "version": "0.1.5"
   },
   "paths": {
     "/api/audit/{realmId}": {
@@ -7590,8 +7590,8 @@
         "tags": [
           "oauth"
         ],
-        "summary": "OAuth authorize endpoint",
-        "description": "Initiates the simplified OAuth flow:\n1. Validates client_id exists and is enabled\n2. Validates redirect_uri is in whitelist\n3. Stores state token in Redis (5 minutes TTL)\n4. Redirects to login page with OAuth parameters\n\n# Arguments\n* `realm_id` - Realm identifier\n* `params` - OAuth query parameters (client_id, redirect_uri, state, response_type)\n\n# Returns\n* 302 redirect to login page with OAuth parameters\n\n# Errors\n* 400 - Invalid parameters (missing client_id, redirect_uri, or state)\n* 400 - Invalid response_type (must be \"token\")\n* 404 - Client not found or disabled\n* 400 - Redirect URI not in whitelist",
+        "summary": "OAuth authorize endpoint (Authorization Code + PKCE)",
+        "description": "Initiates the Authorization Code + PKCE flow:\n1. Validates client_id exists and is enabled\n2. Validates redirect_uri is in whitelist (exact match only)\n3. Validates PKCE code_challenge_method (must be S256 if provided)\n4. Stores state token with PKCE parameters in Redis (5 minutes TTL)\n5. Redirects to login page with OAuth parameters\n\n# Arguments\n* `realm_id` - Realm identifier\n* `params` - OAuth query parameters (client_id, redirect_uri, state, response_type, code_challenge, code_challenge_method)\n\n# Returns\n* 302 redirect to login page with OAuth parameters\n\n# Errors\n* 400 - Invalid parameters (missing client_id, redirect_uri, state, or code_challenge)\n* 400 - Invalid response_type (must be \"code\")\n* 400 - Unsupported code_challenge_method (must be \"S256\")\n* 404 - Client not found or disabled\n* 400 - Redirect URI not in whitelist",
         "operationId": "oauth_authorize",
         "parameters": [
           {
@@ -7615,7 +7615,7 @@
           {
             "name": "redirect_uri",
             "in": "query",
-            "description": "Redirect URI (must be in whitelist)",
+            "description": "Redirect URI (must be in whitelist, exact match)",
             "required": true,
             "schema": {
               "type": "string"
@@ -7633,8 +7633,26 @@
           {
             "name": "response_type",
             "in": "query",
-            "description": "Response type (must be 'token')",
+            "description": "Response type (must be 'code')",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code_challenge",
+            "in": "query",
+            "description": "PKCE code challenge (SHA256 + Base64url)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code_challenge_method",
+            "in": "query",
+            "description": "PKCE method (must be 'S256' if provided, defaults to S256)",
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -7642,7 +7660,7 @@
         ],
         "responses": {
           "302": {
-            "description": "Redirect to login page"
+            "description": "Redirect to /{realmId}/auth/login with OAuth parameters"
           },
           "400": {
             "description": "Bad request",
@@ -8063,6 +8081,57 @@
           },
           "500": {
             "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/oauth/{realmId}/token": {
+      "post": {
+        "tags": [
+          "oauth"
+        ],
+        "operationId": "oauth_token",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Access token issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
             "content": {
               "application/json": {
                 "schema": {
@@ -13657,18 +13726,28 @@
       "AuthorizeQueryParams": {
         "type": "object",
         "required": [
-          "clientId",
-          "redirectUri",
-          "state"
+          "client_id",
+          "redirect_uri",
+          "state",
+          "code_challenge"
         ],
         "properties": {
-          "clientId": {
+          "client_id": {
             "type": "string"
           },
-          "redirectUri": {
+          "code_challenge": {
             "type": "string"
           },
-          "responseType": {
+          "code_challenge_method": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "redirect_uri": {
+            "type": "string"
+          },
+          "response_type": {
             "type": "string"
           },
           "state": {
@@ -16293,6 +16372,12 @@
           },
           "realmId": {
             "type": "string"
+          },
+          "redirectTo": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "requiresTotp": {
             "type": [
@@ -19198,6 +19283,55 @@
           }
         }
       },
+      "TokenRequest": {
+        "type": "object",
+        "description": "OAuth 2.0 token request (RFC 6749)\n\nField names use snake_case per OAuth 2.0 specification rather than the\nproject-wide camelCase convention.",
+        "required": [
+          "grant_type",
+          "code",
+          "redirect_uri",
+          "client_id",
+          "code_verifier"
+        ],
+        "properties": {
+          "client_id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "code_verifier": {
+            "type": "string"
+          },
+          "grant_type": {
+            "type": "string"
+          },
+          "redirect_uri": {
+            "type": "string"
+          }
+        }
+      },
+      "TokenResponse": {
+        "type": "object",
+        "description": "OAuth 2.0 token response (RFC 6749)",
+        "required": [
+          "access_token",
+          "token_type",
+          "expires_in"
+        ],
+        "properties": {
+          "access_token": {
+            "type": "string"
+          },
+          "expires_in": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "token_type": {
+            "type": "string"
+          }
+        }
+      },
       "TotpStatusResponse": {
         "type": "object",
         "required": [
@@ -20256,6 +20390,12 @@
           },
           "message": {
             "type": "string"
+          },
+          "redirectTo": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "token": {
             "type": "string"
