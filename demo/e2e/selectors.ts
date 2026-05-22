@@ -63,6 +63,7 @@ export const SELECTORS = {
     menuClientApps: '[data-testid="sidebar-menu-client-apps"]',
     menuAuthorization: '[data-testid="sidebar-menu-authorization"]',
     menuPermissions: '[data-testid="sidebar-menu-permissions"]',
+    menuApiKeys: '[data-testid="sidebar-menu-api-keys"]',
     menuAuditLog: '[data-testid="sidebar-menu-audit-log"]',
   },
 
@@ -307,6 +308,63 @@ export const SELECTORS = {
     // Footer buttons
     cancelButton: '[data-testid="cancel-button"]',
     submitButton: '[data-testid="submit-button"]',
+  },
+
+  /**
+   * API Keys Page Selectors
+   * Route: /{realmId}/manage/api-keys
+   */
+  apiKeys: {
+    page: '[data-testid="api-keys-page"]',
+    heading: '[data-testid="api-keys-heading"]',
+    table: '[data-testid="api-keys-table"]',
+    addButton: '[data-testid="add-api-key-button"]',
+    name: '[data-testid="api-key-name"]',
+    enabledSwitch: '[data-testid="api-key-enabled-switch"]',
+    statusBadge: '[data-testid="api-key-status-badge"]',
+    expires: '[data-testid="api-key-expires"]',
+    lastUsed: '[data-testid="api-key-last-used"]',
+    usageCount: '[data-testid="api-key-usage-count"]',
+    editButton: '[data-testid="edit-api-key-button"]',
+    deleteButton: '[data-testid="delete-api-key-button"]',
+  },
+
+  /**
+   * API Key Form Page Selectors
+   * Route: /{realmId}/manage/api-keys/new, /{realmId}/manage/api-keys/{apiKeyId}/edit
+   */
+  apiKeyForm: {
+    page: '[data-testid="api-key-form-page"]',
+    pageTitle: '[data-testid="page-title"]',
+    backButton: '[data-testid="api-key-form-back-button"]',
+    nameInput: '[data-testid="api-key-name-input"]',
+    enabledSwitch: '[data-testid="api-key-enabled-switch"]',
+    expiresAtInput: '[data-testid="api-key-expires-at-input"]',
+    expiresAtClearButton: '[data-testid="api-key-expires-at-clear-button"]',
+    cancelButton: '[data-testid="cancel-button"]',
+    submitButton: '[data-testid="submit-button"]',
+  },
+
+  /**
+   * API Key Reveal Page Selectors
+   * Route: /{realmId}/manage/api-keys/reveal
+   */
+  apiKeyReveal: {
+    page: '[data-testid="api-key-reveal-page"]',
+    pageTitle: '[data-testid="page-title"]',
+    backButton: '[data-testid="api-key-reveal-back-button"]',
+    keyValue: '[data-testid="api-key-reveal-value"]',
+    copyButton: '[data-testid="copy-api-key-button"]',
+    doneButton: '[data-testid="api-key-reveal-done-button"]',
+  },
+
+  /**
+   * API Key Delete Dialog Selectors
+   */
+  apiKeyDelete: {
+    dialog: '[data-testid="delete-confirmation-dialog"]',
+    cancelButton: '[data-testid="cancel-delete-button"]',
+    confirmButton: '[data-testid="confirm-delete-button"]',
   },
 
   /**
