@@ -11,7 +11,7 @@
 
 ### 1.1 支付平台配置用户故事
 
-- 📄 [docs/user-stories/07-payment-provider-user-stories.md](/docs/user-stories/07-payment-provider-user-stories.md)
+- 📄 [docs/user-stories/billing/payment-provider.md](/docs/user-stories/billing/payment-provider.md)
   - **[US-PP-001] 配置支付平台** (P0): 作为 Realm Admin，我想要配置支付平台（Creem/Stripe），以便用户可以使用该平台进行支付
   - **[US-PP-002] 查看支付平台配置** (P0): 作为 Realm Admin，我想要查看支付平台配置和状态，以便管理支付集成
 
@@ -34,7 +34,7 @@
 | P1 | 0 | - |
 | P2 | 0 | - |
 
-**注意**：所有 P0/P1 用户故事已在 `docs/user-stories/07-payment-provider-user-stories.md` 中定义，无需额外创建 Stripe 专用用户故事。
+**注意**：所有 P0/P1 用户故事已在 `docs/user-stories/billing/payment-provider.md` 中定义，无需额外创建 Stripe 专用用户故事。
 
 ---
 
@@ -62,7 +62,7 @@
 ### 2.3 依赖项
 
 - ✅ 通用支付平台配置系统（状态: 待实现，见 Billing PRD 第 3.1 节）
-- ✅ Billing 订阅计费系统（状态: 部分实现，docs/prd/billing/billing.md）
+- ✅ Billing 订阅计费系统（状态: 部分实现，docs/prd/billing/subscription.md）
 - ✅ Realm 管理系统（状态: 已实现）
 - ✅ 用户管理系统（状态: 已实现）
 - ❌ Stripe 账户和 API 密钥（状态: 待配置）
@@ -334,11 +334,11 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 - [Stripe.js 文档](https://stripe.com/docs/js)
 
 ### 11.2 相关用户故事
-- 📄 [docs/user-stories/07-payment-provider-user-stories.md](/docs/user-stories/07-payment-provider-user-stories.md) - 支付平台配置用户故事
+- 📄 [docs/user-stories/billing/payment-provider.md](/docs/user-stories/billing/payment-provider.md) - 支付平台配置用户故事
 
 ### 11.3 相关 PRD
-- [Billing 订阅计费 PRD](/docs/prd/billing/billing.md) - 现有订阅计费系统
-- [Subscription History PRD](/docs/prd/billing/subscription-history.md) - 订阅变更历史
+- [Billing 订阅计费 PRD](/docs/prd/billing/subscription.md) - 现有订阅计费系统
+- [Subscription History PRD](/docs/prd/billing/subscription.md) - 订阅变更历史
 
 ### 11.4 技术资源
 - [Stripe Rust SDK](https://docs.rs/stripe-rust/)

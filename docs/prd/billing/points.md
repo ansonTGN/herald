@@ -14,21 +14,21 @@
 
 详细的用户故事和验收标准请查看 `../../user-stories/` 目录中的对应文件：
 
-**Tenant Admin 积分管理**: [points-admin-manage.md](/docs/user-stories/points-admin-manage.md)
+**Tenant Admin 积分管理**: [points-admin-manage.md](/docs/user-stories/billing/points-admin.md)
 - US-PO-01: 配置积分套餐
 - US-PO-02: 查看所有用户积分账户
 - US-PO-03: 查看用户积分交易历史
 - US-PO-04: 管理积分套餐配置
 - US-PO-05: 查看套餐充值引导
-- US-PO-06: 配置 Realm 默认积分策略（新增）
-- US-PO-07: 查看免费用户积分统计（新增）
+- US-PO-06: 配置 Realm 默认积分策略
+- US-PO-07: 查看免费用户积分统计
 
-**Tenant User 积分查询**: [points-user-view.md](/docs/user-stories/points-user-view.md)
+**Tenant User 积分查询**: [points-user-view.md](/docs/user-stories/billing/points-user.md)
 - US-PU-01: 查看我的积分余额
 - US-PU-02: 查看我的交易历史
 - US-PU-03: 筛选交易记录
 
-**免费用户积分体验**: [points-free-user.md](/docs/user-stories/points-free-user.md)（新增）
+**免费用户积分体验**: [points-free-user.md](/docs/user-stories/billing/points-free-user.md)
 - US-FU-01: 注册时获得初始积分（永久有效）
 - US-FU-02: 定期自动获得免费积分（支持 once/daily/weekly/monthly）
 - US-FU-03: 升级到付费套餐时保留注册初始积分
@@ -37,8 +37,8 @@
 
 | 优先级 | 用户故事数量 | 关键故事 |
 |--------|------------|---------|
-| P0 | 2 | US-PO-01, US-PU-01 |
-| P1 | 3 | US-PO-02, US-PO-03, US-PU-02 |
+| P0 | 5 | US-PO-01, US-PU-01, US-FU-01, US-FU-02, US-PO-06 |
+| P1 | 4 | US-PO-02, US-PO-03, US-PU-02, US-FU-03 |
 | P2 | 3 | US-PO-04, US-PO-05, US-PU-03 |
 
 ---
@@ -56,11 +56,15 @@
 - ✅ 前端积分管理页面
 - ✅ 前端积分充值页面
 - ✅ 积分 SDK（供第三方应用调用消耗积分）
-- ✅ **积分发放周期管理**（新增）：支持灵活的积分发放策略（一次性/每日/每周/每月）
-- ✅ **积分有效期管理**（新增）：支持积分过期时间配置（永久有效/N天有效）
-- ✅ **积分发放调度系统**（新增）：定时任务自动发放积分
-- ✅ **免费用户积分系统**（新增）：注册初始积分、定期免费积分（支持 once/daily/weekly/monthly）
-- ✅ **Realm 默认配置**（新增）：管理员配置免费用户的积分策略（含周期类型）
+- ✅ **积分发放周期管理**：支持灵活的积分发放策略（一次性/每日/每周/每月）
+- ✅ **积分有效期管理**：支持积分过期时间配置（永久有效/N天有效）
+- ✅ **积分发放调度系统**：定时任务自动发放积分
+- ✅ **免费用户积分系统**：注册初始积分、定期免费积分（支持 once/daily/weekly/monthly）
+- ✅ **Realm 默认配置**：管理员配置免费用户的积分策略（含周期类型）
+- ✅ **注册初始积分**：用户注册时自动获得一次性积分（永久有效）
+- ✅ **定期免费积分**：免费用户按配置周期自动获得积分（支持 once/daily/weekly/monthly，不可累积）
+- ✅ **免费用户升级**：免费用户升级到付费套餐时的积分处理
+- ✅ **独立积分调度**：免费用户积分发放不依赖订阅系统
 
 ### 2.2 不包含功能 (Out of Scope)
 
@@ -68,14 +72,28 @@
 - ❌ **积分提现** (原因: 积分仅供内部消费，不支持提现为现金)
 - ❌ **积分等级/会员系统** (原因: 首版不实现积分等级体系)
 - ❌ **积分商城** (原因: 商城系统不在本次实现范围内)
+- ❌ **免费用户间积分转账** (原因: 免费积分仅供个人使用)
+- ❌ **免费积分累积** (原因: 定期积分按配置周期过期，不累积)
 
-**注意**: 积分过期机制已纳入本版本需求（见 5.10 节），不再属于"不包含功能"。
+**注意**: 积分过期机制已纳入本版本需求（见 5.12 节），不再属于"不包含功能"。
 
 ### 2.3 依赖项
 
 - ⚠️ **billing (订阅计费)** (状态: 部分实现)
   - 依赖原因: 需要与套餐系统打通，支持通过购买套餐获取积分
   - 影响范围: 积分充值、套餐配置
+
+- ✅ **用户注册系统** (状态: 已实现)
+  - 依赖原因: 需要在用户注册时触发积分发放
+  - 影响范围: 注册初始积分发放
+
+- ✅ **积分系统核心** (状态: 部分实现)
+  - 依赖原因: 复用积分账本、交易记录等核心功能
+  - 影响范围: 积分发放、查询、消费
+
+- ⚠️ **定时任务系统** (状态: 待实现)
+  - 依赖原因: 需要定时任务按周期自动发放积分
+  - 影响范围: 定期积分发放（once/daily/weekly/monthly）
 
 ---
 
@@ -84,6 +102,8 @@
 ### 3.1 功能描述
 
 积分系统是 Herald 多租户认证与授权系统中的虚拟货币子系统，为每个用户提供独立的积分账户管理能力。系统与订阅计费套餐深度集成，支持通过购买套餐定期自动获得积分，第三方应用可以通过授权 SDK 消耗积分来实现按次/按量计费场景。
+
+免费用户积分系统为未付费用户提供基础的积分体验，包括注册时的初始积分赠送和定期自动积分发放。该系统独立于订阅计费系统，通过 Realm 级别的配置实现灵活的免费用户积分策略。
 
 当前 PRD 基线仍以 `Plan` 级积分配置为主。随着 Billing 编目向 `Realm -> Product -> Plan` 演进，Points 只要求与 Product 语义兼容；是否升级为 Product 分层积分规则，属于后续版本能力，不作为本 PRD 的当前必做范围。
 
@@ -95,6 +115,20 @@
 - **交易追溯**: 完整的积分交易历史记录，支持审计和对账
 - **管理界面**: 提供租户管理员管理积分套餐、查看积分报表的功能
 - **用户自助查询**: 用户可查询个人积分余额和交易历史
+- **注册初始积分**：用户注册时自动获得一次性积分，永久有效，不可重复获取
+- **定期免费积分**：免费用户按配置周期自动获得积分，支持 once/daily/weekly/monthly，不累积
+- **灵活周期配置**：管理员可配置发放周期（一次性/每日/每周/每月）和有效期
+- **精准时间发放**：按用户注册时间点计算发放时间（如注册于 15:30，则每日 15:30 发放）
+- **独立于订阅系统**：免费用户不需要创建订阅记录，避免 $0 订阅污染
+- **升级平滑过渡**：免费用户升级到付费套餐时，注册初始积分保留
+- **管理员可配置**：租户管理员可配置免费用户的积分策略（含周期类型）
+
+### 3.3 业务价值
+
+- **降低使用门槛**：免费用户可以体验基础功能，降低注册阻力
+- **培养使用习惯**：每日积分鼓励用户每日使用，形成使用习惯
+- **转化漏斗优化**：免费用户积分用完后更容易转化为付费用户
+- **数据洞察**：通过免费用户行为数据优化产品功能
 
 ---
 
@@ -108,6 +142,14 @@
 | **前端积分管理页面** | ✅ | **已完整实现**（管理员和用户页面） |
 | **前端积分充值页面** | ✅ | **已完整实现**（套餐配置和管理） |
 | **积分系统 Demo 测试** | ✅ | **已完整实现**（847行管理员测试 + 用户测试） |
+| Realm 默认配置数据模型 | ❌ | 待实施（支持 periodic 配置） |
+| 用户积分配置数据模型 | ❌ | 待实施 |
+| 注册初始积分发放 | ❌ | 待实施 |
+| 定期积分自动发放 | ❌ | 待实施（支持 once/daily/weekly/monthly） |
+| 免费用户升级处理 | ❌ | 待实施 |
+| Realm 配置管理 API | ❌ | 待实施 |
+| 免费用户积分统计 API | ❌ | 待实施 |
+| 前端配置管理页面 | ❌ | 待实施 |
 
 **实现说明**：
 
@@ -295,7 +337,7 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 
 **年付套餐 + 一次性发放 + 永久有效**:
 
-### 5.5.1 Product 兼容约束（后续扩展预留）
+### 5.6 Product 兼容约束（后续扩展预留）
 
 随着 Product 概念的引入，Points 需要兼容新的 Billing 编目语义，但当前版本不将 5 层积分规则系统定义为 P0 核心范围。
 
@@ -314,54 +356,11 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - 多层规则优先级匹配
 - 冲突检测与规则预览
 
-### 5.5.2 免费用户积分系统（P0 核心 - 新增）
-
-免费用户积分系统为未付费用户提供基础的积分体验，包括注册时的初始积分赠送和每日自动积分发放。
-
-**功能点**:
-- **注册初始积分**：用户注册时自动获得一次性积分（永久有效）
-- **定期免费积分**：免费用户按配置周期自动获得积分（支持 once/daily/weekly/monthly，不可累积）
-- **Realm 默认配置**：管理员配置免费用户的积分策略（含周期类型）
-- **独立于订阅系统**：免费用户不需要创建订阅记录
-- **升级平滑过渡**：免费用户升级到付费套餐时，注册初始积分保留
-
-**核心思想**:
-- 免费用户**不需要创建订阅**，直接使用独立的积分配置
-- 通过 `user_points_configs` 表管理免费用户积分
-- 完全独立的积分发放调度系统，支持多种周期类型
-- 管理员通过 Realm 配置控制免费用户的积分策略
-
-**架构优势**:
-- ✅ 简单直接，无需订阅系统参与
-- ✅ 避免 $0 订阅污染订阅表
-- ✅ 性能更好（无需查询订阅表）
-- ✅ 业务语义清晰（"订阅"仅代表付费关系）
-- ✅ 灵活配置周期类型，与付费积分统一语义
-
-**业务规则**:
-- 注册初始积分永久有效（`validity_days = 0`）
-- 积分类型为 `registration_credit`（新增类型）
-- 升级到付费套餐后保留，不受订阅变更影响
-- 定期积分按配置有效期（`validity_days`），通常为 1/7/30 天
-- 不累积：上一期未用完的积分在本期过期，不累积到下一期
-- 积分类型为 `free_periodic_credit`（新增类型，原 free_daily_credit）
-- 支持 4 种周期类型：once/daily/weekly/monthly
-
-**发放流程**:
-
-**免费用户升级规则**:
-- 注册初始积分保留（`registration_credit`，永久有效）
-- 定期积分立即回收（`free_periodic_credit`，升级时全部回收）
-- 不删除 `user_points_configs` 记录（保留历史）
-- 停用定期积分调度（设置 `free_periodic_points_amount = 0`）
-
-**详细 PRD**: 参见 `docs/prd/billing/points-free-user.md`
-
-### 5.6 积分类型分离（P0 核心）
+### 5.7 积分类型分离（P0 核心）
 
 系统必须支持两种积分类型的分离管理，这是积分系统的核心设计原则。
 
-#### 5.6.1 积分类型定义
+#### 5.7.1 积分类型定义
 
 **充值积分（topup_credit）**：
 - 用户主动购买获得
@@ -373,19 +372,19 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - 按订阅周期发放，周期结束自动过期
 - 优先于充值积分消费
 
-**注册初始积分（registration_credit）**（新增）：
+**注册初始积分（registration_credit）**：
 - 用户注册时自动获得
 - 永久有效（`expires_at = null`）
 - 升级到付费套餐后保留，不受订阅变更影响
 - 每个用户只能获得一次
 
-**免费定期积分（free_periodic_credit）**（新增）：
+**免费定期积分（free_periodic_credit）**：
 - 免费用户按配置周期自动获得（once/daily/weekly/monthly）
 - 按配置有效期（通常为 1/7/30 天）
 - 不累积：上一期未用完的积分在本期过期
 - 升级到付费套餐后立即回收
 
-#### 5.6.2 数据模型要求
+#### 5.7.2 数据模型要求
 
 **强制要求**：
 - 数据库必须存在 `credit_type` 字段区分积分类型
@@ -397,25 +396,25 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - `points_wallets` 表的聚合字段：`topup_balance`、`subscription_balance`、`registration_balance`、`free_periodic_balance`
 - `points_transactions` 表的 `credit_type` 字段：记录每笔交易涉及的积分类型
 
-#### 5.6.3 业务规则
+#### 5.7.3 业务规则
 
 **发放规则**：
 - 订阅首次赠送：发放 `subscription_credit`
 - 订阅续费：发放 `subscription_credit`
 - 订阅升级补差：发放 `subscription_credit`
 - 直接充值购买：发放 `topup_credit`
-- 用户注册：发放 `registration_credit`（新增）
-- 免费用户定期发放：发放 `free_periodic_credit`（新增，支持 once/daily/weekly/monthly）
+- 用户注册：发放 `registration_credit`
+- 免费用户定期发放：发放 `free_periodic_credit`（支持 once/daily/weekly/monthly）
 
 **查询规则**：
 - 用户查询余额时，必须显示两种类型的分别余额
 - 管理员查询账户时，必须显示按类型分桶的积分明细
 
-### 5.7 积分消费优先级（P0 核心）
+### 5.8 积分消费优先级（P0 核心）
 
 当用户同时拥有多种类型的积分时，系统必须按照过期时间优先消费即将过期的积分。
 
-#### 5.7.1 消费优先级规则
+#### 5.8.1 消费优先级规则
 
 **强制规则**：按过期时间优先消费
 - 查询所有可用积分（WHERE status = 'active' AND remaining_amount > 0）
@@ -432,7 +431,7 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - 消费 300 积分：先扣除 free_periodic_credit 的 50，再扣除 subscription_credit 的 250
 - 消费 1500 积分：先扣除 free_periodic_credit 的 50，再扣除 subscription_credit 的 500，再扣除 registration_credit 的 950
 
-#### 5.7.2 实现要求
+#### 5.8.2 实现要求
 
 **原子性要求**：
 - 单次消费必须原子性地完成跨类型的积分扣减
@@ -447,11 +446,11 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - 不需要调用方指定消费哪种类型的积分
 - 系统根据可用余额自动计算消费分摊
 
-### 5.8 退款积分回收（P0 核心）
+### 5.9 退款积分回收（P0 核心）
 
 当支付平台处理退款时，Herald 必须执行积分回收操作。
 
-#### 5.8.1 责任界定
+#### 5.9.1 责任界定
 
 **支付平台（Creem）职责**：
 - 处理金额退款
@@ -462,7 +461,7 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - 根据退款金额回收未使用的积分
 - 记录积分回收审计日志
 
-#### 5.8.2 退款积分回收规则
+#### 5.9.2 退款积分回收规则
 
 **充值退款（topup_credit 退款）**：
 - 按未使用比例回收 `topup_credit`
@@ -480,7 +479,7 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - 回收计算：500 × (700/1000) = 350 积分
 - 最终剩余：1000 - 300 - 350 = 350 积分
 
-#### 5.8.3 实现要求
+#### 5.9.3 实现要求
 
 **Webhook 处理**：
 - 接收并处理 `refund.created` 事件
@@ -494,11 +493,11 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - 使用 Stripe 事件的 `id` 作为幂等键
 - 重复事件不重复回收积分
 
-### 5.9 订阅生命周期积分处理（P1）
+### 5.10 订阅生命周期积分处理（P1）
 
 当用户的订阅发生变更时，积分系统需要处理相应的积分发放和回收。
 
-#### 5.9.1 订阅升级
+#### 5.10.1 订阅升级
 
 **规则**：升级立即生效，回收老积分，发放新积分
 
@@ -526,7 +525,7 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - 创建新的积分发放调度（根据新套餐配置）
 - 发放新套餐的首次积分
 
-#### 5.9.2 订阅降级
+#### 5.10.2 订阅降级
 
 **规则**：降级下周期生效，不回收当前周期已发积分
 
@@ -545,7 +544,7 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - 检查 `cancel_at_period_end` 标志
 - 不执行积分回收操作
 
-#### 5.9.3 订阅取消
+#### 5.10.3 订阅取消
 
 **规则**：区分默认取消和立即取消
 
@@ -571,33 +570,6 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - 检查取消模式（立即取消 / 周期结束）
 - 立即取消：调用积分回收接口
 - 周期结束：设置会员积分的 `expires_at` 为周期结束时间
-
-### 5.10 积分过期机制（P1）
-
-会员积分需要在订阅周期结束后自动过期，充值积分默认长期有效。
-
-#### 5.10.1 过期规则
-
-**会员积分（subscription_credit）**：
-- 发放时设置 `expires_at` 为当前周期结束时间
-- 周期结束后自动过期
-- 过期后 `status` 更新为 `expired`
-
-**充值积分（topup_credit）**：
-- 默认长期有效，`expires_at` 为 `null`
-- 产品可以配置充值积分有效期（可选）
-
-#### 5.10.2 过期处理
-
-**定时任务**：
-- 每小时扫描 `points_credit_ledger` 表
-- 找到 `expires_at < now` 且 `status = active` 的记录
-- 更新 `status = expired`
-- 创建 `points_revocation_record` 记录
-
-**用户体验**：
-- 用户可查看即将过期的积分
-- 过期前 7 天、3 天、1 天发送通知（如果通知系统已实现）
 
 ### 5.11 Stripe Webhook 事件处理（P0 核心）
 
@@ -655,9 +627,161 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 - 处理事件前检查 `external_ref_id` 是否已存在
 - 如果存在，跳过处理
 
+### 5.12 积分过期机制（P1）
+
+会员积分需要在订阅周期结束后自动过期，充值积分默认长期有效。
+
+#### 5.12.1 过期规则
+
+**会员积分（subscription_credit）**：
+- 发放时设置 `expires_at` 为当前周期结束时间
+- 周期结束后自动过期
+- 过期后 `status` 更新为 `expired`
+
+**充值积分（topup_credit）**：
+- 默认长期有效，`expires_at` 为 `null`
+- 产品可以配置充值积分有效期（可选）
+
+#### 5.12.2 过期处理
+
+**定时任务**：
+- 每小时扫描 `points_credit_ledger` 表
+- 找到 `expires_at < now` 且 `status = active` 的记录
+- 更新 `status = expired`
+- 创建 `points_revocation_record` 记录
+
+**用户体验**：
+- 用户可查看即将过期的积分
+- 过期前 7 天、3 天、1 天发送通知（如果通知系统已实现）
+
 ---
 
-## 6. API 相关约束
+## 6. 免费用户积分策略
+
+### 6.1 注册初始积分发放
+
+用户注册成功后，系统自动发放一次性初始积分，永久有效。
+
+**功能点**:
+- 用户注册时触发 `RegistrationService.handle_user_registration()`
+- 从 `realm_default_configs` 表读取租户默认配置
+- 创建 `user_points_configs` 记录（存储用户积分配置）
+- 发放 `registration_credit` 类型的积分（永久有效，`expires_at = null`）
+- 积分来源标记为 `registration`
+- 防止重复发放：每个用户只能获得一次注册初始积分
+
+**业务规则**:
+- 注册初始积分永久有效（`validity_days = 0`）
+- 积分类型为 `registration_credit`
+- 升级到付费套餐后保留，不受订阅变更影响
+- 不可重复获取（基于 `user_id` 去重）
+
+### 6.2 定期免费积分自动发放
+
+免费用户按配置周期自动获得积分，支持 once/daily/weekly/monthly 四种周期。
+
+**功能点**:
+- 定时任务每小时扫描待发放的用户（`next_grant_time < now`）
+- 按用户注册时间点计算发放时间（如 15:30 注册，则每周期 15:30 发放）
+- 发放 `free_periodic_credit` 类型的积分（按配置有效期）
+- 根据周期类型更新 `next_grant_time`
+- 记录发放历史到 `points_grant_records` 表
+
+**业务规则**:
+- 支持 4 种周期类型：once（一次性）、daily（每日）、weekly（每周）、monthly（每月）
+- 积分有效期按配置（`validity_days`），通常为 1/7/30 天
+- 不累积：上一期未用完的积分在本期过期，不累积到下一期
+- 积分类型为 `free_periodic_credit`
+- 升级到付费套餐后停用定期积分调度
+- 发放失败自动重试（最多 3 次）
+
+**周期类型说明**:
+
+| 周期类型 | 说明 | 发放频率 | 示例（注册于 2026-03-23 15:30） |
+|---------|------|---------|-------------------------------|
+| `once` | 一次性发放 | 仅注册时发放一次 | 2026-03-23 15:30 发放，后续不再发放 |
+| `daily` | 每日发放 | 每天 15:30 | 2026-03-24 15:30, 2026-03-25 15:30, ... |
+| `weekly` | 每周发放 | 每 7 天 15:30 | 2026-03-30 15:30, 2026-04-06 15:30, ... |
+| `monthly` | 每月发放 | 每月 23 日 15:30 | 2026-04-23 15:30, 2026-05-23 15:30, ... |
+
+**时区处理**:
+- 所有时间存储使用 UTC
+- 定时任务基于 UTC 时间执行
+- 前端显示转换为用户本地时区（默认东八区）
+
+### 6.3 Realm 默认配置管理
+
+租户管理员配置免费用户的默认积分策略。
+
+**功能点**:
+- 配置注册初始积分数（默认为0，表示不发放）
+- 配置定期积分数（默认为0，表示不启用）
+- 配置定期积分发放周期类型（once/daily/weekly/monthly）
+- 配置定期积分有效期（根据周期配置，通常为 1/7/30 天）
+- 配置变更后影响新注册用户，不影响现有用户
+
+**配置项**:
+| 配置项 | 类型 | 默认值 | 说明 |
+|-------|------|--------|------|
+| `registration_bonus_points` | `i64` | 0 | 注册初始积分数（0表示不发放） |
+| `free_periodic_points_amount` | `i64` | 0 | 定期积分数（0表示不启用定期积分） |
+| `free_periodic_grant_period_type` | `string` | `daily` | 发放周期类型：once/daily/weekly/monthly |
+| `free_periodic_validity_days` | `i64` | 1 | 定期积分有效期（天），once 周期可为 0（永久） |
+
+**业务规则**:
+- 新 Realm 自动创建默认配置（默认值均为0，不发放积分）
+- 配置仅影响新注册用户，不影响现有用户
+- 修改配置后立即生效（对新用户）
+- 不允许删除配置（只能修改）
+- `free_periodic_points_amount > 0` 表示启用定期积分
+- 周期类型为 `once` 时，仅在注册时发放一次，不创建后续调度
+
+### 6.4 免费用户升级到付费套餐
+
+免费用户订阅付费套餐时的积分处理。
+
+**功能点**:
+- 停用免费用户的定期积分调度（设置 `active = false`）
+- 保留注册初始积分（永久有效，不受订阅变更影响）
+- 立即回收所有未使用的定期积分（`free_periodic_credit`）
+- 创建付费订阅的积分发放调度
+- 立即发放付费套餐的第一期积分（如果配置了 `grant_on_subscribe`）
+
+**业务规则**:
+- 注册初始积分保留（`registration_credit`，永久有效）
+- **回收所有免费定期积分**（`free_periodic_credit` 立即回收）
+- 不删除 `user_points_configs` 记录（保留历史）
+- 停用定期积分调度（设置 `free_periodic_points_amount = 0`）
+- 创建付费积分调度
+- 发放新套餐的积分（过期周期重算）
+
+**积分处理规则**:
+| 积分类型 | 升级时处理 | 说明 |
+|---------|----------|------|
+| `registration_credit` | **保留** | 注册初始积分永久保留，不受订阅变更影响 |
+| `free_periodic_credit` | **立即回收** | 所有未使用的定期积分立即回收（归零），避免积分混乱 |
+| `subscription_credit` (付费) | **开始发放** | 付费订阅的调度激活，开始发放，过期时间从升级时刻重新计算 |
+
+### 6.5 防止滥用机制
+
+防止用户通过重复注册等方式滥用免费积分。
+
+**功能点**:
+- 每个用户只能有一个 `user_points_configs` 记录（基于 `user_id` 唯一约束）
+- 注册时检查是否已存在配置记录
+- 不允许重复注册获取注册初始积分
+- 监控异常注册行为（同一 IP 多次注册）
+- 记录所有积分发放历史，便于审计
+
+**防护措施**:
+- 数据库唯一约束：`user_points_configs.user_id` 主键
+- 幂等性检查：注册前检查 `user_points_configs` 是否存在
+- IP 限流：同一 IP 短时间内多次注册触发告警
+- 审计日志：记录所有注册初始积分发放操作
+
+---
+
+## 7. API 相关约束
 
 **状态**: 必填
 
@@ -667,7 +791,7 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 
 ---
 
-## 7. 前端/交互约束
+## 8. 前端/交互约束
 
 **状态**: 必填
 
@@ -676,7 +800,7 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 
 ---
 
-## 8. 技术设计承接
+## 9. 技术设计承接
 
 **状态**: 必填
 
@@ -685,17 +809,23 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 
 ---
 
-## 9. 相关文件索引
+## 10. 相关文件索引
 
-### 9.1 后端文件
+### 10.1 后端文件
 
 | 文件路径 | 状态 | 说明 |
 |---------|------|------|
 | `backend/core/src/domain/points/` | ❌ | 积分领域模型 |
 | `backend/core/src/services/points_service.rs` | ❌ | 积分业务逻辑 |
 | `backend/sdk/src/points.rs` | ❌ | 积分 SDK 模块 |
+| `backend/core/src/domain/points/entities.rs` | ❌ | 扩展积分类型定义 |
+| `backend/core/src/domain/points/realm_config.rs` | ❌ | Realm 配置领域模型 |
+| `backend/core/src/domain/points/user_config.rs` | ❌ | 用户配置领域模型 |
+| `backend/core/src/services/registration_service.rs` | ❌ | 注册积分发放服务 |
+| `backend/core/src/services/free_points_service.rs` | ❌ | 免费积分业务逻辑 |
+| `backend/worker/src/jobs/free_points_grant_job.rs` | ❌ | 免费积分定时任务 |
 
-### 9.2 前端文件
+### 10.2 前端文件
 
 | 文件路径 | 状态 | 说明 |
 |---------|------|------|
@@ -703,16 +833,19 @@ Billing 引入 Product 后，Points 需要保证语义上能够承接 `Product -
 | `frontend/src/routes/points/recharge.tsx` | ❌ | 积分充值页面 |
 | `frontend/src/routes/user/points.tsx` | ❌ | 用户积分页面 |
 | `frontend/src/components/points/` | ❌ | 积分相关组件 |
+| `frontend/src/routes/admin/points/config.tsx` | ❌ | Realm 配置管理页面 |
+| `frontend/src/routes/admin/points/free-stats.tsx` | ❌ | 免费用户统计页面 |
+| `frontend/src/routes/admin/points/user-config.tsx` | ❌ | 用户配置详情页面 |
+| `frontend/src/components/points/RealmConfigForm.tsx` | ❌ | 配置表单组件 |
 
 ---
 
-## 10. 参考资料
+## 11. 参考资料
 
-- **PRD**: `docs/prd/billing.md` - Billing 订阅计费产品需求文档（依赖）
-- **PRD**: `docs/prd/billing/points-free-user.md` - 免费用户积分系统产品需求文档（新增）
-- **用户故事**: `docs/user-stories/points-admin-manage.md` - Tenant Admin 积分管理用户故事
-- **用户故事**: `docs/user-stories/points-user-view.md` - Tenant User 积分查询用户故事
-- **用户故事**: `docs/user-stories/points-free-user.md` - 免费用户积分用户故事（新增）
+- **PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档（依赖）
+- **用户故事**: `docs/user-stories/billing/points-admin.md` - Tenant Admin 积分管理用户故事
+- **用户故事**: `docs/user-stories/billing/points-user.md` - Tenant User 积分查询用户故事
+- **用户故事**: `docs/user-stories/billing/points-free-user.md` - 免费用户积分用户故事
 - **实施计划**: `.ai/future/credits_plan_split.md` - 积分系统解耦实施计划
 - **规范**: `spec/backend/development.md` - 后端开发规范
 - **规范**: `spec/frontend/development.md` - 前端开发规范

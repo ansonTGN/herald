@@ -12,19 +12,19 @@
 
 ### 1.1 相关故事
 
-- `[US-DC-001]` CLI 工具发起设备授权，优先级 P0，来源 `docs/user-stories/15-device-code-user-stories.md`
+- `[US-DC-001]` CLI 工具发起设备授权，优先级 P0，来源 `docs/user-stories/auth/device-code.md`
   - 角色：Third-Party App
   - 摘要：CLI 通过 Device Authorization Grant 请求 device_code 和 user_code
-- `[US-DC-002]` 用户在验证页面完成授权，优先级 P0，来源 `docs/user-stories/15-device-code-user-stories.md`
+- `[US-DC-002]` 用户在验证页面完成授权，优先级 P0，来源 `docs/user-stories/auth/device-code.md`
   - 角色：Regular User
   - 摘要：用户在 Herald 验证页面输入 user_code 并完成登录授权
-- `[US-DC-003]` CLI 工具轮询获取令牌，优先级 P0，来源 `docs/user-stories/15-device-code-user-stories.md`
+- `[US-DC-003]` CLI 工具轮询获取令牌，优先级 P0，来源 `docs/user-stories/auth/device-code.md`
   - 角色：Third-Party App
   - 摘要：CLI 按 interval 轮询令牌端点，用户授权后获得 access token
-- `[US-DC-004]` Realm Admin 配置 Device Code Grant，优先级 P1，来源 `docs/user-stories/15-device-code-user-stories.md`
+- `[US-DC-004]` Realm Admin 配置 Device Code Grant，优先级 P1，来源 `docs/user-stories/auth/device-code.md`
   - 角色：Realm Admin
   - 摘要：管理员为 Client App 启用或禁用 Device Code Grant
-- `[US-DC-005]` 设备验证页面 API，优先级 P1，来源 `docs/user-stories/15-device-code-user-stories.md`
+- `[US-DC-005]` 设备验证页面 API，优先级 P1，来源 `docs/user-stories/auth/device-code.md`
   - 角色：Third-Party App
   - 摘要：开放 API 供第三方应用构建自定义设备码验证体验
 
@@ -219,9 +219,9 @@ CLI 工具                          Herald                      用户浏览器
 
 ## 10. 参考资料
 
-- 用户故事：`docs/user-stories/15-device-code-user-stories.md`
+- 用户故事：`docs/user-stories/auth/device-code.md`
 - RFC 8628 — OAuth 2.0 Device Authorization Grant: https://datatracker.ietf.org/doc/html/rfc8628
-- 相关 PRD：`docs/prd/auth/oauth-third-party-integration.md`
+- 相关 PRD：`docs/prd/auth/oauth.md`
 - 相关 PRD：`docs/prd/integration/client-app.md`
 - Auth0 Device Authorization Flow: https://auth0.com/docs/get-started/authentication-and-authorization-flow/device-authorization-flow
 - WorkOS Device Authorization Grant 实践指南: https://workos.com/blog/oauth-device-authorization-grant

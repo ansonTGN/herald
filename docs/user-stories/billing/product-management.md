@@ -347,7 +347,7 @@ And 至少存在一个 Product 才能创建 Plan
 ## 相关文档
 
 - **PRD**: `docs/prd/billing/product-catalog.md` - Product 编目管理产品需求文档
-- **PRD**: `docs/prd/billing/billing.md` - Billing 订阅计费产品需求文档
+- **PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档
 - **PRD**: `docs/prd/billing/points.md` - Points 积分系统产品需求文档
-- **用户故事**: `docs/user-stories/06-billing-user-stories.md` - Billing 用户故事
-- **用户故事**: `docs/user-stories/points-admin-manage.md` - 积分管理用户故事
+- **用户故事**: `docs/user-stories/billing/subscription.md` - Billing 用户故事
+- **用户故事**: `docs/user-stories/billing/points-admin.md` - 积分管理用户故事

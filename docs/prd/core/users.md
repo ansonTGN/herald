@@ -10,13 +10,13 @@
 
 ### 1.1 Realm Admin 用户故事
 
-- 📄 [docs/user-stories/02-realm-admin-user-stories.md](/docs/user-stories/02-realm-admin-user-stories.md)
+- 📄 [docs/user-stories/core/realm-admin.md](/docs/user-stories/core/realm-admin.md)
   - **[US-RA-001] Realm 隔离访问** (P0): 作为 Realm Admin，我想要只能访问自己 Realm 的资源，以便保证数据隔离
   - **[US-RA-006] 用户角色分配** (P0): 作为 Realm Admin，我想要为用户分配角色，以便控制访问权限
 
 ### 1.2 Regular User 用户故事
 
-- 📄 [docs/user-stories/03-regular-user-user-stories.md](/docs/user-stories/03-regular-user-user-stories.md)
+- 📄 [docs/user-stories/core/regular-user.md](/docs/user-stories/core/regular-user.md)
   - **[US-RU-001] 账号注册** (P0): 作为 Regular User，我想要注册账号，以便使用系统服务
   - **[US-RU-002] 账号登录** (P0): 作为 Regular User，我想要登录系统，以便访问受保护的资源
   - **[US-RU-003] 退出登录** (P0): 作为 Regular User，我想要退出登录，以便保护账户安全
@@ -288,7 +288,7 @@
 ## 10. 参考资料
 
 - 用户故事：请参考对应的 `docs/user-stories/` 文档。
-- 相关 PRD：请参考 `docs/prd/00-index.md` 与相邻业务域文档。
+- 相关 PRD：请参考 `docs/prd/index.md` 与相邻业务域文档。
 - 技术设计：如需实现细节，请补充或引用 `docs/design/`、`.ai/design/` 或接口说明。
 - 本文档已按最新 `/t-prd` 分层要求收敛：PRD 仅保留业务语义、范围、规则、约束与验收目标。
 

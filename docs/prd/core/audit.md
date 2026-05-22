@@ -12,23 +12,23 @@
 
 ### 1.1 相关故事
 
-- `[US-AU-001]` 查看 Realm 审计日志，优先级 P0，来源 `docs/user-stories/14-audit-user-stories.md`
+- `[US-AU-001]` 查看 Realm 审计日志，优先级 P0，来源 `docs/user-stories/core/audit.md`
   - 角色：Realm Admin
   - 摘要：Realm Admin 查看当前 Realm 下所有核心操作的审计日志列表，支持 Realm 隔离
 
-- `[US-AU-002]` 按条件筛选审计日志，优先级 P0，来源 `docs/user-stories/14-audit-user-stories.md`
+- `[US-AU-002]` 按条件筛选审计日志，优先级 P0，来源 `docs/user-stories/core/audit.md`
   - 角色：Realm Admin
   - 摘要：按事件类型、操作者和时间范围筛选审计日志
 
-- `[US-AU-003]` 查看审计日志详情，优先级 P1，来源 `docs/user-stories/14-audit-user-stories.md`
+- `[US-AU-003]` 查看审计日志详情，优先级 P1，来源 `docs/user-stories/core/audit.md`
   - 角色：Realm Admin
   - 摘要：查看某条审计日志的完整变更详情和上下文
 
-- `[US-AU-004]` 查看 Admin Realm 审计日志，优先级 P0，来源 `docs/user-stories/14-audit-user-stories.md`
+- `[US-AU-004]` 查看 Admin Realm 审计日志，优先级 P0，来源 `docs/user-stories/core/audit.md`
   - 角色：Admin Realm 管理员
   - 摘要：查看 Admin Realm 的平台级审计日志
 
-- `[US-AU-005]` 系统自动记录核心操作，优先级 P0，来源 `docs/user-stories/14-audit-user-stories.md`
+- `[US-AU-005]` 系统自动记录核心操作，优先级 P0，来源 `docs/user-stories/core/audit.md`
   - 角色：Herald 系统
   - 摘要：核心操作（用户管理、RBAC 变更、Realm 管理、认证事件）发生时自动记录审计事件
 
@@ -175,7 +175,7 @@ Herald 系统需要为所有核心操作提供可追溯的审计能力。当前�
 
 ## 10. 参考资料
 
-- 用户故事：`docs/user-stories/14-audit-user-stories.md`
+- 用户故事：`docs/user-stories/core/audit.md`
 - 权限管理 PRD：`docs/prd/auth/permissions.md`（审计日志原在 Out of Scope 中）
 - 角色定义：`docs/user-stories/_roles.md`
 - 现有 RBAC 审计实现：`backend/domain/src/audit/rbac_audit.rs`

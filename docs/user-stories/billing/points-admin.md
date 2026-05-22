@@ -603,4 +603,4 @@ And 我看到该用户是否已升级为付费用户
 
 - **PRD**: `docs/prd/billing/points.md` - 积分系统产品需求文档
 - **用户故事**: `points-user-view.md` - Tenant User 积分查询用户故事
-- **依赖 PRD**: `docs/prd/billing/billing.md` - Billing 订阅计费产品需求文档
+- **依赖 PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档

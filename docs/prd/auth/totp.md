@@ -10,14 +10,14 @@
 
 ### 1.1 Realm Admin 用户故事
 
-- 📄 [docs/user-stories/05-totp-user-stories.md](/docs/user-stories/05-totp-user-stories.md)
+- 📄 [docs/user-stories/auth/totp.md](/docs/user-stories/auth/totp.md)
   - **启用/禁用 TOTP 功能** (P0): 作为 Realm 管理员，我想要为本 Realm 启用或禁用 TOTP 二次认证功能，以便提升本 Realm 用户账户的安全性
   - **强制启用 TOTP** (P1): 作为 Realm 管理员，我想要设置本 Realm 强制启用 TOTP，以便确保所有用户都必须使用二次认证
   - **查看 TOTP 统计** (P2): 作为 Realm 管理员，我想要查看本 Realm 的 TOTP 启用率，以便了解安全状态
 
 ### 1.2 Regular User 用户故事
 
-- 📄 [docs/user-stories/05-totp-user-stories.md](/docs/user-stories/05-totp-user-stories.md)
+- 📄 [docs/user-stories/auth/totp.md](/docs/user-stories/auth/totp.md)
   - **[US-TO-001] 启用 TOTP 二次认证** (P0): 作为普通用户，我想要为我的账户启用 TOTP 二次认证，以便提升账户安全性，防止密码泄露导致账户被盗
   - **[US-TO-003] 使用 TOTP 登录** (P0): 作为普通用户，我想要在登录时能够通过 TOTP 验证码进行二次认证，以便确保即使密码泄露，账户仍受保护
   - **[US-TO-002] 禁用 TOTP** (P0): 作为普通用户，我想要能够禁用我的 TOTP 二次认证，以便在更换设备或不再需要时可以关闭此功能
@@ -271,7 +271,7 @@ Herald 系统支持在 Realm 级别和用户级别配置 TOTP：
 
 ## 10. 参考资料
 
-- **相关用户故事**: [docs/user-stories/05-totp-user-stories.md](/docs/user-stories/05-totp-user-stories.md)
+- **相关用户故事**: [docs/user-stories/auth/totp.md](/docs/user-stories/auth/totp.md)
 - **RFC 6238**: TOTP 标准规范
 - **Google Authenticator**: 验证器应用参考
 - **与 Realm 设置的关系**: TOTP 配置属于 Realm Settings 的一部分

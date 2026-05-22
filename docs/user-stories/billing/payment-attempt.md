@@ -9,11 +9,11 @@
 
 **依赖关系**:
 - US-PA-001 依赖 US-PP-001（需要积分包商品）和 US-PR-001（需要订阅套餐）
-- US-PA-001 依赖支付平台配置（docs/user-stories/07-payment-provider-user-stories.md）
+- US-PA-001 依赖支付平台配置（docs/user-stories/billing/payment-provider.md）
 - US-PA-002 依赖 US-PA-001（需要先有支付尝试）
 - US-PA-003 依赖 US-PA-001 和 US-PA-002（需要支付尝试和状态查询）
 - US-PA-004 无前置依赖，可并行实现
-- 依赖微信支付/Stripe/Creem 集成（docs/user-stories/09-wechat-pay-user-stories.md）
+- 依赖微信支付/Stripe/Creem 集成（docs/user-stories/billing/wechat-pay.md）
 
 ---
 
@@ -340,6 +340,6 @@ And 前端提供"重新支付"按钮
 
 - **PRD**: `docs/prd/billing/unified-purchase.md` - 统一购买架构产品需求文档（待创建）
 - **技术方案**: `.ai/future/order.md` - 统一购买架构技术方案
-- **用户故事**: `09-wechat-pay-user-stories.md` - 微信支付用户故事
-- **用户故事**: `10-points-package-user-stories.md` - 积分包管理用户故事
+- **用户故事**: `billing/wechat-pay.md` - 微信支付用户故事
+- **用户故事**: `billing/points-package.md` - 积分包管理用户故事
 - **用户故事**: `11-points-package-purchase-user-stories.md` - 积分包购买用户故事

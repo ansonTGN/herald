@@ -12,15 +12,15 @@
 
 ### 1.1 相关故事
 
-- `[US-RA-010]` 查看 Dashboard 用户活跃概览，优先级 P1，来源 `docs/user-stories/02-realm-admin-user-stories.md`
+- `[US-RA-010]` 查看 Dashboard 用户活跃概览，优先级 P1，来源 `docs/user-stories/core/realm-admin.md`
   - 角色：Realm Admin
   - 摘要：Realm Admin 在 Dashboard 首屏看到本 Realm 的用户核心指标（总用户数、新增用户数、活跃用户数）
 
-- `[US-RA-011]` 查看 Dashboard 认证趋势图，优先级 P1，来源 `docs/user-stories/02-realm-admin-user-stories.md`
+- `[US-RA-011]` 查看 Dashboard 认证趋势图，优先级 P1，来源 `docs/user-stories/core/realm-admin.md`
   - 角色：Realm Admin
   - 摘要：Realm Admin 在 Dashboard 上看到最近 30 天的认证趋势图，发现异常登录波动
 
-- `[US-RA-012]` 通过 Dashboard 快捷导航跳转，优先级 P1，来源 `docs/user-stories/02-realm-admin-user-stories.md`
+- `[US-RA-012]` 通过 Dashboard 快捷导航跳转，优先级 P1，来源 `docs/user-stories/core/realm-admin.md`
   - 角色：Realm Admin
   - 摘要：Dashboard 下方保留原有管理功能导航入口，支持快速跳转
 
@@ -118,7 +118,7 @@
 - 新增 Dashboard Stats 单端点，一次性返回所有指标数据（用户指标 + 趋势数据）
 - 访问控制：复用现有 Realm Admin 权限检查，不新增独立权限
 - 租户边界：所有查询强制 `realm_id` 过滤
-- 技术设计详见 `.ai/design/dashboard-redesign.md`
+- 技术设计详见 `.ai/design/dashboard.md`
 
 ---
 
@@ -131,7 +131,7 @@
 - 关键交互：页面加载自动拉取数据；"Total Users" 卡片可点击跳转用户管理页
 - 状态反馈：加载中 Skeleton、空态显示 0 / "暂无数据"、错误使用现有错误处理模式
 - 图表组件：使用 shadcn chart（底层 recharts），通过 `npx shadcn@latest add chart` 安装
-- 技术设计详见 `.ai/design/dashboard-redesign.md`
+- 技术设计详见 `.ai/design/dashboard.md`
 
 ---
 
@@ -139,7 +139,7 @@
 
 **状态**: 必填
 
-- 技术设计文档：`.ai/design/dashboard-redesign.md`
+- 技术设计文档：`.ai/design/dashboard.md`
 - 包含 API 接口设计、数据库索引变更、前端组件设计、测试策略
 
 ---
@@ -161,14 +161,14 @@
 
 ### 9.3 用户故事文件
 
-- `docs/user-stories/02-realm-admin-user-stories.md` — US-RA-010 ~ US-RA-012
+- `docs/user-stories/core/realm-admin.md` — US-RA-010 ~ US-RA-012
 
 ---
 
 ## 10. 参考资料
 
-- 用户故事：`docs/user-stories/02-realm-admin-user-stories.md`
+- 用户故事：`docs/user-stories/core/realm-admin.md`
 - 相关 PRD：`docs/prd/core/audit.md`（审计日志，Dashboard 聚合其数据）
 - 相关 PRD：`docs/prd/auth/totp.md`（TOTP 统计模式可复用）
-- 技术设计：`.ai/design/dashboard-redesign.md`
+- 技术设计：`.ai/design/dashboard.md`
 - IAM Dashboard 行业参考：Cloudeagle IAM Key Metrics、Reddit r/ProductManagement KPI 讨论

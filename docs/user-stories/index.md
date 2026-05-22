@@ -1,0 +1,231 @@
+# 用户故事索引
+
+本文档索引列出所有 Herald 系统的用户故事。
+
+## 用户故事目录结构
+
+```
+docs/user-stories/
+├── index.md              # 本文件
+├── _README.md            # 编写指南
+├── _roles.md             # 角色定义
+├── core/                 # 核心功能
+│   ├── admin-realm.md    # Admin Realm 管理
+│   ├── realm-admin.md    # Realm Admin 管理
+│   ├── builtin-protection.md # 内置保护
+│   ├── regular-user.md   # 普通用户
+│   └── audit.md          # 审计日志
+├── auth/                 # 认证授权
+│   ├── third-party-app.md # 第三方应用
+│   ├── client-app-settings.md # Client App 设置
+│   ├── totp.md           # TOTP 二次认证
+│   ├── oauth-extension.md # OAuth Provider 扩展
+│   ├── wechat-oauth.md   # 微信 OAuth
+│   └── device-code.md    # Device Code
+├── billing/              # 计费相关
+│   ├── subscription.md   # 订阅套餐
+│   ├── product-management.md # 产品管理
+│   ├── points-admin.md   # 积分管理
+│   ├── points-user.md    # 积分查询
+│   ├── points-free-user.md # 免费用户积分
+│   ├── points-package.md # 积分包
+│   ├── points-package-purchase.md # 积分包购买
+│   ├── payment-provider.md # 支付平台配置
+│   ├── shopify-pay.md    # Shopify 支付
+│   ├── wechat-pay.md     # 微信支付
+│   ├── payment-attempt.md # 支付尝试
+│   └── invoice.md        # 发票
+└── integration/          # 集成扩展
+    └── sdk.md            # SDK 资源管理
+```
+
+## 用户故事 ID 索引
+
+| US-ID | 标题 | 角色 | 优先级 | 文件 |
+|-------|------|------|--------|------|
+| US-AR-001 | 创建 Realm | Admin Realm | P0 | [core/admin-realm](core/admin-realm.md#故事-1创建-realm-us-ar-001) |
+| US-AR-002 | 查看 Realm 列表 | Admin Realm | P0 | [core/admin-realm](core/admin-realm.md#故事-2查看-realm-列表-us-ar-002) |
+| US-AR-003 | 查看 Realm 详情 | Admin Realm | P1 | [core/admin-realm](core/admin-realm.md#故事-3查看-realm-详情-us-ar-003) |
+| US-AR-004 | Realm 创建权限控制 | Admin Realm | P0 | [core/admin-realm](core/admin-realm.md#故事-4realm-创建权限控制-us-ar-004) |
+| US-RA-001 | Realm 隔离访问 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-1realm-隔离访问-us-ra-001) |
+| US-RA-002 | 角色定义管理 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-2角色定义管理-us-ra-002) |
+| US-RA-003 | 权限定义管理 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-3权限定义管理-us-ra-003) |
+| US-RA-004 | 为角色分配权限 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-4为角色分配权限-us-ra-004) |
+| US-RA-005 | 查看角色权限 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-5查看角色权限-us-ra-005) |
+| US-RA-006 | 用户角色分配 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-6用户角色分配-us-ra-006) |
+| US-RA-007 | 权限策略管理 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-7权限策略管理-us-ra-007) |
+| US-RA-008 | 订阅套餐管理 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-8订阅套餐管理-us-ra-008) |
+| US-RA-009 | 默认角色和权限保护 | Realm Admin | P0 | [core/builtin-protection](core/builtin-protection.md#us-ra-009) |
+| US-RA-010 | 查看 Dashboard 用户活跃概览 | Realm Admin | P1 | [core/realm-admin](core/realm-admin.md#故事-10查看-dashboard-用户活跃概览-us-ra-010) |
+| US-RA-011 | 查看 Dashboard 认证趋势图 | Realm Admin | P1 | [core/realm-admin](core/realm-admin.md#故事-11查看-dashboard-认证趋势图-us-ra-011) |
+| US-RA-012 | 通过 Dashboard 快捷导航跳转 | Realm Admin | P1 | [core/realm-admin](core/realm-admin.md#故事-12通过-dashboard-快捷导航跳转-us-ra-012) |
+| US-RA-013 | 配置 Realm 邮件服务 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-13配置-realm-邮件服务-us-ra-013) |
+| US-RA-014 | 发送测试邮件 | Realm Admin | P1 | [core/realm-admin](core/realm-admin.md#故事-14发送测试邮件-us-ra-014) |
+| US-RA-015 | 邮件依赖的功能开关前置验证 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-15邮件依赖的功能开关前置验证-us-ra-015) |
+| US-RU-001 | 账号注册 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-1账号注册-us-ru-001) |
+| US-RU-002 | 账号登录 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-2账号登录-us-ru-002) |
+| US-RU-003 | OAuth 第三方登录 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-3oauth-第三方登录-us-ru-003) |
+| US-RU-004 | 修改个人密码 | Regular User | P1 | [core/regular-user](core/regular-user.md#故事-4修改个人密码-us-ru-004) |
+| US-RU-005 | 查看个人资料 | Regular User | P1 | [core/regular-user](core/regular-user.md#故事-5查看个人资料-us-ru-005) |
+| US-RU-006 | 修改个人昵称 | Regular User | P2 | [core/regular-user](core/regular-user.md#故事-6修改个人昵称-us-ru-006) |
+| US-RU-007 | 退出登录 | Regular User | P1 | [core/regular-user](core/regular-user.md#故事-7退出登录-us-ru-007) |
+| US-RU-008 | 访问第三方应用（SSO） | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-8访问第三方应用-us-ru-008) |
+| US-RU-009 | 认证重定向流程 | All Users | P0 | [core/regular-user](core/regular-user.md#故事-9认证重定向流程-us-ru-009) |
+| US-RU-010 | 从第三方 Web 应用跳转登录 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-10从第三方-web-应用跳转登录-us-ru-010) |
+| US-TP-001 | OAuth 授权码登录 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-1oauth-授权码登录authorization-code-pkce-us-tp-001) |
+| US-TP-002 | 验证用户登录状态 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-2验证用户登录状态-us-tp-002) |
+| US-TP-003 | 检查用户权限 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-3检查用户权限-us-tp-003) |
+| US-TP-004 | 获取用户信息 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-4获取用户信息-us-tp-004) |
+| US-TP-005 | Client App 配置管理 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-5client-app-配置管理-us-tp-005) |
+| US-TP-006 | 处理异常情况 | Third-Party App | P1 | [auth/third-party-app](auth/third-party-app.md#故事-6处理异常情况-us-tp-006) |
+| US-TP-007 | 会话管理 | Third-Party App | P1 | [auth/third-party-app](auth/third-party-app.md#故事-7会话管理-us-tp-007) |
+| US-TP-008 | 配置 Client App 跳转地址白名单 | Third-Party App | P0 | [auth/client-app-settings](auth/client-app-settings.md#故事-1配置-client-app-跳转地址白名单-us-tp-008) |
+| US-TP-009 | 管理 Client App 图标 | Third-Party App | P0 | [auth/client-app-settings](auth/client-app-settings.md#故事-2管理-client-app-图标-us-tp-009) |
+| US-TP-010 | 启用/禁用 Client App | Third-Party App | P0 | [auth/client-app-settings](auth/client-app-settings.md#故事-3启用禁用-client-app-us-tp-010) |
+| US-TP-011 | 配置 Session 有效期策略 | Third-Party App | P0 | [auth/client-app-settings](auth/client-app-settings.md#故事-4配置-session-有效期策略-us-tp-011) |
+| US-TO-001 | Realm 管理员启用/禁用 TOTP 功能 | TOTP User | P0 | [auth/totp](auth/totp.md#故事-1realm-管理员启用禁用-totp-功能-us-to-001) |
+| US-TO-002 | 用户启用 TOTP 二次认证 | TOTP User | P0 | [auth/totp](auth/totp.md#故事-2用户启用-totp-二次认证-us-to-002) |
+| US-TO-003 | 用户使用 TOTP 登录 | TOTP User | P0 | [auth/totp](auth/totp.md#故事-3用户使用-totp-登录-us-to-003) |
+| US-TO-004 | 用户禁用 TOTP | TOTP User | P0 | [auth/totp](auth/totp.md#故事-4用户禁用-totp-us-to-004) |
+| US-TO-005 | 用户重新生成 TOTP 密钥 | TOTP User | P1 | [auth/totp](auth/totp.md#故事-5用户重新生成-totp-密钥-us-to-005) |
+| US-TO-006 | Realm 管理员强制启用 TOTP | TOTP User | P1 | [auth/totp](auth/totp.md#故事-6realm-管理员强制启用-totp-us-to-006) |
+| US-TO-007 | 用户查看 TOTP 使用情况 | TOTP User | P2 | [auth/totp](auth/totp.md#故事-7用户查看-totp-使用情况-us-to-007) |
+| US-BI-001 | 创建订阅套餐 | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-1创建订阅套餐-us-bi-001) |
+| US-BI-002 | 编辑订阅套餐 | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-2编辑订阅套餐-us-bi-002) |
+| US-BI-003 | 配置 Plan 的支付平台映射 | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-3配置-plan-的支付平台映射-us-bi-003) |
+| US-BI-004 | 删除订阅套餐 | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-4删除订阅套餐-us-bi-004) |
+| US-BI-005 | 分配套餐到 Client App | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-5分配套餐到-client-app-us-bi-005) |
+| US-BI-006 | 查看订阅列表 | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-6查看订阅列表-us-bi-006) |
+| US-BI-007 | 第三方应用查询套餐状态（SDK 集成） | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-7第三方应用查询套餐状态sdk-集成-us-bi-007) |
+| US-BI-008 | 查看订阅变更历史 | Billing User | P1 | [billing/subscription](billing/subscription.md#故事-8查看订阅变更历史-us-bi-008) |
+| US-BI-009 | 查看自己的订阅变更历史 | Billing User | P1 | [billing/subscription](billing/subscription.md#故事-9查看自己的订阅变更历史-us-bi-009) |
+| US-PR-001 | 创建 Product | Realm Admin | P0 | [billing/product-management](billing/product-management.md#故事-1创建-product-us-pr-001) |
+| US-PR-002 | 编辑 Product | Realm Admin | P0 | [billing/product-management](billing/product-management.md#故事-2编辑-product-us-pr-002) |
+| US-PR-003 | 查看 Product 列表 | Realm Admin | P0 | [billing/product-management](billing/product-management.md#故事-3查看-product-列表-us-pr-003) |
+| US-PR-004 | 启用/禁用 Product | Realm Admin | P1 | [billing/product-management](billing/product-management.md#故事-4启用禁用-product-us-pr-004) |
+| US-PR-005 | 删除 Product | Realm Admin | P1 | [billing/product-management](billing/product-management.md#故事-5删除-product-us-pr-005) |
+| US-PR-006 | 在 Product 下管理 Plan | Realm Admin | P0 | [billing/product-management](billing/product-management.md#故事-6在-product-下管理-plan-us-pr-006) |
+| US-PO-01 | 配置积分套餐 | Points Admin | P0 | [billing/points-admin](billing/points-admin.md#故事-1配置积分套餐-us-po-01) |
+| US-PO-02 | 查看所有用户积分账户 | Points Admin | P1 | [billing/points-admin](billing/points-admin.md#故事-2查看所有用户积分账户-us-po-02) |
+| US-PO-03 | 查看用户积分交易历史 | Points Admin | P1 | [billing/points-admin](billing/points-admin.md#故事-3查看用户积分交易历史-us-po-03) |
+| US-PO-04 | 管理积分套餐配置 | Points Admin | P2 | [billing/points-admin](billing/points-admin.md#故事-4管理积分套餐配置-us-po-04) |
+| US-PO-05 | 查看套餐充值引导 | Points Admin | P2 | [billing/points-admin](billing/points-admin.md#故事-5查看套餐充值引导-us-po-05) |
+| US-PO-06 | 配置 Realm 默认积分策略 | Points Admin | P0 | [billing/points-admin](billing/points-admin.md#故事-6配置-realm-默认积分策略-us-po-06) |
+| US-PO-07 | 查看免费用户积分统计 | Points Admin | P1 | [billing/points-admin](billing/points-admin.md#故事-7查看免费用户积分统计-us-po-07) |
+| US-PU-01 | 查看我的积分余额 | Points User | P0 | [billing/points-user](billing/points-user.md#故事-1查看我的积分余额-us-pu-01) |
+| US-PU-02 | 查看我的交易历史 | Points User | P1 | [billing/points-user](billing/points-user.md#故事-2查看我的交易历史-us-pu-02) |
+| US-PU-03 | 筛选交易记录 | Points User | P2 | [billing/points-user](billing/points-user.md#故事-3筛选交易记录-us-pu-03) |
+| US-PP-007 | 配置 Shopify Payment Provider | Realm Admin | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-1配置-shopify-支付平台-us-pp-007) |
+| US-PP-008 | 查看 Shopify Payment Provider 配置 | Realm Admin | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-2查看-shopify-支付平台配置-us-pp-008) |
+| US-PP-009 | 编辑 Shopify Payment Provider 配置 | Realm Admin | P1 | [billing/shopify-pay](billing/shopify-pay.md#故事-3编辑-shopify-支付平台配置-us-pp-009) |
+| US-PP-010 | 删除 Shopify Payment Provider 配置 | Realm Admin | P1 | [billing/shopify-pay](billing/shopify-pay.md#故事-4删除-shopify-支付平台配置-us-pp-010) |
+| US-PP-011 | Shopify Subscription Contract 创建和同步 | System | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-5shopify-订阅合同创建与同步-us-pp-011) |
+| US-PP-012 | Shopify Subscription 续费和状态同步 | System | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-6shopify-订阅续费与状态同步-us-pp-012) |
+| US-PP-013 | 用户认领 Shopify 订阅 | Herald User | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-7用户认领-shopify-订阅-us-pp-013) |
+| US-PP-014 | Webhook 处理未归属订阅 | System | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-8webhook-处理未归属订阅-us-pp-014) |
+| US-PP-015 | 通过 Customer Binding 自动归属 | System | P1 | [billing/shopify-pay](billing/shopify-pay.md#故事-9通过-customer-binding-自动归属-us-pp-015) |
+| US-WP-001 | 配置微信支付平台 | Realm Admin | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-1配置微信支付平台-us-wp-001) |
+| US-WP-002 | 查看微信支付平台配置 | Realm Admin | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-2查看微信支付平台配置-us-wp-002) |
+| US-WP-003 | 编辑微信支付平台配置 | Realm Admin | P1 | [billing/wechat-pay](billing/wechat-pay.md#故事-3编辑微信支付平台配置-us-wp-003) |
+| US-WP-004 | 删除微信支付平台配置 | Realm Admin | P1 | [billing/wechat-pay](billing/wechat-pay.md#故事-4删除微信支付平台配置-us-wp-004) |
+| US-WP-005 | 用户通过微信扫码支付 | Regular User | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-5用户通过微信扫码支付-us-wp-005) |
+| US-WP-006 | 微信支付 Webhook 回调处理 | System | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-6微信支付-webhook-回调处理-us-wp-006) |
+| US-WP-007 | 主动查询支付状态 | System | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-7主动查询支付状态-us-wp-007) |
+| US-WP-008 | 关闭过期支付订单 | System | P1 | [billing/wechat-pay](billing/wechat-pay.md#故事-8关闭过期支付订单-us-wp-008) |
+| US-PP-001 | 创建积分包 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-1创建积分包-us-pp-001) |
+| US-PP-002 | 编辑积分包 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-2编辑积分包-us-pp-002) |
+| US-PP-003 | 配置积分包的支付平台映射 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-3配置积分包的支付平台映射-us-pp-003) |
+| US-PP-004 | 查看积分包列表 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-4查看积分包列表-us-pp-004) |
+| US-PP-005 | 删除积分包 | Realm Admin | P1 | [billing/points-package](billing/points-package.md#故事-5删除积分包-us-pp-005) |
+| US-PU-06 | 购买积分包 | Regular User | P0 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-1购买积分包-us-pu-06) |
+| US-PU-07 | 查看积分包购买记录 | Regular User | P1 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-2查看积分包购买记录-us-pu-07) |
+| US-PU-08 | 积分包与订阅购买的区别 | Regular User | P1 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-3积分包与订阅购买的区别-us-pu-08) |
+| US-PA-001 | 创建支付尝试（订阅或积分包） | System | P0 | [billing/payment-attempt](billing/payment-attempt.md#故事-1创建支付尝试订阅或积分包-us-pa-001) |
+| US-PA-002 | 查询支付尝试状态 | System | P0 | [billing/payment-attempt](billing/payment-attempt.md#故事-2查询支付尝试状态-us-pa-002) |
+| US-PA-003 | 处理支付成功后的履约 | System | P0 | [billing/payment-attempt](billing/payment-attempt.md#故事-3处理支付成功后的履约-us-pa-003) |
+| US-PA-004 | 关闭过期的支付尝试 | System | P1 | [billing/payment-attempt](billing/payment-attempt.md#故事-4关闭过期的支付尝试-us-pa-004) |
+| US-IV-001 | 创建发票 | Realm Admin | P0 | [billing/invoice](billing/invoice.md#故事-1创建发票-us-iv-001) |
+| US-IV-002 | 编辑发票草稿 | Realm Admin | P0 | [billing/invoice](billing/invoice.md#故事-2编辑发票草稿-us-iv-002) |
+| US-IV-003 | 查看发票列表 | Realm Admin | P0 | [billing/invoice](billing/invoice.md#故事-3查看发票列表-us-iv-003) |
+| US-IV-004 | 查看发票详情 | Realm Admin | P0 | [billing/invoice](billing/invoice.md#故事-4查看发票详情-us-iv-004) |
+| US-IV-005 | 开具发票 | Realm Admin | P0 | [billing/invoice](billing/invoice.md#故事-5开具发票-us-iv-005) |
+| US-IV-006 | 作废发票 | Realm Admin | P1 | [billing/invoice](billing/invoice.md#故事-6作废发票-us-iv-006) |
+| US-IV-007 | 标记发票已付 | Realm Admin | P0 | [billing/invoice](billing/invoice.md#故事-7标记发票已付-us-iv-007) |
+| US-IV-008 | 查看我的发票 | Regular User | P1 | [billing/invoice](billing/invoice.md#故事-8查看我的发票-us-iv-008) |
+| US-IV-009 | 系统标记逾期发票 | System | P1 | [billing/invoice](billing/invoice.md#故事-9系统标记逾期发票-us-iv-009) |
+| US-IV-010 | 配置销售方信息 | Realm Admin | P0 | [billing/invoice](billing/invoice.md#故事-10配置销售方信息-us-iv-010) |
+| US-IV-011 | 申请发票 | Regular User | P0 | [billing/invoice](billing/invoice.md#故事-11申请发票-us-iv-011) |
+| US-IV-012 | 审核并开具用户申请的发票 | Realm Admin | P0 | [billing/invoice](billing/invoice.md#故事-12审核并开具用户申请的发票-us-iv-012) |
+| US-AU-001 | 查看 Realm 审计日志 | Realm Admin | P0 | [core/audit](core/audit.md#故事-1查看-realm-审计日志-us-au-001) |
+| US-AU-002 | 按条件筛选审计日志 | Realm Admin | P0 | [core/audit](core/audit.md#故事-2按条件筛选审计日志-us-au-002) |
+| US-AU-003 | 查看审计日志详情 | Realm Admin | P1 | [core/audit](core/audit.md#故事-3查看审计日志详情-us-au-003) |
+| US-AU-004 | 查看 Admin Realm 审计日志 | Admin Realm | P0 | [core/audit](core/audit.md#故事-4查看-admin-realm-审计日志-us-au-004) |
+| US-AU-005 | 系统自动记录核心操作 | System | P0 | [core/audit](core/audit.md#故事-5系统自动记录核心操作-us-au-005) |
+| US-DC-001 | CLI 工具发起设备授权 | Third-Party App | P0 | [auth/device-code](auth/device-code.md#故事-1cli-工具发起设备授权-us-dc-001) |
+| US-DC-002 | 用户在验证页面完成授权 | Regular User | P0 | [auth/device-code](auth/device-code.md#故事-2用户在验证页面完成授权-us-dc-002) |
+| US-DC-003 | CLI 工具轮询获取令牌 | Third-Party App | P0 | [auth/device-code](auth/device-code.md#故事-3cli-工具轮询获取令牌-us-dc-003) |
+| US-DC-004 | Realm Admin 配置 Device Code Grant | Realm Admin | P1 | [auth/device-code](auth/device-code.md#故事-4realm-admin-配置-device-code-grant-us-dc-004) |
+| US-DC-005 | 设备验证页面 API | Third-Party App | P1 | [auth/device-code](auth/device-code.md#故事-5设备验证页面-api-us-dc-005) |
+| US-TP-012 | 通过 SDK 管理 Realm | Third-Party App | P1 | [integration/sdk](integration/sdk.md#故事-1通过-sdk-管理-realm-us-tp-012) |
+| US-TP-013 | 通过 SDK 管理用户 | Third-Party App | P0 | [integration/sdk](integration/sdk.md#故事-2通过-sdk-管理用户-us-tp-013) |
+| US-TP-014 | 通过 SDK 管理 Client App | Third-Party App | P1 | [integration/sdk](integration/sdk.md#故事-3通过-sdk-管理-client-app-us-tp-014) |
+| US-TP-015 | 第三方 Web SPA 发起 SSO 登录 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-15第三方-web-spa-发起-sso-登录-us-tp-015) |
+| US-TP-016 | 第三方后端用授权码换取令牌 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-16第三方后端用授权码换取令牌-us-tp-016) |
+
+**总计**: 130 个用户故事
+
+---
+
+## 按领域分类
+
+### Core 核心功能
+
+| 角色 | 文档 | 故事数 | 相关 PRD |
+|------|------|-------|---------|
+| Admin Realm | [core/admin-realm.md](core/admin-realm.md) | 4 | [Realm PRD](/docs/prd/core/realm.md) |
+| Realm Admin | [core/realm-admin.md](core/realm-admin.md), [core/builtin-protection.md](core/builtin-protection.md) | 15 | [Users PRD](/docs/prd/core/users.md), [Permissions PRD](/docs/prd/auth/permissions.md), [Client Apps PRD](/docs/prd/integration/client-app.md), [Realm Settings PRD](/docs/prd/core/realm-settings.md), [Dashboard PRD](/docs/prd/core/dashboard.md) |
+| Regular User | [core/regular-user.md](core/regular-user.md) | 10 | [Users PRD](/docs/prd/core/users.md), [OAuth PRD](/docs/prd/auth/oauth.md) |
+| Audit | [core/audit.md](core/audit.md) | 5 | [Audit PRD](/docs/prd/core/audit.md) |
+
+### Auth 认证与授权
+
+| 角色 | 文档 | 故事数 | 相关 PRD |
+|------|------|-------|---------|
+| Third-Party App | [auth/third-party-app.md](auth/third-party-app.md), [auth/client-app-settings.md](auth/client-app-settings.md) | 16 | [OAuth PRD](/docs/prd/auth/oauth.md), [Client Apps PRD](/docs/prd/integration/client-app.md) |
+| TOTP User | [auth/totp.md](auth/totp.md) | 7 | [TOTP PRD](/docs/prd/auth/totp.md) |
+| OAuth Extension | [auth/oauth-extension.md](auth/oauth-extension.md) | - | [OAuth PRD](/docs/prd/auth/oauth.md) |
+| WeChat OAuth | [auth/wechat-oauth.md](auth/wechat-oauth.md) | - | [WeChat OAuth PRD](/docs/prd/auth/wechat-oauth.md) |
+| Device Code | [auth/device-code.md](auth/device-code.md) | 5 | [Device Code PRD](/docs/prd/auth/device-code.md) |
+
+### Billing 计费相关
+
+| 角色 | 文档 | 故事数 | 相关 PRD |
+|------|------|-------|---------|
+| Billing User | [billing/subscription.md](billing/subscription.md) | 9 | [Subscription PRD](/docs/prd/billing/subscription.md) |
+| Product Admin | [billing/product-management.md](billing/product-management.md) | 6 | [Product Catalog PRD](/docs/prd/billing/product-catalog.md) |
+| Points Admin | [billing/points-admin.md](billing/points-admin.md) | 7 | [Points PRD](/docs/prd/billing/points.md) |
+| Points User | [billing/points-user.md](billing/points-user.md), [billing/points-free-user.md](billing/points-free-user.md) | 6 | [Points PRD](/docs/prd/billing/points.md), [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
+| Points Package | [billing/points-package.md](billing/points-package.md), [billing/points-package-purchase.md](billing/points-package-purchase.md) | 8 | [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
+| Payment Provider | [billing/payment-provider.md](billing/payment-provider.md) | - | [Subscription PRD](/docs/prd/billing/subscription.md) |
+| Shopify Pay | [billing/shopify-pay.md](billing/shopify-pay.md) | 9 | [Shopify Pay PRD](/docs/prd/billing/shopify-pay.md) |
+| WeChat Pay | [billing/wechat-pay.md](billing/wechat-pay.md) | 8 | [WeChat Pay PRD](/docs/prd/billing/wechat-pay.md) |
+| Payment Attempt | [billing/payment-attempt.md](billing/payment-attempt.md) | 4 | [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
+| Invoice | [billing/invoice.md](billing/invoice.md) | 12 | [Invoice PRD](/docs/prd/billing/invoice.md) |
+
+### Integration 集成
+
+| 角色 | 文档 | 故事数 | 相关 PRD |
+|------|------|-------|---------|
+| SDK | [integration/sdk.md](integration/sdk.md) | 3 | [SDK PRD](/docs/prd/integration/sdk.md) |
+
+## 特殊文档
+
+| 文档 | 说明 |
+|------|------|
+| [_README.md](_README.md) | 用户故事编写指南 |
+| [_roles.md](_roles.md) | 角色定义文档 |
+
+## 相关文档
+
+- **PRD 文档索引**: [docs/prd/index.md](/docs/prd/index.md)
+- **角色定义**: [_roles.md](_roles.md)

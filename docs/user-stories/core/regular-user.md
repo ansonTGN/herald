@@ -479,5 +479,5 @@ And 不静默降级为普通登录
 ## 📖 相关PRD
 
 - **用户管理**: [docs/prd/core/users.md](/docs/prd/core/users.md)
-- **OAuth 第三方集成**: [docs/prd/auth/oauth-third-party-integration.md](/docs/prd/auth/oauth-third-party-integration.md)
+- **OAuth 第三方集成**: [docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)
 - **微信 OAuth**: [docs/prd/auth/wechat-oauth.md](/docs/prd/auth/wechat-oauth.md)

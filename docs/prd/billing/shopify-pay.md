@@ -12,7 +12,7 @@
 
 ### 1.1 Shopify Pay 配置用户故事
 
-- 📄 [docs/user-stories/08-shopify-pay-user-stories.md](/docs/user-stories/08-shopify-pay-user-stories.md)
+- 📄 [docs/user-stories/billing/shopify-pay.md](/docs/user-stories/billing/shopify-pay.md)
   - **[US-PP-007] 配置 Shopify Payment Provider** (P0): 作为 Realm Admin，我想要配置 Shopify 作为支付平台，以便用户可以使用 Shopify 进行订阅支付
   - **[US-PP-008] 查看 Shopify Payment Provider 配置** (P0): 作为 Realm Admin，我想要查看 Shopify 配置和状态，以便管理支付集成
   - **[US-PP-009] 编辑 Shopify Payment Provider 配置** (P1): 作为 Realm Admin，我想要更新 Shopify 配置，以便进行密钥轮换和配置变更
@@ -62,9 +62,9 @@
 ### 2.3 依赖项
 
 - ✅ 通用支付平台配置系统（状态: 待实现，见 Billing PRD）
-- ✅ Billing 订阅计费系统（状态: 部分实现，docs/prd/billing/billing.md）
+- ✅ Billing 订阅计费系统（状态: 部分实现，docs/prd/billing/subscription.md）
 - ✅ Points 积分系统（状态: 已实现，docs/prd/billing/points.md）
-- ✅ Subscription History 订阅历史（状态: 部分实现，docs/prd/billing/subscription-history.md）
+- ✅ Subscription History 订阅历史（状态: 部分实现，docs/prd/billing/subscription.md）
 - ✅ Realm 管理系统（状态: 已实现）
 - ✅ 用户管理系统（状态: 已实现）
 - ❌ Shopify Shop 和 API 凭据（状态: 待配置）
@@ -435,13 +435,13 @@ subscription_id -> points_credit_ledger -> user_id  ❌
 - [Shopify Storefront API Reference](https://shopify.dev/docs/api/storefront)
 
 ### 10.2 相关用户故事
-- 📄 [docs/user-stories/08-shopify-pay-user-stories.md](/docs/user-stories/08-shopify-pay-user-stories.md) - Shopify Pay 用户故事
-- 📄 [docs/user-stories/07-payment-provider-user-stories.md](/docs/user-stories/07-payment-provider-user-stories.md) - 通用支付平台配置用户故事
+- 📄 [docs/user-stories/billing/shopify-pay.md](/docs/user-stories/billing/shopify-pay.md) - Shopify Pay 用户故事
+- 📄 [docs/user-stories/billing/payment-provider.md](/docs/user-stories/billing/payment-provider.md) - 通用支付平台配置用户故事
 
 ### 10.3 相关 PRD
-- [Billing 订阅计费 PRD](/docs/prd/billing/billing.md) - 现有订阅计费系统
+- [Billing 订阅计费 PRD](/docs/prd/billing/subscription.md) - 现有订阅计费系统
 - [Points 积分系统 PRD](/docs/prd/billing/points.md) - 积分发放和回收逻辑
-- [Subscription History PRD](/docs/prd/billing/subscription-history.md) - 订阅变更历史
+- [Subscription History PRD](/docs/prd/billing/subscription.md) - 订阅变更历史
 - [Stripe Payment PRD](/docs/prd/billing/stripe-payment.md) - Stripe 支付集成参考
 
 ### 10.4 技术资源

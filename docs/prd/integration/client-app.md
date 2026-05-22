@@ -10,7 +10,7 @@
 
 ### 1.1 Third-Party App 用户故事
 
-- 📄 [docs/user-stories/04-third-party-app-user-stories.md](/docs/user-stories/04-third-party-app-user-stories.md)
+- 📄 [docs/user-stories/auth/third-party-app.md](/docs/user-stories/auth/third-party-app.md)
   - **[US-TP-001] 创建 Client App** (P0): 作为 Realm Admin，我想要创建新的 Client App，以便添加新的接入应用
   - **[US-TP-002] 查看 Client App 列表** (P0): 作为 Realm Admin，我想要查看所有 Client App，以便管理系统中的应用
   - **[US-TP-003] 查看 Client App 详情** (P0): 作为 Realm Admin，我想要查看 Client App 详情，以便了解应用配置
@@ -19,7 +19,7 @@
 
 ### 1.2 Client App Settings 用户故事
 
-- 📄 [docs/user-stories/client-app-settings.md](/docs/user-stories/client-app-settings.md)
+- 📄 [docs/user-stories/auth/client-app-settings.md](/docs/user-stories/auth/client-app-settings.md)
   - **配置 OAuth 2.0 设置** (P0): 作为 Realm Admin，我想要配置 OAuth 2.0 设置（redirect_uris、client_secret、enabled），以便确保应用安全接入
   - **配置会话设置** (P0): 作为 Realm Admin，我想要配置会话 TTL 和滑动续期策略，以便在用户活跃时自动延长会话
   - **配置应用外观** (P1): 作为 Realm Admin，我想要配置应用图标，以便提升用户体验

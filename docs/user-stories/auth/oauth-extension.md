@@ -84,7 +84,7 @@ And 列表不再显示该 Provider
 
 ## 📖 相关PRD
 
-- **OAuth Provider**: [docs/prd/auth/oauth-provider.md](/docs/prd/auth/oauth-provider.md)
-- **OAuth 第三方集成**: [docs/prd/auth/oauth-third-party-integration.md](/docs/prd/auth/oauth-third-party-integration.md)
+- **OAuth Provider**: [docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)
+- **OAuth 第三方集成**: [docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)
 
 ---

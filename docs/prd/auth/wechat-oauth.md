@@ -10,15 +10,15 @@
 > **说明**: 详细的用户故事和验收标准请查看 `docs/user-stories/` 目录中的对应文件。
 
 ### 1.1 租户管理员用户故事
-- 📄 `docs/user-stories/02-realm-admin-user-stories-oauth-extension.md`
+- 📄 `docs/user-stories/auth/oauth-extension.md`
   - **[US-RA-010] OAuth Provider 配置管理** (P0): 作为 Realm Admin,我想要管理 OAuth Provider 配置（Google、GitHub、Facebook、Apple、WeChat）,以便用户可以使用第三方登录
 
 ### 1.2 租户用户用户故事
-- 📄 `docs/user-stories/03-regular-user-user-stories.md`
+- 📄 `docs/user-stories/core/regular-user.md`
   - **[US-RU-003] OAuth 第三方登录** (P1): 作为普通用户,我想要使用第三方账号（Google、GitHub、Facebook、Apple、WeChat）登录,以便无需记忆额外密码
 
 ### 1.3 微信专属用户故事
-- 📄 `docs/user-stories/10-wechat-oauth-user-stories.md`
+- 📄 `docs/user-stories/auth/wechat-oauth.md`
   - **[US-RA-011] WeChat OAuth Provider 配置** (P1): 作为 Realm Admin,我想要配置 WeChat OAuth Provider,以便用户可以使用微信登录
   - **[US-RA-012] WeChat Mini Program Provider 配置** (P1): 作为 Realm Admin,我想要配置 WeChat Mini Program Provider,以便小程序用户可以登录
   - **[US-RU-010] 微信网站应用登录** (P1): 作为普通用户,我想要使用微信扫码登录,以便快速访问系统
@@ -228,9 +228,9 @@ Herald 项目需要接入微信账号体系，支持两种登录方式：
 ## 10. 参考资料
 
 - 相关用户故事:
-  - [02-realm-admin-user-stories-oauth-extension.md](/docs/user-stories/02-realm-admin-user-stories-oauth-extension.md)
-  - [03-regular-user-user-stories.md](/docs/user-stories/03-regular-user-user-stories.md)
-  - [10-wechat-oauth-user-stories.md](/docs/user-stories/10-wechat-oauth-user-stories.md)
+  - [oauth-extension.md](/docs/user-stories/auth/oauth-extension.md)
+  - [regular-user.md](/docs/user-stories/core/regular-user.md)
+  - [wechat-oauth.md](/docs/user-stories/auth/wechat-oauth.md)
 - 相关设计文档: `.ai/future/wechat.md`
 - 微信开放平台文档: https://open.weixin.qq.com/cgi-bin/showdocument?action=dir_list&t=resource/res_list&verify=1&id=open1419316505&token=&lang=zh_CN
 - 微信小程序登录文档: https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/user-info/phone-number/getPhoneNumber.html

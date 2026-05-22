@@ -1,4 +1,4 @@
-# Billing 订阅计费产品需求文档 (PRD)
+# 订阅计费产品需求文档 (PRD)
 
 **创建时间**: 2025-01-30
 **状态**: Partially Implemented
@@ -10,12 +10,12 @@
 
 ### 1.1 Realm Admin 用户故事
 
-- 📄 [docs/user-stories/02-realm-admin-user-stories.md](/docs/user-stories/02-realm-admin-user-stories.md)
+- 📄 [docs/user-stories/core/realm-admin.md](/docs/user-stories/core/realm-admin.md)
   - **订阅套餐管理** (P0): 作为 Realm Admin，我想要管理订阅套餐，以便为用户提供不同的订阅选项
 
 ### 1.2 Billing 用户故事
 
-- 📄 [docs/user-stories/06-billing-user-stories.md](/docs/user-stories/06-billing-user-stories.md)
+- 📄 [docs/user-stories/billing/subscription.md](/docs/user-stories/billing/subscription.md)
   - **[US-BI-001] 创建订阅套餐** (P0): 作为 Realm Admin，我想要在 Product 上下文中创建订阅套餐，以便定义价格和计费信息
   - **[US-BI-002] 编辑订阅套餐** (P0): 作为 Realm Admin，我想要在 Product 上下文中编辑订阅套餐，以便更新价格和描述
   - **[US-BI-003] 配置 Plan 的支付平台映射** (P0): 作为 Realm Admin，我想要为 Plan 配置一个或多个支付平台映射，以便该套餐可以在不同支付平台上售卖
@@ -23,10 +23,14 @@
   - **[US-BI-005] 分配套餐到 Client App** (P0): 作为 Realm Admin，我想要将套餐分配到 Client App，以便控制哪些应用可以提供哪些订阅
   - **[US-BI-006] 查看订阅列表** (P0): 作为 Realm Admin，我想要查看订阅列表，以便了解订阅情况
   - **[US-BI-007] 第三方应用查询套餐状态** (P0): 作为 Third-party App，我想要通过 SDK 查询用户的订阅和套餐状态，以及可用的支付平台选项
-  - **[US-BI-008] 查看订阅变更历史** (P1): 作为 Realm Admin，我想要查看所有用户的订阅变更历史
-  - **[US-BI-009] 查看自己的订阅变更历史** (P1): 作为 Regular User，我想要查看我的订阅变更历史
 
-### 1.3 用户故事优先级汇总
+### 1.3 订阅变更历史用户故事
+
+- 📄 [docs/user-stories/billing/subscription.md](/docs/user-stories/billing/subscription.md)
+  - **[US-BI-008] 查看订阅变更历史** (P1): 作为 Realm Admin，我想要查看所有用户的订阅变更历史，以便监控和管理订阅情况
+  - **[US-BI-009] 查看自己的订阅变更历史** (P1): 作为 Regular User，我想要查看我的订阅变更历史，以便了解订阅的变更轨迹
+
+### 1.4 用户故事优先级汇总
 
 | 优先级 | 用户故事数量 | 关键故事 |
 |--------|------------|---------|
@@ -47,6 +51,12 @@
 - ✅ 套餐基本信息（name、title、description、type、price、currency、checkout_url）
 - ✅ 前端套餐管理页面
 - ✅ 前端套餐分配对话框
+- ✅ 查询单个订阅的变更时间线
+- ✅ 按用户、套餐、时间等维度查询订阅历史（Realm Admin）
+- ✅ 显示变更类型（创建、升级、降级、取消、续费等）
+- ✅ 显示变更前后的状态对比
+- ✅ 前端历史记录页面（全局查询和单订阅详情）
+- ✅ 权限控制（Realm Admin 可查看所有历史，Regular User 只能查看自己的）
 
 ### 2.2 不包含功能 (Out of Scope)
 
@@ -55,12 +65,16 @@
 - ❌ **支付方式管理** (原因: 前后端均未实现)
 - ❌ **计费统计和报表** (原因: 前后端均未实现)
 - ❌ **通知系统** (原因: 邮件/短信通知未实现)
+- ❌ **支付事件历史** (原因: 支付事件由支付平台处理，Herald 不负责记录)
+- ❌ **导出历史记录** (原因: 属于 P2 功能，暂不实现)
+- ❌ **历史记录审计日志** (原因: 可选扩展功能，暂不实现)
+- ❌ **历史记录统计分析** (原因: 属于计费统计报表功能，单独规划)
 
 **注意**：
 - ✅ **退款功能**：支付平台处理金额退款，Herald 处理积分回收（详见 `docs/prd/billing/points.md` 第 5.8 节）
 - ✅ **订阅管理**：即使前后端订阅管理功能未完整实现，积分系统仍需定义订阅变更的积分处理规则（详见 `docs/prd/billing/points.md` 第 5.9 节）
 
-### 2.2 新增状态说明
+### 2.3 新增状态说明
 
 #### Past Due (逾期)
 - **触发条件**: 收到 `subscription.past_due` 事件
@@ -92,7 +106,7 @@
 - **访问权限**: 不受影响（退款不影响访问权限）
 - **处理方式**: 仅记录日志用于审计，不撤销访问权限
 
-### 2.3 依赖项
+### 2.4 依赖项
 
 - ✅ **Realm 系统** (状态: 已实现) - Billing 功能属于 Realm 级别
 - ✅ **Client App 系统** (状态: 已实现) - 套餐分配到 Client App
@@ -103,7 +117,7 @@
 
 ## 3. 需求概述
 
-Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理和计费方案功能。本文档描述支付平台配置、订阅套餐管理、套餐分配、订阅升级/降级等功能需求。
+Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理和计费方案功能。本文档描述支付平台配置、订阅套餐管理、套餐分配、订阅升级/降级、订阅变更历史等功能需求。
 
 **关键特性**：
 - 支持多种支付平台（Creem）
@@ -112,6 +126,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 订阅升级/降级（按比例计费）
 - Webhook 集成和通知系统
 - 完整的计费统计和报表
+- 完整的订阅变更历史记录
 
 **架构说明**：
 - ⭐ **简化模型**：Herald 不管理套餐的功能（features）和配额（quotas），由第三方应用自行管理
@@ -154,6 +169,10 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - ❌ **支付方式管理**：前后端均未实现
 - ❌ **计费统计和报表**：前后端均未实现
 - ❌ **通知系统**：邮件/短信通知未实现
+- ❌ **订阅变更历史后端 API**：需要实现历史查询接口
+- ❌ **订阅变更历史前端页面**：需要实现历史记录展示
+- ❌ **订阅变更历史数据模型**：需要新建 subscription_history 表
+- ❌ **订阅变更历史记录创建**：需要在订阅变更时创建历史记录
 
 ### 4.4 待重构内容
 
@@ -181,7 +200,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 支付流程由第三方支付平台（Creem）处理，Herald 只负责套餐配置和分发
 - 多支付平台重构是模型升级，不是简单的实现细节重构
 
-### 4.1 ⚠️ 安全警告
+### 4.5 安全警告
 
 **P1 - 权限检查缺失**：
 
@@ -208,9 +227,9 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 ## 5. 功能需求
 
-### 3.1 支付平台配置
+### 5.1 支付平台配置
 
-#### 3.1.1 支持的支付平台
+#### 5.1.1 支持的支付平台
 
 **当前支持**：
 - ✅ **Creem**：模拟支付平台（用于开发和测试）
@@ -219,7 +238,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - ❌ **Stripe**：真实支付平台
 - ❌ **支付宝/微信支付**：中国支付平台
 
-#### 3.1.2 配置支付平台
+#### 5.1.2 配置支付平台
 
 **路由**：`/$realmId/billing/payment-providers`
 
@@ -234,7 +253,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 只在创建和更新时显示 Secret，后续只显示部分掩码
 - 删除支付平台前需检查是否有活跃订阅
 
-#### 3.1.3 Webhook 端点配置
+#### 5.1.3 Webhook 端点配置
 
 **架构说明**：
 系统采用 realm 隔离的 webhook 端点架构，每个 realm 使用独立的 webhook URL。这种设计提供了更好的安全性、可扩展性和多租户隔离。
@@ -279,9 +298,9 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - ✅ 已完成：checkout session 创建时自动设置正确的 webhook URL
 - ⚠️ 注意：需要在支付平台（Creem/Stripe）Dashboard 中重新配置 webhook URL
 
-### 3.2 订阅套餐管理
+### 5.2 订阅套餐管理
 
-#### 3.2.1 套餐模型（多支付平台支持）
+#### 5.2.1 套餐模型（多支付平台支持）
 
 **核心模型变更**：
 - Plan 表示业务套餐本身，不包含支付平台映射信息
@@ -319,7 +338,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - Plan Payment Provider 是 Plan 的下属配置对象，表示支付平台映射
 - Product 生命周期与管理能力不在本文档主定义，详见 `docs/prd/billing/product-catalog.md`
 
-**❌ 已移除字段**（简化模型 + 多支付平台重构）：
+**已移除字段**（简化模型 + 多支付平台重构）：
 - ❌ `features: Record<string, boolean>` - 功能开关（由第三方应用管理）
 - ❌ `quotas: Record<string, number>` - 配额限制（由第三方应用管理）
 - ❌ `payment_provider` - 已从 Plan 主表移除，迁移到 Plan Payment Provider 映射表
@@ -333,7 +352,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 支付平台映射独立管理，一个 Plan 可以配置多个支付平台
 - 不需要为每个支付平台复制 Plan
 
-#### 3.2.2 创建订阅套餐
+#### 5.2.2 创建订阅套餐
 
 **路由**：`/$realmId/billing`
 
@@ -358,7 +377,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 支付平台映射通过独立的配置界面管理
 - 实际支付流程使用的 checkout URL 由各支付平台映射配置决定
 
-#### 3.2.3 配置 Plan 的支付平台映射
+#### 5.2.3 配置 Plan 的支付平台映射
 
 **目的**：为 Plan 配置一个或多个支付平台映射，使该套餐可以在不同支付平台上售卖。
 
@@ -401,7 +420,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 删除失败（有活跃订阅）：显示错误消息 "Cannot delete payment provider mapping with X active subscriptions"
 - 禁用成功：显示提示消息 "Existing subscriptions will continue to work, new users cannot select this provider"
 
-#### 3.2.4 查看订阅套餐列表
+#### 5.2.4 查看订阅套餐列表
 
 **路由**：`/$realmId/billing`
 
@@ -427,19 +446,19 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 如果没有配置支付平台，显示 "Not configured" 并高亮提示
 - 点击支付平台列可以跳转到支付平台配置页面
 
-**❌ 已移除列**（简化模型 + 多支付平台重构）：
+**已移除列**（简化模型 + 多支付平台重构）：
 - ❌ Features - 功能开关（由第三方应用管理）
 - ❌ Quotas - 配额限制（由第三方应用管理）
 - ❌ Provider - 单一支付平台列（已替换为 Payment Providers 多平台列）
 
-#### 3.2.5 编辑订阅套餐
+#### 5.2.5 编辑订阅套餐
 
 **说明**：
 - `name` 字段不可修改（套餐的唯一标识符）
 - 更新价格会影响新订阅用户，已订阅用户保持原价格直到续费
 - 更新 `checkout_url` 会立即生效，所有新订阅用户使用新 URL
 
-#### 3.2.6 删除订阅套餐
+#### 5.2.6 删除订阅套餐
 
 **删除限制**：
 - ❌ 无法删除有活跃订阅的套餐
@@ -448,23 +467,23 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 **错误响应**：
 
-### 3.3 套餐分配管理
+### 5.3 套餐分配管理
 
-#### 3.3.1 分配套餐到 Client App
+#### 5.3.1 分配套餐到 Client App
 
 **目的**：允许 Realm Admin 为特定的 Client App 分配可用套餐，最终用户只能看到已分配的套餐。
 
-#### 3.3.2 查看套餐分配
+#### 5.3.2 查看套餐分配
 
-#### 3.3.3 移除套餐分配
+#### 5.3.3 移除套餐分配
 
 **说明**：
 - 移除分配不会影响已订阅用户
 - 移除分配后，新用户无法看到该套餐
 
-### 3.4 订阅管理（待实现）
+### 5.4 订阅管理（待实现）
 
-#### 3.4.1 创建订阅
+#### 5.4.1 创建订阅
 
 **流程**：
 1. 用户在第三方应用中选择套餐
@@ -474,26 +493,26 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 5. Creem 发送 Webhook 通知 Herald
 6. Herald 创建订阅记录
 
-#### 3.4.2 升级订阅
+#### 5.4.2 升级订阅
 
 **按比例计费（Proration）**：
 
-#### 3.4.3 降级订阅
+#### 5.4.3 降级订阅
 
 **降级规则**：
 - 降级在**下个计费周期**生效（当前周期保持原套餐）
 - 如果当前用户数超过目标套餐限制，不允许降级
 
-#### 3.4.4 取消订阅
+#### 5.4.4 取消订阅
 
 **取消规则**：
 - 取消在**当前计费周期结束**生效
 - 取消后用户可以继续使用直到周期结束
 - 取消后不自动删除数据，数据保留期由第三方应用决定
 
-### 3.5 Webhook 处理（已实现）
+### 5.5 Webhook 处理（已实现）
 
-#### 3.5.1 支持的 Webhook 事件
+#### 5.5.1 支持的 Webhook 事件
 
 **Creem Webhook 事件**（已实现）：
 - `checkout.completed` - 一次性支付成功
@@ -505,7 +524,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - `subscription.expired` - 订阅过期
 - `subscription.update` - 订阅更新（升级/降级）
 
-#### 3.5.2 Webhook 端点
+#### 5.5.2 Webhook 端点
 
 **架构说明**：
 
@@ -524,7 +543,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - ✅ 订阅状态解析和转换
 - ✅ 状态转换验证（`can_transition_to()`）
 
-#### 3.5.3 积分充值集成
+#### 5.5.3 积分充值集成
 
 当订阅创建或续费时，billing webhook handler 会自动调用积分系统进行充值：
 
@@ -551,18 +570,109 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 使用乐观锁防止并发问题
 - 充值失败不影响订阅状态
 
-### 3.6 计费统计和报表（待实现）
+### 5.6 计费统计和报表（待实现）
 
-#### 3.6.1 订阅总览
+#### 5.6.1 订阅总览
 
-#### 3.6.2 套餐分布统计
+#### 5.6.2 套餐分布统计
 
-#### 3.6.3 收入趋势
+#### 5.6.3 收入趋势
 
 **Query Parameters**:
 - `period`: 1m, 3m, 6m, 12m（统计周期）
 
-### 6.1 权限要求
+---
+
+## 6. 订阅变更历史
+
+### 6.1 功能描述
+
+Subscription History 功能提供了订阅变更历史记录的查询和展示能力。通过记录每次订阅变更的详细信息（包括变更类型、操作者、变更前后状态等），帮助 Realm Admin 监控和管理订阅情况，同时帮助 Regular User 了解自己的订阅变更轨迹。
+
+### 6.2 目标用户
+
+- **Realm Admin**：查看和管理 Realm 内所有用户的订阅变更历史
+- **Regular User**：查看自己的订阅变更历史
+
+### 6.3 关键特性
+
+- **完整的变更时间线**：记录从订阅创建到当前的所有变更事件
+- **多维度筛选**：支持按用户、套餐、变更类型、时间等维度筛选
+- **变更前后对比**：清晰展示每次变更的前后状态
+- **权限控制**：Realm Admin 可查看所有历史，Regular User 只能查看自己的
+- **变更类型丰富**：支持创建、升级、降级、取消、过期、续费、激活、计费周期变更等多种变更类型
+
+### 6.4 业务价值
+
+- **透明度**：用户可以清晰了解订阅的变更历史和原因
+- **可追溯性**：Realm Admin 可以追踪任何订阅变更的来源和时间
+- **问题排查**：当出现订阅异常时，可以通过历史记录快速定位问题
+- **运营洞察**：通过历史数据分析用户的订阅行为模式
+
+### 6.5 单订阅历史
+
+#### 功能描述
+展示单个订阅从创建到当前的所有变更事件，按时间倒序排列。
+
+#### 需求细节
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| Event ID | 事件唯一标识符 | evt_1234567890 |
+| Event Type | 变更类型 | created, upgraded, downgraded, canceled, renewed, reactivated |
+| Timestamp | 变更时间 | 2025-01-15 10:30:00 UTC |
+| Actor | 操作者 | user@example.com, system |
+| Changes | 变更详情 | Plan: basic → pro |
+| Previous State | 变更前状态 | { "status": "active", "plan": "basic" } |
+| New State | 变更后状态 | { "status": "active", "plan": "pro" } |
+
+#### 变更类型定义
+
+| 类型 | 说明 | 触发场景 |
+|------|------|---------|
+| `created` | 创建订阅 | 用户首次订阅套餐 |
+| `upgraded` | 升级套餐 | 用户从低级套餐升级到高级套餐 |
+| `downgraded` | 降级套餐 | 用户从高级套餐降级到低级套餐 |
+| `canceled` | 取消订阅 | 用户主动取消订阅 |
+| `expired` | 订阅过期 | 订阅因未续费而过期 |
+| `renewed` | 续费订阅 | 订阅成功续费 |
+| `reactivated` | 激活订阅 | 已取消的订阅重新激活 |
+| `billing_period_changed` | 计费周期变更 | 从月付改为年付或反之 |
+
+### 6.6 全局历史查询（Realm Admin）
+
+#### 功能描述
+Realm Admin 可以查询 Realm 内所有订阅的历史记录，支持多维度筛选和分页。
+
+#### 筛选条件
+
+| 筛选维度 | 字段名 | 类型 | 示例 |
+|---------|--------|------|------|
+| 用户 | `user_id` | UUID | 123e4567-e89b-12d3-a456-426614174000 |
+| 套餐 | `plan_id` | UUID | 987e6543-e21b-43d3-b456-426614174999 |
+| 变更类型 | `event_type` | enum | created, upgraded, canceled |
+| 时间范围 | `from_date`, `to_date` | datetime | 2025-01-01, 2025-01-31 |
+| 订阅状态 | `subscription_status` | enum | active, canceled, past_due |
+
+#### 分页参数
+| 参数 | 说明 | 示例 |
+|------|------|------|
+| `page` | 页码 | 1 |
+| `page_size` | 每页数量 | 20 |
+| `sort_by` | 排序字段 | timestamp |
+| `sort_order` | 排序方向 | desc |
+
+### 6.7 订阅历史权限控制
+
+| 角色 | 可访问范围 | 说明 |
+|------|----------|------|
+| Realm Admin | Realm 内所有订阅历史 | 可查看和筛选所有用户的订阅变更 |
+| Regular User | 仅限自己的订阅历史 | 只能查看自己订阅的变更记录 |
+
+---
+
+## 7. 非功能需求
+
+### 7.1 权限要求
 
 | 操作 | 需要权限 | 说明 |
 |------|---------|------|
@@ -573,8 +683,10 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 | 分配套餐 | `billing.manage` | Realm Admin |
 | 查看订阅统计 | `billing.view` | Realm Admin |
 | 管理订阅 | `billing.manage` | Realm Admin |
+| 查看订阅变更历史（Realm Admin） | `billing.view` | Realm Admin |
+| 查看自己的订阅变更历史 | 认证用户 | Regular User |
 
-### 6.2 数据加密
+### 7.2 数据加密
 
 **敏感数据加密存储**：
 - ✅ API Secret Key：AES-256-GCM 加密
@@ -582,9 +694,29 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - ✅ 只在创建和更新时显示完整 Secret
 - ✅ 查询时只显示部分掩码（如 `sk_test_...123`）
 
+### 7.3 性能要求
+
+| 指标 | 要求 |
+|------|------|
+| 单订阅历史查询响应时间 | < 500ms |
+| 全局历史查询响应时间（分页） | < 1000ms |
+| 支持的历史记录数量 | 无限制（基于分页） |
+
+### 7.4 数据一致性
+
+- 订阅变更时必须同步创建历史记录
+- 历史记录一旦创建不可修改
+- 确保变更前后的状态准确性
+
+### 7.5 安全性
+
+- Realm Admin 可查看所有历史记录
+- Regular User 只能查看自己的历史记录
+- 敏感信息（如支付详情）不记录在历史中
+
 ---
 
-## 6. API 相关约束
+## 8. API 相关约束
 
 **状态**: 必填
 
@@ -602,7 +734,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 ---
 
-## 7. 前端/交互约束
+## 9. 前端/交互约束
 
 **状态**: 必填
 
@@ -647,7 +779,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 ---
 
-## 8. 技术设计承接
+## 10. 技术设计承接
 
 **状态**: 必填
 
@@ -671,18 +803,43 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 ---
 
-## 9. 相关文件索引
+## 11. 相关文件索引
 
 - 相关实现文件请以本功能对应的 `backend/`、`frontend/`、`demo/` 目录和现有设计文档为准。
 - 若需补充精确文件清单，应在技术设计文档中维护，避免在 PRD 中混入实现级细节。
 
+### 11.1 后端文件（待创建）
+
+| 文件路径 | 说明 | 状态 |
+|---------|------|------|
+| `backend/core/src/entity/subscription_history.rs` | Entity 模型 | ❌ 未创建 |
+
+### 11.2 前端文件（待创建）
+
+| 文件路径 | 说明 | 状态 |
+|---------|------|------|
+| `frontend/src/routes/$realmId/manage/subscription-history.tsx` | 全局历史页面 | ❌ 未创建 |
+| `frontend/src/routes/$realmId/account/subscription/$subscriptionId/history.tsx` | 单订阅历史页面 | ❌ 未创建 |
+| `frontend/src/components/billing/subscription-history-list.tsx` | 历史列表组件 | ❌ 未创建 |
+| `frontend/src/components/billing/subscription-history-filter.tsx` | 筛选组件 | ❌ 未创建 |
+| `frontend/src/components/billing/subscription-timeline.tsx` | 时间线组件 | ❌ 未创建 |
+| `frontend/src/components/billing/history-event-badge.tsx` | 事件标签组件 | ❌ 未创建 |
+
+### 11.3 测试文件（待创建）
+
+| 文件路径 | 说明 | 状态 |
+|---------|------|------|
+| `backend/test-support/tests/subscription-history-scenarios.md` | 后端场景测试 | ❌ 未创建 |
+| `demo/e2e/subscription-history.spec.ts` | Demo/E2E 测试 | ❌ 未创建 |
+
 ---
 
-## 10. 参考资料
+## 12. 参考资料
 
-- 用户故事: `docs/user-stories/06-billing-user-stories.md`
-- 订阅变更历史: `docs/prd/subscription-history.md` - 订阅变更历史功能 PRD
+- 用户故事: `docs/user-stories/billing/subscription.md`
 - 后端开发指南: `../../spec/backend/development.md`
 - 前端开发指南: `../../spec/frontend/development.md`
 - 权限管理: `docs/prd/permissions.md`
 - Client App 管理: `docs/prd/client-app.md`
+- 现有订阅模型: `backend/core/src/entity/subscription.rs`
+- 现有套餐模型: `backend/core/src/entity/plan.rs`

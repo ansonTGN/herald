@@ -11,7 +11,7 @@
 
 ### 1.1 Product 管理用户故事
 
-- 📄 [docs/user-stories/product-management.md](/docs/user-stories/product-management.md)
+- 📄 [docs/user-stories/billing/product-management.md](/docs/user-stories/billing/product-management.md)
   - **[US-PR-001] 创建 Product** (P0): 作为 Realm Admin，我想要创建 Product，以便将相关的套餐组织在一起
   - **[US-PR-002] 编辑 Product** (P0): 作为 Realm Admin，我想要编辑 Product 信息，以便更新产品描述
   - **[US-PR-003] 查看 Product 列表** (P0): 作为 Realm Admin，我想要查看所有 Product 列表，以便了解产品目录结构
@@ -270,10 +270,10 @@ Product 是 Realm 下的正式业务对象，具有以下特征：
 
 ## 9. 相关文件索引
 
-- **用户故事**: [docs/user-stories/product-management.md](/docs/user-stories/product-management.md)
-- **Billing PRD**: [docs/prd/billing/billing.md](billing.md) - Billing 订阅计费产品需求文档
+- **用户故事**: [docs/user-stories/billing/product-management.md](/docs/user-stories/billing/product-management.md)
+- **Billing PRD**: [docs/prd/billing/subscription.md](billing.md) - Billing 订阅计费产品需求文档
 - **Points PRD**: [docs/prd/billing/points.md](points.md) - Points 积分系统产品需求文档（当前仍以 Plan 级配置为主）
-- **用户故事**: [docs/user-stories/06-billing-user-stories.md](/docs/user-stories/06-billing-user-stories.md) - Billing 原有用户故事
+- **用户故事**: [docs/user-stories/billing/subscription.md](/docs/user-stories/billing/subscription.md) - Billing 原有用户故事
 - **后端开发指南**: [../../spec/backend/development.md](/spec/backend/development.md)
 - **前端开发指南**: [../../spec/frontend/development.md](/spec/frontend/development.md)
 - **权限管理**: [docs/prd/auth/permissions.md](/docs/prd/auth/permissions.md)
@@ -283,7 +283,7 @@ Product 是 Realm 下的正式业务对象，具有以下特征：
 ## 10. 参考资料
 
 - 用户故事：请参考对应的 `docs/user-stories/` 文档。
-- 相关 PRD：请参考 `docs/prd/00-index.md` 与相邻业务域文档。
+- 相关 PRD：请参考 `docs/prd/index.md` 与相邻业务域文档。
 - 技术设计：如需实现细节，请补充或引用 `docs/design/`、`.ai/design/` 或接口说明。
 - 本文档已按最新 `/t-prd` 分层要求收敛：PRD 仅保留业务语义、范围、规则、约束与验收目标。
 

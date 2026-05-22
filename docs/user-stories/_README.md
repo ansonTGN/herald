@@ -4,22 +4,24 @@
 
 ---
 
-## 文件结构
+## 目录结构
 
-| 文件 | 说明 |
-|------|------|
-| [`_roles.md`](/docs/user-stories/_roles.md) | **统一角色定义参考**（新增角色/修改权限时更新本文档） |
-| `_README.md` | 本文档 |
-| `01-admin-realm-user-stories.md` | 主管理员用户故事 |
-| `02-realm-admin-user-stories.md` | 次管理员用户故事 |
-| `03-regular-user-user-stories.md` | 普通用户用户故事 |
-| `04-third-party-app-user-stories.md` | 第三方应用用户故事 |
+```
+docs/user-stories/
+├── index.md              # 用户故事索引（含全部 US-ID 对照表）
+├── _README.md            # 本文档
+├── _roles.md             # 统一角色定义参考
+├── core/                 # 核心功能
+├── auth/                 # 认证授权
+├── billing/              # 计费相关
+└── integration/          # 集成扩展
+```
 
 ---
 
 ## 编写新用户故事
 
-1. 参考 [`_roles.md`](/docs/user-stories/_roles.md) 确认角色定义
+1. 参考 [`_roles.md`](_roles.md) 确认角色定义
 2. 遵循 [`spec/product/user-story.md`](/spec/product/user-story.md) 的 INVEST 原则
 3. 使用 GWT 格式编写验收标准
 4. 在用户故事文件开头引用 `_roles.md` 中的对应角色
@@ -30,7 +32,7 @@
 ### 故事 1：用户管理
 
 **【用户故事】**
-**作为**：主管理员（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**作为**：主管理员（详见 [docs/user-stories/_roles.md](_roles.md)）
 **我希望**：能够查看所有Realm的用户
 **从而**：统一管控系统用户访问权限
 ```
@@ -43,7 +45,7 @@
 
 更新角色定义时的步骤：
 
-1. **更新** [`_roles.md`](/docs/user-stories/_roles.md) 中的角色定义
+1. **更新** [`_roles.md`](_roles.md) 中的角色定义
 2. **同步代码实现**：
    - 前端：`frontend/src/auth.tsx` 的 `UserRole` 枚举
    - 后端：`api/src/application/http/admin/middleware.rs` 的权限校验逻辑
@@ -51,14 +53,13 @@
 
 ### 新增用户故事
 
-- 在对应角色文件中追加新故事
-- 或创建新文件（按编号 05、06...）
-- 确保引用 [`_roles.md`](/docs/user-stories/_roles.md) 中的角色定义
+- 在对应领域子目录的文件中追加新故事
+- 确保引用 [`_roles.md`](_roles.md) 中的角色定义
 
 ### 禁止事项
 
 - ❌ 在单个用户故事文件中重复定义角色
-- ❌ 与 [`_roles.md`](/docs/user-stories/_roles.md) 中的定义不一致
+- ❌ 与 [`_roles.md`](_roles.md) 中的定义不一致
 - ❌ 直接在用户故事中硬编码角色权限详情
 
 ---
@@ -66,4 +67,6 @@
 ## 相关文档
 
 - [`spec/product/user-story.md`](/spec/product/user-story.md) - 用户故事编写规范
-- [`_roles.md`](/docs/user-stories/_roles.md) - 统一角色定义参考
+- [`_roles.md`](_roles.md) - 统一角色定义参考
+- [`index.md`](index.md) - 用户故事索引
+- [`docs/prd/index.md`](/docs/prd/index.md) - PRD 文档索引

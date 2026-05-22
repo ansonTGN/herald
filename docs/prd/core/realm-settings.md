@@ -11,7 +11,7 @@
 
 ### 1.1 Realm Admin 用户故事
 
-- 📄 [docs/user-stories/02-realm-admin-user-stories.md](/docs/user-stories/02-realm-admin-user-stories.md)
+- 📄 [docs/user-stories/core/realm-admin.md](/docs/user-stories/core/realm-admin.md)
   - **[US-RA-008] 配置 Realm 设置** (P0): 作为 Realm Admin，我想要配置 Realm 设置（Turnstile、注册策略、OAuth Provider），以便管理本 Realm 的安全和访问控制
   - **[US-RA-013] 配置 Realm 邮件服务** (P0): 作为 Realm Admin，我想要配置邮件发送方式（Resend API 或 SMTP），以便让本 Realm 独立发送系统邮件
   - **[US-RA-014] 发送测试邮件** (P1): 作为 Realm Admin，我想要发送测试邮件验证配置正确性

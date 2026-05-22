@@ -399,7 +399,7 @@ Then 我可以根据数据决定优先使用的平台
 
 ## 相关文档
 
-- **PRD**: `docs/prd/billing/billing.md` - Billing 订阅计费产品需求文档
+- **PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档
 - **PRD**: `docs/prd/billing/stripe-payment.md` - Stripe 支付集成产品需求文档
 - **技术设计**: `.ai/design/payment-provider-integration.md` - 支付平台集成技术设计（待创建）
 

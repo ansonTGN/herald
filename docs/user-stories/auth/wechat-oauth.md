@@ -277,8 +277,8 @@ And 用户可以继续使用之前的账号数据
 ## 相关文档
 
 - **PRD**: `docs/prd/auth/wechat-oauth.md` - 微信 OAuth 集成产品需求文档
-- **用户故事**: `docs/user-stories/02-realm-admin-user-stories-oauth-extension.md` - OAuth Provider 配置管理
-- **用户故事**: `docs/user-stories/03-regular-user-user-stories.md` - 普通用户 OAuth 第三方登录
+- **用户故事**: `docs/user-stories/auth/oauth-extension.md` - OAuth Provider 配置管理
+- **用户故事**: `docs/user-stories/core/regular-user.md` - 普通用户 OAuth 第三方登录
 - **技术规划**: `.ai/future/wechat.md` - 微信 OAuth 集成实施计划
 
 ---

@@ -10,7 +10,7 @@
 
 ### 1.1 Realm Admin 用户故事
 
-- 📄 [docs/user-stories/02-realm-admin-user-stories.md](/docs/user-stories/02-realm-admin-user-stories.md)
+- 📄 [docs/user-stories/core/realm-admin.md](/docs/user-stories/core/realm-admin.md)
   - **[US-RA-002] 角色定义管理** (P0): 作为 Realm Admin，我想要管理角色定义，以便定义不同的用户角色
   - **[US-RA-003] 权限定义管理** (P0): 作为 Realm Admin，我想要管理权限定义，以便定义系统权限
   - **[US-RA-004] 为角色分配权限** (P0): 作为 Realm Admin，我想要为角色分配权限，以便控制角色可访问的资源
@@ -20,7 +20,7 @@
 
 ### 1.2 内置保护用户故事
 
-- 📄 [docs/user-stories/builtin_protection.md](/docs/user-stories/builtin_protection.md)
+- 📄 [docs/user-stories/core/builtin-protection.md](/docs/user-stories/core/builtin-protection.md)
   - **默认角色和权限保护** (P0): 作为系统管理员，我希望默认的角色和权限不能被删除或修改，以便确保系统核心功能不受误操作影响
 
 ### 1.3 用户故事优先级汇总
@@ -146,5 +146,5 @@ Herald 系统实现了完整的 RBAC (基于角色的访问控制) 权限管理�
 
 - 前端开发指南: `../../spec/frontend/development.md`
 - Realm Settings 文档: `docs/prd/realm-settings.md`
-- OAuth 文档: `docs/prd/oauth-provider.md`
+- OAuth 文档: `docs/prd/auth/oauth.md`
 

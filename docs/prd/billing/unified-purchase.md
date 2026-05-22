@@ -13,26 +13,26 @@
 ### 1.1 相关故事
 
 **积分包管理**
-- `[US-PP-001]` 创建积分包，优先级 P0，来源 `docs/user-stories/10-points-package-user-stories.md`
-- `[US-PP-002]` 编辑积分包，优先级 P0，来源 `docs/user-stories/10-points-package-user-stories.md`
-- `[US-PP-003]` 配置积分包的支付平台映射，优先级 P0，来源 `docs/user-stories/10-points-package-user-stories.md`
-- `[US-PP-004]` 查看积分包列表，优先级 P0，来源 `docs/user-stories/10-points-package-user-stories.md`
-- `[US-PP-005]` 删除积分包，优先级 P1，来源 `docs/user-stories/10-points-package-user-stories.md`
+- `[US-PP-001]` 创建积分包，优先级 P0，来源 `docs/user-stories/billing/points-package.md`
+- `[US-PP-002]` 编辑积分包，优先级 P0，来源 `docs/user-stories/billing/points-package.md`
+- `[US-PP-003]` 配置积分包的支付平台映射，优先级 P0，来源 `docs/user-stories/billing/points-package.md`
+- `[US-PP-004]` 查看积分包列表，优先级 P0，来源 `docs/user-stories/billing/points-package.md`
+- `[US-PP-005]` 删除积分包，优先级 P1，来源 `docs/user-stories/billing/points-package.md`
 - 角色：Realm Admin
 - 摘要：管理员创建和管理积分包商品，用户购买积分包获得充值积分（topup_credit）
 
 **积分包购买**
-- `[US-PU-06]` 购买积分包，优先级 P0，来源 `docs/user-stories/11-points-package-purchase-user-stories.md`
-- `[US-PU-07]` 查看积分包购买记录，优先级 P1，来源 `docs/user-stories/11-points-package-purchase-user-stories.md`
-- `[US-PU-08]` 积分包与订阅购买的区别，优先级 P1，来源 `docs/user-stories/11-points-package-purchase-user-stories.md`
+- `[US-PU-06]` 购买积分包，优先级 P0，来源 `docs/user-stories/billing/points-package-purchase.md`
+- `[US-PU-07]` 查看积分包购买记录，优先级 P1，来源 `docs/user-stories/billing/points-package-purchase.md`
+- `[US-PU-08]` 积分包与订阅购买的区别，优先级 P1，来源 `docs/user-stories/billing/points-package-purchase.md`
 - 角色：Regular User
 - 摘要：用户购买积分包获得充值积分，理解积分包与订阅的区别
 
 **PaymentAttempt 支付尝试**
-- `[US-PA-001]` 创建支付尝试（订阅或积分包），优先级 P0，来源 `docs/user-stories/12-payment-attempt-user-stories.md`
-- `[US-PA-002]` 查询支付尝试状态，优先级 P0，来源 `docs/user-stories/12-payment-attempt-user-stories.md`
-- `[US-PA-003]` 处理支付成功后的履约，优先级 P0，来源 `docs/user-stories/12-payment-attempt-user-stories.md`
-- `[US-PA-004]` 关闭过期的支付尝试，优先级 P1，来源 `docs/user-stories/12-payment-attempt-user-stories.md`
+- `[US-PA-001]` 创建支付尝试（订阅或积分包），优先级 P0，来源 `docs/user-stories/billing/payment-attempt.md`
+- `[US-PA-002]` 查询支付尝试状态，优先级 P0，来源 `docs/user-stories/billing/payment-attempt.md`
+- `[US-PA-003]` 处理支付成功后的履约，优先级 P0，来源 `docs/user-stories/billing/payment-attempt.md`
+- `[US-PA-004]` 关闭过期的支付尝试，优先级 P1，来源 `docs/user-stories/billing/payment-attempt.md`
 - 角色：System
 - 摘要：统一发起式支付平台的支付流程，处理支付成功后的履约逻辑
 
@@ -450,13 +450,13 @@ Herald 当前已在 Billing 领域引入了多支付平台支持，但不同平�
 
 ### 10.1 用户故事
 
-- 积分包管理：`docs/user-stories/10-points-package-user-stories.md`
-- 积分包购买：`docs/user-stories/11-points-package-purchase-user-stories.md`
-- PaymentAttempt：`docs/user-stories/12-payment-attempt-user-stories.md`
+- 积分包管理：`docs/user-stories/billing/points-package.md`
+- 积分包购买：`docs/user-stories/billing/points-package-purchase.md`
+- PaymentAttempt：`docs/user-stories/billing/payment-attempt.md`
 
 ### 10.2 相关 PRD
 
-- Billing 订阅计费：`docs/prd/billing/billing.md`
+- Billing 订阅计费：`docs/prd/billing/subscription.md`
 - Product 编目管理：`docs/prd/billing/product-catalog.md`
 - Points 积分系统：`docs/prd/billing/points.md`
 - 微信支付集成：`docs/prd/billing/wechat-pay.md`

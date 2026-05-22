@@ -10,7 +10,7 @@
 
 ### 1.1 Admin Realm 用户故事
 
-- 📄 [docs/user-stories/01-admin-realm-user-stories.md](/docs/user-stories/01-admin-realm-user-stories.md)
+- 📄 [docs/user-stories/core/admin-realm.md](/docs/user-stories/core/admin-realm.md)
   - **[US-AR-001] 创建 Realm** (P0): 作为 Admin Realm 管理员，我想要创建新的 Realm，以便为不同组织提供独立的认证服务
   - **[US-AR-002] 查看 Realm 列表** (P0): 作为 Admin Realm 管理员，我想要查看所有 Realm，以便管理系统中的组织
   - **[US-AR-003] 查看 Realm 详情** (P1): 作为 Admin Realm 管理员，我想要查看 Realm 详情，以便了解 Realm 的配置信息
@@ -18,7 +18,7 @@
 
 ### 1.2 Realm Admin 用户故事
 
-- 📄 [docs/user-stories/02-realm-admin-user-stories.md](/docs/user-stories/02-realm-admin-user-stories.md)
+- 📄 [docs/user-stories/core/realm-admin.md](/docs/user-stories/core/realm-admin.md)
   - **[US-RA-001] Realm 隔离访问** (P0): 作为 Realm Admin，我想要只能访问自己 Realm 的资源，以便保证数据隔离
 
 ### 1.3 用户故事优先级汇总
@@ -428,6 +428,6 @@ Realm（域）是 Herald 系统中的多租户隔离单位，每个用户、客�
 - 现有功能参考:
   - Users 功能: `docs/prd/users.md`
   - Settings 功能: `docs/prd/realm-settings.md`
-  - OAuth 配置: `docs/prd/oauth-provider.md`
+  - OAuth 配置: `docs/prd/auth/oauth.md`
   - Permission 管理: `docs/prd/permissions.md`
 

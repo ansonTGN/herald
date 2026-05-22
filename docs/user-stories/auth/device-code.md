@@ -219,6 +219,6 @@ Then 系统返回错误
 - **Device Code**: [docs/prd/auth/device-code.md](/docs/prd/auth/device-code.md)
 
 ### 相关 PRD
-- OAuth 第三方集成: [docs/prd/auth/oauth-third-party-integration.md](/docs/prd/auth/oauth-third-party-integration.md)
+- OAuth 第三方集成: [docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)
 - Client App 管理: [docs/prd/integration/client-app.md](/docs/prd/integration/client-app.md)
-- OAuth Provider: [docs/prd/auth/oauth-provider.md](/docs/prd/auth/oauth-provider.md)
+- OAuth Provider: [docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)

@@ -8,55 +8,55 @@
 
 ## 1. 相关用户故事
 
-> 详细故事与验收标准请查看 `docs/user-stories/13-invoice-user-stories.md`。
+> 详细故事与验收标准请查看 `docs/user-stories/billing/invoice.md`。
 
 ### 1.1 相关故事
 
-- `[US-IV-001]` 创建发票，优先级 P0，来源 `docs/user-stories/13-invoice-user-stories.md`
+- `[US-IV-001]` 创建发票，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
   - 角色：Realm Admin
   - 摘要：创建发票草稿，添加行项目，设置费用和双方信息
 
-- `[US-IV-002]` 编辑发票草稿，优先级 P0，来源 `docs/user-stories/13-invoice-user-stories.md`
+- `[US-IV-002]` 编辑发票草稿，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
   - 角色：Realm Admin
   - 摘要：修改草稿发票的行项目、费用和双方信息
 
-- `[US-IV-003]` 查看发票列表，优先级 P0，来源 `docs/user-stories/13-invoice-user-stories.md`
+- `[US-IV-003]` 查看发票列表，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
   - 角色：Realm Admin
   - 摘要：查看本 Realm 所有发票，支持筛选和分页
 
-- `[US-IV-004]` 查看发票详情，优先级 P0，来源 `docs/user-stories/13-invoice-user-stories.md`
+- `[US-IV-004]` 查看发票详情，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
   - 角色：Realm Admin
   - 摘要：查看发票完整详情，包括行项目和状态历史
 
-- `[US-IV-005]` 开具发票，优先级 P0，来源 `docs/user-stories/13-invoice-user-stories.md`
+- `[US-IV-005]` 开具发票，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
   - 角色：Realm Admin
   - 摘要：将草稿发票正式开具（draft → issued）
 
-- `[US-IV-006]` 作废发票，优先级 P1，来源 `docs/user-stories/13-invoice-user-stories.md`
+- `[US-IV-006]` 作废发票，优先级 P1，来源 `docs/user-stories/billing/invoice.md`
   - 角色：Realm Admin
   - 摘要：作废草稿或已开具的发票
 
-- `[US-IV-007]` 标记发票已付，优先级 P0，来源 `docs/user-stories/13-invoice-user-stories.md`
+- `[US-IV-007]` 标记发票已付，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
   - 角色：Realm Admin
   - 摘要：手动将发票标记为已付款
 
-- `[US-IV-008]` 查看我的发票，优先级 P1，来源 `docs/user-stories/13-invoice-user-stories.md`
+- `[US-IV-008]` 查看我的发票，优先级 P1，来源 `docs/user-stories/billing/invoice.md`
   - 角色：Regular User
   - 摘要：查看自己的发票列表和详情
 
-- `[US-IV-009]` 系统标记逾期发票，优先级 P1，来源 `docs/user-stories/13-invoice-user-stories.md`
+- `[US-IV-009]` 系统标记逾期发票，优先级 P1，来源 `docs/user-stories/billing/invoice.md`
   - 角色：Herald 系统
   - 摘要：自动将超过到期日未支付的发票标记为逾期
 
-- `[US-IV-010]` 配置销售方信息，优先级 P0，来源 `docs/user-stories/13-invoice-user-stories.md`
+- `[US-IV-010]` 配置销售方信息，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
   - 角色：Realm Admin
   - 摘要：在 Billing 设置中配置本 Realm 的销售方信息，用户申请发票时自动填充
 
-- `[US-IV-011]` 申请发票，优先级 P0，来源 `docs/user-stories/13-invoice-user-stories.md`
+- `[US-IV-011]` 申请发票，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
   - 角色：Regular User
   - 摘要：为已付款订单或订阅申请发票
 
-- `[US-IV-012]` 审核并开具用户申请的发票，优先级 P0，来源 `docs/user-stories/13-invoice-user-stories.md`
+- `[US-IV-012]` 审核并开具用户申请的发票，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
   - 角色：Realm Admin
   - 摘要：审核用户申请的发票，确认后开具或作废
 
@@ -251,7 +251,7 @@
 
 ## 10. 参考资料
 
-- 用户故事：`docs/user-stories/13-invoice-user-stories.md`
+- 用户故事：`docs/user-stories/billing/invoice.md`
 - 设计参考：`.ai/future/invoice.md`
-- 相关 PRD：`docs/prd/billing/billing.md`
+- 相关 PRD：`docs/prd/billing/subscription.md`
 - 角色：`docs/user-stories/_roles.md`

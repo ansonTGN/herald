@@ -699,9 +699,9 @@ And 后续用户注册不再要求邮箱验证
 ## 相关文档
 
 - **PRD**: `docs/prd/auth/permissions.md` - 权限与角色管理产品需求文档
-- **PRD**: `docs/prd/billing/billing.md` - Billing 订阅计费产品需求文档
+- **PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档
 - **技术设计**: `.ai/design/fix-permission-and-sdk-impl.md` - Realm 创建权限修复技术设计
-- **用户故事**: `docs/user-stories/builtin_protection.md` - 默认角色和权限保护
-- **PRD**: `docs/prd/core/dashboard-redesign.md` - Dashboard 重设计产品需求文档
+- **用户故事**: `docs/user-stories/core/builtin-protection.md` - 默认角色和权限保护
+- **PRD**: `docs/prd/core/dashboard.md` - Dashboard 重设计产品需求文档
 - **PRD**: `docs/prd/core/realm-settings.md` - Realm Settings 产品需求文档（含邮件配置）
 - **技术设计**: `.ai/design/realm-email-config.md` - Per-Realm 邮件配置与功能开关技术设计

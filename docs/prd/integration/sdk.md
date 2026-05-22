@@ -8,19 +8,19 @@
 
 ## 1. 相关用户故事
 
-> 详细故事与验收标准请查看 `docs/user-stories/16-sdk-user-stories.md`。
+> 详细故事与验收标准请查看 `docs/user-stories/integration/sdk.md`。
 
 ### 1.1 相关故事
 
-- **[US-TP-012]** 通过 SDK 管理 Realm，优先级 P1，来源 `docs/user-stories/16-sdk-user-stories.md`
+- **[US-TP-012]** 通过 SDK 管理 Realm，优先级 P1，来源 `docs/user-stories/integration/sdk.md`
 - 角色：Third-Party App
 - 摘要：编程式创建、查询列表、查询详情 Realm
 
-- **[US-TP-013]** 通过 SDK 管理用户，优先级 P0，来源 `docs/user-stories/16-sdk-user-stories.md`
+- **[US-TP-013]** 通过 SDK 管理用户，优先级 P0，来源 `docs/user-stories/integration/sdk.md`
 - 角色：Third-Party App
 - 摘要：在指定 Realm 中创建、查询列表、查询详情用户
 
-- **[US-TP-014]** 通过 SDK 管理 Client App，优先级 P1，来源 `docs/user-stories/16-sdk-user-stories.md`
+- **[US-TP-014]** 通过 SDK 管理 Client App，优先级 P1，来源 `docs/user-stories/integration/sdk.md`
 - 角色：Third-Party App
 - 摘要：编程式创建、查询列表、查询详情 Client App
 
@@ -182,8 +182,8 @@
 
 ## 10. 参考资料
 
-- 用户故事：`docs/user-stories/16-sdk-user-stories.md`
-- 相关 PRD：`docs/prd/integration/third-party-api.md`（现有 ext API）
+- 用户故事：`docs/user-stories/integration/sdk.md`
+- 相关 PRD：`docs/prd/auth/oauth.md`（现有 ext API）
 - 相关 PRD：`docs/prd/core/realm.md`（Realm 管理）
 - 相关 PRD：`docs/prd/core/users.md`（用户管理）
 - 相关 PRD：`docs/prd/integration/client-app.md`（Client App 管理）

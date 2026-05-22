@@ -423,4 +423,4 @@ And 列表为空
 
 - **PRD**: `docs/prd/billing/points.md` - 积分系统产品需求文档
 - **用户故事**: `points-admin-manage.md` - Tenant Admin 积分管理用户故事
-- **依赖 PRD**: `docs/prd/billing/billing.md` - Billing 订阅计费产品需求文档
+- **依赖 PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档

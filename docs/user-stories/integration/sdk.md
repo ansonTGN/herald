@@ -185,5 +185,5 @@ Then 返回权限不足错误
 
 ## 📖 相关PRD
 
-- **SDK 增强**: [docs/prd/integration/sdk-improve.md](/docs/prd/integration/sdk-improve.md)
+- **SDK 增强**: [docs/prd/integration/sdk.md](/docs/prd/integration/sdk.md)
 - **Client App 管理**: [docs/prd/integration/client-app.md](/docs/prd/integration/client-app.md)

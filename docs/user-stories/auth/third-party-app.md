@@ -30,7 +30,7 @@
 - [ ] 第三方 Web SSO 教程
 
 ### 📖 相关文档
-- **产品需求文档**: [docs/prd/auth/oauth-third-party-integration.md](/docs/prd/auth/oauth-third-party-integration.md)
+- **产品需求文档**: [docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)
 - **Client Apps 管理**: [docs/prd/integration/client-app.md](/docs/prd/integration/client-app.md)
 - **权限验证**: [docs/prd/auth/permissions.md](/docs/prd/auth/permissions.md)
 
@@ -583,11 +583,11 @@ sequenceDiagram
 
 ## 📖 相关PRD
 
-- **OAuth Provider**: [docs/prd/auth/oauth-provider.md](/docs/prd/auth/oauth-provider.md)
-- **OAuth 第三方集成**: [docs/prd/auth/oauth-third-party-integration.md](/docs/prd/auth/oauth-third-party-integration.md)
-- **第三方 API**: [docs/prd/integration/third-party-api.md](/docs/prd/integration/third-party-api.md)
+- **OAuth Provider**: [docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)
+- **OAuth 第三方集成**: [docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)
+- **第三方 API**: [docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)
 - **权限验证**: [docs/prd/auth/permissions.md](/docs/prd/auth/permissions.md)
-- **计费系统**: [docs/prd/billing/billing.md](/docs/prd/billing/billing.md)
+- **计费系统**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md)
 
 ---
 

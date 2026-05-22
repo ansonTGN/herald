@@ -13,7 +13,7 @@
 - US-PU-07 依赖 US-PU-06（需要先有购买记录）
 - US-PU-08 无前置依赖，可并行实现
 - 依赖积分系统（docs/prd/billing/points.md）
-- 依赖支付平台配置（docs/user-stories/07-payment-provider-user-stories.md）
+- 依赖支付平台配置（docs/user-stories/billing/payment-provider.md）
 
 ---
 
@@ -279,6 +279,6 @@ And 系统显示订阅信息和下次续费时间
 
 - **PRD**: `docs/prd/billing/unified-purchase.md` - 统一购买架构产品需求文档
 - **PRD**: `docs/prd/billing/points.md` - 积分系统产品需求文档
-- **用户故事**: `10-points-package-user-stories.md` - 积分包管理用户故事
+- **用户故事**: `billing/points-package.md` - 积分包管理用户故事
 - **用户故事**: `points-user-view.md` - 积分查询用户故事
 - **技术方案**: `.ai/future/order.md` - 统一购买架构技术方案

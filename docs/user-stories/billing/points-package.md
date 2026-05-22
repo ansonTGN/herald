@@ -12,8 +12,8 @@
 - US-PP-002 和 US-PP-003 依赖 US-PP-001（需要先创建积分包）
 - US-PP-004 依赖 US-PP-001（需要存在积分包才能查看）
 - US-PP-005 无前置依赖，但建议在 US-PP-001 之后实现
-- 依赖 Product/Plan 编目系统（docs/user-stories/product-management.md）
-- 依赖支付平台配置（docs/user-stories/07-payment-provider-user-stories.md）
+- 依赖 Product/Plan 编目系统（docs/user-stories/billing/product-management.md）
+- 依赖支付平台配置（docs/user-stories/billing/payment-provider.md）
 
 ---
 
