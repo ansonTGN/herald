@@ -6,7 +6,7 @@
  * - US-RA-003: Permission Definition Management
  * - US-RA-004/005: Role Permission Assignment
  * - US-RA-006: User Role Assignment
- * - US-RA-010: Built-in Role and Permission Protection
+ * - US-BP-001: Built-in Role and Permission Protection
  *
  * Design Doc: .ai/design/frontend-role-and-permission-management.md
  *
@@ -16,7 +16,7 @@
  * - Phase 3: Role Definition Management (US-RA-002)
  * - Phase 4: Role Permission Assignment (US-RA-004/005)
  * - Phase 5: User Role Assignment (US-RA-006)
- * - Phase 6: Built-in Protection Mechanisms (US-RA-010)
+ * - Phase 6: Built-in Protection Mechanisms (US-BP-001)
  * - Phase 7: Complete RBAC Loop Demo
  *
  * UnifiedLogger Usage:
@@ -628,10 +628,10 @@ test.describe('[Realm Admin] RBAC Comprehensive Demo Tests', () => {
   })
 
   // ============================================================================
-  // Phase 6-7: Built-in Protection and Complete RBAC Loop [US-RA-010]
+  // Phase 6-7: Built-in Protection and Complete RBAC Loop [US-BP-001]
   // ============================================================================
 
-  test.describe('Phase 6-7: Built-in Protection and Complete RBAC Loop [US-RA-010]', () => {
+  test.describe('Phase 6-7: Built-in Protection and Complete RBAC Loop [US-BP-001]', () => {
     test('内置保护和完整 RBAC 闭环演示', async ({ page, loginPage, demoLogger, testStartTime }) => {
       // ✅ 添加登录步骤（必须在所有操作之前）
       await loginPage.loginAsAdmin('admin@cas.com', 'password', 'admin')

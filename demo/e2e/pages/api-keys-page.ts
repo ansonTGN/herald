@@ -371,6 +371,9 @@ export class ApiKeysPage extends BasePage {
 
     // Wait for dialog to close
     await expect(this.deleteDialog).toBeHidden({ timeout: 10000 })
+
+    // Wait for the deleted key to disappear from the table (React Query cache invalidation)
+    await expect(this.page.getByText(name, { exact: true }).first()).toBeHidden({ timeout: 10000 })
     this.logger?.testCode.log(`Deleted API Key "${name}"`)
   }
 

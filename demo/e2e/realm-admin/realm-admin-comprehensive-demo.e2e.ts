@@ -10,7 +10,7 @@
  *   - Scenario 4.3: UI cross-realm access denied
  *
  * Note: Other realm-admin stories are covered in separate test files:
- * - realm-admin-rbac-comprehensive-demo.e2e.ts: US-RA-002 ~ US-RA-006, US-RA-010
+ * - realm-admin-rbac-comprehensive-demo.e2e.ts: US-RA-002 ~ US-RA-006, US-BP-001
  * - client-app-management-demo.e2e.ts: Client app management
  * - realm-admin-oauth-config-demo.e2e.ts: OAuth provider configuration
  * - realm-admin-totp-config-demo.e2e.ts: TOTP configuration

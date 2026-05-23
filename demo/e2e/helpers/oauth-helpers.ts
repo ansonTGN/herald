@@ -189,7 +189,9 @@ export async function seedOAuthClientApp(
 
 /** Block navigation to unreachable OAuth callback URLs in test environment. */
 export async function blockExternalCallback(page: Page): Promise<void> {
-  await page.route('https://example.com/**', (route) => route.abort())
+  await page.route('https://example.com/**', (route) =>
+    route.fulfill({ status: 200, body: '<html><body>Blocked</body></html>', contentType: 'text/html' })
+  )
 }
 
 /** Predicate matching the login API POST response. */
@@ -225,22 +227,32 @@ export async function completeOAuthLoginAndGetAuthCode(
   expect(authorizeResult.status).toBe(302)
   expect(authorizeResult.redirectLocation).toBeTruthy()
 
+  await page.context().clearCookies()
   await page.goto(`${baseUrl}${authorizeResult.redirectLocation}`, { waitUntil: 'domcontentloaded' })
   await expect(page.getByTestId('login-card')).toBeVisible({ timeout: 10000 })
 
   await blockExternalCallback(page)
 
-  const loginResponsePromise = page.waitForResponse(isLoginApiResponse, { timeout: 15000 })
+  // Intercept the login API response at the network level to capture the body
+  // before the page navigation (window.location.href = redirectTo) destroys
+  // the Playwright response context.
+  let capturedLoginBody: { redirectTo: string } | undefined
+  await page.route('**/api/auth/*/login', async (route) => {
+    const response = await route.fetch()
+    const body = await response.text()
+    try { capturedLoginBody = JSON.parse(body) } catch { /* not JSON */ }
+    await route.fulfill({ response, body })
+  })
 
   await page.getByTestId('email-input').fill(credentials.email)
   await page.getByTestId('password-input').fill(credentials.password)
   await page.getByTestId('login-submit-button').click()
 
-  const loginResponse = await loginResponsePromise
-  expect(loginResponse.ok()).toBe(true)
+  // Wait for the intercepted response to be captured
+  await page.waitForResponse(isLoginApiResponse, { timeout: 15000 })
+  expect(capturedLoginBody).toBeTruthy()
 
-  const loginData = await loginResponse.json()
-  const redirectTo: string = loginData.redirectTo
+  const redirectTo: string = capturedLoginBody!.redirectTo
   expect(redirectTo).toContain('code=')
 
   const authCode = new URL(redirectTo).searchParams.get('code')!

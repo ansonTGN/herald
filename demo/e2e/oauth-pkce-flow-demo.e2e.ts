@@ -88,6 +88,9 @@ test.describe('[OAuth PKCE] Happy Path Demo Tests', () => {
     let authCode: string
 
     await test.step('And: User follows redirect to login page', async () => {
+      // Clear cookies so the browser appears unauthenticated; otherwise the
+      // frontend detects the existing admin session and redirects to dashboard.
+      await page.context().clearCookies()
       await page.goto(`${BASE_URL}${redirectLocation}`, { waitUntil: 'domcontentloaded' })
       await expect(page.getByTestId('login-card')).toBeVisible({ timeout: 10000 })
       await expect(page.getByTestId('email-input')).toBeVisible()
@@ -145,9 +148,12 @@ test.describe('[OAuth PKCE] Happy Path Demo Tests', () => {
     })
 
     await test.step('When: User submits credentials without OAuth params', async () => {
+      const loginResponsePromise = page.waitForResponse(isLoginApiResponse, { timeout: 15000 })
       await page.getByTestId('email-input').fill(DEMO_ADMIN.email)
       await page.getByTestId('password-input').fill(DEMO_ADMIN.password)
       await page.getByTestId('login-submit-button').click()
+      const loginResponse = await loginResponsePromise
+      expect(loginResponse.ok()).toBe(true)
     })
 
     await test.step('Then: Login succeeds and redirects to dashboard', async () => {

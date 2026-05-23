@@ -89,7 +89,7 @@ test.describe('Admin Realm Authentication', () => {
       await expect(sidebar.locator(SELECTORS.sidebar.menuSettings)).toBeVisible()
 
       // Note: Roles and Realms menus require specific permissions
-      // Roles: roles.view (now implemented), Realms: realm.create
+      // Roles: roles.view (now implemented), Realms: realm.manage
       // These may not be visible depending on user permissions
     })
 

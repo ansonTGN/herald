@@ -52,7 +52,7 @@ test.describe('[Realm Admin] API Key Navigation and Edge Cases Demo Tests', () =
 
     await test.step('When: Ensure Authorization sidebar group is expanded', async () => {
       const apiKeysMenu = page.locator(SELECTORS.sidebar.menuApiKeys)
-      const isVisible = await apiKeysMenu.isVisible().catch(() => false)
+      const isVisible = await expect(apiKeysMenu).toBeVisible({ timeout: 5000 }).then(() => true).catch(() => false)
       if (!isVisible) {
         const authorizationGroup = page.locator(SELECTORS.sidebar.menuAuthorization)
         await authorizationGroup.click()

@@ -616,8 +616,8 @@ test.describe('Realm Management - US-AR-001 to US-AR-005', () => {
    * Test 9: Realm Creation Permission Control (US-AR-004)
    *
    * Covers:
-   * - Scenario 1: Admin Realm admin has realm.create permission
-   * - Scenario 2: Realm Admin without realm.create permission
+   * - Scenario 1: Admin Realm admin has realm.manage permission
+   * - Scenario 2: Realm Admin without realm.manage permission
    * - Scenario 3: Realms navigation menu permission control
    * - Scenario 4: Direct URL access permission check
    */
@@ -628,16 +628,16 @@ test.describe('Realm Management - US-AR-001 to US-AR-005', () => {
 
     const page = realmsPage.page
 
-    await test.step('Scenario 1: Verify admin has realm.create permission', async () => {
-      demoLogger.testCode.log('Verifying admin has realm.create permission')
+    await test.step('Scenario 1: Verify admin has realm.manage permission', async () => {
+      demoLogger.testCode.log('Verifying admin has realm.manage permission')
 
-      // Verify "Add Realm" button is visible (requires realm.create permission)
+      // Verify "Add Realm" button is visible (requires realm.manage permission)
       await expect(realmsPage.addButton).toBeVisible()
-      demoLogger.testCode.log('Add Realm button is visible - admin has realm.create permission')
+      demoLogger.testCode.log('Add Realm button is visible - admin has realm.manage permission')
     })
 
-    await test.step('Scenario 2: Realm Admin without realm.create permission', async () => {
-      demoLogger.testCode.log('Testing Realm Admin without realm.create permission')
+    await test.step('Scenario 2: Realm Admin without realm.manage permission', async () => {
+      demoLogger.testCode.log('Testing Realm Admin without realm.manage permission')
 
       // Create a test realm to use as a Realm Admin
       const testRealmId = `test-realm-${Date.now()}`
