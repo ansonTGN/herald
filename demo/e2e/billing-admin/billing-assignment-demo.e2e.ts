@@ -72,7 +72,7 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
 
       await test.step('When: 选择一个 Client App', async () => {
         // 等待复选框可见
-        await expect(page.getByTestId(/^plan-assignment-checkbox-/)).toBeVisible({ timeout: 5000 })
+        await expect(page.getByTestId(/^plan-assignment-checkbox-/).first()).toBeVisible({ timeout: 5000 })
         // 选择第一个 Client App
         await page.getByTestId(/^plan-assignment-checkbox-/).first().check()
         demoLogger.testCode.log('[Test] ✓ Client app selected')
@@ -118,7 +118,7 @@ test.describe('[Billing Admin] Assign Plan to Client App Demo Tests', () => {
 
       await test.step('And: 选择多个 Client App', async () => {
         // 等待复选框可见
-        await expect(page.getByTestId(/^plan-assignment-checkbox-/)).toBeVisible({ timeout: 5000 })
+        await expect(page.getByTestId(/^plan-assignment-checkbox-/).first()).toBeVisible({ timeout: 5000 })
         const checkboxes = page.getByTestId(/^plan-assignment-checkbox-/)
         const checkboxCount = await checkboxes.count()
         await expect(checkboxCount).toBeGreaterThan(0)

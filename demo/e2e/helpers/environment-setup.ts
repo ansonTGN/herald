@@ -376,10 +376,8 @@ export async function cleanupDemoTestData(
   // 清理 Shopify 支付配置（通过 API）
   await cleanupShopifyConfiguration(page, realmId, verbose)
 
-  // TODO: 等待前端 Users/Roles/Clients 页面实现后，恢复清理逻辑
-  if (verbose) {
-    console.log(`[EnvironmentSetup] 跳过 realm "${realmId}" 的其他测试数据清理（页面未实现）`)
-  }
+  // 清理测试创建的订阅套餐（通过 API）
+  await cleanupSubscriptionPlans(page, realmId, options)
 }
 
 /**
@@ -431,5 +429,74 @@ async function cleanupShopifyConfiguration(
   } catch (error) {
     // 网络错误或其他异常
     console.error(`[EnvironmentSetup] 删除 Shopify 配置时发生错误 (realm: ${realmId}):`, error)
+  }
+}
+
+/**
+ * 清理测试创建的订阅套餐
+ *
+ * 通过 API 获取所有套餐，删除非内置的测试套餐。
+ * 内置套餐（名称以 "test-subscription-plan" 开头）会保留。
+ *
+ * @param page Playwright Page 对象（使用其已认证的 request context）
+ * @param realmId Realm ID
+ * @param options 清理选项（verbose 控制日志输出）
+ */
+async function cleanupSubscriptionPlans(
+  page: Page,
+  realmId: string,
+  options: CleanupDataOptions = {}
+): Promise<void> {
+  const { verbose = true } = options
+  const plansApiUrl = `${BASE_URL}/api/bill/${realmId}/plans`
+
+  try {
+    const listResponse = await page.request.get(plansApiUrl, {
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    if (listResponse.status() !== 200) {
+      if (verbose) {
+        console.warn(
+          `[EnvironmentSetup] 获取套餐列表失败 (realm: ${realmId}): HTTP ${listResponse.status()}`
+        )
+      }
+      return
+    }
+
+    const body = await listResponse.json()
+    const plans: Array<{ id: string; name: string }> = body.plans || []
+
+    let deletedCount = 0
+    for (const plan of plans) {
+      // 保留内置的测试套餐
+      if (plan.name === 'test-subscription-plan') {
+        continue
+      }
+
+      const deleteUrl = `${plansApiUrl}/${plan.id}`
+      const deleteResponse = await page.request.delete(deleteUrl, {
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      if (deleteResponse.status() === 200 || deleteResponse.status() === 204) {
+        deletedCount++
+        if (verbose) {
+          console.log(`[EnvironmentSetup] 已删除套餐 "${plan.name}" (${plan.id})`)
+        }
+      } else if (verbose) {
+        console.warn(
+          `[EnvironmentSetup] 删除套餐 "${plan.name}" 失败: HTTP ${deleteResponse.status()}`
+        )
+      }
+    }
+
+    if (verbose) {
+      console.log(
+        `[EnvironmentSetup] 套餐清理完成 (realm: ${realmId}): 已删除 ${deletedCount}/${plans.length} 个`
+      )
+    }
+  } catch (error) {
+    console.error(`[EnvironmentSetup] 清理订阅套餐时发生错误 (realm: ${realmId}):`, error)
   }
 }

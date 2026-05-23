@@ -77,9 +77,8 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
       })
 
       await test.step('Then: 验证配置成功', async () => {
-        // Verify the success message is displayed (frontend shows different messages for create vs update)
-        const successMessage = page.getByText(/Configuration (created|updated) successfully/)
-        await expect(successMessage).toBeVisible()
+        // After page-based save, verify edit button appears (proves config was saved)
+        await expect(page.getByTestId('edit-stripe-button')).toBeVisible()
         await demoLogger.testCode.log('Configuration verified successfully')
       })
     })
@@ -475,29 +474,22 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
         await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing/payment-providers`)
         await page.getByTestId('edit-stripe-button').click()
 
-        // Wait for the dialog to be visible
-        await expect(page.getByRole('dialog')).toBeVisible()
+        // Wait for navigation to Stripe config page (page-based, not dialog)
+        await page.waitForURL('**/payment-providers/stripe', { timeout: 10000 })
+        await expect(page.getByTestId('stripe-config-form-page')).toBeVisible()
 
         // Use invalid keys that don't match Stripe's expected format
         // (P2: enhanced validation - verify format validation logic)
         const invalidKey = 'pk_invalid_format'
-        await page.getByTestId('stripe-publishable-key-input').fill(invalidKey)
-        await page.getByTestId('stripe-secret-key-input').fill('sk_invalid_format')
+        await page.getByTestId('page-stripe-publishable-key-input').fill(invalidKey)
+        await page.getByTestId('page-stripe-secret-key-input').fill('sk_invalid_format')
 
         await demoLogger.testCode.log('Attempting to save invalid Stripe credentials')
 
-        await page.getByTestId('stripe-save-button').click()
+        await page.getByTestId('stripe-config-page-submit-button').click()
 
-        // Wait for save operation
-        await expect(async () => {
-          const buttonText = await page.getByTestId('stripe-save-button').textContent()
-          expect(buttonText).toBe('Save')
-        }).toPass({ timeout: 15000 })
-
-        // (P2) Verify that invalid keys are still saved (backend may not validate format)
-        // In production, format validation should be added
-        const savedKey = await page.getByTestId('stripe-publishable-key-input').inputValue()
-        expect(savedKey).toBe(invalidKey)
+        // Wait for navigation back to payment-providers page (indicates success)
+        await page.waitForURL('**/payment-providers', { timeout: 15000 })
 
         await demoLogger.testCode.log('Invalid format accepted (backend format validation not implemented)')
       })
@@ -662,38 +654,32 @@ async function configureStripe(
     await demoLogger.testCode.log('Creating new Stripe configuration')
   }
 
-  // Wait for the dialog to be visible and rendered
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await expect(page.getByTestId('stripe-enabled-switch')).toBeVisible()
+  // Wait for navigation to Stripe config page (page-based, not dialog)
+  await page.waitForURL('**/payment-providers/stripe', { timeout: 10000 })
+  await expect(page.getByTestId('stripe-config-form-page')).toBeVisible()
+  await expect(page.getByTestId('page-stripe-enabled-switch')).toBeVisible()
 
   // Enable Stripe
-  const enabledSwitch = page.getByTestId('stripe-enabled-switch')
+  const enabledSwitch = page.getByTestId('page-stripe-enabled-switch')
   const isEnabled = await enabledSwitch.isChecked()
   if (!isEnabled) {
     await enabledSwitch.click()
   }
 
   // Fill in keys with proper test format
-  await page.getByTestId('stripe-publishable-key-input').fill(`pk_test_51M${timestamp}`)
-  await page.getByTestId('stripe-secret-key-input').fill(`sk_test_51M${timestamp}`)
-  await page.getByTestId('stripe-webhook-secret-input').fill(`whsec_${timestamp}`)
+  await page.getByTestId('page-stripe-publishable-key-input').fill(`pk_test_51M${timestamp}`)
+  await page.getByTestId('page-stripe-secret-key-input').fill(`sk_test_51M${timestamp}`)
+  await page.getByTestId('page-stripe-webhook-secret-input').fill(`whsec_${timestamp}`)
 
   await demoLogger.testCode.log('Stripe config filled with test credentials')
 
   // Save configuration
-  await page.getByTestId('stripe-save-button').click()
+  await page.getByTestId('stripe-config-page-submit-button').click()
 
-  // Wait for save to complete
-  await expect(async () => {
-    const buttonText = await page.getByTestId('stripe-save-button').textContent()
-    expect(buttonText).toBe('Save')
-  }).toPass({ timeout: 15000 })
+  // Wait for navigation back to payment-providers page (indicates success)
+  await page.waitForURL('**/payment-providers', { timeout: 15000 })
 
   await demoLogger.testCode.log('Stripe configuration saved')
-
-  // Verify success message (frontend shows different messages for create vs update)
-  const successMessage = page.getByText(/Configuration (created|updated) successfully/)
-  await expect(successMessage).toBeVisible()
 }
 
 /**

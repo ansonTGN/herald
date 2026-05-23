@@ -49,7 +49,7 @@ export async function navigateToSubscriptionHistory(page: Page, realmId: string)
   // Wait for the "User ID" label to be visible (filter section is rendered)
   await expect(page.getByText('User ID')).toBeVisible({ timeout: 10000 })
   // Wait for the "History Events" heading to be visible (table is rendered)
-  await expect(page.getByRole('heading', { name: 'History Events' })).toBeVisible({ timeout: 10000 })
+  await expect(page.getByText('History Events')).toBeVisible({ timeout: 10000 })
 }
 
 /**

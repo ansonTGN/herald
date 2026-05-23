@@ -461,12 +461,12 @@ test.describe('[Billing Admin] Product Management Demo Tests', () => {
         const planHostRow = page.locator(`tr:has-text("${planHostCode}")`)
         await expect(planHostRow).toBeVisible()
         // The plans count column shows the number
-        await expect(planHostRow.locator('td').nth(4)).toHaveText('0')
+        await expect(planHostRow.locator('td').nth(3)).toHaveText('0')
 
         // plan-target should show Plans count = 1
         const planTargetRow = page.locator(`tr:has-text("${planTargetCode}")`)
         await expect(planTargetRow).toBeVisible()
-        await expect(planTargetRow.locator('td').nth(4)).toHaveText('1')
+        await expect(planTargetRow.locator('td').nth(3)).toHaveText('1')
 
         console.log('[Test] Product plans count verified')
       })

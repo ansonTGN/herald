@@ -1022,6 +1022,7 @@ pub async fn list_plan_assignments(
 
 /// Query parameters for batch plan assignments endpoint
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BatchPlanAssignmentsQuery {
     pub client_app_ids: Option<String>,
 }

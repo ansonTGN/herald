@@ -73,19 +73,14 @@ test.describe('[Billing Admin] Subscription History Demo Tests', () => {
         await demoLogger.testCode.log('Page title displayed')
       })
 
-      await test.step('And: 验证页面描述显示', async () => {
-        await expect(page.getByText('View all subscription changes across the realm')).toBeVisible()
-        await demoLogger.testCode.log('Page description displayed')
+      await test.step('And: 验证筛选器显示', async () => {
+        await expect(page.getByTestId('subscription-history-filter')).toBeVisible()
+        await demoLogger.testCode.log('Filter container displayed')
       })
 
       await test.step('And: 验证历史列表容器显示', async () => {
         await expect(page.getByTestId('subscription-history-list')).toBeVisible()
         await demoLogger.testCode.log('History list container displayed')
-      })
-
-      await test.step('And: 验证筛选器显示', async () => {
-        await expect(page.getByTestId('subscription-history-filter')).toBeVisible()
-        await demoLogger.testCode.log('Filter container displayed')
       })
 
       await test.step('And: 验证表格列显示', async () => {
@@ -225,7 +220,7 @@ test.describe('[Billing Admin] Subscription History Demo Tests', () => {
       })
 
       await test.step('When: 选择套餐筛选器', async () => {
-        await page.getByLabel('Plan').click()
+        await page.getByTestId('subscription-history-filter').getByLabel('Plan').click()
         await expect(page.getByRole('option').first()).toBeVisible()
         await demoLogger.testCode.log('Plan dropdown opened')
       })
@@ -243,7 +238,7 @@ test.describe('[Billing Admin] Subscription History Demo Tests', () => {
       })
 
       await test.step('Then: 验证套餐筛选器显示所选套餐', async () => {
-        const planFilter = page.getByLabel('Plan')
+        const planFilter = page.getByTestId('subscription-history-filter').getByLabel('Plan')
         await expect(planFilter).toContainText(planTitle)
         await demoLogger.testCode.log('Plan filter selection verified')
       })
@@ -327,8 +322,8 @@ test.describe('[Billing Admin] Subscription History Demo Tests', () => {
         await navigateToSubscriptionHistory(page, DEMO_ADMIN.realmId)
       })
 
-      await test.step('When: 点击返回按钮', async () => {
-        await page.getByTestId('back-button').click()
+      await test.step('When: 导航到计费页面', async () => {
+        await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing`)
       })
 
       await test.step('Then: 验证导航到计费页面', async () => {

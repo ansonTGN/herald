@@ -14,53 +14,210 @@
  * Prerequisites:
  * - Demo seed data must be initialized
  * - Frontend components must have required data-testid attributes
- * - Unclaimed subscriptions must be creatable via API or test setup
- * - Shopify configuration must exist (tests will skip if not configured)
+ *
+ * Test data setup:
+ * - Shopify provider config is created via API before each test
+ * - An unclaimed subscription is created via test API before each test
+ * - Cleanup removes Shopify config and test plans after each test
  */
 
 import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
-import { verifyTestEnvironment } from '../helpers/environment-setup'
+import { verifyTestEnvironment, BASE_URL } from '../helpers/environment-setup'
 import { loginAsAdmin } from '../helpers/auth'
 import type { Page } from '@playwright/test'
 
+const SHOPIFY_SHOP_DOMAIN = 'demo-test-store.myshopify.com'
+const SHOPIFY_ADMIN_TOKEN = 'shpat_demo_test_access_token_xxxxx'
+const SHOPIFY_STOREFRONT_TOKEN = 'shp_demo_test_storefront_token_xxxxx'
+const SHOPIFY_CLIENT_SECRET = 'demo_test_app_client_secret_32chars'
+const TEST_API_TOKEN = process.env.TEST_API_TOKEN || 'test-token-123'
+
+interface PlanInfo {
+  id: string
+  name: string
+}
+
 /**
- * Checks if Shopify configuration exists in the test environment.
- * Tests will be skipped if no configuration exists.
+ * Actively sets up Shopify test data via API.
  *
- * @param page - Playwright Page object
- * @param realmId - Realm ID
- * @returns Promise<boolean> - true if Shopify config exists
+ * Steps:
+ * 1. Login first (so page.request carries auth cookies)
+ * 2. Check/create Shopify provider config
+ * 3. Find or create a billing plan (requires a product first)
+ * 4. Create an unclaimed Shopify subscription via test API
  */
-async function hasShopifyConfig(
+async function ensureShopifySetup(
   page: Page,
   realmId: string
-): Promise<boolean> {
-  try {
-    // Navigate to payment providers page as admin
-    await loginAsAdmin(page, { realmId, waitNavigation: false })
-    await page.goto(`/${realmId}/manage/billing/payment-providers`)
-    await page.waitForLoadState('domcontentloaded')
+): Promise<void> {
+  // Step 1: Login so page.request carries session cookies
+  await loginAsAdmin(page, { realmId, waitNavigation: false })
+  console.log('[Test Setup] Logged in for Shopify setup')
 
-    // Check if Shopify configuration already exists
-    const shopDomainIndicator = page.getByText(/\.myshopify\.com/)
-    const hasExistingConfig = await shopDomainIndicator.isVisible({ timeout: 3000 }).catch(() => false)
+  // Step 2: Ensure Shopify provider config exists
+  await ensureShopifyProviderConfig(page, realmId)
 
-    if (hasExistingConfig) {
-      console.log('[Test Setup] ✓ Shopify configuration found')
-    } else {
-      console.log('[Test Setup] ℹ Shopify configuration not found - tests will be skipped')
-    }
+  // Step 3: Ensure a billing plan exists for the realm
+  const planId = await ensureBillingPlan(page, realmId)
+  console.log(`[Test Setup] Using plan ID: ${planId}`)
 
-    return hasExistingConfig
-  } catch (error) {
-    console.error('[Test Setup] Error checking Shopify configuration:', error)
-    return false
+  // Step 4: Create an unclaimed Shopify subscription
+  await createUnclaimedSubscription(page, realmId, planId)
+  console.log('[Test Setup] Shopify setup complete')
+}
+
+/**
+ * Checks if Shopify provider config exists; creates it if not.
+ */
+async function ensureShopifyProviderConfig(
+  page: Page,
+  realmId: string
+): Promise<void> {
+  const listUrl = `${BASE_URL}/api/third/pay/${realmId}/providers`
+  const listResponse = await page.request.get(listUrl)
+  const listBody = await listResponse.json()
+
+  const hasShopify = (listBody.providers || []).some(
+    (p: { platform: string }) => p.platform === 'shopify'
+  )
+
+  if (hasShopify) {
+    console.log('[Test Setup] Shopify provider config already exists')
+    return
   }
+
+  console.log('[Test Setup] Creating Shopify provider config...')
+  const createUrl = `${BASE_URL}/api/third/pay/${realmId}/providers/shopify`
+  const createResponse = await page.request.post(createUrl, {
+    headers: { 'Content-Type': 'application/json' },
+    data: {
+      shopDomain: SHOPIFY_SHOP_DOMAIN,
+      adminAccessToken: SHOPIFY_ADMIN_TOKEN,
+      storefrontAccessToken: SHOPIFY_STOREFRONT_TOKEN,
+      appClientSecret: SHOPIFY_CLIENT_SECRET,
+      skipConnectionTest: true,
+    },
+  })
+
+  if (createResponse.status() === 200 || createResponse.status() === 201) {
+    console.log('[Test Setup] Shopify provider config created')
+  } else if (createResponse.status() === 409) {
+    // Already exists (race condition is fine)
+    console.log('[Test Setup] Shopify provider config already exists (409)')
+  } else {
+    const errorText = await createResponse.text()
+    console.error(`[Test Setup] Failed to create Shopify config: HTTP ${createResponse.status()} - ${errorText}`)
+    throw new Error(`Failed to create Shopify config: HTTP ${createResponse.status()}`)
+  }
+}
+
+/**
+ * Ensures a billing plan exists for the realm. Returns the plan ID.
+ * Creates a product first if none exists, then creates a plan.
+ */
+async function ensureBillingPlan(
+  page: Page,
+  realmId: string
+): Promise<string> {
+  // Check existing plans
+  const plansUrl = `${BASE_URL}/api/bill/${realmId}/plans`
+  const plansResponse = await page.request.get(plansUrl)
+
+  if (plansResponse.status() === 200) {
+    const plansBody = await plansResponse.json()
+    const plans: PlanInfo[] = plansBody.plans || []
+
+    if (plans.length > 0) {
+      console.log(`[Test Setup] Found existing plan: ${plans[0].id}`)
+      return plans[0].id
+    }
+  }
+
+  // No plans exist -- need to create a product first, then a plan
+  console.log('[Test Setup] No billing plans found, creating product and plan...')
+
+  // Create product
+  const productsUrl = `${BASE_URL}/api/bill/${realmId}/products`
+  const productResponse = await page.request.post(productsUrl, {
+    headers: { 'Content-Type': 'application/json' },
+    data: {
+      code: 'shopify-test-product',
+      title: 'Shopify Test Product',
+      description: 'Product for Shopify claim flow tests',
+      enabled: true,
+    },
+  })
+
+  if (productResponse.status() !== 201) {
+    const errorText = await productResponse.text()
+    throw new Error(`Failed to create product: HTTP ${productResponse.status()} - ${errorText}`)
+  }
+
+  const productBody = await productResponse.json()
+  const productId = productBody.id
+  console.log(`[Test Setup] Created product: ${productId}`)
+
+  // Create plan
+  const planResponse = await page.request.post(plansUrl, {
+    headers: { 'Content-Type': 'application/json' },
+    data: {
+      name: 'shopify-test-plan',
+      title: 'Shopify Test Plan',
+      description: 'Plan for Shopify claim flow tests',
+      type: 'monthly',
+      price: 1000,
+      currency: 'USD',
+      productId: productId,
+    },
+  })
+
+  if (planResponse.status() !== 201) {
+    const errorText = await planResponse.text()
+    throw new Error(`Failed to create plan: HTTP ${planResponse.status()} - ${errorText}`)
+  }
+
+  const planBody = await planResponse.json()
+  console.log(`[Test Setup] Created plan: ${planBody.id}`)
+  return planBody.id
+}
+
+/**
+ * Creates an unclaimed Shopify subscription via test API.
+ */
+async function createUnclaimedSubscription(
+  page: Page,
+  realmId: string,
+  planId: string
+): Promise<void> {
+  const testUrl = `${BASE_URL}/api/test/${realmId}/shopify/unclaimed-subscriptions`
+  const timestamp = Date.now()
+
+  const response = await page.context().request.post(testUrl, {
+    headers: {
+      'Content-Type': 'application/json',
+      'x-test-api-token': TEST_API_TOKEN,
+    },
+    data: {
+      shopDomain: SHOPIFY_SHOP_DOMAIN,
+      shopifyCustomerId: `shopify_test_customer_${timestamp}`,
+      shopifyCustomerGid: `gid://shopify/Customer/${timestamp}`,
+      contractId: `gid://shopify/SubscriptionContract/${timestamp}`,
+      planId: planId,
+      status: 'active',
+    },
+  })
+
+  if (response.status() !== 200 && response.status() !== 201) {
+    const errorText = await response.text()
+    throw new Error(`Failed to create unclaimed subscription: HTTP ${response.status()} - ${errorText}`)
+  }
+
+  const body = await response.json()
+  console.log(`[Test Setup] Created unclaimed subscription: ${body.subscriptionId}`)
 }
 
 test.describe('[Regular User] Shopify Subscription Claim Flow', () => {
   let testStartTime: number
-  let hasShopifyConfigAvailable: boolean
   const realmId = 'admin'
   const testUser = {
     email: 'admin@cas.com',
@@ -76,13 +233,8 @@ test.describe('[Regular User] Shopify Subscription Claim Flow', () => {
       requiredUsers: [testUser.email],
     })
 
-    // Step 2: Check if Shopify configuration exists (don't create it)
-    hasShopifyConfigAvailable = await hasShopifyConfig(page, realmId)
-
-    // Skip all tests in this suite if no Shopify config
-    if (!hasShopifyConfigAvailable) {
-      test.skip(true, 'Shopify configuration not found - skipping Shopify claim flow tests')
-    }
+    // Step 2: Actively set up Shopify test data (provider config + plan + unclaimed subscription)
+    await ensureShopifySetup(page, realmId)
   })
 
   test.afterEach(async ({ page, demoLogger }) => {

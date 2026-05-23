@@ -136,7 +136,7 @@ test.describe('Authentication Redirect Flow', () => {
     await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/user\\/profile`), { timeout: 10000 })
 
     // Verify profile page is loaded
-    await expect(page.locator('h3:text("Profile Information")')).toBeVisible()
+    await expect(page.getByText('Profile Information')).toBeVisible()
   })
 
   // Scenario 5: Admin user accessing realm root
@@ -198,7 +198,7 @@ test.describe('Authentication Redirect Flow', () => {
     await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/user\\/profile`), { timeout: 10000 })
 
     // Verify profile page is loaded
-    await expect(page.locator('h3:text("Profile Information")')).toBeVisible()
+    await expect(page.getByText('Profile Information')).toBeVisible()
   })
 
   // Scenario 6.5: Authenticated regular user accessing root URL
@@ -245,7 +245,7 @@ test.describe('Authentication Redirect Flow', () => {
     await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/user\\/profile`), { timeout: 10000 })
 
     // Verify profile page is loaded
-    await expect(page.locator('h3:text("Profile Information")')).toBeVisible()
+    await expect(page.getByText('Profile Information')).toBeVisible()
   })
 
   // Scenario 7: Regular user accessing admin dashboard (permission denied)
@@ -292,7 +292,7 @@ test.describe('Authentication Redirect Flow', () => {
     await expect(page).toHaveURL(new RegExp(`\\/${REALM_ID}\\/user\\/profile`), { timeout: 10000 })
 
     // Verify profile page is loaded
-    await expect(page.locator('h3:text("Profile Information")')).toBeVisible()
+    await expect(page.getByText('Profile Information')).toBeVisible()
   })
 
   // Scenario 8: Logout and redirect
@@ -335,7 +335,7 @@ test.describe('Authentication Redirect Flow', () => {
     })
 
     await test.step('Verify logged in state', async () => {
-      await expect(page.locator('h3:text("Profile Information")')).toBeVisible()
+      await expect(page.getByText('Profile Information')).toBeVisible()
     })
 
     await test.step('Logout', async () => {

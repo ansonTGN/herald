@@ -170,8 +170,13 @@ test.describe('Permission Model Refactoring', () => {
       await test.step('Authorization group expandable with Roles/Permissions', async () => {
         const authMenu = page.locator(SELECTORS.sidebar.menuAuthorization)
         await expect(authMenu).toBeVisible()
-        await authMenu.click()
-        await page.waitForTimeout(300)
+
+        // Only click to expand if children are not already visible
+        const rolesVisible = await page.locator(SELECTORS.sidebar.menuRoles).isVisible().catch(() => false)
+        if (!rolesVisible) {
+          await authMenu.click()
+          await page.waitForTimeout(300)
+        }
 
         await expect(page.locator(SELECTORS.sidebar.menuRoles)).toBeVisible()
         await expect(page.locator(SELECTORS.sidebar.menuPermissions)).toBeVisible()

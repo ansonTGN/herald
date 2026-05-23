@@ -225,8 +225,7 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
     let billing_routes = billing::billing_routes();
     let audit_routes = audit::audit_router();
 
-    // Test routes - only included in test builds
-    #[cfg(test)]
+    // Test routes - included in test builds and when ENABLE_TEST_API is set (e.g., demo mode)
     let billing_test_routes = billing::billing_test_routes();
 
     let router = Router::new()
@@ -372,10 +371,7 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
         // External API routes
         .nest("/api/ext", super::ext::create_router((*state).clone()));
 
-    #[cfg(test)]
-    let router = router.merge(billing_test_routes);
-
-    router
+    router.merge(billing_test_routes)
 }
 
 /// Health check endpoint for monitoring and orchestration

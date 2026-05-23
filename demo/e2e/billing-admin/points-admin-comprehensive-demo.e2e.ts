@@ -94,6 +94,7 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
 
       await test.step('When: 创建积分配置', async () => {
         await page.locator(SELECTORS.pointsAdmin.createPlanConfigButton).click()
+        // Form is now on a dedicated page (navigated to /configs/new), not a dialog
         await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
 
         // Shadcn UI Select interaction: use role-based selector (combobox) to click trigger
@@ -116,9 +117,10 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
         await page.locator(SELECTORS.pointsAdmin.planConfigMaxAccumulation).fill('12')
 
         await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
+        // After submit, navigates back to configs list page; form is removed from DOM
         await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).not.toBeVisible()
 
-        // Verify we're back on the configs page after dialog closes
+        // Verify we're back on the configs page
         await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
       })
 
@@ -134,13 +136,15 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
 
       await test.step('When: 编辑套餐配置', async () => {
         await page.locator(SELECTORS.pointsAdmin.firstEditPlanConfigButton()).first().click()
+        // Edit navigates to a dedicated form page
         await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
         await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).clear()
         await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).fill('1200')
         await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
+        // After submit, navigates back to configs list page
         await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).not.toBeVisible()
 
-        // Verify we're back on the configs page after dialog closes
+        // Verify we're back on the configs page
         await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
         // Wait for the config card to appear with updated values
         const configCards = page.locator('[data-testid^="config-card-"]')
@@ -152,12 +156,14 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
 
       await test.step('When: 禁用自动充值', async () => {
         await page.locator(SELECTORS.pointsAdmin.firstEditPlanConfigButton()).first().click()
+        // Edit navigates to a dedicated form page
         await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
         await page.locator(SELECTORS.pointsAdmin.planConfigRenewalEnabled).uncheck()
         await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
+        // After submit, navigates back to configs list page
         await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).not.toBeVisible()
 
-        // Verify we're back on the configs page after dialog closes
+        // Verify we're back on the configs page
         await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
         // Wait for the config card to appear with updated values
         const configCards = page.locator('[data-testid^="config-card-"]')
@@ -404,6 +410,7 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
         await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
 
         await page.locator(SELECTORS.pointsAdmin.createPlanConfigButton).click()
+        // Form is now on a dedicated page (navigated to /configs/new), not a dialog
         await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
 
         // Select the plan by title
@@ -420,9 +427,10 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
         await page.locator(SELECTORS.pointsAdmin.planConfigValidityDays).fill('30')
         await page.locator(SELECTORS.pointsAdmin.planConfigMaxAccumulation).fill('12')
         await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
+        // After submit, navigates back to configs list page
         await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).not.toBeVisible()
 
-        // Verify we're back on the configs page after dialog closes
+        // Verify we're back on the configs page
         await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
         // Wait for the config to appear
         const configCards = page.locator('[data-testid^="config-card-"]')
@@ -534,10 +542,10 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
         await expect(page.getByTestId('free-stats-page')).toBeVisible()
 
         // Verify stat cards are displayed
-        await expect(page.getByText(/总免费用户数/)).toBeVisible()
-        await expect(page.getByText(/活跃免费用户数/)).toBeVisible()
-        await expect(page.getByText(/总注册奖励积分/)).toBeVisible()
-        await expect(page.getByText(/总定期积分发放/)).toBeVisible()
+        await expect(page.getByText(/Total Free Users/)).toBeVisible()
+        await expect(page.getByText(/Active Free Users/)).toBeVisible()
+        await expect(page.getByText(/Total Registration Bonus/)).toBeVisible()
+        await expect(page.getByText(/Total Periodic Points Granted/)).toBeVisible()
         demoLogger.testCode.log('[Test] ✓ Free user statistics viewed')
       })
 
@@ -786,11 +794,11 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
       }
 
       await test.step('Then: 验证概览统计卡片', async () => {
-        // Verify stat cards are displayed (using text content since testid uses Chinese)
-        await expect(page.getByText(/总免费用户数/)).toBeVisible()
-        await expect(page.getByText(/活跃免费用户数/)).toBeVisible()
-        await expect(page.getByText(/总注册奖励积分/)).toBeVisible()
-        await expect(page.getByText(/总定期积分发放/)).toBeVisible()
+        // Verify stat cards are displayed
+        await expect(page.getByText(/Total Free Users/)).toBeVisible()
+        await expect(page.getByText(/Active Free Users/)).toBeVisible()
+        await expect(page.getByText(/Total Registration Bonus/)).toBeVisible()
+        await expect(page.getByText(/Total Periodic Points Granted/)).toBeVisible()
 
         demoLogger.testCode.log('[Test] ✓ Overview statistics cards displayed')
       })

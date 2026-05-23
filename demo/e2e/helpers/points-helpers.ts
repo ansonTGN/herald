@@ -170,10 +170,10 @@ export async function createPointsPlanConfig(
   page: Page,
   config: PointsPlanConfig
 ): Promise<void> {
-  // Click create button
+  // Click create button (navigates to dedicated form page)
   await page.locator(SELECTORS.pointsAdmin.createPlanConfigButton).click()
 
-  // Wait for dialog to open
+  // Wait for form page to load
   await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
 
   // Shadcn UI Select interaction: use role-based selector (combobox) to click trigger
@@ -207,7 +207,7 @@ export async function createPointsPlanConfig(
   // Submit form
   await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
 
-  // Wait for dialog to close
+  // Wait for navigation back to configs list (form removed from DOM)
   await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).not.toBeVisible()
 }
 
@@ -219,10 +219,10 @@ export async function editPointsPlanConfig(
   configId: string,
   updates: Partial<PointsPlanConfig>
 ): Promise<void> {
-  // Click edit button
+  // Click edit button (navigates to dedicated form page)
   await page.locator(SELECTORS.pointsAdmin.editPlanConfigButton(configId)).click()
 
-  // Wait for dialog to open
+  // Wait for form page to load
   await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
 
   // Update fields that are provided
@@ -257,7 +257,7 @@ export async function editPointsPlanConfig(
   // Submit form
   await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
 
-  // Wait for dialog to close
+  // Wait for navigation back to configs list (form removed from DOM)
   await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).not.toBeVisible()
 }
 

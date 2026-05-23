@@ -53,7 +53,7 @@ export async function createSubscriptionPlan(page: Page, formData: SubscriptionP
 
   // Idempotent: skip creation if plan already exists in the table
   const planRow = page.locator(`tr:has-text("${formData.planName}")`)
-  if (await planRow.isVisible()) {
+  if ((await planRow.count()) > 0) {
     console.log(`[createSubscriptionPlan] Plan "${formData.planName}" already exists, skipping creation`)
     return
   }
@@ -160,6 +160,12 @@ export async function createSubscriptionPlan(page: Page, formData: SubscriptionP
 
   // Wait a bit more for the table to fully render
   await page.waitForTimeout(1000)
+
+  // Scroll the new plan row into view so subsequent assertions can find it
+  const newPlanRow = page.locator(`tr:has-text("${formData.planName}")`)
+  if ((await newPlanRow.count()) > 0) {
+    await newPlanRow.first().scrollIntoViewIfNeeded()
+  }
 }
 
 /**
@@ -201,4 +207,15 @@ export async function confirmDeleteSubscriptionPlan(page: Page): Promise<void> {
  */
 export async function confirmDeleteSubscriptionPlanAndWait(page: Page): Promise<void> {
   await confirmDeleteSubscriptionPlan(page)
+}
+
+/**
+ * Verify a plan name is visible in the billing page table.
+ * Scrolls the element into view first to handle cases where the table has many rows
+ * and the target row is below the viewport.
+ */
+export async function verifyPlanVisible(page: Page, planName: string, timeout = 5000): Promise<void> {
+  const planText = page.getByText(planName)
+  await planText.scrollIntoViewIfNeeded()
+  await expect(planText).toBeVisible({ timeout })
 }

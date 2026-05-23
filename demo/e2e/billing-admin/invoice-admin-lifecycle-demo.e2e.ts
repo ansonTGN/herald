@@ -132,8 +132,10 @@ test.describe('[Billing Admin] Invoice Admin Lifecycle Demo Tests', () => {
         await page.getByTestId('invoice-account-id').fill(userId)
         await page.getByTestId('invoice-billing-name').fill(billingName)
         await page.getByTestId('invoice-billing-tax-id').fill('N/A')
+        await page.getByTestId('invoice-billing-address').fill('123 Billing St')
         await page.getByTestId('invoice-seller-name').fill(sellerName)
         await page.getByTestId('invoice-seller-tax-id').fill('N/A')
+        await page.getByTestId('invoice-seller-address').fill('456 Seller Ave')
 
         // Fill line item: unitPrice is in display units (major currency).
         // "99" => 9900 cents. qty=1 => subtotal = 9900 cents.
@@ -270,6 +272,7 @@ test.describe('[Billing Admin] Invoice Admin Lifecycle Demo Tests', () => {
         invoiceNumber = await createInvoice(page, DEMO_ADMIN.realmId, {
           accountId: userId,
           billingName,
+          billingEmail: `buyer-issue-${testStartTime}@example.com`,
           sellerName,
           lineItems: [
             { name: 'Pro Plan', quantity: '1', unitPrice: 9900 },
@@ -354,6 +357,7 @@ test.describe('[Billing Admin] Invoice Admin Lifecycle Demo Tests', () => {
         invoiceNumber = await createInvoice(page, DEMO_ADMIN.realmId, {
           accountId: userId,
           billingName,
+          billingEmail: `buyer-void-issued-${testStartTime}@example.com`,
           sellerName,
           lineItems: [
             { name: 'Issued Item', quantity: '1', unitPrice: 5000 },
@@ -400,6 +404,7 @@ test.describe('[Billing Admin] Invoice Admin Lifecycle Demo Tests', () => {
         invoiceNumber = await createInvoice(page, DEMO_ADMIN.realmId, {
           accountId: userId,
           billingName,
+          billingEmail: `buyer-paid-${testStartTime}@example.com`,
           sellerName,
           lineItems: [
             { name: 'Paid Item', quantity: '1', unitPrice: 8000 },
@@ -447,6 +452,7 @@ test.describe('[Billing Admin] Invoice Admin Lifecycle Demo Tests', () => {
         invoiceNumber = await createInvoice(page, DEMO_ADMIN.realmId, {
           accountId: userId,
           billingName,
+          billingEmail: `buyer-lifecycle-${testStartTime}@example.com`,
           sellerName,
           lineItems: [
             { name: 'Basic Plan', quantity: '1', unitPrice: 2000 },
@@ -503,6 +509,7 @@ test.describe('[Billing Admin] Invoice Admin Lifecycle Demo Tests', () => {
         invoiceNumber = await createInvoice(page, DEMO_ADMIN.realmId, {
           accountId: userId,
           billingName,
+          billingEmail: `buyer-void-lifecycle-${testStartTime}@example.com`,
           sellerName,
           lineItems: [
             { name: 'Voidable Item', quantity: '2', unitPrice: 4000 },

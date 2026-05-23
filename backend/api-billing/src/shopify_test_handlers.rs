@@ -22,7 +22,6 @@ mod constants {
     pub const PAYMENT_PROVIDER: &str = "shopify";
     pub const SUBSCRIPTION_TIER: &str = "professional";
     pub const BILLING_PERIOD: &str = "monthly";
-    pub const BINDING_STATUS: &str = "active";
     pub const TEST_API_TOKEN_HEADER: &str = "x-test-api-token";
 }
 
@@ -82,7 +81,7 @@ pub async fn create_unclaimed_subscription(
             id, realm_id, user_id, external_subscription_id, external_product_id,
             payment_provider, status, tier, current_period_start, current_period_end,
             plan_id, billing_period, created_at, updated_at
-        ) VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())",
+        ) VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())",
     )
     .bind(subscription_id)
     .bind(&realm_id)
@@ -101,19 +100,17 @@ pub async fn create_unclaimed_subscription(
 
     sqlx::query(
         "INSERT INTO shopify_subscription_binding (
-            subscription_id, realm_id, shop_domain, customer_id, customer_gid,
-            contract_id, contract_gid, last_order_id, status, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())",
+            subscription_id, realm_id, shop_domain, customer_id,
+            contract_id, contract_gid, last_order_id, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())",
     )
     .bind(subscription_id)
     .bind(&realm_id)
     .bind(&request.shop_domain)
     .bind(&request.shopify_customer_id)
-    .bind(request.shopify_customer_gid.unwrap_or_default())
     .bind(&request.contract_id)
     .bind(&request.contract_id)
     .bind(request.last_order_id.unwrap_or_default())
-    .bind(constants::BINDING_STATUS)
     .execute(pool)
     .await
     .map_err(|e| ApiError::internal(format!("Failed to create Shopify binding: {e}")))?;

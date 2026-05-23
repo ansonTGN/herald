@@ -57,7 +57,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
 
       // 先等待数据刷新完成
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.billingPlans(realmId),
+        queryKey: ['subscription-plans', realmId],
       })
       await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
 
@@ -113,7 +113,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
       }
       assignDialog.close()
       // Invalidate queries and wait for refetch to complete
-      await queryClient.invalidateQueries({ queryKey: queryKeys.billingPlans(realmId) })
+      await queryClient.invalidateQueries({ queryKey: ['subscription-plans', realmId] })
       await queryClient.invalidateQueries({ queryKey: queryKeys.planAssignmentsList(realmId) })
       await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },

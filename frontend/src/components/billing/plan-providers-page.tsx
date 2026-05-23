@@ -95,7 +95,7 @@ export function PlanProvidersPage({ realmId, planId }: PlanProvidersPageProps) {
   })
 
   async function invalidateProviderQueries() {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.billingPlans(realmId) })
+    await queryClient.invalidateQueries({ queryKey: ['subscription-plans', realmId] })
     await queryClient.invalidateQueries({ queryKey: queryKeys.planProviders(realmId, planId) })
     await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
   }

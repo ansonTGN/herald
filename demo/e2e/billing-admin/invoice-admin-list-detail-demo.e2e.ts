@@ -164,6 +164,7 @@ test.describe('[Billing Admin] Invoice Admin List & Detail Demo Tests', () => {
         issuedInvoiceNumber = await createInvoice(page, DEMO_ADMIN.realmId, {
           accountId: userId,
           billingName: billingNameIssued,
+          billingEmail: 'issued-test@example.com',
           sellerName,
           lineItems: [{ name: 'Issued Item', quantity: '1', unitPrice: 4000 }],
           dueDate: futureDueDate(),
@@ -481,6 +482,7 @@ test.describe('[Billing Admin] Invoice Admin List & Detail Demo Tests', () => {
         invoiceNumber = await createInvoice(page, DEMO_ADMIN.realmId, {
           accountId: userId,
           billingName,
+          billingEmail: 'history-test@example.com',
           sellerName,
           lineItems: [{ name: 'History Item', quantity: '1', unitPrice: 7000 }],
           dueDate: futureDueDate(),
@@ -565,6 +567,7 @@ test.describe('[Billing Admin] Invoice Admin List & Detail Demo Tests', () => {
         issuedInvoiceId = await createInvoice(page, DEMO_ADMIN.realmId, {
           accountId: userId,
           billingName: billingNameIssued,
+          billingEmail: 'actions-issued-test@example.com',
           sellerName,
           lineItems: [{ name: 'Issued Item', quantity: '1', unitPrice: 2000 }],
           dueDate: futureDueDate(),
@@ -576,6 +579,7 @@ test.describe('[Billing Admin] Invoice Admin List & Detail Demo Tests', () => {
         paidInvoiceId = await createInvoice(page, DEMO_ADMIN.realmId, {
           accountId: userId,
           billingName: billingNamePaid,
+          billingEmail: 'actions-paid-test@example.com',
           sellerName,
           lineItems: [{ name: 'Paid Item', quantity: '1', unitPrice: 3000 }],
           dueDate: futureDueDate(),

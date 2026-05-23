@@ -295,7 +295,7 @@ export const SELECTORS = {
     nameInput: '[data-testid="client-app-name-input"]',
     descriptionInput: '[data-testid="client-app-description-input"]',
     // Redirect URIs tab
-    redirectUrisInput: '[data-testid="redirect-uris-input"]',
+    redirectUrisInput: '[data-testid="redirect-uris-input-field"]',
     // Security tab
     enabledSwitch: '[data-testid="client-app-enabled-switch"]',
     sessionTtlInput: '[data-testid="session-ttl-input"]',
@@ -542,7 +542,7 @@ export const SELECTORS = {
     editPlanConfigButton: (configId: string) => `[data-testid="edit-config-${configId}"]`,
     deletePlanConfigButton: (configId: string) => `[data-testid="delete-config-${configId}"]`,
     // Plan Config Dialog
-    planConfigDialog: '[role="dialog"] [data-testid="points-plan-config-form"]',
+    planConfigDialog: '[data-testid="points-plan-config-form"]',
     planConfigPlanId: '[data-testid="plan-select"]',
     planConfigPointsOnSubscribe: '[data-testid="points-per-period"]',
     planConfigRenewalEnabled: '[data-testid="grant-on-subscribe"]',

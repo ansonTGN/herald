@@ -415,7 +415,7 @@ export class ClientAppsPage extends BasePage {
     this.logger?.testCode.log('Clicked submit button')
 
     // Wait for success toast
-    await expect(this.successMessage).toBeVisible({ timeout: 10000 })
+    await expect(this.successMessage.first()).toBeVisible({ timeout: 10000 })
     this.logger?.testCode.log('Success message appeared')
 
     // Wait for navigation back to list page

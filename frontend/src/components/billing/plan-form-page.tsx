@@ -62,7 +62,7 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
     onSuccess: async (data: SubscriptionPlanResponse) => {
       const action = isEditing ? 'updated' : 'created'
       toast.success(`Subscription Plan "${data?.title}" ${action} successfully`)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.billingPlans(realmId) })
+      await queryClient.invalidateQueries({ queryKey: ['subscription-plans', realmId] })
       await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
       navigate({
         to: '/$realmId/manage/billing',
@@ -79,7 +79,8 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
     schema: subscriptionPlanSchema,
     defaultValues,
     onSubmit: async ({ value }) => {
-      await saveMutation.mutateAsync(value)
+      const payload = { ...value, price: Math.round(value.price * 100) }
+      await saveMutation.mutateAsync(payload)
     },
   })
 

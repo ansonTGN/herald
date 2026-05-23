@@ -97,10 +97,13 @@ export function PlanAssignmentDialog({
   }, [open, userModified, selectedApps, assignedClientAppIds])
 
   function handleToggleApp(clientAppId: string) {
+    setSelectedApps((prev) => {
+      const base = userModified ? prev : assignedClientAppIds
+      return base.includes(clientAppId)
+        ? base.filter((id) => id !== clientAppId)
+        : [...base, clientAppId]
+    })
     setUserModified(true)
-    setSelectedApps((prev) =>
-      prev.includes(clientAppId) ? prev.filter((id) => id !== clientAppId) : [...prev, clientAppId]
-    )
   }
 
   function handleSubmit() {

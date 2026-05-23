@@ -1,6 +1,6 @@
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { createUserSchema, type CreateUserFormData } from '@/lib/schemas/common'
-import { createUser } from '@/lib/api-generated'
+import { createUser2 } from '@/lib/api-generated'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import {
   Dialog,
@@ -59,7 +59,7 @@ export function CreateUserDialog({
 
   const { isSubmitting, mutate } = useFormMutation({
     mutationFn: (data: CreateUserFormData) =>
-      createUser({
+      createUser2({
         path: { realmId },
         body: data, // Direct pass - no manual mapping needed
       }),

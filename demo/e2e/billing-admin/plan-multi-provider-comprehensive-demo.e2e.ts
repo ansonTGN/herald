@@ -96,6 +96,36 @@ test.describe('[Billing Admin] Plan Multi-Payment Provider Comprehensive Demo', 
     })
 
     // ============================================================================
+    // Step 1b: Configure Stripe Payment Provider (prerequisite for US-BI-003)
+    // ============================================================================
+
+    await test.step('Given: 已配置 Stripe 支付平台', async () => {
+      // Navigate directly to Stripe configuration page
+      await page.goto(`/${realmId}/manage/billing/payment-providers/stripe`)
+      await expect(page.getByTestId('stripe-config-form-page')).toBeVisible({ timeout: 10000 })
+
+      // Enable Stripe
+      const enabledSwitch = page.getByTestId('page-stripe-enabled-switch')
+      if (!(await enabledSwitch.isChecked())) {
+        await enabledSwitch.click()
+      }
+
+      // Fill configuration
+      await page.getByTestId('page-stripe-publishable-key-input').fill(`pk_test_51M${timestamp}`)
+      await page.getByTestId('page-stripe-secret-key-input').fill(`sk_test_51M${timestamp}`)
+      await page.getByTestId('page-stripe-webhook-secret-input').fill(`whsec_${timestamp}`)
+
+      // Submit and wait for navigation back to providers page
+      await page.getByTestId('stripe-config-page-submit-button').click()
+
+      await expect(page.getByText(/configuration (created|updated) successfully/i)).toBeVisible({
+        timeout: 15000,
+      })
+
+      console.log('✓ Stripe payment provider configured')
+    })
+
+    // ============================================================================
     // Step 2: Create Plan Without Provider Fields (US-BI-001)
     // ============================================================================
 

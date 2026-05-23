@@ -18,7 +18,7 @@
  */
 
 import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
-import { createSubscriptionPlan, openEditSubscriptionPlanDialog, openDeleteSubscriptionPlanDialog, openAssignSubscriptionPlanDialog, confirmDeleteSubscriptionPlan } from './helpers/billing-page.helpers'
+import { createSubscriptionPlan, openEditSubscriptionPlanDialog, openDeleteSubscriptionPlanDialog, openAssignSubscriptionPlanDialog, confirmDeleteSubscriptionPlan, verifyPlanVisible } from './helpers/billing-page.helpers'
 import { DEMO_ADMIN } from '../helpers/auth'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 
@@ -76,7 +76,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
 
       await test.step('Then: 验证月付套餐创建成功', async () => {
         await expect(page.getByTestId('billing-page')).toBeVisible()
-        await expect(page.getByText(monthlyPlanName)).toBeVisible({ timeout: 5000 })
+        await verifyPlanVisible(page, monthlyPlanName)
         await demoLogger.testCode.log('Monthly plan created successfully')
       })
 
@@ -97,7 +97,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
 
       await test.step('Then: 验证年付套餐创建成功', async () => {
         await expect(page.getByTestId('billing-page')).toBeVisible()
-        await expect(page.getByText(yearlyPlanName)).toBeVisible({ timeout: 5000 })
+        await verifyPlanVisible(page, yearlyPlanName)
         await demoLogger.testCode.log('Yearly plan created successfully')
       })
     })
@@ -149,7 +149,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
           type: 'monthly',
           externalProductId: `prod_${planName}`,
         })
-        await expect(page.getByText(planName)).toBeVisible({ timeout: 5000 })
+        await verifyPlanVisible(page, planName)
         await demoLogger.testCode.log('First plan created')
 
         // 尝试创建同名套餐
@@ -221,7 +221,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
           type: 'monthly',
           externalProductId: `prod_${planName}`,
         })
-        await expect(page.getByText(planName)).toBeVisible({ timeout: 5000 })
+        await verifyPlanVisible(page, planName)
         await demoLogger.testCode.log('Plan created for editing')
       })
 
@@ -278,7 +278,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
           type: 'monthly',
           externalProductId: `prod_${planName}`,
         })
-        await expect(page.getByText(planName)).toBeVisible({ timeout: 5000 })
+        await verifyPlanVisible(page, planName)
       })
 
       await test.step('When: 编辑套餐并禁用', async () => {
@@ -298,7 +298,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
         await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing`)
         await expect(page.getByTestId('billing-page')).toBeVisible()
         // 验证套餐在表格中仍然可见（即使已禁用）- 使用唯一的 planName
-        await expect(page.getByText(planName)).toBeVisible({ timeout: 5000 })
+        await verifyPlanVisible(page, planName)
         await demoLogger.testCode.log('Plan disabled successfully')
       })
 
@@ -347,7 +347,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
           type: 'monthly',
           externalProductId: `prod_${planName}`,
         })
-        await expect(page.getByText(planName)).toBeVisible({ timeout: 5000 })
+        await verifyPlanVisible(page, planName)
       })
 
       await test.step('When: 删除套餐', async () => {
@@ -359,7 +359,9 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
       })
 
       await test.step('Then: 验证套餐删除成功', async () => {
-        // 验证套餐不再出现在列表中
+        // Reload to ensure fresh data after async delete mutation
+        await page.reload({ waitUntil: 'networkidle' })
+        await expect(page.getByTestId('billing-page')).toBeVisible()
         await expect(page.getByText(planName)).not.toBeVisible()
         await demoLogger.testCode.log('Plan deleted successfully')
       })
@@ -387,7 +389,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
           type: 'monthly',
           externalProductId: `prod_${activePlanName}`,
         })
-        await expect(page.getByText(activePlanName)).toBeVisible({ timeout: 5000 })
+        await verifyPlanVisible(page, activePlanName)
       })
 
       await test.step('When: 尝试删除套餐', async () => {
@@ -421,7 +423,7 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
           currency: 'usd',
           externalProductId: `prod_${canceledPlanName}`,
         })
-        await expect(page.getByText(canceledPlanName)).toBeVisible({ timeout: 5000 })
+        await verifyPlanVisible(page, canceledPlanName)
         await demoLogger.testCode.log('Plan created successfully')
 
         // 分配套餐到一个 Client App
@@ -454,12 +456,17 @@ test.describe('[Billing Admin] Subscription Plan Management Demo Tests', () => {
 
       await test.step('When: 删除套餐', async () => {
         await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing`)
+        await expect(page.getByTestId('billing-page')).toBeVisible()
+        // Wait for table data to load (not "Loading...")
+        await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 })
         await openDeleteSubscriptionPlanDialog(page, canceledPlanName)
         await confirmDeleteSubscriptionPlan(page)
         await demoLogger.testCode.log('Plan deletion initiated')
       })
 
       await test.step('Then: 验证套餐删除成功', async () => {
+        await page.reload({ waitUntil: 'networkidle' })
+        await expect(page.getByTestId('billing-page')).toBeVisible()
         await expect(page.getByText(canceledPlanName)).not.toBeVisible()
         await demoLogger.testCode.log('Plan with canceled subscriptions deleted successfully')
       })

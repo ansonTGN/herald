@@ -16,12 +16,13 @@ export async function clickRowMenuItem(
   while (currentPage < maxPages) {
     // Check if the row exists on the current page
     const row = page.locator(`tr:has-text("${rowText}")`)
-    const isVisible = await row.isVisible().catch(() => false)
+    const rowCount = await row.count()
 
-    if (isVisible) {
-      // Found the row, click the menu
-      await expect(row).toBeVisible()
-      const menuTrigger = row.getByRole('button', { name: 'Open menu' })
+    if (rowCount > 0) {
+      // Found the row — scroll into view if needed, then click the menu
+      await row.first().scrollIntoViewIfNeeded()
+      await expect(row.first()).toBeVisible()
+      const menuTrigger = row.first().getByRole('button', { name: 'Open menu' })
       await expect(menuTrigger).toBeVisible()
       await menuTrigger.click()
 
