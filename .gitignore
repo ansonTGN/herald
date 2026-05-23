@@ -10,6 +10,7 @@ tmpclaude-*
 
 # Generated files
 backend/frontend/api.json
+frontend/api.json
 frontend/.jscpd-report/
 scripts/log
 test-results/
