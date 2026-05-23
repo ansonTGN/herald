@@ -20,40 +20,8 @@ use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::PermissionService;
-use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::infrastructure::billing::{decrypt_secret, encrypt_secret};
 use herald_core::infrastructure::shopify::{ShopifyAdminClient, ShopifyStorefrontClient};
-
-// ============================================================================
-// Authentication & Authorization Helper Functions
-// ============================================================================
-
-pub(crate) async fn require_realm_admin(
-    state: &AppState,
-    identity: &Identity,
-    realm_id: &str,
-) -> Result<(), CoreError> {
-    if !identity.is_user() {
-        return Err(CoreError::Forbidden(
-            "Access denied: Realm Admin user required".to_string(),
-        ));
-    }
-
-    let permission_checker = &state.permission_checker;
-
-    let allowed = permission_checker
-        .check_permission(realm_id, &identity.user_id(), "realm", "admin")
-        .await
-        .map_err(|e| CoreError::InternalServerError(format!("Permission check failed: {e}")))?;
-
-    if !allowed {
-        return Err(CoreError::Forbidden(
-            "Access denied: Realm Admin permission required".to_string(),
-        ));
-    }
-
-    Ok(())
-}
 
 // ============================================================================
 // Encryption Helper Functions
@@ -121,10 +89,10 @@ pub async fn list_payment_providers(
     let _user_id =
         require_authenticated_user_in_realm(&identity, &realm_id, "list payment providers")?;
 
-    let is_admin = if identity.is_user() {
+    let can_manage = if identity.is_user() {
         state
             .permission_checker
-            .check_permission(&realm_id, &identity.user_id(), "realm", "admin")
+            .check_permission(&realm_id, &identity.user_id(), "billing", "manage")
             .await
             .unwrap_or(false)
     } else {
@@ -135,7 +103,7 @@ pub async fn list_payment_providers(
 
     if let Some(config) =
         get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url).await?
-        && (is_admin || config.enabled)
+        && (can_manage || config.enabled)
     {
         providers.push(PaymentProviderInfo {
             platform: "shopify".to_string(),
@@ -148,19 +116,19 @@ pub async fn list_payment_providers(
     }
 
     if let Some(wechat_config) = get_wechat_config_for_providers(&state.pool, &realm_id).await?
-        && (is_admin || wechat_config.enabled)
+        && (can_manage || wechat_config.enabled)
     {
         providers.push(wechat_config);
     }
 
     if let Some(stripe_config) = get_stripe_config_for_providers(&state.pool, &realm_id).await?
-        && (is_admin || stripe_config.enabled)
+        && (can_manage || stripe_config.enabled)
     {
         providers.push(stripe_config);
     }
 
     if let Some(creem_config) = get_creem_config_for_providers(&state.pool, &realm_id).await?
-        && (is_admin || creem_config.enabled)
+        && (can_manage || creem_config.enabled)
     {
         providers.push(creem_config);
     }
@@ -192,7 +160,7 @@ pub async fn create_shopify_config(
     Extension(identity): Extension<Identity>,
     Json(request): Json<ShopifyConfigRequest>,
 ) -> Result<Json<ShopifyConfigResponse>, ApiError> {
-    require_realm_admin(&state, &identity, &realm_id).await?;
+    crate::handlers::require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
     validate_request(&request).map_err(ApiError::bad_request_json)?;
 
@@ -289,7 +257,7 @@ pub async fn get_shopify_config(
     Path(realm_id): Path<String>,
     Extension(identity): Extension<Identity>,
 ) -> Result<Json<ShopifyConfigResponse>, ApiError> {
-    require_realm_admin(&state, &identity, &realm_id).await?;
+    crate::handlers::require_billing_permission(&state, &identity, &realm_id, "view").await?;
 
     let config = get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url)
         .await?
@@ -322,7 +290,7 @@ pub async fn update_shopify_config(
     Extension(identity): Extension<Identity>,
     Json(request): Json<ShopifyConfigUpdateRequest>,
 ) -> Result<Json<ShopifyConfigResponse>, ApiError> {
-    require_realm_admin(&state, &identity, &realm_id).await?;
+    crate::handlers::require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
     validate_request(&request).map_err(ApiError::bad_request_json)?;
 
@@ -360,7 +328,7 @@ pub async fn delete_shopify_config(
     Path(realm_id): Path<String>,
     Extension(identity): Extension<Identity>,
 ) -> Result<StatusCode, ApiError> {
-    require_realm_admin(&state, &identity, &realm_id).await?;
+    crate::handlers::require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
     let _existing = get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url)
         .await?
@@ -405,7 +373,7 @@ pub async fn test_shopify_connection_endpoint(
     Extension(identity): Extension<Identity>,
     Json(request): Json<TestConnectionRequest>,
 ) -> Result<Json<TestConnectionResponse>, ApiError> {
-    require_realm_admin(&state, &identity, &realm_id).await?;
+    crate::handlers::require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
     validate_request(&request).map_err(ApiError::bad_request_json)?;
 

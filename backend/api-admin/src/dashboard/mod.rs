@@ -58,7 +58,12 @@ pub async fn get_dashboard_stats(
 ) -> Result<ApiResult<DashboardStatsResponse>, ApiError> {
     let has_permission = state
         .permission_checker
-        .check_permission(&identity.realm_id(), &identity.user_id(), "realm", "admin")
+        .check_permission(
+            &identity.realm_id(),
+            &identity.user_id(),
+            "dashboard",
+            "view",
+        )
         .await
         .map_err(|e| {
             tracing::error!("Failed to check dashboard access permission: {e}");

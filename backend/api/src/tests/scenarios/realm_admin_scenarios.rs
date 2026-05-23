@@ -7,10 +7,7 @@
 // 问题：当 Realm Admin 用户登录并尝试访问 /api/roles/{realmId}/users 时，
 // 得到 403 "Realm admin privileges required" 错误
 //
-// 原因：Realm 创建时自动创建了 realm-admin 角色，但没有自动授予该角色
-// `realm.admin:{realm_id}` 权限
-//
-// 修复：确保 realm-admin 角色自动获得 realm.admin:{realm_id} 权限
+// 修复：确保 realm-admin 角色自动获得 realm.manage 等权限
 //
 // 运行方式：
 // cd backend
@@ -47,7 +44,7 @@ use axum::body::to_bytes;
 /// **验收标准**：
 /// - Realm Admin 用户可以访问用户列表 API
 /// - 返回 200 OK（不是 403 Forbidden）
-/// - realm-admin 角色拥有 realm.admin:{realm_id} 权限
+/// - realm-admin 角色拥有 dashboard.view, audit.view, api_keys.view, realm.manage 等权限
 ///
 /// **运行方式**：
 /// ```bash
@@ -284,10 +281,10 @@ async fn test_scenario_realm_admin_can_access_users(ctx: &mut TestContext) {
     // ============================================================================
     println!("[Step 5] 验证 realm-admin 角色的权限策略");
 
-    // 检查是否存在 realm.admin 权限策略
-    let has_realm_admin_policy: bool = sqlx::query(
+    // 检查是否存在 realm.manage 权限策略（admin realm 下的 realm-admin）
+    let has_realm_manage_policy: bool = sqlx::query(
         "SELECT EXISTS(SELECT 1 FROM role_policies
-         WHERE role_id = $1 AND realm_id = $2 AND resource = 'realm' AND action = 'admin')"
+         WHERE role_id = $1 AND realm_id = $2 AND resource = 'realm' AND action = 'manage')"
     )
     .bind(realm_admin_role_id)
     .bind(&new_realm_id)
@@ -296,9 +293,21 @@ async fn test_scenario_realm_admin_can_access_users(ctx: &mut TestContext) {
     .unwrap()
     .get("exists");
 
-    if !has_realm_admin_policy {
+    // 检查是否存在 dashboard.view 权限策略
+    let has_dashboard_view_policy: bool = sqlx::query(
+        "SELECT EXISTS(SELECT 1 FROM role_policies
+         WHERE role_id = $1 AND realm_id = $2 AND resource = 'dashboard' AND action = 'view')"
+    )
+    .bind(realm_admin_role_id)
+    .bind(&new_realm_id)
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .unwrap()
+    .get("exists");
+
+    if !has_realm_manage_policy && !has_dashboard_view_policy {
         println!(
-            "[Step 5] ⚠️  缺少权限策略: realm.admin 应该授予给 realm-admin 角色"
+            "[Step 5] Warning: realm-admin 角色缺少标准权限策略"
         );
     }
 
@@ -321,22 +330,25 @@ async fn test_scenario_realm_admin_can_access_users(ctx: &mut TestContext) {
     println!("[Step 6] 响应状态码: {}", status);
 
     if status == StatusCode::OK {
-        println!("[Step 6] ✅ 测试通过：Realm Admin 可以访问用户列表 (200 OK)");
+        println!("[Step 6] OK 测试通过：Realm Admin 可以访问用户列表 (200 OK)");
 
         // 验证响应内容
         let body: serde_json::Value = crate::tests::response_json(resp).await;
         assert!(body["items"].is_array(), "响应应包含 items 数组");
         println!(
-            "[Step 6] ✅ 用户列表返回成功，共 {} 个用户",
+            "[Step 6] OK 用户列表返回成功，共 {} 个用户",
             body["items"].as_array().unwrap().len()
         );
 
-        // 最终断言
-        assert!(has_realm_admin_policy, "realm-admin 角色应该有 realm.admin 权限");
+        // 最终断言 - 验证标准权限策略存在
+        assert!(
+            has_realm_manage_policy || has_dashboard_view_policy,
+            "realm-admin 角色应该有 realm.manage 或 dashboard.view 权限"
+        );
     } else {
         // 打印调试信息
-        println!("[Step 6] ❌ 测试失败：Realm Admin 无法访问用户列表 ({} )", status);
-        println!("[Step 6] 原因：realm-admin 角色缺少 realm.admin 权限");
+        println!("[Step 6] FAIL 测试失败：Realm Admin 无法访问用户列表 ({} )", status);
+        println!("[Step 6] 原因：realm-admin 角色缺少必要权限");
 
         println!("\n=== 调试信息 ===");
         println!("Realm ID: {}", new_realm_id);
@@ -388,16 +400,16 @@ async fn test_scenario_realm_admin_can_access_users(ctx: &mut TestContext) {
 ///
 /// **场景描述**：
 /// 验证当创建新 Realm 时，系统自动授予 realm-admin 角色
-/// realm.admin:{realm_id} 权限。
+/// dashboard.view, audit.view, api_keys.view, realm.manage 等权限。
 ///
 /// **测试步骤**：
 /// 1. Super Admin 创建新 Realm
 /// 2. 检查 realm-admin 角色是否存在
-/// 3. 检查 realm-admin 角色是否有 realm.admin:{realm_id} 权限
+/// 3. 检查 realm-admin 角色是否有 dashboard.view 等权限
 ///
 /// **验收标准**：
 /// - realm-admin 角色存在
-/// - realm-admin 角色有 realm.admin:{realm_id} 权限
+/// - realm-admin 角色有 dashboard.view 等权限
 ///
 /// **运行方式**：
 /// ```bash
@@ -486,14 +498,14 @@ async fn test_scenario_realm_creation_sets_realm_admin_permissions(ctx: &mut Tes
     println!("[Step 2] ✓ 获取 realm-admin 角色: {}", realm_admin_role_id);
 
     // ============================================================================
-    // Step 3: 验证 realm-admin 角色有 realm.admin 权限
+    // Step 3: 验证 realm-admin 角色有 dashboard.view 等权限
     // ============================================================================
     println!("[Step 3] 验证 realm-admin 角色的权限");
 
-    // 检查是否存在 realm.admin 权限策略
-    let has_realm_admin_policy: bool = sqlx::query(
+    // 检查是否存在 dashboard.view 权限策略（替代原来的 realm.admin）
+    let has_dashboard_view_policy: bool = sqlx::query(
         "SELECT EXISTS(SELECT 1 FROM role_policies
-         WHERE role_id = $1 AND realm_id = $2 AND resource = 'realm' AND action = 'admin')"
+         WHERE role_id = $1 AND realm_id = $2 AND resource = 'dashboard' AND action = 'view')"
     )
     .bind(realm_admin_role_id)
     .bind(&new_realm_id)
@@ -502,9 +514,9 @@ async fn test_scenario_realm_creation_sets_realm_admin_permissions(ctx: &mut Tes
     .unwrap()
     .get("exists");
 
-    if !has_realm_admin_policy {
-        println!("[Step 3] ❌ 权限策略缺失");
-        println!("[Step 3] 预期策略: realm.admin for role {}", realm_admin_role_id);
+    if !has_dashboard_view_policy {
+        println!("[Step 3] FAIL 权限策略缺失");
+        println!("[Step 3] 预期策略: dashboard.view for role {}", realm_admin_role_id);
 
         // 列出实际存在的权限策略
         let role_policies: Vec<(String, String)> = sqlx::query_as(
@@ -522,11 +534,11 @@ async fn test_scenario_realm_creation_sets_realm_admin_permissions(ctx: &mut Tes
         }
 
         assert!(
-            has_realm_admin_policy,
-            "realm-admin 角色应该有 realm.admin 权限"
+            has_dashboard_view_policy,
+            "realm-admin 角色应该有 dashboard.view 权限"
         );
     } else {
-        println!("[Step 3] ✅ realm-admin 角色有 realm.admin 权限");
+        println!("[Step 3] OK realm-admin 角色有 dashboard.view 权限");
     }
 
     println!("\n✅ Realm 创建时自动设置权限测试完成！");

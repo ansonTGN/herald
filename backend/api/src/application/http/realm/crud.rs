@@ -368,6 +368,9 @@ pub async fn update_realm(
         .map_err(|e| {
             tracing::error!("Failed to update realm: {e}");
             match e {
+                herald_core::domain::common::entities::app_errors::CoreError::Forbidden(msg) => {
+                    ApiError::forbidden(msg)
+                }
                 herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
                     ApiError::not_found("Realm not found")
                 }

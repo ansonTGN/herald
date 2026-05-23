@@ -3,8 +3,8 @@
 // =============================================================================
 //
 // Test realm creation with permission-based access control:
-// - Users with "realm.create" permission can create realms
-// - Users without "realm.create" permission receive 403 Forbidden
+// - Users with "realm.manage" permission can create realms
+// - Users without "realm.manage" permission receive 403 Forbidden
 //
 // =============================================================================
 
@@ -24,14 +24,14 @@ use tower::ServiceExt;
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_realm_creation_with_permission(ctx: &mut TestContext) {
-    // Given: User has realm.create permission (via realm-admin role in admin realm)
+    // Given: User has realm.manage permission (via realm-admin role in admin realm)
     let email = format!("admin-with-perm-{}", ctx._realm_id);
 
     // Create user and grant realm-admin role
     let (admin_token, user_id) = create_admin_session_with_user(ctx, &email, 1800).await;
     grant_realm_admin_role(ctx, &user_id).await;
 
-    // IMPORTANT: Add realms.create permission for admin realm
+    // IMPORTANT: Add realm.manage permission for admin realm
     // This is the permission that controls who can create new realms
     if ctx._realm_id == "admin" {
         // Get the realm-admin role UUID
@@ -42,7 +42,7 @@ async fn test_scenario_realm_creation_with_permission(ctx: &mut TestContext) {
                 .await
                 .unwrap();
 
-        // Add realms.create permission to the role
+        // Add realm.manage permission to the role
         let policy_id = uuid::Uuid::now_v7();
         sqlx::query(
             "INSERT INTO role_policies (id, role_id, realm_id, resource, action)
@@ -52,11 +52,11 @@ async fn test_scenario_realm_creation_with_permission(ctx: &mut TestContext) {
         .bind(policy_id)
         .bind(role_uuid)
         .bind(&ctx._realm_id)
-        .bind("realms")
-        .bind("create")
+        .bind("realm")
+        .bind("manage")
         .execute(&ctx._app_state.pool)
         .await
-        .expect("Failed to add realms.create permission");
+        .expect("Failed to add realm.manage permission");
 
         // Invalidate permission cache
         let _ = ctx
@@ -65,7 +65,7 @@ async fn test_scenario_realm_creation_with_permission(ctx: &mut TestContext) {
             .invalidate_realm_cache(&ctx._realm_id)
             .await;
 
-        tracing::info!("Added realms.create permission to realm-admin role");
+        tracing::info!("Added realm.manage permission to realm-admin role");
     }
 
     let test_realm_id = format!("test-realm-with-perm-{}", ctx._realm_id);
@@ -96,17 +96,17 @@ async fn test_scenario_realm_creation_with_permission(ctx: &mut TestContext) {
     assert_eq!(
         response.status(),
         StatusCode::CREATED,
-        "User with realm.create permission should be able to create realm"
+        "User with realm.manage permission should be able to create realm"
     );
 }
 
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_realm_creation_without_permission_returns_403(ctx: &mut TestContext) {
-    // Given: User does NOT have realm.create permission
+    // Given: User does NOT have realm.manage permission
     let email = format!("admin-no-perm-{}", ctx._realm_id);
     let admin_token = create_admin_session(ctx, &email, 1800).await;
-    // Note: NOT granting realm-admin role, so no realms.create permission
+    // Note: NOT granting realm-admin role, so no realm.manage permission
 
     let test_realm_id = format!("test-realm-no-perm-{}", ctx._realm_id);
 
@@ -136,7 +136,7 @@ async fn test_scenario_realm_creation_without_permission_returns_403(ctx: &mut T
     assert_eq!(
         response.status(),
         StatusCode::FORBIDDEN,
-        "User without realm.create permission should receive 403"
+        "User without realm.manage permission should receive 403"
     );
 }
 

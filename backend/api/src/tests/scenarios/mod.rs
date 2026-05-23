@@ -59,6 +59,18 @@ pub mod oauth_pkce_scenarios;
 // Unified permission hierarchy scenarios
 pub mod unified_permission_hierarchy_scenarios;
 
+// Dashboard & Audit permission enforcement scenarios
+pub mod dashboard_audit_permission_scenarios;
+
+// Realm manage permission scenarios (realm.manage CRUD + legacy removal)
+pub mod realm_manage_permission_scenarios;
+
+// API Keys view/manage permission split scenarios
+pub mod api_keys_permission_scenarios;
+
+// Billing & Points permission enforcement scenarios
+pub mod billing_points_permission_scenarios;
+
 // Points system scenarios
 pub mod points;
 

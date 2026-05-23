@@ -539,11 +539,9 @@ impl RedisPermissionChecker {
     /// # Matching Rules (with hierarchy)
     /// * Exact resource and action match → Permission granted
     /// * Hierarchical match: higher-level actions grant lower-level access
-    ///   - `manage` grants access to: `view`, `edit`, `delete`, `manage`
-    ///   - `edit` grants access to: `view`, `edit`
-    ///   - `delete` grants access to: `view`, `delete`
+    ///   - `manage` grants access to: `view`, `manage`, `create`
+    ///   - `view` grants access to: `view`
     /// * Resource must always match exactly (no wildcards)
-    /// * Custom actions (admin, create) must match exactly
     fn matches_policy(&self, policy: &Policy, resource: &str, action: &str) -> bool {
         // Resource must match exactly
         if policy.resource != resource {
@@ -566,30 +564,20 @@ impl RedisPermissionChecker {
     }
 
     /// Check if a granted action covers the requested action (with hierarchy)
+    ///
+    /// Permission hierarchy: manage > create > view
     fn action_matches_hierarchy(&self, granted_action: &str, requested_action: &str) -> bool {
         // Exact match always works
         if granted_action == requested_action {
             return true;
         }
 
-        // Custom actions require exact match
-        if Self::is_custom_action(granted_action) || Self::is_custom_action(requested_action) {
-            return false;
-        }
-
         // Hierarchical checks
-        // Permission hierarchy: manage > create > view
-        // Custom actions (admin) require exact match
         match granted_action {
-            "manage" => matches!(requested_action, "view" | "manage" | "create"),
-            "view" => requested_action == "view",
+            "manage" => matches!(requested_action, "view" | "create"),
+            "view" => false,
             _ => false,
         }
-    }
-
-    /// Check if an action is a custom (non-hierarchical) action
-    fn is_custom_action(action: &str) -> bool {
-        matches!(action, "admin")
     }
 
     /// Get cached value with error handling (fallback to None on error)
@@ -689,15 +677,10 @@ mod tests {
                     return true;
                 }
 
-                // Custom actions require exact match
-                if matches!(granted_action, "admin") || matches!(requested_action, "admin") {
-                    return false;
-                }
-
                 // Hierarchical checks
                 match granted_action {
-                    "manage" => matches!(requested_action, "view" | "manage" | "create"),
-                    "view" => requested_action == "view",
+                    "manage" => matches!(requested_action, "view" | "create"),
+                    "view" => false,
                     _ => false,
                 }
             }
@@ -713,7 +696,6 @@ mod tests {
         // Then: Should match
         assert!(test_action_hierarchy("view", "view"));
         assert!(test_action_hierarchy("manage", "manage"));
-        assert!(test_action_hierarchy("admin", "admin"));
         assert!(test_action_hierarchy("create", "create"));
     }
 
@@ -739,32 +721,6 @@ mod tests {
         // When: Checking users:manage permission
         // Then: Should NOT be granted (view doesn't cover manage)
         assert!(!test_action_hierarchy("view", "manage"));
-    }
-
-    #[test]
-    fn test_custom_actions_require_exact_match() {
-        // Given: User has users:admin permission
-        // When: Checking users:view permission
-        // Then: Should NOT be granted (admin requires exact match)
-        assert!(!test_action_hierarchy("admin", "view"));
-
-        // When: Checking users:admin permission
-        // Then: Should be granted (exact match)
-        assert!(test_action_hierarchy("admin", "admin"));
-
-        // Given: User has users:manage permission
-        // When: Checking users:admin permission
-        // Then: Should NOT be granted (admin requires exact match)
-        assert!(!test_action_hierarchy("manage", "admin"));
-
-        // Given: User has users:create permission
-        // When: Checking users:view permission
-        // Then: Should NOT be granted (create only covers itself)
-        assert!(!test_action_hierarchy("create", "view"));
-
-        // When: Checking users:create permission
-        // Then: Should be granted (exact match)
-        assert!(test_action_hierarchy("create", "create"));
     }
 
     #[test]

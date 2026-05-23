@@ -295,7 +295,7 @@ async fn test_scenario_dashboard_stats_empty_realm_returns_zeros(ctx: &mut TestC
     let now = chrono::Utc::now();
     let empty_admin_id = seed_user(ctx, &empty_realm_id, "dashboard-empty@test.com", &now).await;
 
-    // Create realm-admin role with realm.admin policy in the empty realm
+    // Create realm-admin role with dashboard.view policy in the empty realm
     let role_uuid = uuid::Uuid::now_v7();
     sqlx::query(
         "INSERT INTO roles (id, name, description, realm_id, client_id, is_builtin)
@@ -311,14 +311,14 @@ async fn test_scenario_dashboard_stats_empty_realm_returns_zeros(ctx: &mut TestC
     let policy_id = uuid::Uuid::now_v7();
     sqlx::query(
         "INSERT INTO role_policies (id, role_id, realm_id, resource, action)
-         VALUES ($1, $2, $3, 'realm', 'admin')",
+         VALUES ($1, $2, $3, 'dashboard', 'view')",
     )
     .bind(policy_id)
     .bind(role_uuid)
     .bind(&empty_realm_id)
     .execute(&ctx.app_state.pool)
     .await
-    .expect("Failed to add realm.admin policy");
+    .expect("Failed to add dashboard.view policy");
 
     let user_role_id = uuid::Uuid::now_v7();
     let user_uuid = uuid::Uuid::parse_str(&empty_admin_id).unwrap();
@@ -476,14 +476,14 @@ async fn test_scenario_dashboard_stats_realm_isolation_no_leakage(ctx: &mut Test
     let policy_id = uuid::Uuid::now_v7();
     sqlx::query(
         "INSERT INTO role_policies (id, role_id, realm_id, resource, action)
-         VALUES ($1, $2, $3, 'realm', 'admin')",
+         VALUES ($1, $2, $3, 'dashboard', 'view')",
     )
     .bind(policy_id)
     .bind(role_uuid)
     .bind(&realm_b_id)
     .execute(&ctx.app_state.pool)
     .await
-    .expect("Failed to add realm.admin policy to Realm B");
+    .expect("Failed to add dashboard.view policy to Realm B");
 
     let user_role_id = uuid::Uuid::now_v7();
     let user_uuid = uuid::Uuid::parse_str(&realm_b_admin_id).unwrap();

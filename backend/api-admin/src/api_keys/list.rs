@@ -36,8 +36,8 @@ pub async fn list_api_keys(
         &realm_id,
         &user_id,
         "api_keys",
-        "manage",
-        "api_keys.manage",
+        "view",
+        "api_keys.view",
     )
     .await?;
 

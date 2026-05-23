@@ -3,7 +3,7 @@
 /// 测试目标：验证权限层级系统正常工作
 /// - manage 权限包含 view 权限
 /// - view 权限不包含 manage 权限
-/// - 自定义权限（admin, create）必须精确匹配
+/// - 非层级权限必须精确匹配
 /// - 多权限层级验证
 ///
 /// 来源：`.ai/design/fix-permission.md` Section 5.5.2
@@ -230,10 +230,10 @@ mod tests {
             PermissionTestCase::CustomRequireExactMatch => {
                 let (admin_token, user_id_str, _) = setup_test_environment(
                     ctx,
-                    "test-admin-user@test.com",
-                    "test-admin-role",
-                    "Role with users:admin permission",
-                    vec![("users", "admin")],
+                    "test-create-user@test.com",
+                    "test-create-role",
+                    "Role with users:create permission",
+                    vec![("users", "create")],
                 )
                 .await;
 
@@ -248,10 +248,10 @@ mod tests {
 
                 assert!(
                     !allowed,
-                    "users:admin should NOT grant access to users:view (custom actions require exact match)"
+                    "users:create should NOT grant access to users:view (non-hierarchy actions require exact match)"
                 );
                 tracing::info!(
-                    "✓ Custom permission correctly requires exact match (via {:?})",
+                    "OK Non-hierarchy permission correctly requires exact match (via {:?})",
                     method
                 );
             }
@@ -336,9 +336,9 @@ mod tests {
         .await;
     }
 
-    /// 场景测试：自定义权限必须精确匹配（API）
+    /// 场景测试：非层级权限必须精确匹配（API）
     ///
-    /// **Given**: 用户拥有 `users:admin` 权限（自定义权限）
+    /// **Given**: 用户拥有 `users:create` 权限
     /// **When**: 用户请求访问需要 `users:view` 权限的资源
     /// **Then**: 权限检查返回 false（拒绝访问）
     #[test_context(PermissionHierarchyTestContext)]

@@ -123,14 +123,14 @@ fn realm_to_list_item(realm: Realm) -> RealmListItem {
 
 /// Create a new realm
 ///
-/// Creates a new realm in the system. Only principals with `realm:create` permission
+/// Creates a new realm in the system. Only principals with `realm:manage` permission
 /// in the admin realm may invoke this endpoint.
 ///
 /// # Authentication
 /// Requires valid API Key via X-API-Key header
 ///
 /// # Authorization
-/// The caller must have `realm:create` permission in the `admin` realm.
+/// The caller must have `realm:manage` permission in the `admin` realm.
 #[utoipa::path(
     post,
     path = "/api/ext/realms",
@@ -150,9 +150,9 @@ pub async fn create_realm(
     Extension(identity): Extension<Identity>,
     Json(req): Json<CreateRealmExtRequest>,
 ) -> Response {
-    // 1. Authorization: requires realm:create in the admin realm
+    // 1. Authorization: requires realm:manage in the admin realm
     if let Err(resp) =
-        require_principal_permission(&state, &identity, "admin", "realm", "create").await
+        require_principal_permission(&state, &identity, "admin", "realm", "manage").await
     {
         return resp.into_response();
     }

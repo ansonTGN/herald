@@ -1,4 +1,4 @@
-use super::shopify_config_handlers::require_realm_admin;
+use crate::handlers::require_billing_permission;
 use crate::shopify_config_types::{
     GenericErrorResponse, PaymentProviderInfo, ValidationErrorDetail, ValidationErrorResponse,
     validate_request,
@@ -43,7 +43,7 @@ pub async fn create_wechat_config(
     Extension(identity): Extension<Identity>,
     Json(request): Json<WechatConfigRequest>,
 ) -> Result<(StatusCode, Json<WechatConfigResponse>), ApiError> {
-    require_realm_admin(&state, &identity, &realm_id).await?;
+    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
     validate_request(&request).map_err(ApiError::bad_request_json)?;
 
@@ -121,7 +121,7 @@ pub async fn get_wechat_config(
     Extension(identity): Extension<Identity>,
     Query(query): Query<WechatConfigQuery>,
 ) -> Result<Json<WechatConfigResponse>, ApiError> {
-    require_realm_admin(&state, &identity, &realm_id).await?;
+    require_billing_permission(&state, &identity, &realm_id, "view").await?;
 
     let config = get_wechat_config_internal(&state.pool, &realm_id, query.reveal_secrets)
         .await?
@@ -152,7 +152,7 @@ pub async fn update_wechat_config(
     Extension(identity): Extension<Identity>,
     Json(request): Json<WechatConfigUpdateRequest>,
 ) -> Result<(StatusCode, Json<WechatConfigResponse>), ApiError> {
-    require_realm_admin(&state, &identity, &realm_id).await?;
+    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
     validate_request(&request).map_err(ApiError::bad_request_json)?;
 
@@ -225,7 +225,7 @@ pub async fn delete_wechat_config(
     Path(realm_id): Path<String>,
     Extension(identity): Extension<Identity>,
 ) -> Result<StatusCode, ApiError> {
-    require_realm_admin(&state, &identity, &realm_id).await?;
+    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
     let _existing = get_wechat_config_internal(&state.pool, &realm_id, false)
         .await?

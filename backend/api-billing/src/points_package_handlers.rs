@@ -244,7 +244,7 @@ pub async fn list_points_packages(
     let service = &state.points_package_service;
 
     let packages = service
-        .list_visible_points_packages(&identity, &realm_id)
+        .list_visible_points_packages(&identity, state.permission_checker.as_ref(), &realm_id)
         .await
         .map_err(|e| core_error_to_api_error(e, "List points packages"))?;
 
@@ -281,7 +281,12 @@ pub async fn get_points_package(
     let service = &state.points_package_service;
 
     let package = service
-        .get_visible_points_package(&identity, &realm_id, package_id)
+        .get_visible_points_package(
+            &identity,
+            state.permission_checker.as_ref(),
+            &realm_id,
+            package_id,
+        )
         .await
         .map_err(|e| core_error_to_api_error(e, "Get points package"))?;
 

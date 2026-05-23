@@ -18,39 +18,11 @@ use herald_api_base::application::http::common::pagination::{
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::PermissionService;
 use herald_core::domain::billing::{
     BillingRepository, HistoryEventType, SUBSCRIPTION_STATUS_UNKNOWN, SortOrder,
     SubscriptionHistoryQuery,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
-
-async fn require_realm_admin(
-    state: &AppState,
-    identity: &Identity,
-    realm_id: &str,
-) -> Result<(), CoreError> {
-    if !identity.is_user() {
-        return Err(CoreError::Forbidden(
-            "Access denied: Realm Admin user required".to_string(),
-        ));
-    }
-
-    let permission_checker = &state.permission_checker;
-
-    let allowed = permission_checker
-        .check_permission(realm_id, &identity.user_id(), "realm", "admin")
-        .await
-        .map_err(|e| CoreError::InternalServerError(format!("Permission check failed: {e}")))?;
-
-    if !allowed {
-        return Err(CoreError::Forbidden(
-            "Access denied: Realm Admin permission required".to_string(),
-        ));
-    }
-
-    Ok(())
-}
 
 /// Get subscription history for a specific subscription
 #[utoipa::path(
@@ -159,7 +131,7 @@ pub async fn list_subscription_history(
         ));
     }
 
-    require_realm_admin(&state, &identity, &realm_id).await?;
+    crate::handlers::require_billing_permission(&state, &identity, &realm_id, "view").await?;
 
     if let Err(validation_errors) = query.validate() {
         return Err(ApiError::bad_request(format!(

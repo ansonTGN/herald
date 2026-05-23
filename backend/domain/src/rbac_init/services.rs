@@ -110,54 +110,34 @@ where
         );
 
         // 3. 创建 realm-admin 的权限
-        // Note: realm.create permission only exists in admin realm
+        // Note: realm.manage permission only exists in admin realm
         let is_admin_realm = request.realm_id == "admin";
-        let realm_admin_permissions: Vec<(&str, &str)> = if is_admin_realm {
-            vec![
-                ("realm.view", "View realm information"),
-                ("realm.admin", "Realm administration"),
-                ("realm.create", "Create new realms"),
-                ("users.view", "View users"),
-                ("users.manage", "User management"),
-                ("clients.view", "View client applications"),
-                ("clients.manage", "Client application management"),
-                ("roles.view", "View roles"),
-                ("roles.manage", "Role management"),
-                ("permissions.view", "View permissions"),
-                ("permissions.manage", "Permission management"),
-                ("policies.view", "View policies"),
-                ("policies.manage", "Policy management"),
-                ("settings.view", "View settings"),
-                ("settings.manage", "Settings management"),
-                ("api_keys.manage", "API Key management"),
-                ("billing.view", "View billing plans"),
-                ("billing.manage", "Manage billing plans"),
-                ("points.view", "View points accounts and transactions"),
-                ("points.manage", "Manage points accounts and transactions"),
-            ]
-        } else {
-            vec![
-                ("realm.view", "View realm information"),
-                ("realm.admin", "Realm administration"),
-                ("users.view", "View users"),
-                ("users.manage", "User management"),
-                ("clients.view", "View client applications"),
-                ("clients.manage", "Client application management"),
-                ("roles.view", "View roles"),
-                ("roles.manage", "Role management"),
-                ("permissions.view", "View permissions"),
-                ("permissions.manage", "Permission management"),
-                ("policies.view", "View policies"),
-                ("policies.manage", "Policy management"),
-                ("settings.view", "View settings"),
-                ("settings.manage", "Settings management"),
-                ("api_keys.manage", "API Key management"),
-                ("billing.view", "View billing plans"),
-                ("billing.manage", "Manage billing plans"),
-                ("points.view", "View points accounts and transactions"),
-                ("points.manage", "Manage points accounts and transactions"),
-            ]
-        };
+        let mut realm_admin_permissions: Vec<(&str, &str)> = vec![
+            ("realm.view", "View realm information"),
+            ("dashboard.view", "View dashboard"),
+            ("audit.view", "View audit logs"),
+            ("users.view", "View users"),
+            ("users.manage", "User management"),
+            ("clients.view", "View client applications"),
+            ("clients.manage", "Client application management"),
+            ("roles.view", "View roles"),
+            ("roles.manage", "Role management"),
+            ("permissions.view", "View permissions"),
+            ("permissions.manage", "Permission management"),
+            ("policies.view", "View policies"),
+            ("policies.manage", "Policy management"),
+            ("settings.view", "View settings"),
+            ("settings.manage", "Settings management"),
+            ("api_keys.view", "View API keys"),
+            ("api_keys.manage", "API Key management"),
+            ("billing.view", "View billing plans"),
+            ("billing.manage", "Manage billing plans"),
+            ("points.view", "View points accounts and transactions"),
+            ("points.manage", "Manage points accounts and transactions"),
+        ];
+        if is_admin_realm {
+            realm_admin_permissions.insert(1, ("realm.manage", "Create and manage realms"));
+        }
 
         for (name, description) in realm_admin_permissions {
             let (resource, action) = parse_permission(name).map_err(|e| {
@@ -208,73 +188,35 @@ where
         }
 
         // 5. 为 realm-admin 角色添加权限策略
-        // IMPORTANT: Add realm.admin:{realm_id} policy FIRST
-        // This is required by the require_realm_admin middleware
-        // The middleware checks for: (client_id, user_id, "realm.admin:{realm_id}", "admin")
-
-        // Insert realm.admin policy (special format for middleware)
-        self.role_policy_repository
-            .create_policy(crate::rbac_init::CreateRolePolicyRequest {
-                realm_id: request.realm_id.clone(),
-                role_id: realm_admin_role.id,
-                resource: format!("realm.admin:{}", request.realm_id),
-                action: "admin".to_string(),
-            })
-            .await?;
-
-        tracing::info!(
-            realm_id = %request.realm_id,
-            "Realm admin permission policy added successfully"
-        );
 
         // Realm admin policies
-        // Note: realm.create policy only exists in admin realm
-        let realm_admin_policies: Vec<(&str, &str)> = if is_admin_realm {
-            vec![
-                ("realm", "view"),
-                ("realm", "admin"),
-                ("realm", "create"),
-                ("users", "view"),
-                ("users", "manage"),
-                ("clients", "view"),
-                ("clients", "manage"),
-                ("roles", "view"),
-                ("roles", "manage"),
-                ("permissions", "view"),
-                ("permissions", "manage"),
-                ("policies", "view"),
-                ("policies", "manage"),
-                ("settings", "view"),
-                ("settings", "manage"),
-                ("api_keys", "manage"),
-                ("billing", "view"),
-                ("billing", "manage"),
-                ("points", "view"),
-                ("points", "manage"),
-            ]
-        } else {
-            vec![
-                ("realm", "view"),
-                ("realm", "admin"),
-                ("users", "view"),
-                ("users", "manage"),
-                ("clients", "view"),
-                ("clients", "manage"),
-                ("roles", "view"),
-                ("roles", "manage"),
-                ("permissions", "view"),
-                ("permissions", "manage"),
-                ("policies", "view"),
-                ("policies", "manage"),
-                ("settings", "view"),
-                ("settings", "manage"),
-                ("api_keys", "manage"),
-                ("billing", "view"),
-                ("billing", "manage"),
-                ("points", "view"),
-                ("points", "manage"),
-            ]
-        };
+        // Note: realm.manage policy only exists in admin realm
+        let mut realm_admin_policies: Vec<(&str, &str)> = vec![
+            ("realm", "view"),
+            ("dashboard", "view"),
+            ("audit", "view"),
+            ("users", "view"),
+            ("users", "manage"),
+            ("clients", "view"),
+            ("clients", "manage"),
+            ("roles", "view"),
+            ("roles", "manage"),
+            ("permissions", "view"),
+            ("permissions", "manage"),
+            ("policies", "view"),
+            ("policies", "manage"),
+            ("settings", "view"),
+            ("settings", "manage"),
+            ("api_keys", "view"),
+            ("api_keys", "manage"),
+            ("billing", "view"),
+            ("billing", "manage"),
+            ("points", "view"),
+            ("points", "manage"),
+        ];
+        if is_admin_realm {
+            realm_admin_policies.insert(1, ("realm", "manage"));
+        }
 
         for (resource, action) in realm_admin_policies {
             self.role_policy_repository

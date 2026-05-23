@@ -36,29 +36,30 @@ impl<R: PointsPackageRepository> PointsPackageService<R> {
         Ok(())
     }
 
-    async fn ensure_realm_admin<P: PermissionService>(
+    async fn ensure_points_permission<P: PermissionService>(
         &self,
         identity: &Identity,
         permission_checker: &P,
         realm_id: &str,
+        action: &str,
     ) -> Result<(), CoreError> {
         self.ensure_realm_access(identity, realm_id).await?;
 
         if !identity.is_user() {
             return Err(CoreError::Forbidden(
-                "Access denied: realm admin user required".to_string(),
+                "Access denied: user required".to_string(),
             ));
         }
 
         let allowed = permission_checker
-            .check_permission(realm_id, &identity.user_id(), "realm", "admin")
+            .check_permission(realm_id, &identity.user_id(), "points", action)
             .await
             .map_err(|e| CoreError::InternalServerError(format!("Permission check failed: {e}")))?;
 
         if !allowed {
-            return Err(CoreError::Forbidden(
-                "Access denied: realm admin permission required".to_string(),
-            ));
+            return Err(CoreError::Forbidden(format!(
+                "Insufficient permissions: points.{action} required"
+            )));
         }
 
         Ok(())
@@ -71,27 +72,31 @@ impl<R: PointsPackageRepository> PointsPackageService<R> {
         realm_id: &str,
         input: CreatePointsPackageInput,
     ) -> PointsPackageResult<PointsPackage> {
-        self.ensure_realm_admin(identity, permission_checker, realm_id)
+        self.ensure_points_permission(identity, permission_checker, realm_id, "manage")
             .await?;
         self.create_points_package(realm_id, input).await
     }
 
-    pub async fn list_visible_points_packages(
+    pub async fn list_visible_points_packages<P: PermissionService>(
         &self,
         identity: &Identity,
+        permission_checker: &P,
         realm_id: &str,
     ) -> PointsPackageResult<Vec<PointsPackage>> {
-        self.ensure_realm_access(identity, realm_id).await?;
+        self.ensure_points_permission(identity, permission_checker, realm_id, "view")
+            .await?;
         self.list_points_packages(realm_id, true).await
     }
 
-    pub async fn get_visible_points_package(
+    pub async fn get_visible_points_package<P: PermissionService>(
         &self,
         identity: &Identity,
+        permission_checker: &P,
         realm_id: &str,
         package_id: uuid::Uuid,
     ) -> PointsPackageResult<PointsPackage> {
-        self.ensure_realm_access(identity, realm_id).await?;
+        self.ensure_points_permission(identity, permission_checker, realm_id, "view")
+            .await?;
 
         let package = self.get_points_package(realm_id, package_id).await?;
         if !package.enabled {
@@ -109,7 +114,7 @@ impl<R: PointsPackageRepository> PointsPackageService<R> {
         package_id: uuid::Uuid,
         input: UpdatePointsPackageInput,
     ) -> PointsPackageResult<PointsPackage> {
-        self.ensure_realm_admin(identity, permission_checker, realm_id)
+        self.ensure_points_permission(identity, permission_checker, realm_id, "manage")
             .await?;
         self.update_points_package(realm_id, package_id, input)
             .await
@@ -122,7 +127,7 @@ impl<R: PointsPackageRepository> PointsPackageService<R> {
         realm_id: &str,
         package_id: uuid::Uuid,
     ) -> PointsPackageResult<()> {
-        self.ensure_realm_admin(identity, permission_checker, realm_id)
+        self.ensure_points_permission(identity, permission_checker, realm_id, "manage")
             .await?;
         self.delete_points_package(realm_id, package_id).await
     }
@@ -134,7 +139,7 @@ impl<R: PointsPackageRepository> PointsPackageService<R> {
         realm_id: &str,
         package_id: uuid::Uuid,
     ) -> PointsPackageResult<Vec<PointsPackagePaymentProvider>> {
-        self.ensure_realm_admin(identity, permission_checker, realm_id)
+        self.ensure_points_permission(identity, permission_checker, realm_id, "view")
             .await?;
         self.get_points_package(realm_id, package_id).await?;
         self.list_payment_provider_mappings(package_id).await
@@ -147,7 +152,7 @@ impl<R: PointsPackageRepository> PointsPackageService<R> {
         realm_id: &str,
         input: CreatePaymentProviderMappingInput,
     ) -> PointsPackageResult<PointsPackagePaymentProvider> {
-        self.ensure_realm_admin(identity, permission_checker, realm_id)
+        self.ensure_points_permission(identity, permission_checker, realm_id, "manage")
             .await?;
         self.get_points_package(realm_id, input.points_package_id)
             .await?;
@@ -163,7 +168,7 @@ impl<R: PointsPackageRepository> PointsPackageService<R> {
         mapping_id: uuid::Uuid,
         input: UpdatePaymentProviderMappingInput,
     ) -> PointsPackageResult<PointsPackagePaymentProvider> {
-        self.ensure_realm_admin(identity, permission_checker, realm_id)
+        self.ensure_points_permission(identity, permission_checker, realm_id, "manage")
             .await?;
         self.get_points_package(realm_id, package_id).await?;
 
@@ -188,7 +193,7 @@ impl<R: PointsPackageRepository> PointsPackageService<R> {
         package_id: uuid::Uuid,
         mapping_id: uuid::Uuid,
     ) -> PointsPackageResult<()> {
-        self.ensure_realm_admin(identity, permission_checker, realm_id)
+        self.ensure_points_permission(identity, permission_checker, realm_id, "manage")
             .await?;
         self.get_points_package(realm_id, package_id).await?;
 

@@ -22,7 +22,7 @@ use uuid::Uuid;
 // ============================================================================
 
 /// Permission-based realm policy
-/// Only allows users with "realm.create" permission to create new realms
+/// Only allows users with "realm.manage" permission to manage realms
 ///
 /// NOTE: Uses concrete RedisPermissionChecker type instead of trait object
 /// because PermissionService trait has `impl Future` return types which are
@@ -49,7 +49,7 @@ impl RealmPolicy for PermissionBasedRealmPolicy {
                     principal.principal_type,
                     &principal.principal_id,
                     "realm",
-                    "create",
+                    "manage",
                 )
                 .await
             {
@@ -58,7 +58,7 @@ impl RealmPolicy for PermissionBasedRealmPolicy {
                         principal_type = %principal.principal_type,
                         principal_id = %principal.principal_id,
                         has_permission,
-                        "Checked realm.create permission"
+                        "Checked realm.manage permission"
                     );
                     has_permission
                 }
@@ -67,7 +67,7 @@ impl RealmPolicy for PermissionBasedRealmPolicy {
                         error = %e,
                         principal_type = %principal.principal_type,
                         principal_id = %principal.principal_id,
-                        "Failed to check realm.create permission"
+                        "Failed to check realm.manage permission"
                     );
                     false
                 }
@@ -102,7 +102,7 @@ impl RealmPolicy for PermissionBasedRealmPolicy {
                     principal.principal_type,
                     &principal.principal_id,
                     "realm",
-                    "create",
+                    "manage",
                 )
                 .await
                 .unwrap_or_default()
@@ -119,7 +119,7 @@ impl RealmPolicy for PermissionBasedRealmPolicy {
                     principal.principal_type,
                     &principal.principal_id,
                     "realm",
-                    "create",
+                    "manage",
                 )
                 .await
                 .unwrap_or_default()

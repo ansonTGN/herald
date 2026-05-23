@@ -7893,7 +7893,7 @@
           "ext"
         ],
         "summary": "List realms",
-        "description": "Returns all realms visible to the caller. Principals in the admin realm see all realms;\nothers see only their own realm.\n\n# Authentication\nRequires valid API Key via X-API-Key header\n\n# Authorization\nThe caller must have `realm:list` permission in their own realm.",
+        "description": "Returns all realms visible to the caller. Principals in the admin realm see all realms;\nothers see only their own realm.\n\n# Authentication\nRequires valid API Key via X-API-Key header\n\n# Authorization\nThe caller must have `realm:view` permission in their own realm.",
         "operationId": "list_realms",
         "responses": {
           "200": {
@@ -7948,7 +7948,7 @@
           "ext"
         ],
         "summary": "Create a new realm",
-        "description": "Creates a new realm in the system. Only principals with `realm:create` permission\nin the admin realm may invoke this endpoint.\n\n# Authentication\nRequires valid API Key via X-API-Key header\n\n# Authorization\nThe caller must have `realm:create` permission in the `admin` realm.",
+        "description": "Creates a new realm in the system. Only principals with `realm:manage` permission\nin the admin realm may invoke this endpoint.\n\n# Authentication\nRequires valid API Key via X-API-Key header\n\n# Authorization\nThe caller must have `realm:manage` permission in the `admin` realm.",
         "operationId": "create_realm",
         "requestBody": {
           "content": {

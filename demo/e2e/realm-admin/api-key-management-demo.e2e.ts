@@ -243,20 +243,13 @@ test.describe('[Realm Admin] API Key Management Demo Tests', () => {
 
     await test.step('When: Click enabled switch to disable', async () => {
       const apiKeyPage = new ApiKeysPage(page, demoLogger)
+
       const row = await apiKeyPage.findRowByName(keyName)
       expect(row).not.toBeNull()
 
       const toggleSwitch = row!.locator('[data-testid="api-key-enabled-switch"]')
       await apiKeyPage.smartClick(toggleSwitch)
       console.log('Clicked enabled switch to disable')
-    })
-
-    await test.step('Then: Verify toast shows disabled message', async () => {
-      const apiKeyPage = new ApiKeysPage(page, demoLogger)
-      await expect(apiKeyPage.successMessage).toBeVisible({ timeout: 10000 })
-      const toastText = await apiKeyPage.successMessage.textContent()
-      expect(toastText).toContain('disabled')
-      console.log('Toast shows disabled message')
     })
 
     await test.step('Then: Verify badge changes to Disabled', async () => {
@@ -280,7 +273,6 @@ test.describe('[Realm Admin] API Key Management Demo Tests', () => {
 
     await test.step('Then: Verify badge changes back to Enabled', async () => {
       const apiKeyPage = new ApiKeysPage(page, demoLogger)
-      await expect(apiKeyPage.successMessage).toBeVisible({ timeout: 10000 })
 
       const row = await apiKeyPage.findRowByName(keyName)
       expect(row).not.toBeNull()

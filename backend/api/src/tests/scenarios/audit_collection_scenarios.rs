@@ -314,7 +314,7 @@ async fn test_scenario_user_delete_produces_audit_event(ctx: &mut TestContext) {
 /// User Story: docs/user-stories/14-audit-user-stories.md
 /// Covers: Realm creation records realm.create and realm.rbac_init audit events
 ///
-/// Given a super admin with realm.create permission,
+/// Given a super admin with realm.manage permission,
 /// When creating a new realm via POST /api/realms,
 /// Then audit events for realm.create and realm.rbac_init are recorded.
 #[test_context(TestContext)]
@@ -322,7 +322,7 @@ async fn test_scenario_user_delete_produces_audit_event(ctx: &mut TestContext) {
 async fn test_scenario_realm_create_produces_audit_events(ctx: &mut TestContext) {
     let app = ctx.create_unified_test_router();
 
-    // Setup: create admin session with realm-admin role (admin realm includes realm.create)
+    // Setup: create admin session with realm-admin role (admin realm includes realm.manage)
     let (admin_token, admin_user_id) =
         create_admin_session_with_user(ctx, "audit-realm-create@test.com", 1800).await;
     grant_realm_admin_role(ctx, &admin_user_id).await;

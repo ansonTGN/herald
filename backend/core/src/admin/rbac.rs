@@ -30,7 +30,7 @@ where
             .await?
             .get("count");
 
-    // Expected: 17 realm-admin permissions (all realm-admin permissions, including realm.create)
+    // Expected: 17 realm-admin permissions (all realm-admin permissions, including realm.manage)
     // All permissions are created by RealmInitializationService with is_builtin=true
     const EXPECTED_BUILTIN_PERMISSIONS: i64 = 17;
 

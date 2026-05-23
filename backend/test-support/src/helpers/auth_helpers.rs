@@ -10,7 +10,7 @@
 //
 // 根据最新架构设计（`.ai/design/cas-permission-architecture-refactor.md`）：
 // - **没有跨 Realm 访问**：所有用户只能访问自己所属的 Realm
-// - **admin realm 是普通 realm**：只有 `realm.create` 权限可以创建新 Realm
+// - **admin realm 是普通 realm**：只有 `realm.manage` 权限可以创建新 Realm
 // - **权限验证在 Service 层**：不在 HTTP middleware
 //
 // ## 参考
@@ -108,17 +108,19 @@ pub async fn create_admin_session(ctx: &TestContext, email: &str, ttl_seconds: u
 /// 授予 Realm Admin 角色（通过 user_roles 表）
 ///
 /// 将用户加入 realm-admin 角色，自动获得标准权限：
-/// - realm.view, realm.admin
+/// - realm.view, dashboard.view, audit.view
 /// - users.view, users.manage
 /// - clients.view, clients.manage
 /// - roles.view, roles.manage
 /// - permissions.view, permissions.manage
 /// - policies.view, policies.manage
 /// - settings.view, settings.manage
+/// - api_keys.view, api_keys.manage
 /// - billing.view, billing.manage
+/// - points.view, points.manage
 ///
 /// **特殊权限（仅 admin realm）**：
-/// - realm.create (仅当 realm_id == "admin" 时授予)
+/// - realm.manage (仅当 realm_id == "admin" 时授予)
 ///
 /// **参数**:
 /// - `ctx`: 测试上下文
@@ -168,11 +170,12 @@ pub async fn grant_realm_admin_role(ctx: &TestContext, user_id: &str) {
             .expect("Failed to create realm-admin role");
             let role_id = role_uuid.to_string();
 
-            // 为 realm-admin 角色添加标准权限（统一 action: view, manage, create）
-            // 注意：只有 admin realm 才有 realm.create 权限
+            // 为 realm-admin 角色添加标准权限（统一 action: view, manage）
+            // 注意：只有 admin realm 才有 realm.manage 权限
             let mut permissions = vec![
                 ("realm", "view"),
-                ("realm", "admin"),
+                ("dashboard", "view"),
+                ("audit", "view"),
                 ("users", "view"),
                 ("users", "manage"),
                 ("clients", "view"),
@@ -185,6 +188,7 @@ pub async fn grant_realm_admin_role(ctx: &TestContext, user_id: &str) {
                 ("policies", "manage"),
                 ("settings", "view"),
                 ("settings", "manage"),
+                ("api_keys", "view"),
                 ("api_keys", "manage"),
                 ("billing", "view"),
                 ("billing", "manage"),
@@ -192,9 +196,9 @@ pub async fn grant_realm_admin_role(ctx: &TestContext, user_id: &str) {
                 ("points", "manage"),
             ];
 
-            // 只有 admin realm 才有创建新 Realm 的权限
+            // 只有 admin realm 才有管理 Realm 的权限
             if ctx._realm_id == "admin" {
-                permissions.push(("realm", "create"));
+                permissions.push(("realm", "manage"));
             }
 
             // 为每个权限添加策略到 role_policies 表
@@ -216,13 +220,13 @@ pub async fn grant_realm_admin_role(ctx: &TestContext, user_id: &str) {
                 .expect("Failed to add policy for realm-admin role");
             }
 
-            let permission_count = if ctx._realm_id == "admin" { 20 } else { 19 };
+            let permission_count = if ctx._realm_id == "admin" { 23 } else { 22 };
             tracing::debug!(
                 realm_id = %ctx._realm_id,
                 role_id = %role_id,
                 "Created realm-admin role with {} standard permissions{}",
                 permission_count,
-                if ctx._realm_id == "admin" { " (including realms.create)" } else { "" }
+                if ctx._realm_id == "admin" { " (including realm.manage)" } else { "" }
             );
 
             role_id

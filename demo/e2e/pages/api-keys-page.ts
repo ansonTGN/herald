@@ -360,8 +360,14 @@ export class ApiKeysPage extends BasePage {
     // Wait for delete confirmation dialog
     await expect(this.deleteDialog).toBeVisible({ timeout: 10000 })
 
-    // Click confirm
-    await this.smartClick(this.deleteConfirmButton)
+    // Click confirm and wait for DELETE API response
+    await Promise.all([
+      this.page.waitForResponse(
+        (resp) => resp.url().includes('/api/api-keys/') && resp.request().method() === 'DELETE',
+        { timeout: 10000 }
+      ),
+      this.smartClick(this.deleteConfirmButton),
+    ])
 
     // Wait for dialog to close
     await expect(this.deleteDialog).toBeHidden({ timeout: 10000 })

@@ -64,7 +64,7 @@ pub fn validate_policy_for_realm_admin(
     }
 }
 
-const SENSITIVE_PERMISSIONS: &[&str] = &["realm.create"];
+const SENSITIVE_PERMISSIONS: &[&str] = &["realm.manage"];
 
 /// Validates that sensitive permissions can only be created in the admin realm
 ///

@@ -43,7 +43,7 @@ pub async fn list_audit_events(
 
     let allowed = state
         .permission_checker
-        .check_permission(&realm_id, &identity.user_id(), "realm", "admin")
+        .check_permission(&realm_id, &identity.user_id(), "audit", "view")
         .await
         .map_err(|e| {
             tracing::error!("Failed to check audit access permission: {e}");
