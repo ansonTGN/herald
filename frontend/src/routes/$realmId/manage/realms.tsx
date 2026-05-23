@@ -9,7 +9,7 @@ import { RealmTable } from '@/components/realms/realm-table'
 import { ListPagination } from '@/components/shared'
 import { CreateRealmDialog } from '@/components/realms/create-realm-dialog'
 import { RealmDetailDialog } from '@/components/realms/realm-detail-dialog'
-import { useAuth } from '@/hooks/use-auth'
+import { usePermission } from '@/hooks/use-permission'
 import { PERMISSION } from '@/lib/constants/auth-constants'
 import { Plus } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -26,9 +26,8 @@ function RealmsPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const detailDialog = useDialogManager<string>()
 
-  // Get permissions
-  const { permissions } = useAuth()
-  const canCreateRealm = permissions.includes(PERMISSION.REALM_CREATE)
+  const { hasPermission } = usePermission()
+  const canCreateRealm = hasPermission(PERMISSION.REALM_MANAGE)
 
   const { data, isLoading, error } = useQuery(
     realmsQueryOptions({

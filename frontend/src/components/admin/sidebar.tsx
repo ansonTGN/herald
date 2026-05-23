@@ -20,9 +20,11 @@ import { useAuth } from '@/hooks/use-auth'
 import { useRealmId } from '@/stores/auth-store'
 import { PERMISSION } from '@/lib/constants/auth-constants'
 import { realmQueryOptions, featureAvailabilityQueryOptions } from '@/data/query-options'
+import { filterByPermission } from '@/lib/utils/filter-by-permission'
 import type { LucideIcon } from 'lucide-react'
 
 interface MenuItem {
+  id: string
   name: string
   path?: string
   icon: LucideIcon
@@ -55,57 +57,71 @@ export function Sidebar() {
   // Memoize menu items to prevent infinite re-renders
   const menuItems: MenuItem[] = useMemo(
     () => [
-      { name: 'Dashboard', path: `/${realmId}/manage`, icon: LayoutDashboard, permission: null },
       {
+        id: 'dashboard',
+        name: 'Dashboard',
+        path: `/${realmId}/manage`,
+        icon: LayoutDashboard,
+        permission: PERMISSION.DASHBOARD_VIEW,
+      },
+      {
+        id: 'realms',
         name: 'Realms',
         path: `/${realmId}/manage/realms`,
         icon: Globe,
         permission: PERMISSION.REALM_VIEW,
       },
       {
+        id: 'clients',
         name: 'Clients',
         path: `/${realmId}/manage/client-apps`,
         icon: Briefcase,
         permission: PERMISSION.CLIENTS_VIEW,
       },
       {
+        id: 'users',
         name: 'Users',
         path: `/${realmId}/manage/users`,
         icon: Users,
         permission: PERMISSION.USERS_VIEW,
       },
       {
+        id: 'authorization',
         name: 'Authorization',
         icon: Shield,
         permission: null,
         children: [
           {
+            id: 'permissions',
             name: 'Permissions',
             path: `/${realmId}/manage/permissions`,
             icon: Key,
             permission: PERMISSION.PERMISSIONS_VIEW,
           },
           {
+            id: 'roles',
             name: 'Roles',
             path: `/${realmId}/manage/roles`,
             icon: Shield,
             permission: PERMISSION.ROLES_VIEW,
           },
           {
+            id: 'api-keys',
             name: 'API Keys',
             path: `/${realmId}/manage/api-keys`,
             icon: Key,
-            // NOTE: Uses manage because backend only defines api_keys.manage, no api_keys.view exists yet
-            permission: PERMISSION.API_KEYS_MANAGE,
+            permission: PERMISSION.API_KEYS_VIEW,
           },
         ],
       },
       {
+        id: 'products-payments',
         name: 'Products & Payments',
         icon: Briefcase,
         permission: null,
         children: [
           {
+            id: 'products',
             name: 'Products',
             path: `/${realmId}/manage/products`,
             icon: Briefcase,
@@ -113,6 +129,7 @@ export function Sidebar() {
             visible: adminFeatures?.productsVisible ?? true,
           },
           {
+            id: 'payment-providers',
             name: 'Payment Providers',
             path: `/${realmId}/manage/billing/payment-providers`,
             icon: CreditCard,
@@ -120,6 +137,7 @@ export function Sidebar() {
             visible: adminFeatures?.billingConfigVisible ?? true,
           },
           {
+            id: 'subscription-plans',
             name: 'Subscription Plans',
             path: `/${realmId}/manage/billing`,
             icon: CreditCard,
@@ -127,6 +145,7 @@ export function Sidebar() {
             visible: adminFeatures?.plansVisible ?? true,
           },
           {
+            id: 'points-packages',
             name: 'Points Packages',
             path: `/${realmId}/manage/points-packages`,
             icon: Coins,
@@ -134,6 +153,7 @@ export function Sidebar() {
             visible: adminFeatures?.pointsPackagesVisible ?? true,
           },
           {
+            id: 'points-rules',
             name: 'Points Rules',
             path: `/${realmId}/manage/points/configs`,
             icon: Settings,
@@ -143,11 +163,13 @@ export function Sidebar() {
         ],
       },
       {
+        id: 'transactions',
         name: 'Transactions',
         icon: FileText,
         permission: null,
         children: [
           {
+            id: 'invoices',
             name: 'Invoices',
             path: `/${realmId}/manage/billing/invoices`,
             icon: FileText,
@@ -155,6 +177,7 @@ export function Sidebar() {
             visible: adminFeatures?.invoicesVisible ?? true,
           },
           {
+            id: 'subscription-history',
             name: 'Subscription History',
             path: `/${realmId}/manage/subscription-history`,
             icon: History,
@@ -162,6 +185,7 @@ export function Sidebar() {
             visible: adminFeatures?.subscriptionHistoryVisible ?? true,
           },
           {
+            id: 'points-wallets',
             name: 'Points Wallets',
             path: `/${realmId}/manage/points/wallets`,
             icon: Users,
@@ -171,13 +195,14 @@ export function Sidebar() {
         ],
       },
       {
+        id: 'audit-log',
         name: 'Audit Log',
         path: `/${realmId}/manage/audit`,
         icon: ScrollText,
-        // NOTE: Uses realm.admin to match backend audit API which checks realm:admin permission
-        permission: PERMISSION.REALM_ADMIN,
+        permission: PERMISSION.AUDIT_VIEW,
       },
       {
+        id: 'settings',
         name: 'Settings',
         path: `/${realmId}/manage/settings`,
         icon: Settings,
@@ -187,8 +212,9 @@ export function Sidebar() {
     [adminFeatures, realmId]
   )
 
-  const filteredMenuItems = menuItems.filter(
-    (item) => !(item.name === 'Realms' && realmId !== 'admin')
+  const filteredMenuItems = useMemo(
+    () => filterByPermission(menuItems, permissions, realmId),
+    [menuItems, permissions, realmId]
   )
 
   const renderMenuItem = (item: MenuItem, level: number = 0) => {
@@ -196,21 +222,13 @@ export function Sidebar() {
     const isOpen = openMenus.has(item.name)
     const Icon = item.icon
 
-    // Skip if permission check fails
-    if (item.permission && !permissions.includes(item.permission)) {
-      return null
-    }
-
     if (item.visible === false) {
       return null
     }
 
-    // For parent menus, verify at least one child is visible
+    // For parent menus, verify at least one child is visible (visible flag only; permissions already filtered)
     const visibleChildren = hasChildren
-      ? item.children!.filter(
-          (child) =>
-            child.visible !== false && (!child.permission || permissions.includes(child.permission))
-        )
+      ? item.children!.filter((child) => child.visible !== false)
       : []
 
     if (hasChildren && visibleChildren.length === 0) {

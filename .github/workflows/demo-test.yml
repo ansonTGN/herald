@@ -55,7 +55,13 @@ jobs:
         working-directory: demo
         run: |
           TEST_FILES=$(find e2e -name '*.e2e.ts' -not -path '*/live/*' | sort | tr '\n' ' ')
-          npx playwright test $TEST_FILES --project=demo-fast --max-failures=0
+          PLAYWRIGHT_JSON_OUTPUT_FILE=test-results/results.json \
+            npx playwright test $TEST_FILES --project=demo-fast --max-failures=0 --reporter=list,json
+        continue-on-error: true
+
+      - name: Failure summary
+        if: always()
+        run: python scripts/demo-failure-summary.py demo/test-results/results.json
 
       - name: Upload test results
         if: always()
@@ -66,6 +72,10 @@ jobs:
             demo/test-results/
             log/
           if-no-files-found: ignore
+
+      - name: Fail if tests failed
+        if: always()
+        run: python scripts/demo-failure-summary.py demo/test-results/results.json --check-only
 
       - name: Stop demo environment
         if: always()

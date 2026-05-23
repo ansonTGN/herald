@@ -27,7 +27,6 @@ export interface UseAuthReturn {
 
   // Computed properties
   hasAdminPermission: boolean
-  isSuperAdmin: boolean
 
   // Actions
   login: (realmId: string) => void
@@ -67,7 +66,6 @@ export function useAuth(): UseAuthReturn {
     permissions,
     roles,
     hasAdminPermission: hasAdminPermission(permissions),
-    isSuperAdmin: permissions.includes('*'),
     ...actions,
   }
 }

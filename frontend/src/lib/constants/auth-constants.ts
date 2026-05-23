@@ -9,8 +9,8 @@
 // Permission string constants - single source of truth matching backend rbac_init/services.rs
 export const PERMISSION = {
   REALM_VIEW: 'realm.view',
-  REALM_ADMIN: 'realm.admin',
-  REALM_CREATE: 'realm.create',
+  DASHBOARD_VIEW: 'dashboard.view',
+  REALM_MANAGE: 'realm.manage',
   USERS_VIEW: 'users.view',
   USERS_MANAGE: 'users.manage',
   CLIENTS_VIEW: 'clients.view',
@@ -23,6 +23,8 @@ export const PERMISSION = {
   POLICIES_MANAGE: 'policies.manage',
   SETTINGS_VIEW: 'settings.view',
   SETTINGS_MANAGE: 'settings.manage',
+  AUDIT_VIEW: 'audit.view',
+  API_KEYS_VIEW: 'api_keys.view',
   API_KEYS_MANAGE: 'api_keys.manage',
   BILLING_VIEW: 'billing.view',
   BILLING_MANAGE: 'billing.manage',
@@ -34,8 +36,8 @@ export const PERMISSION = {
 // Note: POINTS_VIEW excluded because it's also assigned to the `user` role
 export const ADMIN_PERMISSIONS = [
   PERMISSION.REALM_VIEW,
-  PERMISSION.REALM_ADMIN,
-  PERMISSION.REALM_CREATE,
+  PERMISSION.DASHBOARD_VIEW,
+  PERMISSION.REALM_MANAGE,
   PERMISSION.USERS_VIEW,
   PERMISSION.USERS_MANAGE,
   PERMISSION.CLIENTS_VIEW,
@@ -48,6 +50,8 @@ export const ADMIN_PERMISSIONS = [
   PERMISSION.POLICIES_MANAGE,
   PERMISSION.SETTINGS_VIEW,
   PERMISSION.SETTINGS_MANAGE,
+  PERMISSION.AUDIT_VIEW,
+  PERMISSION.API_KEYS_VIEW,
   PERMISSION.API_KEYS_MANAGE,
   PERMISSION.BILLING_VIEW,
   PERMISSION.BILLING_MANAGE,

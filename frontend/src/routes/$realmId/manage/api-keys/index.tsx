@@ -4,7 +4,7 @@ import { apiKeysQueryOptions, queryKeys } from '@/data/query-options'
 import { apiKeysSearchSchema } from '@/lib/schemas/search-params'
 import { DeleteApiKeyDialog } from '@/components/api-keys/delete-api-key-dialog'
 import { ApiKeyTable } from '@/components/api-keys/api-key-table'
-import { ListPagination } from '@/components/shared'
+import { ListPagination, AccessDenied } from '@/components/shared'
 import { Plus } from 'lucide-react'
 import { useDialogManager } from '@/hooks/use-dialog-state'
 import { deleteApiKey, updateApiKey } from '@/lib/api-generated'
@@ -27,13 +27,14 @@ export const Route = createFileRoute('/$realmId/manage/api-keys/')({
   },
 })
 
-function ApiKeysPage() {
+export function ApiKeysPage() {
   const { realmId } = Route.useParams()
   const navigate = useNavigate()
   const search = Route.useSearch()
   const { hasPermission } = usePermission()
 
   const canManage = hasPermission(PERMISSION.API_KEYS_MANAGE)
+  const canView = hasPermission(PERMISSION.API_KEYS_VIEW)
 
   const deleteDialog = useDialogManager<ApiKeyListItem>()
 
@@ -75,6 +76,10 @@ function ApiKeysPage() {
       params: { realmId },
       search: { ...search, page: newPage },
     })
+  }
+
+  if (!canView) {
+    return <AccessDenied message="Access denied: You do not have permission to view API keys" />
   }
 
   return (

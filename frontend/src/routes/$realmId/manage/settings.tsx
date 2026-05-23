@@ -24,7 +24,7 @@ import {
   buildEmailConfigRequest,
 } from '@/lib/realm-config-utils'
 import { useState, useEffect } from 'react'
-import { PageHeader } from '@/components/shared'
+import { PageHeader, AccessDenied } from '@/components/shared'
 import { queryKeys, realmQueryOptions, emailStatusQueryOptions } from '@/data/query-options'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { updateRealmSchema, type UpdateRealmFormData } from '@/lib/schemas/realm'
@@ -43,7 +43,7 @@ export const Route = createFileRoute('/$realmId/manage/settings')({
 function GeneralTab({ realmId }: { realmId: string }) {
   const { data: realm, isLoading } = useQuery(realmQueryOptions(realmId))
   const auth = useAuth()
-  const canUpdate = auth.permissions?.includes(PERMISSION.SETTINGS_MANAGE) ?? true
+  const canUpdate = auth.permissions?.includes(PERMISSION.SETTINGS_MANAGE) ?? false
 
   const { isSubmitting, mutate } = useFormMutation({
     mutationFn: (data: UpdateRealmFormData) => updateRealm({ path: { realmId }, body: data }),
@@ -134,8 +134,8 @@ function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general')
 
   // Permission checks
-  const canViewConfig = auth.permissions?.includes(PERMISSION.SETTINGS_VIEW) ?? true // Temporary default
-  const canUpdateConfig = auth.permissions?.includes(PERMISSION.SETTINGS_MANAGE) ?? true // Temporary default
+  const canViewConfig = auth.permissions?.includes(PERMISSION.SETTINGS_VIEW) ?? false
+  const canUpdateConfig = auth.permissions?.includes(PERMISSION.SETTINGS_MANAGE) ?? false
 
   // Get realm configuration list
   const {
@@ -199,14 +199,9 @@ function SettingsPage() {
     },
   })
 
-  // Permission check after hooks
   if (!canViewConfig) {
     return (
-      <div className="space-y-6">
-        <div className="text-destructive">
-          Access denied: You do not have permission to view realm configuration
-        </div>
-      </div>
+      <AccessDenied message="Access denied: You do not have permission to view realm configuration" />
     )
   }
 

@@ -28,7 +28,6 @@ export function usePermission() {
 
     // Predefined permission checks
     hasAdminPermission: hasAdminPermission(safePermissions),
-    isSuperAdmin: safePermissions.includes('*') || false,
 
     // Raw data
     permissions: safePermissions,
