@@ -49,8 +49,8 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body_text = String::from_utf8(body.to_vec()).unwrap();
         assert!(
-            body_text.contains("realm admin"),
-            "Forbidden response should mention realm admin requirement, got: {body_text}"
+            body_text.contains("points.manage"),
+            "Forbidden response should mention points.manage requirement, got: {body_text}"
         );
     }
 
@@ -61,8 +61,9 @@ mod tests {
     ) {
         let app = ctx.create_unified_test_router();
         let realm_id = ctx._realm_id.clone();
-        let (token, _user_id) =
+        let (token, user_id) =
             create_admin_session_with_user(ctx, "points-viewer@test.com", 1800).await;
+        grant_realm_admin_role(ctx, &user_id).await;
 
         create_points_package(
             ctx,

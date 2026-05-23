@@ -246,16 +246,44 @@ mod tests {
         .await
         .expect("Failed to create role");
 
-        sqlx::query(
-            "INSERT INTO role_policies (id, role_id, realm_id, resource, action)
-             VALUES ($1, $2, $3, 'realm', 'admin')",
-        )
-        .bind(Uuid::now_v7())
-        .bind(role_id)
-        .bind(realm_id)
-        .execute(&ctx._app_state.pool)
-        .await
-        .expect("Failed to create role policy");
+        let permissions = vec![
+            ("realm", "view"),
+            ("dashboard", "view"),
+            ("audit", "view"),
+            ("users", "view"),
+            ("users", "manage"),
+            ("clients", "view"),
+            ("clients", "manage"),
+            ("roles", "view"),
+            ("roles", "manage"),
+            ("permissions", "view"),
+            ("permissions", "manage"),
+            ("policies", "view"),
+            ("policies", "manage"),
+            ("settings", "view"),
+            ("settings", "manage"),
+            ("api_keys", "view"),
+            ("api_keys", "manage"),
+            ("billing", "view"),
+            ("billing", "manage"),
+            ("points", "view"),
+            ("points", "manage"),
+        ];
+
+        for (resource, action) in &permissions {
+            sqlx::query(
+                "INSERT INTO role_policies (id, role_id, realm_id, resource, action)
+                 VALUES ($1, $2, $3, $4, $5)",
+            )
+            .bind(Uuid::now_v7())
+            .bind(role_id)
+            .bind(realm_id)
+            .bind(resource)
+            .bind(action)
+            .execute(&ctx._app_state.pool)
+            .await
+            .expect("Failed to create role policy");
+        }
 
         sqlx::query(
             "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id)

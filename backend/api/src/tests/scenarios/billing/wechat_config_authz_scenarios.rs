@@ -26,8 +26,8 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body_text = String::from_utf8(body.to_vec()).unwrap();
         assert!(
-            body_text.contains("Realm Admin") || body_text.contains("realm admin"),
-            "Forbidden response should mention realm admin requirement, got: {body_text}"
+            body_text.contains("billing.manage"),
+            "Forbidden response should mention billing.manage requirement, got: {body_text}"
         );
     }
 

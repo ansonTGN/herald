@@ -153,7 +153,7 @@ async fn test_scenario_sdk_realm_create_success(ctx: &mut SchemaTestContext) {
     ensure_admin_realm(ctx).await;
 
     let (api_key, _key_id, _realm) =
-        setup_api_key_with_permissions(ctx, "admin", &ctx._client_id, &[("realm", "create")]).await;
+        setup_api_key_with_permissions(ctx, "admin", &ctx._client_id, &[("realm", "manage")]).await;
 
     let (base_url, handle) = start_test_server(ctx).await;
     let client = Client::new(base_url, api_key, None);
@@ -205,7 +205,7 @@ async fn test_scenario_sdk_realm_create_forbidden(ctx: &mut SchemaTestContext) {
         ctx,
         &ctx._realm_id,
         &ctx._client_id,
-        &[("realm", "create")],
+        &[("realm", "manage")],
     )
     .await;
 
@@ -277,9 +277,9 @@ async fn test_scenario_sdk_realm_create_forbidden(ctx: &mut SchemaTestContext) {
 async fn test_scenario_sdk_realm_create_validation_error(ctx: &mut SchemaTestContext) {
     ensure_admin_realm(ctx).await;
 
-    // Given: admin-realm API key with realm:create
+    // Given: admin-realm API key with realm:manage
     let (api_key, _, _) =
-        setup_api_key_with_permissions(ctx, "admin", &ctx._client_id, &[("realm", "create")]).await;
+        setup_api_key_with_permissions(ctx, "admin", &ctx._client_id, &[("realm", "manage")]).await;
 
     let (base_url, handle) = start_test_server(ctx).await;
     let client = Client::new(base_url, api_key, None);
