@@ -63,6 +63,7 @@ pub async fn get_api_key(
         last_used_at: api_key.last_used_at.map(|dt| dt.to_rfc3339()),
         usage_count: api_key.usage_count,
         created_at: api_key.created_at.to_rfc3339(),
+        roles: Vec::new(),
     };
 
     Ok(ApiResult::ok(response))

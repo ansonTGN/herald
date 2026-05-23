@@ -23,6 +23,8 @@ use herald_api_base::application::http::common::api_key_utils::{
 use herald_api_base::application::http::common::error_codes::ErrorCode;
 use herald_api_base::application::http::common::error_helpers::json_error;
 use herald_api_base::application::http::state::AppState;
+use herald_core::entity::client_app;
+use sea_orm::EntityTrait;
 
 /// API Key authentication middleware
 ///
@@ -88,6 +90,15 @@ pub async fn api_key_auth_middleware(
             );
         }
 
+        // Check if the associated Client App is enabled
+        if !cached.client_app_enabled {
+            warn!(
+                "API key's Client App is disabled (cache path): {:?}",
+                cached.id
+            );
+            return json_error(StatusCode::UNAUTHORIZED, ErrorCode::ClientAppDisabled);
+        }
+
         // Convert cached value to domain entity and inject identity
         let api_key_entity = match cached_to_entity(cached) {
             Ok(entity) => entity,
@@ -146,6 +157,35 @@ pub async fn api_key_auth_middleware(
         );
     }
 
+    // 5b. Check if the associated Client App is enabled (if client_app_id is set)
+    let mut client_app_enabled = true;
+    if let Some(app_id) = api_key_record.client_app_id {
+        match client_app::Entity::find_by_id(app_id)
+            .one(state.db.as_ref())
+            .await
+        {
+            Ok(Some(app)) => {
+                client_app_enabled = app.enabled;
+            }
+            Ok(None) => {
+                warn!("API key references non-existent Client App: {}", app_id);
+                client_app_enabled = false;
+            }
+            Err(e) => {
+                error!("Database error checking Client App enabled status: {}", e);
+                return json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError);
+            }
+        }
+    }
+
+    if !client_app_enabled {
+        warn!(
+            "API key's Client App is disabled (DB path): {:?}",
+            api_key_record.id
+        );
+        return json_error(StatusCode::UNAUTHORIZED, ErrorCode::ClientAppDisabled);
+    }
+
     // 6. Update usage stats asynchronously (don't block request)
     let api_key_id = api_key_record.id.clone();
     let repo = state.api_key_repo.clone();
@@ -156,7 +196,8 @@ pub async fn api_key_auth_middleware(
     });
 
     // 7. Write to cache for next request (use plaintext API key as cache key)
-    let cache_value = (&api_key_record).into();
+    let mut cache_value: ApiKeyCacheValue = (&api_key_record).into();
+    cache_value.client_app_enabled = client_app_enabled;
     if let Err(e) = state
         .api_key_cache
         .set(api_key, &cache_value, API_KEY_CACHE_TTL_SECONDS)

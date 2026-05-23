@@ -18,8 +18,8 @@ use crate::{
 use super::super::{
     AdminUser, AdminUserRepository, AdminUserService, CreateUserWithRolesRequest, PermissionDetail,
     PermissionListData, PermissionManagementService, PermissionSource, RoleAssignmentService,
-    RoleDetail, RolePolicyRepository, UpdateUserAdminRequest, UserAdminError, UserAdminResult,
-    UserPermissionService, UserRoleRepository,
+    RoleDetail, RoleEntity, RolePolicyRepository, UpdateUserAdminRequest, UserAdminError,
+    UserAdminResult, UserPermissionService, UserRoleRepository,
 };
 
 // ============================================================================
@@ -563,6 +563,107 @@ where
         }
 
         Ok(roles[0].name == "user")
+    }
+
+    async fn assign_api_key_roles(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        api_key_id: &str,
+        role_ids: Vec<Uuid>,
+    ) -> UserAdminResult<()> {
+        require_permission(
+            &*self.permission_checker,
+            &identity,
+            realm_id,
+            "roles",
+            "manage",
+            "Insufficient permissions to manage roles",
+        )
+        .await?;
+
+        // Realm boundary check
+        if identity.realm_id() != realm_id {
+            return Err(UserAdminError::PermissionDenied(
+                "Cannot manage roles in a different realm".to_string(),
+            ));
+        }
+
+        // Validate roles: all must exist in realm, none can be builtin
+        if !role_ids.is_empty() {
+            let roles = self
+                .role_policy_repository
+                .get_roles_by_ids(&role_ids)
+                .await?;
+
+            // Check all roles were found
+            if roles.len() != role_ids.len() {
+                let found_ids: std::collections::HashSet<Uuid> =
+                    roles.iter().map(|r| r.id).collect();
+                let missing: Vec<String> = role_ids
+                    .iter()
+                    .filter(|id| !found_ids.contains(id))
+                    .map(|id| id.to_string())
+                    .collect();
+                return Err(UserAdminError::RoleNotFound(missing.join(", ")));
+            }
+
+            // Check none are builtin
+            if let Some(builtin) = roles.iter().find(|r| r.is_builtin) {
+                return Err(UserAdminError::InvalidRoleAssignment(format!(
+                    "Cannot assign builtin role '{}' to API Key",
+                    builtin.name
+                )));
+            }
+
+            // Check all belong to realm
+            if let Some(wrong_realm) = roles.iter().find(|r| r.realm_id != realm_id) {
+                return Err(UserAdminError::RoleNotFound(wrong_realm.id.to_string()));
+            }
+        }
+
+        // Use the built-in API Key client ID
+        let client_id = crate::client_api_keys::constants::ADMIN_API_CLIENT_ID;
+
+        self.user_role_repository
+            .replace_api_key_roles(api_key_id, realm_id, client_id, &role_ids)
+            .await?;
+
+        // Invalidate principal cache
+        let _ = self
+            .permission_checker
+            .invalidate_principal_role_cache(realm_id, "api_key", api_key_id)
+            .await;
+
+        Ok(())
+    }
+
+    async fn get_api_key_roles(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        api_key_id: &str,
+    ) -> UserAdminResult<Vec<RoleEntity>> {
+        require_permission(
+            &*self.permission_checker,
+            &identity,
+            realm_id,
+            "api_keys",
+            "view",
+            "Insufficient permissions to view API keys",
+        )
+        .await?;
+
+        // Realm boundary check
+        if identity.realm_id() != realm_id {
+            return Err(UserAdminError::PermissionDenied(
+                "Cannot view API key roles in a different realm".to_string(),
+            ));
+        }
+
+        self.user_role_repository
+            .get_api_key_roles(api_key_id)
+            .await
     }
 }
 

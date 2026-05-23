@@ -422,6 +422,33 @@ impl PermissionService for RedisPermissionChecker {
             .await;
         Ok(has_permission)
     }
+
+    /// Invalidate cached roles and permissions for any principal type.
+    async fn invalidate_principal_role_cache(
+        &self,
+        realm_id: &str,
+        principal_type: &str,
+        principal_id: &str,
+    ) -> Result<(), CoreError> {
+        let patterns = vec![
+            CacheKey::principal_role_bindings(realm_id, principal_type, principal_id),
+            CacheKey::principal_permission_pattern(
+                realm_id,
+                Some(principal_type),
+                Some(principal_id),
+            ),
+        ];
+        self.invalidate_patterns(&patterns).await;
+
+        info!(
+            realm_id = %realm_id,
+            principal_type = %principal_type,
+            principal_id = %principal_id,
+            "Principal role cache invalidated"
+        );
+
+        Ok(())
+    }
 }
 
 impl RedisPermissionChecker {

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+use uuid::Uuid;
 use validator::Validate;
 
 /// Request to create a new API Key
@@ -69,6 +70,41 @@ pub struct ApiKeyListItem {
 
     /// Creation time (ISO 8601)
     pub created_at: String,
+
+    /// Roles assigned to this API key
+    #[serde(default)]
+    pub roles: Vec<ApiKeyRoleSummary>,
+}
+
+/// Role summary for API Key list display
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiKeyRoleSummary {
+    pub id: Uuid,
+    pub name: String,
+}
+
+/// Response for API Key roles query
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiKeyRolesResponse {
+    pub roles: Vec<ApiKeyRoleDetail>,
+}
+
+/// Detailed role info for an API Key
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiKeyRoleDetail {
+    pub id: uuid::Uuid,
+    pub name: String,
+    pub description: Option<String>,
+}
+
+/// Request to replace API Key roles (empty array clears all roles)
+#[derive(Serialize, Deserialize, ToSchema, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateApiKeyRolesRequest {
+    pub role_ids: Vec<uuid::Uuid>,
 }
 
 /// Request to update an existing API Key

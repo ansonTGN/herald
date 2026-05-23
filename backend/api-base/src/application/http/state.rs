@@ -218,4 +218,7 @@ pub struct AppState {
 
     /// JWT secret key for token generation (device code, OAuth)
     pub jwt_secret: String,
+
+    /// User role repository for batch role queries (e.g. API key role summaries)
+    pub user_role_repository: Arc<PostgresUserRoleRepository>,
 }

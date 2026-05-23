@@ -414,6 +414,7 @@ impl AsyncTestContext for SchemaTestContext {
             payment_attempt_service,
             purchase_service,
             jwt_secret: TEST_JWT_SECRET.to_string(),
+            user_role_repository,
         });
 
         // 13. 初始化 Redis Functions（只运行一次）

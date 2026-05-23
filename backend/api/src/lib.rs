@@ -353,6 +353,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         purchase_repository: purchase_repository.clone(),
         purchase_service: purchase_service.clone(),
         jwt_secret: jwt_secret.clone(),
+        user_role_repository: user_role_repository.clone(),
     };
 
     init_rate_limit_function(&temp_state)
@@ -443,6 +444,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         purchase_repository,
         purchase_service,
         jwt_secret,
+        user_role_repository,
     });
 
     // Validate frontend URL before creating router

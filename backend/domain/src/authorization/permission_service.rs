@@ -83,4 +83,12 @@ pub trait PermissionService: Send + Sync {
         resource: &str,
         action: &str,
     ) -> impl std::future::Future<Output = Result<bool, CoreError>> + Send;
+
+    /// Invalidate cached roles and permissions for any principal type.
+    fn invalidate_principal_role_cache(
+        &self,
+        realm_id: &str,
+        principal_type: &str,
+        principal_id: &str,
+    ) -> impl std::future::Future<Output = Result<(), CoreError>> + Send;
 }

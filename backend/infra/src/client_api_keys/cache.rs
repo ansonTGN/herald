@@ -37,6 +37,10 @@ pub struct ApiKeyCacheValue {
     /// Whether the key is enabled
     pub enabled: bool,
 
+    /// Whether the associated Client App is enabled.
+    /// Defaults to true for backward compatibility (keys without client_app_id).
+    pub client_app_enabled: bool,
+
     /// Expiration time (ISO 8601 string, None = never expires)
     pub expires_at: Option<String>,
 
@@ -53,6 +57,7 @@ impl From<&ClientApiKey> for ApiKeyCacheValue {
             realm_id: api_key.realm_id.clone(),
             client_app_id: api_key.client_app_id,
             enabled: api_key.enabled,
+            client_app_enabled: true,
             expires_at: api_key.expires_at.map(|dt| dt.to_rfc3339()),
             created_at: api_key.created_at.to_rfc3339(),
         }

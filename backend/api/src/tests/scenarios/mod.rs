@@ -68,6 +68,9 @@ pub mod realm_manage_permission_scenarios;
 // API Keys view/manage permission split scenarios
 pub mod api_keys_permission_scenarios;
 
+// API Key roles CRUD + permission + cache scenarios
+pub mod api_key_roles_scenarios;
+
 // Billing & Points permission enforcement scenarios
 pub mod billing_points_permission_scenarios;
 

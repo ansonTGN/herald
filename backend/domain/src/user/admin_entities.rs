@@ -22,6 +22,7 @@ pub struct RoleEntity {
     pub realm_id: String,
     pub name: String,
     pub description: Option<String>,
+    pub is_builtin: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

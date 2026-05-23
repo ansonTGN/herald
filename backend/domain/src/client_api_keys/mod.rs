@@ -7,6 +7,8 @@ pub mod constants;
 pub mod entities;
 pub mod services;
 
-pub use constants::{API_KEY_SALT_V1, SHA256_HASH_PREFIX, get_active_api_key_salt};
+pub use constants::{
+    ADMIN_API_CLIENT_ID, API_KEY_SALT_V1, SHA256_HASH_PREFIX, get_active_api_key_salt,
+};
 pub use entities::ClientApiKey;
 pub use services::ClientApiKeyService;

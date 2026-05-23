@@ -30,6 +30,7 @@ pub enum ErrorCode {
     EmailAlreadyExists,
     PlatformPermissionRequired,
     ValidationError,
+    ClientAppDisabled,
 }
 
 impl ErrorCode {
@@ -63,6 +64,7 @@ impl ErrorCode {
             ErrorCode::EmailAlreadyExists => "email_already_exists",
             ErrorCode::PlatformPermissionRequired => "platform_permission_required",
             ErrorCode::ValidationError => "validation_error",
+            ErrorCode::ClientAppDisabled => "client_app_disabled",
         }
     }
 
@@ -96,6 +98,7 @@ impl ErrorCode {
             ErrorCode::EmailAlreadyExists => 30010,
             ErrorCode::PlatformPermissionRequired => 30011,
             ErrorCode::ValidationError => 10006,
+            ErrorCode::ClientAppDisabled => 30012,
         }
     }
 }

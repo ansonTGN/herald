@@ -373,6 +373,181 @@
         }
       }
     },
+    "/api/api-keys/{realmId}/{apiKeyId}/roles": {
+      "get": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Get API Key roles",
+        "description": "Returns the list of roles assigned to a specific API Key.",
+        "operationId": "adminGetApiKeyRoles",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "apiKeyId",
+            "in": "path",
+            "description": "API Key ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API Key roles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyRolesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API Key not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Update API Key roles",
+        "description": "Replaces all roles assigned to an API Key. Empty array clears all roles.\nBuiltin roles cannot be assigned to API Keys (returns 400).",
+        "operationId": "adminUpdateApiKeyRoles",
+        "parameters": [
+          {
+            "name": "realmId",
+            "in": "path",
+            "description": "Realm ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "apiKeyId",
+            "in": "path",
+            "description": "API Key ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateApiKeyRolesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Roles updated"
+          },
+          "400": {
+            "description": "Bad request - builtin role or role not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API Key not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/api-keys/{realmId}/{apiKeyId}/rotate": {
       "post": {
         "tags": [
@@ -14723,10 +14898,72 @@
             "type": "string",
             "description": "Realm this API key belongs to"
           },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyRoleSummary"
+            },
+            "description": "Roles assigned to this API key"
+          },
           "usageCount": {
             "type": "integer",
             "format": "int32",
             "description": "Total usage count"
+          }
+        }
+      },
+      "ApiKeyRoleDetail": {
+        "type": "object",
+        "description": "Detailed role info for an API Key",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiKeyRoleSummary": {
+        "type": "object",
+        "description": "Role summary for API Key list display",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiKeyRolesResponse": {
+        "type": "object",
+        "description": "Response for API Key roles query",
+        "required": [
+          "roles"
+        ],
+        "properties": {
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyRoleDetail"
+            }
           }
         }
       },
@@ -18083,6 +18320,13 @@
                   "type": "string",
                   "description": "Realm this API key belongs to"
                 },
+                "roles": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyRoleSummary"
+                  },
+                  "description": "Roles assigned to this API key"
+                },
                 "usageCount": {
                   "type": "integer",
                   "format": "int32",
@@ -21057,6 +21301,22 @@
               "null"
             ],
             "description": "Human-readable name (1-100 characters)"
+          }
+        }
+      },
+      "UpdateApiKeyRolesRequest": {
+        "type": "object",
+        "description": "Request to replace API Key roles (empty array clears all roles)",
+        "required": [
+          "roleIds"
+        ],
+        "properties": {
+          "roleIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         }
       },

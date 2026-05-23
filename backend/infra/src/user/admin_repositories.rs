@@ -476,12 +476,13 @@ impl UserRoleRepository for PostgresUserRoleRepository {
                 String,
                 String,
                 Option<String>,
+                bool,
                 DateTime<Utc>,
                 DateTime<Utc>,
             ),
         >(
             r#"
-            SELECT r.id, r.realm_id, r.name, r.description, r.created_at, r.updated_at
+            SELECT r.id, r.realm_id, r.name, r.description, r.is_builtin, r.created_at, r.updated_at
             FROM roles r
             INNER JOIN user_roles ur ON r.id = ur.role_id
             WHERE ur.user_id = $1
@@ -498,13 +499,16 @@ impl UserRoleRepository for PostgresUserRoleRepository {
         let roles = rows
             .into_iter()
             .map(
-                |(id, realm_id, name, description, created_at, updated_at)| RoleEntity {
-                    id,
-                    realm_id,
-                    name,
-                    description,
-                    created_at,
-                    updated_at,
+                |(id, realm_id, name, description, is_builtin, created_at, updated_at)| {
+                    RoleEntity {
+                        id,
+                        realm_id,
+                        name,
+                        description,
+                        is_builtin,
+                        created_at,
+                        updated_at,
+                    }
                 },
             )
             .collect();
@@ -603,6 +607,171 @@ impl UserRoleRepository for PostgresUserRoleRepository {
         })?;
 
         Ok(rows)
+    }
+
+    async fn replace_api_key_roles(
+        &self,
+        api_key_id: &str,
+        realm_id: &str,
+        client_id: &str,
+        role_ids: &[Uuid],
+    ) -> UserAdminResult<()> {
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            tracing::error!("Failed to begin transaction: {}", e);
+            UserAdminError::DatabaseError(format!("Failed to begin transaction: {}", e))
+        })?;
+
+        // Delete existing roles for this API key principal
+        sqlx::query(
+            r#"
+            DELETE FROM user_roles
+            WHERE principal_type = 'api_key' AND principal_id = $1 AND realm_id = $2 AND client_id = $3
+            "#,
+        )
+        .bind(api_key_id)
+        .bind(realm_id)
+        .bind(client_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to delete existing API key roles: {}", e);
+            UserAdminError::DatabaseError(format!("Failed to delete existing API key roles: {}", e))
+        })?;
+
+        // Insert new role assignments
+        for role_id in role_ids {
+            let user_role_id = generate_uuid_v7();
+            sqlx::query(
+                r#"
+                INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id)
+                VALUES ($1, NULL, $2, $3, $4, 'api_key', $5)
+                "#,
+            )
+            .bind(user_role_id)
+            .bind(role_id)
+            .bind(realm_id)
+            .bind(client_id)
+            .bind(api_key_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to insert API key role: {}", e);
+                UserAdminError::DatabaseError(format!("Failed to insert API key role: {}", e))
+            })?;
+        }
+
+        tx.commit().await.map_err(|e| {
+            tracing::error!("Failed to commit transaction: {}", e);
+            UserAdminError::DatabaseError(format!("Failed to commit transaction: {}", e))
+        })?;
+
+        tracing::info!(
+            "Replaced roles for API key: api_key_id={}, role_count={}",
+            api_key_id,
+            role_ids.len()
+        );
+        Ok(())
+    }
+
+    async fn get_api_key_roles(&self, api_key_id: &str) -> UserAdminResult<Vec<RoleEntity>> {
+        let rows = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                String,
+                String,
+                Option<String>,
+                bool,
+                DateTime<Utc>,
+                DateTime<Utc>,
+            ),
+        >(
+            r#"
+            SELECT r.id, r.realm_id, r.name, r.description, r.is_builtin, r.created_at, r.updated_at
+            FROM roles r
+            INNER JOIN user_roles ur ON r.id = ur.role_id
+            WHERE ur.principal_type = 'api_key' AND ur.principal_id = $1
+            "#,
+        )
+        .bind(api_key_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to fetch API key roles: {}", e);
+            UserAdminError::DatabaseError(format!("Failed to fetch API key roles: {}", e))
+        })?;
+
+        let roles = rows
+            .into_iter()
+            .map(
+                |(id, realm_id, name, description, is_builtin, created_at, updated_at)| {
+                    RoleEntity {
+                        id,
+                        realm_id,
+                        name,
+                        description,
+                        is_builtin,
+                        created_at,
+                        updated_at,
+                    }
+                },
+            )
+            .collect();
+
+        Ok(roles)
+    }
+
+    async fn get_api_key_role_summaries_batch(
+        &self,
+        api_key_ids: &[String],
+    ) -> UserAdminResult<Vec<(String, Vec<(Uuid, String)>)>> {
+        if api_key_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Build placeholder string for IN clause
+        let placeholders = api_key_ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("${}", i + 1))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let query = format!(
+            r#"
+            SELECT ur.principal_id, r.id, r.name
+            FROM user_roles ur
+            INNER JOIN roles r ON ur.role_id = r.id
+            WHERE ur.principal_type = 'api_key' AND ur.principal_id IN ({})
+            "#,
+            placeholders
+        );
+
+        let mut query_builder = sqlx::query_as::<_, (String, Uuid, String)>(&query);
+
+        for api_key_id in api_key_ids {
+            query_builder = query_builder.bind(api_key_id);
+        }
+
+        let rows = query_builder.fetch_all(&self.pool).await.map_err(|e| {
+            tracing::error!("Failed to fetch API key role summaries: {}", e);
+            UserAdminError::DatabaseError(format!("Failed to fetch API key role summaries: {}", e))
+        })?;
+
+        // Group by principal_id preserving input order
+        let mut result: Vec<(String, Vec<(Uuid, String)>)> = Vec::new();
+        for api_key_id in api_key_ids {
+            let roles: Vec<(Uuid, String)> = rows
+                .iter()
+                .filter(|(pid, _, _)| pid == api_key_id)
+                .map(|(_, role_id, role_name)| (*role_id, role_name.clone()))
+                .collect();
+            if !roles.is_empty() {
+                result.push((api_key_id.clone(), roles));
+            }
+        }
+
+        Ok(result)
     }
 }
 
@@ -714,7 +883,7 @@ impl RolePolicyRepository for PostgresRolePolicyRepository {
 
         let query = format!(
             r#"
-            SELECT id, realm_id, name, description, created_at, updated_at
+            SELECT id, realm_id, name, description, is_builtin, created_at, updated_at
             FROM roles
             WHERE id IN ({})
             "#,
@@ -728,6 +897,7 @@ impl RolePolicyRepository for PostgresRolePolicyRepository {
                 String,
                 String,
                 Option<String>,
+                bool,
                 DateTime<Utc>,
                 DateTime<Utc>,
             ),
@@ -745,13 +915,16 @@ impl RolePolicyRepository for PostgresRolePolicyRepository {
         let roles = rows
             .into_iter()
             .map(
-                |(id, realm_id, name, description, created_at, updated_at)| RoleEntity {
-                    id,
-                    realm_id,
-                    name,
-                    description,
-                    created_at,
-                    updated_at,
+                |(id, realm_id, name, description, is_builtin, created_at, updated_at)| {
+                    RoleEntity {
+                        id,
+                        realm_id,
+                        name,
+                        description,
+                        is_builtin,
+                        created_at,
+                        updated_at,
+                    }
                 },
             )
             .collect();

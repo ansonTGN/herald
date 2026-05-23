@@ -13,6 +13,8 @@ use super::{
     admin_entities::{AdminUserEntity, PolicyEntity, RoleEntity},
     admin_errors::UserAdminResult,
 };
+
+type ApiKeyRoleSummaries = Vec<(String, Vec<(Uuid, String)>)>;
 use crate::authentication::Identity;
 
 // ============================================================================
@@ -117,6 +119,28 @@ pub trait UserRoleRepository: Send + Sync {
         realm_id: &str,
         client_id: &str,
     ) -> impl Future<Output = UserAdminResult<Vec<(Uuid, Uuid)>>> + Send;
+
+    /// Replace all roles for an API key principal (transactional)
+    fn replace_api_key_roles(
+        &self,
+        api_key_id: &str,
+        realm_id: &str,
+        client_id: &str,
+        role_ids: &[Uuid],
+    ) -> impl Future<Output = UserAdminResult<()>> + Send;
+
+    /// Get roles with details for an API key principal
+    fn get_api_key_roles(
+        &self,
+        api_key_id: &str,
+    ) -> impl Future<Output = UserAdminResult<Vec<RoleEntity>>> + Send;
+
+    /// Batch get role summaries for multiple API key principals
+    /// Returns (principal_id, Vec<(role_id, role_name)>)
+    fn get_api_key_role_summaries_batch(
+        &self,
+        api_key_ids: &[String],
+    ) -> impl Future<Output = UserAdminResult<ApiKeyRoleSummaries>> + Send;
 }
 
 /// Repository for role policy operations
@@ -253,6 +277,23 @@ pub trait RoleAssignmentService: Send + Sync {
         realm_id: &str,
         role_ids: &[Uuid],
     ) -> impl Future<Output = UserAdminResult<bool>> + Send;
+
+    /// Assign roles to an API Key principal
+    fn assign_api_key_roles(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        api_key_id: &str,
+        role_ids: Vec<Uuid>,
+    ) -> impl Future<Output = UserAdminResult<()>> + Send;
+
+    /// Get roles assigned to an API Key principal
+    fn get_api_key_roles(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        api_key_id: &str,
+    ) -> impl Future<Output = UserAdminResult<Vec<RoleEntity>>> + Send;
 }
 
 /// Service for user permission management

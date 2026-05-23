@@ -258,7 +258,7 @@ impl AsyncTestContext for SchemaTestContext {
             permission_checker.clone(),
         ));
         let permission_management_service = Arc::new(PermissionManagementServiceImpl::new(
-            user_role_repository,
+            user_role_repository.clone(),
             role_policy_repository,
             permission_checker.clone(),
         ));
@@ -361,6 +361,7 @@ impl AsyncTestContext for SchemaTestContext {
             fulfillment_service,
             purchase_service,
             jwt_secret: crate::TEST_JWT_SECRET.to_string(),
+            user_role_repository,
         });
 
         // 13. 初始化 Redis Functions（只运行一次）

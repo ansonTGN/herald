@@ -1883,6 +1883,7 @@ dependencies = [
  "herald-api-base",
  "herald-api-billing",
  "herald-core",
+ "sea-orm",
  "serde",
  "serde_json",
  "sqlx",

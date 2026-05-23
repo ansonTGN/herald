@@ -55,6 +55,8 @@ pub use admin::admin_router_with_middleware;
         crate::api_keys::update::update_api_key,
         crate::api_keys::delete::delete_api_key,
         crate::api_keys::rotate::rotate_api_key,
+        crate::api_keys::roles::get_api_key_roles,
+        crate::api_keys::roles::update_api_key_roles,
     ),
     components(schemas(
         crate::role_definitions::types::RoleCreateRequest,
@@ -84,6 +86,9 @@ pub use admin::admin_router_with_middleware;
         crate::api_keys::types::CreateApiKeyResponse,
         crate::api_keys::types::ApiKeyListItem,
         crate::api_keys::types::UpdateApiKeyRequest,
+        crate::api_keys::types::UpdateApiKeyRolesRequest,
+        crate::api_keys::types::ApiKeyRolesResponse,
+        crate::api_keys::types::ApiKeyRoleDetail,
         herald_api_base::application::http::common::pagination::PaginationMeta,
         herald_api_base::application::http::server::api_entities::PageResponse<crate::client_apps::types::ClientAppItem>,
         herald_api_base::application::http::server::api_entities::PageResponse<crate::api_keys::types::ApiKeyListItem>,
