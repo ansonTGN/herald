@@ -1,24 +1,21 @@
-# Billing 用户故事
+# Realm Admin 用户故事
 
-**角色代码**: BI
-**角色定义**：Realm Admin 负责管理 Realm 的订阅套餐、Product 编目上下文和计费配置。
+> 角色定义见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)
 
-**故事范围**: US-BI-001 ~ US-BI-006
-**创建时间**: 2025-02-01
-**状态**: Active
+## 用户故事
 
----
-
-## 故事 1：创建订阅套餐 [US-BI-001]
+### 故事 1：创建订阅套餐 [US-BI-001]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：在 Product 上下文中创建订阅套餐，以便定义价格和计费信息
 **从而**：为用户提供不同的订阅选项
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：创建月付套餐**
 ```gherkin
@@ -99,16 +96,18 @@ And 点击该按钮可以跳转到支付平台配置页面
 ```
 
 
-## 故事 2：编辑订阅套餐 [US-BI-002]
+### 故事 2：编辑订阅套餐 [US-BI-002]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：在 Product 上下文中编辑订阅套餐的业务信息，以便更新价格和描述
 **从而**：适应市场变化和业务需求
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：编辑套餐基本信息**
 ```gherkin
@@ -172,16 +171,18 @@ And 我可以看到该套餐所属的 Product 为 "ai-services"
 ```
 
 
-## 故事 3：配置 Plan 的支付平台映射 [US-BI-003]
+### 故事 3：配置 Plan 的支付平台映射 [US-BI-003]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：为 Plan 配置一个或多个支付平台映射，以便该套餐可以在不同支付平台上售卖
 **从而**：为用户提供更多支付方式选择，并避免为每个平台复制套餐
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：为 Plan 添加支付平台映射**
 ```gherkin
@@ -281,16 +282,18 @@ And 支付平台映射添加失败
 ```
 
 
-## 故事 4：删除订阅套餐 [US-BI-004]
+### 故事 4：删除订阅套餐 [US-BI-004]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：在 Product 上下文中删除订阅套餐，以便移除不再需要的套餐
 **从而**：保持套餐列表的整洁
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：删除无订阅的套餐**
 ```gherkin
@@ -328,16 +331,18 @@ And 该套餐的所有支付平台映射也一并删除
 ```
 
 
-## 故事 5：分配套餐到 Client App [US-BI-005]
+### 故事 5：分配套餐到 Client App [US-BI-005]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：将套餐分配到 Client App，以便控制哪些应用可以提供哪些订阅
 **从而**：实现不同应用的差异化套餐策略
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：分配套餐到单个 Client App**
 ```gherkin
@@ -397,16 +402,18 @@ And 已订阅用户不受影响
 ```
 
 
-## 故事 6：查看订阅列表 [US-BI-006]
+### 故事 6：查看订阅列表 [US-BI-006]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：查看订阅列表，以便了解订阅情况
 **从而**：监控业务收入和用户订阅状态
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：查看所有订阅**
 ```gherkin
@@ -462,7 +469,7 @@ And 页面显示：
 ```
 
 
-## 故事 7：第三方应用查询套餐状态（SDK 集成） [US-BI-007]
+### 故事 7：第三方应用查询套餐状态（SDK 集成） [US-BI-007]
 
 **优先级**: P0
 
@@ -473,11 +480,13 @@ And 页面显示：
 
 **【验收标准】**
 
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
 **场景 1：查询订阅详情**
 ```gherkin
 Given 我是第三方应用开发者
 And 用户已登录我的应用
-When 我通过 SDK 调用查询订阅详情接口
+When 我通过 SDK 查询用户订阅详情
 Then 我收到订阅详情，包括：
   | id                     | sub_1234567890            |
   | status                 | active                    |
@@ -493,7 +502,7 @@ And 我可以识别使用的支付平台
 **场景 2：查询可用套餐列表（包含支付平台信息）**
 ```gherkin
 Given 我是第三方应用开发者
-When 我通过 SDK 调用查询套餐列表接口
+When 我通过 SDK 查询套餐列表
 Then 我收到该 Realm 的所有可用套餐
 And 每个套餐包含可用的支付平台列表：
   | product     | name  | title    | price | currency | payment_providers      |
@@ -506,7 +515,7 @@ And 我可以看到每个套餐支持的多个支付平台
 **场景 3：查询套餐分配**
 ```gherkin
 Given 我是第三方应用开发者
-When 我通过 SDK 调用查询套餐分配接口
+When 我通过 SDK 查询套餐分配
 Then 我收到分配给该 Client App 的所有套餐
 And 每个套餐包含其支持的支付平台列表
 And 我可以只展示已分配的套餐给用户
@@ -561,16 +570,18 @@ And 我禁用该套餐的订阅按钮
 ```
 
 
-## 故事 8：查看订阅变更历史 [US-BI-008]
+### 故事 8：查看订阅变更历史 [US-BI-008]
 
 **优先级**: P1
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：查看所有用户的订阅变更历史，以便监控和管理订阅情况
 **从而**：了解订阅的变更轨迹和趋势
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：查看全局订阅变更历史**
 ```gherkin
@@ -635,16 +646,18 @@ And 对话框显示：
 ```
 
 
-## 故事 9：查看自己的订阅变更历史 [US-BI-009]
+### 故事 9：查看自己的订阅变更历史 [US-BI-009]
 
 **优先级**: P1
 
 **【用户故事】**
-**作为**：Regular User
+**作为**：Regular User（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：查看我的订阅变更历史，以便了解订阅的变更轨迹
 **从而**：追踪我的订阅状态变化
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 0：个人中心 Subscription 入口按 active Plan 显示**
 ```gherkin
@@ -729,6 +742,6 @@ And 我无法查看其他用户的历史记录
 
 ## 相关文档
 
-- **PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档
-- **PRD**: `docs/prd/billing/subscription.md` - Subscription History 订阅变更历史产品需求文档
-- **SDK 文档**: `backend/sdk/src/lib.rs` - Rust SDK 源码
+- **PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - Billing 订阅计费产品需求文档
+- **用户故事**: [docs/user-stories/billing/product-management.md](/docs/user-stories/billing/product-management.md) - Product 管理用户故事
+- **用户故事**: [docs/user-stories/billing/points-admin.md](/docs/user-stories/billing/points-admin.md) - 积分管理用户故事

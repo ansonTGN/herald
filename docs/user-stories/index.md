@@ -62,6 +62,8 @@ docs/user-stories/
 | US-RA-013 | 配置 Realm 邮件服务 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-13配置-realm-邮件服务-us-ra-013) |
 | US-RA-014 | 发送测试邮件 | Realm Admin | P1 | [core/realm-admin](core/realm-admin.md#故事-14发送测试邮件-us-ra-014) |
 | US-RA-015 | 邮件依赖的功能开关前置验证 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-15邮件依赖的功能开关前置验证-us-ra-015) |
+| US-RA-016 | API Key 角色管理 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-16api-key-角色管理-us-ra-016) |
+| US-RA-017 | 创建 API Key 时绑定角色 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-17创建-api-key-时绑定角色-us-ra-017) |
 | US-RU-001 | 账号注册 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-1账号注册-us-ru-001) |
 | US-RU-002 | 账号登录 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-2账号登录-us-ru-002) |
 | US-RU-003 | OAuth 第三方登录 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-3oauth-第三方登录-us-ru-003) |
@@ -172,51 +174,49 @@ docs/user-stories/
 | US-TP-015 | 第三方 Web SPA 发起 SSO 登录 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-15第三方-web-spa-发起-sso-登录-us-tp-015) |
 | US-TP-016 | 第三方后端用授权码换取令牌 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-16第三方后端用授权码换取令牌-us-tp-016) |
 
-**总计**: 130 个用户故事
-
 ---
 
 ## 按领域分类
 
 ### Core 核心功能
 
-| 角色 | 文档 | 故事数 | 相关 PRD |
-|------|------|-------|---------|
-| Admin Realm | [core/admin-realm.md](core/admin-realm.md) | 4 | [Realm PRD](/docs/prd/core/realm.md) |
-| Realm Admin | [core/realm-admin.md](core/realm-admin.md), [core/builtin-protection.md](core/builtin-protection.md) | 15 | [Users PRD](/docs/prd/core/users.md), [Permissions PRD](/docs/prd/auth/permissions.md), [Client Apps PRD](/docs/prd/integration/client-app.md), [Realm Settings PRD](/docs/prd/core/realm-settings.md), [Dashboard PRD](/docs/prd/core/dashboard.md) |
-| Regular User | [core/regular-user.md](core/regular-user.md) | 10 | [Users PRD](/docs/prd/core/users.md), [OAuth PRD](/docs/prd/auth/oauth.md) |
-| Audit | [core/audit.md](core/audit.md) | 5 | [Audit PRD](/docs/prd/core/audit.md) |
+| 角色 | 文档 | 相关 PRD |
+|------|------|---------|
+| Admin Realm | [core/admin-realm.md](core/admin-realm.md) | [Realm PRD](/docs/prd/core/realm.md) |
+| Realm Admin | [core/realm-admin.md](core/realm-admin.md), [core/builtin-protection.md](core/builtin-protection.md) | [Users PRD](/docs/prd/core/users.md), [Permissions PRD](/docs/prd/auth/permissions.md), [Client Apps PRD](/docs/prd/integration/client-app.md), [Realm Settings PRD](/docs/prd/core/realm-settings.md), [Dashboard PRD](/docs/prd/core/dashboard.md), [API Key Roles PRD](/docs/prd/integration/api-key-roles.md) |
+| Regular User | [core/regular-user.md](core/regular-user.md) | [Users PRD](/docs/prd/core/users.md), [OAuth PRD](/docs/prd/auth/oauth.md) |
+| Audit | [core/audit.md](core/audit.md) | [Audit PRD](/docs/prd/core/audit.md) |
 
 ### Auth 认证与授权
 
-| 角色 | 文档 | 故事数 | 相关 PRD |
-|------|------|-------|---------|
-| Third-Party App | [auth/third-party-app.md](auth/third-party-app.md), [auth/client-app-settings.md](auth/client-app-settings.md) | 16 | [OAuth PRD](/docs/prd/auth/oauth.md), [Client Apps PRD](/docs/prd/integration/client-app.md) |
-| TOTP User | [auth/totp.md](auth/totp.md) | 7 | [TOTP PRD](/docs/prd/auth/totp.md) |
-| OAuth Extension | [auth/oauth-extension.md](auth/oauth-extension.md) | - | [OAuth PRD](/docs/prd/auth/oauth.md) |
-| WeChat OAuth | [auth/wechat-oauth.md](auth/wechat-oauth.md) | - | [WeChat OAuth PRD](/docs/prd/auth/wechat-oauth.md) |
-| Device Code | [auth/device-code.md](auth/device-code.md) | 5 | [Device Code PRD](/docs/prd/auth/device-code.md) |
+| 角色 | 文档 | 相关 PRD |
+|------|------|---------|
+| Third-Party App | [auth/third-party-app.md](auth/third-party-app.md), [auth/client-app-settings.md](auth/client-app-settings.md) | [OAuth PRD](/docs/prd/auth/oauth.md), [Client Apps PRD](/docs/prd/integration/client-app.md) |
+| TOTP User | [auth/totp.md](auth/totp.md) | [TOTP PRD](/docs/prd/auth/totp.md) |
+| OAuth Extension | [auth/oauth-extension.md](auth/oauth-extension.md) | [OAuth PRD](/docs/prd/auth/oauth.md) |
+| WeChat OAuth | [auth/wechat-oauth.md](auth/wechat-oauth.md) | [WeChat OAuth PRD](/docs/prd/auth/wechat-oauth.md) |
+| Device Code | [auth/device-code.md](auth/device-code.md) | [Device Code PRD](/docs/prd/auth/device-code.md) |
 
 ### Billing 计费相关
 
-| 角色 | 文档 | 故事数 | 相关 PRD |
-|------|------|-------|---------|
-| Billing User | [billing/subscription.md](billing/subscription.md) | 9 | [Subscription PRD](/docs/prd/billing/subscription.md) |
-| Product Admin | [billing/product-management.md](billing/product-management.md) | 6 | [Product Catalog PRD](/docs/prd/billing/product-catalog.md) |
-| Points Admin | [billing/points-admin.md](billing/points-admin.md) | 7 | [Points PRD](/docs/prd/billing/points.md) |
-| Points User | [billing/points-user.md](billing/points-user.md), [billing/points-free-user.md](billing/points-free-user.md) | 6 | [Points PRD](/docs/prd/billing/points.md), [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
-| Points Package | [billing/points-package.md](billing/points-package.md), [billing/points-package-purchase.md](billing/points-package-purchase.md) | 8 | [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
-| Payment Provider | [billing/payment-provider.md](billing/payment-provider.md) | - | [Subscription PRD](/docs/prd/billing/subscription.md) |
-| Shopify Pay | [billing/shopify-pay.md](billing/shopify-pay.md) | 9 | [Shopify Pay PRD](/docs/prd/billing/shopify-pay.md) |
-| WeChat Pay | [billing/wechat-pay.md](billing/wechat-pay.md) | 8 | [WeChat Pay PRD](/docs/prd/billing/wechat-pay.md) |
-| Payment Attempt | [billing/payment-attempt.md](billing/payment-attempt.md) | 4 | [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
-| Invoice | [billing/invoice.md](billing/invoice.md) | 12 | [Invoice PRD](/docs/prd/billing/invoice.md) |
+| 角色 | 文档 | 相关 PRD |
+|------|------|---------|
+| Billing User | [billing/subscription.md](billing/subscription.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
+| Product Admin | [billing/product-management.md](billing/product-management.md) | [Product Catalog PRD](/docs/prd/billing/product-catalog.md) |
+| Points Admin | [billing/points-admin.md](billing/points-admin.md) | [Points PRD](/docs/prd/billing/points.md) |
+| Points User | [billing/points-user.md](billing/points-user.md), [billing/points-free-user.md](billing/points-free-user.md) | [Points PRD](/docs/prd/billing/points.md), [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
+| Points Package | [billing/points-package.md](billing/points-package.md), [billing/points-package-purchase.md](billing/points-package-purchase.md) | [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
+| Payment Provider | [billing/payment-provider.md](billing/payment-provider.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
+| Shopify Pay | [billing/shopify-pay.md](billing/shopify-pay.md) | [Shopify Pay PRD](/docs/prd/billing/shopify-pay.md) |
+| WeChat Pay | [billing/wechat-pay.md](billing/wechat-pay.md) | [WeChat Pay PRD](/docs/prd/billing/wechat-pay.md) |
+| Payment Attempt | [billing/payment-attempt.md](billing/payment-attempt.md) | [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
+| Invoice | [billing/invoice.md](billing/invoice.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
 
 ### Integration 集成
 
-| 角色 | 文档 | 故事数 | 相关 PRD |
-|------|------|-------|---------|
-| SDK | [integration/sdk.md](integration/sdk.md) | 3 | [SDK PRD](/docs/prd/integration/sdk.md) |
+| 角色 | 文档 | 相关 PRD |
+|------|------|---------|
+| SDK | [integration/sdk.md](integration/sdk.md) | [SDK PRD](/docs/prd/integration/sdk.md) |
 
 ## 特殊文档
 

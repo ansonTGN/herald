@@ -1,7 +1,6 @@
 # Invoice 发票产品需求文档 (PRD)
 
 **创建时间**: 2026-05-08
-**状态**: Implemented
 **优先级**: P0
 
 ---
@@ -10,7 +9,7 @@
 
 > 详细故事与验收标准请查看 `docs/user-stories/billing/invoice.md`。
 
-### 1.1 相关故事
+### 1.1 故事引用
 
 - `[US-IV-001]` 创建发票，优先级 P0，来源 `docs/user-stories/billing/invoice.md`
   - 角色：Realm Admin
@@ -60,13 +59,13 @@
   - 角色：Realm Admin
   - 摘要：审核用户申请的发票，确认后开具或作废
 
-### 1.2 优先级汇总
+### 1.2 优先级汇总表
 
-| 优先级 | 数量 | 关键故事                                                                                   |
-| ------ | ---- | ------------------------------------------------------------------------------------------ |
-| P0     | 9    | 创建发票、编辑草稿、查看列表、查看详情、开具发票、标记已付、配置销售方、申请发票、审核开具 |
-| P1     | 3    | 作废发票、查看我的发票、系统标记逾期                                                       |
-| P2     | 0    | -                                                                                          |
+| 优先级 | 数量 | 关键故事 |
+|--------|------|----------|
+| P0 | 9 | 创建发票、编辑草稿、查看列表、查看详情、开具发票、标记已付、配置销售方、申请发票、审核开具 |
+| P1 | 3 | 作废发票、查看我的发票、系统标记逾期 |
+| P2 | 0 | - |
 
 ---
 
@@ -91,23 +90,23 @@
 - 发票可关联 Subscription 和 Payment Attempt（上下文入口自动传递关联 ID；独立表单仍可手动填写）
 - PDF 发票生成和下载
 
-### 2.2 不包含功能 (Out of Scope)
+### 2.2 不包含功能
 
-- ❌ 多格式导出（CSV / XLSX / XML，后续迭代）
-- ❌ 邮件发送发票（后续迭代）
-- ❌ Subscription 续费自动创建 Invoice（后续迭代）
-- ❌ Payment Attempt 支付成功自动创建 Invoice（可关联但不自动生成）
-- ❌ 在线支付集成（发票仅手动标记已付）
-- ❌ 发票模板自定义
-- ❌ 多币种自动转换
+- 多格式导出（CSV / XLSX / XML，后续迭代）
+- 邮件发送发票（后续迭代）
+- Subscription 续费自动创建 Invoice（后续迭代）
+- Payment Attempt 支付成功自动创建 Invoice（可关联但不自动生成）
+- 在线支付集成（发票仅手动标记已付）
+- 发票模板自定义
+- 多币种自动转换
 
 ### 2.3 依赖项
 
-- ✅ **Realm 系统**（已实现）— 发票属于 Realm 级别
-- ✅ **Account 系统**（已实现）— 开票对象关联 Account
-- ✅ **现有角色与登录身份判断**（已实现）— 复用 Realm Admin / Regular User 角色边界，不新增 Invoice 细粒度权限
-- ⚠️ **Subscription 系统**（部分实现）— Invoice 可选关联 Subscription
-- ⚠️ **Payment Attempt 系统**（已实现）— Invoice 可选关联 Payment Attempt
+- **Realm 系统** — 发票属于 Realm 级别
+- **Account 系统** — 开票对象关联 Account
+- **现有角色与登录身份判断** — 复用 Realm Admin / Regular User 角色边界，不新增 Invoice 细粒度权限
+- **Subscription 系统**（部分实现）— Invoice 可选关联 Subscription
+- **Payment Attempt 系统** — Invoice 可选关联 Payment Attempt
 
 ---
 
@@ -129,22 +128,27 @@
 
 ---
 
-## 4. 当前实现状态
+## 4. 业务规则与状态
 
-| 功能模块           | 状态      | 备注                                   |
-| ------------------ | --------- | -------------------------------------- |
-| 销售方信息配置     | ✅ 已实现 | 含税号（seller_tax_id）                |
-| 用户申请发票       | ✅ 已实现 | -                                      |
-| 管理员审核开具     | ✅ 已实现 | -                                      |
-| 管理员手动创建发票 | ✅ 已实现 | 辅助路径                               |
-| 行项目管理         | ✅ 已实现 | -                                      |
-| 状态机             | ✅ 已实现 | draft / issued / paid / void / overdue |
-| 金额计算           | ✅ 已实现 | 折扣、税费、运费，支持固定和百分比模式 |
-| 发票编号生成       | ✅ 已实现 | INV-{YEAR}-{SEQ}                       |
-| 逾期标记定时任务   | ✅ 已实现 | -                                      |
-| 前端发票管理页面   | ✅ 已实现 | -                                      |
-| 前端发票申请页面   | ✅ 已实现 | -                                      |
-| PDF 发票生成       | ✅ 已实现 | -                                      |
+### 4.1 业务规则
+
+- **销售方信息前置条件**：Realm Admin 必须先配置销售方信息（公司名称、地址、邮箱、电话、税号），否则用户无法提交发票申请
+- **用户申请验证**：用户申请发票需验证拥有对应的支付记录；申请时填写开票抬头信息（含税号），系统创建草稿发票（来源标记为 user_application），销售方信息自动从 Realm 配置填充
+- **发票编号唯一性**：发票编号（invoice_number）在 realm + 年范围内唯一，格式 INV-{YEAR}-{SEQ}
+- **编辑约束**：仅 draft 状态可编辑行项目、费用和双方信息；编辑后自动重算金额
+- **开具约束**：空发票不可开具；开具时记录开票日期
+- **作废约束**：已付款发票不可作废；可作废 draft 和 issued 状态
+- **标记已付约束**：仅 issued / overdue 状态可标记已付
+- **来源标记**：发票来源（admin_manual / user_application）需持久化，用于筛选和审计
+- **关联可选**：发票可关联 subscription_id 和 payment_attempt_id，关联为可选，不触发自动行为
+- **金额计算规则**：line_item.subtotal = quantity x unit_price；invoice.subtotal = SUM(line_items.subtotal)；invoice.total = subtotal - discount_amount + tax_amount + shipping_amount；所有金额以最小货币单位（分）存储
+
+### 4.2 关键状态与异常
+
+- **发票状态机**：draft → issued → paid / void / overdue
+- **逾期标记**：系统定时检查到期日已过的 issued 发票，自动标记为 overdue
+- **审计追踪**：所有状态变更操作需记录审计事件（actor、timestamp、changes）
+- **权限边界**：不新增 Invoice 细粒度权限；管理端复用 Realm Admin 角色判断，用户端复用登录用户身份判断；Regular User 只能查询和申请自己的发票
 
 ---
 
@@ -152,25 +156,18 @@
 
 ### 5.1 核心需求
 
-- **销售方信息配置**：Realm Admin 在 Billing 设置中配置本 Realm 的销售方信息（公司名称、地址、邮箱、电话、税号），用户申请发票时自动填充；未配置时用户无法提交申请
-- **用户申请发票（主流程）**：Regular User 为已付款的订单或订阅申请发票，填写开票抬头信息（含税号），系统创建草稿发票（来源标记为 user_application），销售方信息自动从 Realm 配置填充
-- **管理员审核开具**：Realm Admin 在发票列表中筛选待审核发票，审核通过后开具（draft → issued），审核不通过可作废并注明原因；审核时允许编辑草稿内容
+- **销售方信息配置**：Realm Admin 在 Billing 设置中配置本 Realm 的销售方信息，用户申请发票时自动填充
+- **用户申请发票（主流程）**：Regular User 为已付款的订单或订阅申请发票，填写开票抬头信息，系统创建草稿发票
+- **管理员审核开具**：Realm Admin 在发票列表中筛选待审核发票，审核通过后开具，审核不通过可作废并注明原因；审核时允许编辑草稿内容
 - **管理员手动创建（辅助路径）**：Realm Admin 可直接创建草稿发票，手动填写双方信息和行项目
-- **发票编辑**：仅草稿状态可编辑行项目、费用和双方信息；编辑后自动重算金额
-- **发票开具**：将草稿发票正式开具（draft → issued），记录开票日期；空发票不可开具
-- **发票作废**：将草稿或已开具的发票作废（draft / issued → void）；已付款发票不可作废
-- **标记已付**：手动将已开具或逾期发票标记为已付款（issued / overdue → paid）
+- **发票编辑**：仅草稿状态可编辑，编辑后自动重算金额
+- **发票开具**：将草稿发票正式开具，记录开票日期
+- **发票作废**：将草稿或已开具的发票作废；已付款发票不可作废
+- **标记已付**：手动将已开具或逾期发票标记为已付款
 - **逾期标记**：系统定时检查到期日已过的 issued 发票，自动标记为 overdue
+- **PDF 生成和下载**：支持发票 PDF 生成和下载
 
-### 5.2 计算规则
-
-- `line_item.subtotal` = quantity × unit_price
-- `invoice.subtotal` = SUM(line_items.subtotal)
-- `invoice.total` = subtotal - discount_amount + tax_amount + shipping_amount
-- 折扣 / 税费 / 运费：请求中传入 mode（fixed / percent）和 value，服务端计算最终金额
-- 所有金额以最小货币单位（分）存储，避免浮点误差
-
-### 5.3 验收目标
+### 5.2 验收目标
 
 - Realm Admin 能配置销售方信息，后续发票自动填充
 - Regular User 能为已付款订单申请发票，看到申请状态变化
@@ -185,56 +182,47 @@
 
 ## 6. API 相关约束
 
-**状态**: 必填
+**适用性**: 适用
 
-- 发票 API 遵循 realm 隔离原则，在 `api-billing` crate 中新增
-- 不新增 Invoice 专属细粒度权限；管理端接口复用 Realm Admin 角色判断，用户端接口复用登录用户身份判断
-- Realm Admin 可管理本 Realm 所有发票；Regular User 只能查询和申请自己的发票
-- 销售方信息配置 API 归属 Realm Billing 设置，仅 Realm Admin 可访问
-- 用户申请发票 API 需验证用户拥有对应的支付记录
-- 发票编号（invoice_number）在 realm + 年范围内唯一
-- 仅 draft 状态可编辑；issued / overdue 可标记已付或作废；paid 不可修改
-- 发票可关联 subscription_id 和 payment_attempt_id，关联为可选，不触发自动行为
-- 发票来源标记（admin_manual / user_application）需持久化，用于筛选和审计
-- 状态变更操作需记录审计事件（actor、timestamp、changes）
+- **接口能力范围**：发票 CRUD、销售方信息配置、发票开具/作废/标记已付、用户申请发票、PDF 生成下载的能力边界；在 api-billing crate 中新增
+- **访问控制原则**：不新增 Invoice 专属细粒度权限；管理端接口复用 Realm Admin 角色判断，用户端接口复用登录用户身份判断；Realm Admin 可管理本 Realm 所有发票；Regular User 只能查询和申请自己的发票；销售方信息配置 API 归属 Realm Billing 设置，仅 Realm Admin 可访问
+- **租户/Realm 数据边界**：发票按 Realm 隔离；发票编号在 realm + 年范围内唯一
+- **状态操作约束**：仅 draft 可编辑；issued / overdue 可标记已付或作废；paid 不可修改
 
 ---
 
 ## 7. 前端/交互约束
 
-**状态**: 必填
+**适用性**: 适用
 
 - **管理后台**（Realm Admin）：
-  - 入口：Realm 管理后台的 Billing 区域新增 "Invoices" 菜单；该入口只按管理权限控制，不因当前 Realm 尚未配置销售方信息或尚无发票记录而隐藏
+  - 入口：Realm 管理后台的 Billing 区域新增 "Invoices" 菜单；只按管理权限控制，不因当前 Realm 尚未配置销售方信息或尚无发票记录而隐藏
   - 销售方配置：Billing 设置页面新增销售方信息配置区域（公司名称、地址、邮箱、电话、税号）
   - 发票列表页：表格展示编号、开票对象、金额、状态、来源、到期日，支持状态、来源和日期筛选
   - 待审核视图：筛选来源为 "user_application" 且状态为 "draft" 的发票，快速审核
-  - 发票创建 / 编辑表单：行项目动态添加删除，实时计算金额汇总
+  - 发票创建/编辑表单：行项目动态添加删除，实时计算金额汇总
   - 发票详情页：展示完整发票信息、行项目和状态历史时间线
-  - 状态操作：Issue、Void、Mark as Paid 按钮根据当前状态启用 / 禁用
+  - 状态操作：Issue、Void、Mark as Paid 按钮根据当前状态启用/禁用
 
 - **个人页面**（Regular User）：
-  - 入口：当 Realm 已配置销售方信息时，用户个人中心显示 "My Invoices" 菜单；未配置销售方信息时隐藏该入口
-  - 申请发票入口：当 Realm 已配置销售方信息时，在支付记录或订阅详情旁提供 "Apply for Invoice" 按钮；未配置时不展示申请入口
+  - 入口：当 Realm 已配置销售方信息时，用户个人中心显示 "My Invoices" 菜单；未配置时隐藏
+  - 申请发票入口：当 Realm 已配置销售方信息时，在支付记录或订阅详情旁提供 "Apply for Invoice" 按钮；未配置时不展示
   - 申请表单：选择支付记录、填写开票抬头（名称、地址、邮箱、税号）
   - 列表页：展示属于自己的发票，包含编号、金额、状态、到期日、申请状态
   - 详情页：查看发票完整信息
 
-- **状态反馈**：
-  - 操作成功后显示对应成功消息
-  - 状态不合法时禁用按钮并提示原因
-  - 金额变动后实时更新汇总区域
+- **状态反馈**：操作成功后显示对应成功消息；状态不合法时禁用按钮并提示原因；金额变动后实时更新汇总区域
 
+---
 
-## 8. 相关文件索引
+## 8. 已确认决策
 
-### 8.1 后端文件
+### 8.1 已确认决策
 
-- `backend/` 相关实现文件待技术设计文档确定后补充
-
-### 8.2 前端文件
-
-- `frontend/` 相关实现文件待技术设计文档确定后补充
+- 主流程为用户申请 + 管理员审核开具，保留管理员手动创建辅助路径
+- 不新增 Invoice 细粒度权限，复用现有 Realm Admin / Regular User 角色边界
+- 发票可关联 Subscription 和 Payment Attempt 但不自动生成
+- 发票编号格式为 INV-{YEAR}-{SEQ}，租户内按年递增
 
 ---
 
@@ -242,4 +230,3 @@
 
 - 用户故事：`docs/user-stories/billing/invoice.md`
 - 相关 PRD：`docs/prd/billing/subscription.md`
-- 角色：`docs/user-stories/_roles.md`

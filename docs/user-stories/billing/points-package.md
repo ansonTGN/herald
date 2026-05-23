@@ -1,32 +1,21 @@
-# 积分包（PointsPackage）用户故事
+# Realm Admin / Regular User 用户故事
 
-**角色代码**: PP (Points Package)
-**角色定义**：Realm Admin 负责管理积分包商品；Regular User 购买积分包获得充值积分（topup_credit）。
+> 角色定义见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)
 
-**故事范围**: US-PP-001 ~ US-PP-005
-**创建时间**: 2026-04-08
-**状态**: Active
+## 用户故事
 
-**依赖关系**:
-- US-PP-001 无前置依赖，可优先实现
-- US-PP-002 和 US-PP-003 依赖 US-PP-001（需要先创建积分包）
-- US-PP-004 依赖 US-PP-001（需要存在积分包才能查看）
-- US-PP-005 无前置依赖，但建议在 US-PP-001 之后实现
-- 依赖 Product/Plan 编目系统（docs/user-stories/billing/product-management.md）
-- 依赖支付平台配置（docs/user-stories/billing/payment-provider.md）
-
----
-
-## 故事 1：创建积分包 [US-PP-001]
+### 故事 1：创建积分包 [US-PP-001]
 
 **优先级**: P0
 
 **【用户故事】**
 **作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
-**我希望**：创建积分包（PointsPackage）商品
-**从而**：用户可以购买积分包获得充值积分（topup_credit），而不是订阅
+**我希望**：创建积分包商品
+**从而**：用户可以购买积分包获得充值积分，而不是订阅
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：创建新的积分包**
 ```gherkin
@@ -75,7 +64,7 @@ Then 系统显示验证错误："Price must be greater than 0"
 
 ---
 
-## 故事 2：编辑积分包 [US-PP-002]
+### 故事 2：编辑积分包 [US-PP-002]
 
 **优先级**: P0
 
@@ -124,7 +113,7 @@ And 该积分包下的所有支付平台映射也一并禁用
 
 ---
 
-## 故事 3：配置积分包的支付平台映射 [US-PP-003]
+### 故事 3：配置积分包的支付平台映射 [US-PP-003]
 
 **优先级**: P0
 
@@ -184,7 +173,7 @@ And 已购买的用户不受影响
 
 ---
 
-## 故事 4：查看积分包列表 [US-PP-004]
+### 故事 4：查看积分包列表 [US-PP-004]
 
 **优先级**: P0
 
@@ -233,7 +222,7 @@ Then 我看到该积分包的所有支付平台映射：
 
 ---
 
-## 故事 5：删除积分包 [US-PP-005]
+### 故事 5：删除积分包 [US-PP-005]
 
 **优先级**: P1
 
@@ -286,18 +275,6 @@ And 我必须点击 "Confirm" 才能执行删除
 | P0 | 4 | 创建积分包、编辑积分包、配置支付平台映射、查看积分包列表 |
 | P1 | 1 | 删除积分包 |
 | P2 | 0 | - |
-
----
-
-## 与订阅套餐的区别
-
-| 特性 | 订阅套餐（Plan） | 积分包（PointsPackage） |
-|------|-----------------|----------------------|
-| 购买对象 | 订阅权益 | 充值积分（topup_credit） |
-| 履约结果 | 创建 Subscription + 发放 subscription_credit | 仅发放 topup_credit |
-| 是否续费 | 是（定期） | 否（一次性） |
-| 积分类型 | subscription_credit | topup_credit |
-| 积分过期 | 有（随订阅周期） | 无（长期有效） |
 
 ---
 

@@ -1,29 +1,26 @@
-# Admin Realm 用户故事
+# Admin Realm 管理员 用户故事
 
-**角色代码**: AR
-**角色定义**：Admin Realm 管理员是系统最高权限用户，负责创建和管理多个 Realm。
+> 角色定义见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)
 
-**故事范围**: US-AR-001 ~ US-AR-005
-**创建时间**: 2025-02-01
-**状态**: Active
+## 用户故事
 
----
-
-## 故事 1：创建 Realm [US-AR-001]
+### 故事 1：创建 Realm [US-AR-001]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Admin Realm 管理员
+**作为**：Admin Realm 管理员（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：创建新的 Realm，以便为不同组织提供独立的认证服务
 **从而**：支持多租户业务场景
 
 **【验收标准】**
 
-**场景 1：Admin Realm 管理员拥有 realm.manage 权限**
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：正常创建 Realm 成功**
 ```gherkin
 Given 我是 Admin Realm 的管理员
-And 我拥有 `realm.manage` 权限
+And 我拥有 realm.manage 权限
 When 我在 Realms 管理页面点击 "Create Realm" 按钮
 And 我填写 Realm 信息：
   | Realm ID | myapp                  |
@@ -34,15 +31,14 @@ And 我提交表单
 Then Realm 创建成功
 And 系统显示成功消息："Realm 'myapp' created successfully"
 And Realm 列表显示新创建的 Realm
-And 新 Realm 自动创建默认 RBAC（角色、权限、策略）
-And 新 Realm 自动创建 admin-web-console Client App
-And 提供的管理员用户自动分配 realm-admin 角色
+And 新 Realm 自动创建默认角色和权限配置
+And 新 Realm 自动创建管理控制台客户端应用
+And 提供的管理员用户自动分配管理员角色
 ```
 
 **场景 2：Realm ID 必填验证**
 ```gherkin
 Given 我是 Admin Realm 的管理员
-And 我拥有 `realm.manage` 权限
 When 我在创建 Realm 表单中留空 "Realm ID" 字段
 And 我填写其他必填字段并提交
 Then 系统显示验证错误："Realm ID is required"
@@ -62,7 +58,7 @@ Then 系统显示验证错误：
   | 已存在   | "Realm ID already exists"            |
 ```
 
-**场景 4：密码验证**
+**场景 4：密码强度验证**
 ```gherkin
 Given 我是 Admin Realm 的管理员
 And 我在创建 Realm 表单中输入弱密码
@@ -72,16 +68,18 @@ Then 系统显示验证错误："Password must be at least 8 characters"
 
 ---
 
-## 故事 2：查看 Realm 列表 [US-AR-002]
+### 故事 2：查看 Realm 列表 [US-AR-002]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Admin Realm 管理员
+**作为**：Admin Realm 管理员（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：查看所有 Realm，以便管理系统中的组织
 **从而**：了解系统整体情况
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：查看所有 Realm（分页显示）**
 ```gherkin
@@ -134,16 +132,18 @@ And 我可以跳转到指定页码
 
 ---
 
-## 故事 3：查看 Realm 详情 [US-AR-003]
+### 故事 3：查看 Realm 详情 [US-AR-003]
 
 **优先级**: P1
 
 **【用户故事】**
-**作为**：Admin Realm 管理员
+**作为**：Admin Realm 管理员（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：查看 Realm 详情，以便了解 Realm 的配置信息
 **从而**：更好地管理 Realm
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：查看 Realm 基本信息**
 ```gherkin
@@ -160,29 +160,31 @@ And 页面显示以下信息：
 
 ---
 
-## 故事 4：Realm 创建权限控制 [US-AR-004]
+### 故事 4：Realm 创建权限控制 [US-AR-004]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：系统
-**我希望**：只有拥有 `realm.manage` 权限的 Admin Realm 用户才能创建新 Realm
+**作为**：Admin Realm 管理员（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：只有拥有 Realm 管理权限的 Admin Realm 用户才能创建新 Realm
 **从而**：防止未授权用户创建 Realm，保证系统安全
 
 **【验收标准】**
 
-**场景 1：Admin Realm 管理员拥有 realm.manage 权限**
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：拥有权限的用户创建 Realm 成功**
 ```gherkin
 Given 我是 Admin Realm 的管理员
-And 我拥有 `realm.manage` 权限
+And 我拥有 realm.manage 权限
 When 我尝试创建新 Realm
 Then Realm 创建成功
 ```
 
-**场景 2：Realm Admin 缺少 realm.manage 权限**
+**场景 2：无权限的 Realm Admin 无法创建 Realm**
 ```gherkin
-Given 我是 Realm Admin（来自 realm-1，非 admin realm）
-And 我没有 `realm.manage` 权限
+Given 我是 Realm Admin（来自非 admin realm）
+And 我没有 realm.manage 权限
 When 我尝试通过管理界面创建新 Realm
 Then 系统显示错误："权限不足"
 And 我无法访问创建 Realm 功能
@@ -191,7 +193,7 @@ And 我无法访问创建 Realm 功能
 **场景 3：Realms 导航菜单权限控制**
 ```gherkin
 Given 我是 Realm Admin（非 admin realm）
-And 我没有 `realm.manage` 权限
+And 我没有 realm.manage 权限
 When 我登录系统
 Then 左侧导航菜单中不显示 "Realms" 菜单项
 ```
@@ -199,30 +201,31 @@ Then 左侧导航菜单中不显示 "Realms" 菜单项
 **场景 4：直接访问 URL 权限检查**
 ```gherkin
 Given 我是 Realm Admin（非 admin realm）
-And 我没有 `realm.manage` 权限
+And 我没有 realm.manage 权限
 When 我直接访问 Realms 管理页面
 Then 系统返回权限不足提示或重定向到无权限页面
 ```
 
 ---
 
-## 故事 5：访问新创建的 Realm [US-AR-005]
+### 故事 5：访问新创建的 Realm [US-AR-005]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Admin Realm 管理员
+**作为**：Admin Realm 管理员（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：创建 Realm 后能够访问该 Realm 的管理界面
-**从而**：验证 Realm 配置、设置 RBAC、管理 Realm 用户
+**从而**：验证 Realm 配置、设置权限、管理 Realm 用户
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：创建 Realm 后访问其 Dashboard**
 ```gherkin
 Given 我是 Admin Realm 的管理员
-And 我拥有 `realm.manage` 权限
-When 我创建了新 Realm "test-realm-123"
-And 我使用该 Realm 的管理员账号登录
+And 我创建了新 Realm "test-realm-123"
+When 我使用该 Realm 的管理员账号登录
   | Email           | admin@test-realm-123.com |
   | Password        | password123              |
   | Realm           | test-realm-123           |
@@ -232,10 +235,9 @@ And 页面显示 Realm 名称 "test-realm-123"
 And 我可以访问该 Realm 的管理功能
 ```
 
-**场景 2：验证新 Realm 自动创建的 RBAC**
+**场景 2：验证新 Realm 自动创建的默认配置**
 ```gherkin
 Given 我是 Admin Realm 的管理员
-And 我拥有 `realm.manage` 权限
 And 我创建了新 Realm "myapp"
 And 我使用该 Realm 的管理员账号登录
 When 我访问该 Realm 的角色管理页面
@@ -244,22 +246,3 @@ Then 我看到默认角色存在：
   | user        |
 And 我看到默认权限配置正确
 ```
-
----
-
-## 用户故事优先级汇总
-
-| 优先级 | 用户故事数量 | 关键故事 |
-|--------|------------|---------|
-| P0 | 4 | 创建 Realm、查看 Realm 列表、Realm 创建权限控制、访问新创建的 Realm |
-| P1 | 1 | 查看 Realm 详情 |
-| P2 | 0 | - |
-
----
-
-## 相关文档
-
-- **PRD**: `docs/prd/core/realm.md` - Realm 管理产品需求文档
-- **权限系统**: `docs/prd/auth/permissions.md` - RBAC 权限系统文档
-
----

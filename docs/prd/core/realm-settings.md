@@ -1,27 +1,37 @@
-# Realm Settings 菜单产品需求文档 (PRD)
+# Realm Settings 产品需求文档 (PRD)
 
 **创建时间**: 2025-01-05
-**状态**: Implemented
-**最后更新**: 2026-05-19
+**优先级**: P0
 
 ---
+
 ## 1. 相关用户故事
 
-> **说明**: 详细的用户故事和验收标准请查看 `../../user-stories/` 目录中的对应文件。
+> 详细故事与验收标准请查看 `docs/user-stories/` 中对应文档。
 
-### 1.1 Realm Admin 用户故事
+### 1.1 故事引用
 
-- 📄 [docs/user-stories/core/realm-admin.md](/docs/user-stories/core/realm-admin.md)
-  - **[US-RA-008] 配置 Realm 设置** (P0): 作为 Realm Admin，我想要配置 Realm 设置（Turnstile、注册策略、OAuth Provider），以便管理本 Realm 的安全和访问控制
-  - **[US-RA-013] 配置 Realm 邮件服务** (P0): 作为 Realm Admin，我想要配置邮件发送方式（Resend API 或 SMTP），以便让本 Realm 独立发送系统邮件
-  - **[US-RA-014] 发送测试邮件** (P1): 作为 Realm Admin，我想要发送测试邮件验证配置正确性
-  - **[US-RA-015] 邮件依赖的功能开关前置验证** (P0): 作为 Realm Admin，我希望在未配置邮件时无法开启邮箱验证等邮件依赖功能
+- `[US-RA-008]` 配置 Realm 设置 (P0)，来源 `docs/user-stories/core/realm-admin.md`
+  - 角色：Realm Admin
+  - 摘要：作为 Realm Admin，配置 Realm 设置（Turnstile、注册策略、OAuth Provider），管理本 Realm 的安全和访问控制
 
-### 1.2 用户故事优先级汇总
+- `[US-RA-013]` 配置 Realm 邮件服务 (P0)，来源 `docs/user-stories/core/realm-admin.md`
+  - 角色：Realm Admin
+  - 摘要：配置邮件发送方式（Resend API 或 SMTP），让本 Realm 独立发送系统邮件
 
-| 优先级 | 用户故事数量 | 关键故事 |
-|--------|------------|---------|
-| P0 | 5 | 配置 Turnstile 验证码、配置注册策略、配置 OAuth Provider、配置邮件服务、功能开关前置验证 |
+- `[US-RA-014]` 发送测试邮件 (P1)，来源 `docs/user-stories/core/realm-admin.md`
+  - 角色：Realm Admin
+  - 摘要：发送测试邮件验证配置正确性
+
+- `[US-RA-015]` 邮件依赖功能开关前置验证 (P0)，来源 `docs/user-stories/core/realm-admin.md`
+  - 角色：Realm Admin
+  - 摘要：未配置邮件时无法开启邮箱验证等邮件依赖功能
+
+### 1.2 优先级汇总
+
+| 优先级 | 数量 | 关键故事 |
+|--------|------|----------|
+| P0 | 3 | 配置 Realm 设置、配置邮件服务、功能开关前置验证 |
 | P1 | 1 | 发送测试邮件 |
 | P2 | 0 | - |
 
@@ -31,317 +41,127 @@
 
 ### 2.1 包含功能
 
-- ✅ Realm Config 管理（Turnstile、Registration）
-- ✅ OAuth Provider 配置管理（独立系统）
-- 🚧 Email 邮件服务配置（Per-Realm，支持 Resend / SMTP）
-- ✅ 前端 Settings 页面（多 Tab 布局）
-- ✅ Turnstile 配置表单
-- ✅ Registration 配置表单
-- ✅ OAuth 配置表单
-- 🚧 Email 配置表单
-- 🚧 邮件依赖功能开关前置验证
-- ✅ 后端 Realm Config API
-- ✅ 后端 OAuth Config API（部分实现）
+- Realm Config 管理（Turnstile、Registration）
+- OAuth Provider 配置管理（独立系统，不在 Realm Config 中管理）
+- Email 邮件服务配置（Per-Realm，支持 Resend / SMTP）
+- 邮件依赖功能开关前置验证
+- 前端 Settings 页面（多 Tab 布局）
 
 ### 2.2 不包含功能 (Out of Scope)
 
-- ❌ **端到端测试** (原因: 待实施)
-- ❌ **更多配置类型** (原因: 当前只支持 Turnstile、Registration、OAuth、Email)
-- ❌ **配置模板功能** (原因: 没有预定义配置模板)
+- 端到端测试
+- 更多配置类型（当前仅支持 Turnstile、Registration、OAuth、Email）
+- 配置模板功能（无预定义配置模板）
+- 会话配置、密码策略配置（暂不在 Realm Config 中管理）
 
 ### 2.3 依赖项
 
-- ✅ **Realm 系统** (状态: 已实现) - Config 属于 Realm 级别
-- ✅ **权限管理系统** (状态: 已实现) - Realm Admin 权限检查
-- ✅ **OAuth Provider 系统** (状态: 部分实现) - OAuth Provider 配置管理
+- **Realm 系统** — Config 属于 Realm 级别，依赖 Realm 基础设施
+- **权限管理系统** — Realm Admin 权限检查
+- **OAuth Provider 系统** — OAuth Provider 配置管理
 
 ---
 
 ## 3. 需求概述
 
-在 Herald 管理后台的左侧导航栏添加 **Settings** 菜单项，用于管理 Realm 的各类配置项，包括 Turnstile 验证码配置、用户注册配置等。
+### 3.1 功能描述
 
-**注意**:
-- OAuth 配置有独立的配置系统，不在 Realm Config 中管理
-- 邮件服务配置已纳入 Realm Config 管理（使用 `email` 配置类型）
-- 会话配置、密码策略配置暂不在 Realm Config 中管理
+在 Herald 管理后台提供 Realm Settings 功能，允许 Realm Admin 管理本 Realm 的各类配置项，包括 Turnstile 验证码配置、用户注册配置、OAuth Provider 配置和邮件服务配置。Settings 页面通过多 Tab 布局组织不同配置类型，每个 Tab 包含独立的配置表单。
 
-**导航菜单配置**（已完成，参考 `frontend/src/data/navigation.ts`）：
+### 3.2 关键特性
+
+- 分 Tab 布局管理多种配置类型（Turnstile、Registration、OAuth、Email）
+- 每种配置类型独立启用/禁用，支持保存和重置
+- 邮件服务支持 Resend API 和 SMTP 两种 Provider
+- 邮件依赖的功能开关（如邮箱验证）需前置校验邮件配置完整性
+- OAuth 配置通过独立系统管理，不在 Realm Config 中
 
 ---
 
-## 4. 当前实现状态
+## 4. 业务规则与状态
 
-### ✅ 已完整实现 (2026-03-31 更新)
+### 4.1 业务规则
 
-**后端实现**：
-- [x] Realm Config 后端接口实现
-- [x] 后端数据库 Repository 实现 (`PostgresRealmConfigRepository`)
-- [x] 后端 Service 实现 (`RealmConfigServiceImpl`)
-- [x] 后端 Service 与 HTTP 层集成
-- [x] 路由注册到 HTTP Server
-- [x] OAuth Provider 配置系统（独立系统）
-- [x] Stripe 支付配置系统
+- **Realm 隔离**：所有配置项属于 Realm 级别，不同 Realm 的配置相互独立
+- **权限要求**：仅 Realm Admin 角色可查看和修改 Realm Settings
+- **敏感信息脱敏**：密码、密钥类字段（Turnstile site_secret、Resend API Key、SMTP 密码）在展示时必须脱敏，编辑时才暴露为输入框
+- **邮件配置完整性定义**：provider + from_address + 对应 provider 的必填字段均已填写且 enabled=true
+- **功能开关前置验证**：`require_email_verification` 开关仅在邮件配置完整时可开启；未配置邮件时，该开关显示为禁用状态，提示 "Email verification requires email configuration"
+- **密码策略强制生效**：所有密码策略字段（最小长度、大小写、数字、特殊字符）用于密码强度校验，系统默认最小长度 8，必须包含大小写字母、数字和特殊字符
+- **OAuth 配置独立**：OAuth Provider 有独立配置系统，不在 Realm Config 中管理
 
-**前端实现**：
-- [x] Settings 页面：`frontend/src/routes/$realmId/manage/settings.tsx`
-- [x] TOTP 配置表单：`frontend/src/components/realm-config/totp-config-form.tsx`
-- [x] Registration 配置表单：`frontend/src/components/realm-config/registration-config-form.tsx`
-- [x] OAuth Provider 配置页面：`frontend/src/components/oauth-config/provider-config-page.tsx`
-- [x] Stripe 配置表单：`frontend/src/components/stripe-config/stripe-config-form.tsx`
-- [x] 前端数据层：`frontend/src/lib/api-generated`（Realm Config API）
-- [x] 完整的权限检查（settings.view、settings.manage）
-- [x] 多 Tab 布局（TOTP、Registration、OAuth、Stripe）
+### 4.2 关键状态与异常
 
-**已实现功能**：
-- ✅ TOTP 二次认证配置（启用/禁用、issuer、算法、digits、period）
-- ✅ 用户注册配置（注册开关、邮箱验证、默认用户状态、密码策略）
-- ✅ OAuth Provider 配置（Google、GitHub、Facebook、Apple 等）
-- ✅ Stripe 支付配置（API Key、Webhook Secret 等）
-- ✅ 配置的批量保存和验证
-- ✅ 完整的错误处理和用户反馈
-
-**实现说明**：
-- Settings 页面使用 `/$realmId/manage/settings` 路由
-- 使用 Tabs 布局组织多个配置类型
-- 所有配置类型均已实现，包括 PRD 中描述的 Turnstile（现为 TOTP）和 Registration
-- 实际实现比 PRD 原始设计更全面，增加了 OAuth、Stripe 和 TOTP 配置
-
-### 📝 待实现 (2026-05-19 更新)
-
-**Email 邮件服务配置**：
-- [ ] Per-Realm 邮件配置（Resend API / SMTP）
-- [ ] Email 配置表单（Settings 页面新增 Tab）
-- [ ] 发送测试邮件功能
-- [ ] 邮件依赖功能开关前置验证（Registration Tab 联动）
-- [ ] 移除全局 Resend 配置，改为按 Realm 动态获取邮件配置
-- [ ] 更新所有邮件相关 auth handler 使用新的 EmailService
-
-**业务规则**：
-- 每个 Realm 独立配置邮件发送方式和参数
-- 支持 Resend API（HTTP）和标准 SMTP（STARTTLS/SSL）两种方式
-- 邮件相关功能（邮箱验证、密码重置、更换邮箱）仅在邮件配置完整后才可开启
-- 密码/密钥类字段标记 `is_secret = true`，前端读取时脱敏显示
-- ✅ 完整的错误处理和用户反馈
-
-**实现说明**：
-- Settings 页面使用 `/$realmId/manage/settings` 路由
-- 使用 Tabs 布局组织多个配置类型
-- 所有配置类型均已实现，包括 PRD 中描述的 Turnstile（现为 TOTP）和 Registration
-- 实际实现比 PRD 原始设计更全面，增加了 OAuth、Stripe 和 TOTP 配置
-
-**测试覆盖**：
-- 组件测试：`frontend/src/components/stripe-config/__tests__/`
-- E2E 测试：通过其他 Demo 测试覆盖（OAuth、TOTP 等）
-
-### 📝 架构说明
-
-#### OAuth 配置系统 (独立)
-
-**适用场景**: 管理第三方登录提供商的完整配置
-
-**后端实现**:
-- 实体: `core/src/domain/oauth/entities.rs` - `OAuthProviderConfig`
-- API: `api/src/application/http/oauth/`
-- Repository: `PostgresOAuthConfigRepository`
-
-**前端实现**:
-- API: `oauthConfigApi` in `frontend/src/lib/api.ts`
-- 组件: `frontend/src/features/settings/oauth-config-form.tsx` (独立使用)
-
-**数据结构**:
-
-**优点**:
-- ✅ 类型安全 - 强类型实体，编译期检查
-- ✅ 业务逻辑清晰 - 独立的登录流程、provider 验证
-- ✅ 易于扩展 - Provider 特定的配置和验证逻辑
-- ✅ 代码可读性高 - `OAuthProviderConfig` 比 `RealmConfig { config_type: "oauth" }` 清晰
-
-#### Realm Config 系统 (简单配置)
-
-**适用场景**: 简单的 key-value 配置
-
-**后端实现**:
-- 实体: `core/src/domain/realm_config/entities.rs` - `RealmConfig`
-- API: `api/src/application/http/realm_config/`
-- Repository: `PostgresRealmConfigRepository`
-
-**前端实现**:
-- API: `realmConfigApi` in `frontend/src/lib/api.ts`
-- 组件: Settings 页面中的 Turnstile 和 Registration 配置
-
-**支持类型**:
-
-**数据结构**:
-
-**适用配置项**:
-- ✅ 注册开关: `enabled: "true"`
-- ✅ 会话超时: `session_timeout: "3600"`
-- ✅ Turnstile site_secret: `site_secret: "0x4AAA..."`
-- ✅ 邮件服务配置: `provider: "resend"`, `smtp_host: "smtp.qq.com"` 等
-- ❌ OAuth provider 配置 (使用独立系统)
-
-#### 关键区别
-
-| 特性 | OAuth 系统 | Realm Config 系统 |
-|------|-----------|------------------|
-| 数据模型 | 强类型结构体 | Key-Value 泛化 |
-| 复杂度 | 复杂 (scopes, provider 验证) | 简单 (开关、字符串) |
-| 扩展性 | Provider 特定逻辑 | 统一存储格式 |
-| 类型安全 | 编译期检查 | 运行时解析 |
-| 使用场景 | OAuth 第三方登录 | 简单配置项 |
+- **未配置邮件 + 尝试开启邮箱验证**：开关禁用，显示提示信息，阻止开启
+- **Provider 切换**：切换邮件 Provider 时，隐藏/显示对应字段（Resend 显示 API Key；SMTP 显示 Host/Port/Username/Password）
+- **测试邮件**：保存配置后可通过 "Send Test Email" 验证配置正确性
+- **新用户默认状态**：Registration 配置中 default_user_status 取值范围 0-3
 
 ---
 
 ## 5. 功能需求
 
-### 2.1 Settings 页面布局
+### 5.1 核心需求
 
-#### 2.1.1 路由定义
+- **Turnstile 配置**：管理 Turnstile 验证码的 site_secret，用于人机验证
+- **Registration 配置**：管理用户注册策略，包括是否开放注册、是否需要邮箱验证、新用户默认状态、密码强度策略
+- **Email 配置**：管理邮件服务（Resend 或 SMTP），包括发件人地址、Provider 特定参数
+- **OAuth 配置**：通过独立系统管理 OAuth Provider（不在本页面详细定义）
+- **Settings 页面**：多 Tab 布局，每个配置类型对应一个 Tab，包含启用/禁用开关、配置表单、保存/重置按钮
 
-创建 `frontend/src/routes/admin/(dashboard)/settings.tsx` 路由文件：
+### 5.2 验收目标
 
-**架构说明**:
-- **固定路由**: `/admin/settings`（不包含 realmId 参数）
-- **realmId 获取**: 从 UI 上下文获取（从 Realms Table 选择后通过导航传递）
-- **当前实现**: 临时硬编码 `realmId = 'admin'`
-- **未来实现**: 从 Realms Table 页面选择一行，点击 "Settings" 按钮，跳转到 Settings 页面并传递 realmId
-
-**注意**: 文件名使用括号分组 `(dashboard)`，不使用点号或斜杠
-
-#### 2.1.2 页面结构
-
-Settings 页面采用分组卡片布局，每个配置类型对应一个独立的卡片区域：
-
-1. **页面标题区域**
-   - 标题: "Settings"
-   - 描述: "Manage realm configuration"
-
-2. **配置分组**（使用 Tabs 或垂直布局）
-   - Turnstile 配置
-   - 用户注册配置 (Registration)
-
-**注意**:
-- OAuth 配置应该通过独立的 OAuth 配置管理页面或 API 进行管理
-- 邮件服务、会话配置、密码策略配置暂不在此页面管理
-
-3. **每个配置卡片包含**:
-   - 配置标题
-   - 启用/禁用开关
-   - 配置项表单
-   - 保存/重置按钮
-
-### 2.2 配置类型详细设计
-
-#### 2.2.1 Turnstile 配置
-
-**配置类型**: `turnstile`
-
-**存储结构**: 单个配置项，site_key 存储在 metadata 中
-
-**配置项**:
-
-| 配置键 | 显示名称 | 类型 | 是否敏感 | 说明 |
-|--------|---------|------|----------|------|
-| `site_secret` | Site Secret | string | 是 | Turnstile Secret Key |
-
-**存储结构**:
-
-**表单定义**:
-
-#### 2.2.3 用户注册配置
-
-**配置类型**: `registration`
-
-**配置项**:
-
-| 配置键 | 显示名称 | 类型 | 是否敏感 | 说明 |
-|--------|---------|------|----------|------|
-| `enabled` | Allow Registration | boolean | 否 | 是否开放用户注册 |
-| `require_email_verification` | Require Email Verification | boolean | 否 | 是否需要邮箱验证 |
-| `default_user_status` | Default User Status | number | 否 | 新用户默认状态 (0-3) |
-| `password_min_length` | Password Min Length | number | 否 | 密码最小长度（默认 8） |
-| `password_require_uppercase` | Password Require Uppercase | boolean | 否 | 密码是否需要大写字母（默认 true） |
-| `password_require_lowercase` | Password Require Lowercase | boolean | 否 | 密码是否需要小写字母（默认 true） |
-| `password_require_number` | Password Require Number | boolean | 否 | 密码是否需要数字（默认 true） |
-| `password_require_special_char` | Password Require Special Char | boolean | 否 | 密码是否需要特殊字符（默认 true） |
-
-**说明**：
-- 所有密码策略字段强制生效，用于密码强度校验
-- 系统默认：最小长度 8，必须包含大小写字母、数字和特殊字符
-- **前置条件**：`require_email_verification` 开关仅在邮件服务配置完整后可启用
-
-**表单定义**:
-
-#### 2.2.4 邮件服务配置
-
-**配置类型**: `email`
-
-**支持的 Provider**:
-- Resend API — 通过 HTTP API 发送，适合使用 Resend 服务的用户
-- SMTP — 标准邮件发送协议，支持 QQ邮箱、Gmail、企业邮箱等
-
-**配置项**:
-
-| 配置键 | 显示名称 | Provider | 类型 | 是否敏感 | 说明 |
-|--------|---------|----------|------|----------|------|
-| `provider` | Provider | 通用 | string | 否 | "resend" 或 "smtp" |
-| `from_address` | From Address | 通用 | string | 否 | 发件人地址 |
-| `resend_api_key` | API Key | Resend | string | 是 | Resend API Key |
-| `smtp_host` | SMTP Host | SMTP | string | 否 | SMTP 服务器地址 |
-| `smtp_port` | SMTP Port | SMTP | string | 否 | 端口（默认 587） |
-| `smtp_encryption` | Encryption | SMTP | string | 否 | "starttls" 或 "ssl" |
-| `smtp_username` | Username | SMTP | string | 否 | SMTP 用户名 |
-| `smtp_password` | Password | SMTP | string | 是 | SMTP 密码/授权码 |
-
-**功能开关前置验证规则**:
-- 邮件配置完整性定义：provider + from_address + 对应 provider 的必填字段均已填写且 enabled=true
-- `require_email_verification` 开关仅在邮件配置完整时可开启
-- 未配置邮件时，Registration Tab 中该开关显示为禁用状态，并提示 "Email verification requires email configuration"
-
-**表单交互**:
-- Provider 切换时，隐藏/显示对应字段（Resend 显示 API Key；SMTP 显示 Host/Port/Username/Password）
-- 密码/密钥类字段编辑时显示脱敏占位符，点击编辑后才变为输入框
-- 保存后可点击 "Send Test Email" 验证配置正确性
+- Realm Admin 能通过 Settings 页面成功配置 Turnstile、Registration、Email 各项参数
+- 邮件服务配置保存后，可通过测试邮件功能验证配置正确性
+- 未配置邮件时，邮箱验证开关处于禁用状态并有明确提示
+- 密码策略配置生效，注册时按配置规则校验密码强度
+- 敏感字段在页面展示时脱敏，仅在编辑时可见
+- 不同 Realm 的配置相互隔离
 
 ---
 
 ## 6. API 相关约束
 
-**状态**: 必填
+**适用性**: 适用
 
-- 仅说明 Realm、用户、设置等核心管理能力的访问边界、角色要求和数据隔离原则，不在 PRD 中维护端点列表、请求响应字段或实现细节。
-- 必须遵守 realm 隔离、权限校验、敏感信息脱敏和关键操作审计要求。
-- 详细接口契约、验证规则和错误模型应在技术设计、接口说明或代码中维护。
+- 接口能力范围：Realm Config 的查询和更新（涵盖 turnstile、registration、email 配置类型），以及 OAuth Provider 的独立配置管理
+- 访问控制原则：所有接口要求 Realm Admin 权限，操作需通过 Realm 归属校验
+- 数据边界原则：配置数据按 Realm 隔离，不同 Realm 之间不可交叉访问
+- 敏感信息处理：密码、密钥等敏感字段在读取时脱敏返回，仅在写入时接受明文
+- 审计要求：关键配置变更应记录审计日志
+- 详细接口契约、验证规则和错误模型在技术设计文档中维护
 
 ---
 
 ## 7. 前端/交互约束
 
-**状态**: 必填
+**适用性**: 适用
 
-- 仅保留菜单入口、页面可见性、表单校验期望、操作反馈和角色差异，不写路由代码、组件实现或类型定义。
-- 核心管理流程需确保敏感操作有明确确认与结果反馈，且不同角色看到的操作入口和数据范围保持一致。
+- **页面入口**：管理后台左侧导航栏 Settings 菜单项，realmId 从 UI 上下文获取
+- **页面布局**：多 Tab 布局，每个配置类型对应一个 Tab（Turnstile、Registration、OAuth、Email）
+- **每个 Tab 包含**：配置标题、启用/禁用开关、配置项表单、保存/重置按钮
+- **敏感字段交互**：密码/密钥类字段展示脱敏占位符，点击编辑后变为输入框
+- **Email Provider 切换**：切换 Provider 时动态隐藏/显示对应字段
+- **功能开关联动**：未配置邮件时，Registration Tab 中邮箱验证开关显示为禁用状态，并提示原因
+- **操作反馈**：保存成功/失败有明确反馈，测试邮件发送有结果反馈
+- **角色差异**：仅 Realm Admin 可见和操作 Settings 入口
 
+---
 
-## 8. 相关文件索引
+## 8. 已确认决策
 
-- 相关实现文件请以本功能对应的 `backend/`、`frontend/`、`demo/` 目录和现有设计文档为准。
-- 若需补充精确文件清单，应在技术设计文档中维护，避免在 PRD 中混入实现级细节。
+### 8.1 已确认决策
+
+- OAuth 配置使用独立系统管理，不纳入 Realm Config 存储结构
+- 邮件服务配置纳入 Realm Config 管理，使用 `email` 配置类型
+- 会话配置、密码策略配置暂不纳入 Realm Config 管理
+- Settings 页面使用多 Tab 布局而非分组卡片布局
 
 ---
 
 ## 9. 参考资料
 
-- Realm Config 实体定义: `core/src/domain/realm_config/entities.rs`
-- Realm Config API 定义: `api/src/application/http/realm_config/mod.rs`
-- Realm Config Service: `core/src/domain/realm_config/service.rs`
-- Users 功能参考: `docs/frontend/users.md`
-- Client Apps 功能参考: `docs/frontend/client_app.md`
-- 现有代码参考:
-  - 数据层: `frontend/src/data/users.ts`
-  - 工具层: `frontend/src/utils/users.ts`
-  - 页面组件: `frontend/src/features/users/index.tsx`
-  - 表单组件: `frontend/src/features/users/user-form.tsx`
-  - 路由配置: `frontend/src/routes/$realmId/users.tsx`
-
+- 用户故事：`docs/user-stories/core/realm-admin.md`
+- 相关 PRD：`docs/prd/core/realm.md`
+- 相关 PRD：`docs/prd/core/users.md`
+- 相关 PRD：`docs/prd/integration/client-app.md`

@@ -1,24 +1,21 @@
 # 微信 OAuth 用户故事
 
-**角色代码**: RA / RU
-**故事范围**: US-RA-011 ~ US-RA-012, US-RU-010 ~ US-RU-011
-**创建时间**: 2026-03-03
-**状态**: Active
+> 角色定义见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)
 
----
-
-## 租户管理员故事 (Realm Admin Stories)
+## 租户管理员故事
 
 ### 故事 11：WeChat OAuth Provider 配置 [US-RA-011]
 
 **优先级**: P1
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：配置 WeChat OAuth Provider（网站应用微信登录），以便用户可以使用微信扫码登录
 **从而**：提供便捷的微信登录选项
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：添加 WeChat OAuth Provider 配置**
 ```gherkin
@@ -98,11 +95,13 @@ And Scope 字段自动恢复为 snsapi_login
 **优先级**: P1
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：配置 WeChat Mini Program Provider，以便小程序用户可以登录
 **从而**：支持小程序端的微信登录功能
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：添加 WeChat Mini Program Provider 配置**
 ```gherkin
@@ -130,18 +129,20 @@ Then WeChat Mini Program Provider 状态变为 "Enabled"
 
 ---
 
-## 租户用户故事 (Regular User Stories)
+## 租户用户故事
 
 ### 故事 10：微信网站应用登录 [US-RU-010]
 
 **优先级**: P1
 
 **【用户故事】**
-**作为**：普通用户
+**作为**：普通用户（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：使用微信扫码登录系统，以便快速访问
 **从而**：无需记忆额外密码
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：微信网站应用登录成功（新用户）**
 ```gherkin
@@ -166,7 +167,7 @@ And 用户自动登录系统
 And 用户可以使用系统功能
 ```
 
-**场景 3：用户拒绝授权（失败场景）**
+**场景 3：用户拒绝授权**
 ```gherkin
 Given 用户点击 "微信登录" 按钮
 When 用户在微信授权页面点击 "取消"
@@ -174,14 +175,14 @@ Then 系统提示 "授权失败，请重试"
 And 用户停留在登录页面
 ```
 
-**场景 4：WeChat Provider 未启用（失败场景）**
+**场景 4：WeChat Provider 未启用**
 ```gherkin
 Given Realm realm-2 未启用 WeChat OAuth Provider
 When 用户访问登录页面
 Then 不显示 "微信登录" 按钮
 ```
 
-**场景 5：登录链接过期（失败场景）**
+**场景 5：登录链接过期**
 ```gherkin
 Given 用户发起微信登录
 When 用户在超过10分钟后完成授权
@@ -207,11 +208,13 @@ And 用户可以继续使用之前的账号数据
 **优先级**: P1
 
 **【用户故事】**
-**作为**：小程序用户
+**作为**：小程序用户（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：使用微信账号登录，以便在小程序内访问 Herald 服务
 **从而**：无缝的登录体验
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：微信小程序登录成功（新用户）**
 ```gherkin
@@ -236,7 +239,7 @@ And 用户自动登录系统
 And 用户可以继续使用之前的账号数据
 ```
 
-**场景 3：授权码无效（失败场景）**
+**场景 3：授权失败**
 ```gherkin
 Given 用户在小程序中打开登录页面
 And 用户点击 "微信登录" 按钮
@@ -245,7 +248,7 @@ Then 系统提示 "授权失败，请重试"
 And 用户停留在登录页面
 ```
 
-**场景 4：WeChat Mini Program Provider 未启用（失败场景）**
+**场景 4：WeChat Mini Program Provider 未启用**
 ```gherkin
 Given Realm realm-2 未启用 WeChat Mini Program Provider
 And 用户在小程序中打开登录页面
@@ -266,18 +269,8 @@ And 用户可以继续使用之前的账号数据
 
 ---
 
-## 用户故事优先级汇总
-
-| 优先级 | 用户故事数量 | 关键故事 |
-|--------|------------|---------|
-| P1 | 4 | WeChat OAuth Provider 配置、WeChat Mini Program Provider 配置、微信网站应用登录、微信小程序登录 |
-
----
-
 ## 相关文档
 
-- **PRD**: `docs/prd/auth/wechat-oauth.md` - 微信 OAuth 集成产品需求文档
-- **用户故事**: `docs/user-stories/auth/oauth-extension.md` - OAuth Provider 配置管理
-- **用户故事**: `docs/user-stories/core/regular-user.md` - 普通用户 OAuth 第三方登录
-
----
+- **PRD**: [docs/prd/auth/wechat-oauth.md](/docs/prd/auth/wechat-oauth.md)
+- **OAuth Provider 配置管理**: [docs/user-stories/auth/oauth-extension.md](/docs/user-stories/auth/oauth-extension.md)
+- **普通用户 OAuth 第三方登录**: [docs/user-stories/core/regular-user.md](/docs/user-stories/core/regular-user.md)

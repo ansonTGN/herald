@@ -1,29 +1,26 @@
 # Realm Admin 用户故事
 
-**角色代码**: RA
-**角色定义**：Realm Admin 是特定 Realm 的管理员，负责管理该 Realm 下的用户、客户端应用、角色、权限和订阅套餐。
+> 角色定义见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)
 
-**故事范围**: US-RA-001 ~ US-RA-015
-**创建时间**: 2025-02-01
-**状态**: Active
+## 用户故事
 
----
-
-## 故事 1：Realm 隔离访问 [US-RA-001]
+### 故事 1：Realm 隔离访问 [US-RA-001]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
-**我希望**：只能访问自己 Realm 的资源，以便保证数据隔离
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：只能访问自己 Realm 的资源
 **从而**：确保多租户系统的安全性和数据隔离
 
 **【验收标准】**
 
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
 **场景 1：访问自己 Realm 的资源**
 ```gherkin
 Given 我是 realm-1 的管理员
-When 我访问 realm-1 的用户管理页面（/realm-1/users）
+When 我访问 realm-1 的用户管理页面
 Then 我可以看到 realm-1 的所有用户
 And 我可以管理这些用户
 ```
@@ -31,33 +28,25 @@ And 我可以管理这些用户
 **场景 2：不能访问其他 Realm 的资源**
 ```gherkin
 Given 我是 realm-1 的管理员
-When 我尝试访问 realm-2 的用户管理页面（/realm-2/users）
-Then 系统返回 403 Forbidden
+When 我尝试访问 realm-2 的用户管理页面
+Then 系统拒绝访问并显示权限不足提示
 And 显示错误消息："Access denied: You do not have permission to access this realm"
 ```
 
-**场景 3：API 跨 Realm 访问被拒绝**
-```gherkin
-Given 我是 realm-1 的管理员
-And 我的 session 属于 realm-1
-When 我通过 API 访问 realm-2 的资源
-  When 我通过 API 访问 realm-2 的资源
-Then 系统返回 403 Forbidden
-And 响应体包含错误信息：
-  | error | "Cross-realm access denied" |
-```
+---
 
-
-## 故事 2：角色定义管理 [US-RA-002]
+### 故事 2：角色定义管理 [US-RA-002]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：管理角色定义，以便定义不同的用户角色
 **从而**：灵活控制用户权限
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：创建角色定义**
 ```gherkin
@@ -101,17 +90,20 @@ Then 角色定义删除成功
 And 列表不再显示该角色
 ```
 
+---
 
-## 故事 3：权限定义管理 [US-RA-003]
+### 故事 3：权限定义管理 [US-RA-003]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：管理权限定义，以便定义系统权限
 **从而**：精确控制用户可访问的资源
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：创建权限定义**
 ```gherkin
@@ -119,8 +111,6 @@ Given 我是 realm-1 的管理员
 When 我在权限管理页面点击 "Create Permission" 按钮
 And 我填写权限信息：
   | Name        | users.delete       |
-  | Resource    | users              |
-  | Action      | delete             |
   | Description | 删除用户权限        |
 And 我提交表单
 Then 权限定义创建成功
@@ -131,34 +121,34 @@ Then 权限定义创建成功
 Given 我是 realm-1 的管理员
 When 我访问权限管理页面
 Then 我看到权限定义列表
-And 列表包含默认权限（realm-admin 的全部权限）
+And 列表包含默认权限
 And 列表包含我创建的自定义权限
 ```
 
+---
 
-## 故事 4：为角色分配权限 [US-RA-004]
+### 故事 4：为角色分配权限 [US-RA-004]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：为角色分配权限，以便控制角色可访问的资源
-**从而**：实现基于角色的权限控制（RBAC）
+**从而**：实现基于角色的权限控制
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：为角色分配权限**
 ```gherkin
 Given 我是 realm-1 的管理员
 And 已存在角色 "user-admin"
-And 已存在权限 "users.view" 和 "users.manage"
 When 我在角色详情页面选择 "user-admin" 角色
-And 我为该角色分配权限：
-  | users.view   |
-  | users.manage |
+And 我为该角色分配权限 users.view 和 users.manage
 And 我保存更改
 Then 权限分配成功
-And "user-admin" 角色拥有 users.view 和 users.manage 权限
+And "user-admin" 角色拥有对应的权限
 ```
 
 **场景 2：查看角色的权限**
@@ -166,10 +156,7 @@ And "user-admin" 角色拥有 users.view 和 users.manage 权限
 Given 我是 realm-1 的管理员
 When 我查看 "user-admin" 角色的详情
 Then 我看到该角色拥有的所有权限
-And 权限列表包含：
-  | Resource | Action  |
-  | users    | view    |
-  | users    | manage  |
+And 权限列表清晰展示每个权限项
 ```
 
 **场景 3：移除角色权限**
@@ -185,26 +172,19 @@ And 该角色的用户无法删除用户
 ```gherkin
 Given 我是 realm-1 的管理员
 And 已存在角色 "user-admin"
-And 已存在权限 "users.manage"
 When 我为该角色仅分配 "users.manage" 权限
 And 我保存更改
-Then "user-admin" 角色自动拥有以下权限：
-  | users.view    |
-  | users.manage  |
-And "user-admin" 角色可以执行所有用户操作：创建、查看、编辑、删除、重置密码等
+Then "user-admin" 角色自动拥有 users.view 和 users.manage 权限
+And "user-admin" 角色可以执行所有用户操作：创建、查看、编辑、删除等
 ```
 
 **场景 5：低权限不覆盖高权限**
 ```gherkin
 Given 我是 realm-1 的管理员
 And 已存在角色 "viewer"
-And 已存在权限 "users.view"
 When 我为该角色仅分配 "users.view" 权限
 And 我保存更改
-Then "viewer" 角色仅拥有：
-  | users.view    |
-And "viewer" 角色不能访问：
-  | users.manage  |
+Then "viewer" 角色仅拥有 users.view 权限
 And "viewer" 角色不能执行任何修改操作（编辑、删除、创建等）
 ```
 
@@ -213,36 +193,31 @@ And "viewer" 角色不能执行任何修改操作（编辑、删除、创建等�
 Given 我是 realm-1 的管理员
 And 已存在角色 "user-and-client-admin"
 When 我为该角色仅分配 "users.manage" 权限
-Then 该角色仅拥有 users 域的权限：
-  | users.view   |
-  | users.manage |
-And 该角色不能访问其他资源：
-  | clients.view |
-  | clients.manage |
+Then 该角色仅拥有 users 资源的完整权限
+And 该角色不能访问其他资源（如 clients）的管理操作
 ```
 
+---
 
-## 故事 5：查看角色权限 [US-RA-005]
+### 故事 5：查看角色权限 [US-RA-005]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：查看角色的权限，以便了解角色能力
 **从而**：更好地管理和审计权限
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：查看单个角色的权限**
 ```gherkin
 Given 我是 realm-1 的管理员
 When 我在角色列表中点击 "realm-admin" 角色
 Then 我看到该角色的详情页面
-And 页面显示：
-  | 字段         | 内容                         |
-  | Name         | realm-admin                  |
-  | Description  | Realm 管理员                  |
-  | Permissions  | 全部权限列表                |
+And 页面显示角色名称、描述和全部权限列表
 ```
 
 **场景 2：批量查看所有角色的权限**
@@ -254,17 +229,22 @@ And 每个角色显示其权限数量
 And 我可以点击角色查看详细权限
 ```
 
+---
 
-## 故事 6：用户角色分配 [US-RA-006]
+### 故事 6：用户角色分配 [US-RA-006]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：为用户分配角色，以便控制用户权限
 **从而**：实现灵活的用户权限管理
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+> **说明**：本故事的权限模型同样适用于 API Key 角色分配，详见 [US-RA-016](#故事-16api-key-角色管理-us-ra-016)。两者共享相同的角色选择和保存交互模式。
 
 **场景 1：为用户分配角色**
 ```gherkin
@@ -283,9 +263,7 @@ And 用户 "user@example.com" 拥有 "user-admin" 角色的所有权限
 Given 我是 realm-1 的管理员
 And 已存在用户 "advanced-user@example.com"
 And 已存在角色 "user-admin" 和 "billing-admin"
-When 我为该用户分配两个角色：
-  | user-admin    |
-  | billing-admin |
+When 我为该用户分配两个角色
 And 我保存更改
 Then 角色分配成功
 And 用户拥有两个角色的所有权限（并集）
@@ -305,22 +283,23 @@ And 用户只保留剩余角色的权限
 Given 我是 realm-1 的管理员
 When 我查看用户 "user@example.com" 的详情
 Then 我看到该用户的角色列表
-And 角色列表显示：
-  | Role         | Assigned At  |
-  | user-admin   | 2025-01-15   |
+And 角色列表显示角色名称和分配时间
 ```
 
+---
 
-## 故事 7：权限策略管理 [US-RA-007]
+### 故事 7：权限策略管理 [US-RA-007]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：管理权限策略，以便定义资源访问规则
 **从而**：实现细粒度的权限控制
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：创建权限策略**
 ```gherkin
@@ -340,7 +319,7 @@ And 拥有 "user-admin" 角色的用户可以管理用户资源
 Given 我是 realm-1 的管理员
 When 我访问权限策略页面
 Then 我看到权限策略列表
-And 列表包含 realm-admin 角色的默认策略（每个 resource.action 一条）
+And 列表包含管理员角色的默认策略
 And 列表包含我创建的自定义策略
 ```
 
@@ -353,17 +332,20 @@ Then 策略删除成功
 And 拥有 "user-admin" 角色的用户无法再管理用户资源
 ```
 
+---
 
-## 故事 8：订阅套餐管理 [US-RA-008]
+### 故事 8：订阅套餐管理 [US-RA-008]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：管理订阅套餐，以便为用户提供不同的订阅选项
 **从而**：实现灵活的订阅计费模式
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：创建订阅套餐**
 ```gherkin
@@ -398,22 +380,23 @@ And "mobile-app" 的用户可以看到 "basic" 套餐
 Given 我是 realm-1 的管理员
 When 我访问订阅管理页面
 Then 我看到订阅列表
-And 列表包含：
-  | User       | Plan    | Status  | Billing Period   |
-  | user@...   | basic   | active  | 2025-01 - 2025-02|
+And 列表包含用户、套餐、状态、计费周期等信息
 ```
 
+---
 
-## 故事 9：权限层级验证 [US-RA-009]
+### 故事 9：权限层级验证 [US-RA-009]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：系统能自动应用权限层级规则，以便简化角色权限配置
 **从而**：减少手动配置多个权限的工作量
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：Manage 权限自动覆盖所有操作**
 ```gherkin
@@ -423,11 +406,10 @@ When 我为该角色仅分配 "users.manage" 权限
 And 用户 "admin-user" 拥有 "admin" 角色
 When 该用户尝试执行以下操作：
   | 操作 | 预期结果 |
-  | 查看用户列表 | ✅ 成功 |
-  | 编辑用户信息 | ✅ 成功 |
-  | 删除用户 | ✅ 成功 |
-  | 管理用户 | ✅ 成功 |
-  | 重置用户密码 | ✅ 成功 (manage 覆盖所有操作) |
+  | 查看用户列表 | 成功 |
+  | 编辑用户信息 | 成功 |
+  | 删除用户 | 成功 |
+  | 重置用户密码 | 成功 |
 Then 所有符合预期的操作都能正常执行
 ```
 
@@ -439,9 +421,9 @@ And 我为该角色仅分配 "users.view" 权限
 And 用户 "viewer-user" 拥有 "viewer" 角色
 When 该用户尝试执行以下操作：
   | 操作 | 预期结果 |
-  | 查看用户列表 | ✅ 成功 |
-  | 编辑用户信息 | ❌ 失败 (view 不包含 manage) |
-  | 删除用户 | ❌ 失败 |
+  | 查看用户列表 | 成功 |
+  | 编辑用户信息 | 失败 |
+  | 删除用户 | 失败 |
 Then 只有查看操作能正常执行
 ```
 
@@ -453,22 +435,25 @@ And 我为该角色仅分配 "users.create" 权限
 And 用户拥有 "user-creator" 角色
 When 该用户尝试执行以下操作：
   | 操作 | 预期结果 |
-  | 创建用户 | ✅ 成功 |
-  | 查看用户列表 | ❌ 失败 (create 不包含 view) |
+  | 创建用户 | 成功 |
+  | 查看用户列表 | 失败 |
 Then 只有创建操作能正常执行
 ```
 
+---
 
-## 故事 10：查看 Dashboard 用户活跃概览 [US-RA-010]
+### 故事 10：查看 Dashboard 用户活跃概览 [US-RA-010]
 
 **优先级**: P1
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：在 Admin Dashboard 首屏看到本 Realm 的用户核心指标（总用户数、新增用户数、活跃用户数）
 **从而**：快速了解 Realm 的用户增长与活跃趋势，无需进入多个子页面分别查看
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：Dashboard 正常展示用户指标**
 ```gherkin
@@ -487,16 +472,20 @@ When 我访问 realm-2 的管理后台首页
 Then 3 张指标卡片均显示数值 0
 ```
 
-## 故事 11：查看 Dashboard 认证趋势图 [US-RA-011]
+---
+
+### 故事 11：查看 Dashboard 认证趋势图 [US-RA-011]
 
 **优先级**: P1
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：在 Dashboard 上看到最近 30 天的认证趋势图（登录成功和失败次数）
 **从而**：发现异常登录波动，及时响应安全问题
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：正常展示认证趋势**
 ```gherkin
@@ -516,16 +505,20 @@ When 我访问 realm-1 的管理后台首页
 Then 趋势图区域显示"暂无数据"提示
 ```
 
-## 故事 12：通过 Dashboard 快捷导航跳转 [US-RA-012]
+---
+
+### 故事 12：通过 Dashboard 快捷导航跳转 [US-RA-012]
 
 **优先级**: P1
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：在 Dashboard 下方保留管理功能导航入口
 **从而**：从 Dashboard 快速跳转到用户管理、角色管理等子页面
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：快捷导航正常跳转**
 ```gherkin
@@ -543,17 +536,20 @@ Then 可看到 Users、Roles、Permissions、Client Apps、Realms、Settings 6 �
 And 每个导航入口的跳转目标正确
 ```
 
+---
 
-## 故事 13：配置 Realm 邮件服务 [US-RA-013]
+### 故事 13：配置 Realm 邮件服务 [US-RA-013]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
-**我希望**：在 Settings 页面的 Email Tab 中配置本 Realm 的邮件发送方式（Resend API 或 SMTP）
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：在 Settings 页面的 Email Tab 中配置本 Realm 的邮件发送方式
 **从而**：让我的 Realm 能够独立发送邮件（验证邮箱、密码重置等），不依赖全局配置
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：配置 Resend API 方式**
 ```gherkin
@@ -561,9 +557,7 @@ Given 我是 realm-1 的管理员
 And realm-1 尚未配置邮件服务
 When 我在 Settings 页面切换到 Email Tab
 And 我选择 provider 为 "Resend API"
-And 我填写：
-  | From Address | noreply@example.com |
-  | API Key      | re_xxxxx            |
+And 我填写发件地址和 API Key
 And 我点击 "Save"
 Then 邮件配置保存成功
 And 页面显示 "Email is configured" 状态
@@ -574,13 +568,7 @@ And 页面显示 "Email is configured" 状态
 Given 我是 realm-1 的管理员
 And realm-1 尚未配置邮件服务
 When 我选择 provider 为 "SMTP"
-And 我填写：
-  | From Address  | notify@company.com |
-  | SMTP Host     | smtp.qq.com        |
-  | SMTP Port     | 587                |
-  | Encryption    | STARTTLS           |
-  | Username      | notify@company.com |
-  | Password      | my-auth-code       |
+And 我填写 SMTP 主机、端口、加密方式、用户名和密码
 And 我点击 "Save"
 Then 邮件配置保存成功
 And 页面显示 "Email is configured" 状态
@@ -590,7 +578,7 @@ And 页面显示 "Email is configured" 状态
 ```gherkin
 Given 我是 realm-1 的管理员
 When 我选择 provider 为 "SMTP"
-And 我仅填写了 SMTP Host 而未填写 Username 和 Password
+And 我仅填写了 SMTP Host 而未填写其他必填字段
 And 我点击 "Save"
 Then 保存失败
 And 页面提示缺失的必填字段
@@ -601,21 +589,24 @@ And 页面提示缺失的必填字段
 Given 我是 realm-1 的管理员
 And realm-1 已配置了 Resend API 方式
 When 我切换 provider 为 "SMTP"
-Then Resend 相关字段（API Key）被隐藏
-And SMTP 相关字段（Host、Port 等）显示为空
+Then Resend 相关字段被隐藏
+And SMTP 相关字段显示为空
 ```
 
+---
 
-## 故事 14：发送测试邮件 [US-RA-014]
+### 故事 14：发送测试邮件 [US-RA-014]
 
 **优先级**: P1
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：在邮件配置保存后发送测试邮件以验证配置正确性
 **从而**：确保用户能正常收到系统邮件
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：测试邮件发送成功**
 ```gherkin
@@ -643,20 +634,23 @@ And realm-1 已配置邮件服务但配置有误
 When 我点击 "Send Test Email"
 And 我输入收件人地址 test@example.com
 Then 系统返回发送失败提示
-And 页面显示错误信息（如 "SMTP authentication failed"）
+And 页面显示错误信息
 ```
 
+---
 
-## 故事 15：邮件依赖的功能开关前置验证 [US-RA-015]
+### 故事 15：邮件依赖的功能开关前置验证 [US-RA-015]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：在未配置邮件服务时无法开启邮件依赖功能（如邮箱验证、密码重置邮件）
 **从而**：避免用户因邮件不可用而无法完成注册或重置密码
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：邮件未配置时无法开启邮箱验证**
 ```gherkin
@@ -685,21 +679,129 @@ Then "Require Email Verification" 开关自动变为禁用状态
 And 后续用户注册不再要求邮箱验证
 ```
 
+---
 
-## 用户故事优先级汇总
+### 故事 16：API Key 角色管理 [US-RA-016]
 
-| 优先级 | 用户故事数量 | 关键故事 |
-|--------|------------|---------|
-| P0 | 11 | Realm 隔离访问、角色定义管理、权限定义管理、为角色分配权限、查看角色权限、用户角色分配、权限策略管理、订阅套餐管理、权限层级验证、配置 Realm 邮件服务、邮件依赖的功能开关前置验证 |
-| P1 | 4 | 查看 Dashboard 用户活跃概览、查看 Dashboard 认证趋势图、通过 Dashboard 快捷导航跳转、发送测试邮件 |
-| P2 | 0 | - |
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：在管理后台为 API Key 分配和管理角色
+**从而**：控制 API Key 可执行的操作范围，实现第三方集成的权限自助配置
+
+**【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：查看 API Key 已分配角色**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 中存在已创建的 API Key "sdk-key-01"
+When 我在 API Key 列表页查看该行
+Then 该行显示已分配的角色标识
+And 如果该 API Key 无角色，则显示「—」
+```
+
+**场景 2：为 API Key 分配角色**
+```gherkin
+Given 我是 realm-1 的管理员
+And 我具备角色管理权限
+And 已存在自定义角色 "sdk-manager"
+When 我在 API Key 列表页点击「Roles」按钮
+And 在角色对话框中选择 "sdk-manager" 角色
+Then 角色立即保存
+And 列表页的角色标识更新为 "sdk-manager"
+And 该 API Key 可执行 "sdk-manager" 角色所包含的权限操作
+```
+
+**场景 3：清空 API Key 角色**
+```gherkin
+Given 我是 realm-1 的管理员
+And API Key "sdk-key-01" 已分配角色 "sdk-manager"
+When 我在角色对话框中取消所有角色
+Then 角色保存为空
+And 列表页的角色标识恢复为「—」
+And 该 API Key 的权限操作全部失效
+```
+
+**场景 4：API Key 不允许绑定内置角色**
+```gherkin
+Given 我是 realm-1 的管理员
+And 系统中存在内置角色（如 realm-admin、user）
+When 我在角色对话框中尝试选择内置角色
+Then 保存失败
+And 提示「内置角色不能分配给 API Key」
+And 该 API Key 的原有角色绑定不受影响
+```
+
+**场景 5：无角色管理权限时不可操作**
+```gherkin
+Given 我是 realm-1 的管理员
+And 我只有 API Key 查看权限，没有角色管理权限
+When 我查看 API Key 列表
+Then 我能看到每行的角色标识
+And 「Roles」按钮不可见
+```
+
+**场景 6：角色变更后权限立即生效**
+```gherkin
+Given API Key "sdk-key-01" 刚被分配了 "sdk-manager" 角色
+When 该 API Key 通过外部接口调用需要权限的操作
+Then 权限检查立即反映新角色
+```
 
 ---
 
-## 相关文档
+### 故事 17：创建 API Key 时绑定角色 [US-RA-017]
 
-- **PRD**: `docs/prd/auth/permissions.md` - 权限与角色管理产品需求文档
-- **PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档
-- **用户故事**: `docs/user-stories/core/builtin-protection.md` - 默认角色和权限保护
-- **PRD**: `docs/prd/core/dashboard.md` - Dashboard 重设计产品需求文档
-- **PRD**: `docs/prd/core/realm-settings.md` - Realm Settings 产品需求文档（含邮件配置）
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：在创建 API Key 时可选地为其分配角色
+**从而**：API Key 创建后即可立即使用，无需再手动分配角色
+
+**【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：创建 API Key 时选择角色**
+```gherkin
+Given 我是 realm-1 的管理员
+And 我具备 API Key 管理和角色管理权限
+When 我在创建 API Key 表单中填写名称和过期时间
+And 我在角色选择区选择 "sdk-manager" 角色
+And 我提交表单
+Then API Key 创建成功
+And 明文 Key 正常展示
+And "sdk-manager" 角色自动绑定到该 API Key
+```
+
+**场景 2：创建 API Key 时不选角色**
+```gherkin
+Given 我是 realm-1 的管理员
+When 我在创建 API Key 表单中只填写名称和过期时间，不选择角色
+And 我提交表单
+Then API Key 创建成功
+And 明文 Key 正常展示
+And 该 API Key 无角色绑定
+```
+
+**场景 3：角色绑定部分失败时保留 Key**
+```gherkin
+Given 我是 realm-1 的管理员
+When 我创建 API Key 并选择了角色
+And API Key 创建成功但角色绑定失败
+Then 明文 Key 仍然展示
+And 页面提示「API Key 已创建，但角色绑定失败，可稍后在列表页管理角色」
+```
+
+**场景 4：无角色管理权限时不显示角色选择器**
+```gherkin
+Given 我是 realm-1 的管理员
+And 我有 API Key 管理权限但没有角色管理权限
+When 我打开创建 API Key 表单
+Then 表单中不显示角色选择区
+And 我仍可正常创建 API Key
+```

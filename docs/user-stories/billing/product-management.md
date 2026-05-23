@@ -1,24 +1,21 @@
-# Product 管理 用户故事
+# Realm Admin 用户故事
 
-**角色代码**: PR
-**角色定义**：Realm Admin 负责管理 Realm 的产品目录和产品线组织。
+> 角色定义见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)
 
-**故事范围**: US-PR-001 ~ US-PR-006
-**创建时间**: 2026-03-26
-**状态**: Active
+## 用户故事
 
----
-
-## 故事 1：创建 Product [US-PR-001]
+### 故事 1：创建 Product [US-PR-001]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：创建 Product（产品），以便将相关的套餐组织在一起
 **从而**：为用户提供清晰的产品线分类和更好的产品展示
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：创建新 Product**
 ```gherkin
@@ -53,16 +50,18 @@ Then 系统显示验证错误："Product code must contain only letters, numbers
 
 ---
 
-## 故事 2：编辑 Product [US-PR-002]
+### 故事 2：编辑 Product [US-PR-002]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：编辑 Product 信息，以便更新产品描述
 **从而**：保持产品目录的准确性和良好的用户体验
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：编辑 Product 基本信息**
 ```gherkin
@@ -100,16 +99,18 @@ And 已订阅用户不受影响
 
 ---
 
-## 故事 3：查看 Product 列表 [US-PR-003]
+### 故事 3：查看 Product 列表 [US-PR-003]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：查看所有 Product 列表，以便了解产品目录结构
 **从而**：有效管理产品线和套餐组织
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：查看所有 Product**
 ```gherkin
@@ -145,16 +146,18 @@ And 每个 Plan 显示其名称、价格、状态信息
 
 ---
 
-## 故事 4：启用/禁用 Product [US-PR-004]
+### 故事 4：启用/禁用 Product [US-PR-004]
 
 **优先级**: P1
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：启用或禁用 Product，以便控制产品的可见性
 **从而**：在不删除数据的情况下临时下架产品
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：禁用 Product**
 ```gherkin
@@ -186,16 +189,18 @@ And 系统显示成功消息："X products disabled successfully"
 
 ---
 
-## 故事 5：删除 Product [US-PR-005]
+### 故事 5：删除 Product [US-PR-005]
 
 **优先级**: P1
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：删除不再需要的 Product，以便保持产品目录整洁
 **从而**：移除过时或测试用的产品线
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：删除无 Plan 的 Product**
 ```gherkin
@@ -242,16 +247,18 @@ And 我必须点击 "Confirm" 才能执行删除
 
 ---
 
-## 故事 6：在 Product 下管理 Plan [US-PR-006]
+### 故事 6：在 Product 下管理 Plan [US-PR-006]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：在 Product 视图下管理 Plan，以便按产品线组织套餐
 **从而**：保持产品目录的层次结构和清晰度
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：在 Product 下创建 Plan**
 ```gherkin
@@ -346,8 +353,8 @@ And 至少存在一个 Product 才能创建 Plan
 
 ## 相关文档
 
-- **PRD**: `docs/prd/billing/product-catalog.md` - Product 编目管理产品需求文档
-- **PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档
-- **PRD**: `docs/prd/billing/points.md` - Points 积分系统产品需求文档
-- **用户故事**: `docs/user-stories/billing/subscription.md` - Billing 用户故事
-- **用户故事**: `docs/user-stories/billing/points-admin.md` - 积分管理用户故事
+- **PRD**: [docs/prd/billing/product-catalog.md](/docs/prd/billing/product-catalog.md) - Product 编目管理产品需求文档
+- **PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - Billing 订阅计费产品需求文档
+- **PRD**: [docs/prd/billing/points.md](/docs/prd/billing/points.md) - Points 积分系统产品需求文档
+- **用户故事**: [docs/user-stories/billing/subscription.md](/docs/user-stories/billing/subscription.md) - Billing 用户故事
+- **用户故事**: [docs/user-stories/billing/points-admin.md](/docs/user-stories/billing/points-admin.md) - 积分管理用户故事

@@ -1,24 +1,21 @@
 # Realm Admin 用户故事 - OAuth Provider 配置（扩展）
 
-**角色代码**: RA
-**角色定义**：Realm Admin 是特定 Realm 的管理员，负责管理该 Realm 下的用户、客户端应用、角色、权限、订阅套餐和 OAuth Provider 配置。
+> 角色定义见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)
 
-**故事范围**: US-RA-010（OAuth Provider 配置管理）
-**创建时间**: 2025-02-12
-**状态**: Active
+## 用户故事
 
----
-
-## 故事 10：OAuth Provider 配置管理 [US-RA-010]
+### 故事 10：OAuth Provider 配置管理 [US-RA-010]
 
 **优先级**: P0
 
 **【用户故事】**
-**作为**：Realm Admin
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：管理 OAuth Provider 配置（Google、GitHub、Facebook、Apple），以便用户可以使用第三方登录
 **从而**：提供灵活的多渠道登录选项
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：添加 OAuth Provider 配置**
 ```gherkin
@@ -82,9 +79,6 @@ And 列表不再显示该 Provider
 
 ---
 
-## 📖 相关PRD
+## 相关文档
 
 - **OAuth Provider**: [docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)
-- **OAuth 第三方集成**: [docs/prd/auth/oauth.md](/docs/prd/auth/oauth.md)
-
----

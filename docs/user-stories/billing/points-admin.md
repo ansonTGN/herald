@@ -1,17 +1,12 @@
-# Points Admin 积分管理用户故事
+# Realm Admin 积分管理用户故事
 
-**角色代码**: PO (Points Owner/Admin)
-**角色定义**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)），负责管理本租户内用户的积分账户、积分套餐配置和积分交易记录。
+> 角色定义见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)
 
 **边界说明**：当前积分配置仍以 Plan 为主。Product 在当前阶段主要作为 Billing 编目上下文，用于帮助管理员理解某个 Plan 的所属产品线，而不是独立的积分配置层级。
 
-**故事范围**: US-PO-01 ~ US-PO-07
-**创建时间**: 2026-03-13
-**状态**: Active
+## 用户故事
 
----
-
-## 故事 1：配置积分套餐 [US-PO-01]
+### 故事 1：配置积分套餐 [US-PO-01]
 
 **优先级**: P0
 
@@ -22,13 +17,15 @@
 
 **【验收标准】**
 
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
 **场景 1：创建积分套餐配置**
 ```gherkin
 Given 我是 realm-1 的管理员
 And 已存在订阅套餐 "pro-monthly"
 When 我在积分套餐配置页面点击 "Create Config" 按钮
 And 我填写配置信息：
-  | Plan ID             | plan-uuid-123           |
+  | Plan                | pro-monthly             |
   | Points on Subscribe | 1000                    |
   | Points on Renewal   | 1000                    |
   | Renewal Enabled     | true                    |
@@ -90,7 +87,7 @@ And 配置列表不再显示该套餐的配置
 ```
 
 
-## 故事 2：查看所有用户积分账户 [US-PO-02]
+### 故事 2：查看所有用户积分账户 [US-PO-02]
 
 **优先级**: P1
 
@@ -100,6 +97,8 @@ And 配置列表不再显示该套餐的配置
 **从而**：了解整体积分使用情况
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：查看用户积分账户列表（包含分类余额）**
 ```gherkin
@@ -145,7 +144,7 @@ And 可以翻页查看其他用户
 And 页面显示总页数和当前页码
 ```
 
-**场景 5：查看用户积分账本明细（Ledger 级别）**
+**场景 5：查看用户积分账本明细**
 ```gherkin
 Given 我是 realm-1 的管理员
 And 已存在用户 "user-1"
@@ -154,9 +153,9 @@ When 我在积分账户列表中点击 user-1
 And 我点击"积分账本"标签
 Then 我看到 user-1 的积分账本明细
 And 列表显示每笔积分的完整生命周期：
-  | Ledger ID | 积分类型 | 来源类型 | 发放金额 | 已使用 | 剩余 | 回收金额 | 状态 | 过期时间 |
-  | ledger_xxx | subscription_credit | subscription_renewal | 1000 | 300 | 700 | 0 | active | 2026-04-15 |
-  | ledger_yyy | topup_credit | topup | 2000 | 500 | 1500 | 0 | active | null |
+  | 积分类型 | 来源类型 | 发放金额 | 已使用 | 剩余 | 回收金额 | 状态 | 过期时间 |
+  | 会员积分 | 订阅续费 | 1000 | 300 | 700 | 0 | active | 2026-04-15 |
+  | 充值积分 | 充值购买 | 2000 | 500 | 1500 | 0 | active | 永久有效 |
 And 我可以按积分类型筛选
 And 我可以按状态筛选
 And 我可以按过期时间排序
@@ -164,7 +163,7 @@ And 我可以点击查看某笔积分的完整消费分摊记录
 ```
 
 
-## 故事 3：查看用户积分交易历史 [US-PO-03]
+### 故事 3：查看用户积分交易历史 [US-PO-03]
 
 **优先级**: P1
 
@@ -175,6 +174,8 @@ And 我可以点击查看某笔积分的完整消费分摊记录
 
 **【验收标准】**
 
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
 **场景 1：查看用户的所有交易记录（包含新的交易类型）**
 ```gherkin
 Given 我是 realm-1 的管理员
@@ -184,10 +185,10 @@ When 我在积分账户列表中点击 user-1
 Then 我看到 user-1 的交易历史列表
 And 列表显示每笔交易的详细信息：
   | 交易 ID | 交易类型 | 积分类型 | 金额 | 交易后余额 | 描述 | 时间 |
-  | txn-001 | subscription_renewal | subscription_credit | 1000 | 1000 | 订阅 pro 套餐续费 | 2026-03-13 12:00 |
-  | txn-002 | consume | subscription_credit | -100 | 900 | 调用 AI API | 2026-03-13 12:30 |
-  | txn-003 | refund_revoke | topup_credit | -350 | 550 | 退款回收：50% 退款 | 2026-03-13 13:00 |
-  | txn-004 | expire_revoke | subscription_credit | -200 | 350 | 会员积分过期 | 2026-03-15 00:00 |
+  | txn-001 | 订阅续费 | 会员积分 | 1000 | 1000 | 订阅 pro 套餐续费 | 2026-03-13 12:00 |
+  | txn-002 | 消耗 | 会员积分 | -100 | 900 | 调用 AI API | 2026-03-13 12:30 |
+  | txn-003 | 退款回收 | 充值积分 | -350 | 550 | 退款回收：50% 退款 | 2026-03-13 13:00 |
+  | txn-004 | 过期回收 | 会员积分 | -200 | 350 | 会员积分过期 | 2026-03-15 00:00 |
 And 我可以看到退款、过期等新的交易类型
 ```
 
@@ -195,14 +196,14 @@ And 我可以看到退款、过期等新的交易类型
 ```gherkin
 Given 我是 realm-1 的管理员
 And user-1 有多种类型的交易记录
-When 我选择只查看 "refund_revoke" 类型的交易
+When 我选择只查看"退款回收"类型的交易
 Then 我只看到退款回收类型的交易记录
 And 其他类型的交易不显示
-When 我选择只查看 "expire_revoke" 类型的交易
+When 我选择只查看"过期回收"类型的交易
 Then 我只看到过期回收类型的交易记录
 And 我可以选择的交易类型包括：
-  | recharge | subscription_grant | subscription_renewal | subscription_upgrade |
-  | consume | refund_revoke | expire_revoke | cancel_revoke | adjust |
+  | 充值 | 订阅赠送 | 订阅续费 | 订阅升级 |
+  | 消耗 | 退款回收 | 过期回收 | 取消回收 | 调整 |
 ```
 
 **场景 3：按时间范围筛选**
@@ -214,7 +215,7 @@ Then 我只看到该时间范围内的交易记录
 And 3 月之外的交易不显示
 ```
 
-**场景 4：按 Client App ID 筛选**
+**场景 4：按 Client App 筛选**
 ```gherkin
 Given 我是 realm-1 的管理员
 And user-1 的积分消耗来自不同的 Client App
@@ -234,7 +235,7 @@ And 页面显示总交易数和当前页码
 ```
 
 
-## 故事 4：管理积分套餐配置 [US-PO-04]
+### 故事 4：管理积分套餐配置 [US-PO-04]
 
 **优先级**: P2
 
@@ -245,19 +246,21 @@ And 页面显示总交易数和当前页码
 
 **【验收标准】**
 
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
 **场景 1：批量创建多个套餐配置**
 ```gherkin
 Given 我是 realm-1 的管理员
 And 已存在多个订阅套餐：
-  | 套餐 ID           | 套餐名称  |
-  | plan-basic-monthly | 基础月付  |
-  | plan-pro-monthly   | 专业月付  |
-  | plan-enterprise    | 企业版    |
+  | 套餐名称  |
+  | 基础月付  |
+  | 专业月付  |
+  | 企业版    |
 When 我为每个套餐创建积分配置：
-  | 套餐 ID           | 首次充值 | 续费充值 | 周期类型 |
-  | plan-basic-monthly | 500      | 500      | monthly  |
-  | plan-pro-monthly   | 1000     | 1000     | monthly  |
-  | plan-enterprise    | 2000     | 2000     | yearly   |
+  | 套餐名称  | 首次充值 | 续费充值 | 周期类型 |
+  | 基础月付  | 500      | 500      | monthly  |
+  | 专业月付  | 1000     | 1000     | monthly  |
+  | 企业版    | 2000     | 2000     | yearly   |
 Then 所有套餐配置创建成功
 And 配置列表显示所有套餐
 ```
@@ -307,7 +310,7 @@ And 所有套餐的最大累计积分限制都是 20000
 ```
 
 
-## 故事 5：查看套餐充值引导 [US-PO-05]
+### 故事 5：查看套餐充值引导 [US-PO-05]
 
 **优先级**: P2
 
@@ -317,6 +320,8 @@ And 所有套餐的最大累计积分限制都是 20000
 **从而**：向用户说明积分赠送规则
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：查看单个套餐的充值引导**
 ```gherkin
@@ -363,22 +368,9 @@ And 我可以将链接分享给用户
 And 用户点击链接可以查看充值规则
 ```
 
-
-## 用户故事优先级汇总
-
-| 优先级 | 用户故事数量 | 关键故事 |
-|--------|------------|---------|
-| P0 | 1 | US-PO-01: 配置积分套餐 |
-| P1 | 2 | US-PO-02: 查看所有用户积分账户, US-PO-03: 查看用户积分交易历史 |
-| P2 | 2 | US-PO-04: 管理积分套餐配置, US-PO-05: 查看套餐充值引导 |
-
-**注意**：
-- 退款积分回收与异步任务失败积分退回已移至 `points-billing-events.md` 文档中。
-- US-PO-06（配置 Realm 默认积分策略）和 US-PO-07（查看免费用户积分统计）为新增功能（2026-03-23）。
-
 ---
 
-## 故事 6：配置 Realm 默认积分策略 [US-PO-06]
+### 故事 6：配置 Realm 默认积分策略 [US-PO-06]
 
 **优先级**: P0
 
@@ -388,6 +380,8 @@ And 用户点击链接可以查看充值规则
 **从而**：灵活控制免费用户的积分权益，优化产品转化率
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：查看 Realm 默认配置**
 ```gherkin
@@ -478,7 +472,7 @@ And 我可以看到谁在何时修改了配置
 
 ---
 
-## 故事 7：查看免费用户积分统计 [US-PO-07]
+### 故事 7：查看免费用户积分统计 [US-PO-07]
 
 **优先级**: P1
 
@@ -488,6 +482,8 @@ And 我可以看到谁在何时修改了配置
 **从而**：了解免费用户的使用情况和转化率
 
 **【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
 **场景 1：查看免费用户概览统计**
 ```gherkin
@@ -584,23 +580,20 @@ And 我看到该用户是否已升级为付费用户
 
 ---
 
-## 用户故事优先级汇总（更新）
+
+## 用户故事优先级汇总
 
 | 优先级 | 用户故事数量 | 关键故事 |
 |--------|------------|---------|
-| P0 | 3 | US-PO-01, US-PO-06, US-FU-01 |
-| P1 | 5 | US-PO-02, US-PO-03, US-PO-07, US-FU-02, US-PU-01 |
-| P2 | 4 | US-PO-04, US-PO-05, US-FU-03, US-PU-02, US-PU-03 |
-
-**说明**：
-- P0 新增：US-PO-06（配置 Realm 默认积分策略）、US-FU-01（注册时获得初始积分）
-- P1 新增：US-PO-07（查看免费用户积分统计）、US-FU-02（每日自动获得免费积分）
-- P2 新增：US-FU-03（升级到付费套餐时保留注册初始积分）
+| P0 | 2 | US-PO-01: 配置积分套餐, US-PO-06: 配置 Realm 默认积分策略 |
+| P1 | 3 | US-PO-02: 查看所有用户积分账户, US-PO-03: 查看用户积分交易历史, US-PO-07: 查看免费用户积分统计 |
+| P2 | 2 | US-PO-04: 管理积分套餐配置, US-PO-05: 查看套餐充值引导 |
 
 ---
 
 ## 相关文档
 
-- **PRD**: `docs/prd/billing/points.md` - 积分系统产品需求文档
-- **用户故事**: `points-user-view.md` - Tenant User 积分查询用户故事
-- **依赖 PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档
+- **PRD**: [docs/prd/billing/points.md](/docs/prd/billing/points.md) - 积分系统产品需求文档
+- **用户故事**: [docs/user-stories/billing/points-user.md](/docs/user-stories/billing/points-user.md) - 用户积分查询用户故事
+- **用户故事**: [docs/user-stories/billing/points-free-user.md](/docs/user-stories/billing/points-free-user.md) - 免费用户积分用户故事
+- **依赖 PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - Billing 订阅计费产品需求文档
