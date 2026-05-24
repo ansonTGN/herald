@@ -78,6 +78,43 @@ pub async fn assign_permission_to_role(
         }
     })?;
 
+    // Sync to role_policies so RedisPermissionChecker can find the permission
+    let perm_row: Option<(String, String)> =
+        sqlx::query_as("SELECT resource, action FROM permissions WHERE id = $1")
+            .bind(payload.permission_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to lookup permission for policy sync: {e}");
+                ApiError::internal("Failed to sync role policy")
+            })?;
+
+    if let Some((resource, action)) = perm_row {
+        sqlx::query(
+            r#"
+            INSERT INTO role_policies (id, realm_id, role_id, resource, action)
+            VALUES (uuidv7(), $1, $2, $3, $4)
+            ON CONFLICT (role_id, resource, action) DO NOTHING
+            "#,
+        )
+        .bind(&realm_id)
+        .bind(role_id)
+        .bind(&resource)
+        .bind(&action)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to sync role_policies: {e}");
+            ApiError::internal("Failed to sync role policy")
+        })?;
+
+        // Invalidate permission cache so the new policy takes effect
+        let _ = state
+            .permission_checker
+            .invalidate_role_policy_cache(&realm_id, &role_id.to_string())
+            .await;
+    }
+
     Ok(ApiResult::ok(()))
 }
 
@@ -170,6 +207,38 @@ pub async fn remove_permission_from_role(
             tracing::error!("Failed to remove permission from role: {e}");
             ApiError::internal("Failed to remove permission")
         })?;
+
+    // Sync removal to role_policies
+    let perm_row: Option<(String, String)> =
+        sqlx::query_as("SELECT resource, action FROM permissions WHERE id = $1")
+            .bind(permission_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to lookup permission for policy sync: {e}");
+                ApiError::internal("Failed to sync role policy")
+            })?;
+
+    if let Some((resource, action)) = perm_row {
+        sqlx::query(
+            "DELETE FROM role_policies WHERE role_id = $1 AND resource = $2 AND action = $3",
+        )
+        .bind(role_id)
+        .bind(&resource)
+        .bind(&action)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to sync role_policies removal: {e}");
+            ApiError::internal("Failed to sync role policy")
+        })?;
+
+        // Invalidate permission cache so the removal takes effect
+        let _ = state
+            .permission_checker
+            .invalidate_role_policy_cache(&realm_id, &role_id.to_string())
+            .await;
+    }
 
     Ok(ApiResult::no_content())
 }

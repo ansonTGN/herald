@@ -45,6 +45,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
     const updatedName = `Updated Lifecycle App ${testStartTime}`
 
     const testClientApp: ClientAppData = {
+      clientId: `lifecycle-${testStartTime}`,
       name: originalName,
       description: 'Testing complete lifecycle',
       redirectUris: ['https://example.com/callback', 'https://app.example.com/auth'],
@@ -77,6 +78,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
       // Fill Basic tab
       await test.step('Step 3: Fill basic information', async () => {
         await clientAppsPage.fillBasicTab({
+          clientId: testClientApp.clientId,
           name: testClientApp.name,
           description: testClientApp.description,
         })
@@ -186,6 +188,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
 
       // Fill some data
       await clientAppsPage.fillBasicTab({
+        clientId: `cancel-${testStartTime}`,
         name: `Cancel Test App ${testStartTime}`,
         description: 'App to test cancellation',
       })
@@ -213,6 +216,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
 
       // Fill Basic tab
       await clientAppsPage.fillBasicTab({
+        clientId: `nav-${testStartTime}`,
         name: `Navigation Test App ${testStartTime}`,
         description: 'App to test page navigation',
       })
@@ -310,6 +314,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
 
       // Fill name only on Basic tab
       await clientAppsPage.fillBasicTab({
+        clientId: `persist-${testStartTime}`,
         name: `Persistence Test App ${testStartTime}`,
         description: 'Testing data persistence across tabs',
       })
@@ -442,6 +447,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
 
       // Fill Basic tab (we are already on it)
       await clientAppsPage.fillBasicTab({
+        clientId: `tabctrl-${testStartTime}`,
         name: `Tab Controls Test ${testStartTime}`,
         description: 'Testing tab controls',
       })
@@ -483,8 +489,15 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
       await clientAppsPage.gotoCreatePage()
       console.log('Create form page opened')
 
-      // Focus on the name input and type
-      await clientAppsPage.nameInput.focus()
+      // Focus on the client ID input and type
+      await clientAppsPage.clientIdInput.focus()
+      await page.keyboard.type(`kb-${testStartTime}`)
+      console.log('Typed client ID')
+
+      // Tab to name input
+      await page.keyboard.press('Tab')
+
+      // Type name
       await page.keyboard.type(`Keyboard Test App ${testStartTime}`)
       console.log('Typed app name')
 
@@ -565,6 +578,7 @@ test.describe('[Realm Admin] Client App Management Demo Tests', () => {
 
       // Create a test app first
       await clientAppsPage.createClientApp({
+        clientId: `esc-${testStartTime}`,
         name: `Esc Delete Test App ${testStartTime}`,
         redirectUris: ['https://example.com/callback'],
         sessionTtl: 3600,

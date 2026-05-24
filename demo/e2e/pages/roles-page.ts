@@ -349,6 +349,22 @@ export class RolesPage extends BasePage {
     await this.clickDeleteRole(name)
     await this.confirmDeleteRole()
 
+    // Wait for the row to be removed (AlertDialog closes before mutation completes)
+    const row = this.findRoleRow(name)
+    try {
+      await expect(row).toBeHidden({ timeout: 5000 })
+    } catch {
+      // Mutation may have failed - reload and retry once
+      this.logger?.testCode.log(`Role "${name}" still visible, retrying...`)
+      await this.page.reload()
+      await this.waitForReady()
+      if (await this.roleExists(name)) {
+        await this.clickDeleteRole(name)
+        await this.confirmDeleteRole()
+        await expect(row).toBeHidden({ timeout: 5000 })
+      }
+    }
+
     // Remove from created roles tracking
     const index = this.createdRoles.indexOf(name)
     if (index > -1) {

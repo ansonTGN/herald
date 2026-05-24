@@ -269,28 +269,27 @@ export class UsersPage extends BasePage {
     const row = this.findUserRow(email)
     await expect(row).toBeVisible()
 
-    // Find delete button in the row (note: data-testid format is {rowIndex}-delete-button)
+    // Find delete button in the row
     const deleteButton = row.locator('[data-testid$="-delete-button"]').first()
 
-    // Handle native confirm dialog by auto-accepting it
-    // Setup dialog handler BEFORE clicking to handle synchronous confirm
-    await this.page.evaluate(() => {
-      window.confirm = () => true
-    })
-
-    // Click delete button (triggers native confirm, which is auto-accepted)
+    // Click delete button to open the AlertDialog
     await deleteButton.click()
+
+    // Wait for the confirm dialog to appear
+    const confirmDialog = this.page.locator('[data-testid="delete-user-dialog"]')
+    await expect(confirmDialog).toBeVisible({ timeout: 5000 })
   }
 
   /**
-   * Confirm user deletion
-   * Note: Frontend uses native window.confirm() which is auto-accepted in clickDeleteUser
-   * This method just waits for the deletion to complete
+   * Confirm user deletion by clicking the confirm button in the AlertDialog
    */
   async confirmDeleteUser(): Promise<void> {
-    // Native confirm dialog is already handled in clickDeleteUser
-    // Wait briefly for deletion mutation to complete
-    await this.page.waitForTimeout(500)
+    const confirmButton = this.page.locator('[data-testid="confirm-delete-user-button"]')
+    await confirmButton.click()
+
+    // Wait for the dialog to close
+    const confirmDialog = this.page.locator('[data-testid="delete-user-dialog"]')
+    await expect(confirmDialog).toBeHidden({ timeout: 5000 })
   }
 
   /**
@@ -305,6 +304,8 @@ export class UsersPage extends BasePage {
 
     await this.clickDeleteUser(email)
     await this.confirmDeleteUser()
+    // Wait for the user row to disappear from the table
+    await expect(this.findUserRow(email)).toBeHidden({ timeout: 5000 })
   }
 
   /**

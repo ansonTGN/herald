@@ -568,6 +568,9 @@ export class ClientAppsPage extends BasePage {
 
     // Wait for dialog to close
     await expect(this.deleteConfirmDialog).toBeHidden({ timeout: 10000 })
+
+    // Wait for success toast to ensure mutation completed and cache invalidated
+    await expect(this.successMessage.first()).toBeVisible({ timeout: 10000 })
   }
 
   async deleteClientAppByName(appName: string): Promise<void> {

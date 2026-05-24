@@ -174,9 +174,6 @@ export function getInvoiceFormDefaults(
 }
 
 export function getApplyFormDefaults(
-  sellerConfig?: {
-    defaultPaymentTerms?: string | null
-  } | null,
   prefilledReference?: PrefilledInvoiceReference
 ): ApplyInvoiceFormData {
   return {
@@ -187,7 +184,7 @@ export function getApplyFormDefaults(
     billingEmail: null,
     billingAddress: '',
     billingPhone: null,
-    dueDate: computeDueDate(sellerConfig?.defaultPaymentTerms),
+    dueDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
     notes: null,
   }
 }

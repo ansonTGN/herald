@@ -339,6 +339,22 @@ export class PermissionsPage extends BasePage {
     await this.clickDeletePermission(name)
     await this.confirmDeletePermission()
 
+    // Wait for the row to be removed (AlertDialog closes before mutation completes)
+    const row = this.findPermissionRow(name)
+    try {
+      await expect(row).toBeHidden({ timeout: 5000 })
+    } catch {
+      // Mutation may have failed - reload and retry once
+      this.logger?.testCode.log(`Permission "${name}" still visible, retrying...`)
+      await this.page.reload()
+      await this.waitForReady()
+      if (await this.permissionExists(name)) {
+        await this.clickDeletePermission(name)
+        await this.confirmDeletePermission()
+        await expect(row).toBeHidden({ timeout: 5000 })
+      }
+    }
+
     // Remove from created permissions tracking
     const index = this.createdPermissions.indexOf(name)
     if (index > -1) {

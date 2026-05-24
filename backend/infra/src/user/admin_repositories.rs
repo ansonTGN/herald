@@ -308,6 +308,16 @@ impl AdminUserRepository for PostgresAdminUserRepository {
             UserAdminError::DatabaseError(format!("Failed to begin transaction: {}", e))
         })?;
 
+        // Delete user_roles first (cascade was removed by generalize_user_roles migration)
+        sqlx::query("DELETE FROM user_roles WHERE user_id = $1")
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to delete user_roles: {}", e);
+                UserAdminError::DatabaseError(format!("Failed to delete user_roles: {}", e))
+            })?;
+
         // Delete profile first (foreign key constraint)
         sqlx::query("DELETE FROM profile WHERE id = $1")
             .bind(user_id)

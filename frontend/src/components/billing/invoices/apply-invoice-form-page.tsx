@@ -1,5 +1,4 @@
-import { useEffect, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -11,7 +10,6 @@ import {
   getApplyFormDefaults,
   type PrefilledInvoiceReference,
 } from '@/lib/schemas/invoice-forms'
-import { sellerConfigQueryOptions } from '@/data/invoice-query-options'
 import { useApplyInvoice } from '@/data/invoice-mutations'
 
 interface ApplyInvoiceFormPageProps {
@@ -27,12 +25,9 @@ export function ApplyInvoiceFormPage({
 }: ApplyInvoiceFormPageProps) {
   const navigate = useNavigate()
   const { mutate: apply, isPending: isSubmitting } = useApplyInvoice(realmId)
-  const { data: sellerConfig } = useQuery({
-    ...sellerConfigQueryOptions(realmId),
-  })
   const defaultValues = useMemo(
-    () => getApplyFormDefaults(sellerConfig, prefilledReference),
-    [sellerConfig, prefilledReference]
+    () => getApplyFormDefaults(prefilledReference),
+    [prefilledReference]
   )
 
   const form = useAppForm({
@@ -49,12 +44,6 @@ export function ApplyInvoiceFormPage({
       })
     },
   })
-
-  useEffect(() => {
-    if (sellerConfig !== undefined) {
-      form.reset(defaultValues)
-    }
-  }, [sellerConfig, defaultValues, form])
 
   const handleCancel = () => {
     if (returnTo === `/${realmId}/user/points`) {

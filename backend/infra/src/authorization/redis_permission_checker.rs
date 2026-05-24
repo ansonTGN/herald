@@ -443,8 +443,16 @@ impl PermissionService for RedisPermissionChecker {
         principal_type: &str,
         principal_id: &str,
     ) -> Result<(), CoreError> {
+        let role_bindings_key =
+            CacheKey::principal_role_bindings(realm_id, principal_type, principal_id);
+
+        // Direct DEL for the exact role bindings key — avoids SCAN unreliability.
+        if let Err(e) = self.cache.write().await.delete(&role_bindings_key).await {
+            warn!(error = %e, key = %role_bindings_key, "Failed to delete role bindings key");
+        }
+
         let patterns = vec![
-            CacheKey::principal_role_bindings(realm_id, principal_type, principal_id),
+            role_bindings_key,
             CacheKey::principal_permission_pattern(
                 realm_id,
                 Some(principal_type),

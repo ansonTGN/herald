@@ -176,7 +176,7 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
         await page.getByTestId('provider-mapping-submit-button').click()
 
         // Wait for success message
-        await expect(page.getByText('Payment provider mapping added')).toBeVisible()
+        await expect(page.getByText('Payment provider mapping added').first()).toBeVisible()
 
         await page.getByTestId('back-to-points-packages-button').click()
 

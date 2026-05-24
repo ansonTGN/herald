@@ -26,7 +26,7 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { secrets, requireWechatPayment } from '../secrets/env'
+import { secrets, hasWechatPayment } from '../secrets/env'
 import { seedWechatConfig } from '../secrets/realm-seed'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 import { loginWithCredentials, loginAsAdmin } from '../helpers/auth'
@@ -39,7 +39,7 @@ const USER_EMAIL = TEST_DATA.USERS.USER_REALM_001
 
 test.describe('Live: WeChat QR Code Payment', () => {
   test.beforeEach(async ({ page }) => {
-    requireWechatPayment()
+    test.skip(!hasWechatPayment(), 'WeChat Pay credentials not configured in .env.demo')
 
     await verifyTestEnvironment(page, {
       requiredRealms: [REALM_ID],

@@ -630,10 +630,17 @@ where
             .await?;
 
         // Invalidate principal cache
-        let _ = self
+        if let Err(e) = self
             .permission_checker
             .invalidate_principal_role_cache(realm_id, "api_key", api_key_id)
-            .await;
+            .await
+        {
+            tracing::error!(
+                error = %e,
+                api_key_id = %api_key_id,
+                "Failed to invalidate API key role cache"
+            );
+        }
 
         Ok(())
     }

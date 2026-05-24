@@ -521,8 +521,20 @@ impl PointsPolicy for PermissionBasedPointsPolicy {
                 return true;
             }
 
-            // Check if user has points.view permission
             let realm_id = identity.realm_id();
+
+            // Users can always view their own data
+            if let (Some(target), Some(current)) = (target_user_id, user_id.parse::<Uuid>().ok())
+                && target == current
+            {
+                tracing::debug!(
+                    user_id = %user_id,
+                    "User viewing own points wallet"
+                );
+                return true;
+            }
+
+            // Check if user has points.view permission
             let has_permission_result = checker
                 .check_permission(&realm_id, &user_id, "points", "view")
                 .await;
@@ -566,21 +578,12 @@ impl PointsPolicy for PermissionBasedPointsPolicy {
                 return true;
             }
 
-            // Otherwise, user can only view their own balance
+            // User with points.view but not manage can only view their own
             match (target_user_id, user_id.parse::<Uuid>().ok()) {
-                (Some(target), Some(current)) => {
-                    tracing::debug!(
-                        user_id = %user_id,
-                        target_user_id = %target,
-                        current_user_id = %current,
-                        "Checking if user is viewing own points"
-                    );
-                    target == current
-                }
                 (None, Some(_current)) => {
                     tracing::debug!(
                         user_id = %user_id,
-                        "User is viewing their own transaction history"
+                        "User viewing own transaction history"
                     );
                     true
                 }

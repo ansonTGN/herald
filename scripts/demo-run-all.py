@@ -28,7 +28,7 @@ if sys.platform == "win32":
 
 QUALITY_DIR = REPO_ROOT / ".ai" / "quality"
 E2E_DIR = REPO_ROOT / "demo" / "e2e"
-EXCLUDED_DIR_NAMES = {"fixtures", "templates", "verification"}
+EXCLUDED_DIR_NAMES = {"fixtures", "templates", "verification", "live"}
 
 
 @dataclass

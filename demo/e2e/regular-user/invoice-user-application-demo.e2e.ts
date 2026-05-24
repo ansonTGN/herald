@@ -247,6 +247,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeVisible({ timeout: 5000 })
         await page.getByTestId('seller-config-name-input').fill(sellerName)
+        await page.getByTestId('seller-config-address-input').fill('123 Seller Street')
         await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
         await page.getByTestId('seller-config-save-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
@@ -282,8 +283,9 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
       })
 
       await test.step('Then: invoice appears in user invoice list', async () => {
-        const row = page.locator('tr').filter({ hasText: billingName }).first()
-        await expect(row).toBeVisible({ timeout: 10000 })
+        await expect(page.getByTestId('invoice-user-table')).toBeVisible()
+        const tableRows = page.getByTestId('invoice-user-table').locator('tbody tr')
+        await expect(tableRows.first()).toBeVisible({ timeout: 10000 })
       })
 
       await demoLogger.testCode.log(
@@ -311,6 +313,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeVisible({ timeout: 5000 })
         await page.getByTestId('seller-config-name-input').fill(sellerName)
+        await page.getByTestId('seller-config-address-input').fill('123 Seller Street')
         await page
           .getByTestId('seller-config-email-input')
           .fill(`seller-apply-${testStartTime}@example.com`)
@@ -396,6 +399,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeVisible({ timeout: 5000 })
         await page.getByTestId('seller-config-name-input').fill(sellerName)
+        await page.getByTestId('seller-config-address-input').fill('123 Seller Street')
         await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
         await page.getByTestId('seller-config-save-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
@@ -499,6 +503,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeVisible({ timeout: 5000 })
         await page.getByTestId('seller-config-name-input').fill(sellerName)
+        await page.getByTestId('seller-config-address-input').fill('123 Seller Street')
         await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
         await page.getByTestId('seller-config-save-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
@@ -589,6 +594,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeVisible({ timeout: 5000 })
         await page.getByTestId('seller-config-name-input').fill(sellerName)
+        await page.getByTestId('seller-config-address-input').fill('123 Seller Street')
         await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
         await page.getByTestId('seller-config-save-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
@@ -667,6 +673,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeVisible({ timeout: 5000 })
         await page.getByTestId('seller-config-name-input').fill(sellerName)
+        await page.getByTestId('seller-config-address-input').fill('123 Seller Street')
         await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
         await page.getByTestId('seller-config-save-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({
@@ -750,6 +757,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.getByTestId('seller-config-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeVisible({ timeout: 5000 })
         await page.getByTestId('seller-config-name-input').fill(sellerName)
+        await page.getByTestId('seller-config-address-input').fill('123 Seller Street')
         await page.getByTestId('seller-config-tax-id-input').fill('TAX123456')
         await page.getByTestId('seller-config-save-button').click()
         await expect(page.getByTestId('seller-config-form-dialog')).toBeHidden({

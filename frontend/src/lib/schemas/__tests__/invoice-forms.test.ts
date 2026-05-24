@@ -707,9 +707,10 @@ describe('getInvoiceFormDefaults', () => {
 })
 
 describe('getApplyFormDefaults', () => {
-  it('returns correct default shape', () => {
+  it('returns correct default shape with dueDate 30 days from today', () => {
     const defaults = getApplyFormDefaults()
 
+    const expectedDueDate = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
     expect(defaults).toEqual({
       currency: 'CNY',
       paymentAttemptId: null,
@@ -718,13 +719,13 @@ describe('getApplyFormDefaults', () => {
       billingEmail: null,
       billingAddress: '',
       billingPhone: null,
-      dueDate: '',
+      dueDate: expectedDueDate,
       notes: null,
     })
   })
 
   it('prefills only paymentAttemptId for payment attempt reference', () => {
-    const defaults = getApplyFormDefaults(null, {
+    const defaults = getApplyFormDefaults({
       type: 'paymentAttempt',
       id: '11111111-1111-1111-1111-111111111111',
     })
@@ -734,35 +735,12 @@ describe('getApplyFormDefaults', () => {
   })
 
   it('prefills only subscriptionId for subscription reference', () => {
-    const defaults = getApplyFormDefaults(null, {
+    const defaults = getApplyFormDefaults({
       type: 'subscription',
       id: '22222222-2222-2222-2222-222222222222',
     })
 
     expect(defaults.paymentAttemptId).toBeNull()
     expect(defaults.subscriptionId).toBe('22222222-2222-2222-2222-222222222222')
-  })
-
-  it('auto-fills dueDate from sellerConfig defaultPaymentTerms "Net 30"', () => {
-    const defaults = getApplyFormDefaults({
-      defaultPaymentTerms: 'Net 30',
-    })
-
-    const expected = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
-    expect(defaults.dueDate).toBe(expected)
-  })
-
-  it('auto-fills dueDate from "Due on Receipt" as today', () => {
-    const defaults = getApplyFormDefaults({
-      defaultPaymentTerms: 'Due on Receipt',
-    })
-
-    const expected = new Date().toISOString().slice(0, 10)
-    expect(defaults.dueDate).toBe(expected)
-  })
-
-  it('leaves dueDate empty when defaultPaymentTerms is null', () => {
-    const defaults = getApplyFormDefaults({ defaultPaymentTerms: null })
-    expect(defaults.dueDate).toBe('')
   })
 })

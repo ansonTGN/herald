@@ -67,6 +67,7 @@ const REALM_ID = 'admin'
 test.describe('Live: GitHub OAuth Full Flow', () => {
   test.beforeEach(async ({ page }) => {
     test.skip(!hasGitHubOAuth(), 'GitHub OAuth credentials not configured in .env.demo')
+    test.skip(!process.env.HEADED, 'Live OAuth tests require headed mode (set HEADED=1)')
 
     // Step 1: Login as admin and seed GitHub OAuth config via API
     await test.step('Setup: seed GitHub OAuth config', async () => {
@@ -117,27 +118,6 @@ test.describe('Live: GitHub OAuth Full Flow', () => {
 
     // Step 3: Click GitHub button, validate redirect URL, then pause for manual login
     await test.step('When clicking GitHub OAuth button and authorizing on GitHub', async () => {
-      // Intercept fetch in the browser to capture the OAuth response before
-      // window.location.href navigates away (which destroys response bodies)
-      await page.evaluate(() => {
-        const origFetch = window.fetch
-        ;(window as unknown as Record<string, unknown>).__oauthCaptured = null
-        window.fetch = async (...args: Parameters<typeof fetch>) => {
-          const response = await origFetch(...args)
-          const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url
-          if (url.includes('/github/login')) {
-            const cloned = response.clone()
-            try {
-              const body = await cloned.json()
-              ;(window as unknown as Record<string, unknown>).__oauthCaptured = body
-            } catch {
-              // ignore parse errors
-            }
-          }
-          return response
-        }
-      })
-
       const githubButton = page.getByTestId('oauth-login-button-github')
       await githubButton.click()
 

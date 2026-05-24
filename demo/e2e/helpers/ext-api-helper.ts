@@ -11,8 +11,6 @@
  * @see backend/api-ext/src/lib.rs
  */
 
-import { request, type APIResponse } from '@playwright/test'
-
 /**
  * Base URL for external API endpoints
  *
@@ -38,8 +36,7 @@ function authHeaders(apiKey: string): Record<string, string> {
 /**
  * Make an authenticated request to the external API using an API Key
  *
- * Creates a new API request context, sets the X-API-Key header,
- * makes the HTTP request, and disposes the context after use.
+ * Uses Node.js fetch directly to bypass any Playwright proxy interference.
  *
  * @param options Request options
  * @param options.apiKey The API key value for X-API-Key header
@@ -64,49 +61,29 @@ export async function makeExtApiRequest(options: {
   body?: unknown
 }): Promise<{ status: number; body: unknown }> {
   const { apiKey, method, path, body } = options
+  const url = `${API_EXT_BASE_URL}${path}`
+  const headers = authHeaders(apiKey)
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+  }
 
-  const apiContext = await request.newContext({
-    baseURL: API_EXT_BASE_URL,
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   })
 
-  try {
-    const headers = authHeaders(apiKey)
-    if (body !== undefined) {
-      headers['Content-Type'] = 'application/json'
-    }
+  let responseBody: unknown
+  const contentType = response.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    responseBody = await response.json().catch(() => response.text())
+  } else {
+    responseBody = await response.text()
+  }
 
-    let response: APIResponse
-    const opts = { headers, data: body }
-
-    switch (method.toUpperCase()) {
-      case 'GET':
-        response = await apiContext.get(path, { headers })
-        break
-      case 'DELETE':
-        response = await apiContext.delete(path, { headers })
-        break
-      case 'PUT':
-        response = await apiContext.put(path, opts)
-        break
-      default:
-        response = await apiContext.post(path, opts)
-        break
-    }
-
-    let responseBody: unknown
-    const contentType = response.headers()['content-type'] || ''
-    if (contentType.includes('application/json')) {
-      responseBody = await response.json().catch(() => response.text())
-    } else {
-      responseBody = await response.text()
-    }
-
-    return {
-      status: response.status(),
-      body: responseBody,
-    }
-  } finally {
-    await apiContext.dispose()
+  return {
+    status: response.status,
+    body: responseBody,
   }
 }
 
