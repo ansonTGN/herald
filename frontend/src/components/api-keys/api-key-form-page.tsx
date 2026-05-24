@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import {
   createApiKeySchema,
@@ -8,13 +9,18 @@ import {
 import { createApiKey, updateApiKey } from '@/lib/api-generated'
 import type { CreateApiKeyResponse, ApiKeyListItem } from '@/lib/api-generated'
 import { useFormMutation } from '@/hooks/use-form-mutation'
+import { usePermission } from '@/hooks/use-permission'
+import { PERMISSION } from '@/lib/constants/auth-constants'
 import { useNavigate } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { queryKeys } from '@/data/query-options'
+import { queryKeys, rolesQueryOptions, updateApiKeyRolesMutation } from '@/data/query-options'
+import { toast } from 'sonner'
 import { ArrowLeft } from 'lucide-react'
 import { TextField, SwitchField } from '@/components/shared/form-fields'
+import { RoleSelector } from '@/components/shared/role-selector'
 
 type MutationResult = CreateApiKeyResponse | ApiKeyListItem
 
@@ -27,6 +33,14 @@ interface ApiKeyFormPageProps {
 export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
   const isCreate = mode === 'create'
   const navigate = useNavigate()
+  const { hasPermission } = usePermission()
+  const canManageRoles = hasPermission(PERMISSION.ROLES_MANAGE)
+  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([])
+
+  const { data: rolesData } = useQuery({
+    ...rolesQueryOptions(realmId),
+    enabled: isCreate && canManageRoles,
+  })
 
   const goToList = () => navigate({ to: '/$realmId/manage/api-keys', params: { realmId } })
 
@@ -55,8 +69,17 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
     invalidateQueries: [queryKeys.apiKeysList(realmId)],
     getSuccessMessage: () =>
       isCreate ? 'API Key created successfully' : 'API Key updated successfully',
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       if (isCreate) {
+        if (selectedRoleIds.length > 0 && canManageRoles) {
+          try {
+            await updateApiKeyRolesMutation(realmId, data.id, selectedRoleIds)
+          } catch {
+            toast.error(
+              'API Key created, but role binding failed. You can manage roles from the list page later.'
+            )
+          }
+        }
         void navigate({
           to: '/$realmId/manage/api-keys/reveal',
           params: { realmId },
@@ -176,6 +199,22 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
               </div>
             )}
           />
+
+          {isCreate && canManageRoles && (
+            <div className="space-y-2">
+              <Label>Roles (Optional)</Label>
+              <RoleSelector
+                roles={(rolesData ?? []).map((r) => ({ id: r.id, name: r.name }))}
+                selectedRoleIds={selectedRoleIds}
+                onChange={setSelectedRoleIds}
+                disabled={isSubmitting}
+                placeholder="Select roles to assign after creation"
+              />
+              <p className="text-xs text-muted-foreground">
+                Selected roles will be assigned to the API key after creation.
+              </p>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2">
             <Button

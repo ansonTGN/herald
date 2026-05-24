@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { apiKeysQueryOptions, queryKeys } from '@/data/query-options'
 import { apiKeysSearchSchema } from '@/lib/schemas/search-params'
 import { DeleteApiKeyDialog } from '@/components/api-keys/delete-api-key-dialog'
+import { ApiKeyRolesDialog } from '@/components/api-keys/api-key-roles-dialog'
 import { ApiKeyTable } from '@/components/api-keys/api-key-table'
 import { ListPagination, AccessDenied } from '@/components/shared'
 import { Plus } from 'lucide-react'
@@ -35,8 +36,10 @@ export function ApiKeysPage() {
 
   const canManage = hasPermission(PERMISSION.API_KEYS_MANAGE)
   const canView = hasPermission(PERMISSION.API_KEYS_VIEW)
+  const canManageRoles = hasPermission(PERMISSION.ROLES_MANAGE)
 
   const deleteDialog = useDialogManager<ApiKeyListItem>()
+  const rolesDialog = useDialogManager<ApiKeyListItem>()
 
   const { data, isLoading, error } = useQuery(
     apiKeysQueryOptions(realmId, {
@@ -116,6 +119,8 @@ export function ApiKeysPage() {
             onToggleEnabled={(key) => toggleMutate(key)}
             canUpdate={canManage}
             canDelete={canManage}
+            onManageRoles={(key) => rolesDialog.open(key)}
+            canManageRoles={canManageRoles}
           />
         </CardContent>
       </Card>
@@ -141,6 +146,15 @@ export function ApiKeysPage() {
             }
           }}
           apiKeyName={deleteDialog.selectedItem.name}
+        />
+      )}
+
+      {rolesDialog.selectedItem && (
+        <ApiKeyRolesDialog
+          open={rolesDialog.isOpen}
+          onOpenChange={rolesDialog.onOpenChange}
+          apiKeyId={rolesDialog.selectedItem.id}
+          apiKeyName={rolesDialog.selectedItem.name}
         />
       )}
     </div>

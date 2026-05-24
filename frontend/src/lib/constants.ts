@@ -74,6 +74,7 @@ export const QUERY_KEYS = {
   FEATURE_AVAILABILITY: 'feature-availability',
   API_KEYS: 'api-keys',
   API_KEY: 'api-key',
+  API_KEY_ROLES: 'api-key-roles',
 } as const
 
 /**

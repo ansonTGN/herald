@@ -48,6 +48,10 @@ jobs:
         with:
           workspaces: backend -> target
 
+      - name: Generate API client
+        working-directory: frontend
+        run: npm run generate-api
+
       - name: Start demo environment
         run: python scripts/demo-start.py --timeout 300
 

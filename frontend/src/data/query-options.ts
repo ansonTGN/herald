@@ -49,6 +49,8 @@ import {
   emailStatus,
   listApiKeys,
   getApiKey,
+  adminGetApiKeyRoles,
+  adminUpdateApiKeyRoles,
 } from '@/lib/api-generated'
 import { handleApiResponse } from '@/lib/api-utils'
 import type {
@@ -232,6 +234,8 @@ export const queryKeys = {
     [QUERY_KEYS.API_KEYS, realmId, filters] as const,
   apiKeysList: (realmId: string) => [QUERY_KEYS.API_KEYS, realmId] as const,
   apiKey: (realmId: string, id: string) => [QUERY_KEYS.API_KEY, realmId, id] as const,
+  apiKeyRoles: (realmId: string, apiKeyId: string) =>
+    [QUERY_KEYS.API_KEY_ROLES, realmId, apiKeyId] as const,
 }
 
 function extractNestedArray<T>(response: unknown, key: string): T[] {
@@ -1226,3 +1230,35 @@ export const apiKeyQueryOptions = (realmId: string, id: string) =>
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_5_MIN,
   })
+
+// ==================== API Key Roles ====================
+
+export const adminApiKeyRolesQueryOptions = (realmId: string, apiKeyId: string) =>
+  queryOptions({
+    queryKey: queryKeys.apiKeyRoles(realmId, apiKeyId),
+    queryFn: async () =>
+      handleApiResponse(
+        await adminGetApiKeyRoles({
+          path: { realmId, apiKeyId },
+        })
+      ),
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+
+export const updateApiKeyRolesMutation = async (
+  realmId: string,
+  apiKeyId: string,
+  roleIds: string[]
+) => {
+  try {
+    const response = await adminUpdateApiKeyRoles({
+      path: { realmId, apiKeyId },
+      body: { roleIds },
+    })
+    if (response.error) handleApiErrorWithStatus(response.error)
+    return response.data
+  } catch (error) {
+    handleApiErrorWithStatus(error)
+  }
+}
