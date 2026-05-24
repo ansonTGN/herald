@@ -327,6 +327,9 @@ export const SELECTORS = {
     usageCount: '[data-testid="api-key-usage-count"]',
     editButton: '[data-testid="edit-api-key-button"]',
     deleteButton: '[data-testid="delete-api-key-button"]',
+    rolesCell: '[data-testid="api-key-roles-cell"]',
+    rolesOverflow: '[data-testid="api-key-roles-overflow"]',
+    manageRolesButton: '[data-testid="manage-api-key-roles-button"]',
   },
 
   /**
@@ -365,6 +368,19 @@ export const SELECTORS = {
     dialog: '[data-testid="delete-confirmation-dialog"]',
     cancelButton: '[data-testid="cancel-delete-button"]',
     confirmButton: '[data-testid="confirm-delete-button"]',
+  },
+
+  /**
+   * API Key Roles Dialog Selectors
+   */
+  apiKeyRoles: {
+    dialogContent: '[data-testid="api-key-roles-dialog-content"]',
+    dialogTitle: '[data-testid="api-key-roles-dialog-title"]',
+    dialogName: '[data-testid="api-key-roles-dialog-name"]',
+    dialogClose: '[data-testid="api-key-roles-dialog-close"]',
+    roleSelectorTrigger: '[data-testid="role-selector-trigger"]',
+    roleSelectorSearch: '[data-testid="role-selector-search"]',
+    roleSelectorItem: (roleId: string) => `[data-testid="role-selector-item-${roleId}"]`,
   },
 
   /**

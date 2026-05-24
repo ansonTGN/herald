@@ -61,6 +61,13 @@ export class ApiKeysPage extends BasePage {
   readonly deleteCancelButton: Locator
   readonly deleteConfirmButton: Locator
 
+  // Roles dialog locators
+  readonly rolesDialog: Locator
+  readonly rolesDialogTitle: Locator
+  readonly rolesDialogClose: Locator
+  readonly roleSelectorTrigger: Locator
+  readonly roleSelectorSearch: Locator
+
   // Success toast
   readonly successMessage: Locator
 
@@ -99,6 +106,13 @@ export class ApiKeysPage extends BasePage {
     this.deleteDialog = this.page.locator(SELECTORS.apiKeyDelete.dialog)
     this.deleteCancelButton = this.page.locator(SELECTORS.apiKeyDelete.cancelButton)
     this.deleteConfirmButton = this.page.locator(SELECTORS.apiKeyDelete.confirmButton)
+
+    // Roles dialog
+    this.rolesDialog = this.page.locator(SELECTORS.apiKeyRoles.dialogContent)
+    this.rolesDialogTitle = this.page.locator(SELECTORS.apiKeyRoles.dialogTitle)
+    this.rolesDialogClose = this.page.locator(SELECTORS.apiKeyRoles.dialogClose)
+    this.roleSelectorTrigger = this.page.locator(SELECTORS.apiKeyRoles.roleSelectorTrigger)
+    this.roleSelectorSearch = this.page.locator(SELECTORS.apiKeyRoles.roleSelectorSearch)
 
     // Success message (toast)
     this.successMessage = this.page.locator('[data-sonner-toast][data-type="success"]')
@@ -408,8 +422,163 @@ export class ApiKeysPage extends BasePage {
   }
 
   // ============================================================================
+  // Roles Dialog Helpers
+  // ============================================================================
+
+  /**
+   * Open the roles dialog for an API key by name
+   *
+   * Finds the table row by API key name, clicks the manage-roles button,
+   * and waits for the roles dialog to appear and the roles API response to complete.
+   *
+   * @param apiKeyName Name of the API key
+   */
+  async openRolesDialog(apiKeyName: string): Promise<void> {
+    // Ensure we are on the list page
+    if (!await this.container.isVisible().catch(() => false)) {
+      await this.goto(this.currentRealmId)
+    }
+
+    const row = await this.findRowByName(apiKeyName)
+    if (!row) {
+      throw new Error(`API Key "${apiKeyName}" not found for opening roles dialog`)
+    }
+
+    const manageRolesBtn = row.locator(SELECTORS.apiKeys.manageRolesButton)
+
+    // Click manage-roles button and wait for both dialog and roles API response
+    const [response] = await Promise.all([
+      this.page.waitForResponse(
+        (resp) => resp.url().includes('/api/api-keys/') && resp.url().includes('/roles') && resp.request().method() === 'GET',
+        { timeout: 10000 }
+      ),
+      this.smartClick(manageRolesBtn),
+    ])
+
+    // Wait for dialog to be visible
+    await expect(this.rolesDialog).toBeVisible({ timeout: 10000 })
+
+    this.logger?.testCode.log(`Opened roles dialog for "${apiKeyName}" (status: ${response?.status() ?? 'unknown'})`)
+  }
+
+  /**
+   * Select a role in the roles dialog (toggle on).
+   * The combobox uses toggle semantics — clicking assigns the role via immediate PUT.
+   */
+  async selectRoleInDialog(roleName: string, roleId: string): Promise<void> {
+    await this.toggleRoleInDialog(roleName, roleId, 'Selected')
+  }
+
+  /**
+   * Deselect a role in the roles dialog (toggle off).
+   * The combobox uses toggle semantics — clicking removes the role via immediate PUT.
+   */
+  async deselectRoleInDialog(roleName: string, roleId: string): Promise<void> {
+    await this.toggleRoleInDialog(roleName, roleId, 'Deselected')
+  }
+
+  /**
+   * Close the roles dialog
+   */
+  async closeRolesDialog(): Promise<void> {
+    await this.smartClick(this.rolesDialogClose)
+    await expect(this.rolesDialog).toBeHidden({ timeout: 5000 })
+    this.logger?.testCode.log('Closed roles dialog')
+  }
+
+  /**
+   * Get role badge texts for an API key.
+   * Returns empty array if em-dash is shown (no roles assigned).
+   */
+  async getRoleBadgeTexts(apiKeyName: string): Promise<string[]> {
+    const rolesCell = await this.getRolesCellForApiKey(apiKeyName)
+
+    const cellText = await rolesCell.textContent()
+    if (cellText?.includes('—')) {
+      return []
+    }
+
+    const badges = rolesCell.locator('[data-slot="badge"], span[class*="badge"]')
+    const count = await badges.count()
+
+    if (count === 0) {
+      const text = cellText?.trim()
+      return text ? [text] : []
+    }
+
+    const texts: string[] = []
+    for (let i = 0; i < count; i++) {
+      const badgeText = await badges.nth(i).textContent()
+      if (badgeText?.trim()) {
+        texts.push(badgeText.trim())
+      }
+    }
+
+    return texts
+  }
+
+  /**
+   * Check if an API key shows em-dash for roles (no roles assigned).
+   */
+  async hasEmDashRoleBadge(apiKeyName: string): Promise<boolean> {
+    const rolesCell = await this.getRolesCellForApiKey(apiKeyName)
+    const cellText = await rolesCell.textContent()
+    return cellText?.includes('—') ?? false
+  }
+
+  /**
+   * Check if an API key has an overflow badge showing "+N more".
+   */
+  async hasOverflowBadge(apiKeyName: string): Promise<boolean> {
+    const row = await this.findRowByName(apiKeyName)
+    if (!row) {
+      throw new Error(`API Key "${apiKeyName}" not found for checking overflow badge`)
+    }
+
+    const overflowBadge = row.locator(SELECTORS.apiKeys.rolesOverflow)
+    return await overflowBadge.isVisible().catch(() => false)
+  }
+
+  // ============================================================================
   // Private Helpers
   // ============================================================================
+
+  /** Toggle a role on/off in the roles dialog combobox. */
+  private async toggleRoleInDialog(roleName: string, roleId: string, action: 'Selected' | 'Deselected'): Promise<void> {
+    await this.smartClick(this.roleSelectorTrigger)
+
+    await expect(this.roleSelectorSearch).toBeVisible({ timeout: 5000 })
+    await this.roleSelectorSearch.fill(roleName)
+
+    const roleItem = this.page.locator(SELECTORS.apiKeyRoles.roleSelectorItem(roleId))
+
+    await Promise.all([
+      this.page.waitForResponse(
+        (resp) => resp.url().includes('/api/api-keys/') && resp.url().includes('/roles') && resp.request().method() === 'PUT' && resp.status() === 200,
+        { timeout: 10000 }
+      ),
+      this.smartClick(roleItem),
+    ])
+
+    const popoverOpen = await this.roleSelectorSearch.isVisible({ timeout: 1000 }).catch(() => false)
+    if (popoverOpen) {
+      await this.page.keyboard.press('Escape')
+    }
+
+    this.logger?.testCode.log(`${action} role "${roleName}" (${roleId})`)
+  }
+
+  /** Find the roles cell for a given API key name. */
+  private async getRolesCellForApiKey(apiKeyName: string): Promise<Locator> {
+    const row = await this.findRowByName(apiKeyName)
+    if (!row) {
+      throw new Error(`API Key "${apiKeyName}" not found`)
+    }
+
+    const rolesCell = row.locator(SELECTORS.apiKeys.rolesCell)
+    await expect(rolesCell).toBeVisible({ timeout: 5000 })
+    return rolesCell
+  }
 
   /**
    * Toggle a switch to the desired state
