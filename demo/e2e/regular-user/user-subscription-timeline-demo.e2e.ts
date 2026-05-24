@@ -151,9 +151,8 @@ test.describe('[Regular User] Subscription Timeline Demo Tests', () => {
         await expect(page.getByRole('heading', { name: 'Subscription History' })).toBeVisible()
         await demoLogger.testCode.info('Page title displayed')
 
-        // 验证页面描述
-        await expect(page.getByText('View your subscription changes and history')).toBeVisible()
-        await demoLogger.testCode.info('Page description displayed')
+        // PageHeader has no subtitle, only verify title
+        await demoLogger.testCode.info('Page title verified (no description subtitle)')
 
         // 验证时间线容器或空状态
         const timeline = page.getByTestId('subscription-timeline')
@@ -273,7 +272,7 @@ test.describe('[Regular User] Subscription Timeline Demo Tests', () => {
           const previousStateVisible = await page.getByText('Previous State').isVisible().catch(() => false)
           if (previousStateVisible) {
             await expect(page.getByText('Previous State')).toBeVisible()
-            await expect(page.getByText('Status:')).toBeVisible()
+            await expect(page.getByText('Status:').first()).toBeVisible()
             await demoLogger.testCode.info('Previous State and Status displayed')
           }
 

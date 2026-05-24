@@ -1,6 +1,6 @@
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { createRealmSchema, type CreateRealmFormData } from '@/lib/schemas/realm'
-import { createRealm } from '@/lib/api-generated'
+import { createRealm2 } from '@/lib/api-generated'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import {
   Dialog,
@@ -25,7 +25,7 @@ interface CreateRealmDialogProps {
 export function CreateRealmDialog({ open, onOpenChange }: CreateRealmDialogProps) {
   const { isSubmitting, mutate } = useFormMutation({
     mutationFn: (data: CreateRealmFormData) =>
-      createRealm({
+      createRealm2({
         body: data,
       }),
     getSuccessMessage: (response) => {

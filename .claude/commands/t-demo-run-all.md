@@ -28,6 +28,15 @@ allowed-tools:
 /t-demo-run-all continue
 ```
 
+只运行 `.ai/need_test.md` 中列出的测试：
+```bash
+/t-demo-run-all --filter-file .ai/need_test.md
+```
+
+```bash
+/t-demo-run-all continue --filter-file .ai/need_test.md
+```
+
 等价脚本入口：
 ```bash
 uv run scripts/demo-run-all.py
@@ -35,6 +44,10 @@ uv run scripts/demo-run-all.py
 
 ```bash
 uv run scripts/demo-run-all.py continue
+```
+
+```bash
+uv run scripts/demo-run-all.py --filter-file .ai/need_test.md
 ```
 
 ## 执行流程

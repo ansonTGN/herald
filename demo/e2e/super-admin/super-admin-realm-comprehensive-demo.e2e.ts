@@ -286,7 +286,7 @@ test.describe('Realm Management - US-AR-001 to US-AR-005', () => {
       await expect(realmsPage.dialog).toBeVisible()
 
       // Verify dialog title
-      await expect(realmsPage.dialogTitle).toHaveText(/Realm Details|Realm Information/i)
+      await expect(realmsPage.dialogTitle).toHaveText(/Edit Realm/i)
 
       // Verify realm information is displayed
       // The detail dialog shows realm information in read-only mode initially
@@ -800,8 +800,8 @@ test.describe('Realm Management - US-AR-001 to US-AR-005', () => {
       // Verify we're on the new realm (redirects to realm home page)
       await expect(page).toHaveURL(new RegExp(`/${realmId}`))
 
-      // Verify realm name is displayed (use first match to avoid strict mode violation)
-      await expect(page.getByText(new RegExp(realmId, 'i')).first()).toBeVisible()
+      // Verify realm name is displayed in the sidebar header
+      await expect(page.locator('h1:has-text("Herald") + p')).toContainText('Access Test Realm')
       demoLogger.testCode.log('Successfully logged into new realm')
     })
 

@@ -334,13 +334,11 @@ export class RealmsPage extends BasePage {
     const row = this.findRealmRow(id)
     await expect(row).toBeVisible({ timeout: 10000 })
 
-    // Frontend uses dynamic index: realm-${row.index}-view-button
-    // We find the View button by its visible text instead
-    const viewButton = row.getByRole('button', { name: 'View' }).first()
+    const viewButton = row.getByRole('button', { name: 'Edit' }).first()
     await this.smartClick(viewButton)
 
     await expect(this.dialog).toBeVisible({ timeout: 10000 })
-    await expect(this.dialogTitle).toHaveText(/Realm Details|Realm Information/i, { timeout: 5000 })
+    await expect(this.dialogTitle).toHaveText(/Edit Realm/i, { timeout: 5000 })
   }
 
   /**
@@ -349,7 +347,6 @@ export class RealmsPage extends BasePage {
    * @param newName New realm name
    */
   async editRealmName(newName: string): Promise<void> {
-    await this.smartClick(this.detailEditButton)
     await this.fillField(this.detailNameInput, newName)
     await this.smartClick(this.dialogSubmitButton)
 

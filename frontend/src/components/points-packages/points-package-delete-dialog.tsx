@@ -30,8 +30,8 @@ export function PointsPackageDeleteDialog({
   hasPurchaseHistory,
 }: PointsPackageDeleteDialogProps) {
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange} data-testid="points-package-delete-dialog">
-      <AlertDialogContent>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent data-testid="points-package-delete-dialog">
         <AlertDialogHeader>
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />

@@ -67,7 +67,7 @@ test.describe('[Regular User] TOTP 管理演示测试', () => {
         await page.goto(`${BASE_URL}/${realmId}/user/security`)
 
         // 验证页面加载成功 - 等待页面元素出现而非 loadState
-        await expect(page.getByRole('heading', { name: 'Change Password' })).toBeVisible()
+        await expect(page.getByTestId('security-page-title')).toBeVisible()
       })
 
       // NOTE: TOTP 组件尚未集成到 profile/security 页面
@@ -93,7 +93,7 @@ test.describe('[Regular User] TOTP 管理演示测试', () => {
 
       await test.step('Then: 验证 Security 页面显示', async () => {
         // 当前页面显示密码修改表单
-        await expect(page.getByRole('heading', { name: 'Change Password' })).toBeVisible()
+        await expect(page.getByTestId('security-page-title')).toBeVisible()
         demoLogger.testCode.log('[Test] ✓ Security page displayed (Password change form)')
         demoLogger.testCode.info('[Test] ⚠️ TOTP components not yet integrated to profile/security page')
       })
@@ -162,12 +162,12 @@ test.describe('[Regular User] TOTP 管理演示测试', () => {
         await page.goto(`${BASE_URL}/${realmId}/user/security`)
 
         // 等待页面元素出现
-        await expect(page.getByRole('heading', { name: 'Change Password' })).toBeVisible()
+        await expect(page.getByTestId('security-page-title')).toBeVisible()
       })
 
       // NOTE: TOTP 组件尚未集成
       await test.step('Then: 验证 Security 页面显示', async () => {
-        await expect(page.getByRole('heading', { name: 'Change Password' })).toBeVisible()
+        await expect(page.getByTestId('security-page-title')).toBeVisible()
         demoLogger.testCode.log('[Test] ✓ Security page displayed')
         demoLogger.testCode.info('[Test] ⚠️ TOTP disable functionality not yet implemented in UI')
       })
@@ -194,12 +194,12 @@ test.describe('[Regular User] TOTP 管理演示测试', () => {
         await page.goto(`${BASE_URL}/${realmId}/user/security`)
 
         // 等待页面元素出现
-        await expect(page.getByRole('heading', { name: 'Change Password' })).toBeVisible()
+        await expect(page.getByTestId('security-page-title')).toBeVisible()
       })
 
       // NOTE: TOTP 组件尚未集成
       await test.step('Then: 验证 Security 页面显示', async () => {
-        await expect(page.getByRole('heading', { name: 'Change Password' })).toBeVisible()
+        await expect(page.getByTestId('security-page-title')).toBeVisible()
         demoLogger.testCode.log('[Test] ✓ Security page displayed')
         demoLogger.testCode.info('[Test] ⚠️ TOTP regenerate functionality not yet implemented in UI')
       })
@@ -226,12 +226,12 @@ test.describe('[Regular User] TOTP 管理演示测试', () => {
         await page.goto(`${BASE_URL}/${realmId}/user/security`)
 
         // 等待页面元素出现
-        await expect(page.getByRole('heading', { name: 'Change Password' })).toBeVisible()
+        await expect(page.getByTestId('security-page-title')).toBeVisible()
       })
 
       // NOTE: TOTP 组件尚未集成
       await test.step('Then: 验证 Security 页面显示', async () => {
-        await expect(page.getByRole('heading', { name: 'Change Password' })).toBeVisible()
+        await expect(page.getByTestId('security-page-title')).toBeVisible()
         demoLogger.testCode.log('[Test] ✓ Security page displayed')
         demoLogger.testCode.info('[Test] ⚠️ TOTP status display functionality not yet implemented in UI')
       })

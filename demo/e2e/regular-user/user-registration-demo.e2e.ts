@@ -264,12 +264,12 @@ test.describe('[Regular User] Account Registration Demo Tests', () => {
         // Click submit button to trigger validation
         await page.getByTestId('register-submit-button').click()
         // Wait for validation error to appear
-        await expect(page.locator('p.text-red-500')).toBeVisible({ timeout: 3000 })
+        await expect(page.getByRole('alert')).toBeVisible({ timeout: 3000 })
       })
 
       await test.step('Step 4: Verify error message displayed', async () => {
-        // Check for validation error message (error appears in a p element with text-red-500 class)
-        const errorMessage = page.locator('p.text-red-500').filter({ hasText: 'Invalid email address' })
+        // Check for validation error message (TextField renders errors with role="alert")
+        const errorMessage = page.getByRole('alert').filter({ hasText: 'Invalid email address' })
         await expect(errorMessage).toBeVisible()
       })
     })
@@ -323,12 +323,12 @@ test.describe('[Regular User] Account Registration Demo Tests', () => {
         await page.getByTestId('register-confirm-password-input').fill('Password456!')
         await page.getByTestId('register-confirm-password-input').blur() // Trigger validation
         // Use text filter to precisely locate password mismatch error
-        await expect(page.locator('.text-red-500').filter({ hasText: 'Passwords do not match' })).toBeVisible({ timeout: 3000 })
+        await expect(page.getByRole('alert').filter({ hasText: 'Passwords do not match' })).toBeVisible({ timeout: 3000 })
       })
 
       await test.step('Step 4: Verify error message displayed', async () => {
         const confirmPasswordInput = page.getByTestId('register-confirm-password-input')
-        const errorMessage = confirmPasswordInput.locator('..').locator('.text-red-500').filter({ hasText: 'Passwords do not match' })
+        const errorMessage = confirmPasswordInput.locator('..').getByRole('alert').filter({ hasText: 'Passwords do not match' })
         await expect(errorMessage).toBeVisible()
         await expect(errorMessage).toContainText('Passwords do not match')
       })
