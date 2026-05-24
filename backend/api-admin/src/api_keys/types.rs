@@ -15,6 +15,9 @@ pub struct CreateApiKeyRequest {
     /// Optional expiration time (ISO 8601 string)
     #[schema(example = "2026-12-31T23:59:59Z")]
     pub expires_at: Option<String>,
+
+    /// Client App to bind this API key to. Defaults to the built-in admin-api-client.
+    pub client_app_id: Option<Uuid>,
 }
 
 /// Response after creating an API Key (plaintext key shown once)
@@ -32,6 +35,12 @@ pub struct CreateApiKeyResponse {
 
     /// Realm this API key belongs to
     pub realm_id: String,
+
+    /// Client App this API key is bound to
+    pub client_app_id: Option<Uuid>,
+
+    /// Client App display name
+    pub client_app_name: Option<String>,
 
     /// Whether the API key is enabled
     pub enabled: bool,
@@ -55,6 +64,12 @@ pub struct ApiKeyListItem {
 
     /// Realm this API key belongs to
     pub realm_id: String,
+
+    /// Client App this API key is bound to
+    pub client_app_id: Option<Uuid>,
+
+    /// Client App display name
+    pub client_app_name: Option<String>,
 
     /// Whether the API key is enabled
     pub enabled: bool,

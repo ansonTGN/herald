@@ -6,10 +6,10 @@
  * @see ../../../spec/demo/e2e-testing.md#page-object-model-pom-规范
  */
 
-import { Page, Locator, expect } from '@playwright/test'
-import { SELECTORS } from '../selectors'
-import { BasePage } from './base-page'
-import type { UnifiedLogger } from '../helpers/unified-logger'
+import { Page, Locator, expect } from "@playwright/test";
+import { SELECTORS } from "../selectors";
+import { BasePage } from "./base-page";
+import type { UnifiedLogger } from "../helpers/unified-logger";
 
 /**
  * API Keys Page Object
@@ -32,90 +32,118 @@ import type { UnifiedLogger } from '../helpers/unified-logger'
  */
 export class ApiKeysPage extends BasePage {
   // List page locators
-  readonly container: Locator
-  readonly heading: Locator
-  readonly table: Locator
-  readonly addButton: Locator
+  readonly container: Locator;
+  readonly heading: Locator;
+  readonly table: Locator;
+  readonly addButton: Locator;
 
   // Form page locators (create/edit)
-  readonly formPage: Locator
-  readonly pageTitle: Locator
-  readonly formBackButton: Locator
-  readonly nameInput: Locator
-  readonly enabledSwitch: Locator
-  readonly expiresAtInput: Locator
-  readonly expiresAtClearButton: Locator
-  readonly cancelButton: Locator
-  readonly submitButton: Locator
+  readonly formPage: Locator;
+  readonly pageTitle: Locator;
+  readonly formBackButton: Locator;
+  readonly nameInput: Locator;
+  readonly clientAppSelectorTrigger: Locator;
+  readonly clientAppSelectorSearch: Locator;
+  readonly enabledSwitch: Locator;
+  readonly expiresAtInput: Locator;
+  readonly expiresAtClearButton: Locator;
+  readonly cancelButton: Locator;
+  readonly submitButton: Locator;
 
   // Reveal page locators
-  readonly revealPage: Locator
-  readonly revealPageTitle: Locator
-  readonly revealBackButton: Locator
-  readonly keyValue: Locator
-  readonly copyButton: Locator
-  readonly doneButton: Locator
+  readonly revealPage: Locator;
+  readonly revealPageTitle: Locator;
+  readonly revealBackButton: Locator;
+  readonly keyValue: Locator;
+  readonly copyButton: Locator;
+  readonly doneButton: Locator;
 
   // Delete dialog locators
-  readonly deleteDialog: Locator
-  readonly deleteCancelButton: Locator
-  readonly deleteConfirmButton: Locator
+  readonly deleteDialog: Locator;
+  readonly deleteCancelButton: Locator;
+  readonly deleteConfirmButton: Locator;
 
   // Roles dialog locators
-  readonly rolesDialog: Locator
-  readonly rolesDialogTitle: Locator
-  readonly rolesDialogClose: Locator
-  readonly roleSelectorTrigger: Locator
-  readonly roleSelectorSearch: Locator
+  readonly rolesDialog: Locator;
+  readonly rolesDialogTitle: Locator;
+  readonly rolesDialogClose: Locator;
+  readonly roleSelectorTrigger: Locator;
+  readonly roleSelectorSearch: Locator;
 
   // Success toast
-  readonly successMessage: Locator
+  readonly successMessage: Locator;
 
   // Current realm ID (stored for navigation)
-  private currentRealmId: string = 'admin'
+  private currentRealmId: string = "admin";
 
   constructor(page: Page, logger?: UnifiedLogger) {
-    super(page, logger)
+    super(page, logger);
 
     // List page
-    this.container = this.page.locator(SELECTORS.apiKeys.page)
-    this.heading = this.page.locator(SELECTORS.apiKeys.heading)
-    this.table = this.page.locator(SELECTORS.apiKeys.table)
-    this.addButton = this.page.locator(SELECTORS.apiKeys.addButton)
+    this.container = this.page.locator(SELECTORS.apiKeys.page);
+    this.heading = this.page.locator(SELECTORS.apiKeys.heading);
+    this.table = this.page.locator(SELECTORS.apiKeys.table);
+    this.addButton = this.page.locator(SELECTORS.apiKeys.addButton);
 
     // Form page
-    this.formPage = this.page.locator(SELECTORS.apiKeyForm.page)
-    this.pageTitle = this.page.locator(SELECTORS.apiKeyForm.pageTitle)
-    this.formBackButton = this.page.locator(SELECTORS.apiKeyForm.backButton)
-    this.nameInput = this.page.locator(SELECTORS.apiKeyForm.nameInput)
-    this.enabledSwitch = this.page.locator(SELECTORS.apiKeyForm.enabledSwitch)
-    this.expiresAtInput = this.page.locator(SELECTORS.apiKeyForm.expiresAtInput)
-    this.expiresAtClearButton = this.page.locator(SELECTORS.apiKeyForm.expiresAtClearButton)
-    this.cancelButton = this.page.locator(SELECTORS.apiKeyForm.cancelButton)
-    this.submitButton = this.page.locator(SELECTORS.apiKeyForm.submitButton)
+    this.formPage = this.page.locator(SELECTORS.apiKeyForm.page);
+    this.pageTitle = this.page.locator(SELECTORS.apiKeyForm.pageTitle);
+    this.formBackButton = this.page.locator(SELECTORS.apiKeyForm.backButton);
+    this.nameInput = this.page.locator(SELECTORS.apiKeyForm.nameInput);
+    this.clientAppSelectorTrigger = this.page.locator(
+      SELECTORS.apiKeyForm.clientAppSelectorTrigger,
+    );
+    this.clientAppSelectorSearch = this.page.locator(
+      SELECTORS.apiKeyForm.clientAppSelectorSearch,
+    );
+    this.enabledSwitch = this.page.locator(SELECTORS.apiKeyForm.enabledSwitch);
+    this.expiresAtInput = this.page.locator(
+      SELECTORS.apiKeyForm.expiresAtInput,
+    );
+    this.expiresAtClearButton = this.page.locator(
+      SELECTORS.apiKeyForm.expiresAtClearButton,
+    );
+    this.cancelButton = this.page.locator(SELECTORS.apiKeyForm.cancelButton);
+    this.submitButton = this.page.locator(SELECTORS.apiKeyForm.submitButton);
 
     // Reveal page
-    this.revealPage = this.page.locator(SELECTORS.apiKeyReveal.page)
-    this.revealPageTitle = this.page.locator(SELECTORS.apiKeyReveal.pageTitle)
-    this.revealBackButton = this.page.locator(SELECTORS.apiKeyReveal.backButton)
-    this.keyValue = this.page.locator(SELECTORS.apiKeyReveal.keyValue)
-    this.copyButton = this.page.locator(SELECTORS.apiKeyReveal.copyButton)
-    this.doneButton = this.page.locator(SELECTORS.apiKeyReveal.doneButton)
+    this.revealPage = this.page.locator(SELECTORS.apiKeyReveal.page);
+    this.revealPageTitle = this.page.locator(SELECTORS.apiKeyReveal.pageTitle);
+    this.revealBackButton = this.page.locator(
+      SELECTORS.apiKeyReveal.backButton,
+    );
+    this.keyValue = this.page.locator(SELECTORS.apiKeyReveal.keyValue);
+    this.copyButton = this.page.locator(SELECTORS.apiKeyReveal.copyButton);
+    this.doneButton = this.page.locator(SELECTORS.apiKeyReveal.doneButton);
 
     // Delete dialog
-    this.deleteDialog = this.page.locator(SELECTORS.apiKeyDelete.dialog)
-    this.deleteCancelButton = this.page.locator(SELECTORS.apiKeyDelete.cancelButton)
-    this.deleteConfirmButton = this.page.locator(SELECTORS.apiKeyDelete.confirmButton)
+    this.deleteDialog = this.page.locator(SELECTORS.apiKeyDelete.dialog);
+    this.deleteCancelButton = this.page.locator(
+      SELECTORS.apiKeyDelete.cancelButton,
+    );
+    this.deleteConfirmButton = this.page.locator(
+      SELECTORS.apiKeyDelete.confirmButton,
+    );
 
     // Roles dialog
-    this.rolesDialog = this.page.locator(SELECTORS.apiKeyRoles.dialogContent)
-    this.rolesDialogTitle = this.page.locator(SELECTORS.apiKeyRoles.dialogTitle)
-    this.rolesDialogClose = this.page.locator(SELECTORS.apiKeyRoles.dialogClose)
-    this.roleSelectorTrigger = this.page.locator(SELECTORS.apiKeyRoles.roleSelectorTrigger)
-    this.roleSelectorSearch = this.page.locator(SELECTORS.apiKeyRoles.roleSelectorSearch)
+    this.rolesDialog = this.page.locator(SELECTORS.apiKeyRoles.dialogContent);
+    this.rolesDialogTitle = this.page.locator(
+      SELECTORS.apiKeyRoles.dialogTitle,
+    );
+    this.rolesDialogClose = this.page.locator(
+      SELECTORS.apiKeyRoles.dialogClose,
+    );
+    this.roleSelectorTrigger = this.page.locator(
+      SELECTORS.apiKeyRoles.roleSelectorTrigger,
+    );
+    this.roleSelectorSearch = this.page.locator(
+      SELECTORS.apiKeyRoles.roleSelectorSearch,
+    );
 
     // Success message (toast)
-    this.successMessage = this.page.locator('[data-sonner-toast][data-type="success"]')
+    this.successMessage = this.page.locator(
+      '[data-sonner-toast][data-type="success"]',
+    );
   }
 
   // ============================================================================
@@ -127,19 +155,19 @@ export class ApiKeysPage extends BasePage {
    *
    * @param realmId Realm ID (defaults to 'admin')
    */
-  async goto(realmId: string = 'admin'): Promise<void> {
-    this.currentRealmId = realmId
-    const url = `/${realmId}/manage/api-keys`
-    await this.page.goto(url)
-    await this.waitForReady()
+  async goto(realmId: string = "admin"): Promise<void> {
+    this.currentRealmId = realmId;
+    const url = `/${realmId}/manage/api-keys`;
+    await this.page.goto(url);
+    await this.waitForReady();
   }
 
   /**
    * Wait for API Keys list page to be visible
    */
   async waitForReady(): Promise<void> {
-    await expect(this.container).toBeVisible()
-    await expect(this.heading).toBeVisible()
+    await expect(this.container).toBeVisible();
+    await expect(this.heading).toBeVisible();
   }
 
   // ============================================================================
@@ -152,10 +180,10 @@ export class ApiKeysPage extends BasePage {
    * Navigates to /{realmId}/manage/api-keys/new and waits for the form page.
    */
   async gotoCreatePage(): Promise<void> {
-    const url = `/${this.currentRealmId}/manage/api-keys/new`
-    await this.page.goto(url)
-    await this.waitForFormPage()
-    this.logger?.testCode.log('Create API Key form page opened')
+    const url = `/${this.currentRealmId}/manage/api-keys/new`;
+    await this.page.goto(url);
+    await this.waitForFormPage();
+    this.logger?.testCode.log("Create API Key form page opened");
   }
 
   /**
@@ -167,27 +195,27 @@ export class ApiKeysPage extends BasePage {
    */
   async gotoEditPage(apiKeyName: string): Promise<void> {
     // Ensure we are on the list page to find the key
-    if (!await this.container.isVisible().catch(() => false)) {
-      await this.goto(this.currentRealmId)
+    if (!(await this.container.isVisible().catch(() => false))) {
+      await this.goto(this.currentRealmId);
     }
 
-    const row = await this.findRowByName(apiKeyName)
+    const row = await this.findRowByName(apiKeyName);
     if (!row) {
-      throw new Error(`API Key "${apiKeyName}" not found in table`)
+      throw new Error(`API Key "${apiKeyName}" not found in table`);
     }
 
-    const editBtn = row.locator(SELECTORS.apiKeys.editButton)
-    await this.smartClick(editBtn)
-    await this.waitForFormPage()
-    this.logger?.testCode.log(`Edit form page opened for "${apiKeyName}"`)
+    const editBtn = row.locator(SELECTORS.apiKeys.editButton);
+    await this.smartClick(editBtn);
+    await this.waitForFormPage();
+    this.logger?.testCode.log(`Edit form page opened for "${apiKeyName}"`);
   }
 
   /**
    * Wait for the form page to be visible
    */
   async waitForFormPage(): Promise<void> {
-    await expect(this.formPage).toBeVisible()
-    await expect(this.pageTitle).toBeVisible()
+    await expect(this.formPage).toBeVisible();
+    await expect(this.pageTitle).toBeVisible();
   }
 
   // ============================================================================
@@ -201,14 +229,16 @@ export class ApiKeysPage extends BasePage {
    * @returns Locator for the table row, or null if not found
    */
   async findRowByName(name: string): Promise<Locator | null> {
-    const nameCell = this.page.getByText(name, { exact: true }).first()
-    const isVisible = await nameCell.isVisible({ timeout: 5000 }).catch(() => false)
+    const nameCell = this.page.getByText(name, { exact: true }).first();
+    const isVisible = await nameCell
+      .isVisible({ timeout: 5000 })
+      .catch(() => false);
 
     if (!isVisible) {
-      return null
+      return null;
     }
 
-    return nameCell.locator('xpath=ancestor::tr[1]')
+    return nameCell.locator("xpath=ancestor::tr[1]");
   }
 
   /**
@@ -217,8 +247,8 @@ export class ApiKeysPage extends BasePage {
    * @param name API key name
    */
   async apiKeyExists(name: string): Promise<boolean> {
-    const nameCell = this.page.getByText(name, { exact: true }).first()
-    return await nameCell.isVisible({ timeout: 5000 }).catch(() => false)
+    const nameCell = this.page.getByText(name, { exact: true }).first();
+    return await nameCell.isVisible({ timeout: 5000 }).catch(() => false);
   }
 
   /**
@@ -227,8 +257,13 @@ export class ApiKeysPage extends BasePage {
    * @param name API key name
    * @param timeout Timeout in milliseconds (default: 10000)
    */
-  async waitForApiKeyByName(name: string, timeout: number = 10000): Promise<void> {
-    await expect(this.page.getByText(name, { exact: true })).toBeVisible({ timeout })
+  async waitForApiKeyByName(
+    name: string,
+    timeout: number = 10000,
+  ): Promise<void> {
+    await expect(this.page.getByText(name, { exact: true })).toBeVisible({
+      timeout,
+    });
   }
 
   // ============================================================================
@@ -238,18 +273,50 @@ export class ApiKeysPage extends BasePage {
   /**
    * Fill the create form fields
    *
-   * @param data Form data: name (required), expiresAt (optional)
+   * @param data Form data: name (required), expiresAt (optional), clientAppId (optional)
    */
-  async fillCreateForm(data: { name: string; expiresAt?: string }): Promise<void> {
-    await expect(this.nameInput).toBeVisible()
-    await this.fillField(this.nameInput, data.name)
-    this.logger?.testCode.log(`Filled API Key name: "${data.name}"`)
+  async fillCreateForm(data: {
+    name: string;
+    expiresAt?: string;
+    clientAppId?: string;
+  }): Promise<void> {
+    await expect(this.nameInput).toBeVisible();
+    await this.fillField(this.nameInput, data.name);
+    this.logger?.testCode.log(`Filled API Key name: "${data.name}"`);
+
+    if (data.clientAppId) {
+      await this.selectClientApp(data.clientAppId);
+    }
 
     if (data.expiresAt) {
-      await expect(this.expiresAtInput).toBeVisible()
-      await this.expiresAtInput.fill(data.expiresAt)
-      this.logger?.testCode.log(`Filled expiresAt: "${data.expiresAt}"`)
+      await expect(this.expiresAtInput).toBeVisible();
+      await this.expiresAtInput.fill(data.expiresAt);
+      this.logger?.testCode.log(`Filled expiresAt: "${data.expiresAt}"`);
     }
+  }
+
+  async selectClientApp(clientAppId: string): Promise<void> {
+    await this.smartClick(this.clientAppSelectorTrigger);
+    await expect(this.clientAppSelectorSearch).toBeVisible({ timeout: 5000 });
+    await this.smartClick(
+      this.page.locator(
+        SELECTORS.apiKeyForm.clientAppSelectorItem(clientAppId),
+      ),
+    );
+    this.logger?.testCode.log(
+      `Selected Client App for API Key: "${clientAppId}"`,
+    );
+  }
+
+  async getClientAppText(apiKeyName: string): Promise<string> {
+    const row = await this.findRowByName(apiKeyName);
+    if (!row) {
+      throw new Error(`API Key "${apiKeyName}" not found`);
+    }
+
+    const cell = row.locator(SELECTORS.apiKeys.clientApp);
+    await expect(cell).toBeVisible({ timeout: 5000 });
+    return (await cell.textContent())?.trim() ?? "";
   }
 
   /**
@@ -257,21 +324,25 @@ export class ApiKeysPage extends BasePage {
    *
    * @param data Form data: name (optional), enabled (optional), expiresAt (optional)
    */
-  async fillEditForm(data: { name?: string; enabled?: boolean; expiresAt?: string }): Promise<void> {
+  async fillEditForm(data: {
+    name?: string;
+    enabled?: boolean;
+    expiresAt?: string;
+  }): Promise<void> {
     if (data.name !== undefined) {
-      await expect(this.nameInput).toBeVisible()
-      await this.fillField(this.nameInput, data.name)
-      this.logger?.testCode.log(`Updated API Key name: "${data.name}"`)
+      await expect(this.nameInput).toBeVisible();
+      await this.fillField(this.nameInput, data.name);
+      this.logger?.testCode.log(`Updated API Key name: "${data.name}"`);
     }
 
     if (data.enabled !== undefined) {
-      await this.toggleSwitch(this.enabledSwitch, data.enabled, 'Enabled')
+      await this.toggleSwitch(this.enabledSwitch, data.enabled, "Enabled");
     }
 
     if (data.expiresAt !== undefined) {
-      await expect(this.expiresAtInput).toBeVisible()
-      await this.expiresAtInput.fill(data.expiresAt)
-      this.logger?.testCode.log(`Updated expiresAt: "${data.expiresAt}"`)
+      await expect(this.expiresAtInput).toBeVisible();
+      await this.expiresAtInput.fill(data.expiresAt);
+      this.logger?.testCode.log(`Updated expiresAt: "${data.expiresAt}"`);
     }
   }
 
@@ -283,27 +354,32 @@ export class ApiKeysPage extends BasePage {
    * (e.g., `waitForRevealPage()` after create, `waitForReady()` after edit).
    */
   async submitForm(): Promise<void> {
-    await expect(this.submitButton).toBeEnabled()
+    await expect(this.submitButton).toBeEnabled();
     // Use waitForResponse to ensure the API call completes before caller asserts next page
     const [response] = await Promise.all([
       this.page.waitForResponse(
-        (resp) => resp.url().includes('/api/api-keys/') && resp.status() >= 200 && resp.status() < 300,
-        { timeout: 10000 }
+        (resp) =>
+          resp.url().includes("/api/api-keys/") &&
+          resp.status() >= 200 &&
+          resp.status() < 300,
+        { timeout: 10000 },
       ),
       this.smartClick(this.submitButton),
-    ])
-    this.logger?.testCode.log(`Submit completed with status ${response?.status() ?? 'unknown'}`)
+    ]);
+    this.logger?.testCode.log(
+      `Submit completed with status ${response?.status() ?? "unknown"}`,
+    );
   }
 
   /**
    * Cancel the form and return to list page
    */
   async cancelForm(): Promise<void> {
-    await this.smartClick(this.cancelButton)
-    this.logger?.testCode.log('Clicked cancel button')
+    await this.smartClick(this.cancelButton);
+    this.logger?.testCode.log("Clicked cancel button");
 
     // Wait for navigation back to list page
-    await expect(this.container).toBeVisible({ timeout: 5000 })
+    await expect(this.container).toBeVisible({ timeout: 5000 });
   }
 
   // ============================================================================
@@ -316,9 +392,9 @@ export class ApiKeysPage extends BasePage {
    * Verifies the page title is "API Key Created".
    */
   async waitForRevealPage(): Promise<void> {
-    await expect(this.revealPage).toBeVisible({ timeout: 10000 })
-    await expect(this.revealPageTitle).toHaveText('API Key Created')
-    this.logger?.testCode.log('API Key reveal page visible')
+    await expect(this.revealPage).toBeVisible({ timeout: 10000 });
+    await expect(this.revealPageTitle).toHaveText("API Key Created");
+    this.logger?.testCode.log("API Key reveal page visible");
   }
 
   /**
@@ -327,23 +403,23 @@ export class ApiKeysPage extends BasePage {
    * @returns The plaintext API key string
    */
   async getRevealedKeyValue(): Promise<string> {
-    await expect(this.keyValue).toBeVisible()
-    const value = await this.keyValue.textContent()
-    return value?.trim() || ''
+    await expect(this.keyValue).toBeVisible();
+    const value = await this.keyValue.textContent();
+    return value?.trim() || "";
   }
 
   /**
    * Click copy then done button
    */
   async copyAndDone(): Promise<void> {
-    await this.smartClick(this.copyButton)
-    this.logger?.testCode.log('Clicked copy button')
+    await this.smartClick(this.copyButton);
+    this.logger?.testCode.log("Clicked copy button");
 
-    await this.smartClick(this.doneButton)
-    this.logger?.testCode.log('Clicked done button')
+    await this.smartClick(this.doneButton);
+    this.logger?.testCode.log("Clicked done button");
 
     // Wait for navigation back to list page
-    await expect(this.container).toBeVisible({ timeout: 5000 })
+    await expect(this.container).toBeVisible({ timeout: 5000 });
   }
 
   // ============================================================================
@@ -359,36 +435,40 @@ export class ApiKeysPage extends BasePage {
    */
   async deleteApiKeyByName(name: string): Promise<void> {
     // Ensure we are on the list page
-    if (!await this.container.isVisible().catch(() => false)) {
-      await this.goto(this.currentRealmId)
+    if (!(await this.container.isVisible().catch(() => false))) {
+      await this.goto(this.currentRealmId);
     }
 
-    const row = await this.findRowByName(name)
+    const row = await this.findRowByName(name);
     if (!row) {
-      throw new Error(`API Key "${name}" not found for deletion`)
+      throw new Error(`API Key "${name}" not found for deletion`);
     }
 
-    const deleteBtn = row.locator(SELECTORS.apiKeys.deleteButton)
-    await this.smartClick(deleteBtn)
+    const deleteBtn = row.locator(SELECTORS.apiKeys.deleteButton);
+    await this.smartClick(deleteBtn);
 
     // Wait for delete confirmation dialog
-    await expect(this.deleteDialog).toBeVisible({ timeout: 10000 })
+    await expect(this.deleteDialog).toBeVisible({ timeout: 10000 });
 
     // Click confirm and wait for DELETE API response
     await Promise.all([
       this.page.waitForResponse(
-        (resp) => resp.url().includes('/api/api-keys/') && resp.request().method() === 'DELETE',
-        { timeout: 10000 }
+        (resp) =>
+          resp.url().includes("/api/api-keys/") &&
+          resp.request().method() === "DELETE",
+        { timeout: 10000 },
       ),
       this.smartClick(this.deleteConfirmButton),
-    ])
+    ]);
 
     // Wait for dialog to close
-    await expect(this.deleteDialog).toBeHidden({ timeout: 10000 })
+    await expect(this.deleteDialog).toBeHidden({ timeout: 10000 });
 
     // Wait for the deleted key to disappear from the table (React Query cache invalidation)
-    await expect(this.page.getByText(name, { exact: true }).first()).toBeHidden({ timeout: 10000 })
-    this.logger?.testCode.log(`Deleted API Key "${name}"`)
+    await expect(this.page.getByText(name, { exact: true }).first()).toBeHidden(
+      { timeout: 10000 },
+    );
+    this.logger?.testCode.log(`Deleted API Key "${name}"`);
   }
 
   /**
@@ -398,27 +478,27 @@ export class ApiKeysPage extends BasePage {
    */
   async cancelDeleteDialog(name: string): Promise<void> {
     // Ensure we are on the list page
-    if (!await this.container.isVisible().catch(() => false)) {
-      await this.goto(this.currentRealmId)
+    if (!(await this.container.isVisible().catch(() => false))) {
+      await this.goto(this.currentRealmId);
     }
 
-    const row = await this.findRowByName(name)
+    const row = await this.findRowByName(name);
     if (!row) {
-      throw new Error(`API Key "${name}" not found`)
+      throw new Error(`API Key "${name}" not found`);
     }
 
-    const deleteBtn = row.locator(SELECTORS.apiKeys.deleteButton)
-    await this.smartClick(deleteBtn)
+    const deleteBtn = row.locator(SELECTORS.apiKeys.deleteButton);
+    await this.smartClick(deleteBtn);
 
     // Wait for delete confirmation dialog
-    await expect(this.deleteDialog).toBeVisible({ timeout: 10000 })
+    await expect(this.deleteDialog).toBeVisible({ timeout: 10000 });
 
     // Click cancel
-    await this.smartClick(this.deleteCancelButton)
+    await this.smartClick(this.deleteCancelButton);
 
     // Verify dialog closes
-    await expect(this.deleteDialog).toBeHidden({ timeout: 5000 })
-    this.logger?.testCode.log(`Cancelled delete dialog for "${name}"`)
+    await expect(this.deleteDialog).toBeHidden({ timeout: 5000 });
+    this.logger?.testCode.log(`Cancelled delete dialog for "${name}"`);
   }
 
   // ============================================================================
@@ -435,32 +515,41 @@ export class ApiKeysPage extends BasePage {
    */
   async openRolesDialog(apiKeyName: string): Promise<void> {
     // Ensure we are on the list page
-    if (!await this.container.isVisible().catch(() => false)) {
-      await this.goto(this.currentRealmId)
+    if (!(await this.container.isVisible().catch(() => false))) {
+      await this.goto(this.currentRealmId);
     }
 
-    const row = await this.findRowByName(apiKeyName)
+    const row = await this.findRowByName(apiKeyName);
     if (!row) {
-      throw new Error(`API Key "${apiKeyName}" not found for opening roles dialog`)
+      throw new Error(
+        `API Key "${apiKeyName}" not found for opening roles dialog`,
+      );
     }
 
-    const manageRolesBtn = row.locator(SELECTORS.apiKeys.manageRolesButton)
+    const manageRolesBtn = row.locator(SELECTORS.apiKeys.manageRolesButton);
 
     // Click manage-roles button and wait for dialog to open.
     // The GET /roles response may be served from React Query cache, so we don't
     // strictly require a network response — the dialog becoming visible is sufficient.
-    const responsePromise = this.page.waitForResponse(
-      (resp) => resp.url().includes('/api/api-keys/') && resp.url().includes('/roles') && resp.request().method() === 'GET',
-      { timeout: 10000 }
-    ).catch(() => null)
+    const responsePromise = this.page
+      .waitForResponse(
+        (resp) =>
+          resp.url().includes("/api/api-keys/") &&
+          resp.url().includes("/roles") &&
+          resp.request().method() === "GET",
+        { timeout: 10000 },
+      )
+      .catch(() => null);
 
-    await this.smartClick(manageRolesBtn)
+    await this.smartClick(manageRolesBtn);
 
     // Wait for dialog to be visible (this is the real gate)
-    await expect(this.rolesDialog).toBeVisible({ timeout: 10000 })
+    await expect(this.rolesDialog).toBeVisible({ timeout: 10000 });
 
-    const response = await responsePromise
-    this.logger?.testCode.log(`Opened roles dialog for "${apiKeyName}" (status: ${response?.status() ?? 'cached'})`)
+    const response = await responsePromise;
+    this.logger?.testCode.log(
+      `Opened roles dialog for "${apiKeyName}" (status: ${response?.status() ?? "cached"})`,
+    );
   }
 
   /**
@@ -468,7 +557,7 @@ export class ApiKeysPage extends BasePage {
    * The combobox uses toggle semantics — clicking assigns the role via immediate PUT.
    */
   async selectRoleInDialog(roleName: string, roleId: string): Promise<void> {
-    await this.toggleRoleInDialog(roleName, roleId, 'Selected')
+    await this.toggleRoleInDialog(roleName, roleId, "Selected");
   }
 
   /**
@@ -476,16 +565,16 @@ export class ApiKeysPage extends BasePage {
    * The combobox uses toggle semantics — clicking removes the role via immediate PUT.
    */
   async deselectRoleInDialog(roleName: string, roleId: string): Promise<void> {
-    await this.toggleRoleInDialog(roleName, roleId, 'Deselected')
+    await this.toggleRoleInDialog(roleName, roleId, "Deselected");
   }
 
   /**
    * Close the roles dialog
    */
   async closeRolesDialog(): Promise<void> {
-    await this.smartClick(this.rolesDialogClose)
-    await expect(this.rolesDialog).toBeHidden({ timeout: 5000 })
-    this.logger?.testCode.log('Closed roles dialog')
+    await this.smartClick(this.rolesDialogClose);
+    await expect(this.rolesDialog).toBeHidden({ timeout: 5000 });
+    this.logger?.testCode.log("Closed roles dialog");
   }
 
   /**
@@ -493,52 +582,56 @@ export class ApiKeysPage extends BasePage {
    * Returns empty array if em-dash is shown (no roles assigned).
    */
   async getRoleBadgeTexts(apiKeyName: string): Promise<string[]> {
-    const rolesCell = await this.getRolesCellForApiKey(apiKeyName)
+    const rolesCell = await this.getRolesCellForApiKey(apiKeyName);
 
-    const cellText = await rolesCell.textContent()
-    if (cellText?.includes('—')) {
-      return []
+    const cellText = await rolesCell.textContent();
+    if (cellText?.includes("—")) {
+      return [];
     }
 
-    const badges = rolesCell.locator('[data-slot="badge"], span[class*="badge"]')
-    const count = await badges.count()
+    const badges = rolesCell.locator(
+      '[data-slot="badge"], span[class*="badge"]',
+    );
+    const count = await badges.count();
 
     if (count === 0) {
-      const text = cellText?.trim()
-      return text ? [text] : []
+      const text = cellText?.trim();
+      return text ? [text] : [];
     }
 
-    const texts: string[] = []
+    const texts: string[] = [];
     for (let i = 0; i < count; i++) {
-      const badgeText = await badges.nth(i).textContent()
+      const badgeText = await badges.nth(i).textContent();
       if (badgeText?.trim()) {
-        texts.push(badgeText.trim())
+        texts.push(badgeText.trim());
       }
     }
 
-    return texts
+    return texts;
   }
 
   /**
    * Check if an API key shows em-dash for roles (no roles assigned).
    */
   async hasEmDashRoleBadge(apiKeyName: string): Promise<boolean> {
-    const rolesCell = await this.getRolesCellForApiKey(apiKeyName)
-    const cellText = await rolesCell.textContent()
-    return cellText?.includes('—') ?? false
+    const rolesCell = await this.getRolesCellForApiKey(apiKeyName);
+    const cellText = await rolesCell.textContent();
+    return cellText?.includes("—") ?? false;
   }
 
   /**
    * Check if an API key has an overflow badge showing "+N more".
    */
   async hasOverflowBadge(apiKeyName: string): Promise<boolean> {
-    const row = await this.findRowByName(apiKeyName)
+    const row = await this.findRowByName(apiKeyName);
     if (!row) {
-      throw new Error(`API Key "${apiKeyName}" not found for checking overflow badge`)
+      throw new Error(
+        `API Key "${apiKeyName}" not found for checking overflow badge`,
+      );
     }
 
-    const overflowBadge = row.locator(SELECTORS.apiKeys.rolesOverflow)
-    return await overflowBadge.isVisible().catch(() => false)
+    const overflowBadge = row.locator(SELECTORS.apiKeys.rolesOverflow);
+    return await overflowBadge.isVisible().catch(() => false);
   }
 
   // ============================================================================
@@ -546,50 +639,66 @@ export class ApiKeysPage extends BasePage {
   // ============================================================================
 
   /** Toggle a role on/off in the roles dialog combobox. */
-  private async toggleRoleInDialog(roleName: string, roleId: string, action: 'Selected' | 'Deselected'): Promise<void> {
-    await this.smartClick(this.roleSelectorTrigger)
+  private async toggleRoleInDialog(
+    roleName: string,
+    roleId: string,
+    action: "Selected" | "Deselected",
+  ): Promise<void> {
+    await this.smartClick(this.roleSelectorTrigger);
 
-    await expect(this.roleSelectorSearch).toBeVisible({ timeout: 5000 })
+    await expect(this.roleSelectorSearch).toBeVisible({ timeout: 5000 });
 
-    const roleItem = this.page.locator(SELECTORS.apiKeyRoles.roleSelectorItem(roleId))
+    const roleItem = this.page.locator(
+      SELECTORS.apiKeyRoles.roleSelectorItem(roleId),
+    );
 
     await Promise.all([
       this.page.waitForResponse(
-        (resp) => resp.url().includes('/api/api-keys/') && resp.url().includes('/roles') && resp.request().method() === 'PUT' && resp.status() === 200,
-        { timeout: 10000 }
+        (resp) =>
+          resp.url().includes("/api/api-keys/") &&
+          resp.url().includes("/roles") &&
+          resp.request().method() === "PUT" &&
+          resp.status() === 200,
+        { timeout: 10000 },
       ),
       this.smartClick(roleItem),
-    ])
+    ]);
 
-    const popoverOpen = await this.roleSelectorSearch.isVisible({ timeout: 1000 }).catch(() => false)
+    const popoverOpen = await this.roleSelectorSearch
+      .isVisible({ timeout: 1000 })
+      .catch(() => false);
     if (popoverOpen) {
-      await this.page.keyboard.press('Escape')
+      await this.page.keyboard.press("Escape");
     }
 
-    this.logger?.testCode.log(`${action} role "${roleName}" (${roleId})`)
+    this.logger?.testCode.log(`${action} role "${roleName}" (${roleId})`);
   }
 
   /** Find the roles cell for a given API key name. */
   private async getRolesCellForApiKey(apiKeyName: string): Promise<Locator> {
-    const row = await this.findRowByName(apiKeyName)
+    const row = await this.findRowByName(apiKeyName);
     if (!row) {
-      throw new Error(`API Key "${apiKeyName}" not found`)
+      throw new Error(`API Key "${apiKeyName}" not found`);
     }
 
-    const rolesCell = row.locator(SELECTORS.apiKeys.rolesCell)
-    await expect(rolesCell).toBeVisible({ timeout: 5000 })
-    return rolesCell
+    const rolesCell = row.locator(SELECTORS.apiKeys.rolesCell);
+    await expect(rolesCell).toBeVisible({ timeout: 5000 });
+    return rolesCell;
   }
 
   /**
    * Toggle a switch to the desired state
    */
-  private async toggleSwitch(locator: Locator, desiredState: boolean, label: string): Promise<void> {
-    const isChecked = await locator.getAttribute('aria-checked')
-    const currentlyEnabled = isChecked === 'true'
+  private async toggleSwitch(
+    locator: Locator,
+    desiredState: boolean,
+    label: string,
+  ): Promise<void> {
+    const isChecked = await locator.getAttribute("aria-checked");
+    const currentlyEnabled = isChecked === "true";
     if (currentlyEnabled !== desiredState) {
-      await locator.click()
-      this.logger?.testCode.log(`Toggled ${label}: ${desiredState}`)
+      await locator.click();
+      this.logger?.testCode.log(`Toggled ${label}: ${desiredState}`);
     }
   }
 }

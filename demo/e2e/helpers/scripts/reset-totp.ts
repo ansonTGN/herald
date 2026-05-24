@@ -232,7 +232,7 @@ Examples:
 
 Environment Variables:
   DATABASE_URL                PostgreSQL connection string
-                             (default: postgres://postgres:postgres@127.0.0.1:5432/cas_demo)
+                             (default: postgres://postgres:postgres@127.0.0.1:5432/herald_demo)
 `)
 }
 

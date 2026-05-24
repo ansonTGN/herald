@@ -805,3 +805,63 @@ When 我打开创建 API Key 表单
 Then 表单中不显示角色选择区
 And 我仍可正常创建 API Key
 ```
+
+---
+
+### 故事 18：API Key 按 Client App 隔离 [US-RA-018]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：创建 API Key 时选择其代表的 Client App
+**从而**：让第三方集成只能操作所属 Client App 的资源，避免同一 Realm 内跨应用越权
+
+**【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：创建 API Key 时选择 Client App**
+```gherkin
+Given 我是 realm-1 的管理员
+And realm-1 中存在 Client App "mobile-app"
+When 我在创建 API Key 表单中填写名称
+And 我在 Client App 选择器中选择 "mobile-app"
+And 我提交表单
+Then API Key 创建成功
+And API Key 列表显示该 Key 绑定到 "mobile-app"
+```
+
+**场景 2：未选择 Client App 时使用默认范围**
+```gherkin
+Given 我是 realm-1 的管理员
+When 我在创建 API Key 表单中未选择 Client App
+And 我提交表单
+Then API Key 创建成功
+And 该 API Key 使用默认的 "admin-api-client" 范围
+```
+
+**场景 3：普通 Client App API Key 不能访问其他应用资源**
+```gherkin
+Given API Key "mobile-key" 绑定到 Client App "mobile-app"
+And realm-1 中还存在 Client App "web-app"
+When "mobile-key" 尝试访问 "web-app" 的订阅或积分资源
+Then 系统拒绝访问
+And 不返回 "web-app" 的资源数据
+```
+
+**场景 4：admin-api-client API Key 保持 Realm 级访问**
+```gherkin
+Given API Key "admin-api-key" 使用默认的 "admin-api-client" 范围
+And realm-1 中存在多个 Client App
+When "admin-api-key" 访问任意 Client App 的订阅或积分资源
+Then 系统按该 API Key 的角色权限正常处理请求
+```
+
+**场景 5：禁用 Client App 后其 API Key 不可用**
+```gherkin
+Given API Key "mobile-key" 绑定到 Client App "mobile-app"
+When 管理员禁用 "mobile-app"
+Then "mobile-key" 无法继续通过外部接口认证
+And 系统返回 Client App 已禁用的错误
+```

@@ -16,11 +16,17 @@ import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { queryKeys, rolesQueryOptions, updateApiKeyRolesMutation } from '@/data/query-options'
+import {
+  clientAppsQueryOptions,
+  queryKeys,
+  rolesQueryOptions,
+  updateApiKeyRolesMutation,
+} from '@/data/query-options'
 import { toast } from 'sonner'
 import { ArrowLeft } from 'lucide-react'
 import { TextField, SwitchField } from '@/components/shared/form-fields'
 import { RoleSelector } from '@/components/shared/role-selector'
+import { ClientAppSelector } from '@/components/shared/client-app-selector'
 
 type MutationResult = CreateApiKeyResponse | ApiKeyListItem
 
@@ -40,6 +46,11 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
   const { data: rolesData } = useQuery({
     ...rolesQueryOptions(realmId),
     enabled: isCreate && canManageRoles,
+  })
+
+  const { data: clientAppsData } = useQuery({
+    ...clientAppsQueryOptions(realmId, { page: 0, pageSize: 100 }),
+    enabled: isCreate,
   })
 
   const goToList = () => navigate({ to: '/$realmId/manage/api-keys', params: { realmId } })
@@ -154,6 +165,27 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
             placeholder="My API Key"
             required
           />
+
+          {isCreate && (
+            <form.Field
+              name="clientAppId"
+              children={(field) => (
+                <div className="space-y-2">
+                  <Label>Client App</Label>
+                  <ClientAppSelector
+                    clientApps={(clientAppsData?.items ?? []).map((app) => ({
+                      id: app.id,
+                      name: app.name,
+                      clientId: app.clientId,
+                    }))}
+                    value={field.state.value}
+                    onChange={field.handleChange}
+                    disabled={isSubmitting}
+                  />
+                </div>
+              )}
+            />
+          )}
 
           {!isCreate && (
             <SwitchField

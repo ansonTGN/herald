@@ -4,6 +4,8 @@ use herald_api_base::application::http::server::api_entities::{ApiError, ApiResu
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::user::UserRoleRepository;
+use herald_core::entity::client_app;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 use crate::api_keys::types::{ApiKeyListItem, ApiKeyRoleSummary, ListQuery};
 
@@ -82,14 +84,38 @@ pub async fn list_api_keys(
         let mut role_map: std::collections::HashMap<String, Vec<(uuid::Uuid, String)>> =
             role_summaries.into_iter().collect();
 
+        let client_app_ids: Vec<uuid::Uuid> =
+            api_keys.iter().filter_map(|k| k.client_app_id).collect();
+        let client_apps = if client_app_ids.is_empty() {
+            Vec::new()
+        } else {
+            client_app::Entity::find()
+                .filter(client_app::Column::Id.is_in(client_app_ids))
+                .all(state.db.as_ref())
+                .await
+                .map_err(|e| {
+                    tracing::error!("Failed to batch load API key Client Apps: {e}");
+                    ApiError::internal("Failed to load API key Client Apps")
+                })?
+        };
+        let client_app_name_by_id: std::collections::HashMap<uuid::Uuid, String> = client_apps
+            .into_iter()
+            .map(|app| (app.id, app.name))
+            .collect();
+
         api_keys
             .into_iter()
             .map(|k| {
                 let roles = role_map.remove(&k.id).unwrap_or_default();
+                let client_app_name = k
+                    .client_app_id
+                    .and_then(|id| client_app_name_by_id.get(&id).cloned());
                 ApiKeyListItem {
                     id: k.id,
                     name: k.name,
                     realm_id: k.realm_id,
+                    client_app_id: k.client_app_id,
+                    client_app_name,
                     enabled: k.enabled,
                     expires_at: k.expires_at.map(|dt| dt.to_rfc3339()),
                     last_used_at: k.last_used_at.map(|dt| dt.to_rfc3339()),

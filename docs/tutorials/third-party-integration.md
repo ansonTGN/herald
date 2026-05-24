@@ -15,7 +15,7 @@ Herald 是独立的认证和计费服务。你的后端不用自己管用户、�
 
 1. 创建一个 realm（租户），记下 `realm_id`
 2. 在 realm 下创建一个 client app（代表你的服务），记下 `client_id`
-3. 为这个 realm 生成一个 API Key，保存密钥值——只显示一次，丢了得重新生成
+3. 为这个 realm 生成一个 API Key，保存密钥值——只显示一次，丢了得重新生成。生成时选择对应的 Client App；不选择时默认绑定 `admin-api-client`
 4. 定义权限点。权限格式是 `resource:action`，比如 `product:read`、`device:manage`
 5. 创建角色，把权限点分配给角色
 6. 创建一个管理员用户，把角色分配给这个用户
@@ -50,6 +50,8 @@ let herald_client = Arc::new(Client::new(
 ```
 
 API Key 是你的后端跟 Herald 之间的身份凭证，存在环境变量或配置文件里，不要硬编码。缓存时间 5 分钟够用，SDK 会在 token 过期时自动失效缓存条目，不需要手动管理。
+
+API Key 同时带有 Client App 范围。绑定 `admin-api-client` 的 Key 是 realm 级管理 Key，可以访问该 realm 下的所有 Client App 资源；绑定普通 Client App 的 Key 只能访问该 Client App 的权限检查、订阅和积分资源。禁用 Client App 会立即让绑定到它的 API Key 失效。
 
 ### 写认证中间件
 
@@ -176,7 +178,7 @@ let app = axum::Router::new()
 
 ## 3. 通过 SDK 管理资源
 
-API Key 在 Herald 中也是一种 Principal（主体），跟用户一样可以分配角色和权限。你给 API Key 分配了什么权限，通过这个 Key 发出的 SDK 调用就能做什么。
+API Key 在 Herald 中也是一种 Principal（主体），跟用户一样可以分配角色和权限。你给 API Key 分配了什么权限，通过这个 Key 发出的 SDK 调用就能做什么。权限仍然受 Client App 范围限制：普通 Client App Key 即使有角色，也不能越权访问其他 Client App 的订阅、积分或权限检查。
 
 ### 管理 Realm
 
@@ -234,7 +236,7 @@ let apps = herald_client.list_client_apps("my-realm").await?;
 let app = herald_client.get_client_app("my-realm", "my-mobile-app").await?;
 ```
 
-所有操作都受 API Key 权限范围约束。SDK 调用不带 realm 范围外的数据。
+所有操作都受 API Key 权限范围约束。SDK 调用不带 realm 范围外的数据。如果你的服务只服务一个 Client App，建议给后端使用绑定该 Client App 的 API Key；只有需要跨 Client App 管理时才使用默认的 `admin-api-client` Key。
 
 ## 4. 前端 OAuth 登录
 
@@ -381,6 +383,8 @@ println!("扣费后余额: {}", result.balance_after);
 
 `idempotency_key` 建议每次请求都传。网络超时重试时，相同的 key 不会重复扣费——这个 key 的唯一性由你的业务决定，用请求 ID 或者业务 ID 都行。
 
+如果 SDK 使用的是普通 Client App API Key，这里的 `client_app_id` 必须是该 Key 绑定的 Client App。`admin-api-client` Key 可以为同一 realm 下任意 Client App 扣积分。
+
 余额不足时 Herald 返回错误，你的业务代码需要处理这个情况（拒绝请求或提示用户充值）。
 
 ## 6. 订阅系统
@@ -393,6 +397,8 @@ if sub.status == "active" {
     // 用户有付费订阅
 }
 ```
+
+普通 Client App API Key 只能查询自身绑定 Client App 的订阅状态；`admin-api-client` Key 可查询同一 realm 下任意 Client App。
 
 查询可用的套餐计划展示给用户选择：
 

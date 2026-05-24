@@ -14,6 +14,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::client_app_scope::ensure_client_app_scope;
 use crate::client_helper::ClientAppLookup;
 use herald_api_base::application::http::common::error_codes::ErrorCode;
 use herald_api_base::application::http::common::error_helpers::json_error;
@@ -114,6 +115,10 @@ pub async fn get_subscription(
             "Cross-realm access attempt blocked"
         );
         return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    if let Err(resp) = ensure_client_app_scope(&state, &identity, client_app_id).await {
+        return resp;
     }
 
     // 3. Query subscription status

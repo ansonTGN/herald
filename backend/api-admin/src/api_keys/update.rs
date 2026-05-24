@@ -8,6 +8,7 @@ use herald_api_base::application::http::server::api_entities::{ApiError, ApiResu
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 
+use crate::api_keys::client_app_info::client_app_name;
 use crate::api_keys::types::{ApiKeyListItem, UpdateApiKeyRequest};
 
 /// Update an API Key
@@ -87,6 +88,8 @@ pub async fn update_api_key(
         id: saved.id,
         name: saved.name,
         realm_id: saved.realm_id,
+        client_app_id: saved.client_app_id,
+        client_app_name: client_app_name(&state, saved.client_app_id).await?,
         enabled: saved.enabled,
         expires_at: saved.expires_at.map(|dt| dt.to_rfc3339()),
         last_used_at: saved.last_used_at.map(|dt| dt.to_rfc3339()),

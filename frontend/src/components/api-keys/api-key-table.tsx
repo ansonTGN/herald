@@ -79,6 +79,15 @@ function createApiKeyColumns(config: ApiKeyColumnConfig): ColumnDef<ApiKeyListIt
       },
     },
     {
+      id: 'clientApp',
+      header: 'Client App',
+      cell: ({ row }) => (
+        <span data-testid="api-key-client-app">
+          {row.original.clientAppName ?? row.original.clientAppId ?? '-'}
+        </span>
+      ),
+    },
+    {
       id: 'enabled',
       header: 'Status',
       cell: ({ row }) => (

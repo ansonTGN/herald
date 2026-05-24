@@ -5,6 +5,7 @@ pub mod api_key_auth;
 pub mod authz;
 pub mod billing;
 pub mod client_app;
+mod client_app_scope;
 pub mod client_helper;
 pub mod permission;
 pub mod points;

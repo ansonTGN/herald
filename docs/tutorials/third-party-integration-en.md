@@ -17,7 +17,7 @@ Complete these steps in the Herald admin console before writing code.
 
 **Create a client app** under that realm. A client app represents your service (web admin panel, mobile app, CLI tool). Note the `client_id`. If you need different login behaviors (session duration, redirect URIs), create separate client apps for each.
 
-**Generate an API Key** for the realm. The secret is shown once. Store it somewhere your backend can read at startup -- environment variable or secret manager, not hardcoded.
+**Generate an API Key** for the realm. Choose the client app this backend serves. If you leave it empty, Herald binds the key to `admin-api-client`. The secret is shown once. Store it somewhere your backend can read at startup -- environment variable or secret manager, not hardcoded.
 
 **Define permission points.** Permissions use a `resource:action` format. You define what resources and actions exist based on your domain. Herald stores and enforces them. The action hierarchy matters: `manage` covers `view`, `create`, and `manage` itself. `create` only covers `create`. `view` only covers `view`. Hierarchy only applies within the same resource.
 
@@ -51,6 +51,8 @@ let herald_client = Arc::new(Client::new(
 ```
 
 The API key authenticates your backend to Herald. The SDK sends it as the `X-API-Key` header on every request.
+
+API keys also carry a client app scope. A key bound to `admin-api-client` is realm-wide and can access resources for any client app in that realm. A key bound to an ordinary client app can only access permission checks, subscriptions, and points for that client app. Disabling a client app immediately disables the API keys bound to it.
 
 The cache duration of 5 minutes is fine for most cases. The SDK tracks when it last saw a token and automatically invalidates cached permission checks when that token reaches the 5-minute threshold. You don't need to manage cache invalidation yourself.
 
@@ -180,7 +182,7 @@ The `client_id` in `AuthState` tells Herald which client app this permission che
 
 ## Resource Management via SDK
 
-API keys act as principals in Herald's RBAC system. Assign roles and permissions to an API key the same way you would for a user, and the key can perform the corresponding operations through the SDK.
+API keys act as principals in Herald's RBAC system. Assign roles and permissions to an API key the same way you would for a user, and the key can perform the corresponding operations through the SDK. Roles do not bypass client app scope: an ordinary client app key cannot access another client app's permission checks, subscriptions, or points.
 
 ### Manage Realms
 
@@ -248,7 +250,7 @@ let app = herald_client.get_client_app("my-realm", "app-001").await?;
 
 The server generates the `client_id` when you create a client app. Check the `client_id` field in the response.
 
-All SDK operations are scoped to the API key's realm. The API key determines what you can access -- there is no way to escape the realm boundary through the SDK.
+All SDK operations are scoped to the API key's realm. The API key determines what you can access -- there is no way to escape the realm boundary through the SDK. If your backend serves one client app, prefer an API key bound to that client app. Use the default `admin-api-client` key only for realm-level management across client apps.
 
 ## Frontend OAuth Login
 
@@ -395,6 +397,8 @@ println!("Balance after: {}", result.balance_after);
 
 Always pass an `idempotency_key`. Generate a unique one per logical operation (UUID v7 works well). On network timeout retries, the same key prevents double-charging. The response includes `balance_after` so you can check remaining balance without a separate query.
 
+When the SDK uses an ordinary client app API key, the `client_app_id` here must be the key's bound client app. An `admin-api-client` key can consume points for any client app in the same realm.
+
 ## Subscription System
 
 Query a client app's subscription status to gate features:
@@ -405,6 +409,8 @@ if sub.status == "active" {
     // user has a paid subscription
 }
 ```
+
+An ordinary client app API key can only query the subscription for its bound client app. An `admin-api-client` key can query any client app in the same realm.
 
 List available plans to show upgrade options:
 

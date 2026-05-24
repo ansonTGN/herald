@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::client_app_scope::ensure_client_app_scope;
 use herald_api_base::application::http::common::error_codes::ErrorCode;
 use herald_api_base::application::http::common::error_helpers::json_error;
 use herald_api_base::application::http::rate_limit::{RateLimitConfig, rate_limit};
@@ -366,6 +367,10 @@ pub async fn consume_points_ext(
             return json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidClientAppIdFormat);
         }
     };
+
+    if let Err(resp) = ensure_client_app_scope(&state, &identity, client_app_id).await {
+        return resp;
+    }
 
     // 5. Create input DTO
     let input = ConsumePointsInput {

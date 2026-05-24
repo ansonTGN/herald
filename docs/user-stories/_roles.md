@@ -221,6 +221,11 @@ Herald 系统（System Actor，非角色）
 
 权限检查时通过 `check_principal_permission` 方法按 Principal Type 查找角色和策略。
 
+API Key 还携带 Client App 作用域：
+- 绑定 `admin-api-client` 时，API Key 的资源范围为所属 Realm。
+- 绑定普通 Client App 时，API Key 只能访问该 Client App 的资源；用户等 Realm 级资源仍按 Realm 隔离和 RBAC 权限控制。
+- 禁用绑定的 Client App 会使该 Client App 下的 API Key 无法通过外部 API 认证。
+
 ---
 
 ## 权限层级

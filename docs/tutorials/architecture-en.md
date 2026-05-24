@@ -134,7 +134,7 @@ Seven crates form the API layer:
 | `api-admin` | User CRUD, role management, permission definition management | session + inject_identity |
 | `api-billing` | Plans, subscriptions, payment webhooks (Stripe/Creem/WeChat/Shopify), invoices, points package purchases | mixed |
 | `api-oauth` | OAuth login (GitHub/Google/WeChat), OAuth configuration management | mixed |
-| `api-ext` | Third-party API: permission checks, subscription queries, points balance and consumption | API Key |
+| `api-ext` | Third-party API: permission checks, subscription queries, points balance and consumption, isolated by the API key's bound client app | API Key |
 | `api-points` | Points balance, transaction history, consumption, top-up | session or API Key |
 
 `api` crate's `create_api_routes()` is the single entry point for route registration. It nests sub-crate routes under unified prefixes and attaches the `inject_identity` middleware. Each sub-crate defines its own `ApiDoc` (utoipa OpenApi spec), which get merged into one complete OpenAPI document in `build_openapi_spec()`.
@@ -175,6 +175,8 @@ A Rust crate published for third-party applications. Wraps all endpoints under `
 - `get_balance` / `consume_points` — points queries and consumption
 
 The constructor takes `base_url` and `api_key`. All requests include the `X-API-Key` header automatically. Permission checks use a local moka cache with a 5-minute TTL; when a token expires, associated cache entries are cleared in batch.
+
+Each API key is bound to a client app. A key bound to the default `admin-api-client` is realm-wide and can access external API resources for any client app in the same realm. A key bound to an ordinary client app can only access permission checks, subscriptions, and points for that client app. `api-ext` enforces this scope for subscription, points, and permission-check endpoints. API key authentication rechecks the bound client app's enabled state even on cache hits, so disabling a client app immediately blocks its API keys.
 
 ### frontend — React Admin Panel
 

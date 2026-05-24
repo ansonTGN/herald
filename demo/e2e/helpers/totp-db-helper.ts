@@ -15,7 +15,7 @@ import { Pool, PoolClient, QueryResult } from 'pg'
 // ============================================================================
 
 const DEFAULT_DATABASE_URL =
-  process.env.DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/cas_demo'
+  process.env.DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/herald_demo'
 
 const pool = new Pool({
   connectionString: DEFAULT_DATABASE_URL,

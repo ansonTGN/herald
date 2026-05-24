@@ -43,16 +43,17 @@
 - API Key 列表页增加「Roles」操作按钮（打开角色管理对话框）
 - API Key 角色管理对话框（查看、分配、清除角色，即时保存）
 - 创建 API Key 表单增加可选角色选择器（创建成功后自动绑定）
+- 创建 API Key 表单增加 Client App 选择器；未选择时默认绑定内置 `admin-api-client`
+- API Key 列表展示绑定的 Client App 名称
 - 每个 Realm 拥有一个内置 API Key Client App（`client_id = 'admin-api-client'`，默认 `enabled=true`）
 - API Key 认证路径受关联 Client App 的 `enabled` 状态影响（Client App 禁用时其下所有 API Key 均不可用）
+- ext API 对非 `admin-api-client` 的 API Key 执行 Client App 作用域隔离
 
 ### 2.2 不包含功能 (Out of Scope)
 
 - API Key 粒度的 scope/permission 直接绑定（走 RBAC 角色中转）
-- ext API 端点变更（现有 ext 端点已通过 RBAC 做权限检查）
 - SDK 变更
 - 新的数据存储结构
-- 自建 Client App 使用 API Key 内置权限
 
 ### 2.3 依赖项
 
@@ -74,6 +75,7 @@
 - **与用户角色分配交互一致**：复用 RoleSelector 组件，即时保存模式
 - **内置角色保护**：API Key 不允许绑定内置角色（`is_builtin=true`），仅可绑定自定义角色
 - **Client App 全局开关**：内置 API Key Client App 的 `enabled` 状态作为其下所有 API Key 的全局开关
+- **Client App 作用域隔离**：绑定非内置 Client App 的 API Key 只能访问该 Client App 的资源
 - **创建时可选角色**：创建 API Key 时可选角色，角色绑定失败不回滚 Key 创建
 
 ---
@@ -85,7 +87,9 @@
 - API Key 角色管理需 `roles.manage` 权限（与用户角色分配一致）
 - API Key 角色查看需 `api_keys.view` 权限
 - API Key 不允许绑定内置角色（`is_builtin=true`），仅可绑定自定义角色
-- 角色绑定必须使用内置 API Key Client App 的 client_id，不能使用自建 Client 或 admin-web-console
+- API Key 必须绑定到本 Realm 下存在的 Client App；未显式选择时绑定内置 `admin-api-client`
+- 绑定 `admin-api-client` 的 API Key 保持 Realm 级 ext API 访问范围
+- 绑定普通 Client App 的 API Key 只能访问该 Client App 的订阅、套餐分配、积分消费和权限检查上下文
 - 禁用单个 API Key 只更新该 Key 自身的 `enabled` 状态，不影响内置 Client App
 - 角色替换采用 last-write-wins 语义（与用户角色分配一致）
 - 并发策略不使用乐观锁，前端通过 invalidate 缓存保证 UI 最终一致
@@ -94,6 +98,7 @@
 
 - 角色绑定失败时不回滚 API Key 创建，仍展示明文 Key，toast 提示用户稍后手动管理角色
 - Client App 被禁用时，其下所有 API Key 认证均不可用
+- 普通 Client App API Key 访问其他 Client App 资源时返回权限不足
 - 无 `roles.manage` 权限时「Roles」按钮隐藏，角色 badge 仍可见（由 `api_keys.view` 控制）
 
 ---
@@ -116,14 +121,21 @@
 3. **内置 API Key Client App**
    - 每个 Realm 拥有一个内置 API Key Client App（`client_id = 'admin-api-client'`）
    - 默认 `enabled=true`
-   - API Key 创建时复用该 Client App
+   - API Key 创建时未选择 Client App 则复用该 Client App
    - Client App 被禁用时，其下所有 API Key 均不可用
+
+4. **API Key Client App 隔离** -- US-RA-018
+   - 创建 API Key 时可选择本 Realm 下的 Client App
+   - 列表和详情展示绑定的 Client App
+   - 绑定普通 Client App 的 API Key 只能访问该 Client App 的 ext API 资源
+   - 绑定 `admin-api-client` 的 API Key 可访问本 Realm 内全部 ext API 资源
 
 ### 5.2 验收目标
 
 - US-RA-016 全部验收场景通过
 - US-RA-017 全部验收场景通过
 - API Key 角色变更后 ext API 权限立即生效
+- API Key 绑定普通 Client App 后，不能访问其他 Client App 的订阅、套餐分配、积分消费和权限检查上下文
 - 现有用户角色分配功能不受影响
 - 现有 API Key 列表的分页和筛选行为不受影响
 
@@ -136,6 +148,7 @@
 - API Key 角色查询和替换使用 Session 认证（管理后台用户登录，非 API Key 认证）
 - 读取操作检查 `api_keys.view` 权限，写操作检查 `roles.manage` 权限
 - Realm 隔离：只能操作当前 Realm 下的 API Key
+- Client App 隔离：创建 API Key 时提供的 Client App 必须属于当前 Realm；ext API 对普通 Client App API Key 强制目标 Client App 等于绑定 Client App
 - 角色替换采用 last-write-wins 语义（与用户角色分配一致）
 - 并发策略不使用乐观锁，前端通过 invalidate 缓存保证 UI 最终一致
 
@@ -146,6 +159,7 @@
 **适用性**: 适用
 
 - API Key 列表页每行新增角色 badge 列和「Roles」操作按钮
+- API Key 列表页显示 Client App 列；创建页在名称后显示 Client App 选择器
 - 角色对话框复用 RoleSelector 组件，交互模式与用户角色分配一致（即时保存，无确认按钮）
 - 创建 API Key 表单中角色选择区仅对具备 `roles.manage` 权限的用户显示
 - 角色绑定失败时 toast 提示，不阻断明文 Key 展示
@@ -162,6 +176,8 @@
 - **内置 Client App 默认状态**：`enabled=true`
 - **创建时绑定失败策略**：不回滚 API Key 创建，保留明文 Key 展示，toast 提示用户稍后手动管理角色
 - **创建表单权限门控**：无 `roles.manage` 权限时不显示角色选择区，创建 API Key 仍由 `api_keys.manage` 控制
+- **Client App 默认值**：创建 API Key 未选择 Client App 时默认绑定 `admin-api-client`
+- **超级范围判断**：仅 `client_id = 'admin-api-client'` 的绑定视为 Realm 级 API Key；其他 Client App 均按自身作用域隔离
 
 ---
 

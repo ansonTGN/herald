@@ -13,6 +13,7 @@ function normalizeExpiresAt(value: string): string | undefined {
 
 export const createApiKeySchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name must be at most 100 characters'),
+  clientAppId: z.string().uuid().optional(),
   expiresAt: z
     .string()
     .optional()

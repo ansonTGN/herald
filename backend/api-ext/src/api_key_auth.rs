@@ -90,13 +90,30 @@ pub async fn api_key_auth_middleware(
             );
         }
 
-        // Check if the associated Client App is enabled
-        if !cached.client_app_enabled {
-            warn!(
-                "API key's Client App is disabled (cache path): {:?}",
-                cached.id
-            );
-            return json_error(StatusCode::UNAUTHORIZED, ErrorCode::ClientAppDisabled);
+        // Check the associated Client App live, even on cache hit, so disabling
+        // a Client App immediately blocks its API keys.
+        if let Some(app_id) = cached.client_app_id {
+            match client_app::Entity::find_by_id(app_id)
+                .one(state.db.as_ref())
+                .await
+            {
+                Ok(Some(app)) if app.enabled => {}
+                Ok(Some(_)) => {
+                    warn!(
+                        "API key's Client App is disabled (cache path): {:?}",
+                        cached.id
+                    );
+                    return json_error(StatusCode::UNAUTHORIZED, ErrorCode::ClientAppDisabled);
+                }
+                Ok(None) => {
+                    warn!("API key references non-existent Client App: {}", app_id);
+                    return json_error(StatusCode::UNAUTHORIZED, ErrorCode::ClientAppDisabled);
+                }
+                Err(e) => {
+                    error!("Database error checking Client App enabled status: {}", e);
+                    return json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError);
+                }
+            }
         }
 
         // Convert cached value to domain entity and inject identity

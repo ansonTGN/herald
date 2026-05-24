@@ -4,6 +4,7 @@ use herald_api_base::application::http::server::api_entities::{ApiError, ApiResu
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 
+use crate::api_keys::client_app_info::client_app_name;
 use crate::api_keys::types::ApiKeyListItem;
 
 /// Get a specific API Key by ID
@@ -58,6 +59,8 @@ pub async fn get_api_key(
         id: api_key.id,
         name: api_key.name,
         realm_id: api_key.realm_id,
+        client_app_id: api_key.client_app_id,
+        client_app_name: client_app_name(&state, api_key.client_app_id).await?,
         enabled: api_key.enabled,
         expires_at: api_key.expires_at.map(|dt| dt.to_rfc3339()),
         last_used_at: api_key.last_used_at.map(|dt| dt.to_rfc3339()),

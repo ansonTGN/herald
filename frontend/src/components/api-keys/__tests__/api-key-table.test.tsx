@@ -26,6 +26,19 @@ function makeKey(overrides: Partial<ApiKeyListItem> & { id: string }): ApiKeyLis
 // ---------------------------------------------------------------------------
 
 describe('ApiKeyTable roles column', () => {
+  it('shows the bound Client App name when present', () => {
+    const key = makeKey({
+      id: 'k-client-app',
+      name: 'Scoped Key',
+      clientAppId: '018f6f3a-7f25-7c00-9a2f-000000000001',
+      clientAppName: 'Mobile App',
+    })
+
+    render(<ApiKeyTable data={[key]} />)
+
+    expect(screen.getByTestId('api-key-client-app')).toHaveTextContent('Mobile App')
+  })
+
   describe('shows all badges when 2 or fewer roles', () => {
     const cases = [
       {

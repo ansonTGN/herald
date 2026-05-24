@@ -112,7 +112,8 @@ export const SELECTORS = {
     container: '[data-testid="users-page"]',
     heading: '[data-testid="users-heading"]',
     table: '[data-testid="users-table"]',
-    addButton: '[data-testid="add-user-button"], [data-testid="create-user-button"]',
+    addButton:
+      '[data-testid="add-user-button"], [data-testid="create-user-button"]',
     searchInput: '[data-testid="users-search-input"]',
   },
 
@@ -147,7 +148,8 @@ export const SELECTORS = {
     addButton: '[data-testid="permission-create-button"]',
     // Create dialog
     createNameInput: '[data-testid="permission-create-name-input"]',
-    createDescriptionInput: '[data-testid="permission-create-description-input"]',
+    createDescriptionInput:
+      '[data-testid="permission-create-description-input"]',
     createSubmitButton: '[data-testid="permission-create-submit-button"]',
     // Edit dialog
     editNameInput: '[data-testid="permission-edit-name-input"]',
@@ -163,7 +165,8 @@ export const SELECTORS = {
     container: '[data-testid="realms-page"]',
     heading: '[data-testid="realms-heading"]',
     table: '[data-testid="realms-table"]',
-    addButton: '[data-testid="add-realm-button"], [data-testid="create-realm-button"]',
+    addButton:
+      '[data-testid="add-realm-button"], [data-testid="create-realm-button"]',
   },
 
   /**
@@ -234,14 +237,16 @@ export const SELECTORS = {
     totpVerifySubmitButton: '[data-testid="totp-verify-submit-button"]',
     totpVerifyLoading: '[data-testid="totp-verify-loading"]',
     // Common Setup Page Elements
-    totpSavedBackupCodesCheckbox: '[data-testid="totp-saved-backup-codes-checkbox"]',
+    totpSavedBackupCodesCheckbox:
+      '[data-testid="totp-saved-backup-codes-checkbox"]',
     totpSavedBackupCodesLabel: '[data-testid="totp-saved-backup-codes-label"]',
     // TOTP Disable Form (Dialog)
     totpDisablePasswordInput: '[data-testid="totp-disable-password-input"]',
     totpDisableCancelButton: '[data-testid="totp-disable-cancel-button"]',
     totpDisableSubmitButton: '[data-testid="totp-disable-submit-button"]',
     // TOTP Regenerate Form (Dialog)
-    totpRegeneratePasswordInput: '[data-testid="totp-regenerate-password-input"]',
+    totpRegeneratePasswordInput:
+      '[data-testid="totp-regenerate-password-input"]',
     totpRegenerateCancelButton: '[data-testid="totp-regenerate-cancel-button"]',
     // Backup Codes
     backupCodesCopyAllButton: '[data-testid="backup-codes-copy-all-button"]',
@@ -299,7 +304,8 @@ export const SELECTORS = {
     // Security tab
     enabledSwitch: '[data-testid="client-app-enabled-switch"]',
     sessionTtlInput: '[data-testid="session-ttl-input"]',
-    sessionTtlPreset: (label: string) => `[data-testid="session-ttl-preset-${label}"]`,
+    sessionTtlPreset: (label: string) =>
+      `[data-testid="session-ttl-preset-${label}"]`,
     sessionRenewalTtlInput: '[data-testid="session-renewal-ttl-input"]',
     deviceCodeGrantSwitch: '[data-testid="device-code-grant-switch"]',
     regenerateSecretSwitch: '[data-testid="regenerate-secret-switch"]',
@@ -325,6 +331,7 @@ export const SELECTORS = {
     expires: '[data-testid="api-key-expires"]',
     lastUsed: '[data-testid="api-key-last-used"]',
     usageCount: '[data-testid="api-key-usage-count"]',
+    clientApp: '[data-testid="api-key-client-app"]',
     editButton: '[data-testid="edit-api-key-button"]',
     deleteButton: '[data-testid="delete-api-key-button"]',
     rolesCell: '[data-testid="api-key-roles-cell"]',
@@ -341,6 +348,11 @@ export const SELECTORS = {
     pageTitle: '[data-testid="page-title"]',
     backButton: '[data-testid="api-key-form-back-button"]',
     nameInput: '[data-testid="api-key-name-input"]',
+    clientAppSelectorTrigger: '[data-testid="client-app-selector-trigger"]',
+    clientAppSelectorSearch: '[data-testid="client-app-selector-search"]',
+    clientAppSelectorDefault: '[data-testid="client-app-selector-default"]',
+    clientAppSelectorItem: (appId: string) =>
+      `[data-testid="client-app-selector-item-${appId}"]`,
     enabledSwitch: '[data-testid="api-key-enabled-switch"]',
     expiresAtInput: '[data-testid="api-key-expires-at-input"]',
     expiresAtClearButton: '[data-testid="api-key-expires-at-clear-button"]',
@@ -380,7 +392,8 @@ export const SELECTORS = {
     dialogClose: '[data-testid="api-key-roles-dialog-close"]',
     roleSelectorTrigger: '[data-testid="role-selector-trigger"]',
     roleSelectorSearch: '[data-testid="role-selector-search"]',
-    roleSelectorItem: (roleId: string) => `[data-testid="role-selector-item-${roleId}"]`,
+    roleSelectorItem: (roleId: string) =>
+      `[data-testid="role-selector-item-${roleId}"]`,
   },
 
   /**
@@ -405,8 +418,10 @@ export const SELECTORS = {
     // Feedback
     // Sonner toast uses .data-[state=open]:animate-in to show toasts
     toast: '[data-testid="toast"], [data-sonner-toast]',
-    toastMessage: '[data-testid="toast-message"], [data-sonner-toast] [data-description]',
-    successMessage: '[data-testid="success-message"], [data-sonner-toast].success',
+    toastMessage:
+      '[data-testid="toast-message"], [data-sonner-toast] [data-description]',
+    successMessage:
+      '[data-testid="success-message"], [data-sonner-toast].success',
     errorMessage: '[data-testid="error-message"], [data-sonner-toast].error',
 
     // Loading
@@ -437,7 +452,8 @@ export const SELECTORS = {
     applyFilterButton: '[data-testid="apply-filter-button"]',
     // History table
     historyRow: (index: number) => `[data-testid="history-row-${index}"]`,
-    viewDetailsButton: (index: number) => `[data-testid="view-details-${index}"]`,
+    viewDetailsButton: (index: number) =>
+      `[data-testid="view-details-${index}"]`,
     previousPageButton: '[data-testid="previous-page-button"]',
     nextPageButton: '[data-testid="next-page-button"]',
   },
@@ -454,19 +470,20 @@ export const SELECTORS = {
     backButton: '[data-testid="back-button"]',
     // Timeline events
     timelineEvent: (index: number) => `[data-testid="timeline-event-${index}"]`,
-    viewEventDetailsButton: (index: number) => `[data-testid="view-event-details-${index}"]`,
+    viewEventDetailsButton: (index: number) =>
+      `[data-testid="view-event-details-${index}"]`,
     // Event details dialog
     eventDetailDialog: '[data-testid="event-detail-dialog"]',
     // Event badges (parameterized by event type)
     eventBadge: (
       type:
-        | 'created'
-        | 'upgraded'
-        | 'downgraded'
-        | 'canceled'
-        | 'renewed'
-        | 'reactivated'
-        | 'expired'
+        | "created"
+        | "upgraded"
+        | "downgraded"
+        | "canceled"
+        | "renewed"
+        | "reactivated"
+        | "expired",
     ) => `[data-testid="event-badge-${type}"]`,
   },
 
@@ -504,15 +521,22 @@ export const SELECTORS = {
     providerMappingFormDialog: '[data-testid="provider-mapping-form-dialog"]',
     providerMappingProviderSelectTrigger:
       '[data-testid="provider-mapping-provider-select-trigger"]',
-    providerMappingExternalProductIdInput: '[data-testid="provider-mapping-product-id-input"]',
-    providerMappingExternalPriceIdInput: '[data-testid="provider-mapping-price-id-input"]',
-    providerMappingSubmitButton: '[data-testid="provider-mapping-submit-button"]',
-    providerMappingCancelButton: '[data-testid="provider-mapping-cancel-button"]',
+    providerMappingExternalProductIdInput:
+      '[data-testid="provider-mapping-product-id-input"]',
+    providerMappingExternalPriceIdInput:
+      '[data-testid="provider-mapping-price-id-input"]',
+    providerMappingSubmitButton:
+      '[data-testid="provider-mapping-submit-button"]',
+    providerMappingCancelButton:
+      '[data-testid="provider-mapping-cancel-button"]',
     providerMappingBackButton: '[data-testid="back-to-billing-button"]',
     // Dynamic provider mapping buttons
-    editMappingButton: (id: string) => `[data-testid="edit-mapping-button-${id}"]`,
-    toggleMappingButton: (id: string) => `[data-testid="toggle-mapping-button-${id}"]`,
-    deleteMappingButton: (id: string) => `[data-testid="delete-mapping-button-${id}"]`,
+    editMappingButton: (id: string) =>
+      `[data-testid="edit-mapping-button-${id}"]`,
+    toggleMappingButton: (id: string) =>
+      `[data-testid="toggle-mapping-button-${id}"]`,
+    deleteMappingButton: (id: string) =>
+      `[data-testid="delete-mapping-button-${id}"]`,
     // Delete confirmation dialog
     confirmDeleteButton: '[data-testid="confirm-delete-button"]',
   },
@@ -536,12 +560,18 @@ export const SELECTORS = {
     transactionsSection:
       '[data-testid="transaction-history-table"], [data-testid="no-transactions"]',
     transactionsTable: '[data-testid="transaction-history-table"]',
-    transactionRow: (index: number) => `[data-testid="transaction-row-${index}"]`,
-    transactionType: (index: number) => `[data-testid="transaction-type-${index}"]`,
-    transactionAmount: (index: number) => `[data-testid="transaction-amount-${index}"]`,
-    transactionBalance: (index: number) => `[data-testid="transaction-balance-${index}"]`,
-    transactionDescription: (index: number) => `[data-testid="transaction-description-${index}"]`,
-    transactionTime: (index: number) => `[data-testid="transaction-time-${index}"]`,
+    transactionRow: (index: number) =>
+      `[data-testid="transaction-row-${index}"]`,
+    transactionType: (index: number) =>
+      `[data-testid="transaction-type-${index}"]`,
+    transactionAmount: (index: number) =>
+      `[data-testid="transaction-amount-${index}"]`,
+    transactionBalance: (index: number) =>
+      `[data-testid="transaction-balance-${index}"]`,
+    transactionDescription: (index: number) =>
+      `[data-testid="transaction-description-${index}"]`,
+    transactionTime: (index: number) =>
+      `[data-testid="transaction-time-${index}"]`,
     // Transaction Filters
     transactionFilters: '[data-testid="transaction-filters"]',
     filterType: '[data-testid="filter-transaction-type"]',
@@ -553,10 +583,13 @@ export const SELECTORS = {
     // Plan Configs Section
     planConfigsSection: '[data-testid="points-configs-page"]',
     planConfigsTable: '[data-testid="points-configs-page"]',
-    planConfigRow: (configId: string) => `[data-testid="config-card-${configId}"]`,
+    planConfigRow: (configId: string) =>
+      `[data-testid="config-card-${configId}"]`,
     createPlanConfigButton: '[data-testid="create-config-button"]',
-    editPlanConfigButton: (configId: string) => `[data-testid="edit-config-${configId}"]`,
-    deletePlanConfigButton: (configId: string) => `[data-testid="delete-config-${configId}"]`,
+    editPlanConfigButton: (configId: string) =>
+      `[data-testid="edit-config-${configId}"]`,
+    deletePlanConfigButton: (configId: string) =>
+      `[data-testid="delete-config-${configId}"]`,
     // Plan Config Dialog
     planConfigDialog: '[data-testid="points-plan-config-form"]',
     planConfigPlanId: '[data-testid="plan-select"]',
@@ -588,11 +621,16 @@ export const SELECTORS = {
     transactionsSection:
       '[data-testid="transaction-history-table"], [data-testid="no-transactions"]',
     transactionsTable: '[data-testid="transaction-history-table"]',
-    transactionRow: (index: number) => `[data-testid="transaction-row-${index}"]`,
-    transactionType: (index: number) => `[data-testid="transaction-type-${index}"]`,
-    transactionAmount: (index: number) => `[data-testid="transaction-amount-${index}"]`,
-    transactionDescription: (index: number) => `[data-testid="transaction-description-${index}"]`,
-    transactionTime: (index: number) => `[data-testid="transaction-time-${index}"]`,
+    transactionRow: (index: number) =>
+      `[data-testid="transaction-row-${index}"]`,
+    transactionType: (index: number) =>
+      `[data-testid="transaction-type-${index}"]`,
+    transactionAmount: (index: number) =>
+      `[data-testid="transaction-amount-${index}"]`,
+    transactionDescription: (index: number) =>
+      `[data-testid="transaction-description-${index}"]`,
+    transactionTime: (index: number) =>
+      `[data-testid="transaction-time-${index}"]`,
     // Transaction Filters
     filterType: '[data-testid="filter-transaction-type"]',
     filterStartTime: '[data-testid="filter-from-date"]',
@@ -610,10 +648,14 @@ export const SELECTORS = {
    */
   points: {
     // Realm Configuration
-    registrationBonusPointsInput: '[data-testid="registration-bonus-points-input"]',
-    freePeriodicPointsAmountInput: '[data-testid="free-periodic-points-amount-input"]',
-    freePeriodicGrantPeriodTypeSelect: '[data-testid="grant-period-type-select"]',
-    freePeriodicValidityDaysInput: '[data-testid="free-periodic-validity-days-input"]',
+    registrationBonusPointsInput:
+      '[data-testid="registration-bonus-points-input"]',
+    freePeriodicPointsAmountInput:
+      '[data-testid="free-periodic-points-amount-input"]',
+    freePeriodicGrantPeriodTypeSelect:
+      '[data-testid="grant-period-type-select"]',
+    freePeriodicValidityDaysInput:
+      '[data-testid="free-periodic-validity-days-input"]',
     saveButton: '[data-testid="save-config-button"]',
     successMessage: '[data-testid="success-message"]',
     errorMessage: '[data-testid="error-message"]',
@@ -663,7 +705,8 @@ export const SELECTORS = {
     v3KeyDisplay: '[data-testid="v3-key-display"]',
     privateKeyDisplay: '[data-testid="private-key-display"]',
     notifyUrlDisplay: '[data-testid="notify-url-display"]',
-    showSecretsButton: '[data-testid="wechat-config-detail"] [data-testid="show-secrets-button"]',
+    showSecretsButton:
+      '[data-testid="wechat-config-detail"] [data-testid="show-secrets-button"]',
     hideSecretsButton: '[data-testid="hide-secrets-button"]',
     editConfigButton: '[data-testid="edit-wechat-button"]',
     deleteConfigButton: '[data-testid="delete-wechat-button"]',
@@ -709,9 +752,12 @@ export const SELECTORS = {
     emptyState: '[data-testid="points-packages-empty-state"]',
     error: '[data-testid="points-packages-error"]',
     // Package list items
-    editButton: (id: string) => `[data-testid="points-package-edit-button-${id}"]`,
-    configureButton: (id: string) => `[data-testid="points-package-configure-button-${id}"]`,
-    deleteButton: (id: string) => `[data-testid="points-package-delete-button-${id}"]`,
+    editButton: (id: string) =>
+      `[data-testid="points-package-edit-button-${id}"]`,
+    configureButton: (id: string) =>
+      `[data-testid="points-package-configure-button-${id}"]`,
+    deleteButton: (id: string) =>
+      `[data-testid="points-package-delete-button-${id}"]`,
   },
 
   /**
@@ -776,7 +822,8 @@ export const SELECTORS = {
   packageSelector: {
     container: '[data-testid="points-packages-selector"]',
     card: (id: string) => `[data-testid="points-package-card-${id}"]`,
-    selectButton: (id: string) => `[data-testid="points-package-select-button-${id}"]`,
+    selectButton: (id: string) =>
+      `[data-testid="points-package-select-button-${id}"]`,
     selected: (id: string) => `[data-testid="points-package-selected-${id}"]`,
     bestValueBadge: '[data-testid="points-package-best-value-badge"]',
   },
@@ -786,9 +833,12 @@ export const SELECTORS = {
    */
   paymentMethodSelector: {
     container: '[data-testid="payment-method-selector"]',
-    button: (platform: string) => `[data-testid="payment-method-button-${platform}"]`,
-    select: (platform: string) => `[data-testid="payment-method-select-${platform}"]`,
-    selected: (platform: string) => `[data-testid="payment-method-selected-${platform}"]`,
+    button: (platform: string) =>
+      `[data-testid="payment-method-button-${platform}"]`,
+    select: (platform: string) =>
+      `[data-testid="payment-method-select-${platform}"]`,
+    selected: (platform: string) =>
+      `[data-testid="payment-method-selected-${platform}"]`,
   },
 
   /**
@@ -885,7 +935,8 @@ export const SELECTORS = {
     empty: '[data-testid="purchase-history-empty"]',
     error: '[data-testid="purchase-history-error"]',
     item: (id: string) => `[data-testid="purchase-history-item-${id}"]`,
-    detailsButton: (id: string) => `[data-testid="purchase-history-details-button-${id}"]`,
+    detailsButton: (id: string) =>
+      `[data-testid="purchase-history-details-button-${id}"]`,
     // Filters
     filterProvider: '[data-testid="filter-provider"]',
     filterStatus: '[data-testid="filter-status"]',
@@ -894,7 +945,7 @@ export const SELECTORS = {
     resetFiltersButton: '[data-testid="reset-filters-button"]',
     applyFiltersButton: '[data-testid="apply-filters-button"]',
   },
-}
+};
 
 /**
  * Selector helper for multiple fallback selectors
@@ -904,7 +955,7 @@ export const SELECTORS = {
  */
 export function getSelector(selector: string | string[]): string {
   if (Array.isArray(selector)) {
-    return selector.join(', ')
+    return selector.join(", ");
   }
-  return selector
+  return selector;
 }

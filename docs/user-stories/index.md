@@ -64,6 +64,7 @@ docs/user-stories/
 | US-RA-015 | 邮件依赖的功能开关前置验证 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-15邮件依赖的功能开关前置验证-us-ra-015) |
 | US-RA-016 | API Key 角色管理 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-16api-key-角色管理-us-ra-016) |
 | US-RA-017 | 创建 API Key 时绑定角色 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-17创建-api-key-时绑定角色-us-ra-017) |
+| US-RA-018 | API Key 按 Client App 隔离 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-18api-key-按-client-app-隔离-us-ra-018) |
 | US-RU-001 | 账号注册 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-1账号注册-us-ru-001) |
 | US-RU-002 | 账号登录 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-2账号登录-us-ru-002) |
 | US-RU-003 | OAuth 第三方登录 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-3oauth-第三方登录-us-ru-003) |

@@ -38,6 +38,18 @@ describe('createApiKeySchema', () => {
       }
     })
 
+    it('should accept optional clientAppId as UUID', () => {
+      const result = createApiKeySchema.safeParse({
+        name: 'Scoped Key',
+        clientAppId: '018f6f3a-7f25-7c00-9a2f-000000000001',
+      })
+
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data.clientAppId).toBe('018f6f3a-7f25-7c00-9a2f-000000000001')
+      }
+    })
+
     it('should strip empty string expiresAt to undefined', () => {
       const result = createApiKeySchema.safeParse({
         name: 'No Expiry Key',
@@ -90,6 +102,15 @@ describe('createApiKeySchema', () => {
       const result = createApiKeySchema.safeParse({
         name: 'Valid Name',
         expiresAt: 12345,
+      })
+
+      expect(result.success).toBe(false)
+    })
+
+    it('should reject invalid clientAppId', () => {
+      const result = createApiKeySchema.safeParse({
+        name: 'Valid Name',
+        clientAppId: 'not-a-uuid',
       })
 
       expect(result.success).toBe(false)

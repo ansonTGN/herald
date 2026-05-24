@@ -5,6 +5,7 @@ use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::client_api_keys::services::ClientApiKeyService;
 
+use crate::api_keys::client_app_info::client_app_name;
 use crate::api_keys::types::RotateApiKeyResponse;
 
 /// Rotate an API Key
@@ -72,10 +73,12 @@ pub async fn rotate_api_key(
     })?;
 
     let response = RotateApiKeyResponse {
+        client_app_name: client_app_name(&state, saved.client_app_id).await?,
         id: saved.id,
         name: saved.name,
         key: plaintext_key,
         realm_id: saved.realm_id,
+        client_app_id: saved.client_app_id,
         enabled: saved.enabled,
         expires_at: saved.expires_at.map(|dt| dt.to_rfc3339()),
         created_at: saved.created_at.to_rfc3339(),

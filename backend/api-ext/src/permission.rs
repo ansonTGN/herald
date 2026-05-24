@@ -13,6 +13,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::client_app_scope::{bound_client_identifier, is_admin_api_key};
 use herald_api_base::application::http::auth::util::load_session;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
@@ -97,7 +98,7 @@ pub struct PermissionCheckResponse {
 )]
 pub async fn check_permission(
     State(state): State<AppState>,
-    Extension(_identity): Extension<Identity>,
+    Extension(identity): Extension<Identity>,
     Json(req): Json<PermissionCheckRequest>,
 ) -> Result<Json<PermissionCheckResponse>, ApiError> {
     // Validate request
@@ -126,6 +127,39 @@ pub async fn check_permission(
             return Ok(denied_response(Some("internal_error".to_string())));
         }
     };
+
+    if !identity.has_access_to_realm(&session_data.realm_id) {
+        tracing::warn!(
+            api_key_realm_id = %identity.realm_id(),
+            session_realm_id = %session_data.realm_id,
+            "Cross-realm permission check blocked"
+        );
+        return Ok(denied_response(Some(
+            "cross_realm_access_forbidden".to_string(),
+        )));
+    }
+
+    let admin_api_key = match is_admin_api_key(&state, &identity).await {
+        Ok(value) => value,
+        Err(_) => return Ok(denied_response(Some("internal_error".to_string()))),
+    };
+    let bound_client_id = match bound_client_identifier(&state, &identity).await {
+        Ok(value) => value,
+        Err(_) => return Ok(denied_response(Some("internal_error".to_string()))),
+    };
+    if !admin_api_key
+        && bound_client_id
+            .as_deref()
+            .is_some_and(|id| id != session_data.client_id)
+    {
+        tracing::warn!(
+            api_key_id = %identity.id(),
+            bound_client_id = ?bound_client_id,
+            session_client_id = %session_data.client_id,
+            "Client App scoped API key attempted permission check for another Client App"
+        );
+        return Ok(denied_response(Some("forbidden".to_string())));
+    }
 
     // 2. Parse user_id from session
     let user_id = match Uuid::parse_str(&session_data.user_id) {

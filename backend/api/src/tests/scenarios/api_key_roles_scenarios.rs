@@ -957,6 +957,24 @@ async fn seed_realm_api_key_client(ctx: &TestContext) -> uuid::Uuid {
     existing_id
 }
 
+/// Creates an ordinary Client App for API key scoping tests.
+async fn seed_scoped_client_app(ctx: &TestContext, client_id: &str, name: &str) -> uuid::Uuid {
+    let app_id = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO client_app (id, realm_id, client_id, name, enabled, redirect_uris, session_ttl_seconds)
+         VALUES ($1, $2, $3, $4, true, '[]'::jsonb, 1800)",
+    )
+    .bind(app_id)
+    .bind(&ctx._realm_id)
+    .bind(client_id)
+    .bind(name)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to seed scoped Client App");
+
+    app_id
+}
+
 // =============================================================================
 // Scenario 12: Creating an API Key uses the realm's built-in API Key Client App
 // =============================================================================
@@ -1016,6 +1034,81 @@ async fn test_create_api_key_uses_realm_api_key_client(ctx: &mut TestContext) {
         db_client_app_id,
         Some(builtin_client_app_id),
         "client_api_keys.client_app_id must point to the realm's built-in API Key Client App"
+    );
+}
+
+// =============================================================================
+// Scenario 12b: Creating an API Key can bind an ordinary Client App
+// =============================================================================
+
+// User Story: docs/user-stories/core/realm-admin.md - US-RA-018
+// Covers: US-RA-018
+//
+// Given: Realm has an ordinary Client App
+// When: POST /api/api-keys/{realmId} with clientAppId
+// Then: 201 Created, response and DB row point to the selected Client App
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_create_api_key_accepts_client_app_scope(ctx: &mut TestContext) {
+    let app = ctx.create_unified_test_router();
+
+    // Given: admin user with api_keys.manage
+    let (token, admin_id) =
+        create_admin_session_with_user(ctx, "apikey-client-scope@test.com", 1800).await;
+    grant_realm_admin_role(ctx, &admin_id).await;
+
+    // Given: realm has an ordinary Client App to scope the API Key to
+    let client_app_id = seed_scoped_client_app(ctx, "scoped-api-client", "Scoped API Client").await;
+
+    // When: creating an API Key with clientAppId
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/api-keys/{}", ctx._realm_id))
+        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({
+                "name": "scoped-client-app-key",
+                "clientAppId": client_app_id
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let resp = app.clone().oneshot(req).await.unwrap();
+
+    // Then: 201 Created with the selected Client App echoed for the UI table
+    assert_eq!(
+        resp.status(),
+        StatusCode::CREATED,
+        "POST create API key with clientAppId should return 201 Created"
+    );
+
+    let resp_json: serde_json::Value = response_json(resp).await;
+    let created_id = resp_json["id"].as_str().expect("Response should have id");
+    assert_eq!(
+        resp_json["clientAppId"].as_str(),
+        Some(client_app_id.to_string().as_str()),
+        "Response should expose the selected Client App id"
+    );
+    assert_eq!(
+        resp_json["clientAppName"].as_str(),
+        Some("Scoped API Client"),
+        "Response should expose the selected Client App name"
+    );
+
+    // Then: DB row client_app_id points to the selected Client App UUID
+    let db_client_app_id: Option<uuid::Uuid> =
+        sqlx::query_scalar("SELECT client_app_id FROM client_api_keys WHERE id = $1")
+            .bind(created_id)
+            .fetch_one(&ctx._app_state.pool)
+            .await
+            .expect("Failed to query client_app_id");
+
+    assert_eq!(
+        db_client_app_id,
+        Some(client_app_id),
+        "client_api_keys.client_app_id must point to the selected Client App"
     );
 }
 

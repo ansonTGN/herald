@@ -71,6 +71,7 @@
 - 应用外观配置（icon_url）
 - Client Secret 重新生成
 - Client App 快速切换（启用/禁用）
+- Client App 作为 API Key 的作用域边界：绑定到该 App 的 API Key 可随 App 禁用而失效
 - URL 安全验证（禁止 javascript: 协议、协议相对 URL）
 
 ### 2.2 不包含功能 (Out of Scope)
@@ -119,6 +120,8 @@ Client App 采用双 ID 系统：
 - Client Secret 由系统自动生成（UUID），仅在创建/重新生成时返回一次
 - 删除 Client App 需要二次确认
 - 会话续期策略在 Session 创建时固化（写入 SessionData），后续配置修改只影响新创建的 Session
+- 禁用 Client App 会使绑定到该 App 的 API Key 在外部 API 认证中不可用
+- 删除 Client App 后，历史 API Key 的 Client App 关联可为空；空关联仅用于兼容旧数据，不应作为新建默认
 
 ### 4.2 关键状态与异常
 
@@ -156,6 +159,7 @@ Client App 采用双 ID 系统：
 - URL 安全验证生效（拒绝 javascript: 协议和协议相对 URL）
 - Client Secret 仅在创建/重新生成时展示一次
 - 所有操作遵守 Realm 隔离原则
+- 作为 API Key 作用域时，普通 Client App 只能授权其自身资源；`admin-api-client` 是系统内置的 Realm 级 API Key 作用域
 
 ---
 
@@ -167,6 +171,7 @@ Client App 采用双 ID 系统：
 - 访问控制：所有操作需 Realm Admin 权限，遵守 Realm 隔离原则
 - 凭证脱敏：Client Secret 不在列表和详情查询中返回，仅在创建/重新生成时展示
 - 详细接口契约、认证方式和错误模型应下沉到技术设计文档
+- Client App 的 `enabled` 状态会被 API Key 认证链路读取，用于统一禁用其下 API Key
 
 ---
 

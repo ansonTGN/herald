@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::client_app_scope::{ensure_client_app_scope, is_admin_api_key};
 use crate::client_helper::ClientAppLookup;
 use herald_api_base::application::http::common::error_codes::ErrorCode;
 use herald_api_base::application::http::common::error_helpers::json_error;
@@ -171,6 +172,10 @@ pub async fn get_subscription(
         Ok(uuid) => uuid,
         Err(e) => return e,
     };
+
+    if let Err(resp) = ensure_client_app_scope(&state, &identity, client_app_uuid).await {
+        return resp;
+    }
 
     // 3. Query subscription
     let subscription = match state
@@ -390,6 +395,10 @@ pub async fn list_plan_assignments(
         Err(e) => return e,
     };
 
+    if let Err(resp) = ensure_client_app_scope(&state, &identity, client_app_uuid).await {
+        return resp;
+    }
+
     // 3. Query plan assignments
     let assignments = match state
         .billing_repository
@@ -508,6 +517,11 @@ pub async fn list_plan_assignments_batch(
         .into_response();
     }
 
+    let admin_api_key = match is_admin_api_key(&state, &identity).await {
+        Ok(value) => value,
+        Err(resp) => return resp,
+    };
+
     // 3. Resolve client app identifiers to UUIDs
     let client_app_lookup = ClientAppLookup::new(state.pool.clone());
     let mut client_app_uuids = Vec::with_capacity(identifiers.len());
@@ -516,7 +530,14 @@ pub async fn list_plan_assignments_batch(
             .find_uuid_by_identifier_required(identifier, &realm_id)
             .await
         {
-            Ok(uuid) => client_app_uuids.push(uuid),
+            Ok(uuid) => {
+                if !admin_api_key
+                    && let Err(resp) = ensure_client_app_scope(&state, &identity, uuid).await
+                {
+                    return resp;
+                }
+                client_app_uuids.push(uuid);
+            }
             Err(e) => return e,
         }
     }

@@ -134,7 +134,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 | `api-admin` | 用户 CRUD、角色管理、权限定义管理 | session + inject_identity |
 | `api-billing` | 套餐、订阅、支付 webhook（Stripe/Creem/微信/Shopify）、发票、积分包购买 | 混合 |
 | `api-oauth` | OAuth 登录（GitHub/Google/微信）、Device Code Grant（RFC 8628）、OAuth 配置管理 | 混合 |
-| `api-ext` | 第三方 API：权限检查、订阅查询、积分余额和消费 | API Key |
+| `api-ext` | 第三方 API：权限检查、订阅查询、积分余额和消费，按 API Key 绑定的 Client App 隔离 | API Key |
 | `api-points` | 积分余额、交易历史、消费、充值 | session 或 API Key |
 
 `api` crate 的 `create_api_routes()` 是路由注册的唯一入口。它把子 crate 的路由 `nest` 到统一前缀下，挂上 `inject_identity` 中间件。每个子 crate 独立定义自己的 `ApiDoc`（utoipa OpenApi spec），最后在 `build_openapi_spec()` 里 merge 成一份完整的 OpenAPI 文档。
@@ -175,6 +175,8 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 - `get_balance` / `consume_points` — 积分查询和消费
 
 构造函数接收 `base_url` 和 `api_key`，所有请求自动带上 `X-API-Key` header。权限检查有本地缓存（moka），5 分钟 TTL，token 过期时批量清除关联缓存。
+
+API Key 绑定到一个 Client App。默认绑定 `admin-api-client` 的 Key 是 realm 级 Key，可以访问同一 realm 下所有 Client App 的外部 API 资源；绑定普通 Client App 的 Key 只能访问该 Client App 的权限检查、订阅和积分资源。`api-ext` 在处理订阅、积分和权限检查时都会校验这个范围；API Key 认证即使命中缓存，也会重新检查绑定 Client App 是否仍启用，因此禁用 Client App 会立即阻断它的 API Key。
 
 ### frontend — React 管理后台
 

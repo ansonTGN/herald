@@ -189,10 +189,8 @@ test.describe('[Regular User] Profile Management Comprehensive Demo Tests', () =
         const page = usersPage.page
 
         await page.goto('/admin/user/security')
-        // 修复：使用角色选择器更精确（避免与按钮文本冲突）
-        await expect(page.getByRole('heading', { name: 'Change Password' })).toBeVisible()
+        await expect(page.locator(SELECTORS.profile.oldPasswordInput)).toBeVisible()
 
-        // 使用统一选择器
         await page.locator(SELECTORS.profile.oldPasswordInput).fill('password')
         await page.locator(SELECTORS.profile.newPasswordInput).fill(newPassword)
         await page.locator(SELECTORS.profile.confirmPasswordInput).fill(newPassword)
@@ -225,7 +223,7 @@ test.describe('[Regular User] Profile Management Comprehensive Demo Tests', () =
         const page = usersPage.page
 
         await page.goto('/admin/user/security')
-        await expect(page.getByRole('heading', { name: 'Change Password' })).toBeVisible()
+        await expect(page.locator(SELECTORS.profile.oldPasswordInput)).toBeVisible()
       })
 
       await test.step('Then: 所有必需字段都存在且可编辑', async () => {

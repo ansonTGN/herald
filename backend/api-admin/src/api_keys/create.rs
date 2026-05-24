@@ -8,12 +8,10 @@ use herald_api_base::application::http::auth::util::require_permission;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::client_api_keys::constants::ADMIN_API_CLIENT_ID;
 use herald_core::domain::client_api_keys::services::ClientApiKeyService;
-use herald_core::entity::client_app;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
+use crate::api_keys::client_app_info::resolve_client_app_for_create;
 use crate::api_keys::types::{CreateApiKeyRequest, CreateApiKeyResponse};
 
 /// Create a new API Key
@@ -71,32 +69,15 @@ pub async fn create_api_key(
     let now = Utc::now();
     let id = Uuid::now_v7().to_string();
 
-    // Resolve the realm's built-in API Key Client App
-    let builtin_client_app = client_app::Entity::find()
-        .filter(client_app::Column::RealmId.eq(&realm_id))
-        .filter(client_app::Column::ClientId.eq(ADMIN_API_CLIENT_ID))
-        .one(state.db.as_ref())
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to query built-in API Key Client App: {e}");
-            ApiError::internal("Failed to create API key")
-        })?;
-
-    let builtin_client_app = match builtin_client_app {
-        Some(app) => app,
-        None => {
-            return Err(ApiError::bad_request(
-                "Realm is missing the built-in API Key Client App. Please contact support.",
-            ));
-        }
-    };
+    let client_app =
+        resolve_client_app_for_create(&state, &realm_id, payload.client_app_id).await?;
 
     let api_key = herald_core::domain::client_api_keys::entities::ClientApiKey {
         id: id.clone(),
         name: payload.name.clone(),
         api_key_hash,
         realm_id: realm_id.clone(),
-        client_app_id: Some(builtin_client_app.id),
+        client_app_id: Some(client_app.id),
         enabled: true,
         expires_at,
         created_at: now,
@@ -114,6 +95,8 @@ pub async fn create_api_key(
         name: saved.name,
         key: plaintext_key,
         realm_id: saved.realm_id,
+        client_app_id: saved.client_app_id,
+        client_app_name: Some(client_app.name),
         enabled: saved.enabled,
         expires_at: saved.expires_at.map(|dt| dt.to_rfc3339()),
         created_at: saved.created_at.to_rfc3339(),
