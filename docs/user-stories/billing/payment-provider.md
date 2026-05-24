@@ -8,6 +8,8 @@
 
 **优先级**: P0
 
+> **待实现**：当前后端仅支持读取 Creem/Stripe 配置，创建/编辑/删除功能尚未实现。
+
 **【用户故事】**
 **作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
 **我希望**：配置支付平台（Creem/Stripe）
@@ -159,12 +161,12 @@ And 页面显示：
   | Updated At        | 2026-03-20 10:00:00 UTC  |
 ```
 
-**场景 4：测试 Webhook 连接**
+**场景 4：测试 Webhook 连接（仅 Shopify 支持）**
 ```gherkin
 Given 我是 realm-1 的管理员
-And 已配置 Stripe 平台
+And 已配置 Shopify 平台
 When 我在配置详情页面点击 "Test Webhook" 按钮
-Then 系统向 Stripe 发送测试 Webhook 事件
+Then 系统向 Shopify 发送测试 Webhook 事件
 And 系统显示测试结果：
   | 测试项           | 状态   |
   | Signature 验证   | 成功    |
@@ -173,11 +175,15 @@ When Webhook 测试失败
 Then 系统显示错误详情和修复建议
 ```
 
+> **注意**：当前仅 Shopify 支持测试连接功能，Stripe 和 Creem 的测试连接功能待实现。
+
 ---
 
 ### 故事 3：编辑支付平台配置 [US-PP-004]
 
 **优先级**: P1
+
+> **待实现**：当前后端仅支持读取 Creem/Stripe 配置，编辑功能尚未实现。
 
 **【用户故事】**
 **作为**：Realm Admin
@@ -260,6 +266,8 @@ And 原有配置保持不变
 ### 故事 4：删除支付平台配置 [US-PP-005]
 
 **优先级**: P1
+
+> **待实现**：当前后端仅支持读取 Creem/Stripe 配置，删除功能尚未实现。
 
 **【用户故事】**
 **作为**：Realm Admin

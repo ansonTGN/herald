@@ -147,7 +147,6 @@ And 我保存更改
 Then 套餐状态更新为 "disabled"
 And 新用户无法看到该套餐
 And 已订阅用户不受影响
-And 该套餐下的所有支付平台映射也一并禁用
 ```
 
 **场景 4：查看套餐详情和支付平台映射**
@@ -724,9 +723,10 @@ Then 我看到提示信息："No history available for this subscription"
 **场景 6：权限隔离**
 ```gherkin
 Given 我是 regular-user-1
-When 我尝试访问用户 regular-user-2 的订阅历史
-Then 我收到权限错误："Access denied"
-And 我无法查看其他用户的历史记录
+And 我通过 Client App "app-a" 关联了订阅
+When 我访问订阅历史
+Then 我只能查看自己通过 Client App 关联的订阅历史
+And 我无法查看其他用户的订阅历史记录
 ```
 
 

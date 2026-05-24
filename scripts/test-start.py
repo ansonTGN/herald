@@ -193,6 +193,7 @@ def main() -> int:
             "--name",
             "cas-test-postgres",
             "--memory=1g",
+            "--shm-size=512m",
             "--cpus=0.5",
             "--restart=unless-stopped",
             "--log-opt",

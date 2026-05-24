@@ -102,7 +102,7 @@ Then Herald 拒绝授权请求（白名单精确匹配，不允许前缀绕过�
 **场景 1：验证用户已登录**
 ```gherkin
 Given 用户已通过 Herald 登录并获得访问令牌
-When 第三方应用使用该令牌和 client_id 请求验证用户登录状态
+When 第三方应用使用该令牌请求验证用户登录状态
 Then 系统确认用户已登录，返回用户标识
 ```
 
@@ -125,13 +125,6 @@ Then 系统返回错误，提示令牌格式无效
 Given 用户的访问令牌已超过有效期
 When 第三方应用使用该令牌请求验证
 Then 系统返回未授权，提示令牌已过期
-```
-
-**场景 5：Client ID 不匹配（失败场景）**
-```gherkin
-Given 令牌是为 client-app-1 颁发的
-When 第三方应用使用 client_id=client-app-2 验证权限
-Then 系统返回禁止访问，提示客户端不匹配
 ```
 
 ---
@@ -165,7 +158,7 @@ Then 系统返回不允许
 ```gherkin
 Given 用户拥有多个资源的不同权限
 When 第三方应用一次请求检查多个资源的权限
-Then 系统返回每个资源的权限检查结果
+Then 系统返回权限检查结果（首次拒绝即停止，不继续检查后续规则）
 ```
 
 **场景 4：所有权限检查通过**
@@ -427,14 +420,14 @@ Then 系统返回订阅信息，包含 has_subscription=false、status=none、ti
 ```gherkin
 Given 客户端应用的订阅状态为 canceled
 When 第三方应用查询该客户端应用的订阅状态
-Then 系统返回 has_subscription=false、status=canceled、tier=free
+Then 系统返回 has_subscription=true、status=canceled 及当前订阅的实际 tier 信息
 ```
 
 **场景 4：查询已过期的订阅**
 ```gherkin
 Given 客户端应用的订阅状态为 expired
 When 第三方应用查询该客户端应用的订阅状态
-Then 系统返回 has_subscription=false、status=expired、tier=free
+Then 系统返回 has_subscription=true、status=expired 及当前订阅的实际 tier 信息
 ```
 
 **场景 5：查询 trial 订阅**

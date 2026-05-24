@@ -36,13 +36,14 @@ And 新 Realm 自动创建管理控制台客户端应用
 And 提供的管理员用户自动分配管理员角色
 ```
 
-**场景 2：Realm ID 必填验证**
+**场景 2：Realm ID 可选，不填则自动生成**
 ```gherkin
 Given 我是 Admin Realm 的管理员
 When 我在创建 Realm 表单中留空 "Realm ID" 字段
 And 我填写其他必填字段并提交
-Then 系统显示验证错误："Realm ID is required"
-And Realm 创建失败
+Then Realm 创建成功
+And 系统自动为该 Realm 生成唯一 ID
+And Realm 列表显示新创建的 Realm（使用自动生成的 ID）
 ```
 
 **场景 3：Realm ID 格式验证**
@@ -51,11 +52,11 @@ Given 我是 Admin Realm 的管理员
 And 我在创建 Realm 表单中输入无效的 Realm ID
 When 我提交表单
 Then 系统显示验证错误：
-  | 错误类型 | 说明                     |
-  | 格式错误 | "Realm ID must be alphanumeric" |
-  | 长度错误 | "Realm ID must be 3-36 characters" |
-  | 保留词   | "Realm ID cannot be a reserved word" |
-  | 已存在   | "Realm ID already exists"            |
+  | 错误类型 | 说明                                                        |
+  | 格式错误 | "Realm ID can only contain letters, numbers, hyphens, and underscores" |
+  | 长度错误 | "Realm ID must be between 3 and 36 characters"                     |
+  | 保留词   | "'{realmId}' is a reserved word and cannot be used as a realm ID"   |
+  | 已存在   | "Realm ID already exists"                                            |
 ```
 
 **场景 4：密码强度验证**
@@ -92,7 +93,7 @@ And 表格包含以下列：
   | Name         | Realm 显示名称     |
   | Created At   | 创建时间           |
   | Updated At   | 更新时间           |
-And 表格默认每页显示 25 个 Realm
+And 表格默认每页显示 20 个 Realm
 And 我可以查看分页控件
 ```
 
@@ -122,11 +123,11 @@ Then 表格显示所有 Realm
 **场景 4：分页导航**
 ```gherkin
 Given 我在 Realms 管理页面
-And 系统中有超过 25 个 Realm
+And 系统中有超过 20 个 Realm
 When 我点击 "Next" 按钮
-Then 表格显示下一页的 25 个 Realm
+Then 表格显示下一页的 20 个 Realm
 And 当我点击 "Previous" 按钮
-Then 表格显示上一页的 25 个 Realm
+Then 表格显示上一页的 20 个 Realm
 And 我可以跳转到指定页码
 ```
 

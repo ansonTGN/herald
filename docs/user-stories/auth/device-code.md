@@ -28,7 +28,7 @@ Then 系统返回设备码（device_code）、用户码（user_code）、验证�
 ```gherkin
 Given 系统返回了用户码（user_code）
 When 用户查看 CLI 输出
-Then 用户码为 8 字符的大写字母和数字组合，以连字符分隔（如 "ABCD-1234"），不包含易混淆字符（0/O、1/I/L）
+Then 用户码为 8 字符的大写辅音字母组合，以连字符分隔（如 "BCDF-GHJK"），不包含易混淆字符（元音和易混淆辅音）
 ```
 
 **场景 3：Client App 已禁用**
@@ -70,7 +70,7 @@ Then 系统提示"设备码已过期"，CLI 工具应引导用户重新发起授
 **场景 1：成功输入设备码并授权**
 ```gherkin
 Given 用户在浏览器访问 Herald 的设备验证页面
-When 用户输入正确的用户码（如 "ABCD-1234"）并提交
+When 用户输入正确的用户码（如 "BCDF-GHJK"）并提交
 Then 系统提示用户登录（如未登录），登录后显示授权确认页面，展示请求授权的 Client App 名称
 When 用户点击"授权"
 Then 系统提示"授权成功，请返回 CLI 工具"
@@ -235,7 +235,7 @@ Then 系统返回验证失败提示
 ## 业务规则与边界说明
 
 1. **Device Code Grant 是 OAuth 2.0 的扩展授权类型**（RFC 8628），适用于无浏览器或输入受限的设备
-2. 用户码（user_code）格式为 8 字符（`XXXX-XXXX`），使用 base-20 编码排除易混淆字符
+2. 用户码（user_code）格式为 8 字符（`XXXX-XXXX`），使用大写辅音字母（BCDFGHJKMNPQRSTVWXYZ）排除元音和易混淆字符
 3. 设备码（device_code）对用户不可见，仅用于后端轮询
 4. 设备码和用户码的默认有效期为 900 秒（15 分钟）
 5. 默认轮询间隔为 5 秒
