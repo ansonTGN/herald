@@ -499,37 +499,23 @@ export class RolesPage extends BasePage {
     return await checkbox.isChecked()
   }
 
-  /**
-   * Save role permissions changes
-   * Note: The role permissions dialog auto-saves on checkbox toggle and has no save button.
-   * This method clicks the close button to dismiss the dialog.
-   */
   async savePermissions(): Promise<void> {
-    // The dialog auto-saves, so we just need to close it
-    const closeButton = this.page.locator('[data-testid="dialog-close-button"], [data-testid="role-permissions-close-button"], [aria-label="Close"]')
+    const saveButton = this.page.locator('[data-testid="role-permissions-save-button"]')
+    await expect(saveButton).toBeEnabled({ timeout: 5000 })
 
-    // Click close button and wait for dialog to close
     const dialog = this.page.locator('[data-testid="role-permissions-dialog"]')
     await Promise.all([
       dialog.waitFor({ state: 'hidden', timeout: 10000 }),
-      this.smartClick(closeButton)
+      this.smartClick(saveButton),
     ])
 
-    // Wait for data table to refresh using role-based selectors
     await expect(this.table.getByRole('row').first()).toBeVisible({ timeout: 5000 })
   }
 
-  /**
-   * Cancel role permissions changes
-   * Note: The role permissions dialog auto-saves on checkbox toggle and has no cancel button.
-   * This method clicks the close button to dismiss the dialog.
-   */
   async cancelPermissions(): Promise<void> {
-    // The dialog auto-saves, so we just need to close it
-    const closeButton = this.page.locator('[data-testid="dialog-close-button"], [data-testid="role-permissions-close-button"], [aria-label="Close"]')
-    await this.smartClick(closeButton)
+    const cancelButton = this.page.locator('[data-testid="role-permissions-cancel-button"]')
+    await this.smartClick(cancelButton)
 
-    // Wait for dialog to close
     const dialog = this.page.locator('[data-testid="role-permissions-dialog"]')
     await expect(dialog).toBeHidden()
   }

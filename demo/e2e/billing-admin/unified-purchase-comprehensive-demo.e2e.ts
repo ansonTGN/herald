@@ -83,8 +83,9 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
         // Click "Create Package" button
         await page.locator(SELECTORS.pointsPackages.addButton).click()
 
-        // Wait for form dialog to appear
-        await expect(page.locator(SELECTORS.pointsPackageForm.dialog)).toBeVisible()
+        // Wait for navigation to form page
+        await page.waitForURL('**/manage/points-packages/new', { timeout: 10000 })
+        await expect(page.locator(SELECTORS.pointsPackageForm.page)).toBeVisible()
 
         // Fill package form
         await page.locator(SELECTORS.pointsPackageForm.nameInput).fill(packageName)
@@ -108,8 +109,8 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
         // Submit form
         await page.locator(SELECTORS.pointsPackageForm.submitButton).click()
 
-        // Wait for dialog to close and success message
-        await expect(page.locator(SELECTORS.pointsPackageForm.dialog)).toBeHidden()
+        // Wait for navigation back to points packages list
+        await page.waitForURL('**/manage/points-packages', { timeout: 10000 })
 
         // Wait for table to reload and show new package
         await expect(page.locator(SELECTORS.pointsPackages.table)).toBeVisible()
@@ -261,7 +262,7 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
 
         // Wait for processing step
         await expect(page.locator(SELECTORS.purchasePoints.stepProcessing)).toBeVisible()
-        await expect(page.locator(SELECTORS.paymentStatus.pending)).toBeVisible()
+        await expect(page.locator(SELECTORS.paymentProviderUI.wechatQrSection)).toBeVisible()
 
         const attemptId = await page
           .waitForFunction(() => {
@@ -324,7 +325,7 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
         await expect(page.locator(SELECTORS.purchaseHistory.list)).toBeVisible()
 
         // Verify purchase appears in history
-        await expect(page.getByTestId(/^purchase-history-item-/)).toBeVisible()
+        await expect(page.getByTestId(/^purchase-history-item-/).first()).toBeVisible()
 
         console.log('[User] ✓ Purchase history verified')
       })
@@ -401,7 +402,7 @@ test.describe('[Unified Purchase] Comprehensive Demo', () => {
 
         // Wait for processing step
         await expect(page.locator(SELECTORS.purchasePoints.stepProcessing)).toBeVisible()
-        await expect(page.locator(SELECTORS.paymentStatus.pending)).toBeVisible()
+        await expect(page.locator(SELECTORS.paymentProviderUI.redirectPrompt)).toBeVisible()
 
         const attemptId = await page
           .waitForFunction(() => {

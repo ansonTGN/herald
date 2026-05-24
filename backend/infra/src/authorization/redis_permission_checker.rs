@@ -92,8 +92,6 @@ impl CacheKey {
 mod cache_ttl {
     /// Short cache for denials (1 minute)
     pub const DENIAL: u64 = 60;
-    /// Standard cache for permission grants (5 minutes)
-    pub const PERMISSION: u64 = 300;
     /// Cache for user roles (5 minutes)
     pub const USER_ROLES: u64 = 300;
     /// Cache for role policies (10 minutes)
@@ -365,6 +363,15 @@ impl PermissionService for RedisPermissionChecker {
     /// Check if a principal has permission to access a resource
     ///
     /// Generalized permission check for any principal type (user, api_key, client).
+    ///
+    /// Uses a two-tier caching strategy:
+    /// - **Denial cache**: negative results (permission denied) are cached with a
+    ///   short TTL to reduce DB load on repeated denied checks.
+    /// - **Grant**: positive results are NOT cached as a top-level permission result.
+    ///   Instead, they are derived from the cached role bindings and role policies,
+    ///   which are invalidated atomically on role changes.  This eliminates the
+    ///   TOCTOU race where a concurrent request re-caches a stale "granted" result
+    ///   after cache invalidation.
     async fn check_principal_permission(
         &self,
         realm_id: &str,
@@ -382,7 +389,7 @@ impl PermissionService for RedisPermissionChecker {
             "Checking principal permission"
         );
 
-        // 1. Check permission result cache
+        // 1. Check denial cache only (positive results are not cached at this level)
         let cache_key = CacheKey::principal_permission(
             realm_id,
             principal_type,
@@ -391,14 +398,16 @@ impl PermissionService for RedisPermissionChecker {
             action,
         );
         if let Some(cached) = self.get_cached_result(&cache_key).await {
-            debug!(
-                cached = cached,
-                "Principal permission check result from cache"
-            );
-            return Ok(cached);
+            if !cached {
+                debug!("Principal permission denied (cached denial)");
+                return Ok(false);
+            }
+            // Stale cached grant from a previous code version — treat as miss.
+            // We do NOT return early for cached=true to avoid the TOCTOU race.
+            debug!("Ignoring stale cached grant, re-evaluating from role bindings");
         }
 
-        // 2. Query principal's roles
+        // 2. Query principal's roles (uses role bindings cache internally)
         let roles = self
             .get_principal_roles(realm_id, principal_type, principal_id)
             .await?;
@@ -412,14 +421,18 @@ impl PermissionService for RedisPermissionChecker {
 
         debug!(count = roles.len(), "Found roles for principal");
 
-        // 3. Check role policies for permission match
+        // 3. Check role policies for permission match (uses role policies cache internally)
         let has_permission = self
             .check_roles_policies(&roles, realm_id, principal_id, resource, action)
             .await?;
 
-        // 4. Cache and return result
-        self.cache_result(&cache_key, has_permission, cache_ttl::PERMISSION)
-            .await;
+        // 4. Only cache denials; grants are derived from role bindings + policies
+        //    which have their own cache layers with proper invalidation.
+        if !has_permission {
+            self.cache_result(&cache_key, false, cache_ttl::DENIAL)
+                .await;
+        }
+
         Ok(has_permission)
     }
 

@@ -213,11 +213,13 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
 
       // Fill Basic tab
       await clientAppsPage.fillBasicTab({
+        clientId: `dc-grant-test-${ts}`,
         name: `DC Grant Test App ${ts}`,
         description: 'Test app for device code grant toggle',
       })
 
-      // Skip Redirect URIs (not required for device code)
+      // Fill Redirect URIs (required by Zod validation)
+      await clientAppsPage.fillRedirectUrisTab([`https://dc-grant-${ts}.example.com/callback`])
 
       // Switch to Security tab and toggle device code grant ON
       await clientAppsPage.fillSecurityTab({
@@ -312,6 +314,7 @@ test.describe('[Device Code] Error Scenarios & Admin Config Toggle', () => {
 
       // Fill Basic tab
       await clientAppsPage.fillBasicTab({
+        clientId: `dc-grant-default-${ts}`,
         name: `DC Grant Default App ${ts}`,
         description: 'Test app with default device code grant (disabled)',
       })

@@ -133,7 +133,7 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
         await page.getByTestId('plan-type-monthly').click()
 
         // Set price
-        await page.getByTestId('plan-price-input').fill('1000')
+        await page.getByTestId('plan-price-input').fill('10')
 
         // Select currency: USD
         await page.getByTestId('plan-currency-select-trigger').click()
@@ -149,7 +149,7 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
         await page.getByTestId('plan-form-submit-button').click()
 
         // Wait for navigation back to billing page (success)
-        await page.waitForURL('**/manage/billing', { timeout: 10000 })
+        await page.waitForURL('**/manage/billing*', { timeout: 10000 })
         await demoLogger.testCode.log('Plan form submitted')
       })
 
@@ -218,7 +218,7 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
       await test.step('When: 提交表单', async () => {
         await page.getByTestId('plan-form-submit-button').click()
         // Wait for navigation back to billing page
-        await page.waitForURL('**/manage/billing', { timeout: 10000 })
+        await page.waitForURL('**/manage/billing*', { timeout: 10000 })
         await demoLogger.testCode.log('Yearly plan created')
       })
 
@@ -267,56 +267,35 @@ test.describe('[Billing Admin] Stripe Payment Comprehensive Demo', () => {
       })
 
       await test.step('Given: 已创建 Client App', async () => {
-        // Navigate directly to wizard page
+        // Navigate to client app creation page
         await page.goto(`/${DEMO_ADMIN.realmId}/manage/client-apps/new`)
-        await expect(page.getByTestId('client-app-wizard')).toBeVisible()
-        await demoLogger.testCode.log('Navigated to client app wizard')
+        await expect(page.getByTestId('client-app-form-page')).toBeVisible()
+        await demoLogger.testCode.log('Navigated to client app form')
 
-        // Step 1: Basic Information
+        // Basic Info tab (default)
         await expect(page.getByTestId('client-app-name-input')).toBeVisible()
+        await page.getByTestId('client-id-input').fill(`test-app-id-${testStartTime}`)
         await page.getByTestId('client-app-name-input').fill(clientAppName)
 
-        // Select App Type
-        await page.getByTestId('client-app-app-type-select').click()
-        await page.getByRole('option', { name: 'Web' }).click()
+        // Switch to Redirect URIs tab
+        await page.getByTestId('tab-redirect-uris').click()
+        await expect(page.getByTestId('redirect-uris-input')).toBeVisible()
 
-        // Select Client Type
-        await page.getByTestId('client-app-client-type-confidential-radio').click()
-        await demoLogger.testCode.log('Filled step 1: Basic Information')
-
-        // Click Next to proceed to Step 2
-        await page.getByTestId('next-button').click()
-
-        // Step 2: Redirect URIs
-        await expect(page.getByTestId('wizard-step-redirect-uris')).toBeVisible()
-
-        // Add redirect URI by clicking the input, typing, and pressing Enter
-        const redirectUriInput = page.getByTestId('redirect-uris-field')
-        await redirectUriInput.fill('https://example.com/callback')
-        await page.keyboard.press('Enter')
+        // Add redirect URI
+        await page.getByTestId('redirect-uris-input-field').fill('https://example.com/callback')
+        await page.getByTestId('redirect-uris-input-add-button').click()
         await demoLogger.testCode.log('Added redirect URI')
 
-        // Click Next to proceed to Step 3
-        await page.getByTestId('next-button').click()
-
-        // Step 3: Security Settings
-        await expect(page.getByTestId('wizard-step-security')).toBeVisible()
-
-        // Use default session TTL (3600s preset)
-        await page.getByTestId('session-ttl-preset-3600').click()
+        // Switch to Security tab
+        await page.getByTestId('tab-security').click()
+        await page.getByTestId('session-ttl-preset-30m').click()
         await demoLogger.testCode.log('Selected security settings')
 
-        // Click Next to proceed to Step 4
-        await page.getByTestId('next-button').click()
-
-        // Step 4: Review & Create
-        await expect(page.getByTestId('wizard-step-review')).toBeVisible()
-
-        // Submit the wizard
+        // Submit the form
         await page.getByTestId('submit-button').click()
 
         // Wait for success message (toast notification)
-        await expect(page.getByText(/created successfully/i)).toBeVisible({ timeout: 10000 })
+        await expect(page.getByText(/Client App created/i)).toBeVisible({ timeout: 10000 })
         await demoLogger.testCode.log('Client app created successfully')
 
         // Wait for navigation back to list page
@@ -769,7 +748,7 @@ async function createStripePlan(
   await page.getByTestId('plan-form-submit-button').click()
 
   // Wait for navigation back to billing page (success)
-  await page.waitForURL('**/manage/billing', { timeout: 10000 })
+  await page.waitForURL('**/manage/billing*', { timeout: 10000 })
 
   await demoLogger.testCode.log(`Plan created successfully: ${options.name}`)
 

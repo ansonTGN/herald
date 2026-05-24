@@ -646,11 +646,17 @@ export const SELECTORS = {
 
   /**
    * WeChat Pay Configuration Selectors
-   * Route: /{realmId}/billing/payment-providers
+   *
+   * Providers list page: /{realmId}/manage/billing/payment-providers
+   * Config form page:    /{realmId}/manage/billing/payment-providers/wechat
+   *
+   * The config form was refactored from a dialog to a dedicated page route.
+   * Page-level selectors use "page-" prefixed data-testids.
    */
   wechatPay: {
-    // Configuration card
-    configCard: '[data-testid="wechat-config-detail"]',
+    // Provider row on the payment providers list page
+    configCard: '[data-testid="wechat-provider-row"]',
+    toggleDetailsButton: '[data-testid="toggle-wechat-details-button"]',
     appIdDisplay: '[data-testid="app-id-display"]',
     merchantIdDisplay: '[data-testid="merchant-id-display"]',
     serialNoDisplay: '[data-testid="serial-no-display"]',
@@ -659,22 +665,22 @@ export const SELECTORS = {
     notifyUrlDisplay: '[data-testid="notify-url-display"]',
     showSecretsButton: '[data-testid="wechat-config-detail"] [data-testid="show-secrets-button"]',
     hideSecretsButton: '[data-testid="hide-secrets-button"]',
-    editConfigButton: '[data-testid="edit-wechat-config-button"]',
-    deleteConfigButton: '[data-testid="delete-wechat-config-button"]',
+    editConfigButton: '[data-testid="edit-wechat-button"]',
+    deleteConfigButton: '[data-testid="delete-wechat-button"]',
 
-    // Configuration form
-    configFormDialog: '[data-testid="wechat-config-form-dialog"]',
-    configForm: '[data-testid="wechat-config-form"]',
-    appIdInput: '[data-testid="app-id-input"]',
-    merchantIdInput: '[data-testid="merchant-id-input"]',
-    serialNoInput: '[data-testid="serial-no-input"]',
-    v3KeyInput: '[data-testid="v3-key-input"]',
-    notifyUrlInput: '[data-testid="notify-url-input"]',
-    privateKeyInput: '[data-testid="private-key-input"]',
-    configSubmitButton: '[data-testid="wechat-config-submit-button"]',
-    configCancelButton: '[data-testid="wechat-config-cancel-button"]',
+    // Configuration form page (dedicated route, not a dialog)
+    configFormPage: '[data-testid="wechat-config-form-page"]',
+    configForm: '[data-testid="wechat-config-page-form"]',
+    appIdInput: '[data-testid="page-app-id-input"]',
+    merchantIdInput: '[data-testid="page-merchant-id-input"]',
+    serialNoInput: '[data-testid="page-serial-no-input"]',
+    v3KeyInput: '[data-testid="page-v3-key-input"]',
+    notifyUrlInput: '[data-testid="page-notify-url-input"]',
+    privateKeyInput: '[data-testid="page-private-key-input"]',
+    configSubmitButton: '[data-testid="wechat-config-page-submit-button"]',
+    configCancelButton: '[data-testid="wechat-config-page-cancel-button"]',
 
-    // Payment providers page
+    // Payment providers list page buttons
     addWechatButton: '[data-testid="add-wechat-button"]',
     editWechatButton: '[data-testid="edit-wechat-button"]',
     deleteWechatButton: '[data-testid="delete-wechat-button"]',
@@ -709,10 +715,10 @@ export const SELECTORS = {
   },
 
   /**
-   * Unified Purchase - Points Package Form Dialog
+   * Unified Purchase - Points Package Form Page
    */
   pointsPackageForm: {
-    dialog: '[data-testid="points-package-form-dialog"]',
+    page: '[data-testid="points-package-form-page"]',
     nameInput: '[data-testid="points-package-name-input"]',
     titleInput: '[data-testid="points-package-title-input"]',
     descriptionInput: '[data-testid="points-package-description-input"]',

@@ -7,6 +7,7 @@ use crate::audit::{
 use crate::authentication::Identity;
 use crate::authorization::{AssignRoleToUserRequest, RoleRepository, UserRoleRepository};
 use crate::client::ports::ClientRepository;
+use crate::client_api_keys::constants::ADMIN_API_CLIENT_ID;
 use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::{RealmPolicy, ensure_policy};
 use crate::rbac_init::RealmInitializationService;
@@ -244,6 +245,56 @@ where
                     "RBAC initialization failed for realm {}: {}",
                     realm.id, e
                 )));
+            }
+        }
+
+        // 2.5 Create built-in API Key Client App (client_id='admin-api-client')
+        {
+            let existing_api_client = self
+                .client_repository
+                .get_client_app_by_client_id(&realm.id, ADMIN_API_CLIENT_ID)
+                .await;
+
+            if existing_api_client.is_err() {
+                tracing::info!(
+                    realm_id = %realm.id,
+                    "Creating built-in API Key Client App"
+                );
+                match self
+                    .client_repository
+                    .create_client_app(crate::client::value_objects::CreateClientAppRequest {
+                        realm_id: realm.id.clone(),
+                        client_id: ADMIN_API_CLIENT_ID.to_string(),
+                        name: "API Key Client".to_string(),
+                        description: Some("Built-in client for API key authentication".to_string()),
+                        redirect_uris: None,
+                        enabled: Some(true),
+                        icon_url: None,
+                        session_ttl_seconds: None,
+                        session_renewal_ttl_seconds: None,
+                        device_code_grant_enabled: None,
+                    })
+                    .await
+                {
+                    Ok(_) => {
+                        tracing::info!(
+                            realm_id = %realm.id,
+                            "Built-in API Key Client App created successfully"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            realm_id = %realm.id,
+                            error = %e,
+                            "Failed to create built-in API Key Client App, rolling back realm creation"
+                        );
+                        let _ = self.realm_repository.delete_realm(&realm.id).await;
+                        return Err(CoreError::InternalServerError(format!(
+                            "Failed to create API Key Client App for realm {}: {}",
+                            realm.id, e
+                        )));
+                    }
+                }
             }
         }
 

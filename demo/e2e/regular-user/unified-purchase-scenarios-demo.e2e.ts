@@ -130,7 +130,9 @@ test.describe('[P0] Admin Operations', () => {
         .getByTestId(/^points-package-edit-button-/)
         .first()
         .click()
-      await expect(page.locator(SELECTORS.pointsPackageForm.dialog)).toBeVisible()
+      // Wait for navigation to edit form page
+      await page.waitForURL('**/manage/points-packages/*/edit', { timeout: 10000 })
+      await expect(page.locator(SELECTORS.pointsPackageForm.page)).toBeVisible()
 
       await page.locator(SELECTORS.pointsPackageForm.titleInput).fill('Updated Title')
       await page.locator(SELECTORS.pointsPackageForm.priceInput).fill('6.99')

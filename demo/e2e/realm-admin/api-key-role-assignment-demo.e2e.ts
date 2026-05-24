@@ -105,6 +105,7 @@ test.describe('[Realm Admin] API Key Role Assignment Demo', () => {
       // Return to list page
       await apiKeyPage.smartClick(apiKeyPage.doneButton)
       await expect(apiKeyPage.container).toBeVisible({ timeout: 5000 })
+      await apiKeyPage.waitForApiKeyByName(TEST_API_KEY_NAME)
     })
 
     // -----------------------------------------------------------------------
@@ -140,9 +141,9 @@ test.describe('[Realm Admin] API Key Role Assignment Demo', () => {
         description: 'Test role for API Key assignment',
       })
 
-      // Assign realm:view permission to the test role
+      // Assign realm.view permission to the test role
       await rolesPage.clickPermissionsButton(TEST_ROLE_NAME)
-      await rolesPage.setPermission('realm:view', true)
+      await rolesPage.setPermission('realm.view', true)
       await rolesPage.savePermissions()
 
       // Extract the roleId from the table (needed for selectRoleInDialog)
@@ -150,6 +151,7 @@ test.describe('[Realm Admin] API Key Role Assignment Demo', () => {
 
       // Navigate back to API Keys page
       await apiKeyPage.goto(REALM_ID)
+      await apiKeyPage.waitForApiKeyByName(TEST_API_KEY_NAME)
 
       // Open roles dialog for the API Key
       await apiKeyPage.openRolesDialog(TEST_API_KEY_NAME)
@@ -201,7 +203,13 @@ test.describe('[Realm Admin] API Key Role Assignment Demo', () => {
     // Step 9: Verify ext API returns 403 after role removal
     // -----------------------------------------------------------------------
     await test.step('Then: Verify ext API returns 403 after role removal', async () => {
-      const status = await callExtApiWithApiKey(revealedApiKey, '/realms')
+      // Wait for backend cache invalidation to propagate and retry
+      let status = 200
+      for (let i = 0; i < 5; i++) {
+        await page.waitForTimeout(500)
+        status = await callExtApiWithApiKey(revealedApiKey, '/realms')
+        if (status === 403) break
+      }
       expect(status).toBe(403)
     })
   })

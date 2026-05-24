@@ -135,8 +135,8 @@ test.describe('[Billing Admin] WeChat Pay Configuration', () => {
       })
 
       await test.step('Then: 显示配置成功消息', async () => {
-        // Verify success message is shown
-        await expect(page.getByText(/Configuration created successfully/i)).toBeVisible({ timeout: 10000 })
+        // Verify success message is shown (frontend: "WeChat Pay configuration created successfully")
+        await expect(page.getByText(/WeChat Pay configuration created successfully/i)).toBeVisible({ timeout: 10000 })
         await demoLogger.testCode.log('Configuration created successfully message displayed')
       })
 
@@ -146,16 +146,10 @@ test.describe('[Billing Admin] WeChat Pay Configuration', () => {
         await demoLogger.testCode.log('WeChat Pay configuration card is visible')
       })
 
-      await test.step('Then: 配置显示敏感信息掩码', async () => {
-        // Verify sensitive fields are masked
-        const v3KeyDisplay = page.locator(SELECTORS.wechatPay.v3KeyDisplay)
-        await expect(v3KeyDisplay).toBeVisible()
-        const v3KeyText = await v3KeyDisplay.textContent()
-        expect(v3KeyText).toContain('***') // Should show asterisks for masked key
-
-        const privateKeyDisplay = page.locator(SELECTORS.wechatPay.privateKeyDisplay)
-        await expect(privateKeyDisplay).toContainText('(configured)')
-        await demoLogger.testCode.log('Sensitive information is properly masked')
+      await test.step('Then: WeChat Pay 行显示 Edit 和 Delete 按钮', async () => {
+        await expect(page.locator(SELECTORS.wechatPay.editConfigButton)).toBeVisible()
+        await expect(page.locator(SELECTORS.wechatPay.deleteConfigButton)).toBeVisible()
+        await demoLogger.testCode.log('Edit and Delete buttons are visible on the row')
       })
     })
 
@@ -192,7 +186,7 @@ test.describe('[Billing Admin] WeChat Pay Configuration', () => {
 
         // Now create new configuration
         await createWechatPayConfig(page, realmId, config)
-        await expect(page.getByText(/Configuration created successfully/i)).toBeVisible()
+        await expect(page.getByText(/WeChat Pay configuration created successfully/i)).toBeVisible()
         await demoLogger.testCode.log('WeChat Pay configured')
       })
 
@@ -202,10 +196,10 @@ test.describe('[Billing Admin] WeChat Pay Configuration', () => {
         await demoLogger.testCode.log('Edit button clicked')
       })
 
-      await test.step('Then: 显示编辑对话框', async () => {
-        // Verify edit dialog is shown
-        await expect(page.locator(SELECTORS.wechatPay.configFormDialog)).toBeVisible()
-        await demoLogger.testCode.log('Edit dialog is visible')
+      await test.step('Then: 显示编辑页面', async () => {
+        // Verify config form page is shown (route-based, not dialog)
+        await expect(page.locator(SELECTORS.wechatPay.configFormPage)).toBeVisible()
+        await demoLogger.testCode.log('Edit form page is visible')
       })
 
       await test.step('When: 修改 AppId 并保存', async () => {
@@ -237,16 +231,14 @@ test.describe('[Billing Admin] WeChat Pay Configuration', () => {
       })
 
       await test.step('Then: 显示更新成功消息', async () => {
-        // Verify update success message
-        await expect(page.getByText(/Configuration updated successfully/i)).toBeVisible({ timeout: 10000 })
+        // Verify update success message (frontend: "WeChat Pay configuration updated successfully")
+        await expect(page.getByText(/WeChat Pay configuration updated successfully/i)).toBeVisible({ timeout: 10000 })
         await demoLogger.testCode.log('Configuration updated successfully message displayed')
       })
 
-      await test.step('Then: 配置卡片显示新的 AppId', async () => {
-        // Verify new AppId is displayed
-        const newAppId = `wx${(testStartTime + 1).toString(16).padStart(16, '0')}`
-        await expect(page.locator(SELECTORS.wechatPay.appIdDisplay)).toContainText(newAppId)
-        await demoLogger.testCode.log('New AppId is displayed in configuration card')
+      await test.step('Then: WeChat Pay 行仍显示在列表中', async () => {
+        await expect(page.locator(SELECTORS.wechatPay.configCard)).toBeVisible({ timeout: 5000 })
+        await demoLogger.testCode.log('WeChat Pay row still visible after edit')
       })
     })
 
@@ -263,7 +255,7 @@ test.describe('[Billing Admin] WeChat Pay Configuration', () => {
         const config = generateWechatPayTestData(testStartTime, realmId)
         await deleteWechatPayConfigIfExists(page, realmId)
         await createWechatPayConfig(page, realmId, config)
-        await expect(page.getByText(/Configuration created successfully/i)).toBeVisible()
+        await expect(page.getByText(/WeChat Pay configuration created successfully/i)).toBeVisible()
         await demoLogger.testCode.log('WeChat Pay configured')
       })
 

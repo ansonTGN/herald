@@ -446,19 +446,21 @@ export class ApiKeysPage extends BasePage {
 
     const manageRolesBtn = row.locator(SELECTORS.apiKeys.manageRolesButton)
 
-    // Click manage-roles button and wait for both dialog and roles API response
-    const [response] = await Promise.all([
-      this.page.waitForResponse(
-        (resp) => resp.url().includes('/api/api-keys/') && resp.url().includes('/roles') && resp.request().method() === 'GET',
-        { timeout: 10000 }
-      ),
-      this.smartClick(manageRolesBtn),
-    ])
+    // Click manage-roles button and wait for dialog to open.
+    // The GET /roles response may be served from React Query cache, so we don't
+    // strictly require a network response — the dialog becoming visible is sufficient.
+    const responsePromise = this.page.waitForResponse(
+      (resp) => resp.url().includes('/api/api-keys/') && resp.url().includes('/roles') && resp.request().method() === 'GET',
+      { timeout: 10000 }
+    ).catch(() => null)
 
-    // Wait for dialog to be visible
+    await this.smartClick(manageRolesBtn)
+
+    // Wait for dialog to be visible (this is the real gate)
     await expect(this.rolesDialog).toBeVisible({ timeout: 10000 })
 
-    this.logger?.testCode.log(`Opened roles dialog for "${apiKeyName}" (status: ${response?.status() ?? 'unknown'})`)
+    const response = await responsePromise
+    this.logger?.testCode.log(`Opened roles dialog for "${apiKeyName}" (status: ${response?.status() ?? 'cached'})`)
   }
 
   /**
@@ -548,7 +550,6 @@ export class ApiKeysPage extends BasePage {
     await this.smartClick(this.roleSelectorTrigger)
 
     await expect(this.roleSelectorSearch).toBeVisible({ timeout: 5000 })
-    await this.roleSelectorSearch.fill(roleName)
 
     const roleItem = this.page.locator(SELECTORS.apiKeyRoles.roleSelectorItem(roleId))
 

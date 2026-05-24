@@ -319,6 +319,10 @@ test.describe('[Billing Admin] WeChat Pay Provider Configuration', () => {
       await test.step('Then: 配置更新成功', async () => {
         await page.goto(`/${realmId}/manage/billing/payment-providers`)
 
+        // Expand the collapsible details to see config fields
+        await page.locator(SELECTORS.wechatPay.toggleDetailsButton).waitFor({ state: 'visible', timeout: 10000 })
+        await page.locator(SELECTORS.wechatPay.toggleDetailsButton).click()
+
         // Verify the update succeeded - check that v3Key is masked (shows first 4 chars + asterisks)
         await expect(page.locator(SELECTORS.wechatPay.v3KeyDisplay)).toContainText('my_v')
         await demoLogger.testCode.log('New v3Key stored and displayed (masked)')
@@ -382,6 +386,10 @@ MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC${testStartTime + 1}
 
       await test.step('Then: 新的私钥加密存储', async () => {
         await page.goto(`/${realmId}/manage/billing/payment-providers`)
+
+        // Expand the collapsible details to see config fields
+        await page.locator(SELECTORS.wechatPay.toggleDetailsButton).waitFor({ state: 'visible', timeout: 10000 })
+        await page.locator(SELECTORS.wechatPay.toggleDetailsButton).click()
 
         // Verify serial number is updated (non-sensitive field)
         await expect(page.locator(SELECTORS.wechatPay.serialNoDisplay)).toContainText(newSerialNo)

@@ -17,6 +17,7 @@
 // =============================================================================
 
 use crate::tests::helpers::auth_helpers::{create_admin_session_with_user, grant_realm_admin_role};
+use crate::tests::helpers::client_helpers::create_test_api_key;
 use crate::tests::response_json;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
@@ -803,6 +804,111 @@ async fn test_api_key_roles_cache_invalidation(ctx: &mut TestContext) {
 }
 
 // =============================================================================
+// Scenario: Cache invalidation after role removal (full round-trip via ext API)
+// =============================================================================
+//
+// Regression test: after removing an API key's role via PUT with roleIds: [],
+// the ext API must return 403 (not 200).
+//
+// This exercises the full stack: admin API role assignment -> cache invalidation
+// -> ext API permission check via X-API-Key header.
+//
+// User Story: docs/user-stories/core/realm-admin.md - US-RA-006
+// Covers: US-RA-006, US-TP-012
+//
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_api_key_roles_cache_invalidation_on_remove(ctx: &mut TestContext) {
+    let app = ctx.create_unified_test_router();
+
+    // Given: admin user with roles.manage
+    let (token, _admin_id) =
+        create_admin_session_with_user(ctx, "apikey-roles-remove-cache@test.com", 1800).await;
+    grant_realm_admin_role(ctx, &_admin_id).await;
+
+    // Given: an API Key with a known plaintext value (for X-API-Key header)
+    let (api_key_plaintext, api_key_entity) =
+        create_test_api_key(ctx, "cache-remove-test-key", true, None).await;
+    let key_id = &api_key_entity.id;
+
+    // Given: a role with realm:view policy
+    let role_id = seed_role(ctx, "role-cache-remove-test").await;
+    let policy_id = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO role_policies (id, role_id, realm_id, resource, action)
+         VALUES ($1, $2, $3, 'realm', 'view')",
+    )
+    .bind(policy_id)
+    .bind(role_id)
+    .bind(&ctx._realm_id)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to seed role policy");
+
+    // Step 1: Assign the role to the API key
+    let req = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
+        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({ "roleIds": [role_id] }).to_string()))
+        .unwrap();
+
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "PUT assign role should succeed"
+    );
+
+    // Step 2: Verify ext API returns 200 (permission granted)
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/ext/realms")
+        .header("X-API-Key", &api_key_plaintext)
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "GET /api/ext/realms should return 200 after role assignment"
+    );
+
+    // Step 3: Remove the role (empty roleIds)
+    let req = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/api-keys/{}/{}/roles", ctx._realm_id, key_id))
+        .header(header::COOKIE, format!("X-Auth={}", token))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({ "roleIds": [] }).to_string()))
+        .unwrap();
+
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "PUT remove role should succeed"
+    );
+
+    // Step 4: Verify ext API returns 403 (permission denied after removal)
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/ext/realms")
+        .header("X-API-Key", &api_key_plaintext)
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "GET /api/ext/realms should return 403 after role removal (cache invalidated)"
+    );
+}
+
+// =============================================================================
 // BE-T03: API Key Client App Lifecycle Scenarios (tests 12-16)
 // =============================================================================
 //
@@ -819,20 +925,36 @@ async fn test_api_key_roles_cache_invalidation(ctx: &mut TestContext) {
 // =============================================================================
 
 /// Creates the built-in API Key Client App (client_id='admin-api-client', enabled=true)
-/// for the test realm and returns its UUID.
+/// for the test realm and returns its UUID. Idempotent: if the row already exists (e.g.
+/// created by realm init), returns the existing UUID instead of failing.
 async fn seed_realm_api_key_client(ctx: &TestContext) -> uuid::Uuid {
     let app_id = uuid::Uuid::now_v7();
-    sqlx::query(
+    let inserted: Option<(uuid::Uuid,)> = sqlx::query_as(
         "INSERT INTO client_app (id, realm_id, client_id, name, enabled, redirect_uris, session_ttl_seconds)
-         VALUES ($1, $2, 'admin-api-client', 'API Key Client', true, '[]'::jsonb, 1800)",
+         VALUES ($1, $2, 'admin-api-client', 'API Key Client', true, '[]'::jsonb, 1800)
+         ON CONFLICT (realm_id, client_id) DO NOTHING
+         RETURNING id",
     )
     .bind(app_id)
     .bind(&ctx._realm_id)
-    .execute(&ctx._app_state.pool)
+    .fetch_optional(&ctx._app_state.pool)
     .await
     .expect("Failed to seed realm API Key Client App");
 
-    app_id
+    if let Some((id,)) = inserted {
+        return id;
+    }
+
+    // Row already exists (created by realm init); fetch its id.
+    let (existing_id,): (uuid::Uuid,) = sqlx::query_as(
+        "SELECT id FROM client_app WHERE realm_id = $1 AND client_id = 'admin-api-client'",
+    )
+    .bind(&ctx._realm_id)
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .expect("Failed to find existing realm API Key Client App");
+
+    existing_id
 }
 
 // =============================================================================
@@ -918,8 +1040,13 @@ async fn test_create_api_key_fails_when_realm_api_key_client_missing(ctx: &mut T
         create_admin_session_with_user(ctx, "apikey-lifecycle-noclient@test.com", 1800).await;
     grant_realm_admin_role(ctx, &admin_id).await;
 
-    // Given: realm does NOT have the built-in API Key Client App
-    // (not seeding it -- the test realm only has 'admin-web-console')
+    // Given: realm does NOT have the built-in API Key Client App.
+    // Realm init now auto-creates it, so we must explicitly remove it.
+    sqlx::query("DELETE FROM client_app WHERE realm_id = $1 AND client_id = 'admin-api-client'")
+        .bind(&ctx._realm_id)
+        .execute(&ctx._app_state.pool)
+        .await
+        .expect("Failed to delete auto-created admin-api-client");
 
     // Count existing API keys before attempt
     let count_before: i64 =

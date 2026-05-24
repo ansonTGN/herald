@@ -102,17 +102,26 @@ test.describe('[OAuth PKCE] Happy Path Demo Tests', () => {
       // Block navigation to the unreachable callback URL
       await blockExternalCallback(page)
 
-      const loginResponsePromise = page.waitForResponse(isLoginApiResponse, { timeout: 15000 })
+      // Intercept the login API response at the network level to capture the body
+      // before the page navigation (window.location.href = redirectTo) destroys
+      // the Playwright response context.
+      let capturedLoginBody: { redirectTo: string } | undefined
+      await page.route('**/api/auth/*/login', async (route) => {
+        const response = await route.fetch()
+        const body = await response.text()
+        try { capturedLoginBody = JSON.parse(body) } catch { /* not JSON */ }
+        await route.fulfill({ response, body })
+      })
 
       await page.getByTestId('email-input').fill(DEMO_ADMIN.email)
       await page.getByTestId('password-input').fill(DEMO_ADMIN.password)
       await page.getByTestId('login-submit-button').click()
 
-      const loginResponse = await loginResponsePromise
-      expect(loginResponse.ok()).toBe(true)
+      // Wait for the intercepted response to be captured
+      await page.waitForResponse(isLoginApiResponse, { timeout: 15000 })
+      expect(capturedLoginBody).toBeTruthy()
 
-      const loginData = await loginResponse.json()
-      const redirectTo: string = loginData.redirectTo
+      const redirectTo: string = capturedLoginBody!.redirectTo
       expect(redirectTo).toContain(redirectUri)
       expect(redirectTo).toContain('code=')
       expect(redirectTo).toContain(`state=${state}`)

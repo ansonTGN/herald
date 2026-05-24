@@ -117,35 +117,58 @@ test.describe('Live: GitHub OAuth Full Flow', () => {
 
     // Step 3: Click GitHub button, validate redirect URL, then pause for manual login
     await test.step('When clicking GitHub OAuth button and authorizing on GitHub', async () => {
-      // Intercept the API response that returns the auth URL
-      const loginResponsePromise = page.waitForResponse(
-        (resp) =>
-          resp.url().includes(`/api/oauth/${REALM_ID}/github/login`) &&
-          resp.request().method() === 'GET',
-        { timeout: 15000 },
-      )
+      // Intercept fetch in the browser to capture the OAuth response before
+      // window.location.href navigates away (which destroys response bodies)
+      await page.evaluate(() => {
+        const origFetch = window.fetch
+        ;(window as unknown as Record<string, unknown>).__oauthCaptured = null
+        window.fetch = async (...args: Parameters<typeof fetch>) => {
+          const response = await origFetch(...args)
+          const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url
+          if (url.includes('/github/login')) {
+            const cloned = response.clone()
+            try {
+              const body = await cloned.json()
+              ;(window as unknown as Record<string, unknown>).__oauthCaptured = body
+            } catch {
+              // ignore parse errors
+            }
+          }
+          return response
+        }
+      })
 
       const githubButton = page.getByTestId('oauth-login-button-github')
       await githubButton.click()
 
-      const loginResponse = await loginResponsePromise
-      expect(loginResponse.ok()).toBeTruthy()
+      // Wait for the redirect to GitHub (frontend does window.location.href)
+      await page.waitForURL('**github.com/**', { timeout: 15_000 })
 
-      const responseBody = await loginResponse.json()
-      const authUrl: string = responseBody.authUrl
-      const stateToken: string = responseBody.state
+      // The redirect URL goes to GitHub. If not logged in, GitHub redirects to
+      // github.com/login?...&return_to=<encoded /login/oauth/authorize URL>.
+      // Extract the actual OAuth URL from return_to if present, or use current URL directly.
+      const currentUrl = page.url()
+      const urlObj = new URL(currentUrl)
+      let authUrl = currentUrl
+
+      if (urlObj.searchParams.has('return_to')) {
+        // GitHub login redirect — the real OAuth URL is encoded in return_to
+        const returnTo = urlObj.searchParams.get('return_to')!
+        authUrl = returnTo.startsWith('http')
+          ? decodeURIComponent(returnTo)
+          : `https://github.com${decodeURIComponent(returnTo)}`
+      }
+
+      const authUrlObj = new URL(authUrl)
+      const stateToken = authUrlObj.searchParams.get('state') ?? ''
 
       // Validate the auth URL structure
       expect(authUrl).toContain('github.com/login/oauth/authorize')
-      const urlObj = new URL(authUrl)
-      expect(urlObj.searchParams.get('client_id')).toBe(secrets.github.clientId)
-      expect(urlObj.searchParams.get('state')).toBe(stateToken)
-      expect(urlObj.searchParams.get('scope')).toContain('user:email')
+      expect(authUrlObj.searchParams.get('client_id')).toBe(secrets.github.clientId)
+      expect(authUrlObj.searchParams.get('state')).toBe(stateToken)
+      expect(authUrlObj.searchParams.get('scope')).toContain('user:email')
       console.log(`[step-3] Auth URL validated: ${authUrl}`)
-
-      // Wait for the redirect to GitHub
-      await page.waitForURL('**github.com/**', { timeout: 15000 })
-      console.log(`[step-3] Redirected to: ${page.url()}`)
+      console.log(`[step-3] Redirected to: ${currentUrl}`)
 
       // >>> MANUAL INTERVENTION REQUIRED <<<
       // The test pauses here. In the opened browser window:

@@ -80,9 +80,9 @@ export async function createWechatPayConfig(
   await expect(addButton).toBeVisible({ timeout: 10000 })
   await addButton.click()
 
-  // Wait for form dialog to be visible and fully rendered
-  await expect(page.locator(SELECTORS.wechatPay.configFormDialog)).toBeVisible({ timeout: 5000 })
-  await page.waitForTimeout(200) // Allow form animations to complete
+  // Wait for config form page to be visible (route-based navigation)
+  await expect(page.locator(SELECTORS.wechatPay.configFormPage)).toBeVisible({ timeout: 5000 })
+  await page.waitForTimeout(200) // Allow form to render
 
   // Fill form fields sequentially to avoid race conditions
   await page.locator(SELECTORS.wechatPay.appIdInput).fill(config.appId)
@@ -97,11 +97,10 @@ export async function createWechatPayConfig(
   await expect(submitButton).toBeEnabled({ timeout: 3000 })
   await submitButton.click()
 
-  // Wait for success message and dialog to close
-  await Promise.all([
-    expect(page.getByText(/Configuration created successfully/i)).toBeVisible({ timeout: 10000 }),
-    expect(page.locator(SELECTORS.wechatPay.configFormDialog)).toBeHidden({ timeout: 10000 })
-  ])
+  // Wait for success toast; page navigates back to providers list after save
+  await expect(page.getByText(/WeChat Pay configuration created successfully/i)).toBeVisible({ timeout: 10000 })
+  // Page navigates back to the providers list after successful creation
+  await expect(page.locator(SELECTORS.wechatPay.configFormPage)).toBeHidden({ timeout: 10000 })
 }
 
 /**
@@ -205,10 +204,13 @@ export async function loginAndNavigateToPaymentProviders(
 }
 
 /**
- * Open WeChat Pay configuration dialog
+ * Open WeChat Pay configuration form page
+ *
+ * Clicking "Add WeChat Pay" or "Edit" navigates to a dedicated route page,
+ * not a dialog. This helper waits for the page to render.
  *
  * @param page - Playwright page object
- * @param mode - Dialog mode: 'add' or 'edit'
+ * @param mode - Page mode: 'add' or 'edit'
  */
 export async function openWechatPayConfigDialog(page: Page, mode: 'add' | 'edit'): Promise<void> {
   if (mode === 'add') {
@@ -222,13 +224,13 @@ export async function openWechatPayConfigDialog(page: Page, mode: 'add' | 'edit'
     await editButton.click()
   }
 
-  // Wait for dialog to be visible and fully rendered
-  await expect(page.locator(SELECTORS.wechatPay.configFormDialog)).toBeVisible({ timeout: 5000 })
+  // Wait for config form page to render (route-based navigation)
+  await expect(page.locator(SELECTORS.wechatPay.configFormPage)).toBeVisible({ timeout: 5000 })
 
   // Wait for form to be ready (first field should be visible)
   await expect(page.locator(SELECTORS.wechatPay.appIdInput)).toBeVisible({ timeout: 3000 })
 
-  // Allow form animations to complete
+  // Allow form to settle
   await page.waitForTimeout(200)
 }
 
@@ -284,11 +286,10 @@ export async function submitWechatPayConfig(page: Page, expectSuccess: boolean =
   await submitButton.click()
 
   if (expectSuccess) {
-    // Wait for success message and dialog to close
-    await Promise.all([
-      expect(page.getByText(/Configuration created successfully|Configuration updated successfully/i)).toBeVisible({ timeout: 10000 }),
-      expect(page.locator(SELECTORS.wechatPay.configFormDialog)).toBeHidden({ timeout: 10000 })
-    ])
+    // Wait for success toast; page navigates back to providers list after save
+    await expect(page.getByText(/WeChat Pay configuration (created|updated) successfully/i)).toBeVisible({ timeout: 10000 })
+    // Page navigates back to the providers list after successful save
+    await expect(page.locator(SELECTORS.wechatPay.configFormPage)).toBeHidden({ timeout: 10000 })
   }
   // For error cases, caller should wait for specific error messages
 }
@@ -307,6 +308,11 @@ export async function verifyConfigDisplay(
 ): Promise<void> {
   // Verify configuration card is visible
   await expect(page.locator(SELECTORS.wechatPay.configCard)).toBeVisible()
+
+  // Expand the collapsible details row to reveal config fields
+  const toggleBtn = page.locator(SELECTORS.wechatPay.toggleDetailsButton)
+  await toggleBtn.waitFor({ state: 'visible', timeout: 10000 })
+  await toggleBtn.click()
 
   // Verify non-sensitive fields are displayed
   await expect(page.locator(SELECTORS.wechatPay.appIdDisplay)).toContainText(config.appId)
