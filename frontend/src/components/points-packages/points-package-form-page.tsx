@@ -15,6 +15,7 @@ import {
   displayPriceToApiPrice,
 } from '@/lib/schemas/points-package-forms'
 import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
 import { NumberField, TextField, TextareaField } from '@/components/shared/form-fields'
@@ -50,6 +51,10 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
               currency: pkg.currency,
               sortOrder: pkg.sortOrder,
               enabled: pkg.enabled,
+              packageType: (pkg.packageType as 'standard' | 'promotional') ?? 'standard',
+              originalPrice: pkg.originalPrice ?? undefined,
+              promoStartTime: pkg.promoStartTime ?? '',
+              promoEndTime: pkg.promoEndTime ?? '',
             }
           : undefined
       ),
@@ -66,6 +71,13 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
           body: {
             ...data,
             price: apiPrice,
+            packageType: data.packageType,
+            originalPrice:
+              data.packageType === 'promotional' && data.originalPrice
+                ? displayPriceToApiPrice(data.originalPrice, data.currency)
+                : null,
+            promoStartTime: data.promoStartTime || null,
+            promoEndTime: data.promoEndTime || null,
           },
         }).then(handleApiResponse)
       }
@@ -79,6 +91,13 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
           currency: data.currency,
           sortOrder: data.sortOrder,
           enabled: data.enabled,
+          packageType: data.packageType,
+          originalPrice:
+            data.packageType === 'promotional' && data.originalPrice
+              ? displayPriceToApiPrice(data.originalPrice, data.currency)
+              : null,
+          promoStartTime: data.promoStartTime || null,
+          promoEndTime: data.promoEndTime || null,
         },
       }).then(handleApiResponse)
     },
@@ -248,6 +267,83 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
                   </div>
                 )}
               </form.Field>
+
+              <form.Field name="packageType">
+                {(field) => (
+                  <div className="space-y-2">
+                    <Label>Package Type</Label>
+                    <RadioGroup
+                      value={field.state.value}
+                      onValueChange={(val) => {
+                        field.handleChange(val as 'standard' | 'promotional')
+                        if (val === 'standard') {
+                          form.setFieldValue('originalPrice', undefined)
+                          form.setFieldValue('promoStartTime', '')
+                          form.setFieldValue('promoEndTime', '')
+                        }
+                      }}
+                      className="flex gap-4"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem
+                          value="standard"
+                          id="package-type-standard"
+                          data-testid="points-package-type-standard"
+                        />
+                        <Label htmlFor="package-type-standard">Standard</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem
+                          value="promotional"
+                          id="package-type-promotional"
+                          data-testid="points-package-type-promotional"
+                        />
+                        <Label htmlFor="package-type-promotional">Promotional</Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+                )}
+              </form.Field>
+
+              <form.Subscribe selector={(state) => state.values.packageType}>
+                {(packageType) =>
+                  packageType === 'promotional' && (
+                    <div className="space-y-4 pl-4 border-l-2 border-primary/20">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <NumberField
+                            form={form}
+                            name="originalPrice"
+                            label="Original Price (Before Discount)"
+                            dataTestId="points-package-original-price-input"
+                            placeholder="19.99"
+                            step="0.01"
+                            helpText="Must be greater than selling price"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <TextField
+                          form={form}
+                          name="promoStartTime"
+                          label="Promotion Start Time"
+                          dataTestId="points-package-promo-start-input"
+                          type="datetime-local"
+                        />
+                        <TextField
+                          form={form}
+                          name="promoEndTime"
+                          label="Promotion End Time"
+                          dataTestId="points-package-promo-end-input"
+                          type="datetime-local"
+                        />
+                      </div>
+                    </div>
+                  )
+                }
+              </form.Subscribe>
             </CardContent>
           </Card>
 

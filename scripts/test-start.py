@@ -82,13 +82,20 @@ def _start_pgdog() -> bool:
 
     # Create PgDog configuration
     # Note: PgDog connects to PostgreSQL via localhost:15433 (host.docker.internal on Windows/Mac)
+    #
+    # Tuning rationale:
+    # - pooler_mode = "transaction": releases server connections between transactions,
+    #   allowing many test clients to share a smaller pool of server connections.
+    # - pool_size = 64: accommodates 8 parallel tests × ~4 connections each + shared pool.
+    # - checkout_timeout = 60000: generous timeout for CI environments with slow I/O.
+    # - workers = 4: more event loops to handle concurrent test traffic.
     pgdog_config = """[general]
 host = "0.0.0.0"
 port = 6432
-workers = 2
-default_pool_size = 32
-min_pool_size = 1
-checkout_timeout = 30000
+workers = 4
+default_pool_size = 64
+min_pool_size = 2
+checkout_timeout = 60000
 idle_timeout = 600000
 healthcheck_timeout = 5000
 healthcheck_interval = 10000
@@ -100,8 +107,8 @@ port = 15433
 database_name = "postgres"
 user = "postgres"
 password = "postgres"
-pool_size = 32
-min_pool_size = 1
+pool_size = 64
+min_pool_size = 2
 """
 
     # PgDog also requires users.toml for authentication
@@ -109,9 +116,9 @@ min_pool_size = 1
 name = "postgres"
 password = "postgres"
 database = "postgres"
-pooler_mode = "session"
-pool_size = 32
-min_pool_size = 1
+pooler_mode = "transaction"
+pool_size = 64
+min_pool_size = 2
 """
 
     # Create Docker network if it doesn't exist
@@ -125,8 +132,8 @@ min_pool_size = 1
         [
             "--name",
             "cas-test-pgdog",
-            "--memory=256m",
-            "--cpus=0.25",
+            "--memory=512m",
+            "--cpus=1.0",
             "--restart=unless-stopped",
             "--log-opt",
             "max-size=10m",

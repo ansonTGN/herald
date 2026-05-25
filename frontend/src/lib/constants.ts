@@ -62,6 +62,7 @@ export const QUERY_KEYS = {
   POINTS_TRANSACTIONS: 'points-transactions',
   POINTS_PLAN_CONFIGS: 'points-plan-configs',
   POINTS_PACKAGES: 'points-packages',
+  EXT_POINTS_PACKAGES: 'ext-points-packages',
   POINTS_PACKAGE: 'points-package',
   POINTS_PACKAGE_PURCHASES: 'points-package-purchases',
   PAYMENT_ATTEMPT_STATUS: 'payment-attempt-status',

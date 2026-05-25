@@ -7,7 +7,7 @@ import { AlertCircle, ArrowLeft, ArrowRight, Loader2 } from 'lucide-react'
 import { createPaymentAttempt, cancelPaymentAttempt } from '@/lib/api-generated'
 import type { PaymentAttemptStatusResponse } from '@/lib/api-generated'
 import {
-  pointsPackagesQueryOptions,
+  pointsPackagesExtQueryOptions,
   paymentProvidersQueryOptions,
   paymentAttemptStatusQueryOptions,
   queryKeys,
@@ -53,7 +53,7 @@ function PurchasePointsPage() {
 
   // Fetch packages and providers
   const { data: packages, isLoading: packagesLoading } = useQuery(
-    pointsPackagesQueryOptions(realmId)
+    pointsPackagesExtQueryOptions(realmId)
   )
   const { data: providers, isLoading: providersLoading } = useQuery(
     paymentProvidersQueryOptions(realmId)

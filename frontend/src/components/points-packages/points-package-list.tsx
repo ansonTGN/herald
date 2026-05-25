@@ -93,6 +93,9 @@ export function PointsPackageList({
             <TableHead>Title</TableHead>
             <TableHead className="text-right">Points</TableHead>
             <TableHead className="text-right">Price</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead className="text-right">Original Price</TableHead>
+            <TableHead>Valid Until</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Sort Order</TableHead>
             <TableHead className="text-right">Actions</TableHead>
@@ -100,11 +103,37 @@ export function PointsPackageList({
         </TableHeader>
         <TableBody>
           {packages.map((pkg) => (
-            <TableRow key={pkg.id}>
+            <TableRow key={pkg.id} className={pkg.isExpired ? 'opacity-50' : ''}>
               <TableCell className="font-medium">{pkg.name}</TableCell>
               <TableCell>{pkg.title}</TableCell>
               <TableCell className="text-right">{pkg.points.toLocaleString()}</TableCell>
               <TableCell className="text-right">{formatPrice(pkg.price, pkg.currency)}</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-1">
+                  {pkg.packageType === 'promotional' ? (
+                    <Badge>Promotional</Badge>
+                  ) : (
+                    <Badge variant="secondary">Standard</Badge>
+                  )}
+                  {pkg.isExpired && <Badge variant="destructive">Expired</Badge>}
+                </div>
+              </TableCell>
+              <TableCell className="text-right">
+                {pkg.originalPrice != null ? (
+                  <span className="line-through text-muted-foreground">
+                    {formatPrice(pkg.originalPrice, pkg.currency)}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </TableCell>
+              <TableCell>
+                {pkg.promoEndTime ? (
+                  new Date(pkg.promoEndTime).toLocaleDateString()
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </TableCell>
               <TableCell>
                 {pkg.enabled ? (
                   <Badge variant="default">Enabled</Badge>

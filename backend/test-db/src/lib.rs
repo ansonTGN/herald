@@ -2,7 +2,7 @@ use sea_orm::DatabaseConnection;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::sync::Arc;
 
-const SHARED_POOL_MAX_CONNECTIONS: u32 = 4;
+const SHARED_POOL_MAX_CONNECTIONS: u32 = 8;
 
 pub struct SharedTestDatabase {
     pub pool: Arc<PgPool>,

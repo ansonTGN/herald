@@ -6,6 +6,7 @@ import {
   getPaymentProviderMappingDefaults,
   updatePointsPackageFormSchema,
   getUpdatePointsPackageDefaults,
+  calculateDiscountPercent,
 } from '../points-package-forms'
 
 describe('Points Package Forms', () => {
@@ -20,6 +21,7 @@ describe('Points Package Forms', () => {
         currency: 'USD',
         sortOrder: 0,
         enabled: true,
+        packageType: 'standard',
       }
 
       const result = pointsPackageFormSchema.safeParse(data)
@@ -130,6 +132,24 @@ describe('Points Package Forms', () => {
       const result = pointsPackageFormSchema.safeParse(data)
       expect(result.success).toBe(false)
     })
+
+    it('should default packageType to standard when omitted', () => {
+      const data = {
+        name: 'test-package',
+        title: 'Test Package',
+        points: 100,
+        price: 9.99,
+        currency: 'USD',
+        sortOrder: 0,
+        enabled: true,
+      }
+
+      const result = pointsPackageFormSchema.safeParse(data)
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data.packageType).toBe('standard')
+      }
+    })
   })
 
   describe('paymentProviderMappingSchema', () => {
@@ -168,6 +188,10 @@ describe('Points Package Forms', () => {
         currency: 'USD',
         sortOrder: 0,
         enabled: true,
+        packageType: 'standard',
+        originalPrice: undefined,
+        promoStartTime: '',
+        promoEndTime: '',
       })
     })
 
@@ -182,6 +206,30 @@ describe('Points Package Forms', () => {
       expect(defaults.name).toBe('custom-package')
       expect(defaults.points).toBe(500)
       expect(defaults.price).toBe(9.99) // Default value
+    })
+
+    it('should convert originalPrice from API cents to display price', () => {
+      const defaults = getPointsPackageDefaults({
+        originalPrice: 1999, // 1999 cents
+        currency: 'USD',
+      })
+
+      expect(defaults.originalPrice).toBe(19.99)
+    })
+
+    it('should handle promo fields from input', () => {
+      const defaults = getPointsPackageDefaults({
+        packageType: 'promotional',
+        originalPrice: 2999, // cents
+        promoStartTime: '2025-01-01T00:00:00Z',
+        promoEndTime: '2025-12-31T23:59:59Z',
+        currency: 'USD',
+      })
+
+      expect(defaults.packageType).toBe('promotional')
+      expect(defaults.originalPrice).toBe(29.99)
+      expect(defaults.promoStartTime).toBe('2025-01-01T00:00:00Z')
+      expect(defaults.promoEndTime).toBe('2025-12-31T23:59:59Z')
     })
   })
 
@@ -243,6 +291,19 @@ describe('Points Package Forms', () => {
     it('should allow partial updates', () => {
       const data = {
         description: 'New description',
+      }
+
+      const result = updatePointsPackageFormSchema.safeParse(data)
+      expect(result.success).toBe(true)
+    })
+
+    it('should accept promo fields in update', () => {
+      const data = {
+        packageType: 'promotional',
+        price: 9.99,
+        originalPrice: 19.99,
+        promoStartTime: '2025-06-01T00:00',
+        promoEndTime: '2025-12-31T23:59',
       }
 
       const result = updatePointsPackageFormSchema.safeParse(data)
@@ -418,6 +479,136 @@ describe('Points Package Forms', () => {
     })
   })
 
+  describe('promo cross-field validation', () => {
+    it('should accept valid promotional package', () => {
+      const data = {
+        name: 'promo-pkg',
+        title: 'Promo Package',
+        points: 100,
+        price: 4.99,
+        currency: 'USD',
+        packageType: 'promotional',
+        originalPrice: 9.99,
+        promoStartTime: '2025-06-01T00:00',
+        promoEndTime: '2025-12-31T23:59',
+      }
+
+      const result = pointsPackageFormSchema.safeParse(data)
+      expect(result.success).toBe(true)
+    })
+
+    it('should reject promotional package without originalPrice', () => {
+      const data = {
+        name: 'promo-pkg',
+        title: 'Promo Package',
+        points: 100,
+        price: 4.99,
+        currency: 'USD',
+        packageType: 'promotional',
+        promoEndTime: '2025-12-31T23:59',
+      }
+
+      const result = pointsPackageFormSchema.safeParse(data)
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        const issues = result.error.issues
+        expect(issues.some((i) => i.path.includes('originalPrice'))).toBe(true)
+      }
+    })
+
+    it('should reject promotional package where originalPrice <= price', () => {
+      const data = {
+        name: 'promo-pkg',
+        title: 'Promo Package',
+        points: 100,
+        price: 9.99,
+        currency: 'USD',
+        packageType: 'promotional',
+        originalPrice: 9.99, // Same as price, not greater
+        promoEndTime: '2025-12-31T23:59',
+      }
+
+      const result = pointsPackageFormSchema.safeParse(data)
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        const issues = result.error.issues
+        expect(issues.some((i) => i.path.includes('originalPrice'))).toBe(true)
+      }
+    })
+
+    it('should reject promotional package without promoEndTime', () => {
+      const data = {
+        name: 'promo-pkg',
+        title: 'Promo Package',
+        points: 100,
+        price: 4.99,
+        currency: 'USD',
+        packageType: 'promotional',
+        originalPrice: 9.99,
+        promoStartTime: '2025-06-01T00:00',
+      }
+
+      const result = pointsPackageFormSchema.safeParse(data)
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        const issues = result.error.issues
+        expect(issues.some((i) => i.path.includes('promoEndTime'))).toBe(true)
+      }
+    })
+
+    it('should reject when promoEndTime is before promoStartTime', () => {
+      const data = {
+        name: 'promo-pkg',
+        title: 'Promo Package',
+        points: 100,
+        price: 4.99,
+        currency: 'USD',
+        packageType: 'promotional',
+        originalPrice: 9.99,
+        promoStartTime: '2025-12-31T23:59',
+        promoEndTime: '2025-01-01T00:00', // Before start
+      }
+
+      const result = pointsPackageFormSchema.safeParse(data)
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        const issues = result.error.issues
+        expect(issues.some((i) => i.path.includes('promoEndTime'))).toBe(true)
+      }
+    })
+
+    it('should accept standard package without promo fields', () => {
+      const data = {
+        name: 'standard-pkg',
+        title: 'Standard Package',
+        points: 100,
+        price: 9.99,
+        currency: 'USD',
+        packageType: 'standard',
+      }
+
+      const result = pointsPackageFormSchema.safeParse(data)
+      expect(result.success).toBe(true)
+    })
+
+    it('should accept standard package even with empty promo fields', () => {
+      const data = {
+        name: 'standard-pkg',
+        title: 'Standard Package',
+        points: 100,
+        price: 9.99,
+        currency: 'USD',
+        packageType: 'standard',
+        originalPrice: undefined,
+        promoStartTime: '',
+        promoEndTime: '',
+      }
+
+      const result = pointsPackageFormSchema.safeParse(data)
+      expect(result.success).toBe(true)
+    })
+  })
+
   describe('paymentProviderMappingSchema edge cases', () => {
     it('should reject externalProductId exceeding max length', () => {
       const data = {
@@ -465,6 +656,10 @@ describe('Points Package Forms', () => {
         currency: 'USD',
         sortOrder: 0,
         enabled: true,
+        packageType: 'standard',
+        originalPrice: undefined,
+        promoStartTime: '',
+        promoEndTime: '',
       })
     })
 
@@ -491,6 +686,47 @@ describe('Points Package Forms', () => {
       expect(defaults.currency).toBe('USD')
       expect(defaults.sortOrder).toBe(0)
       expect(defaults.enabled).toBe(true)
+    })
+
+    it('should convert originalPrice from API cents for update', () => {
+      const pkg = {
+        name: 'promo-pkg',
+        packageType: 'promotional',
+        originalPrice: 2999, // cents
+        currency: 'USD',
+        promoStartTime: '2025-06-01T00:00:00Z',
+        promoEndTime: '2025-12-31T23:59:59Z',
+      }
+
+      const defaults = getUpdatePointsPackageDefaults(pkg)
+
+      expect(defaults.packageType).toBe('promotional')
+      expect(defaults.originalPrice).toBe(29.99)
+      expect(defaults.promoStartTime).toBe('2025-06-01T00:00:00Z')
+      expect(defaults.promoEndTime).toBe('2025-12-31T23:59:59Z')
+    })
+  })
+
+  describe('calculateDiscountPercent', () => {
+    it('should calculate 50% discount', () => {
+      expect(calculateDiscountPercent(5, 10)).toBe(50)
+    })
+
+    it('should calculate 0% discount when prices are equal', () => {
+      expect(calculateDiscountPercent(10, 10)).toBe(0)
+    })
+
+    it('should calculate 25% discount', () => {
+      expect(calculateDiscountPercent(7.5, 10)).toBe(25)
+    })
+
+    it('should round to nearest integer', () => {
+      // 1 - 3.33 / 9.99 = 0.667... rounds to 67
+      expect(calculateDiscountPercent(3.33, 9.99)).toBe(67)
+    })
+
+    it('should handle 99% discount', () => {
+      expect(calculateDiscountPercent(0.01, 1)).toBe(99)
     })
   })
 })

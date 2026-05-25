@@ -1,11 +1,12 @@
-import { type PointsPackageResponse } from '@/lib/api-generated'
+import { type ExtPointsPackageItem } from '@/lib/api-generated'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Check, Star } from 'lucide-react'
 import { formatPrice, apiPriceToDisplayPrice } from '@/lib/schemas/points-package-forms'
 
 interface PointsPackageSelectorProps {
-  packages: PointsPackageResponse[]
+  packages: ExtPointsPackageItem[]
   selectedPackageId: string | null
   onSelect: (packageId: string) => void
   disabled?: boolean
@@ -25,8 +26,12 @@ export function PointsPackageSelector({
     )
   }
 
-  // Find the package with the most points for the "best value" badge
-  const bestValuePackage = packages.reduce((max, pkg) => (pkg.points > max.points ? pkg : max))
+  // Find the non-promotional package with the most points for the "best value" badge
+  const nonPromoPackages = packages.filter((pkg) => pkg.packageType !== 'promotional')
+  const bestValuePackage =
+    nonPromoPackages.length > 0
+      ? nonPromoPackages.reduce((max, pkg) => (pkg.points > max.points ? pkg : max))
+      : null
 
   return (
     <div
@@ -35,8 +40,8 @@ export function PointsPackageSelector({
     >
       {packages.map((pkg) => {
         const isSelected = selectedPackageId === pkg.id
-        const isBestValue = pkg.id === bestValuePackage.id
-        const isAvailable = pkg.enabled
+        const isBestValue = bestValuePackage != null && pkg.id === bestValuePackage.id
+        const isPromo = pkg.packageType === 'promotional'
 
         return (
           <Card
@@ -45,11 +50,19 @@ export function PointsPackageSelector({
               isSelected
                 ? 'border-primary ring-2 ring-primary'
                 : 'border-muted-foreground/25 hover:border-muted-foreground/50'
-            } ${!isAvailable ? 'opacity-50' : ''}`}
+            }`}
             data-testid={`points-package-card-${pkg.id}`}
             data-selected={isSelected ? true : undefined}
           >
-            {isBestValue && (
+            {isPromo && pkg.discountPercent != null ? (
+              <Badge
+                variant="destructive"
+                className="absolute -top-2 -right-2 rounded-full px-3 py-1 text-xs font-bold"
+                data-testid="points-package-discount-badge"
+              >
+                -{pkg.discountPercent}%
+              </Badge>
+            ) : isBestValue ? (
               <div
                 className="absolute -top-2 -right-2 rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground"
                 data-testid="points-package-best-value-badge"
@@ -57,7 +70,7 @@ export function PointsPackageSelector({
                 <Star className="mr-1 inline h-3 w-3" />
                 Best Value
               </div>
-            )}
+            ) : null}
 
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
@@ -88,6 +101,11 @@ export function PointsPackageSelector({
                 <div className="flex items-center justify-between border-t pt-4">
                   <div className="text-sm">
                     <div className="font-medium">Price</div>
+                    {pkg.originalPrice != null && (
+                      <div className="text-sm text-muted-foreground line-through">
+                        {formatPrice(pkg.originalPrice, pkg.currency)}
+                      </div>
+                    )}
                     <div className="text-lg font-bold">{formatPrice(pkg.price, pkg.currency)}</div>
                   </div>
                   <div className="text-right text-sm">
@@ -102,21 +120,33 @@ export function PointsPackageSelector({
                   </div>
                 </div>
 
+                {pkg.promoEndTime && (
+                  <div
+                    className="text-xs text-amber-600 font-medium"
+                    data-testid="points-package-limited-time"
+                  >
+                    {(() => {
+                      const daysLeft = Math.ceil(
+                        (new Date(pkg.promoEndTime).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+                      )
+                      return daysLeft > 0
+                        ? daysLeft <= 7
+                          ? `${daysLeft} days left`
+                          : `Ends ${new Date(pkg.promoEndTime).toLocaleDateString()}`
+                        : 'Ending soon'
+                    })()}
+                  </div>
+                )}
+
                 <Button
                   className="w-full"
                   variant={isSelected ? 'default' : 'outline'}
-                  onClick={() => isAvailable && !disabled && onSelect(pkg.id)}
-                  disabled={!isAvailable || disabled}
+                  onClick={() => !disabled && onSelect(pkg.id)}
+                  disabled={disabled}
                   data-testid={`points-package-select-button-${pkg.id}`}
                 >
-                  {isSelected ? 'Selected' : isAvailable ? 'Select Package' : 'Unavailable'}
+                  {isSelected ? 'Selected' : 'Select Package'}
                 </Button>
-
-                {!isAvailable && (
-                  <div className="text-center text-xs text-muted-foreground">
-                    This package is currently unavailable
-                  </div>
-                )}
               </div>
             </CardContent>
           </Card>

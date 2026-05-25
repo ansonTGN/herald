@@ -37,6 +37,7 @@ import {
   getFreeUserStatistics,
   listPlanPaymentProviders,
   listPointsPackages,
+  listPointsPackagesExt,
   getPointsPackage,
   getPointsPackagePurchaseHistory,
   getPointsPackagePurchaseDetails,
@@ -218,6 +219,7 @@ export const queryKeys = {
     [QUERY_KEYS.FREE_USER_STATS, realmId, dateRange] as const,
   userRoles: () => [QUERY_KEYS.USER_ROLES] as const,
   pointsPackages: (realmId: string) => [QUERY_KEYS.POINTS_PACKAGES, realmId] as const,
+  extPointsPackages: (realmId: string) => [QUERY_KEYS.EXT_POINTS_PACKAGES, realmId] as const,
   pointsPackage: (realmId: string, packageId: string) =>
     [QUERY_KEYS.POINTS_PACKAGE, realmId, packageId] as const,
   pointsPackagePurchases: (realmId: string, filters: Record<string, unknown>) =>
@@ -1006,6 +1008,18 @@ export const pointsPackagesQueryOptions = (realmId: string) =>
       })
       if (response.error) throw response.error
       // Response has .packages property, not .items
+      return response.data?.packages ?? []
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+
+export const pointsPackagesExtQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.extPointsPackages(realmId),
+    queryFn: async () => {
+      const response = await listPointsPackagesExt({ path: { realmId } })
+      if (response.error) throw response.error
       return response.data?.packages ?? []
     },
     retry: RETRY_COUNT,
