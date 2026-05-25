@@ -90,8 +90,10 @@ Realm（域）是 Herald 系统中的多租户隔离单位，每个用户、客�
 - 通过 URL 路径中的 realm_id 参数进行上下文切换
 - 基于 realm 的权限控制和资源隔离
 - Realm 创建时自动初始化完整的 RBAC 基础设施
-- Realm 创建时自动创建管理控制台客户端应用
-- Realm 创建时自动创建管理员用户并分配角色
+- Realm 创建时自动创建管理控制台客户端应用（admin-web-console）
+- Realm 创建时自动创建 API Key 客户端应用（admin-api-client），用于 API Key 认证
+- Realm 创建时自动初始化注册配置（enabled: false）
+- Realm 创建时自动创建管理员用户并分配角色，管理员用户状态自动设为 Normal（已验证）
 - 当前不提供 Realm 删除功能
 
 ---
@@ -121,31 +123,35 @@ Realm（域）是 Herald 系统中的多租户隔离单位，每个用户、客�
 
 **权限要求**
 
-- **查看 Realm 列表**：所有已认证用户（只返回用户所属的 realms）
+- **查看 Realm 列表**：拥有 `realm.view` 权限的已认证用户（当前返回所有 realms，未按用户所属过滤，已知限制）
 - **切换 Realm**：用户需要有访问目标 realm 的权限（通过用户-realm 关联检查）
 - **创建 Realm**：需要 Admin Realm 的 `realm.manage` 权限
-- **编辑 Realm**：需要本 realm 的管理员权限
+- **编辑 Realm**：本 realm 管理员可编辑自己 realm 的元数据；Admin realm 管理员拥有 `realm.manage` 权限可编辑任何 realm 的元数据（但不可管理其他 realm 的内部资源）
 - **删除 Realm**：不提供该功能（当前限制）
 
 **Realm ID 验证规则**
 
-- 格式：仅字母数字，3-36 个字符
+- 格式：仅字母数字、连字符（`-`）和下划线（`_`），必须以字母或数字开头，3-36 个字符
 - 唯一性：全局唯一
-- 保留词：禁止使用 `admin`、`system`、`api`、`www` 等保留词
+- 保留词：禁止使用 `admin`、`system`、`api`、`www` 等保留词（不区分大小写）
 - Realm ID 创建后不可修改
 
 **Realm 创建初始化规则**
 
 - 创建 realm 时必须指定管理员用户的 email 和 password
 - 自动级联创建默认 web-console client app（client_id 固定为 `admin-web-console`）
+- 自动创建 API Key 客户端应用（client_id 固定为 `admin-api-client`），用于 API Key 认证
+- 自动初始化注册配置（`registration.enabled: false`）
 - 自动创建管理员用户并分配 `realm-admin` 角色
+- 管理员用户状态自动设为 Normal（已验证），可立即登录
 - 自动初始化默认 RBAC：角色定义（`realm-admin`、`user`）、权限定义、角色权限关联和 RBAC 策略
-- 如果管理员用户创建失败，回滚整个 realm 创建操作
+- 如果任何步骤失败（注册配置、客户端创建、RBAC 初始化、管理员用户创建等），通过 `delete_realm` 删除已创建的 realm 进行回滚（非数据库事务回滚）
 - 详细默认角色和权限说明请参考 `docs/prd/core/permissions.md`
 
 ### 4.2 关键状态与异常
 
 - **权限隔离**：Realm 级别的数据隔离，用户只能访问被授权的 realm 资源；后端验证用户是否有权访问目标 Realm 的资源，未授权时拒绝访问
+- **列表过滤限制**：当前 Realm 列表接口返回所有 realms，未按用户所属进行过滤（已知限制，待优化）
 - **删除限制**：当前项目不支持 realm 删除，避免数据孤立和一致性问题
 - **导航权限可见性**：非 Admin Realm 管理员（无 `realm.manage` 权限）看不到 "Realms" 菜单项；直接访问 URL 时返回权限不足提示
 - **Admin Realm 管理员边界**：创建 Realm 后不能直接切换到新 Realm 的内部资源，需使用该 Realm 的管理员账号登录
@@ -156,8 +162,8 @@ Realm（域）是 Herald 系统中的多租户隔离单位，每个用户、客�
 
 ### 5.1 核心需求
 
-- **Realm 创建**：Admin Realm 管理员可创建新 Realm，指定 Realm ID（可选，留空自动生成 UUID v7）、名称、管理员 email 和密码；系统自动初始化 RBAC 基础设施和管理员用户
-- **Realm 列表查看**：Admin Realm 管理员可查看所有 Realm 列表，支持分页、排序和搜索
+- **Realm 创建**：Admin Realm 管理员可创建新 Realm，指定 Realm ID（可选，留空自动生成 UUID v7，格式为字母数字、连字符和下划线，3-36 个字符）、名称、管理员 email 和密码；系统自动初始化 RBAC 基础设施、客户端应用和管理员用户
+- **Realm 列表查看**：拥有 `realm.view` 权限的已认证用户可查看 Realm 列表，支持分页、排序和搜索（当前返回所有 realms，未按用户所属过滤，已知限制）
 - **Realm 详情查看**：Admin Realm 管理员可查看 Realm 的基本信息（Realm ID、名称、创建时间、更新时间）
 - **Realm 编辑**：可修改名称和描述，Realm ID 不可修改
 - **Realm 导航与访问**：通过 URL 路径 `/$realmId/*` 访问特定 Realm 的管理界面；后端验证用户权限，实现跨 Realm 的导航隔离
@@ -165,7 +171,7 @@ Realm（域）是 Herald 系统中的多租户隔离单位，每个用户、客�
 
 ### 5.2 验收目标
 
-- Admin Realm 管理员能够成功创建新 Realm，创建后新 Realm 自动包含默认角色、权限、策略和管理员用户
+- Admin Realm 管理员能够成功创建新 Realm，创建后新 Realm 自动包含默认角色、权限、策略、客户端应用（admin-web-console 和 admin-api-client）和管理员用户（状态为已验证）
 - 创建的 Realm 管理员能够登录并访问自己 Realm 的管理功能
 - Realm Admin 只能访问自己 Realm 的资源，访问其他 Realm 资源时被拒绝
 - Realm 列表支持分页、排序和搜索，正确显示所有 Realm 信息
@@ -179,8 +185,8 @@ Realm（域）是 Herald 系统中的多租户隔离单位，每个用户、客�
 **适用性**: 适用
 
 - Realm 管理能力的访问边界：Realm 创建、列表查询、详情查询、编辑更新均受权限控制
-- 创建 Realm 需要 Admin Realm 的 `realm.manage` 权限；列表查询对所有已认证用户开放（仅返回其所属 realm）
-- 编辑操作限定在本 realm 的管理员角色范围内
+- 创建 Realm 需要 Admin Realm 的 `realm.manage` 权限；列表查询需要 `realm.view` 权限（当前返回所有 realms，未按用户所属过滤，已知限制）
+- 编辑操作：本 realm 管理员可编辑自己 realm；Admin realm 管理员拥有 `realm.manage` 权限可编辑任何 realm 的元数据（但不可管理内部资源）
 - 所有 Realm 相关接口必须遵守 realm 隔离原则，确保数据不跨 realm 泄露
 - 敏感操作（如创建 Realm 时传入管理员密码）需遵循安全传输和存储要求
 - 详细接口契约、验证规则和错误模型应在技术设计文档中维护
@@ -208,9 +214,13 @@ Realm（域）是 Herald 系统中的多租户隔离单位，每个用户、客�
 - Realm 删除功能当前不提供：数据库不支持级联删除，删除会导致数据孤立
 - Realm ID 创建后不可修改
 - Realm 创建时自动初始化完整的 RBAC 基础设施（角色、权限、策略）
-- Realm 创建时自动创建 admin-web-console client app
-- 创建 Realm 时必须指定管理员 email 和密码，创建失败时回滚整个操作
+- Realm 创建时自动创建 admin-web-console client app 和 admin-api-client（用于 API Key 认证）
+- Realm 创建时自动初始化注册配置（registration.enabled: false）
+- 创建的管理员用户状态自动设为 Normal（已验证），可立即登录
+- 创建 Realm 时必须指定管理员 email 和密码，创建失败时通过 delete_realm 回滚（非数据库事务回滚）
 - Admin Realm 管理员创建 Realm 后不能直接切换到新 Realm 的内部资源
+- Admin realm 管理员拥有 realm.manage 权限可编辑任何 realm 的元数据（但不可管理内部资源）
+- Realm 列表当前返回所有 realms，未按用户所属过滤（已知限制，待优化）
 
 ---
 

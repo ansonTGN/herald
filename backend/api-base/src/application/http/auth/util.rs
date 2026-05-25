@@ -88,30 +88,14 @@ pub fn build_set_cookie(name: &str, value: &str, max_age_secs: i64, is_productio
     // spec: http-only cookie, 有效期 30分钟
     // 在生产环境（HTTPS）添加 Secure 属性，开发环境（HTTP）不添加
     let secure_flag = if is_production { "; Secure" } else { "" };
-    // 添加 Domain=localhost 以支持 Vite 代理场景（开发环境）
-    // 在生产环境中，也应该设置正确的 domain
-    let domain_flag = if is_production {
-        // 生产环境应该从配置中读取 domain，这里先留空，让浏览器使用默认
-        ""
-    } else {
-        // 开发环境：设置 Domain=localhost，支持跨端口访问
-        "; Domain=localhost"
-    };
 
-    format!(
-        "{name}={value}; Path=/; Max-Age={max_age_secs}; HttpOnly; SameSite=Lax{secure_flag}{domain_flag}"
-    )
+    format!("{name}={value}; Path=/; Max-Age={max_age_secs}; HttpOnly; SameSite=Lax{secure_flag}")
 }
 
 pub fn build_clear_cookie(name: &str, is_production: bool) -> String {
     let secure_flag = if is_production { "; Secure" } else { "" };
-    let domain_flag = if is_production {
-        ""
-    } else {
-        "; Domain=localhost"
-    };
 
-    format!("{name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax{secure_flag}{domain_flag}")
+    format!("{name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax{secure_flag}")
 }
 
 #[derive(Serialize, Deserialize)]

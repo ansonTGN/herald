@@ -47,7 +47,7 @@
 - `verification_uri_complete` 支持（URL 中嵌入 user_code）
 - Device Code Grant 在 Client App 中的启用/禁用配置
 - 设备验证 API（供第三方应用自定义验证流程）
-- 协议规定的全部错误码：`authorization_pending`、`slow_down`、`expired_token`、`access_denied`
+- 协议规定的全部错误码：`authorization_pending`、`slow_down`、`expired_token`、`access_denied`，以及扩展错误码 `invalid_request`（consumed 状态时返回）
 
 ### 2.2 不包含功能 (Out of Scope)
 
@@ -94,15 +94,17 @@
 1. CLI 工具通过 `client_id` 请求 `device_code` 和 `user_code`
 2. 响应包含 `verification_uri`、`verification_uri_complete`、`expires_in`（默认 900 秒）、`interval`（默认 5 秒）
 3. 用户在 Herald 验证页面输入 `user_code`、登录、查看 Client App 名称并确认授权
-4. CLI 工具以指定间隔轮询令牌端点，系统返回 `authorization_pending`、`slow_down`、`expired_token`、`access_denied` 或 access token
+4. CLI 工具以指定间隔轮询令牌端点，系统返回 `authorization_pending`、`slow_down`、`expired_token`、`access_denied`、`invalid_request` 或 access token
 5. Realm Admin 可为每个 Client App 独立启用或禁用 Device Code Grant
 
 **user_code 生成规则**
 - 长度：8 字符，格式 `XXXX-XXXX`（4+4，连字符分隔）
 - 字符集：base-20 编码，排除易混淆字符（0、O、1、I、L）
-- 有效字符：`A B C D E F G H J K M N P Q R S T V W X Y Z 2 3 4 5 6 7 8 9`
-- 大小写：统一大写显示，验证时不区分大小写
-- 唯一性：生成时检查与当前未过期的 user_code 不重复
+- 有效字符：`B C D F G H J K M N P Q R S T V W X Y Z`（共 20 个字符，纯大写，无数字）
+- 大小写：统一大写显示
+  - **[已知问题]** 当前 `validate_user_code()` 直接按大写字符集校验，小写字母会被拒绝。预期行为应在验证前将输入转为大写，待修复
+- 唯一性：
+  - **[已知限制]** 当前 `generate_user_code()` 未做显式唯一性检查，基于 UUID v7 随机种子的低碰撞概率（20^8 ≈ 256 亿种组合）。在高并发场景下存在极低概率的碰撞风险
 
 **API 能力边界**
 - 不需要 `redirect_uri` 参数（与授权码流程的关键区别）
@@ -111,15 +113,34 @@
 ### 4.2 关键状态与异常
 
 **device_code 生命周期**
-- 高强度随机性，不可猜测或枚举
-- 有效期：默认 900 秒（15 分钟），过期后不可使用
-- 状态由 pending 转为终态（authorized / denied / expired）后不可逆
+- 高强度随机性（UUID v7），不可猜测或枚举
+- 有效期：默认 900 秒（15 分钟），由 Redis TTL 自然过期，过期后 Redis key 自动删除
+- 状态机（所有状态转换不可逆）：
+  ```
+  pending → verified → authorized → consumed
+                    ↘ denied
+  ```
+  - `pending`：初始状态，device_code 生成后等待用户验证
+  - `verified`：用户在验证页面输入 user_code 后的中间状态，此时 user_id 已绑定
+  - `authorized`：用户在确认页面点击"授权"后的状态，CLI 可领取 token
+  - `denied`：用户在确认页面点击"拒绝"后的终态
+  - `consumed`：CLI 成功领取 token 后的终态，防止重复领取
+  - `expired`：非显式状态，由 Redis TTL 自然过期（key 被删除后查询返回 `expired_token`）
+
+**Realm 隔离校验**
+- 所有端点（authorize、verify、confirm、token）均校验存储的 `realm_id` 与路径参数 `realmId` 一致
+- 不匹配时返回 `invalid_request` 错误（realm mismatch）
+
+**幂等性**
+- 同一用户重复调用 verify 端点验证同一 user_code 时，幂等返回 Client App 信息，不会重复修改状态
+- 不同用户尝试验证已被其他用户验证的 user_code 时，返回 `already_used` 错误
 
 **轮询错误码**
-- `authorization_pending`：用户尚未完成授权，CLI 应继续轮询
+- `authorization_pending`：用户尚未完成授权（状态为 pending 或 verified），CLI 应继续轮询
 - `slow_down`：轮询过快，CLI 应在当前间隔基础上增加 5 秒
-- `expired_token`：device_code 已过期，需重新发起授权请求
-- `access_denied`：用户拒绝授权
+- `expired_token`：device_code 已过期（Redis key 不存在），需重新发起授权请求
+- `access_denied`：用户拒绝授权（状态为 denied）
+- `invalid_request`：device_code 已被消费（状态为 consumed），不可重复领取 token
 
 ---
 

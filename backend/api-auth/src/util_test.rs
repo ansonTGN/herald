@@ -16,10 +16,9 @@ mod tests {
         assert!(cookie.contains("HttpOnly"));
         assert!(cookie.contains("SameSite=Lax"));
         assert!(cookie.contains("Path=/"));
-        // 开发环境应该有 Domain=localhost 以支持代理
         assert!(
-            cookie.contains("Domain=localhost"),
-            "Development cookie should have Domain=localhost for Vite proxy support"
+            !cookie.contains("Domain="),
+            "Development cookie should be host-only so 127.0.0.1 and localhost both work"
         );
     }
 
@@ -53,10 +52,9 @@ mod tests {
         assert!(cookie.contains("HttpOnly"));
         assert!(cookie.contains("SameSite=Lax"));
         assert!(cookie.contains("Path=/"));
-        // 清除 cookie 也需要 Domain 以匹配
         assert!(
-            cookie.contains("Domain=localhost"),
-            "Development clear cookie should have Domain=localhost"
+            !cookie.contains("Domain="),
+            "Development clear cookie should be host-only"
         );
     }
 

@@ -90,6 +90,11 @@ function LoginPage() {
           redirectPath = checkAdminPermission() ? '/manage' : '/user/profile'
         }
 
+        if (redirectPath.startsWith('http://') || redirectPath.startsWith('https://')) {
+          window.location.href = redirectPath
+          return
+        }
+
         await router.navigate({
           to: `/${userRealmId}${redirectPath}`,
           params: { realmId: userRealmId },
@@ -128,6 +133,11 @@ function LoginPage() {
 
     if (safeRedirectPath === '/') {
       safeRedirectPath = checkAdminPermission() ? '/manage' : '/user/profile'
+    }
+
+    if (safeRedirectPath.startsWith('http://') || safeRedirectPath.startsWith('https://')) {
+      window.location.href = safeRedirectPath
+      return
     }
 
     await router.navigate({

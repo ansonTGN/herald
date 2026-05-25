@@ -25,7 +25,7 @@
 - `[US-RA-012]` 通过 Dashboard 快捷导航跳转 (P1)
 
 **内置保护用户故事** — `docs/user-stories/core/builtin-protection.md`
-- `[US-BP-001]` 默认角色和权限保护 (P0): 默认的角色和权限不能被删除或修改
+- `[US-BP-001]` 默认角色和权限保护 (P0): 默认的角色和权限不能被删除，内置角色名称不可修改
 
 **审计日志用户故事** — `docs/user-stories/core/audit.md`
 - `[US-AU-001]` 查看 Realm 审计日志 (P0)
@@ -38,7 +38,7 @@
 
 | 优先级 | 数量 | 关键故事 |
 |--------|------|----------|
-| P0 | 13 | Realm 隔离访问、角色定义管理、权限定义管理、为角色分配权限、查看角色权限、用户角色分配、权限策略管理、权限层级验证、默认角色和权限保护、审计日志查看/筛选/Admin Realm/自动记录 |
+| P0 | 13 | Realm 隔离访问、角色定义管理、权限定义管理、为角色分配权限、查看角色权限、用户角色分配、权限策略管理、权限层级验证、默认角色和权限不可删除/内置角色名称不可修改、审计日志查看/筛选/Admin Realm/自动记录 |
 | P1 | 4 | Dashboard 活跃概览、认证趋势图、快捷导航、审计详情 |
 | P2 | 0 | - |
 
@@ -88,7 +88,7 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 - `resource.action` 格式的细粒度权限模型
 - `manage` / `create` / `view` 三级 action 层级，`manage` 向下隐含 `view` 和 `create`
 - Realm 级别权限隔离，跨 Realm 访问拒绝
-- 内置 `realm-admin` 和 `user` 默认角色，不可删除或修改
+- 内置 `realm-admin` 和 `user` 默认角色，不可删除，名称不可修改，描述可修改
 - 菜单级和按钮级前端权限控制，对齐后端权限模型
 
 ---
@@ -194,9 +194,32 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 
 ### 4.2 关键状态与异常
 
-- 默认角色（`realm-admin`、`user`）和默认权限受内置保护，不能被删除或修改（`US-BP-001`）
+- 默认角色（`realm-admin`、`user`）和默认权限受内置保护，不能被删除；内置角色的名称不可修改，描述(description)可修改（`US-BP-001`）
 - 权限属于 Realm 级别，跨 Realm 访问必须拒绝
 - 权限检查遵循 `resource.action` 精确匹配和层级规则，不做前端特例判断
+- **[待修复]** `permission_definitions/delete.rs` 查询权限时仅按 `id` 过滤，未校验 `realm_id`，存在跨 Realm 删除风险
+
+**API 架构说明**:
+
+当前系统中存在两套权限相关 API 共存：
+
+| API 风格 | 路径前缀 | 说明 |
+|----------|---------|------|
+| 旧 API | `/api/permission/{realmId}/permissions` | 使用 `PermissionData` 格式，按 client 维度管理权限分配 |
+| 新 API | `/api/permission/{realmId}/define` | 权限定义（permission_definitions）的 CRUD |
+| 新 API | `/api/roles/{realmId}/define` | 角色定义（role_definitions）的 CRUD 及角色权限关联 |
+
+旧 API 为过渡期保留，新 API 为主要演进方向。前端应优先使用新 API。
+
+**Principal 角色与权限管理**:
+
+- **API Key 角色分配**: API Key 可作为 Principal 分配角色。通过 `GET/PUT /api/api-keys/{realmId}/{apiKeyId}/roles` 管理 API Key 的角色列表（查询需要 `api_keys.view`，更新需要 `roles.manage`）。内置角色不可分配给 API Key。
+- **用户直接权限管理**: 支持绕过角色，直接为用户分配权限。通过以下端点管理：
+  - `GET /api/users/{realmId}/{userId}/permissions` — 查询用户直接权限（需要 `users.view`）
+  - `POST /api/users/{realmId}/{userId}/permissions` — 分配直接权限（需要 `policies.manage`）
+  - `DELETE /api/users/{realmId}/{userId}/permissions` — 移除直接权限（需要 `policies.manage`）
+  - `GET /api/users/{realmId}/{userId}/effective-permissions` — 查询用户有效权限（含角色继承 + 直接分配），每条权限标注来源（角色名或 "direct"）
+  - 安全约束：不可创建 `All` 或通配符权限策略
 
 ---
 
@@ -205,18 +228,18 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 ### 5.1 核心需求
 
 - RBAC 元数据管理：支持角色定义的创建、查询、更新、删除；权限定义的创建、查询、更新、删除；角色权限关联的管理
-- 权限运行时：支持用户角色分配、API Key 角色分配、资源访问策略管理
+- 权限运行时：支持用户角色分配、API Key 角色分配、用户直接权限分配/移除、资源访问策略管理
 - 权限检查：Service 层集成 `resource.action` 权限检查，`manage` 隐含 `view` 和 `create`
 - 前端权限控制：侧边栏菜单根据 `resource.view` 权限动态显示/隐藏；按钮级权限控制新增、编辑、删除操作
-- 默认角色与权限：系统提供 `realm-admin` 和 `user` 内置角色及对应权限，受内置保护
+- 默认角色与权限：系统提供 `realm-admin` 和 `user` 内置角色及对应权限，受内置保护（不可删除，内置角色名称不可修改）
 
 ### 5.2 验收目标
 
-- Realm Admin 可在管理端完成角色定义、权限定义、角色权限关联、用户角色分配的完整操作
+- Realm Admin 可在管理端完成角色定义、权限定义、角色权限关联、用户角色分配、API Key 角色分配、用户直接权限分配/移除的完整操作
 - 无权限用户访问受保护资源时被拒绝，前端隐藏无权限的菜单和操作按钮
 - 权限层级规则正确生效：`manage` 隐含 `view` 和 `create`，`create` 不隐含 `view`
 - 跨 Realm 访问被拒绝
-- 默认角色和权限不可被删除或修改
+- 默认角色和权限不可被删除；内置角色名称不可修改，描述可修改
 
 ---
 

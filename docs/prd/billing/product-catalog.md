@@ -88,6 +88,8 @@ Product 编目管理是 Herald 系统为 Realm 提供的产品线组织能力。
 - title 长度限制：1-100 字符
 - description 长度限制：0-500 字符（可选）
 
+> **⚠️ 待修复 — code 格式校验**：PRD 要求 code 只能包含字母、数字、横线、下划线，但当前后端代码仅有长度校验（3-50），缺少格式正则校验。需在 service 层补充格式验证。
+
 **Product-Plan 关系**：
 - 关系类型：一对多（1:N），一个 Product 可包含多个 Plan，一个 Plan 必须属于且仅属于一个 Product
 - 强制归属：所有 Plan 必须有 product_id，不可为 NULL
@@ -95,7 +97,7 @@ Product 编目管理是 Herald 系统为 Realm 提供的产品线组织能力。
 - 迁移支持：现有 Plan 可以迁移到其他 Product
 
 **创建 Product**：
-- Realm Admin 可创建新 Product，必须提供 code、title、description
+- Realm Admin 可创建新 Product，必须提供 code、title，description 为可选字段
 - 创建时检查 code 在同一 Realm 内的唯一性和格式合规性
 
 **编辑 Product**：
@@ -130,6 +132,12 @@ Product 编目管理是 Herald 系统为 Realm 提供的产品线组织能力。
 - Product 属于 Realm，跨 Realm 不可见
 - 所有 Product 创建、更新、删除操作记录审计日志（操作人、操作时间、操作内容）
 
+> **⚠️ 待实现 — 审计日志**：PRD 要求所有 Product 变更记录审计日志，但当前 Product handler 中无审计事件写入逻辑，需补充实现。
+
+> **📝 实现备注 — CreateProductRequest.enabled 字段无效**：API schema 中 `CreateProductRequest` 包含 `enabled: Option<bool>` 字段，但后端实际忽略该字段，创建时硬编码 `enabled = true`。如需支持创建时指定 enabled 状态，需修改 handler 逻辑。
+
+> **📝 实现备注 — get_product 返回额外数据**：`ProductDetailResponse` 包含完整的 Plan 列表，超出 PRD 要求的"显示 Plan 数量"。当前实现按 PRD 要求保留，不做裁剪。
+
 ### 4.2 关键状态与异常
 
 - **Plan 归属冲突**：如果 Plan 已属于其他 Product，迁移时需处理归属变更
@@ -142,13 +150,15 @@ Product 编目管理是 Herald 系统为 Realm 提供的产品线组织能力。
 
 ### 5.1 核心需求
 
-- Realm Admin 可以创建 Product，必须提供 code、title、description，系统校验 code 格式和唯一性
+- Realm Admin 可以创建 Product，必须提供 code、title（description 为可选），系统校验 code 格式和唯一性
 - Realm Admin 可以编辑 Product 的 title、description、enabled，code 不可修改
 - Realm Admin 可以删除 Product（仅当其下无 Plan 时）
 - Realm Admin 可以查看 Realm 内所有 Product，列表按创建时间排序，支持按 enabled 状态筛选
 - 每个 Product 显示其下的 Plan 数量
 - 所有 Plan 必须归属到某个 Product
 - Product 的 enabled 状态控制其下 Plan 的可见性
+
+> **⚠️ 待修复 — enabled 筛选参数未暴露**：service/repo 层已支持 `enabled_only` 参数，但 HTTP handler 中传 `None`，未从查询参数中读取。需在 handler 中补充 `enabled` 查询参数的解析与传递。
 
 ### 5.2 验收目标
 

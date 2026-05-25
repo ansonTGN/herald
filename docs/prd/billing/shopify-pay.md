@@ -90,7 +90,7 @@ Shopify Pay 集成是 Herald 系统支付平台选项之一，与 Creem（模拟
 
 ### 4.1 业务规则
 
-- **配置管理规则**：每个 Realm 可配置一个 Shopify Shop；配置项包括 Shop Domain、Admin Access Token、Storefront Access Token、App Client Secret、API Version、Webhook Subscription Mode、Timeout；敏感信息加密存储，查看时脱敏；编辑时敏感字段留空则保留现有值
+- **配置管理规则**：每个 Realm 可配置一个 Shopify Shop；配置项包括 Shop Domain、Admin Access Token、Storefront Access Token、App Client Secret、API Version、Webhook Subscription Mode、Timeout、Skip Connection Test（跳过连接测试，用于 demo/test 环境，默认 false）；敏感信息加密存储，查看时脱敏；编辑时敏感字段留空则保留现有值
 - **权限控制**：只有 Realm Admin 可以查看和更新 Shopify 配置；删除配置前需确认无活跃订阅
 - **真源原则**：subscription.user_id 是订阅归属的唯一真源，禁止从 points_credit_ledger 反查
 - **两阶段归属**：支持"已归属订阅"（user_id NOT NULL）和"未归属订阅"（user_id NULL）
@@ -99,6 +99,7 @@ Shopify Pay 集成是 Herald 系统支付平台选项之一，与 Creem（模拟
   - 路径 A：contract_id / order_id → shopify_subscription_binding.subscription_id → subscription.user_id
   - 路径 B：shopify_customer_id → shopify_user_binding.user_id
   - 禁止路径：subscription_id → points_credit_ledger → user_id（ledger 是派生数据）
+- **预留字段**：`shopify_subscription_binding.customer_payment_method_id` 为数据库预留字段，当前代码未实际写入，预留用于未来支付方式变更场景
 - **修订版本控制**：升级/降级时比较 contract 的 revision_id，只有更高版本才能覆盖本地状态
 - **升级降级规则**：升级（新计划积分更多）发放差额积分；降级（新计划积分更少）仅更新 Subscription 和 history，不回收既有积分
 - **数据隔离**：不同 Realm 的支付数据完全隔离；一个 Realm 绑定一个 Shopify Shop
@@ -106,6 +107,7 @@ Shopify Pay 集成是 Herald 系统支付平台选项之一，与 Creem（模拟
 ### 4.2 关键状态与异常
 
 - **Webhook 处理安全**：Webhook 端点必须验证 HMAC-SHA256 签名（使用 X-Shopify-Hmac-SHA256 header）；使用 raw body 验签，不能先 JSON parse 再验签；API Tokens 不得暴露给前端；所有操作必须通过 HTTPS；所有 webhook 事件必须记录审计日志
+- **[待确认] client_secret 解密问题**：`app_client_secret` 在存储时经过加密（`encrypt_secret`），但 `ShopifyRepository::get_client_secret` 从数据库读取后未调用 `decrypt_secret`，直接将加密后的值用于 HMAC 验签。这可能导致 webhook 验签失败。需确认是否为 bug，若确认为 bug 则需在 `get_client_secret` 中增加解密步骤
 - **幂等处理**：基于 X-Shopify-Event-Id 做幂等判断
 - **错误处理**：Webhook 验证失败返回 401；处理成功后尽快返回 202 Accepted，异步处理业务事件；Shopify 会重试失败的 webhook（最多 8 次），持续失败可能导致订阅被移除
 - **认领冲突**：同一 Shopify Customer 不能被两个 Herald 用户认领（唯一约束）
@@ -123,7 +125,7 @@ Shopify Pay 集成是 Herald 系统支付平台选项之一，与 Creem（模拟
 - **升级/降级处理**：接收 subscription_contracts/update webhook → revision_id 比对 → 执行升级差额积分发放或降级状态更新
 - **取消处理**：接收 subscription_contracts/update webhook → 映射 Shopify 状态到 Herald 状态（ScheduledCancel / Canceled）
 - **退款处理**：接收 refunds/create webhook → 记录退款事件 → 进入现有退款积分回收路径
-- **订阅认领**：用户登录后通过 Shopify Customer ID 或 Contract ID 认领未归属订阅 → 更新 user_id → 补发当前有效周期权益 → 记录审计日志
+- **订阅认领**：用户登录后通过 Shopify Customer ID、Contract ID 或 Order ID 认领未归属订阅 → 更新 user_id → 补发当前有效周期权益 → 记录审计日志；其中 Order ID 路径通过 `shopify_subscription_binding.last_order_id` 反查 `customer_id`
 - **Webhook 事件处理分支**：已归属订阅正常发放积分；未归属订阅只同步状态不发放积分
 
 ### 5.2 验收目标
@@ -143,7 +145,8 @@ Shopify Pay 集成是 Herald 系统支付平台选项之一，与 Creem（模拟
 
 - **接口能力范围**：Shopify webhook 处理的能力边界；不在 PRD 中列出端点、schema 或状态码细节
 - **访问控制原则**：必须遵守 realm 隔离、webhook 验证、幂等处理和事件顺序约束
-- **Webhook 事件主题**：subscription_contracts/create、subscription_contracts/update、subscription_billing_attempts/success、subscription_billing_attempts/failure、orders/paid、refunds/create、app/uninstalled
+- **Webhook 事件主题**：subscription_contracts/create、subscription_contracts/update、subscription_billing_attempts/success、subscription_billing_attempts/failure、refunds/create
+- **待实现事件主题**：orders/paid（用于一次性订单支付确认）、app/uninstalled（用于应用卸载时清理配置和关联数据）
 - **兼容性要求**：与 Shopify Admin API、Storefront API 的详细契约应下沉到技术设计或接口说明
 
 ---
@@ -153,7 +156,7 @@ Shopify Pay 集成是 Herald 系统支付平台选项之一，与 Creem（模拟
 **适用性**: 适用
 
 - **管理入口**：支付平台配置管理页面，包含 Shopify 配置列表、创建表单、编辑（密钥轮换）、删除、连接测试
-- **关键操作路径**：Shopify 配置创建（Shop Domain、Admin Access Token、Storefront Access Token、App Client Secret、API Version）；编辑时敏感字段留空保留现有值
+- **关键操作路径**：Shopify 配置创建（Shop Domain、Admin Access Token、Storefront Access Token、App Client Secret、API Version、Skip Connection Test）；编辑时敏感字段留空保留现有值
 - **状态反馈**：敏感信息脱敏显示和加密存储说明；配置状态展示；删除前提示活跃订阅数量和影响范围
 - **权限可见性**：仅 Realm Admin 可访问配置管理页面
 

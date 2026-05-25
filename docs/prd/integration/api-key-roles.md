@@ -42,12 +42,13 @@
 - API Key 列表页显示角色 badge（每行显示已分配角色，超过 2 个折叠为「+N more」）
 - API Key 列表页增加「Roles」操作按钮（打开角色管理对话框）
 - API Key 角色管理对话框（查看、分配、清除角色，即时保存）
-- 创建 API Key 表单增加可选角色选择器（创建成功后自动绑定）
+- 创建 API Key 表单增加可选角色选择器（创建成功后自动绑定）**⚠️ 待实现，详见 9.1**
 - 创建 API Key 表单增加 Client App 选择器；未选择时默认绑定内置 `admin-api-client`
 - API Key 列表展示绑定的 Client App 名称
 - 每个 Realm 拥有一个内置 API Key Client App（`client_id = 'admin-api-client'`，默认 `enabled=true`）
 - API Key 认证路径受关联 Client App 的 `enabled` 状态影响（Client App 禁用时其下所有 API Key 均不可用）
 - ext API 对非 `admin-api-client` 的 API Key 执行 Client App 作用域隔离
+- API Key 更新（名称、启用状态、过期时间）、删除、密钥轮换（已实现，详见 9.4）
 
 ### 2.2 不包含功能 (Out of Scope)
 
@@ -76,7 +77,7 @@
 - **内置角色保护**：API Key 不允许绑定内置角色（`is_builtin=true`），仅可绑定自定义角色
 - **Client App 全局开关**：内置 API Key Client App 的 `enabled` 状态作为其下所有 API Key 的全局开关
 - **Client App 作用域隔离**：绑定非内置 Client App 的 API Key 只能访问该 Client App 的资源
-- **创建时可选角色**：创建 API Key 时可选角色，角色绑定失败不回滚 Key 创建
+- **创建时可选角色**：创建 API Key 时可选角色，角色绑定失败不回滚 Key 创建（⚠️ 后端待实现，详见 9.1）
 
 ---
 
@@ -117,6 +118,8 @@
    - 创建表单增加可选角色选择区
    - 创建成功后自动绑定所选角色
    - 角色绑定失败不回滚 Key 创建，仍展示明文 Key
+
+   > **⚠️ 待实现（P0）**：后端 `CreateApiKeyRequest` 无 `role_ids` 字段，`create.rs` 中无角色绑定调用。当前创建 API Key 后角色列表为空，需手动通过角色管理端点分配。需在请求结构体中新增 `role_ids: Option<Vec<Uuid>>` 并在创建流程中调用 `role_assignment_service.assign_api_key_roles`。
 
 3. **内置 API Key Client App**
    - 每个 Realm 拥有一个内置 API Key Client App（`client_id = 'admin-api-client'`）
@@ -181,7 +184,37 @@
 
 ---
 
-## 9. 参考资料
+## 9. 实现差异与已知问题
+
+### 9.1 待实现（P0）
+
+- **创建 API Key 时无角色绑定（US-RA-017）**：`CreateApiKeyRequest`（`api-admin/src/api_keys/types.rs`）无 `role_ids` 字段，`create.rs` 中完全没有角色绑定调用。创建后需手动通过 `PUT /{apiKeyId}/roles` 分配角色。
+
+### 9.2 待修复
+
+- **GET 单个 API Key roles 返回空数组**：`get.rs` 硬编码 `roles: Vec::new()`，未查询角色数据，与 `list.rs`（批量加载角色）行为不一致。`update.rs` 响应同样存在此问题。应改为调用 `user_role_repository.get_api_key_roles` 或复用 list 的批量加载逻辑。
+
+### 9.3 已知冗余
+
+- **权限检查双层重复**：HTTP 层（`api-admin/api_keys/roles.rs`）通过 `require_permission` 检查 `api_keys.view` / `roles.manage`；domain 层（`domain/src/user/services/admin.rs`）的 `get_api_key_roles` / `assign_api_key_roles` 再次调用 `require_permission` 检查相同权限。两层检查逻辑一致，属防御性冗余，当前不影响正确性。
+
+### 9.4 已实现但 PRD 未覆盖的端点
+
+以下端点已在代码中实现，属于 API Key 基础 CRUD 的自然扩展，PRD 未单独列出：
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/{apiKeyId}` | PUT | 更新 API Key 名称、启用状态、过期时间 |
+| `/{apiKeyId}` | DELETE | 永久删除 API Key |
+| `/{apiKeyId}/rotate` | POST | 轮换 API Key（生成新密钥，旧密钥立即失效，新明文仅返回一次） |
+
+### 9.5 待增强建议
+
+- **`role_ids` 数组长度限制**：`UpdateApiKeyRolesRequest.role_ids`（`api-admin/src/api_keys/types.rs`）无最大长度约束，建议增加 `#[validate(length(max = 20))]` 或类似限制，防止一次性绑定过多角色。
+
+---
+
+## 10. 参考资料
 
 - 用户故事：`docs/user-stories/core/realm-admin.md`（US-RA-016、US-RA-017）
 - 用户故事：`docs/user-stories/integration/sdk.md`（US-TP-012 ~ US-TP-014）

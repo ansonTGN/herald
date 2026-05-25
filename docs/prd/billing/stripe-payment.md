@@ -39,10 +39,12 @@
 ### 2.1 包含功能
 
 - Stripe 作为支付平台选项之一（与 Creem 并列）
-- Stripe 配置管理（API Key、Webhook Secret 等）
+- Stripe 配置管理——通过通用 `realm_config` API（`/api/realms/{realmId}/config`，ConfigType::Stripe）统一管理，支持 api_key、webhook_secret、publishable_key、timeout、webhook_endpoint_id 配置项
 - 订阅支付处理（周期性计费）
 - 一次性支付处理（Payment Intents）
 - Webhook 事件处理（支付状态同步）
+- 退款处理——`charge.refunded` 事件处理，支持 topup（按比例回收积分）和 subscription（回收未使用积分）两种退款类型的积分回收
+- Demo/Mock 模式——支持 `mock://stripe` 作为 base URL，用于测试环境模拟 Stripe 响应
 - 支付历史记录查询
 
 ### 2.2 不包含功能
@@ -50,10 +52,10 @@
 - 批量导入配置
 - 平台健康检查（仅支持 Webhook 连接测试）
 - 其他支付网关的详细实现（Creem 是模拟平台，其他平台需单独 PRD）
-- 退款处理
 - Disputes 处理
 - 多币种转换（使用 Stripe 原生币种支持）
 - 税务计算（使用 Stripe Tax 或后续集成）
+- `payment_intent.payment_failed` 和 `invoice.payment_failed` 事件处理（待实现）
 
 ### 2.3 依赖项
 
@@ -84,19 +86,21 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 
 ### 4.1 业务规则
 
-- **配置管理规则**：每个 Realm 可配置独立的 Stripe 账户；配置项包括 Account ID（可选）、Publishable Key、Secret Key、Webhook Signing Secret、Webhook Endpoint URL、Environment（test 或 live）
+- **配置管理规则**：每个 Realm 可配置独立的 Stripe 账户；通过通用 `realm_config` API（`/api/realms/{realmId}/config`，ConfigType::Stripe）管理，配置项包括 api_key（Secret Key）、webhook_secret（Webhook Signing Secret）、publishable_key（Publishable Key）、timeout（HTTP 请求超时秒数）、webhook_endpoint_id（Webhook 端点 ID，用于验证）
+  - **配置项差异说明**：Account ID 未作为独立 config_key 实现；Environment（test/live）由 API Key 前缀自动决定（`sk_test_*` / `sk_live_*`）；Webhook Endpoint URL 由 `public_base_url` 动态拼接，不作为独立配置项
 - **密钥加密存储**：API Key 必须加密存储在数据库中
 - **密钥脱敏**：Secret Key 查看时显示脱敏信息
-- **编辑时密钥保留**：更新配置时，敏感字段（Secret Key、Webhook Secret）为可选，留空则保留现有值；非敏感字段正常更新
+- **编辑时密钥保留**：更新配置时，敏感字段（Secret Key、Webhook Secret）为可选，留空则保留现有值；非敏感字段正常更新（待修复：当前代码缺少密钥保留逻辑，更新时需传完整值）
 - **权限控制**：只有 Realm Admin 可以查看和更新 Stripe 配置
-- **删除保护**：无活跃订阅时才可删除配置
+- **删除保护**：无活跃订阅时才可删除配置（待修复：当前代码缺少删除前活跃订阅检查）
 - **数据隔离**：不同 Realm 的支付数据完全隔离；用户只能查看自己的支付历史；Realm Admin 只能查看所属 Realm 的支付数据
 
 ### 4.2 关键状态与异常
 
 - **支付失败处理**：返回用户友好的错误信息，支持支付重试（针对临时性错误），记录所有支付失败事件
-- **Webhook 重试**：Webhook 处理失败时支持重试（最多 3 次）
+- **Webhook 重试**：代码未实现自动重试机制，依赖 Stripe 自身重试发送策略（已知设计决策）
 - **安全约束**：API Key 不得暴露给前端（仅 Publishable Key 可暴露）；Webhook 端点必须验证 Stripe Signature；所有支付操作必须通过 HTTPS；支付敏感信息不得存储在本地数据库；所有支付操作必须记录审计日志
+- **Webhook 签名验证**：使用 HMAC-SHA256 验证，签名格式为 `stripe-signature` 头中的 `t=...,v1=...`；包含时间戳重放攻击防护（15 分钟窗口，即 900 秒），拒绝过旧或未来时间戳的请求
 
 ---
 
@@ -104,10 +108,10 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 
 ### 5.1 核心需求
 
-- **Stripe 配置管理**：每个 Realm 可配置独立 Stripe 账户，支持创建、查看（脱敏）、更新、删除配置
+- **Stripe 配置管理**：每个 Realm 通过通用 `realm_config` API（`/api/realms/{realmId}/config`，ConfigType::Stripe）配置独立 Stripe 账户，支持创建、查看（脱敏）、更新、删除配置
 - **一次性支付处理**：创建 Payment Intent → 获取 Client Secret → 确认支付 → 处理支付结果
 - **订阅支付处理**：创建 Stripe Subscription → 处理首次支付 → 处理续费事件 → 取消订阅
-- **Webhook 事件处理**：验证 Stripe Signature → 解析事件类型 → 执行业务逻辑 → 更新本地状态 → 记录事件日志；支持 payment_intent.succeeded、payment_intent.payment_failed、invoice.paid、invoice.payment_failed、customer.subscription.created/updated/deleted 等事件
+- **Webhook 事件处理**：验证 Stripe Signature（HMAC-SHA256 + 时间戳重放防护）→ 解析事件类型 → 执行业务逻辑 → 更新本地状态 → 记录事件日志；已实现事件：checkout.session.completed、customer.subscription.created/updated/deleted、charge.refunded；待实现事件：payment_intent.payment_failed、invoice.payment_failed
 - **支付历史查询**：用户查看自己的支付历史，Realm Admin 查看 Realm 所有支付记录，支持按状态/时间/金额筛选和分页
 
 ### 5.2 验收目标
@@ -150,6 +154,20 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 - Stripe 支付用户体验在第三方应用中完成，Herald 只负责配置管理和 Webhook 处理
 - Stripe 与 Creem 作为支付平台选项并列存在
 - 复用通用支付平台配置系统
+- Webhook 处理失败不自动重试，依赖 Stripe 自身重试发送策略
+- Demo/Mock 模式使用 `mock://stripe` 作为 base URL，客户端检测到后跳过真实 HTTP 调用并返回模拟响应
+
+### 8.2 与实现已知差异
+
+| 项 | 状态 | 说明 |
+|----|------|------|
+| 密钥保留逻辑 | 待修复 | 更新配置时，敏感字段（api_key、webhook_secret）留空应保留现有值，当前代码缺少此逻辑 |
+| 删除保护 | 待修复 | 删除配置前应检查是否存在活跃订阅，当前代码未实现此检查 |
+| payment_intent.payment_failed 事件 | 待实现 | 支付失败事件尚未处理 |
+| invoice.payment_failed 事件 | 待实现 | 发票支付失败事件尚未处理 |
+| Account ID 配置项 | 未实现 | Account ID 未作为独立 config_key 实现，如需要可通过 metadata 扩展 |
+| Environment 配置项 | 不需要 | test/live 环境由 API Key 前缀（`sk_test_*` / `sk_live_*`）自动决定，无需独立配置 |
+| Webhook URL 配置项 | 不需要 | 由 `public_base_url` 动态拼接，不作为独立配置项 |
 
 ---
 

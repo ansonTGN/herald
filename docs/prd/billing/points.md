@@ -138,6 +138,9 @@
 - 用户注册：发放 registration_credit
 - 免费用户定期发放：发放 free_periodic_credit（支持 once/daily/weekly/monthly）
 
+**积分套餐配置约束**：
+- points_per_period 应 >= 1 — ⚠️ 待修复：当前代码允许 0，应增加校验使 points_per_period >= 1
+
 **积分充值周期**：
 - once：订阅时发放一次，不创建调度
 - daily：按订阅时间点每天同一时间发放
@@ -149,7 +152,7 @@
 - validity_days > 0：发放后 N 天过期
 
 **退款积分回收**：
-- 充值退款（topup_credit 退款）：按未使用比例回收 topup_credit，已使用部分不回收，优先回收最晚获得的充值积分（FIFO）
+- 充值退款（topup_credit 退款）：按未使用比例回收 topup_credit（proportional revocation），已使用部分不回收。代码实现为 `revoke_topup_proportional`
 - 会员退款（subscription_credit 退款）：仅回收未使用的 subscription_credit，已使用部分不回收，不回收充值积分
 
 **订阅升级**：
@@ -197,9 +200,10 @@
 - 用户可查看即将过期的积分
 
 **查询规则**：
-- 用户查询余额时，必须显示各类型的分别余额
+- 用户查询余额时，必须显示各类型的分别余额 — ⚠️ 待修复：当前 `PointsWalletResponse` 仅返回 `total_balance`，不含 `topup_balance`/`subscription_balance` 分桶明细
 - 管理员查询账户时，必须显示按类型分桶的积分明细
 - 权限隔离：用户只能查询自己的记录，管理员可查询全租户记录
+- ext API 查询单笔交易：代码已实现 `get_transaction_ext` 但未注册到 OpenAPI 路由，当前不可通过外部接口访问
 
 **Product 兼容约束**：
 - 当前正式配置对象仍是 Plan
@@ -213,7 +217,7 @@
 - **账户冻结/关闭**：账户状态异常时，积分操作受限
 - **重复发放**：注册初始积分基于 user_id 去重，Webhook 事件基于幂等键去重
 - **部分失败**：异步任务失败时，通过补偿接口退回已消费积分（使用 external_ref_id 关联原始消费交易），补偿积分继承原积分类型和过期时间
-- **积分过期通知**：过期前 7 天、3 天、1 天发送通知（如果通知系统可用）
+- **积分过期通知**：过期前 7 天、3 天、1 天发送通知 — 条件性需求，依赖通知系统实现。当前代码仅实现过期扫描（状态更新为 expired），不含通知推送
 
 ---
 
@@ -232,7 +236,7 @@
 - 修改配置仅影响新订阅和续费，不影响历史记录
 - 交易历史查询支持按时间范围、交易类型、用户 ID（仅管理员）、Client App ID 筛选，分页查询
 - 支持 Realm 默认配置管理：注册初始积分数、定期积分数、发放周期类型、定期积分有效期
-- 新 Realm 自动创建默认配置（默认值均为0，不发放积分）
+- 新 Realm 自动创建默认配置（默认值均为0，不发放积分）— ⚠️ 待修复：当前 realm 创建流程中未触发 points 配置初始化
 - 配置变更后影响新注册用户，不影响现有用户
 - 支持 4 种免费积分周期类型：once、daily、weekly、monthly
 - 异步任务积分补偿：通过 external_ref_id 关联原始消费交易，补偿积分继承原积分类型和过期时间，保证幂等性
@@ -257,6 +261,9 @@
 
 - 接口能力范围包括：积分账户查询类、积分消费类（SDK）、积分充值/发放类、交易历史查询类、套餐积分配置管理类、Realm 默认配置管理类、Webhook 回调处理类
 - 访问控制：SDK 消耗接口需 API Key 授权（ThirdParty 身份）；管理类接口需 Realm Admin 权限；用户查询类接口仅允许查询本人数据
+- SDK 消耗积分时校验 API Key 对 client_app 的作用域（client_app_scope），确保 API Key 只能操作其授权范围内的 client_app 积分
+- 限流策略：realm 级别 100 次/分钟，user 级别 20 次/分钟
+- 管理接口权限：`plan_configs` 和 `realm_configs` handler 使用 `require_authenticated_user_in_realm` + service 层 policy 检查，通过 `points.view`/`points.manage` 权限控制访问
 - 积分变更必须可追溯，所有发放、消费、回收操作创建交易记录
 - Realm 隔离：所有接口严格遵守 realm 数据边界，防止跨 realm 操作
 - Webhook 回调处理需保证幂等性，防止重复发放或重复回收

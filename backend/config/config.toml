@@ -12,6 +12,7 @@ url = "redis://127.0.0.1:6379/1"
 [server]
 bind_address = "0.0.0.0:8080"
 log_level = "info"
+app_env = "demo"
 
 [frontend]
 url = "http://localhost:3000"

@@ -74,7 +74,7 @@
 ### 2.3 依赖项
 
 - **Product/Plan 编目系统**：积分包和订阅套餐都属于商品编目系统
-- **积分系统**：履约时发放 subscription_credit 或 topup_credit
+- **积分系统**：积分包履约时发放 topup_credit；订阅履约不直接发放 subscription_credit，积分发放延迟到后续支付平台（Stripe/Wechat）webhook 事件触发
 - **订阅系统**：订阅购买时创建或更新 Subscription
 - **支付平台配置**：已配置 Wechat/Stripe/Creem/Shopify 等支付平台
 - **PaymentEvent 审计**：所有支付事件记录到 PaymentEvent
@@ -108,7 +108,7 @@ Herald 当前已在 Billing 领域引入了多支付平台支持，但不同平�
 ### 3.2 关键特性
 
 - **三层模型**：Catalog Layer（定义卖什么）、Purchase Layer（表达一次支付尝试）、Fulfillment Layer（表达支付完成后的履约结果）
-- **购买对象与履约结果解耦**：订阅购买创建 Subscription + 发放 subscription_credit；积分包购买仅发放 topup_credit
+- **购买对象与履约结果解耦**：订阅购买创建 Subscription，积分发放延迟到后续 Stripe/Wechat webhook 事件触发（不在履约时直接发放 subscription_credit）；积分包购买仅发放 topup_credit
 - **平台分型**：发起式支付平台（Wechat/Stripe/Creem）进入 PaymentAttempt 模型；合同同步型平台（Shopify）保持 webhook-driven 模式
 
 ---
@@ -123,7 +123,7 @@ Herald 当前已在 Billing 领域引入了多支付平台支持，但不同平�
 - **删除保护**：有购买记录的积分包不可删除
 - **支付平台前置条件**：未配置支付平台时用户不可发起购买
 - **购买对象区分**：支持 subscription_plan 和 points_package 两种购买对象类型
-- **履约分流**：订阅购买创建/更新 Subscription + 发放 subscription_credit；积分包购买仅发放 topup_credit
+- **履约分流**：订阅购买创建/更新 Subscription（积分发放由支付平台 webhook 事件触发，不在履约时直接发放 subscription_credit）；积分包购买仅发放 topup_credit
 - **履约幂等性**：重复支付成功通知不重复履约
 - **平台分型规则**：Wechat/Stripe/Creem 进入 PaymentAttempt 模型；Shopify 保持 webhook-driven 订阅同步，不进入 PaymentAttempt
 
@@ -164,9 +164,12 @@ Herald 当前已在 Billing 领域引入了多支付平台支持，但不同平�
 
 **适用性**: 适用
 
-- **接口能力范围**：积分包管理（创建/编辑/删除/查询、支付平台映射配置、启用/禁用）、购买（创建支付尝试、查询状态、关闭）、履约（支付成功后内部履约、发放 subscription_credit 或 topup_credit）
-- **访问控制原则**：积分包管理仅 Realm Admin 可访问；购买接口已登录用户可访问；履约接口为系统内部调用不对外暴露
+- **接口能力范围**：积分包管理（创建/编辑/删除/查询、支付平台映射配置、启用/禁用）、购买（创建支付尝试、查询状态、关闭）、履约（支付成功后内部履约、积分包发放 topup_credit，订阅创建 Subscription 后积分由 webhook 触发发放）
+- **访问控制原则**：积分包管理使用 `points.manage` / `points.view` RBAC 权限控制（而非仅 Realm Admin 角色判断）；购买接口已登录用户可访问；履约接口为系统内部调用不对外暴露，通过 internal API key 中间件鉴权（`/api/internal/bill/purchase/payment-attempts/{attemptId}/fulfill`）
+- **购买前置校验**：非微信支付（Stripe、Creem 等）要求用户必须提供 email，微信支付无需此校验
 - **租户/Realm 数据边界**：积分包和 PaymentAttempt 按 Realm 隔离，不同 Realm 互不干扰
+- **PurchaseHistory 双路径注册**：购买历史 API 同时注册在 `/api/bill/{realmId}/purchase/points-packages/history` 和 `/api/realms/{realmId}/billing/purchase/points-packages/history` 两个路径前缀下
+- **PaymentAttempt 额外字段**：除基本字段外，PaymentAttempt 还包含 `provider_reference`（支付平台交易引用，如 Wechat 的 out_trade_no、Stripe/Creem 的 checkout session ID）、`provider_status`（支付平台原始状态）、`metadata`（JSON 扩展元数据）、`expires_at`（过期时间）、`completed_at`（完成时间）字段
 - **兼容性要求**：不影响现有订阅购买流程、Shopify webhook 处理和积分发放逻辑
 - **相关接口说明位置**：积分系统见 `docs/prd/billing/points.md`，微信支付见 `docs/prd/billing/wechat-pay.md`，Shopify 见 `docs/prd/billing/shopify-pay.md`
 
@@ -211,6 +214,10 @@ Herald 当前已在 Billing 领域引入了多支付平台支持，但不同平�
 - PaymentAttempt 仅用于发起式支付平台（Wechat/Stripe/Creem），Shopify 保持 webhook-driven 模式
 - 订阅购买与积分包购买通过 PurchasableTarget 类型区分，履约逻辑分流
 - 不改变现有 subscription_credit 和 topup_credit 的分离逻辑
+
+### 8.2 已知限制
+
+- **[P0] 订阅履约 tier/billing_period 硬编码**：`fulfill_subscription_purchase` 中 tier 硬编码为 `Professional`，billing_period 硬编码为 `Monthly`，未根据 Plan 动态查询。需在后续版本从 Plan 读取正确的 tier 和 billing_period。
 
 ---
 

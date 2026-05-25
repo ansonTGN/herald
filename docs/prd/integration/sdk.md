@@ -85,14 +85,15 @@
 - API Key 只有一种身份语义，代表第三方服务端机器凭据；API Key 自身作为 Principal 参与授权，不按 Key 类型拆分
 - 使用统一 Principal + RBAC 模型，API Key 不携带 runtime/management scope，能力由 Principal 的角色和 role policy 决定
 - Realm 隔离：用户和 Client App 操作仅限 API Key 所属 Realm
-- Realm 创建特权：创建 Realm 需 API Key Principal 在 admin realm 具备 `realm:create` 权限，普通 Realm 的 API Key 不可创建 Realm
+- Realm 创建特权：创建 Realm 需 API Key Principal 在 admin realm 具备 `realm:manage` 权限，普通 Realm 的 API Key 不可创建 Realm（RBAC 初始化仅对 admin realm 注册 `realm:manage` 权限）
+- Admin Realm 跨租户特权：`require_realm_membership` 对 admin realm 的 Principal（包括 API Key）始终放行，即 admin realm 的 API Key 可跨 Realm 操作用户、Client App 等资源，不受 Realm 隔离限制
 - Principal 绑定：API Key 以自身唯一标识作为 Principal ID，复用现有角色绑定机制
 - 角色分配：API Key 的角色通过管理后台由 Realm Admin 分配（详见 [API Key Roles PRD](/docs/prd/integration/api-key-roles.md)），API Key 不允许绑定内置角色
 
 ### 4.2 关键状态与异常
 
-- 跨 Realm 操作被拒绝时返回权限不足错误
-- Realm 创建时需校验 API Key Principal 属于 admin realm 且具备 `realm:create` 权限
+- 跨 Realm 操作被拒绝时返回权限不足错误（admin realm 的 Principal 除外，见 4.1 Admin Realm 跨租户特权）
+- Realm 创建时需校验 API Key Principal 属于 admin realm 且具备 `realm:manage` 权限
 
 ---
 
@@ -106,22 +107,22 @@
    - 查询指定 Realm 详情
 
 2. **用户管理** -- US-TP-013（P0）
-   - 在指定 Realm 中创建用户，返回用户 ID 和状态
-   - 查询指定 Realm 的用户列表
+   - 在指定 Realm 中创建用户，返回用户 ID 和状态（创建时 email 仅检查非空，无格式校验，待修复）
+   - 查询指定 Realm 的用户列表（分页：page 默认 1，page_size 默认 20，最大 100）
    - 查询指定 Realm 中单个用户的详情
 
 3. **Client App 管理** -- US-TP-014
    - 在指定 Realm 中创建 Client App，返回 Client ID 和 Secret
-   - 查询指定 Realm 的 Client App 列表
-   - 查询指定 Realm 中单个 Client App 的详情
+   - 查询指定 Realm 的 Client App 列表（返回字段：id、client_id、name、enabled、created_at）
+   - 查询指定 Realm 中单个 Client App 的详情（返回字段：id、client_id、client_secret（仅创建时返回）、name、description、redirect_uris、enabled、created_at）
 
 ### 5.2 验收目标
 
 - 3 个用户故事的全部验收场景通过
 - SDK 新增方法与现有方法风格一致（方法命名、错误处理、参数模式）
-- 所有新增 ext 端点遵循 Realm 隔离原则：API Key 只能操作所属 Realm 的资源
+- 所有新增 ext 端点遵循 Realm 隔离原则：API Key 只能操作所属 Realm 的资源（admin realm 的 API Key 享有跨租户特权，见 4.1）
 - 所有新增资源管理端点要求 API Key Principal 具备对应权限
-- Realm 创建需额外校验 API Key Principal 属于 admin realm 且具备 `realm:create`
+- Realm 创建需额外校验 API Key Principal 属于 admin realm 且具备 `realm:manage`
 
 ---
 
@@ -135,15 +136,33 @@
 - API Key 语义：API Key 只有一种身份语义，代表第三方服务端机器凭据；API Key 自身作为 Principal 参与授权，不按 Key 类型拆分
 - 权限模型：使用统一 Principal + RBAC 模型，能力由 Principal 的角色和 role policy 决定
 - Realm 隔离：用户和 Client App 操作仅限 API Key 所属 Realm
-- Realm 创建特权：创建 Realm 需 API Key Principal 在 admin realm 具备 `realm:create` 权限
+- Realm 创建特权：创建 Realm 需 API Key Principal 在 admin realm 具备 `realm:manage` 权限
+- Admin Realm 跨租户特权：`require_realm_membership` 对 admin realm 的 Principal 始终放行，admin realm 的 API Key 可跨 Realm 操作资源
 - Principal 绑定：API Key 以自身唯一标识作为 Principal ID，复用现有角色绑定机制
 - 角色分配：API Key 的角色通过管理后台由 Realm Admin 分配（详见 [API Key Roles PRD](/docs/prd/integration/api-key-roles.md)），API Key 不允许绑定内置角色
 
+### 输入验证规则
+
+- Realm name：3-50 字符（代码中 `req.name.len() < 3 || req.name.len() > 50` 时返回 400 ValidationError）
+- Realm admin email：仅检查非空（代码中 `req.admin_user.email.is_empty()`，无邮箱格式校验）
+- Realm admin password：最少 8 字符（代码中 `req.admin_user.password.len() < 8`）
+- User email（ext API 创建用户）：仅检查非空（代码中 `req.email.is_empty()`，**待修复：缺少邮箱格式校验**）
+- User password：最少 8 字符
+- Client App name：非空
+- Client App redirect_uris：必填（传入 `CreateClientAppRequest`，如启用 device_code_grant 且 redirect_uris 为空会触发业务校验失败）
+
+### 分页参数
+
+- 用户列表：`page`（1-based，默认 1）、`page_size`（默认 20，最大 100）
+- Realm 列表与 Client App 列表：当前无分页，返回全量数据
+- **已知不一致**：用户列表 OpenAPI 注释描述为 "default 100, max 500"（`pageSize` 参数描述），实际代码默认 20、最大 100（`page_size.unwrap_or(20).clamp(1, 100)`），待修复注释
+
 ### 接口能力边界
 
-- Realm：创建、列表、详情（需对应权限；创建还需 admin realm 权限）
-- User：创建、列表、详情（需对应权限，限本 Realm）
-- Client App：创建、列表、详情（需对应权限，限本 Realm）
+- Realm：创建、列表、详情（需对应权限；创建还需 admin realm `realm:manage` 权限）
+- User：创建、列表、详情（需对应权限，限本 Realm；admin realm 的 API Key 可跨 Realm）
+- Client App：创建、列表、详情（需对应权限，限本 Realm；admin realm 的 API Key 可跨 Realm）
+- 积分交易查询单笔（`get_transaction_ext`）：端点已挂载于 `/api/ext/points/{realmId}/transactions/{transactionId}`，但未注册到 OpenAPI 文档（`ApiDoc` 的 `paths` 中未列出），待补充注册
 
 ---
 

@@ -67,7 +67,7 @@
 
 - 订阅套餐管理（创建、编辑、删除、查看）
 - 套餐分配到 Client App
-- 支持多种支付平台（当前已支持 Creem 模拟支付平台，未来扩展 Stripe、支付宝/微信支付）
+- 支持多种支付平台：Creem（模拟支付平台，已实现）、Stripe（已实现，详见 `docs/prd/billing/stripe-payment.md`）、Shopify Pay（已实现，详见 `docs/prd/billing/shopify-pay.md`）、微信支付（已实现，详见 `docs/prd/billing/wechat-pay.md`）；支付宝待实现
 - 灵活的订阅套餐管理（月付/年付）
 - 套餐基本信息管理（name、title、description、type、price、currency、checkout_url）
 - Plan 多支付平台映射配置（一个 Plan 可关联多个支付平台）
@@ -104,7 +104,7 @@
 - **Realm 系统** — Billing 功能属于 Realm 级别
 - **Client App 系统** — 套餐分配到 Client App
 - **权限管理系统** — Realm Admin 权限检查
-- **支付平台集成** — 当前已集成 Creem 模拟支付平台；Stripe/支付宝/微信支付待实现
+- **支付平台集成** — 当前已集成 Creem（模拟支付平台）、Stripe（`docs/prd/billing/stripe-payment.md`）、Shopify Pay（`docs/prd/billing/shopify-pay.md`）、微信支付（`docs/prd/billing/wechat-pay.md`）；支付宝待实现
 
 ---
 
@@ -120,7 +120,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 ### 3.2 关键特性
 
-- 支持多种支付平台（Creem、Stripe/支付宝/微信支付）
+- 支持多种支付平台（Creem、Stripe、Shopify Pay、微信支付；支付宝待实现）
 - 灵活的订阅套餐管理（月付/年付）
 - Plan 多支付平台映射：一个 Plan 可关联多个支付平台的商品/价格配置，无需为每个支付平台复制 Plan
 - 套餐分配到 Client App，控制哪些应用可以提供哪些订阅
@@ -141,6 +141,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - Plan Payment Provider 是 Plan 的下属配置对象，每个映射分别保存外部商品、价格、checkout 等接入信息
 - Plan 是订阅和计费的直接承载对象，Product 是 Plan 的上层编目对象
 - 套餐的 `name` 字段是唯一标识符，用于 API 调用和前端路由，创建后不可修改
+  > **[待修复]** 当前代码 `UpdateSubscriptionPlanInput` 包含 `name: Option<String>`，`update_plan` 方法允许修改 name。应拒绝 name 变更，使其与 PRD 意图一致。
 - 套餐的 `title` 字段是用户友好的显示名称
 - `features` 和 `quotas` 由第三方应用自行管理，Herald 不存储这些信息
 - 更新价格影响新订阅用户，已订阅用户保持原价格直到续费
@@ -149,11 +150,12 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 **删除规则**：
 - 无法删除有活跃订阅的套餐
 - 可以删除无订阅的套餐（包括已取消订阅的套餐）
-- 删除套餐时级联删除所有支付平台映射
+- 删除套餐时级联删除所有支付平台映射（数据库层面通过外键级联或应用层逐条删除实现）
 
 **支付平台映射规则**：
 - 同一 Plan 不能重复配置同一个支付平台
 - 删除支付平台映射前需检查是否有活跃订阅
+  > **[待修复]** 当前代码 `remove_payment_provider_from_plan` 未检查该映射下是否有活跃订阅，直接执行删除。应增加活跃订阅检查，拒绝有活跃订阅的映射删除。
 - 禁用支付平台映射不影响已订阅用户，但新用户无法使用该支付平台
 - 启用支付平台映射时，如果该平台未在 Realm 层配置，应提示用户先配置支付平台
 
@@ -213,9 +215,15 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - **Past Due（逾期）** — 收到 `subscription.past_due` 事件触发；立即撤销访问权限；用户更新支付方式后可恢复 Active 状态；多次支付失败后转为 Expired
 - **Disputed（争议中）** — 收到 `dispute.created` 事件触发；争议调查期间保持访问权限；记录争议详情（ID、金额、原因）；争议解决后根据结果转为 Active 或 Canceled
 - **Scheduled Cancel（预定取消）** — 收到 `subscription.scheduled_cancel` 事件触发；用户在计费周期结束前仍可正常访问；可在周期结束前取消预定取消操作
-- **Refund（退款）** — 收到 `refund.created` 事件触发；退款不影响访问权限；仅记录日志用于审计
 - **Canceled** — 订阅已取消
-- **Expired** — 订阅已过期
+- **Expired** — 订阅已过期；过期后自动降级为 Free tier
+- **Incomplete（未完成）** — 支付需在 23 小时内完成，期间无访问权限；超时未完成则转为 Expired
+- **Trialing（试用中）** — 试用期间享有完整访问权限
+- **Paused（暂停）** — 订阅暂停中，无访问权限
+- **Pending（待处理）** — 本地扩展状态，用于支付流程中间态
+
+> **退款说明**：`refund.created`（Creem）/ `charge.refunded`（Stripe）事件不作为独立订阅状态。退款事件仅记录审计日志并触发积分回收（按退款类型比例撤销），不改变订阅状态。详见 `docs/prd/billing/points.md`。
+> **[待完善]** 当前退款事件仅通过日志记录，未创建 `SubscriptionHistoryEvent`。应补充退款事件的历史记录创建逻辑。
 
 **订阅变更事件类型**：
 
@@ -244,7 +252,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 **支付平台配置**：
 - 支持添加、编辑、启用/禁用、删除支付平台配置（API Key、Secret Key、Webhook Secret）
-- 当前支持 Creem（模拟支付平台），未来扩展 Stripe、支付宝/微信支付
+- 当前支持 Creem（模拟支付平台）、Stripe、Shopify Pay、微信支付；支付宝待实现
 - 每个 realm 使用独立的 webhook URL，实现多租户隔离
 
 **订阅套餐管理**：
@@ -267,8 +275,9 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 **Webhook 事件处理**：
 - 支持 Creem 的 checkout.completed、subscription.active/trialing/paid/paused/canceled/expired/update 事件
+- 支持 Stripe 的 checkout.session.completed、customer.subscription.updated/deleted、charge.refunded、invoice.payment_succeeded、payment_intent.succeeded 事件（详见 `docs/prd/billing/stripe-payment.md`）
 - 签名验证、事件幂等性处理、状态转换验证
-- 与积分系统联动：首次订阅充值、定期续费充值
+- 与积分系统联动：首次订阅充值、定期续费充值、退款积分回收
 
 **订阅变更历史**：
 - 单订阅历史：展示单个订阅从创建到当前的所有变更事件，按时间倒序排列
@@ -304,7 +313,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 所有接口遵守 realm 隔离原则
 - 写入类操作（创建、编辑、删除套餐/映射/分配）需要 `billing.manage` 权限
 - 读取类操作需要 `billing.view` 权限或认证用户身份
-- 删除套餐时级联删除所有支付平台映射配置
+- 删除套餐时级联删除所有支付平台映射配置（数据库层面通过外键级联或应用层逐条删除实现）
 - 金额与积分变更必须可追溯
 
 **兼容性要求**：
@@ -358,7 +367,8 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - **多支付平台映射**：采用 Plan + Plan Payment Provider 映射模型，一个 Plan 可关联多个支付平台，无需为每个支付平台复制 Plan
 - **Webhook 隔离**：每个 realm 使用独立的 webhook URL，realm_id 从 URL 路径提取实现多租户隔离
 - **编目演进**：Billing 编目从 `Realm -> Plan` 演进为 `Realm -> Product -> Plan`，Product 主定义以 product-catalog PRD 为准
-- **退款边界**：支付平台处理金额退款，Herald 处理积分回收
+- **退款边界**：支付平台处理金额退款，Herald 处理积分回收。退款不作为独立订阅状态，`refund.created`/`charge.refunded` 事件仅记录审计日志并触发积分回收，不改变订阅状态
+- **订阅过期降级**：订阅过期后自动将 tier 降级为 Free，确保用户失去付费权限
 
 ---
 
@@ -367,5 +377,8 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 用户故事：`docs/user-stories/billing/subscription.md`
 - 相关 PRD：`docs/prd/billing/product-catalog.md`
 - 相关 PRD：`docs/prd/billing/points.md`
+- 相关 PRD：`docs/prd/billing/stripe-payment.md`
+- 相关 PRD：`docs/prd/billing/shopify-pay.md`
+- 相关 PRD：`docs/prd/billing/wechat-pay.md`
 - 相关 PRD：`docs/prd/core/realm-settings.md`
 - Realm Admin 用户故事：`docs/user-stories/core/realm-admin.md`

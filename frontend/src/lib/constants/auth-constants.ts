@@ -87,9 +87,12 @@ const ALLOWED_REDIRECT_PATTERNS = [
 export function validateRedirectPath(redirectPath: string | undefined): boolean {
   if (!redirectPath) return true
 
-  // Reject absolute URLs to prevent external redirects
   if (redirectPath.startsWith('http://') || redirectPath.startsWith('https://')) {
-    return false
+    try {
+      return new URL(redirectPath).hostname === window.location.hostname
+    } catch {
+      return false
+    }
   }
 
   // Reject protocol-relative URLs

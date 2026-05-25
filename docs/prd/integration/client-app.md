@@ -100,7 +100,7 @@
 
 Client App 采用双 ID 系统：
 - `id`: UUID（内部主键，用于数据库关联和 role_policies）
-- `client_id`: string（外部标识符，必填，3-36 字符，仅字母数字）
+- `client_id`: string（外部标识符，必填，3-36 字符，字母数字、连字符和下划线）
 
 ### 3.2 关键特性
 
@@ -122,6 +122,8 @@ Client App 采用双 ID 系统：
 - 会话续期策略在 Session 创建时固化（写入 SessionData），后续配置修改只影响新创建的 Session
 - 禁用 Client App 会使绑定到该 App 的 API Key 在外部 API 认证中不可用
 - 删除 Client App 后，历史 API Key 的 Client App 关联可为空；空关联仅用于兼容旧数据，不应作为新建默认
+- 内置管理控制台 Client App（client_id 固定为 `admin-web-console`）不允许被删除，防止 Realm 管理入口不可用
+- `device_code_grant_enabled` 字段控制是否启用 Device Code Grant 流程，默认 false；启用后允许该 Client App 参与 Device Code 授权流程
 
 ### 4.2 关键状态与异常
 
@@ -149,7 +151,11 @@ Client App 采用双 ID 系统：
    - 配置 Session TTL（60-86400 秒）和 Renewal TTL（60-604800 秒或 null，需 >= Session TTL）
    - 重新生成 Client Secret
 
-3. **应用外观配置** (P1)
+3. **Device Code Grant 配置**
+   - `device_code_grant_enabled` 字段控制该 Client App 是否允许 Device Code Grant 授权流程
+   - 默认值为 false；启用后，该 Client App 可用于设备码授权场景
+
+4. **应用外观配置** (P1)
    - 配置应用图标 URL
 
 ### 5.2 验收目标
@@ -172,6 +178,14 @@ Client App 采用双 ID 系统：
 - 凭证脱敏：Client Secret 不在列表和详情查询中返回，仅在创建/重新生成时展示
 - 详细接口契约、认证方式和错误模型应下沉到技术设计文档
 - Client App 的 `enabled` 状态会被 API Key 认证链路读取，用于统一禁用其下 API Key
+- ext API（`/api/ext/realms/{realmId}/client-apps`）通过 API Key 认证提供第三方集成接口，支持创建、列表和详情查询；创建时 `client_id` 由系统自动生成（UUID v7），不允许自定义
+- 内置管理控制台 Client App（`admin-web-console`）受删除保护，基础架构层阻止删除操作
+
+> **[待修复] Session TTL/Renewal TTL 上限校验缺失**：PRD 定义 Session TTL 范围 60-86400 秒、Renewal TTL 范围 60-604800 秒，当前代码仅校验各自下限 60 秒，未校验上限。需在 `validate_session_config` 中补充上限检查。
+
+> **[待修复] Renewal TTL >= Session TTL 校验缺失**：PRD 要求 `renewal_ttl >= session_ttl`，当前代码仅分别验证各自下限，未做交叉校验。需在 `validate_session_config` 中补充。
+
+> **[待修复] name/description 长度限制不一致**：创建接口 name max=100、description max=500；更新接口 name max=36、description max=255。需统一为相同限制。
 
 ---
 
@@ -196,6 +210,10 @@ Client App 采用双 ID 系统：
 - **双 ID 系统**：Client App 同时拥有 UUID 内部主键和 string 外部 client_id
 - **凭证一次性展示**：Client Secret 仅在创建和重新生成时返回一次
 - **会话续期策略固化**：续期策略在 Session 创建时固化，后续配置修改只影响新 Session
+- **client_id 格式**：允许字母数字、连字符（`-`）和下划线（`_`），3-36 字符
+- **管理控制台删除保护**：内置管理控制台 Client App（`admin-web-console`）禁止删除
+- **ext API 自动生成 client_id**：ext API 创建 Client App 时使用 UUID v7 自动生成 client_id，不允许自定义；admin API 允许自定义 client_id
+- **Device Code Grant 开关**：通过 `device_code_grant_enabled` 字段控制，默认关闭
 
 ---
 

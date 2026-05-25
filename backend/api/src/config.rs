@@ -95,7 +95,7 @@ fn default_log_level() -> String {
 }
 
 fn default_app_env() -> String {
-    "development".to_string()
+    "production".to_string()
 }
 
 fn default_frontend_url() -> String {

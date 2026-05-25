@@ -142,10 +142,10 @@ pub async fn oauth_authorize(
     let allowed_uris: Vec<String> = serde_json::from_str(&redirect_uris)
         .map_err(|_| ApiError::internal("Failed to parse redirect URIs".to_string()))?;
 
-    // Enforce HTTPS for all environments (Demo uses HTTPS URIs in tests)
+    // Enforce HTTPS in production. Local OAuth clients use localhost HTTP in dev/demo.
     herald_core::domain::client::validation::validate_redirect_uri(
         &params.redirect_uri,
-        false, // is_development: always enforce HTTPS
+        state.app_env != "production",
     )
     .map_err(|e| ApiError::bad_request(format!("Invalid redirect_uri: {}", e)))?;
 

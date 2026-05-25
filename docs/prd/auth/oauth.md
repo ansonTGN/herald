@@ -81,7 +81,7 @@
 
 ### 2.1 包含功能
 
-- OAuth Provider 配置管理（Google、GitHub、Facebook、Apple）及 Provider 启用/禁用控制
+- OAuth Provider 配置管理（Google、GitHub、Facebook、Apple、WeChat、WeChat Mini Program）及 Provider 启用/禁用控制
 - Authorization Code + PKCE 流程（OAuth 2.1 推荐模式），支持第三方 SPA 发起授权请求
 - 用户在 Herald 登录页完成认证后生成 authorization_code，通过 redirect_uri 回传第三方
 - 第三方后端用 authorization_code + code_verifier 换取 access_token
@@ -90,7 +90,11 @@
 - TOTP 二次认证流程中保持 OAuth 上下文
 - 前端登录页透传 OAuth 参数，处理后端返回的 redirectTo 跳转
 - 第三方 API 认证（API Key 方式），支持用户登录状态验证、权限检查和订阅状态查询
+- API Key 绑定到特定 Client App（Client App Scope），普通 Client App 的 API Key 仅能访问该 App 所属资源，Admin API Client 的 Key 可跨 App 访问
+- API Key 轮换（Rotate），生成新密钥并立即失效旧密钥
 - API Key Realm 隔离，API Key 使用统计
+- OAuth 2.0 Device Authorization Grant (RFC 8628)，详见独立 PRD `docs/prd/auth/device-code.md`
+- Herald 作为 OAuth Client 的 SSO 登录，通过 `/api/oauth/{realmId}/{provider}/login` 和 `/{provider}/callback` 路径实现第三方 Provider 登录
 
 ### 2.2 不包含功能 (Out of Scope)
 
@@ -102,7 +106,6 @@
 - API Key 管理界面（后续优化）
 - 速率限制（后续优化）
 - 审计日志（后续优化）
-- API Key Scope 验证和轮换（后续优化）
 - Webhooks 和 GraphQL 支持（后续优化）
 
 ### 2.3 依赖项
@@ -124,11 +127,15 @@
 
 为 Herald 多租户系统提供完整的 OAuth 与第三方集成能力，包括两个核心功能域：
 
-1. **OAuth Provider 配置管理**：允许 Realm Admin 为每个 Realm 配置第三方登录提供商（Google、GitHub、Facebook、Apple），管理 Provider 的启用/禁用状态和 OAuth 凭证。用户可通过已配置的 Provider 实现 SSO 登录。
+1. **OAuth Provider 配置管理**：允许 Realm Admin 为每个 Realm 配置第三方登录提供商（Google、GitHub、Facebook、Apple、WeChat、WeChat Mini Program），管理 Provider 的启用/禁用状态和 OAuth 凭证。用户可通过已配置的 Provider 实现 SSO 登录。
 
 2. **第三方应用 OAuth 集成 (Authorization Code + PKCE)**：基于 OAuth 2.1 标准流程，允许第三方 Web 应用通过 Herald 系统验证用户身份。第三方 SPA 发起授权请求，用户在 Herald 完成认证后，通过授权码安全交换令牌。
 
-3. **第三方 API 接入**：第三方应用通过 API Key 认证接入 Herald 系统，实现用户登录状态验证、权限检查和订阅状态查询等功能。
+3. **第三方 API 接入**：第三方应用通过 API Key 认证接入 Herald 系统，实现用户登录状态验证、权限检查和订阅状态查询等功能。Ext API 还提供 Realm、User、Client App、Billing（订阅计划查询）、Points（余额查询与消费）等完整管理能力。详细内容参考各自独立 PRD。
+
+4. **Herald OAuth Client SSO 登录**：Herald 本身作为 OAuth Client，通过通用登录路径 `/api/oauth/{realmId}/{provider}/login` 发起第三方 Provider 授权，回调路径 `/{provider}/callback` 接收授权结果并完成用户关联登录。支持所有已配置的 Provider 类型。
+
+5. **OAuth 2.0 Device Authorization Grant**：完整实现 RFC 8628 设备授权流程，包含 authorize、token、verify、confirm 四个独立端点，详见独立 PRD `docs/prd/auth/device-code.md`。
 
 ### 3.2 关键特性
 
@@ -138,7 +145,11 @@
 - redirect_uri 白名单精确匹配（origin + port），禁止前缀匹配，防止开放重定向
 - TOTP 二次认证流程中保持 OAuth 上下文，认证完成后同样返回 redirectTo
 - API Key 绑定到特定 realm，实现跨租户隔离
+- API Key 可绑定到特定 Client App（Client App Scope），普通 Client App 的 Key 仅能访问该 App 资源，Admin API Client 的 Key 可跨 App 访问
+- API Key 支持轮换（Rotate），旧密钥立即失效，返回新密钥（仅展示一次）
 - 命名约定：推荐使用 "Provider" 或 "Identity Provider"，而非 "OAuth Config"，符合行业标准
+- Herald 本身可作为 OAuth Client，通过通用路径实现第三方 Provider SSO 登录
+- 支持 OAuth 2.0 Device Authorization Grant (RFC 8628)，适用于无浏览器设备
 
 ---
 
@@ -148,11 +159,12 @@
 
 **OAuth Provider 管理:**
 - Provider 配置为 Realm 级别资源，仅 Realm Admin 可管理
-- 每个 Realm 可配置多个 OAuth Provider（Google、GitHub、Facebook、Apple）
+- 每个 Realm 可配置多个 OAuth Provider（Google、GitHub、Facebook、Apple、WeChat、WeChat Mini Program）
 - Provider 可独立启用/禁用；禁用的 Provider 不在登录页显示
 - Provider 配置包含 Client ID、Client Secret、Scopes 和启用状态
 - 编辑 Provider 时 Client Secret 为可选（留空表示保持原值）；前端不应显示已存储的 Client Secret
 - 删除 Provider 需要二次确认
+- WeChat Provider Scope 仅允许 `snsapi_login`；WeChat Mini Program 不使用 Scope
 
 **OAuth 授权流程:**
 - 第三方 SPA 必须使用 Authorization Code + PKCE 流程，不支持 Implicit Flow
@@ -165,10 +177,20 @@
 **第三方 API 接入:**
 - 第三方应用使用 API Key（通过 X-API-Key header）认证，与 session token 认证体系分离
 - API Key 绑定到特定 realm，只能访问所属 realm 的资源
+- API Key 可绑定到特定 Client App（Client App Scope），绑定后只能访问该 Client App 所属资源
+- Admin API Client（`admin-api-console`）的 API Key 不受 Client App Scope 限制，可跨 App 访问
+- 未绑定 Client App 的 API Key 也不受 Client App Scope 限制
+- API Key 支持轮换（Rotate），调用 `POST /api/api-keys/{realmId}/{apiKeyId}/rotate` 生成新密钥，旧密钥立即失效（旧缓存条目通过 TTL 自然过期）
 - API Key 有启用/禁用和过期时间控制
 - 记录 API Key 使用统计（使用次数和最后使用时间）
 - 无效或缺失 API Key 返回 401；过期或禁用 API Key 返回 401
 - 无效 session token 在权限检查时返回 `allowed: false`，而非报错
+
+**Herald OAuth Client SSO 登录:**
+- Herald 作为 OAuth Client 通过 `/api/oauth/{realmId}/{provider}/login` 发起第三方 Provider 授权
+- 回调路径 `/{provider}/callback` 接收 Provider 授权结果，创建或关联 OAuth 用户账户，完成 SSO 登录
+- 支持所有已配置的 Provider 类型（Google、GitHub、Facebook、Apple、WeChat、WeChat Mini Program）
+- OAuth 账户通过 open_id 关联用户，Email 冲突时自动关联（需验证用户当前未登录）
 
 **TOTP + OAuth 兼容:**
 - TOTP 临时会话中保存 OAuth 上下文（oauth_client_id、redirect_uri、state）
@@ -212,8 +234,11 @@
 
 **第三方 API 接入:**
 - API Key 认证系统：提取验证 X-API-Key header，校验 API Key 有效且未过期，更新使用统计
+- API Key Client App Scope 校验：绑定了 Client App 的 API Key 仅能访问该 App 的资源，Admin API Client 的 Key 除外
+- API Key 轮换：通过 `POST /api/api-keys/{realmId}/{apiKeyId}/rotate` 轮换密钥，旧密钥立即失效，返回新明文密钥（仅展示一次）
 - 权限检查：第三方应用使用 API Key + 用户 session token，检查用户对指定资源的权限，支持 batch 检查
 - 订阅状态查询：第三方应用使用 API Key 查询客户端应用的订阅状态，无订阅时返回 free tier 信息
+- Ext API 完整能力：除权限检查和订阅查询外，还提供 Realm（创建/列表/查询）、User（创建/列表/查询）、Client App（创建/列表/查询）、Billing（订阅计划/分配查询）、Points（余额查询/消费/交易查询）管理接口。详细内容参考各自独立 PRD
 
 ### 5.2 验收目标
 
@@ -240,9 +265,13 @@
 - PKCE 的 code_challenge 必须使用 S256 方法（SHA256）
 - 第三方 API 接入使用独立的 API Key 认证体系（X-API-Key header），与 session token 认证分离
 - API Key 绑定 realm，第三方接口只能访问所属 realm 的资源
+- API Key 可绑定 Client App（Client App Scope），绑定后仅能访问该 Client App 资源；Admin API Client 和未绑定 Client App 的 Key 不受此限制
+- API Key 轮换端点 `POST /api/api-keys/{realmId}/{apiKeyId}/rotate`，需要 `api_keys.manage` 权限
 - 权限检查接口支持 batch 模式（多个 rules），无效 session token 返回 `allowed: false` 而非报错
 - 订阅查询接口在无订阅时返回 free tier 信息
 - Client App 禁用时拒绝所有 OAuth 授权请求
+- Herald OAuth Client SSO 路径：`GET /api/oauth/{realmId}/{provider}/login`（发起授权）和 `GET|POST /api/oauth/{realmId}/{provider}/callback`（回调处理），用于 Herald 自身通过第三方 Provider 登录
+- OAuth 2.0 Device Authorization Grant 完整实现（RFC 8628），端点包含 authorize、token、verify、confirm，详见 `docs/prd/auth/device-code.md`
 - 详细端点契约、认证方式和错误模型应下沉到技术设计或接口说明文档
 
 ---
@@ -274,6 +303,10 @@
 - 命名使用 "Provider" / "Identity Provider"，避免与 OAuth Config 技术术语混淆
 - redirect_uri 白名单采用精确匹配策略（origin + port），不使用前缀匹配
 - 第三方 API 认证使用独立 API Key 体系，与 session token 分离
+- API Key 支持 Client App Scope 绑定，限制 API Key 仅访问特定 Client App 资源；Admin API Client 不受此限制
+- OAuth Provider 支持 WeChat 和 WeChat Mini Program，WeChat Scope 限制为 `snsapi_login`，WeChat Mini Program 不使用 Scope
+- Herald 自身作为 OAuth Client 通过通用登录/回调路径实现 SSO 登录
+- OAuth 2.0 Device Authorization Grant (RFC 8628) 独立实现，详见 `docs/prd/auth/device-code.md`
 - 编辑 Provider 时 Client Secret 可选留空（保持原值），前端不回显已存储的 Secret
 - State 和 authorization_code 存储在 Redis，一次性使用后删除
 
@@ -290,3 +323,4 @@
 - 相关 PRD：`docs/prd/integration/client-app.md`
 - 相关 PRD：`docs/prd/auth/permissions.md`
 - 相关 PRD：`docs/prd/auth/totp.md`
+- 相关 PRD：`docs/prd/auth/device-code.md`（Device Authorization Grant）
