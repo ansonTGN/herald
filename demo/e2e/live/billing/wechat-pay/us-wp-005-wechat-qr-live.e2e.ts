@@ -1,6 +1,18 @@
 /**
  * Live WeChat QR Code Payment Flow Test
  *
+ * Related User Stories: US-WP-005, US-PU-06, US-PA-001, US-PA-002
+ * Coverage: partial live smoke; validates real WeChat credentials can render a QR code.
+ * Not Covered: payment success, status polling, fulfilled points/subscription result,
+ *   expired QR, failed payment, cancel order closure, or unconfigured-provider state.
+ * Live Dependency: real WeChat Pay merchant credentials
+ * Manual Step: none for QR rendering; payment completion requires external scan/webhook
+ * Run Command:
+ *   cd demo
+ *   npx playwright test e2e/live/billing/wechat-pay/us-wp-005-wechat-qr-live.e2e.ts --project=demo-fast
+ * Skip/Fail Policy:
+ *   Skips when WeChat Pay credentials are absent.
+ *
  * Validates that real WeChat Pay credentials from .env.demo are correctly
  * configured and can produce a scannable QR code for native payment.
  *
@@ -20,24 +32,24 @@
  *   4. Development config → AppID → set WECHAT_APP_ID in .env.demo
  *   5. Account info → Merchant ID → set WECHAT_MCH_ID in .env.demo
  *
- * Skips gracefully when credentials are absent.
+ * Skips when credentials are absent.
  *
  * User Stories: US-PU-06 Scenario 1, US-WP-005, US-PA-001, US-PA-002
  */
 
 import { test, expect } from '@playwright/test'
-import { secrets, hasWechatPayment } from '../secrets/env'
-import { seedWechatConfig } from '../secrets/realm-seed'
-import { verifyTestEnvironment } from '../helpers/environment-setup'
-import { loginWithCredentials, loginAsAdmin } from '../helpers/auth'
-import { SELECTORS } from '../selectors'
-import { initiatePurchaseFlow, TEST_DATA } from '../helpers/unified-purchase.helpers'
+import { secrets, hasWechatPayment } from '../../../secrets/env'
+import { seedWechatConfig } from '../../../secrets/realm-seed'
+import { verifyTestEnvironment } from '../../../helpers/environment-setup'
+import { loginWithCredentials, loginAsAdmin } from '../../../helpers/auth'
+import { SELECTORS } from '../../../selectors'
+import { initiatePurchaseFlow, TEST_DATA } from '../../../helpers/unified-purchase.helpers'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 const REALM_ID = TEST_DATA.REALMS.REALM_001
 const USER_EMAIL = TEST_DATA.USERS.USER_REALM_001
 
-test.describe('Live: WeChat QR Code Payment', () => {
+test.describe('[Live][Billing WeChat Pay] US-WP-005: WeChat QR payment', () => {
   test.beforeEach(async ({ page }) => {
     test.skip(!hasWechatPayment(), 'WeChat Pay credentials not configured in .env.demo')
 
@@ -79,7 +91,7 @@ test.describe('Live: WeChat QR Code Payment', () => {
     }
   })
 
-  test('WeChat credentials produce scannable QR code', async ({ page }) => {
+  test('US-WP-005 Scenario 1: WeChat credentials produce scannable QR code', async ({ page }) => {
     await test.step('Initiate WeChat purchase flow', async () => {
       const attemptId = await initiatePurchaseFlow(page, TEST_DATA.PAYMENT_PROVIDERS.WECHAT, REALM_ID)
       expect(attemptId).toBeTruthy()

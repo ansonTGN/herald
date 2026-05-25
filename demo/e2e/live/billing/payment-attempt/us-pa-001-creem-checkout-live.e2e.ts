@@ -1,6 +1,18 @@
 /**
  * Live Creem Payment Smoke Test
  *
+ * Related User Stories: US-PA-001, US-PA-002, US-PA-003, subscription purchase
+ * Coverage: partial live smoke; covers the Creem checkout URL branch of US-PA-001.
+ * Not Covered: complete payment-attempt matrix, frontend polling states, failure/expiry,
+ *   webhook compensation, entitlement fulfillment, idempotency, or audit outcomes.
+ * Live Dependency: real Creem test credentials and checkout
+ * Manual Step: maybe, depending on Creem checkout challenge behavior
+ * Run Command:
+ *   cd demo
+ *   npx playwright test e2e/live/billing/payment-attempt/us-pa-001-creem-checkout-live.e2e.ts --project=demo-fast --headed
+ * Skip/Fail Policy:
+ *   Fails loud when required Creem credentials are absent.
+ *
  * Validates that real Creem credentials from .env.demo are correctly
  * configured and accepted by the Creem API.
  *
@@ -28,17 +40,17 @@
  *
  * Test mode: use ck_test_* API key, test card 4242 4242 4242 4242
  *
- * Skips gracefully when credentials are absent.
+ * Fails loud when credentials are absent.
  */
 
 import { test, expect, type Frame, type Locator, type Page } from '@playwright/test'
-import { secrets, requireCreemPayment } from '../secrets/env'
-import { seedCreemConfig } from '../secrets/realm-seed'
-import { loginAsAdmin } from '../helpers/auth'
-import { verifyTestEnvironment } from '../helpers/environment-setup'
-import { createProduct, verifyProductInTable } from '../billing-admin/helpers/product-page.helpers'
-import { createSubscriptionPlan } from '../billing-admin/helpers/billing-page.helpers'
-import { fulfillPayment, waitForPaymentStatus } from '../helpers/payment-simulation'
+import { secrets, requireCreemPayment } from '../../../secrets/env'
+import { seedCreemConfig } from '../../../secrets/realm-seed'
+import { loginAsAdmin } from '../../../helpers/auth'
+import { verifyTestEnvironment } from '../../../helpers/environment-setup'
+import { createProduct, verifyProductInTable } from '../../../billing-admin/helpers/product-page.helpers'
+import { createSubscriptionPlan } from '../../../billing-admin/helpers/billing-page.helpers'
+import { fulfillPayment, waitForPaymentStatus } from '../../../helpers/payment-simulation'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 const REALM_ID = 'admin'
@@ -80,7 +92,7 @@ async function findVisibleCheckoutControl(
   )
 }
 
-test.describe('Live: Creem Payment', () => {
+test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment attempt', () => {
 
   test.beforeEach(async ({ page }) => {
     // Live payment tests must fail loud when credentials are missing.
@@ -142,7 +154,7 @@ test.describe('Live: Creem Payment', () => {
     }
   })
 
-  test('Creem credentials are correctly configured and accepted', async ({ page }) => {
+  test('US-PA-001 Setup: Creem credentials are configured and accepted', async ({ page }) => {
     await test.step('Given Creem config is seeded', async () => {
       // Verify the config was stored by listing payment providers
       const providersResponse = await page.request.get(
@@ -224,7 +236,7 @@ test.describe('Live: Creem Payment', () => {
     })
   })
 
-  test('Checkout: full Creem payment with test card', async ({ page }) => {
+  test('US-PA-001 Scenario 5: Creem checkout payment attempt succeeds', async ({ page }) => {
     let planId: string
     let attemptId: string
     let checkoutUrl: string

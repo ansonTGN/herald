@@ -1,7 +1,11 @@
 /**
  * WeChat QR Code Payment Flow Demo Test
  *
- * User Stories: US-PU-06 Scenario 1, US-WP-005, US-PA-001, US-PA-002
+ * Related User Stories: US-PU-06, US-WP-005, US-PA-001, US-PA-002
+ * Coverage: partial demo; covers QR rendering after initiating a points-package
+ *   WeChat payment.
+ * Not Covered: payment success, points fulfillment, new balance, no subscription
+ *   record, failure/retry, expiry, disabled provider, or package-list scenarios.
  *
  * Verifies that selecting WeChat as payment provider renders the QR code
  * section with correct UI elements. Does NOT verify payment completion
@@ -19,7 +23,7 @@ import { initiatePurchaseFlow, TEST_DATA } from '../helpers/unified-purchase.hel
 const REALM_ID = TEST_DATA.REALMS.REALM_001
 const USER_EMAIL = TEST_DATA.USERS.USER_REALM_001
 
-test.describe('[P0] WeChat QR Code Payment Flow', () => {
+test.describe('[Regular User] US-PU-06: WeChat QR rendering demo', () => {
   let testStartTime: number
 
   test.beforeEach(async ({ page }) => {
@@ -46,7 +50,7 @@ test.describe('[P0] WeChat QR Code Payment Flow', () => {
     })
   })
 
-  test('should display WeChat QR code when WeChat payment is initiated', async ({ page, demoLogger }) => {
+  test('US-PU-06 Scenario 1: displays WeChat QR code when payment is initiated', async ({ page }) => {
     await test.step('Initiate WeChat purchase flow', async () => {
       const attemptId = await initiatePurchaseFlow(page, TEST_DATA.PAYMENT_PROVIDERS.WECHAT, REALM_ID)
       expect(attemptId).toBeTruthy()

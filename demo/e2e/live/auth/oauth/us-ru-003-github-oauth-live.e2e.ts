@@ -1,12 +1,24 @@
 /**
  * Live GitHub OAuth Full Flow Test (Manual-Assisted)
  *
- * End-to-end test that validates the complete GitHub OAuth login flow.
+ * Related User Story: US-RU-003 OAuth 第三方登录
+ * Coverage: partial live smoke; covers only US-RU-003 Scenario 2 (GitHub success).
+ * Not Covered: Google success, rejected authorization, hidden unconfigured provider,
+ *   email association, and Realm Admin OAuth provider configuration UI.
+ * Live Dependency: real GitHub OAuth app credentials
+ * Manual Step: required for GitHub login, CAPTCHA, 2FA, and consent
+ * Run Command:
+ *   cd demo
+ *   npx playwright test e2e/live/auth/oauth/us-ru-003-github-oauth-live.e2e.ts --project=demo-fast --headed
+ * Skip/Fail Policy:
+ *   Skips when GitHub credentials or HEADED=1 are absent.
+ *
+ * End-to-end smoke test that validates the live GitHub OAuth success path.
  * The test automates all setup and initiates the OAuth redirect,
  * then pauses for manual GitHub login (CAPTCHA / 2FA cannot be automated),
  * and finally verifies the callback result.
  *
- * Skips gracefully when credentials are absent.
+ * Skips when credentials or headed mode are absent.
  *
  * =============================================================================
  * HOW TO RUN
@@ -40,10 +52,10 @@
  * 3. Run this test in headed mode (so you can see and operate the browser):
  *
  *    cd demo
- *    npx playwright test e2e/live/github-oauth-live.e2e.ts --project=demo-fast --headed
+ *    npx playwright test e2e/live/auth/oauth/us-ru-003-github-oauth-live.e2e.ts --project=demo-fast --headed
  *
  *    Or with Playwright UI for better visibility:
- *    npx playwright test e2e/live/github-oauth-live.e2e.ts --ui
+ *    npx playwright test e2e/live/auth/oauth/us-ru-003-github-oauth-live.e2e.ts --ui
  *
  * 4. When the test pauses on the GitHub login page, manually:
  *    a) Log in with your GitHub account
@@ -57,14 +69,14 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { secrets, hasGitHubOAuth } from '../secrets/env'
-import { seedOAuthConfig } from '../secrets/realm-seed'
-import { loginAsAdmin, logout } from '../helpers/auth'
+import { secrets, hasGitHubOAuth } from '../../../secrets/env'
+import { seedOAuthConfig } from '../../../secrets/realm-seed'
+import { loginAsAdmin, logout } from '../../../helpers/auth'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 const REALM_ID = 'admin'
 
-test.describe('Live: GitHub OAuth Full Flow', () => {
+test.describe('[Live][Auth OAuth] US-RU-003: GitHub OAuth login', () => {
   test.beforeEach(async ({ page }) => {
     test.skip(!hasGitHubOAuth(), 'GitHub OAuth credentials not configured in .env.demo')
     test.skip(!process.env.HEADED, 'Live OAuth tests require headed mode (set HEADED=1)')
@@ -103,7 +115,7 @@ test.describe('Live: GitHub OAuth Full Flow', () => {
     }
   })
 
-  test('complete GitHub OAuth login with manual authorization', async ({ page }) => {
+  test('US-RU-003 Scenario 2: GitHub login succeeds with manual authorization', async ({ page }) => {
     // Step 2: Navigate to login page and verify GitHub button exists
     await test.step('Given the login page with GitHub OAuth enabled', async () => {
       await page.goto(`${BASE_URL}/${REALM_ID}/auth/login`, {
