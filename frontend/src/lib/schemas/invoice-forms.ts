@@ -109,6 +109,7 @@ export const applyInvoiceSchema = z
     billingEmail: z.string().email('Invalid email').optional().nullable(),
     billingAddress: z.string().min(1, 'Billing address is required'),
     billingPhone: z.string().max(50).optional().nullable(),
+    billingTaxId: z.string().min(1, 'Tax ID is required'),
     dueDate: z.string().min(1, 'Due date is required'),
     notes: z.string().max(2000).optional().nullable(),
   })
@@ -184,6 +185,7 @@ export function getApplyFormDefaults(
     billingEmail: null,
     billingAddress: '',
     billingPhone: null,
+    billingTaxId: '',
     dueDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
     notes: null,
   }

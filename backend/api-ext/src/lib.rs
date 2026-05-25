@@ -9,6 +9,7 @@ mod client_app_scope;
 pub mod client_helper;
 pub mod permission;
 pub mod points;
+pub mod points_package;
 pub mod realm;
 pub mod subscription;
 pub mod user;
@@ -31,6 +32,7 @@ use herald_api_base::application::http::state::AppState;
         crate::billing::list_plan_assignments_batch,
         crate::points::get_balance_ext,
         crate::points::consume_points_ext,
+        crate::points_package::list_points_packages_ext,
         crate::realm::create_realm,
         crate::realm::list_realms,
         crate::realm::get_realm,
@@ -53,6 +55,8 @@ use herald_api_base::application::http::state::AppState;
         crate::points::ExtPointsBalanceResponse,
         crate::points::ExtConsumePointsRequest,
         crate::points::ExtConsumePointsResponse,
+        crate::points_package::ExtPointsPackageItem,
+        crate::points_package::ExtPointsPackageListResponse,
         crate::realm::CreateRealmExtRequest,
         crate::realm::AdminUserInput,
         crate::realm::RealmInfoResponse,
@@ -113,6 +117,10 @@ pub fn create_router(state: AppState) -> Router<AppState> {
         .route(
             "/points/{realmId}/transactions/{transactionId}",
             axum::routing::get(points::get_transaction_ext),
+        )
+        .route(
+            "/{realmId}/points-packages",
+            axum::routing::get(points_package::list_points_packages_ext),
         )
         .route(
             "/realms",

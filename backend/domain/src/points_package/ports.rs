@@ -1,8 +1,9 @@
 // Points Package repository ports
 
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use super::entities::{PointsPackage, PointsPackagePaymentProvider};
+use super::entities::{PackageType, PointsPackage, PointsPackagePaymentProvider};
 use crate::common::entities::app_errors::CoreError;
 
 /// Input for creating a points package
@@ -17,6 +18,10 @@ pub struct CreatePointsPackageInput {
     pub currency: String,
     pub sort_order: Option<i32>,
     pub enabled: Option<bool>,
+    pub package_type: Option<PackageType>,
+    pub original_price: Option<i64>,
+    pub promo_start_time: Option<DateTime<Utc>>,
+    pub promo_end_time: Option<DateTime<Utc>>,
 }
 
 /// Input for updating a points package
@@ -30,6 +35,10 @@ pub struct UpdatePointsPackageInput {
     pub currency: Option<String>,
     pub sort_order: Option<i32>,
     pub enabled: Option<bool>,
+    pub package_type: Option<PackageType>,
+    pub original_price: Option<Option<i64>>,
+    pub promo_start_time: Option<Option<DateTime<Utc>>>,
+    pub promo_end_time: Option<Option<DateTime<Utc>>>,
 }
 
 /// Input for creating a payment provider mapping

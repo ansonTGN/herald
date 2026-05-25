@@ -194,6 +194,9 @@ describe('ApplyInvoiceFormPage', () => {
       // Fill billing address (required)
       await user.type(screen.getByTestId('apply-billing-address-input'), '123 Billing St')
 
+      // Fill billing tax ID (required)
+      await user.type(screen.getByTestId('apply-billing-tax-id-input'), 'TAX123456')
+
       // dueDate is auto-populated from sellerConfig (Net 30 terms), no need to fill
 
       // Submit
@@ -209,6 +212,7 @@ describe('ApplyInvoiceFormPage', () => {
         billingName: 'John Doe',
         billingEmail: 'john@example.com',
         billingAddress: '123 Billing St',
+        billingTaxId: 'TAX123456',
         currency: 'CNY',
       })
 
@@ -247,6 +251,7 @@ describe('ApplyInvoiceFormPage', () => {
 
       await user.type(screen.getByTestId('apply-billing-name-input'), 'John Doe')
       await user.type(screen.getByTestId('apply-billing-address-input'), '123 Billing St')
+      await user.type(screen.getByTestId('apply-billing-tax-id-input'), 'TAX123456')
       await user.click(screen.getByTestId('apply-invoice-submit-button'))
 
       await waitFor(() => {
@@ -256,6 +261,7 @@ describe('ApplyInvoiceFormPage', () => {
       expect(capturedBody).toMatchObject({
         paymentAttemptId: '11111111-1111-1111-1111-111111111111',
         billingName: 'John Doe',
+        billingTaxId: 'TAX123456',
       })
       expect(capturedBody).not.toHaveProperty('subscriptionId')
     })

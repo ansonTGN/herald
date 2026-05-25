@@ -176,6 +176,14 @@ export function ApplyInvoiceFormPage({
                   dataTestId="apply-billing-phone-input"
                   placeholder="+1 234 567 8900"
                 />
+                <TextField
+                  form={form}
+                  name="billingTaxId"
+                  label="Tax ID"
+                  dataTestId="apply-billing-tax-id-input"
+                  placeholder="Enter tax identification number"
+                  required
+                />
               </CardContent>
             </Card>
 

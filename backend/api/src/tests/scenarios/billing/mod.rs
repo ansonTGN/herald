@@ -47,6 +47,7 @@ pub mod shopify_config_encryption_scenarios;
 
 // Points Package scenario tests
 pub mod points_package_authz_scenarios;
+pub mod points_package_promo_scenarios;
 pub mod points_package_purchase_scenarios;
 
 // Subscription Fulfillment scenario tests

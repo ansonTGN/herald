@@ -6,7 +6,7 @@ pub mod ports;
 pub mod services;
 
 // Re-export commonly used types
-pub use entities::{PointsPackage, PointsPackagePaymentProvider};
+pub use entities::{PackageType, PointsPackage, PointsPackagePaymentProvider};
 pub use errors::{PointsPackageErrorExt, PointsPackageResult};
 pub use ports::{
     CreatePaymentProviderMappingInput, CreatePointsPackageInput, PointsPackageRepository,

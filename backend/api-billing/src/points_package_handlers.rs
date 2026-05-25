@@ -5,7 +5,9 @@ use axum::{
     extract::{Extension, Path, State},
     http::StatusCode,
 };
-use serde::{Deserialize, Serialize};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Deserializer, Serialize};
+use std::str::FromStr;
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
@@ -15,8 +17,8 @@ use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::points_package::{
-    CreatePaymentProviderMappingInput, CreatePointsPackageInput, UpdatePaymentProviderMappingInput,
-    UpdatePointsPackageInput,
+    CreatePaymentProviderMappingInput, CreatePointsPackageInput, PackageType,
+    UpdatePaymentProviderMappingInput, UpdatePointsPackageInput,
 };
 
 // ============================================================================
@@ -43,6 +45,15 @@ pub struct CreatePointsPackageRequest {
     pub sort_order: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    pub original_price: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub promo_start_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub promo_end_time: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Validate)]
@@ -64,6 +75,14 @@ pub struct UpdatePointsPackageRequest {
     pub sort_order: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_option_option")]
+    pub package_type: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_option_option")]
+    pub original_price: Option<Option<i64>>,
+    #[serde(default, deserialize_with = "deserialize_option_option")]
+    pub promo_start_time: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_option_option")]
+    pub promo_end_time: Option<Option<String>>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -80,6 +99,17 @@ pub struct PointsPackageResponse {
     pub currency: String,
     pub sort_order: i32,
     pub enabled: bool,
+    pub package_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_price: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub promo_start_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub promo_end_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discount_percent: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_expired: Option<bool>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -130,12 +160,43 @@ pub struct ListPaymentProviderMappingsResponse {
 }
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+/// Custom deserializer for `Option<Option<T>>` to distinguish three states:
+/// - field missing from JSON -> None (no change)
+/// - field is null -> Some(None) (clear value)
+/// - field has value -> Some(Some(value)) (set value)
+fn deserialize_option_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<Option<T>>::deserialize(deserializer)
+}
+
+/// Parse an ISO 8601 timestamp string into DateTime<Utc>.
+fn parse_iso_timestamp(s: &str) -> Result<DateTime<Utc>, String> {
+    DateTime::parse_from_rfc3339(s)
+        .map(|dt| dt.to_utc())
+        .map_err(|e| format!("Invalid ISO 8601 timestamp '{}': {}", s, e))
+}
+
+// ============================================================================
 // Conversion Helpers
 // ============================================================================
 
 fn points_package_to_response(
     package: herald_core::domain::points_package::PointsPackage,
 ) -> PointsPackageResponse {
+    use herald_core::domain::points_package::PackageType;
+    let is_promo = package.package_type == PackageType::Promotional;
+    let discount_percent = package.discount_percent();
+    let is_expired = if is_promo {
+        Some(package.is_promo_expired())
+    } else {
+        None
+    };
     PointsPackageResponse {
         id: package.id,
         realm_id: package.realm_id,
@@ -147,6 +208,12 @@ fn points_package_to_response(
         currency: package.currency,
         sort_order: package.sort_order,
         enabled: package.enabled,
+        package_type: package.package_type.to_string(),
+        original_price: package.original_price,
+        promo_start_time: package.promo_start_time.map(|dt| dt.to_rfc3339()),
+        promo_end_time: package.promo_end_time.map(|dt| dt.to_rfc3339()),
+        discount_percent,
+        is_expired,
         created_at: package.created_at.to_rfc3339(),
         updated_at: package.updated_at.to_rfc3339(),
     }
@@ -194,6 +261,27 @@ pub async fn create_points_package(
 
     let service = &state.points_package_service;
 
+    let package_type = input
+        .package_type
+        .as_deref()
+        .map(PackageType::from_str)
+        .transpose()
+        .map_err(ApiError::bad_request)?;
+
+    let promo_start_time = input
+        .promo_start_time
+        .as_deref()
+        .map(parse_iso_timestamp)
+        .transpose()
+        .map_err(ApiError::bad_request)?;
+
+    let promo_end_time = input
+        .promo_end_time
+        .as_deref()
+        .map(parse_iso_timestamp)
+        .transpose()
+        .map_err(ApiError::bad_request)?;
+
     let create_input = CreatePointsPackageInput {
         realm_id: realm_id.clone(),
         name: input.name,
@@ -204,6 +292,10 @@ pub async fn create_points_package(
         currency: input.currency,
         sort_order: input.sort_order,
         enabled: input.enabled,
+        package_type,
+        original_price: input.original_price,
+        promo_start_time,
+        promo_end_time,
     };
 
     let package = service
@@ -322,6 +414,35 @@ pub async fn update_points_package(
 
     let service = &state.points_package_service;
 
+    // Map package_type: None -> no change, Some(None) or Some(Some("standard")) -> Standard,
+    // Some(Some("promotional")) -> Promotional
+    let package_type = match input.package_type {
+        None => None,
+        Some(None) => Some(PackageType::Standard),
+        Some(Some(s)) => Some(s.parse::<PackageType>().map_err(ApiError::bad_request)?),
+    };
+
+    // original_price: Option<Option<i64>> pass-through
+    let original_price = input.original_price;
+
+    // promo_start_time: None -> no change, Some(None) -> clear, Some(Some(iso)) -> parse
+    let promo_start_time = match input.promo_start_time {
+        None => None,
+        Some(None) => Some(None),
+        Some(Some(s)) => Some(Some(
+            parse_iso_timestamp(&s).map_err(ApiError::bad_request)?,
+        )),
+    };
+
+    // promo_end_time: same pattern
+    let promo_end_time = match input.promo_end_time {
+        None => None,
+        Some(None) => Some(None),
+        Some(Some(s)) => Some(Some(
+            parse_iso_timestamp(&s).map_err(ApiError::bad_request)?,
+        )),
+    };
+
     let update_input = UpdatePointsPackageInput {
         id: package_id,
         realm_id: realm_id.clone(),
@@ -331,6 +452,10 @@ pub async fn update_points_package(
         currency: input.currency,
         sort_order: input.sort_order,
         enabled: input.enabled,
+        package_type,
+        original_price,
+        promo_start_time,
+        promo_end_time,
     };
 
     let package = service

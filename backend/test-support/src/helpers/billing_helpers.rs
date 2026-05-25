@@ -173,3 +173,151 @@ pub fn client_app_create_json(client_id: &str, name: &str, redirect_uris: &[&str
 
     payload.to_string()
 }
+
+/// ============================================================================
+/// Points Package Promo Test Helpers
+/// ============================================================================
+///
+/// Create a points package via direct SQL insertion with promo fields.
+///
+/// Returns the package_id.
+#[allow(clippy::too_many_arguments)]
+pub async fn create_test_points_package_via_sql(
+    ctx: &mut TestContext,
+    realm_id: &str,
+    name: &str,
+    points: i64,
+    price: i64,
+    currency: &str,
+    package_type: &str,
+    original_price: Option<i64>,
+    promo_start: Option<chrono::DateTime<chrono::Utc>>,
+    promo_end: Option<chrono::DateTime<chrono::Utc>>,
+) -> Uuid {
+    let package_id = Uuid::now_v7();
+
+    sqlx::query(
+        "INSERT INTO points_packages (id, realm_id, name, title, description, points, price, currency,
+                          sort_order, enabled, package_type, original_price, promo_start_time, promo_end_time,
+                          created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, true, $9, $10, $11, $12, NOW(), NOW())",
+    )
+    .bind(package_id)
+    .bind(realm_id)
+    .bind(name)
+    .bind(name) // title
+    .bind(format!("{} description", name))
+    .bind(points)
+    .bind(price)
+    .bind(currency)
+    .bind(package_type)
+    .bind(original_price)
+    .bind(promo_start)
+    .bind(promo_end)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create points package via SQL");
+
+    package_id
+}
+
+/// Create a points package via the HTTP API.
+///
+/// Returns (StatusCode, response body as serde_json::Value).
+pub async fn create_points_package_via_api(
+    router: &axum::Router,
+    realm_id: &str,
+    session_token: &str,
+    payload: serde_json::Value,
+) -> (axum::http::StatusCode, serde_json::Value) {
+    use axum::body::{Body, to_bytes};
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/bill/{}/points-packages", realm_id))
+                .header("Content-Type", "application/json")
+                .header("cookie", format!("X-Auth={}", session_token))
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
+    (status, json)
+}
+
+/// Update a points package via the HTTP API.
+///
+/// Returns (StatusCode, response body as serde_json::Value).
+pub async fn update_points_package_via_api(
+    router: &axum::Router,
+    realm_id: &str,
+    package_id: Uuid,
+    session_token: &str,
+    payload: serde_json::Value,
+) -> (axum::http::StatusCode, serde_json::Value) {
+    use axum::body::{Body, to_bytes};
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!(
+                    "/api/bill/{}/points-packages/{}",
+                    realm_id, package_id
+                ))
+                .header("Content-Type", "application/json")
+                .header("cookie", format!("X-Auth={}", session_token))
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
+    (status, json)
+}
+
+/// List points packages via the HTTP API.
+///
+/// Returns (StatusCode, response body as serde_json::Value).
+pub async fn list_points_packages_via_api(
+    router: &axum::Router,
+    realm_id: &str,
+    session_token: &str,
+) -> (axum::http::StatusCode, serde_json::Value) {
+    use axum::body::{Body, to_bytes};
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!("/api/bill/{}/points-packages", realm_id))
+                .header("cookie", format!("X-Auth={}", session_token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
+    (status, json)
+}

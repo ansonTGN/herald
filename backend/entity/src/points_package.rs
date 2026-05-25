@@ -18,6 +18,11 @@ pub struct Model {
     pub sort_order: i32,
     #[sea_orm(default_value = "true")]
     pub enabled: bool,
+    #[sea_orm(default_value = "standard")]
+    pub package_type: String,
+    pub original_price: Option<i64>,
+    pub promo_start_time: Option<DateTimeWithTimeZone>,
+    pub promo_end_time: Option<DateTimeWithTimeZone>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

@@ -178,6 +178,35 @@ export function WechatConfigFormDialog({
               helpText="Exactly 32 characters. Used for verifying webhook signatures."
             />
 
+            <form.Field
+              name="platformPublicKey"
+              children={(field) => (
+                <div className="space-y-2">
+                  <label htmlFor={field.name} className="text-sm font-medium">
+                    Platform Public Key <span className="text-destructive">*</span>
+                  </label>
+                  <Textarea
+                    id={field.name}
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="-----BEGIN PUBLIC KEY-----&#10;...&#10;-----END PUBLIC KEY-----"
+                    rows={5}
+                    className="font-mono text-xs"
+                    data-testid="platform-public-key-input"
+                  />
+                  {field.state.meta.errors && (
+                    <p className="text-sm text-destructive">
+                      {field.state.meta.errors[0]?.message}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    WeChat Pay platform RSA public key in PEM format. Used for webhook signature
+                    verification.
+                  </p>
+                </div>
+              )}
+            />
+
             <TextField
               form={form}
               name="notifyUrl"
@@ -246,6 +275,7 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
           privateKey: data.privateKey,
           serialNo: data.serialNo,
           v3Key: data.v3Key,
+          platformPublicKey: data.platformPublicKey,
         },
       })
       if (response.error) throw response.error
@@ -276,6 +306,7 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
       }
       if (data.privateKey) body.privateKey = data.privateKey
       if (data.v3Key) body.v3Key = data.v3Key
+      if (data.platformPublicKey) body.platformPublicKey = data.platformPublicKey
       const response = await updateWechatConfig({
         path: { realmId },
         body: body as Parameters<typeof updateWechatConfig>[0]['body'],

@@ -268,6 +268,16 @@ export const wechatConfigSchema = z.object({
     .refine((val) => !val || val.length === 32, 'API v3 Key must be exactly 32 bytes')
     .trim(),
 
+  platformPublicKey: z
+    .string()
+    .refine(
+      (val) =>
+        !val ||
+        (val.includes('-----BEGIN PUBLIC KEY-----') && val.includes('-----END PUBLIC KEY-----')),
+      'Platform Public Key must be in valid PEM format'
+    )
+    .trim(),
+
   notifyUrl: z
     .string()
     .min(1, 'Notify URL is required')
@@ -286,6 +296,7 @@ export function getWechatConfigDefaults(config?: Partial<WechatConfigForm>): Wec
     privateKey: '',
     serialNo: '',
     v3Key: '',
+    platformPublicKey: '',
     notifyUrl: '',
     ...config,
   } as WechatConfigForm

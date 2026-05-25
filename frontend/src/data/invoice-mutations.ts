@@ -238,6 +238,7 @@ export function useApplyInvoice(realmId: string) {
           billingEmail: values.billingEmail ?? undefined,
           billingAddress: values.billingAddress,
           billingPhone: values.billingPhone ?? undefined,
+          billingTaxId: values.billingTaxId,
           dueDate: values.dueDate,
           notes: values.notes ?? undefined,
         },

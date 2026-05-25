@@ -740,3 +740,36 @@ pub async fn get_subscription_by_stripe_id(
     .await
     .unwrap()
 }
+
+/// ============================================================================
+/// User-Facing Ext API Helpers
+/// ============================================================================
+/// List user-visible points packages via the external API endpoint.
+///
+/// Uses API Key authentication (X-API-Key header).
+///
+/// Returns (StatusCode, response body as serde_json::Value)
+pub async fn list_user_visible_points_packages_via_ext_api(
+    app: &axum::Router,
+    realm_id: &str,
+    api_key: &str,
+) -> (StatusCode, serde_json::Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!("/api/ext/{}/points-packages", realm_id))
+                .header("X-API-Key", api_key)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body_json: serde_json::Value =
+        serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
+    (status, body_json)
+}

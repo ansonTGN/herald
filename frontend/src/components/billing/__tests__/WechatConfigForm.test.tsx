@@ -184,6 +184,7 @@ describe('WechatConfigForm', () => {
             '-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQ\n-----END PRIVATE KEY-----',
           serialNo: '1A2B3C4D5E6F',
           v3Key: '0123456789abcdefghijklmnopqrstuv',
+          platformPublicKey: '',
           notifyUrl: 'https://example.com/api/webhook',
         })
       })
@@ -233,6 +234,7 @@ describe('WechatConfigForm', () => {
             '-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQ\n-----END PRIVATE KEY-----',
           serialNo: '1A2B3C4D5E6F',
           v3Key: '0123456789abcdefghijklmnopqrstuv',
+          platformPublicKey: '',
           notifyUrl: 'https://example.com/api/webhook',
         })
       })
@@ -305,6 +307,7 @@ describe('WechatConfigForm', () => {
             '-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQ\n-----END PRIVATE KEY-----',
           serialNo: '1A2B3C4D5E6F',
           v3Key: '0123456789abcdefghijklmnopqrstuv',
+          platformPublicKey: '',
           notifyUrl: 'https://updated.example.com/api/webhook',
         })
       })

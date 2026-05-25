@@ -24,6 +24,15 @@ pub trait PointsPackageErrorExt {
 
     /// Invalid price
     fn invalid_price(price: i64) -> Self;
+
+    /// Standard package cannot have original price
+    fn standard_cannot_have_original_price() -> Self;
+
+    /// Original price must be greater than selling price
+    fn original_price_not_greater_than_selling_price(original: i64, selling: i64) -> Self;
+
+    /// Promotional time range invalid (end must be after start)
+    fn promo_time_range_invalid() -> Self;
 }
 
 /// PointsPackage-specific error variants that extend CoreError
@@ -64,6 +73,28 @@ impl PointsPackageErrorExt for CoreError {
     fn invalid_price(price: i64) -> Self {
         tracing::debug!("Invalid price: {}", price);
         CoreError::InvalidPrice(price)
+    }
+
+    fn standard_cannot_have_original_price() -> Self {
+        tracing::debug!("Standard package cannot have original price");
+        CoreError::BadRequest("Standard package cannot have original price".to_string())
+    }
+
+    fn original_price_not_greater_than_selling_price(original: i64, selling: i64) -> Self {
+        tracing::debug!(
+            "Original price ({}) must be greater than selling price ({})",
+            original,
+            selling
+        );
+        CoreError::BadRequest(format!(
+            "Original price ({}) must be greater than selling price ({})",
+            original, selling
+        ))
+    }
+
+    fn promo_time_range_invalid() -> Self {
+        tracing::debug!("Promotional end time must be after start time");
+        CoreError::BadRequest("Promotional end time must be after start time".to_string())
     }
 }
 

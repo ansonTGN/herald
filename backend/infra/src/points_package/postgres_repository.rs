@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::points_package::{
-    CreatePaymentProviderMappingInput, CreatePointsPackageInput, PointsPackage,
+    CreatePaymentProviderMappingInput, CreatePointsPackageInput, PackageType, PointsPackage,
     PointsPackagePaymentProvider, PointsPackageRepository,
 };
 use herald_entity::{
@@ -38,6 +38,10 @@ impl PostgresPointsPackageRepository {
             currency: model.currency,
             sort_order: model.sort_order,
             enabled: model.enabled,
+            package_type: model.package_type.parse().unwrap_or(PackageType::Standard),
+            original_price: model.original_price,
+            promo_start_time: model.promo_start_time.map(chrono::DateTime::from),
+            promo_end_time: model.promo_end_time.map(chrono::DateTime::from),
             created_at: chrono::DateTime::from(model.created_at),
             updated_at: chrono::DateTime::from(model.updated_at),
         }
@@ -76,6 +80,13 @@ impl PointsPackageRepository for PostgresPointsPackageRepository {
             currency: Set(input.currency),
             sort_order: Set(input.sort_order.unwrap_or(0)),
             enabled: Set(input.enabled.unwrap_or(true)),
+            package_type: Set(input
+                .package_type
+                .map(|pt| pt.to_string())
+                .unwrap_or_else(|| "standard".to_string())),
+            original_price: Set(input.original_price),
+            promo_start_time: Set(input.promo_start_time.map(|t| t.into())),
+            promo_end_time: Set(input.promo_end_time.map(|t| t.into())),
             created_at: Set(now.into()),
             updated_at: Set(now.into()),
         };
@@ -160,6 +171,10 @@ impl PointsPackageRepository for PostgresPointsPackageRepository {
             currency: Set(package.currency),
             sort_order: Set(package.sort_order),
             enabled: Set(package.enabled),
+            package_type: Set(package.package_type.to_string()),
+            original_price: Set(package.original_price),
+            promo_start_time: Set(package.promo_start_time.map(|t| t.into())),
+            promo_end_time: Set(package.promo_end_time.map(|t| t.into())),
             created_at: Set(package.created_at.into()),
             updated_at: Set(chrono::Utc::now().into()),
         };

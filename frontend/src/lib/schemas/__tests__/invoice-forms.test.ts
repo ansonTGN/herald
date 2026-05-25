@@ -461,6 +461,7 @@ describe('applyInvoiceSchema', () => {
       billingEmail: null,
       billingAddress: '123 Main St',
       billingPhone: null,
+      billingTaxId: 'TAX123456',
       dueDate: '2025-08-01',
       notes: null,
     })
@@ -476,6 +477,7 @@ describe('applyInvoiceSchema', () => {
       billingEmail: null,
       billingAddress: '123 Main St',
       billingPhone: null,
+      billingTaxId: 'TAX123456',
       dueDate: '2025-08-01',
       notes: null,
     })
@@ -489,6 +491,7 @@ describe('applyInvoiceSchema', () => {
       subscriptionId: 'sub_123',
       billingName: 'Acme Corp',
       billingAddress: '123 Main St',
+      billingTaxId: 'TAX123456',
       dueDate: '2025-08-01',
     })
     expect(result.success).toBe(true)
@@ -501,6 +504,7 @@ describe('applyInvoiceSchema', () => {
       subscriptionId: null,
       billingName: 'Acme Corp',
       billingAddress: '123 Main St',
+      billingTaxId: 'TAX123456',
       dueDate: '2025-08-01',
     })
     expect(result.success).toBe(false)
@@ -513,6 +517,7 @@ describe('applyInvoiceSchema', () => {
       subscriptionId: '',
       billingName: 'Acme Corp',
       billingAddress: '123 Main St',
+      billingTaxId: 'TAX123456',
       dueDate: '2025-08-01',
     })
     // Empty strings are falsy, so the refine will fail
@@ -526,6 +531,7 @@ describe('applyInvoiceSchema', () => {
       subscriptionId: null,
       billingName: '',
       billingAddress: '123 Main St',
+      billingTaxId: 'TAX123456',
       dueDate: '2025-08-01',
     })
     expect(result.success).toBe(false)
@@ -537,6 +543,7 @@ describe('applyInvoiceSchema', () => {
       subscriptionId: null,
       billingName: 'Acme Corp',
       billingAddress: '123 Main St',
+      billingTaxId: 'TAX123456',
       dueDate: '2025-08-01',
     })
     expect(result.success).toBe(true)
@@ -719,6 +726,7 @@ describe('getApplyFormDefaults', () => {
       billingEmail: null,
       billingAddress: '',
       billingPhone: null,
+      billingTaxId: '',
       dueDate: expectedDueDate,
       notes: null,
     })
