@@ -22,3 +22,6 @@ skill-eval-workspace/
 
 # Playwright test storage
 .storage/*.json
+
+# Local config overrides
+backend/config/*-local.toml
