@@ -14,7 +14,9 @@ use herald_api_base::application::http::common::auth_utils::require_authenticate
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::billing::BillingRepository;
-use herald_core::infrastructure::wechat::models::{CreateOrderParams, WechatPaymentOrder};
+use herald_core::infrastructure::wechat::models::{
+    CreateOrderParams, WechatOrderStatus, WechatPaymentOrder,
+};
 use herald_core::infrastructure::wechat::repository::WechatOrderRepository;
 
 #[utoipa::path(
@@ -137,7 +139,7 @@ pub async fn create_wechat_order(
         amount,
         currency: "CNY".to_string(),
         code_url: result.code_url.clone(),
-        status: herald_core::infrastructure::wechat::models::WechatOrderStatus::Pending,
+        status: WechatOrderStatus::Pending,
         description: Some(description),
         paid_at: None,
         closed_at: None,
@@ -211,10 +213,53 @@ pub async fn get_wechat_order_status(
         return Err(ApiError::forbidden("Access denied"));
     }
 
+    let config_row = repo
+        .get_wechat_config(&realm_id)
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to load WeChat config: {}", e)))?
+        .ok_or_else(|| ApiError::internal("WeChat configuration not found"))?;
+
+    let client = create_wechat_client_from_config(config_row)
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to create WeChat Pay client: {}", e)))?;
+
+    let remote_status = client
+        .query_order(&order.out_trade_no)
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to query WeChat order status: {}", e)))?;
+
+    let local_status = match remote_status.trade_state.as_str() {
+        "SUCCESS" => {
+            let paid_amount = remote_status.amount.unwrap_or(0);
+            if paid_amount != order.amount {
+                tracing::error!(
+                    out_trade_no = %order.out_trade_no,
+                    expected = order.amount,
+                    actual = paid_amount,
+                    "Order status poll amount mismatch"
+                );
+                return Err(ApiError::bad_request("Amount mismatch"));
+            }
+            if let Some(transaction_id) = &remote_status.transaction_id {
+                repo.mark_order_paid(order.id, transaction_id)
+                    .await
+                    .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
+            }
+            WechatOrderStatus::Paid
+        }
+        "CLOSED" | "REVOKED" | "PAYERROR" => {
+            repo.mark_order_closed(order.id)
+                .await
+                .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
+            WechatOrderStatus::Closed
+        }
+        _ => order.status,
+    };
+
     Ok(Json(WechatOrderStatusResponse {
         order_id: order.id.to_string(),
-        status: order.status.to_string(),
-        trade_state: None,
+        status: local_status.to_string(),
+        trade_state: Some(remote_status.trade_state),
     }))
 }
 
@@ -261,7 +306,7 @@ pub async fn close_wechat_order(
         return Err(ApiError::forbidden("Access denied"));
     }
 
-    if order.status != herald_core::infrastructure::wechat::models::WechatOrderStatus::Pending {
+    if order.status != WechatOrderStatus::Pending {
         return Err(ApiError::conflict_json(GenericErrorResponse {
             error: "order_not_closable".to_string(),
             message: format!("Order with status '{}' cannot be closed", order.status),
@@ -274,38 +319,32 @@ pub async fn close_wechat_order(
         .map_err(|e| ApiError::internal(format!("Failed to load WeChat config: {}", e)))?
         .ok_or_else(|| ApiError::internal("WeChat configuration not found"))?;
 
-    let app_id = config_row
-        .app_id
-        .ok_or_else(|| ApiError::internal("Missing app_id"))?;
-    let mch_id = config_row
-        .mch_id
-        .ok_or_else(|| ApiError::internal("Missing mch_id"))?;
-    let private_key = config_row
-        .private_key
-        .ok_or_else(|| ApiError::internal("Missing private_key"))?;
-    let serial_no = config_row
-        .serial_no
-        .ok_or_else(|| ApiError::internal("Missing serial_no"))?;
-    let v3_key = config_row
-        .v3_key
-        .ok_or_else(|| ApiError::internal("Missing v3_key"))?;
-    let notify_url = config_row
-        .notify_url
-        .ok_or_else(|| ApiError::internal("Missing notify_url"))?;
+    let client = create_wechat_client_from_config(config_row)
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to create WeChat Pay client: {}", e)))?;
 
-    let mock_base_url = config_row.mock_base_url;
-
-    let client = herald_core::infrastructure::wechat::client::WechatPayClient::new_async(
-        app_id,
-        mch_id,
-        private_key,
-        serial_no,
-        v3_key,
-        notify_url,
-        mock_base_url,
-    )
-    .await
-    .map_err(|e| ApiError::internal(format!("Failed to create WeChat Pay client: {}", e)))?;
+    let remote_status = client
+        .query_order(&order.out_trade_no)
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to query WeChat order status: {}", e)))?;
+    if remote_status.trade_state == "SUCCESS" {
+        if let Some(transaction_id) = &remote_status.transaction_id {
+            repo.mark_order_paid(order.id, transaction_id)
+                .await
+                .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
+        }
+        return Err(ApiError::conflict_json(GenericErrorResponse {
+            error: "order_already_paid".to_string(),
+            message: "Order has already been paid on WeChat side".to_string(),
+        }));
+    }
+    if matches!(remote_status.trade_state.as_str(), "CLOSED" | "REVOKED") {
+        repo.mark_order_closed(order_uuid).await.map_err(|e| {
+            error!(order_id = %order_uuid, error = %e, "Failed to mark order as closed");
+            ApiError::internal(format!("Database error: {}", e))
+        })?;
+        return Ok(StatusCode::NO_CONTENT);
+    }
 
     client.close_order(&order.out_trade_no).await.map_err(|e| {
         warn!(order_id = %order_uuid, error = %e, "Failed to close order on WeChat side");
@@ -324,4 +363,39 @@ pub async fn close_wechat_order(
     );
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn create_wechat_client_from_config(
+    config_row: herald_core::infrastructure::wechat::repository::WechatConfigRow,
+) -> Result<herald_core::infrastructure::wechat::client::WechatPayClient, anyhow::Error> {
+    let app_id = config_row
+        .app_id
+        .ok_or_else(|| anyhow::anyhow!("Missing app_id"))?;
+    let mch_id = config_row
+        .mch_id
+        .ok_or_else(|| anyhow::anyhow!("Missing mch_id"))?;
+    let private_key = config_row
+        .private_key
+        .ok_or_else(|| anyhow::anyhow!("Missing private_key"))?;
+    let serial_no = config_row
+        .serial_no
+        .ok_or_else(|| anyhow::anyhow!("Missing serial_no"))?;
+    let v3_key = config_row
+        .v3_key
+        .ok_or_else(|| anyhow::anyhow!("Missing v3_key"))?;
+    let notify_url = config_row
+        .notify_url
+        .ok_or_else(|| anyhow::anyhow!("Missing notify_url"))?;
+
+    herald_core::infrastructure::wechat::client::WechatPayClient::new_async(
+        app_id,
+        mch_id,
+        private_key,
+        serial_no,
+        v3_key,
+        notify_url,
+        config_row.mock_base_url,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!(e.to_string()))
 }

@@ -159,6 +159,7 @@ pub struct AppState {
     pub admin_user_service: Arc<
         AdminUserServiceImpl<
             PostgresAdminUserRepository,
+            PostgresUserRoleRepository,
             RedisPermissionChecker,
             PostgresAuditEventRepository,
         >,
@@ -188,6 +189,7 @@ pub struct AppState {
             PostgresUserRoleRepository,
             PostgresRolePolicyRepository,
             RedisPermissionChecker,
+            herald_core::infrastructure::audit::PostgresAuditEventRepository,
         >,
     >,
 

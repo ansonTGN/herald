@@ -15,6 +15,7 @@ import { ProductDeleteDialog } from './product-delete-dialog'
 import { toast } from 'sonner'
 import { type ProductFormData } from '@/lib/schemas/billing-forms'
 import { PageHeader } from '@/components/shared/page-header'
+import { handleApiResponse } from '@/lib/api-utils'
 
 interface ProductPageProps {
   realmId: string
@@ -36,25 +37,23 @@ export function ProductPage({ realmId }: ProductPageProps) {
     }): Promise<ProductResponse> => {
       const { formData, editingProductId } = data
       if (editingProductId) {
-        const response = await updateProduct({
-          path: { realmId, productId: editingProductId },
-          body: {
-            title: formData.title,
-            description: formData.description ?? null,
-            enabled: formData.enabled,
-          },
-        })
-        if (response.error) throw response.error
-        if (!response.data) throw new Error('Failed to update product')
-        return response.data as unknown as ProductResponse
+        return handleApiResponse(
+          await updateProduct({
+            path: { realmId, productId: editingProductId },
+            body: {
+              title: formData.title,
+              description: formData.description ?? null,
+              enabled: formData.enabled,
+            },
+          })
+        )
       } else {
-        const response = await createProduct({
-          path: { realmId },
-          body: formData,
-        })
-        if (response.error) throw response.error
-        if (!response.data) throw new Error('Failed to create product')
-        return response.data as unknown as ProductResponse
+        return handleApiResponse(
+          await createProduct({
+            path: { realmId },
+            body: formData,
+          })
+        )
       }
     },
     onSuccess: (data: ProductResponse, variables) => {

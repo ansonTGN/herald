@@ -231,11 +231,23 @@ pub struct SubscriptionPlanSummary {
 
 // Product Management Types
 
+fn validate_product_code(code: &str) -> Result<(), validator::ValidationError> {
+    if code
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        Ok(())
+    } else {
+        Err(validator::ValidationError::new("invalid_product_code"))
+    }
+}
+
 /// Request to create a product
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateProductRequest {
     #[validate(length(min = 3, max = 50))]
+    #[validate(custom(function = "validate_product_code"))]
     pub code: String,
     #[validate(length(min = 1, max = 100))]
     pub title: String,
@@ -274,6 +286,13 @@ pub struct ProductResponse {
     pub plans_count: i64,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// Response for listing products
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListProductsQuery {
+    pub enabled: Option<bool>,
 }
 
 /// Response for listing products

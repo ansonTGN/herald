@@ -145,7 +145,7 @@ Realm（域）是 Herald 系统中的多租户隔离单位，每个用户、客�
 - 自动创建管理员用户并分配 `realm-admin` 角色
 - 管理员用户状态自动设为 Normal（已验证），可立即登录
 - 自动初始化默认 RBAC：角色定义（`realm-admin`、`user`）、权限定义、角色权限关联和 RBAC 策略
-- 如果任何步骤失败（注册配置、客户端创建、RBAC 初始化、管理员用户创建等），通过 `delete_realm` 删除已创建的 realm 进行回滚（非数据库事务回滚）
+- 如果任何步骤失败（注册配置、客户端创建、RBAC 初始化、管理员用户创建等），创建失败返回错误，已创建的部分数据可能残留（已知限制，Realm 不支持删除）
 - 详细默认角色和权限说明请参考 `docs/prd/core/permissions.md`
 
 ### 4.2 关键状态与异常
@@ -217,7 +217,7 @@ Realm（域）是 Herald 系统中的多租户隔离单位，每个用户、客�
 - Realm 创建时自动创建 admin-web-console client app 和 admin-api-client（用于 API Key 认证）
 - Realm 创建时自动初始化注册配置（registration.enabled: false）
 - 创建的管理员用户状态自动设为 Normal（已验证），可立即登录
-- 创建 Realm 时必须指定管理员 email 和密码，创建失败时通过 delete_realm 回滚（非数据库事务回滚）
+- 创建 Realm 时必须指定管理员 email 和密码，创建失败时返回错误（已创建的部分数据可能残留，Realm 不支持删除）
 - Admin Realm 管理员创建 Realm 后不能直接切换到新 Realm 的内部资源
 - Admin realm 管理员拥有 realm.manage 权限可编辑任何 realm 的元数据（但不可管理内部资源）
 - Realm 列表当前返回所有 realms，未按用户所属过滤（已知限制，待优化）

@@ -111,6 +111,7 @@ pub struct OAuthProvider {
     pub open_id: String,
     pub union_id: Option<String>,
     pub email: Option<String>,
+    pub user_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -191,6 +192,7 @@ impl OAuthProvider {
             open_id: config.open_id,
             union_id: config.union_id,
             email: config.email,
+            user_id: config.user_id,
             created_at: now,
             updated_at: now,
         }
@@ -204,6 +206,7 @@ pub struct CreateOAuthProviderConfig {
     pub open_id: String,
     pub union_id: Option<String>,
     pub email: Option<String>,
+    pub user_id: Option<Uuid>,
 }
 
 /// Request to create/update OAuth provider configuration

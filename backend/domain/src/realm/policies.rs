@@ -32,13 +32,6 @@ pub trait RealmPolicy: Send + Sync {
         realm: &Realm,
     ) -> impl Future<Output = Result<bool, CoreError>> + Send;
 
-    /// 检查是否可以删除 Realm
-    fn can_delete_realm(
-        &self,
-        identity: &Identity,
-        realm: &Realm,
-    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
-
     /// 检查是否可以列出 Realms
     fn can_list_realms(
         &self,

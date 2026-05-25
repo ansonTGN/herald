@@ -156,6 +156,8 @@ pub struct ApplyInvoiceRequest {
     pub billing_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_phone: Option<String>,
+    #[validate(length(min = 1, max = 100))]
+    pub billing_tax_id: String,
     pub due_date: NaiveDate,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
@@ -230,7 +232,7 @@ pub struct CreateInvoiceRequest {
 // Update Invoice (draft only)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateInvoiceRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -241,6 +243,7 @@ pub struct UpdateInvoiceRequest {
     pub billing_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_phone: Option<String>,
+    #[validate(length(min = 1, max = 100))]
     pub billing_tax_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -251,6 +254,7 @@ pub struct UpdateInvoiceRequest {
     pub seller_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seller_phone: Option<String>,
+    #[validate(length(min = 1, max = 100))]
     pub seller_tax_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]

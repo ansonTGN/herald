@@ -109,8 +109,10 @@ pub async fn device_verify(
     // Authenticate user session
     let (_token, sess) = require_session(&state, &headers).await?;
 
+    let user_code = payload.user_code.to_uppercase();
+
     // Validate user_code format
-    validate_user_code(&payload.user_code)?;
+    validate_user_code(&user_code)?;
 
     let mut conn = state
         .redis_manager
@@ -119,7 +121,7 @@ pub async fn device_verify(
         .map_err(|_| ApiError::internal("Internal server error"))?;
 
     // Lookup device_code from user_code index
-    let user_code_key = format!("deviceUserCode:{}", payload.user_code);
+    let user_code_key = format!("deviceUserCode:{}", user_code);
     let device_code: Option<String> = conn.get(&user_code_key).await.map_err(|e| {
         tracing::error!(error = %e, "Redis GET failed: user code lookup");
         ApiError::internal("Internal server error")

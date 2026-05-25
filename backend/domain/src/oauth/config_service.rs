@@ -4,6 +4,10 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::{
+    audit::{
+        ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
+        NewAuditEvent,
+    },
     authentication::Identity,
     common::{
         entities::app_errors::CoreError,
@@ -18,24 +22,61 @@ use crate::{
 };
 
 /// OAuth provider configuration service
-pub struct OAuthConfigService<R, P>
+pub struct OAuthConfigService<R, P, A>
 where
     R: OAuthConfigRepository,
     P: OAuthConfigPolicy,
+    A: AuditEventRepository + 'static,
 {
     config_repository: Arc<R>,
     policy: Arc<P>,
+    audit_event_repository: Arc<A>,
 }
 
-impl<R, P> OAuthConfigService<R, P>
+impl<R, P, A> OAuthConfigService<R, P, A>
 where
     R: OAuthConfigRepository,
     P: OAuthConfigPolicy,
+    A: AuditEventRepository + 'static,
 {
-    pub fn new(config_repository: Arc<R>, policy: Arc<P>) -> Self {
+    pub fn new(config_repository: Arc<R>, policy: Arc<P>, audit_event_repository: Arc<A>) -> Self {
         Self {
             config_repository,
             policy,
+            audit_event_repository,
+        }
+    }
+
+    async fn record_audit(
+        &self,
+        identity: &Identity,
+        config: &OAuthProviderConfig,
+        action: AuditAction,
+    ) {
+        if let Err(e) = self
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: config.realm_id.clone(),
+                category: AuditCategory::OAuth,
+                action,
+                actor_id: identity.id(),
+                actor_type: Some(ActorType::Admin),
+                actor_name: identity.as_user().map(|u| u.email.clone()),
+                target_type: AuditTargetType::OAuthConfig,
+                target_id: config.id.to_string(),
+                target_name: Some(config.provider_type.as_str().to_string()),
+                result: AuditResult::Success,
+                details: Some(serde_json::json!({
+                    "provider_type": config.provider_type.as_str(),
+                    "enabled": config.enabled,
+                })),
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record oauth config audit event");
         }
     }
 
@@ -86,7 +127,10 @@ where
         }
 
         let config = OAuthProviderConfig::new(request)?;
-        self.config_repository.create_config(config).await
+        let created = self.config_repository.create_config(config).await?;
+        self.record_audit(&identity, &created, AuditAction::OAuthConfigCreate)
+            .await;
+        Ok(created)
     }
 
     /// Get OAuth provider configuration by realm and provider type
@@ -206,7 +250,10 @@ where
             ));
         }
 
-        self.config_repository.update_config(id, request).await
+        let updated = self.config_repository.update_config(id, request).await?;
+        self.record_audit(&identity, &updated, AuditAction::OAuthConfigUpdate)
+            .await;
+        Ok(updated)
     }
 
     /// Delete OAuth provider configuration
@@ -238,7 +285,10 @@ where
             ));
         }
 
-        self.config_repository.delete_config(id).await
+        self.config_repository.delete_config(id).await?;
+        self.record_audit(&identity, &config, AuditAction::OAuthConfigDelete)
+            .await;
+        Ok(())
     }
 
     /// Get enabled OAuth providers for a realm
@@ -262,10 +312,11 @@ where
     }
 }
 
-impl<R, P> std::fmt::Debug for OAuthConfigService<R, P>
+impl<R, P, A> std::fmt::Debug for OAuthConfigService<R, P, A>
 where
     R: OAuthConfigRepository,
     P: OAuthConfigPolicy,
+    A: AuditEventRepository + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OAuthConfigService").finish()

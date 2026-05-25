@@ -9,6 +9,8 @@ use herald_api_base::application::http::server::api_entities::{ApiError, ApiResu
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::client_api_keys::services::ClientApiKeyService;
+use herald_core::domain::user::RoleAssignmentService;
+use herald_core::domain::user::admin_errors::UserAdminError;
 use uuid::Uuid;
 
 use crate::api_keys::client_app_info::resolve_client_app_for_create;
@@ -89,6 +91,21 @@ pub async fn create_api_key(
         tracing::error!("Failed to create API key: {e}");
         ApiError::internal("Failed to create API key")
     })?;
+
+    if let Some(role_ids) = payload.role_ids {
+        state
+            .role_assignment_service
+            .assign_api_key_roles(identity, &realm_id, &saved.id, role_ids)
+            .await
+            .map_err(|e| match e {
+                UserAdminError::PermissionDenied(msg) => ApiError::forbidden(msg),
+                UserAdminError::RoleNotFound(id) => {
+                    ApiError::bad_request(format!("Role not found: {id}"))
+                }
+                UserAdminError::InvalidRoleAssignment(msg) => ApiError::bad_request(msg),
+                other => ApiError::internal(format!("Failed to assign API key roles: {other}")),
+            })?;
+    }
 
     let response = CreateApiKeyResponse {
         id: saved.id,

@@ -55,7 +55,6 @@ pub trait RealmPolicy: Send + Sync {
     fn can_create_realm(&self, identity: Identity) -> impl Future<Output = bool> + Send;
     fn can_read_realm(&self, identity: Identity) -> impl Future<Output = bool> + Send;
     fn can_update_realm(&self, identity: Identity) -> impl Future<Output = bool> + Send;
-    fn can_delete_realm(&self, identity: Identity) -> impl Future<Output = bool> + Send;
     fn can_list_realms(&self, identity: Identity) -> impl Future<Output = bool> + Send;
 }
 
@@ -102,9 +101,6 @@ impl RealmPolicy for AllowAllRealmPolicy {
         async move { true }
     }
     fn can_update_realm(&self, _identity: Identity) -> impl Future<Output = bool> + Send {
-        async move { true }
-    }
-    fn can_delete_realm(&self, _identity: Identity) -> impl Future<Output = bool> + Send {
         async move { true }
     }
     fn can_list_realms(&self, _identity: Identity) -> impl Future<Output = bool> + Send {
@@ -262,19 +258,6 @@ mod tests {
         let can_update = policy.can_update_realm(identity).await;
 
         assert!(can_update, "AllowAllRealmPolicy should allow realm updates");
-    }
-
-    #[tokio::test]
-    async fn test_allow_all_realm_policy_allows_delete() {
-        let policy = AllowAllRealmPolicy;
-        let identity = create_test_identity("user001", "test-realm");
-
-        let can_delete = policy.can_delete_realm(identity).await;
-
-        assert!(
-            can_delete,
-            "AllowAllRealmPolicy should allow realm deletion"
-        );
     }
 
     #[tokio::test]

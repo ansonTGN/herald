@@ -37,6 +37,7 @@ pub enum WechatOrderStatus {
     Paid,
     Closed,
     Expired,
+    Refunded,
 }
 
 impl WechatOrderStatus {
@@ -47,6 +48,7 @@ impl WechatOrderStatus {
             Self::Paid => "paid",
             Self::Closed => "closed",
             Self::Expired => "expired",
+            Self::Refunded => "refunded",
         }
     }
 }
@@ -66,6 +68,7 @@ impl std::str::FromStr for WechatOrderStatus {
             "paid" => Ok(Self::Paid),
             "closed" => Ok(Self::Closed),
             "expired" => Ok(Self::Expired),
+            "refunded" => Ok(Self::Refunded),
             other => Err(format!("Unknown wechat order status: {}", other)),
         }
     }
@@ -98,6 +101,7 @@ pub struct CreateOrderResult {
 pub struct QueryOrderResult {
     pub trade_state: String,
     pub transaction_id: Option<String>,
+    pub amount: Option<i32>,
 }
 
 /// WeChat configuration stored in realm_config

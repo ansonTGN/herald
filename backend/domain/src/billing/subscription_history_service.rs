@@ -203,6 +203,26 @@ impl SubscriptionHistoryService {
             created_at: Utc::now(),
         }
     }
+
+    /// Create a history event for a subscription refund without changing subscription state
+    pub fn create_subscription_refunded_event(
+        subscription: &Subscription,
+        changes: serde_json::Value,
+        actor: Option<String>,
+    ) -> SubscriptionHistoryEvent {
+        SubscriptionHistoryEvent {
+            id: Uuid::now_v7().to_string(),
+            subscription_id: subscription.id,
+            event_type: HistoryEventType::Refunded,
+            timestamp: Utc::now(),
+            actor,
+            changes: Some(changes),
+            previous_state: Some(serialize_subscription_state(subscription)),
+            new_state: Some(serialize_subscription_state(subscription)),
+            realm_id: subscription.realm_id.clone(),
+            created_at: Utc::now(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -263,5 +283,24 @@ mod tests {
         assert_eq!(event.actor, Some(actor));
         assert!(event.previous_state.is_some());
         assert!(event.new_state.is_some());
+    }
+
+    #[test]
+    fn test_create_subscription_refunded_event_keeps_subscription_state() {
+        let subscription = create_test_subscription();
+        let changes = serde_json::json!({
+            "refund_id": "refund-123",
+            "amount": 1000,
+        });
+        let event = SubscriptionHistoryService::create_subscription_refunded_event(
+            &subscription,
+            changes,
+            Some("webhook".to_string()),
+        );
+
+        assert_eq!(event.subscription_id, subscription.id);
+        assert_eq!(event.event_type, HistoryEventType::Refunded);
+        assert_eq!(event.previous_state, event.new_state);
+        assert!(event.changes.is_some());
     }
 }

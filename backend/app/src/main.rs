@@ -124,7 +124,7 @@ async fn main() -> Result<()> {
     // Start Worker
     info!("Starting Worker service");
     let invoice_repo = Arc::new(PostgresInvoiceRepository::new(db.clone()));
-    let worker_config = WorkerConfig::new(expiration_service, invoice_repo);
+    let worker_config = WorkerConfig::new(expiration_service, invoice_repo, pg_pool.clone());
     let worker_handle = herald_worker::start(worker_config)?;
 
     // Wait for either service to complete or shutdown signal

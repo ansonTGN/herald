@@ -2,6 +2,7 @@ use axum::{
     Form, Json,
     extract::{Path, State},
 };
+use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -129,8 +130,38 @@ pub async fn device_authorize(
         ));
     }
 
+    let mut conn = state
+        .redis_manager
+        .get()
+        .await
+        .map_err(|_| ApiError::internal("Internal server error".to_string()))?;
+
     let device_code = uuid::Uuid::now_v7().to_string();
-    let user_code = generate_user_code();
+    let mut user_code = generate_user_code();
+    for _ in 0..5 {
+        let exists: bool = conn
+            .exists(format!("deviceUserCode:{}", user_code))
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Redis EXISTS failed: user code collision check");
+                ApiError::internal("Internal server error".to_string())
+            })?;
+        if !exists {
+            break;
+        }
+        user_code = generate_user_code();
+    }
+
+    let user_code_key = format!("deviceUserCode:{}", user_code);
+    let exists: bool = conn.exists(&user_code_key).await.map_err(|e| {
+        tracing::error!(error = %e, "Redis EXISTS failed: final user code collision check");
+        ApiError::internal("Internal server error".to_string())
+    })?;
+    if exists {
+        return Err(ApiError::internal(
+            "Failed to allocate unique device user code".to_string(),
+        ));
+    }
 
     let now = chrono::Utc::now().timestamp();
     let state_json = serde_json::json!({
@@ -145,12 +176,6 @@ pub async fn device_authorize(
     })
     .to_string();
 
-    let mut conn = state
-        .redis_manager
-        .get()
-        .await
-        .map_err(|_| ApiError::internal("Internal server error".to_string()))?;
-
     let _: Vec<()> = redis::pipe()
         .atomic()
         .cmd("SET")
@@ -159,7 +184,7 @@ pub async fn device_authorize(
         .arg("EX")
         .arg(DEVICE_CODE_TTL_SECONDS)
         .cmd("SET")
-        .arg(format!("deviceUserCode:{}", user_code))
+        .arg(user_code_key)
         .arg(&device_code)
         .arg("EX")
         .arg(DEVICE_CODE_TTL_SECONDS)

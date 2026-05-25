@@ -9,6 +9,7 @@ use crate::wechat_config_types::{
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
+use herald_core::infrastructure::billing::{decrypt_secret, encrypt_secret};
 
 // The rest of the file is identical to the original but with these import changes.
 // Due to the file size, I include the full content with only import path substitutions.
@@ -20,6 +21,32 @@ use sqlx::PgPool;
 use sqlx::Row;
 use tracing::info;
 use uuid::Uuid;
+
+fn is_wechat_secret_key(key: &str) -> bool {
+    matches!(key, "private_key" | "v3_key")
+}
+
+fn encrypt_wechat_value(key: &str, value: &str) -> Result<String, ApiError> {
+    if is_wechat_secret_key(key) {
+        encrypt_secret(value).map_err(|e| {
+            tracing::error!(key = %key, error = %e, "Failed to encrypt WeChat config value");
+            ApiError::internal("Failed to encrypt WeChat config value")
+        })
+    } else {
+        Ok(value.to_string())
+    }
+}
+
+fn decrypt_wechat_value(key: &str, value: &str) -> Result<String, ApiError> {
+    if is_wechat_secret_key(key) {
+        decrypt_secret(value).map_err(|e| {
+            tracing::error!(key = %key, error = %e, "Failed to decrypt WeChat config value");
+            ApiError::internal("Failed to decrypt WeChat config value")
+        })
+    } else {
+        Ok(value.to_string())
+    }
+}
 
 #[utoipa::path(
     post,
@@ -320,6 +347,7 @@ async fn get_wechat_config_internal(
         serial_no: String::new(),
         v3_key: String::new(),
         private_key: String::new(),
+        platform_public_key: String::new(),
         notify_url: String::new(),
         created_at: String::new(),
         updated_at: String::new(),
@@ -342,6 +370,7 @@ async fn get_wechat_config_internal(
             "mch_id" => config.mch_id = value,
             "serial_no" => config.serial_no = value,
             "private_key" => {
+                let value = decrypt_wechat_value(&key, &value)?;
                 if reveal_secrets {
                     config.private_key = value;
                 } else {
@@ -349,10 +378,18 @@ async fn get_wechat_config_internal(
                 }
             }
             "v3_key" => {
+                let value = decrypt_wechat_value(&key, &value)?;
                 if reveal_secrets {
                     config.v3_key = value;
                 } else {
                     config.v3_key = mask_v3_key(&value);
+                }
+            }
+            "platform_public_key" => {
+                if reveal_secrets {
+                    config.platform_public_key = value;
+                } else {
+                    config.platform_public_key = mask_secret(&value);
                 }
             }
             "notify_url" => config.notify_url = value,
@@ -377,10 +414,12 @@ async fn save_wechat_config(
         ("private_key", &request.private_key, true),
         ("serial_no", &request.serial_no, false),
         ("v3_key", &request.v3_key, true),
+        ("platform_public_key", &request.platform_public_key, true),
         ("notify_url", &request.notify_url, false),
     ];
 
     for (key, value, is_secret) in config_items {
+        let stored_value = encrypt_wechat_value(key, value)?;
         sqlx::query(
             r#"
             INSERT INTO realm_config (id, realm_id, config_type, config_key, config_value, is_secret, created_at, updated_at)
@@ -390,7 +429,7 @@ async fn save_wechat_config(
         .bind(Uuid::now_v7())
         .bind(realm_id)
         .bind(key)
-        .bind(value)
+        .bind(&stored_value)
         .bind(is_secret)
         .execute(db)
         .await
@@ -425,11 +464,15 @@ async fn update_wechat_config_internal(
     if let Some(v3_key) = &request.v3_key {
         updates.push(("v3_key", v3_key.clone()));
     }
+    if let Some(platform_public_key) = &request.platform_public_key {
+        updates.push(("platform_public_key", platform_public_key.clone()));
+    }
     if let Some(notify_url) = &request.notify_url {
         updates.push(("notify_url", notify_url.clone()));
     }
 
     for (key, value) in updates {
+        let stored_value = encrypt_wechat_value(key, &value)?;
         sqlx::query(
             r#"
             UPDATE realm_config
@@ -439,7 +482,7 @@ async fn update_wechat_config_internal(
               AND config_key = $3
             "#,
         )
-        .bind(&value)
+        .bind(&stored_value)
         .bind(realm_id)
         .bind(key)
         .execute(db)

@@ -35,6 +35,8 @@ pub enum HistoryEventType {
     PastDue,
     /// Subscription dispute/chargeback created
     Disputed,
+    /// Subscription payment was refunded
+    Refunded,
 }
 
 impl HistoryEventType {
@@ -50,6 +52,7 @@ impl HistoryEventType {
             HistoryEventType::BillingPeriodChanged => "billing_period_changed",
             HistoryEventType::PastDue => "past_due",
             HistoryEventType::Disputed => "disputed",
+            HistoryEventType::Refunded => "refunded",
         }
     }
 }
@@ -69,6 +72,7 @@ impl std::str::FromStr for HistoryEventType {
             "billing_period_changed" => Ok(HistoryEventType::BillingPeriodChanged),
             "past_due" => Ok(HistoryEventType::PastDue),
             "disputed" => Ok(HistoryEventType::Disputed),
+            "refunded" => Ok(HistoryEventType::Refunded),
             _ => Err(CoreError::BadRequest(format!(
                 "Invalid history event type: {}",
                 s

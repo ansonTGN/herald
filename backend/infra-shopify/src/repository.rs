@@ -3,7 +3,13 @@
 //! Provides database access methods for Shopify subscription bindings,
 //! payment events, and related configuration.
 
+use aes_gcm::{
+    Aes256Gcm, Nonce,
+    aead::{Aead, KeyInit},
+};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
+use once_cell::sync::Lazy;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -19,6 +25,58 @@ type SubscriptionQueryResult = (
     String,
     Option<DateTime<Utc>>,
 );
+
+static ENCRYPTION_KEY: Lazy<Result<[u8; 32], String>> = Lazy::new(|| {
+    let key_str = std::env::var("ENCRYPTION_KEY")
+        .map_err(|_| "ENCRYPTION_KEY environment variable not set".to_string())?;
+    let key_bytes = STANDARD
+        .decode(&key_str)
+        .map_err(|e| format!("ENCRYPTION_KEY must be valid base64: {e}"))?;
+
+    if key_bytes.len() != 32 {
+        return Err(format!(
+            "ENCRYPTION_KEY must be 32 bytes (256 bits), got {} bytes",
+            key_bytes.len()
+        ));
+    }
+
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&key_bytes);
+    Ok(key)
+});
+
+const NONCE_SIZE: usize = 12;
+
+fn decrypt_secret(encrypted_secret: &str) -> Result<String, CoreError> {
+    let combined = STANDARD.decode(encrypted_secret).map_err(|e| {
+        tracing::error!("Failed to decode Shopify client secret: {}", e);
+        CoreError::InvalidWebhookSecret
+    })?;
+
+    if combined.len() < NONCE_SIZE + 16 {
+        return Err(CoreError::InvalidWebhookSecret);
+    }
+
+    let key = ENCRYPTION_KEY
+        .as_ref()
+        .map_err(|e| CoreError::InternalServerError(e.clone()))?;
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| {
+        tracing::error!("Failed to create Shopify secret cipher: {}", e);
+        CoreError::InternalServerError(format!("Cipher init failed: {}", e))
+    })?;
+    let (nonce_bytes, ciphertext) = combined.split_at(NONCE_SIZE);
+    let plaintext = cipher
+        .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
+        .map_err(|e| {
+            tracing::debug!("Failed to decrypt Shopify client secret: {}", e);
+            CoreError::InvalidWebhookSecret
+        })?;
+
+    String::from_utf8(plaintext).map_err(|e| {
+        tracing::error!("Decrypted Shopify client secret is not valid UTF-8: {}", e);
+        CoreError::InvalidWebhookSecret
+    })
+}
 
 /// Shopify subscription binding record
 #[derive(Debug, Clone)]
@@ -90,7 +148,7 @@ impl ShopifyRepository {
             CoreError::NotFound
         })?;
 
-        Ok(client_secret)
+        decrypt_secret(&client_secret)
     }
 
     /// Get configured shop domain for a realm

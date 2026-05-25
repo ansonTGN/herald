@@ -220,6 +220,7 @@ where
             open_id: user_info.provider_user_id,
             union_id: None,
             email: Some(user_info.email),
+            user_id: Some(user_id),
         };
 
         let oauth_provider = OAuthProvider::new(create_oauth_provider_config);

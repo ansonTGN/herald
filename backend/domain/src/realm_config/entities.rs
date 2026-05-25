@@ -91,8 +91,14 @@ pub enum ConfigType {
     /// 用户注册配置
     ///
     /// Valid config_key values:
+    /// - `enabled`: Enable user registration for the realm ("true" or "false")
     /// - `allowed_domains`: Comma-separated list of allowed email domains (e.g., "example.com,test.org")
     /// - `require_email_verification`: Require email verification for new accounts ("true" or "false")
+    /// - `password_min_length`: Minimum password length
+    /// - `require_uppercase`: Require at least one uppercase letter ("true" or "false")
+    /// - `require_lowercase`: Require at least one lowercase letter ("true" or "false")
+    /// - `require_numbers`: Require at least one number ("true" or "false")
+    /// - `require_special_chars`: Require at least one special character ("true" or "false")
     ///
     /// Example allowed domains configuration:
     /// ```json
@@ -182,6 +188,7 @@ pub enum ConfigType {
     /// - `api_key`: Stripe API key (secret, mark is_secret=true)
     /// - `webhook_secret`: Stripe webhook signing secret (secret, mark is_secret=true)
     /// - `publishable_key`: Stripe publishable key (non-secret)
+    /// - `account_id`: Stripe account ID (non-secret, optional)
     /// - `timeout`: HTTP request timeout in seconds (non-secret, e.g., "30")
     /// - `webhook_endpoint_id`: Stripe webhook endpoint ID (non-secret, for verification)
     ///
@@ -324,7 +331,13 @@ pub enum ConfigType {
 
 impl From<String> for ConfigType {
     fn from(s: String) -> Self {
-        match s.to_lowercase().as_str() {
+        ConfigType::try_from_str(&s).unwrap_or(ConfigType::Turnstile)
+    }
+}
+
+impl ConfigType {
+    pub fn try_from_str(s: &str) -> Result<Self, String> {
+        let config_type = match s.to_lowercase().as_str() {
             "turnstile" => ConfigType::Turnstile,
             "registration" => ConfigType::Registration,
             "totp" => ConfigType::Totp,
@@ -333,8 +346,9 @@ impl From<String> for ConfigType {
             "stripe" => ConfigType::Stripe,
             "shopify" => ConfigType::Shopify,
             "email" => ConfigType::Email,
-            _ => ConfigType::Turnstile, // 默认值
-        }
+            _ => return Err(format!("Invalid config type: {}", s)),
+        };
+        Ok(config_type)
     }
 }
 

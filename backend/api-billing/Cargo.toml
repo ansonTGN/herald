@@ -32,3 +32,4 @@ bytes = { workspace = true }
 aes-gcm = { workspace = true }
 md5 = "0.7"
 subtle = "2.5"
+rsa = "0.9"

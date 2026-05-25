@@ -32,7 +32,7 @@ pub async fn get_registration_status(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,
 ) -> Result<ApiResult<RegistrationStatusResponse>, ApiError> {
-    let value = query_config_value(&state.pool, &realm_id, "registration", "allowed").await?;
+    let value = query_config_value(&state.pool, &realm_id, "registration", "enabled").await?;
 
     // Parse the config value as boolean
     let enabled = value.and_then(|v| parse_bool(&v)).unwrap_or(false); // Default to disabled if no config found

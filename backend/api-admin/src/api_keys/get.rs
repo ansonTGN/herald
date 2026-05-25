@@ -3,9 +3,11 @@ use herald_api_base::application::http::auth::util::require_permission;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
+use herald_core::domain::user::RoleAssignmentService;
+use herald_core::domain::user::admin_errors::UserAdminError;
 
 use crate::api_keys::client_app_info::client_app_name;
-use crate::api_keys::types::ApiKeyListItem;
+use crate::api_keys::types::{ApiKeyListItem, ApiKeyRoleSummary};
 
 /// Get a specific API Key by ID
 ///
@@ -55,6 +57,21 @@ pub async fn get_api_key(
         return Err(ApiError::not_found("API key not found"));
     }
 
+    let roles = state
+        .role_assignment_service
+        .get_api_key_roles(identity, &realm_id, &api_key_id)
+        .await
+        .map_err(|e| match e {
+            UserAdminError::PermissionDenied(msg) => ApiError::forbidden(msg),
+            other => ApiError::internal(format!("Failed to load API key roles: {other}")),
+        })?
+        .into_iter()
+        .map(|role| ApiKeyRoleSummary {
+            id: role.id,
+            name: role.name,
+        })
+        .collect();
+
     let response = ApiKeyListItem {
         id: api_key.id,
         name: api_key.name,
@@ -66,7 +83,7 @@ pub async fn get_api_key(
         last_used_at: api_key.last_used_at.map(|dt| dt.to_rfc3339()),
         usage_count: api_key.usage_count,
         created_at: api_key.created_at.to_rfc3339(),
-        roles: Vec::new(),
+        roles,
     };
 
     Ok(ApiResult::ok(response))

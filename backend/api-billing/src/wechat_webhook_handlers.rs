@@ -9,7 +9,8 @@ use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::purchase::{CompletePaymentAttemptInput, PaymentCompletionSource};
 use herald_core::infrastructure::wechat::{
-    repository::WechatOrderRepository, subscription_service::WechatSubscriptionService,
+    WechatOrderStatus, repository::WechatOrderRepository,
+    subscription_service::WechatSubscriptionService,
 };
 
 #[utoipa::path(
@@ -77,8 +78,12 @@ pub async fn wechat_webhook_handler(
         error!("v3_key not found in config");
         ApiError::internal("Configuration error")
     })?;
+    let platform_public_key = config_row.platform_public_key.ok_or_else(|| {
+        error!("platform_public_key not found in config");
+        ApiError::internal("Configuration error")
+    })?;
 
-    verify_signature(&message, signature, &v3_key).map_err(|e| {
+    verify_signature(&message, signature, &platform_public_key).map_err(|e| {
         error!(error = %e, "Signature verification failed");
         ApiError::unauthorized("Invalid signature")
     })?;
@@ -160,8 +165,11 @@ pub async fn wechat_webhook_handler(
             ApiError::not_found("Order not found")
         })?;
 
-    match webhook_data.event_type.as_str() {
-        "TRANSACTION.SUCCESS" => {
+    match (
+        webhook_data.event_type.as_str(),
+        payment_data.trade_state.as_deref(),
+    ) {
+        ("TRANSACTION.SUCCESS", Some("SUCCESS") | None) => {
             let amount = payment_data.amount.as_ref().map(|a| a.total).unwrap_or(0) as i32;
             if amount != order.amount {
                 error!(
@@ -173,7 +181,16 @@ pub async fn wechat_webhook_handler(
                 return Err(ApiError::bad_request("Amount mismatch"));
             }
 
-            let transaction_id = payment_data.transaction_id.unwrap_or_default();
+            let transaction_id = payment_data
+                .transaction_id
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| {
+                    error!(
+                        out_trade_no = %out_trade_no,
+                        "Webhook missing transaction_id for successful payment"
+                    );
+                    ApiError::bad_request("Missing transaction_id")
+                })?;
             repo.mark_order_paid(order.id, &transaction_id)
                 .await
                 .map_err(|e| {
@@ -252,7 +269,23 @@ pub async fn wechat_webhook_handler(
                 );
             }
         }
-        "TRANSACTION.CLOSED" => {
+        ("TRANSACTION.SUCCESS", Some("REFUND")) => {
+            let transaction_id = payment_data.transaction_id.as_deref();
+            repo.update_order_status(order.id, WechatOrderStatus::Refunded, transaction_id)
+                .await
+                .map_err(|e| {
+                    error!(
+                        order_id = %order.id,
+                        error = %e,
+                        "Failed to mark order as refunded"
+                    );
+                    ApiError::internal("Failed to update order")
+                })?;
+
+            info!(order_id = %order.id, "WeChat order refunded");
+        }
+        ("TRANSACTION.SUCCESS", Some("CLOSED" | "REVOKED" | "PAYERROR"))
+        | ("TRANSACTION.CLOSED", _) => {
             repo.mark_order_closed(order.id).await.map_err(|e| {
                 error!(
                     order_id = %order.id,
@@ -264,9 +297,17 @@ pub async fn wechat_webhook_handler(
 
             info!(order_id = %order.id, "WeChat order closed");
         }
+        ("TRANSACTION.SUCCESS", Some("NOTPAY" | "USERPAYING" | "ACCEPT")) => {
+            info!(
+                order_id = %order.id,
+                trade_state = ?payment_data.trade_state,
+                "WeChat order remains pending"
+            );
+        }
         _ => {
             info!(
                 event_type = %webhook_data.event_type,
+                trade_state = ?payment_data.trade_state,
                 "Unhandled WeChat webhook event type"
             );
         }
@@ -305,6 +346,7 @@ pub struct WebhookAmount {
 struct WechatPaymentData {
     pub out_trade_no: Option<String>,
     pub transaction_id: Option<String>,
+    pub trade_state: Option<String>,
     #[serde(default)]
     pub amount: Option<WechatAmount>,
 }
@@ -318,23 +360,23 @@ struct WechatAmount {
 fn verify_signature(
     message: &str,
     signature: &str,
-    v3_key: &str,
+    platform_public_key_pem: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use base64::Engine;
-    use hmac::Mac;
-    use subtle::ConstantTimeEq;
+    use rsa::RsaPublicKey;
+    use rsa::pkcs1::DecodeRsaPublicKey;
+    use rsa::pkcs1v15::Pkcs1v15Sign;
+    use rsa::pkcs8::DecodePublicKey;
+    use sha2::{Digest, Sha256};
 
     let decoded_signature = base64::engine::general_purpose::STANDARD.decode(signature)?;
+    let public_key = RsaPublicKey::from_public_key_pem(platform_public_key_pem)
+        .or_else(|_| RsaPublicKey::from_pkcs1_pem(platform_public_key_pem))?;
+    let digest = Sha256::digest(message.as_bytes());
 
-    let mut mac = <hmac::Hmac<sha2::Sha256> as hmac::Mac>::new_from_slice(v3_key.as_bytes())?;
-    mac.update(message.as_bytes());
-    let expected_signature = mac.finalize().into_bytes();
+    public_key.verify(Pkcs1v15Sign::new::<Sha256>(), &digest, &decoded_signature)?;
 
-    if decoded_signature.ct_eq(&expected_signature).into() {
-        Ok(())
-    } else {
-        Err("Signature verification failed".into())
-    }
+    Ok(())
 }
 
 fn decrypt_resource_data(
@@ -343,28 +385,32 @@ fn decrypt_resource_data(
     nonce: &str,
     api_v3_key: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    use aes_gcm::aead::Payload;
     use aes_gcm::aead::{Aead, KeyInit};
     use base64::Engine;
 
-    let key_bytes = md5::compute(api_v3_key).0;
-
     let ciphertext_bytes = base64::engine::general_purpose::STANDARD.decode(ciphertext)?;
-    let nonce_bytes = base64::engine::general_purpose::STANDARD.decode(nonce)?;
+    let nonce_bytes = nonce.as_bytes();
+    if nonce_bytes.len() != 12 {
+        return Err(format!(
+            "Invalid nonce length: expected 12 bytes, got {}",
+            nonce_bytes.len()
+        )
+        .into());
+    }
 
-    let cipher = aes_gcm::Aes128Gcm::new_from_slice(&key_bytes)?;
-    let nonce_bytes = &nonce_bytes[..nonce_bytes.len().min(12)];
+    let cipher = aes_gcm::Aes256Gcm::new_from_slice(api_v3_key.as_bytes())?;
     let nonce = aes_gcm::Nonce::from_slice(nonce_bytes);
 
     let plaintext = cipher
-        .decrypt(nonce, ciphertext_bytes.as_slice())
+        .decrypt(
+            nonce,
+            Payload {
+                msg: ciphertext_bytes.as_slice(),
+                aad: associated_data.as_bytes(),
+            },
+        )
         .map_err(|e| format!("Decryption failed: {}", e))?;
 
-    let ad_len = associated_data.len();
-    let decrypted_data = if ad_len > 0 && plaintext.len() > ad_len {
-        String::from_utf8(plaintext[ad_len..].to_vec())?
-    } else {
-        String::from_utf8(plaintext)?
-    };
-
-    Ok(decrypted_data)
+    Ok(String::from_utf8(plaintext)?)
 }

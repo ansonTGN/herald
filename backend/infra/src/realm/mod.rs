@@ -125,6 +125,10 @@ impl RealmRepository for PostgresRealmRepository {
         // Build base query
         let mut query = realm::Entity::find();
 
+        if let Some(realm_id) = &filters.accessible_realm_id {
+            query = query.filter(realm::Column::Id.eq(realm_id));
+        }
+
         // Apply search filter
         if let Some(search_term) = &filters.search {
             let search_pattern = format!("%{}%", search_term);
@@ -221,11 +225,7 @@ impl RealmRepository for PostgresRealmRepository {
     }
 
     async fn delete_realm(&self, _id: &str) -> Result<(), CoreError> {
-        // Realm deletion is not supported because the database does not have
-        // cascade delete constraints on foreign keys. Deleting a realm would
-        // leave orphaned data in tables like client_app, roles, permissions, etc.
-        Err(CoreError::BadRequest(
-            "Realm deletion is not supported".to_string(),
-        ))
+        // Realm deletion is not supported
+        todo!("Realm deletion is not supported")
     }
 }

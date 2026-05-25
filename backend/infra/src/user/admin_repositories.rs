@@ -144,6 +144,7 @@ impl AdminUserRepository for PostgresAdminUserRepository {
                 param_count += 1;
                 query.push_str(&format!(", email = ${}", param_count));
             }
+
             if status.is_some() {
                 param_count += 1;
                 query.push_str(&format!(", status = ${}", param_count));
@@ -164,7 +165,7 @@ impl AdminUserRepository for PostgresAdminUserRepository {
 
             query_builder.execute(&mut *tx).await.map_err(|e| {
                 if e.to_string().contains("account_email_key") {
-                    tracing::debug!("Email already exists");
+                    tracing::debug!("Email already exists on update");
                     UserAdminError::DuplicateEmail("Email already exists".to_string())
                 } else {
                     tracing::error!("Failed to update user: {}", e);

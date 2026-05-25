@@ -309,7 +309,8 @@ pub async fn find_or_create_user(
     realm_id: &str,
     user_info: &OAuthUserInfo,
 ) -> Result<Uuid, AuthError> {
-    // Three-level matching strategy: union_id -> email -> create
+    // Three-level matching strategy: union_id -> open_id -> email -> create
+
     // Priority 1: Match by union_id if available (cross-app matching)
     if let Some(union_id) = &user_info.union_id {
         match state
@@ -318,17 +319,15 @@ pub async fn find_or_create_user(
             .find_by_union_id(realm_id, union_id)
             .await
         {
-            Ok(_provider) => {
-                // Found user via union_id - need to link to this user
-                // For now, we'll search by the provider's user_id from the provider record
-                // TODO: Implement proper user-provider linking
+            Ok(provider) => {
                 tracing::info!("Found user via union_id: {}", union_id);
-                // Fallback to email lookup for now
-                return find_or_create_user_by_email(state, realm_id, user_info).await;
+                if let Some(user_id) = provider.user_id {
+                    ensure_oauth_provider_linked(state, realm_id, user_id, user_info).await?;
+                    return Ok(user_id);
+                }
             }
             Err(herald_core::domain::common::entities::app_errors::CoreError::NotFound) => {
-                // No user found via union_id, try email matching
-                tracing::info!("No user found via union_id, trying email matching");
+                tracing::debug!("No user found via union_id, trying open_id matching");
             }
             Err(e) => {
                 return Err(AuthError::InternalServerError(format!(
@@ -339,8 +338,101 @@ pub async fn find_or_create_user(
         }
     }
 
-    // Priority 2: Match by email
-    find_or_create_user_by_email(state, realm_id, user_info).await
+    // Priority 2: Match by open_id (direct provider matching)
+    let provider_open_id = user_info
+        .open_id
+        .as_deref()
+        .unwrap_or(&user_info.provider_user_id);
+
+    match state
+        .service
+        .oauth_provider_repository()
+        .find_by_provider_and_open_id(realm_id, user_info.provider_type.as_str(), provider_open_id)
+        .await
+    {
+        Ok(provider) => {
+            if let Some(user_id) = provider.user_id {
+                return Ok(user_id);
+            }
+        }
+        Err(herald_core::domain::common::entities::app_errors::CoreError::NotFound) => {}
+        Err(e) => {
+            return Err(AuthError::InternalServerError(format!(
+                "Failed to lookup oauth provider by open_id: {}",
+                e
+            )));
+        }
+    }
+
+    // Priority 3: Match by email
+    let user_id = find_or_create_user_by_email(state, realm_id, user_info).await?;
+    ensure_oauth_provider_linked(state, realm_id, user_id, user_info).await?;
+    Ok(user_id)
+}
+
+async fn ensure_oauth_provider_linked(
+    state: &AppState,
+    realm_id: &str,
+    user_id: Uuid,
+    user_info: &OAuthUserInfo,
+) -> Result<(), AuthError> {
+    use herald_core::domain::oauth::entities::{CreateOAuthProviderConfig, OAuthProvider};
+
+    let provider_open_id = user_info
+        .open_id
+        .as_deref()
+        .unwrap_or(&user_info.provider_user_id);
+
+    match state
+        .service
+        .oauth_provider_repository()
+        .find_by_provider_and_open_id(realm_id, user_info.provider_type.as_str(), provider_open_id)
+        .await
+    {
+        Ok(provider) => {
+            if provider.user_id != Some(user_id) {
+                state
+                    .service
+                    .oauth_provider_repository()
+                    .link_provider_to_user(user_id, provider.id)
+                    .await
+                    .map_err(|e| {
+                        AuthError::InternalServerError(format!(
+                            "Failed to link oauth provider: {}",
+                            e
+                        ))
+                    })?;
+            }
+            Ok(())
+        }
+        Err(herald_core::domain::common::entities::app_errors::CoreError::NotFound) => {
+            let provider = OAuthProvider::new(CreateOAuthProviderConfig {
+                realm_id: realm_id.to_string(),
+                provider_type: user_info.provider_type.clone(),
+                open_id: provider_open_id.to_string(),
+                union_id: user_info.union_id.clone(),
+                email: Some(user_info.email.clone()),
+                user_id: Some(user_id),
+            });
+
+            state
+                .service
+                .oauth_provider_repository()
+                .create_provider(provider)
+                .await
+                .map(|_| ())
+                .map_err(|e| {
+                    AuthError::InternalServerError(format!(
+                        "Failed to create oauth provider link: {}",
+                        e
+                    ))
+                })
+        }
+        Err(e) => Err(AuthError::InternalServerError(format!(
+            "Failed to lookup oauth provider: {}",
+            e
+        ))),
+    }
 }
 
 /// Find or create user by email

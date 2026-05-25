@@ -45,6 +45,7 @@ impl ListRealmsPaginatedQuery {
                 .clone()
                 .or_else(|| Some("created_at".to_string())),
             sort_order: self.sort_order.clone().or_else(|| Some("desc".to_string())),
+            accessible_realm_id: None,
         }
     }
 }
@@ -52,7 +53,7 @@ impl ListRealmsPaginatedQuery {
 #[derive(Debug, Deserialize, Serialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRealmValidator {
-    #[validate(length(min = 3, max = 64))]
+    #[validate(length(min = 3, max = 36))]
     pub id: Option<String>,
 
     #[validate(length(min = 3, max = 50))]

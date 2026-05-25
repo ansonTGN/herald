@@ -25,6 +25,41 @@ use herald_core::domain::realm_config::{
 };
 use herald_core::third::email::EmailService;
 
+fn parse_config_type(value: String) -> Result<ConfigType, ApiError> {
+    ConfigType::try_from_str(&value).map_err(ApiError::bad_request)
+}
+
+fn is_empty_stripe_secret(config_type: &ConfigType, config_key: &str, config_value: &str) -> bool {
+    *config_type == ConfigType::Stripe
+        && matches!(config_key, "api_key" | "webhook_secret")
+        && config_value.trim().is_empty()
+}
+
+async fn ensure_stripe_config_deletable(state: &AppState, realm_id: &str) -> Result<(), ApiError> {
+    let active_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM subscription
+         WHERE realm_id = $1
+           AND payment_provider = 'stripe'
+           AND status IN ('active', 'trialing', 'past_due', 'scheduled_cancel')",
+    )
+    .bind(realm_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(realm_id = %realm_id, error = %e, "Failed to count active Stripe subscriptions");
+        ApiError::internal("Failed to validate Stripe configuration deletion")
+    })?;
+
+    if active_count > 0 {
+        return Err(ApiError::bad_request(
+            "Cannot delete Stripe configuration while active Stripe subscriptions exist",
+        ));
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, Serialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct UpsertRealmConfigValidator {
@@ -297,8 +332,29 @@ pub async fn upsert_realm_config(
         "Upserting realm config"
     );
 
+    let config_type = parse_config_type(payload.config_type)?;
+    if is_empty_stripe_secret(&config_type, &payload.config_key, &payload.config_value) {
+        let existing = realm_config_service
+            .get_config(identity, realm_id, "stripe".to_string(), payload.config_key)
+            .await
+            .map_err(|e| match e {
+                herald_core::domain::common::entities::app_errors::CoreError::Forbidden(msg) => {
+                    ApiError::forbidden(msg)
+                }
+                herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
+                    ApiError::bad_request("Stripe secret value is required")
+                }
+                _ => {
+                    tracing::error!("Failed to load existing Stripe secret: {e}");
+                    ApiError::internal("Failed to load existing Stripe secret")
+                }
+            })?
+            .ok_or_else(|| ApiError::bad_request("Stripe secret value is required"))?;
+        return Ok(Json(to_response(existing)));
+    }
+
     let request = UpsertRealmConfigRequest {
-        config_type: ConfigType::from(payload.config_type),
+        config_type,
         config_key: payload.config_key,
         config_value: payload.config_value,
         is_secret: payload.is_secret,
@@ -381,18 +437,45 @@ pub async fn batch_upsert_realm_configs(
         "Batch upserting realm configs"
     );
 
-    let requests: Vec<UpsertRealmConfigRequest> = payload
-        .configs
-        .into_iter()
-        .map(|r| UpsertRealmConfigRequest {
-            config_type: ConfigType::from(r.config_type),
+    let mut skipped_existing = Vec::new();
+    let mut requests: Vec<UpsertRealmConfigRequest> = Vec::new();
+    for r in payload.configs {
+        let config_type = parse_config_type(r.config_type)?;
+        if is_empty_stripe_secret(&config_type, &r.config_key, &r.config_value) {
+            let existing = realm_config_service
+                .get_config(
+                    identity.clone(),
+                    realm_id.clone(),
+                    "stripe".to_string(),
+                    r.config_key,
+                )
+                .await
+                .map_err(|e| match e {
+                    herald_core::domain::common::entities::app_errors::CoreError::Forbidden(
+                        msg,
+                    ) => ApiError::forbidden(msg),
+                    herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
+                        ApiError::bad_request("Stripe secret value is required")
+                    }
+                    _ => {
+                        tracing::error!("Failed to load existing Stripe secret: {e}");
+                        ApiError::internal("Failed to load existing Stripe secret")
+                    }
+                })?
+                .ok_or_else(|| ApiError::bad_request("Stripe secret value is required"))?;
+            skipped_existing.push(existing);
+            continue;
+        }
+
+        requests.push(UpsertRealmConfigRequest {
+            config_type,
             config_key: r.config_key,
             config_value: r.config_value,
             is_secret: r.is_secret,
             enabled: r.enabled,
             metadata: r.metadata,
-        })
-        .collect();
+        });
+    }
 
     // Validate: cannot enable email verification without email config
     if requests.iter().any(|r| {
@@ -421,22 +504,29 @@ pub async fn batch_upsert_realm_configs(
         );
     }
 
-    let configs = realm_config_service
-        .batch_upsert_configs(
-            identity,
-            realm_id.clone(),
-            herald_core::domain::realm_config::BatchUpsertRealmConfigRequest { configs: requests },
-        )
-        .await
-        .map_err(|e| match e {
-            herald_core::domain::common::entities::app_errors::CoreError::Forbidden(msg) => {
-                ApiError::forbidden(msg)
-            }
-            _ => {
-                tracing::error!(realm_id = %realm_id, error = %e, "Failed to batch upsert realm configs");
-                ApiError::internal("Failed to batch upsert realm configs")
-            }
-        })?;
+    let mut configs = if requests.is_empty() {
+        Vec::new()
+    } else {
+        realm_config_service
+            .batch_upsert_configs(
+                identity,
+                realm_id.clone(),
+                herald_core::domain::realm_config::BatchUpsertRealmConfigRequest {
+                    configs: requests,
+                },
+            )
+            .await
+            .map_err(|e| match e {
+                herald_core::domain::common::entities::app_errors::CoreError::Forbidden(msg) => {
+                    ApiError::forbidden(msg)
+                }
+                _ => {
+                    tracing::error!(realm_id = %realm_id, error = %e, "Failed to batch upsert realm configs");
+                    ApiError::internal("Failed to batch upsert realm configs")
+                }
+            })?
+    };
+    configs.extend(skipped_existing);
 
     tracing::debug!(
         realm_id = %realm_id,
@@ -508,6 +598,10 @@ pub async fn delete_realm_config(
         user_id = %current_user_id,
         "Deleting realm config"
     );
+
+    if parse_config_type(config_type.clone())? == ConfigType::Stripe {
+        ensure_stripe_config_deletable(&state, &realm_id).await?;
+    }
 
     realm_config_service
         .delete_config(identity, realm_id, config_type, config_key)

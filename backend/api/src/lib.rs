@@ -232,6 +232,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
     // Create admin user services
     let admin_user_service = Arc::new(AdminUserServiceImpl::new(
         admin_user_repository.clone(),
+        user_role_repository.clone(),
         permission_checker.clone(),
         audit_event_repository.clone(),
     ));
@@ -249,6 +250,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         user_role_repository.clone(),
         role_policy_repository.clone(),
         permission_checker.clone(),
+        audit_event_repository.clone(),
     ));
     info!("Admin user services initialized");
 

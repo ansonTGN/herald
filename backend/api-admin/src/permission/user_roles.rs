@@ -23,6 +23,10 @@ use validator::Validate;
 use herald_api_base::application::http::common::validation;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::audit::{
+    ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
+    NewAuditEvent,
+};
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::permission_service::PermissionService;
 use herald_core::domain::authorization::principal_types;
@@ -202,6 +206,30 @@ pub async fn assign_roles_to_user(
         .ok_or_else(|| ApiError::bad_request("User has no realm"))?;
 
     if identity.realm_id() != *realm_id {
+        if let Err(e) = state
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm_id.clone(),
+                category: AuditCategory::Rbac,
+                action: AuditAction::RoleAssign,
+                actor_id: identity.user_id().to_string(),
+                actor_type: Some(ActorType::Admin),
+                actor_name: identity.as_user().map(|u| u.email.clone()),
+                target_type: AuditTargetType::User,
+                target_id: user_id.to_string(),
+                target_name: None,
+                result: AuditResult::Failure,
+                details: Some(
+                    serde_json::json!({"role_ids": request.role_ids, "reason": "realm_boundary"}),
+                ),
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record audit event");
+        }
         return Err(ApiError::forbidden(
             "Access denied: cannot manage roles in a different realm",
         ));
@@ -223,6 +251,28 @@ pub async fn assign_roles_to_user(
         })?;
 
     if !has_permission {
+        if let Err(e) = state
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm_id.clone(),
+                category: AuditCategory::Rbac,
+                action: AuditAction::RoleAssign,
+                actor_id: identity.user_id().to_string(),
+                actor_type: Some(ActorType::Admin),
+                actor_name: identity.as_user().map(|u| u.email.clone()),
+                target_type: AuditTargetType::User,
+                target_id: user_id.to_string(),
+                target_name: None,
+                result: AuditResult::Failure,
+                details: Some(serde_json::json!({"role_ids": request.role_ids, "reason": "permission_denied"})),
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record audit event");
+        }
         return Err(ApiError::forbidden(
             "Insufficient permissions: requires roles.manage",
         ));
@@ -327,6 +377,29 @@ pub async fn assign_roles_to_user(
         "Roles assigned to user"
     );
 
+    if let Err(e) = state
+        .audit_event_repository
+        .create(NewAuditEvent {
+            realm_id: realm_id.clone(),
+            category: AuditCategory::Rbac,
+            action: AuditAction::RoleAssign,
+            actor_id: identity.user_id().to_string(),
+            actor_type: Some(ActorType::Admin),
+            actor_name: identity.as_user().map(|u| u.email.clone()),
+            target_type: AuditTargetType::User,
+            target_id: user_id.to_string(),
+            target_name: None,
+            result: AuditResult::Success,
+            details: Some(serde_json::json!({"role_ids": request.role_ids})),
+            ip_address: None,
+            user_agent: None,
+            trace_id: None,
+        })
+        .await
+    {
+        tracing::warn!(error = %e, "Failed to record audit event");
+    }
+
     Ok(ApiResult::created(UserRolesResponse { roles }))
 }
 
@@ -370,6 +443,28 @@ pub async fn remove_role_from_user(
         .ok_or_else(|| ApiError::bad_request("User has no realm"))?;
 
     if identity.realm_id() != *realm_id {
+        if let Err(e) = state
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm_id.clone(),
+                category: AuditCategory::Rbac,
+                action: AuditAction::RoleUnassign,
+                actor_id: identity.user_id().to_string(),
+                actor_type: Some(ActorType::Admin),
+                actor_name: identity.as_user().map(|u| u.email.clone()),
+                target_type: AuditTargetType::User,
+                target_id: user_id.to_string(),
+                target_name: None,
+                result: AuditResult::Failure,
+                details: Some(serde_json::json!({"role_id": role_id, "reason": "realm_boundary"})),
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record audit event");
+        }
         return Err(ApiError::forbidden(
             "Access denied: cannot manage roles in a different realm",
         ));
@@ -391,6 +486,30 @@ pub async fn remove_role_from_user(
         })?;
 
     if !has_permission {
+        if let Err(e) = state
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm_id.clone(),
+                category: AuditCategory::Rbac,
+                action: AuditAction::RoleUnassign,
+                actor_id: identity.user_id().to_string(),
+                actor_type: Some(ActorType::Admin),
+                actor_name: identity.as_user().map(|u| u.email.clone()),
+                target_type: AuditTargetType::User,
+                target_id: user_id.to_string(),
+                target_name: None,
+                result: AuditResult::Failure,
+                details: Some(
+                    serde_json::json!({"role_id": role_id, "reason": "permission_denied"}),
+                ),
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record audit event");
+        }
         return Err(ApiError::forbidden(
             "Insufficient permissions: requires roles.manage",
         ));
@@ -425,6 +544,29 @@ pub async fn remove_role_from_user(
         role_id = %role_id,
         "Role removed from user"
     );
+
+    if let Err(e) = state
+        .audit_event_repository
+        .create(NewAuditEvent {
+            realm_id: realm_id.clone(),
+            category: AuditCategory::Rbac,
+            action: AuditAction::RoleUnassign,
+            actor_id: identity.user_id().to_string(),
+            actor_type: Some(ActorType::Admin),
+            actor_name: identity.as_user().map(|u| u.email.clone()),
+            target_type: AuditTargetType::User,
+            target_id: user_id.to_string(),
+            target_name: None,
+            result: AuditResult::Success,
+            details: Some(serde_json::json!({"role_id": role_id})),
+            ip_address: None,
+            user_agent: None,
+            trace_id: None,
+        })
+        .await
+    {
+        tracing::warn!(error = %e, "Failed to record audit event");
+    }
 
     Ok(ApiResult::no_content())
 }

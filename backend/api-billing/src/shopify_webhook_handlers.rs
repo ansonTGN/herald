@@ -131,11 +131,124 @@ async fn handle_webhook_event_internal(
             handle_billing_attempt_failure(state, realm_id, payload).await
         }
         "refunds/create" => handle_refunds_create(state, realm_id, payload).await,
+        "orders/paid" => handle_orders_paid(state, realm_id, payload).await,
+        "app/uninstalled" => handle_app_uninstalled(state, realm_id).await,
         _ => {
             warn!("Unsupported webhook topic: {}", topic);
             Ok(())
         }
     }
+}
+
+async fn handle_orders_paid(
+    state: AppState,
+    realm_id: String,
+    payload: Value,
+) -> Result<(), CoreError> {
+    let order_id = payload["admin_graphql_api_id"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            payload["id"]
+                .as_i64()
+                .filter(|&id| id > 0)
+                .map(|id| id.to_string())
+        })
+        .ok_or_else(|| CoreError::BadRequest("Missing Shopify order id".to_string()))?;
+
+    let shopify_repo = ShopifyRepository::new(state.pool.clone());
+    let Some((subscription_id, _customer_id)) =
+        shopify_repo.find_binding_by_order_id(&order_id).await?
+    else {
+        warn!(
+            realm_id = %realm_id,
+            order_id = %order_id,
+            "Shopify orders/paid webhook has no subscription binding"
+        );
+        return Ok(());
+    };
+
+    let subscription_record = shopify_repo
+        .find_subscription_with_user(subscription_id)
+        .await?
+        .ok_or(CoreError::NotFound)?;
+    if let (Some(user_id), Some(plan_id)) =
+        (subscription_record.user_id, subscription_record.plan_id)
+    {
+        let period_end = subscription_record
+            .current_period_end
+            .unwrap_or_else(|| chrono::Utc::now() + chrono::Duration::days(30));
+        state
+            .subscription_service
+            .handle_subscription_paid(
+                user_id,
+                &realm_id,
+                plan_id,
+                true,
+                period_end,
+                format!("shopify_order_paid_{}", order_id),
+            )
+            .await?;
+    }
+
+    info!(
+        realm_id = %realm_id,
+        order_id = %order_id,
+        subscription_id = %subscription_id,
+        "Processed Shopify orders/paid webhook"
+    );
+
+    Ok(())
+}
+
+async fn handle_app_uninstalled(state: AppState, realm_id: String) -> Result<(), CoreError> {
+    let mut tx = state.pool.begin().await.map_err(|e| {
+        CoreError::DatabaseError(format!("Failed to begin Shopify uninstall cleanup: {}", e))
+    })?;
+
+    sqlx::query(
+        "UPDATE subscription
+         SET status = 'canceled', updated_at = NOW()
+         WHERE realm_id = $1 AND payment_provider = 'shopify'
+           AND status IN ('active', 'trialing', 'past_due', 'scheduled_cancel', 'pending')",
+    )
+    .bind(&realm_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| {
+        CoreError::DatabaseError(format!("Failed to cancel Shopify subscriptions: {}", e))
+    })?;
+
+    sqlx::query("DELETE FROM shopify_subscription_binding WHERE realm_id = $1")
+        .bind(&realm_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to delete Shopify bindings: {}", e))
+        })?;
+
+    sqlx::query("DELETE FROM shopify_user_binding WHERE realm_id = $1")
+        .bind(&realm_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to delete Shopify user bindings: {}", e))
+        })?;
+
+    sqlx::query("DELETE FROM realm_config WHERE realm_id = $1 AND config_type = 'shopify'")
+        .bind(&realm_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to delete Shopify config: {}", e)))?;
+
+    tx.commit().await.map_err(|e| {
+        CoreError::DatabaseError(format!("Failed to commit Shopify uninstall cleanup: {}", e))
+    })?;
+
+    info!(realm_id = %realm_id, "Processed Shopify app/uninstalled cleanup");
+
+    Ok(())
 }
 
 async fn handle_subscription_contracts_create(

@@ -92,17 +92,17 @@ pub struct ClientAppCreateRequest {
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientAppUpdateRequest {
-    /// Client application name (1-36 characters)
+    /// Client application name (1-100 characters)
     ///
     /// Updates the display name shown to users in authorization screens.
-    #[validate(length(min = 1, max = 36))]
+    #[validate(length(min = 1, max = 100))]
     #[schema(example = "Updated Web App")]
     pub name: Option<String>,
 
-    /// Detailed description of the client application (max 255 characters)
+    /// Detailed description of the client application (max 500 characters)
     ///
     /// Updates the description explaining the purpose of the application.
-    #[validate(length(max = 255))]
+    #[validate(length(max = 500))]
     #[schema(example = "Updated admin dashboard with new features")]
     pub description: Option<String>,
 

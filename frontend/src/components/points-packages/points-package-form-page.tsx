@@ -19,6 +19,7 @@ import { Switch } from '@/components/ui/switch'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
 import { NumberField, TextField, TextareaField } from '@/components/shared/form-fields'
 import { useFormMutation } from '@/hooks/use-form-mutation'
+import { handleApiResponse } from '@/lib/api-utils'
 import { queryKeys } from '@/data/query-options'
 import { ArrowLeft } from 'lucide-react'
 
@@ -66,11 +67,7 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
             ...data,
             price: apiPrice,
           },
-        }).then((response) => {
-          if (response.error) throw response.error
-          if (!response.data) throw new Error('Failed to create package')
-          return response.data as unknown as PointsPackageResponse
-        })
+        }).then(handleApiResponse)
       }
 
       return updatePointsPackage({
@@ -83,11 +80,7 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
           sortOrder: data.sortOrder,
           enabled: data.enabled,
         },
-      }).then((response) => {
-        if (response.error) throw response.error
-        if (!response.data) throw new Error('Failed to update package')
-        return response.data as unknown as PointsPackageResponse
-      })
+      }).then(handleApiResponse)
     },
     getSuccessMessage: (data) =>
       `Points package "${data?.title}" ${isCreate ? 'created' : 'updated'} successfully`,

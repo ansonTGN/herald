@@ -85,6 +85,14 @@ pub async fn handle_enable_totp(
     let user_repo = PostgresUserRepository::new(state.db.clone());
     let user = user_repo.get_user_by_id(user_id).await?;
 
+    let realm_repo = PostgresRealmTotpConfigRepository::new(state.db.clone());
+    let realm_config = realm_repo.get_realm_totp_config(&user.realm_id).await?;
+    if !realm_config.map(|config| config.enabled).unwrap_or(false) {
+        return Err(ApiError::forbidden(
+            "TOTP is not enabled for this realm".to_string(),
+        ));
+    }
+
     if user.password_hash.is_none() {
         return Err(ApiError::bad_request(
             "Password authentication not enabled for this account".to_string(),

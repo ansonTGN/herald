@@ -8,6 +8,8 @@ pub enum AuditCategory {
     Rbac,
     RealmManagement,
     Auth,
+    Billing,
+    OAuth,
 }
 
 /// Specific action that was performed.
@@ -47,6 +49,18 @@ pub enum AuditAction {
     AuthLogout,
     #[serde(rename = "auth.login_failed")]
     AuthLoginFailed,
+    #[serde(rename = "product.create")]
+    ProductCreate,
+    #[serde(rename = "product.update")]
+    ProductUpdate,
+    #[serde(rename = "product.delete")]
+    ProductDelete,
+    #[serde(rename = "oauth_config.create")]
+    OAuthConfigCreate,
+    #[serde(rename = "oauth_config.update")]
+    OAuthConfigUpdate,
+    #[serde(rename = "oauth_config.delete")]
+    OAuthConfigDelete,
 }
 
 /// Type of the target entity an audit event refers to.
@@ -58,6 +72,8 @@ pub enum AuditTargetType {
     Permission,
     Realm,
     Session,
+    Product,
+    OAuthConfig,
 }
 
 /// Outcome of the audited operation.
@@ -101,6 +117,9 @@ mod tests {
             (AuditAction::AuthLogin, "auth.login"),
             (AuditAction::AuthLogout, "auth.logout"),
             (AuditAction::AuthLoginFailed, "auth.login_failed"),
+            (AuditAction::OAuthConfigCreate, "oauth_config.create"),
+            (AuditAction::OAuthConfigUpdate, "oauth_config.update"),
+            (AuditAction::OAuthConfigDelete, "oauth_config.delete"),
         ];
 
         for (variant, expected) in pairs {

@@ -32,6 +32,7 @@ use crate::infrastructure::{
     },
     client::PostgresClientRepository,
     oauth::PostgresOAuthConfigRepository,
+    points::PostgresRealmPointsConfigInitializer,
     realm::PostgresRealmRepository,
     realm_config::PostgresRealmConfigRepository,
     user::repositories::{PostgresUserRepository, PostgresVerificationRepository},
@@ -106,6 +107,8 @@ impl ApplicationServiceBuilder {
             crate::infrastructure::oauth::repository::PostgresOAuthRepository::new(db.clone()),
         );
         let realm_config_repository = Arc::new(PostgresRealmConfigRepository::new(db.clone()));
+        let realm_points_config_initializer =
+            Arc::new(PostgresRealmPointsConfigInitializer::new(db.clone()));
         let user_role_repository = Arc::new(PostgresUserRoleRepository::new(
             db.clone(),
             permission_checker.clone(),
@@ -178,6 +181,7 @@ impl ApplicationServiceBuilder {
             user_repository.clone(),
             user_service.clone(),
             realm_config_repository.clone(),
+            realm_points_config_initializer,
             Arc::new(
                 crate::infrastructure::audit::PostgresAuditEventRepository::new((*db).clone()),
             ),
@@ -191,6 +195,9 @@ impl ApplicationServiceBuilder {
         let oauth_config_service = Arc::new(OAuthConfigService::new(
             oauth_config_repository.clone(),
             oauth_config_policy,
+            Arc::new(
+                crate::infrastructure::audit::PostgresAuditEventRepository::new((*db).clone()),
+            ),
         ));
 
         // Step 4: Assemble ApplicationService

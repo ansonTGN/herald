@@ -19,6 +19,7 @@ use crate::types::{
     CreateProductRequest,
     // Subscription plan types
     CreateSubscriptionPlanRequest,
+    ListProductsQuery,
     ListProductsResponse,
     ListSubscriptionPlanAssignmentsResponse,
     ListSubscriptionPlansResponse,
@@ -42,6 +43,10 @@ use crate::webhooks::verify_webhook_signature;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 // Import the trait and types from herald_core
+use herald_core::domain::audit::{
+    ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
+    NewAuditEvent,
+};
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::PermissionService;
 use herald_core::domain::billing::{
@@ -1460,6 +1465,7 @@ pub async fn create_checkout_session(
                 currency: plan.currency.clone(),
                 plan_name: plan.name.clone(),
                 realm_id: realm_id.clone(),
+                // Stripe webhook endpoint is derived from the public base URL and realm route.
                 webhook_url: Some(format!(
                     "{}/api/third/pay/{}/stripe/webhooks",
                     state.public_base_url, realm_id
@@ -2471,13 +2477,12 @@ async fn handle_subscription_scheduled_cancel(
 
 /// Handle refund.created event (audit only - no access revocation)
 async fn handle_refund_created(
-    _state: &AppState,
+    state: &AppState,
     event: &CreemWebhookEvent,
     _realm_id: String,
 ) -> Result<(), CoreError> {
     let refund: CreemRefund = serde_json::from_value(event.object.clone())?;
 
-    // Only log for audit - do not revoke access
     tracing::info!(
         "Refund created - subscription: {}, amount: {} {}, reason: {:?}",
         refund.subscription_id,
@@ -2486,8 +2491,28 @@ async fn handle_refund_created(
         refund.reason
     );
 
-    // Future: Could create a refunds table for audit tracking
-    // Currently, just log the event
+    if let Some(sub) = state
+        .billing_repository
+        .find_by_external_subscription_id(&refund.subscription_id, "creem")
+        .await?
+    {
+        let changes = serde_json::json!({
+            "refund_id": refund.id,
+            "amount": refund.amount,
+            "currency": refund.currency,
+            "reason": refund.reason,
+            "created_at": refund.created_at,
+        });
+        let history_event = SubscriptionHistoryService::create_subscription_refunded_event(
+            &sub,
+            changes,
+            Some(ACTOR_WEBHOOK.to_string()),
+        );
+        state
+            .billing_repository
+            .save_history_event(history_event)
+            .await?;
+    }
 
     Ok(())
 }
@@ -2614,6 +2639,39 @@ pub fn product_to_response(product: Product) -> ProductResponse {
     }
 }
 
+async fn record_product_audit(
+    state: &AppState,
+    identity: &Identity,
+    realm_id: &str,
+    action: AuditAction,
+    product_id: Uuid,
+    product_code: Option<String>,
+    result: AuditResult,
+) {
+    if let Err(e) = state
+        .audit_event_repository
+        .create(NewAuditEvent {
+            realm_id: realm_id.to_string(),
+            category: AuditCategory::Billing,
+            action,
+            actor_id: identity.user_id().to_string(),
+            actor_type: Some(ActorType::Admin),
+            actor_name: identity.as_user().map(|u| u.email.clone()),
+            target_type: AuditTargetType::Product,
+            target_id: product_id.to_string(),
+            target_name: product_code,
+            result,
+            details: None,
+            ip_address: None,
+            user_agent: None,
+            trace_id: None,
+        })
+        .await
+    {
+        tracing::warn!(error = %e, "Failed to record product audit event");
+    }
+}
+
 /// Convert domain SubscriptionPlan to SubscriptionPlanSummaryForProduct
 fn subscription_plan_to_product_summary(
     plan: SubscriptionPlan,
@@ -2650,6 +2708,7 @@ pub async fn list_products(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(realm_id): Path<String>,
+    Query(query): Query<ListProductsQuery>,
 ) -> Result<Json<ListProductsResponse>, ApiError> {
     tracing::info!("Listing products for realm: {}", realm_id);
 
@@ -2658,7 +2717,7 @@ pub async fn list_products(
 
     let products = state
         .product_service
-        .list_products(identity, &realm_id, None)
+        .list_products(identity, &realm_id, query.enabled)
         .await?;
 
     Ok(Json(ListProductsResponse {
@@ -2714,8 +2773,19 @@ pub async fn create_product(
 
     let product = state
         .product_service
-        .create_product(identity, &realm_id, input)
+        .create_product(identity.clone(), &realm_id, input)
         .await?;
+
+    record_product_audit(
+        &state,
+        &identity,
+        &realm_id,
+        AuditAction::ProductCreate,
+        product.id,
+        Some(product.code.clone()),
+        AuditResult::Success,
+    )
+    .await;
 
     Ok((StatusCode::CREATED, Json(product_to_response(product))))
 }
@@ -2820,8 +2890,19 @@ pub async fn update_product(
 
     let product = state
         .product_service
-        .update_product(identity, &realm_id, product_id, input)
+        .update_product(identity.clone(), &realm_id, product_id, input)
         .await?;
+
+    record_product_audit(
+        &state,
+        &identity,
+        &realm_id,
+        AuditAction::ProductUpdate,
+        product.id,
+        Some(product.code.clone()),
+        AuditResult::Success,
+    )
+    .await;
 
     Ok((StatusCode::OK, Json(product_to_response(product))))
 }
@@ -2856,8 +2937,19 @@ pub async fn delete_product(
 
     state
         .product_service
-        .delete_product(identity, &realm_id, product_id)
+        .delete_product(identity.clone(), &realm_id, product_id)
         .await?;
+
+    record_product_audit(
+        &state,
+        &identity,
+        &realm_id,
+        AuditAction::ProductDelete,
+        product_id,
+        None,
+        AuditResult::Success,
+    )
+    .await;
 
     Ok(StatusCode::NO_CONTENT)
 }

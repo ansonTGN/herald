@@ -12,14 +12,14 @@ use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::{RealmPolicy, ensure_policy};
 use crate::rbac_init::RealmInitializationService;
 use crate::realm::{
-    CreateRealmRequest, ListRealmsFilters, PaginatedRealmsResponse, Realm, RealmRepository,
-    RealmService, RealmSummary, UpdateRealmRequest,
+    CreateRealmRequest, ListRealmsFilters, PaginatedRealmsResponse, Realm,
+    RealmPointsConfigInitializer, RealmRepository, RealmService, RealmSummary, UpdateRealmRequest,
 };
 use crate::realm_config::{ConfigType, RealmConfigRepository, UpsertRealmConfigRequest};
 use crate::user::ports::{UserRepository, UserService};
 use crate::user::value_objects::CreateUserRequest;
 
-pub struct RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
+pub struct RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE>
 where
     R: RealmRepository,
     P: RealmPolicy,
@@ -30,6 +30,7 @@ where
     U: UserRepository,
     UR2: UserService,
     RCR: RealmConfigRepository,
+    RPCI: RealmPointsConfigInitializer,
     AE: AuditEventRepository + 'static,
 {
     pub(crate) realm_repository: Arc<R>,
@@ -41,10 +42,12 @@ where
     pub(crate) user_repository: Arc<U>,
     pub(crate) user_service: Arc<UR2>,
     pub(crate) realm_config_repository: Arc<RCR>,
+    pub(crate) realm_points_config_initializer: Arc<RPCI>,
     pub(crate) audit_event_repository: Arc<AE>,
 }
 
-impl<R, P, RB, C, UR, RR, U, UR2, RCR, AE> RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
+impl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE>
+    RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE>
 where
     R: RealmRepository,
     P: RealmPolicy,
@@ -55,6 +58,7 @@ where
     U: UserRepository,
     UR2: UserService,
     RCR: RealmConfigRepository,
+    RPCI: RealmPointsConfigInitializer,
     AE: AuditEventRepository + 'static,
 {
     pub fn new(
@@ -67,6 +71,7 @@ where
         user_repository: Arc<U>,
         user_service: Arc<UR2>,
         realm_config_repository: Arc<RCR>,
+        realm_points_config_initializer: Arc<RPCI>,
         audit_event_repository: Arc<AE>,
     ) -> Self {
         Self {
@@ -79,6 +84,7 @@ where
             user_repository,
             user_service,
             realm_config_repository,
+            realm_points_config_initializer,
             audit_event_repository,
         }
     }
@@ -90,8 +96,8 @@ where
     }
 }
 
-impl<R, P, RB, C, UR, RR, U, UR2, RCR, AE> RealmService
-    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
+impl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE> RealmService
+    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE>
 where
     R: RealmRepository,
     P: RealmPolicy,
@@ -102,6 +108,7 @@ where
     U: UserRepository,
     UR2: UserService,
     RCR: RealmConfigRepository,
+    RPCI: RealmPointsConfigInitializer,
     AE: AuditEventRepository + 'static,
 {
     async fn create_realm(
@@ -150,9 +157,34 @@ where
                     "Failed to initialize default registration config, rolling back realm"
                 );
                 // Rollback: delete the realm that was created
-                let _ = self.realm_repository.delete_realm(&realm.id).await;
+                // TODO: Realm deletion is not supported - partial realm data may remain
                 return Err(CoreError::InternalServerError(format!(
                     "Failed to initialize default registration config for realm {}: {}",
+                    realm.id, e
+                )));
+            }
+        }
+
+        match self
+            .realm_points_config_initializer
+            .create_default_realm_points_config(&realm.id)
+            .await
+        {
+            Ok(_) => {
+                tracing::info!(
+                    realm_id = %realm.id,
+                    "Default points config initialized successfully"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    realm_id = %realm.id,
+                    error = %e,
+                    "Failed to initialize default points config, rolling back realm"
+                );
+                // TODO: Realm deletion is not supported - partial realm data may remain
+                return Err(CoreError::InternalServerError(format!(
+                    "Failed to initialize default points config for realm {}: {}",
                     realm.id, e
                 )));
             }
@@ -204,7 +236,7 @@ where
                             "Failed to create admin-web-console client"
                         );
                         // Rollback: delete the realm that was created
-                        let _ = self.realm_repository.delete_realm(&realm.id).await;
+                        // TODO: Realm deletion is not supported - partial realm data may remain
                         return Err(CoreError::InternalServerError(format!(
                             "Failed to create admin-web-console client for realm {}: {}",
                             realm.id, e
@@ -239,7 +271,7 @@ where
                     "RBAC initialization failed, rolling back realm creation"
                 );
                 // Rollback: delete the realm that was created
-                let _ = self.realm_repository.delete_realm(&realm.id).await;
+                // TODO: Realm deletion is not supported - partial realm data may remain
                 // Return a generic error message
                 return Err(CoreError::InternalServerError(format!(
                     "RBAC initialization failed for realm {}: {}",
@@ -288,7 +320,7 @@ where
                             error = %e,
                             "Failed to create built-in API Key Client App, rolling back realm creation"
                         );
-                        let _ = self.realm_repository.delete_realm(&realm.id).await;
+                        // TODO: Realm deletion is not supported - partial realm data may remain
                         return Err(CoreError::InternalServerError(format!(
                             "Failed to create API Key Client App for realm {}: {}",
                             realm.id, e
@@ -318,7 +350,7 @@ where
                         error = %e,
                         "Failed to create admin user, rolling back realm"
                     );
-                    let _ = self.realm_repository.delete_realm(&realm.id).await;
+                    // TODO: Realm deletion is not supported - partial realm data may remain
                     // Preserve the original error type (BadRequest, Conflict, etc.)
                     return Err(e);
                 }
@@ -337,7 +369,7 @@ where
                         error = %e,
                         "Failed to find realm-admin role, rolling back realm"
                     );
-                    let _ = self.realm_repository.delete_realm(&realm.id).await;
+                    // TODO: Realm deletion is not supported - partial realm data may remain
                     return Err(CoreError::InternalServerError(format!(
                         "Failed to find realm-admin role: {}",
                         e
@@ -372,7 +404,7 @@ where
                         error = %e,
                         "Failed to verify admin user, rolling back realm"
                     );
-                    let _ = self.realm_repository.delete_realm(&realm.id).await;
+                    // TODO: Realm deletion is not supported - partial realm data may remain
                     return Err(CoreError::InternalServerError(format!(
                         "Failed to verify admin user: {}",
                         e
@@ -406,7 +438,7 @@ where
                         error = %e,
                         "Failed to assign role to admin user, rolling back realm"
                     );
-                    let _ = self.realm_repository.delete_realm(&realm.id).await;
+                    // TODO: Realm deletion is not supported - partial realm data may remain
                     return Err(CoreError::InternalServerError(format!(
                         "Failed to assign role to admin user: {}",
                         e
@@ -481,7 +513,13 @@ where
             "Insufficient permissions to list realms",
         )?;
 
-        self.realm_repository.list_realms().await
+        Ok(self
+            .realm_repository
+            .list_realms()
+            .await?
+            .into_iter()
+            .filter(|realm| identity.has_access_to_realm(&realm.id))
+            .collect())
     }
 
     async fn list_realms_paginated(
@@ -494,6 +532,9 @@ where
             self.policy.can_list_realms(identity.clone()).await,
             "Insufficient permissions to list realms",
         )?;
+
+        let mut filters = filters;
+        filters.accessible_realm_id = Some(identity.realm_id());
 
         self.realm_repository.list_realms_paginated(filters).await
     }
@@ -520,17 +561,6 @@ where
             .await
     }
 
-    async fn delete_realm(&self, identity: Identity, id: String) -> Result<(), CoreError> {
-        // Policy check
-        ensure_policy(
-            self.policy.can_delete_realm(identity.clone()).await,
-            "Insufficient permissions to delete realm",
-        )?;
-
-        // Note: Realm deletion is not supported to prevent orphaned data
-        self.realm_repository.delete_realm(&id).await
-    }
-
     async fn get_public_realm_info(&self, id: String) -> Result<RealmSummary, CoreError> {
         let realm = self.realm_repository.get_realm_by_id(&id).await?;
         Ok(RealmSummary {
@@ -541,8 +571,8 @@ where
     }
 }
 
-impl<R, P, RB, C, UR, RR, U, UR2, RCR, AE> std::fmt::Debug
-    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, AE>
+impl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE> std::fmt::Debug
+    for RealmServiceImpl<R, P, RB, C, UR, RR, U, UR2, RCR, RPCI, AE>
 where
     R: RealmRepository,
     P: RealmPolicy,
@@ -553,6 +583,7 @@ where
     U: UserRepository,
     UR2: UserService,
     RCR: RealmConfigRepository,
+    RPCI: RealmPointsConfigInitializer,
     AE: AuditEventRepository + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

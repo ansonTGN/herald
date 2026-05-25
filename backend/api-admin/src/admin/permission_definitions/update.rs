@@ -40,6 +40,12 @@ pub async fn update_permission(
     Extension(identity): Extension<Identity>,
     Valid(Json(payload)): Valid<Json<PermissionUpdateRequest>>,
 ) -> Result<ApiResult<PermissionResponse>, ApiError> {
+    if identity.realm_id() != realm_id {
+        return Err(ApiError::forbidden(
+            "Cannot update permissions in a different realm",
+        ));
+    }
+
     // Check permission: requires permissions.manage
     let current_user_id = identity.user_id();
     let has_permission = state
@@ -73,8 +79,9 @@ pub async fn update_permission(
     let action = parts[1];
 
     let permission_check: Option<(bool,)> =
-        sqlx::query_as("SELECT is_builtin FROM permissions WHERE id = $1")
+        sqlx::query_as("SELECT is_builtin FROM permissions WHERE id = $1 AND realm_id = $2")
             .bind(id)
+            .bind(&realm_id)
             .fetch_optional(&state.pool)
             .await
             .map_err(|e| {
@@ -94,7 +101,7 @@ pub async fn update_permission(
         r#"
         UPDATE permissions
         SET name = $1, resource = $2, action = $3, description = $4, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $5
+        WHERE id = $5 AND realm_id = $6
         RETURNING id, name, resource, action, description, realm_id, is_builtin
         "#,
     )
@@ -103,6 +110,7 @@ pub async fn update_permission(
     .bind(action)
     .bind(&payload.description)
     .bind(id)
+    .bind(&realm_id)
     .fetch_optional(&state.pool)
     .await
     .map_err(|e| {

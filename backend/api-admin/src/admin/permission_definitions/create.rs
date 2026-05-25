@@ -38,6 +38,12 @@ pub async fn create_permission(
     Extension(identity): Extension<Identity>,
     Valid(Json(payload)): Valid<Json<PermissionCreateRequest>>,
 ) -> Result<ApiResult<PermissionResponse>, ApiError> {
+    if identity.realm_id() != realm_id {
+        return Err(ApiError::forbidden(
+            "Cannot create permissions in a different realm",
+        ));
+    }
+
     // Check permission: requires permissions.manage
     let current_user_id = identity.user_id();
     let has_permission = state

@@ -349,6 +349,13 @@ impl WechatPayClient {
         struct WechatQueryResponse {
             trade_state: String,
             transaction_id: Option<String>,
+            amount: Option<QueryAmount>,
+        }
+
+        #[derive(Debug, Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct QueryAmount {
+            total: i32,
         }
 
         let wechat_response: WechatQueryResponse = response.json().await.map_err(|e| {
@@ -369,6 +376,7 @@ impl WechatPayClient {
         Ok(QueryOrderResult {
             trade_state: wechat_response.trade_state,
             transaction_id: wechat_response.transaction_id,
+            amount: wechat_response.amount.map(|a| a.total),
         })
     }
 

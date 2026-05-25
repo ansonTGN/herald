@@ -7,6 +7,7 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
+use std::time::Duration;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -95,6 +96,13 @@ struct StripeInvoicePaidPayload {
 struct StripePaymentIntentSucceededPayload {
     attempt_id: Uuid,
     payment_intent_id: String,
+    completed_at: DateTime<Utc>,
+}
+
+struct StripePaymentFailedPayload {
+    attempt_id: Uuid,
+    provider_reference: String,
+    provider_status: String,
     completed_at: DateTime<Utc>,
 }
 
@@ -395,6 +403,25 @@ fn parse_payment_intent_succeeded_payload(
     })
 }
 
+fn parse_payment_failed_payload(
+    event: &Value,
+) -> Result<Option<StripePaymentFailedPayload>, CoreError> {
+    let object = &event["data"]["object"];
+    let Some(attempt_id) = parse_attempt_id(&object["metadata"]["attemptId"]) else {
+        return Ok(None);
+    };
+
+    Ok(Some(StripePaymentFailedPayload {
+        attempt_id,
+        provider_reference: object["id"]
+            .as_str()
+            .ok_or_else(|| CoreError::BadRequest("Missing failed payment object id".to_string()))?
+            .to_string(),
+        provider_status: object["status"].as_str().unwrap_or("failed").to_string(),
+        completed_at: parse_optional_stripe_datetime(&object["created"])?.unwrap_or_else(Utc::now),
+    }))
+}
+
 async fn fulfill_payment_attempt(
     app_state: &AppState,
     attempt_id: Uuid,
@@ -414,6 +441,31 @@ async fn fulfill_payment_attempt(
             },
         })
         .await?;
+
+    Ok(())
+}
+
+async fn fail_payment_attempt(
+    app_state: &AppState,
+    realm_id: &str,
+    payload: StripePaymentFailedPayload,
+) -> Result<(), CoreError> {
+    app_state
+        .payment_attempt_service
+        .mark_payment_failed(
+            realm_id,
+            payload.attempt_id,
+            payload.provider_status,
+            payload.completed_at,
+        )
+        .await?;
+
+    info!(
+        realm_id = %realm_id,
+        attempt_id = %payload.attempt_id,
+        provider_reference = %payload.provider_reference,
+        "Stripe payment attempt marked failed"
+    );
 
     Ok(())
 }
@@ -596,6 +648,36 @@ async fn handle_payment_intent_succeeded(
 
     Ok(create_placeholder_transaction(
         payload.attempt_id,
+        realm_id,
+        TransactionType::Recharge,
+    ))
+}
+
+async fn handle_payment_failed(
+    app_state: AppState,
+    event: Value,
+    realm_id: &str,
+    _idempotency_key: &str,
+) -> Result<PointsTransaction, CoreError> {
+    let event_id = parse_event_id(&event)?;
+    let Some(payload) = parse_payment_failed_payload(&event)? else {
+        warn!(
+            realm_id = %realm_id,
+            event_id = %event_id,
+            "Stripe payment_failed event has no attemptId metadata - ignoring"
+        );
+        return Ok(create_placeholder_transaction(
+            Uuid::now_v7(),
+            realm_id,
+            TransactionType::Recharge,
+        ));
+    };
+
+    let attempt_id = payload.attempt_id;
+    fail_payment_attempt(&app_state, realm_id, payload).await?;
+
+    Ok(create_placeholder_transaction(
+        attempt_id,
         realm_id,
         TransactionType::Recharge,
     ))
@@ -1231,85 +1313,16 @@ pub async fn handle_stripe_webhook(
         return Ok(StatusCode::OK);
     }
 
-    // Step 10: Route to appropriate handler
-    let result = match event_type.as_str() {
-        "checkout.session.completed" => {
-            handle_checkout_session_completed(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                &idempotency_key,
-            )
-            .await
-        }
-        "customer.subscription.created" => {
-            handle_subscription_created(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                &idempotency_key,
-            )
-            .await
-        }
-        "customer.subscription.updated" => {
-            handle_subscription_updated(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                &idempotency_key,
-            )
-            .await
-        }
-        "customer.subscription.deleted" => {
-            handle_subscription_deleted(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                &idempotency_key,
-            )
-            .await
-        }
-        "charge.refunded" => {
-            handle_charge_refunded(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                &idempotency_key,
-            )
-            .await
-        }
-        "invoice.payment_succeeded" => {
-            handle_invoice_payment_succeeded(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                &idempotency_key,
-            )
-            .await
-        }
-        "payment_intent.succeeded" => {
-            handle_payment_intent_succeeded(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                &idempotency_key,
-            )
-            .await
-        }
-        _ => {
-            warn!(
-                realm_id = %realm_id,
-                event_id = %event_id,
-                event_type = %event_type,
-                "Unknown Stripe event type - ignoring"
-            );
-            Ok(create_placeholder_transaction(
-                Uuid::now_v7(),
-                &realm_id,
-                TransactionType::SubscriptionGrant,
-            ))
-        }
-    };
+    // Step 10: Route to appropriate handler, retrying transient handler failures.
+    let result = process_stripe_event_with_retries(
+        app_state.clone(),
+        &event,
+        &realm_id,
+        &idempotency_key,
+        &event_id,
+        &event_type,
+    )
+    .await;
 
     // Step 11: Handle result
     match result {
@@ -1342,6 +1355,128 @@ pub async fn handle_stripe_webhook(
                 "Failed to process Stripe webhook event"
             );
             Err(e)
+        }
+    }
+}
+
+async fn process_stripe_event_with_retries(
+    app_state: AppState,
+    event: &Value,
+    realm_id: &str,
+    idempotency_key: &str,
+    event_id: &str,
+    event_type: &str,
+) -> Result<PointsTransaction, CoreError> {
+    const MAX_ATTEMPTS: u32 = 3;
+
+    for attempt in 1..=MAX_ATTEMPTS {
+        let result = process_stripe_event_once(
+            app_state.clone(),
+            event,
+            realm_id,
+            idempotency_key,
+            event_id,
+            event_type,
+        )
+        .await;
+
+        match result {
+            Ok(transaction) => return Ok(transaction),
+            Err(e) if attempt < MAX_ATTEMPTS => {
+                // Only retry transient errors (database, internal, network), not permanent ones
+                let is_transient = matches!(
+                    &e,
+                    CoreError::DatabaseError(_)
+                        | CoreError::InternalServerError(_)
+                        | CoreError::RateLimitExceeded
+                );
+                if !is_transient {
+                    return Err(e);
+                }
+                warn!(
+                    realm_id = %realm_id,
+                    event_id = %event_id,
+                    event_type = %event_type,
+                    attempt,
+                    error = %e,
+                    "Stripe webhook handler failed with transient error, retrying"
+                );
+                tokio::time::sleep(Duration::from_millis(100 * attempt as u64)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    unreachable!("retry loop always returns")
+}
+
+async fn process_stripe_event_once(
+    app_state: AppState,
+    event: &Value,
+    realm_id: &str,
+    idempotency_key: &str,
+    event_id: &str,
+    event_type: &str,
+) -> Result<PointsTransaction, CoreError> {
+    match event_type {
+        "checkout.session.completed" => {
+            handle_checkout_session_completed(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                idempotency_key,
+            )
+            .await
+        }
+        "customer.subscription.created" => {
+            handle_subscription_created(app_state.clone(), event.clone(), realm_id, idempotency_key)
+                .await
+        }
+        "customer.subscription.updated" => {
+            handle_subscription_updated(app_state.clone(), event.clone(), realm_id, idempotency_key)
+                .await
+        }
+        "customer.subscription.deleted" => {
+            handle_subscription_deleted(app_state.clone(), event.clone(), realm_id, idempotency_key)
+                .await
+        }
+        "charge.refunded" => {
+            handle_charge_refunded(app_state.clone(), event.clone(), realm_id, idempotency_key)
+                .await
+        }
+        "invoice.payment_succeeded" => {
+            handle_invoice_payment_succeeded(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                idempotency_key,
+            )
+            .await
+        }
+        "payment_intent.succeeded" => {
+            handle_payment_intent_succeeded(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                idempotency_key,
+            )
+            .await
+        }
+        "payment_intent.payment_failed" | "invoice.payment_failed" => {
+            handle_payment_failed(app_state.clone(), event.clone(), realm_id, idempotency_key).await
+        }
+        _ => {
+            warn!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                event_type = %event_type,
+                "Unknown Stripe event type - ignoring"
+            );
+            Ok(create_placeholder_transaction(
+                Uuid::now_v7(),
+                realm_id,
+                TransactionType::SubscriptionGrant,
+            ))
         }
     }
 }

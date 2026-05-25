@@ -6,6 +6,8 @@
 use crate::common::entities::app_errors::CoreError;
 use url::Url;
 
+const MAX_SESSION_TTL_SECONDS: i32 = 86_400;
+
 /// Validates a redirect URI according to security requirements
 ///
 /// # Rules
@@ -119,15 +121,32 @@ pub fn validate_session_config(
             session_ttl_seconds
         )));
     }
+    if session_ttl_seconds > MAX_SESSION_TTL_SECONDS {
+        return Err(CoreError::BadRequest(format!(
+            "Session TTL must be at most {} seconds, got {}",
+            MAX_SESSION_TTL_SECONDS, session_ttl_seconds
+        )));
+    }
 
     // Validate renewal TTL if provided
-    if let Some(renewal_ttl) = session_renewal_ttl_seconds
-        && renewal_ttl < 60
-    {
-        return Err(CoreError::BadRequest(format!(
-            "Session renewal TTL must be at least 60 seconds, got {}",
-            renewal_ttl
-        )));
+    if let Some(renewal_ttl) = session_renewal_ttl_seconds {
+        if renewal_ttl < 60 {
+            return Err(CoreError::BadRequest(format!(
+                "Session renewal TTL must be at least 60 seconds, got {}",
+                renewal_ttl
+            )));
+        }
+        if renewal_ttl > MAX_SESSION_TTL_SECONDS {
+            return Err(CoreError::BadRequest(format!(
+                "Session renewal TTL must be at most {} seconds, got {}",
+                MAX_SESSION_TTL_SECONDS, renewal_ttl
+            )));
+        }
+        if renewal_ttl >= session_ttl_seconds {
+            return Err(CoreError::BadRequest(
+                "Session renewal TTL must be less than session TTL".to_string(),
+            ));
+        }
     }
 
     Ok(())

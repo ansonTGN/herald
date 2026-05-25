@@ -1859,6 +1859,7 @@ dependencies = [
  "md5",
  "rand 0.8.5",
  "reqwest",
+ "rsa",
  "serde",
  "serde_json",
  "sha2",
@@ -2094,9 +2095,12 @@ dependencies = [
 name = "herald-infra-shopify"
 version = "0.1.7"
 dependencies = [
+ "aes-gcm",
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "herald-domain",
+ "once_cell",
  "reqwest",
  "serde",
  "serde_json",
@@ -2132,9 +2136,12 @@ dependencies = [
 name = "herald-infra-wechat"
 version = "0.1.7"
 dependencies = [
+ "aes-gcm",
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "herald-domain",
+ "once_cell",
  "reqwest",
  "serde",
  "serde_json",
@@ -2227,6 +2234,7 @@ dependencies = [
  "sqlx",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

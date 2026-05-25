@@ -64,7 +64,7 @@ impl Validate for VerifyTotpRequest {
 
         // Validate backup_code format if provided
         if let Some(backup_code) = &self.backup_code
-            && (backup_code.len() != 6 || !backup_code.chars().all(|c| c.is_alphanumeric()))
+            && (backup_code.len() != 6 || !backup_code.chars().all(|c| c.is_ascii_digit()))
         {
             errors.add(
                 "backup_code",
@@ -217,7 +217,7 @@ pub async fn handle_verify_totp(
     }
 
     // 5. Verify TOTP code or backup code using service layer
-    let using_totp_code = req.code.is_some();
+    let _using_totp_code = req.code.is_some();
 
     // For backup codes, we need to fetch them from the database
     let backup_codes = if req.backup_code.is_some() {
@@ -308,11 +308,7 @@ pub async fn handle_verify_totp(
         })?;
 
         // Return specific error message
-        let error_message = if using_totp_code {
-            "验证码已过期或无效".to_string() // Verification code has expired or is invalid
-        } else {
-            "Invalid verification code".to_string()
-        };
+        let error_message = "验证码已过期或无效".to_string();
 
         return Err(ApiError::unauthorized(error_message));
     }

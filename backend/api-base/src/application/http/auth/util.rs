@@ -377,7 +377,7 @@ pub async fn verify_turnstile_for_realm(
 pub async fn is_registration_enabled(state: &AppState, realm_id: &str) -> Result<bool, ApiError> {
     let row = sqlx::query_as::<_, (String,)>(
         "SELECT config_value FROM realm_config
-         WHERE realm_id = $1 AND config_type = 'registration' AND config_key = 'allowed' AND enabled = true",
+         WHERE realm_id = $1 AND config_type = 'registration' AND config_key = 'enabled' AND enabled = true",
     )
     .bind(realm_id)
     .fetch_optional(&state.pool)

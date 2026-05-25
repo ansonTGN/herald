@@ -609,7 +609,7 @@ where
         }
 
         // Verify mapping exists
-        let _existing = self
+        let existing = self
             .repository
             .find_subscription_plan_payment_provider_by_id(mapping_id)
             .await?
@@ -619,6 +619,17 @@ where
                     mapping_id
                 ))
             })?;
+
+        let active_count = self
+            .repository
+            .count_active_subscriptions_for_subscription_plan(existing.plan_id)
+            .await?;
+        if active_count > 0 {
+            return Err(CoreError::BadRequest(
+                "Cannot remove payment provider mapping while the plan has active subscriptions"
+                    .to_string(),
+            ));
+        }
 
         self.repository
             .delete_subscription_plan_payment_provider(mapping_id)

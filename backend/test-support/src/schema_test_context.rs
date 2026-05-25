@@ -240,6 +240,7 @@ impl AsyncTestContext for SchemaTestContext {
         };
         let admin_user_service = Arc::new(AdminUserServiceImpl::new(
             admin_user_repository,
+            user_role_repository.clone(),
             permission_checker.clone(),
             Arc::new(
                 herald_core::infrastructure::audit::PostgresAuditEventRepository::new(
@@ -261,6 +262,11 @@ impl AsyncTestContext for SchemaTestContext {
             user_role_repository.clone(),
             role_policy_repository,
             permission_checker.clone(),
+            Arc::new(
+                herald_core::infrastructure::audit::PostgresAuditEventRepository::new(
+                    sea_conn.clone(),
+                ),
+            ),
         ));
 
         // Create points package and payment services

@@ -415,6 +415,11 @@ pub async fn update_invoice(
 ) -> Result<Json<InvoiceDetailResponse>, ApiError> {
     tracing::info!("Updating invoice {} for realm: {}", invoice_id, realm_id);
     require_billing_permission(&state, &identity, &realm_id, "manage").await?;
+    request
+        .validate()
+        .map_err(|e: validator::ValidationErrors| {
+            CoreError::BadRequest(format!("Validation failed: {}", e))
+        })?;
 
     let line_items = request.line_items.map(|items| {
         items
@@ -770,7 +775,7 @@ pub async fn apply_invoice(
         billing_address: request.billing_address,
         billing_email: request.billing_email,
         billing_phone: request.billing_phone,
-        billing_tax_id: String::new(),
+        billing_tax_id: request.billing_tax_id,
         seller_name: seller_config.seller_name,
         seller_address: seller_config.seller_address,
         seller_email: seller_config.seller_email,

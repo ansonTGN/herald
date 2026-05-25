@@ -56,30 +56,35 @@ async fn require_permission<P: PermissionService>(
 // Admin User Service Implementation
 // ============================================================================
 
-pub struct AdminUserServiceImpl<R, P, AE>
+pub struct AdminUserServiceImpl<R, UR, P, AE>
 where
     R: AdminUserRepository,
+    UR: UserRoleRepository,
     P: PermissionService,
     AE: AuditEventRepository + 'static,
 {
     user_repository: Arc<R>,
+    user_role_repository: Arc<UR>,
     permission_checker: Arc<P>,
     pub(crate) audit_event_repository: Arc<AE>,
 }
 
-impl<R, P, AE> AdminUserServiceImpl<R, P, AE>
+impl<R, UR, P, AE> AdminUserServiceImpl<R, UR, P, AE>
 where
     R: AdminUserRepository,
+    UR: UserRoleRepository,
     P: PermissionService,
     AE: AuditEventRepository + 'static,
 {
     pub fn new(
         user_repository: Arc<R>,
+        user_role_repository: Arc<UR>,
         permission_checker: Arc<P>,
         audit_event_repository: Arc<AE>,
     ) -> Self {
         Self {
             user_repository,
+            user_role_repository,
             permission_checker,
             audit_event_repository,
         }
@@ -89,11 +94,46 @@ where
         bcrypt::hash(password, bcrypt::DEFAULT_COST)
             .map_err(|e| UserAdminError::InternalError(format!("Password hashing failed: {}", e)))
     }
+
+    async fn record_user_audit(
+        &self,
+        identity: &Identity,
+        realm_id: &str,
+        action: AuditAction,
+        target_id: String,
+        target_name: Option<String>,
+        result: AuditResult,
+        reason: Option<&str>,
+    ) {
+        if let Err(e) = self
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm_id.to_string(),
+                category: AuditCategory::UserManagement,
+                action,
+                actor_id: identity.user_id().to_string(),
+                actor_type: Some(ActorType::Admin),
+                actor_name: identity.as_user().map(|u| u.email.clone()),
+                target_type: AuditTargetType::User,
+                target_id,
+                target_name,
+                result,
+                details: reason.map(|reason| serde_json::json!({"reason": reason})),
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record audit event");
+        }
+    }
 }
 
-impl<R, P, AE> AdminUserService for AdminUserServiceImpl<R, P, AE>
+impl<R, UR, P, AE> AdminUserService for AdminUserServiceImpl<R, UR, P, AE>
 where
     R: AdminUserRepository,
+    UR: UserRoleRepository,
     P: PermissionService,
     AE: AuditEventRepository + 'static,
 {
@@ -115,6 +155,28 @@ where
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
+            if let Err(e) = self
+                .audit_event_repository
+                .create(NewAuditEvent {
+                    realm_id: realm_id.to_string(),
+                    category: AuditCategory::UserManagement,
+                    action: AuditAction::UserCreate,
+                    actor_id: identity.user_id().to_string(),
+                    actor_type: Some(ActorType::Admin),
+                    actor_name: identity.as_user().map(|u| u.email.clone()),
+                    target_type: AuditTargetType::User,
+                    target_id: "".to_string(),
+                    target_name: Some(request.email.clone()),
+                    result: AuditResult::Failure,
+                    details: Some(serde_json::json!({"reason": "realm_boundary"})),
+                    ip_address: None,
+                    user_agent: None,
+                    trace_id: None,
+                })
+                .await
+            {
+                tracing::warn!(error = %e, "Failed to record audit event");
+            }
             return Err(UserAdminError::PermissionDenied(
                 "Cannot create users in a different realm".to_string(),
             ));
@@ -126,14 +188,51 @@ where
             .email_exists(realm_id, &request.email)
             .await?
         {
+            if let Err(e) = self
+                .audit_event_repository
+                .create(NewAuditEvent {
+                    realm_id: realm_id.to_string(),
+                    category: AuditCategory::UserManagement,
+                    action: AuditAction::UserCreate,
+                    actor_id: identity.user_id().to_string(),
+                    actor_type: Some(ActorType::Admin),
+                    actor_name: identity.as_user().map(|u| u.email.clone()),
+                    target_type: AuditTargetType::User,
+                    target_id: "".to_string(),
+                    target_name: Some(request.email.clone()),
+                    result: AuditResult::Failure,
+                    details: Some(serde_json::json!({"reason": "duplicate_email"})),
+                    ip_address: None,
+                    user_agent: None,
+                    trace_id: None,
+                })
+                .await
+            {
+                tracing::warn!(error = %e, "Failed to record audit event");
+            }
             return Err(UserAdminError::DuplicateEmail(request.email));
         }
 
         // Hash password
-        let password_hash = self.hash_password(&request.password).await?;
+        let password_hash = match self.hash_password(&request.password).await {
+            Ok(hash) => hash,
+            Err(e) => {
+                self.record_user_audit(
+                    &identity,
+                    realm_id,
+                    AuditAction::UserCreate,
+                    "".to_string(),
+                    Some(request.email.clone()),
+                    AuditResult::Failure,
+                    Some("password_hash_failed"),
+                )
+                .await;
+                return Err(e);
+            }
+        };
 
         // Create user with profile
-        let user_id = self
+        let user_id = match self
             .user_repository
             .create_user_with_profile(
                 realm_id,
@@ -142,16 +241,74 @@ where
                 request.nickname.as_deref(),
                 request.status.unwrap_or(1),
             )
-            .await?;
+            .await
+        {
+            Ok(user_id) => user_id,
+            Err(e) => {
+                self.record_user_audit(
+                    &identity,
+                    realm_id,
+                    AuditAction::UserCreate,
+                    "".to_string(),
+                    Some(request.email.clone()),
+                    AuditResult::Failure,
+                    Some("create_user_failed"),
+                )
+                .await;
+                return Err(e);
+            }
+        };
+
+        if let Err(e) = self
+            .user_role_repository
+            .replace_user_roles(user_id, realm_id, "admin-web-console", &request.role_ids)
+            .await
+        {
+            self.record_user_audit(
+                &identity,
+                realm_id,
+                AuditAction::UserCreate,
+                user_id.to_string(),
+                Some(request.email.clone()),
+                AuditResult::Failure,
+                Some("assign_roles_failed"),
+            )
+            .await;
+            return Err(e);
+        }
 
         // Fetch created user for response
-        let user_entity = self
-            .user_repository
-            .get_user_with_profile(user_id)
-            .await?
-            .ok_or_else(|| {
-                UserAdminError::InternalError("Failed to fetch created user".to_string())
-            })?;
+        let user_entity = match self.user_repository.get_user_with_profile(user_id).await {
+            Ok(Some(user)) => user,
+            Ok(None) => {
+                self.record_user_audit(
+                    &identity,
+                    realm_id,
+                    AuditAction::UserCreate,
+                    user_id.to_string(),
+                    Some(request.email.clone()),
+                    AuditResult::Failure,
+                    Some("fetch_created_user_failed"),
+                )
+                .await;
+                return Err(UserAdminError::InternalError(
+                    "Failed to fetch created user".to_string(),
+                ));
+            }
+            Err(e) => {
+                self.record_user_audit(
+                    &identity,
+                    realm_id,
+                    AuditAction::UserCreate,
+                    user_id.to_string(),
+                    Some(request.email.clone()),
+                    AuditResult::Failure,
+                    Some("fetch_created_user_failed"),
+                )
+                .await;
+                return Err(e);
+            }
+        };
 
         let admin_user = AdminUser {
             id: user_entity.id,
@@ -208,27 +365,87 @@ where
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
+            if let Err(e) = self
+                .audit_event_repository
+                .create(NewAuditEvent {
+                    realm_id: realm_id.to_string(),
+                    category: AuditCategory::UserManagement,
+                    action: AuditAction::UserUpdate,
+                    actor_id: identity.user_id().to_string(),
+                    actor_type: Some(ActorType::Admin),
+                    actor_name: identity.as_user().map(|u| u.email.clone()),
+                    target_type: AuditTargetType::User,
+                    target_id: user_id.to_string(),
+                    target_name: None,
+                    result: AuditResult::Failure,
+                    details: Some(serde_json::json!({"reason": "realm_boundary"})),
+                    ip_address: None,
+                    user_agent: None,
+                    trace_id: None,
+                })
+                .await
+            {
+                tracing::warn!(error = %e, "Failed to record audit event");
+            }
             return Err(UserAdminError::PermissionDenied(
                 "Cannot update users in a different realm".to_string(),
             ));
         }
 
         // Update user fields
-        self.user_repository
+        if let Err(e) = self
+            .user_repository
             .update_user_fields(
                 user_id,
                 request.email.as_deref(),
                 request.nickname.as_deref(),
                 request.status,
             )
-            .await?;
+            .await
+        {
+            self.record_user_audit(
+                &identity,
+                realm_id,
+                AuditAction::UserUpdate,
+                user_id.to_string(),
+                None,
+                AuditResult::Failure,
+                Some("update_user_failed"),
+            )
+            .await;
+            return Err(e);
+        }
 
         // Fetch updated user
-        let user_entity = self
-            .user_repository
-            .get_user_with_profile(user_id)
-            .await?
-            .ok_or_else(|| UserAdminError::UserNotFound(user_id.to_string()))?;
+        let user_entity = match self.user_repository.get_user_with_profile(user_id).await {
+            Ok(Some(user)) => user,
+            Ok(None) => {
+                self.record_user_audit(
+                    &identity,
+                    realm_id,
+                    AuditAction::UserUpdate,
+                    user_id.to_string(),
+                    None,
+                    AuditResult::Failure,
+                    Some("user_not_found"),
+                )
+                .await;
+                return Err(UserAdminError::UserNotFound(user_id.to_string()));
+            }
+            Err(e) => {
+                self.record_user_audit(
+                    &identity,
+                    realm_id,
+                    AuditAction::UserUpdate,
+                    user_id.to_string(),
+                    None,
+                    AuditResult::Failure,
+                    Some("fetch_updated_user_failed"),
+                )
+                .await;
+                return Err(e);
+            }
+        };
 
         let admin_user = AdminUser {
             id: user_entity.id,
@@ -323,15 +540,62 @@ where
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
+            if let Err(e) = self
+                .audit_event_repository
+                .create(NewAuditEvent {
+                    realm_id: realm_id.to_string(),
+                    category: AuditCategory::UserManagement,
+                    action: AuditAction::UserDelete,
+                    actor_id: identity.user_id().to_string(),
+                    actor_type: Some(ActorType::Admin),
+                    actor_name: identity.as_user().map(|u| u.email.clone()),
+                    target_type: AuditTargetType::User,
+                    target_id: user_id.to_string(),
+                    target_name: None,
+                    result: AuditResult::Failure,
+                    details: Some(serde_json::json!({"reason": "realm_boundary"})),
+                    ip_address: None,
+                    user_agent: None,
+                    trace_id: None,
+                })
+                .await
+            {
+                tracing::warn!(error = %e, "Failed to record audit event");
+            }
             return Err(UserAdminError::PermissionDenied(
                 "Cannot delete users in a different realm".to_string(),
             ));
         }
 
         // Delete user (transactional - profile and account)
-        let deleted = self.user_repository.delete_user(user_id).await?;
+        let deleted = match self.user_repository.delete_user(user_id).await {
+            Ok(deleted) => deleted,
+            Err(e) => {
+                self.record_user_audit(
+                    &identity,
+                    realm_id,
+                    AuditAction::UserDelete,
+                    user_id.to_string(),
+                    None,
+                    AuditResult::Failure,
+                    Some("delete_user_failed"),
+                )
+                .await;
+                return Err(e);
+            }
+        };
 
         if !deleted {
+            self.record_user_audit(
+                &identity,
+                realm_id,
+                AuditAction::UserDelete,
+                user_id.to_string(),
+                None,
+                AuditResult::Failure,
+                Some("user_not_found"),
+            )
+            .await;
             return Err(UserAdminError::UserNotFound(user_id.to_string()));
         }
 
@@ -380,6 +644,28 @@ where
 
         // Realm boundary check
         if identity.realm_id() != realm_id {
+            if let Err(e) = self
+                .audit_event_repository
+                .create(NewAuditEvent {
+                    realm_id: realm_id.to_string(),
+                    category: AuditCategory::UserManagement,
+                    action: AuditAction::UserUpdate,
+                    actor_id: identity.user_id().to_string(),
+                    actor_type: Some(ActorType::Admin),
+                    actor_name: identity.as_user().map(|u| u.email.clone()),
+                    target_type: AuditTargetType::User,
+                    target_id: user_id.to_string(),
+                    target_name: None,
+                    result: AuditResult::Failure,
+                    details: Some(serde_json::json!({"reason": "realm_boundary"})),
+                    ip_address: None,
+                    user_agent: None,
+                    trace_id: None,
+                })
+                .await
+            {
+                tracing::warn!(error = %e, "Failed to record audit event");
+            }
             return Err(UserAdminError::PermissionDenied(
                 "Cannot reset passwords for users in a different realm".to_string(),
             ));
@@ -389,16 +675,95 @@ where
         let new_password = generate_random_password();
 
         // Hash the new password
-        let password_hash = self.hash_password(&new_password).await?;
+        let password_hash = match self.hash_password(&new_password).await {
+            Ok(hash) => hash,
+            Err(e) => {
+                self.record_user_audit(
+                    &identity,
+                    realm_id,
+                    AuditAction::UserUpdate,
+                    user_id.to_string(),
+                    None,
+                    AuditResult::Failure,
+                    Some("password_hash_failed"),
+                )
+                .await;
+                return Err(e);
+            }
+        };
 
         // Update password in database
-        let updated = self
+        let updated = match self
             .user_repository
             .update_user_password(user_id, &password_hash)
-            .await?;
+            .await
+        {
+            Ok(updated) => updated,
+            Err(e) => {
+                self.record_user_audit(
+                    &identity,
+                    realm_id,
+                    AuditAction::UserUpdate,
+                    user_id.to_string(),
+                    None,
+                    AuditResult::Failure,
+                    Some("update_password_failed"),
+                )
+                .await;
+                return Err(e);
+            }
+        };
 
         if !updated {
+            if let Err(e) = self
+                .audit_event_repository
+                .create(NewAuditEvent {
+                    realm_id: realm_id.to_string(),
+                    category: AuditCategory::UserManagement,
+                    action: AuditAction::UserUpdate,
+                    actor_id: identity.user_id().to_string(),
+                    actor_type: Some(ActorType::Admin),
+                    actor_name: identity.as_user().map(|u| u.email.clone()),
+                    target_type: AuditTargetType::User,
+                    target_id: user_id.to_string(),
+                    target_name: None,
+                    result: AuditResult::Failure,
+                    details: Some(serde_json::json!({"reason": "user_not_found"})),
+                    ip_address: None,
+                    user_agent: None,
+                    trace_id: None,
+                })
+                .await
+            {
+                tracing::warn!(error = %e, "Failed to record audit event");
+            }
             return Err(UserAdminError::UserNotFound(user_id.to_string()));
+        }
+
+        // Record success audit event (failure does not fail the operation)
+        if let Err(e) = self
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm_id.to_string(),
+                category: AuditCategory::UserManagement,
+                action: AuditAction::UserUpdate,
+                actor_id: identity.user_id().to_string(),
+                actor_type: Some(ActorType::Admin),
+                actor_name: identity.as_user().map(|u| u.email.clone()),
+                target_type: AuditTargetType::User,
+                target_id: user_id.to_string(),
+                target_name: None,
+                result: AuditResult::Success,
+                details: Some(
+                    serde_json::json!({"action": "reset_password", "user_id": user_id.to_string()}),
+                ),
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record audit event");
         }
 
         Ok(new_password)
@@ -892,41 +1257,80 @@ where
 // Permission Management Service Implementation
 // ============================================================================
 
-pub struct PermissionManagementServiceImpl<UR, RP, P>
+pub struct PermissionManagementServiceImpl<UR, RP, P, AE>
 where
     UR: UserRoleRepository,
     RP: RolePolicyRepository,
     P: PermissionService,
+    AE: AuditEventRepository + 'static,
 {
     user_role_repository: Arc<UR>,
     role_policy_repository: Arc<RP>,
     permission_checker: Arc<P>,
+    audit_event_repository: Arc<AE>,
 }
 
-impl<UR, RP, P> PermissionManagementServiceImpl<UR, RP, P>
+impl<UR, RP, P, AE> PermissionManagementServiceImpl<UR, RP, P, AE>
 where
     UR: UserRoleRepository,
     RP: RolePolicyRepository,
     P: PermissionService,
+    AE: AuditEventRepository + 'static,
 {
     pub fn new(
         user_role_repository: Arc<UR>,
         role_policy_repository: Arc<RP>,
         permission_checker: Arc<P>,
+        audit_event_repository: Arc<AE>,
     ) -> Self {
         Self {
             user_role_repository,
             role_policy_repository,
             permission_checker,
+            audit_event_repository,
+        }
+    }
+
+    async fn record_rbac_audit(
+        &self,
+        identity: &Identity,
+        realm_id: &str,
+        action: AuditAction,
+        target_type: AuditTargetType,
+        target_id: String,
+        details: serde_json::Value,
+    ) {
+        if let Err(e) = self
+            .audit_event_repository
+            .create(NewAuditEvent {
+                realm_id: realm_id.to_string(),
+                category: AuditCategory::Rbac,
+                action,
+                actor_id: identity.user_id().to_string(),
+                actor_type: Some(ActorType::Admin),
+                actor_name: identity.as_user().map(|u| u.email.clone()),
+                target_type,
+                target_id,
+                target_name: None,
+                result: AuditResult::Success,
+                details: Some(details),
+                ip_address: None,
+                user_agent: None,
+                trace_id: None,
+            })
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record audit event");
         }
     }
 }
 
-impl<UR, RP, P> PermissionManagementService for PermissionManagementServiceImpl<UR, RP, P>
+impl<UR, RP, P, AE> PermissionManagementService for PermissionManagementServiceImpl<UR, RP, P, AE>
 where
     UR: UserRoleRepository + 'static,
     RP: RolePolicyRepository + 'static,
     P: PermissionService + 'static,
+    AE: AuditEventRepository + 'static,
 {
     async fn create_permission(
         &self,
@@ -962,6 +1366,15 @@ where
             self.role_policy_repository
                 .create_role_policy(rid, realm_id, &res, &act)
                 .await?;
+            self.record_rbac_audit(
+                &identity,
+                realm_id,
+                AuditAction::PermissionGrant,
+                AuditTargetType::Role,
+                rid.to_string(),
+                serde_json::json!({"resource": res, "action": act}),
+            )
+            .await;
 
             // Invalidate realm cache
             let _ = self
@@ -975,6 +1388,15 @@ where
             self.user_role_repository
                 .add_user_role(uid, r, realm_id, client_id)
                 .await?;
+            self.record_rbac_audit(
+                &identity,
+                realm_id,
+                AuditAction::RoleAssign,
+                AuditTargetType::User,
+                uid.to_string(),
+                serde_json::json!({"role_id": r, "client_id": client_id}),
+            )
+            .await;
 
             // Invalidate user cache
             let _ = self
@@ -1018,6 +1440,15 @@ where
             self.role_policy_repository
                 .delete_role_policy(rid, &res, &act)
                 .await?;
+            self.record_rbac_audit(
+                &identity,
+                realm_id,
+                AuditAction::PermissionRevoke,
+                AuditTargetType::Role,
+                rid.to_string(),
+                serde_json::json!({"resource": res, "action": act}),
+            )
+            .await;
 
             // Invalidate realm cache
             let _ = self
@@ -1031,6 +1462,15 @@ where
             self.user_role_repository
                 .remove_user_role(uid, r, client_id)
                 .await?;
+            self.record_rbac_audit(
+                &identity,
+                realm_id,
+                AuditAction::RoleUnassign,
+                AuditTargetType::User,
+                uid.to_string(),
+                serde_json::json!({"role_id": r, "client_id": client_id}),
+            )
+            .await;
 
             // Invalidate user cache
             let _ = self

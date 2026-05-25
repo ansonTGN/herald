@@ -31,6 +31,10 @@ pub struct ListRealmsFilters {
 
     /// Sort order (asc, desc)
     pub sort_order: Option<String>,
+
+    #[serde(skip)]
+    #[schema(value_type = Option<String>, read_only = true)]
+    pub accessible_realm_id: Option<String>,
 }
 
 /// Pagination metadata response
@@ -163,6 +167,14 @@ pub trait RealmRepository: Send + Sync {
 }
 
 #[cfg_attr(test, mockall::automock)]
+pub trait RealmPointsConfigInitializer: Send + Sync {
+    fn create_default_realm_points_config(
+        &self,
+        realm_id: &str,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+}
+
+#[cfg_attr(test, mockall::automock)]
 pub trait RealmService: Send + Sync {
     fn create_realm(
         &self,
@@ -193,12 +205,6 @@ pub trait RealmService: Send + Sync {
         id: String,
         request: UpdateRealmRequest,
     ) -> impl Future<Output = Result<Realm, CoreError>> + Send;
-
-    fn delete_realm(
-        &self,
-        identity: Identity,
-        id: String,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
     fn get_public_realm_info(
         &self,

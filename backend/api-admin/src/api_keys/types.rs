@@ -18,6 +18,9 @@ pub struct CreateApiKeyRequest {
 
     /// Client App to bind this API key to. Defaults to the built-in admin-api-client.
     pub client_app_id: Option<Uuid>,
+
+    /// Optional role IDs to assign to this API key after creation.
+    pub role_ids: Option<Vec<Uuid>>,
 }
 
 /// Response after creating an API Key (plaintext key shown once)

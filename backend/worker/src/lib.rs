@@ -14,9 +14,11 @@ use tracing::info;
 use herald_core::domain::billing::invoice::InvoiceRepository;
 use herald_core::domain::points::ExpirationService;
 use herald_core::infrastructure::points::PostgresPointsRepository;
+use sqlx::PgPool;
 
 pub use jobs::InvoiceOverdueJob;
 pub use jobs::PointsExpirationJob;
+pub use jobs::WechatOrderExpiryJob;
 
 /// Configuration for the worker
 #[derive(Clone)]
@@ -28,6 +30,8 @@ where
     pub expiration_service: Arc<ExpirationService<PostgresPointsRepository>>,
 
     pub invoice_repo: Arc<R>,
+
+    pub pg_pool: PgPool,
 
     /// Interval for running background jobs (in seconds)
     pub expiration_interval_secs: u64,
@@ -41,6 +45,7 @@ where
     pub fn new(
         expiration_service: Arc<ExpirationService<PostgresPointsRepository>>,
         invoice_repo: Arc<R>,
+        pg_pool: PgPool,
     ) -> Self {
         let expiration_interval_secs = std::env::var("WORKER_EXPIRATION_INTERVAL_SECS")
             .ok()
@@ -49,6 +54,7 @@ where
         Self {
             expiration_service,
             invoice_repo,
+            pg_pool,
             expiration_interval_secs,
         }
     }
@@ -77,11 +83,12 @@ where
     pub fn start(self) -> Result<WorkerHandle> {
         let expiration_service = self.config.expiration_service.clone();
         let invoice_repo = self.config.invoice_repo.clone();
+        let pg_pool = self.config.pg_pool.clone();
         let interval = Duration::from_secs(self.config.expiration_interval_secs);
 
         // Spawn the worker loop
         let handle = tokio::spawn(async move {
-            Self::worker_loop(expiration_service, invoice_repo, interval).await
+            Self::worker_loop(expiration_service, invoice_repo, pg_pool, interval).await
         });
 
         Ok(WorkerHandle { handle })
@@ -91,6 +98,7 @@ where
     async fn worker_loop(
         expiration_service: Arc<ExpirationService<PostgresPointsRepository>>,
         invoice_repo: Arc<R>,
+        pg_pool: PgPool,
         interval: Duration,
     ) {
         info!("Starting worker service");
@@ -98,6 +106,7 @@ where
         // Create jobs
         let expiration_job = PointsExpirationJob::new(expiration_service);
         let invoice_overdue_job = InvoiceOverdueJob::new(invoice_repo);
+        let wechat_order_expiry_job = WechatOrderExpiryJob::new(pg_pool);
 
         let mut timer = tokio::time::interval(interval);
 
@@ -132,6 +141,21 @@ where
                         }
                         Err(e) => {
                             tracing::error!(error = %e, "Invoice overdue marking failed");
+                        }
+                    }
+
+                    match wechat_order_expiry_job.run().await {
+                        Ok(result) => {
+                            info!(
+                                candidates = result.candidates,
+                                closed = result.closed,
+                                paid = result.paid,
+                                errors = result.errors,
+                                "WeChat order expiry processing completed"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!(error = %e, "WeChat order expiry processing failed");
                         }
                     }
                 }

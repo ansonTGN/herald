@@ -20,6 +20,7 @@ use crate::infrastructure::{
     },
     client::PostgresClientRepository,
     oauth::{PostgresOAuthConfigRepository, PostgresOAuthRepository},
+    points::PostgresRealmPointsConfigInitializer,
     realm::PostgresRealmRepository,
     realm_config::PostgresRealmConfigRepository,
     user::repositories::{PostgresUserRepository, PostgresVerificationRepository},
@@ -43,6 +44,7 @@ type RealmRepo = PostgresRealmRepository;
 type OAuthConfigRepo = PostgresOAuthConfigRepository;
 type OAuthProviderRepo = PostgresOAuthRepository;
 type RealmConfigRepo = PostgresRealmConfigRepository;
+type RealmPointsConfigInitializer = PostgresRealmPointsConfigInitializer;
 type RolePolicyRepo = crate::infrastructure::authorization::PostgresRolePolicyRepository;
 type UserRoleRepo = PostgresUserRoleRepository;
 type RealmInitServiceType =
@@ -72,6 +74,7 @@ pub type RealmServiceType = RealmServiceImpl<
     UserRepo,
     UserServiceType,
     RealmConfigRepo,
+    RealmPointsConfigInitializer,
     PostgresAuditEventRepository,
 >;
 pub type RealmConfigServiceType = RealmConfigServiceImpl<
@@ -81,6 +84,7 @@ pub type RealmConfigServiceType = RealmConfigServiceImpl<
 pub type OAuthConfigServiceType = OAuthConfigService<
     OAuthConfigRepo,
     crate::infrastructure::authorization::policies::PermissionBasedOAuthConfigPolicy,
+    PostgresAuditEventRepository,
 >;
 
 // Permission checker type alias

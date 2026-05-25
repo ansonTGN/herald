@@ -52,7 +52,7 @@ pub struct CreatePlanConfigInput {
 
     pub grant_period_type: String,
 
-    #[validate(range(min = 0))]
+    #[validate(range(min = 1))]
     pub points_per_period: i64,
 
     #[validate(range(min = 0))]

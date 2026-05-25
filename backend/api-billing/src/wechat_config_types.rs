@@ -35,6 +35,11 @@ pub struct WechatConfigRequest {
     #[schema(example = "0123456789abcdef0123456789abcdef")]
     pub v3_key: String,
 
+    /// WeChat Pay platform RSA public key (PEM format) used for webhook signature verification
+    #[validate(length(min = 1, message = "Platform public key is required"))]
+    #[schema(example = "-----BEGIN PUBLIC KEY-----...")]
+    pub platform_public_key: String,
+
     /// Webhook callback URL (must be HTTPS)
     #[validate(length(min = 1, message = "Notify URL is required"))]
     #[validate(url(message = "Notify URL must be a valid URL"))]
@@ -52,6 +57,7 @@ pub struct WechatConfigUpdateRequest {
     pub serial_no: Option<String>,
     #[validate(length(min = 32, max = 32, message = "V3 key must be exactly 32 characters"))]
     pub v3_key: Option<String>,
+    pub platform_public_key: Option<String>,
     #[validate(url(message = "Notify URL must be a valid URL"))]
     pub notify_url: Option<String>,
 }
@@ -76,6 +82,8 @@ pub struct WechatConfigResponse {
     pub v3_key: String,
     #[schema(example = "*********** (configured)")]
     pub private_key: String,
+    #[schema(example = "*********** (configured)")]
+    pub platform_public_key: String,
     #[schema(example = "https://api.example.com/wechat/webhooks")]
     pub notify_url: String,
     #[schema(example = "2026-04-04T12:00:00Z")]

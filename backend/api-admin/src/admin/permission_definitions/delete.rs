@@ -32,6 +32,12 @@ pub async fn delete_permission(
     Path((realm_id, id)): Path<(String, Uuid)>,
     Extension(identity): Extension<Identity>,
 ) -> Result<ApiResult<()>, ApiError> {
+    if identity.realm_id() != realm_id {
+        return Err(ApiError::forbidden(
+            "Cannot delete permissions in a different realm",
+        ));
+    }
+
     // Check permission: requires permissions.manage
     let current_user_id = identity.user_id();
     let has_permission = state
@@ -55,17 +61,19 @@ pub async fn delete_permission(
     }
 
     // 3. Check if permission is built-in
-    let permission: Option<(bool, String, String)> =
-        sqlx::query_as("SELECT is_builtin, name, realm_id FROM permissions WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to check permission: {e}");
-                ApiError::internal("Failed to check permission")
-            })?;
+    let permission: Option<(bool, String, String)> = sqlx::query_as(
+        "SELECT is_builtin, name, realm_id FROM permissions WHERE id = $1 AND realm_id = $2",
+    )
+    .bind(id)
+    .bind(&realm_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to check permission: {e}");
+        ApiError::internal("Failed to check permission")
+    })?;
 
-    let realm_id = match permission {
+    let permission_realm_id = match permission {
         Some((is_builtin, permission_name, realm_id)) => {
             if is_builtin {
                 tracing::warn!(
@@ -101,8 +109,9 @@ pub async fn delete_permission(
     }
 
     // 4. Execute deletion
-    let result = sqlx::query("DELETE FROM permissions WHERE id = $1")
+    let result = sqlx::query("DELETE FROM permissions WHERE id = $1 AND realm_id = $2")
         .bind(id)
+        .bind(&permission_realm_id)
         .execute(&state.pool)
         .await
         .map_err(|e| {
@@ -116,7 +125,7 @@ pub async fn delete_permission(
 
     let _ = state
         .permission_checker
-        .invalidate_realm_cache(&realm_id)
+        .invalidate_realm_cache(&permission_realm_id)
         .await;
 
     Ok(ApiResult::no_content())

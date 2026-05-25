@@ -36,6 +36,18 @@ pub struct CreateUserExtRequest {
     pub nickname: Option<String>,
 }
 
+fn is_valid_email(email: &str) -> bool {
+    let trimmed = email.trim();
+    let Some((local, domain)) = trimmed.split_once('@') else {
+        return false;
+    };
+    !local.is_empty()
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
+        && !domain.contains("..")
+}
+
 /// Query parameters for listing users via the ext API
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -120,7 +132,7 @@ pub async fn create_user(
     }
 
     // 3. Validate input
-    if req.email.is_empty() {
+    if !is_valid_email(&req.email) {
         return json_error(StatusCode::BAD_REQUEST, ErrorCode::ValidationError);
     }
     if req.password.len() < 8 {
@@ -170,7 +182,7 @@ pub async fn create_user(
 /// List users in a realm
 ///
 /// Returns a paginated list of users in the specified realm.
-/// Default page_size is 100, maximum is 500.
+/// Default page_size is 20, maximum is 100.
 ///
 /// # Authentication
 /// Requires valid API Key via X-API-Key header
@@ -184,7 +196,7 @@ pub async fn create_user(
     params(
         ("realmId" = String, Path, description = "Realm ID"),
         ("page" = Option<u64>, Query, description = "Page number (1-based, default 1)"),
-        ("pageSize" = Option<u64>, Query, description = "Page size (default 100, max 500)")
+        ("pageSize" = Option<u64>, Query, description = "Page size (default 20, max 100)")
     ),
     responses(
         (status = 200, description = "Users listed successfully", body = UserListResponse),

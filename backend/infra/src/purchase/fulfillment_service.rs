@@ -2,7 +2,10 @@
 
 use std::sync::Arc;
 
-use herald_domain::billing::{BillingPeriod, Subscription, SubscriptionStatus, SubscriptionTier};
+use herald_domain::billing::{
+    BillingPeriod, Subscription, SubscriptionPlan, SubscriptionPlanType, SubscriptionStatus,
+    SubscriptionTier,
+};
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::payment_attempt::PaymentAttempt;
 use herald_domain::points::{CreditSourceType, CreditType, PointsRepository};
@@ -64,22 +67,49 @@ where
     PR: PurchaseRepository + Send + Sync,
     B: herald_domain::billing::BillingRepository + Send + Sync,
 {
-    /// Calculate subscription period start and end times
-    ///
-    /// Returns (period_start, period_end) where:
-    /// - period_start: Current UTC time
-    /// - period_end: Current time + 1 month (for monthly billing)
-    ///
-    /// P0 limitation: Always uses monthly period. Future enhancement should
-    /// query the Plan to determine correct billing period (monthly/yearly).
     fn calculate_subscription_period(
         &self,
+        billing_period: &BillingPeriod,
     ) -> (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>) {
         let now = chrono::Utc::now();
-        // P0: Always use 1 month for subscription period
-        // Future enhancement: Query Plan to get billing_period and calculate accordingly
-        let period_end = now + chrono::Duration::days(30); // Approximate 1 month
+        let period_end = match billing_period {
+            BillingPeriod::Monthly => now + chrono::Duration::days(30),
+            BillingPeriod::Yearly => now + chrono::Duration::days(365),
+        };
         (now, period_end)
+    }
+
+    fn billing_period_from_plan(plan: &SubscriptionPlan) -> BillingPeriod {
+        match plan.r#type {
+            SubscriptionPlanType::Monthly => BillingPeriod::Monthly,
+            SubscriptionPlanType::Yearly => BillingPeriod::Yearly,
+        }
+    }
+
+    fn determine_tier_from_plan(product_code: &str, plan: &SubscriptionPlan) -> SubscriptionTier {
+        let tier_source = format!(
+            "{} {} {}",
+            product_code.to_ascii_lowercase(),
+            plan.name.to_ascii_lowercase(),
+            plan.title.to_ascii_lowercase()
+        );
+
+        if tier_source.contains("enterprise") {
+            SubscriptionTier::Enterprise
+        } else if tier_source.contains("professional") {
+            SubscriptionTier::Professional
+        } else if tier_source.contains("starter") {
+            SubscriptionTier::Starter
+        } else if tier_source.contains("free") {
+            SubscriptionTier::Free
+        } else if tier_source
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .any(|word| word == "pro")
+        {
+            SubscriptionTier::Professional
+        } else {
+            SubscriptionTier::Free
+        }
     }
 }
 
@@ -124,14 +154,37 @@ where
             });
         }
 
-        // Calculate subscription period based on current time
-        let (period_start, period_end) = self.calculate_subscription_period();
+        let plan = self
+            .billing_repository
+            .find_subscription_plan_by_id(attempt.target_id)
+            .await?
+            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
+                realm_id: attempt.realm_id.clone(),
+                plan_id: attempt.target_id.to_string(),
+            })?;
+
+        if plan.realm_id != attempt.realm_id {
+            return Err(CoreError::SubscriptionPlanNotFound {
+                realm_id: attempt.realm_id.clone(),
+                plan_id: attempt.target_id.to_string(),
+            });
+        }
+
+        let product = self
+            .billing_repository
+            .find_product_by_id(&attempt.realm_id, plan.product_id)
+            .await?
+            .ok_or_else(|| {
+                CoreError::InternalServerError(format!(
+                    "Product {} not found for subscription plan {}",
+                    plan.product_id, plan.id
+                ))
+            })?;
+        let billing_period = Self::billing_period_from_plan(&plan);
+        let tier = Self::determine_tier_from_plan(&product.code, &plan);
+        let (period_start, period_end) = self.calculate_subscription_period(&billing_period);
 
         // Create new subscription
-        // P0 acceptable defaults:
-        // - tier: Professional (future: query from Plan)
-        // - billing_period: Monthly (future: query from Plan)
-        // - client_app_id: None (future: extract from attempt.metadata)
         let subscription = Subscription {
             id: uuid::Uuid::now_v7(), // Using UUID v7 as required
             realm_id: attempt.realm_id.clone(),
@@ -140,13 +193,13 @@ where
             external_product_id: attempt.target_id.to_string(),
             payment_provider: attempt.payment_provider.clone(),
             status: SubscriptionStatus::Active,
-            tier: SubscriptionTier::Professional, // P0 default
+            tier,
             current_period_start: Some(period_start),
             current_period_end: Some(period_end),
             cancel_at_period_end: false,
             client_app_id: None, // P0 default - future enhancement
             plan_id: Some(attempt.target_id),
-            billing_period: BillingPeriod::Monthly, // P0 default
+            billing_period,
             cancel_at: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
