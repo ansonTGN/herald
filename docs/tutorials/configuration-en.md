@@ -29,20 +29,20 @@ The path can be relative or absolute. Relative paths are resolved against the pr
 
 ## Config File Sections
 
-The Docker image includes a production config (`backend/config/production.toml`). Defaults below are based on that file. Override as needed for local development.
+The Docker image includes a production config (`backend/config/production.toml`). The "Code Default" column shows what the code uses when a field is omitted from the config file. The "Docker Config Value" column shows the explicit value set in production.toml. Override as needed for local development.
 
 ### [database]
 
 PostgreSQL connection pool settings. `url` is the only required field; everything else has a built-in default.
 
-| Parameter | Type | Default (Docker) | Required | Description |
-|---|---|---|---|---|
-| `url` | string | — | Yes | PostgreSQL connection string |
-| `max_connections` | u32 | 50 | No | Maximum number of connections in the pool |
-| `acquire_timeout_secs` | u64 | 10 | No | Timeout (seconds) waiting to acquire a connection from the pool |
-| `idle_timeout_secs` | u64 | 300 | No | How long an idle connection stays alive (seconds) |
-| `max_lifetime_secs` | u64 | 1800 | No | Maximum lifetime of a single connection (seconds) |
-| `connect_timeout_secs` | u64 | 5 | No | TCP connection establishment timeout (seconds) |
+| Parameter | Type | Code Default | Docker Config Value | Required | Description |
+|---|---|---|---|---|---|
+| `url` | string | — | — | Yes | PostgreSQL connection string |
+| `max_connections` | u32 | 100 | 50 | No | Maximum number of connections in the pool |
+| `acquire_timeout_secs` | u64 | 30 | 10 | No | Timeout (seconds) waiting to acquire a connection from the pool |
+| `idle_timeout_secs` | u64 | 600 | 300 | No | How long an idle connection stays alive (seconds) |
+| `max_lifetime_secs` | u64 | 1800 | 1800 | No | Maximum lifetime of a single connection (seconds) |
+| `connect_timeout_secs` | u64 | 10 | 5 | No | TCP connection establishment timeout (seconds) |
 
 Connection string format: `postgresql://user:password@host:port/database`
 
@@ -57,9 +57,9 @@ Tune `max_connections` based on actual concurrency in production. The pool is im
 
 ### [redis]
 
-| Parameter | Type | Default (Docker) | Required | Description |
-|---|---|---|---|---|
-| `url` | string | `redis://redis:6379` | No | Redis connection URL |
+| Parameter | Type | Code Default | Docker Config Value | Required | Description |
+|---|---|---|---|---|---|
+| `url` | string | `redis://127.0.0.1:6379` | `redis://redis:6379` | No | Redis connection URL |
 
 Redis is used for permission-check caching and session storage. In Docker, the host is the container name.
 
@@ -72,11 +72,11 @@ url = "redis://redis:6379"
 
 HTTP server and logging settings.
 
-| Parameter | Type | Default (Docker) | Required | Description |
-|---|---|---|---|---|
-| `bind_address` | string | `0.0.0.0:3000` | No | Listen address, format `ip:port` |
-| `log_level` | string | `info` | No | Log level (trace/debug/info/warn/error) |
-| `app_env` | string | `production` | No | Runtime environment identifier |
+| Parameter | Type | Code Default | Docker Config Value | Required | Description |
+|---|---|---|---|---|---|
+| `bind_address` | string | `0.0.0.0:3000` | `0.0.0.0:3000` | No | Listen address, format `ip:port` |
+| `log_level` | string | `info` | `info` | No | Log level (trace/debug/info/warn/error) |
+| `app_env` | string | `production` | `production` | No | Runtime environment identifier |
 
 `app_env` is currently a label only -- the codebase does not branch on it. Using `0.0.0.0` for `bind_address` means listening on all network interfaces.
 
@@ -91,10 +91,10 @@ app_env = "production"
 
 Settings for the frontend application, primarily affecting CORS and static file serving.
 
-| Parameter | Type | Default (Docker) | Required | Description |
-|---|---|---|---|---|
-| `url` | string | `http://localhost:3000` | No | Frontend application URL, used for CORS allowlisting |
-| `static_dir` | string | `/app/frontend/dist` | No | Path to a static files directory; when set, the backend serves the SPA |
+| Parameter | Type | Code Default | Docker Config Value | Required | Description |
+|---|---|---|---|---|---|
+| `url` | string | `http://localhost:5173` | `http://localhost:3000` | No | Frontend application URL, used for CORS allowlisting |
+| `static_dir` | string | none (no serving) | `/app/frontend/dist` | No | Path to a static files directory; when set, the backend serves the SPA |
 
 In Docker, `url` defaults to `http://localhost:3000` because the backend serves both API and frontend static files on the same port. Change it to the actual domain (e.g., `https://your-domain.com`) when deploying with a domain name.
 

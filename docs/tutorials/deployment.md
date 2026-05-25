@@ -155,7 +155,7 @@ App 启动时会自动运行数据库迁移（`sqlx::migrate!`）。你不需要
 docker exec herald-app wget -qO- http://localhost:3000/health
 ```
 
-返回 `{"status":"healthy",...}` 表示服务正常。
+返回类似 `{"status":"healthy","database":true,"redis":true,"version":"0.1.7","uptime":45,"timestamp":"..."}` 的 JSON 表示服务正常。
 
 ### Caddy
 
@@ -187,7 +187,7 @@ curl -I https://your-domain.com
 部署完成后，按这个清单检查：
 
 1. 浏览器访问 `https://your-domain.com`，能看到前端界面
-2. `curl https://your-domain.com/health` 返回 `{"status":"healthy"}`
+2. `curl https://your-domain.com/health` 返回 `{"status":"healthy",...}`
 3. `docker exec herald-redis redis-cli ping` 返回 PONG
 4. `docker exec herald-postgres pg_isready -U herald` 返回 accepting connections
 

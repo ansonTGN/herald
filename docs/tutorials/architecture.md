@@ -61,7 +61,7 @@ HTTP Request
   → PostgreSQL
 ```
 
-Handler 不直接写 SQL。它调 Domain Service 的方法，Service 通过 trait（port）抽象数据访问，infra 层提供具体实现。这是六边形架构的核心约束：`domain/` crate 的 `Cargo.toml` 里没有任何数据库或 HTTP 依赖，只有纯 Rust 类型。
+Handler 不直接写 SQL。它调 Domain Service 的方法，Service 通过 trait（port）抽象数据访问，infra 层提供具体实现。这是六边形架构的核心约束：`domain/` crate 的 `Cargo.toml` 里引入了 sea-orm、sqlx 等依赖，但仅用于错误类型转换（`From` impl），不直接操作数据库或发起 HTTP 请求。
 
 权限检查走的另一条线：Handler → `RedisPermissionChecker` → Redis 缓存 → PostgreSQL（缓存 miss 时）。权限模型使用 `resource:action` 对（如 `product:read`），通过 `realm_id` 和 `client_id` 确定作用域。action 有层级关系：`manage` 覆盖 `view`、`create` 和 `manage` 本身；`create` 和 `view` 只覆盖自身。
 
@@ -75,7 +75,7 @@ SeaORM 自动生成的实体定义。覆盖用户、角色、权限、订阅、�
 
 ### domain — 领域层
 
-纯业务逻辑，Cargo.toml 零外部依赖（只有 serde、uuid、chrono 这类基础库）。
+纯业务逻辑。Cargo.toml 依赖以基础库为主（serde、uuid、chrono、bcrypt 等），但也引入了 sea-orm、sqlx、redis、reqwest、axum——这些是为了实现 `From<ExternalError>` 错误转换，domain 层本身不直接操作数据库或发起 HTTP 请求。
 
 关键子模块：
 
@@ -101,6 +101,7 @@ SeaORM 自动生成的实体定义。覆盖用户、角色、权限、订阅、�
 | `rbac_init` | Realm 初始化时创建默认角色和权限 |
 | `dashboard` | 仪表盘数据聚合 |
 | `common` | 共享领域工具类型 |
+| `security_constants` | 安全相关常量定义 |
 
 每个子模块内部有 `ports/`（trait 定义）、`entities/`（领域实体）、`service.rs`（业务逻辑）。Ports 是 Repository trait，定义了 `find_by_id`、`save`、`update` 这类接口，但不关心底层是 PostgreSQL 还是内存。
 
@@ -124,7 +125,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 
 ### api 系列 — HTTP 接口
 
-7 个 crate 组成 API 层：
+8 个 crate 组成 API 层：
 
 | Crate | 职责 | 认证方式 |
 |-------|------|---------|

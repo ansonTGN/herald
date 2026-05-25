@@ -275,7 +275,7 @@ Content-Type: application/json
 {
   "access_token": "...",
   "token_type": "Bearer",
-  "expires_in": 600
+  "expires_in": 1800
 }
 ```
 
@@ -326,7 +326,7 @@ grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=收到的dev
 
 Cookie 名称：`X-Auth`，属性：`httpOnly`、`secure`（生产环境）、`sameSite=Lax`。
 
-默认会话 TTL 1800 秒（30 分钟），可在 Client App 配置中修改 `session_ttl_seconds`。OAuth 流程返回的 token 默认 TTL 是 600 秒（10 分钟）。
+默认会话 TTL 1800 秒（30 分钟），可在 Client App 配置中修改 `session_ttl_seconds`。OAuth 流程返回的 token TTL 同样读取 Client App 的 `session_ttl_seconds` 配置，默认也是 1800 秒。
 
 **滑动续期**：如果 Client App 配置了 `session_renewal_ttl_seconds`，Herald 的 identity middleware 在每次请求时检查剩余 TTL。当剩余 TTL <= `renewal_ttl_seconds / 2` 时，自动把 session TTL 续期到 `renewal_ttl_seconds`，同时在响应头中更新 Cookie。
 

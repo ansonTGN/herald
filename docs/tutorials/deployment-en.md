@@ -155,7 +155,7 @@ Verify:
 docker exec herald-app wget -qO- http://localhost:3000/health
 ```
 
-A response of `{"status":"healthy",...}` means the service is running.
+A response like `{"status":"healthy","database":true,"redis":true,"version":"0.1.7","uptime":45,"timestamp":"..."}` means the service is running.
 
 ### Caddy
 
@@ -187,7 +187,7 @@ An `HTTP/2 200` response means deployment is complete. Opening `https://your-dom
 Once everything is running, confirm each piece:
 
 1. Open `https://your-domain.com` in a browser -- the frontend should load
-2. `curl https://your-domain.com/health` returns `{"status":"healthy"}`
+2. `curl https://your-domain.com/health` returns `{"status":"healthy",...}`
 3. `docker exec herald-redis redis-cli ping` returns `PONG`
 4. `docker exec herald-postgres pg_isready -U herald` returns accepting connections
 

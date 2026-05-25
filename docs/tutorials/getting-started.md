@@ -62,4 +62,4 @@ curl http://localhost:8080/health
 
 ## 下一步
 
-服务跑起来后，打开 http://localhost:3000 进入前端界面。第一个注册的用户会成为超级管理员，可以创建 realm、邀请用户、配置权限。具体操作见[架构](architecture.md)了解各模块的职责。
+服务跑起来后，打开 http://localhost:3000 进入前端界面。创建 realm 时指定的管理员用户具有超级管理员权限，可以邀请用户、配置权限。具体操作见[架构](architecture.md)了解各模块的职责。

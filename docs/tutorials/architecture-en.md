@@ -61,7 +61,7 @@ HTTP Request
   → PostgreSQL
 ```
 
-Handlers never write SQL. They call methods on Domain Services, which access data through trait-based ports. The infra layer provides concrete implementations. This is the central constraint of hexagonal architecture: `domain/` has no database or HTTP dependencies in its `Cargo.toml` — just plain Rust types.
+Handlers never write SQL. They call methods on Domain Services, which access data through trait-based ports. The infra layer provides concrete implementations. This is the central constraint of hexagonal architecture: `domain/` pulls in sea-orm, sqlx, etc. in its `Cargo.toml`, but only for error type conversions (`From` impls). The domain layer does not directly query databases or make HTTP requests.
 
 Permission checks follow a separate path: Handler → `RedisPermissionChecker` → Redis cache → PostgreSQL (on cache miss). The permission model uses `resource:action` pairs (e.g., `product:read`), scoped by `realm_id` and `client_id`. Actions have a hierarchy: `manage` covers `view`, `create`, and `manage` itself; `create` and `view` only cover themselves.
 
@@ -75,7 +75,7 @@ No business logic lives here. To change a table schema, write a migration SQL fi
 
 ### domain — Domain Layer
 
-Pure business logic. `Cargo.toml` has zero external dependencies beyond foundational crates like serde, uuid, and chrono.
+Pure business logic. `Cargo.toml` primarily depends on foundational crates (serde, uuid, chrono, bcrypt, etc.), but also pulls in sea-orm, sqlx, redis, reqwest, and axum — these are used solely for `From<ExternalError>` error conversions. The domain layer does not directly query databases or make HTTP requests.
 
 Key submodules:
 
@@ -101,6 +101,7 @@ Key submodules:
 | `rbac_init` | Default roles and permissions for new realms |
 | `dashboard` | Dashboard data aggregation |
 | `common` | Shared domain utility types |
+| `security_constants` | Security-related constants |
 
 Each submodule contains `ports/` (trait definitions), `entities/` (domain entities), and `service.rs` (business logic). Ports define Repository traits with methods like `find_by_id`, `save`, and `update` — without caring whether the backing store is PostgreSQL or in-memory.
 
@@ -124,7 +125,7 @@ Two responsibilities:
 
 ### api crates — HTTP Interface
 
-Seven crates form the API layer:
+Eight crates form the API layer:
 
 | Crate | Responsibility | Auth Method |
 |-------|---------------|-------------|

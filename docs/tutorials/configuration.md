@@ -29,20 +29,20 @@ let config = ApiConfig::load(&config_path)?;
 
 ## 配置文件段
 
-Docker 镜像内置了一份生产配置（`backend/config/production.toml`），以下默认值以该文件为准。本地开发可以按需覆盖。
+Docker 镜像内置了一份生产配置（`backend/config/production.toml`）。下表"代码默认值"列是配置文件中省略该字段时代码自动使用的值，"Docker 配置值"列是生产配置中显式设定的值。本地开发按需覆盖即可。
 
 ### [database]
 
 PostgreSQL 连接池配置。`url` 是唯一必填项，其余都有内置默认值。
 
-| 参数 | 类型 | 默认值（Docker） | 必填 | 说明 |
-|---|---|---|---|---|
-| `url` | string | — | 是 | PostgreSQL 连接字符串 |
-| `max_connections` | u32 | 50 | 否 | 连接池最大连接数 |
-| `acquire_timeout_secs` | u64 | 10 | 否 | 从连接池获取连接的超时（秒） |
-| `idle_timeout_secs` | u64 | 300 | 否 | 空闲连接存活时间（秒） |
-| `max_lifetime_secs` | u64 | 1800 | 否 | 单个连接最大生命周期（秒） |
-| `connect_timeout_secs` | u64 | 5 | 否 | 建立 TCP 连接的超时（秒） |
+| 参数 | 类型 | 代码默认值 | Docker 配置值 | 必填 | 说明 |
+|---|---|---|---|---|---|
+| `url` | string | — | — | 是 | PostgreSQL 连接字符串 |
+| `max_connections` | u32 | 100 | 50 | 否 | 连接池最大连接数 |
+| `acquire_timeout_secs` | u64 | 30 | 10 | 否 | 从连接池获取连接的超时（秒） |
+| `idle_timeout_secs` | u64 | 600 | 300 | 否 | 空闲连接存活时间（秒） |
+| `max_lifetime_secs` | u64 | 1800 | 1800 | 否 | 单个连接最大生命周期（秒） |
+| `connect_timeout_secs` | u64 | 10 | 5 | 否 | 建立 TCP 连接的超时（秒） |
 
 连接字符串格式：`postgresql://用户名:密码@主机:端口/数据库名`
 
@@ -57,9 +57,9 @@ url = "postgresql://herald:herald@db:5432/herald"
 
 ### [redis]
 
-| 参数 | 类型 | 默认值（Docker） | 必填 | 说明 |
-|---|---|---|---|---|
-| `url` | string | `redis://redis:6379` | 否 | Redis 连接地址 |
+| 参数 | 类型 | 代码默认值 | Docker 配置值 | 必填 | 说明 |
+|---|---|---|---|---|---|
+| `url` | string | `redis://127.0.0.1:6379` | `redis://redis:6379` | 否 | Redis 连接地址 |
 
 Redis 用于权限检查缓存和 session 存储。Docker 环境中使用容器名作为主机名。
 
@@ -72,11 +72,11 @@ url = "redis://redis:6379"
 
 HTTP 服务器和日志配置。
 
-| 参数 | 类型 | 默认值（Docker） | 必填 | 说明 |
-|---|---|---|---|---|
-| `bind_address` | string | `0.0.0.0:3000` | 否 | 监听地址，格式为 `ip:port` |
-| `log_level` | string | `info` | 否 | 日志级别（trace/debug/info/warn/error） |
-| `app_env` | string | `production` | 否 | 运行环境标识 |
+| 参数 | 类型 | 代码默认值 | Docker 配置值 | 必填 | 说明 |
+|---|---|---|---|---|---|
+| `bind_address` | string | `0.0.0.0:3000` | `0.0.0.0:3000` | 否 | 监听地址，格式为 `ip:port` |
+| `log_level` | string | `info` | `info` | 否 | 日志级别（trace/debug/info/warn/error） |
+| `app_env` | string | `production` | `production` | 否 | 运行环境标识 |
 
 `app_env` 目前是一个标识字段，代码中不直接用它做分支逻辑。`bind_address` 用 `0.0.0.0` 表示监听所有网卡。
 
@@ -91,10 +91,10 @@ app_env = "production"
 
 前端应用相关的配置，主要影响 CORS 和静态文件托管。
 
-| 参数 | 类型 | 默认值（Docker） | 必填 | 说明 |
-|---|---|---|---|---|
-| `url` | string | `http://localhost:3000` | 否 | 前端应用地址，用于 CORS 白名单 |
-| `static_dir` | string | `/app/frontend/dist` | 否 | 静态文件目录路径，设置后由后端托管 SPA |
+| 参数 | 类型 | 代码默认值 | Docker 配置值 | 必填 | 说明 |
+|---|---|---|---|---|---|
+| `url` | string | `http://localhost:5173` | `http://localhost:3000` | 否 | 前端应用地址，用于 CORS 白名单 |
+| `static_dir` | string | 无（不托管） | `/app/frontend/dist` | 否 | 静态文件目录路径，设置后由后端托管 SPA |
 
 `url` 在 Docker 环境中默认为 `http://localhost:3000`，因为后端在同一端口上同时提供 API 和前端静态文件。部署到域名时改为实际地址（如 `https://your-domain.com`）。
 

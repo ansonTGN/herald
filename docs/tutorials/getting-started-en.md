@@ -62,4 +62,4 @@ If the backend fails to start, check that PostgreSQL and Redis containers are ru
 
 ## Next Steps
 
-Once everything is running, open http://localhost:3000 to access the frontend. The first user to register becomes the super admin, who can create realms, invite users, and configure permissions. See [Architecture](architecture-en.md) for what each module does.
+Once everything is running, open http://localhost:3000 to access the frontend. The admin user specified during realm creation has super admin permissions, and can invite users and configure permissions. See [Architecture](architecture-en.md) for what each module does.

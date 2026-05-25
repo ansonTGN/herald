@@ -289,7 +289,7 @@ Step 5: The response:
 {
     "access_token": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b",
     "token_type": "Bearer",
-    "expires_in": 600
+    "expires_in": 1800
 }
 ```
 
@@ -344,7 +344,7 @@ The device code expires after 900 seconds (15 minutes). If it expires before the
 
 The cookie name is `X-Auth`. Herald sets it with `httpOnly`, `secure` (in production), and `sameSite=Lax` attributes.
 
-Default session TTL is 1800 seconds (30 minutes), configurable per client app via `session_ttl_seconds`. The OAuth token endpoint uses a separate default of 600 seconds.
+Default session TTL is 1800 seconds (30 minutes), configurable per client app via `session_ttl_seconds`. The OAuth token endpoint reads the same `session_ttl_seconds` from the client app config, defaulting to 1800 seconds as well.
 
 **Sliding renewal** extends sessions for active users. When `session_renewal_ttl_seconds` is set on a client app, Herald's identity middleware checks the remaining TTL on each request. If the remaining TTL drops below `renewal_ttl / 2`, the middleware extends the session to the full renewal TTL and refreshes the cookie.
 
