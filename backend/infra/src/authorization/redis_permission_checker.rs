@@ -260,7 +260,7 @@ impl PermissionService for RedisPermissionChecker {
         ];
         self.invalidate_patterns(&patterns).await;
 
-        info!(
+        debug!(
             realm_id = %realm_id,
             "Realm cache invalidated"
         );
