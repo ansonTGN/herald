@@ -49,6 +49,8 @@ pub struct SchemaTestContext {
     pub _client_id: String,
     /// Client App UUID (internal database ID)
     pub _client_app_id: String,
+    /// 原始连接池（用于清理）
+    cleanup_pool: Arc<sqlx::PgPool>,
 }
 
 impl AsyncTestContext for SchemaTestContext {
@@ -388,6 +390,7 @@ impl AsyncTestContext for SchemaTestContext {
             _realm_id: realm_id,
             _client_id: client_id,
             _client_app_id: client_app_id,
+            cleanup_pool: shared.pool.clone(),
         }
     }
 
@@ -395,11 +398,21 @@ impl AsyncTestContext for SchemaTestContext {
         let SchemaTestContext {
             ref schema_name,
             app_state,
+            cleanup_pool,
             ..
         } = self;
 
         // 使用共享的 schema 清理逻辑
-        let _ = crate::helpers::cleanup_schema_if_needed(schema_name, &app_state.pool).await;
+        let schema_pool = app_state.pool.clone();
+        drop(app_state);
+
+        schema_pool.close().await;
+
+        if let Err(error) =
+            crate::helpers::cleanup_schema_if_needed(schema_name, &cleanup_pool).await
+        {
+            tracing::warn!(schema_name = %schema_name, %error, "Failed to drop test schema");
+        }
     }
 }
 

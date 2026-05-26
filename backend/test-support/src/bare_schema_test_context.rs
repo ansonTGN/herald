@@ -89,6 +89,10 @@ impl AsyncTestContext for BareSchemaTestContext {
         let _ = (*db).clone().close().await;
 
         // 使用共享的 schema 清理逻辑
-        let _ = crate::helpers::cleanup_schema_if_needed(schema_name, &cleanup_pool).await;
+        if let Err(error) =
+            crate::helpers::cleanup_schema_if_needed(schema_name, &cleanup_pool).await
+        {
+            tracing::warn!(schema_name = %schema_name, %error, "Failed to drop test schema");
+        }
     }
 }

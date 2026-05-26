@@ -474,7 +474,9 @@ impl AsyncTestContext for SchemaTestContext {
         let _ = schema_db.as_ref().clone().close().await;
 
         // 使用共享的 schema 清理逻辑
-        let _ = cleanup_schema_if_needed(schema_name, &cleanup_pool).await;
+        if let Err(error) = cleanup_schema_if_needed(schema_name, &cleanup_pool).await {
+            tracing::warn!(schema_name = %schema_name, %error, "Failed to drop test schema");
+        }
 
         // Redis 清理
         // NEW: 测试使用 DB 1 隔离，不需要清理
@@ -485,11 +487,15 @@ impl AsyncTestContext for SchemaTestContext {
 
 async fn cleanup_schema_if_needed(
     schema_name: &str,
-    _cleanup_pool: &PgPool,
+    cleanup_pool: &PgPool,
 ) -> Result<(), sqlx::Error> {
-    tracing::debug!("🗑️  跳过删除测试 Schema: {}", schema_name);
-    tracing::debug!("📝 测试 Schema 将保留，通过测试环境启动脚本批量清理");
-
+    tracing::debug!("🗑️  Dropping test schema: {}", schema_name);
+    sqlx::query(&format!(
+        r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#,
+        schema_name
+    ))
+    .execute(cleanup_pool)
+    .await?;
     Ok(())
 }
 

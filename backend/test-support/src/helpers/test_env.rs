@@ -24,10 +24,14 @@ use tracing::debug;
 /// * `Err(sqlx::Error)` if the drop operation failed
 pub async fn cleanup_schema_if_needed(
     schema_name: &str,
-    _cleanup_pool: &PgPool,
+    cleanup_pool: &PgPool,
 ) -> Result<(), sqlx::Error> {
-    debug!("🗑️  跳过删除测试 Schema: {}", schema_name);
-    debug!("📝 测试 Schema 将保留，通过测试环境启动脚本批量清理");
-
+    debug!("🗑️  Dropping test schema: {}", schema_name);
+    sqlx::query(&format!(
+        r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#,
+        schema_name
+    ))
+    .execute(cleanup_pool)
+    .await?;
     Ok(())
 }
