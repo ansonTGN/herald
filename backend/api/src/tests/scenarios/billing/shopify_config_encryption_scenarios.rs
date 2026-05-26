@@ -1,8 +1,8 @@
 // =============================================================================
-// Shopify Config Encryption Scenarios
+// Shopify Config Scenarios
 // =============================================================================
 //
-// Test scenarios for Shopify configuration encryption/decryption functionality.
+// Test scenarios for Shopify configuration storage and masking functionality.
 //
 // User Stories:
 // - docs/user-stories/08-shopify-pay-user-stories.md
@@ -11,11 +11,9 @@
 //   - US-PP-003: Edit Shopify Payment Provider configuration
 //
 // Covers:
-// - Encryption on save (3 sensitive fields)
-// - Decryption on read with masking
-// - Backward compatibility with legacy plaintext data
-// - Encryption/decryption failures handling
-// - Performance and concurrent operations
+// - Plaintext storage of all config fields
+// - Sensitive field masking in API responses
+// - Update and concurrent operations
 //
 // =============================================================================
 
@@ -32,20 +30,7 @@ use uuid::Uuid;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::OnceLock;
     use test_context::test_context;
-
-    /// Ensure ENCRYPTION_KEY is set for billing crypto operations.
-    /// Must be called before any request that triggers encrypt_secret/decrypt_secret.
-    static ENCRYPTION_KEY_SETUP: OnceLock<()> = OnceLock::new();
-    fn ensure_encryption_key() {
-        ENCRYPTION_KEY_SETUP.get_or_init(|| unsafe {
-            std::env::set_var(
-                "ENCRYPTION_KEY",
-                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-            );
-        });
-    }
 
     // =============================================================================
     // Test Helper Functions
@@ -143,7 +128,7 @@ mod tests {
         .unwrap()
     }
 
-    /// Insert plaintext Shopify config directly into database (for testing backward compatibility)
+    /// Insert plaintext Shopify config directly into database
     async fn insert_plaintext_shopify_config(
         ctx: &TestContext,
         realm_id: &str,
@@ -168,27 +153,6 @@ mod tests {
         .execute(&ctx._app_state.pool)
         .await
         .expect("Failed to insert plaintext config");
-    }
-
-    /// Assert that a value appears to be encrypted (not plaintext)
-    fn assert_is_encrypted(value: &str, plaintext: &str) {
-        // Encrypted value should be different from plaintext
-        assert_ne!(
-            value, plaintext,
-            "Encrypted value should not match plaintext"
-        );
-
-        // Encrypted value should be longer (base64 encoded with nonce)
-        assert!(
-            value.len() > plaintext.len(),
-            "Encrypted value should be longer than plaintext"
-        );
-
-        // Encrypted value should contain base64 characters
-        assert!(
-            value.contains('/') || value.contains('+') || value.contains('=') || value.len() > 40,
-            "Encrypted value should appear to be base64 encoded"
-        );
     }
 
     /// Assert that sensitive field is masked in response
@@ -237,7 +201,7 @@ mod tests {
         let role_id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO roles (id, name, description, realm_id, client_id, is_builtin, created_at, updated_at)
-             VALUES ($1, 'shopify-test-admin', 'Shopify encryption test admin', $2, $3, false, NOW(), NOW())",
+             VALUES ($1, 'shopify-test-admin', 'Shopify test admin', $2, $3, false, NOW(), NOW())",
         )
         .bind(role_id)
         .bind(realm_id)
@@ -315,17 +279,15 @@ mod tests {
     }
 
     // =============================================================================
-    // Scenario 1: Configuration is encrypted on save
+    // Scenario 1: Configuration is stored as plaintext in database
     // =============================================================================
 
     #[test_context(TestContext)]
     #[tokio::test]
-    async fn test_scenario_shopify_config_encrypted_on_save(ctx: &mut TestContext) {
+    async fn test_scenario_shopify_config_plaintext_storage(ctx: &mut TestContext) {
         // User Story: docs/user-stories/08-shopify-pay-user-stories.md
         // Covers: US-PP-007 - Realm Admin creates and views Shopify configuration
-        //          验收标准: 敏感凭据必须加密存储
 
-        ensure_encryption_key();
         let app = ctx.create_unified_test_router();
         let realm_id = &ctx._realm_id;
 
@@ -346,32 +308,26 @@ mod tests {
             response.status(),
         );
 
-        // And: Database values are encrypted (not plaintext)
+        // Then: Database values are stored as plaintext
         let admin_token_db = get_config_from_db(ctx, realm_id, "admin_access_token")
             .await
             .expect("admin_access_token should exist");
+        assert_eq!(
+            admin_token_db,
+            config_payload["adminAccessToken"].as_str().unwrap(),
+            "Sensitive fields should be stored as plaintext"
+        );
+
         let storefront_token_db = get_config_from_db(ctx, realm_id, "storefront_access_token")
             .await
             .expect("storefront_access_token should exist");
-        let app_secret_db = get_config_from_db(ctx, realm_id, "app_client_secret")
-            .await
-            .expect("app_client_secret should exist");
-
-        // Verify all three sensitive fields are encrypted
-        assert_is_encrypted(
-            &admin_token_db,
-            config_payload["adminAccessToken"].as_str().unwrap(),
-        );
-        assert_is_encrypted(
-            &storefront_token_db,
+        assert_eq!(
+            storefront_token_db,
             config_payload["storefrontAccessToken"].as_str().unwrap(),
-        );
-        assert_is_encrypted(
-            &app_secret_db,
-            config_payload["appClientSecret"].as_str().unwrap(),
+            "Sensitive fields should be stored as plaintext"
         );
 
-        // And: Non-sensitive fields are stored as plaintext
+        // And: Non-sensitive fields are also stored as plaintext
         let shop_domain_db = get_config_from_db(ctx, realm_id, "shop_domain")
             .await
             .expect("shop_domain should exist");
@@ -383,17 +339,15 @@ mod tests {
     }
 
     // =============================================================================
-    // Scenario 2: Configuration is decrypted on read and masked
+    // Scenario 2: Configuration response masks sensitive fields
     // =============================================================================
 
     #[test_context(TestContext)]
     #[tokio::test]
-    async fn test_scenario_shopify_config_decrypted_on_read(ctx: &mut TestContext) {
+    async fn test_scenario_shopify_config_masked_on_read(ctx: &mut TestContext) {
         // User Story: docs/user-stories/08-shopify-pay-user-stories.md
         // Covers: US-PP-008 - View Shopify Payment Provider configuration
-        //          验收标准: 可以查看配置，敏感字段脱敏显示
 
-        ensure_encryption_key();
         let app = ctx.create_unified_test_router();
         let realm_id = &ctx._realm_id;
 
@@ -403,7 +357,7 @@ mod tests {
                 .await;
         crate::tests::helpers::grant_realm_admin_role(ctx, &user_id).await;
 
-        // And: An encrypted Shopify configuration exists
+        // And: A Shopify configuration exists
         let config_payload = valid_shopify_config_request();
         let create_response =
             send_create_shopify_config(&app, realm_id, &admin_token, &config_payload).await;
@@ -451,17 +405,15 @@ mod tests {
     }
 
     // =============================================================================
-    // Scenario 3: Encryption/decryption roundtrip
+    // Scenario 3: Configuration update roundtrip
     // =============================================================================
 
     #[test_context(TestContext)]
     #[tokio::test]
-    async fn test_scenario_shopify_config_encryption_roundtrip(ctx: &mut TestContext) {
+    async fn test_scenario_shopify_config_update_roundtrip(ctx: &mut TestContext) {
         // User Story: docs/user-stories/08-shopify-pay-user-stories.md
         // Covers: US-PP-007 - Realm Admin creates and views Shopify configuration
-        //          验收标准: 敏感凭据加密存储，往返一致性
 
-        ensure_encryption_key();
         let app = ctx.create_unified_test_router();
         let realm_id = &ctx._realm_id;
 
@@ -480,25 +432,11 @@ mod tests {
                 || create_response.status() == StatusCode::CREATED
         );
 
-        // Then: Database contains encrypted values
-        let encrypted_admin = get_config_from_db(ctx, realm_id, "admin_access_token")
+        // Then: Database contains plaintext values
+        let stored_admin = get_config_from_db(ctx, realm_id, "admin_access_token")
             .await
             .unwrap();
-        assert_is_encrypted(&encrypted_admin, "shpat_test_token_12345");
-
-        // When: Read configuration
-        let get_response = send_get_shopify_config(&app, realm_id, &admin_token).await;
-        assert_eq!(get_response.status(), StatusCode::OK);
-
-        // Then: Response contains masked values
-        let body_bytes = to_bytes(get_response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-        assert_field_is_masked(
-            body["adminAccessToken"].as_str().unwrap(),
-            initial_config["adminAccessToken"].as_str().unwrap(),
-        );
+        assert_eq!(stored_admin, "shpat_test_token_12345");
 
         // When: Update configuration with new values
         let updated_config = json!({
@@ -516,33 +454,27 @@ mod tests {
             send_update_shopify_config(&app, realm_id, &admin_token, &updated_config).await;
         assert_eq!(update_response.status(), StatusCode::OK);
 
-        // Then: Database contains new encrypted values
-        let new_encrypted_admin = get_config_from_db(ctx, realm_id, "admin_access_token")
+        // Then: Database contains new plaintext values
+        let new_stored_admin = get_config_from_db(ctx, realm_id, "admin_access_token")
             .await
             .unwrap();
-        assert_is_encrypted(&new_encrypted_admin, "shpat_updated_token_789");
-        assert_ne!(
-            encrypted_admin, new_encrypted_admin,
-            "Encrypted values should be different after update"
-        );
+        assert_eq!(new_stored_admin, "shpat_updated_token_789");
 
-        // And: Read again to verify new masked values
+        // And: Read again to verify masked values
         let final_get_response = send_get_shopify_config(&app, realm_id, &admin_token).await;
         assert_eq!(final_get_response.status(), StatusCode::OK);
     }
 
     // =============================================================================
-    // Scenario 4: Backward compatibility with legacy plaintext data
+    // Scenario 4: Direct database insert is readable
     // =============================================================================
 
     #[test_context(TestContext)]
     #[tokio::test]
-    async fn test_scenario_shopify_config_legacy_plaintext_compatible(ctx: &mut TestContext) {
+    async fn test_scenario_shopify_config_direct_db_readable(ctx: &mut TestContext) {
         // User Story: docs/user-stories/08-shopify-pay-user-stories.md
         // Covers: US-PP-008 - View Shopify Payment Provider configuration
-        //          验收标准: 可以查看配置（包括历史数据），降级处理
 
-        ensure_encryption_key();
         let app = ctx.create_unified_test_router();
         let realm_id = &ctx._realm_id;
 
@@ -552,28 +484,28 @@ mod tests {
                 .await;
         crate::tests::helpers::grant_realm_admin_role(ctx, &user_id).await;
 
-        // And: Database contains plaintext Shopify config (legacy data)
+        // And: Database contains directly inserted Shopify config
         insert_plaintext_shopify_config(
             ctx,
             realm_id,
-            "legacy-shop.myshopify.com",
-            "shpat_legacy_plaintext",
-            "shp_legacy_plaintext",
-            "legacy_secret_plaintext",
+            "direct-shop.myshopify.com",
+            "shpat_direct_insert",
+            "shp_direct_insert",
+            "direct_secret_plaintext",
         )
         .await;
 
         // When: GET retrieve Shopify configuration
         let get_response = send_get_shopify_config(&app, realm_id, &admin_token).await;
 
-        // Then: Returns 200 OK (should not fail with decryption error)
+        // Then: Returns 200 OK
         assert_eq!(
             get_response.status(),
             StatusCode::OK,
-            "Legacy plaintext data should be readable with 200 OK"
+            "Direct DB insert should be readable"
         );
 
-        // And: Response contains configuration (graceful degradation)
+        // And: Response contains configuration
         let body_bytes = to_bytes(get_response.into_body(), usize::MAX)
             .await
             .unwrap();
@@ -581,101 +513,25 @@ mod tests {
 
         assert_eq!(
             body["shopDomain"].as_str().unwrap(),
-            "legacy-shop.myshopify.com"
+            "direct-shop.myshopify.com"
         );
 
-        // And: Sensitive fields are masked (decryption falls back to masking)
+        // And: Sensitive fields are masked
         assert_field_is_masked(
             body["adminAccessToken"].as_str().unwrap(),
-            "shpat_legacy_plaintext",
-        );
-        assert_field_is_masked(
-            body["storefrontAccessToken"].as_str().unwrap(),
-            "shp_legacy_plaintext",
-        );
-        assert_field_is_masked(
-            body["appClientSecret"].as_str().unwrap(),
-            "legacy_secret_plaintext",
+            "shpat_direct_insert",
         );
     }
 
     // =============================================================================
-    // Scenario 5: Update configuration with new encrypted values
+    // Scenario 5: Concurrent operations
     // =============================================================================
 
     #[test_context(TestContext)]
     #[tokio::test]
-    async fn test_scenario_shopify_config_update_encrypted(ctx: &mut TestContext) {
-        // User Story: docs/user-stories/08-shopify-pay-user-stories.md
-        // Covers: US-PP-003 - Edit Shopify Payment Provider configuration
-        //          验收标准: 可以更新配置，新值必须加密
-
-        ensure_encryption_key();
-        let app = ctx.create_unified_test_router();
-        let realm_id = &ctx._realm_id;
-
-        // Given: Realm Admin user is logged in
-        let (admin_token, user_id) =
-            crate::tests::helpers::create_admin_session_with_user(ctx, "admin@test.com", 1800)
-                .await;
-        crate::tests::helpers::grant_realm_admin_role(ctx, &user_id).await;
-
-        // And: An encrypted Shopify configuration exists
-        let initial_config = valid_shopify_config_request();
-        let create_response =
-            send_create_shopify_config(&app, realm_id, &admin_token, &initial_config).await;
-        assert!(
-            create_response.status() == StatusCode::OK
-                || create_response.status() == StatusCode::CREATED
-        );
-
-        // Get the encrypted value before update
-        let old_encrypted_admin = get_config_from_db(ctx, realm_id, "admin_access_token")
-            .await
-            .unwrap();
-
-        // When: PUT update configuration with new token
-        let updated_config = json!({
-            "shopDomain": "test-shop.myshopify.com",
-            "adminAccessToken": "shpat_new_updated_token",
-            "storefrontAccessToken": "shp_new_updated_token",
-            "appClientSecret": "new_updated_secret123456789012345",
-            "apiVersion": "2024-01",
-            "webhookSubscriptionMode": "admin_api",
-            "timeout": 30,
-            "skipConnectionTest": true
-        });
-
-        let update_response =
-            send_update_shopify_config(&app, realm_id, &admin_token, &updated_config).await;
-        assert_eq!(update_response.status(), StatusCode::OK);
-
-        // Then: Database contains new encrypted value
-        let new_encrypted_admin = get_config_from_db(ctx, realm_id, "admin_access_token")
-            .await
-            .unwrap();
-
-        // Verify it's encrypted (not plaintext)
-        assert_is_encrypted(&new_encrypted_admin, "shpat_new_updated_token");
-
-        // Verify it's different from old encrypted value (different nonce)
-        assert_ne!(
-            old_encrypted_admin, new_encrypted_admin,
-            "Updated value should have different encryption (new nonce)"
-        );
-    }
-    // =============================================================================
-    // Scenario 8: Concurrent encryption operations
-    // =============================================================================
-
-    #[test_context(TestContext)]
-    #[tokio::test]
-    async fn test_scenario_shopify_config_concurrent_encryption(ctx: &mut TestContext) {
+    async fn test_scenario_shopify_config_concurrent_operations(ctx: &mut TestContext) {
         // User Story: docs/user-stories/08-shopify-pay-user-stories.md
         // Covers: US-PP-007 - Realm Admin creates and views Shopify configuration
-        //          验收标准: 并发加密操作安全
-
-        ensure_encryption_key();
 
         let app = ctx.create_unified_test_router();
 
@@ -722,25 +578,16 @@ mod tests {
             results.push(realm_id);
         }
 
-        // And: All encrypted values are unique (no nonce reuse)
-        let mut encrypted_values = std::collections::HashSet::new();
-
+        // And: All stored values are correct
         for realm_id in results {
             let admin_token_db = get_config_from_db(ctx, &realm_id, "admin_access_token")
                 .await
                 .expect("Should have admin_access_token");
 
-            // Verify it's encrypted
-            assert_is_encrypted(&admin_token_db, "shpat_test_token_12345");
-
-            // Collect for uniqueness check
-            encrypted_values.insert(admin_token_db);
+            assert_eq!(
+                admin_token_db, "shpat_test_token_12345",
+                "Stored value should match plaintext"
+            );
         }
-
-        assert_eq!(
-            encrypted_values.len(),
-            10,
-            "All encrypted values should be unique (no nonce reuse)"
-        );
     }
 }

@@ -84,7 +84,7 @@ pub async fn get_public_config(
     State(state): State<AppState>,
     _headers: HeaderMap,
 ) -> Result<ApiResult<PublicConfigResponse>, ApiError> {
-    let allowed = query_bool_config(&state.pool, &realm_id, "allowed", false).await?;
+    let allowed = query_bool_config(&state.pool, &realm_id, "enabled", false).await?;
     let require_email_verification =
         query_bool_config(&state.pool, &realm_id, "require_email_verification", false).await?;
 

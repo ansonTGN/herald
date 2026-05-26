@@ -270,7 +270,7 @@ async fn test_scenario_email_config_save_via_batch_upsert(ctx: &mut TestContext)
 async fn test_scenario_enable_email_verification_without_email_config_rejected(
     ctx: &mut TestContext,
 ) {
-    // Given: no email config, registration allowed = true via SQL
+    // Given: no email config, registration enabled = true via SQL
     let app = ctx.create_unified_test_router();
     let (token, user_id) =
         create_admin_session_with_user(ctx, "switch-no-email@test.com", 1800).await;
@@ -280,7 +280,7 @@ async fn test_scenario_enable_email_verification_without_email_config_rejected(
 
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)
+         VALUES ($1, 'registration', 'enabled', 'true', true)
          ON CONFLICT (realm_id, config_type, config_key)
          DO UPDATE SET config_value = EXCLUDED.config_value, enabled = EXCLUDED.enabled",
     )
@@ -332,7 +332,7 @@ async fn test_scenario_enable_email_verification_without_email_config_rejected(
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_enable_email_verification_with_email_config_succeeds(ctx: &mut TestContext) {
-    // Given: complete Resend email config, registration allowed = true
+    // Given: complete Resend email config, registration enabled = true
     let app = ctx.create_unified_test_router();
     let (token, user_id) =
         create_admin_session_with_user(ctx, "switch-with-email@test.com", 1800).await;
@@ -342,7 +342,7 @@ async fn test_scenario_enable_email_verification_with_email_config_succeeds(ctx:
 
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)
+         VALUES ($1, 'registration', 'enabled', 'true', true)
          ON CONFLICT (realm_id, config_type, config_key)
          DO UPDATE SET config_value = EXCLUDED.config_value, enabled = EXCLUDED.enabled",
     )
@@ -395,7 +395,7 @@ async fn test_scenario_is_email_verification_required_returns_false_without_conf
 
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)
+         VALUES ($1, 'registration', 'enabled', 'true', true)
          ON CONFLICT (realm_id, config_type, config_key)
          DO UPDATE SET config_value = EXCLUDED.config_value, enabled = EXCLUDED.enabled",
     )
@@ -468,14 +468,14 @@ async fn test_scenario_is_email_verification_required_returns_false_without_conf
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_registration_without_email_config_succeeds(ctx: &mut TestContext) {
-    // Given: registration allowed = true, no email config, no require_email_verification
+    // Given: registration enabled = true, no email config, no require_email_verification
     let app = ctx.create_unified_test_router();
 
     delete_email_config_direct(&ctx._app_state.pool, &ctx._realm_id).await;
 
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)
+         VALUES ($1, 'registration', 'enabled', 'true', true)
          ON CONFLICT (realm_id, config_type, config_key)
          DO UPDATE SET config_value = EXCLUDED.config_value, enabled = EXCLUDED.enabled",
     )
@@ -540,7 +540,7 @@ async fn test_scenario_password_reset_without_email_config_does_not_error(ctx: &
     // Enable registration and create a user
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)
+         VALUES ($1, 'registration', 'enabled', 'true', true)
          ON CONFLICT (realm_id, config_type, config_key)
          DO UPDATE SET config_value = EXCLUDED.config_value, enabled = EXCLUDED.enabled",
     )

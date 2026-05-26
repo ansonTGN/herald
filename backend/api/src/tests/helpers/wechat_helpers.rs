@@ -48,7 +48,6 @@ pub async fn setup_wechat_config_with_keys(
     v3_key: &str,
     _mock_base_url: Option<&str>, // Parameter kept for compatibility but unused
 ) {
-    // Store config values in realm_config
     let notify_url = format!(
         "https://example.com/api/third/pay/{}/wechat/webhooks",
         realm_id
@@ -56,14 +55,14 @@ pub async fn setup_wechat_config_with_keys(
     let private_key_pem = load_test_rsa_key();
     let platform_cert_pem = load_test_rsa_pubkey();
 
-    let keys = vec![
+    let keys: Vec<(&str, &str)> = vec![
         ("app_id", "wx1234567890abcdef"),
         ("mch_id", "1234567890"),
-        ("private_key", private_key_pem.as_str()),
+        ("private_key", &private_key_pem),
         ("serial_no", "1A2B3C4D5E6F"),
         ("v3_key", v3_key),
         ("notify_url", notify_url.as_str()),
-        ("platform_certificate", platform_cert_pem.as_str()),
+        ("platform_public_key", platform_cert_pem.as_str()),
     ];
 
     for (key, value) in keys {
@@ -78,20 +77,19 @@ pub async fn setup_wechat_config_with_keys(
         .await
         .expect("Failed to insert WeChat config");
     }
-
-    // NOTE: mock_base_url parameter is kept for API compatibility but no longer used
-    // We're transitioning to real WeChat Pay sandbox environment
 }
 
 /// Generate a valid WeChat config payload
 pub fn valid_wechat_config_payload() -> serde_json::Value {
     let private_key_pem = load_test_rsa_key();
+    let platform_public_key_pem = load_test_rsa_pubkey();
     json!({
         "appId": "wx1234567890abcdef",
         "mchId": "1234567890",
         "privateKey": private_key_pem,
         "serialNo": "1A2B3C4D5E6F",
         "v3Key": "abcd1234567890abcdef1234567890ab",
+        "platformPublicKey": platform_public_key_pem,
         "notifyUrl": "https://example.com/api/third/pay/realm-1/wechat/webhooks"
     })
 }

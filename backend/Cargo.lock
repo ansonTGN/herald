@@ -2095,12 +2095,9 @@ dependencies = [
 name = "herald-infra-shopify"
 version = "0.1.7"
 dependencies = [
- "aes-gcm",
  "anyhow",
- "base64 0.22.1",
  "chrono",
  "herald-domain",
- "once_cell",
  "reqwest",
  "serde",
  "serde_json",
@@ -2136,12 +2133,9 @@ dependencies = [
 name = "herald-infra-wechat"
 version = "0.1.7"
 dependencies = [
- "aes-gcm",
  "anyhow",
- "base64 0.22.1",
  "chrono",
  "herald-domain",
- "once_cell",
  "reqwest",
  "serde",
  "serde_json",

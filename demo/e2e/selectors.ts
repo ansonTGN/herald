@@ -775,6 +775,12 @@ export const SELECTORS = {
     enabledSwitch: '[data-testid="points-package-enabled-switch"]',
     cancelButton: '[data-testid="points-package-cancel-button"]',
     submitButton: '[data-testid="points-package-submit-button"]',
+    // Promo package fields
+    packageTypeStandard: '[data-testid="points-package-type-standard"]',
+    packageTypePromotional: '[data-testid="points-package-type-promotional"]',
+    originalPriceInput: '[data-testid="points-package-original-price-input"]',
+    promoStartInput: '[data-testid="points-package-promo-start-input"]',
+    promoEndInput: '[data-testid="points-package-promo-end-input"]',
   },
 
   /**
@@ -826,6 +832,9 @@ export const SELECTORS = {
       `[data-testid="points-package-select-button-${id}"]`,
     selected: (id: string) => `[data-testid="points-package-selected-${id}"]`,
     bestValueBadge: '[data-testid="points-package-best-value-badge"]',
+    // Promo package display elements
+    discountBadge: '[data-testid="points-package-discount-badge"]',
+    limitedTimeLabel: '[data-testid="points-package-limited-time"]',
   },
 
   /**

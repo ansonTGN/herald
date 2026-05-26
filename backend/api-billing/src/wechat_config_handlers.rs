@@ -9,10 +9,6 @@ use crate::wechat_config_types::{
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
-use herald_core::infrastructure::billing::{decrypt_secret, encrypt_secret};
-
-// The rest of the file is identical to the original but with these import changes.
-// Due to the file size, I include the full content with only import path substitutions.
 
 use axum::Json;
 use axum::extract::{Extension, Path, Query, State};
@@ -21,32 +17,6 @@ use sqlx::PgPool;
 use sqlx::Row;
 use tracing::info;
 use uuid::Uuid;
-
-fn is_wechat_secret_key(key: &str) -> bool {
-    matches!(key, "private_key" | "v3_key")
-}
-
-fn encrypt_wechat_value(key: &str, value: &str) -> Result<String, ApiError> {
-    if is_wechat_secret_key(key) {
-        encrypt_secret(value).map_err(|e| {
-            tracing::error!(key = %key, error = %e, "Failed to encrypt WeChat config value");
-            ApiError::internal("Failed to encrypt WeChat config value")
-        })
-    } else {
-        Ok(value.to_string())
-    }
-}
-
-fn decrypt_wechat_value(key: &str, value: &str) -> Result<String, ApiError> {
-    if is_wechat_secret_key(key) {
-        decrypt_secret(value).map_err(|e| {
-            tracing::error!(key = %key, error = %e, "Failed to decrypt WeChat config value");
-            ApiError::internal("Failed to decrypt WeChat config value")
-        })
-    } else {
-        Ok(value.to_string())
-    }
-}
 
 #[utoipa::path(
     post,
@@ -370,7 +340,6 @@ async fn get_wechat_config_internal(
             "mch_id" => config.mch_id = value,
             "serial_no" => config.serial_no = value,
             "private_key" => {
-                let value = decrypt_wechat_value(&key, &value)?;
                 if reveal_secrets {
                     config.private_key = value;
                 } else {
@@ -378,7 +347,6 @@ async fn get_wechat_config_internal(
                 }
             }
             "v3_key" => {
-                let value = decrypt_wechat_value(&key, &value)?;
                 if reveal_secrets {
                     config.v3_key = value;
                 } else {
@@ -418,27 +386,39 @@ async fn save_wechat_config(
         ("notify_url", &request.notify_url, false),
     ];
 
+    let mut tx = db
+        .begin()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {}", e)))?;
+
     for (key, value, is_secret) in config_items {
-        let stored_value = encrypt_wechat_value(key, value)?;
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             INSERT INTO realm_config (id, realm_id, config_type, config_key, config_value, is_secret, created_at, updated_at)
             VALUES ($1, $2, 'wechat', $3, $4, $5, NOW(), NOW())
+            ON CONFLICT (realm_id, config_type, config_key) DO NOTHING
             "#,
         )
         .bind(Uuid::now_v7())
         .bind(realm_id)
         .bind(key)
-        .bind(&stored_value)
+        .bind(value)
         .bind(is_secret)
-        .execute(db)
+        .execute(&mut *tx)
         .await
         .map_err(|e| {
             tracing::error!(realm_id = %realm_id, key = %key, error = %e, "Failed to save wechat config item");
             ApiError::internal(format!("Database error: {}", e))
         })?;
+
+        if result.rows_affected() == 0 {
+            tracing::warn!(realm_id = %realm_id, key = %key, "Config key already exists, skipping");
+        }
     }
 
+    tx.commit()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to commit transaction: {}", e)))?;
     Ok(())
 }
 
@@ -471,8 +451,12 @@ async fn update_wechat_config_internal(
         updates.push(("notify_url", notify_url.clone()));
     }
 
+    let mut tx = db
+        .begin()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {}", e)))?;
+
     for (key, value) in updates {
-        let stored_value = encrypt_wechat_value(key, &value)?;
         sqlx::query(
             r#"
             UPDATE realm_config
@@ -482,10 +466,10 @@ async fn update_wechat_config_internal(
               AND config_key = $3
             "#,
         )
-        .bind(&stored_value)
+        .bind(&value)
         .bind(realm_id)
         .bind(key)
-        .execute(db)
+        .execute(&mut *tx)
         .await
         .map_err(|e| {
             tracing::error!(realm_id = %realm_id, key = %key, error = %e, "Failed to update wechat config item");
@@ -493,6 +477,9 @@ async fn update_wechat_config_internal(
         })?;
     }
 
+    tx.commit()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to commit transaction: {}", e)))?;
     Ok(())
 }
 

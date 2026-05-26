@@ -125,7 +125,7 @@ async fn test_list_realms(ctx: &mut RealmTestContext) {
     let response: serde_json::Value = response_json(resp).await;
     let realms = response["realms"].as_array().unwrap();
     assert!(!realms.is_empty());
-    assert!(realms.iter().any(|r| r["id"] == "listtest"));
+    assert!(realms.iter().any(|r| r["id"] == ctx._realm_id));
 }
 
 #[test_context(RealmTestContext)]

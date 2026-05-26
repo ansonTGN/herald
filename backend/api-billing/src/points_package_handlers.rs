@@ -1,5 +1,6 @@
 // Points Package API Handlers
 
+use axum::extract::Query;
 use axum::{
     Json,
     extract::{Extension, Path, State},
@@ -8,7 +9,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::str::FromStr;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
 
@@ -314,12 +315,20 @@ pub async fn create_points_package(
     ))
 }
 
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct ListPointsPackagesQuery {
+    /// When true, return only packages visible to regular (non-admin) users
+    #[serde(default)]
+    #[param(value_type = bool)]
+    pub visible: Option<bool>,
+}
+
 #[utoipa::path(
     get,
     path = "/api/bill/{realmId}/points-packages",
     params(
         ("realmId" = String, Path, description = "Realm ID"),
-        ("enabledOnly" = Option<bool>, Query, description = "Filter to only enabled packages")
+        ListPointsPackagesQuery
     ),
     responses(
         (status = 200, description = "Points packages listed successfully", body = ListPointsPackagesResponse),
@@ -332,13 +341,24 @@ pub async fn list_points_packages(
     State(state): State<AppState>,
     Path(realm_id): Path<String>,
     Extension(identity): Extension<Identity>,
+    Query(query): Query<ListPointsPackagesQuery>,
 ) -> Result<Json<ListPointsPackagesResponse>, ApiError> {
-    let service = &state.points_package_service;
-
-    let packages = service
-        .list_visible_points_packages(&identity, state.permission_checker.as_ref(), &realm_id)
-        .await
-        .map_err(|e| core_error_to_api_error(e, "List points packages"))?;
+    let packages = if query.visible.unwrap_or(false) {
+        if !identity.has_access_to_realm(&realm_id) {
+            return Err(ApiError::forbidden("Cross-realm access denied".to_string()));
+        }
+        state
+            .points_package_service
+            .list_user_visible_packages(&realm_id)
+            .await
+            .map_err(|e| core_error_to_api_error(e, "List user-visible points packages"))?
+    } else {
+        state
+            .points_package_service
+            .list_visible_points_packages(&identity, state.permission_checker.as_ref(), &realm_id)
+            .await
+            .map_err(|e| core_error_to_api_error(e, "List points packages"))?
+    };
 
     let response = ListPointsPackagesResponse {
         packages: packages

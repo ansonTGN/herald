@@ -20,47 +20,7 @@ use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::PermissionService;
-use herald_core::infrastructure::billing::{decrypt_secret, encrypt_secret};
 use herald_core::infrastructure::shopify::{ShopifyAdminClient, ShopifyStorefrontClient};
-
-// ============================================================================
-// Encryption Helper Functions
-// ============================================================================
-
-fn decrypt_or_mask_field(encrypted_value: &str, field_name: &str) -> String {
-    match decrypt_secret(encrypted_value) {
-        Ok(plaintext) => mask_token(&plaintext),
-        Err(_) => {
-            tracing::warn!(
-                "Failed to decrypt {}, assuming legacy plaintext data",
-                field_name
-            );
-            mask_token(encrypted_value)
-        }
-    }
-}
-
-struct EncryptedShopifyCredentials {
-    admin_token: String,
-    storefront_token: String,
-    client_secret: String,
-}
-
-fn encrypt_credentials(
-    request: &ShopifyConfigRequest,
-) -> Result<EncryptedShopifyCredentials, ApiError> {
-    Ok(EncryptedShopifyCredentials {
-        admin_token: encrypt_secret(&request.admin_access_token).map_err(|e| {
-            ApiError::internal(format!("Failed to encrypt admin access token: {}", e))
-        })?,
-        storefront_token: encrypt_secret(&request.storefront_access_token).map_err(|e| {
-            ApiError::internal(format!("Failed to encrypt storefront access token: {}", e))
-        })?,
-        client_secret: encrypt_secret(&request.app_client_secret).map_err(|e| {
-            ApiError::internal(format!("Failed to encrypt app client secret: {}", e))
-        })?,
-    })
-}
 
 // ============================================================================
 // Configuration Management Handlers
@@ -192,15 +152,6 @@ pub async fn create_shopify_config(
                 message: "Invalid Storefront Access Token format (must start with shp_)"
                     .to_string(),
             }],
-        }));
-    }
-
-    if let Ok(Some(_)) =
-        get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url).await
-    {
-        return Err(ApiError::conflict_json(GenericErrorResponse {
-            error: "configuration_already_exists".to_string(),
-            message: "A Shopify configuration already exists for this realm. Please edit the existing configuration.".to_string(),
         }));
     }
 
@@ -455,14 +406,13 @@ async fn get_shopify_config_internal(
         match key.as_str() {
             "shop_domain" => config.shop_domain = value,
             "admin_access_token" => {
-                config.admin_access_token = decrypt_or_mask_field(&value, "admin_access_token");
+                config.admin_access_token = mask_token(&value);
             }
             "storefront_access_token" => {
-                config.storefront_access_token =
-                    decrypt_or_mask_field(&value, "storefront_access_token");
+                config.storefront_access_token = mask_token(&value);
             }
             "app_client_secret" => {
-                config.app_client_secret = decrypt_or_mask_field(&value, "app_client_secret");
+                config.app_client_secret = mask_token(&value);
             }
             "api_version" => config.api_version = value,
             "webhook_subscription_mode" => config.webhook_subscription_mode = value,
@@ -491,13 +441,15 @@ async fn save_shopify_config(
 ) -> Result<(), ApiError> {
     let timeout_str = request.timeout.to_string();
 
-    let encrypted = encrypt_credentials(request)?;
-
     let config_items = vec![
         ("shop_domain", &request.shop_domain, false),
-        ("admin_access_token", &encrypted.admin_token, true),
-        ("storefront_access_token", &encrypted.storefront_token, true),
-        ("app_client_secret", &encrypted.client_secret, true),
+        ("admin_access_token", &request.admin_access_token, true),
+        (
+            "storefront_access_token",
+            &request.storefront_access_token,
+            true,
+        ),
+        ("app_client_secret", &request.app_client_secret, true),
         ("api_version", &request.api_version, false),
         (
             "webhook_subscription_mode",
@@ -507,11 +459,17 @@ async fn save_shopify_config(
         ("timeout", &timeout_str, false),
     ];
 
+    let mut tx = db
+        .begin()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {}", e)))?;
+
     for (key, value, is_secret) in config_items {
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             INSERT INTO realm_config (id, realm_id, config_type, config_key, config_value, is_secret, created_at, updated_at)
             VALUES ($1, $2, 'shopify', $3, $4, $5, NOW(), NOW())
+            ON CONFLICT (realm_id, config_type, config_key) DO NOTHING
             "#,
         )
         .bind(Uuid::now_v7())
@@ -519,17 +477,19 @@ async fn save_shopify_config(
         .bind(key)
         .bind(value)
         .bind(is_secret)
-        .execute(db)
+        .execute(&mut *tx)
         .await
         .map_err(|e| ApiError::internal(format!("Failed to save config: {}", e)))?;
+
+        if result.rows_affected() == 0 {
+            tracing::warn!(realm_id = %realm_id, key = %key, "Config key already exists, skipping");
+        }
     }
 
+    tx.commit()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to commit transaction: {}", e)))?;
     Ok(())
-}
-
-fn encrypt_field(value: &str, label: &str) -> Result<String, ApiError> {
-    encrypt_secret(value)
-        .map_err(|e| ApiError::internal(format!("Failed to encrypt {}: {}", label, e)))
 }
 
 async fn update_shopify_config_internal(
@@ -543,22 +503,13 @@ async fn update_shopify_config_internal(
         updates.push(("shop_domain", shop_domain.clone()));
     }
     if let Some(admin_access_token) = &request.admin_access_token {
-        updates.push((
-            "admin_access_token",
-            encrypt_field(admin_access_token, "admin token")?,
-        ));
+        updates.push(("admin_access_token", admin_access_token.clone()));
     }
     if let Some(storefront_access_token) = &request.storefront_access_token {
-        updates.push((
-            "storefront_access_token",
-            encrypt_field(storefront_access_token, "storefront token")?,
-        ));
+        updates.push(("storefront_access_token", storefront_access_token.clone()));
     }
     if let Some(app_client_secret) = &request.app_client_secret {
-        updates.push((
-            "app_client_secret",
-            encrypt_field(app_client_secret, "client secret")?,
-        ));
+        updates.push(("app_client_secret", app_client_secret.clone()));
     }
     if let Some(api_version) = &request.api_version {
         updates.push(("api_version", api_version.clone()));
@@ -573,6 +524,11 @@ async fn update_shopify_config_internal(
         updates.push(("timeout", timeout.to_string()));
     }
 
+    let mut tx = db
+        .begin()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {}", e)))?;
+
     for (key, value) in updates {
         sqlx::query(
             r#"
@@ -586,11 +542,14 @@ async fn update_shopify_config_internal(
         .bind(&value)
         .bind(realm_id)
         .bind(key)
-        .execute(db)
+        .execute(&mut *tx)
         .await
         .map_err(|e| ApiError::internal(format!("Failed to update config: {}", e)))?;
     }
 
+    tx.commit()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to commit transaction: {}", e)))?;
     Ok(())
 }
 

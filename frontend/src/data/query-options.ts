@@ -37,7 +37,6 @@ import {
   getFreeUserStatistics,
   listPlanPaymentProviders,
   listPointsPackages,
-  listPointsPackagesExt,
   getPointsPackage,
   getPointsPackagePurchaseHistory,
   getPointsPackagePurchaseDetails,
@@ -59,6 +58,7 @@ import type {
   SubscriptionPlanResponse,
   PaymentAttemptStatusResponse,
   PointsWalletResponse,
+  PointsPackageResponse,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -1018,9 +1018,12 @@ export const pointsPackagesExtQueryOptions = (realmId: string) =>
   queryOptions({
     queryKey: queryKeys.extPointsPackages(realmId),
     queryFn: async () => {
-      const response = await listPointsPackagesExt({ path: { realmId } })
-      if (response.error) throw response.error
-      return response.data?.packages ?? []
+      const res = await fetch(`/api/bill/${realmId}/points-packages?visible=true`, {
+        credentials: 'include',
+      })
+      if (!res.ok) throw new Error(`Failed to load packages: ${res.status}`)
+      const data = await res.json()
+      return (data as { packages: PointsPackageResponse[] }).packages ?? []
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_5_MIN,

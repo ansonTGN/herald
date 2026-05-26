@@ -3,13 +3,7 @@
 //! Provides database access methods for `wechat_payment_order` table
 //! and WeChat configuration stored in `realm_config`.
 
-use aes_gcm::{
-    Aes256Gcm, Nonce,
-    aead::{Aead, AeadCore, KeyInit, OsRng},
-};
-use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
-use once_cell::sync::Lazy;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -19,95 +13,6 @@ use herald_domain::common::entities::app_errors::CoreError;
 /// Repository for WeChat payment order database operations
 pub struct WechatOrderRepository {
     pool: PgPool,
-}
-
-static ENCRYPTION_KEY: Lazy<Result<[u8; 32], String>> = Lazy::new(|| {
-    let key_str = std::env::var("ENCRYPTION_KEY")
-        .map_err(|_| "ENCRYPTION_KEY environment variable not set".to_string())?;
-    let key_bytes = STANDARD
-        .decode(&key_str)
-        .map_err(|e| format!("ENCRYPTION_KEY must be valid base64: {e}"))?;
-
-    if key_bytes.len() != 32 {
-        return Err(format!(
-            "ENCRYPTION_KEY must be 32 bytes (256 bits), got {} bytes",
-            key_bytes.len()
-        ));
-    }
-
-    let mut key = [0u8; 32];
-    key.copy_from_slice(&key_bytes);
-    Ok(key)
-});
-
-const NONCE_SIZE: usize = 12;
-
-fn encryption_key() -> Result<&'static [u8; 32], CoreError> {
-    ENCRYPTION_KEY
-        .as_ref()
-        .map_err(|e| CoreError::InternalServerError(e.clone()))
-}
-
-fn is_wechat_secret_key(key: &str) -> bool {
-    matches!(key, "private_key" | "v3_key")
-}
-
-fn encrypt_secret(secret: &str) -> Result<String, CoreError> {
-    let cipher = Aes256Gcm::new_from_slice(encryption_key()?).map_err(|e| {
-        tracing::error!("Failed to create WeChat secret cipher: {}", e);
-        CoreError::InternalServerError(format!("Cipher init failed: {}", e))
-    })?;
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let ciphertext = cipher.encrypt(&nonce, secret.as_bytes()).map_err(|e| {
-        tracing::error!("Failed to encrypt WeChat config value: {}", e);
-        CoreError::InternalServerError(format!("Encryption failed: {}", e))
-    })?;
-
-    Ok(STANDARD.encode([nonce.as_slice(), &ciphertext].concat()))
-}
-
-fn decrypt_secret(encrypted_secret: &str) -> Result<String, CoreError> {
-    let combined = STANDARD.decode(encrypted_secret).map_err(|e| {
-        tracing::error!("Failed to decode WeChat config value: {}", e);
-        CoreError::InvalidWebhookSecret
-    })?;
-
-    if combined.len() < NONCE_SIZE + 16 {
-        return Err(CoreError::InvalidWebhookSecret);
-    }
-
-    let cipher = Aes256Gcm::new_from_slice(encryption_key()?).map_err(|e| {
-        tracing::error!("Failed to create WeChat secret cipher: {}", e);
-        CoreError::InternalServerError(format!("Cipher init failed: {}", e))
-    })?;
-    let (nonce_bytes, ciphertext) = combined.split_at(NONCE_SIZE);
-    let plaintext = cipher
-        .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
-        .map_err(|e| {
-            tracing::debug!("Failed to decrypt WeChat config value: {}", e);
-            CoreError::InvalidWebhookSecret
-        })?;
-
-    String::from_utf8(plaintext).map_err(|e| {
-        tracing::error!("Decrypted WeChat config value is not valid UTF-8: {}", e);
-        CoreError::InvalidWebhookSecret
-    })
-}
-
-fn store_config_value(key: &str, value: &str) -> Result<String, CoreError> {
-    if is_wechat_secret_key(key) {
-        encrypt_secret(value)
-    } else {
-        Ok(value.to_string())
-    }
-}
-
-fn load_config_value(key: &str, value: String) -> Result<String, CoreError> {
-    if is_wechat_secret_key(key) {
-        decrypt_secret(&value)
-    } else {
-        Ok(value)
-    }
 }
 
 impl WechatOrderRepository {
@@ -322,9 +227,9 @@ impl WechatOrderRepository {
             match key.as_str() {
                 "app_id" => config.app_id = Some(value),
                 "mch_id" => config.mch_id = Some(value),
-                "private_key" => config.private_key = Some(load_config_value(&key, value)?),
+                "private_key" => config.private_key = Some(value),
                 "serial_no" => config.serial_no = Some(value),
-                "v3_key" => config.v3_key = Some(load_config_value(&key, value)?),
+                "v3_key" => config.v3_key = Some(value),
                 "platform_public_key" => config.platform_public_key = Some(value),
                 "notify_url" => config.notify_url = Some(value),
                 "mock_base_url" => config.mock_base_url = Some(value),
@@ -375,7 +280,6 @@ impl WechatOrderRepository {
         ];
 
         for (key, value, is_secret) in config_items {
-            let stored_value = store_config_value(key, value)?;
             sqlx::query(
                 r#"
                 INSERT INTO realm_config (id, realm_id, config_type, config_key, config_value, is_secret, created_at, updated_at)
@@ -385,7 +289,7 @@ impl WechatOrderRepository {
             .bind(Uuid::now_v7())
             .bind(realm_id)
             .bind(key)
-            .bind(&stored_value)
+            .bind(value)
             .bind(is_secret)
             .execute(&self.pool)
             .await
@@ -423,7 +327,6 @@ impl WechatOrderRepository {
         .collect();
 
         for (key, value) in updates {
-            let stored_value = store_config_value(key, value)?;
             sqlx::query(
                 r#"
                 UPDATE realm_config
@@ -433,7 +336,7 @@ impl WechatOrderRepository {
                   AND config_key = $3
                 "#,
             )
-            .bind(&stored_value)
+            .bind(value)
             .bind(realm_id)
             .bind(key)
             .execute(&self.pool)

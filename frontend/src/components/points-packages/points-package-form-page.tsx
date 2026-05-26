@@ -64,6 +64,7 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
   const { isSubmitting, mutate } = useFormMutation({
     mutationFn: (data: PointsPackageFormData) => {
       const apiPrice = displayPriceToApiPrice(data.price, data.currency)
+      const toApiTime = (v: string | undefined | null) => (v ? new Date(v).toISOString() : null)
 
       if (isCreate) {
         return createPointsPackage({
@@ -76,8 +77,8 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
               data.packageType === 'promotional' && data.originalPrice
                 ? displayPriceToApiPrice(data.originalPrice, data.currency)
                 : null,
-            promoStartTime: data.promoStartTime || null,
-            promoEndTime: data.promoEndTime || null,
+            promoStartTime: toApiTime(data.promoStartTime),
+            promoEndTime: toApiTime(data.promoEndTime),
           },
         }).then(handleApiResponse)
       }
@@ -96,8 +97,8 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
             data.packageType === 'promotional' && data.originalPrice
               ? displayPriceToApiPrice(data.originalPrice, data.currency)
               : null,
-          promoStartTime: data.promoStartTime || null,
-          promoEndTime: data.promoEndTime || null,
+          promoStartTime: toApiTime(data.promoStartTime),
+          promoEndTime: toApiTime(data.promoEndTime),
         },
       }).then(handleApiResponse)
     },
