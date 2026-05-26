@@ -2039,7 +2039,6 @@ dependencies = [
 name = "herald-infra"
 version = "0.1.7"
 dependencies = [
- "aes-gcm",
  "anyhow",
  "base64 0.22.1",
  "bcrypt",
@@ -2058,7 +2057,6 @@ dependencies = [
  "mockall",
  "moka",
  "oauth2",
- "once_cell",
  "rand 0.8.5",
  "redis",
  "reqwest",

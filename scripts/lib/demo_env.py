@@ -315,7 +315,6 @@ def start_environment(
         backend_env["TOTP_SECRET_KEY"] = "demo-totp-encryption-key-32-bytes-long"
         backend_env["ADMIN_REALM_ID"] = "admin"
         backend_env["INTERNAL_API_KEY"] = "demo-internal-api-key"
-        backend_env["ENCRYPTION_KEY"] = "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
         backend_env["TEST_API_TOKEN"] = "test-token-123"
 
         from .proc import spawn_background

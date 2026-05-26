@@ -15,7 +15,6 @@ pub use herald_infra as infrastructure;
 pub use config::PermissionConfig;
 pub use infrastructure::billing::{
     IronPressInvoicePdfGenerator, PostgresBillingRepository, PostgresInvoiceRepository,
-    decrypt_secret, encrypt_secret,
 };
 pub use infrastructure::creem::CreemClient;
 pub use infrastructure::oauth::ReqwestHttpClient;

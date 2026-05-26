@@ -163,25 +163,9 @@ mod tests {
         .unwrap()
     }
 
-    /// Assert that a value appears to be encrypted (not plaintext)
-    fn assert_is_encrypted(value: &str, plaintext: &str) {
-        // Encrypted value should be different from plaintext
-        assert_ne!(
-            value, plaintext,
-            "Encrypted value should not match plaintext"
-        );
-
-        // Encrypted value should be longer (base64 encoded with nonce)
-        assert!(
-            value.len() > plaintext.len(),
-            "Encrypted value should be longer than plaintext"
-        );
-
-        // Encrypted value should contain base64 characters
-        assert!(
-            value.contains('/') || value.contains('+') || value.contains('=') || value.len() > 40,
-            "Encrypted value should appear to be base64 encoded"
-        );
+    /// Assert that a value is stored as plaintext in the database
+    fn assert_is_plaintext(value: &str, expected: &str) {
+        assert_eq!(value, expected, "Value should be stored as plaintext");
     }
 
     /// Assert that sensitive field is masked in response
@@ -206,19 +190,10 @@ mod tests {
     /// User Story: docs/user-stories/08-shopify-pay-user-stories.md
     /// Covers: US-PP-007 (Realm Admin creates and views Shopify config)
     ///          US-PP-008 (View Shopify Payment Provider config)
-    ///          Acceptance: Complete configuration workflow with AuthZ + Encryption
+    ///          Acceptance: Complete configuration workflow with AuthZ
     #[test_context(TestContext)]
     #[tokio::test]
     async fn test_scenario_integration_shopify_config_create_and_view(ctx: &mut TestContext) {
-        // Set ENCRYPTION_KEY for this test (required for Shopify config encryption)
-        // Using exactly 32 bytes of base64-encoded data
-        unsafe {
-            std::env::set_var(
-                "ENCRYPTION_KEY",
-                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-            )
-        }; // 32 bytes base64
-
         let app = ctx.create_unified_test_router();
         let realm_id = &ctx._realm_id;
 
@@ -244,7 +219,7 @@ mod tests {
             create_response.status()
         );
 
-        // And: Database contains encrypted sensitive fields
+        // And: Database contains plaintext sensitive fields
         let admin_token_db = get_config_from_db(ctx, realm_id, "admin_access_token")
             .await
             .expect("admin_access_token should exist");
@@ -255,15 +230,15 @@ mod tests {
             .await
             .expect("app_client_secret should exist");
 
-        assert_is_encrypted(
+        assert_is_plaintext(
             &admin_token_db,
             config_payload["adminAccessToken"].as_str().unwrap(),
         );
-        assert_is_encrypted(
+        assert_is_plaintext(
             &storefront_token_db,
             config_payload["storefrontAccessToken"].as_str().unwrap(),
         );
-        assert_is_encrypted(
+        assert_is_plaintext(
             &app_secret_db,
             config_payload["appClientSecret"].as_str().unwrap(),
         );
@@ -337,19 +312,10 @@ mod tests {
 
     /// User Story: docs/user-stories/08-shopify-pay-user-stories.md
     /// Covers: US-PP-003 (Edit Shopify Payment Provider configuration)
-    ///          Acceptance: Complete update workflow with AuthZ + Encryption
+    ///          Acceptance: Complete update workflow with AuthZ
     #[test_context(TestContext)]
     #[tokio::test]
     async fn test_scenario_integration_shopify_config_update(ctx: &mut TestContext) {
-        // Set ENCRYPTION_KEY for this test (required for Shopify config encryption)
-        // Using exactly 32 bytes of base64-encoded data
-        unsafe {
-            std::env::set_var(
-                "ENCRYPTION_KEY",
-                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-            )
-        }; // 32 bytes base64
-
         let app = ctx.create_unified_test_router();
         let realm_id = &ctx._realm_id;
 
@@ -373,7 +339,7 @@ mod tests {
             create_response.status()
         );
 
-        let old_encrypted_admin = get_config_from_db(ctx, realm_id, "admin_access_token")
+        let old_stored_admin = get_config_from_db(ctx, realm_id, "admin_access_token")
             .await
             .unwrap();
 
@@ -400,15 +366,15 @@ mod tests {
             update_response.status()
         );
 
-        // And: Database contains new encrypted values
-        let new_encrypted_admin = get_config_from_db(ctx, realm_id, "admin_access_token")
+        // And: Database contains new plaintext values
+        let new_stored_admin = get_config_from_db(ctx, realm_id, "admin_access_token")
             .await
             .unwrap();
 
-        assert_is_encrypted(&new_encrypted_admin, "shpat_new_token_789");
+        assert_is_plaintext(&new_stored_admin, "shpat_new_token_789");
         assert_ne!(
-            old_encrypted_admin, new_encrypted_admin,
-            "Encrypted values should be different after update"
+            old_stored_admin, new_stored_admin,
+            "Values should be different after update"
         );
 
         // And: API response shows updated (masked) values
@@ -451,15 +417,6 @@ mod tests {
     #[test_context(TestContext)]
     #[tokio::test]
     async fn test_scenario_integration_shopify_config_delete(ctx: &mut TestContext) {
-        // Set ENCRYPTION_KEY for this test (required for Shopify config encryption)
-        // Using exactly 32 bytes of base64-encoded data
-        unsafe {
-            std::env::set_var(
-                "ENCRYPTION_KEY",
-                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-            )
-        }; // 32 bytes base64
-
         let app = ctx.create_unified_test_router();
         let realm_id = &ctx._realm_id;
 

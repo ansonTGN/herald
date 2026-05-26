@@ -599,7 +599,6 @@ mod tests {
     #[test_context(TestContext)]
     #[tokio::test]
     async fn test_scenario_stripe_points_package_returns_checkout_url(ctx: &mut TestContext) {
-        use crate::tests::helpers::billing_helpers::ensure_billing_test_encryption_key;
         use crate::tests::helpers::create_admin_session_with_user;
         use axum::body::{Body, to_bytes};
         use axum::http::{Request, StatusCode};
@@ -645,7 +644,6 @@ mod tests {
             .await;
 
         // And: Configure Stripe for the realm with mock server URL
-        ensure_billing_test_encryption_key();
         setup_stripe_config(ctx, &realm_id, "sk_test_fake_key", "whsec_test").await;
         sqlx::query(
             "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled, created_at, updated_at)
