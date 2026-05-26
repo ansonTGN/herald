@@ -13,7 +13,7 @@ CREATE TABLE user_oauth_providers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
     realm_id TEXT NOT NULL,
-    provider_type VARCHAR(50) NOT NULL,
+    provider_type text NOT NULL,
     provider_user_id TEXT NOT NULL,
     open_id TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

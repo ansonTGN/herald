@@ -29,6 +29,7 @@ CREATE TABLE account (
 
 CREATE UNIQUE INDEX account_realm_id_email_index ON account(realm_id, email);
 CREATE UNIQUE INDEX account_realm_id_username_index ON account(realm_id, username) WHERE username IS NOT NULL;
+CREATE INDEX idx_account_realm_created ON account(realm_id, created_at DESC);
 COMMENT ON TABLE account IS 'User accounts for authentication';
 COMMENT ON COLUMN account.status IS '0: wait verified, 1: normal, 2: forbid, 3: invalid';
 COMMENT ON COLUMN account.username IS 'Optional username for login, can be used instead of email';
@@ -72,6 +73,7 @@ COMMENT ON COLUMN provider.user_id IS 'Reference to the account (user) that owns
 CREATE TABLE realm (
     id text PRIMARY KEY DEFAULT uuidv7(),
     name text NOT NULL,
+    description text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamptz DEFAULT now()
 );
@@ -91,6 +93,7 @@ CREATE TABLE client_app (
     session_ttl_seconds integer DEFAULT 1800 NOT NULL,
     session_renewal_ttl_seconds integer,
     client_secret text,
+    device_code_grant_enabled boolean NOT NULL DEFAULT false,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamptz DEFAULT now(),
     CONSTRAINT client_app_realm_client_idx UNIQUE (realm_id, client_id)
@@ -139,8 +142,8 @@ CREATE TABLE permissions (
     name TEXT NOT NULL,
     description text,
     realm_id text NOT NULL,
-    resource varchar(100) NOT NULL DEFAULT '',
-    action varchar(100) NOT NULL DEFAULT '',
+    resource text NOT NULL DEFAULT '',
+    action text NOT NULL DEFAULT '',
     is_builtin BOOLEAN NOT NULL DEFAULT FALSE,
     created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -178,26 +181,29 @@ COMMENT ON TABLE role_permissions IS 'Many-to-many relationship between roles an
 -- User-Role associations
 CREATE TABLE user_roles (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
-    user_id UUID NOT NULL,
+    user_id UUID,
     role_id UUID NOT NULL,
     realm_id TEXT NOT NULL,
-    client_id TEXT NOT NULL,
+    client_id TEXT,
+    principal_type TEXT NOT NULL DEFAULT 'user',
+    principal_id TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    CONSTRAINT fk_user_roles_user FOREIGN KEY (user_id) REFERENCES account(id) ON DELETE CASCADE,
     CONSTRAINT fk_user_roles_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
-    CONSTRAINT fk_user_roles_realm FOREIGN KEY (realm_id) REFERENCES realm(id) ON DELETE CASCADE,
-    CONSTRAINT uq_user_roles UNIQUE (user_id, role_id, realm_id)
+    CONSTRAINT fk_user_roles_realm FOREIGN KEY (realm_id) REFERENCES realm(id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_user_roles_user_id ON user_roles(user_id);
 CREATE INDEX idx_user_roles_role_id ON user_roles(role_id);
 CREATE INDEX idx_user_roles_realm_id ON user_roles(realm_id);
-COMMENT ON TABLE user_roles IS 'Many-to-many relationship between users and roles';
-COMMENT ON COLUMN user_roles.user_id IS 'UUID of the user (references account.id)';
+CREATE UNIQUE INDEX idx_user_roles_principal_role ON user_roles (realm_id, principal_type, principal_id, role_id);
+COMMENT ON TABLE user_roles IS 'Many-to-many relationship between principals (users, api_keys, clients) and roles';
+COMMENT ON COLUMN user_roles.user_id IS 'UUID of the user (nullable for non-user principals)';
 COMMENT ON COLUMN user_roles.role_id IS 'UUID of the role (references roles.id)';
 COMMENT ON COLUMN user_roles.realm_id IS 'Realm ID for multi-tenant isolation';
-COMMENT ON COLUMN user_roles.client_id IS 'Client app identifier (TEXT) that assigned this role';
+COMMENT ON COLUMN user_roles.client_id IS 'Client app identifier (nullable for non-user principals)';
+COMMENT ON COLUMN user_roles.principal_type IS 'Type of principal: "user", "api_key", or "client"';
+COMMENT ON COLUMN user_roles.principal_id IS 'ID of the principal (user_id for users, client_api_keys.id for API keys)';
 
 -- Role Policies table (RBAC policies for roles)
 CREATE TABLE role_policies (
@@ -279,6 +285,7 @@ CREATE TABLE client_api_keys (
     name TEXT NOT NULL,
     api_key_hash TEXT UNIQUE NOT NULL,
     realm_id TEXT NOT NULL,
+    client_app_id UUID REFERENCES client_app(id) ON DELETE SET NULL,
     enabled BOOLEAN DEFAULT true,
     expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -289,10 +296,12 @@ CREATE TABLE client_api_keys (
 );
 
 CREATE INDEX idx_client_api_keys_realm ON client_api_keys(realm_id);
-CREATE INDEX idx_client_api_keys_key ON client_api_keys(api_key_hash);
 CREATE INDEX idx_client_api_keys_enabled ON client_api_keys(enabled);
+CREATE INDEX idx_client_api_keys_client_app_id ON client_api_keys(client_app_id);
+CREATE INDEX idx_client_api_keys_app_realm ON client_api_keys(client_app_id, realm_id);
 COMMENT ON TABLE client_api_keys IS 'API keys for client app programmatic access';
 COMMENT ON COLUMN client_api_keys.api_key_hash IS 'Hashed API key for secure storage';
+COMMENT ON COLUMN client_api_keys.client_app_id IS 'Client App this API key belongs to (1:1 relationship)';
 COMMENT ON COLUMN client_api_keys.usage_count IS 'Number of times this key has been used';
 
 -- ====================================
@@ -382,6 +391,23 @@ COMMENT ON TABLE email_verification_code IS 'Verification codes for email confir
 -- Billing Tables
 -- ====================================
 
+-- Products table
+CREATE TABLE products (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    realm_id TEXT NOT NULL,
+    code TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    description TEXT,
+    enabled BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_products_realm_code UNIQUE (realm_id, code)
+);
+
+CREATE INDEX idx_products_realm_id ON products(realm_id);
+CREATE INDEX idx_products_realm_enabled ON products(realm_id, enabled);
+COMMENT ON TABLE products IS 'Product catalog items';
+
 -- Subscription plan table (subscription plans)
 CREATE TABLE subscription_plan (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
@@ -389,11 +415,10 @@ CREATE TABLE subscription_plan (
     name TEXT NOT NULL,
     description TEXT,
     title TEXT NOT NULL DEFAULT '',
-    type VARCHAR(20) NOT NULL DEFAULT 'monthly',
+    type text NOT NULL DEFAULT 'monthly',
     price INTEGER NOT NULL DEFAULT 0,
-    currency VARCHAR(10) NOT NULL DEFAULT 'USD',
-    payment_provider VARCHAR(50) NOT NULL DEFAULT 'creem',
-    external_product_id TEXT NOT NULL DEFAULT '',
+    currency text NOT NULL DEFAULT 'USD',
+    product_id UUID NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
     external_price_id TEXT,
     checkout_url TEXT,
     monthly_price_cents INTEGER,
@@ -405,19 +430,40 @@ CREATE TABLE subscription_plan (
     sort_order INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_subscription_plan_realm_name UNIQUE (realm_id, name),
-    CONSTRAINT chk_subscription_plan_type CHECK (type IN ('monthly', 'yearly')),
-    CONSTRAINT chk_subscription_plan_currency CHECK (currency IN ('USD', 'EUR', 'CNY')),
-    CONSTRAINT chk_subscription_plan_payment_provider CHECK (payment_provider IN ('creem', 'stripe', 'shopify'))
+    CONSTRAINT uq_subscription_plan_realm_name UNIQUE (realm_id, name)
 );
 
 CREATE INDEX idx_subscription_plan_realm_id ON subscription_plan(realm_id);
 CREATE INDEX idx_subscription_plan_active ON subscription_plan(active);
 CREATE INDEX idx_subscription_plan_type ON subscription_plan(type);
-CREATE INDEX idx_subscription_plan_payment_provider ON subscription_plan(payment_provider);
+CREATE INDEX idx_subscription_plan_product_id ON subscription_plan(product_id);
+CREATE INDEX idx_subscription_plan_realm_product ON subscription_plan(realm_id, product_id);
 COMMENT ON TABLE subscription_plan IS 'Subscription pricing plans for billing';
 COMMENT ON COLUMN subscription_plan.type IS 'Plan type: monthly or yearly billing';
-COMMENT ON COLUMN subscription_plan.payment_provider IS 'Payment provider: creem, stripe, or shopify';
+
+-- Subscription Plan Payment Provider mapping
+CREATE TABLE subscription_plan_payment_provider (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    plan_id UUID NOT NULL,
+    payment_provider text NOT NULL,
+    external_product_id TEXT NOT NULL,
+    external_price_id TEXT,
+    enabled BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_subscription_plan_payment_provider_plan
+        FOREIGN KEY (plan_id) REFERENCES subscription_plan(id) ON DELETE CASCADE,
+    CONSTRAINT uq_subscription_plan_payment_provider_plan_provider UNIQUE (plan_id, payment_provider)
+);
+
+CREATE INDEX idx_subscription_plan_payment_provider_plan_id ON subscription_plan_payment_provider(plan_id);
+CREATE INDEX idx_subscription_plan_payment_provider_provider ON subscription_plan_payment_provider(payment_provider);
+COMMENT ON TABLE subscription_plan_payment_provider IS 'Payment provider mappings for plans, allowing multiple providers per plan';
+COMMENT ON COLUMN subscription_plan_payment_provider.plan_id IS 'Reference to the plan';
+COMMENT ON COLUMN subscription_plan_payment_provider.payment_provider IS 'Payment provider name (stripe, creem, shopify, etc.)';
+COMMENT ON COLUMN subscription_plan_payment_provider.external_product_id IS 'External product ID from the payment provider';
+COMMENT ON COLUMN subscription_plan_payment_provider.external_price_id IS 'External price ID from the payment provider (optional)';
+COMMENT ON COLUMN subscription_plan_payment_provider.enabled IS 'Whether this payment provider mapping is enabled for checkout';
 
 -- Client App Subscription Plan junction table
 CREATE TABLE client_app_subscription_plan (
@@ -437,17 +483,18 @@ COMMENT ON TABLE client_app_subscription_plan IS 'Associates client apps with av
 CREATE TABLE subscription (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     realm_id TEXT NOT NULL,
+    user_id UUID REFERENCES account(id) ON DELETE SET NULL,
     external_subscription_id TEXT NOT NULL,
     external_product_id TEXT NOT NULL,
-    payment_provider VARCHAR(50) NOT NULL DEFAULT 'creem',
-    status VARCHAR(50) NOT NULL,
-    tier VARCHAR(50) NOT NULL DEFAULT 'free',
+    payment_provider text NOT NULL DEFAULT 'creem',
+    status text NOT NULL,
+    tier text NOT NULL DEFAULT 'free',
     current_period_start TIMESTAMPTZ,
     current_period_end TIMESTAMPTZ,
     cancel_at_period_end BOOLEAN DEFAULT false,
     plan_id UUID,
     client_app_id UUID UNIQUE,
-    billing_period VARCHAR(20) DEFAULT 'monthly',
+    billing_period text DEFAULT 'monthly',
     cancel_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -461,25 +508,34 @@ CREATE INDEX idx_subscription_status ON subscription(status);
 CREATE INDEX idx_subscription_plan_id ON subscription(plan_id);
 CREATE INDEX idx_subscription_client_app_id ON subscription(client_app_id);
 CREATE INDEX idx_subscription_billing_period ON subscription(billing_period);
+CREATE INDEX idx_subscription_user_id ON subscription(user_id);
+CREATE INDEX idx_subscription_realm_user_id ON subscription(realm_id, user_id);
 COMMENT ON TABLE subscription IS 'Client app subscriptions to billing plans';
 
 -- Payment Event table
 CREATE TABLE payment_event (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     realm_id TEXT NOT NULL,
-    creem_event_id TEXT NOT NULL UNIQUE,
-    event_type VARCHAR(100) NOT NULL,
+    external_event_id TEXT NOT NULL,
+    payment_provider text NOT NULL DEFAULT 'creem',
+    event_type text NOT NULL,
     subscription_id UUID,
     payload JSONB,
     processed BOOLEAN DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    processing_started_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT payment_event_unique_external_provider
+        UNIQUE (external_event_id, payment_provider)
 );
 
 CREATE INDEX idx_payment_event_realm_id ON payment_event(realm_id);
-CREATE INDEX idx_payment_event_creem_event_id ON payment_event(creem_event_id);
 CREATE INDEX idx_payment_event_event_type ON payment_event(event_type);
 CREATE INDEX idx_payment_event_processed ON payment_event(processed);
-COMMENT ON TABLE payment_event IS 'Webhook events from payment providers';
+CREATE INDEX idx_payment_event_provider ON payment_event(payment_provider);
+COMMENT ON TABLE payment_event IS 'Payment events from multiple providers (Creem, Stripe, etc.)';
+COMMENT ON COLUMN payment_event.external_event_id IS 'External event ID from payment provider (unique per provider)';
+COMMENT ON COLUMN payment_event.payment_provider IS 'Payment provider type (creem, stripe, etc.)';
+COMMENT ON COLUMN payment_event.processing_started_at IS 'When webhook processing last claimed the event for execution; null means idle';
 
 -- ====================================
 -- Initial Data
@@ -494,3 +550,8 @@ VALUES ('admin', 'Admin');
 -- Insert default admin client app
 INSERT INTO client_app (id, realm_id, client_id, name, session_renewal_ttl_seconds)
 VALUES (uuidv7(), 'admin', 'admin-web-console', 'Admin Client App', 86400);
+
+-- Insert built-in API Key Client App for the admin realm
+INSERT INTO client_app (id, realm_id, client_id, name, description, enabled, redirect_uris, session_ttl_seconds)
+VALUES (uuidv7(), 'admin', 'admin-api-client', 'API Key Client', 'Built-in client for API key authentication', true, '[]'::jsonb, 1800)
+ON CONFLICT (realm_id, client_id) DO NOTHING;

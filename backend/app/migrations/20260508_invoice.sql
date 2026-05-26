@@ -37,7 +37,7 @@ CREATE TABLE invoice (
     subscription_id UUID REFERENCES subscription(id) ON DELETE SET NULL,
     payment_attempt_id UUID,
     status TEXT NOT NULL CHECK (status IN ('draft', 'issued', 'paid', 'void', 'overdue')),
-    currency VARCHAR(3) NOT NULL,
+    currency text NOT NULL,
 
     -- Dates
     issue_date DATE,

@@ -10,7 +10,7 @@
 CREATE TABLE subscription_history (
     id TEXT PRIMARY KEY,
     subscription_id UUID NOT NULL,
-    event_type VARCHAR(50) NOT NULL,
+    event_type text NOT NULL,
     timestamp TIMESTAMPTZ NOT NULL,
     actor TEXT,
     changes JSONB,
@@ -61,7 +61,7 @@ CREATE TABLE points_wallets (
     total_consumed BIGINT NOT NULL DEFAULT 0 CHECK (total_consumed >= 0),
     total_topup_granted BIGINT NOT NULL DEFAULT 0 CHECK (total_topup_granted >= 0),
     total_subscription_granted BIGINT NOT NULL DEFAULT 0 CHECK (total_subscription_granted >= 0),
-    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'frozen', 'closed')),
+    status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'frozen', 'closed')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uk_points_wallets_user_id UNIQUE (user_id)
@@ -92,7 +92,7 @@ CREATE TABLE points_transactions (
     wallet_id UUID NOT NULL REFERENCES points_wallets(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,
     realm_id TEXT NOT NULL,
-    type VARCHAR(32) NOT NULL CHECK (type IN (
+    type text NOT NULL CHECK (type IN (
         'recharge',
         'consume',
         'subscription_grant',
@@ -111,7 +111,7 @@ CREATE TABLE points_transactions (
     balance_after BIGINT NOT NULL CHECK (balance_after >= 0),
     topup_balance_after BIGINT CHECK (topup_balance_after >= 0),
     subscription_balance_after BIGINT CHECK (subscription_balance_after >= 0),
-    credit_type VARCHAR(32) CHECK (credit_type IN (
+    credit_type text CHECK (credit_type IN (
         'topup_credit',
         'subscription_credit',
         'registration_credit',
@@ -158,7 +158,7 @@ CREATE TABLE points_plan_configs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     realm_id TEXT NOT NULL,
     plan_id UUID NOT NULL REFERENCES subscription_plan(id) ON DELETE CASCADE,
-    grant_period_type VARCHAR(20) NOT NULL DEFAULT 'once' CHECK (grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
+    grant_period_type text NOT NULL DEFAULT 'once' CHECK (grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
     points_per_period BIGINT NOT NULL DEFAULT 0 CHECK (points_per_period >= 0),
     validity_days BIGINT NOT NULL DEFAULT 0 CHECK (validity_days >= 0),
     grant_on_subscribe BOOLEAN NOT NULL DEFAULT TRUE,
@@ -181,7 +181,7 @@ CREATE TABLE idempotency_keys (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     realm_id TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+    status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
     request_data JSONB NOT NULL DEFAULT '{}',
     response_data JSONB,
     transaction_id UUID,
@@ -203,13 +203,13 @@ CREATE TABLE points_credit_ledger (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL,
     realm_id TEXT NOT NULL,
-    credit_type VARCHAR(32) NOT NULL CHECK (credit_type IN (
+    credit_type text NOT NULL CHECK (credit_type IN (
         'topup_credit',
         'subscription_credit',
         'registration_credit',
         'free_periodic_credit'
     )),
-    source_type VARCHAR(32) NOT NULL CHECK (source_type IN (
+    source_type text NOT NULL CHECK (source_type IN (
         'subscription_initial',
         'subscription_renewal',
         'subscription_upgrade',
@@ -226,7 +226,7 @@ CREATE TABLE points_credit_ledger (
         granted_amount - used_amount - revoked_amount
     ) STORED CHECK (remaining_amount >= 0),
     expires_at TIMESTAMPTZ,
-    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'expired', 'fully_used')),
+    status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'expired', 'fully_used')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -278,7 +278,7 @@ CREATE TABLE points_revocation_records (
     ledger_id UUID NOT NULL,
     user_id UUID NOT NULL,
     realm_id TEXT NOT NULL,
-    revocation_type VARCHAR(30) NOT NULL CHECK (revocation_type IN (
+    revocation_type text NOT NULL CHECK (revocation_type IN (
         'refund_revoke',
         'expire_revoke',
         'cancel_revoke',
@@ -308,7 +308,7 @@ COMMENT ON COLUMN points_revocation_records.revocation_type IS 'Type of revocati
 CREATE TABLE realm_default_configs (
     realm_id TEXT PRIMARY KEY,
     registration_bonus_points BIGINT NOT NULL DEFAULT 0 CHECK (registration_bonus_points >= 0),
-    free_periodic_grant_period_type VARCHAR(20) NOT NULL DEFAULT 'daily' CHECK (free_periodic_grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
+    free_periodic_grant_period_type text NOT NULL DEFAULT 'daily' CHECK (free_periodic_grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
     free_periodic_points_amount BIGINT NOT NULL DEFAULT 0 CHECK (free_periodic_points_amount >= 0),
     free_periodic_validity_days BIGINT NOT NULL DEFAULT 0 CHECK (free_periodic_validity_days >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -328,7 +328,7 @@ CREATE TABLE user_points_configs (
     user_id UUID PRIMARY KEY,
     realm_id TEXT NOT NULL,
     registration_bonus_points BIGINT NOT NULL CHECK (registration_bonus_points >= 0),
-    free_periodic_grant_period_type VARCHAR(20) CHECK (free_periodic_grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
+    free_periodic_grant_period_type text CHECK (free_periodic_grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
     free_periodic_points_amount BIGINT CHECK (free_periodic_points_amount >= 0),
     free_periodic_validity_days BIGINT CHECK (free_periodic_validity_days >= 0),
     next_grant_time TIMESTAMPTZ,
@@ -353,7 +353,7 @@ CREATE TABLE points_grant_schedules (
     realm_id TEXT NOT NULL,
     subscription_id UUID,
     plan_config_id UUID,
-    grant_period_type VARCHAR(20) NOT NULL CHECK (grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
+    grant_period_type text NOT NULL CHECK (grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
     base_time TIMESTAMPTZ NOT NULL,
     next_grant_time TIMESTAMPTZ NOT NULL,
     points_per_period BIGINT NOT NULL CHECK (points_per_period >= 0),

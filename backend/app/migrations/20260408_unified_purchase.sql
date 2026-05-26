@@ -15,14 +15,18 @@
 CREATE TABLE points_packages (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     realm_id text NOT NULL,
-    name varchar(255) NOT NULL,
-    title varchar(255) NOT NULL,
+    name text NOT NULL,
+    title text NOT NULL,
     description text,
     points bigint NOT NULL CHECK(points > 0),
     price bigint NOT NULL CHECK(price > 0),
-    currency varchar(3) NOT NULL,
+    currency text NOT NULL,
     sort_order integer NOT NULL DEFAULT 0,
     enabled boolean NOT NULL DEFAULT true,
+    package_type text NOT NULL DEFAULT 'standard',
+    original_price BIGINT NULL,
+    promo_start_time TIMESTAMPTZ NULL,
+    promo_end_time TIMESTAMPTZ NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT uq_points_packages_realm_name UNIQUE (realm_id, name)
@@ -51,13 +55,17 @@ COMMENT ON COLUMN points_packages.enabled IS 'Whether this package is available 
 CREATE TABLE points_package_payment_providers (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     points_package_id uuid NOT NULL,
-    payment_provider varchar(50) NOT NULL,
+    payment_provider text NOT NULL,
     enabled boolean NOT NULL DEFAULT true,
-    external_product_id varchar(255),
+    external_product_id text,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT uq_package_provider UNIQUE (points_package_id, payment_provider),
-    CONSTRAINT chk_payment_provider CHECK (payment_provider IN ('wechat', 'stripe', 'creem'))
+    CONSTRAINT chk_payment_provider CHECK (payment_provider IN ('wechat', 'stripe', 'creem')),
+    CONSTRAINT fk_package_providers_package
+        FOREIGN KEY (points_package_id)
+        REFERENCES points_packages(id)
+        ON DELETE CASCADE
 );
 
 -- Index for querying provider mappings for a package
@@ -66,12 +74,7 @@ CREATE INDEX idx_package_providers_package ON points_package_payment_providers(p
 -- Index for querying packages by provider
 CREATE INDEX idx_package_providers_provider ON points_package_payment_providers(payment_provider);
 
--- Foreign key to points_packages table
-ALTER TABLE points_package_payment_providers
-    ADD CONSTRAINT fk_package_providers_package
-    FOREIGN KEY (points_package_id)
-    REFERENCES points_packages(id)
-    ON DELETE CASCADE;
+-- Foreign key is defined inline in the CREATE TABLE above
 
 -- Comments for documentation
 COMMENT ON TABLE points_package_payment_providers IS 'Payment provider availability mappings for points packages';
@@ -90,14 +93,14 @@ CREATE TABLE payment_attempts (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     realm_id text NOT NULL,
     user_id uuid NOT NULL,
-    payment_provider varchar(50) NOT NULL,
-    target_type varchar(50) NOT NULL,
+    payment_provider text NOT NULL,
+    target_type text NOT NULL,
     target_id uuid NOT NULL,
     amount bigint NOT NULL CHECK(amount > 0),
-    currency varchar(3) NOT NULL,
-    status varchar(50) NOT NULL,
-    provider_reference varchar(255),
-    provider_status varchar(100),
+    currency text NOT NULL,
+    status text NOT NULL,
+    provider_reference text,
+    provider_status text,
     metadata jsonb,
     expires_at timestamptz NOT NULL,
     completed_at timestamptz,
@@ -140,8 +143,8 @@ CREATE TABLE points_package_purchases (
     payment_attempt_id uuid NOT NULL,
     points bigint NOT NULL,
     amount bigint NOT NULL,
-    currency varchar(3) NOT NULL,
-    payment_provider varchar(50) NOT NULL,
+    currency text NOT NULL,
+    payment_provider text NOT NULL,
     points_transaction_id uuid,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),

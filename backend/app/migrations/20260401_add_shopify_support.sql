@@ -11,14 +11,14 @@ CREATE TABLE shopify_subscription_binding (
     id BIGSERIAL PRIMARY KEY,
     subscription_id UUID NOT NULL REFERENCES subscription(id) ON DELETE CASCADE,
     realm_id text NOT NULL REFERENCES realm(id) ON DELETE CASCADE,
-    shop_domain VARCHAR(255) NOT NULL,
-    contract_id VARCHAR(255) NOT NULL UNIQUE,
-    contract_gid VARCHAR(255) NOT NULL,
+    shop_domain text NOT NULL,
+    contract_id text NOT NULL UNIQUE,
+    contract_gid text NOT NULL,
     contract_revision_id BIGINT NOT NULL DEFAULT 1,
-    customer_id VARCHAR(255),
-    customer_payment_method_id VARCHAR(255),
-    last_billing_attempt_id VARCHAR(255),
-    last_order_id VARCHAR(255),
+    customer_id text,
+    customer_payment_method_id text,
+    last_billing_attempt_id text,
+    last_order_id text,
     cancel_reason TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -56,15 +56,7 @@ COMMENT ON INDEX idx_shopify_binding_revision IS 'Check for existing higher revi
 -- ====================================
 -- Add user_id to subscription table
 -- ====================================
--- This allows tracking which user owns a subscription for Shopify webhook processing
-ALTER TABLE subscription
-ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES account(id) ON DELETE SET NULL;
-
-CREATE INDEX IF NOT EXISTS idx_subscription_user_id
-    ON subscription(user_id);
-
-CREATE INDEX IF NOT EXISTS idx_subscription_realm_user_id
-    ON subscription(realm_id, user_id);
+-- user_id column is now created directly in core_init.sql
 
 -- ====================================
 -- Shopify User Binding Table
@@ -73,11 +65,11 @@ CREATE INDEX IF NOT EXISTS idx_subscription_realm_user_id
 CREATE TABLE IF NOT EXISTS shopify_user_binding (
     id BIGSERIAL PRIMARY KEY,
     realm_id TEXT NOT NULL REFERENCES realm(id) ON DELETE CASCADE,
-    shop_domain VARCHAR(255) NOT NULL,
-    shopify_customer_id VARCHAR(255) NOT NULL,
-    shopify_customer_gid VARCHAR(255),
+    shop_domain text NOT NULL,
+    shopify_customer_id text NOT NULL,
+    shopify_customer_gid text,
     user_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,
-    status VARCHAR(32) NOT NULL DEFAULT 'active',
+    status text NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_shopify_user_binding_customer
