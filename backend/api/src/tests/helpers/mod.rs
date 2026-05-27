@@ -40,8 +40,6 @@ pub mod rbac_helpers;
 pub mod shopify_helpers;
 pub mod test_commons;
 #[cfg(test)]
-pub mod test_constants;
-#[cfg(test)]
 pub mod test_setup_helpers;
 pub mod user_helpers;
 pub mod webhook_helpers;
@@ -49,10 +47,6 @@ pub mod webhook_helpers;
 // WeChat Pay test helpers
 #[cfg(test)]
 pub mod wechat_helpers;
-
-// 测试模块
-#[cfg(test)]
-mod auth_helpers_test;
 
 // 重新导出常用函数
 pub use auth_helpers::*;
