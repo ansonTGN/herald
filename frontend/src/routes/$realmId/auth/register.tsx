@@ -30,9 +30,9 @@ function getRegisterPageState(
     return { isLoading: false, error: true, registrationAllowed: false }
   }
 
-  const allowed =
-    (publicConfig as { registration?: { allowed?: boolean } })?.registration?.allowed === true
-  return { isLoading: false, error: false, registrationAllowed: allowed }
+  const registrationEnabled =
+    (publicConfig as { registration?: { enabled?: boolean } })?.registration?.enabled === true
+  return { isLoading: false, error: false, registrationAllowed: registrationEnabled }
 }
 
 function RegisterPage() {

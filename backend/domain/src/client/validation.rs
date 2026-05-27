@@ -7,6 +7,7 @@ use crate::common::entities::app_errors::CoreError;
 use url::Url;
 
 const MAX_SESSION_TTL_SECONDS: i32 = 86_400;
+const MAX_SESSION_RENEWAL_TTL_SECONDS: i32 = 604_800;
 
 /// Validates a redirect URI according to security requirements
 ///
@@ -102,6 +103,7 @@ pub fn validate_redirect_uris(uris: &[String], is_development: bool) -> Result<(
 /// # Rules
 /// - Session TTL must be at least 60 seconds
 /// - Session renewal TTL (if provided) must be at least 60 seconds
+/// - Session renewal TTL (if provided) must be at least the session TTL
 ///
 /// # Arguments
 /// * `session_ttl_seconds` - The initial session TTL in seconds
@@ -136,15 +138,15 @@ pub fn validate_session_config(
                 renewal_ttl
             )));
         }
-        if renewal_ttl > MAX_SESSION_TTL_SECONDS {
+        if renewal_ttl > MAX_SESSION_RENEWAL_TTL_SECONDS {
             return Err(CoreError::BadRequest(format!(
                 "Session renewal TTL must be at most {} seconds, got {}",
-                MAX_SESSION_TTL_SECONDS, renewal_ttl
+                MAX_SESSION_RENEWAL_TTL_SECONDS, renewal_ttl
             )));
         }
-        if renewal_ttl >= session_ttl_seconds {
+        if renewal_ttl < session_ttl_seconds {
             return Err(CoreError::BadRequest(
-                "Session renewal TTL must be less than session TTL".to_string(),
+                "Session renewal TTL must be greater than or equal to session TTL".to_string(),
             ));
         }
     }
@@ -213,6 +215,11 @@ mod tests {
     #[test]
     fn test_validate_session_config_renewal_ttl_too_short() {
         assert!(validate_session_config(1800, Some(30)).is_err());
+    }
+
+    #[test]
+    fn test_validate_session_config_renewal_ttl_less_than_session_ttl() {
+        assert!(validate_session_config(1800, Some(300)).is_err());
     }
 
     #[test]

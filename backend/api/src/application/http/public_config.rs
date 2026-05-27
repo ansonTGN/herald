@@ -16,7 +16,7 @@ use herald_core::domain::realm::{RealmService, RealmSummary};
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RegistrationConfig {
-    pub allowed: bool,
+    pub enabled: bool,
     pub require_email_verification: bool,
 }
 
@@ -84,7 +84,7 @@ pub async fn get_public_config(
     State(state): State<AppState>,
     _headers: HeaderMap,
 ) -> Result<ApiResult<PublicConfigResponse>, ApiError> {
-    let allowed = query_bool_config(&state.pool, &realm_id, "enabled", false).await?;
+    let registration_enabled = query_bool_config(&state.pool, &realm_id, "enabled", false).await?;
     let require_email_verification =
         query_bool_config(&state.pool, &realm_id, "require_email_verification", false).await?;
 
@@ -125,7 +125,7 @@ pub async fn get_public_config(
         realm_name: realm_info.name,
         realm_description: realm_info.description,
         registration: RegistrationConfig {
-            allowed,
+            enabled: registration_enabled,
             require_email_verification,
         },
         oauth_providers,

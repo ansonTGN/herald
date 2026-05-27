@@ -30,7 +30,7 @@ export function RegistrationConfigForm({
   const form = useAppForm({
     schema: registrationConfigSchema,
     defaultValues: initialConfig || {
-      allowed: true,
+      enabled: true,
       requireEmailVerification: true,
     },
     onSubmit: async ({ value }) => {
@@ -77,16 +77,16 @@ export function RegistrationConfigForm({
           >
             {/* Allow Registration */}
             <form.Field
-              name="allowed"
+              name="enabled"
               children={(field) => (
                 <ConfigSwitchField
                   field={field}
                   form={form}
-                  id="reg-allowed"
-                  label="Allow Registration"
-                  description="Allow new users to register for this realm"
+                  id="reg-enabled"
+                  label="Enable Registration"
+                  description="Enable new users to register for this realm"
                   disabled={disabled}
-                  errorTestId="reg-allowed-error"
+                  errorTestId="reg-enabled-error"
                 />
               )}
             />

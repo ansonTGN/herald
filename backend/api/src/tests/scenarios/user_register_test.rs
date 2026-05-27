@@ -77,7 +77,7 @@ async fn test_scenario_user_register_success(ctx: &mut TestContext) {
     println!("[Step 1] 启用 realm {} 的注册功能", ctx._realm_id);
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)",
+         VALUES ($1, 'registration', 'enabled', 'true', true)",
     )
     .bind(&ctx._realm_id)
     .execute(&ctx._app_state.pool)
@@ -239,7 +239,7 @@ async fn test_scenario_user_register_cannot_login_without_verification(ctx: &mut
     println!("[Step 1] 注册新用户: no-verify@cas.com");
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)",
+         VALUES ($1, 'registration', 'enabled', 'true', true)",
     )
     .bind(&ctx._realm_id)
     .execute(&ctx._app_state.pool)
@@ -384,7 +384,7 @@ async fn test_scenario_user_register_duplicate_email(ctx: &mut TestContext) {
     println!("[Step 1] 注册新用户: duplicate@cas.com");
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)",
+         VALUES ($1, 'registration', 'enabled', 'true', true)",
     )
     .bind(&ctx._realm_id)
     .execute(&ctx._app_state.pool)
@@ -479,7 +479,7 @@ async fn test_scenario_user_register_duplicate_email(ctx: &mut TestContext) {
 ///
 /// **验收标准**：
 /// - 返回 400 Bad Request
-/// - 返回错误信息 "Registration is not allowed for this realm"
+/// - 返回错误信息 "Registration is not enabled for this realm"
 ///
 /// **运行方式**：
 /// ```bash
@@ -536,8 +536,8 @@ async fn test_scenario_user_register_disabled(ctx: &mut TestContext) {
     assert!(
         response_message(&body)
             .to_lowercase()
-            .contains("registration is not allowed"),
-        "Error message should mention registration not allowed"
+            .contains("registration is not enabled"),
+        "Error message should mention registration not enabled"
     );
 
     println!("[Step 3] ✓ 返回 400 Bad Request，错误信息正确");
@@ -583,7 +583,7 @@ async fn test_scenario_user_register_without_verification_required(ctx: &mut Tes
     println!("[Step 1] 启用注册功能");
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)",
+         VALUES ($1, 'registration', 'enabled', 'true', true)",
     )
     .bind(&ctx._realm_id)
     .execute(&ctx._app_state.pool)
@@ -737,7 +737,7 @@ async fn test_scenario_resend_verification_email(ctx: &mut TestContext) {
     println!("[Step 1] 启用注册功能和邮箱验证");
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)",
+         VALUES ($1, 'registration', 'enabled', 'true', true)",
     )
     .bind(&ctx._realm_id)
     .execute(&ctx._app_state.pool)

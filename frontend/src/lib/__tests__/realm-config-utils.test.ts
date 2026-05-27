@@ -100,7 +100,7 @@ describe('parseEmailConfig', () => {
   test('ignores non-email config types', () => {
     const configs: RealmConfigResponse[] = [
       makeConfig('totp', 'settings', '{"enabled":true}'),
-      makeConfig('registration', 'allowed', 'true'),
+      makeConfig('registration', 'enabled', 'true'),
       makeConfig('email', 'provider', 'resend'),
     ]
 

@@ -19,14 +19,14 @@ describe('RegistrationConfigForm', () => {
   it('GIVEN form is rendered WHEN no initial config THEN should display form with default values', async () => {
     const screen = render(<RegistrationConfigForm {...defaultProps} />)
 
-    expect(screen.getByTestId('reg-allowed-switch')).toBeInTheDocument()
+    expect(screen.getByTestId('reg-enabled-switch')).toBeInTheDocument()
     expect(screen.getByTestId('reg-require-email-switch')).toBeInTheDocument()
     expect(screen.getByTestId('reg-save-button')).toBeInTheDocument()
   })
 
   it('GIVEN initial config provided WHEN rendering THEN should display configuration values', async () => {
     const initialConfig: RegistrationConfigFormData = {
-      allowed: false,
+      enabled: false,
       requireEmailVerification: true, // P0 修复：camelCase 字段名
     }
 
@@ -34,8 +34,8 @@ describe('RegistrationConfigForm', () => {
       <RegistrationConfigForm {...defaultProps} initialConfig={initialConfig} />
     )
 
-    const allowedSwitch = screen.getByTestId('reg-allowed-switch')
-    expect(allowedSwitch).not.toBeChecked()
+    const enabledSwitch = screen.getByTestId('reg-enabled-switch')
+    expect(enabledSwitch).not.toBeChecked()
 
     const requireEmailSwitch = screen.getByTestId('reg-require-email-switch')
     expect(requireEmailSwitch).toBeChecked()
@@ -46,8 +46,8 @@ describe('RegistrationConfigForm', () => {
     const screen = render(<RegistrationConfigForm {...defaultProps} />)
 
     // 禁用注册
-    const allowedSwitch = screen.getByTestId('reg-allowed-switch')
-    await userEvent.click(allowedSwitch)
+    const enabledSwitch = screen.getByTestId('reg-enabled-switch')
+    await userEvent.click(enabledSwitch)
 
     // 提交表单
     const saveButton = screen.getByTestId('reg-save-button')
@@ -56,7 +56,7 @@ describe('RegistrationConfigForm', () => {
     // 验证 onSave 被调用
     await waitFor(() => {
       expect(mockOnSave).toHaveBeenCalledWith({
-        allowed: false,
+        enabled: false,
         requireEmailVerification: true,
       })
     })
@@ -72,8 +72,8 @@ describe('RegistrationConfigForm', () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     // 禁用注册并提交
-    const allowedSwitch = screen.getByTestId('reg-allowed-switch')
-    await userEvent.click(allowedSwitch)
+    const enabledSwitch = screen.getByTestId('reg-enabled-switch')
+    await userEvent.click(enabledSwitch)
 
     const saveButton = screen.getByTestId('reg-save-button')
     await userEvent.click(saveButton)
@@ -95,8 +95,8 @@ describe('RegistrationConfigForm', () => {
     const screen = render(<RegistrationConfigForm {...defaultProps} />)
 
     // 先禁用注册
-    const allowedSwitch = screen.getByTestId('reg-allowed-switch')
-    await userEvent.click(allowedSwitch)
+    const enabledSwitch = screen.getByTestId('reg-enabled-switch')
+    await userEvent.click(enabledSwitch)
 
     // 修改邮箱验证要求
     const requireEmailSwitch = screen.getByTestId('reg-require-email-switch')
@@ -106,10 +106,10 @@ describe('RegistrationConfigForm', () => {
     const saveButton = screen.getByTestId('reg-save-button')
     await userEvent.click(saveButton)
 
-    // 验证 onSave 被调用，保存所有配置（即使 allowed=false）
+    // 验证 onSave 被调用，保存所有配置（即使 enabled=false）
     await waitFor(() => {
       expect(mockOnSave).toHaveBeenCalledWith({
-        allowed: false,
+        enabled: false,
         requireEmailVerification: expect.any(Boolean),
       })
     })
@@ -120,8 +120,8 @@ describe('RegistrationConfigForm', () => {
     const screen = render(<RegistrationConfigForm {...defaultProps} disabled={true} />)
 
     // 验证开关被禁用
-    const allowedSwitch = screen.getByTestId('reg-allowed-switch')
-    expect(allowedSwitch).toBeDisabled()
+    const enabledSwitch = screen.getByTestId('reg-enabled-switch')
+    expect(enabledSwitch).toBeDisabled()
 
     const requireEmailSwitch = screen.getByTestId('reg-require-email-switch')
     expect(requireEmailSwitch).toBeDisabled()
@@ -179,7 +179,7 @@ describe('RegistrationConfigForm', () => {
   // P0 补充：初始配置加载测试 - 禁用注册但要求邮箱验证
   it('GIVEN initial config has registration disabled with email verification WHEN rendering THEN should display switches correctly', async () => {
     const initialConfig: RegistrationConfigFormData = {
-      allowed: false,
+      enabled: false,
       requireEmailVerification: true,
     }
 
@@ -187,17 +187,17 @@ describe('RegistrationConfigForm', () => {
       <RegistrationConfigForm {...defaultProps} initialConfig={initialConfig} />
     )
 
-    const allowedSwitch = screen.getByTestId('reg-allowed-switch')
-    expect(allowedSwitch).not.toBeChecked()
+    const enabledSwitch = screen.getByTestId('reg-enabled-switch')
+    expect(enabledSwitch).not.toBeChecked()
 
     const requireEmailSwitch = screen.getByTestId('reg-require-email-switch')
     expect(requireEmailSwitch).toBeChecked()
   })
 
   // P0 补充：初始配置加载测试 - 允许注册但不需要邮箱验证
-  it('GIVEN initial config has registration enabled without email verification WHEN rendering THEN should display switches correctly', async () => {
+  it('GIVEN initial config allows registration without email verification WHEN rendering THEN should display switches correctly', async () => {
     const initialConfig: RegistrationConfigFormData = {
-      allowed: true,
+      enabled: true,
       requireEmailVerification: false,
     }
 
@@ -205,8 +205,8 @@ describe('RegistrationConfigForm', () => {
       <RegistrationConfigForm {...defaultProps} initialConfig={initialConfig} />
     )
 
-    const allowedSwitch = screen.getByTestId('reg-allowed-switch')
-    expect(allowedSwitch).toBeChecked()
+    const enabledSwitch = screen.getByTestId('reg-enabled-switch')
+    expect(enabledSwitch).toBeChecked()
 
     const requireEmailSwitch = screen.getByTestId('reg-require-email-switch')
     expect(requireEmailSwitch).not.toBeChecked()

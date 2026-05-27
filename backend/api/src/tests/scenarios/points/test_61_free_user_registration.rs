@@ -63,7 +63,7 @@ async fn test_scenario_free_user_registration_grants_initial_bonus(ctx: &mut Tes
     sqlx::query(
         r#"
         INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-        VALUES ($1, 'registration', 'allowed', 'true', true)
+        VALUES ($1, 'registration', 'enabled', 'true', true)
         ON CONFLICT (realm_id, config_type, config_key)
         DO UPDATE SET config_value = EXCLUDED.config_value, enabled = EXCLUDED.enabled
         "#,
@@ -197,7 +197,7 @@ async fn test_scenario_free_user_registration_prevents_duplicate_bonuses(ctx: &m
     sqlx::query(
         r#"
         INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-        VALUES ($1, 'registration', 'allowed', 'true', true)
+        VALUES ($1, 'registration', 'enabled', 'true', true)
         ON CONFLICT (realm_id, config_type, config_key)
         DO UPDATE SET config_value = EXCLUDED.config_value, enabled = EXCLUDED.enabled
         "#,
@@ -343,7 +343,7 @@ async fn test_scenario_free_user_registration_periodic_points_disabled(ctx: &mut
     sqlx::query(
         r#"
         INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-        VALUES ($1, 'registration', 'allowed', 'true', true)
+        VALUES ($1, 'registration', 'enabled', 'true', true)
         ON CONFLICT (realm_id, config_type, config_key)
         DO UPDATE SET config_value = EXCLUDED.config_value, enabled = EXCLUDED.enabled
         "#,

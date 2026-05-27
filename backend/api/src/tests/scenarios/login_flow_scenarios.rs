@@ -142,8 +142,8 @@ async fn test_scenario_complete_login_flow(ctx: &mut TestContext) {
         serde_json::from_slice(&public_config_body).expect("Failed to parse public config data");
 
     println!(
-        "[Step 3] ✓ 公共配置获取成功: registration.allowed={}, oauth_providers.len()={}",
-        public_config_json.registration.allowed,
+        "[Step 3] ✓ 公共配置获取成功: registration.enabled={}, oauth_providers.len()={}",
+        public_config_json.registration.enabled,
         public_config_json.oauth_providers.len()
     );
 

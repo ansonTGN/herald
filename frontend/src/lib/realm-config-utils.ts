@@ -38,15 +38,15 @@ export function parseTOTPConfig(configs: RealmConfigResponse[]): TOTPConfigForm 
  * Parses Registration configuration from realm config array
  */
 export function parseRegistrationConfig(configs: RealmConfigResponse[]): RegistrationConfigForm {
-  const allowedConfig = configs.find(
-    (c) => c.configType === 'registration' && c.configKey === 'allowed'
+  const enabledConfig = configs.find(
+    (c) => c.configType === 'registration' && c.configKey === 'enabled'
   )
   const requireEmailConfig = configs.find(
     (c) => c.configType === 'registration' && c.configKey === 'require_email_verification'
   )
 
   return {
-    allowed: allowedConfig?.configValue === 'true',
+    enabled: enabledConfig?.configValue === 'true',
     requireEmailVerification: requireEmailConfig?.configValue === 'true',
   }
 }
@@ -75,8 +75,8 @@ export function buildRegistrationConfigRequest(config: RegistrationConfigForm) {
   return [
     {
       configType: 'registration' as const,
-      configKey: 'allowed',
-      configValue: config.allowed ? 'true' : 'false',
+      configKey: 'enabled',
+      configValue: config.enabled ? 'true' : 'false',
       isSecret: false,
       enabled: true,
     },

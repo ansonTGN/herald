@@ -9,7 +9,7 @@ export const totpConfigSchema = z.object({
 
 // Registration 配置 Schema
 export const registrationConfigSchema = z.object({
-  allowed: z.boolean(), // 是否允许注册
+  enabled: z.boolean(), // 是否允许注册
   requireEmailVerification: z.boolean(), // ✅ camelCase：是否需要邮箱验证
 })
 

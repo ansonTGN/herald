@@ -100,7 +100,7 @@
 - **未配置邮件 + 尝试开启邮箱验证**：开关禁用，显示提示信息，阻止开启
 - **Provider 切换**：切换邮件 Provider 时，隐藏/显示对应字段（Resend 显示 API Key；SMTP 显示 Host/Port/Username/Password）
 - **测试邮件**：保存配置后可通过 "Send Test Email" 验证配置正确性，速率限制 3 次/60 秒
-- **Registration 键名不一致（已知 Bug）**：创建 Realm 时写入 `config_key = "enabled"`（`realm/services.rs`），但查询注册状态时读取 `config_key = 'allowed'`（`api-base/util.rs`、`api-auth/registration_status.rs`）。键名应为 `"allowed"`，代码修复中
+- **Registration 键名统一**：注册开关使用 `config_key = "enabled"`，创建 Realm、查询注册状态和 public config 均使用同一键名。
 
 > **计划中功能**：以下功能在 PRD 中曾提及但当前代码无实现，移至未来扩展：
 > - `default_user_status`（Registration 配置中新用户默认状态，取值范围 0-3）
@@ -172,7 +172,7 @@
 
 ### 8.2 已知限制
 
-- **Registration 键名不一致（Bug）**：创建 Realm 时写入 `config_key = "enabled"`（`backend/domain/src/realm/services.rs`），但查询注册状态时读取 `config_key = 'allowed'`（`backend/api-base/src/application/http/auth/util.rs`、`backend/api-auth/src/registration_status.rs`）。正确键名应为 `"allowed"`，代码修复中
+- **Registration 键名统一**：创建 Realm、注册状态查询和 public config 均使用 `config_key = "enabled"`。
 - **config_type 无枚举强校验**：`ConfigType::from(String)` 对无法识别的类型默认 fallback 为 `Turnstile`，无法拒绝无效类型。API 层 `config_type` 字段为纯 String，后端无法在解析阶段返回校验错误
 - **邮件完整性不检查 enabled 标志**：`is_email_configured` 仅检查字段非空，不检查各条目的 `enabled` 字段。即使用户禁用了某个邮件配置项，只要字段非空仍视为已配置
 

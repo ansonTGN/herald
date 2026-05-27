@@ -50,7 +50,7 @@ function LoginPage() {
   const { data: publicConfig, isLoading } = useQuery(publicConfigQueryOptions(realmId))
 
   const oauthProviders = publicConfig?.oauthProviders ?? []
-  const isRegistrationEnabled = publicConfig?.registration?.allowed === true
+  const isRegistrationAllowed = publicConfig?.registration?.enabled === true
 
   const { oauthParams, hasPartialOAuth } = validateOAuthParams(search)
 
@@ -278,7 +278,7 @@ function LoginPage() {
             </div>
           )}
 
-          {isRegistrationEnabled && (
+          {isRegistrationAllowed && (
             <div className="mt-4 text-center">
               <span className="text-sm text-gray-500">Don't have an account? </span>
               <Link

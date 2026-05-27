@@ -153,7 +153,7 @@ async fn test_scenario_realm_admin_can_access_users(ctx: &mut TestContext) {
     // 启用注册
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)
+         VALUES ($1, 'registration', 'enabled', 'true', true)
          ON CONFLICT (realm_id, config_type, config_key) DO UPDATE SET enabled = true",
     )
     .bind(&new_realm_id)

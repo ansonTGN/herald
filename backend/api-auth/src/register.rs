@@ -76,10 +76,10 @@ pub async fn register(
         tracing::debug!(
             realm_id = %realm_id,
             email = %email,
-            "Registration failed: registration disabled for realm"
+            "Registration failed: registration not enabled for realm"
         );
         return Err(ApiError::bad_request(
-            "Registration is not allowed for this realm".to_string(),
+            "Registration is not enabled for this realm".to_string(),
         ));
     }
 

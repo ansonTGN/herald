@@ -24,7 +24,7 @@ export interface TOTPConfigData {
  * Registration Configuration Data
  */
 export interface RegistrationConfigData {
-  allowed: boolean                        // 是否允许注册
+  enabled: boolean                        // 是否允许注册
   require_email_verification: boolean     // 是否需要邮箱验证
 }
 
@@ -143,7 +143,7 @@ export class SettingsPage extends BasePage {
     this.totpSaveButton = page.getByTestId('totp-save-button')
 
     // Registration Configuration - using data-testid
-    this.allowRegistrationSwitch = page.getByTestId('reg-allowed-switch')
+    this.allowRegistrationSwitch = page.getByTestId('reg-enabled-switch')
     this.requireEmailVerificationSwitch = page.getByTestId('reg-require-email-switch')
 
     // Save button in Registration form
@@ -488,10 +488,10 @@ export class SettingsPage extends BasePage {
    * Get current Registration Configuration state
    */
   async getRegistrationConfig(): Promise<RegistrationConfigData> {
-    const allowed = await this.allowRegistrationSwitch.isChecked()
+    const enabled = await this.allowRegistrationSwitch.isChecked()
     const require_email_verification = await this.requireEmailVerificationSwitch.isChecked()
 
-    return { allowed, require_email_verification }
+    return { enabled, require_email_verification }
   }
 
   /**
@@ -500,7 +500,7 @@ export class SettingsPage extends BasePage {
   async verifyRegistrationConfig(expected: RegistrationConfigData): Promise<void> {
     const actual = await this.getRegistrationConfig()
 
-    expect(actual.allowed).toBe(expected.allowed)
+    expect(actual.enabled).toBe(expected.enabled)
     expect(actual.require_email_verification).toBe(expected.require_email_verification)
   }
 

@@ -279,7 +279,7 @@ test.describe('[Realm Admin] TOTP 配置综合演示测试', () => {
           await settingsPage.switchToRegistrationTab()
 
           const config = await settingsPage.getRegistrationConfig()
-          expect(config.allowed).toBeFalsy()
+          expect(config.enabled).toBeFalsy()
           expect(config.require_email_verification).toBeTruthy()
 
           demoLogger.testCode.log('Registration 配置持久化验证通过')

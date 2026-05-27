@@ -33,7 +33,7 @@ use tower::ServiceExt;
 /// 当 realm 配置了允许注册，但未配置 OAuth 提供商时，端点应返回正确的注册配置和空的 OAuth 提供商列表。
 ///
 /// **验收标准**：
-/// - registration.allowed = true
+/// - registration.enabled = true
 /// - registration.requireEmailVerification = false (默认值)
 /// - oauth_providers 为空数组
 /// - 响应状态码为 200
@@ -52,7 +52,7 @@ async fn test_scenario_public_config_registration_enabled_no_oauth(ctx: &mut Tes
     // 配置 realm: 允许注册
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)
+         VALUES ($1, 'registration', 'enabled', 'true', true)
          ON CONFLICT (realm_id, config_type, config_key) DO UPDATE
          SET config_value = EXCLUDED.config_value, enabled = EXCLUDED.enabled",
     )
@@ -83,7 +83,7 @@ async fn test_scenario_public_config_registration_enabled_no_oauth(ctx: &mut Tes
         serde_json::from_value(response_value.clone()).unwrap();
 
     // 验证响应
-    assert!(response_json.registration.allowed);
+    assert!(response_json.registration.enabled);
     assert!(!response_json.registration.require_email_verification);
     assert!(response_json.oauth_providers.is_empty());
 
@@ -97,7 +97,7 @@ async fn test_scenario_public_config_registration_enabled_no_oauth(ctx: &mut Tes
 /// 当 realm 禁止注册，但配置了 OAuth 提供商时，端点应返回正确的配置。
 ///
 /// **验收标准**：
-/// - registration.allowed = false
+/// - registration.enabled = false
 /// - registration.requireEmailVerification = false (默认值)
 /// - oauth_providers 包含配置的提供商
 /// - 响应状态码为 200
@@ -116,7 +116,7 @@ async fn test_scenario_public_config_registration_disabled_with_oauth(ctx: &mut 
     // 配置 realm: 禁止注册
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'false', true)
+         VALUES ($1, 'registration', 'enabled', 'false', true)
          ON CONFLICT (realm_id, config_type, config_key) DO UPDATE
          SET config_value = EXCLUDED.config_value, enabled = EXCLUDED.enabled",
     )
@@ -159,7 +159,7 @@ async fn test_scenario_public_config_registration_disabled_with_oauth(ctx: &mut 
         serde_json::from_value(response_value.clone()).unwrap();
 
     // 验证响应
-    assert!(!response_json.registration.allowed);
+    assert!(!response_json.registration.enabled);
     assert!(!response_json.registration.require_email_verification);
     assert_eq!(response_json.oauth_providers.len(), 1);
     assert_eq!(response_json.oauth_providers[0].name, "google");
@@ -176,7 +176,7 @@ async fn test_scenario_public_config_registration_disabled_with_oauth(ctx: &mut 
 ///
 /// **验收标准**：
 /// - 响应状态码为 200（端点默认返回空配置）或 404（可选）
-/// - registration.allowed = false (默认值)
+/// - registration.enabled = false (默认值)
 /// - registration.requireEmailVerification = false (默认值)
 /// - oauth_providers 为空数组
 ///
@@ -215,7 +215,7 @@ async fn test_scenario_public_config_non_existent_realm(ctx: &mut TestContext) {
         serde_json::from_value(response_value.clone()).unwrap();
 
     // 验证响应（默认值）
-    assert!(!response_json.registration.allowed);
+    assert!(!response_json.registration.enabled);
     assert!(!response_json.registration.require_email_verification);
     assert!(response_json.oauth_providers.is_empty());
 
@@ -230,8 +230,8 @@ async fn test_scenario_public_config_non_existent_realm(ctx: &mut TestContext) {
 ///
 /// **验收标准**：
 /// - 响应是有效的 JSON
-/// - 字段名称使用 camelCase (registration, allowed, requireEmailVerification, oauthProviders)
-/// - 字段类型正确（allowed/requireEmailVerification/enabled 为 boolean，oauth_providers 为数组）
+/// - 字段名称使用 camelCase (registration, enabled, requireEmailVerification, oauthProviders)
+/// - 字段类型正确（enabled/requireEmailVerification 为 boolean，oauth_providers 为数组）
 /// - 响应可以反序列化为 PublicConfigResponse 结构体
 ///
 /// **运行方式**：
@@ -247,7 +247,7 @@ async fn test_scenario_public_config_response_format(ctx: &mut TestContext) {
     // 配置 realm
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)",
+         VALUES ($1, 'registration', 'enabled', 'true', true)",
     )
     .bind(&realm_id)
     .execute(&ctx._app_state.pool)
@@ -290,7 +290,7 @@ async fn test_scenario_public_config_response_format(ctx: &mut TestContext) {
 
     // 验证 camelCase 字段名称
     assert!(body_str.contains("\"registration\""));
-    assert!(body_str.contains("\"allowed\""));
+    assert!(body_str.contains("\"enabled\""));
     assert!(body_str.contains("\"requireEmailVerification\""));
     assert!(body_str.contains("\"oauthProviders\""));
 
@@ -300,7 +300,7 @@ async fn test_scenario_public_config_response_format(ctx: &mut TestContext) {
         serde_json::from_value(response_value.clone()).unwrap();
 
     // 验证类型
-    assert!(response_json.registration.allowed);
+    assert!(response_json.registration.enabled);
     assert!(!response_json.registration.require_email_verification);
     assert_eq!(response_json.oauth_providers.len(), 1);
 

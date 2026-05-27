@@ -65,7 +65,7 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
     sqlx::query(
         r#"
         INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-        VALUES ($1, 'registration', 'allowed', 'true', true)
+        VALUES ($1, 'registration', 'enabled', 'true', true)
         ON CONFLICT (realm_id, config_type, config_key)
         DO UPDATE SET config_value = EXCLUDED.config_value, enabled = EXCLUDED.enabled
         "#,
@@ -299,7 +299,7 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     sqlx::query(
         r#"
         INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-        VALUES ($1, 'registration', 'allowed', 'true', true)
+        VALUES ($1, 'registration', 'enabled', 'true', true)
         ON CONFLICT (realm_id, config_type, config_key)
         DO UPDATE SET config_value = EXCLUDED.config_value, enabled = EXCLUDED.enabled
         "#,

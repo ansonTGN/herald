@@ -222,7 +222,7 @@ where
                         enabled: Some(true),
                         icon_url: None,
                         session_ttl_seconds: Some(1800),
-                        session_renewal_ttl_seconds: Some(300),
+                        session_renewal_ttl_seconds: Some(1800),
                         device_code_grant_enabled: None,
                     })
                     .await;
@@ -513,12 +513,14 @@ where
             "Insufficient permissions to list realms",
         )?;
 
+        let can_list_all_realms = identity.realm_id() == "admin";
+
         Ok(self
             .realm_repository
             .list_realms()
             .await?
             .into_iter()
-            .filter(|realm| identity.has_access_to_realm(&realm.id))
+            .filter(|realm| can_list_all_realms || identity.has_access_to_realm(&realm.id))
             .collect())
     }
 

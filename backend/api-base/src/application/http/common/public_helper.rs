@@ -20,7 +20,7 @@ fn public_config_query_error(message: &'static str) -> ApiError {
 /// * `pool` - Database connection pool
 /// * `realm_id` - The realm ID
 /// * `config_type` - The config type (e.g., "registration", "turnstile")
-/// * `config_key` - The config key (e.g., "allowed", "site_secret")
+/// * `config_key` - The config key (e.g., "enabled", "site_secret")
 ///
 /// # Returns
 ///

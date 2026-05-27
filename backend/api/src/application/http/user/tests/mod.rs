@@ -22,7 +22,7 @@ async fn test_get_profile_success(ctx: &mut SchemaTestContext) {
     // Enable registration for this realm
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)",
+         VALUES ($1, 'registration', 'enabled', 'true', true)",
     )
     .bind(&ctx._realm_id)
     .execute(&ctx._app_state.pool as &sqlx::PgPool)
@@ -130,7 +130,7 @@ async fn test_update_profile_nickname(ctx: &mut SchemaTestContext) {
     // Enable registration
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)",
+         VALUES ($1, 'registration', 'enabled', 'true', true)",
     )
     .bind(&ctx._realm_id)
     .execute(&ctx._app_state.pool as &PgPool)
@@ -241,7 +241,7 @@ async fn test_change_password_success(ctx: &mut SchemaTestContext) {
     // Enable registration
     sqlx::query(
         "INSERT INTO realm_config (realm_id, config_type, config_key, config_value, enabled)
-         VALUES ($1, 'registration', 'allowed', 'true', true)",
+         VALUES ($1, 'registration', 'enabled', 'true', true)",
     )
     .bind(&ctx._realm_id)
     .execute(&ctx._app_state.pool as &PgPool)
