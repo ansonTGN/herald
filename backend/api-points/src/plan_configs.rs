@@ -45,8 +45,8 @@ pub async fn list_plan_configs(
         &realm_id,
         &user_id.to_string(),
         "points",
-        "view",
-        "points.view",
+        "manage",
+        "points.manage",
     )
     .await?;
 

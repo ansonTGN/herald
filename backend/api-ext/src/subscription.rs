@@ -14,6 +14,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::authz::require_principal_permission;
 use crate::client_app_scope::ensure_client_app_scope;
 use crate::client_helper::ClientAppLookup;
 use herald_api_base::application::http::common::error_codes::ErrorCode;
@@ -115,6 +116,13 @@ pub async fn get_subscription(
             "Cross-realm access attempt blocked"
         );
         return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    if let Err(resp) =
+        require_principal_permission(&state, &identity, &client_app_realm_id, "billing", "view")
+            .await
+    {
+        return resp.into_response();
     }
 
     if let Err(resp) = ensure_client_app_scope(&state, &identity, client_app_id).await {

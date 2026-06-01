@@ -235,8 +235,8 @@ where
             ));
         }
 
-        // Non-admin users can only see their own transactions
-        let can_view_all = self.policy.can_view_points(identity.clone(), None).await;
+        // Only points managers can query across users; points.view alone is scoped to self.
+        let can_view_all = self.policy.can_manage_points(identity.clone()).await;
         if !can_view_all && let Ok(current_user_id) = identity.user_id().parse::<Uuid>() {
             // Override filters to only show current user's transactions
             let mut restricted_filters = filters;
@@ -258,10 +258,12 @@ where
         identity: Identity,
         realm_id: &str,
     ) -> Result<Vec<PointsPlanConfig>, CoreError> {
-        // Check view permissions
+        // Plan configs are billing/points management configuration.
         ensure_policy(
-            self.policy.can_view_points_configs(identity.clone()).await,
-            "Insufficient permissions to view plan configs",
+            self.policy
+                .can_manage_points_configs(identity.clone())
+                .await,
+            "Insufficient permissions to manage plan configs",
         )?;
 
         // Check realm boundary

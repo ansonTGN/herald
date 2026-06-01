@@ -123,17 +123,17 @@ async fn start_test_server(ctx: &SchemaTestContext) -> (String, tokio::task::Joi
 // ---------------------------------------------------------------------------
 
 // User Story: docs/user-stories/16-sdk-user-stories.md - US-TP-014 Scenario 1
-// Covers: API Key with clients:create in realm R -> create succeeds, returns client_id, client_secret, name
+// Covers: API Key with clients:manage in realm R -> create succeeds, returns client_id, client_secret, name
 
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_scenario_sdk_client_app_create_success(ctx: &mut SchemaTestContext) {
-    // Given: API key in realm R with clients:create permission
+    // Given: API key in realm R with clients:manage permission
     let (api_key, _key_id, _realm) = setup_api_key_with_permissions(
         ctx,
         &ctx._realm_id,
         &ctx._client_id,
-        &[("clients", "create")],
+        &[("clients", "manage")],
     )
     .await;
 
@@ -179,12 +179,12 @@ async fn test_scenario_sdk_client_app_create_success(ctx: &mut SchemaTestContext
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_scenario_sdk_client_app_create_validation_error(ctx: &mut SchemaTestContext) {
-    // Given: API key with clients:create permission
+    // Given: API key with clients:manage permission
     let (api_key, _key_id, _realm) = setup_api_key_with_permissions(
         ctx,
         &ctx._realm_id,
         &ctx._client_id,
-        &[("clients", "create")],
+        &[("clients", "manage")],
     )
     .await;
 
@@ -234,12 +234,12 @@ async fn test_scenario_sdk_client_app_create_cross_realm_forbidden(ctx: &mut Sch
         .await
         .expect("Failed to create second realm");
 
-    // Given: API key in realm A with clients:create
+    // Given: API key in realm A with clients:manage
     let (api_key, _key_id, _realm) = setup_api_key_with_permissions(
         ctx,
         &ctx._realm_id,
         &ctx._client_id,
-        &[("clients", "create")],
+        &[("clients", "manage")],
     )
     .await;
 
@@ -272,17 +272,17 @@ async fn test_scenario_sdk_client_app_create_cross_realm_forbidden(ctx: &mut Sch
 // ---------------------------------------------------------------------------
 
 // User Story: docs/user-stories/16-sdk-user-stories.md - US-TP-014 Scenario 6
-// Covers: Key lacks clients:create -> 403
+// Covers: Key lacks clients:manage -> 403
 
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_scenario_sdk_client_app_create_missing_permission(ctx: &mut SchemaTestContext) {
-    // Given: API key in realm R with clients:view only (no clients:create)
+    // Given: API key in realm R with clients:view only (no clients:manage)
     let (api_key, _key_id, _realm) = setup_api_key_with_permissions(
         ctx,
         &ctx._realm_id,
         &ctx._client_id,
-        &[("clients", "view")], // missing clients:create
+        &[("clients", "view")], // missing clients:manage
     )
     .await;
 
@@ -300,7 +300,7 @@ async fn test_scenario_sdk_client_app_create_missing_permission(ctx: &mut Schema
     // Then: returns 403 Forbidden
     assert!(
         result.is_err(),
-        "Missing clients:create permission should return error"
+        "Missing clients:manage permission should return error"
     );
     match result.unwrap_err() {
         Error::Forbidden(_) => {}
@@ -320,12 +320,12 @@ async fn test_scenario_sdk_client_app_create_missing_permission(ctx: &mut Schema
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_scenario_sdk_client_app_list_success(ctx: &mut SchemaTestContext) {
-    // Given: API key with clients:view and clients:create (to seed data)
+    // Given: API key with clients:view and clients:manage (to seed data)
     let (api_key, _key_id, _realm) = setup_api_key_with_permissions(
         ctx,
         &ctx._realm_id,
         &ctx._client_id,
-        &[("clients", "view"), ("clients", "create")],
+        &[("clients", "view"), ("clients", "manage")],
     )
     .await;
 
@@ -385,12 +385,12 @@ async fn test_scenario_sdk_client_app_list_success(ctx: &mut SchemaTestContext) 
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_scenario_sdk_client_app_detail_success(ctx: &mut SchemaTestContext) {
-    // Given: API key with clients:view and clients:create (to seed data)
+    // Given: API key with clients:view and clients:manage (to seed data)
     let (api_key, _key_id, _realm) = setup_api_key_with_permissions(
         ctx,
         &ctx._realm_id,
         &ctx._client_id,
-        &[("clients", "view"), ("clients", "create")],
+        &[("clients", "view"), ("clients", "manage")],
     )
     .await;
 

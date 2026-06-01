@@ -30,9 +30,11 @@ where
             .await?
             .get("count");
 
-    // Expected: 17 realm-admin permissions (all realm-admin permissions, including realm.manage)
+    // Expected: 22 admin-realm built-in permissions. RealmInitializationService
+    // creates 21 realm-admin permissions plus admin-only realm.manage; the user
+    // role reuses points.view and does not create another permission row.
     // All permissions are created by RealmInitializationService with is_builtin=true
-    const EXPECTED_BUILTIN_PERMISSIONS: i64 = 17;
+    const EXPECTED_BUILTIN_PERMISSIONS: i64 = 22;
 
     if permission_count >= EXPECTED_BUILTIN_PERMISSIONS {
         info!(

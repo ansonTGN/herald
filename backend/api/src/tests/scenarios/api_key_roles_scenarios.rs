@@ -10,7 +10,7 @@
 // - US-RA-006: User role assignment (API Key reuses same model)
 // - US-TP-012: API Key as principal with realm.manage via RBAC
 // - US-TP-013: API Key as principal with users.create/users.view via RBAC
-// - US-TP-014: API Key as principal with clients.create/clients.view via RBAC
+// - US-TP-014: API Key as principal with clients.manage/clients.view via RBAC
 //
 // Reference: .ai/design/api_key_and_role.md sections 4.2.1, 4.2.2, 4.5
 //

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::authz::require_principal_permission;
 use crate::client_app_scope::{ensure_client_app_scope, is_admin_api_key};
 use crate::client_helper::ClientAppLookup;
 use herald_api_base::application::http::common::error_codes::ErrorCode;
@@ -163,6 +164,12 @@ pub async fn get_subscription(
         return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
     }
 
+    if let Err(resp) =
+        require_principal_permission(&state, &identity, &realm_id, "billing", "view").await
+    {
+        return resp.into_response();
+    }
+
     // 2. Find client app by identifier to get the UUID
     let client_app_lookup = ClientAppLookup::new(state.pool.clone());
     let client_app_uuid: Uuid = match client_app_lookup
@@ -297,6 +304,12 @@ pub async fn list_plans(
         return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
     }
 
+    if let Err(resp) =
+        require_principal_permission(&state, &identity, &realm_id, "billing", "view").await
+    {
+        return resp.into_response();
+    }
+
     // 2. Query all plans for the realm
     let plans = match state
         .billing_repository
@@ -383,6 +396,12 @@ pub async fn list_plan_assignments(
             "Cross-realm access attempt blocked"
         );
         return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    if let Err(resp) =
+        require_principal_permission(&state, &identity, &realm_id, "billing", "view").await
+    {
+        return resp.into_response();
     }
 
     // 2. Find client app by identifier to get the UUID
@@ -493,6 +512,12 @@ pub async fn list_plan_assignments_batch(
             "Cross-realm access attempt blocked"
         );
         return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    if let Err(resp) =
+        require_principal_permission(&state, &identity, &realm_id, "billing", "view").await
+    {
+        return resp.into_response();
     }
 
     // 2. Parse client_app_ids from query parameter

@@ -135,11 +135,11 @@ impl TryFrom<UpdatePlanConfigInput>
         })?;
 
         if let Some(points) = input.points_per_period
-            && points < 0
+            && points <= 0
         {
             return Err(CoreError::bad_request(
                 "points_per_period",
-                "Must be non-negative",
+                "Must be greater than 0",
             ));
         }
 
@@ -326,6 +326,29 @@ mod tests {
         let input = UpdatePlanConfigInput {
             grant_period_type: None,
             points_per_period: Some(-100),
+            validity_days: None,
+            grant_on_subscribe: None,
+            max_periods: None,
+        };
+
+        assert!(input.validate().is_ok());
+        assert!(
+            <(
+                Option<String>,
+                Option<i64>,
+                Option<i64>,
+                Option<bool>,
+                Option<i64>
+            ) as std::convert::TryFrom<UpdatePlanConfigInput>>::try_from(input.clone())
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_invalid_update_plan_config_zero_points() {
+        let input = UpdatePlanConfigInput {
+            grant_period_type: None,
+            points_per_period: Some(0),
             validity_days: None,
             grant_on_subscribe: None,
             max_periods: None,

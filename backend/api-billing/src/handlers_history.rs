@@ -53,6 +53,8 @@ pub async fn get_subscription_history(
         ));
     }
 
+    crate::handlers::require_billing_permission(&state, &identity, &realm_id, "view").await?;
+
     let subscription = match state
         .billing_repository
         .find_subscription_by_id(subscription_id)
@@ -64,15 +66,6 @@ pub async fn get_subscription_history(
 
     if subscription.realm_id != realm_id {
         return Err(ApiError::not_found("Subscription not found"));
-    }
-
-    if identity.is_user()
-        && let Some(_client_app_id) = subscription.client_app_id
-        && !identity.has_access_to_realm(&realm_id)
-    {
-        return Err(ApiError::forbidden(
-            "You don't have permission to view this subscription's history".to_string(),
-        ));
     }
 
     let events = state

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::authz::require_principal_permission;
 use crate::client_app_scope::ensure_client_app_scope;
 use herald_api_base::application::http::common::error_codes::ErrorCode;
 use herald_api_base::application::http::common::error_helpers::json_error;
@@ -149,6 +150,12 @@ pub async fn get_balance_ext(
             "Cross-realm access attempt blocked"
         );
         return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    if let Err(resp) =
+        require_principal_permission(&state, &identity, &realm_id, "points", "view").await
+    {
+        return resp.into_response();
     }
 
     // 2. Extract user_id from query parameter
@@ -310,6 +317,12 @@ pub async fn consume_points_ext(
             "Cross-realm access attempt blocked"
         );
         return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    if let Err(resp) =
+        require_principal_permission(&state, &identity, &realm_id, "points", "manage").await
+    {
+        return resp.into_response();
     }
 
     // 2. Check idempotency if key is provided
@@ -573,6 +586,12 @@ pub async fn grant_points_ext(
         return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
     }
 
+    if let Err(resp) =
+        require_principal_permission(&state, &identity, &realm_id, "points", "manage").await
+    {
+        return resp.into_response();
+    }
+
     // 2. Validate amount (1 to 1,000,000)
     if request.amount <= 0 || request.amount > 1_000_000 {
         return json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidAmount);
@@ -741,6 +760,12 @@ pub async fn get_transaction_ext(
             "Cross-realm access attempt blocked"
         );
         return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    if let Err(resp) =
+        require_principal_permission(&state, &identity, &realm_id, "points", "view").await
+    {
+        return resp.into_response();
     }
 
     // 2. Parse transaction_id

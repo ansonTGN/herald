@@ -24,7 +24,7 @@
 - **[US-RA-006]** 用户角色分配（P0）-- API Key 角色分配复用同一权限模型和交互模式
 - **[US-TP-012]** 通过 SDK 管理 Realm（P1）-- API Key 需具备 `realm.manage` 权限
 - **[US-TP-013]** 通过 SDK 管理用户（P0）-- API Key 需具备 `users.create`/`users.view` 权限
-- **[US-TP-014]** 通过 SDK 管理 Client App（P1）-- API Key 需具备 `clients.create`/`clients.view` 权限
+- **[US-TP-014]** 通过 SDK 管理 Client App（P1）-- API Key 需具备 `clients.manage`/`clients.view` 权限
 
 ### 1.3 优先级汇总
 

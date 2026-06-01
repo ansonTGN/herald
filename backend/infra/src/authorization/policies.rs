@@ -159,7 +159,7 @@ impl ClientPolicy for PermissionBasedClientPolicy {
                     principal.principal_type,
                     &principal.principal_id,
                     "clients",
-                    "create",
+                    "manage",
                 )
                 .await
                 .unwrap_or_default()
