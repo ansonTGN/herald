@@ -7,6 +7,8 @@ use axum::{
 use uuid::Uuid;
 
 use crate::types::{ListWalletsQuery, PointsWalletResponse};
+use herald_api_base::application::http::auth::util::require_permission;
+use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
 use herald_api_base::application::http::common::error_codes::POINTS_UNIT;
 use herald_api_base::application::http::server::api_entities::{
     ApiError, ApiResult, ErrorResponse, PageResponse,
@@ -59,6 +61,17 @@ pub async fn list_wallets(
     Path(realm_id): Path<String>,
     Query(query): Query<ListWalletsQuery>,
 ) -> Result<ApiResult<PageResponse<PointsWalletResponse>>, ApiError> {
+    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "points wallets")?;
+    require_permission(
+        &state,
+        &realm_id,
+        &user_id.to_string(),
+        "points",
+        "view",
+        "points.view",
+    )
+    .await?;
+
     let filters = WalletFilters {
         status: query.status,
         search: query.search,
@@ -108,6 +121,17 @@ pub async fn get_wallet(
     Extension(identity): Extension<Identity>,
     Path((realm_id, user_id)): Path<(String, String)>,
 ) -> Result<Json<PointsWalletResponse>, ApiError> {
+    let _user_id = require_authenticated_user_in_realm(&identity, &realm_id, "points wallet")?;
+    require_permission(
+        &state,
+        &realm_id,
+        &_user_id.to_string(),
+        "points",
+        "view",
+        "points.view",
+    )
+    .await?;
+
     let user_uuid = user_id
         .parse::<Uuid>()
         .map_err(|_| ApiError::bad_request("Invalid user ID format"))?;

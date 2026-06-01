@@ -314,7 +314,10 @@
 - 访问控制：SDK 消耗接口需 API Key 授权（ThirdParty 身份）；管理类接口需 Realm Admin 权限；用户查询类接口仅允许查询本人数据
 - SDK 消耗积分时校验 API Key 对 client_app 的作用域（client_app_scope），确保 API Key 只能操作其授权范围内的 client_app 积分
 - 限流策略：realm 级别 100 次/分钟，user 级别 20 次/分钟
-- 管理接口权限：`plan_configs` 和 `realm_configs` handler 使用 `require_authenticated_user_in_realm` + service 层 policy 检查，通过 `points.view`/`points.manage` 权限控制访问
+- 管理接口权限：所有管理端点使用 `require_authenticated_user_in_realm` + `require_permission` 进行权限控制：
+  - 积分数据查询（wallets、transactions、user_configs、free_user_statistics）：`points.view`
+  - 积分配置管理（plan_configs、grant）：`points.manage`
+  - Realm 默认积分配置（realm_default_config）：读操作 `settings.view`，写操作 `settings.manage`
 - 积分变更必须可追溯，所有发放、消费、回收操作创建交易记录
 - Realm 隔离：所有接口严格遵守 realm 数据边界，防止跨 realm 操作
 - Webhook 回调处理需保证幂等性，防止重复发放或重复回收

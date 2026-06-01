@@ -11,6 +11,7 @@ use crate::types::{
     CreateRealmConfigRequest, FreeUserStatisticsQuery, FreeUserStatisticsResponse,
     RealmDefaultConfigResponse, UpdateRealmConfigRequest,
 };
+use herald_api_base::application::http::auth::util::require_permission;
 use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
@@ -83,7 +84,17 @@ pub async fn get_realm_default_config(
     Extension(identity): Extension<Identity>,
     Path(realm_id): Path<String>,
 ) -> Result<Json<RealmDefaultConfigResponse>, ApiError> {
-    let _ = require_authenticated_user_in_realm(&identity, &realm_id, "points configuration APIs")?;
+    let user_id =
+        require_authenticated_user_in_realm(&identity, &realm_id, "realm default config")?;
+    require_permission(
+        &state,
+        &realm_id,
+        &user_id.to_string(),
+        "settings",
+        "view",
+        "settings.view",
+    )
+    .await?;
 
     match state
         .realm_config_service
@@ -118,7 +129,17 @@ pub async fn create_realm_default_config(
     Path(realm_id): Path<String>,
     Json(request): Json<CreateRealmConfigRequest>,
 ) -> Result<Json<RealmDefaultConfigResponse>, ApiError> {
-    let _ = require_authenticated_user_in_realm(&identity, &realm_id, "points configuration APIs")?;
+    let user_id =
+        require_authenticated_user_in_realm(&identity, &realm_id, "realm default config")?;
+    require_permission(
+        &state,
+        &realm_id,
+        &user_id.to_string(),
+        "settings",
+        "manage",
+        "settings.manage",
+    )
+    .await?;
 
     // Validate request
     request
@@ -167,7 +188,17 @@ pub async fn update_realm_default_config(
     Path(realm_id): Path<String>,
     Json(request): Json<UpdateRealmConfigRequest>,
 ) -> Result<Json<RealmDefaultConfigResponse>, ApiError> {
-    let _ = require_authenticated_user_in_realm(&identity, &realm_id, "points configuration APIs")?;
+    let user_id =
+        require_authenticated_user_in_realm(&identity, &realm_id, "realm default config")?;
+    require_permission(
+        &state,
+        &realm_id,
+        &user_id.to_string(),
+        "settings",
+        "manage",
+        "settings.manage",
+    )
+    .await?;
 
     // Validate request
     request
@@ -214,7 +245,17 @@ pub async fn get_free_user_statistics(
     Path(realm_id): Path<String>,
     Query(query): Query<FreeUserStatisticsQuery>,
 ) -> Result<Json<FreeUserStatisticsResponse>, ApiError> {
-    let _ = require_authenticated_user_in_realm(&identity, &realm_id, "points configuration APIs")?;
+    let user_id =
+        require_authenticated_user_in_realm(&identity, &realm_id, "free user statistics")?;
+    require_permission(
+        &state,
+        &realm_id,
+        &user_id.to_string(),
+        "points",
+        "view",
+        "points.view",
+    )
+    .await?;
 
     let start_date = parse_optional_rfc3339(query.start_date, "startDate")?;
     let end_date = parse_optional_rfc3339(query.end_date, "endDate")?;

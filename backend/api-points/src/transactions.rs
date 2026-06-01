@@ -4,6 +4,8 @@ use axum::extract::{Extension, Path, Query, State};
 use uuid::Uuid;
 
 use crate::types::{ListTransactionsQuery, PointsTransactionResponse};
+use herald_api_base::application::http::auth::util::require_permission;
+use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
 use herald_api_base::application::http::server::api_entities::{
     ApiError, ApiResult, ErrorResponse, PageResponse,
 };
@@ -40,6 +42,17 @@ pub async fn list_transactions(
     Path(realm_id): Path<String>,
     Query(query): Query<ListTransactionsQuery>,
 ) -> Result<ApiResult<PageResponse<PointsTransactionResponse>>, ApiError> {
+    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "points transactions")?;
+    require_permission(
+        &state,
+        &realm_id,
+        &user_id.to_string(),
+        "points",
+        "view",
+        "points.view",
+    )
+    .await?;
+
     // Parse filters
     let user_id = query.user_id.and_then(|s| s.parse::<Uuid>().ok());
 

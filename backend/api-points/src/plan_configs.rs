@@ -11,6 +11,7 @@ use crate::types::{
     CreatePlanConfigRequest, ListPlanConfigsResponse, PointsPlanConfigResponse,
     UpdatePlanConfigRequest,
 };
+use herald_api_base::application::http::auth::util::require_permission;
 use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
@@ -37,7 +38,17 @@ pub async fn list_plan_configs(
     Extension(identity): Extension<Identity>,
     Path(realm_id): Path<String>,
 ) -> Result<Json<ListPlanConfigsResponse>, ApiError> {
-    let _ = require_authenticated_user_in_realm(&identity, &realm_id, "points configuration APIs")?;
+    let user_id =
+        require_authenticated_user_in_realm(&identity, &realm_id, "points configuration APIs")?;
+    require_permission(
+        &state,
+        &realm_id,
+        &user_id.to_string(),
+        "points",
+        "view",
+        "points.view",
+    )
+    .await?;
 
     match state
         .points_service
@@ -91,7 +102,17 @@ pub async fn create_plan_config(
     Path(realm_id): Path<String>,
     Json(request): Json<CreatePlanConfigRequest>,
 ) -> Result<(StatusCode, Json<PointsPlanConfigResponse>), ApiError> {
-    let _ = require_authenticated_user_in_realm(&identity, &realm_id, "points configuration APIs")?;
+    let user_id =
+        require_authenticated_user_in_realm(&identity, &realm_id, "points configuration APIs")?;
+    require_permission(
+        &state,
+        &realm_id,
+        &user_id.to_string(),
+        "points",
+        "manage",
+        "points.manage",
+    )
+    .await?;
 
     let input = CreatePlanConfigInput {
         plan_id: request.plan_id,
@@ -152,7 +173,17 @@ pub async fn update_plan_config(
     Path((realm_id, config_id)): Path<(String, String)>,
     Json(request): Json<UpdatePlanConfigRequest>,
 ) -> Result<Json<PointsPlanConfigResponse>, ApiError> {
-    let _ = require_authenticated_user_in_realm(&identity, &realm_id, "points configuration APIs")?;
+    let user_id =
+        require_authenticated_user_in_realm(&identity, &realm_id, "points configuration APIs")?;
+    require_permission(
+        &state,
+        &realm_id,
+        &user_id.to_string(),
+        "points",
+        "manage",
+        "points.manage",
+    )
+    .await?;
 
     let config_uuid = config_id
         .parse::<Uuid>()
@@ -210,7 +241,17 @@ pub async fn delete_plan_config(
     Extension(identity): Extension<Identity>,
     Path((realm_id, config_id)): Path<(String, String)>,
 ) -> Result<StatusCode, ApiError> {
-    let _ = require_authenticated_user_in_realm(&identity, &realm_id, "points configuration APIs")?;
+    let user_id =
+        require_authenticated_user_in_realm(&identity, &realm_id, "points configuration APIs")?;
+    require_permission(
+        &state,
+        &realm_id,
+        &user_id.to_string(),
+        "points",
+        "manage",
+        "points.manage",
+    )
+    .await?;
 
     let config_uuid = config_id
         .parse::<Uuid>()
