@@ -181,6 +181,7 @@ where
                 schedule.points_per_period,
                 expires_at,
                 Some(schedule.id.to_string()),
+                None, // description
             )
             .await?;
 

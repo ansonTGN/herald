@@ -174,7 +174,74 @@ Then 返回权限不足错误
 
 ---
 
+### 故事 4：通过 SDK 发放积分 [US-TP-017]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Third-Party App（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：通过 SDK 向指定用户发放积分
+**从而**：在我的平台实现积分奖励、等级提升等运营能力
+
+**【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：通过 SDK 发放积分成功**
+```gherkin
+Given SDK 已使用 API Key 初始化，且具备积分发放权限
+And 指定的用户存在于目标 Realm
+When 调用 SDK 向该用户发放 100 积分
+And 设置发放原因为 "Level up bonus"
+And 设置有效期为 30 天
+Then 返回发放成功
+And 用户的积分余额增加 100
+And 该批积分将在 30 天后过期
+```
+
+**场景 2：发放积分不设置有效期（永久有效）**
+```gherkin
+Given SDK 已使用 API Key 初始化，且具备积分发放权限
+When 调用 SDK 向用户发放积分
+And 不设置有效期
+Then 返回发放成功
+And 该批积分永久有效
+```
+
+**场景 3：积分数量必须为正数**
+```gherkin
+Given SDK 已使用 API Key 初始化
+When 调用 SDK 发放积分且数量为 0 或负数
+Then 返回参数校验错误："Points amount must be greater than 0"
+```
+
+**场景 4：缺少积分发放权限**
+```gherkin
+Given SDK 使用的 API Key 不具备积分发放权限
+When 调用 SDK 发放积分
+Then 返回权限不足错误
+```
+
+**场景 5：用户不存在**
+```gherkin
+Given SDK 已使用 API Key 初始化
+And 指定用户不存在
+When 调用 SDK 向该用户发放积分
+Then 返回未找到错误
+```
+
+**场景 6：跨 Realm 操作被拒绝**
+```gherkin
+Given SDK 使用的 API Key 属于 realm-1
+And 目标用户属于 realm-2
+When 调用 SDK 向该用户发放积分
+Then 返回权限不足错误
+```
+
+---
+
 ## 相关文档
 
 - **SDK 增强**: [docs/prd/integration/sdk.md](/docs/prd/integration/sdk.md)
 - **Client App 管理**: [docs/prd/integration/client-app.md](/docs/prd/integration/client-app.md)
+- **积分发放**: [docs/prd/billing/points-grant.md](/docs/prd/billing/points-grant.md)

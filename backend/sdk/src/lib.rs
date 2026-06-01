@@ -128,6 +128,30 @@ pub struct ConsumePointsResponse {
     pub balance_after: i64,
 }
 
+/// Points grant request
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GrantPointsRequest {
+    pub user_id: String,
+    pub amount: i64,
+    pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validity_days: Option<i64>,
+}
+
+/// Points grant response
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GrantPointsResponse {
+    pub transaction_id: String,
+    pub user_id: String,
+    pub amount: i64,
+    pub granted_balance: i64,
+    pub balance: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+}
+
 // ============================================================================
 // Realm types
 // ============================================================================
@@ -581,6 +605,54 @@ impl Client {
         let status = response.status();
         let resp = handle_response(response).await;
         debug!(status = %status, "API Response for consume_points: {:?}", resp);
+        resp
+    }
+
+    /// Grant points to a user
+    ///
+    /// # Arguments
+    ///
+    /// * `realm_id` - The realm ID
+    /// * `user_id` - The user ID to grant points to
+    /// * `amount` - The amount of points to grant (must be > 0)
+    /// * `reason` - The reason for granting points (must be non-empty)
+    /// * `validity_days` - Optional validity period in days (None = permanent)
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(GrantPointsResponse)` on success
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(Error::Unauthorized)` if the API key is invalid
+    /// Returns `Err(Error::Forbidden)` if cross-realm access or insufficient permissions
+    /// Returns `Err(Error::NotFound)` if the user is not found
+    pub async fn grant_points(
+        &self,
+        realm_id: &str,
+        user_id: &str,
+        amount: i64,
+        reason: &str,
+        validity_days: Option<i64>,
+    ) -> Result<GrantPointsResponse, Error> {
+        let url = format!("{}/api/ext/points/{}/grant", self.base_url, realm_id);
+
+        let request = GrantPointsRequest {
+            user_id: user_id.to_string(),
+            amount,
+            reason: reason.to_string(),
+            validity_days,
+        };
+
+        let response = self
+            .build_request(Method::POST, &url)
+            .json(&request)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let resp = handle_response(response).await;
+        debug!(status = %status, "API Response for grant_points: {:?}", resp);
         resp
     }
 
@@ -1562,6 +1634,113 @@ mod tests {
         match result.unwrap_err() {
             Error::Forbidden(_) => {}
             other => panic!("Expected Forbidden, got: {:?}", other),
+        }
+
+        server.verify().await;
+    }
+
+    // ========================================================================
+    // Points Grant API Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_grant_points_success() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        let user_id = uuid::Uuid::now_v7().to_string();
+        let transaction_id = uuid::Uuid::now_v7().to_string();
+        let grant_response = json!({
+            "transactionId": transaction_id,
+            "userId": user_id,
+            "amount": 100,
+            "grantedBalance": 100,
+            "balance": 150,
+            "expiresAt": null
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/api/ext/points/realm1/grant"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&grant_response))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client
+            .grant_points("realm1", &user_id, 100, "test reason", None)
+            .await;
+        assert!(
+            result.is_ok(),
+            "grant_points should succeed, got: {:?}",
+            result
+        );
+        let resp = result.unwrap();
+        assert_eq!(resp.amount, 100);
+        assert_eq!(resp.balance, 150);
+        assert_eq!(resp.granted_balance, 100);
+        assert!(resp.expires_at.is_none());
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_grant_points_with_validity() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        let user_id = uuid::Uuid::now_v7().to_string();
+        let transaction_id = uuid::Uuid::now_v7().to_string();
+        let grant_response = json!({
+            "transactionId": transaction_id,
+            "userId": user_id,
+            "amount": 200,
+            "grantedBalance": 200,
+            "balance": 200,
+            "expiresAt": "2026-07-01T00:00:00Z"
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/api/ext/points/realm1/grant"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&grant_response))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client
+            .grant_points("realm1", &user_id, 200, "campaign reward", Some(30))
+            .await;
+        assert!(
+            result.is_ok(),
+            "grant_points should succeed, got: {:?}",
+            result
+        );
+        let resp = result.unwrap();
+        assert_eq!(resp.amount, 200);
+        assert_eq!(resp.granted_balance, 200);
+        assert_eq!(resp.expires_at, Some("2026-07-01T00:00:00Z".to_string()));
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_grant_points_not_found() {
+        let server = MockServer::start().await;
+        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
+
+        Mock::given(method("POST"))
+            .and(path("/api/ext/points/realm1/grant"))
+            .respond_with(ResponseTemplate::new(404))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client
+            .grant_points("realm1", "nonexistent-user", 100, "test", None)
+            .await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::NotFound(_) => {}
+            other => panic!("Expected NotFound, got: {:?}", other),
         }
 
         server.verify().await;

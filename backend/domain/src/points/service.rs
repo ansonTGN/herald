@@ -7,7 +7,10 @@ use crate::authentication::Identity;
 use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::ensure_policy;
 use crate::points::{
-    dtos::{ConsumePointsInput, CreatePlanConfigInput, RevokePointsOutput, UpdatePlanConfigInput},
+    dtos::{
+        ConsumePointsInput, CreatePlanConfigInput, GrantPointsInput, GrantPointsOutput,
+        RevokePointsOutput, UpdatePlanConfigInput,
+    },
     entities::{
         CreditSourceType, CreditType, Paginated, PointsBalance, PointsPlanConfig,
         PointsTransaction, PointsWallet, RechargeType, RevocationType, WalletStatus,
@@ -439,6 +442,99 @@ where
         Ok(())
     }
 
+    // ===== Points Grant =====
+
+    /// Grant points to a user (admin endpoint)
+    ///
+    /// Performs permission check and realm boundary check, validates input,
+    /// then delegates to `grant_points_internal`.
+    pub async fn grant_points(
+        &self,
+        identity: Identity,
+        realm_id: &str,
+        input: GrantPointsInput,
+    ) -> Result<GrantPointsOutput, CoreError> {
+        // Permission check
+        ensure_policy(
+            self.policy.can_manage_points(identity.clone()).await,
+            "Insufficient permissions to grant points",
+        )?;
+
+        // Realm boundary check
+        if !identity.has_access_to_realm(realm_id) {
+            return Err(CoreError::Forbidden(
+                "Access denied: cannot grant points from a different realm".to_string(),
+            ));
+        }
+
+        self.execute_grant(realm_id, input).await
+    }
+
+    /// Grant points to a user (SDK/ext endpoint)
+    ///
+    /// Skips identity/policy checks -- those are handled by the caller
+    /// at the middleware level (API Key authentication).
+    pub async fn grant_points_for_sdk(
+        &self,
+        realm_id: &str,
+        input: GrantPointsInput,
+    ) -> Result<GrantPointsOutput, CoreError> {
+        self.execute_grant(realm_id, input).await
+    }
+
+    /// Shared implementation for granting points
+    async fn execute_grant(
+        &self,
+        realm_id: &str,
+        input: GrantPointsInput,
+    ) -> Result<GrantPointsOutput, CoreError> {
+        // Validate input
+        input.validate()?;
+
+        // Compute expires_at from validity_days
+        let expires_at = input
+            .validity_days
+            .map(|days| chrono::Utc::now() + chrono::Duration::days(days));
+
+        // Build description including the user-provided reason
+        let description = Some(format!(
+            "{}: {} points granted ({})",
+            input.source_type.as_str(),
+            input.amount,
+            input.reason
+        ));
+
+        // Grant points via internal method
+        let ledger_id = self
+            .grant_points_internal(
+                realm_id,
+                input.user_id,
+                CreditType::GrantedCredit,
+                input.source_type,
+                input.amount,
+                expires_at,
+                Some(input.source_id),
+                description,
+            )
+            .await?;
+
+        // Fetch the updated wallet to get current balances
+        let wallet = self
+            .repository
+            .find_by_user_id(realm_id, input.user_id)
+            .await?
+            .ok_or_else(|| CoreError::wallet_not_found(&input.user_id.to_string()))?;
+
+        Ok(GrantPointsOutput {
+            transaction_id: ledger_id,
+            user_id: input.user_id,
+            amount: input.amount,
+            granted_balance: wallet.granted_balance,
+            total_balance: wallet.total_balance,
+            expires_at,
+        })
+    }
+
     // ===== Internal Methods =====
 
     /// Create a new points wallet (internal use)
@@ -454,6 +550,7 @@ where
             total_balance: 0,
             topup_balance: 0,
             subscription_balance: 0,
+            granted_balance: 0,
             total_topup_granted: 0,
             total_subscription_granted: 0,
             total_recharged: 0,
@@ -774,7 +871,7 @@ where
     /// * `source_id` - Optional source ID for traceability
     ///
     /// # Returns
-    /// Ok(()) on success
+    /// Ok(ledger_id) on success -- the ID of the created credit ledger entry
     ///
     /// # Errors
     /// - InvalidAmount if amount <= 0
@@ -793,14 +890,15 @@ where
         amount: i64,
         expires_at: Option<chrono::DateTime<chrono::Utc>>,
         source_id: Option<String>,
-    ) -> Result<(), CoreError> {
+        description: Option<String>,
+    ) -> Result<Uuid, CoreError> {
         if amount <= 0 {
             return Err(CoreError::BadRequest(
                 "Grant amount must be positive".to_string(),
             ));
         }
 
-        let _saved_ledger = self
+        let saved_ledger = self
             .repository
             .grant_points_atomic(
                 realm_id,
@@ -810,6 +908,7 @@ where
                 amount,
                 expires_at,
                 source_id,
+                description,
             )
             .await?;
 
@@ -823,6 +922,6 @@ where
             "Points granted internally"
         );
 
-        Ok(())
+        Ok(saved_ledger.id)
     }
 }

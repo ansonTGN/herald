@@ -89,6 +89,7 @@ where
                     registration_bonus,
                     None, // expires_at = None (permanent)
                     None, // source_id
+                    None, // description
                 )
                 .await?;
 
@@ -215,6 +216,7 @@ where
                 amount,
                 expires_at,
                 Some(schedule.id.to_string()),
+                None, // description
             )
             .await?;
 

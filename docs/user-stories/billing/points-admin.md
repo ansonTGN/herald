@@ -584,11 +584,90 @@ And 我看到该用户是否已升级为付费用户
 ---
 
 
+### 故事 8：主动发放积分 [US-PO-08]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：主动向指定用户发放积分，并可设置有效期和发放原因
+**从而**：灵活运营，奖励用户或补偿异常情况
+
+**【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：向单个用户发放积分**
+```gherkin
+Given 我是 realm-1 的管理员
+And 已存在用户 "user-1"
+When 我在积分管理页面点击 "Grant Points" 按钮
+And 我填写发放信息：
+  | 用户     | user-1           |
+  | 积分数量 | 100              |
+  | 有效期   | 30 天            |
+  | 发放原因 | "Event reward"   |
+And 我提交表单
+Then 系统向 user-1 发放 100 积分
+And 系统显示成功消息："Successfully granted 100 points to user-1"
+And user-1 的积分余额增加 100
+And 交易历史中新增一笔类型为 "发放" 的记录，原因为 "Event reward"
+And 这批积分将在 30 天后过期
+```
+
+**场景 2：发放积分并设置永久有效**
+```gherkin
+Given 我是 realm-1 的管理员
+And 已存在用户 "user-1"
+When 我向 user-1 发放积分
+And 我设置有效期为 "永久有效"
+And 我提交表单
+Then 系统向 user-1 发放积分
+And 这批积分永久有效（无过期时间）
+```
+
+**场景 3：积分数量必须为正数**
+```gherkin
+Given 我是 realm-1 的管理员
+When 我尝试发放积分
+And 我设置积分数量为 0 或负数
+Then 系统显示验证错误："积分数量必须大于 0"
+And 发放操作未执行
+```
+
+**场景 4：用户不存在**
+```gherkin
+Given 我是 realm-1 的管理员
+And 指定的用户 "nonexistent-user" 不存在
+When 我尝试向该用户发放积分
+Then 系统显示错误："User not found"
+And 发放操作未执行
+```
+
+**场景 5：跨 Realm 用户不可发放**
+```gherkin
+Given 我是 realm-1 的管理员
+And 用户 "user-other-realm" 属于 realm-2
+When 我尝试向 user-other-realm 发放积分
+Then 系统显示权限不足错误
+And 发放操作未执行
+```
+
+**场景 6：发放原因必填**
+```gherkin
+Given 我是 realm-1 的管理员
+When 我尝试发放积分但不填写发放原因
+Then 系统显示验证错误："发放原因为必填项"
+And 发放操作未执行
+```
+
+---
+
 ## 用户故事优先级汇总
 
 | 优先级 | 用户故事数量 | 关键故事 |
 |--------|------------|---------|
-| P0 | 2 | US-PO-01: 配置积分套餐, US-PO-06: 配置 Realm 默认积分策略 |
+| P0 | 3 | US-PO-01: 配置积分套餐, US-PO-06: 配置 Realm 默认积分策略, US-PO-08: 主动发放积分 |
 | P1 | 3 | US-PO-02: 查看所有用户积分账户, US-PO-03: 查看用户积分交易历史, US-PO-07: 查看免费用户积分统计 |
 | P2 | 2 | US-PO-04: 管理积分套餐配置, US-PO-05: 查看套餐充值引导 |
 
@@ -600,3 +679,4 @@ And 我看到该用户是否已升级为付费用户
 - **用户故事**: [docs/user-stories/billing/points-user.md](/docs/user-stories/billing/points-user.md) - 用户积分查询用户故事
 - **用户故事**: [docs/user-stories/billing/points-free-user.md](/docs/user-stories/billing/points-free-user.md) - 免费用户积分用户故事
 - **依赖 PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - Billing 订阅计费产品需求文档
+- **依赖 PRD**: [docs/prd/billing/points-grant.md](/docs/prd/billing/points-grant.md) - 积分发放产品需求文档

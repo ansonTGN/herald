@@ -72,4 +72,10 @@ mod test_71_concurrent_consume_recharge;
 mod test_72_mixed_credit_concurrent_consume;
 mod test_73_mixed_operations_concurrent;
 
+// Admin grant points tests
+mod test_74_admin_grant_points;
+
+// Ext/SDK grant points tests
+mod test_75_ext_grant_points;
+
 pub mod fixtures;

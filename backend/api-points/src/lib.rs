@@ -2,6 +2,7 @@
 // Points, wallets, transactions, plan configs, realm configs
 
 pub mod auth_middleware;
+pub mod grant;
 pub mod plan_configs;
 pub mod realm_configs;
 pub mod routes;
@@ -26,6 +27,7 @@ pub mod wallets;
         crate::realm_configs::update_realm_default_config,
         crate::realm_configs::get_free_user_statistics,
         crate::user_configs::get_user_points_config,
+        crate::grant::grant_points,
     ),
     components(schemas(
         crate::types::ConsumePointsRequest,
@@ -43,6 +45,8 @@ pub mod wallets;
         crate::types::UpdateRealmConfigRequest,
         crate::types::UserPointsConfigResponse,
         crate::types::FreeUserStatisticsResponse,
+        crate::types::GrantPointsRequest,
+        crate::types::GrantPointsResponse,
     ))
 )]
 pub struct ApiDoc;

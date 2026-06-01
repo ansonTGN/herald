@@ -223,6 +223,28 @@ pub struct FreeUserStatisticsResponse {
     pub last_updated_at: String,
 }
 
+/// Grant points request (admin)
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GrantPointsRequest {
+    pub user_id: String,
+    pub amount: i64,
+    pub reason: String,
+    pub validity_days: Option<i64>,
+}
+
+/// Grant points response (admin)
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GrantPointsResponse {
+    pub transaction_id: Uuid,
+    pub user_id: Uuid,
+    pub amount: i64,
+    pub granted_balance: i64,
+    pub total_balance: i64,
+    pub expires_at: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -32,6 +32,7 @@ pub mod oauth_pkce_helpers;
 pub mod oauth_test_helpers;
 #[cfg(test)]
 pub mod payment_assertions;
+pub mod points_grant_helpers;
 pub mod points_helpers;
 #[cfg(test)]
 pub mod points_package_helpers;

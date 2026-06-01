@@ -5,6 +5,7 @@ use axum::{Router, routing};
 use herald_api_base::application::http::state::AppState;
 
 use super::{
+    grant::grant_points,
     plan_configs::{create_plan_config, delete_plan_config, list_plan_configs, update_plan_config},
     realm_configs::{
         create_realm_default_config, get_free_user_statistics, get_realm_default_config,
@@ -32,6 +33,7 @@ use super::{
 /// - PUT /api/points/{realmId}/default-config - Update realm default config (admin session only)
 /// - GET /api/points/{realmId}/statistics/free-users - Get free user statistics (admin session only)
 /// - GET /api/points/{realmId}/user-configs/{userId} - Get user points config (admin session only)
+/// - POST /api/points/{realmId}/grant - Grant points to user (admin session only)
 ///
 /// Note: Balance and consume endpoints have been moved to /api/ext/points/ for SDK compatibility.
 pub fn points_router() -> Router<AppState> {
@@ -61,4 +63,5 @@ pub fn points_router() -> Router<AppState> {
             "/user-configs/{userId}",
             routing::get(get_user_points_config),
         )
+        .route("/grant", routing::post(grant_points))
 }

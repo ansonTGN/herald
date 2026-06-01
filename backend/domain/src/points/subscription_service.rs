@@ -127,6 +127,7 @@ where
                 difference,
                 Some(period_end),
                 Some(new_plan_id.to_string()),
+                None, // description
             )
             .await?;
 

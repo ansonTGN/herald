@@ -1,0 +1,183 @@
+// =============================================================================
+// Points Grant Test Helpers
+// =============================================================================
+//
+// Helpers for admin grant points API tests.
+// Provides functions for building requests, calling the grant endpoint,
+// and asserting balance state in the database.
+//
+// =============================================================================
+
+#![allow(dead_code)]
+
+use crate::tests::schema_test_context::SchemaTestContext as TestContext;
+use axum::{
+    body::Body,
+    http::{Request, StatusCode, header},
+};
+use serde_json::json;
+use tower::ServiceExt;
+use uuid::Uuid;
+
+/// Build a grant points admin HTTP request with session auth.
+///
+/// Returns a Request<Body> ready to send via oneshot.
+pub fn grant_points_admin_request(
+    realm_id: &str,
+    user_id: Uuid,
+    amount: i64,
+    reason: &str,
+    validity_days: Option<i64>,
+    session_token: &str,
+) -> Request<Body> {
+    let mut body = json!({
+        "userId": user_id.to_string(),
+        "amount": amount,
+        "reason": reason,
+    });
+    if let Some(days) = validity_days {
+        body["validityDays"] = json!(days);
+    }
+
+    Request::builder()
+        .method("POST")
+        .uri(format!("/api/points/{}/grant", realm_id))
+        .header("content-type", "application/json")
+        .header(header::COOKIE, format!("X-Auth={}", session_token))
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+/// Call the admin grant endpoint via the unified test router and return
+/// the parsed GrantPointsResponse on success, or the status code on failure.
+pub async fn grant_points_admin_via_api(
+    ctx: &TestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    amount: i64,
+    reason: &str,
+    validity_days: Option<i64>,
+    session_token: &str,
+) -> (StatusCode, Option<serde_json::Value>) {
+    let app = ctx.create_unified_test_router();
+    let request = grant_points_admin_request(
+        realm_id,
+        user_id,
+        amount,
+        reason,
+        validity_days,
+        session_token,
+    );
+    let response = app.oneshot(request).await.unwrap();
+
+    let status = response.status();
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Option<serde_json::Value> = if body_bytes.is_empty() {
+        None
+    } else {
+        Some(serde_json::from_slice(&body_bytes).unwrap())
+    };
+    (status, body)
+}
+
+/// Assert granted_balance for a user matches the expected value.
+pub async fn assert_granted_balance(pool: &sqlx::PgPool, user_id: Uuid, expected: i64) {
+    let row: Option<i64> =
+        sqlx::query_scalar("SELECT granted_balance FROM points_wallets WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap();
+
+    let actual = row.unwrap_or(0);
+    assert_eq!(
+        actual, expected,
+        "granted_balance mismatch: expected {}, got {}",
+        expected, actual
+    );
+}
+
+/// Assert total_balance for a user matches the expected value.
+pub async fn assert_total_balance(pool: &sqlx::PgPool, user_id: Uuid, expected: i64) {
+    let row: Option<i64> =
+        sqlx::query_scalar("SELECT total_balance FROM points_wallets WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap();
+
+    let actual = row.unwrap_or(0);
+    assert_eq!(
+        actual, expected,
+        "total_balance mismatch: expected {}, got {}",
+        expected, actual
+    );
+}
+
+// =============================================================================
+// Ext/SDK Grant Points Helpers
+// =============================================================================
+//
+// Helpers for ext/SDK grant points API tests.
+// Uses X-API-Key header for authentication (same pattern as test_14).
+//
+// =============================================================================
+
+/// Build an ext grant points HTTP request with API Key auth.
+///
+/// Returns a Request<Body> ready to send via oneshot.
+pub fn grant_points_ext_request(
+    realm_id: &str,
+    user_id: Uuid,
+    amount: i64,
+    reason: &str,
+    validity_days: Option<i64>,
+    api_key: &str,
+) -> Request<Body> {
+    let mut body = json!({
+        "userId": user_id.to_string(),
+        "amount": amount,
+        "reason": reason,
+    });
+    if let Some(days) = validity_days {
+        body["validityDays"] = json!(days);
+    }
+
+    Request::builder()
+        .method("POST")
+        .uri(format!("/api/ext/points/{}/grant", realm_id))
+        .header("content-type", "application/json")
+        .header("X-API-Key", api_key)
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+/// Call the ext grant endpoint via the unified test router and return
+/// the status code and optional parsed response body.
+pub async fn grant_points_ext_via_api(
+    ctx: &TestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    amount: i64,
+    reason: &str,
+    validity_days: Option<i64>,
+    api_key: &str,
+) -> (StatusCode, Option<serde_json::Value>) {
+    let app = ctx.create_unified_test_router();
+    let request =
+        grant_points_ext_request(realm_id, user_id, amount, reason, validity_days, api_key);
+    let response = app.oneshot(request).await.unwrap();
+
+    let status = response.status();
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Option<serde_json::Value> = if body_bytes.is_empty() {
+        None
+    } else {
+        Some(serde_json::from_slice(&body_bytes).unwrap())
+    };
+    (status, body)
+}

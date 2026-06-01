@@ -112,6 +112,7 @@ pub enum TransactionType {
     IdempotencyRecord,
     Expiration,
     Refund,
+    Grant,
 }
 
 impl TransactionType {
@@ -130,6 +131,7 @@ impl TransactionType {
             TransactionType::IdempotencyRecord => "idempotency_record",
             TransactionType::Expiration => "expiration",
             TransactionType::Refund => "refund",
+            TransactionType::Grant => "grant",
         }
     }
 }
@@ -155,6 +157,7 @@ impl std::str::FromStr for TransactionType {
                 "idempotency_record" => Some(TransactionType::IdempotencyRecord),
                 "expiration" => Some(TransactionType::Expiration),
                 "refund" => Some(TransactionType::Refund),
+                "grant" => Some(TransactionType::Grant),
                 _ => None,
             },
         )
@@ -218,6 +221,8 @@ pub enum CreditType {
     RegistrationCredit,
     /// 免费定期积分（按周期自动发放）
     FreePeriodicCredit,
+    /// 主动发放积分（管理员或 SDK 发放）
+    GrantedCredit,
 }
 
 impl CreditType {
@@ -227,6 +232,7 @@ impl CreditType {
             CreditType::SubscriptionCredit => "subscription_credit",
             CreditType::RegistrationCredit => "registration_credit",
             CreditType::FreePeriodicCredit => "free_periodic_credit",
+            CreditType::GrantedCredit => "granted_credit",
         }
     }
 
@@ -245,15 +251,21 @@ impl CreditType {
         )
     }
 
-    /// Returns the (topup_delta, subscription_delta) balance deltas for this credit type.
+    pub fn is_granted(&self) -> bool {
+        matches!(self, CreditType::GrantedCredit)
+    }
+
+    /// Returns the (topup_delta, subscription_delta, granted_delta) balance deltas for this credit type.
     ///
-    /// Subscription credits count toward subscription balance, all other credits count toward topup balance.
-    pub fn wallet_balance_delta(&self, amount: i64) -> (i64, i64) {
+    /// Subscription credits count toward subscription balance, granted credits toward granted balance,
+    /// and all other credits count toward topup balance.
+    pub fn wallet_balance_delta(&self, amount: i64) -> (i64, i64, i64) {
         match self {
-            CreditType::SubscriptionCredit => (0, amount),
+            CreditType::SubscriptionCredit => (0, amount, 0),
+            CreditType::GrantedCredit => (0, 0, amount),
             CreditType::TopupCredit
             | CreditType::RegistrationCredit
-            | CreditType::FreePeriodicCredit => (amount, 0),
+            | CreditType::FreePeriodicCredit => (amount, 0, 0),
         }
     }
 }
@@ -270,6 +282,7 @@ impl std::str::FromStr for CreditType {
                 "subscription_credit" => Some(CreditType::SubscriptionCredit),
                 "registration_credit" => Some(CreditType::RegistrationCredit),
                 "free_periodic_credit" => Some(CreditType::FreePeriodicCredit),
+                "granted_credit" => Some(CreditType::GrantedCredit),
                 _ => None,
             },
         )
@@ -308,6 +321,10 @@ pub enum CreditSourceType {
     CancelRevoke,
     /// 升级时回收（免费用户升级到付费）
     UpgradeRevoke,
+    /// 管理员主动发放
+    AdminGrant,
+    /// SDK/第三方应用发放
+    SdkGrant,
 }
 
 impl CreditSourceType {
@@ -324,6 +341,8 @@ impl CreditSourceType {
             CreditSourceType::ExpireRevoke => "expire_revoke",
             CreditSourceType::CancelRevoke => "cancel_revoke",
             CreditSourceType::UpgradeRevoke => "upgrade_revoke",
+            CreditSourceType::AdminGrant => "admin_grant",
+            CreditSourceType::SdkGrant => "sdk_grant",
         }
     }
 }
@@ -347,6 +366,8 @@ impl std::str::FromStr for CreditSourceType {
                 "expire_revoke" => Some(CreditSourceType::ExpireRevoke),
                 "cancel_revoke" => Some(CreditSourceType::CancelRevoke),
                 "upgrade_revoke" => Some(CreditSourceType::UpgradeRevoke),
+                "admin_grant" => Some(CreditSourceType::AdminGrant),
+                "sdk_grant" => Some(CreditSourceType::SdkGrant),
                 _ => None,
             },
         )
@@ -502,9 +523,10 @@ pub struct PointsWallet {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
-    pub total_balance: i64, // Computed field: topup_balance + subscription_balance
+    pub total_balance: i64, // Computed: topup_balance + subscription_balance + granted_balance
     pub topup_balance: i64,
     pub subscription_balance: i64,
+    pub granted_balance: i64,
     pub total_topup_granted: i64,
     pub total_subscription_granted: i64,
     pub total_recharged: i64,

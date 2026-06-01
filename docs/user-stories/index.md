@@ -174,6 +174,7 @@ docs/user-stories/
 | US-TP-014 | 通过 SDK 管理 Client App | Third-Party App | P1 | [integration/sdk](integration/sdk.md#故事-3通过-sdk-管理-client-app-us-tp-014) |
 | US-TP-015 | 第三方 Web SPA 发起 SSO 登录 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-15第三方-web-spa-发起-sso-登录-us-tp-015) |
 | US-TP-016 | 第三方后端用授权码换取令牌 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-16第三方后端用授权码换取令牌-us-tp-016) |
+| US-TP-017 | 通过 SDK 发放积分 | Third-Party App | P0 | [integration/sdk](integration/sdk.md#故事-4通过-sdk-发放积分-us-tp-017) |
 
 ---
 

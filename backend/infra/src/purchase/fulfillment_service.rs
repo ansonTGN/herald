@@ -311,6 +311,7 @@ where
                 package.points,
                 None, // No expiration for purchased points
                 Some(attempt.id.to_string()),
+                None, // description
             )
             .await?;
 

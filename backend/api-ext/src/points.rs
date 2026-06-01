@@ -19,7 +19,21 @@ use herald_api_base::application::http::rate_limit::{RateLimitConfig, rate_limit
 use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::points::dtos::ConsumePointsInput;
+use herald_core::domain::points::dtos::{ConsumePointsInput, GrantPointsInput};
+use herald_core::domain::points::entities::CreditSourceType;
+
+const REALM_RATE_LIMIT_PREFIX: &str = "points:realm:";
+const USER_RATE_LIMIT_PREFIX: &str = "points:user:";
+const REALM_RATE_LIMIT: RateLimitConfig = RateLimitConfig {
+    max_requests: 100,
+    window_secs: 60,
+    enforce_in_dev: true,
+};
+const USER_RATE_LIMIT: RateLimitConfig = RateLimitConfig {
+    max_requests: 20,
+    window_secs: 60,
+    enforce_in_dev: true,
+};
 
 /// Balance response (SDK-compatible)
 #[derive(Debug, Serialize, ToSchema)]
@@ -54,6 +68,28 @@ pub struct ExtConsumePointsResponse {
     pub user_id: String,
     pub amount: i64,
     pub balance_after: i64,
+}
+
+/// Grant points request (SDK-compatible)
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtGrantPointsRequest {
+    pub user_id: String,
+    pub amount: i64,
+    pub reason: String,
+    pub validity_days: Option<i64>,
+}
+
+/// Grant points response (SDK-compatible)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtGrantPointsResponse {
+    pub transaction_id: String,
+    pub user_id: String,
+    pub amount: i64,
+    pub granted_balance: i64,
+    pub balance: i64,
+    pub expires_at: Option<String>,
 }
 
 /// Get user points balance
@@ -234,33 +270,16 @@ pub async fn consume_points_ext(
     );
 
     // 0. Apply rate limiting (parallel checks for better performance)
-    let realm_rate_limit = RateLimitConfig {
-        max_requests: 100,
-        window_secs: 60,
-        enforce_in_dev: true,
-    };
-
-    let user_rate_limit = RateLimitConfig {
-        max_requests: 20,
-        window_secs: 60,
-        enforce_in_dev: true,
-    };
-
-    // Pre-compute rate limit keys to reduce string allocations in hot path
-    const REALM_RATE_LIMIT_PREFIX: &str = "points:realm:";
-    const USER_RATE_LIMIT_PREFIX: &str = "points:user:";
-
-    // Run both rate limit checks in parallel
     let (realm_result, user_result) = tokio::join!(
         rate_limit(
             &state,
             format!("{}{}", REALM_RATE_LIMIT_PREFIX, realm_id),
-            realm_rate_limit
+            REALM_RATE_LIMIT
         ),
         rate_limit(
             &state,
             format!("{}{}:{}", USER_RATE_LIMIT_PREFIX, realm_id, request.user_id),
-            user_rate_limit
+            USER_RATE_LIMIT
         )
     );
 
@@ -449,6 +468,201 @@ pub async fn consume_points_ext(
             // Non-critical error, don't fail the request
         }
     }
+
+    Json(response).into_response()
+}
+
+/// Grant points to a user account (SDK)
+///
+/// Grants points to a user's account from a third-party application.
+/// Returns transaction details including the new balance.
+///
+/// # Authentication
+/// Requires valid API Key via X-API-Key header
+///
+/// # Realm Isolation
+/// The API key must belong to the same realm as the requested realm.
+/// Cross-realm requests will return 403 Forbidden.
+///
+/// # Example
+/// ```bash
+/// curl -X POST \
+///   https://api.example.com/api/ext/points/realm123/grant \
+///   -H "X-API-Key: your-api-key" \
+///   -H "Content-Type: application/json" \
+///   -d '{
+///     "userId": "user-123",
+///     "amount": 100,
+///     "reason": "Promotional grant"
+///   }'
+/// ```
+#[utoipa::path(
+    post,
+    path = "/api/ext/points/{realmId}/grant",
+    tag = "ext",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    request_body = ExtGrantPointsRequest,
+    responses(
+        (status = 200, description = "Points granted successfully", body = ExtGrantPointsResponse),
+        (status = 400, description = "Bad request (invalid amount, invalid user ID, empty reason)", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - Invalid or missing API Key", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Cross-realm access attempt", body = ErrorResponse),
+        (status = 404, description = "Not found - User or account not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    security(("api_key" = []))
+)]
+pub async fn grant_points_ext(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path(realm_id): Path<String>,
+    Json(request): Json<ExtGrantPointsRequest>,
+) -> Response {
+    let api_key_realm_id = identity.realm_id();
+
+    tracing::info!(
+        api_key_realm_id = %api_key_realm_id,
+        request_realm_id = %realm_id,
+        user_id = %request.user_id,
+        amount = request.amount,
+        "Points grant requested"
+    );
+
+    // 0. Apply rate limiting (realm 100/min, user 20/min)
+    let (realm_result, user_result) = tokio::join!(
+        rate_limit(
+            &state,
+            format!("{}{}", REALM_RATE_LIMIT_PREFIX, realm_id),
+            REALM_RATE_LIMIT
+        ),
+        rate_limit(
+            &state,
+            format!("{}{}:{}", USER_RATE_LIMIT_PREFIX, realm_id, request.user_id),
+            USER_RATE_LIMIT
+        )
+    );
+
+    if let Err(e) = realm_result {
+        tracing::warn!(
+            realm_id = %realm_id,
+            error = %e,
+            "Realm-level rate limit exceeded"
+        );
+        return json_error(StatusCode::TOO_MANY_REQUESTS, ErrorCode::RateLimitExceeded);
+    }
+
+    if let Err(e) = user_result {
+        tracing::warn!(
+            realm_id = %realm_id,
+            user_id = %request.user_id,
+            error = %e,
+            "User-level rate limit exceeded"
+        );
+        return json_error(StatusCode::TOO_MANY_REQUESTS, ErrorCode::RateLimitExceeded);
+    }
+
+    // 1. Check realm isolation
+    if !identity.has_access_to_realm(&realm_id) {
+        tracing::warn!(
+            api_key_realm_id = %api_key_realm_id,
+            request_realm_id = %realm_id,
+            "Cross-realm access attempt blocked"
+        );
+        return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    // 2. Validate amount (1 to 1,000,000)
+    if request.amount <= 0 || request.amount > 1_000_000 {
+        return json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidAmount);
+    }
+
+    // 3. Parse user_id as UUID
+    let user_id = match request.user_id.parse::<Uuid>() {
+        Ok(uuid) => uuid,
+        Err(_) => {
+            tracing::warn!("Invalid user ID format: {}", request.user_id);
+            return json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidUserIdFormat);
+        }
+    };
+
+    // 4. Validate reason non-empty
+    if request.reason.trim().is_empty() {
+        return json_error(StatusCode::BAD_REQUEST, ErrorCode::ValidationError);
+    }
+
+    // 5. Validate validity_days is None or > 0
+    if let Some(days) = request.validity_days
+        && days <= 0
+    {
+        return json_error(StatusCode::BAD_REQUEST, ErrorCode::ValidationError);
+    }
+
+    // 6. Determine source_id from API key identity
+    let source_id = identity
+        .as_third_party()
+        .map(|api_key| {
+            api_key
+                .client_app_id
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| api_key.id.clone())
+        })
+        .unwrap_or_default();
+
+    // 7. Build input and call service
+    let input = GrantPointsInput {
+        user_id,
+        amount: request.amount,
+        reason: request.reason,
+        validity_days: request.validity_days,
+        source_type: CreditSourceType::SdkGrant,
+        source_id,
+    };
+
+    let output = match state
+        .points_service
+        .grant_points_for_sdk(&realm_id, input)
+        .await
+    {
+        Ok(output) => output,
+        Err(e) => {
+            tracing::error!("Failed to grant points: {}", e);
+            return match e {
+                herald_core::domain::common::entities::app_errors::CoreError::Unauthorized => {
+                    json_error(StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized)
+                }
+                herald_core::domain::common::entities::app_errors::CoreError::Forbidden(_) => {
+                    json_error(StatusCode::FORBIDDEN, ErrorCode::Forbidden)
+                }
+                herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
+                    json_error(StatusCode::NOT_FOUND, ErrorCode::UserNotFound)
+                }
+                herald_core::domain::common::entities::app_errors::CoreError::BadRequest(_) => {
+                    json_error(StatusCode::BAD_REQUEST, ErrorCode::ValidationError)
+                }
+                _ => json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError),
+            };
+        }
+    };
+
+    // 8. Build response (ext convention: balance instead of totalBalance)
+    let response = ExtGrantPointsResponse {
+        transaction_id: output.transaction_id.to_string(),
+        user_id: output.user_id.to_string(),
+        amount: output.amount,
+        granted_balance: output.granted_balance,
+        balance: output.total_balance,
+        expires_at: output.expires_at.map(|dt| dt.to_rfc3339()),
+    };
+
+    tracing::info!(
+        transaction_id = %output.transaction_id,
+        user_id = %output.user_id,
+        amount = output.amount,
+        balance = output.total_balance,
+        "Points granted successfully"
+    );
 
     Json(response).into_response()
 }

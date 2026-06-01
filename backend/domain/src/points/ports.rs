@@ -83,14 +83,17 @@ pub enum WalletUpdate {
         total: i64,
         topup: i64,
         subscription: i64,
+        granted: i64,
     },
     Grant {
         topup: i64,
         subscription: i64,
+        granted: i64,
     },
     Revocation {
         topup: i64,
         subscription: i64,
+        granted: i64,
     },
 }
 
@@ -599,6 +602,7 @@ pub trait PointsRepository: Send + Sync {
         amount: i64,
         expires_at: Option<chrono::DateTime<chrono::Utc>>,
         source_id: Option<String>,
+        description: Option<String>,
     ) -> impl Future<Output = Result<PointsCreditLedger, CoreError>> + Send;
 
     fn recharge_points_atomic(
