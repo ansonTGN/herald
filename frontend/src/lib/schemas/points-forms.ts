@@ -45,6 +45,23 @@ export const accountFiltersSchema = z.object({
 export type AccountFilters = z.infer<typeof accountFiltersSchema>
 
 /**
+ * Schema for granting points to a user
+ */
+export const grantPointsSchema = z.object({
+  userId: z.string().min(1, 'User is required'),
+  amount: z.number().int('Amount must be an integer').min(1, 'Amount must be at least 1'),
+  reason: z.string().min(1, 'Reason is required'),
+  validityDays: z
+    .number()
+    .int('Validity days must be an integer')
+    .min(1, 'Validity days must be at least 1')
+    .nullable()
+    .optional(),
+})
+
+export type GrantPointsFormData = z.infer<typeof grantPointsSchema>
+
+/**
  * Schema for realm default configuration
  *
  * ⚠️ Note: This schema matches the backend API response.
