@@ -1,31 +1,67 @@
 # Integrating a Third-Party Backend with Herald
 
-Herald is a standalone authentication and billing service. Your backend delegates user registration, login, permissions, and billing to Herald and focuses on business logic.
+Herald handles users, login, permissions, and billing. Your backend only writes business logic, calling Herald's authentication and billing interfaces through the SDK.
 
 ```
 Browser -> Your Frontend -> Your Backend -> Herald SDK -> Herald Service
-                                            (verify token, check perms, deduct points)
+                |                       (verify token, check perms, deduct points)
+              OAuth redirect -> Herald login page -> callback to your backend -> set cookie
 ```
 
 Your backend never connects to Herald's database. All interaction goes through HTTP API, with SDK-side caching.
 
-## Prerequisites
+## 1. Prerequisites
 
-Complete these steps in the Herald admin console before writing code.
+Complete these steps in the Herald admin console before writing code:
 
-**Create a realm.** A realm is a tenant boundary. All users, permissions, and billing live within a realm. Note the `realm_id` -- you'll pass it to every SDK call.
+1. Create a realm (tenant) and note the `realm_id`
+2. Create a client app under that realm and note the `client_id`
+3. Generate an API Key for the realm. The secret is shown once. Store it somewhere your backend can read at startup -- config file or secret manager, not hardcoded. Choose the client app this backend serves; if left empty, Herald binds the key to `admin-api-client`
+4. Define permission points in `resource:action` format, e.g. `product:read`, `device:manage`
+5. Create roles and assign permission points to them
+6. Create an admin user and assign roles
 
-**Create a client app** under that realm. A client app represents your service (web admin panel, mobile app, CLI tool). Note the `client_id`. If you need different login behaviors (session duration, redirect URIs), create separate client apps for each.
+See [Design Your Permission Model](#design-your-permission-model) for step 4.
 
-**Generate an API Key** for the realm. Choose the client app this backend serves. If you leave it empty, Herald binds the key to `admin-api-client`. The secret is shown once. Store it somewhere your backend can read at startup -- environment variable or secret manager, not hardcoded.
+## 2. Backend Integration
 
-**Define permission points.** Permissions use a `resource:action` format. You define what resources and actions exist based on your domain. Herald stores and enforces them. The action hierarchy matters: `manage` covers `view`, `create`, and `manage` itself. `create` only covers `create`. `view` only covers `view`. Hierarchy only applies within the same resource.
+### Configuration
 
-**Create roles and assign permissions.** Bundle permission points into roles. A "product admin" role might have `product.manage`, which implicitly grants `product.view` and `product.create`.
+Add a `[herald]` section to your service config:
 
-**Create an admin user and assign the role.** This user will be the first person who can log into your admin panel.
+```toml
+[herald]
+base_url = "http://127.0.0.1:13000"
+api_key = "sk-your-api-key"
+realm_id = "my-app"
+client_id = "admin-web-console"
+```
 
-## Backend Integration
+| Field | Description |
+|-------|-------------|
+| `base_url` | Herald address. Use container name inside Docker networks |
+| `api_key` | API key generated in Herald admin console |
+| `realm_id` | Your service's realm |
+| `client_id` | The client app identifier from prerequisites |
+
+Wrap the config in `Option<HeraldConfig>`. When absent, the entire auth system is disabled:
+
+```rust
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HeraldConfig {
+    pub base_url: String,
+    pub api_key: String,
+    pub realm_id: String,
+    pub client_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct Config {
+    // ... other fields
+    #[serde(default)]
+    pub herald: Option<HeraldConfig>,
+}
+```
 
 ### Install the SDK
 
@@ -34,112 +70,316 @@ Complete these steps in the Herald admin console before writing code.
 herald-sdk = "0.1"
 ```
 
-### Initialize the Client
+### Initialization
 
-Create the SDK client at application startup with Herald's address and your API key:
+Create the SDK client at startup based on config. When `Option<Arc<Client>>` is `None`, routes won't get the auth middleware:
 
 ```rust
-use herald_sdk::Client;
-use std::sync::Arc;
-use std::time::Duration;
-
-let herald_client = Arc::new(Client::new(
-    "http://127.0.0.1:3000".to_string(),  // Herald address
-    "your-api-key".to_string(),            // API Key
-    Some(Duration::from_secs(300)),        // Cache TTL, default 5 min
-));
+let herald_client = config.herald.as_ref().map(|herald| {
+    Arc::new(herald_sdk::Client::new(
+        herald.base_url.clone(),
+        herald.api_key.clone(),
+        None,  // default 5-minute cache
+    ))
+});
 ```
 
-The API key authenticates your backend to Herald. The SDK sends it as the `X-API-Key` header on every request.
+The third argument is cache duration. `None` means 300 seconds. The SDK automatically invalidates cached entries when a token expires.
 
-API keys also carry a client app scope. A key bound to `admin-api-client` is realm-wide and can access resources for any client app in that realm. A key bound to an ordinary client app can only access permission checks, subscriptions, and points for that client app. Disabling a client app immediately disables the API keys bound to it.
+The API key authenticates your backend to Herald. Store it in config or environment variables, never hardcode it. API keys carry a client app scope: a key bound to `admin-api-client` can access all client apps in the realm; a key bound to an ordinary client app can only access that app's permission checks, subscriptions, and points.
 
-The cache duration of 5 minutes is fine for most cases. The SDK tracks when it last saw a token and automatically invalidates cached permission checks when that token reaches the 5-minute threshold. You don't need to manage cache invalidation yourself.
+### Auth Config Endpoint
 
-### Write an Auth Middleware
-
-The middleware extracts the `X-Auth` token from cookies, maps the request path to a permission rule (resource + action), and asks Herald whether the user is allowed through.
+Your frontend needs to know whether Herald is enabled. Provide a public endpoint:
 
 ```rust
-use axum::{
-    extract::{Request, State},
-    middleware::Next,
-    response::Response,
-};
-use herald_sdk::{Client, PermissionCheckRequest, Rule};
-
-#[derive(Clone)]
-pub struct AuthState {
-    pub herald_sdk: Arc<Client>,
-    pub client_id: String,
+#[derive(Serialize)]
+pub struct AuthConfigResponse {
+    pub enabled: bool,
+    pub login_url: Option<String>,
+    pub herald_login_url: Option<String>,
 }
 
-pub async fn auth_middleware(
-    State(state): State<AuthState>,
+// GET /api/auth/config
+pub async fn get_auth_config(State(state): State<Arc<AppState>>) -> Json<AuthConfigResponse> {
+    let herald = &state.config.herald;
+    Json(AuthConfigResponse {
+        enabled: herald.is_some(),
+        login_url: herald.as_ref().map(|_| "/api/auth/oauth/start".to_string()),
+        herald_login_url: herald.as_ref().map(|h| {
+            format!("{}/{}/auth/login", h.base_url.trim_end_matches('/'), h.realm_id)
+        }),
+    })
+}
+```
+
+Frontend calls this once at startup. `enabled: false` means skip all auth logic.
+
+### OAuth Backend Handlers
+
+SPAs use OAuth 2.1 Authorization Code + PKCE. Your backend needs two handlers: `oauth_start` to initiate login, `oauth_callback` to receive the redirect.
+
+#### oauth_start: Initiate Login
+
+```rust
+// GET /api/auth/oauth/start?redirect=/devices
+pub async fn oauth_start(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<OAuthStartQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let herald = state.config.herald.as_ref()?;
+
+    let (app_origin, return_to) = resolve_app_origin_and_return_to(&headers, query.redirect)?;
+    let redirect_uri = format!("{app_origin}/api/auth/oauth/callback");
+    let oauth_state = random_token(32);
+    let code_verifier = random_token(64);
+    let code_challenge = pkce_challenge(&code_verifier);
+
+    let authorize_url = format!(
+        "{}/api/oauth/{}/authorize?client_id={}&redirect_uri={}&state={}&response_type=code&code_challenge={}&code_challenge_method=S256",
+        herald.base_url.trim_end_matches('/'),
+        herald.realm_id,
+        herald.client_id,
+        urlencoding::encode(&redirect_uri),
+        oauth_state,
+        code_challenge,
+    );
+
+    // Store OAuth state in a cookie, valid for 5 minutes
+    let oauth_cookie = encode_oauth_cookie(&OAuthCookie {
+        state: oauth_state,
+        code_verifier,
+        return_to,
+        redirect_uri,
+    });
+
+    Ok((
+        StatusCode::FOUND,
+        [
+            (header::LOCATION, authorize_url),
+            (header::SET_COOKIE, build_cookie("APP_OAUTH", &oauth_cookie, 300)),
+        ],
+    ))
+}
+```
+
+Four things happen here:
+
+1. Generate `code_verifier` (random string) and `code_challenge` (SHA256 hash, base64url-encoded)
+2. Build Herald's authorize URL and redirect the user there
+3. Store `{state, code_verifier, return_to, redirect_uri}` encoded in an `APP_OAUTH` cookie
+4. `return_to` remembers the user's original page for the callback redirect
+
+#### oauth_callback: Handle Redirect
+
+```rust
+// GET /api/auth/oauth/callback?code=xxx&state=yyy
+pub async fn oauth_callback(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<OAuthCallbackQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let herald = state.config.herald.as_ref()?;
+
+    // 1. Retrieve OAuth state from cookie, verify state to prevent CSRF
+    let oauth_cookie_value = get_cookie(&headers, "APP_OAUTH").ok_or(ApiError::unauthorized)?;
+    let oauth_cookie = decode_oauth_cookie(&oauth_cookie_value)?;
+    if oauth_cookie.state != query.state {
+        return Err(ApiError::unauthorized());
+    }
+
+    // 2. Exchange authorization code + code_verifier for token
+    let token = exchange_oauth_code(
+        herald.base_url.trim_end_matches('/'),
+        &herald.realm_id,
+        &herald.client_id,
+        &query.code,
+        &oauth_cookie.redirect_uri,
+        &oauth_cookie.code_verifier,
+    ).await?;
+
+    // 3. Set X-Auth cookie, clear OAuth state cookie, redirect to original page
+    let mut headers = HeaderMap::new();
+    headers.insert(header::LOCATION, HeaderValue::from_str(&oauth_cookie.return_to)?);
+    headers.append(header::SET_COOKIE, HeaderValue::from_str(&build_cookie("X-Auth", &token.access_token, token.expires_in))?);
+    headers.append(header::SET_COOKIE, HeaderValue::from_str(&clear_cookie("APP_OAUTH"))?);
+
+    Ok((StatusCode::FOUND, headers))
+}
+```
+
+`exchange_oauth_code` sends a POST to Herald's token endpoint:
+
+```rust
+async fn exchange_oauth_code(
+    herald_base_url: &str, realm_id: &str, client_id: &str,
+    code: &str, redirect_uri: &str, code_verifier: &str,
+) -> Result<TokenResponse, ApiError> {
+    let url = format!("{herald_base_url}/api/oauth/{realm_id}/token");
+    let response = reqwest::Client::new()
+        .post(url)
+        .json(&serde_json::json!({
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": client_id,
+            "code_verifier": code_verifier,
+        }))
+        .send().await?;
+    // ...
+}
+```
+
+PKCE's security comes from `code_verifier` only existing in your backend's cookie -- it never passes through the frontend URL. Authorization codes are single-use: Herald atomically reads and deletes them with `GETDEL`, so a second exchange attempt fails.
+
+#### Cookie Helpers
+
+```rust
+fn build_cookie(name: &str, value: &str, max_age_seconds: i64) -> String {
+    format!("{name}={value}; Path=/; Max-Age={max_age_seconds}; HttpOnly; SameSite=Lax")
+}
+
+fn clear_cookie(name: &str) -> String {
+    format!("{name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
+}
+
+fn get_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+    let cookies = headers.get(header::COOKIE)?.to_str().ok()?;
+    cookies.split(';').find_map(|cookie| {
+        let (cookie_name, value) = cookie.trim().split_once('=')?;
+        (cookie_name == name && !value.is_empty()).then(|| value.to_string())
+    })
+}
+
+fn pkce_challenge(code_verifier: &str) -> String {
+    let digest = sha2::Sha256::digest(code_verifier.as_bytes());
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest)
+}
+```
+
+### Auth Middleware
+
+The middleware extracts the token from cookies, maps the request path to a permission rule, and calls Herald to check.
+
+```rust
+use axum::extract::State;
+use axum::http::{Method, Request, header};
+use axum::middleware::Next;
+use axum::response::{IntoResponse, Response};
+use herald_sdk::{Client, Error, PermissionCheckRequest, Rule};
+use std::sync::Arc;
+
+#[derive(Clone)]
+pub struct HeraldAuthState {
+    pub herald_sdk: Arc<Client>,
+    pub client_id: Arc<str>,
+}
+
+pub async fn herald_auth_middleware(
+    State(auth_state): State<HeraldAuthState>,
     mut request: Request,
     next: Next,
 ) -> Response {
-    let token = extract_token(&request);
-    let Some(token) = token else {
-        return (axum::http::StatusCode::UNAUTHORIZED, "missing token").into_response();
+    // 1. Extract token from cookie
+    let Some(token) = extract_auth_token(&request) else {
+        return ApiError::unauthorized().into_response();
     };
 
-    let rule = match extract_rule(request.uri().path(), request.method()) {
-        Some(r) => r,
-        None => return (axum::http::StatusCode::FORBIDDEN, "unrecognized path").into_response(),
+    // 2. Map request path to permission rule
+    let Some(rule) = extract_permission(request.uri().path(), request.method()) else {
+        return ApiError::forbidden().into_response();
     };
 
-    let result = state.herald_sdk
+    // 3. Check with Herald
+    let response = auth_state.herald_sdk
         .check_permission(PermissionCheckRequest {
             token,
             rules: Some(vec![rule]),
-            client_id: state.client_id.clone(),
+            client_id: auth_state.client_id.to_string(),
         })
         .await;
 
-    match result {
-        Ok(resp) if resp.allowed => {
-            if let Some(user_id) = resp.user_id {
-                request.extensions_mut().insert(CurrentUser { user_id });
-            }
+    match response {
+        // Allowed: inject user_id into request extensions
+        Ok(permission) if permission.allowed => {
+            let Some(user_id) = permission.user_id else {
+                return ApiError::unauthorized().into_response();
+            };
+            request.extensions_mut().insert(CurrentUser { user_id });
             next.run(request).await
         }
-        Ok(_) => (axum::http::StatusCode::FORBIDDEN, "permission denied").into_response(),
-        Err(_) => (axum::http::StatusCode::SERVICE_UNAVAILABLE, "auth unavailable").into_response(),
+        // Session not found or expired: allowed=false, user_id=None
+        Ok(permission) if permission.user_id.is_none() => {
+            ApiError::unauthorized().into_response()
+        }
+        // Authenticated but lacks permission: allowed=false, user_id=Some(...)
+        Ok(_) => ApiError::forbidden().into_response(),
+        // Herald error: distinguish 401/403/other
+        Err(error) => classify_auth_error(&error).into_response(),
     }
+}
+
+fn classify_auth_error(error: &Error) -> ApiError {
+    match error {
+        Error::Unauthorized(_) => ApiError::unauthorized(),
+        Error::Forbidden(_) => ApiError::forbidden(),
+        _ => ApiError::service_unavailable("auth service unavailable"),
+    }
+}
+
+fn extract_auth_token(request: &Request) -> Option<String> {
+    let cookies = request.headers().get(header::COOKIE)?.to_str().ok()?;
+    cookies.split(';').find_map(|cookie| {
+        let (name, value) = cookie.trim().split_once('=')?;
+        (name == "X-Auth" && !value.is_empty()).then(|| value.to_string())
+    })
 }
 ```
 
-When Herald is down, the middleware returns 503. This is intentional. Never let unauthenticated requests through because the auth service is unavailable -- a temporary outage is better than a security hole.
+The three rejection scenarios mean different things:
+
+| Condition | Herald returns | Your backend returns | Frontend behavior |
+|-----------|---------------|---------------------|-------------------|
+| Cookie missing or token invalid | `allowed=false, user_id=None` | 401 | Redirect to login |
+| User has session but no permission | `allowed=false, user_id=Some(...)` | 403 | Show permission denied |
+| Herald service unavailable | Network error or 500 | 503 | Show service unavailable |
+
+503, not passthrough. If the auth service is down, processing requests means bypassing auth.
 
 ### Design Your Permission Model
 
-Permissions have two dimensions: resource and action. You define them; Herald stores and enforces.
-
-Example for an IoT platform:
-
-| Path prefix           | Resource | HTTP method         | Action  |
-|-----------------------|----------|---------------------|---------|
-| `/admin/product*`     | `product`| GET                 | `read`  |
-| `/admin/product*`     | `product`| POST, PUT, DELETE   | `write` |
-| `/admin/device*`      | `device` | GET                 | `read`  |
-| `/admin/device*`      | `device` | POST, PUT, DELETE   | `write` |
+Permissions have two dimensions: **resource** and **action**. You define them; Herald stores and enforces.
 
 Path-to-permission mapping happens in your middleware. Herald only answers one question: can this user do `product:read`?
 
 ```rust
-fn extract_rule(path: &str, method: &Method) -> Option<Rule> {
-    let resource = if path.starts_with("/admin/product") {
+pub fn extract_permission(path: &str, method: &Method) -> Option<Rule> {
+    // Strip /api prefix if present -- the middleware runs inside a nest("/api", ...)
+    let path = path.strip_prefix("/api").unwrap_or(path);
+
+    let resource = if path.starts_with("/admin/product")
+        || path.starts_with("/admin/valid")
+        || path.starts_with("/admin/file")
+    {
         "product"
-    } else if path.starts_with("/admin/device") {
+    } else if path.starts_with("/admin/device")
+        || path.starts_with("/admin/property")
+        || path.starts_with("/admin/event")
+        || path.starts_with("/admin/alarm-rule")
+        || path.starts_with("/admin/alarm")
+    {
         "device"
+    } else if path.starts_with("/admin/ca") || path.starts_with("/admin/ota") {
+        "cert"
     } else {
         return None;
     };
 
     let action = match *method {
         Method::GET => "read",
-        _ => "write",
+        Method::POST | Method::PUT | Method::PATCH | Method::DELETE => "write",
+        _ => return None,
     };
 
     Some(Rule {
@@ -149,49 +389,138 @@ fn extract_rule(path: &str, method: &Method) -> Option<Rule> {
 }
 ```
 
-The action hierarchy in Herald works like this: if a role has `product:manage`, the user passes permission checks for `product:view`, `product:create`, and `product:manage`. If the role only has `product:create`, it only passes `product:create` -- not `product:view`. Granting `manage` is usually simpler than granting individual actions.
+After defining your mapping, configure the resource/action pairs as permission points in the Herald admin console. Create roles, assign permissions, assign roles to users.
 
-After defining your permission model, configure these resource/action pairs as permission points in the Herald admin console. Create roles that bundle those permissions, then assign roles to users.
+Herald has built-in action hierarchy: `manage` covers `view`, `create`, and `manage` itself. `create` only covers `create`. `view` only covers `view`. Custom actions (like `admin`) only match themselves. If a user has `product:manage`, middleware requests for `product:read` will pass.
 
-### Mount on Routes
+### Route Wiring
 
-Only apply the auth middleware to routes that need it. Health checks and webhook receivers typically don't.
+Routes split into three groups: auth endpoints, public routes, and protected admin routes.
 
 ```rust
-let protected_routes = axum::Router::new()
-    .route("/admin/product", get(list_products))
-    .route("/admin/device", get(list_devices))
-    .layer(axum::middleware::from_fn_with_state(
-        AuthState {
-            herald_sdk: herald_client,
-            client_id: "my-service-admin".to_string(),
-        },
-        auth_middleware,
-    ));
+pub fn create_router(
+    config: Arc<Config>,
+    herald_client: Option<Arc<herald_sdk::Client>>,
+) -> Router {
+    // Auth endpoints: public, no Herald auth needed
+    let auth_routes = Router::new()
+        .route("/auth/config", get(get_auth_config))
+        .route("/auth/oauth/start", get(oauth_start))
+        .route("/auth/oauth/callback", get(oauth_callback));
 
-let public_routes = axum::Router::new()
-    .route("/health", get(health_check))
-    .route("/webhook/device", post(device_webhook));
+    // Public routes: health checks, webhooks
+    let public_routes = Router::new()
+        .route("/health", get(health_check))
+        .route("/webhook/device", post(device_webhook));
 
-let app = axum::Router::new()
-    .merge(protected_routes)
-    .merge(public_routes);
+    // Admin routes: require Herald auth
+    let admin_routes = Router::new()
+        .route("/admin/product", get(list_products).post(create_product))
+        .route("/admin/device", get(list_devices));
+
+    // Conditional mounting: only add auth middleware when Herald is configured
+    let admin_routes = match (config.herald.as_ref(), herald_client) {
+        (Some(herald_config), Some(herald_sdk)) => {
+            admin_routes.layer(axum::middleware::from_fn_with_state(
+                HeraldAuthState {
+                    herald_sdk,
+                    client_id: herald_config.client_id.clone().into(),
+                },
+                herald_auth_middleware,
+            ))
+        }
+        (_, _) => admin_routes,
+    };
+
+    Router::new()
+        .merge(auth_routes)
+        .merge(public_routes)
+        .merge(admin_routes)
+}
 ```
 
-The `client_id` in `AuthState` tells Herald which client app this permission check is for. Use the `client_id` you created in the prerequisites.
+The `match` branch is the key. Without `[herald]` in config, `herald_client` is `None` and admin routes get no middleware -- all management endpoints are accessible without auth. This is useful for local development or isolated intranet environments.
 
-## Resource Management via SDK
+## 3. Frontend Integration
 
-API keys act as principals in Herald's RBAC system. Assign roles and permissions to an API key the same way you would for a user, and the key can perform the corresponding operations through the SDK. Roles do not bypass client app scope: an ordinary client app key cannot access another client app's permission checks, subscriptions, or points.
+The frontend handles three things: detect auth state, redirect to login, handle 401 responses.
+
+### Detect Auth State
+
+```typescript
+interface AuthConfig {
+  enabled: boolean
+  login_url: string | null
+  herald_login_url?: string | null
+}
+
+let cachedAuthConfig: AuthConfig | null = null
+
+async function getAuthConfig(): Promise<AuthConfig> {
+  if (cachedAuthConfig) return cachedAuthConfig
+  const res = await fetch('/api/auth/config')
+  cachedAuthConfig = await res.json()
+  return cachedAuthConfig
+}
+```
+
+Call `/api/auth/config` once at startup. If `enabled: false`, skip all auth logic.
+
+### Check Login Status
+
+```typescript
+export async function checkAuth(): Promise<boolean> {
+  const config = await getAuthConfig()
+  if (!config.enabled) return true
+
+  // Probe with a lightweight admin endpoint
+  const response = await fetch('/api/admin/product?page=1&page_size=1', {
+    credentials: 'include',
+  })
+  return response.status !== 401
+}
+```
+
+No dedicated "check login" endpoint. A real admin endpoint does double duty as a login probe.
+
+### Handle 401
+
+```typescript
+let isRedirecting = false
+
+export function handle401(): void {
+  if (isRedirecting) return
+  isRedirecting = true
+
+  const loginUrl = new URL(cachedAuthConfig?.login_url || '/', window.location.origin)
+  loginUrl.searchParams.set('redirect', window.location.href)
+  window.location.href = loginUrl.toString()
+}
+```
+
+`isRedirecting` prevents multiple concurrent 401s from triggering duplicate redirects. The redirect URL includes the current page so OAuth callback returns the user here.
+
+Wire it into an API interceptor:
+
+```typescript
+apiClient.interceptors.response.use(
+  response => response,
+  error => {
+    if (error.response?.status === 401) {
+      handle401()
+    }
+    return Promise.reject(error)
+  }
+)
+```
+
+## 4. Resource Management via SDK
+
+API keys are principals in Herald's RBAC system. Assign roles and permissions to a key, and SDK calls through that key can perform the corresponding operations. Roles don't bypass client app scope.
 
 ### Manage Realms
 
-Realm creation requires the API key to belong to the admin realm and have the `realm:create` permission.
-
 ```rust
-use herald_sdk::{CreateRealmSdkRequest, AdminUserSdkInput};
-
-// Create a realm
 let realm = herald_client.create_realm(CreateRealmSdkRequest {
     name: "my-app".to_string(),
     description: Some("My application".to_string()),
@@ -201,207 +530,64 @@ let realm = herald_client.create_realm(CreateRealmSdkRequest {
     },
 }).await?;
 
-// List accessible realms
 let realms = herald_client.list_realms().await?;
-
-// Get realm details
 let realm = herald_client.get_realm("my-realm").await?;
 ```
-
-Every realm needs an admin user at creation time. The `admin_user` field is required, not optional.
 
 ### Manage Users
 
 ```rust
-use herald_sdk::CreateUserSdkRequest;
-
-// Create a user
 let user = herald_client.create_user("my-realm", CreateUserSdkRequest {
     email: "user@example.com".to_string(),
     password: "secure-password".to_string(),
     nickname: Some("johndoe".to_string()),
 }).await?;
 
-// List users
 let users = herald_client.list_users("my-realm").await?;
-
-// Get user details
-let user = herald_client.get_user("my-realm", &user.id).await?;
+let user = herald_client.get_user("my-realm", &user_id).await?;
 ```
 
 ### Manage Client Apps
 
 ```rust
-use herald_sdk::CreateClientAppSdkRequest;
-
-// Create a client app
 let app = herald_client.create_client_app("my-realm", CreateClientAppSdkRequest {
     name: "Mobile App".to_string(),
     description: Some("iOS and Android app".to_string()),
     redirect_uris: vec!["https://app.example.com/callback".to_string()],
 }).await?;
 
-// List client apps
 let apps = herald_client.list_client_apps("my-realm").await?;
-
-// Get client app details
-let app = herald_client.get_client_app("my-realm", "app-001").await?;
+let app = herald_client.get_client_app("my-realm", "my-mobile-app").await?;
 ```
 
-The server generates the `client_id` when you create a client app. Check the `client_id` field in the response.
+Prefer an API key bound to the client app your backend serves. Use the `admin-api-client` key only for cross-client-app management.
 
-All SDK operations are scoped to the API key's realm. The API key determines what you can access -- there is no way to escape the realm boundary through the SDK. If your backend serves one client app, prefer an API key bound to that client app. Use the default `admin-api-client` key only for realm-level management across client apps.
+## 5. Points System
 
-## Frontend OAuth Login
-
-### OAuth 2.1 + PKCE Flow (for SPAs)
-
-Standard three-legged OAuth with PKCE. Your SPA never handles passwords directly.
-
-Step 1: Your SPA generates a `code_verifier` (random string) and computes `code_challenge` (SHA256 of the verifier, base64url-encoded without padding).
-
-Step 2: Redirect the user's browser to:
-
-```
-GET /api/oauth/{realmId}/authorize?client_id=your-client-id&redirect_uri=https://app.example.com/callback&state=random-state&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256&response_type=code
-```
-
-Step 3: The user logs in at Herald's login page. After authentication, Herald redirects back to your `redirect_uri` with `?code=authorization-code&state=random-state`.
-
-Step 4: Your backend exchanges the authorization code for a token:
-
-```
-POST /api/oauth/{realmId}/token
-Content-Type: application/json
-
-{
-    "grant_type": "authorization_code",
-    "code": "authorization-code",
-    "redirect_uri": "https://app.example.com/callback",
-    "client_id": "your-client-id",
-    "code_verifier": "original-plaintext-verifier"
-}
-```
-
-Step 5: The response:
-
-```json
-{
-    "access_token": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b",
-    "token_type": "Bearer",
-    "expires_in": 1800
-}
-```
-
-Step 6: Set the `access_token` as an `X-Auth` cookie (`httpOnly`, `secure`, `sameSite=Lax`) for subsequent requests. Your frontend never reads this token directly -- the browser sends it automatically.
-
-The `state` parameter prevents CSRF attacks. The `code_challenge` (PKCE) prevents code interception attacks even if someone captures the authorization code from the redirect URL. Authorization codes are single-use -- Herald atomically deletes the code when exchanging it for a token.
-
-### Device Code Flow (for IoT / CLI)
-
-For devices without a browser -- CLI tools, embedded hardware, IoT devices.
-
-Step 1: Request a device code:
-
-```
-POST /api/device/{realmId}/authorize
-Content-Type: application/x-www-form-urlencoded
-
-client_id=your-client-id
-```
-
-Note: the device code grant must be enabled on the client app (`device_code_grant_enabled`). It's disabled by default.
-
-Step 2: The response:
-
-```json
-{
-    "device_code": "0192a3b4-c5d6-...",
-    "user_code": "BCDF-GHJK",
-    "verification_uri": "https://herald.example.com/my-realm/device",
-    "verification_uri_complete": "https://herald.example.com/my-realm/device/BCDF-GHJK",
-    "expires_in": 900,
-    "interval": 5
-}
-```
-
-Step 3: Display the `user_code` and `verification_uri` to the user on whatever output is available. The user opens the URL on another device with a browser, enters the code, and authorizes.
-
-Step 4: Your device polls the token endpoint every `interval` seconds (5 by default):
-
-```
-POST /api/device/{realmId}/token
-Content-Type: application/x-www-form-urlencoded
-
-grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=0192a3b4-c5d6-...
-```
-
-While the user hasn't authorized yet, you get `authorization_pending`. If you poll too fast, you get `slow_down` and the required interval increases by 5 seconds. Once the user approves, the endpoint returns the access token.
-
-The device code expires after 900 seconds (15 minutes). If it expires before the user authorizes, start over with a new device code request.
-
-### Session Management
-
-The cookie name is `X-Auth`. Herald sets it with `httpOnly`, `secure` (in production), and `sameSite=Lax` attributes.
-
-Default session TTL is 1800 seconds (30 minutes), configurable per client app via `session_ttl_seconds`. The OAuth token endpoint reads the same `session_ttl_seconds` from the client app config, defaulting to 1800 seconds as well.
-
-**Sliding renewal** extends sessions for active users. When `session_renewal_ttl_seconds` is set on a client app, Herald's identity middleware checks the remaining TTL on each request. If the remaining TTL drops below `renewal_ttl / 2`, the middleware extends the session to the full renewal TTL and refreshes the cookie.
-
-Three common strategies:
-
-- **Strict timeout**: `session_ttl=300, renewal_ttl=null` (or omitted) -- 5-minute hard timeout, no renewal. Good for sensitive admin panels.
-- **Relaxed (infinite while active)**: `session_ttl=28800, renewal_ttl=28800` -- 8-hour session that renews on every request. The user stays logged in as long as they're active. Good for internal tools.
-- **Progressive**: `session_ttl=300, renewal_ttl=7200` -- starts at 5 minutes, extends to 2 hours after the first renewal. Balances security and convenience.
-
-Handle session expiry in your frontend with a 401 interceptor:
-
-```typescript
-apiClient.interceptors.response.use(
-    response => response,
-    error => {
-        if (error.response?.status === 401) {
-            window.location.href = '/api/auth/config'
-        }
-        return Promise.reject(error)
-    }
-)
-```
-
-The `/api/auth/config` endpoint on your backend returns the Herald login URL. Use an `isRedirecting` flag to prevent multiple concurrent 401 responses from triggering duplicate redirects.
-
-## Points System
-
-For usage-based billing -- API call counts, token consumption, credits.
-
-### Check Balance
+For usage-based billing (API call counts, token consumption, credits).
 
 ```rust
+// Check balance
 let balance = herald_client.get_balance("my-realm", &user_id).await?;
 println!("Balance: {} {}", balance.balance, balance.unit);
-```
 
-### Consume Points
-
-```rust
+// Consume points
 let result = herald_client.consume_points(
     "my-realm",
     &user_id,
-    "my-client-app",    // your client_app_id
-    100,                 // deduct 100 points
+    "my-client-app",
+    100,
     Some("AI API call".to_string()),
-    Some("unique-request-id".to_string()),  // idempotency key
+    Some("unique-request-id".to_string()),
 ).await?;
 println!("Balance after: {}", result.balance_after);
 ```
 
-Always pass an `idempotency_key`. Generate a unique one per logical operation (UUID v7 works well). On network timeout retries, the same key prevents double-charging. The response includes `balance_after` so you can check remaining balance without a separate query.
+Always pass an `idempotency_key`. On network timeout retries, the same key prevents double-charging. When using an ordinary client app API key, `client_app_id` must be that key's bound client app.
 
-When the SDK uses an ordinary client app API key, the `client_app_id` here must be the key's bound client app. An `admin-api-client` key can consume points for any client app in the same realm.
+## 6. Subscription System
 
-## Subscription System
-
-Query a client app's subscription status to gate features:
+Query a client app's subscription status:
 
 ```rust
 let sub = herald_client.get_subscription("my-realm", "my-client-app").await?;
@@ -410,9 +596,7 @@ if sub.status == "active" {
 }
 ```
 
-An ordinary client app API key can only query the subscription for its bound client app. An `admin-api-client` key can query any client app in the same realm.
-
-List available plans to show upgrade options:
+List available plans:
 
 ```rust
 let plans = herald_client.list_plans("my-realm").await?;
@@ -421,29 +605,33 @@ for plan in &plans {
 }
 ```
 
-## Deployment
+Plans are configured in the Herald admin console. Payment is handled between Herald and the payment provider; your backend only queries status and plans via SDK.
 
-### Configuration
-
-Your service needs four settings, typically from environment variables or a config file:
-
-| Setting     | Example                | Description                                              |
-|-------------|------------------------|----------------------------------------------------------|
-| `base_url`  | `http://herald:3000`   | Herald address. Use container name inside Docker networks. |
-| `api_key`   | `sk_xxxx...`           | API key generated in Herald admin console.                |
-| `realm_id`  | `my-app`               | Your service's realm.                                     |
-| `client_id` | `my-app-admin`         | Client identifier for your admin panel.                   |
+## 7. Deployment
 
 ### Cookie Sharing Requirements
 
-Herald and your service must share a host or root domain for browser cookies to work. The `X-Auth` cookie is set by Herald and needs to reach your backend. Common deployment patterns:
+Herald sets the `X-Auth` cookie in the browser after login. Your backend middleware needs to read this cookie, so Herald and your service must share a host or root domain.
 
-**Same host, different ports.** `127.0.0.1:3000` (Herald) and `127.0.0.1:8080` (your service). Works in development. Herald sets `Domain=localhost` in dev mode.
+Three deployment patterns:
 
-**Reverse proxy with unified entry.** Caddy or Nginx routes `/auth` to Herald and `/` to your service. Both appear on the same domain. This is the recommended production setup.
+- **Same host, different ports** (`127.0.0.1:3000` and `127.0.0.1:8080`) -- easiest for development
+- **Reverse proxy** (Caddy or Nginx routes `/auth` to Herald, `/` to your service) -- recommended for production
+- **Same root domain subdomains** (`auth.example.com` and `app.example.com`) -- requires cookie domain configuration
 
-**Same root domain subdomains.** `auth.example.com` (Herald) and `app.example.com` (your service). Requires configuring the cookie domain to `.example.com`.
+### Session Management
 
-### Running Without Herald
+Cookie name: `X-Auth`, attributes: `httpOnly`, `secure` (production), `sameSite=Lax`. Default session TTL is 1800 seconds (30 minutes), configurable per client app via `session_ttl_seconds`.
 
-For local development or isolated intranets where Herald isn't deployed, skip SDK client initialization. Your admin API runs without authentication. Other auth mechanisms (device HMAC, API key auth, etc.) are unaffected since they don't depend on Herald sessions.
+Sliding renewal: when `session_renewal_ttl_seconds` is set, Herald's identity middleware checks remaining TTL on each request. If remaining TTL <= `renewal_ttl / 2`, the session extends to the full renewal TTL.
+
+Three renewal strategies:
+
+| Strategy | Config | Effect |
+|----------|--------|--------|
+| Strict | `session_ttl=300, renewal_ttl=null` | 5-minute hard timeout, no renewal |
+| Relaxed | `session_ttl=28800, renewal_ttl=28800` | 8 hours, active users never expire |
+| Progressive | `session_ttl=300, renewal_ttl=7200` | 5 minutes initially, extends to 2 hours on first renewal |
+
+Progressive works well for admin panels: short sessions for quick tasks, auto-renewal for extended use, expire when the browser closes.
+

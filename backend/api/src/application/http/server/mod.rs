@@ -52,6 +52,12 @@ pub struct HealthCheckResponse {
 /// Sub-crate specs are merged at runtime via build_openapi_spec()
 #[derive(OpenApi)]
 #[openapi(
+    info(
+        title = "Herald API",
+        version = env!("CARGO_PKG_VERSION"),
+        description = "Herald Authentication & Authorization Platform API",
+        license(name = "MIT")
+    ),
     paths(
         realm_config::list_realm_configs,
         realm_config::list_realm_configs_by_type,
