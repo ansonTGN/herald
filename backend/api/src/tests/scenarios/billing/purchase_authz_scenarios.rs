@@ -1,5 +1,6 @@
 use crate::tests::helpers::auth_helpers::create_admin_session_with_user;
 use crate::tests::helpers::billing_helpers::create_test_plan;
+use crate::tests::helpers::points_helpers::create_points_wallet;
 use crate::tests::helpers::points_package_helpers::{
     create_payment_attempt, create_points_package,
 };
@@ -90,6 +91,8 @@ mod tests {
             true,
         )
         .await;
+
+        create_points_wallet(ctx, user_id, &realm_id).await;
 
         let attempt_id = create_payment_attempt(
             ctx,

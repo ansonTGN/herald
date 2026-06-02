@@ -2,11 +2,11 @@
  * Stripe Payment Comprehensive Demo Tests
  *
  * User Stories:
- * - docs/user-stories/06-billing-user-stories.md:
+ * - docs/user-stories/billing/subscription.md:
  *   - US-BI-001: Create Stripe Subscription Plan
  *   - US-BI-004: Assign Stripe Plan to Client App
  *   - US-BI-007: View Subscription Change History (Including Stripe Payment Events)
- * - docs/user-stories/07-payment-provider-user-stories.md:
+ * - docs/user-stories/billing/payment-provider.md:
  *   - US-PP-001: Configure Stripe Payment Provider
  *   - US-PP-002: View Payment Provider Configuration
  *

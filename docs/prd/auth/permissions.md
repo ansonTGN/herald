@@ -126,7 +126,6 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 | 权限项 | 资源 | 动作 | 说明 |
 |--------|------|------|------|
 | dashboard.view | dashboard | view | 查看 Dashboard 统计 |
-| realm.view | realm | view | 查看 Realm 信息 |
 | users.view | users | view | 查看用户 |
 | users.manage | users | manage | 用户管理 |
 | clients.view | clients | view | 查看客户端应用 |
@@ -151,7 +150,8 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 
 | 权限项 | 资源 | 动作 | 说明 |
 |--------|------|------|------|
-| realm.manage | realm | manage | Realm 创建、更新、删除（仅 admin realm） |
+| realm.view | realm | view | 查看 Realm 列表（前端 Realms 菜单可见性） |
+| realm.manage | realm | manage | Realm 创建、删除（仅 admin realm） |
 
 **user 权限清单**:
 
@@ -179,17 +179,18 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 | 权限项 | 原用途 | 替代方案 |
 |--------|--------|---------|
 | `realm.admin` | 宽泛的管理端权限 | 各模块具体的 `resource.view` / `resource.manage` |
-| `realm.create` | Realm 创建 | `realm.manage`（统一管理权限） |
+| `realm.create` | Realm 创建 | `realm.manage`（仅限创建/删除 Realm，不含编辑其他 Realm 元数据） |
 | `realm.admin:{realm_id}` 特殊策略 | 判断是否能进入管理端 | 具体权限检查 + `Identity::has_access_to_realm` |
 
 **Realm 操作权限**:
 
 | 操作 | 权限 |
 |------|------|
-| List realms | `realm.view` |
-| View realm detail | `realm.view` |
+| List realms | `realm.view` in admin realm（Super Admin only） |
+| View own realm detail | 无需权限（登录即可查看） |
+| View other realm detail | `realm.manage` in admin realm |
 | Create realm | `realm.manage` in admin realm |
-| Update realm metadata | `settings.manage` for own realm, or `realm.manage` in admin realm |
+| Update realm metadata | `settings.manage` for own realm only（cross-realm editing not allowed） |
 | Delete realm | `realm.manage` in admin realm |
 
 ### 4.2 关键状态与异常
@@ -197,7 +198,6 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 - 默认角色（`realm-admin`、`user`）和默认权限受内置保护，不能被删除；内置角色的名称不可修改，描述(description)可修改（`US-BP-001`）
 - 权限属于 Realm 级别，跨 Realm 访问必须拒绝
 - 权限检查遵循 `resource.action` 精确匹配和层级规则，不做前端特例判断
-- **[待修复]** `permission_definitions/delete.rs` 查询权限时仅按 `id` 过滤，未校验 `realm_id`，存在跨 Realm 删除风险
 
 **API 架构说明**:
 
@@ -272,7 +272,7 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 | 菜单 | 权限 |
 |-------|------|
 | Dashboard | `dashboard.view` |
-| Realms | `realm.view` |
+| Realms | `realm.view`（仅 admin realm） |
 | Clients | `clients.view` |
 | Users | `users.view` |
 | Permissions | `permissions.view` |

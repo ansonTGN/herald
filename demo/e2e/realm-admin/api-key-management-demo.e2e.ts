@@ -2,9 +2,10 @@
  * API Key Management Demo Tests
  *
  * User Stories:
- * - API Key CRUD Lifecycle (Create -> Reveal -> Copy -> Done -> Edit -> Delete)
- * - API Key with Expiration Date
- * - Toggle Enabled Status from List
+ * - US-RA-016: API Key CRUD Lifecycle (Create -> Reveal -> Copy -> Done -> Edit -> Delete)
+ * - US-RA-017: API Key with Expiration Date
+ * - US-RA-018: Toggle Enabled Status from List
+ * @see ../../../docs/user-stories/core/realm-admin.md
  *
  * Test Structure:
  * 1. Complete API Key Lifecycle (Create -> Reveal -> Copy -> Done -> Edit -> Delete)

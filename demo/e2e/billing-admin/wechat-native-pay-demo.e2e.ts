@@ -2,7 +2,7 @@
  * WeChat Pay Configuration Demo Tests
  *
  * User Stories:
- * - docs/user-stories/09-wechat-pay-user-stories.md:
+ * - docs/user-stories/billing/wechat-pay.md:
  *   - US-WP-005: User scans QR code to pay
  *
  * Design Doc: .ai/design/wechat-pay.md

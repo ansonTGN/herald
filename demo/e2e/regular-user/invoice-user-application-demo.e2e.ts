@@ -8,7 +8,7 @@
  * - US-IV-012: Admin reviews and issues user-applied invoice
  *
  * Design Doc: .ai/design/invoice.md
- * User Stories: docs/user-stories/13-invoice-user-stories.md
+ * User Stories: docs/user-stories/billing/invoice.md
  *
  * Session switching:
  * - Admin operations: loginAsAdmin -> navigate to /{realmId}/manage/billing/invoices

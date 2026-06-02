@@ -498,10 +498,14 @@ where
     }
 
     async fn get_realm(&self, identity: Identity, id: String) -> Result<Realm, CoreError> {
-        let can_read_other_realms = self.policy.can_read_realm(identity.clone()).await;
-        let can_read_target = id == identity.realm_id() || can_read_other_realms;
-
-        ensure_policy(can_read_target, "Insufficient permissions to read realm")?;
+        // Self-realm: any authenticated user can view own realm basic info
+        // Cross-realm: requires realm.manage in admin realm
+        if id != identity.realm_id() {
+            ensure_policy(
+                self.policy.can_create_realm(identity.clone()).await,
+                "Insufficient permissions to view other realm",
+            )?;
+        }
 
         self.realm_repository.get_realm_by_id(&id).await
     }
@@ -547,11 +551,17 @@ where
         id: String,
         request: UpdateRealmRequest,
     ) -> Result<Realm, CoreError> {
-        // Boundary check: allow self-realm update OR master admin via policy
-        let can_update_other_realms = self.policy.can_update_realm(identity.clone()).await;
-        let can_update_target = id == identity.realm_id() || can_update_other_realms;
+        // Only self-realm editing is allowed, requires settings.manage
+        // Cross-realm editing is NOT allowed even for Super Admin (realm.manage is for create/delete only)
         ensure_policy(
-            can_update_target,
+            id == identity.realm_id(),
+            "Insufficient permissions to update realm",
+        )?;
+
+        ensure_policy(
+            self.policy
+                .can_update_own_realm_settings(identity.clone())
+                .await,
             "Insufficient permissions to update realm",
         )?;
 

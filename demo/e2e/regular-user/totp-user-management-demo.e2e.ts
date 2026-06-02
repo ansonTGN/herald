@@ -1,7 +1,7 @@
 /**
  * Regular User TOTP Management Demo Tests
  *
- * 用户故事: docs/user-stories/05-totp-user-stories.md
+ * 用户故事: docs/user-stories/auth/totp.md
  * 设计文档: .ai/design/totp-authentication-frontend-and-demo.md
  *
  * 测试场景：

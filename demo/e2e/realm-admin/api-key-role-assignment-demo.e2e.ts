@@ -1,7 +1,7 @@
 /**
  * API Key Role Assignment Demo Test
  *
- * User Story: API Key Role Assignment Lifecycle
+ * User Story: US-RA-017 — API Key Role Assignment Lifecycle
  * - Create API Key without roles, verify em-dash badge
  * - Verify API Key defaults to the admin-api-client Client App scope
  * - Create role with realm:view permission, assign to API Key
@@ -10,6 +10,7 @@
  * - Remove role, verify badge reverts to em-dash
  * - Verify ext API returns 403 after role removal
  *
+ * @see ../../../docs/user-stories/core/realm-admin.md
  * @see .ai/task/api_key_and_role/demo/dev/DM-D02-role-assignment-demo.md
  */
 

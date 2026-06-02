@@ -150,6 +150,10 @@ mod realm_admin_tests {
             false
         }
 
+        async fn can_update_own_realm_settings(&self, _identity: Identity) -> bool {
+            false
+        }
+
         async fn can_list_realms(&self, _identity: Identity) -> bool {
             false
         }

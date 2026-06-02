@@ -123,10 +123,12 @@ Realm（域）是 Herald 系统中的多租户隔离单位，每个用户、客�
 
 **权限要求**
 
-- **查看 Realm 列表**：拥有 `realm.view` 权限的已认证用户（当前返回所有 realms，未按用户所属过滤，已知限制）
+- **查看 Realm 列表**：仅 Super Admin（admin realm 中拥有 `realm.view` 权限的用户）
+- **查看自己 Realm 详情**：无需权限（登录即可查看）
 - **切换 Realm**：用户需要有访问目标 realm 的权限（通过用户-realm 关联检查）
 - **创建 Realm**：需要 Admin Realm 的 `realm.manage` 权限
-- **编辑 Realm**：本 realm 管理员可编辑自己 realm 的元数据；Admin realm 管理员拥有 `realm.manage` 权限可编辑任何 realm 的元数据（但不可管理其他 realm 的内部资源）
+- **查看其他 Realm**：需要 Admin Realm 的 `realm.manage` 权限（普通 Realm Admin 只能查看自己 Realm）
+- **编辑 Realm**：仅可编辑自己 Realm 的元数据，需要 `settings.manage` 权限（即使 Super Admin 也不能编辑其他 Realm 的元数据）
 - **删除 Realm**：不提供该功能（当前限制）
 
 **Realm ID 验证规则**
@@ -163,8 +165,8 @@ Realm（域）是 Herald 系统中的多租户隔离单位，每个用户、客�
 ### 5.1 核心需求
 
 - **Realm 创建**：Admin Realm 管理员可创建新 Realm，指定 Realm ID（可选，留空自动生成 UUID v7，格式为字母数字、连字符和下划线，3-36 个字符）、名称、管理员 email 和密码；系统自动初始化 RBAC 基础设施、客户端应用和管理员用户
-- **Realm 列表查看**：拥有 `realm.view` 权限的已认证用户可查看 Realm 列表，支持分页、排序和搜索（当前返回所有 realms，未按用户所属过滤，已知限制）
-- **Realm 详情查看**：Admin Realm 管理员可查看 Realm 的基本信息（Realm ID、名称、创建时间、更新时间）
+- **Realm 列表查看**：仅 Super Admin（admin realm 中拥有 `realm.view` 权限）可查看 Realm 列表，支持分页、排序和搜索
+- **Realm 详情查看**：任何已认证用户可查看自己 Realm 的基本信息；Super Admin 可查看其他 Realm 详情
 - **Realm 编辑**：可修改名称和描述，Realm ID 不可修改
 - **Realm 导航与访问**：通过 URL 路径 `/$realmId/*` 访问特定 Realm 的管理界面；后端验证用户权限，实现跨 Realm 的导航隔离
 - **多 Realm 数据隔离**：所有数据操作限定在当前 Realm 范围内，不同 Realm 之间严格隔离
@@ -184,9 +186,9 @@ Realm（域）是 Herald 系统中的多租户隔离单位，每个用户、客�
 
 **适用性**: 适用
 
-- Realm 管理能力的访问边界：Realm 创建、列表查询、详情查询、编辑更新均受权限控制
-- 创建 Realm 需要 Admin Realm 的 `realm.manage` 权限；列表查询需要 `realm.view` 权限（当前返回所有 realms，未按用户所属过滤，已知限制）
-- 编辑操作：本 realm 管理员可编辑自己 realm；Admin realm 管理员拥有 `realm.manage` 权限可编辑任何 realm 的元数据（但不可管理内部资源）
+- Realm 管理能力的访问边界：Realm 创建、列表查询、编辑更新均受权限控制；查看自己 Realm 详情无需权限
+- 创建 Realm 需要 Admin Realm 的 `realm.manage` 权限；列表查询需要 admin realm 的 `realm.view` 权限（仅 Super Admin）
+- 编辑操作：仅可编辑自己 realm 的元数据，需要 `settings.manage` 权限（即使 Super Admin 也不能编辑其他 Realm 的元数据）
 - 所有 Realm 相关接口必须遵守 realm 隔离原则，确保数据不跨 realm 泄露
 - 敏感操作（如创建 Realm 时传入管理员密码）需遵循安全传输和存储要求
 - 详细接口契约、验证规则和错误模型应在技术设计文档中维护

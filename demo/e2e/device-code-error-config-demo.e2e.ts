@@ -21,7 +21,7 @@
  * API Exception: deviceAuthorize and deviceTokenPoll are CLI-side API endpoints
  * with no browser UI. Direct API calls are intentional.
  *
- * @see docs/user-stories/15-device-code-user-stories.md
+ * @see docs/user-stories/auth/device-code.md
  */
 
 import { test, expect, cleanupTestData } from './fixtures/demo-page.fixtures'

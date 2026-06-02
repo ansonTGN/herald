@@ -18,8 +18,8 @@
 //
 // Routes:
 //   POST /api/realms                       — requires realm.manage
-//   PUT  /api/realms/{realmId}             — requires realm.manage (cross-realm)
-//   GET  /api/realms                       — requires realm.view
+//   PUT  /api/realms/{realmId}             — self-realm only, requires settings.manage
+//   GET  /api/realms                       — requires realm.view (admin realm only)
 //
 // =============================================================================
 
@@ -213,19 +213,22 @@ async fn test_scenario_realm_view_cannot_create(ctx: &mut TestContext) {
 }
 
 // =============================================================================
-// Scenario 3: realm.manage grants update of another realm (US-AR-001)
+// Scenario 3: cross-realm update is NOT allowed even with realm.manage (US-AR-001)
 // =============================================================================
 
 /// User Story: docs/user-stories/core/admin-realm.md — Story 1 (US-AR-001)
-/// Covers: User with realm.manage permission can update another realm
+/// Covers: Even Super Admin (realm.manage) cannot update another realm's metadata
 ///
 /// Given a user in the admin realm with ONLY realm.manage permission,
 ///   and a target realm exists (not the user's own realm),
 /// When calling PUT /api/realms/{realmId} with updated name,
-/// Then response is 200 OK.
+/// Then response is 403 Forbidden.
+///
+/// Note: realm.manage is for create/delete only. Cross-realm metadata editing
+/// is not allowed — each realm's admin edits their own realm with settings.manage.
 #[test_context(TestContext)]
 #[tokio::test]
-async fn test_scenario_realm_manage_grants_update(ctx: &mut TestContext) {
+async fn test_scenario_realm_manage_cannot_update_other_realm(ctx: &mut TestContext) {
     let app = ctx.create_unified_test_router();
 
     // Given: first set up a full admin to create a target realm
@@ -271,7 +274,7 @@ async fn test_scenario_realm_manage_grants_update(ctx: &mut TestContext) {
         .invalidate_realm_cache(&ctx._realm_id)
         .await;
 
-    // When: updating the target realm
+    // When: attempting to update the target realm
     let update_req = Request::builder()
         .method("PUT")
         .uri(format!("/api/realms/{}", target_realm_id))
@@ -279,8 +282,8 @@ async fn test_scenario_realm_manage_grants_update(ctx: &mut TestContext) {
         .header("content-type", "application/json")
         .body(Body::from(
             json!({
-                "name": "Updated Target Realm",
-                "description": "Updated via realm.manage permission"
+                "name": "Should Not Update",
+                "description": "Should fail with 403"
             })
             .to_string(),
         ))
@@ -288,11 +291,11 @@ async fn test_scenario_realm_manage_grants_update(ctx: &mut TestContext) {
 
     let resp = app.clone().oneshot(update_req).await.unwrap();
 
-    // Then: 200 OK
+    // Then: 403 Forbidden — cross-realm editing is not allowed
     assert_eq!(
         resp.status(),
-        StatusCode::OK,
-        "User with realm.manage should be able to update another realm"
+        StatusCode::FORBIDDEN,
+        "Cross-realm editing should be forbidden even with realm.manage — only self-realm editing with settings.manage is allowed"
     );
 }
 

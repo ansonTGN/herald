@@ -2,7 +2,7 @@
  * Shopify Payment Configuration Flow Demo Tests
  *
  * User Stories:
- * - docs/user-stories/08-shopify-pay-user-stories.md:
+ * - docs/user-stories/billing/shopify-pay.md:
  *   - US-PP-007: Configure Shopify Payment Platform
  *   - US-PP-008: View Shopify Configuration
  *   - US-PP-009: Edit Shopify Configuration

@@ -2,7 +2,7 @@
  * WeChat Pay Provider Configuration Demo Tests
  *
  * User Stories:
- * - docs/user-stories/09-wechat-pay-user-stories.md:
+ * - docs/user-stories/billing/wechat-pay.md:
  *   - US-WP-001: Configure WeChat Pay platform
  *   - US-WP-002: View WeChat Pay configuration
  *   - US-WP-003: Edit WeChat Pay configuration

@@ -12,7 +12,7 @@
  * - US-BI-007: Third-party App Query Plans (SDK returns payment_providers)
  *
  * Design Document: .ai/design/fix-plan-pay.md
- * User Stories: docs/user-stories/06-billing-user-stories.md
+ * User Stories: docs/user-stories/billing/subscription.md
  *
  * Test Strategy:
  * - Single comprehensive test with multiple test.steps

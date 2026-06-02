@@ -427,19 +427,6 @@ When 该用户尝试执行以下操作：
 Then 只有查看操作能正常执行
 ```
 
-**场景 3：create 不隐含 view**
-```gherkin
-Given 我是 realm-1 的管理员
-And 已存在角色 "user-creator"
-And 我为该角色仅分配 "users.create" 权限
-And 用户拥有 "user-creator" 角色
-When 该用户尝试执行以下操作：
-  | 操作 | 预期结果 |
-  | 创建用户 | 成功 |
-  | 查看用户列表 | 失败 |
-Then 只有创建操作能正常执行
-```
-
 ---
 
 ### 故事 10：查看 Dashboard 用户活跃概览 [US-RA-010]

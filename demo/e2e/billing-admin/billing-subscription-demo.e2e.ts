@@ -2,11 +2,12 @@
  * Billing Subscription Demo Tests
  *
  * User Story:
- * - US-BI-005: View Subscription List
+ * - US-BI-006: View Subscription List
  *
- * P2 Scenarios Added:
- * - US-BI-005 Scene 2: Filter subscriptions by status
- * - US-BI-005 Scene 3: View single subscription details
+ * 测试覆盖:
+ * - US-BI-006 Scene 1: 验证空订阅页面显示 ✅
+ * - US-BI-006 Scene 2: Filter subscriptions by status (commented out, pending subscription API)
+ * - US-BI-006 Scene 3: View single subscription details (commented out, pending subscription API)
  *
  * Design Doc: .ai/design/subscription-billing.md
  *
@@ -42,10 +43,10 @@ test.describe('[Billing Admin] Subscription View Demo Tests', () => {
   })
 
   // ============================================================================
-  // User Story US-BI-005: View Subscription List
+  // User Story US-BI-006: View Subscription List
   // ============================================================================
 
-  test.describe('US-BI-005: View Subscription List', () => {
+  test.describe('US-BI-006: View Subscription List', () => {
     test('should view subscription page (no subscription)', async ({
       page,
       loginPage,
@@ -115,7 +116,7 @@ test.describe('[Billing Admin] Subscription View Demo Tests', () => {
   })
 
   // ============================================================================
-  // P2 场景: US-BI-005 场景 2 - Filter subscriptions by status
+  // P2 场景: US-BI-006 场景 2 - Filter subscriptions by status
   // NOTE: 功能未实现 - 需要订阅列表页面和筛选功能
   // ============================================================================
 
@@ -131,7 +132,7 @@ test.describe('[Billing Admin] Subscription View Demo Tests', () => {
   */
 
   // ============================================================================
-  // P2 场景: US-BI-005 场景 3 - View single subscription details
+  // P2 场景: US-BI-006 场景 3 - View single subscription details
   // NOTE: 功能未实现 - 需要订阅列表表格和详情页面
   // ============================================================================
 

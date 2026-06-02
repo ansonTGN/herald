@@ -11,7 +11,7 @@
  * - Scenario 7: Regular user accessing admin dashboard (permission denied)
  * - Scenario 8: Logout and redirect
  *
- * @see docs/user-stories/03-regular-user-user-stories.md#US-RU-009
+ * @see docs/user-stories/core/regular-user.md#US-RU-009
  * @note Uses the 'admin' realm for all test scenarios
  */
 

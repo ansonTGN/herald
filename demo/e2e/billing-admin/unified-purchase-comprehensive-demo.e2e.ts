@@ -1,6 +1,12 @@
 /**
  * Unified Purchase - Comprehensive Demo Test
  *
+ * User Stories:
+ * - US-PU-006: Admin creates points package with payment provider configurations
+ * - US-PU-007: User purchases points package via payment provider
+ * - US-PU-008: Purchase history verification
+ * @see ../../../docs/user-stories/billing/points-package-purchase.md
+ *
  * Demonstrates the complete unified purchase flow for points packages:
  * 1. Admin creates points package with payment provider configurations
  * 2. User purchases points package via WeChat Pay

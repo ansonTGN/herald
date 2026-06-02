@@ -19,7 +19,7 @@
  * Uses fixtures from demo-page.fixtures for auto-login and navigation.
  * Cross-page navigation is done via sidebar clicks (AuditPage.goto).
  *
- * @see ../../../docs/user-stories/14-audit-user-stories.md
+ * @see ../../../docs/user-stories/core/audit.md
  */
 
 import { test, expect, cleanupTestData } from '../fixtures/demo-page.fixtures'

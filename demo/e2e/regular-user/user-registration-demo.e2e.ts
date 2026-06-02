@@ -1,7 +1,7 @@
 /**
  * User Registration Demo Tests
  *
- * User Story: docs/user-stories/03-regular-user-user-stories.md (US-RU-001: Account Registration)
+ * User Story: docs/user-stories/core/regular-user.md (US-RU-001: Account Registration)
  * Design Doc: .ai/design/user-registration.md
  *
  * Test Scenarios:

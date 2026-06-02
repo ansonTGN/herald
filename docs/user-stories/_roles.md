@@ -104,7 +104,6 @@ Herald 系统（System Actor，非角色）
 | 权限项 | 说明 |
 |--------|------|
 | dashboard.view | 查看 Dashboard 统计 |
-| realm.view | 查看 Realm 信息 |
 | users.view | 查看用户 |
 | users.manage | 用户管理（CRUD） |
 | clients.view | 查看客户端应用 |
@@ -125,7 +124,7 @@ Herald 系统（System Actor，非角色）
 | points.manage | 积分管理、积分包管理、Provider 映射管理 |
 | audit.view | 查看审计日志列表和详情 |
 
-> **与 Admin Realm 管理员的差异**：Realm Admin 缺少 `realm.manage` in admin realm 权限，其余权限相同。
+> **与 Admin Realm 管理员的差异**：Realm Admin 缺少 `realm.view` 和 `realm.manage` 权限（这些仅在 admin realm 中存在），其余权限相同。
 
 **边界约束**：
 - 无法创建 `resource: "All"` 策略

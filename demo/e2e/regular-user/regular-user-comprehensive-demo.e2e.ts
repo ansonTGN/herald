@@ -1,7 +1,7 @@
 /**
  * Regular User Comprehensive Demo Tests
  *
- * User Stories: docs/user-stories/03-regular-user-user-stories.md
+ * User Stories: docs/user-stories/core/regular-user.md
  * Design Doc: .ai/design/user-management.md
  *
  * Test Scenarios:
@@ -113,6 +113,7 @@ test.describe('[Regular User] Profile Management Comprehensive Demo Tests', () =
 
   // ============================================================================
   // User Story 6: Update Personal Nickname [US-RU-006]
+  // Status: 待前端实现后启用 — Profile 编辑页面 UI 未实现
   // ============================================================================
   // Note: Nickname update tests are skipped due to unimplemented frontend UI
   // TODO: Uncomment these tests when frontend profile UI is implemented

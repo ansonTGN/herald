@@ -55,6 +55,10 @@ pub trait RealmPolicy: Send + Sync {
     fn can_create_realm(&self, identity: Identity) -> impl Future<Output = bool> + Send;
     fn can_read_realm(&self, identity: Identity) -> impl Future<Output = bool> + Send;
     fn can_update_realm(&self, identity: Identity) -> impl Future<Output = bool> + Send;
+    fn can_update_own_realm_settings(
+        &self,
+        identity: Identity,
+    ) -> impl Future<Output = bool> + Send;
     fn can_list_realms(&self, identity: Identity) -> impl Future<Output = bool> + Send;
 }
 
@@ -101,6 +105,12 @@ impl RealmPolicy for AllowAllRealmPolicy {
         async move { true }
     }
     fn can_update_realm(&self, _identity: Identity) -> impl Future<Output = bool> + Send {
+        async move { true }
+    }
+    fn can_update_own_realm_settings(
+        &self,
+        _identity: Identity,
+    ) -> impl Future<Output = bool> + Send {
         async move { true }
     }
     fn can_list_realms(&self, _identity: Identity) -> impl Future<Output = bool> + Send {

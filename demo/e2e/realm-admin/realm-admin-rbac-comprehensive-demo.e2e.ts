@@ -434,7 +434,7 @@ test.describe('[Realm Admin] RBAC Comprehensive Demo Tests', () => {
 
         // 注意：实际业务逻辑中，内置角色的所有权限（包括自定义权限）都被禁用
         // 这是预期行为 - 内置角色是系统预定义的，不允许修改任何权限配置
-        const customPermissionName = `reports_${testStartTime}.view`
+        const customPermissionName = `reports.view_${testStartTime}`
         const isCustomPermissionDisabled = await rolesPage.isPermissionCheckboxDisabled(customPermissionName)
         expect(isCustomPermissionDisabled).toBeTruthy()
         console.log('✓ Custom permission also disabled (built-in role protection)')

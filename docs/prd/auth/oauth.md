@@ -178,7 +178,7 @@
 - 第三方应用使用 API Key（通过 X-API-Key header）认证，与 session token 认证体系分离
 - API Key 绑定到特定 realm，只能访问所属 realm 的资源
 - API Key 可绑定到特定 Client App（Client App Scope），绑定后只能访问该 Client App 所属资源
-- Admin API Client（`admin-api-console`）的 API Key 不受 Client App Scope 限制，可跨 App 访问
+- Admin API Client（`admin-api-client`）的 API Key 不受 Client App Scope 限制，可跨 App 访问
 - 未绑定 Client App 的 API Key 也不受 Client App Scope 限制
 - API Key 支持轮换（Rotate），调用 `POST /api/api-keys/{realmId}/{apiKeyId}/rotate` 生成新密钥，旧密钥立即失效（旧缓存条目通过 TTL 自然过期）
 - API Key 有启用/禁用和过期时间控制

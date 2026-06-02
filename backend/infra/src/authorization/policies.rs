@@ -109,6 +109,26 @@ impl RealmPolicy for PermissionBasedRealmPolicy {
         }
     }
 
+    fn can_update_own_realm_settings(
+        &self,
+        identity: Identity,
+    ) -> impl Future<Output = bool> + Send {
+        let checker = self.permission_checker.clone();
+        let principal = identity.principal_ref();
+        async move {
+            checker
+                .check_principal_permission(
+                    &principal.realm_id,
+                    principal.principal_type,
+                    &principal.principal_id,
+                    "settings",
+                    "manage",
+                )
+                .await
+                .unwrap_or_default()
+        }
+    }
+
     fn can_list_realms(&self, identity: Identity) -> impl Future<Output = bool> + Send {
         let checker = self.permission_checker.clone();
         let principal = identity.principal_ref();

@@ -110,10 +110,9 @@ where
         );
 
         // 3. 创建 realm-admin 的权限
-        // Note: realm.manage permission only exists in admin realm
+        // Note: realm.view and realm.manage only exist in admin realm
         let is_admin_realm = request.realm_id == "admin";
         let mut realm_admin_permissions: Vec<(&str, &str)> = vec![
-            ("realm.view", "View realm information"),
             ("dashboard.view", "View dashboard"),
             ("audit.view", "View audit logs"),
             ("users.view", "View users"),
@@ -136,6 +135,7 @@ where
             ("points.manage", "Manage points accounts and transactions"),
         ];
         if is_admin_realm {
+            realm_admin_permissions.insert(0, ("realm.view", "View realm information"));
             realm_admin_permissions.insert(1, ("realm.manage", "Create and manage realms"));
         }
 
@@ -190,9 +190,8 @@ where
         // 5. 为 realm-admin 角色添加权限策略
 
         // Realm admin policies
-        // Note: realm.manage policy only exists in admin realm
+        // Note: realm.view and realm.manage policies only exist in admin realm
         let mut realm_admin_policies: Vec<(&str, &str)> = vec![
-            ("realm", "view"),
             ("dashboard", "view"),
             ("audit", "view"),
             ("users", "view"),
@@ -215,6 +214,7 @@ where
             ("points", "manage"),
         ];
         if is_admin_realm {
+            realm_admin_policies.insert(0, ("realm", "view"));
             realm_admin_policies.insert(1, ("realm", "manage"));
         }
 

@@ -148,7 +148,7 @@ where
             &identity,
             realm_id,
             "users",
-            "create",
+            "manage",
             "Insufficient permissions to create users",
         )
         .await?;

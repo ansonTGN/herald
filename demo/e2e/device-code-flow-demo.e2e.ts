@@ -15,7 +15,7 @@
  * with no browser UI. Direct API calls are intentional as the caller in the
  * real flow is a CLI tool, not a browser user.
  *
- * @see docs/user-stories/15-device-code-user-stories.md
+ * @see docs/user-stories/auth/device-code.md
  */
 
 import { test, expect, cleanupTestData } from './fixtures/demo-page.fixtures'

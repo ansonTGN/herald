@@ -1,15 +1,17 @@
 /**
  * Regular User TOTP 综合演示测试
  *
- * 用户故事: docs/user-stories/05-totp-user-stories.md
+ * 用户故事: docs/user-stories/auth/totp.md
  * 设计文档: .ai/design/totp-authentication-frontend-and-demo.md
  *
  * 测试覆盖 (18/22 scenarios = 81.8%, 4 timeout scenarios skipped, 2 simplified):
  * - US-TO-002: 用户启用 TOTP 二次认证 (5 scenarios, 1 timeout scenario skipped) ✅
- * - US-TO-003: 用户使用 TOTP 登录 (6 scenarios, 1 timeout scenario skipped) ✅
- * - US-TO-004: 用户禁用 TOTP (3 scenarios) ✅
+ * - US-TO-003: 用户使用 TOTP 登录 (6 scenarios, 1 timeout scenario skipped, 3 simplified to console.log only) ⚠
+ * - US-TO-004: 用户禁用 TOTP (3 scenarios, 1 simplified to console.log only) ⚠
  * - US-TO-005: 用户重新生成 TOTP 密钥 (3 scenarios, simplified - scenarios logged) ⚠
  * - US-TO-007: 用户查看 TOTP 使用情况 (3 scenarios, simplified - scenarios logged) ⚠
+ *
+ * 实际断言覆盖率约 12/22 scenarios（6 个简化场景仅 console.log 无 expect 断言）
  *
  * 优化: 从 23 个 test() 合并为 5 个 test()，使用 test.step() 组织场景
  * - US-TO-003 从 6 个独立 test() 合并为 1 个 test() + 6 个 test.step()

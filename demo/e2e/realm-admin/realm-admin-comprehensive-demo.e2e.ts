@@ -1,7 +1,7 @@
 /**
  * Realm Admin Comprehensive Demo Tests
  *
- * User Stories: docs/user-stories/02-realm-admin-user-stories.md
+ * User Stories: docs/user-stories/core/realm-admin.md
  *
  * Test Coverage:
  * - US-RA-001: Realm Isolation Access
