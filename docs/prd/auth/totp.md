@@ -111,7 +111,7 @@ Herald 系统支持在 Realm 级别和用户级别配置 TOTP：
 - **错误消息统一**：TOTP code 失败返回中文"验证码已过期或无效"，backup code 失败返回英文"Invalid verification code"（⚠️ 待统一）
 - **安全规则**：TOTP 密钥使用 AES-256-GCM 加密存储；禁用 TOTP 需验证当前密码；重新生成 TOTP 密钥需验证当前密码；TOTP 验证失败不暴露具体错误（统一提示"验证码错误"）
 - **速率限制**：用户级 5 次/60s + IP 级 10 次/60s 速率限制
-- **平滑降级**：Realm 禁用 TOTP 后，新用户无法启用 TOTP（⚠️ `handle_enable_totp` 未检查 realm 的 TOTP enabled 状态，待实现），已启用用户仍需验证
+- **平滑降级**：Realm 禁用 TOTP 后，新用户无法启用 TOTP（`handle_enable_totp` 已检查 realm 的 TOTP enabled 状态），已启用用户仍需验证
 
 ### 4.2 关键状态与异常
 

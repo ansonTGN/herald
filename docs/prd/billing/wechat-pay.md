@@ -103,7 +103,7 @@
 
 ### 4.2 关键状态与异常
 
-- **trade_state 处理**：SUCCESS 确认支付并发放积分；NOTPAY 保持待支付；CLOSED 更新为已关闭；REFUND 记录退款事件（当前实现仅处理 TRANSACTION.SUCCESS 和 TRANSACTION.CLOSED，REFUND 及其他事件被忽略，见实现差异 BUG-006）
+- **trade_state 处理**：支付回调 event_type 为 `TRANSACTION.SUCCESS` / `TRANSACTION.CLOSED`；退款回调为独立通知流，event_type 为 `REFUND.SUCCESS` / `REFUND.ABNORMAL` / `REFUND.CLOSED`；查询订单返回的 trade_state 包含 SUCCESS / NOTPAY / CLOSED / REFUND 等（当前实现仅处理支付回调的 TRANSACTION.SUCCESS 和 TRANSACTION.CLOSED，未处理退款回调通知，见实现差异 BUG-006）
 - **签名验证失败**：返回 401，记录审计日志（当前签名验证算法与微信规范不符，见实现差异 BUG-001）
 - **金额不一致**：记录告警，不执行业务逻辑
 - **商户响应时限**：需在 5 秒内返回 200 响应，否则微信会重试
@@ -225,13 +225,13 @@
 - **修复方向**：增加后台定时任务（如每 5 分钟扫描），调用 `query_order` 确认状态后 `close_order`
 - **状态**：待实现
 
-### BUG-006：trade_state 处理不完整（P1）
+### BUG-006：退款回调通知未处理（P1）
 
-- **PRD 规范**：处理 SUCCESS、NOTPAY、CLOSED、REFUND 四种状态
-- **当前实现**：仅处理 `TRANSACTION.SUCCESS` 和 `TRANSACTION.CLOSED` 事件类型；REFUND 及其他事件记日志后忽略
-- **影响**：退款事件无法被系统感知，NOTPAY 事件无处理逻辑（虽不影响业务但缺少状态同步）
+- **PRD 规范**：微信支付退款使用独立的通知流，event_type 为 `REFUND.SUCCESS` / `REFUND.ABNORMAL` / `REFUND.CLOSED`，与支付回调的 `TRANSACTION.*` 通知分开发送
+- **当前实现**：仅处理支付回调的 `TRANSACTION.SUCCESS` 和 `TRANSACTION.CLOSED` 事件类型；退款回调通知未注册处理器，退款事件无法被系统感知
+- **影响**：退款成功/异常/关闭事件无法被系统感知，退款状态不更新，影响订单/订阅状态准确性
 - **代码位置**：`wechat_webhook_handlers.rs` → webhook 事件 match 分支
-- **修复方向**：增加 REFUND 事件处理（记录退款状态，更新订单/订阅）；NOTPAY 事件可同步本地状态
+- **修复方向**：增加退款回调通知处理（注册 REFUND.* 事件处理器，记录退款状态，更新订单/订阅）
 - **状态**：待修复
 
 ### BUG-007：关单前未查询微信侧实际状态（P1）

@@ -64,7 +64,7 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
       // Create secondary API key (with a different nominal permission, NOT points.manage)
       apiKeyWithoutPermission = await createTestApiKeyWithPermission(
         page,
-        'clients.read',
+        'clients.view',
         setupStartTime + 1,
       )
 
@@ -276,7 +276,7 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
   test('S4: API key without points.manage permission returns 403', async () => {
     await test.step('Given: SDK uses API key WITHOUT points.manage permission', async () => {
       expect(apiKeyWithoutPermission.apiKey.length).toBeGreaterThan(0)
-      // This API key was created with 'clients.read' nominal permission, not points.manage.
+      // This API key was created with 'clients.view' nominal permission, not points.manage.
       // Actual permission enforcement depends on role assignment in the demo environment.
     })
 

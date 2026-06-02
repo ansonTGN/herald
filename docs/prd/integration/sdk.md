@@ -107,7 +107,7 @@
    - 查询指定 Realm 详情
 
 2. **用户管理** -- US-TP-013（P0）
-   - 在指定 Realm 中创建用户，返回用户 ID 和状态（创建时 email 仅检查非空，无格式校验，待修复）
+   - 在指定 Realm 中创建用户，返回用户 ID 和状态
    - 查询指定 Realm 的用户列表（分页：page 默认 1，page_size 默认 20，最大 100）
    - 查询指定 Realm 中单个用户的详情
 
@@ -144,9 +144,9 @@
 ### 输入验证规则
 
 - Realm name：3-50 字符（代码中 `req.name.len() < 3 || req.name.len() > 50` 时返回 400 ValidationError）
-- Realm admin email：仅检查非空（代码中 `req.admin_user.email.is_empty()`，无邮箱格式校验）
+- Realm admin email：非空且符合邮箱格式
 - Realm admin password：最少 8 字符（代码中 `req.admin_user.password.len() < 8`）
-- User email（ext API 创建用户）：仅检查非空（代码中 `req.email.is_empty()`，**待修复：缺少邮箱格式校验**）
+- User email（ext API 创建用户）：非空且符合邮箱格式
 - User password：最少 8 字符
 - Client App name：非空
 - Client App redirect_uris：必填（传入 `CreateClientAppRequest`，如启用 device_code_grant 且 redirect_uris 为空会触发业务校验失败）

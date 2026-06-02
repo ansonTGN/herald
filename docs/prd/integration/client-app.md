@@ -181,12 +181,6 @@ Client App 采用双 ID 系统：
 - ext API（`/api/ext/realms/{realmId}/client-apps`）通过 API Key 认证提供第三方集成接口，支持创建、列表和详情查询；创建时 `client_id` 由系统自动生成（UUID v7），不允许自定义
 - 内置管理控制台 Client App（`admin-web-console`）受删除保护，基础架构层阻止删除操作
 
-> **[待修复] Session TTL/Renewal TTL 上限校验缺失**：PRD 定义 Session TTL 范围 60-86400 秒、Renewal TTL 范围 60-604800 秒，当前代码仅校验各自下限 60 秒，未校验上限。需在 `validate_session_config` 中补充上限检查。
-
-> **[待修复] Renewal TTL >= Session TTL 校验缺失**：PRD 要求 `renewal_ttl >= session_ttl`，当前代码仅分别验证各自下限，未做交叉校验。需在 `validate_session_config` 中补充。
-
-> **[待修复] name/description 长度限制不一致**：创建接口 name max=100、description max=500；更新接口 name max=36、description max=255。需统一为相同限制。
-
 ---
 
 ## 7. 前端/交互约束

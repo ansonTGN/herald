@@ -4,7 +4,7 @@
 
 ## 租户管理员故事
 
-### 故事 11：WeChat OAuth Provider 配置 [US-RA-011]
+### 故事 1：WeChat OAuth Provider 配置 [US-WO-001]
 
 **优先级**: P1
 
@@ -90,7 +90,7 @@ And Scope 字段自动恢复为 snsapi_login
 
 ---
 
-### 故事 12：WeChat Mini Program Provider 配置 [US-RA-012]
+### 故事 2：WeChat Mini Program Provider 配置 [US-WO-002]
 
 **优先级**: P1
 
@@ -131,7 +131,7 @@ Then WeChat Mini Program Provider 状态变为 "Enabled"
 
 ## 租户用户故事
 
-### 故事 10：微信网站应用登录 [US-RU-010]
+### 故事 3：微信网站应用登录 [US-WO-003]
 
 **优先级**: P1
 
@@ -203,7 +203,7 @@ And 用户可以继续使用之前的账号数据
 
 ---
 
-### 故事 11：微信小程序登录 [US-RU-011]
+### 故事 4：微信小程序登录 [US-WO-004]
 
 **优先级**: P1
 

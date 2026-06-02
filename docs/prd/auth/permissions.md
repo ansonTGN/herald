@@ -151,7 +151,7 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 | 权限项 | 资源 | 动作 | 说明 |
 |--------|------|------|------|
 | realm.view | realm | view | 查看 Realm 列表（前端 Realms 菜单可见性） |
-| realm.manage | realm | manage | Realm 创建、删除（仅 admin realm） |
+| realm.manage | realm | manage | Realm 创建（仅 admin realm） |
 
 **user 权限清单**:
 
@@ -191,7 +191,6 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 | View other realm detail | `realm.manage` in admin realm |
 | Create realm | `realm.manage` in admin realm |
 | Update realm metadata | `settings.manage` for own realm only（cross-realm editing not allowed） |
-| Delete realm | `realm.manage` in admin realm |
 
 ### 4.2 关键状态与异常
 
@@ -251,7 +250,7 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 - Realm 隔离：权限属于 Realm 级别，跨 Realm 访问必须拒绝
 - 权限层级遵循 4.1 节规则，`manage` 隐含 `view` 和 `create`
 - 只读操作（list、get）检查 `view` 权限；写操作（create、update、delete）检查 `manage` 权限
-- Realm 创建、更新、删除在 admin realm 内检查 `realm.manage`
+- Realm 创建在 admin realm 内检查 `realm.manage`
 - 必须遵守 realm 隔离、权限边界、凭证脱敏和幂等要求
 
 ---

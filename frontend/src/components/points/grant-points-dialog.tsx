@@ -45,6 +45,7 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [pendingGrant, setPendingGrant] = useState<GrantPointsFormData | null>(null)
+  const [isPermanent, setIsPermanent] = useState(true)
 
   const grantMutation = useGrantPoints(realmId)
 
@@ -93,6 +94,7 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
     setConfirmOpen(false)
     setServerError(null)
     setPendingGrant(null)
+    setIsPermanent(true)
     form.reset()
   }
 
@@ -134,10 +136,6 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
       </Dialog>
     )
   }
-
-  // Derive isPermanent from form state — single source of truth, cannot diverge from validityDays
-  const isPermanent =
-    form.state.values.validityDays === null || form.state.values.validityDays === undefined
 
   return (
     <>
@@ -281,6 +279,7 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
                     id="grant-permanent"
                     checked={isPermanent}
                     onCheckedChange={(checked) => {
+                      setIsPermanent(checked)
                       form.setFieldValue('validityDays', checked ? null : 30)
                     }}
                     data-testid="grant-points-permanent-toggle"

@@ -47,6 +47,7 @@ docs/user-stories/
 | US-AR-002 | 查看 Realm 列表 | Admin Realm | P0 | [core/admin-realm](core/admin-realm.md#故事-2查看-realm-列表-us-ar-002) |
 | US-AR-003 | 查看 Realm 详情 | Admin Realm | P1 | [core/admin-realm](core/admin-realm.md#故事-3查看-realm-详情-us-ar-003) |
 | US-AR-004 | Realm 创建权限控制 | Admin Realm | P0 | [core/admin-realm](core/admin-realm.md#故事-4realm-创建权限控制-us-ar-004) |
+| US-AR-005 | 访问新创建的 Realm | Admin Realm | P0 | [core/admin-realm](core/admin-realm.md#故事-5访问新创建的-realm-us-ar-005) |
 | US-RA-001 | Realm 隔离访问 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-1realm-隔离访问-us-ra-001) |
 | US-RA-002 | 角色定义管理 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-2角色定义管理-us-ra-002) |
 | US-RA-003 | 权限定义管理 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-3权限定义管理-us-ra-003) |
@@ -55,7 +56,8 @@ docs/user-stories/
 | US-RA-006 | 用户角色分配 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-6用户角色分配-us-ra-006) |
 | US-RA-007 | 权限策略管理 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-7权限策略管理-us-ra-007) |
 | US-RA-008 | 订阅套餐管理 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-8订阅套餐管理-us-ra-008) |
-| US-RA-009 | 默认角色和权限保护 | Realm Admin | P0 | [core/builtin-protection](core/builtin-protection.md#us-ra-009) |
+| US-RA-009 | 权限层级验证 | Realm Admin | P0 | [core/realm-admin](core/realm-admin.md#故事-9权限层级验证-us-ra-009) |
+| US-BP-001 | 内置角色和权限保护 | Realm Admin | P0 | [core/builtin-protection](core/builtin-protection.md#故事-1内置角色和权限保护-us-bp-001) |
 | US-RA-010 | 查看 Dashboard 用户活跃概览 | Realm Admin | P1 | [core/realm-admin](core/realm-admin.md#故事-10查看-dashboard-用户活跃概览-us-ra-010) |
 | US-RA-011 | 查看 Dashboard 认证趋势图 | Realm Admin | P1 | [core/realm-admin](core/realm-admin.md#故事-11查看-dashboard-认证趋势图-us-ra-011) |
 | US-RA-012 | 通过 Dashboard 快捷导航跳转 | Realm Admin | P1 | [core/realm-admin](core/realm-admin.md#故事-12通过-dashboard-快捷导航跳转-us-ra-012) |
@@ -75,6 +77,10 @@ docs/user-stories/
 | US-RU-008 | 访问第三方应用（SSO） | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-8访问第三方应用-us-ru-008) |
 | US-RU-009 | 认证重定向流程 | All Users | P0 | [core/regular-user](core/regular-user.md#故事-9认证重定向流程-us-ru-009) |
 | US-RU-010 | 从第三方 Web 应用跳转登录 | Regular User | P0 | [core/regular-user](core/regular-user.md#故事-10从第三方-web-应用跳转登录-us-ru-010) |
+| US-WO-001 | WeChat OAuth Provider 配置 | Realm Admin | P1 | [auth/wechat-oauth](auth/wechat-oauth.md#故事-1wechat-oauth-provider-配置-us-wo-001) |
+| US-WO-002 | WeChat Mini Program Provider 配置 | Realm Admin | P1 | [auth/wechat-oauth](auth/wechat-oauth.md#故事-2wechat-mini-program-provider-配置-us-wo-002) |
+| US-WO-003 | 微信网站应用登录 | Regular User | P1 | [auth/wechat-oauth](auth/wechat-oauth.md#故事-3微信网站应用登录-us-wo-003) |
+| US-WO-004 | 微信小程序登录 | Regular User | P1 | [auth/wechat-oauth](auth/wechat-oauth.md#故事-4微信小程序登录-us-wo-004) |
 | US-TP-001 | OAuth 授权码登录 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-1oauth-授权码登录authorization-code-pkce-us-tp-001) |
 | US-TP-002 | 验证用户登录状态 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-2验证用户登录状态-us-tp-002) |
 | US-TP-003 | 检查用户权限 | Third-Party App | P0 | [auth/third-party-app](auth/third-party-app.md#故事-3检查用户权限-us-tp-003) |
@@ -115,9 +121,13 @@ docs/user-stories/
 | US-PO-05 | 查看套餐充值引导 | Points Admin | P2 | [billing/points-admin](billing/points-admin.md#故事-5查看套餐充值引导-us-po-05) |
 | US-PO-06 | 配置 Realm 默认积分策略 | Points Admin | P0 | [billing/points-admin](billing/points-admin.md#故事-6配置-realm-默认积分策略-us-po-06) |
 | US-PO-07 | 查看免费用户积分统计 | Points Admin | P1 | [billing/points-admin](billing/points-admin.md#故事-7查看免费用户积分统计-us-po-07) |
+| US-PO-08 | 主动发放积分 | Points Admin | P0 | [billing/points-admin](billing/points-admin.md#故事-8主动发放积分-us-po-08) |
 | US-PU-01 | 查看我的积分余额 | Points User | P0 | [billing/points-user](billing/points-user.md#故事-1查看我的积分余额-us-pu-01) |
 | US-PU-02 | 查看我的交易历史 | Points User | P1 | [billing/points-user](billing/points-user.md#故事-2查看我的交易历史-us-pu-02) |
 | US-PU-03 | 筛选交易记录 | Points User | P2 | [billing/points-user](billing/points-user.md#故事-3筛选交易记录-us-pu-03) |
+| US-FU-01 | 注册时获得初始积分 | Free User | P0 | [billing/points-free-user](billing/points-free-user.md#故事-1注册时获得初始积分-us-fu-01) |
+| US-FU-02 | 定期自动获得免费积分 | Free User | P0 | [billing/points-free-user](billing/points-free-user.md#故事-2定期自动获得免费积分-us-fu-02) |
+| US-FU-03 | 升级到付费套餐时保留注册初始积分 | Free User | P1 | [billing/points-free-user](billing/points-free-user.md#故事-3升级到付费套餐时保留注册初始积分-us-fu-03) |
 | US-PP-007 | 配置 Shopify Payment Provider | Realm Admin | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-1配置-shopify-支付平台-us-pp-007) |
 | US-PP-008 | 查看 Shopify Payment Provider 配置 | Realm Admin | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-2查看-shopify-支付平台配置-us-pp-008) |
 | US-PP-009 | 编辑 Shopify Payment Provider 配置 | Realm Admin | P1 | [billing/shopify-pay](billing/shopify-pay.md#故事-3编辑-shopify-支付平台配置-us-pp-009) |
@@ -127,6 +137,9 @@ docs/user-stories/
 | US-PP-013 | 用户认领 Shopify 订阅 | Herald User | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-7用户认领-shopify-订阅-us-pp-013) |
 | US-PP-014 | Webhook 处理未归属订阅 | System | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-8webhook-处理未归属订阅-us-pp-014) |
 | US-PP-015 | 通过 Customer Binding 自动归属 | System | P1 | [billing/shopify-pay](billing/shopify-pay.md#故事-9通过-customer-binding-自动归属-us-pp-015) |
+| US-PP-016 | 编辑促销积分包 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-7编辑促销积分包-us-pp-016) |
+| US-PP-017 | 用户查看促销积分包 | Regular User | P0 | [billing/points-package](billing/points-package.md#故事-8用户查看促销积分包-us-pp-017) |
+| US-PP-018 | 促销包自动过期 | Realm Admin | P1 | [billing/points-package](billing/points-package.md#故事-9促销包自动过期-us-pp-018) |
 | US-WP-001 | 配置微信支付平台 | Realm Admin | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-1配置微信支付平台-us-wp-001) |
 | US-WP-002 | 查看微信支付平台配置 | Realm Admin | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-2查看微信支付平台配置-us-wp-002) |
 | US-WP-003 | 编辑微信支付平台配置 | Realm Admin | P1 | [billing/wechat-pay](billing/wechat-pay.md#故事-3编辑微信支付平台配置-us-wp-003) |
@@ -140,6 +153,7 @@ docs/user-stories/
 | US-PP-003 | 配置积分包的支付平台映射 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-3配置积分包的支付平台映射-us-pp-003) |
 | US-PP-004 | 查看积分包列表 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-4查看积分包列表-us-pp-004) |
 | US-PP-005 | 删除积分包 | Realm Admin | P1 | [billing/points-package](billing/points-package.md#故事-5删除积分包-us-pp-005) |
+| US-PP-006 | 创建促销积分包 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-6创建促销积分包-us-pp-006) |
 | US-PU-06 | 购买积分包 | Regular User | P0 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-1购买积分包-us-pu-06) |
 | US-PU-07 | 查看积分包购买记录 | Regular User | P1 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-2查看积分包购买记录-us-pu-07) |
 | US-PU-08 | 积分包与订阅购买的区别 | Regular User | P1 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-3积分包与订阅购买的区别-us-pu-08) |
