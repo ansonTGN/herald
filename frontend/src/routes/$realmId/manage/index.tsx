@@ -21,8 +21,13 @@ function ManageDashboard() {
   return (
     <div className="container mx-auto py-6 space-y-6">
       <div className="flex items-center gap-3">
-        <LayoutDashboard className="h-8 w-8 text-muted-foreground" />
-        <h1 className="text-xl font-semibold">Dashboard</h1>
+        <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10">
+          <LayoutDashboard className="h-5 w-5 text-primary" />
+        </div>
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-xs text-muted-foreground">Overview of your authentication system</p>
+        </div>
       </div>
 
       {isError ? (

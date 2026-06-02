@@ -85,19 +85,21 @@ export function QuickNav({ realmId, testId }: QuickNavProps) {
 
   return (
     <div data-testid={testId}>
-      <h2 className="mb-4 text-xl font-semibold">Quick Navigation</h2>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <h2 className="mb-4 text-lg font-semibold tracking-tight">Quick Navigation</h2>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {visibleItems.map((item) => {
           const Icon = item.icon
           return (
             <Link key={item.path} to={item.path} params={{ realmId }}>
               <Card
-                className="cursor-pointer transition-colors hover:bg-accent"
+                className="cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/20 group"
                 data-testid={item.testId}
               >
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">{item.title}</CardTitle>
-                  <Icon className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 transition-colors group-hover:bg-primary/15">
+                    <Icon className="size-4 text-primary" />
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <p className="text-xs text-muted-foreground">{item.description}</p>

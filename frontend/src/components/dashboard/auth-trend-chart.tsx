@@ -25,7 +25,7 @@ const chartConfig = {
   },
   failureCount: {
     label: 'Login Failed',
-    color: 'var(--chart-2)',
+    color: 'var(--destructive)',
   },
 } satisfies ChartConfig
 

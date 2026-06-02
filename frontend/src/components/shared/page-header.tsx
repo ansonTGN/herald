@@ -16,22 +16,6 @@ export interface PageHeaderProps {
   className?: string
 }
 
-/**
- * Standardized page header component for list pages.
- * Provides consistent layout for page title and action button.
- *
- * @example
- * ```tsx
- * <PageHeader
- *   title="Roles"
- *   action={{
- *     label: "Add Role",
- *     onClick: () => setDialogOpen(true),
- *     testId: "role-create-button"
- *   }}
- * />
- * ```
- */
 export function PageHeader({
   title,
   subtitle,
@@ -43,12 +27,12 @@ export function PageHeader({
     <div className={`flex items-center justify-between ${className}`}>
       <div>
         <h1
-          className="text-xl font-semibold"
+          className="text-xl font-semibold tracking-tight"
           data-testid={headingTestId ?? `${title.toLowerCase()}-heading`}
         >
           {title}
         </h1>
-        {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+        {subtitle && <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>}
       </div>
       {action && action.show !== false && (
         <Button onClick={action.onClick} data-testid={action.testId}>

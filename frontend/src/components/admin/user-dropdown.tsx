@@ -26,11 +26,20 @@ export function UserDropdown({ realmId }: UserDropdownProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Avatar className="cursor-pointer h-9 w-9" data-testid="user-avatar">
-          <AvatarFallback data-testid="user-avatar-fallback">
-            {user?.email?.[0]?.toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
+        <button
+          className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent"
+          data-testid="user-avatar"
+        >
+          <Avatar className="size-8">
+            <AvatarFallback
+              data-testid="user-avatar-fallback"
+              className="bg-primary/10 text-primary text-xs font-semibold"
+            >
+              {user?.email?.[0]?.toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <span className="hidden text-sm font-medium sm:block">{user?.email}</span>
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56" data-testid="user-dropdown-content">
         <DropdownMenuLabel>
@@ -56,7 +65,7 @@ export function UserDropdown({ realmId }: UserDropdownProps) {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={handleLogout}
-          className="text-destructive"
+          className="text-destructive focus:text-destructive"
           data-testid="logout-menu-item"
         >
           <LogOut className="mr-2 h-4 w-4" />

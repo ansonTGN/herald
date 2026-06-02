@@ -5,7 +5,7 @@ export function Header() {
   const realmId = useRealmId()
 
   return (
-    <header className="bg-white border-b px-6 py-4" data-testid="admin-header">
+    <header className="border-b border-border bg-card px-6 py-3" data-testid="admin-header">
       <div className="flex items-center justify-between">
         <div className="flex-1" />
         <div className="flex items-center gap-4">

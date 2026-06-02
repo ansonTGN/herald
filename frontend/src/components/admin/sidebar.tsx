@@ -41,7 +41,6 @@ export function Sidebar() {
   const [openMenus, setOpenMenus] = useState<Set<string>>(new Set(['Authorization']))
   const adminFeatures = features?.admin
 
-  // Memoize toggle function to prevent unnecessary re-renders
   const toggleMenu = useCallback((name: string) => {
     setOpenMenus((prev) => {
       const next = new Set(prev)
@@ -54,7 +53,6 @@ export function Sidebar() {
     })
   }, [])
 
-  // Memoize menu items to prevent infinite re-renders
   const menuItems: MenuItem[] = useMemo(
     () => [
       {
@@ -226,7 +224,6 @@ export function Sidebar() {
       return null
     }
 
-    // For parent menus, verify at least one child is visible (visible flag only; permissions already filtered)
     const visibleChildren = hasChildren
       ? item.children!.filter((child) => child.visible !== false)
       : []
@@ -235,39 +232,44 @@ export function Sidebar() {
       return null
     }
 
-    const paddingLeft = level > 0 ? 'px-12' : 'px-6'
+    const paddingLeft = level > 0 ? 'pl-12 pr-4' : 'px-4'
 
     return (
       <div key={item.name}>
         {!hasChildren && item.path ? (
           <Link
             to={item.path}
-            className={`flex items-center text-gray-700 hover:bg-gray-100 ${paddingLeft} py-3`}
-            activeProps={{ className: 'bg-gray-100 font-semibold' }}
+            className={`group relative flex items-center gap-3 rounded-lg py-2.5 text-sm font-medium text-sidebar-foreground/70 transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground ${paddingLeft}`}
+            activeProps={{
+              className:
+                'bg-sidebar-accent text-sidebar-foreground font-semibold before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-5 before:w-[3px] before:rounded-r-full before:bg-sidebar-primary',
+            }}
             activeOptions={{ exact: true }}
             data-testid={`sidebar-menu-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
           >
-            <Icon className="w-5 h-5 mr-3" />
-            {item.name}
+            <Icon className="size-[18px] shrink-0 opacity-60 group-hover:opacity-100 group-[.font-semibold]:opacity-100 transition-opacity" />
+            <span className="truncate">{item.name}</span>
           </Link>
         ) : (
           <div
             onClick={() => hasChildren && toggleMenu(item.name)}
-            className={`flex items-center text-gray-700 hover:bg-gray-100 cursor-pointer ${paddingLeft} py-3`}
+            className={`group flex items-center gap-3 rounded-lg py-2.5 text-sm font-medium text-sidebar-foreground/60 cursor-pointer transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground/90 px-4`}
             data-testid={`sidebar-menu-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
           >
-            <Icon className="w-5 h-5 mr-3" />
-            <span className="flex-1">{item.name}</span>
+            <Icon className="size-[18px] shrink-0 opacity-60 group-hover:opacity-100 transition-opacity" />
+            <span className="flex-1 truncate">{item.name}</span>
             {hasChildren && (
               <ChevronDown
-                className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-0' : '-rotate-90'}`}
+                className={`size-4 shrink-0 text-sidebar-foreground/40 transition-transform duration-200 ${isOpen ? 'rotate-0' : '-rotate-90'}`}
               />
             )}
           </div>
         )}
 
         {hasChildren && isOpen && (
-          <div>{visibleChildren.map((child) => renderMenuItem(child, level + 1))}</div>
+          <div className="mt-0.5 space-y-px">
+            {visibleChildren.map((child) => renderMenuItem(child, level + 1))}
+          </div>
         )}
       </div>
     )
@@ -275,16 +277,20 @@ export function Sidebar() {
 
   return (
     <div
-      className="flex h-full min-h-0 w-64 flex-col bg-white border-r"
+      className="flex h-full min-h-0 w-64 flex-col bg-sidebar border-r border-sidebar-border"
       data-testid="admin-sidebar"
     >
-      <div className="shrink-0 p-6">
-        <h1 className="text-xl font-bold">Herald</h1>
-        <p className="text-sm text-gray-500">{realm?.name ?? realmId}</p>
+      <div className="shrink-0 px-5 pt-6 pb-4">
+        <h1 className="text-lg font-bold tracking-tight text-sidebar-foreground">Herald</h1>
+        <p className="mt-0.5 text-xs font-medium text-sidebar-foreground/40">
+          {realm?.name ?? realmId}
+        </p>
       </div>
 
-      <nav className="mt-6 min-h-0 flex-1 overflow-y-auto" data-testid="sidebar-nav">
-        {filteredMenuItems.map((item) => renderMenuItem(item))}
+      <div className="mx-4 mb-3 h-px bg-sidebar-border" />
+
+      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4" data-testid="sidebar-nav">
+        <div className="space-y-0.5">{filteredMenuItems.map((item) => renderMenuItem(item))}</div>
       </nav>
     </div>
   )

@@ -23,16 +23,26 @@ export function StatsCard({
 }: StatsCardProps) {
   const cardContent = (
     <Card
-      className={linkTo ? 'cursor-pointer transition-colors hover:bg-accent' : undefined}
+      className={
+        linkTo
+          ? 'cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/20'
+          : undefined
+      }
       data-testid={testId}
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
+        <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {title}
+        </CardTitle>
+        {Icon && (
+          <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10">
+            <Icon className="size-4 text-primary" />
+          </div>
+        )}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        <p className="text-xs text-muted-foreground">{description}</p>
+        <div className="text-2xl font-bold tracking-tight">{value}</div>
+        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
       </CardContent>
     </Card>
   )
