@@ -25,6 +25,7 @@ export function useGrantPoints(realmId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.POINTS_WALLETS, realmId] })
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.POINTS_TRANSACTIONS, realmId] })
     },
   })
 }

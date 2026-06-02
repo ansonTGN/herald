@@ -81,8 +81,14 @@ async fn test_scenario_sdk_get_balance_success(ctx: &mut SchemaTestContext) {
     });
 
     // 3. Create API key
-    let (api_key, _api_key_entity) =
+    let (api_key, api_key_entity) =
         herald_test_support::helpers::create_test_api_key(ctx, "SDK Test Key", true, None).await;
+    herald_test_support::helpers::grant_api_key_permissions(
+        ctx,
+        &api_key_entity.id,
+        &[("points", "view"), ("points", "manage")],
+    )
+    .await;
 
     // 4. Create points account with initial balance
     create_points_wallet_with_balance(ctx, &user_id, 1000).await;
@@ -129,8 +135,14 @@ async fn test_scenario_sdk_consume_points_success(ctx: &mut SchemaTestContext) {
     });
 
     // 3. Create API key
-    let (api_key, _api_key_entity) =
+    let (api_key, api_key_entity) =
         herald_test_support::helpers::create_test_api_key(ctx, "SDK Test Key", true, None).await;
+    herald_test_support::helpers::grant_api_key_permissions(
+        ctx,
+        &api_key_entity.id,
+        &[("points", "view"), ("points", "manage")],
+    )
+    .await;
 
     // 4. Create points account with initial balance
     create_points_wallet_with_balance(ctx, &user_id, 500).await;
@@ -186,8 +198,14 @@ async fn test_scenario_sdk_consume_points_insufficient(ctx: &mut SchemaTestConte
     });
 
     // 3. Create API key
-    let (api_key, _api_key_entity) =
+    let (api_key, api_key_entity) =
         herald_test_support::helpers::create_test_api_key(ctx, "SDK Test Key", true, None).await;
+    herald_test_support::helpers::grant_api_key_permissions(
+        ctx,
+        &api_key_entity.id,
+        &[("points", "view"), ("points", "manage")],
+    )
+    .await;
 
     // 4. Create points account with small balance
     create_points_wallet_with_balance(ctx, &user_id, 50).await;

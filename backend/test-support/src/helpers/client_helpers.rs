@@ -437,3 +437,53 @@ pub async fn get_api_key_stats(
 
     row
 }
+
+/// Grant permissions to an API key by creating a role and linking it via user_roles.
+///
+/// This is needed because ext endpoints call `require_principal_permission` which checks
+/// the RBAC system for the API key's principal.
+/// TODO: Consolidate with api::tests::helpers::client_helpers::grant_api_key_permissions
+/// and fixtures::grant_api_key_ext_permissions into a single shared implementation.
+pub async fn grant_api_key_permissions(
+    ctx: &TestContext,
+    api_key_id: &str,
+    permissions: &[(&str, &str)],
+) {
+    let role_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO roles (id, name, realm_id, client_id, is_builtin) VALUES ($1, $2, $3, $4, false)"
+    )
+    .bind(role_id)
+    .bind(format!("test-api-key-role-{}", &api_key_id[..8]))
+    .bind(&ctx._realm_id)
+    .bind(&ctx._client_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create role for API key");
+
+    for (resource, action) in permissions {
+        sqlx::query(
+            "INSERT INTO role_policies (id, role_id, realm_id, resource, action) VALUES ($1, $2, $3, $4, $5)"
+        )
+        .bind(Uuid::now_v7())
+        .bind(role_id)
+        .bind(&ctx._realm_id)
+        .bind(resource)
+        .bind(action)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("Failed to grant permission to API key role");
+    }
+
+    sqlx::query(
+        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id) VALUES ($1, NULL, $2, $3, $4, 'api_key', $5)"
+    )
+    .bind(Uuid::now_v7())
+    .bind(role_id)
+    .bind(&ctx._realm_id)
+    .bind(&ctx._client_id)
+    .bind(api_key_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to assign role to API key");
+}

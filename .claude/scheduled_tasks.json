@@ -1,12 +1,3 @@
 {
-  "tasks": [
-    {
-      "id": "cd2a583f",
-      "cron": "0 8 2 6 *",
-      "prompt": "/t-run points-grant --phase demo",
-      "createdAt": 1780329295324,
-      "createdBySessionId": "91723294-e8ea-419c-aae5-6bbfd03c1aaa",
-      "createdByPid": 32816
-    }
-  ]
+  "tasks": []
 }

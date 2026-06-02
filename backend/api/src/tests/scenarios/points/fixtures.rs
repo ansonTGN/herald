@@ -352,11 +352,12 @@ pub async fn create_test_api_key(pool: &PgPool, realm_id: &str, client_app_id: U
     let api_key_hash = ClientApiKeyService::hash_api_key(&api_key_plaintext);
 
     // 4. Store API key with all required fields including client_app_id
+    let api_key_id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO client_api_keys (id, realm_id, api_key_hash, client_app_id, name, enabled, created_at, last_used_at, usage_count)
          VALUES ($1, $2, $3, $4, $5, true, NOW(), NULL, 0)",
     )
-    .bind(Uuid::now_v7())
+    .bind(api_key_id)
     .bind(realm_id)
     .bind(&api_key_hash)
     .bind(client_app_id)
@@ -365,7 +366,63 @@ pub async fn create_test_api_key(pool: &PgPool, realm_id: &str, client_app_id: U
     .await
     .expect("Failed to create API key");
 
+    // 5. Grant ext endpoint permissions to the API key
+    let client_id = format!("client-{}", client_app_id);
+    grant_api_key_ext_permissions(pool, realm_id, &client_id, &api_key_id.to_string()).await;
+
     api_key_plaintext
+}
+
+/// Grant permissions needed by ext endpoints to an API key principal.
+/// TODO: Consolidate with grant_api_key_permissions in client_helpers into a single shared implementation.
+async fn grant_api_key_ext_permissions(
+    pool: &PgPool,
+    realm_id: &str,
+    client_id: &str,
+    api_key_id: &str,
+) {
+    let role_id = Uuid::now_v7();
+
+    sqlx::query(
+        "INSERT INTO roles (id, name, realm_id, client_id, is_builtin) VALUES ($1, $2, $3, $4, false)"
+    )
+    .bind(role_id)
+    .bind(format!("ext-api-key-role-{}", &api_key_id[..8]))
+    .bind(realm_id)
+    .bind(client_id)
+    .execute(pool)
+    .await
+    .expect("Failed to create role for API key");
+
+    for (resource, action) in [
+        ("billing", "view"),
+        ("points", "view"),
+        ("points", "manage"),
+    ] {
+        sqlx::query(
+            "INSERT INTO role_policies (id, role_id, realm_id, resource, action) VALUES ($1, $2, $3, $4, $5)"
+        )
+        .bind(Uuid::now_v7())
+        .bind(role_id)
+        .bind(realm_id)
+        .bind(resource)
+        .bind(action)
+        .execute(pool)
+        .await
+        .expect("Failed to grant permission");
+    }
+
+    sqlx::query(
+        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id) VALUES ($1, NULL, $2, $3, $4, 'api_key', $5)"
+    )
+    .bind(Uuid::now_v7())
+    .bind(role_id)
+    .bind(realm_id)
+    .bind(client_id)
+    .bind(api_key_id)
+    .execute(pool)
+    .await
+    .expect("Failed to assign role to API key");
 }
 
 /// Helper function to create a test client app

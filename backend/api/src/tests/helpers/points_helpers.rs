@@ -20,14 +20,32 @@ use uuid::Uuid;
 /// ============================================================================
 /// Points Wallet Creation Helpers
 /// ============================================================================
+/// Ensure a user row exists in the account table (needed by grant_points_atomic).
+async fn ensure_test_user_exists(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) {
+    sqlx::query(
+        "INSERT INTO account (id, realm_id, email, password, status, created_at, updated_at)
+         VALUES ($1, $2, $3, '$2a$12$dummy_password_hash', 1, NOW(), NOW())
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(format!("wallet-user-{}@test.com", user_id))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to ensure user exists");
+}
+
 /// Create a points wallet for a user
 ///
+/// Also ensures the user exists in the account table (needed by grant_points_atomic).
 /// Returns the wallet_id
 pub async fn create_points_wallet(
     ctx: &mut SchemaTestContext,
     user_id: Uuid,
     realm_id: &str,
 ) -> Uuid {
+    ensure_test_user_exists(ctx, user_id, realm_id).await;
+
     let wallet_id = Uuid::now_v7();
 
     sqlx::query(
@@ -53,6 +71,8 @@ pub async fn create_points_wallet_with_balance(
     topup_balance: i64,
     subscription_balance: i64,
 ) -> Uuid {
+    ensure_test_user_exists(ctx, user_id, realm_id).await;
+
     let wallet_id = Uuid::now_v7();
 
     sqlx::query(
@@ -413,19 +433,6 @@ pub async fn create_credit_ledger_entry_v2(
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create credit ledger entry");
-
-    // DEBUG: Verify ledger was created immediately after INSERT
-    let (current_schema, ledger_count): (Option<String>, i64) = sqlx::query_as(
-        "SELECT current_schema(), COUNT(*) FROM points_credit_ledger WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(&ctx.app_state.pool)
-    .await
-    .expect("Failed to verify ledger creation");
-    println!(
-        "DEBUG after ledger creation: schema={:?}, ledger_count={}",
-        current_schema, ledger_count
-    );
 
     // Update account balance to match the ledger
     // This is necessary for tests that later revoke points

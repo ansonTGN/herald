@@ -258,6 +258,7 @@ async fn scenario_disabled_api_key(ctx: &mut SchemaTestContext) {
 
     // Step 1: 创建 API Key（enabled = true）
     let (api_key, entity) = create_test_api_key(ctx, "Test Key", true, None).await;
+    grant_api_key_permissions(ctx, &entity.id, &[("billing", "view")]).await;
 
     tracing::info!(
         api_key_id = %entity.id,
@@ -536,6 +537,7 @@ async fn scenario_subscription_active(ctx: &mut SchemaTestContext) {
 
     // Step 1: 创建客户端应用（active 状态 professional 订阅）
     let (api_key, _entity) = create_test_api_key(ctx, "Test Key", true, None).await;
+    grant_api_key_permissions(ctx, &_entity.id, &[("billing", "view")]).await;
 
     // 使用现有的 _client_app_id，创建订阅
     let client_app_uuid =
@@ -582,6 +584,7 @@ async fn scenario_subscription_none(ctx: &mut SchemaTestContext) {
 
     // Step 1: 创建客户端应用（无订阅）
     let (api_key, _entity) = create_test_api_key(ctx, "Test Key", true, None).await;
+    grant_api_key_permissions(ctx, &_entity.id, &[("billing", "view")]).await;
 
     // 使用现有的 _client_app_id（没有订阅）
 

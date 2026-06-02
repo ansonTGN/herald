@@ -44,6 +44,7 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
   const [userSearchQuery, setUserSearchQuery] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+  const [pendingGrant, setPendingGrant] = useState<GrantPointsFormData | null>(null)
 
   const grantMutation = useGrantPoints(realmId)
 
@@ -64,8 +65,8 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
       reason: '',
       validityDays: null as number | null,
     },
-    onSubmit: async () => {
-      // Open confirmation dialog instead of submitting directly
+    onSubmit: async ({ value }) => {
+      setPendingGrant(value as GrantPointsFormData)
       setConfirmOpen(true)
     },
   })
@@ -91,20 +92,20 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
     setUserSearchQuery('')
     setConfirmOpen(false)
     setServerError(null)
+    setPendingGrant(null)
     form.reset()
   }
 
   const handleConfirmGrant = async () => {
-    if (!selectedUser) return
-    const formValues = form.state.values as GrantPointsFormData
+    if (!selectedUser || !pendingGrant) return
     try {
       await grantMutation.mutateAsync({
         userId: selectedUser.id,
-        amount: formValues.amount,
-        reason: formValues.reason,
-        validityDays: formValues.validityDays ?? null,
+        amount: pendingGrant.amount,
+        reason: pendingGrant.reason,
+        validityDays: pendingGrant.validityDays ?? null,
       })
-      toast.success(`Successfully granted ${formValues.amount} points to ${selectedUser.email}`)
+      toast.success(`Successfully granted ${pendingGrant.amount} points to ${selectedUser.email}`)
       onOpenChange(false)
       resetDialogState()
     } catch (error) {
@@ -134,8 +135,9 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
     )
   }
 
-  const formValues = form.state.values as GrantPointsFormData
-  const isPermanent = formValues.validityDays === null || formValues.validityDays === undefined
+  // Derive isPermanent from form state — single source of truth, cannot diverge from validityDays
+  const isPermanent =
+    form.state.values.validityDays === null || form.state.values.validityDays === undefined
 
   return (
     <>
@@ -279,11 +281,7 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
                     id="grant-permanent"
                     checked={isPermanent}
                     onCheckedChange={(checked) => {
-                      if (checked) {
-                        form.setFieldValue('validityDays', null)
-                      } else {
-                        form.setFieldValue('validityDays', 30)
-                      }
+                      form.setFieldValue('validityDays', checked ? null : 30)
                     }}
                     data-testid="grant-points-permanent-toggle"
                   />
@@ -346,17 +344,17 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Amount</span>
-              <span className="font-medium">{formValues.amount.toLocaleString()}</span>
+              <span className="font-medium">{(pendingGrant?.amount ?? 0).toLocaleString()}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Validity</span>
               <span className="font-medium">
-                {formValues.validityDays ? `${formValues.validityDays} days` : 'Permanent'}
+                {pendingGrant?.validityDays ? `${pendingGrant.validityDays} days` : 'Permanent'}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Reason</span>
-              <span className="font-medium">{formValues.reason}</span>
+              <span className="font-medium">{pendingGrant?.reason}</span>
             </div>
           </div>
 

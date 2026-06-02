@@ -41,8 +41,14 @@ async fn test_scenario_sdk_get_subscription_success(ctx: &mut SchemaTestContext)
     });
 
     // 4. Create a test API key for SDK authentication
-    let (api_key, _api_key_entity) =
+    let (api_key, api_key_entity) =
         herald_test_support::helpers::create_test_api_key(ctx, "SDK Test Key", true, None).await;
+    herald_test_support::helpers::grant_api_key_permissions(
+        ctx,
+        &api_key_entity.id,
+        &[("billing", "view")],
+    )
+    .await;
 
     // 5. Create a test subscription
     let realm_id = ctx._realm_id.clone();
@@ -122,8 +128,14 @@ async fn test_scenario_sdk_list_plans_success(ctx: &mut SchemaTestContext) {
     });
 
     // 5. Create a test API key for SDK authentication
-    let (api_key, _api_key_entity) =
+    let (api_key, api_key_entity) =
         herald_test_support::helpers::create_test_api_key(ctx, "SDK Test Key", true, None).await;
+    herald_test_support::helpers::grant_api_key_permissions(
+        ctx,
+        &api_key_entity.id,
+        &[("billing", "view")],
+    )
+    .await;
 
     // 6. Create SDK client with the test API key and list plans
     let client = Client::new(base_url, api_key, None);
@@ -219,8 +231,14 @@ async fn test_scenario_sdk_list_plan_assignments_success(ctx: &mut SchemaTestCon
     });
 
     // 3. Create a test API key for SDK authentication
-    let (api_key, _api_key_entity) =
+    let (api_key, api_key_entity) =
         herald_test_support::helpers::create_test_api_key(ctx, "SDK Test Key", true, None).await;
+    herald_test_support::helpers::grant_api_key_permissions(
+        ctx,
+        &api_key_entity.id,
+        &[("billing", "view")],
+    )
+    .await;
 
     // 4. Create SDK client with the test API key and list plan assignments
     let client = Client::new(base_url, api_key, None);

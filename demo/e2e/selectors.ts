@@ -643,6 +643,33 @@ export const SELECTORS = {
   },
 
   /**
+   * Grant Points Dialog Selectors
+   * Triggered from: /{realmId}/manage/points/wallets
+   *
+   * Two-step dialog flow:
+   * 1. Form dialog (search user, fill amount/validity/reason)
+   * 2. Confirmation dialog (review details, confirm)
+   */
+  grantPoints: {
+    // Wallets page trigger button
+    grantPointsButton: '[data-testid="grant-points-button"]',
+    // Form dialog
+    formDialog: '[data-testid="grant-points-form-dialog"]',
+    userSearchInput: '[data-testid="grant-points-user-search-input"] input',
+    amountInput: '[data-testid="grant-points-amount-input"]',
+    validityDaysInput: '[data-testid="grant-points-validity-days-input"]',
+    permanentToggle: '[data-testid="grant-points-permanent-toggle"]',
+    reasonInput: '[data-testid="grant-points-reason-input"]',
+    cancelButton: '[data-testid="grant-points-cancel-button"]',
+    submitButton: '[data-testid="grant-points-submit-button"]',
+    // Confirmation dialog
+    confirmDialog: '[data-testid="grant-points-confirm-dialog"]',
+    confirmButton: '[data-testid="grant-points-confirm-button"]',
+    // Error alert
+    errorMessage: '[data-testid="grant-points-error-message"]',
+  },
+
+  /**
    * Points Configuration Selectors (Admin)
    * Route: /{realmId}/admin/points/realm-config
    */
