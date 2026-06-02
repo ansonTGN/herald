@@ -487,9 +487,9 @@ async fn test_scenario_sdk_realm_detail_cross_realm_forbidden(ctx: &mut SchemaTe
 async fn test_scenario_sdk_realm_detail_not_found(ctx: &mut SchemaTestContext) {
     ensure_admin_realm(ctx).await;
 
-    // Given: admin-realm API key with realm:view (so permission check passes)
+    // Given: admin-realm API key with realm.manage (cross-realm viewing requires realm.manage)
     let (api_key, _, _) =
-        setup_api_key_with_permissions(ctx, "admin", &ctx._client_id, &[("realm", "view")]).await;
+        setup_api_key_with_permissions(ctx, "admin", &ctx._client_id, &[("realm", "manage")]).await;
 
     let (base_url, handle) = start_test_server(ctx).await;
     let client = Client::new(base_url, api_key, None);

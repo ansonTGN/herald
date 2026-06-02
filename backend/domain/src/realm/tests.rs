@@ -159,6 +159,33 @@ mod realm_admin_tests {
         }
     }
 
+    /// Denies global realm management but allows own-realm settings updates.
+    /// Simulates a realm-admin who can edit their own realm but lacks super-admin powers.
+    #[derive(Clone)]
+    struct OwnRealmOnlyPolicy;
+
+    impl RealmPolicy for OwnRealmOnlyPolicy {
+        async fn can_create_realm(&self, _identity: Identity) -> bool {
+            false
+        }
+
+        async fn can_read_realm(&self, _identity: Identity) -> bool {
+            false
+        }
+
+        async fn can_update_realm(&self, _identity: Identity) -> bool {
+            false
+        }
+
+        async fn can_update_own_realm_settings(&self, _identity: Identity) -> bool {
+            true
+        }
+
+        async fn can_list_realms(&self, _identity: Identity) -> bool {
+            false
+        }
+    }
+
     // =========================================================================
     // Scenario 1: Normal - Create Realm with Admin User
     // =========================================================================
@@ -543,7 +570,7 @@ mod realm_admin_tests {
 
         match result {
             Err(CoreError::Forbidden(msg)) => {
-                assert!(msg.contains("read realm"));
+                assert!(msg.contains("view other realm"));
             }
             _ => panic!("expected forbidden for cross-realm read"),
         }
@@ -570,7 +597,7 @@ mod realm_admin_tests {
 
         let realm_service = Arc::new(RealmServiceImpl::new(
             Arc::new(mock_realm_repo),
-            Arc::new(DenyAllRealmPolicy),
+            Arc::new(OwnRealmOnlyPolicy),
             Arc::new(MockRealmInitializationService::new()),
             Arc::new(MockClientRepository::new()),
             Arc::new(MockUserRoleRepository::new()),

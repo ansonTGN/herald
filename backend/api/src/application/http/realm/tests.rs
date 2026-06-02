@@ -8,6 +8,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode, header},
 };
+use herald_core::domain::authorization::permission_service::PermissionService;
 use serde_json::json;
 use test_context::test_context;
 use tower::ServiceExt;
@@ -131,14 +132,14 @@ async fn test_list_realms(ctx: &mut RealmTestContext) {
 #[test_context(RealmTestContext)]
 #[tokio::test]
 async fn test_update_realm(ctx: &mut RealmTestContext) {
-    // Create admin user and grant realm-admin role
+    // Create admin user and grant realm-admin role (for creating the realm)
     let (admin_token, admin_user_id) =
         create_admin_session_with_user(ctx, "updaterealm@cas.com", 1800).await;
     grant_realm_admin_role(ctx, &admin_user_id).await;
 
     let app = ctx.create_unified_test_router();
 
-    // Create a test realm first
+    // Create a test realm first (admin creates it via super-admin powers)
     let payload = json!(CreateRealmValidator {
         id: Some("updatetest".to_string()),
         name: "Original Name".to_string(),
@@ -160,6 +161,63 @@ async fn test_update_realm(ctx: &mut RealmTestContext) {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
 
+    // The realm creation auto-creates a realm-admin user in "updatetest".
+    // Look up that user and create a session for them (self-realm editing).
+    let realm_admin_user_id: uuid::Uuid = sqlx::query_scalar(
+        "SELECT id FROM account WHERE realm_id = 'updatetest' AND email = 'updateadmin@test.com'",
+    )
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .expect("realm admin user should exist");
+
+    let realm_admin_token = ctx.generate_test_token();
+    let session_data = crate::application::http::auth::util::SessionData {
+        realm_id: "updatetest".to_string(),
+        client_id: ctx._client_id.clone(),
+        user_id: realm_admin_user_id.to_string(),
+        client_ip: "127.0.0.1".to_string(),
+        renewal_ttl_seconds: None,
+    };
+    crate::application::http::auth::util::store_session(
+        &ctx._app_state,
+        &realm_admin_token,
+        &session_data,
+        1800,
+    )
+    .await
+    .unwrap();
+
+    // Grant realm-admin role to the updatetest user in updatetest realm
+    let role_id: uuid::Uuid = sqlx::query_scalar(
+        "SELECT id FROM roles WHERE realm_id = 'updatetest' AND name = 'realm-admin'",
+    )
+    .fetch_optional(&ctx._app_state.pool)
+    .await
+    .unwrap()
+    .expect("realm-admin role should exist in updatetest");
+
+    sqlx::query(
+        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id)
+         VALUES ($1, $2, $3, $4, $5, 'user', $2::text)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(uuid::Uuid::now_v7())
+    .bind(realm_admin_user_id)
+    .bind(role_id)
+    .bind("updatetest")
+    .bind(&ctx._client_id)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("grant realm-admin role");
+
+    // Invalidate permission cache for this user
+    let _ = ctx
+        ._app_state
+        .permission_checker
+        .invalidate_user_role_cache("updatetest", &realm_admin_user_id.to_string())
+        .await;
+
+    // Update the realm using the realm's own admin (self-realm editing)
     let update_payload = json!(UpdateRealmValidator {
         name: "Updated Name".to_string(),
         description: None,
@@ -168,7 +226,7 @@ async fn test_update_realm(ctx: &mut RealmTestContext) {
     let req = Request::builder()
         .method("PUT")
         .uri("/api/realms/updatetest")
-        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .header(header::COOKIE, format!("X-Auth={}", realm_admin_token))
         .header("content-type", "application/json")
         .body(Body::from(update_payload.to_string()))
         .unwrap();

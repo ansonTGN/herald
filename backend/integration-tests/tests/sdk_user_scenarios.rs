@@ -133,7 +133,7 @@ async fn test_scenario_sdk_user_create_success(ctx: &mut SchemaTestContext) {
         ctx,
         &ctx._realm_id,
         &ctx._client_id,
-        &[("users", "create")],
+        &[("users", "manage")],
     )
     .await;
 
@@ -180,7 +180,7 @@ async fn test_scenario_sdk_user_create_email_duplicate(ctx: &mut SchemaTestConte
         ctx,
         &ctx._realm_id,
         &ctx._client_id,
-        &[("users", "create")],
+        &[("users", "manage")],
     )
     .await;
 
@@ -243,7 +243,7 @@ async fn test_scenario_sdk_user_create_validation_error(ctx: &mut SchemaTestCont
         ctx,
         &ctx._realm_id,
         &ctx._client_id,
-        &[("users", "create")],
+        &[("users", "manage")],
     )
     .await;
 
@@ -301,7 +301,7 @@ async fn test_scenario_sdk_user_create_cross_realm_forbidden(ctx: &mut SchemaTes
         ctx,
         &ctx._realm_id,
         &ctx._client_id,
-        &[("users", "create")],
+        &[("users", "manage")],
     )
     .await;
 
@@ -387,7 +387,7 @@ async fn test_scenario_sdk_user_list_success(ctx: &mut SchemaTestContext) {
         ctx,
         &ctx._realm_id,
         &ctx._client_id,
-        &[("users", "view"), ("users", "create")],
+        &[("users", "view"), ("users", "manage")],
     )
     .await;
 
@@ -439,7 +439,7 @@ async fn test_scenario_sdk_user_detail_success(ctx: &mut SchemaTestContext) {
         ctx,
         &ctx._realm_id,
         &ctx._client_id,
-        &[("users", "view"), ("users", "create")],
+        &[("users", "view"), ("users", "manage")],
     )
     .await;
 
