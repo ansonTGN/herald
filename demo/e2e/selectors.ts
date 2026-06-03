@@ -118,6 +118,22 @@ export const SELECTORS = {
   },
 
   /**
+   * Reset Password Dialog Selectors
+   * Triggered from: /{realmId}/manage/users (user table row action)
+   *
+   * The row-level reset password button uses a dynamic testid
+   * (user-table-{row.index}-reset-password-button) and is constructed
+   * per-row in the POM via row-relative locator.
+   */
+  resetPassword: {
+    confirmDialog: '[data-testid="reset-password-dialog"]',
+    confirmButton: '[data-testid="confirm-reset-password-button"]',
+    resultDialog: '[data-testid="reset-password-result-dialog"]',
+    newPasswordText: '[data-testid="new-password-text"]',
+    copyButton: '[data-testid="copy-password-button"]',
+  },
+
+  /**
    * Roles Page Selectors
    * Route: /{realmId}/roles
    */

@@ -766,14 +766,34 @@ where
 }
 
 /// Generate random password (alphanumeric + special characters, 16 characters)
+/// Guarantees at least one character from each category: lowercase, uppercase, digit, special.
 fn generate_random_password() -> String {
     use rand::Rng;
+    use rand::seq::SliceRandom;
+
+    const LOWERCASE: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+    const UPPERCASE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const DIGITS: &[u8] = b"0123456789";
+    const SPECIAL: &[u8] = b"!@#$%^&*";
     const CHARSET: &[u8] =
         b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+
     let mut rng = rand::thread_rng();
-    (0..16)
-        .map(|_| CHARSET[rng.gen_range(0..CHARSET.len())] as char)
-        .collect()
+
+    // Guarantee one from each category
+    let mut chars: Vec<char> = Vec::with_capacity(16);
+    chars.push(LOWERCASE[rng.gen_range(0..LOWERCASE.len())] as char);
+    chars.push(UPPERCASE[rng.gen_range(0..UPPERCASE.len())] as char);
+    chars.push(DIGITS[rng.gen_range(0..DIGITS.len())] as char);
+    chars.push(SPECIAL[rng.gen_range(0..SPECIAL.len())] as char);
+
+    // Fill remaining slots from full charset
+    for _ in 4..16 {
+        chars.push(CHARSET[rng.gen_range(0..CHARSET.len())] as char);
+    }
+
+    chars.shuffle(&mut rng);
+    chars.into_iter().collect()
 }
 
 // ============================================================================
@@ -1497,5 +1517,59 @@ where
             role_policies,
             user_roles,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn has_lowercase(s: &str) -> bool {
+        s.chars().any(|c| c.is_ascii_lowercase())
+    }
+
+    fn has_uppercase(s: &str) -> bool {
+        s.chars().any(|c| c.is_ascii_uppercase())
+    }
+
+    fn has_digit(s: &str) -> bool {
+        s.chars().any(|c| c.is_ascii_digit())
+    }
+
+    fn has_special(s: &str) -> bool {
+        s.chars().any(|c| "!@#$%^&*".contains(c))
+    }
+
+    #[test]
+    fn generate_random_password_has_length_16() {
+        let password = generate_random_password();
+        assert_eq!(password.len(), 16);
+    }
+
+    #[test]
+    fn generate_random_password_guarantees_category_diversity() {
+        // Every generated password must contain at least one character from each category.
+        // This is the core security invariant: uniform sampling over a flat charset
+        // would leave ~7.6% of passwords missing digits and ~43% missing specials.
+        for _ in 0..100 {
+            let password = generate_random_password();
+            assert!(has_lowercase(&password), "missing lowercase: {password}");
+            assert!(has_uppercase(&password), "missing uppercase: {password}");
+            assert!(has_digit(&password), "missing digit: {password}");
+            assert!(has_special(&password), "missing special: {password}");
+        }
+    }
+
+    #[test]
+    fn generate_random_password_only_uses_charset_characters() {
+        let allowed: std::collections::HashSet<char> =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
+                .chars()
+                .collect();
+        for _ in 0..50 {
+            for c in generate_random_password().chars() {
+                assert!(allowed.contains(&c), "unexpected character: {c}");
+            }
+        }
     }
 }

@@ -52,6 +52,13 @@ export class UsersPage extends BasePage {
   readonly toast: Locator
   readonly toastMessage: Locator
 
+  // Reset password selectors
+  readonly resetPasswordConfirmDialog: Locator
+  readonly resetPasswordConfirmButton: Locator
+  readonly resetPasswordResultDialog: Locator
+  readonly resetPasswordNewPasswordText: Locator
+  readonly resetPasswordCopyButton: Locator
+
   constructor(page: Page, logger?: UnifiedLogger) {
     super(page, logger)
     this.container = page.locator(SELECTORS.users.container)
@@ -73,6 +80,13 @@ export class UsersPage extends BasePage {
     // Feedback selectors
     this.toast = page.locator(SELECTORS.common.toast)
     this.toastMessage = page.locator(SELECTORS.common.toastMessage)
+
+    // Reset password selectors
+    this.resetPasswordConfirmDialog = page.locator(SELECTORS.resetPassword.confirmDialog)
+    this.resetPasswordConfirmButton = page.locator(SELECTORS.resetPassword.confirmButton)
+    this.resetPasswordResultDialog = page.locator(SELECTORS.resetPassword.resultDialog)
+    this.resetPasswordNewPasswordText = page.locator(SELECTORS.resetPassword.newPasswordText)
+    this.resetPasswordCopyButton = page.locator(SELECTORS.resetPassword.copyButton)
   }
 
   /**
@@ -372,5 +386,83 @@ export class UsersPage extends BasePage {
    */
   async isCreateDialogVisible(): Promise<boolean> {
     return await this.isVisible(this.dialog)
+  }
+
+  // ─── Reset Password Methods ────────────────────────────────────────────
+
+  /**
+   * Click "Reset Password" button for a user identified by email.
+   *
+   * Finds the user row by email, then locates the reset password button
+   * relative to that row using a suffix-matching selector.
+   * Waits for the confirmation dialog to appear.
+   *
+   * @param email User email to reset password for
+   */
+  async clickResetPassword(email: string): Promise<void> {
+    const row = this.findUserRow(email)
+    await expect(row).toBeVisible()
+
+    const resetButton = row.locator('[data-testid$="-reset-password-button"]').first()
+    await this.smartClick(resetButton)
+
+    await expect(this.resetPasswordConfirmDialog).toBeVisible()
+  }
+
+  /**
+   * Confirm the reset password action by clicking the confirm button.
+   * Waits for the confirmation dialog to close.
+   */
+  async confirmResetPassword(): Promise<void> {
+    await this.smartClick(this.resetPasswordConfirmButton)
+    await expect(this.resetPasswordConfirmDialog).toBeHidden({ timeout: 5000 })
+  }
+
+  /**
+   * Wait for the reset password result dialog to appear and return the new password.
+   *
+   * @returns The newly generated password string
+   */
+  async waitForResetPasswordResult(): Promise<string> {
+    await expect(this.resetPasswordResultDialog).toBeVisible({ timeout: 10000 })
+    await expect(this.resetPasswordNewPasswordText).toBeVisible()
+    const password = await this.resetPasswordNewPasswordText.textContent()
+    if (!password) {
+      throw new Error('New password text is empty in reset password result dialog')
+    }
+    return password.trim()
+  }
+
+  /**
+   * Click the "Copy Password" button in the result dialog.
+   */
+  async copyPassword(): Promise<void> {
+    await this.smartClick(this.resetPasswordCopyButton)
+  }
+
+  /**
+   * Close the reset password result dialog.
+   * Clicks the Close button inside the dialog footer.
+   */
+  async closeResetPasswordResult(): Promise<void> {
+    const closeButton = this.resetPasswordResultDialog.getByRole('button', { name: 'Close', exact: true }).first()
+    await this.smartClick(closeButton)
+    await expect(this.resetPasswordResultDialog).toBeHidden({ timeout: 5000 })
+  }
+
+  /**
+   * Composite method: perform full reset password flow for a user.
+   *
+   * 1. Click reset password button in the user row
+   * 2. Confirm the action
+   * 3. Wait for the result and extract the new password
+   *
+   * @param email User email to reset password for
+   * @returns The newly generated password
+   */
+  async resetUserPassword(email: string): Promise<string> {
+    await this.clickResetPassword(email)
+    await this.confirmResetPassword()
+    return await this.waitForResetPasswordResult()
   }
 }
