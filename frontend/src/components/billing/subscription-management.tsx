@@ -8,7 +8,7 @@ import { queryKeys, subscriptionQueryOptions } from '@/data/query-options'
 import { toast } from 'sonner'
 import { getStatusBadgeVariant, getStatusMessage, type SubscriptionStatus } from '@/types/billing'
 import { formatDate } from '@/lib/date-utils'
-import { ConfirmDeleteDialog, PageHeader } from '@/components/shared'
+import { ConfirmDialog, PageHeader } from '@/components/shared'
 
 interface SubscriptionManagementProps {
   realmId: string
@@ -129,7 +129,7 @@ export function SubscriptionManagement({ realmId, clientAppId }: SubscriptionMan
       </Card>
 
       {/* Cancel Confirmation Dialog */}
-      <ConfirmDeleteDialog
+      <ConfirmDialog
         open={cancelConfirmOpen}
         onOpenChange={setCancelConfirmOpen}
         title="Cancel Subscription"

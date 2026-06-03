@@ -1,4 +1,4 @@
-import { ConfirmDeleteDialog } from '@/components/shared'
+import { ConfirmDialog } from '@/components/shared'
 import type { OAuthConfigResponse } from '@/lib/api-generated'
 
 interface DeleteProviderDialogProps {
@@ -17,7 +17,7 @@ export function DeleteProviderDialog({
   isPending = false,
 }: DeleteProviderDialogProps) {
   return (
-    <ConfirmDeleteDialog
+    <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
       title="Delete Provider Configuration"

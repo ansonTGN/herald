@@ -9,7 +9,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 
-interface ConfirmDeleteDialogProps {
+interface ConfirmDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
@@ -19,12 +19,13 @@ interface ConfirmDeleteDialogProps {
   cancelLabel?: string
   isPending?: boolean
   confirmDisabled?: boolean
+  confirmClassName?: string
   contentTestId?: string
   cancelTestId?: string
   confirmTestId?: string
 }
 
-export function ConfirmDeleteDialog({
+export function ConfirmDialog({
   open,
   onOpenChange,
   title,
@@ -34,10 +35,11 @@ export function ConfirmDeleteDialog({
   cancelLabel = 'Cancel',
   isPending = false,
   confirmDisabled = false,
+  confirmClassName,
   contentTestId,
   cancelTestId,
   confirmTestId,
-}: ConfirmDeleteDialogProps) {
+}: ConfirmDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent {...(contentTestId && { 'data-testid': contentTestId })}>
@@ -55,7 +57,10 @@ export function ConfirmDeleteDialog({
           <AlertDialogAction
             onClick={onConfirm}
             disabled={confirmDisabled || isPending}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className={
+              confirmClassName ??
+              'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+            }
             {...(confirmTestId && { 'data-testid': confirmTestId })}
           >
             {isPending ? `${confirmLabel}...` : confirmLabel}

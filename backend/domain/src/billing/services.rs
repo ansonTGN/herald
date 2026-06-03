@@ -29,7 +29,6 @@ pub struct CreateSubscriptionPlanInput {
 
 #[derive(Debug, Clone)]
 pub struct UpdateSubscriptionPlanInput {
-    pub name: Option<String>,
     pub title: Option<String>,
     pub description: Option<String>,
     pub r#type: Option<SubscriptionPlanType>,
@@ -199,15 +198,6 @@ where
         }
 
         let existing_plan = self.get_plan(identity, realm_id, plan_id).await?;
-
-        // V7: Plan name is immutable after creation
-        if let Some(ref name) = input.name
-            && name != &existing_plan.name
-        {
-            return Err(CoreError::BadRequest(
-                "Subscription plan name cannot be changed after creation".to_string(),
-            ));
-        }
 
         let product_id = input.product_id.unwrap_or(existing_plan.product_id);
 

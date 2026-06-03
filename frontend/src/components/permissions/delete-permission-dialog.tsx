@@ -1,4 +1,4 @@
-import { ConfirmDeleteDialog } from '@/components/shared'
+import { ConfirmDialog } from '@/components/shared'
 import { deletePermission } from '@/lib/api-generated'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { useRealmId } from '@/stores/auth-store'
@@ -37,7 +37,7 @@ export function DeletePermissionDialog({
   }
 
   return (
-    <ConfirmDeleteDialog
+    <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
       title="Delete Permission"

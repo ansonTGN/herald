@@ -1,4 +1,4 @@
-import { ConfirmDeleteDialog } from '@/components/shared'
+import { ConfirmDialog } from '@/components/shared'
 
 interface ProductDeleteDialogProps {
   product: {
@@ -20,7 +20,7 @@ export function ProductDeleteDialog({
   hasPlans,
 }: ProductDeleteDialogProps) {
   return (
-    <ConfirmDeleteDialog
+    <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
       title="Delete Product"

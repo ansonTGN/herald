@@ -11,11 +11,12 @@ import { ListPagination } from '@/components/shared'
 import { CreateUserDialog } from '@/components/users/create-user-dialog'
 import { EditUserDialog } from '@/components/users/edit-user-dialog'
 import { UserRolesDialog } from '@/components/users/user-roles-dialog'
-import { deleteUser } from '@/lib/api-generated'
+import { deleteUser, resetUserPassword } from '@/lib/api-generated'
 import { useRealmId, useAuthStore } from '@/stores/auth-store'
 import type { UserResponse } from '@/lib/api-generated'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ConfirmDeleteDialog, PageHeader } from '@/components/shared'
+import { ConfirmDialog, PageHeader } from '@/components/shared'
+import { ResetPasswordResultDialog } from '@/components/users/reset-password-result-dialog'
 
 export const Route = createFileRoute('/$realmId/manage/users')({
   component: UsersPage,
@@ -48,6 +49,8 @@ function UsersPage() {
   const editDialog = useDialogManager<UserResponse>()
   const deleteDialog = useDialogManager<UserResponse>()
   const rolesDialog = useDialogManager<UserResponse>()
+  const resetPasswordDialog = useDialogManager<UserResponse>()
+  const [resetPasswordResult, setResetPasswordResult] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery(
     usersQueryOptions(realmId, {
@@ -59,10 +62,11 @@ function UsersPage() {
   )
 
   const deleteMutation = useMutation({
-    mutationFn: (userId: string) =>
-      deleteUser({
-        path: { realmId, userId },
-      }),
+    mutationFn: async (userId: string) => {
+      const result = await deleteUser({ path: { realmId, userId } })
+      if (result.error) throw result.error
+      return result.data
+    },
     onSuccess: () => {
       deleteDialog.close()
       queryClient.invalidateQueries({ queryKey: queryKeys.usersList(realmId) })
@@ -70,6 +74,23 @@ function UsersPage() {
     },
     onError: (error: Error) => {
       toast.error(error.message ?? 'Failed to delete user')
+    },
+  })
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const result = await resetUserPassword({
+        path: { realmId, userId },
+      })
+      if (result.error) throw result.error
+      return result.data
+    },
+    onSuccess: (data) => {
+      resetPasswordDialog.close()
+      setResetPasswordResult(data.newPassword)
+    },
+    onError: (error: Error) => {
+      toast.error(error.message ?? 'Failed to reset password')
     },
   })
 
@@ -87,6 +108,10 @@ function UsersPage() {
 
   function handleManageRoles(user: UserResponse) {
     rolesDialog.open(user)
+  }
+
+  function handleResetPassword(user: UserResponse) {
+    resetPasswordDialog.open(user)
   }
 
   function handleSearchChange(email: string | undefined) {
@@ -135,6 +160,7 @@ function UsersPage() {
               onEdit={handleEdit}
               onDelete={handleDelete}
               onManageRoles={handleManageRoles}
+              onResetPassword={handleResetPassword}
             />
           )}
         </CardContent>
@@ -177,7 +203,7 @@ function UsersPage() {
       )}
 
       {deleteDialog.selectedItem && (
-        <ConfirmDeleteDialog
+        <ConfirmDialog
           open={deleteDialog.isOpen}
           onOpenChange={(v) => {
             if (!v) deleteDialog.close()
@@ -191,6 +217,31 @@ function UsersPage() {
           cancelTestId="cancel-delete-user-button"
         />
       )}
+
+      {resetPasswordDialog.selectedItem && (
+        <ConfirmDialog
+          open={resetPasswordDialog.isOpen}
+          onOpenChange={(v) => {
+            if (!v) resetPasswordDialog.close()
+          }}
+          title="Reset Password"
+          description={`Are you sure you want to reset the password for user "${resetPasswordDialog.selectedItem.email}"? A new random password will be generated.`}
+          onConfirm={() => resetPasswordMutation.mutate(resetPasswordDialog.selectedItem!.id)}
+          confirmLabel="Reset Password"
+          confirmClassName="bg-primary text-primary-foreground hover:bg-primary/90"
+          isPending={resetPasswordMutation.isPending}
+          contentTestId="reset-password-dialog"
+          confirmTestId="confirm-reset-password-button"
+        />
+      )}
+
+      <ResetPasswordResultDialog
+        open={!!resetPasswordResult}
+        onOpenChange={(v) => {
+          if (!v) setResetPasswordResult(null)
+        }}
+        newPassword={resetPasswordResult ?? ''}
+      />
     </div>
   )
 }

@@ -31,7 +31,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
-import { BaseFormDialog, ConfirmDeleteDialog, DataTable, PageHeader } from '@/components/shared'
+import { BaseFormDialog, ConfirmDialog, DataTable, PageHeader } from '@/components/shared'
 import { TextField } from '@/components/shared/form-fields'
 import { getFieldErrorMessage } from '@/lib/form-utils'
 import {
@@ -514,7 +514,7 @@ export function PointsPackageProvidersPage({
         availableProviders={availableProviders}
       />
 
-      <ConfirmDeleteDialog
+      <ConfirmDialog
         open={!!deletingMapping}
         onOpenChange={(open) => !open && setDeletingMapping(undefined)}
         title="Delete Payment Provider Mapping"

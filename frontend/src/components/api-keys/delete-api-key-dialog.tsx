@@ -1,4 +1,4 @@
-import { ConfirmDeleteDialog } from '@/components/shared'
+import { ConfirmDialog } from '@/components/shared'
 
 interface DeleteApiKeyDialogProps {
   open: boolean
@@ -14,7 +14,7 @@ export function DeleteApiKeyDialog({
   apiKeyName,
 }: DeleteApiKeyDialogProps) {
   return (
-    <ConfirmDeleteDialog
+    <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
       title="Delete API Key"

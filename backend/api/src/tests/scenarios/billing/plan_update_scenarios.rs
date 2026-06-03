@@ -56,7 +56,6 @@ async fn test_scenario_update_plan_name_and_description(ctx: &mut TestContext) {
     println!("[Step 2] Update plan name and description");
 
     let update_request = json!({
-        "name": "Pro Plan",
         "title": "Pro Plan",
         "description": "Enhanced features for professional users"
     });
@@ -91,7 +90,10 @@ async fn test_scenario_update_plan_name_and_description(ctx: &mut TestContext) {
             .await
             .expect("Failed to fetch plan");
 
-    assert_eq!(name, "Pro Plan", "Plan name should be updated");
+    assert_eq!(
+        name, "Basic Plan",
+        "Plan name should remain unchanged (immutable)"
+    );
     assert_eq!(title, "Pro Plan", "Plan title should be updated");
     assert_eq!(
         description, "Enhanced features for professional users",
@@ -99,10 +101,10 @@ async fn test_scenario_update_plan_name_and_description(ctx: &mut TestContext) {
     );
 
     println!(
-        "[Step 3] ✓ Plan verified: name={}, title={}, description={}",
+        "[Step 3] ✓ Plan verified: name={} (immutable), title={}, description={}",
         name, title, description
     );
-    println!("\n✅ Scenario 1 完成：套餐名称和描述更新成功");
+    println!("\n✅ Scenario 1 完成：套餐标题和描述更新成功（name 不可变）");
 }
 
 /// ============================================================================

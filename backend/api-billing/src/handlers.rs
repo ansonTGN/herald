@@ -612,7 +612,6 @@ pub async fn update_plan(
     require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
     let input = herald_core::domain::billing::UpdateSubscriptionPlanInput {
-        name: request.name,
         title: request.title,
         description: request.description,
         r#type: request.r#type.map(|s| s.parse()).transpose()?,

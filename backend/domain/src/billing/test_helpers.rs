@@ -581,7 +581,6 @@ impl CreateSubscriptionPlanInputBuilder {
 /// Builder for creating test UpdateSubscriptionPlanInput instances
 #[derive(Debug, Clone, Default)]
 pub struct UpdateSubscriptionPlanInputBuilder {
-    name: Option<String>,
     title: Option<String>,
     description: Option<String>,
     plan_type: Option<SubscriptionPlanType>,
@@ -597,16 +596,6 @@ pub struct UpdateSubscriptionPlanInputBuilder {
 impl UpdateSubscriptionPlanInputBuilder {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn with_name(mut self, name: impl Into<String>) -> Self {
-        self.name = Some(name.into());
-        self
-    }
-
-    pub fn with_no_name(mut self) -> Self {
-        self.name = None;
-        self
     }
 
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
@@ -711,7 +700,6 @@ impl UpdateSubscriptionPlanInputBuilder {
 
     pub fn build(self) -> UpdateSubscriptionPlanInput {
         UpdateSubscriptionPlanInput {
-            name: self.name,
             title: self.title,
             description: self.description,
             r#type: self.plan_type,

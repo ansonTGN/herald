@@ -11,7 +11,7 @@ import { PlanTable } from './plan-table'
 import { PlanAssignmentDialog, type PlanAssignmentSubmitData } from './plan-assignment-dialog'
 import { ListPagination } from '@/components/shared'
 import { toast } from 'sonner'
-import { ConfirmDeleteDialog, PageHeader } from '@/components/shared'
+import { ConfirmDialog, PageHeader } from '@/components/shared'
 import type { BillingSearchSchema } from '@/routes/$realmId/manage/billing/index'
 
 interface BillingPageProps {
@@ -216,7 +216,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
         isSubmitting={assignPlanMutation.isPending}
       />
 
-      <ConfirmDeleteDialog
+      <ConfirmDialog
         open={deleteDialog.isOpen}
         onOpenChange={deleteDialog.onOpenChange}
         title="Delete Subscription Plan"

@@ -1,4 +1,4 @@
-import { ConfirmDeleteDialog } from '@/components/shared'
+import { ConfirmDialog } from '@/components/shared'
 
 interface DeleteClientAppDialogProps {
   open: boolean
@@ -14,7 +14,7 @@ export function DeleteClientAppDialog({
   clientAppName,
 }: DeleteClientAppDialogProps) {
   return (
-    <ConfirmDeleteDialog
+    <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
       title="Delete Client App"

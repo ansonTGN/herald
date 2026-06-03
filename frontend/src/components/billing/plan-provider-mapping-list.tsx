@@ -15,7 +15,7 @@ import { queryKeys, subscriptionPlanProvidersQueryOptions } from '@/data/query-o
 import { removePaymentProviderFromPlan, togglePlanPaymentProvider } from '@/lib/api-generated'
 import type { SubscriptionPlanPaymentProviderResponse } from '@/lib/api-generated'
 import { toast } from 'sonner'
-import { ConfirmDeleteDialog } from '@/components/shared'
+import { ConfirmDialog } from '@/components/shared'
 import { formatProviderName } from './format-provider-name'
 
 interface PlanProviderMappingListProps {
@@ -234,7 +234,7 @@ export function PlanProviderMappingList({
         data-testid="provider-mapping-table"
       />
 
-      <ConfirmDeleteDialog
+      <ConfirmDialog
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
         title="Delete Payment Provider Mapping"

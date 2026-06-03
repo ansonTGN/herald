@@ -1,4 +1,4 @@
-import { ConfirmDeleteDialog } from '@/components/shared'
+import { ConfirmDialog } from '@/components/shared'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { deleteRole } from '@/lib/api-generated'
 import { useRealmId } from '@/stores/auth-store'
@@ -37,7 +37,7 @@ export function DeleteRoleDialog({
   }
 
   return (
-    <ConfirmDeleteDialog
+    <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
       title="Delete Role"

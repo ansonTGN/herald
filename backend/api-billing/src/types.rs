@@ -67,8 +67,6 @@ fn validate_currency(currency: &str) -> Result<(), validator::ValidationError> {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSubscriptionPlanRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,

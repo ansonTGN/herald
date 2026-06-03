@@ -16,7 +16,7 @@ import {
 import { deletePlanConfig } from '@/lib/api-generated'
 import type { PointsPlanConfigResponse } from '@/lib/api-generated'
 import { toast } from 'sonner'
-import { ConfirmDeleteDialog, PageHeader } from '@/components/shared'
+import { ConfirmDialog, PageHeader } from '@/components/shared'
 
 interface PointsConfigsPageProps {
   realmId: string
@@ -233,7 +233,7 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
       )}
 
       {/* Delete Confirmation Dialog */}
-      <ConfirmDeleteDialog
+      <ConfirmDialog
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
         title="Delete Points Rule"
