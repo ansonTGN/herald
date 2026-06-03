@@ -15,13 +15,13 @@ use uuid::Uuid;
 
 /// Update user account
 ///
-/// Updates user email, status, or nickname. Requires "users.manage" permission.
+/// Updates user status or nickname. Email is read-only after creation. Requires "users.manage" permission.
 #[utoipa::path(
     put,
     path = "/api/users/{realmId}/{userId}",
     tag = "users",
     summary = "Update a user",
-    description = "Update user email, status, or nickname. Requires `users.manage` permission.",
+    description = "Update user status or nickname. Email is read-only after creation. Requires `users.manage` permission.",
     params(
         ("realmId" = String, Path, description = "Realm ID"),
         ("userId" = Uuid, Path, description = "User ID")
@@ -51,7 +51,6 @@ pub async fn update_user(
 
     // Build UpdateUserAdminRequest (convert i16 to i32 for status)
     let request = UpdateUserAdminRequest {
-        email: payload.email,
         nickname: payload.nickname,
         status: payload.status.map(|s| s as i32),
     };

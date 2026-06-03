@@ -141,7 +141,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - Plan Payment Provider 是 Plan 的下属配置对象，每个映射分别保存外部商品、价格、checkout 等接入信息
 - Plan 是订阅和计费的直接承载对象，Product 是 Plan 的上层编目对象
 - 套餐的 `name` 字段是唯一标识符，用于 API 调用和前端路由，创建后不可修改
-  > **[待修复]** 当前代码 `UpdateSubscriptionPlanInput` 包含 `name: Option<String>`，`update_plan` 方法允许修改 name。应拒绝 name 变更，使其与 PRD 意图一致。
+  > 代码实现拒绝 name 变更：当传入的 name 与现有 name 不同时返回错误。
 - 套餐的 `title` 字段是用户友好的显示名称
 - `features` 和 `quotas` 由第三方应用自行管理，Herald 不存储这些信息
 - 更新价格影响新订阅用户，已订阅用户保持原价格直到续费
@@ -155,7 +155,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 **支付平台映射规则**：
 - 同一 Plan 不能重复配置同一个支付平台
 - 删除支付平台映射前需检查是否有活跃订阅
-  > **[待修复]** 当前代码 `remove_payment_provider_from_plan` 未检查该映射下是否有活跃订阅，直接执行删除。应增加活跃订阅检查，拒绝有活跃订阅的映射删除。
+  > 存在活跃订阅时拒绝删除支付平台映射。
 - 禁用支付平台映射不影响已订阅用户，但新用户无法使用该支付平台
 - 启用支付平台映射时，如果该平台未在 Realm 层配置，应提示用户先配置支付平台
 

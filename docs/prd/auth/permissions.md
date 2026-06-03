@@ -179,7 +179,7 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 | 权限项 | 原用途 | 替代方案 |
 |--------|--------|---------|
 | `realm.admin` | 宽泛的管理端权限 | 各模块具体的 `resource.view` / `resource.manage` |
-| `realm.create` | Realm 创建 | `realm.manage`（仅限创建/删除 Realm，不含编辑其他 Realm 元数据） |
+| `realm.create` | Realm 创建 | `realm.manage`（仅限创建 Realm，不含编辑其他 Realm 元数据；Realm 删除当前不支持） |
 | `realm.admin:{realm_id}` 特殊策略 | 判断是否能进入管理端 | 具体权限检查 + `Identity::has_access_to_realm` |
 
 **Realm 操作权限**:

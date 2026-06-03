@@ -88,7 +88,7 @@ Product 编目管理是 Herald 系统为 Realm 提供的产品线组织能力。
 - title 长度限制：1-100 字符
 - description 长度限制：0-500 字符（可选）
 
-> **⚠️ 待修复 — code 格式校验**：PRD 要求 code 只能包含字母、数字、横线、下划线，但当前后端代码仅有长度校验（3-50），缺少格式正则校验。需在 service 层补充格式验证。
+> code 格式校验仅允许 `[a-zA-Z0-9_-]`，不符合格式的 code 返回验证错误。
 
 **Product-Plan 关系**：
 - 关系类型：一对多（1:N），一个 Product 可包含多个 Plan，一个 Plan 必须属于且仅属于一个 Product

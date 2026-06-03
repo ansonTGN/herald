@@ -24,8 +24,6 @@ pub struct UserCreateRequest {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Validate)]
 pub struct UserUpdateRequest {
-    #[validate(email)]
-    pub email: Option<String>,
     #[validate(length(max = 50))]
     pub nickname: Option<String>,
     pub status: Option<i16>,

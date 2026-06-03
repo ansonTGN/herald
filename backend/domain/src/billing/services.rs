@@ -199,6 +199,16 @@ where
         }
 
         let existing_plan = self.get_plan(identity, realm_id, plan_id).await?;
+
+        // V7: Plan name is immutable after creation
+        if let Some(ref name) = input.name
+            && name != &existing_plan.name
+        {
+            return Err(CoreError::BadRequest(
+                "Subscription plan name cannot be changed after creation".to_string(),
+            ));
+        }
+
         let product_id = input.product_id.unwrap_or(existing_plan.product_id);
 
         self.ensure_product_belongs_to_realm(realm_id, product_id)
@@ -207,7 +217,7 @@ where
         let updated_plan = SubscriptionPlan {
             id: existing_plan.id,
             realm_id: existing_plan.realm_id.clone(),
-            name: input.name.unwrap_or(existing_plan.name),
+            name: existing_plan.name,
             title: input.title.unwrap_or(existing_plan.title),
             description: input.description.or(existing_plan.description),
             r#type: input.r#type.unwrap_or(existing_plan.r#type),
@@ -712,6 +722,18 @@ where
         if !identity.has_access_to_realm(realm_id) {
             return Err(CoreError::Forbidden(
                 "Access denied: cannot access billing products from a different realm".to_string(),
+            ));
+        }
+
+        // V23: Validate product code format (alphanumeric, dash, underscore only)
+        if !input
+            .code
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            return Err(CoreError::BadRequest(
+                "Product code must contain only alphanumeric characters, dashes, and underscores"
+                    .to_string(),
             ));
         }
 

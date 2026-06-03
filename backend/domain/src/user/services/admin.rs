@@ -392,15 +392,10 @@ where
             ));
         }
 
-        // Update user fields
+        // Update user fields (email is read-only after creation)
         if let Err(e) = self
             .user_repository
-            .update_user_fields(
-                user_id,
-                request.email.as_deref(),
-                request.nickname.as_deref(),
-                request.status,
-            )
+            .update_user_fields(user_id, None, request.nickname.as_deref(), request.status)
             .await
         {
             self.record_user_audit(
@@ -770,10 +765,11 @@ where
     }
 }
 
-/// Generate random password (alphanumeric, 16 characters)
+/// Generate random password (alphanumeric + special characters, 16 characters)
 fn generate_random_password() -> String {
     use rand::Rng;
-    const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    const CHARSET: &[u8] =
+        b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
     let mut rng = rand::thread_rng();
     (0..16)
         .map(|_| CHARSET[rng.gen_range(0..CHARSET.len())] as char)

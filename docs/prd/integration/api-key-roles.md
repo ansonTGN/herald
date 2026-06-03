@@ -42,7 +42,7 @@
 - API Key 列表页显示角色 badge（每行显示已分配角色，超过 2 个折叠为「+N more」）
 - API Key 列表页增加「Roles」操作按钮（打开角色管理对话框）
 - API Key 角色管理对话框（查看、分配、清除角色，即时保存）
-- 创建 API Key 表单增加可选角色选择器（创建成功后自动绑定）**⚠️ 待实现，详见 9.1**
+- 创建 API Key 表单增加可选角色选择器（创建成功后自动绑定）
 - 创建 API Key 表单增加 Client App 选择器；未选择时默认绑定内置 `admin-api-client`
 - API Key 列表展示绑定的 Client App 名称
 - 每个 Realm 拥有一个内置 API Key Client App（`client_id = 'admin-api-client'`，默认 `enabled=true`）
@@ -77,7 +77,7 @@
 - **内置角色保护**：API Key 不允许绑定内置角色（`is_builtin=true`），仅可绑定自定义角色
 - **Client App 全局开关**：内置 API Key Client App 的 `enabled` 状态作为其下所有 API Key 的全局开关
 - **Client App 作用域隔离**：绑定非内置 Client App 的 API Key 只能访问该 Client App 的资源
-- **创建时可选角色**：创建 API Key 时可选角色，角色绑定失败不回滚 Key 创建（⚠️ 后端待实现，详见 9.1）
+- **创建时可选角色**：创建 API Key 时可选角色，角色绑定失败不回滚 Key 创建
 
 ---
 
@@ -119,7 +119,7 @@
    - 创建成功后自动绑定所选角色
    - 角色绑定失败不回滚 Key 创建，仍展示明文 Key
 
-   > **⚠️ 待实现（P0）**：后端 `CreateApiKeyRequest` 无 `role_ids` 字段，`create.rs` 中无角色绑定调用。当前创建 API Key 后角色列表为空，需手动通过角色管理端点分配。需在请求结构体中新增 `role_ids: Option<Vec<Uuid>>` 并在创建流程中调用 `role_assignment_service.assign_api_key_roles`。
+   > 创建 API Key 时支持通过 `role_ids` 字段绑定角色，角色绑定失败不回滚 Key 创建。
 
 3. **内置 API Key Client App**
    - 每个 Realm 拥有一个内置 API Key Client App（`client_id = 'admin-api-client'`）
@@ -186,9 +186,9 @@
 
 ## 9. 实现差异与已知问题
 
-### 9.1 待实现（P0）
+### 9.1 已实现
 
-- **创建 API Key 时无角色绑定（US-RA-017）**：`CreateApiKeyRequest`（`api-admin/src/api_keys/types.rs`）无 `role_ids` 字段，`create.rs` 中完全没有角色绑定调用。创建后需手动通过 `PUT /{apiKeyId}/roles` 分配角色。
+- **创建 API Key 时绑定角色（US-RA-017）**：`CreateApiKeyRequest` 支持 `role_ids: Option<Vec<Uuid>>` 字段，创建成功后自动绑定角色。
 
 ### 9.2 待修复
 

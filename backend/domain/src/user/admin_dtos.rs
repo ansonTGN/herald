@@ -16,7 +16,6 @@ pub struct CreateUserWithRolesRequest {
 /// Request to update a user (admin operations)
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct UpdateUserAdminRequest {
-    pub email: Option<String>,
     pub nickname: Option<String>,
     pub status: Option<i32>,
 }
