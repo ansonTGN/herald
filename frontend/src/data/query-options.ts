@@ -364,6 +364,7 @@ export const usersQueryOptions = (
     page?: number
     pageSize?: number
     email?: string
+    status?: string
   }
 ) =>
   queryOptions({
@@ -376,7 +377,9 @@ export const usersQueryOptions = (
             page: filters.page ?? 0,
             pageSize: filters.pageSize ?? 20,
             email: filters.email,
-          },
+            // status is supported by backend but not yet in generated types
+            ...(filters.status ? { status: Number(filters.status) } : {}),
+          } as { page?: number; pageSize?: number; email?: string; status?: number },
         })
       ),
     retry: RETRY_COUNT,

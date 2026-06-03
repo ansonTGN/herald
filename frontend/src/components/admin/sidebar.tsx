@@ -158,6 +158,22 @@ export function Sidebar() {
             permission: PERMISSION.POINTS_VIEW,
             visible: adminFeatures?.pointsVisible ?? true,
           },
+          {
+            id: 'points-free-stats',
+            name: 'Free Stats',
+            path: `/${realmId}/manage/points/free-stats`,
+            icon: History,
+            permission: PERMISSION.POINTS_VIEW,
+            visible: adminFeatures?.pointsVisible ?? true,
+          },
+          {
+            id: 'points-realm-config',
+            name: 'Realm Config',
+            path: `/${realmId}/manage/points/realm-config`,
+            icon: Settings,
+            permission: PERMISSION.POINTS_VIEW,
+            visible: adminFeatures?.pointsVisible ?? true,
+          },
         ],
       },
       {

@@ -12,23 +12,23 @@
 ### 1.1 相关故事
 
 **Tenant Admin 积分管理**: `docs/user-stories/billing/points-admin.md`
-- US-PO-01: 配置积分套餐 (P0)
-- US-PO-02: 查看所有用户积分账户 (P1)
-- US-PO-03: 查看用户积分交易历史 (P1)
-- US-PO-04: 管理积分套餐配置 (P2)
-- US-PO-05: 查看套餐充值引导 (P2)
-- US-PO-06: 配置 Realm 默认积分策略 (P0)
-- US-PO-07: 查看免费用户积分统计 (P0)
+- US-PO-001: 配置积分套餐 (P0)
+- US-PO-002: 查看所有用户积分账户 (P1)
+- US-PO-003: 查看用户积分交易历史 (P1)
+- US-PO-004: 管理积分套餐配置 (P2)
+- US-PO-005: 查看套餐充值引导 (P2)
+- US-PO-006: 配置 Realm 默认积分策略 (P0)
+- US-PO-007: 查看免费用户积分统计 (P1)
 
 **Tenant User 积分查询**: `docs/user-stories/billing/points-user.md`
-- US-PU-01: 查看我的积分余额 (P0)
-- US-PU-02: 查看我的交易历史 (P1)
-- US-PU-03: 筛选交易记录 (P2)
+- US-PU-001: 查看我的积分余额 (P0)
+- US-PU-002: 查看我的交易历史 (P1)
+- US-PU-003: 筛选交易记录 (P2)
 
 **免费用户积分体验**: `docs/user-stories/billing/points-free-user.md`
-- US-FU-01: 注册时获得初始积分（永久有效）(P0)
-- US-FU-02: 定期自动获得免费积分（支持 once/daily/weekly/monthly）(P0)
-- US-FU-03: 升级到付费套餐时保留注册初始积分 (P1)
+- US-FU-001: 注册时获得初始积分（永久有效）(P0)
+- US-FU-002: 定期自动获得免费积分（支持 once/daily/weekly/monthly）(P0)
+- US-FU-003: 升级到付费套餐时保留注册初始积分 (P1)
 
 **积分包管理（含促销包）**: `docs/user-stories/billing/points-package.md`
 - US-PP-001: 创建积分包 (P0)
@@ -37,22 +37,22 @@
 - US-PP-004: 查看积分包列表 (P0)
 - US-PP-005: 删除积分包 (P1)
 - US-PP-006: 创建促销积分包 (P0)
-- US-PP-007: 编辑促销积分包 (P0)
-- US-PP-008: 用户查看促销积分包 (P0)
-- US-PP-009: 促销包自动过期 (P1)
+- US-PP-016: 编辑促销积分包 (P0)
+- US-PP-017: 用户查看促销积分包 (P0)
+- US-PP-018: 促销包自动过期 (P1)
 
 **积分包购买**: `docs/user-stories/billing/points-package-purchase.md`
-- US-PU-06: 购买积分包 (P0)
-- US-PU-07: 查看积分包购买记录 (P1)
-- US-PU-08: 理解积分包与订阅购买的区别 (P1)
+- US-PU-006: 购买积分包 (P0)
+- US-PU-007: 查看积分包购买记录 (P1)
+- US-PU-008: 理解积分包与订阅购买的区别 (P1)
 
 ### 1.2 优先级汇总
 
 | 优先级 | 数量 | 关键故事 |
 |--------|------|----------|
-| P0 | 14 | US-PO-01, US-PO-06, US-PU-01, US-PU-04, US-PU-06, US-FU-01, US-FU-02, US-PP-001~004, US-PP-006~008 |
-| P1 | 10 | US-PO-02, US-PO-03, US-PO-07, US-PU-02, US-PU-05, US-PU-07, US-PU-08, US-FU-03, US-PP-005, US-PP-009 |
-| P2 | 3 | US-PO-04, US-PO-05, US-PU-03 |
+| P0 | 14 | US-PO-001, US-PO-006, US-PU-001, US-PU-004, US-PU-006, US-FU-001, US-FU-002, US-PP-001~004, US-PP-006, US-PP-016, US-PP-017 |
+| P1 | 10 | US-PO-002, US-PO-003, US-PO-007, US-PU-002, US-PU-005, US-PU-007, US-PU-008, US-FU-003, US-PP-005, US-PP-018 |
+| P2 | 3 | US-PO-004, US-PO-005, US-PU-003 |
 
 ---
 
@@ -368,7 +368,7 @@
 - 用户故事：`docs/user-stories/billing/points-admin.md`
 - 用户故事：`docs/user-stories/billing/points-user.md`
 - 用户故事：`docs/user-stories/billing/points-free-user.md`
-- 用户故事：`docs/user-stories/billing/points-package.md`（含促销包故事 US-PP-006~009）
+- 用户故事：`docs/user-stories/billing/points-package.md`（含促销包故事 US-PP-006, US-PP-016~018）
 - 用户故事：`docs/user-stories/billing/points-package-purchase.md`
 - 相关 PRD：`docs/prd/billing/subscription.md`
 - 相关 PRD：`docs/prd/billing/product-catalog.md`

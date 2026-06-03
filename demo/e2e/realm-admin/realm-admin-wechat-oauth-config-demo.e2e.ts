@@ -2,8 +2,8 @@
  * Realm Admin WeChat OAuth Config Demo Tests
  *
  * User Stories:
- * - US-RA-011: WeChat OAuth Provider 配置
- * - US-RA-012: WeChat Mini Program Provider 配置
+ * - US-WO-001: WeChat OAuth Provider 配置
+ * - US-WO-002: WeChat Mini Program Provider 配置
  *
  * Design Doc: .ai/design/wechat-oauth.md
  *
@@ -71,11 +71,11 @@ test.describe('[Realm Admin] WeChat OAuth Config Demo Tests', () => {
   })
 
   // ============================================================================
-  // WeChat OAuth Provider 配置管理 [US-RA-011]
+  // WeChat OAuth Provider 配置管理 [US-WO-001]
   // ============================================================================
 
-  test.describe('用户故事 US-RA-011：WeChat OAuth Provider 配置', () => {
-    test('WeChat Provider 配置管理综合流程 [US-RA-011]', async ({ page, demoLogger, testStartTime }) => {
+  test.describe('用户故事 US-WO-001：WeChat OAuth Provider 配置', () => {
+    test('WeChat Provider 配置管理综合流程 [US-WO-001]', async ({ page, demoLogger, testStartTime }) => {
       const settingsPage = new SettingsPage(page, demoLogger, DEMO_ADMIN.realmId)
 
       // === 初始状态验证 ===
@@ -172,11 +172,11 @@ test.describe('[Realm Admin] WeChat OAuth Config Demo Tests', () => {
   })
 
   // ============================================================================
-  // WeChat Mini Program Provider 配置管理 [US-RA-012]
+  // WeChat Mini Program Provider 配置管理 [US-WO-002]
   // ============================================================================
 
-  test.describe('用户故事 US-RA-012：WeChat Mini Program Provider 配置', () => {
-    test('WeChat Mini Program Provider 配置管理综合流程 [US-RA-012]', async ({ page, demoLogger, testStartTime }) => {
+  test.describe('用户故事 US-WO-002：WeChat Mini Program Provider 配置', () => {
+    test('WeChat Mini Program Provider 配置管理综合流程 [US-WO-002]', async ({ page, demoLogger, testStartTime }) => {
       const settingsPage = new SettingsPage(page, demoLogger, DEMO_ADMIN.realmId)
 
       // === 初始状态验证 ===
@@ -272,11 +272,11 @@ test.describe('[Realm Admin] WeChat OAuth Config Demo Tests', () => {
   })
 
   // ============================================================================
-  // Scope 配置验证 [US-RA-011]
+  // Scope 配置验证 [US-WO-001]
   // ============================================================================
 
-  test.describe('Scope 配置验证 [US-RA-011]', () => {
-    test('WeChat Scope 配置验证 [US-RA-011]', async ({ page, demoLogger, testStartTime }) => {
+  test.describe('Scope 配置验证 [US-WO-001]', () => {
+    test('WeChat Scope 配置验证 [US-WO-001]', async ({ page, demoLogger, testStartTime }) => {
       const settingsPage = new SettingsPage(page, demoLogger, DEMO_ADMIN.realmId)
 
       await test.step('场景 6：Scope 配置验证（WeChat 固定为 snsapi_login）', async () => {
@@ -323,7 +323,7 @@ test.describe('[Realm Admin] WeChat OAuth Config Demo Tests', () => {
   // ============================================================================
 
   test.describe('综合测试：同时配置 WeChat 和 WeChat Mini Program Provider', () => {
-    test('同时配置 WeChat 和 WeChat Mini Program Provider [US-RA-011 & US-RA-012]', async ({ page, demoLogger, testStartTime }) => {
+    test('同时配置 WeChat 和 WeChat Mini Program Provider [US-WO-001 & US-WO-002]', async ({ page, demoLogger, testStartTime }) => {
       const settingsPage = new SettingsPage(page, demoLogger, DEMO_ADMIN.realmId)
 
       // === Phase 1: 配置 WeChat Provider ===

@@ -2,7 +2,7 @@
  * Promotional Package Display and Purchase Demo (User)
  *
  * Covers user-facing promotional package scenarios:
- * - US-PP-008: Promo badge display, strikethrough price, limited-time label, and sorting
+ * - US-PP-017: Promo badge display, strikethrough price, limited-time label, and sorting
  * - US-PU-06: Purchase initiation for promotional packages
  *
  * Each test is self-contained and creates its own promo package via admin UI
@@ -52,10 +52,10 @@ test.describe('[Points Package Promo] User Purchase Display and Purchase Demo', 
   })
 
   // =========================================================================
-  // US-PP-008: User sees promo badge and sorting
+  // US-PP-017: User sees promo badge and sorting
   // =========================================================================
 
-  test('should display promo badge, strikethrough price, limited-time label and correct sorting (US-PP-008)', async ({
+  test('should display promo badge, strikethrough price, limited-time label and correct sorting (US-PP-017)', async ({
     page,
     loginPage,
     demoLogger,
@@ -86,7 +86,7 @@ test.describe('[Points Package Promo] User Purchase Display and Purchase Demo', 
 
       await createPromoPackage(page, REALM_ID, formData)
 
-      console.log(`[US-PP-008] Admin created promo package "${formData.name}" on realm ${REALM_ID}`)
+      console.log(`[US-PP-017] Admin created promo package "${formData.name}" on realm ${REALM_ID}`)
     })
 
     await test.step('And: User logs in and navigates to the purchase page', async () => {
@@ -95,7 +95,7 @@ test.describe('[Points Package Promo] User Purchase Display and Purchase Demo', 
 
       await navigateToPurchasePage(page, REALM_ID)
 
-      console.log('[US-PP-008] User navigated to purchase page')
+      console.log('[US-PP-017] User navigated to purchase page')
     })
 
     let promoCard
@@ -112,7 +112,7 @@ test.describe('[Points Package Promo] User Purchase Display and Purchase Demo', 
       const badgeText = await discountBadge.textContent()
       expect(badgeText).toContain('50')
 
-      console.log(`[US-PP-008] Discount badge visible: "${badgeText}"`)
+      console.log(`[US-PP-017] Discount badge visible: "${badgeText}"`)
     })
 
     await test.step('And: Promo card shows strikethrough original price', async () => {
@@ -120,14 +120,14 @@ test.describe('[Points Package Promo] User Purchase Display and Purchase Demo', 
       // The card shows the original price (9.99) crossed out
       await expect(promoCard!.getByText('9.99')).toBeVisible()
 
-      console.log('[US-PP-008] Strikethrough original price (9.99) displayed')
+      console.log('[US-PP-017] Strikethrough original price (9.99) displayed')
     })
 
     await test.step('And: Promo card shows limited-time label', async () => {
       const limitedTimeLabel = promoCard!.locator(SELECTORS.packageSelector.limitedTimeLabel)
       await expect(limitedTimeLabel).toBeVisible()
 
-      console.log('[US-PP-008] Limited-time label visible')
+      console.log('[US-PP-017] Limited-time label visible')
     })
 
     await test.step('And: "Best Value" badge does NOT appear on promotional packages', async () => {
@@ -135,7 +135,7 @@ test.describe('[Points Package Promo] User Purchase Display and Purchase Demo', 
       const bestValueBadge = promoCard!.locator(SELECTORS.packageSelector.bestValueBadge)
       await expect(bestValueBadge).not.toBeVisible()
 
-      console.log('[US-PP-008] "Best Value" badge correctly suppressed on promo card')
+      console.log('[US-PP-017] "Best Value" badge correctly suppressed on promo card')
     })
 
     await test.step('And: Promo card appears before standard package cards (promo-first sorting)', async () => {
@@ -181,7 +181,7 @@ test.describe('[Points Package Promo] User Purchase Display and Purchase Demo', 
         expect(promoIndex).toBeLessThan(firstNonPromoIndex)
       }
 
-      console.log(`[US-PP-008] Promo card at index ${promoIndex}, first non-promo at index ${firstNonPromoIndex}`)
+      console.log(`[US-PP-017] Promo card at index ${promoIndex}, first non-promo at index ${firstNonPromoIndex}`)
     })
   })
 

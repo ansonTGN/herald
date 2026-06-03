@@ -54,6 +54,7 @@ function UsersPage() {
       page: search.page,
       pageSize: search.pageSize,
       email: search.email,
+      status: search.status,
     })
   )
 
@@ -92,6 +93,10 @@ function UsersPage() {
     navigate({ search: (prev) => ({ ...prev, email, page: 0 }) })
   }
 
+  function handleStatusChange(status: string | undefined) {
+    navigate({ search: (prev) => ({ ...prev, status, page: 0 }) })
+  }
+
   function handlePageChange(page: number) {
     navigate({ search: (prev) => ({ ...prev, page }) })
   }
@@ -114,7 +119,12 @@ function UsersPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
-            <UserSearch email={search.email} onSearchChange={handleSearchChange} />
+            <UserSearch
+              email={search.email}
+              status={search.status}
+              onSearchChange={handleSearchChange}
+              onStatusChange={handleStatusChange}
+            />
           </div>
 
           {data && (

@@ -5,6 +5,7 @@ import type { UpsertRealmConfigRequest } from '@/lib/api-generated/types.gen'
 import { TOTPConfigForm as TOTPConfigFormComponent } from '@/components/realm-config/totp-config-form'
 import { RegistrationConfigForm as RegistrationConfigFormComponent } from '@/components/realm-config/registration-config-form'
 import { EmailConfigForm as EmailConfigFormComponent } from '@/components/realm-config/email-config-form'
+import { TurnstileConfigForm as TurnstileConfigFormComponent } from '@/components/realm-config/turnstile-config-form'
 import { ProviderConfigPage } from '@/components/oauth-config/provider-config-page'
 import { useAuth } from '@/hooks/use-auth'
 import { PERMISSION } from '@/lib/constants/auth-constants'
@@ -14,14 +15,17 @@ import type {
   TOTPConfigForm,
   RegistrationConfigForm,
   EmailConfigForm,
+  TurnstileConfigForm,
 } from '@/lib/schemas/realm-config'
 import {
   parseTOTPConfig,
   parseRegistrationConfig,
   parseEmailConfig,
+  parseTurnstileConfig,
   buildTOTPConfigRequest,
   buildRegistrationConfigRequest,
   buildEmailConfigRequest,
+  buildTurnstileConfigRequest,
 } from '@/lib/realm-config-utils'
 import { useState, useEffect } from 'react'
 import { PageHeader, AccessDenied } from '@/components/shared'
@@ -218,6 +222,7 @@ function SettingsPage() {
 
   // Parse configuration data
   const totpConfig = parseTOTPConfig(configs || [])
+  const turnstileConfig = parseTurnstileConfig(configs || [])
   const registrationConfig = parseRegistrationConfig(configs || [])
   const emailConfig = parseEmailConfig(configs || [])
 
@@ -229,6 +234,16 @@ function SettingsPage() {
     }
 
     await mutation.mutateAsync([buildTOTPConfigRequest(config)])
+  }
+
+  // Save Turnstile configuration
+  async function saveTurnstileConfig(config: TurnstileConfigForm) {
+    if (!canUpdateConfig) {
+      toast.error('Access denied: You do not have permission to modify configuration')
+      return
+    }
+
+    await mutation.mutateAsync(buildTurnstileConfigRequest(config))
   }
 
   // Save Registration configuration
@@ -264,6 +279,9 @@ function SettingsPage() {
           <TabsTrigger value="totp" data-testid="totp-tab">
             TOTP
           </TabsTrigger>
+          <TabsTrigger value="turnstile" data-testid="turnstile-tab">
+            Turnstile
+          </TabsTrigger>
           <TabsTrigger value="registration" data-testid="registration-tab">
             Registration
           </TabsTrigger>
@@ -284,6 +302,16 @@ function SettingsPage() {
             realmId={realmId}
             initialConfig={totpConfig}
             onSave={saveTOTPConfig}
+            isLoading={isLoading}
+            disabled={!canUpdateConfig}
+          />
+        </TabsContent>
+
+        <TabsContent value="turnstile">
+          <TurnstileConfigFormComponent
+            realmId={realmId}
+            initialConfig={turnstileConfig}
+            onSave={saveTurnstileConfig}
             isLoading={isLoading}
             disabled={!canUpdateConfig}
           />

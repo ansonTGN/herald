@@ -118,7 +118,7 @@
 - **OAuth 配置**：通过独立系统管理 OAuth Provider（不在本页面详细定义）
 - **TOTP 配置**：管理 TOTP 二次认证开关设置
 - **TOTP 密钥配置**（TotpKey）：存储 Realm 级别的 TOTP 加密密钥
-- **支付提供商配置**：Creem、Stripe、Shopify 的 API Key / Webhook Secret 等配置
+- **支付提供商配置**：Creem、Stripe、Shopify 的 API Key / Webhook Secret 等配置（已迁移到独立 Payment Providers 页面，此处仅保留遗留兼容）
 - **Settings 页面**：多 Tab 布局，每个配置类型对应一个 Tab，包含启用/禁用开关、配置表单、保存/重置按钮
 
 ### 5.2 验收目标
@@ -169,6 +169,7 @@
 - OAuth 配置使用独立系统管理，不纳入 Realm Config 存储结构
 - 邮件服务配置纳入 Realm Config 管理，使用 `email` 配置类型
 - Settings 页面使用多 Tab 布局而非分组卡片布局
+- 支付提供商配置（Creem/Stripe/Shopify）已迁移到独立的 Payment Providers 页面管理，不再通过 Realm Config 管理。Realm Config 中的 creem/stripe/shopify 配置类型仅用于遗留兼容，新功能应在 Payment Providers 页面操作
 
 ### 8.2 已知限制
 

@@ -2,8 +2,8 @@
  * User Subscription Timeline Demo Tests
  *
  * User Story:
- * - US-BI-008: View Own Subscription History (Regular User)
- * - US-BI-008: Profile Subscription Display (Scenes 7-9)
+ * - US-BI-009: View Own Subscription History (Regular User)
+ * - US-BI-009: Profile Subscription Display (Scenes 7-9)
  *
  * Design Doc: .ai/design/profile-subscription-display.md
  *
@@ -46,7 +46,7 @@
  *
  * 4. Fixed User Role Consistency (P1):
  *    - Using regular user role in realm1
- *    - Aligns with US-BI-008 requirement for Regular User role
+ *    - Aligns with US-BI-009 requirement for Regular User role
  *
  * 5. Aligned Selectors with Frontend Implementation (P1):
  *    - Verified all selectors against actual frontend code
@@ -112,10 +112,10 @@ test.describe('[Regular User] Subscription Timeline Demo Tests', () => {
   })
 
   // ============================================================================
-  // User Story US-BI-008: View Own Subscription History
+  // User Story US-BI-009: View Own Subscription History
   // ============================================================================
 
-  test.describe('US-BI-008: View Own Subscription History', () => {
+  test.describe('US-BI-009: View Own Subscription History', () => {
     // ============================================================================
     // Scene 1-6: Subscription History Timeline
     // ============================================================================

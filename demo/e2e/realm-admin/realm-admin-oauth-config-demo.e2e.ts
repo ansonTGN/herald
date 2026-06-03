@@ -2,7 +2,7 @@
  * Realm Admin OAuth Config Demo Tests
  *
  * User Stories:
- * - US-RA-010: OAuth Provider 配置管理
+ * - US-OE-010: OAuth Provider 配置管理
  *
  * Design Doc: .ai/design/oauth-config-frontend-and-demo.md
  *
@@ -63,10 +63,10 @@ test.describe('[Realm Admin] OAuth Config Demo Tests', () => {
   })
 
   // ============================================================================
-  // OAuth Provider 配置管理综合流程 [US-RA-010]
+  // OAuth Provider 配置管理综合流程 [US-OE-010]
   // ============================================================================
 
-  test('OAuth Provider 配置管理综合流程 [US-RA-010]', async ({ page, demoLogger, testStartTime }) => {
+  test('OAuth Provider 配置管理综合流程 [US-OE-010]', async ({ page, demoLogger, testStartTime }) => {
     const settingsPage = new SettingsPage(page, demoLogger, DEMO_ADMIN.realmId)
 
     // === 初始状态验证 ===

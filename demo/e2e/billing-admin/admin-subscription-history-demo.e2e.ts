@@ -2,7 +2,7 @@
  * Subscription History Admin Demo Tests
  *
  * User Story:
- * - US-BI-007: View Subscription History (Realm Admin)
+ * - US-BI-008: View Subscription History (Realm Admin)
  *
  * Design Doc: .ai/design/subscription-history.md
  *
@@ -51,10 +51,10 @@ test.describe('[Billing Admin] Subscription History Demo Tests', () => {
   })
 
   // ============================================================================
-  // User Story US-BI-007: View Subscription History
+  // User Story US-BI-008: View Subscription History
   // ============================================================================
 
-  test.describe('US-BI-007: View Subscription History', () => {
+  test.describe('US-BI-008: View Subscription History', () => {
     test('should view global subscription history (Scene 1)', async ({
       page,
       loginPage,

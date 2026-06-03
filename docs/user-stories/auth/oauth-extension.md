@@ -4,7 +4,7 @@
 
 ## 用户故事
 
-### 故事 10：OAuth Provider 配置管理 [US-RA-010]
+### 故事 1：OAuth Provider 配置管理 [US-OE-001]
 
 **优先级**: P0
 

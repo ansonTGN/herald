@@ -31,6 +31,7 @@ docs/
 | [realm-settings.md](core/realm-settings.md) | Realm 设置 | Realm Admin |
 | [audit.md](core/audit.md) | Audit 审计日志 | Realm Admin, Admin Realm |
 | [dashboard.md](core/dashboard.md) | Dashboard | Realm Admin |
+| [i18n.md](core/i18n.md) | 国际化（i18n）支持 | All Users |
 
 ### Auth 认证与授权
 

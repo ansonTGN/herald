@@ -134,8 +134,8 @@
 
 - **销售方信息前置条件**：Realm Admin 必须先配置销售方信息（公司名称、地址、邮箱、电话、税号），否则用户无法提交发票申请
 - **用户申请验证**：用户申请发票需验证拥有对应的支付记录；申请时填写开票抬头信息（含税号），系统创建草稿发票（来源标记为 user_application），销售方信息自动从 Realm 配置填充
-- **[待修复] ApplyInvoiceRequest 缺少 billing_tax_id 字段**：PRD 要求用户申请时填写含税号的开票抬头，但当前 `ApplyInvoiceRequest` 无 `billing_tax_id` 字段，代码中硬编码为空字符串（`String::new()`）。需在请求结构中新增 `billing_tax_id` 必填字段并添加 `#[validate(length(min=1))]` 验证
-- **[待修复] UpdateInvoiceRequest 中 billing_tax_id / seller_tax_id 缺少验证**：这两个必填 String 字段没有 `#[validate(length(min=1))]`，可传入空字符串绕过必填约束。需补充验证注解
+- **用户申请发票时必须填写开票抬头税号**：用户申请发票时，`billing_tax_id` 为必填字段，不可为空字符串
+- **发票编辑时双方税号为必填字段**：编辑发票时，`billing_tax_id` 和 `seller_tax_id` 均为必填字段，不可为空字符串
 - **列表搜索**：发票列表支持通过 `search` 查询参数对 `invoice_number` 和 `billing_name` 进行模糊搜索（ILIKE），不区分大小写
 - **销售方默认付款条款**：销售方配置（`SellerConfigRequest`）包含 `default_payment_terms` 可选字段，用户申请发票时自动填充为发票的 `payment_terms`；管理员手动创建时也可单独指定
 - **发票编号唯一性**：发票编号（invoice_number）在 realm + 年范围内唯一，格式 INV-{YEAR}-{SEQ}

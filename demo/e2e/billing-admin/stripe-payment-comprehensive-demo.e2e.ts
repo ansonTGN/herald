@@ -7,8 +7,8 @@
  *   - US-BI-004: Assign Stripe Plan to Client App
  *   - US-BI-007: View Subscription Change History (Including Stripe Payment Events)
  * - docs/user-stories/billing/payment-provider.md:
- *   - US-PP-001: Configure Stripe Payment Provider
- *   - US-PP-002: View Payment Provider Configuration
+ *   - US-PV-001: Configure Stripe Payment Provider
+ *   - US-PV-002: View Payment Provider Configuration
  *
  * Design Doc: .ai/design/stripe-payment.md
  *

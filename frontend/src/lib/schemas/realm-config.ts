@@ -13,6 +13,12 @@ export const registrationConfigSchema = z.object({
   requireEmailVerification: z.boolean(), // ✅ camelCase：是否需要邮箱验证
 })
 
+// Turnstile 配置 Schema
+export const turnstileConfigSchema = z.object({
+  siteKey: z.string(),
+  secretKey: z.string(),
+})
+
 // Email 配置 Schema
 export const emailConfigSchema = z.object({
   provider: z.enum(['resend', 'smtp']),
@@ -28,4 +34,5 @@ export const emailConfigSchema = z.object({
 // 类型导出
 export type TOTPConfigForm = z.infer<typeof totpConfigSchema>
 export type RegistrationConfigForm = z.infer<typeof registrationConfigSchema>
+export type TurnstileConfigForm = z.infer<typeof turnstileConfigSchema>
 export type EmailConfigForm = z.infer<typeof emailConfigSchema>

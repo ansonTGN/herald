@@ -17,6 +17,7 @@ export const usersSearchSchema = z.object({
   page: z.number().int().min(0).optional(),
   pageSize: z.number().int().min(1).max(100).optional(),
   email: z.string().optional(),
+  status: z.string().optional(),
 })
 
 export const realmsSearchSchema = z.object({

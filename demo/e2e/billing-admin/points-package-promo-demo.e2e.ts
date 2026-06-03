@@ -3,8 +3,8 @@
  *
  * Covers admin-side promotional package management:
  * - US-PP-006: Create promotional package with discount pricing
- * - US-PP-007: Edit promotional package prices and time range
- * - US-PP-009: View expired promotional package and extend to reactivate
+ * - US-PP-016: Edit promotional package prices and time range
+ * - US-PP-018: View expired promotional package and extend to reactivate
  *
  * Each test is self-contained and creates its own test data.
  * Uses helpers from DM-D01 (points-package-promo-helpers).
@@ -108,10 +108,10 @@ test.describe('[Points Package Promo] Admin Management Demo', () => {
   })
 
   // =========================================================================
-  // US-PP-007: Edit Promotional Package
+  // US-PP-016: Edit Promotional Package
   // =========================================================================
 
-  test('should edit a promotional package prices and time range (US-PP-007)', async ({
+  test('should edit a promotional package prices and time range (US-PP-016)', async ({
     page,
     demoLogger,
   }) => {
@@ -162,7 +162,7 @@ test.describe('[Points Package Promo] Admin Management Demo', () => {
       packageId = editButtonTestId!.replace('points-package-edit-button-', '')
       expect(packageId).toBeTruthy()
 
-      console.log(`[US-PP-007] Extracted package ID: ${packageId}`)
+      console.log(`[US-PP-016] Extracted package ID: ${packageId}`)
     })
 
     // S1: Edit promo prices
@@ -186,7 +186,7 @@ test.describe('[Points Package Promo] Admin Management Demo', () => {
       // Verify updated original price
       await expect(packageRow.getByText('39.99')).toBeVisible()
 
-      console.log(`[US-PP-007 S1] Promo prices updated (29.99/14.99 -> 39.99/9.99)`)
+      console.log(`[US-PP-016 S1] Promo prices updated (29.99/14.99 -> 39.99/9.99)`)
     })
 
     // S4: Edit promo time range
@@ -209,15 +209,15 @@ test.describe('[Points Package Promo] Admin Management Demo', () => {
       // Should not be expired
       await expect(packageRow.getByText('Expired')).not.toBeVisible()
 
-      console.log(`[US-PP-007 S4] Promo time range extended to 60 days`)
+      console.log(`[US-PP-016 S4] Promo time range extended to 60 days`)
     })
   })
 
   // =========================================================================
-  // US-PP-009: Expired Promotional Package
+  // US-PP-018: Expired Promotional Package
   // =========================================================================
 
-  test('should view expired promo and extend to reactivate (US-PP-009)', async ({
+  test('should view expired promo and extend to reactivate (US-PP-018)', async ({
     page,
     demoLogger,
   }) => {
@@ -260,7 +260,7 @@ test.describe('[Points Package Promo] Admin Management Demo', () => {
       // Verify "Expired" badge is displayed
       await expect(packageRow.getByText('Expired', { exact: true })).toBeVisible()
 
-      console.log(`[US-PP-009 S2] Expired promo "${packageName}" shows "Expired" badge`)
+      console.log(`[US-PP-018 S2] Expired promo "${packageName}" shows "Expired" badge`)
     })
 
     // S3: Extend expired promo to reactivate
@@ -298,7 +298,7 @@ test.describe('[Points Package Promo] Admin Management Demo', () => {
       // Package should still be promotional
       await expect(packageRow.getByText('Promotional')).toBeVisible()
 
-      console.log(`[US-PP-009 S3] Expired promo "${packageName}" reactivated with new time range`)
+      console.log(`[US-PP-018 S3] Expired promo "${packageName}" reactivated with new time range`)
     })
   })
 })
