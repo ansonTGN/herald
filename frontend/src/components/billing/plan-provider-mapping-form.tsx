@@ -20,6 +20,7 @@ import {
 } from '@/lib/schemas/billing-forms'
 import type { SubscriptionPlanPaymentProviderResponse } from '@/lib/api-generated'
 import { formatProviderName } from './format-provider-name'
+import { m } from '@/paraglide/messages'
 
 interface PlanProviderMappingFormProps {
   open: boolean
@@ -74,11 +75,11 @@ export function PlanProviderMappingForm({
     <BaseFormDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={isEditing ? 'Edit Payment Provider' : 'Add Payment Provider'}
+      title={
+        isEditing ? m['billing.edit_payment_provider']() : m['billing.add_payment_provider_title']()
+      }
       description={
-        isEditing
-          ? 'Update payment provider mapping details'
-          : 'Configure a payment provider for this plan'
+        isEditing ? m['billing.edit_mapping_description']() : m['billing.add_mapping_description']()
       }
       className="max-w-lg"
       isSubmitting={isSubmitting}
@@ -91,7 +92,7 @@ export function PlanProviderMappingForm({
             data-testid="provider-mapping-cancel-button"
             onClick={() => onOpenChange(false)}
           >
-            Cancel
+            {m['common.cancel']()}
           </Button>
           <Button
             type="submit"
@@ -99,7 +100,11 @@ export function PlanProviderMappingForm({
             disabled={isSubmitting || (!isEditing && availableProviders.length === 0)}
             data-testid="provider-mapping-submit-button"
           >
-            {isSubmitting ? 'Saving...' : isEditing ? 'Update Mapping' : 'Add Provider'}
+            {isSubmitting
+              ? m['shared.saving']()
+              : isEditing
+                ? m['billing.update_mapping']()
+                : m['billing.add_provider_btn']()}
           </Button>
         </>
       }
@@ -116,7 +121,7 @@ export function PlanProviderMappingForm({
           <div className="space-y-4">
             {isEditing ? (
               <div className="space-y-2">
-                <Label>Payment Provider</Label>
+                <Label>{m['billing.label_payment_provider']()}</Label>
                 <div
                   className="flex h-10 items-center rounded-md border bg-muted px-3 text-sm"
                   data-testid="provider-mapping-provider-readonly"
@@ -130,15 +135,15 @@ export function PlanProviderMappingForm({
                 children={(field) => (
                   <div className="space-y-2">
                     <Label>
-                      Payment Provider <span className="text-destructive">*</span>
+                      {m['billing.label_payment_provider']()}{' '}
+                      <span className="text-destructive">*</span>
                     </Label>
                     {availableProviders.length === 0 ? (
                       <div
                         className="text-sm text-muted-foreground"
                         data-testid="no-providers-message"
                       >
-                        No payment providers configured for this realm. Please configure a payment
-                        provider first.
+                        {m['billing.no_providers_realm']()}
                       </div>
                     ) : (
                       <Select
@@ -147,7 +152,7 @@ export function PlanProviderMappingForm({
                         onValueChange={(value) => field.handleChange(value)}
                       >
                         <SelectTrigger data-testid="provider-mapping-provider-select-trigger">
-                          <SelectValue placeholder="Select a provider" />
+                          <SelectValue placeholder={m['billing.placeholder_select_provider']()} />
                         </SelectTrigger>
                         <SelectContent>
                           {availableProviders.map((provider) => (
@@ -176,7 +181,7 @@ export function PlanProviderMappingForm({
             <TextField
               form={form}
               name="externalProductId"
-              label="External Product ID"
+              label={m['billing.label_external_product_id']()}
               dataTestId="provider-mapping-product-id-input"
               placeholder="prod_basic_monthly"
               required
@@ -185,7 +190,7 @@ export function PlanProviderMappingForm({
             <TextField
               form={form}
               name="externalPriceId"
-              label="External Price ID"
+              label={m['billing.label_external_price_id']()}
               dataTestId="provider-mapping-price-id-input"
               placeholder="price_12345 (optional)"
             />
@@ -195,7 +200,7 @@ export function PlanProviderMappingForm({
                 name="enabled"
                 children={(field) => (
                   <>
-                    <Label htmlFor="provider-enabled">Enabled</Label>
+                    <Label htmlFor="provider-enabled">{m['common.enabled']()}</Label>
                     <Switch
                       id="provider-enabled"
                       data-testid="provider-mapping-enabled-switch"
@@ -206,7 +211,7 @@ export function PlanProviderMappingForm({
                 )}
               />
               <p className="text-xs text-muted-foreground">
-                Enable this provider for new subscriptions
+                {m['billing.help_provider_enabled']()}
               </p>
             </div>
           </div>

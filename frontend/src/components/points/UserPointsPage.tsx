@@ -19,6 +19,7 @@ import {
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import type { TransactionFilters as TransactionFiltersType } from '@/lib/schemas/points-forms'
 import { ListPagination } from '@/components/shared'
+import { m } from '@/paraglide/messages'
 
 interface UserPointsPageProps {
   realmId: string
@@ -66,12 +67,12 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
     <div className="space-y-6" data-testid="user-points-page">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">My Points</h1>
+        <h1 className="text-xl font-semibold">{m['points.user_points_page_title']()}</h1>
         {features?.user.pointsPurchaseVisible === true && (
           <Link to="/$realmId/user/purchase-points" params={{ realmId }}>
             <Button data-testid="purchase-points-button">
               <Plus className="mr-2 h-4 w-4" />
-              Purchase Points
+              {m['points.user_points_purchase_button']()}
             </Button>
           </Link>
         )}
@@ -84,10 +85,10 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
       <Tabs defaultValue="transactions" className="space-y-4" data-testid="points-page-tabs">
         <TabsList>
           <TabsTrigger value="transactions" data-testid="points-tab-transactions">
-            Transaction History
+            {m['points.user_points_transaction_tab']()}
           </TabsTrigger>
           <TabsTrigger value="purchase-history" data-testid="points-tab-purchase-history">
-            Purchase History
+            {m['points.user_points_purchase_history_tab']()}
           </TabsTrigger>
         </TabsList>
 
@@ -96,7 +97,7 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <History className="h-4 w-4" />
-                Transaction History
+                {m['points.user_points_transaction_history']()}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -137,7 +138,7 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Coins className="h-4 w-4" />
-                Points Package Purchase History
+                {m['points.user_points_purchase_history']()}
               </CardTitle>
             </CardHeader>
             <CardContent>

@@ -571,6 +571,9 @@ impl PostgresPointsRepository {
         }
     }
 
+    // TODO: 此查询未过滤 expires_at，在过期定时任务间隙中已过期但未标记的积分
+    // 仍会被消费（且因 ASC 排序会被优先消费）。若业务要求过期积分不可用，
+    // 需加 AND (expires_at IS NULL OR expires_at > NOW())。
     async fn find_active_ledgers_by_expiration_for_update(
         tx: &mut Transaction<'_, Postgres>,
         realm_id: &str,

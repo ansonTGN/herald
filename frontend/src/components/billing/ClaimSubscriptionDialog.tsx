@@ -11,6 +11,7 @@ import { BaseFormDialog } from '@/components/shared/form-dialog'
 import { TextField } from '@/components/shared/form-fields'
 import { getFieldErrorMessage } from '@/lib/form-utils'
 import { Label } from '@/components/ui/label'
+import { m } from '@/paraglide/messages'
 
 interface ClaimSubscriptionDialogProps {
   open: boolean
@@ -43,8 +44,8 @@ export function ClaimSubscriptionDialog({
     <BaseFormDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Claim Shopify Subscription"
-      description="Enter your Shopify information to claim your subscription"
+      title={m['billing.claim_dialog_title']()}
+      description={m['billing.claim_dialog_description']()}
       className="max-w-lg"
       isSubmitting={isSubmitting}
       data-testid="claim-subscription-dialog"
@@ -64,7 +65,7 @@ export function ClaimSubscriptionDialog({
             disabled={isSubmitting}
             data-testid="claim-submit-button"
           >
-            {isSubmitting ? 'Claiming...' : 'Claim Subscription'}
+            {isSubmitting ? m['billing.claim_claiming']() : m['billing.claim_claim_button']()}
           </Button>
         </>
       }
@@ -81,14 +82,14 @@ export function ClaimSubscriptionDialog({
         <AppForm>
           <div className="space-y-6">
             <div className="space-y-2">
-              <Label>Shopify Customer ID</Label>
+              <Label>{m['billing.claim_shopify_customer_id']()}</Label>
               <TextField
                 form={form}
                 name="shopifyCustomerId"
                 label=""
                 dataTestId="shopify-customer-id-input"
                 placeholder="customer_123"
-                helpText="Found in Shopify Admin → Customers. Click on the customer to see their ID."
+                helpText={m['billing.claim_shopify_customer_id_help']()}
               />
             </div>
 
@@ -97,19 +98,21 @@ export function ClaimSubscriptionDialog({
                 <div className="w-full border-t" />
               </div>
               <div className="relative flex justify-center text-sm font-medium">
-                <span className="bg-background px-2 text-muted-foreground">OR</span>
+                <span className="bg-background px-2 text-muted-foreground">
+                  {m['billing.claim_or']()}
+                </span>
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label>Subscription Contract ID</Label>
+              <Label>{m['billing.claim_contract_id']()}</Label>
               <TextField
                 form={form}
                 name="contractId"
                 label=""
                 dataTestId="contract-id-input"
                 placeholder="gid://shopify/SubscriptionContract/..."
-                helpText="Found in Shopify email or account settings. Format: gid://shopify/SubscriptionContract/..."
+                helpText={m['billing.claim_contract_id_help']()}
               />
             </div>
 
@@ -125,11 +128,10 @@ export function ClaimSubscriptionDialog({
                   />
                   <div className="grid gap-1.5 leading-none">
                     <Label htmlFor={field.name} className="font-normal">
-                      Grant current period points
+                      {m['billing.claim_grant_period_points']()}
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      If enabled, you'll receive points for the current billing period of your
-                      subscription
+                      {m['billing.claim_grant_period_points_help']()}
                     </p>
                   </div>
                 </div>

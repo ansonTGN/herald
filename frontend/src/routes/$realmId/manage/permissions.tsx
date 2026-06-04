@@ -7,6 +7,7 @@ import { CreatePermissionDialog } from '@/components/permissions/create-permissi
 import { Card, CardContent } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared'
 import { useState } from 'react'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/permissions')({
   component: PermissionsPage,
@@ -27,9 +28,9 @@ function PermissionsPage() {
   return (
     <div className="space-y-6" data-testid="permissions-page">
       <PageHeader
-        title="Permissions"
+        title={m['permissions.page_title']()}
         action={{
-          label: 'Add Permission',
+          label: m['permissions.add_button'](),
           onClick: () => setCreateDialogOpen(true),
           testId: 'permission-create-button',
         }}

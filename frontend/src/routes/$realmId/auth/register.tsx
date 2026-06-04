@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Link } from '@tanstack/react-router'
 import { useEffect } from 'react'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/auth/register')({
   component: RegisterPage,
@@ -60,7 +61,7 @@ function RegisterPage() {
   if (state.isLoading) {
     return (
       <AuthPageWrapper>
-        <div className="text-gray-600">Loading...</div>
+        <div className="text-gray-600">{m['common.loading']()}</div>
       </AuthPageWrapper>
     )
   }
@@ -68,7 +69,7 @@ function RegisterPage() {
   if (state.error) {
     return (
       <AuthPageWrapper>
-        <div className="text-red-600">Error loading registration configuration</div>
+        <div className="text-red-600">{m['auth.register.error_loading']()}</div>
       </AuthPageWrapper>
     )
   }
@@ -79,19 +80,17 @@ function RegisterPage() {
         <Card className="max-w-md w-full">
           <CardHeader>
             <CardTitle data-testid="registration-disabled-title">
-              Registration Not Available
+              {m['auth.register.disabled_title']()}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-gray-600 mb-4">
-              Registration is not enabled for this realm. Please contact an administrator.
-            </p>
+            <p className="text-gray-600 mb-4">{m['auth.register.disabled_description']()}</p>
             <Link
               to="/$realmId/auth/login"
               params={{ realmId }}
               className="text-blue-600 hover:text-blue-700"
             >
-              Return to Login
+              {m['auth.register.return_to_login']()}
             </Link>
           </CardContent>
         </Card>
@@ -103,19 +102,21 @@ function RegisterPage() {
     <AuthPageWrapper>
       <Card className="max-w-md w-full" data-testid="register-card">
         <CardHeader>
-          <CardTitle data-testid="register-title">Create an Account</CardTitle>
+          <CardTitle data-testid="register-title">{m['auth.register.title']()}</CardTitle>
         </CardHeader>
         <CardContent>
           <RegisterForm realmId={realmId} onSuccess={handleRegisterSuccess} />
           <div className="mt-4 text-center">
-            <span className="text-sm text-gray-500">Already have an account? </span>
+            <span className="text-sm text-gray-500">
+              {m['auth.register.already_have_account']()}{' '}
+            </span>
             <Link
               to="/$realmId/auth/login"
               params={{ realmId }}
               className="text-sm font-medium text-blue-600 hover:text-blue-500"
               data-testid="login-link"
             >
-              Login
+              {m['auth.register.login_link']()}
             </Link>
           </div>
         </CardContent>

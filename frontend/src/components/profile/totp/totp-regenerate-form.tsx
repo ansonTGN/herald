@@ -10,14 +10,15 @@ import { BackupCodesDisplay } from './backup-codes-display'
 import { getFieldErrorMessage } from '@/lib/form-utils'
 import { withTimeout, type TotpData } from '@/lib/totp-utils'
 import { z } from 'zod'
+import { m } from '@/paraglide/messages'
 import type { RegenerateTotpResponse, VerifyTotpSetupResponse } from '@/lib/api-generated'
 
 const regenerateTotpStep1Schema = z.object({
-  password: z.string().min(1, 'Password is required'),
+  password: z.string().min(1, m['profile.totp_password_required']()),
 })
 
 const regenerateTotpStep2Schema = z.object({
-  code: z.string().length(6, 'Code must be 6 digits'),
+  code: z.string().length(6, m['profile.totp_code_must_be_6_digits']()),
 })
 
 interface TotpRegenerateFormProps {
@@ -29,9 +30,9 @@ type RegenerateStep = 'confirm' | 'verify'
 
 function getSubmitButtonText(isSubmitting: boolean, step: RegenerateStep): string {
   if (step === 'confirm') {
-    return isSubmitting ? 'Regenerating...' : 'Regenerate'
+    return isSubmitting ? m['profile.totp_regenerating']() : m['profile.totp_regenerate_button']()
   }
-  return isSubmitting ? 'Verifying...' : 'Verify New TOTP'
+  return isSubmitting ? m['profile.totp_verifying']() : m['profile.totp_verify_new_title']()
 }
 
 export function TotpRegenerateForm({ onSuccess, onCancel }: TotpRegenerateFormProps) {
@@ -43,7 +44,7 @@ export function TotpRegenerateForm({ onSuccess, onCancel }: TotpRegenerateFormPr
       const response = await withTimeout(handleRegenerateTotp({ body: data }))
       return response.data as RegenerateTotpResponse
     },
-    getSuccessMessage: () => 'TOTP regenerated successfully',
+    getSuccessMessage: () => m['profile.totp_regenerated_success'](),
     onSuccess: (data) => {
       setRegeneratedData({
         secret: data.secret,
@@ -68,7 +69,7 @@ export function TotpRegenerateForm({ onSuccess, onCancel }: TotpRegenerateFormPr
       const response = await withTimeout(handleVerifyTotpSetup({ body: data }))
       return response.data as VerifyTotpSetupResponse
     },
-    getSuccessMessage: () => 'TOTP verified successfully',
+    getSuccessMessage: () => m['profile.totp_verified_success'](),
     onSuccess: () => {
       onSuccess()
     },
@@ -89,10 +90,8 @@ export function TotpRegenerateForm({ onSuccess, onCancel }: TotpRegenerateFormPr
   if (step === 'confirm') {
     return (
       <div className="space-y-4" data-testid="totp-regenerate-form-confirm">
-        <h2 className="text-2xl font-bold">Regenerate TOTP</h2>
-        <p className="text-muted-foreground">
-          This will generate a new TOTP secret and backup codes. Your old codes will no longer work.
-        </p>
+        <h2 className="text-2xl font-bold">{m['profile.totp_regenerate_title']()}</h2>
+        <p className="text-muted-foreground">{m['profile.totp_regenerate_description']()}</p>
 
         <AppForm>
           <form
@@ -106,7 +105,7 @@ export function TotpRegenerateForm({ onSuccess, onCancel }: TotpRegenerateFormPr
             <confirmForm.Field name="password">
               {(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor="password">Current Password</Label>
+                  <Label htmlFor="password">{m['profile.current_password_label']()}</Label>
                   <Input
                     id="password"
                     type="password"
@@ -131,7 +130,7 @@ export function TotpRegenerateForm({ onSuccess, onCancel }: TotpRegenerateFormPr
                 onClick={onCancel}
                 data-testid="totp-regenerate-cancel-button"
               >
-                Cancel
+                {m['common.cancel']()}
               </Button>
               <Button
                 type="submit"
@@ -149,10 +148,8 @@ export function TotpRegenerateForm({ onSuccess, onCancel }: TotpRegenerateFormPr
 
   return (
     <div className="space-y-4" data-testid="totp-regenerate-form-verify">
-      <h2 className="text-2xl font-bold">Verify New TOTP</h2>
-      <p className="text-muted-foreground">
-        Enter the verification code from your authenticator app to complete the regeneration.
-      </p>
+      <h2 className="text-2xl font-bold">{m['profile.totp_verify_new_title']()}</h2>
+      <p className="text-muted-foreground">{m['profile.totp_verify_new_description']()}</p>
 
       {regeneratedData && (
         <div className="flex justify-center" data-testid="totp-regenerate-qr-code-container">
@@ -178,7 +175,7 @@ export function TotpRegenerateForm({ onSuccess, onCancel }: TotpRegenerateFormPr
           <verifyForm.Field name="code">
             {(field) => (
               <div className="space-y-2">
-                <Label htmlFor="code">Verification Code</Label>
+                <Label htmlFor="code">{m['profile.verification_code_label']()}</Label>
                 <Input
                   id="code"
                   type="text"
@@ -206,7 +203,7 @@ export function TotpRegenerateForm({ onSuccess, onCancel }: TotpRegenerateFormPr
               onClick={onCancel}
               data-testid="totp-regenerate-verify-cancel-button"
             >
-              Cancel
+              {m['common.cancel']()}
             </Button>
             <Button
               type="submit"

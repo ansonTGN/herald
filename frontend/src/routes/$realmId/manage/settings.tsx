@@ -39,6 +39,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { TextField } from '@/components/shared/form-fields/text-field'
 import { TextareaField } from '@/components/shared/form-fields/textarea-field'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/settings')({
   component: SettingsPage,
@@ -51,7 +52,7 @@ function GeneralTab({ realmId }: { realmId: string }) {
 
   const { isSubmitting, mutate } = useFormMutation({
     mutationFn: (data: UpdateRealmFormData) => updateRealm({ path: { realmId }, body: data }),
-    getSuccessMessage: () => 'Realm updated successfully',
+    getSuccessMessage: () => m['settings.realm_updated_success'](),
     invalidateQueries: [queryKeys.realm(realmId)],
   })
 
@@ -75,13 +76,13 @@ function GeneralTab({ realmId }: { realmId: string }) {
     }
   }, [realm, form])
 
-  if (isLoading) return <div>Loading...</div>
+  if (isLoading) return <div>{m['settings.general_loading']()}</div>
 
   return (
     <Card>
       <CardContent className="space-y-4 max-w-lg pt-6">
         <div className="space-y-2">
-          <Label>Realm ID</Label>
+          <Label>{m['settings.general_realm_id_label']()}</Label>
           <Input value={realmId} disabled data-testid="general-realm-id" />
         </div>
 
@@ -96,7 +97,7 @@ function GeneralTab({ realmId }: { realmId: string }) {
             <TextField
               form={form}
               name="name"
-              label="Realm Name"
+              label={m['settings.general_realm_name_label']()}
               inputId="general-realm-name"
               dataTestId="general-realm-name-input"
               disabled={!canUpdate}
@@ -105,7 +106,7 @@ function GeneralTab({ realmId }: { realmId: string }) {
               <TextareaField
                 form={form}
                 name="description"
-                label="Description"
+                label={m['settings.general_description_label']()}
                 inputId="general-realm-description"
                 dataTestId="general-realm-description-input"
                 disabled={!canUpdate}
@@ -120,7 +121,7 @@ function GeneralTab({ realmId }: { realmId: string }) {
                   disabled={isSubmitting}
                   data-testid="general-realm-save"
                 >
-                  {isSubmitting ? 'Saving...' : 'Save'}
+                  {isSubmitting ? m['settings.general_saving']() : m['settings.general_save']()}
                 </Button>
               </div>
             )}
@@ -173,12 +174,12 @@ function SettingsPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.realmConfig(realmId) })
-      toast.success('Configuration saved successfully')
+      toast.success(m['settings.config_saved_success']())
     },
     onError: (error: unknown) => {
       console.error('Failed to save config:', error)
 
-      let errorMessage = 'Failed to save configuration'
+      let errorMessage: string = m['settings.config_save_failed']()
 
       if (error instanceof Error) {
         errorMessage = error.message
@@ -189,11 +190,11 @@ function SettingsPage() {
         const statusCode = err.response?.status
 
         if (statusCode === 401) {
-          errorMessage = 'Unauthorized: Please log in again'
+          errorMessage = m['settings.config_save_unauthorized']()
         } else if (statusCode === 403) {
-          errorMessage = 'Forbidden: You do not have permission to modify this configuration'
+          errorMessage = m['settings.config_save_forbidden']()
         } else if (statusCode === 500) {
-          errorMessage = 'Server error: Please try again later'
+          errorMessage = m['settings.config_save_server_error']()
         } else if (err.response?.data?.message) {
           errorMessage = err.response.data.message
         }
@@ -204,20 +205,18 @@ function SettingsPage() {
   })
 
   if (!canViewConfig) {
-    return (
-      <AccessDenied message="Access denied: You do not have permission to view realm configuration" />
-    )
+    return <AccessDenied message={m['settings.config_access_denied']()} />
   }
 
   // Handle loading and error states
   if (isLoading) {
-    return <div>Loading...</div>
+    return <div>{m['settings.config_loading']()}</div>
   }
 
   if (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    toast.error(`Failed to load configuration: ${errorMessage}`)
-    return <div>Error loading configuration</div>
+    toast.error(m['settings.config_failed_to_load']({ message: errorMessage }))
+    return <div>{m['settings.config_error_loading']()}</div>
   }
 
   // Parse configuration data
@@ -229,7 +228,7 @@ function SettingsPage() {
   // Save TOTP configuration
   async function saveTOTPConfig(config: TOTPConfigForm) {
     if (!canUpdateConfig) {
-      toast.error('Access denied: You do not have permission to modify configuration')
+      toast.error(m['settings.config_modify_denied']())
       return
     }
 
@@ -239,7 +238,7 @@ function SettingsPage() {
   // Save Turnstile configuration
   async function saveTurnstileConfig(config: TurnstileConfigForm) {
     if (!canUpdateConfig) {
-      toast.error('Access denied: You do not have permission to modify configuration')
+      toast.error(m['settings.config_modify_denied']())
       return
     }
 
@@ -249,7 +248,7 @@ function SettingsPage() {
   // Save Registration configuration
   async function saveRegistrationConfig(config: RegistrationConfigForm) {
     if (!canUpdateConfig) {
-      toast.error('Access denied: You do not have permission to modify configuration')
+      toast.error(m['settings.config_modify_denied']())
       return
     }
 
@@ -259,7 +258,7 @@ function SettingsPage() {
   // Save Email configuration
   async function saveEmailConfig(config: EmailConfigForm) {
     if (!canUpdateConfig) {
-      toast.error('Access denied: You do not have permission to modify configuration')
+      toast.error(m['settings.config_modify_denied']())
       return
     }
 
@@ -269,27 +268,27 @@ function SettingsPage() {
 
   return (
     <div className="space-y-6" data-testid="settings-page">
-      <PageHeader title="Settings" />
+      <PageHeader title={m['settings.page_title']()} />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="general" data-testid="general-tab">
-            General
+            {m['settings.tab_general']()}
           </TabsTrigger>
           <TabsTrigger value="totp" data-testid="totp-tab">
-            TOTP
+            {m['settings.tab_totp']()}
           </TabsTrigger>
           <TabsTrigger value="turnstile" data-testid="turnstile-tab">
-            Turnstile
+            {m['settings.tab_turnstile']()}
           </TabsTrigger>
           <TabsTrigger value="registration" data-testid="registration-tab">
-            Registration
+            {m['settings.tab_registration']()}
           </TabsTrigger>
           <TabsTrigger value="email" data-testid="email-tab">
-            Email
+            {m['settings.tab_email']()}
           </TabsTrigger>
           <TabsTrigger value="providers" data-testid="providers-tab">
-            Providers
+            {m['settings.tab_providers']()}
           </TabsTrigger>
         </TabsList>
 

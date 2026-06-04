@@ -14,6 +14,7 @@ import { PERMISSION } from '@/lib/constants/auth-constants'
 import { Plus } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/realms')({
   component: RealmsPage,
@@ -58,12 +59,12 @@ function RealmsPage() {
   return (
     <div data-testid="realms-page" className="space-y-6">
       <PageHeader
-        title="Realms"
+        title={m['realms.page_title']()}
         headingTestId="realms-heading"
         action={
           canCreateRealm
             ? {
-                label: 'Create Realm',
+                label: m['realms.create_button'](),
                 onClick: handleCreateRealm,
                 testId: 'create-realm-button',
                 icon: <Plus className="mr-2 h-4 w-4" />,

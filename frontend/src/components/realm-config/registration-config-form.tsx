@@ -7,6 +7,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfigSwitchField } from './config-switch-field'
+import { m } from '@/paraglide/messages'
 
 interface RegistrationConfigFormProps {
   realmId: string // For future use
@@ -63,8 +64,8 @@ export function RegistrationConfigForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Registration Configuration</CardTitle>
-        <CardDescription>Configure user registration settings for this realm</CardDescription>
+        <CardTitle>{m['realm_config.registration_title']()}</CardTitle>
+        <CardDescription>{m['realm_config.registration_description']()}</CardDescription>
       </CardHeader>
       <CardContent>
         <AppForm>
@@ -83,8 +84,8 @@ export function RegistrationConfigForm({
                   field={field}
                   form={form}
                   id="reg-enabled"
-                  label="Enable Registration"
-                  description="Enable new users to register for this realm"
+                  label={m['realm_config.registration_enable_label']()}
+                  description={m['realm_config.registration_enable_description']()}
                   disabled={disabled}
                   errorTestId="reg-enabled-error"
                 />
@@ -99,8 +100,8 @@ export function RegistrationConfigForm({
                   field={field}
                   form={form}
                   id="reg-require-email"
-                  label="Require Email Verification"
-                  description="Require users to verify their email address"
+                  label={m['realm_config.registration_email_verify_label']()}
+                  description={m['realm_config.registration_email_verify_description']()}
                   disabled={disabled || !emailConfigured}
                   errorTestId="reg-require-email-error"
                 />
@@ -111,7 +112,7 @@ export function RegistrationConfigForm({
                 className="text-sm text-muted-foreground"
                 data-testid="email-config-required-hint"
               >
-                Email verification requires email configuration
+                {m['realm_config.registration_email_not_configured']()}
               </span>
             )}
 
@@ -121,7 +122,7 @@ export function RegistrationConfigForm({
                 disabled={isLoading || isSubmitting || disabled}
                 data-testid="reg-save-button"
               >
-                {isSubmitting ? 'Saving...' : 'Save'}
+                {isSubmitting ? m['realm_config.saving']() : m['realm_config.save']()}
               </Button>
             </div>
           </form>

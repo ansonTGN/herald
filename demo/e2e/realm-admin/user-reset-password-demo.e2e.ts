@@ -59,6 +59,7 @@ test.describe('[ResetPassword] Admin resets user password', () => {
       expect(newPassword).toMatch(/[A-Z]/)     // has uppercase
       expect(newPassword).toMatch(/[a-z]/)     // has lowercase
       expect(newPassword).toMatch(/[0-9]/)     // has digit
+      expect(newPassword).toMatch(/[!@#$%^&*]/) // has special
     })
 
     // And: admin can copy the password

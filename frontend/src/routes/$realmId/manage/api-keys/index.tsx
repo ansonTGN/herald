@@ -16,6 +16,7 @@ import type { ApiKeyListItem } from '@/lib/api-generated'
 import type { ApiKeysSearchParams } from '@/lib/schemas/search-params'
 import { Card, CardContent } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/api-keys/')({
   component: ApiKeysPage,
@@ -56,7 +57,7 @@ export function ApiKeysPage() {
         if (response.error) throw response.error
         return response.data
       }),
-    getSuccessMessage: () => `API Key deleted successfully`,
+    getSuccessMessage: () => m['api_keys.deleted_success'](),
     invalidateQueries: [queryKeys.apiKeysList(realmId)],
   })
 
@@ -69,7 +70,11 @@ export function ApiKeysPage() {
         if (response.error) throw response.error
         return { ...key, enabled: !key.enabled }
       }),
-    getSuccessMessage: (data) => `API Key "${data.name}" ${data.enabled ? 'enabled' : 'disabled'}`,
+    getSuccessMessage: (data) =>
+      m['api_keys.toggled_status']({
+        name: data.name,
+        status: data.enabled ? m['api_keys.status_enabled']() : m['api_keys.status_disabled'](),
+      }),
     invalidateQueries: [queryKeys.apiKeysList(realmId)],
   })
 
@@ -82,18 +87,18 @@ export function ApiKeysPage() {
   }
 
   if (!canView) {
-    return <AccessDenied message="Access denied: You do not have permission to view API keys" />
+    return <AccessDenied message={m['api_keys.access_denied']()} />
   }
 
   return (
     <div className="space-y-6" data-testid="api-keys-page">
       <PageHeader
-        title="API Keys"
+        title={m['api_keys.page_title']()}
         headingTestId="api-keys-heading"
         action={
           canManage
             ? {
-                label: 'Add API Key',
+                label: m['api_keys.add_button'](),
                 onClick: () =>
                   navigate({ to: '/$realmId/manage/api-keys/new', params: { realmId } }),
                 testId: 'add-api-key-button',

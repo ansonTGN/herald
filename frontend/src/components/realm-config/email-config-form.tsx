@@ -26,6 +26,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { getErrorMessage } from '@/lib/error-utils'
 import { useFormSubmit } from './use-form-submit'
+import { m } from '@/paraglide/messages'
 
 interface EmailConfigFormProps {
   realmId: string
@@ -91,8 +92,8 @@ export function EmailConfigForm({
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <CardTitle>Email Configuration</CardTitle>
-            <CardDescription>Configure email delivery for this realm</CardDescription>
+            <CardTitle>{m['realm_config.email_title']()}</CardTitle>
+            <CardDescription>{m['realm_config.email_description']()}</CardDescription>
           </div>
           {emailStatus && (
             <Badge
@@ -104,7 +105,9 @@ export function EmailConfigForm({
               }
               data-testid="email-config-status-badge"
             >
-              {emailStatus.configured ? 'Email is configured' : 'Email is not configured'}
+              {emailStatus.configured
+                ? m['realm_config.email_configured']()
+                : m['realm_config.email_not_configured']()}
             </Badge>
           )}
         </div>
@@ -130,7 +133,7 @@ export function EmailConfigForm({
               name="provider"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label>Email Provider</Label>
+                  <Label>{m['realm_config.email_provider_label']()}</Label>
                   <RadioGroup
                     value={field.state.value}
                     onValueChange={(value) => field.handleChange(value as 'resend' | 'smtp')}
@@ -143,7 +146,9 @@ export function EmailConfigForm({
                         id="provider-resend"
                         data-testid="email-provider-resend"
                       />
-                      <Label htmlFor="provider-resend">Resend API</Label>
+                      <Label htmlFor="provider-resend">
+                        {m['realm_config.email_provider_resend']()}
+                      </Label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem
@@ -151,7 +156,9 @@ export function EmailConfigForm({
                         id="provider-smtp"
                         data-testid="email-provider-smtp"
                       />
-                      <Label htmlFor="provider-smtp">SMTP</Label>
+                      <Label htmlFor="provider-smtp">
+                        {m['realm_config.email_provider_smtp']()}
+                      </Label>
                     </div>
                   </RadioGroup>
                 </div>
@@ -161,7 +168,7 @@ export function EmailConfigForm({
             <TextField
               form={form}
               name="fromAddress"
-              label="From Address"
+              label={m['realm_config.email_from_address_label']()}
               inputId="email-from-address"
               dataTestId="email-from-address-input"
               type="email"
@@ -174,12 +181,12 @@ export function EmailConfigForm({
               <PasswordField
                 form={form}
                 name="resendApiKey"
-                label="API Key"
+                label={m['realm_config.email_api_key_label']()}
                 inputId="email-resend-api-key"
                 dataTestId="email-resend-api-key-input"
                 placeholder="re_xxxxxxxx"
                 disabled={disabled}
-                helpText="Enter a new API key to replace the existing one"
+                helpText={m['realm_config.email_api_key_help']()}
               />
             )}
 
@@ -188,7 +195,7 @@ export function EmailConfigForm({
                 <TextField
                   form={form}
                   name="smtpHost"
-                  label="SMTP Host"
+                  label={m['realm_config.email_smtp_host_label']()}
                   inputId="email-smtp-host"
                   dataTestId="email-smtp-host-input"
                   placeholder="smtp.example.com"
@@ -198,7 +205,7 @@ export function EmailConfigForm({
                 <TextField
                   form={form}
                   name="smtpPort"
-                  label="Port"
+                  label={m['realm_config.email_smtp_port_label']()}
                   inputId="email-smtp-port"
                   dataTestId="email-smtp-port-input"
                   placeholder="587"
@@ -209,7 +216,9 @@ export function EmailConfigForm({
                   name="smtpEncryption"
                   children={(field) => (
                     <div className="space-y-2">
-                      <Label htmlFor="email-smtp-encryption">Encryption</Label>
+                      <Label htmlFor="email-smtp-encryption">
+                        {m['realm_config.email_smtp_encryption_label']()}
+                      </Label>
                       <Select
                         value={field.state.value}
                         onValueChange={(value) => field.handleChange(value as 'starttls' | 'ssl')}
@@ -219,7 +228,9 @@ export function EmailConfigForm({
                           id="email-smtp-encryption"
                           data-testid="email-smtp-encryption-select"
                         >
-                          <SelectValue placeholder="Select encryption" />
+                          <SelectValue
+                            placeholder={m['realm_config.email_smtp_encryption_placeholder']()}
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="starttls">STARTTLS</SelectItem>
@@ -233,7 +244,7 @@ export function EmailConfigForm({
                 <TextField
                   form={form}
                   name="smtpUsername"
-                  label="Username"
+                  label={m['realm_config.email_smtp_username_label']()}
                   inputId="email-smtp-username"
                   dataTestId="email-smtp-username-input"
                   placeholder="user@example.com"
@@ -243,7 +254,7 @@ export function EmailConfigForm({
                 <PasswordField
                   form={form}
                   name="smtpPassword"
-                  label="Password"
+                  label={m['realm_config.email_smtp_password_label']()}
                   inputId="email-smtp-password"
                   dataTestId="email-smtp-password-input"
                   placeholder="Enter password"
@@ -261,7 +272,7 @@ export function EmailConfigForm({
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <Input
-                  placeholder="Recipient email"
+                  placeholder={m['realm_config.email_test_recipient_placeholder']()}
                   value={testRecipient}
                   onChange={(e) => setTestRecipient(e.target.value)}
                   disabled={disabled}
@@ -276,7 +287,9 @@ export function EmailConfigForm({
                   disabled={disabled || !testRecipient || testEmailMutation.isPending}
                   data-testid="email-test-button"
                 >
-                  {testEmailMutation.isPending ? 'Sending...' : 'Send Test Email'}
+                  {testEmailMutation.isPending
+                    ? m['realm_config.email_test_sending']()
+                    : m['realm_config.email_test_button']()}
                 </Button>
               </div>
 
@@ -285,7 +298,7 @@ export function EmailConfigForm({
                 disabled={isLoading || isSubmitting || disabled}
                 data-testid="email-save-button"
               >
-                {isSubmitting ? 'Saving...' : 'Save'}
+                {isSubmitting ? m['realm_config.saving']() : m['realm_config.save']()}
               </Button>
             </div>
 
@@ -297,7 +310,7 @@ export function EmailConfigForm({
 
             {testEmailMutation.isSuccess && (
               <p className="text-sm text-green-600" data-testid="email-test-success">
-                {testEmailMutation.data?.message || 'Test email sent successfully'}
+                {testEmailMutation.data?.message || m['realm_config.email_test_success']()}
               </p>
             )}
           </form>

@@ -1,15 +1,16 @@
 import { z } from 'zod'
 import { PROVIDER_TYPES } from '@/lib/oauth-provider-constants'
+import { m } from '@/paraglide/messages'
 
 /**
  * Create OAuth Config Schema
  */
 export const createOAuthConfigSchema = z.object({
   providerType: z.enum(PROVIDER_TYPES, {
-    message: 'Provider type is required',
+    error: () => m['oauth.validation_provider_type_required'](),
   }),
-  clientId: z.string().min(1, { message: 'clientId is required' }),
-  clientSecret: z.string().min(1, { message: 'Client Secret is required' }),
+  clientId: z.string().min(1, { error: () => m['oauth.validation_client_id_required']() }),
+  clientSecret: z.string().min(1, { error: () => m['oauth.validation_client_secret_required']() }),
   scopes: z.array(z.string()).optional(),
   enabled: z.boolean().default(true),
 })

@@ -47,12 +47,13 @@ import {
   type PaymentProviderMappingResponse,
 } from '@/lib/api-generated'
 import { formatProviderName } from '@/components/billing/format-provider-name'
+import { m } from '@/paraglide/messages'
 
 const packageProviderMappingSchema = z.object({
-  paymentProvider: z.string().min(1, 'Payment provider is required'),
+  paymentProvider: z.string().min(1, m['points.packages_providers_form_provider_required']()),
   externalProductId: z
     .string()
-    .max(255, 'External product ID must not exceed 255 characters')
+    .max(255, m['points.packages_providers_form_product_id_max_length']())
     .transform((value) => (value === '' ? null : value)),
   enabled: z.boolean().default(true),
 })
@@ -195,11 +196,15 @@ function PointsPackageProviderFormDialog({
     <BaseFormDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={isEditing ? 'Edit Payment Provider' : 'Add Payment Provider'}
+      title={
+        isEditing
+          ? m['points.packages_providers_form_edit_title']()
+          : m['points.packages_providers_form_add_title']()
+      }
       description={
         isEditing
-          ? 'Update payment provider mapping details'
-          : 'Configure a payment provider for this points package'
+          ? m['points.packages_providers_form_edit_description']()
+          : m['points.packages_providers_form_add_description']()
       }
       className="max-w-lg"
       data-testid="provider-mapping-form-dialog"
@@ -219,7 +224,11 @@ function PointsPackageProviderFormDialog({
             disabled={isSubmitting || (!isEditing && availableProviders.length === 0)}
             data-testid="provider-mapping-submit-button"
           >
-            {isSubmitting ? 'Saving...' : isEditing ? 'Update Mapping' : 'Add Provider'}
+            {isSubmitting
+              ? m['shared.saving']()
+              : isEditing
+                ? m['points.packages_providers_form_update']()
+                : m['points.packages_providers_form_add']()}
           </Button>
         </>
       }
@@ -236,7 +245,7 @@ function PointsPackageProviderFormDialog({
           <div className="space-y-4">
             {isEditing ? (
               <div className="space-y-2">
-                <Label>Payment Provider</Label>
+                <Label>{m['points.packages_providers_form_provider_label']()}</Label>
                 <div
                   className="flex h-10 items-center rounded-md border bg-muted px-3 text-sm"
                   data-testid="provider-mapping-provider-readonly"
@@ -250,14 +259,15 @@ function PointsPackageProviderFormDialog({
                 children={(field) => (
                   <div className="space-y-2">
                     <Label>
-                      Payment Provider <span className="text-destructive">*</span>
+                      {m['points.packages_providers_form_provider_label']()}{' '}
+                      <span className="text-destructive">*</span>
                     </Label>
                     {availableProviders.length === 0 ? (
                       <div
                         className="text-sm text-muted-foreground"
                         data-testid="no-providers-message"
                       >
-                        No payment providers configured for this realm.
+                        {m['points.packages_providers_form_no_providers']()}
                       </div>
                     ) : (
                       <Select
@@ -266,7 +276,9 @@ function PointsPackageProviderFormDialog({
                         onValueChange={(value) => field.handleChange(value)}
                       >
                         <SelectTrigger data-testid="provider-mapping-provider-select-trigger">
-                          <SelectValue placeholder="Select a provider" />
+                          <SelectValue
+                            placeholder={m['points.packages_providers_form_provider_placeholder']()}
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           {availableProviders.map((provider) => (
@@ -295,9 +307,9 @@ function PointsPackageProviderFormDialog({
             <TextField
               form={form}
               name="externalProductId"
-              label="External Product ID"
+              label={m['points.packages_providers_form_product_id_label']()}
               dataTestId="provider-mapping-product-id-input"
-              placeholder="Optional external product ID"
+              placeholder={m['points.packages_providers_form_product_id_placeholder']()}
             />
 
             <div className="flex items-center space-x-2">
@@ -305,7 +317,9 @@ function PointsPackageProviderFormDialog({
                 name="enabled"
                 children={(field) => (
                   <>
-                    <Label htmlFor="package-provider-enabled">Enabled</Label>
+                    <Label htmlFor="package-provider-enabled">
+                      {m['points.packages_providers_form_enabled_label']()}
+                    </Label>
                     <Switch
                       id="package-provider-enabled"
                       data-testid="provider-mapping-enabled-switch"
@@ -372,12 +386,12 @@ export function PointsPackageProvidersPage({
       return response.data
     },
     onSuccess: async () => {
-      toast.success('Payment provider mapping added')
+      toast.success(m['points.packages_providers_added']())
       setFormOpen(false)
       await invalidateProviderQueries()
     },
     onError: (error: Error) => {
-      toast.error(`Failed to add mapping: ${error.message}`)
+      toast.error(m['points.packages_providers_add_failed']({ message: error.message }))
     },
   })
 
@@ -400,13 +414,13 @@ export function PointsPackageProvidersPage({
       return response.data
     },
     onSuccess: async () => {
-      toast.success('Payment provider mapping updated')
+      toast.success(m['points.packages_providers_updated']())
       setFormOpen(false)
       setEditingMapping(undefined)
       await invalidateProviderQueries()
     },
     onError: (error: Error) => {
-      toast.error(`Failed to update mapping: ${error.message}`)
+      toast.error(m['points.packages_providers_update_failed']({ message: error.message }))
     },
   })
 
@@ -419,12 +433,12 @@ export function PointsPackageProvidersPage({
       return response.data
     },
     onSuccess: async () => {
-      toast.success('Payment provider mapping removed')
+      toast.success(m['points.packages_providers_removed']())
       setDeletingMapping(undefined)
       await invalidateProviderQueries()
     },
     onError: (error: Error) => {
-      toast.error(`Failed to remove mapping: ${error.message}`)
+      toast.error(m['points.packages_providers_remove_failed']({ message: error.message }))
     },
   })
 
@@ -470,10 +484,14 @@ export function PointsPackageProvidersPage({
   return (
     <div className="space-y-6" data-testid="points-package-providers-page">
       <PageHeader
-        title="Payment Providers"
-        subtitle={pkg?.title ? `For package: ${pkg.title}` : undefined}
+        title={m['points.packages_providers_page_title']()}
+        subtitle={
+          pkg?.title
+            ? m['points.packages_providers_page_subtitle']({ title: pkg.title })
+            : undefined
+        }
         action={{
-          label: 'Back to Packages',
+          label: m['points.packages_providers_back_button'](),
           onClick: () =>
             navigate({
               to: '/$realmId/manage/points-packages',
@@ -486,10 +504,10 @@ export function PointsPackageProvidersPage({
 
       <div className="space-y-4" data-testid="payment-provider-list">
         <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium">Payment Providers</h4>
+          <h4 className="text-sm font-medium">{m['points.packages_providers_heading']()}</h4>
           <Button onClick={handleAdd} size="sm" data-testid="add-provider-mapping-button">
             <Plus className="mr-2 h-4 w-4" />
-            Add Provider
+            {m['points.packages_providers_add_button']()}
           </Button>
         </div>
 
@@ -498,9 +516,11 @@ export function PointsPackageProvidersPage({
           data={mappings}
           isLoading={isLoading}
           error={error ?? undefined}
-          loadingMessage="Loading payment providers..."
-          errorMessage={error ? `Error loading providers: ${error.message}` : undefined}
-          emptyMessage="No payment providers configured."
+          loadingMessage={m['points.packages_providers_loading']()}
+          errorMessage={
+            error ? m['points.packages_providers_error']({ message: error.message }) : undefined
+          }
+          emptyMessage={m['points.packages_providers_empty']()}
           data-testid="provider-mapping-table"
         />
       </div>
@@ -517,8 +537,10 @@ export function PointsPackageProvidersPage({
       <ConfirmDialog
         open={!!deletingMapping}
         onOpenChange={(open) => !open && setDeletingMapping(undefined)}
-        title="Delete Payment Provider Mapping"
-        description={`Are you sure you want to delete the ${formatProviderName(deletingMapping?.paymentProvider ?? '')} mapping?`}
+        title={m['points.packages_providers_delete_title']()}
+        description={m['points.packages_providers_delete_description']({
+          name: formatProviderName(deletingMapping?.paymentProvider ?? ''),
+        })}
         onConfirm={() => deletingMapping && deleteMutation.mutate(deletingMapping.id)}
         isPending={deleteMutation.isPending}
         confirmTestId="confirm-delete-mapping-button"

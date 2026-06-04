@@ -13,6 +13,7 @@ import { ListPagination } from '@/components/shared'
 import { toast } from 'sonner'
 import { ConfirmDialog, PageHeader } from '@/components/shared'
 import type { BillingSearchSchema } from '@/routes/$realmId/manage/billing/index'
+import { m } from '@/paraglide/messages'
 
 interface BillingPageProps {
   realmId: string
@@ -53,7 +54,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
     },
     onSuccess: async (_, planId) => {
       const plan = plans?.find((p) => p.id === planId)
-      toast.success(`Subscription Plan "${plan?.title}" deleted successfully`)
+      toast.success(m['billing.plan_deleted']({ title: plan?.title ?? '' }))
 
       // 先等待数据刷新完成
       await queryClient.invalidateQueries({
@@ -65,7 +66,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
       deleteDialog.close()
     },
     onError: (error: Error) => {
-      toast.error(`Failed to delete plan: ${error.message}`)
+      toast.error(m['billing.plan_delete_failed']({ message: error.message }))
     },
   })
 
@@ -104,12 +105,15 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
       const { assignClientAppIds, removeAssignments } = variables
       if (assignClientAppIds.length > 0 && removeAssignments.length > 0) {
         toast.success(
-          `Plan assignments updated (${assignClientAppIds.length} assigned, ${removeAssignments.length} removed)`
+          m['billing.plan_assigned']({
+            assigned: assignClientAppIds.length,
+            removed: removeAssignments.length,
+          })
         )
       } else if (assignClientAppIds.length > 0) {
-        toast.success(`Plan assigned to ${assignClientAppIds.length} app(s)`)
+        toast.success(m['billing.plan_assigned_only']({ count: assignClientAppIds.length }))
       } else {
-        toast.success(`Plan assignment removed from ${removeAssignments.length} app(s)`)
+        toast.success(m['billing.plan_removed_only']({ count: removeAssignments.length }))
       }
       assignDialog.close()
       // Invalidate queries and wait for refetch to complete
@@ -118,7 +122,7 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
       await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error: Error) => {
-      toast.error(`Failed to assign plan: ${error.message}`)
+      toast.error(m['billing.plan_assign_failed']({ message: error.message }))
     },
   })
 
@@ -164,18 +168,18 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
   return (
     <div className="space-y-6" data-testid="billing-page">
       <div className="flex items-start justify-between gap-4">
-        <PageHeader title="Subscription Plans" />
+        <PageHeader title={m['billing.subscription_plans_title']()} />
         <div className="flex gap-2">
           <Button onClick={handleCreatePlan} data-testid="add-plan-button">
             <Plus className="mr-2 h-4 w-4" />
-            Add Subscription Plan
+            {m['billing.add_subscription_plan']()}
           </Button>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Plans</CardTitle>
+          <CardTitle>{m['billing.plans_card_title']()}</CardTitle>
         </CardHeader>
         <CardContent>
           {plans && plans.length > 0 ? (
@@ -188,11 +192,9 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
               onManageProviders={handleManageProviders}
             />
           ) : isLoading ? (
-            <div className="text-center py-8">Loading...</div>
+            <div className="text-center py-8">{m['common.loading']()}</div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No subscription plans found. Click "Add Subscription Plan" to create one.
-            </div>
+            <div className="text-center py-8 text-muted-foreground">{m['billing.no_plans']()}</div>
           )}
         </CardContent>
       </Card>
@@ -219,8 +221,10 @@ export function BillingPage({ realmId, search }: BillingPageProps) {
       <ConfirmDialog
         open={deleteDialog.isOpen}
         onOpenChange={deleteDialog.onOpenChange}
-        title="Delete Subscription Plan"
-        description={`Are you sure you want to delete subscription plan "${deleteDialog.selectedItem?.title}"?`}
+        title={m['billing.delete_plan_title']()}
+        description={m['billing.delete_plan_description']({
+          title: deleteDialog.selectedItem?.title ?? '',
+        })}
         onConfirm={confirmDeletePlan}
         isPending={deletePlanMutation.isPending}
         confirmTestId="confirm-delete-button"

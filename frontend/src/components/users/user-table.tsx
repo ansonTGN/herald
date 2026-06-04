@@ -10,9 +10,10 @@ import {
 import { UserTableSkeleton } from './user-table-skeleton'
 import { UserTableError } from './user-table-error'
 import { UserTableEmpty } from './user-table-empty'
-import { USER_STATUS_LABELS, USER_STATUS_COLORS } from '@/lib/constants/user'
+import { getUserStatusLabel, USER_STATUS_COLORS } from '@/lib/constants/user'
 import type { UserResponse, RoleResponse } from '@/lib/api-generated'
 import { Badge } from '@/components/ui/badge'
+import { m } from '@/paraglide/messages'
 
 // Type for user data with roles included (from API that extends UserResponse)
 interface UserWithRoles extends UserResponse {
@@ -39,7 +40,7 @@ function createUserColumns(
     {
       id: 'id',
       accessorKey: 'id',
-      header: 'ID',
+      header: m['users.table_id'](),
       cell: ({ row }) => (
         <div className="font-mono text-xs" data-testid={`user-table-${row.index}-id`}>
           {String(row.getValue('id')).slice(0, 8)}...
@@ -48,17 +49,17 @@ function createUserColumns(
     },
     {
       accessorKey: 'email',
-      header: 'Email',
+      header: m['users.table_email'](),
       cell: ({ row }) => row.getValue('email') || '-',
     },
     {
       accessorKey: 'nickname',
-      header: 'Nickname',
+      header: m['users.table_nickname'](),
       cell: ({ row }) => row.getValue('nickname') || '-',
     },
     {
       accessorKey: 'status',
-      header: 'Status',
+      header: m['users.table_status'](),
       cell: ({ row }) => {
         const status = row.getValue('status') as number
         return (
@@ -66,14 +67,14 @@ function createUserColumns(
             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${USER_STATUS_COLORS[status]}`}
             data-testid={`user-table-status-${status}`}
           >
-            {USER_STATUS_LABELS[status]}
+            {getUserStatusLabel(status)}
           </span>
         )
       },
     },
     {
       accessorKey: 'createdAt',
-      header: 'Created At',
+      header: m['users.table_created_at'](),
       cell: ({ row }) => {
         const date = row.getValue('createdAt') as string
         return date ? new Date(date).toLocaleString() : '-'
@@ -81,13 +82,13 @@ function createUserColumns(
     },
     {
       id: 'roles',
-      header: 'Roles',
+      header: m['users.table_roles'](),
       cell: ({ row }) => {
         const user = row.original
         const roles = user?.roles || []
 
         if (roles.length === 0) {
-          return <span className="text-sm text-muted-foreground">No roles</span>
+          return <span className="text-sm text-muted-foreground">{m['users.no_roles']()}</span>
         }
 
         return (
@@ -108,7 +109,7 @@ function createUserColumns(
     },
     {
       id: 'actions',
-      header: 'Actions',
+      header: m['users.table_actions'](),
       cell: ({ row }) => (
         <div className="flex gap-2" data-testid={`user-table-${row.index}-actions`}>
           {onManageRoles && (
@@ -117,7 +118,7 @@ function createUserColumns(
               className="text-sm text-purple-600 hover:text-purple-800"
               data-testid={`user-table-${row.index}-manage-roles-button`}
             >
-              Roles
+              {m['users.table_roles']()}
             </button>
           )}
           {onResetPassword && (
@@ -126,7 +127,7 @@ function createUserColumns(
               className="text-sm text-amber-600 hover:text-amber-800"
               data-testid={`user-table-${row.index}-reset-password-button`}
             >
-              Reset Password
+              {m['users.reset_password_title']()}
             </button>
           )}
           {onEdit && (
@@ -135,7 +136,7 @@ function createUserColumns(
               className="text-sm text-blue-600 hover:text-blue-800"
               data-testid={`user-table-${row.index}-edit-button`}
             >
-              Edit
+              {m['common.edit']()}
             </button>
           )}
           {onDelete && (
@@ -144,7 +145,7 @@ function createUserColumns(
               className="text-sm text-red-600 hover:text-red-800"
               data-testid={`user-table-${row.index}-delete-button`}
             >
-              Delete
+              {m['common.delete']()}
             </button>
           )}
         </div>
@@ -216,7 +217,7 @@ export function UserTable({
           ) : (
             <TableRow>
               <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
+                {m['common.no_results']()}
               </TableCell>
             </TableRow>
           )}

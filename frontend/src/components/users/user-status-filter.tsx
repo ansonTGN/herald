@@ -5,7 +5,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { USER_STATUS_OPTIONS } from '@/lib/constants/user'
+import { getUserStatusOptions } from '@/lib/constants/user'
+import { m } from '@/paraglide/messages'
 
 interface UserStatusFilterProps {
   onStatusChange: (status: number | undefined) => void
@@ -20,10 +21,10 @@ export function UserStatusFilter({ onStatusChange }: UserStatusFilterProps) {
   return (
     <Select value="all" onValueChange={handleValueChange} data-testid="user-status-filter">
       <SelectTrigger className="w-[180px]">
-        <SelectValue placeholder="Filter by status" />
+        <SelectValue placeholder={m['users.form_select_status']()} />
       </SelectTrigger>
       <SelectContent>
-        {USER_STATUS_OPTIONS.map((option) => (
+        {getUserStatusOptions().map((option) => (
           <SelectItem key={option.value} value={option.value}>
             {option.label}
           </SelectItem>

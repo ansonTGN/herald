@@ -2,6 +2,7 @@ import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-quer
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { queryKeys } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 interface UseSaveConfigMutationProps<T> {
   realmId: string
@@ -36,18 +37,15 @@ export function useSaveConfigMutation<T>({
   return useMutation({
     mutationFn,
     onSuccess: async () => {
-      toast.success(
-        isEditing
-          ? `${providerName} configuration updated successfully`
-          : `${providerName} configuration created successfully`
-      )
+      const action = isEditing ? m['billing.updated']() : m['billing.created']()
+      toast.success(m['billing.config_saved']({ provider: providerName, action }))
       await Promise.all(
         keysToInvalidate.map((key) => queryClient.invalidateQueries({ queryKey: key }))
       )
       navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
     },
     onError: (error: { status?: number; message?: string }) => {
-      toast.error(`Failed to save configuration: ${error?.message || 'Unknown error'}`)
+      toast.error(m['billing.config_save_failed']({ message: error?.message || 'Unknown error' }))
     },
   })
 }

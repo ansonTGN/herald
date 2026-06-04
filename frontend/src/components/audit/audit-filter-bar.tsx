@@ -14,6 +14,7 @@ import { X } from 'lucide-react'
 import type { AuditSearchParams } from '@/lib/schemas/search-params'
 import { toDateInputValue } from '@/lib/date-utils'
 import { FILTER_ALL_VALUE } from '@/lib/constants'
+import { m } from '@/paraglide/messages'
 
 export const CATEGORY_ACTIONS: Record<string, string[]> = {
   user_management: ['user.create', 'user.update', 'user.delete'],
@@ -32,31 +33,31 @@ export const CATEGORY_ACTIONS: Record<string, string[]> = {
   auth: ['auth.login', 'auth.logout', 'auth.login_failed'],
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  user_management: 'User Management',
-  rbac: 'RBAC',
-  realm_management: 'Realm Management',
-  auth: 'Authentication',
+const CATEGORY_LABELS: Record<string, () => string> = {
+  user_management: () => m['audit.category_user_management'](),
+  rbac: () => m['audit.category_rbac'](),
+  realm_management: () => m['audit.category_realm_management'](),
+  auth: () => m['audit.category_auth'](),
 }
 
-const ACTION_LABELS: Record<string, string> = {
-  'user.create': 'User Create',
-  'user.update': 'User Update',
-  'user.delete': 'User Delete',
-  'role.create': 'Role Create',
-  'role.update': 'Role Update',
-  'role.delete': 'Role Delete',
-  'permission.create': 'Permission Create',
-  'permission.delete': 'Permission Delete',
-  'role.assign': 'Role Assign',
-  'role.unassign': 'Role Unassign',
-  'permission.grant': 'Permission Grant',
-  'permission.revoke': 'Permission Revoke',
-  'realm.create': 'Realm Create',
-  'realm.rbac_init': 'Realm RBAC Init',
-  'auth.login': 'Login',
-  'auth.logout': 'Logout',
-  'auth.login_failed': 'Login Failed',
+const ACTION_LABELS: Record<string, () => string> = {
+  'user.create': () => m['audit.action_user_create'](),
+  'user.update': () => m['audit.action_user_update'](),
+  'user.delete': () => m['audit.action_user_delete'](),
+  'role.create': () => m['audit.action_role_create'](),
+  'role.update': () => m['audit.action_role_update'](),
+  'role.delete': () => m['audit.action_role_delete'](),
+  'permission.create': () => m['audit.action_permission_create'](),
+  'permission.delete': () => m['audit.action_permission_delete'](),
+  'role.assign': () => m['audit.action_role_assign'](),
+  'role.unassign': () => m['audit.action_role_unassign'](),
+  'permission.grant': () => m['audit.action_permission_grant'](),
+  'permission.revoke': () => m['audit.action_permission_revoke'](),
+  'realm.create': () => m['audit.action_realm_create'](),
+  'realm.rbac_init': () => m['audit.action_realm_rbac_init'](),
+  'auth.login': () => m['audit.action_auth_login'](),
+  'auth.logout': () => m['audit.action_auth_logout'](),
+  'auth.login_failed': () => m['audit.action_auth_login_failed'](),
 }
 
 function getActionsForCategory(category?: string): string[] {
@@ -151,16 +152,16 @@ export function AuditFilterBar({ filters, onFilterChange, onClearFilters }: Audi
       className="flex flex-wrap items-end gap-4 rounded-md border p-4"
     >
       <div className="space-y-1">
-        <Label>Category</Label>
+        <Label>{m['audit.filter_category_label']()}</Label>
         <Select value={filters.category ?? FILTER_ALL_VALUE} onValueChange={handleCategoryChange}>
           <SelectTrigger className="w-[180px]" data-testid="audit-category-select">
-            <SelectValue placeholder="All categories" />
+            <SelectValue placeholder={m['audit.filter_category_all']()} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={FILTER_ALL_VALUE}>All categories</SelectItem>
+            <SelectItem value={FILTER_ALL_VALUE}>{m['audit.filter_category_all']()}</SelectItem>
             {Object.keys(CATEGORY_ACTIONS).map((cat) => (
               <SelectItem key={cat} value={cat}>
-                {CATEGORY_LABELS[cat]}
+                {CATEGORY_LABELS[cat]()}
               </SelectItem>
             ))}
           </SelectContent>
@@ -168,16 +169,16 @@ export function AuditFilterBar({ filters, onFilterChange, onClearFilters }: Audi
       </div>
 
       <div className="space-y-1">
-        <Label>Action</Label>
+        <Label>{m['audit.filter_action_label']()}</Label>
         <Select value={filters.action ?? FILTER_ALL_VALUE} onValueChange={handleActionChange}>
           <SelectTrigger className="w-[180px]" data-testid="audit-action-select">
-            <SelectValue placeholder="All actions" />
+            <SelectValue placeholder={m['audit.filter_action_all']()} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={FILTER_ALL_VALUE}>All actions</SelectItem>
+            <SelectItem value={FILTER_ALL_VALUE}>{m['audit.filter_action_all']()}</SelectItem>
             {availableActions.map((act) => (
               <SelectItem key={act} value={act}>
-                {ACTION_LABELS[act] ?? act}
+                {ACTION_LABELS[act] ? ACTION_LABELS[act]() : act}
               </SelectItem>
             ))}
           </SelectContent>
@@ -185,20 +186,20 @@ export function AuditFilterBar({ filters, onFilterChange, onClearFilters }: Audi
       </div>
 
       <div className="space-y-1">
-        <Label htmlFor="audit-actor-input">Actor ID</Label>
+        <Label htmlFor="audit-actor-input">{m['audit.filter_actor_label']()}</Label>
         <Input
           id="audit-actor-input"
           type="text"
           value={actorInput}
           onChange={(e) => handleActorChange(e.target.value)}
-          placeholder="Enter actor ID"
+          placeholder={m['audit.filter_actor_placeholder']()}
           className="w-[200px]"
           data-testid="audit-actor-input"
         />
       </div>
 
       <div className="space-y-1">
-        <Label htmlFor="audit-start-date">Start Date</Label>
+        <Label htmlFor="audit-start-date">{m['audit.filter_start_date_label']()}</Label>
         <Input
           id="audit-start-date"
           type="date"
@@ -210,7 +211,7 @@ export function AuditFilterBar({ filters, onFilterChange, onClearFilters }: Audi
       </div>
 
       <div className="space-y-1">
-        <Label htmlFor="audit-end-date">End Date</Label>
+        <Label htmlFor="audit-end-date">{m['audit.filter_end_date_label']()}</Label>
         <Input
           id="audit-end-date"
           type="date"
@@ -229,7 +230,7 @@ export function AuditFilterBar({ filters, onFilterChange, onClearFilters }: Audi
           data-testid="audit-clear-filters-button"
         >
           <X className="mr-1 h-4 w-4" />
-          Clear Filters
+          {m['audit.filter_clear']()}
         </Button>
       )}
     </div>

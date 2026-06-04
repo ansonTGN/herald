@@ -18,6 +18,7 @@ import { PageHeader } from '@/components/shared/page-header'
 import { FormActionBar } from '@/components/shared/form-action-bar'
 import { createWechatConfig, updateWechatConfig } from '@/lib/api-generated'
 import { upsertRealmConfig } from '@/lib/api-generated/sdk.gen'
+import { m } from '@/paraglide/messages'
 
 interface WechatConfigFormDialogProps {
   initialValues?: Partial<WechatConfigForm>
@@ -64,11 +65,11 @@ export function WechatConfigFormDialog({
     <BaseFormDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={mode === 'create' ? 'Configure WeChat Pay' : 'Edit WeChat Pay Configuration'}
+      title={mode === 'create' ? m['billing.wechat_configure']() : m['billing.wechat_edit']()}
       description={
         mode === 'create'
-          ? 'Add WeChat Pay as a payment provider'
-          : 'Update WeChat Pay configuration'
+          ? m['billing.wechat_create_description']()
+          : m['billing.wechat_edit_description']()
       }
       className="max-w-2xl"
       isSubmitting={isSubmitting}
@@ -81,7 +82,7 @@ export function WechatConfigFormDialog({
             onClick={() => onOpenChange(false)}
             data-testid="wechat-config-cancel-button"
           >
-            Cancel
+            {m['common.cancel']()}
           </Button>
           <Button
             type="button"
@@ -90,10 +91,10 @@ export function WechatConfigFormDialog({
             data-testid="wechat-config-submit-button"
           >
             {isSubmitting
-              ? 'Saving...'
+              ? m['shared.saving']()
               : mode === 'create'
-                ? 'Create Configuration'
-                : 'Save Changes'}
+                ? m['shared.create_configuration']()
+                : m['shared.save_changes']()}
           </Button>
         </>
       }
@@ -112,21 +113,21 @@ export function WechatConfigFormDialog({
             <TextField
               form={form}
               name="appId"
-              label="App ID"
+              label={m['billing.wechat_app_id']()}
               dataTestId="app-id-input"
               placeholder="wx1234567890abcdef"
               required
-              helpText="Must start with wx. Available in your WeChat Pay merchant account."
+              helpText={m['billing.wechat_app_id_help']()}
             />
 
             <TextField
               form={form}
               name="mchId"
-              label="Merchant ID"
+              label={m['billing.wechat_merchant_id']()}
               dataTestId="merchant-id-input"
               placeholder="1234567890"
               required
-              helpText="Numeric merchant ID from your WeChat Pay account."
+              helpText={m['billing.wechat_merchant_id_help']()}
             />
 
             <form.Field
@@ -134,7 +135,7 @@ export function WechatConfigFormDialog({
               children={(field) => (
                 <div className="space-y-2">
                   <label htmlFor={field.name} className="text-sm font-medium">
-                    Private Key <span className="text-destructive">*</span>
+                    {m['billing.wechat_private_key']()} <span className="text-destructive">*</span>
                   </label>
                   <Textarea
                     id={field.name}
@@ -151,7 +152,7 @@ export function WechatConfigFormDialog({
                     </p>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Merchant private key in PEM format. Used for signing requests to WeChat Pay API.
+                    {m['billing.wechat_private_key_help']()}
                   </p>
                 </div>
               )}
@@ -160,22 +161,22 @@ export function WechatConfigFormDialog({
             <TextField
               form={form}
               name="serialNo"
-              label="Serial No"
+              label={m['billing.wechat_serial_no']()}
               dataTestId="serial-no-input"
               placeholder="1A2B3C4D5E6F"
               required
-              helpText="Certificate serial number from your WeChat Pay merchant account."
+              helpText={m['billing.wechat_serial_no_help']()}
             />
 
             <PasswordField
               form={form}
               name="v3Key"
-              label="API v3 Key"
+              label={m['billing.wechat_v3_key']()}
               dataTestId="v3-key-input"
               placeholder="Enter 32-character API v3 key"
               required
               showToggle={false}
-              helpText="Exactly 32 characters. Used for verifying webhook signatures."
+              helpText={m['billing.wechat_v3_key_help']()}
             />
 
             <form.Field
@@ -183,7 +184,8 @@ export function WechatConfigFormDialog({
               children={(field) => (
                 <div className="space-y-2">
                   <label htmlFor={field.name} className="text-sm font-medium">
-                    Platform Public Key <span className="text-destructive">*</span>
+                    {m['billing.wechat_platform_public_key']()}{' '}
+                    <span className="text-destructive">*</span>
                   </label>
                   <Textarea
                     id={field.name}
@@ -200,8 +202,7 @@ export function WechatConfigFormDialog({
                     </p>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    WeChat Pay platform RSA public key in PEM format. Used for webhook signature
-                    verification.
+                    {m['billing.wechat_platform_public_key_help']()}
                   </p>
                 </div>
               )}
@@ -210,11 +211,11 @@ export function WechatConfigFormDialog({
             <TextField
               form={form}
               name="notifyUrl"
-              label="Notify URL"
+              label={m['billing.wechat_notify_url']()}
               dataTestId="notify-url-input"
               placeholder="https://api.example.com/api/third/pay/{realmId}/wechat/webhooks"
               required
-              helpText="Must use HTTPS. WeChat Pay will send payment notifications to this URL."
+              helpText={m['billing.wechat_notify_url_help']()}
             />
           </div>
         </AppForm>
@@ -246,11 +247,19 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
           isEditing,
           'privateKey',
           value.privateKey,
-          'Private Key is required'
+          m['billing.wechat_private_key_required']()
         )
       )
         return
-      if (!requireFieldOnCreate(form, isEditing, 'v3Key', value.v3Key, 'API v3 Key is required'))
+      if (
+        !requireFieldOnCreate(
+          form,
+          isEditing,
+          'v3Key',
+          value.v3Key,
+          m['billing.wechat_v3_key_required']()
+        )
+      )
         return
       if (isEditing) {
         await updateMutation.mutateAsync(value)
@@ -282,16 +291,18 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
       return response.data
     },
     onSuccess: async () => {
-      toast.success('WeChat Pay configuration created successfully')
+      toast.success(m['billing.wechat_created']())
       await queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] })
       await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
       navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
     },
     onError: (error: { status?: number; message?: string }) => {
       if (error?.status === 409) {
-        toast.error('A WeChat Pay configuration already exists. Please edit the existing one.')
+        toast.error(m['billing.wechat_conflict']())
       } else {
-        toast.error(`Failed to create configuration: ${error?.message || 'Unknown error'}`)
+        toast.error(
+          m['billing.wechat_create_failed']({ message: error?.message || 'Unknown error' })
+        )
       }
     },
   })
@@ -326,13 +337,13 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
       return response.data
     },
     onSuccess: async () => {
-      toast.success('WeChat Pay configuration updated successfully')
+      toast.success(m['billing.wechat_updated']())
       await queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] })
       await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
       navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
     },
     onError: (error: { status?: number; message?: string }) => {
-      toast.error(`Failed to update configuration: ${error?.message || 'Unknown error'}`)
+      toast.error(m['billing.wechat_update_failed']({ message: error?.message || 'Unknown error' }))
     },
   })
 
@@ -345,7 +356,7 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
   return (
     <div className="container max-w-3xl mx-auto py-6 px-6" data-testid="wechat-config-form-page">
       <PageHeader
-        title={isEditing ? 'Edit WeChat Pay Configuration' : 'Configure WeChat Pay'}
+        title={isEditing ? m['billing.wechat_edit']() : m['billing.wechat_configure']()}
         headingTestId="wechat-config-form-page-heading"
       />
 
@@ -368,8 +379,8 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
               <SwitchField
                 form={form}
                 name="enabled"
-                label="Enable WeChat Pay"
-                description="Allow users to pay with WeChat Pay"
+                label={m['billing.wechat_enable']()}
+                description={m['billing.wechat_enable_description']()}
                 dataTestId="page-wechat-enabled-switch"
               />
             )}
@@ -377,21 +388,21 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
             <TextField
               form={form}
               name="appId"
-              label="App ID"
+              label={m['billing.wechat_app_id']()}
               dataTestId="page-app-id-input"
               placeholder="Enter WeChat App ID (e.g. wx1234567890)"
               required
-              helpText="Must start with wx. Available in your WeChat Pay merchant account."
+              helpText={m['billing.wechat_app_id_help']()}
             />
 
             <TextField
               form={form}
               name="mchId"
-              label="Merchant ID"
+              label={m['billing.wechat_merchant_id']()}
               dataTestId="page-merchant-id-input"
               placeholder="Enter merchant ID"
               required
-              helpText="Numeric merchant ID from your WeChat Pay account."
+              helpText={m['billing.wechat_merchant_id_help']()}
             />
 
             <form.Field
@@ -399,7 +410,8 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
               children={(field) => (
                 <div className="space-y-2">
                   <label htmlFor={field.name} className="text-sm font-medium">
-                    Private Key {!isEditing && <span className="text-destructive">*</span>}
+                    {m['billing.wechat_private_key']()}{' '}
+                    {!isEditing && <span className="text-destructive">*</span>}
                   </label>
                   <Textarea
                     id={field.name}
@@ -417,8 +429,8 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
                   )}
                   <p className="text-xs text-muted-foreground">
                     {isEditing
-                      ? 'Leave empty to keep the existing key'
-                      : 'Merchant private key in PEM format. Used for signing requests to WeChat Pay API.'}
+                      ? m['billing.wechat_private_key_keep']()
+                      : m['billing.wechat_private_key_help']()}
                   </p>
                 </div>
               )}
@@ -427,36 +439,34 @@ export function WechatConfigFormPage({ realmId, mode, initialValues }: WechatCon
             <TextField
               form={form}
               name="serialNo"
-              label="Serial No"
+              label={m['billing.wechat_serial_no']()}
               dataTestId="page-serial-no-input"
               placeholder="Enter certificate serial number"
               required
-              helpText="Certificate serial number from your WeChat Pay merchant account."
+              helpText={m['billing.wechat_serial_no_help']()}
             />
 
             <PasswordField
               form={form}
               name="v3Key"
-              label="API v3 Key"
+              label={m['billing.wechat_v3_key']()}
               dataTestId="page-v3-key-input"
               placeholder="Enter 32-character API v3 key"
               required={!isEditing}
               showToggle={false}
               helpText={
-                isEditing
-                  ? 'Leave empty to keep the existing key'
-                  : 'Exactly 32 characters. Used for verifying webhook signatures.'
+                isEditing ? m['billing.wechat_v3_key_keep']() : m['billing.wechat_v3_key_help']()
               }
             />
 
             <TextField
               form={form}
               name="notifyUrl"
-              label="Notify URL"
+              label={m['billing.wechat_notify_url']()}
               dataTestId="page-notify-url-input"
               placeholder="https://api.example.com/api/third/pay/{realmId}/wechat/webhooks"
               required
-              helpText="Must use HTTPS. WeChat Pay will send payment notifications to this URL."
+              helpText={m['billing.wechat_notify_url_help']()}
             />
           </div>
         </AppForm>

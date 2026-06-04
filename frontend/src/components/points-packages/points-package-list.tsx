@@ -13,6 +13,7 @@ import { Pencil, Trash2, CreditCard } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AlertCircle } from 'lucide-react'
 import { formatPrice } from '@/lib/schemas/points-package-forms'
+import { m } from '@/paraglide/messages'
 
 interface PointsPackageListProps {
   data: PointsPackageResponse[] | { packages: PointsPackageResponse[] }
@@ -61,7 +62,7 @@ export function PointsPackageList({
         className="flex flex-col items-center justify-center py-12 text-center"
       >
         <AlertCircle className="mb-4 h-12 w-12 text-destructive" />
-        <h3 className="text-lg font-semibold">Failed to load points packages</h3>
+        <h3 className="text-lg font-semibold">{m['points.packages_list_error_title']()}</h3>
         <p className="text-sm text-muted-foreground">{error.message}</p>
       </div>
     )
@@ -76,9 +77,9 @@ export function PointsPackageList({
         <div className="mb-4 rounded-full bg-muted p-4">
           <CreditCard className="h-8 w-8 text-muted-foreground" />
         </div>
-        <h3 className="text-lg font-semibold">No points packages yet</h3>
+        <h3 className="text-lg font-semibold">{m['points.packages_list_empty_title']()}</h3>
         <p className="text-sm text-muted-foreground">
-          Create your first points package to get started
+          {m['points.packages_list_empty_description']()}
         </p>
       </div>
     )
@@ -89,16 +90,18 @@ export function PointsPackageList({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Title</TableHead>
-            <TableHead className="text-right">Points</TableHead>
-            <TableHead className="text-right">Price</TableHead>
-            <TableHead>Type</TableHead>
-            <TableHead className="text-right">Original Price</TableHead>
-            <TableHead>Valid Until</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Sort Order</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead>{m['points.packages_list_name']()}</TableHead>
+            <TableHead>{m['points.packages_list_title']()}</TableHead>
+            <TableHead className="text-right">{m['points.packages_list_points']()}</TableHead>
+            <TableHead className="text-right">{m['points.packages_list_price']()}</TableHead>
+            <TableHead>{m['points.packages_list_type']()}</TableHead>
+            <TableHead className="text-right">
+              {m['points.packages_list_original_price']()}
+            </TableHead>
+            <TableHead>{m['points.packages_list_valid_until']()}</TableHead>
+            <TableHead>{m['points.packages_list_status']()}</TableHead>
+            <TableHead className="text-right">{m['points.packages_list_sort_order']()}</TableHead>
+            <TableHead className="text-right">{m['points.packages_list_actions']()}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -111,11 +114,13 @@ export function PointsPackageList({
               <TableCell>
                 <div className="flex items-center gap-1">
                   {pkg.packageType === 'promotional' ? (
-                    <Badge>Promotional</Badge>
+                    <Badge>{m['points.packages_list_promotional']()}</Badge>
                   ) : (
-                    <Badge variant="secondary">Standard</Badge>
+                    <Badge variant="secondary">{m['points.packages_list_standard']()}</Badge>
                   )}
-                  {pkg.isExpired && <Badge variant="destructive">Expired</Badge>}
+                  {pkg.isExpired && (
+                    <Badge variant="destructive">{m['points.packages_list_expired']()}</Badge>
+                  )}
                 </div>
               </TableCell>
               <TableCell className="text-right">
@@ -136,9 +141,9 @@ export function PointsPackageList({
               </TableCell>
               <TableCell>
                 {pkg.enabled ? (
-                  <Badge variant="default">Enabled</Badge>
+                  <Badge variant="default">{m['points.packages_list_enabled']()}</Badge>
                 ) : (
-                  <Badge variant="secondary">Disabled</Badge>
+                  <Badge variant="secondary">{m['points.packages_list_disabled']()}</Badge>
                 )}
               </TableCell>
               <TableCell className="text-right">{pkg.sortOrder}</TableCell>
@@ -149,7 +154,7 @@ export function PointsPackageList({
                     size="icon"
                     onClick={() => onEdit(pkg)}
                     data-testid={`points-package-edit-button-${pkg.id}`}
-                    title="Edit package"
+                    title={m['points.packages_list_edit_title']()}
                   >
                     <Pencil className="h-4 w-4" />
                   </Button>
@@ -158,7 +163,7 @@ export function PointsPackageList({
                     size="icon"
                     onClick={() => onConfigureProviders(pkg)}
                     data-testid={`points-package-configure-button-${pkg.id}`}
-                    title="Configure payment providers"
+                    title={m['points.packages_list_configure_title']()}
                   >
                     <CreditCard className="h-4 w-4" />
                   </Button>
@@ -167,7 +172,7 @@ export function PointsPackageList({
                     size="icon"
                     onClick={() => onDelete(pkg)}
                     data-testid={`points-package-delete-button-${pkg.id}`}
-                    title="Delete package"
+                    title={m['points.packages_list_delete_title']()}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>

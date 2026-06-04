@@ -20,6 +20,7 @@ import { queryKeys } from '@/data/query-options'
 import { toast } from 'sonner'
 import { ArrowLeft } from 'lucide-react'
 import type { ClientAppItem } from '@/lib/api-generated'
+import { m } from '@/paraglide/messages'
 
 function transformToUriItems(uris: string[]): UriItem[] {
   return uris.map((uri, index) => ({
@@ -79,13 +80,13 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
     invalidateQueries: [queryKeys.clientAppsList(realmId)],
     onSuccess: (data) => {
       if (isCreate && data?.clientSecret) {
-        toast.success('Client App created. Save your client secret — it will not be shown again.', {
+        toast.success(m['client_apps.created_with_secret'](), {
           description: data.clientSecret,
           duration: 15000,
         })
       } else {
         toast.success(
-          isCreate ? 'Client App created successfully' : 'Client App updated successfully'
+          isCreate ? m['client_apps.created_success']() : m['client_apps.updated_success']()
         )
       }
       navigate({ to: '/$realmId/manage/client-apps', params: { realmId } })
@@ -136,12 +137,10 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
         </Button>
         <div>
           <h1 className="text-2xl font-bold" data-testid="page-title">
-            {isCreate ? 'Create Client App' : 'Edit Client App'}
+            {isCreate ? m['client_apps.create_title']() : m['client_apps.edit_title']()}
           </h1>
           <p className="text-muted-foreground text-sm">
-            {isCreate
-              ? 'Fill in the details to create a new OAuth client application.'
-              : 'Update the client application configuration.'}
+            {isCreate ? m['client_apps.create_description']() : m['client_apps.edit_description']()}
           </p>
         </div>
       </div>
@@ -158,16 +157,16 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
           <Tabs defaultValue="basic" className="w-full">
             <TabsList className="w-full">
               <TabsTrigger value="basic" data-testid="tab-basic">
-                Basic
+                {m['client_apps.tab_basic']()}
               </TabsTrigger>
               <TabsTrigger value="redirect-uris" data-testid="tab-redirect-uris">
-                Redirect URIs
+                {m['client_apps.tab_redirect_uris']()}
               </TabsTrigger>
               <TabsTrigger value="security" data-testid="tab-security">
-                Security
+                {m['client_apps.tab_security']()}
               </TabsTrigger>
               <TabsTrigger value="appearance" data-testid="tab-appearance">
-                Appearance
+                {m['client_apps.tab_appearance']()}
               </TabsTrigger>
             </TabsList>
 
@@ -177,12 +176,12 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                   name="clientId"
                   children={(field) => (
                     <div className="space-y-2">
-                      <Label htmlFor="client-id">Client ID</Label>
+                      <Label htmlFor="client-id">{m['client_apps.form_client_id_label']()}</Label>
                       <Input
                         id="client-id"
                         value={field.state.value ?? ''}
                         onChange={(e) => field.handleChange(e.target.value)}
-                        placeholder="my-client-app"
+                        placeholder={m['client_apps.form_client_id_placeholder']()}
                         data-testid="client-id-input"
                       />
                       {(field.state.meta.isTouched || form.state.isSubmitted) &&
@@ -196,7 +195,7 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                 />
               ) : (
                 <div className="space-y-2">
-                  <Label>Client ID</Label>
+                  <Label>{m['client_apps.form_client_id_label']()}</Label>
                   <p
                     className="text-sm font-mono bg-muted px-3 py-2 rounded-md"
                     data-testid="client-id-display"
@@ -210,7 +209,7 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                 name="name"
                 children={(field) => (
                   <div className="space-y-2">
-                    <Label htmlFor="app-name">Name</Label>
+                    <Label htmlFor="app-name">{m['client_apps.form_name_label']()}</Label>
                     <Input
                       id="app-name"
                       value={field.state.value ?? ''}
@@ -231,13 +230,15 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                 name="description"
                 children={(field) => (
                   <div className="space-y-2">
-                    <Label htmlFor="app-description">Description</Label>
+                    <Label htmlFor="app-description">
+                      {m['client_apps.form_description_label']()}
+                    </Label>
                     <Textarea
                       id="app-description"
                       value={field.state.value ?? ''}
                       onChange={(e) => field.handleChange(e.target.value)}
                       rows={3}
-                      placeholder="Optional description"
+                      placeholder={m['client_apps.form_description_placeholder']()}
                       data-testid="client-app-description-input"
                     />
                   </div>
@@ -252,9 +253,9 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                   <RedirectUrisInput
                     value={transformToUriItems(field.state.value ?? [])}
                     onChange={(items) => field.handleChange(transformFromUriItems(items))}
-                    label="Redirect URIs"
+                    label={m['client_apps.form_redirect_uris_label']()}
                     required
-                    helpText="Allowed OAuth redirect URIs. Must be valid https:// or http:// URLs."
+                    helpText={m['client_apps.form_redirect_uris_help']()}
                     dataTestId="redirect-uris-input"
                   />
                 )}
@@ -266,7 +267,7 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                 name="enabled"
                 children={(field) => (
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="app-enabled">Enabled</Label>
+                    <Label htmlFor="app-enabled">{m['client_apps.form_enabled_label']()}</Label>
                     <Switch
                       id="app-enabled"
                       checked={field.state.value ?? true}
@@ -281,7 +282,7 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                 name="sessionTtlSeconds"
                 children={(field) => (
                   <div className="space-y-2">
-                    <Label htmlFor="session-ttl">Initial Session TTL (seconds)</Label>
+                    <Label htmlFor="session-ttl">{m['client_apps.form_session_ttl_label']()}</Label>
                     <Input
                       id="session-ttl"
                       type="number"
@@ -320,7 +321,9 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                 name="sessionRenewalTtlSeconds"
                 children={(field) => (
                   <div className="space-y-2">
-                    <Label htmlFor="session-renewal-ttl">Sliding Renewal TTL (seconds)</Label>
+                    <Label htmlFor="session-renewal-ttl">
+                      {m['client_apps.form_session_renewal_ttl_label']()}
+                    </Label>
                     <Input
                       id="session-renewal-ttl"
                       type="number"
@@ -329,7 +332,7 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                         const val = e.target.value
                         field.handleChange(val === '' ? null : Number(val))
                       }}
-                      placeholder="Optional - disabled when empty"
+                      placeholder={m['client_apps.form_session_renewal_ttl_placeholder']()}
                       min={60}
                       max={604800}
                       data-testid="session-renewal-ttl-input"
@@ -348,7 +351,9 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                 name="deviceCodeGrantEnabled"
                 children={(field) => (
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="device-code-grant">Device Code Grant</Label>
+                    <Label htmlFor="device-code-grant">
+                      {m['client_apps.form_device_code_grant_label']()}
+                    </Label>
                     <Switch
                       id="device-code-grant"
                       checked={field.state.value ?? false}
@@ -365,9 +370,11 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                   children={(field) => (
                     <div className="flex items-center justify-between pt-4 border-t">
                       <div>
-                        <Label htmlFor="regenerate-secret">Regenerate Secret</Label>
+                        <Label htmlFor="regenerate-secret">
+                          {m['client_apps.form_regenerate_secret_label']()}
+                        </Label>
                         <p className="text-xs text-muted-foreground">
-                          The old secret will be invalidated immediately.
+                          {m['client_apps.form_regenerate_secret_hint']()}
                         </p>
                       </div>
                       <Switch
@@ -387,12 +394,12 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
                 name="iconUrl"
                 children={(field) => (
                   <div className="space-y-2">
-                    <Label htmlFor="icon-url">Icon URL</Label>
+                    <Label htmlFor="icon-url">{m['client_apps.form_icon_url_label']()}</Label>
                     <Input
                       id="icon-url"
                       value={field.state.value ?? ''}
                       onChange={(e) => field.handleChange(e.target.value)}
-                      placeholder="https://example.com/icon.png"
+                      placeholder={m['client_apps.form_icon_url_placeholder']()}
                       data-testid="icon-url-input"
                     />
                   </div>
@@ -408,16 +415,16 @@ export function ClientAppFormPage({ mode, realmId, clientApp }: ClientAppFormPag
               onClick={handleCancel}
               data-testid="cancel-button"
             >
-              Cancel
+              {m['client_apps.form_cancel']()}
             </Button>
             <Button type="submit" disabled={isSubmitting} data-testid="submit-button">
               {isSubmitting
                 ? isCreate
-                  ? 'Creating...'
-                  : 'Saving...'
+                  ? m['client_apps.form_creating']()
+                  : m['client_apps.form_saving']()
                 : isCreate
-                  ? 'Create'
-                  : 'Save Changes'}
+                  ? m['client_apps.form_create']()
+                  : m['client_apps.form_save_changes']()}
             </Button>
           </div>
         </form>

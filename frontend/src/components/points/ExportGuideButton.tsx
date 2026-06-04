@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Download } from 'lucide-react'
+import { m } from '@/paraglide/messages'
 
 interface ExportGuideButtonProps {
   configs: Array<{
@@ -15,20 +16,20 @@ interface ExportGuideButtonProps {
 export function ExportGuideButton({ configs }: ExportGuideButtonProps) {
   function handleExport() {
     const headers = [
-      'Plan',
-      'Points per Period',
-      'Grant on Subscribe',
-      'Grant Period',
-      'Validity Days',
-      'Max Periods',
+      m['points.export_csv_headers_plan'](),
+      m['points.export_csv_headers_points'](),
+      m['points.export_csv_headers_grant_subscribe'](),
+      m['points.export_csv_headers_period'](),
+      m['points.export_csv_headers_validity'](),
+      m['points.export_csv_headers_max_periods'](),
     ]
     const rows = configs.map((c) => [
       c.planName,
       c.pointsPerPeriod.toString(),
-      c.grantOnSubscribe ? 'Yes' : 'No',
+      c.grantOnSubscribe ? m['common.yes']() : m['common.no'](),
       c.grantPeriodType,
       c.validityDays.toString(),
-      c.maxPeriods?.toString() || 'Unlimited',
+      c.maxPeriods?.toString() || m['points.export_csv_unlimited'](),
     ])
 
     const csv = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n')
@@ -45,7 +46,7 @@ export function ExportGuideButton({ configs }: ExportGuideButtonProps) {
   return (
     <Button variant="outline" onClick={handleExport} data-testid="export-guide-button">
       <Download className="mr-2 h-4 w-4" />
-      Export Guide
+      {m['points.configs_export_guide']()}
     </Button>
   )
 }

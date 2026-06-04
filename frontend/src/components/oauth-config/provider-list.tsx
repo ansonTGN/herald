@@ -9,6 +9,7 @@ import { PROVIDER_DISPLAY_NAMES } from '@/lib/oauth-provider-constants'
 import { getErrorMessage } from '@/lib/error-utils'
 import { useOauthToggleMutation, useOauthDeleteMutation } from './oauth-mutations'
 import { DeleteProviderDialog } from './delete-provider-dialog'
+import { m } from '@/paraglide/messages'
 
 interface ProviderListProps {
   realmId: string
@@ -35,14 +36,18 @@ export function ProviderList({ realmId, onEdit }: ProviderListProps) {
   const deleteMutation = useOauthDeleteMutation(realmId, handleDeleteSuccess)
 
   if (isLoading) {
-    return <div className="text-center py-12 text-muted-foreground">Loading providers...</div>
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        {m['oauth.loading_providers']()}
+      </div>
+    )
   }
 
   if (error) {
     const errorMessage = getErrorMessage(error)
     return (
       <div className="text-center py-12 text-destructive">
-        Error loading providers: {errorMessage}
+        {m['oauth.error_loading']({ message: errorMessage })}
       </div>
     )
   }
@@ -50,7 +55,7 @@ export function ProviderList({ realmId, onEdit }: ProviderListProps) {
   if (!configs || configs.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
-        <p>No providers configured</p>
+        <p>{m['oauth.no_providers']()}</p>
       </div>
     )
   }
@@ -75,14 +80,14 @@ export function ProviderList({ realmId, onEdit }: ProviderListProps) {
                 variant={config.enabled ? 'default' : 'secondary'}
                 data-testid={`provider-status-${config.providerType}`}
               >
-                {config.enabled ? 'Enabled' : 'Disabled'}
+                {config.enabled ? m['oauth.provider_enabled']() : m['oauth.provider_disabled']()}
               </Badge>
             </div>
             <div
               className="text-sm text-muted-foreground"
               data-testid={`provider-client-id-${config.providerType}`}
             >
-              clientId: {config.clientId}
+              {m['oauth.form_client_id_label']()}: {config.clientId}
             </div>
             {config.scopes && config.scopes.length > 0 && (
               <div className="flex flex-wrap gap-1">
@@ -93,7 +98,7 @@ export function ProviderList({ realmId, onEdit }: ProviderListProps) {
                 ))}
                 {config.scopes.length > 3 && (
                   <Badge variant="outline" className="text-xs">
-                    +{config.scopes.length - 3} more
+                    {m['oauth.more_scopes']({ count: config.scopes.length - 3 })}
                   </Badge>
                 )}
               </div>
@@ -112,12 +117,12 @@ export function ProviderList({ realmId, onEdit }: ProviderListProps) {
               {config.enabled ? (
                 <>
                   <PowerOff className="mr-2 h-4 w-4" />
-                  Disable
+                  {m['oauth.disable_button']()}
                 </>
               ) : (
                 <>
                   <Power className="mr-2 h-4 w-4" />
-                  Enable
+                  {m['oauth.enable_button']()}
                 </>
               )}
             </Button>
@@ -128,7 +133,7 @@ export function ProviderList({ realmId, onEdit }: ProviderListProps) {
               data-testid={`provider-edit-button-${config.providerType}`}
             >
               <Edit className="mr-2 h-4 w-4" />
-              Edit
+              {m['oauth.edit_button']()}
             </Button>
             <Button
               variant="outline"
@@ -139,7 +144,7 @@ export function ProviderList({ realmId, onEdit }: ProviderListProps) {
               className="text-destructive hover:text-destructive"
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete
+              {m['oauth.delete_button']()}
             </Button>
           </div>
         </div>

@@ -5,12 +5,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-
-const STATUS_OPTIONS = [
-  { label: 'All', value: 'all' },
-  { label: 'Enabled', value: 'true' },
-  { label: 'Disabled', value: 'false' },
-] as const
+import { m } from '@/paraglide/messages'
 
 interface ClientAppStatusFilterProps {
   value: boolean | undefined
@@ -26,6 +21,12 @@ export function ClientAppStatusFilter({ value, onChange }: ClientAppStatusFilter
     }
   }
 
+  const statusOptions = [
+    { label: m['client_apps.filter_all'](), value: 'all' },
+    { label: m['client_apps.filter_enabled'](), value: 'true' },
+    { label: m['client_apps.filter_disabled'](), value: 'false' },
+  ]
+
   return (
     <Select
       value={value === undefined ? 'all' : String(value)}
@@ -33,10 +34,10 @@ export function ClientAppStatusFilter({ value, onChange }: ClientAppStatusFilter
       data-testid="client-app-status-filter"
     >
       <SelectTrigger className="w-[180px]">
-        <SelectValue placeholder="Filter by status" />
+        <SelectValue placeholder={m['client_apps.filter_placeholder']()} />
       </SelectTrigger>
       <SelectContent>
-        {STATUS_OPTIONS.map((option) => (
+        {statusOptions.map((option) => (
           <SelectItem key={option.value} value={option.value}>
             {option.label}
           </SelectItem>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Input } from '@/components/ui/input'
+import { m } from '@/paraglide/messages'
 
 interface ClientAppSearchProps {
   value: string
@@ -20,7 +21,7 @@ export function ClientAppSearch({ value, onChange, debounceMs = 500 }: ClientApp
 
   return (
     <Input
-      placeholder="Search by name or client ID..."
+      placeholder={m['client_apps.search_placeholder']()}
       value={searchInput}
       onChange={(e) => setSearchInput(e.target.value)}
       data-testid="client-app-search-input"

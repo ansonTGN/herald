@@ -4,6 +4,7 @@ import { deleteRole } from '@/lib/api-generated'
 import { useRealmId } from '@/stores/auth-store'
 import type { RoleResponse } from '@/lib/api-generated'
 import { queryKeys } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 interface DeleteRoleDialogProps {
   open: boolean
@@ -25,7 +26,7 @@ export function DeleteRoleDialog({
       deleteRole({
         path: { realmId, roleId: role.id },
       }),
-    getSuccessMessage: () => `Role "${role.name}" deleted successfully`,
+    getSuccessMessage: () => m['roles.deleted_success']({ name: role.name }),
     invalidateQueries: [queryKeys.roles(realmId)],
     onSuccess: () => {
       onOpenChange(false)
@@ -40,13 +41,8 @@ export function DeleteRoleDialog({
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Delete Role"
-      description={
-        <>
-          Are you sure you want to delete the role <strong>"{role.name}"</strong>? This action
-          cannot be undone.
-        </>
-      }
+      title={m['roles.delete_title']()}
+      description={m['roles.delete_description']({ name: role.name })}
       onConfirm={handleDelete}
       isPending={isSubmitting}
       confirmTestId="role-delete-confirm-button"

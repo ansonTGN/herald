@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useRealmId } from '@/stores/auth-store'
 import { logoutFlow } from '@/lib/auth-utils'
 import { featureAvailabilityQueryOptions } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
+import { LanguageSwitcher } from '@/components/shared/language-switcher'
 
 interface MenuItem {
   name: string
@@ -18,6 +20,18 @@ export function ProfileSidebar() {
   const realmId = useRealmId()
   const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
   const userFeatures = features?.user
+
+  /** Maps profile menu item name to its translated display label. */
+  const getProfileNavLabel = useCallback((name: string): string => {
+    const map: Record<string, () => string> = {
+      Profile: m['nav_profile.profile'],
+      Security: m['nav_profile.security'],
+      Points: m['nav_profile.points'],
+      Subscription: m['nav_profile.subscription'],
+      Invoices: m['nav_profile.invoices'],
+    }
+    return map[name]?.() ?? name
+  }, [])
 
   // Memoize menu items to prevent infinite re-renders
   const menuItems: MenuItem[] = useMemo(
@@ -58,7 +72,7 @@ export function ProfileSidebar() {
       className="w-64 bg-white border-r border-gray-200 flex flex-col"
     >
       <div className="p-6">
-        <h1 className="text-xl font-bold text-gray-900">Profile</h1>
+        <h1 className="text-xl font-bold text-gray-900">{m['nav_profile.profile']()}</h1>
       </div>
 
       <nav className="flex-1 px-3 space-y-1">
@@ -74,10 +88,14 @@ export function ProfileSidebar() {
               }`}
             >
               <item.icon className="w-5 h-5 mr-3" />
-              {item.name}
+              {getProfileNavLabel(item.name)}
             </Link>
           ))}
       </nav>
+
+      <div className="px-3 pb-3">
+        <LanguageSwitcher />
+      </div>
 
       <div className="p-3 border-t border-gray-200">
         <button
@@ -86,7 +104,7 @@ export function ProfileSidebar() {
           className="flex items-center w-full px-3 py-2 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50"
         >
           <LogOut className="w-5 h-5 mr-3" />
-          Logout
+          {m['user_menu.logout']()}
         </button>
       </div>
     </aside>

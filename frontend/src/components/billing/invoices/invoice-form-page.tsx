@@ -32,6 +32,7 @@ import {
   formatInvoiceAmount,
 } from '@/lib/invoice-utils'
 import { Plus, Trash2, ArrowLeft } from 'lucide-react'
+import { m } from '@/paraglide/messages'
 
 interface InvoiceFormPageProps {
   mode: 'create' | 'edit'
@@ -39,16 +40,20 @@ interface InvoiceFormPageProps {
   invoice?: InvoiceDetailResponse
 }
 
-const FEE_MODE_OPTIONS = [
-  { value: 'none', label: 'None' },
-  { value: 'fixed', label: 'Fixed' },
-  { value: 'percent', label: 'Percent' },
-]
+function getFeeModeOptions() {
+  return [
+    { value: 'none', label: m['billing.invoice_fee_none']() },
+    { value: 'fixed', label: m['billing.invoice_fee_fixed']() },
+    { value: 'percent', label: m['billing.invoice_fee_percent']() },
+  ]
+}
 
-const SHIPPING_MODE_OPTIONS = [
-  { value: 'none', label: 'None' },
-  { value: 'fixed', label: 'Fixed' },
-]
+function getShippingModeOptions() {
+  return [
+    { value: 'none', label: m['billing.invoice_fee_none']() },
+    { value: 'fixed', label: m['billing.invoice_fee_fixed']() },
+  ]
+}
 
 export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps) {
   const isEditing = mode === 'edit'
@@ -140,10 +145,12 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
         </Button>
         <div>
           <h1 className="text-2xl font-bold" data-testid="invoice-form-title">
-            {isEditing ? 'Edit Invoice' : 'Create Invoice'}
+            {isEditing ? m['billing.invoice_edit_title']() : m['billing.invoice_create_title']()}
           </h1>
           <p className="text-muted-foreground text-sm">
-            {isEditing ? 'Update invoice draft details' : 'Create a new invoice draft'}
+            {isEditing
+              ? m['billing.invoice_edit_description']()
+              : m['billing.invoice_create_description']()}
           </p>
         </div>
       </div>
@@ -162,84 +169,84 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold">Buyer Info</h3>
+                <h3 className="text-sm font-semibold">{m['billing.invoice_buyer_info']()}</h3>
                 <InvoiceTextField
                   form={form}
                   name="billingName"
-                  label="Name"
-                  placeholder="Company or individual name"
+                  label={m['billing.invoice_name']()}
+                  placeholder={m['billing.invoice_placeholder_name']()}
                   required
                   dataTestId="invoice-billing-name"
                 />
                 <InvoiceTextField
                   form={form}
                   name="billingEmail"
-                  label="Email"
-                  placeholder="billing@example.com"
+                  label={m['billing.invoice_email']()}
+                  placeholder={m['billing.invoice_placeholder_email']()}
                   dataTestId="invoice-billing-email"
                 />
                 <InvoiceTextField
                   form={form}
                   name="billingAddress"
-                  label="Address"
-                  placeholder="Billing address"
+                  label={m['billing.invoice_address']()}
+                  placeholder={m['billing.invoice_placeholder_address']()}
                   required
                   dataTestId="invoice-billing-address"
                 />
                 <InvoiceTextField
                   form={form}
                   name="billingPhone"
-                  label="Phone"
-                  placeholder="Phone number"
+                  label={m['billing.invoice_phone']()}
+                  placeholder={m['billing.invoice_placeholder_phone']()}
                   dataTestId="invoice-billing-phone"
                 />
                 <InvoiceTextField
                   form={form}
                   name="billingTaxId"
-                  label="Tax ID"
-                  placeholder="Tax identification number"
+                  label={m['billing.invoice_seller_tax_id_label']()}
+                  placeholder={m['billing.invoice_placeholder_tax_id']()}
                   required
                   dataTestId="invoice-billing-tax-id"
                 />
               </div>
 
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold">Seller Info</h3>
+                <h3 className="text-sm font-semibold">{m['billing.invoice_seller_info']()}</h3>
                 <InvoiceTextField
                   form={form}
                   name="sellerName"
-                  label="Name"
-                  placeholder="Seller company name"
+                  label={m['billing.invoice_name']()}
+                  placeholder={m['billing.invoice_placeholder_seller_name']()}
                   required
                   dataTestId="invoice-seller-name"
                 />
                 <InvoiceTextField
                   form={form}
                   name="sellerEmail"
-                  label="Email"
-                  placeholder="seller@example.com"
+                  label={m['billing.invoice_email']()}
+                  placeholder={m['billing.invoice_placeholder_seller_email']()}
                   dataTestId="invoice-seller-email"
                 />
                 <InvoiceTextField
                   form={form}
                   name="sellerAddress"
-                  label="Address"
-                  placeholder="Seller address"
+                  label={m['billing.invoice_address']()}
+                  placeholder={m['billing.invoice_placeholder_seller_address']()}
                   required
                   dataTestId="invoice-seller-address"
                 />
                 <InvoiceTextField
                   form={form}
                   name="sellerPhone"
-                  label="Phone"
-                  placeholder="Phone number"
+                  label={m['billing.invoice_phone']()}
+                  placeholder={m['billing.invoice_placeholder_phone']()}
                   dataTestId="invoice-seller-phone"
                 />
                 <InvoiceTextField
                   form={form}
                   name="sellerTaxId"
-                  label="Tax ID"
-                  placeholder="Tax identification number"
+                  label={m['billing.invoice_seller_tax_id_label']()}
+                  placeholder={m['billing.invoice_placeholder_tax_id']()}
                   required
                   dataTestId="invoice-seller-tax-id"
                 />
@@ -248,7 +255,7 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Line Items</h3>
+                <h3 className="text-sm font-semibold">{m['billing.invoice_line_items']()}</h3>
                 <Button
                   type="button"
                   variant="outline"
@@ -257,16 +264,16 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
                   data-testid="invoice-add-line-item"
                 >
                   <Plus className="mr-1 h-3 w-3" />
-                  Add Line Item
+                  {m['billing.invoice_add_line_item']()}
                 </Button>
               </div>
 
               <div className="rounded-md border">
                 <div className="grid grid-cols-[1fr_100px_120px_120px_40px] gap-2 bg-muted/50 px-3 py-2 text-xs font-medium">
-                  <span>Name *</span>
-                  <span>Quantity *</span>
-                  <span>Unit Price *</span>
-                  <span>Subtotal</span>
+                  <span>{m['billing.invoice_line_item_name_required']()}</span>
+                  <span>{m['billing.invoice_line_item_quantity_required']()}</span>
+                  <span>{m['billing.invoice_line_item_unit_price_required']()}</span>
+                  <span>{m['billing.invoice_line_item_subtotal']()}</span>
                   <span />
                 </div>
 
@@ -289,29 +296,29 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-sm font-semibold">Fees</h3>
+              <h3 className="text-sm font-semibold">{m['billing.invoice_fees']()}</h3>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <FeeInput
                   form={form}
                   modeName="discountMode"
                   valueName="discountValue"
-                  label="Discount"
+                  label={m['billing.invoice_discount_label']()}
                   dataTestIdPrefix="invoice-discount"
                 />
                 <FeeInput
                   form={form}
                   modeName="taxMode"
                   valueName="taxValue"
-                  label="Tax"
+                  label={m['billing.invoice_tax_label']()}
                   dataTestIdPrefix="invoice-tax"
                 />
                 <FeeInput
                   form={form}
                   modeName="shippingMode"
                   valueName="shippingValue"
-                  label="Shipping"
+                  label={m['billing.invoice_shipping_label']()}
                   dataTestIdPrefix="invoice-shipping"
-                  modeOptions={SHIPPING_MODE_OPTIONS}
+                  modeOptions={getShippingModeOptions()}
                 />
               </div>
             </div>
@@ -326,7 +333,7 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
               <InvoiceTextField
                 form={form}
                 name="dueDate"
-                label="Due Date"
+                label={m['billing.invoice_due_date_label']()}
                 type="date"
                 required
                 dataTestId="invoice-due-date"
@@ -334,8 +341,8 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
               <InvoiceTextField
                 form={form}
                 name="paymentTerms"
-                label="Payment Terms"
-                placeholder="e.g. Net 30"
+                label={m['billing.invoice_payment_terms']()}
+                placeholder={m['billing.invoice_payment_terms_placeholder']()}
                 dataTestId="invoice-payment-terms"
               />
             </div>
@@ -345,15 +352,15 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
                 <InvoiceTextField
                   form={form}
                   name="subscriptionId"
-                  label="Subscription ID"
-                  placeholder="Optional"
+                  label={m['billing.invoice_subscription_id']()}
+                  placeholder={m['common.optional']()}
                   dataTestId="invoice-subscription-id"
                 />
                 <InvoiceTextField
                   form={form}
                   name="paymentAttemptId"
-                  label="Payment Attempt ID"
-                  placeholder="Optional"
+                  label={m['billing.invoice_payment_attempt_id']()}
+                  placeholder={m['common.optional']()}
                   dataTestId="invoice-payment-attempt-id"
                 />
               </div>
@@ -362,14 +369,14 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
             <form.Field name="notes">
               {(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor={field.name}>Additional Information</Label>
+                  <Label htmlFor={field.name}>{m['billing.invoice_notes_label']()}</Label>
                   <textarea
                     id={field.name}
                     data-testid="invoice-notes"
                     value={field.state.value ?? ''}
                     onBlur={field.handleBlur}
                     onChange={(e) => field.handleChange(e.target.value || null)}
-                    placeholder="Additional notes or comments"
+                    placeholder={m['billing.invoice_notes_placeholder']()}
                     rows={3}
                     className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                   />
@@ -392,10 +399,10 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
             onClick={handleCancel}
             data-testid="invoice-form-cancel-button"
           >
-            Cancel
+            {m['common.cancel']()}
           </Button>
           <Button type="submit" disabled={isSubmitting} data-testid="invoice-form-submit-button">
-            {isSubmitting ? 'Saving...' : 'Save as Draft'}
+            {isSubmitting ? m['shared.saving']() : m['billing.invoice_save_draft']()}
           </Button>
         </div>
       </form>
@@ -440,8 +447,8 @@ function AccountSelectorField({ form }: { form: any }) {
     <InvoiceTextField
       form={form}
       name="accountId"
-      label="Account"
-      placeholder="Account ID"
+      label={m['billing.invoice_label_account']()}
+      placeholder={m['billing.invoice_placeholder_account']()}
       required
       dataTestId="invoice-account-id"
     />
@@ -525,7 +532,7 @@ function LineItemRow({
                     value={nameField.state.value ?? ''}
                     onBlur={nameField.handleBlur}
                     onChange={(e) => nameField.handleChange(e.target.value)}
-                    placeholder="Item name"
+                    placeholder={m['billing.invoice_line_item_name_placeholder']()}
                     className="h-8 text-sm"
                   />
                   {(nameField.state.meta.isTouched || form.state.isSubmitted) &&
@@ -613,7 +620,7 @@ function FeeInput({
   valueName,
   label,
   dataTestIdPrefix,
-  modeOptions = FEE_MODE_OPTIONS,
+  modeOptions = getFeeModeOptions(),
 }: {
   form: any
   modeName: string
@@ -662,7 +669,9 @@ function FeeInput({
               value={valueField.state.value ?? ''}
               onBlur={valueField.handleBlur}
               onChange={(e) => valueField.handleChange(e.target.value || null)}
-              placeholder={currentMode === 'percent' ? '%' : 'Amount'}
+              placeholder={
+                currentMode === 'percent' ? '%' : m['billing.invoice_fee_amount_placeholder']()
+              }
               disabled={!currentMode}
               min={0}
               step="0.01"
@@ -702,31 +711,31 @@ function TotalsPreview({ form, defaultCurrency }: { form: any; defaultCurrency: 
       data-testid="invoice-totals-preview"
     >
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Subtotal</span>
+        <span className="text-muted-foreground">{m['billing.invoice_subtotal']()}</span>
         <span className="font-mono" data-testid="invoice-totals-subtotal">
           {fmt(totals.subtotal)}
         </span>
       </div>
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Discount (-)</span>
+        <span className="text-muted-foreground">{m['billing.invoice_discount']()}</span>
         <span className="font-mono" data-testid="invoice-totals-discount">
           -{fmt(totals.discountAmount)}
         </span>
       </div>
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Tax (+)</span>
+        <span className="text-muted-foreground">{m['billing.invoice_tax']()}</span>
         <span className="font-mono" data-testid="invoice-totals-tax">
           +{fmt(totals.taxAmount)}
         </span>
       </div>
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Shipping (+)</span>
+        <span className="text-muted-foreground">{m['billing.invoice_shipping']()}</span>
         <span className="font-mono" data-testid="invoice-totals-shipping">
           +{fmt(totals.shippingAmount)}
         </span>
       </div>
       <div className="border-t pt-2 flex justify-between font-semibold">
-        <span>Total</span>
+        <span>{m['billing.invoice_total_label']()}</span>
         <span className="font-mono" data-testid="invoice-totals-total">
           {fmt(totals.total)}
         </span>
@@ -741,7 +750,7 @@ function CurrencySelect({ form }: { form: any }) {
       {(currencyField: any) => (
         <div className="space-y-1">
           <Label htmlFor="currency" className="text-xs">
-            Currency
+            {m['billing.invoice_currency']()}
           </Label>
           <Select
             value={currencyField.state.value}

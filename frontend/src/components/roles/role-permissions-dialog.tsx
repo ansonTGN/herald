@@ -16,6 +16,7 @@ import { PermissionCheckboxList } from './permission-checkbox-list'
 import { useRealmId } from '@/stores/auth-store'
 import type { RoleResponse, PermissionResponse } from '@/lib/api-generated'
 import { queryKeys } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 interface RolePermissionsDialogProps {
   open: boolean
@@ -77,16 +78,18 @@ export function RolePermissionsDialog({
     },
     onSuccess: async (result) => {
       const parts: string[] = []
-      if (result.assigned > 0) parts.push(`${result.assigned} permission(s) assigned`)
-      if (result.removed > 0) parts.push(`${result.removed} permission(s) removed`)
-      toast.success(`Permissions updated: ${parts.join(', ')}`)
+      if (result.assigned > 0)
+        parts.push(m['roles.permissions_assigned_count']({ count: result.assigned }))
+      if (result.removed > 0)
+        parts.push(m['roles.permissions_removed_count']({ count: result.removed }))
+      toast.success(m['roles.permissions_saved']({ details: parts.join(', ') }))
       await queryClient.invalidateQueries({
         queryKey: queryKeys.rolePermissions(realmId, role.id),
       })
       onOpenChange(false)
     },
     onError: (error: Error) => {
-      toast.error(`Failed to save permissions: ${error.message}`)
+      toast.error(m['roles.permissions_save_failed']({ message: error.message }))
     },
   })
 
@@ -105,11 +108,9 @@ export function RolePermissionsDialog({
         <DialogHeader className="flex-shrink-0">
           <div className="flex items-center gap-2">
             <Shield className="h-5 w-5" />
-            <DialogTitle>Manage Permissions for {role.name}</DialogTitle>
+            <DialogTitle>{m['roles.permissions_title']({ name: role.name })}</DialogTitle>
           </div>
-          <DialogDescription>
-            Assign or remove permissions for this role. Permissions are grouped by resource.
-          </DialogDescription>
+          <DialogDescription>{m['roles.permissions_description']()}</DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-2">
@@ -119,12 +120,12 @@ export function RolePermissionsDialog({
               <Badge variant="outline">
                 {localAssignedIds.length} / {allPermissions.length}
               </Badge>
-              <span className="text-muted-foreground">permissions assigned</span>
+              <span className="text-muted-foreground">{m['roles.permissions_assigned']()}</span>
             </div>
             {saveMutation.isPending && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Saving changes...</span>
+                <span>{m['roles.permissions_saving']()}</span>
               </div>
             )}
           </div>
@@ -152,7 +153,7 @@ export function RolePermissionsDialog({
             disabled={saveMutation.isPending}
             data-testid="role-permissions-cancel-button"
           >
-            Cancel
+            {m['common.cancel']()}
           </Button>
           <Button
             onClick={() => saveMutation.mutate()}
@@ -162,10 +163,10 @@ export function RolePermissionsDialog({
             {saveMutation.isPending ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Saving...
+                {m['shared.saving']()}
               </>
             ) : (
-              'Save Changes'
+              m['shared.save_changes']()
             )}
           </Button>
         </div>

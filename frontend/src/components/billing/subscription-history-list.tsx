@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/table'
 import { HistoryEventBadge } from './history-event-badge'
 import type { SubscriptionHistoryEventWithUser } from '@/types/billing'
+import { m } from '@/paraglide/messages'
 
 interface SubscriptionHistoryListProps {
   events: SubscriptionHistoryEventWithUser[]
@@ -39,7 +40,7 @@ const HistoryTableRow = memo(({ event, index, onEventClick }: HistoryTableRowPro
       <TableCell>
         <div className="space-y-1">
           <div className="text-sm font-medium">
-            {event.subscription.plan?.title || 'Unknown Plan'}
+            {event.subscription.plan?.title || m['billing.subscription_history_unknown_plan']()}
           </div>
           <div className="text-xs text-muted-foreground">{event.subscription.status}</div>
         </div>
@@ -65,7 +66,7 @@ const HistoryTableRow = memo(({ event, index, onEventClick }: HistoryTableRowPro
           data-testid={`view-details-${index}`}
         >
           <ChevronRight className="h-4 w-4" />
-          <span className="sr-only">View details</span>
+          <span className="sr-only">{m['billing.subscription_view_details']()}</span>
         </Button>
       </TableCell>
     </TableRow>
@@ -99,31 +100,33 @@ export function SubscriptionHistoryList({
                   onClick={() => handleSort('timestamp')}
                 >
                   <Clock className="mr-2 h-3.5 w-3.5" />
-                  Timestamp
+                  {m['billing.subscription_history_list_timestamp']()}
                   <ArrowUpDown className="ml-2 h-3.5 w-3.5" />
                 </Button>
               </TableHead>
-              <TableHead>Event Type</TableHead>
-              <TableHead>Subscription</TableHead>
+              <TableHead>{m['billing.subscription_history_list_event_type']()}</TableHead>
+              <TableHead>{m['billing.subscription_history_list_subscription']()}</TableHead>
               <TableHead>
                 <User className="mr-2 h-3.5 w-3.5 inline" />
-                User
+                {m['billing.subscription_history_list_user']()}
               </TableHead>
-              <TableHead>Actor</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>{m['billing.subscription_history_list_actor']()}</TableHead>
+              <TableHead className="text-right">
+                {m['billing.subscription_history_list_actions']()}
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center">
-                  Loading...
+                  {m['billing.subscription_history_loading']()}
                 </TableCell>
               </TableRow>
             ) : events.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  No history events found
+                  {m['billing.subscription_history_no_events']()}
                 </TableCell>
               </TableRow>
             ) : (

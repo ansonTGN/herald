@@ -17,6 +17,7 @@ import type { RealmResponse } from '@/lib/api-generated'
 import { Button } from '@/components/ui/button'
 import { ArrowUpDown } from 'lucide-react'
 import { formatDate } from '@/lib/date-utils'
+import { m } from '@/paraglide/messages'
 
 interface RealmTableProps {
   data?: RealmResponse[]
@@ -39,7 +40,7 @@ function createRealmColumns(
             className="flex items-center gap-2 hover:text-accent-foreground"
             data-testid="realm-id-sort-button"
           >
-            Realm ID
+            {m['realms.table_id']()}
             <ArrowUpDown className="ml-2 h-4 w-4" />
           </button>
         )
@@ -60,7 +61,7 @@ function createRealmColumns(
             className="flex items-center gap-2 hover:text-accent-foreground"
             data-testid="realm-name-sort-button"
           >
-            Name
+            {m['realms.table_name']()}
             <ArrowUpDown className="ml-2 h-4 w-4" />
           </button>
         )
@@ -69,7 +70,7 @@ function createRealmColumns(
     },
     {
       accessorKey: 'description',
-      header: 'Description',
+      header: m['realms.table_description'](),
       cell: ({ row }) => {
         const desc = row.getValue('description') as string | null | undefined
         if (!desc) return <span className="text-muted-foreground">&mdash;</span>
@@ -90,7 +91,7 @@ function createRealmColumns(
             className="flex items-center gap-2 hover:text-accent-foreground"
             data-testid="realm-created-at-sort-button"
           >
-            Created At
+            {m['realms.table_created_at']()}
             <ArrowUpDown className="ml-2 h-4 w-4" />
           </button>
         )
@@ -107,7 +108,7 @@ function createRealmColumns(
             className="flex items-center gap-2 hover:text-accent-foreground"
             data-testid="realm-updated-at-sort-button"
           >
-            Updated At
+            {m['realms.table_updated_at']()}
             <ArrowUpDown className="ml-2 h-4 w-4" />
           </button>
         )
@@ -116,7 +117,7 @@ function createRealmColumns(
     },
     {
       id: 'actions',
-      header: 'Actions',
+      header: m['realms.table_actions'](),
       cell: ({ row }) => (
         <Button
           variant="ghost"
@@ -124,7 +125,7 @@ function createRealmColumns(
           onClick={() => onViewDetail?.(row.original)}
           data-testid={`realm-${row.index}-edit-button`}
         >
-          Edit
+          {m['realms.table_edit']()}
         </Button>
       ),
     },
@@ -142,7 +143,7 @@ export function RealmTable({ data, isLoading, error, onViewDetail }: RealmTableP
   })
 
   if (isLoading) {
-    return <div data-testid="realm-table-loading">Loading...</div>
+    return <div data-testid="realm-table-loading">{m['common.loading']()}</div>
   }
 
   if (error) {
@@ -151,16 +152,14 @@ export function RealmTable({ data, isLoading, error, onViewDetail }: RealmTableP
         data-testid="realm-table-error"
         className="text-red-500 p-4 border border-red-200 rounded-md bg-red-50"
       >
-        <div className="font-semibold">Failed to load realms</div>
-        <div className="text-sm mt-1">
-          {error.message || 'An unknown error occurred. Please try again later.'}
-        </div>
+        <div className="font-semibold">{m['realms.failed_to_load']()}</div>
+        <div className="text-sm mt-1">{error.message || m['realms.failed_to_load_detail']()}</div>
       </div>
     )
   }
 
   if (!data || data.length === 0) {
-    return <div data-testid="realm-table-empty">No realms found</div>
+    return <div data-testid="realm-table-empty">{m['realms.no_realms_found']()}</div>
   }
 
   return (
@@ -193,7 +192,7 @@ export function RealmTable({ data, isLoading, error, onViewDetail }: RealmTableP
           ) : (
             <TableRow>
               <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
+                {m['common.no_results']()}
               </TableCell>
             </TableRow>
           )}

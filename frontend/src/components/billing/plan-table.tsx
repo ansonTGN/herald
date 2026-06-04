@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { DataTable } from '@/components/shared/data-table'
+import { m } from '@/paraglide/messages'
 
 interface PlanTableProps {
   data?: SubscriptionPlanResponse[]
@@ -32,7 +33,7 @@ function createPlanColumns(
     {
       id: 'id',
       accessorKey: 'id',
-      header: 'ID',
+      header: m['billing.col_id'](),
       cell: ({ row }) => (
         <div className="font-mono text-xs" data-testid={`plan-id-${row.index}`}>
           {String(row.getValue('id')).slice(0, 8)}...
@@ -41,7 +42,7 @@ function createPlanColumns(
     },
     {
       accessorKey: 'name',
-      header: 'Subscription Plan Name',
+      header: m['billing.col_plan_name'](),
       cell: ({ row }) => (
         <div className="font-medium" data-testid={`plan-name-${row.index}`}>
           {(row.getValue('name') as string) || ''}
@@ -50,22 +51,28 @@ function createPlanColumns(
     },
     {
       accessorKey: 'title',
-      header: 'Title',
+      header: m['billing.col_title'](),
       cell: ({ row }) => row.getValue('title'),
     },
     {
       accessorKey: 'type',
-      header: 'Billing',
+      header: m['billing.col_billing'](),
       cell: ({ row }) => {
         const type = row.getValue('type') as string
         return (
-          <Badge variant={type === 'monthly' ? 'default' : 'secondary'}>{type || 'Unknown'}</Badge>
+          <Badge variant={type === 'monthly' ? 'default' : 'secondary'}>
+            {type === 'monthly'
+              ? m['billing.billing_monthly']()
+              : type === 'yearly'
+                ? m['billing.billing_yearly']()
+                : type}
+          </Badge>
         )
       },
     },
     {
       accessorKey: 'price',
-      header: 'Price',
+      header: m['billing.col_price'](),
       cell: ({ row }) => {
         const price = row.getValue('price') as number
         const currency = row.original.currency || 'USD'
@@ -74,20 +81,20 @@ function createPlanColumns(
     },
     {
       accessorKey: 'paymentProviders',
-      header: 'Payment Providers',
+      header: m['billing.col_payment_providers'](),
       cell: ({ row }) => {
         const providers = row.getValue('paymentProviders') as
           | Array<PaymentProviderSummary>
           | undefined
 
         if (!providers || providers.length === 0) {
-          return <Badge variant="destructive">Not configured</Badge>
+          return <Badge variant="destructive">{m['billing.not_configured']()}</Badge>
         }
 
         const enabledProviders = getEnabledProviders(providers)
 
         if (enabledProviders.length === 0) {
-          return <Badge variant="secondary">All disabled</Badge>
+          return <Badge variant="secondary">{m['billing.all_disabled']()}</Badge>
         }
 
         const names = formatProviderNames(enabledProviders)
@@ -97,27 +104,29 @@ function createPlanColumns(
     },
     {
       accessorKey: 'trialDays',
-      header: 'Trial Days',
+      header: m['billing.col_trial_days'](),
       cell: ({ row }) => (row.getValue('trialDays') as number).toString(),
     },
     {
       accessorKey: 'active',
-      header: 'Status',
+      header: m['billing.col_status'](),
       cell: ({ row }) => {
         const active = row.getValue('active') as boolean
         return (
-          <Badge variant={active ? 'default' : 'secondary'}>{active ? 'Active' : 'Disabled'}</Badge>
+          <Badge variant={active ? 'default' : 'secondary'}>
+            {active ? m['billing.status_active']() : m['billing.status_disabled']()}
+          </Badge>
         )
       },
     },
     {
       id: 'actions',
-      header: 'Actions',
+      header: m['common.actions'](),
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Open menu</span>
+              <span className="sr-only">{m['billing.open_menu']()}</span>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -128,7 +137,7 @@ function createPlanColumns(
                 data-testid={`edit-plan-button-${row.original.id}`}
               >
                 <Edit className="mr-2 h-4 w-4" />
-                Edit
+                {m['billing.edit_plan']()}
               </DropdownMenuItem>
             )}
             {onManageProviders && (
@@ -137,7 +146,7 @@ function createPlanColumns(
                 data-testid={`manage-providers-button-${row.original.id}`}
               >
                 <Settings className="mr-2 h-4 w-4" />
-                Manage Providers
+                {m['billing.manage_providers']()}
               </DropdownMenuItem>
             )}
             {onAssign && (
@@ -146,7 +155,7 @@ function createPlanColumns(
                 data-testid={`assign-plan-button-${row.original.id}`}
               >
                 <Users className="mr-2 h-4 w-4" />
-                Assign to App
+                {m['billing.assign_to_app']()}
               </DropdownMenuItem>
             )}
             {onDelete && (
@@ -156,7 +165,7 @@ function createPlanColumns(
                 data-testid={`delete-plan-button-${row.original.id}`}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                Delete
+                {m['common.delete']()}
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>
@@ -183,9 +192,11 @@ export function PlanTable({
       data={data}
       isLoading={isLoading}
       error={error}
-      loadingMessage="Loading subscription plans..."
-      errorMessage={error ? `Error loading subscription plans: ${error.message}` : undefined}
-      emptyMessage="No subscription plans found."
+      loadingMessage={m['billing.loading_plans']()}
+      errorMessage={
+        error ? m['billing.error_loading_plans']({ message: error.message }) : undefined
+      }
+      emptyMessage={m['billing.no_plans_found']()}
       data-testid="plans-table"
     />
   )

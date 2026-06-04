@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { Plus, X, Check, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { m } from '@/paraglide/messages'
 
 export interface UriItem {
   id: string
@@ -61,14 +62,14 @@ export function RedirectUrisInput({
 
     if (!isValidUri(trimmed)) {
       setErrors((prev) =>
-        new Map(prev).set('new', 'Must be a valid URL starting with https:// or http://')
+        new Map(prev).set('new', m['client_apps.form_redirect_uris_invalid_url']())
       )
       return
     }
 
     // Check for duplicates
     if (value.some((item) => item.value === trimmed)) {
-      setErrors((prev) => new Map(prev).set('new', 'This URI is already in the list'))
+      setErrors((prev) => new Map(prev).set('new', m['client_apps.form_redirect_uris_duplicate']()))
       return
     }
 
@@ -209,11 +210,11 @@ export function RedirectUrisInput({
                 ? 'bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98]'
                 : 'bg-muted text-muted-foreground cursor-not-allowed'
             )}
-            aria-label="Add URI"
+            aria-label={m['client_apps.form_redirect_uris_add']()}
             data-testid={`${dataTestId}-add-button`}
           >
             <Plus className="w-4 h-4" />
-            Add
+            {m['client_apps.form_redirect_uris_add']()}
           </button>
         </div>
 

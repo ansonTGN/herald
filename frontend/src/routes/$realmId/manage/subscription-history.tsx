@@ -13,6 +13,7 @@ import {
 import type { HistoryFilters, SubscriptionHistoryEventWithUser } from '@/types/billing'
 import { toast } from 'sonner'
 import { PageHeader, ListPagination } from '@/components/shared'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/subscription-history')({
   beforeLoad: ({ context, params }) =>
@@ -89,11 +90,12 @@ function SubscriptionHistoryRoute() {
         <Card className="border-destructive">
           <CardContent className="p-6">
             <p className="text-destructive">
-              Failed to load subscription history:{' '}
-              {error instanceof Error ? error.message : 'Unknown error'}
+              {m['billing.subscription_history_failed_load']({
+                error: error instanceof Error ? error.message : 'Unknown error',
+              })}
             </p>
             <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>
-              Retry
+              {m['common.retry']()}
             </Button>
           </CardContent>
         </Card>
@@ -107,7 +109,9 @@ function SubscriptionHistoryRoute() {
         <div className="flex items-center justify-center py-12" data-testid="page-loading">
           <div className="text-center">
             <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent" />
-            <p className="mt-4 text-muted-foreground">Loading subscription history...</p>
+            <p className="mt-4 text-muted-foreground">
+              {m['billing.subscription_history_loading_page']()}
+            </p>
           </div>
         </div>
       </div>
@@ -116,7 +120,7 @@ function SubscriptionHistoryRoute() {
 
   return (
     <div className="space-y-6" data-testid="subscription-history-page">
-      <PageHeader title="Subscription History" />
+      <PageHeader title={m['billing.subscription_history_page_title']()} />
 
       {/* Filters */}
       <SubscriptionHistoryFilter
@@ -130,7 +134,7 @@ function SubscriptionHistoryRoute() {
       {/* History List */}
       <Card>
         <CardHeader>
-          <CardTitle>History Events</CardTitle>
+          <CardTitle>{m['billing.subscription_history_events']()}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <SubscriptionHistoryList

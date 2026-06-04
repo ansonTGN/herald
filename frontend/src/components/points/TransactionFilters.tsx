@@ -16,6 +16,7 @@ import { toDateInputValue, toUtcDateRangeBoundary } from '@/lib/date-utils'
 import { FILTER_ALL_VALUE } from '@/lib/constants'
 import type { TransactionFilters as TransactionFiltersType } from '@/lib/schemas/points-forms'
 import { useActiveFilters } from '@/hooks/use-active-filters'
+import { m } from '@/paraglide/messages'
 
 const transactionTypeEnum = z.enum(['recharge', 'consume'])
 
@@ -86,7 +87,7 @@ export function TransactionFilters({
                 <form.Field name="transactionType">
                   {(field) => (
                     <>
-                      <Label htmlFor={field.name}>Transaction Type</Label>
+                      <Label htmlFor={field.name}>{m['points.filter_type_label']()}</Label>
                       <Select
                         value={field.state.value ?? FILTER_ALL_VALUE}
                         onValueChange={(value) =>
@@ -98,12 +99,18 @@ export function TransactionFilters({
                         }
                       >
                         <SelectTrigger id={field.name} data-testid="filter-transaction-type">
-                          <SelectValue placeholder="All types" />
+                          <SelectValue placeholder={m['points.filter_type_all']()} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value={FILTER_ALL_VALUE}>All types</SelectItem>
-                          <SelectItem value="recharge">Recharge</SelectItem>
-                          <SelectItem value="consume">Consume</SelectItem>
+                          <SelectItem value={FILTER_ALL_VALUE}>
+                            {m['points.filter_type_all']()}
+                          </SelectItem>
+                          <SelectItem value="recharge">
+                            {m['points.filter_type_recharge']()}
+                          </SelectItem>
+                          <SelectItem value="consume">
+                            {m['points.filter_type_consume']()}
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </>
@@ -116,7 +123,7 @@ export function TransactionFilters({
                 <form.Field name="startTime">
                   {(field) => (
                     <>
-                      <Label htmlFor={field.name}>From Date</Label>
+                      <Label htmlFor={field.name}>{m['points.filter_from_date']()}</Label>
                       <Input
                         id={field.name}
                         type="date"
@@ -134,7 +141,7 @@ export function TransactionFilters({
                 <form.Field name="endTime">
                   {(field) => (
                     <>
-                      <Label htmlFor={field.name}>To Date</Label>
+                      <Label htmlFor={field.name}>{m['points.filter_to_date']()}</Label>
                       <Input
                         id={field.name}
                         type="date"
@@ -153,7 +160,7 @@ export function TransactionFilters({
                   <form.Field name="clientAppId">
                     {(field) => (
                       <>
-                        <Label htmlFor={field.name}>Client App</Label>
+                        <Label htmlFor={field.name}>{m['points.filter_client_app_label']()}</Label>
                         <Select
                           value={field.state.value ?? FILTER_ALL_VALUE}
                           onValueChange={(value) =>
@@ -161,10 +168,12 @@ export function TransactionFilters({
                           }
                         >
                           <SelectTrigger id={field.name} data-testid="filter-client-app">
-                            <SelectValue placeholder="All apps" />
+                            <SelectValue placeholder={m['points.filter_client_app_all']()} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value={FILTER_ALL_VALUE}>All apps</SelectItem>
+                            <SelectItem value={FILTER_ALL_VALUE}>
+                              {m['points.filter_client_app_all']()}
+                            </SelectItem>
                             {clientApps?.map((app) => (
                               <SelectItem key={app.id} value={app.id}>
                                 {app.name}
@@ -190,7 +199,7 @@ export function TransactionFilters({
                     data-testid="clear-filters-button"
                   >
                     <X className="mr-2 h-4 w-4" />
-                    Clear
+                    {m['points.filter_clear']()}
                   </Button>
                 )}
                 <Button
@@ -199,7 +208,7 @@ export function TransactionFilters({
                   disabled={loading}
                   data-testid="apply-filters-button"
                 >
-                  {loading ? 'Applying...' : 'Apply Filters'}
+                  {loading ? m['points.filter_applying']() : m['points.filter_apply']()}
                 </Button>
               </div>
             </div>

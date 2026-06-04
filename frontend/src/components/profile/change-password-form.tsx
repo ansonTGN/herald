@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TextField } from '@/components/shared/form-fields/text-field'
 import { queryKeys } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 export function ChangePasswordForm() {
   const form = useAppForm({
@@ -25,7 +26,7 @@ export function ChangePasswordForm() {
       changeUserPassword({
         body: data,
       }),
-    getSuccessMessage: () => 'Password changed successfully',
+    getSuccessMessage: () => m['profile.password_changed_success'](),
     invalidateQueries: [queryKeys.profile()],
     onSuccess: () => {
       form.reset()
@@ -35,7 +36,7 @@ export function ChangePasswordForm() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Change Password</CardTitle>
+        <CardTitle>{m['profile.change_password_title']()}</CardTitle>
       </CardHeader>
       <CardContent>
         <AppForm>
@@ -50,21 +51,21 @@ export function ChangePasswordForm() {
             <TextField
               form={form}
               name="oldPass"
-              label="Current Password"
+              label={m['profile.current_password_label']()}
               type="password"
               dataTestId="change-password-old-input"
             />
             <TextField
               form={form}
               name="newPass"
-              label="New Password"
+              label={m['profile.new_password_label']()}
               type="password"
               dataTestId="change-password-new-input"
             />
             <TextField
               form={form}
               name="confirmPass"
-              label="Confirm New Password"
+              label={m['profile.confirm_password_label']()}
               type="password"
               dataTestId="change-password-confirm-input"
             />
@@ -74,7 +75,7 @@ export function ChangePasswordForm() {
               disabled={isSubmitting}
               data-testid="change-password-submit-button"
             >
-              {isSubmitting ? 'Changing...' : 'Change Password'}
+              {isSubmitting ? m['profile.changing']() : m['profile.change_password_button']()}
             </Button>
           </form>
         </AppForm>

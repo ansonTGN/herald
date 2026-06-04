@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent } from '@/components/ui/card'
 import { Copy, Check, TriangleAlert, ArrowLeft } from 'lucide-react'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { m } from '@/paraglide/messages'
 
 interface ApiKeyRevealPageProps {
   realmId: string
@@ -55,30 +56,30 @@ export function ApiKeyRevealPage({ realmId }: ApiKeyRevealPageProps) {
         </Button>
         <div>
           <h1 className="text-2xl font-bold" data-testid="page-title">
-            API Key Created
+            {m['api_keys.reveal_title']()}
           </h1>
-          <p className="text-muted-foreground text-sm">
-            Your new API key has been created successfully.
-          </p>
+          <p className="text-muted-foreground text-sm">{m['api_keys.reveal_subtitle']()}</p>
         </div>
       </div>
 
       <Alert className="border-yellow-500/50 bg-yellow-50 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
         <TriangleAlert className="h-4 w-4 !text-yellow-600 dark:!text-yellow-400" />
-        <AlertDescription>
-          Copy this API key now. You won't be able to see it again.
-        </AlertDescription>
+        <AlertDescription>{m['api_keys.reveal_warning']()}</AlertDescription>
       </Alert>
 
       <Card>
         <CardContent className="pt-6 space-y-4">
           <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground">Name</p>
+            <p className="text-sm font-medium text-muted-foreground">
+              {m['api_keys.reveal_name_label']()}
+            </p>
             <p className="text-sm font-semibold">{keyData.name}</p>
           </div>
 
           <div className="space-y-2">
-            <p className="text-sm font-medium text-muted-foreground">API Key</p>
+            <p className="text-sm font-medium text-muted-foreground">
+              {m['api_keys.reveal_key_label']()}
+            </p>
             <div className="flex items-center gap-2">
               <code
                 className="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm break-all select-all"
@@ -96,12 +97,12 @@ export function ApiKeyRevealPage({ realmId }: ApiKeyRevealPageProps) {
                 {copied ? (
                   <>
                     <Check className="h-4 w-4 mr-2" />
-                    Copied
+                    {m['api_keys.reveal_copied']()}
                   </>
                 ) : (
                   <>
                     <Copy className="h-4 w-4 mr-2" />
-                    Copy
+                    {m['api_keys.reveal_copy']()}
                   </>
                 )}
               </Button>
@@ -112,7 +113,7 @@ export function ApiKeyRevealPage({ realmId }: ApiKeyRevealPageProps) {
 
       <div className="flex justify-end">
         <Button onClick={handleDone} data-testid="api-key-reveal-done-button">
-          Done
+          {m['api_keys.reveal_done']()}
         </Button>
       </div>
     </div>

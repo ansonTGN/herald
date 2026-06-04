@@ -3,6 +3,7 @@
  *
  * Type definitions for billing-related functionality including subscription history.
  */
+import { m } from '@/paraglide/messages'
 
 // Subscription history event types
 export type SubscriptionHistoryEventType =
@@ -135,38 +136,59 @@ export interface GlobalSubscriptionHistoryResponse {
   pagination: PaginationInfo
 }
 
-// Event type labels for display
-export const EventTypeLabels: Readonly<Record<SubscriptionHistoryEventType, string>> =
-  Object.freeze({
-    created: 'Created',
-    upgraded: 'Upgraded',
-    downgraded: 'Downgraded',
-    canceled: 'Canceled',
-    expired: 'Expired',
-    renewed: 'Renewed',
-    reactivated: 'Reactivated',
-    billing_period_changed: 'Billing Period Changed',
-    past_due: 'Payment Failed',
-    disputed: 'Dispute Started',
-    payment_succeeded: 'Payment Succeeded',
-    payment_failed: 'Payment Failed',
-    invoice_created: 'Invoice Created',
-  } as const)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const messages = m as any
 
-// Status labels for display
-export const SubscriptionStatusLabels: Readonly<Record<SubscriptionStatus, string>> = Object.freeze(
-  {
-    active: 'Active',
-    trialing: 'Trialing',
-    past_due: 'Past Due',
-    canceled: 'Canceled',
-    incomplete: 'Incomplete',
-    expired: 'Expired',
-    paused: 'Paused',
-    disputed: 'Disputed',
-    scheduled_cancel: 'Scheduled to Cancel',
-  } as const
-)
+const eventTypeKeyMap: Record<SubscriptionHistoryEventType, string> = {
+  created: 'billing.subscription_event_created',
+  upgraded: 'billing.subscription_event_upgraded',
+  downgraded: 'billing.subscription_event_downgraded',
+  canceled: 'billing.subscription_event_canceled',
+  expired: 'billing.subscription_event_expired',
+  renewed: 'billing.subscription_event_renewed',
+  reactivated: 'billing.subscription_event_reactivated',
+  billing_period_changed: 'billing.subscription_event_billing_period_changed',
+  past_due: 'billing.subscription_event_past_due',
+  disputed: 'billing.subscription_event_disputed',
+  payment_succeeded: 'billing.subscription_event_payment_succeeded',
+  payment_failed: 'billing.subscription_event_payment_failed',
+  invoice_created: 'billing.subscription_event_invoice_created',
+}
+
+export function getEventTypeLabel(type: SubscriptionHistoryEventType): string {
+  return messages[eventTypeKeyMap[type]]()
+}
+
+export function getEventTypeLabels(): Readonly<Record<SubscriptionHistoryEventType, string>> {
+  return Object.fromEntries(
+    (Object.keys(eventTypeKeyMap) as SubscriptionHistoryEventType[]).map((k) => [
+      k,
+      messages[eventTypeKeyMap[k]](),
+    ])
+  ) as Readonly<Record<SubscriptionHistoryEventType, string>>
+}
+
+const statusKeyMap: Record<SubscriptionStatus, string> = {
+  active: 'billing.subscription_status_label_active',
+  trialing: 'billing.subscription_status_label_trialing',
+  past_due: 'billing.subscription_status_label_past_due',
+  canceled: 'billing.subscription_status_label_canceled',
+  incomplete: 'billing.subscription_status_label_incomplete',
+  expired: 'billing.subscription_status_label_expired',
+  paused: 'billing.subscription_status_label_paused',
+  disputed: 'billing.subscription_status_label_disputed',
+  scheduled_cancel: 'billing.subscription_status_label_scheduled_cancel',
+}
+
+export function getSubscriptionStatusLabel(status: SubscriptionStatus): string {
+  return messages[statusKeyMap[status]]()
+}
+
+export function getSubscriptionStatusLabels(): Readonly<Record<SubscriptionStatus, string>> {
+  return Object.fromEntries(
+    (Object.keys(statusKeyMap) as SubscriptionStatus[]).map((k) => [k, messages[statusKeyMap[k]]()])
+  ) as Readonly<Record<SubscriptionStatus, string>>
+}
 
 /**
  * Returns the badge variant for a subscription status
@@ -194,17 +216,14 @@ export function getStatusBadgeVariant(
  * @param status - The subscription status
  * @returns The status message or empty string if no message
  */
+const statusMessageKeyMap: Partial<Record<SubscriptionStatus, string>> = {
+  past_due: 'billing.subscription_status_message_past_due',
+  disputed: 'billing.subscription_status_message_disputed',
+  scheduled_cancel: 'billing.subscription_status_message_scheduled_cancel',
+  paused: 'billing.subscription_status_message_paused',
+}
+
 export function getStatusMessage(status: SubscriptionStatus): string {
-  switch (status) {
-    case 'past_due':
-      return 'Payment failed - please update payment method'
-    case 'disputed':
-      return 'Dispute in progress - contact support'
-    case 'scheduled_cancel':
-      return 'Will cancel at period end'
-    case 'paused':
-      return 'Subscription paused'
-    default:
-      return ''
-  }
+  const key = statusMessageKeyMap[status]
+  return key ? messages[key]() : ''
 }

@@ -17,6 +17,7 @@ import { InvoiceDetailDialog } from '@/components/billing/invoices/invoice-detai
 import { InvoiceSellerConfigForm } from '@/components/billing/invoices/invoice-seller-config-form'
 import { useIssueInvoice, useVoidInvoice, useMarkPaid } from '@/data/invoice-mutations'
 import type { InvoiceResponse } from '@/lib/api-generated'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/billing/invoices/')({
   component: InvoiceAdminRoute,
@@ -117,16 +118,16 @@ function InvoiceAdminRoute() {
       >
         <AlertDialogContent data-testid="issue-confirm-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Issue Invoice</AlertDialogTitle>
+            <AlertDialogTitle>{m['billing.invoice_issue_confirm_title']()}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to issue invoice{' '}
-              <span className="font-mono font-semibold">{issueTarget?.invoiceNumber}</span>? This
-              action will lock the invoice and send it to the buyer.
+              {m['billing.invoice_issue_confirm_description']({
+                number: issueTarget?.invoiceNumber ?? '',
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2">
             <Label htmlFor="issue-date" className="text-sm">
-              Issue Date (optional, defaults to today)
+              {m['billing.invoice_issue_date_label']()}
             </Label>
             <Input
               id="issue-date"
@@ -150,7 +151,9 @@ function InvoiceAdminRoute() {
               disabled={issueMutation.isPending}
               data-testid="issue-confirm-button"
             >
-              {issueMutation.isPending ? 'Issuing...' : 'Issue'}
+              {issueMutation.isPending
+                ? m['billing.invoice_issue_issuing']()
+                : m['billing.invoice_issue_button']()}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -164,22 +167,22 @@ function InvoiceAdminRoute() {
       >
         <AlertDialogContent data-testid="void-confirm-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Void Invoice</AlertDialogTitle>
+            <AlertDialogTitle>{m['billing.invoice_void_confirm_title']()}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to void invoice{' '}
-              <span className="font-mono font-semibold">{voidTarget?.invoiceNumber}</span>? This
-              action cannot be undone.
+              {m['billing.invoice_void_confirm_description']({
+                number: voidTarget?.invoiceNumber ?? '',
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2">
             <Label htmlFor="void-reason" className="text-sm">
-              Reason (optional)
+              {m['billing.invoice_void_reason_label']()}
             </Label>
             <Input
               id="void-reason"
               value={voidReason}
               onChange={(e) => setVoidReason(e.target.value)}
-              placeholder="Reason for voiding this invoice"
+              placeholder={m['billing.invoice_void_reason_placeholder']()}
               data-testid="void-reason-input"
             />
           </div>
@@ -198,7 +201,9 @@ function InvoiceAdminRoute() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               data-testid="void-confirm-button"
             >
-              {voidMutation.isPending ? 'Voiding...' : 'Void'}
+              {voidMutation.isPending
+                ? m['billing.invoice_voiding']()
+                : m['billing.invoice_void']()}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -212,11 +217,11 @@ function InvoiceAdminRoute() {
       >
         <AlertDialogContent data-testid="mark-paid-confirm-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Mark Invoice as Paid</AlertDialogTitle>
+            <AlertDialogTitle>{m['billing.invoice_mark_paid_confirm_title']()}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to mark invoice{' '}
-              <span className="font-mono font-semibold">{markPaidTarget?.invoiceNumber}</span> as
-              paid?
+              {m['billing.invoice_mark_paid_confirm_description']({
+                number: markPaidTarget?.invoiceNumber ?? '',
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -236,7 +241,9 @@ function InvoiceAdminRoute() {
               disabled={markPaidMutation.isPending}
               data-testid="mark-paid-confirm-button"
             >
-              {markPaidMutation.isPending ? 'Marking...' : 'Mark as Paid'}
+              {markPaidMutation.isPending
+                ? m['billing.invoice_marking']()
+                : m['billing.invoice_mark_as_paid']()}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

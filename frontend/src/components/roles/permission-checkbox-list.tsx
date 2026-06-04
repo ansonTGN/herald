@@ -4,6 +4,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { BuiltinBadge } from '@/components/shared/builtin-badge'
 import { Shield, AlertTriangle } from 'lucide-react'
 import type { PermissionResponse } from '@/lib/api-generated'
+import { m } from '@/paraglide/messages'
 
 interface PermissionCheckboxListProps {
   permissions: PermissionResponse[]
@@ -62,7 +63,7 @@ export function PermissionCheckboxList({
     return (
       <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
         <Shield className="h-12 w-12 mb-2 opacity-50" />
-        <p>No permissions available</p>
+        <p>{m['roles.no_permissions_available']()}</p>
       </div>
     )
   }
@@ -73,10 +74,7 @@ export function PermissionCheckboxList({
         {isBuiltinRole && (
           <Alert variant="default">
             <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              Built-in permissions cannot be removed from built-in roles. You can still add custom
-              permissions.
-            </AlertDescription>
+            <AlertDescription>{m['roles.builtin_permission_alert']()}</AlertDescription>
           </Alert>
         )}
 
@@ -87,8 +85,11 @@ export function PermissionCheckboxList({
                 {resource}
               </Badge>
               <span className="text-sm text-muted-foreground">
-                ({resourcePermissions.length} permission
-                {resourcePermissions.length !== 1 ? 's' : ''})
+                (
+                {resourcePermissions.length === 1
+                  ? m['roles.permission_count']({ count: resourcePermissions.length })
+                  : m['roles.permission_count_plural']({ count: resourcePermissions.length })}
+                )
               </span>
             </div>
 

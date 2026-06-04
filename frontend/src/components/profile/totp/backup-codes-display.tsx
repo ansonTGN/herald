@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Copy, Check } from 'lucide-react'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { m } from '@/paraglide/messages'
 
 interface BackupCodesDisplayProps {
   backupCodes: string[]
@@ -19,9 +20,9 @@ export function BackupCodesDisplay({ backupCodes }: BackupCodesDisplayProps) {
     <Card data-testid="backup-codes-display">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <div className="flex flex-col space-y-1.5">
-          <CardTitle>Backup Recovery Codes</CardTitle>
+          <CardTitle>{m['profile.backup_codes_title']()}</CardTitle>
           <CardDescription className="text-destructive">
-            These codes will only be shown once. Save them securely!
+            {m['profile.backup_codes_warning']()}
           </CardDescription>
         </div>
         <Button
@@ -34,12 +35,12 @@ export function BackupCodesDisplay({ backupCodes }: BackupCodesDisplayProps) {
           {allCopied ? (
             <>
               <Check className="h-4 w-4 mr-2" />
-              Copied
+              {m['profile.backup_codes_copied']()}
             </>
           ) : (
             <>
               <Copy className="h-4 w-4 mr-2" />
-              Copy All
+              {m['profile.backup_codes_copy_all']()}
             </>
           )}
         </Button>

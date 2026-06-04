@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { m } from '@/paraglide/messages'
 
 // ==================== Payment Provider Constants ====================
 
@@ -88,13 +89,13 @@ function promoRefine<
     if (data.originalPrice == null || data.originalPrice === undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Original price is required for promotional packages',
+        message: m['points.validation_promo_original_price_required'](),
         path: ['originalPrice'],
       })
     } else if (data.originalPrice <= (data.price ?? 0)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Original price must be greater than the selling price',
+        message: m['points.validation_promo_original_price_greater'](),
         path: ['originalPrice'],
       })
     }
@@ -102,7 +103,7 @@ function promoRefine<
     if (!data.promoEndTime) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Promo end time is required for promotional packages',
+        message: m['points.validation_promo_end_time_required'](),
         path: ['promoEndTime'],
       })
     }
@@ -111,7 +112,7 @@ function promoRefine<
   if (data.promoStartTime && data.promoEndTime && data.promoEndTime <= data.promoStartTime) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Promo end time must be after start time',
+      message: m['points.validation_promo_end_after_start'](),
       path: ['promoEndTime'],
     })
   }
@@ -123,34 +124,40 @@ function promoRefine<
 const _pointsPackageBaseSchema = z.object({
   name: z
     .string()
-    .min(3, 'Package name must be at least 3 characters')
-    .max(50, 'Package name must not exceed 50 characters')
-    .regex(
-      PACKAGE_NAME_REGEX,
-      'Package name can only contain lowercase letters, numbers, hyphens, and underscores'
-    ),
-  title: z.string().min(1, 'Title is required').max(100, 'Title must not exceed 100 characters'),
-  description: z.string().max(500, 'Description must not exceed 500 characters').optional(),
-  points: z.number().int('Points must be an integer').min(1, 'Points must be at least 1'),
+    .min(3, { error: () => m['points.validation_pkg_name_min_length']() })
+    .max(50, { error: () => m['points.validation_pkg_name_max_length']() })
+    .regex(PACKAGE_NAME_REGEX, { error: () => m['points.validation_pkg_name_format']() }),
+  title: z
+    .string()
+    .min(1, { error: () => m['points.validation_title_required']() })
+    .max(100, { error: () => m['points.validation_title_max_length']() }),
+  description: z
+    .string()
+    .max(500, { error: () => m['points.validation_description_max_length']() })
+    .optional(),
+  points: z
+    .number()
+    .int({ error: () => m['points.validation_points_must_be_integer']() })
+    .min(1, { error: () => m['points.validation_points_min']() }),
   price: z
     .number()
-    .min(0.01, 'Price must be at least 0.01')
-    .max(9999999, 'Price must not exceed 9999999'),
+    .min(0.01, { error: () => m['points.validation_price_min']() })
+    .max(9999999, { error: () => m['points.validation_price_max']() }),
   currency: z
     .string()
-    .length(3, 'Currency must be exactly 3 characters (ISO 4217)')
-    .regex(/^[A-Z]+$/, 'Currency must be uppercase ISO 4217 code'),
+    .length(3, { error: () => m['points.validation_currency_length']() })
+    .regex(/^[A-Z]+$/, { error: () => m['points.validation_currency_format']() }),
   sortOrder: z
     .number()
-    .int('Sort order must be an integer')
-    .min(0, 'Sort order cannot be negative')
+    .int({ error: () => m['points.validation_sort_order_integer']() })
+    .min(0, { error: () => m['points.validation_sort_order_non_negative']() })
     .default(0),
   enabled: z.boolean().default(true),
   packageType: z.enum(['standard', 'promotional']).default('standard'),
   originalPrice: z
     .number()
-    .min(0.01, 'Original price must be at least 0.01')
-    .max(9999999, 'Original price must not exceed 9999999')
+    .min(0.01, { error: () => m['points.validation_original_price_min']() })
+    .max(9999999, { error: () => m['points.validation_original_price_max']() })
     .optional(),
   promoStartTime: z.string().optional(),
   promoEndTime: z.string().optional(),
@@ -256,7 +263,7 @@ export const paymentProviderMappingSchema = z.object({
   enabled: z.boolean().default(true),
   externalProductId: z
     .string()
-    .max(255, 'External product ID must not exceed 255 characters')
+    .max(255, { error: () => m['points.packages_providers_form_product_id_max_length']() })
     .optional(),
 })
 

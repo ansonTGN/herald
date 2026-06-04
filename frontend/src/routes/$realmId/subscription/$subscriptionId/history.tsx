@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SubscriptionTimeline } from '@/components/billing/subscription-timeline'
 import { queryKeys, subscriptionHistoryQueryOptions } from '@/data/query-options'
 import { toast } from 'sonner'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/subscription/$subscriptionId/history')({
   component: SubscriptionDetailHistoryRoute,
@@ -38,11 +39,12 @@ function SubscriptionDetailHistoryRoute() {
         <Card className="border-destructive">
           <CardContent className="p-6">
             <p className="text-destructive">
-              Failed to load subscription history:{' '}
-              {historyError instanceof Error ? historyError.message : 'Unknown error'}
+              {m['billing.subscription_history_failed_load']({
+                error: historyError instanceof Error ? historyError.message : 'Unknown error',
+              })}
             </p>
             <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>
-              Retry
+              {m['common.retry']()}
             </Button>
           </CardContent>
         </Card>
@@ -65,9 +67,11 @@ function SubscriptionDetailHistoryRoute() {
             onClick={() => window.history.back()}
           >
             <ArrowLeft className="h-5 w-5" />
-            <span className="sr-only">Back</span>
+            <span className="sr-only">{m['common.back']()}</span>
           </Button>
-          <h1 className="text-xl font-semibold">Subscription History</h1>
+          <h1 className="text-xl font-semibold">
+            {m['billing.subscription_detail_history_title']()}
+          </h1>
         </div>
       </div>
 
@@ -77,23 +81,29 @@ function SubscriptionDetailHistoryRoute() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Info className="h-5 w-5" />
-              Current Subscription Status
+              {m['billing.subscription_current_status']()}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Status</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  {m['billing.subscription_status']()}
+                </p>
                 <p className="text-lg font-semibold">{subscription.status}</p>
               </div>
               {subscription.planId && (
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Plan</p>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    {m['billing.subscription_plan']()}
+                  </p>
                   <p className="text-lg font-semibold">{subscription.planId}</p>
                 </div>
               )}
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Billing Period</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  {m['billing.subscription_billing_period']()}
+                </p>
                 <p className="text-lg font-semibold">{subscription.billingPeriod}</p>
               </div>
             </div>
@@ -106,7 +116,7 @@ function SubscriptionDetailHistoryRoute() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Info className="h-5 w-5" />
-            Change Timeline
+            {m['billing.subscription_change_timeline']()}
           </CardTitle>
         </CardHeader>
         <CardContent>

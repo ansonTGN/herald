@@ -1,5 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { m } from '@/paraglide/messages'
 
 interface BuiltinBadgeProps {
   isBuiltin: boolean
@@ -15,7 +16,7 @@ export function BuiltinBadge({ isBuiltin, className }: BuiltinBadgeProps) {
       className={cn('text-xs font-normal', className)}
       data-testid="builtin-badge"
     >
-      Built-in
+      {m['shared.builtin']()}
     </Badge>
   )
 }

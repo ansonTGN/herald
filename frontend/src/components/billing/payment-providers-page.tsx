@@ -30,6 +30,7 @@ import { deleteRealmConfig } from '@/lib/api-generated/sdk.gen'
 import { STRIPE_CONFIG_KEYS } from '@/lib/billing-constants'
 import { CREEM_CONFIG_KEYS } from '@/lib/creem-config-utils'
 import { queryKeys } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 interface PaymentProvidersPageProps {
   realmId: string
@@ -136,14 +137,14 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
       queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] })
       queryClient.invalidateQueries({ queryKey: ['realmConfig', realmId] })
       queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
-      toast.success('Payment provider deleted successfully')
+      toast.success(m['billing.provider_deleted']())
       setIsDeleteDialogOpen(false)
     },
     onError: (error: { status?: number; message?: string }) => {
       if (error?.status === 409) {
-        toast.error('Cannot delete configuration while active subscriptions still exist.')
+        toast.error(m['billing.provider_delete_conflict']())
       } else {
-        toast.error('Failed to delete configuration')
+        toast.error(m['billing.provider_delete_failed']())
       }
     },
   })
@@ -163,7 +164,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Loading payment providers...</div>
+        <div className="text-muted-foreground">{m['billing.loading_providers']()}</div>
       </div>
     )
   }
@@ -185,7 +186,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
 
   return (
     <div className="space-y-6" data-testid="payment-providers-page">
-      <PageHeader title="Payment Providers" />
+      <PageHeader title={m['billing.payment_providers_title']()} />
 
       {unconfiguredProviders.length > 0 && (
         <div className="flex gap-2 flex-wrap">
@@ -197,7 +198,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
               variant="outline"
             >
               <Plus className="mr-2 h-4 w-4" />
-              Add {label}
+              {m['billing.add_provider']({ name: label })}
             </Button>
           ))}
         </div>
@@ -207,8 +208,8 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
         <Table data-testid="provider-list">
           <TableHeader>
             <TableRow>
-              <TableHead>Provider</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>{m['billing.col_provider']()}</TableHead>
+              <TableHead className="text-right">{m['common.actions']()}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -237,7 +238,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                         data-testid="edit-shopify-button"
                       >
                         <Edit className="mr-1 h-3 w-3" />
-                        Edit
+                        {m['common.edit']()}
                       </Button>
                       <Button
                         variant="outline"
@@ -249,7 +250,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                         data-testid="delete-shopify-button"
                       >
                         <Trash2 className="mr-1 h-3 w-3" />
-                        Delete
+                        {m['common.delete']()}
                       </Button>
                     </div>
                   </TableCell>
@@ -305,7 +306,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                         data-testid="edit-wechat-button"
                       >
                         <Edit className="mr-1 h-3 w-3" />
-                        Edit
+                        {m['common.edit']()}
                       </Button>
                       <Button
                         variant="outline"
@@ -317,7 +318,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                         data-testid="delete-wechat-button"
                       >
                         <Trash2 className="mr-1 h-3 w-3" />
-                        Delete
+                        {m['common.delete']()}
                       </Button>
                     </div>
                   </TableCell>
@@ -359,7 +360,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                       data-testid="edit-stripe-button"
                     >
                       <Edit className="mr-1 h-3 w-3" />
-                      Edit
+                      {m['common.edit']()}
                     </Button>
                     <Button
                       variant="outline"
@@ -371,7 +372,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                       data-testid="delete-stripe-button"
                     >
                       <Trash2 className="mr-1 h-3 w-3" />
-                      Delete
+                      {m['common.delete']()}
                     </Button>
                   </div>
                 </TableCell>
@@ -390,7 +391,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                       data-testid="edit-creem-button"
                     >
                       <Edit className="mr-1 h-3 w-3" />
-                      Edit
+                      {m['common.edit']()}
                     </Button>
                     <Button
                       variant="outline"
@@ -402,7 +403,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
                       data-testid="delete-creem-button"
                     >
                       <Trash2 className="mr-1 h-3 w-3" />
-                      Delete
+                      {m['common.delete']()}
                     </Button>
                   </div>
                 </TableCell>
@@ -415,7 +416,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Plug2 className="h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-sm text-muted-foreground text-center">
-              No providers configured yet. Click a button above to get started.
+              {m['billing.no_providers_configured']()}
             </p>
           </CardContent>
         </Card>

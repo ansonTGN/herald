@@ -5,6 +5,7 @@ import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { PERMISSION } from '@/lib/constants/auth-constants'
 import { filterByPermission } from '@/lib/utils/filter-by-permission'
+import { m } from '@/paraglide/messages'
 
 interface QuickNavProps {
   realmId: string
@@ -27,8 +28,8 @@ export function QuickNav({ realmId, testId }: QuickNavProps) {
   const navItems: NavItem[] = [
     {
       id: 'users',
-      title: 'Users',
-      description: 'Manage users and their permissions',
+      title: m['dashboard.nav_users_title'](),
+      description: m['dashboard.nav_users_desc'](),
       icon: Users,
       path: '/$realmId/manage/users',
       testId: 'dashboard-users-card',
@@ -36,8 +37,8 @@ export function QuickNav({ realmId, testId }: QuickNavProps) {
     },
     {
       id: 'roles',
-      title: 'Roles',
-      description: 'Define roles and assign permissions',
+      title: m['dashboard.nav_roles_title'](),
+      description: m['dashboard.nav_roles_desc'](),
       icon: Shield,
       path: '/$realmId/manage/roles',
       testId: 'dashboard-roles-card',
@@ -45,8 +46,8 @@ export function QuickNav({ realmId, testId }: QuickNavProps) {
     },
     {
       id: 'permissions',
-      title: 'Permissions',
-      description: 'Configure system permissions',
+      title: m['dashboard.nav_permissions_title'](),
+      description: m['dashboard.nav_permissions_desc'](),
       icon: Key,
       path: '/$realmId/manage/permissions',
       testId: 'dashboard-permissions-card',
@@ -54,8 +55,8 @@ export function QuickNav({ realmId, testId }: QuickNavProps) {
     },
     {
       id: 'client-apps',
-      title: 'Client Apps',
-      description: 'Manage OAuth 2.0 client applications',
+      title: m['dashboard.nav_client_apps_title'](),
+      description: m['dashboard.nav_client_apps_desc'](),
       icon: Briefcase,
       path: '/$realmId/manage/client-apps',
       testId: 'dashboard-client-apps-card',
@@ -63,8 +64,8 @@ export function QuickNav({ realmId, testId }: QuickNavProps) {
     },
     {
       id: 'realms',
-      title: 'Realms',
-      description: 'Manage realms in the system',
+      title: m['dashboard.nav_realms_title'](),
+      description: m['dashboard.nav_realms_desc'](),
       icon: Globe,
       path: '/$realmId/manage/realms',
       testId: 'dashboard-realms-card',
@@ -72,8 +73,8 @@ export function QuickNav({ realmId, testId }: QuickNavProps) {
     },
     {
       id: 'settings',
-      title: 'Settings',
-      description: 'Configure realm settings',
+      title: m['dashboard.nav_settings_title'](),
+      description: m['dashboard.nav_settings_desc'](),
       icon: Settings,
       path: '/$realmId/manage/settings',
       testId: 'dashboard-settings-card',
@@ -85,7 +86,9 @@ export function QuickNav({ realmId, testId }: QuickNavProps) {
 
   return (
     <div data-testid={testId}>
-      <h2 className="mb-4 text-lg font-semibold tracking-tight">Quick Navigation</h2>
+      <h2 className="mb-4 text-lg font-semibold tracking-tight">
+        {m['dashboard.quick_navigation']()}
+      </h2>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {visibleItems.map((item) => {
           const Icon = item.icon

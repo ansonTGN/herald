@@ -1,3 +1,4 @@
+import { m } from '@/paraglide/messages'
 import { useState, useEffect } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -168,7 +169,7 @@ function PurchasePointsPage() {
       }
     },
     onError: (error: Error) => {
-      toast.error(`Failed to create payment: ${error.message}`)
+      toast.error(m['points.purchase_create_failed']({ message: error.message }))
     },
   })
 
@@ -183,10 +184,10 @@ function PurchasePointsPage() {
     onSuccess: () => {
       clearPurchaseState()
       setCurrentStep('payment')
-      toast.info('Payment cancelled')
+      toast.info(m['points.purchase_cancelled']())
     },
     onError: (error: Error) => {
-      toast.error(`Failed to cancel payment: ${error.message}`)
+      toast.error(m['points.purchase_cancel_failed']({ message: error.message }))
     },
   })
 
@@ -230,8 +231,10 @@ function PurchasePointsPage() {
         return (
           <div className="space-y-6" data-testid="purchase-step-packages">
             <div>
-              <h2 className="text-2xl font-bold">Select Points Package</h2>
-              <p className="text-muted-foreground">Choose a points package that fits your needs</p>
+              <h2 className="text-2xl font-bold">{m['points.purchase_select_package_title']()}</h2>
+              <p className="text-muted-foreground">
+                {m['points.purchase_select_package_description']()}
+              </p>
             </div>
             <PointsPackageSelector
               packages={packages || []}
@@ -246,12 +249,14 @@ function PurchasePointsPage() {
         return (
           <div className="space-y-6" data-testid="purchase-step-payment">
             <div>
-              <h2 className="text-2xl font-bold">Select Payment Method</h2>
+              <h2 className="text-2xl font-bold">{m['points.purchase_payment_title']()}</h2>
               <p className="text-muted-foreground">
-                Buying {selectedPackage?.points.toLocaleString()} points for{' '}
-                {selectedPackage
-                  ? formatPrice(selectedPackage.price, selectedPackage.currency)
-                  : ''}
+                {m['points.purchase_payment_description']({
+                  points: selectedPackage?.points.toLocaleString() ?? '',
+                  price: selectedPackage
+                    ? formatPrice(selectedPackage.price, selectedPackage.currency)
+                    : '',
+                })}
               </p>
             </div>
             <PaymentMethodSelector
@@ -281,16 +286,20 @@ function PurchasePointsPage() {
                 <div className="flex items-center gap-3">
                   <AlertCircle className="h-8 w-8 text-destructive" />
                   <div>
-                    <h3 className="text-lg font-semibold">Unable to load payment status</h3>
+                    <h3 className="text-lg font-semibold">
+                      {m['points.purchase_processing_load_failed']()}
+                    </h3>
                     <p className="text-sm text-muted-foreground">
-                      Please retry or return to payment selection.
+                      {m['points.purchase_processing_load_failed_description']()}
                     </p>
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={() => paymentStatusQuery.refetch()}>Retry</Button>
+                  <Button onClick={() => paymentStatusQuery.refetch()}>
+                    {m['common.retry']()}
+                  </Button>
                   <Button variant="outline" onClick={handleRetry}>
-                    Back to Payment
+                    {m['points.purchase_processing_back_payment']()}
                   </Button>
                 </div>
               </div>
@@ -301,8 +310,10 @@ function PurchasePointsPage() {
               >
                 <Loader2 className="h-8 w-8 animate-spin" />
                 <div>
-                  <h3 className="text-lg font-semibold text-foreground">Checking payment status</h3>
-                  <p className="text-sm">Waiting for the payment provider response.</p>
+                  <h3 className="text-lg font-semibold text-foreground">
+                    {m['points.purchase_processing_checking']()}
+                  </h3>
+                  <p className="text-sm">{m['points.purchase_processing_waiting']()}</p>
                 </div>
               </div>
             )}
@@ -330,10 +341,10 @@ function PurchasePointsPage() {
               </div>
             </div>
             <div>
-              <h2 className="text-2xl font-bold">Purchase Complete!</h2>
-              <p className="text-muted-foreground">Your points have been added to your account</p>
+              <h2 className="text-2xl font-bold">{m['points.purchase_complete_title']()}</h2>
+              <p className="text-muted-foreground">{m['points.purchase_complete_description']()}</p>
             </div>
-            <Button onClick={handleComplete}>View My Points</Button>
+            <Button onClick={handleComplete}>{m['points.purchase_view_points']()}</Button>
           </div>
         )
 
@@ -347,25 +358,25 @@ function PurchasePointsPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Purchase Points</CardTitle>
+            <CardTitle>{m['points.purchase_page_title']()}</CardTitle>
             <div
               className="flex items-center gap-2 text-sm text-muted-foreground"
               data-testid="purchase-step-indicator"
             >
               <span className={currentStep === 'packages' ? 'font-bold text-primary' : ''}>
-                Select Package
+                {m['points.purchase_step_select']()}
               </span>
               <span>→</span>
               <span className={currentStep === 'payment' ? 'font-bold text-primary' : ''}>
-                Payment
+                {m['points.purchase_step_payment']()}
               </span>
               <span>→</span>
               <span className={currentStep === 'processing' ? 'font-bold text-primary' : ''}>
-                Processing
+                {m['points.purchase_step_processing']()}
               </span>
               <span>→</span>
               <span className={currentStep === 'complete' ? 'font-bold text-primary' : ''}>
-                Complete
+                {m['points.purchase_step_complete']()}
               </span>
             </div>
           </div>
@@ -382,7 +393,7 @@ function PurchasePointsPage() {
                 data-testid="purchase-back-button"
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />
-                Back
+                {m['points.purchase_back']()}
               </Button>
               <Button
                 onClick={handleNextStep}
@@ -391,12 +402,14 @@ function PurchasePointsPage() {
               >
                 {currentStep === 'payment' ? (
                   <>
-                    {createPaymentMutation.isPending ? 'Processing...' : 'Complete Purchase'}
+                    {createPaymentMutation.isPending
+                      ? m['points.purchase_processing_button']()
+                      : m['points.purchase_complete_button']()}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </>
                 ) : (
                   <>
-                    Next
+                    {m['points.purchase_next']()}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </>
                 )}

@@ -15,6 +15,7 @@ import type { ClientAppItem } from '@/lib/api-generated'
 import type { ClientAppsSearchParams } from '@/lib/schemas/search-params'
 import { Card, CardContent } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/client-apps/')({
   component: ClientAppsPage,
@@ -54,7 +55,7 @@ function ClientAppsPage() {
         if (response.error) throw response.error
         return response.data
       }),
-    getSuccessMessage: () => `Client App deleted successfully`,
+    getSuccessMessage: () => m['client_apps.deleted_success'](),
     invalidateQueries: [queryKeys.clientAppsList(realmId)],
   })
 
@@ -68,7 +69,12 @@ function ClientAppsPage() {
         return { ...app, enabled: !app.enabled }
       }),
     getSuccessMessage: (data) =>
-      `Client App "${data.name}" ${data.enabled ? 'enabled' : 'disabled'}`,
+      m['client_apps.toggled_status']({
+        name: data.name,
+        status: data.enabled
+          ? m['client_apps.status_enabled']()
+          : m['client_apps.status_disabled'](),
+      }),
     invalidateQueries: [queryKeys.clientAppsList(realmId)],
   })
 
@@ -83,12 +89,12 @@ function ClientAppsPage() {
   return (
     <div className="space-y-6" data-testid="client-apps-page">
       <PageHeader
-        title="Client Apps"
+        title={m['client_apps.page_title']()}
         headingTestId="client-apps-heading"
         action={
           canCreate
             ? {
-                label: 'Add Client App',
+                label: m['client_apps.add_button'](),
                 onClick: () =>
                   navigate({ to: '/$realmId/manage/client-apps/new', params: { realmId } }),
                 testId: 'add-client-app-button',

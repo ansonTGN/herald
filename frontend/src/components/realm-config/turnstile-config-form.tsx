@@ -7,6 +7,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { TextField } from '@/components/shared/form-fields/text-field'
+import { m } from '@/paraglide/messages'
 
 const MASKED_SECRET = '••••••••'
 
@@ -58,10 +59,8 @@ export function TurnstileConfigForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Turnstile Configuration</CardTitle>
-        <CardDescription>
-          Configure Cloudflare Turnstile verification for this realm
-        </CardDescription>
+        <CardTitle>{m['realm_config.turnstile_title']()}</CardTitle>
+        <CardDescription>{m['realm_config.turnstile_description']()}</CardDescription>
       </CardHeader>
       <CardContent>
         <AppForm>
@@ -75,7 +74,7 @@ export function TurnstileConfigForm({
             <TextField
               form={form}
               name="siteKey"
-              label="Site Key"
+              label={m['realm_config.turnstile_site_key_label']()}
               inputId="turnstile-site-key"
               dataTestId="turnstile-site-key-input"
               placeholder="0x4AAAAAAA..."
@@ -85,7 +84,7 @@ export function TurnstileConfigForm({
             <TextField
               form={form}
               name="secretKey"
-              label="Secret Key"
+              label={m['realm_config.turnstile_secret_key_label']()}
               inputId="turnstile-secret-key"
               dataTestId="turnstile-secret-key-input"
               placeholder={MASKED_SECRET}
@@ -99,7 +98,7 @@ export function TurnstileConfigForm({
                 disabled={isLoading || isSubmitting || disabled}
                 data-testid="turnstile-save-button"
               >
-                {isSubmitting ? 'Saving...' : 'Save'}
+                {isSubmitting ? m['realm_config.saving']() : m['realm_config.save']()}
               </Button>
             </div>
           </form>

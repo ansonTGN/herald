@@ -11,6 +11,7 @@ import { BackupCodesDisplay } from './backup-codes-display'
 import { getFieldErrorMessage } from '@/lib/form-utils'
 import { withTimeout, type TotpData } from '@/lib/totp-utils'
 import { z } from 'zod'
+import { m } from '@/paraglide/messages'
 import type { EnableTotpResponse, VerifyTotpSetupResponse } from '@/lib/api-generated'
 
 interface TotpSetupFormProps {
@@ -20,21 +21,20 @@ interface TotpSetupFormProps {
 }
 
 const totpSetupStep1Schema = z.object({
-  password: z.string().min(1, 'Password is required'),
+  password: z.string().min(1, m['profile.totp_password_required']()),
 })
 
 const totpSetupStep2Schema = z.object({
-  code: z.string().length(6, 'Code must be 6 digits'),
+  code: z.string().length(6, m['profile.totp_code_must_be_6_digits']()),
 })
 
 type SetupStep = 'confirm' | 'verify'
 
 function getSubmitButtonText(isSubmitting: boolean, action: 'generate' | 'verify'): string {
-  const actionText = action === 'generate' ? 'Generating' : 'Verifying'
-  const suffix = action === 'generate' ? ' QR Code' : ' & Enable TOTP'
-  return isSubmitting
-    ? `${actionText}...`
-    : `${action.charAt(0).toUpperCase() + action.slice(1)}${suffix}`
+  if (action === 'generate') {
+    return isSubmitting ? m['profile.totp_generating']() : m['profile.totp_generate_button']()
+  }
+  return isSubmitting ? m['profile.totp_verifying']() : m['profile.totp_verify_enable_button']()
 }
 
 export function TotpSetupForm({ onSuccess, onCancel }: TotpSetupFormProps) {
@@ -50,7 +50,7 @@ export function TotpSetupForm({ onSuccess, onCancel }: TotpSetupFormProps) {
       }
       return response.data as EnableTotpResponse
     },
-    getSuccessMessage: () => 'TOTP secret generated successfully',
+    getSuccessMessage: () => m['profile.totp_generated_success'](),
     onSuccess: (data) => {
       setSetupData({
         secret: data.secret,
@@ -78,7 +78,7 @@ export function TotpSetupForm({ onSuccess, onCancel }: TotpSetupFormProps) {
       }
       return response.data as VerifyTotpSetupResponse
     },
-    getSuccessMessage: () => 'TOTP enabled successfully',
+    getSuccessMessage: () => m['profile.totp_enabled_success'](),
     onSuccess: () => {
       onSuccess()
     },
@@ -103,10 +103,8 @@ export function TotpSetupForm({ onSuccess, onCancel }: TotpSetupFormProps) {
   if (step === 'confirm') {
     return (
       <div className="space-y-4" data-testid="totp-setup-form">
-        <h2 className="text-2xl font-bold">Enable TOTP</h2>
-        <p className="text-muted-foreground">
-          Enter your password to generate TOTP secret and backup recovery codes.
-        </p>
+        <h2 className="text-2xl font-bold">{m['profile.totp_setup_title']()}</h2>
+        <p className="text-muted-foreground">{m['profile.totp_setup_description']()}</p>
 
         <AppForm>
           <form
@@ -120,7 +118,7 @@ export function TotpSetupForm({ onSuccess, onCancel }: TotpSetupFormProps) {
             <confirmForm.Field name="password">
               {(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor="password">Current Password</Label>
+                  <Label htmlFor="password">{m['profile.current_password_label']()}</Label>
                   <Input
                     id="password"
                     type="password"
@@ -145,7 +143,7 @@ export function TotpSetupForm({ onSuccess, onCancel }: TotpSetupFormProps) {
                 onClick={onCancel}
                 data-testid="totp-setup-cancel-button"
               >
-                Cancel
+                {m['common.cancel']()}
               </Button>
               <Button
                 type="submit"
@@ -163,10 +161,8 @@ export function TotpSetupForm({ onSuccess, onCancel }: TotpSetupFormProps) {
 
   return (
     <div className="space-y-4" data-testid="totp-setup-form-verify">
-      <h2 className="text-2xl font-bold">Verify TOTP</h2>
-      <p className="text-muted-foreground">
-        Scan the QR code with your authenticator app, then enter the verification code.
-      </p>
+      <h2 className="text-2xl font-bold">{m['profile.totp_verify_title']()}</h2>
+      <p className="text-muted-foreground">{m['profile.totp_verify_description']()}</p>
 
       {setupData && (
         <div className="flex justify-center" data-testid="totp-qr-code-container">
@@ -185,7 +181,7 @@ export function TotpSetupForm({ onSuccess, onCancel }: TotpSetupFormProps) {
           data-testid="totp-saved-backup-codes-checkbox"
         />
         <Label htmlFor="saved-backup-codes" data-testid="totp-saved-backup-codes-label">
-          I have saved my backup codes
+          {m['profile.totp_saved_backup_codes']()}
         </Label>
       </div>
 
@@ -201,7 +197,7 @@ export function TotpSetupForm({ onSuccess, onCancel }: TotpSetupFormProps) {
           <verifyForm.Field name="code">
             {(field) => (
               <div className="space-y-2">
-                <Label htmlFor="code">Verification Code</Label>
+                <Label htmlFor="code">{m['profile.verification_code_label']()}</Label>
                 <Input
                   id="code"
                   type="text"
@@ -229,7 +225,7 @@ export function TotpSetupForm({ onSuccess, onCancel }: TotpSetupFormProps) {
               onClick={onCancel}
               data-testid="totp-verify-cancel-button"
             >
-              Cancel
+              {m['common.cancel']()}
             </Button>
             <Button
               type="submit"

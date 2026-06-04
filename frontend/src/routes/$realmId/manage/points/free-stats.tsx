@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { freeUserStatsQueryOptions } from '@/data/query-options'
 import { useState, useEffect } from 'react'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/points/free-stats')({
   component: FreeUserStatsPage,
@@ -139,7 +140,9 @@ function FreeUserStatsPage() {
   if (error) {
     return (
       <Alert variant="destructive">
-        <AlertDescription>Failed to load stats: {(error as Error).message}</AlertDescription>
+        <AlertDescription>
+          {m['points.free_stats_load_failed']({ message: (error as Error).message })}
+        </AlertDescription>
       </Alert>
     )
   }
@@ -150,34 +153,34 @@ function FreeUserStatsPage() {
 
   const statCards = [
     {
-      title: 'Total Free Users',
+      title: m['points.free_stats_total_free_users'](),
       value: stats.totalFreeUsers.toLocaleString(),
       icon: Users,
-      description: 'All current free users',
+      description: m['points.free_stats_total_free_users_desc'](),
       color: 'text-blue-600',
       bgColor: 'bg-blue-50 dark:bg-blue-950',
     },
     {
-      title: 'Active Free Users',
+      title: m['points.free_stats_active_free_users'](),
       value: stats.activeFreeUsers.toLocaleString(),
       icon: UserCheck,
-      description: 'Users active in last 7 days',
+      description: m['points.free_stats_active_free_users_desc'](),
       color: 'text-green-600',
       bgColor: 'bg-green-50 dark:bg-green-950',
     },
     {
-      title: 'Total Registration Bonus',
+      title: m['points.free_stats_total_registration_bonus'](),
       value: stats.totalRegistrationBonusGranted.toLocaleString(),
       icon: Gift,
-      description: 'Total registration bonus granted',
+      description: m['points.free_stats_total_registration_bonus_desc'](),
       color: 'text-purple-600',
       bgColor: 'bg-purple-50 dark:bg-purple-950',
     },
     {
-      title: 'Total Periodic Points Granted',
+      title: m['points.free_stats_total_periodic_granted'](),
       value: stats.totalPeriodicPointsGranted.toLocaleString(),
       icon: Calendar,
-      description: 'Total periodic points granted',
+      description: m['points.free_stats_total_periodic_granted_desc'](),
       color: 'text-orange-600',
       bgColor: 'bg-orange-50 dark:bg-orange-950',
     },
@@ -188,7 +191,7 @@ function FreeUserStatsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 id="page-title" className="text-xl font-semibold">
-          免费用户统计
+          {m['points.free_stats_page_title']()}
         </h1>
         <div className="flex gap-2" role="group" aria-label="操作按钮">
           <Button
@@ -203,7 +206,7 @@ function FreeUserStatsPage() {
               className={`h-4 w-4 mr-2 ${isRefetching ? 'animate-spin' : ''}`}
               aria-hidden="true"
             />
-            {isRefetching ? 'Refreshing...' : 'Refresh'}
+            {isRefetching ? m['points.free_stats_refreshing']() : m['points.free_stats_refresh']()}
           </Button>
           <Button
             variant="outline"
@@ -214,7 +217,7 @@ function FreeUserStatsPage() {
             disabled={!stats}
           >
             <Download className="h-4 w-4 mr-2" aria-hidden="true" />
-            Export CSV
+            {m['points.free_stats_export']()}
           </Button>
         </div>
       </div>
@@ -222,8 +225,8 @@ function FreeUserStatsPage() {
       {/* Date Range Filter */}
       <Card aria-labelledby="date-filter-title">
         <CardHeader>
-          <CardTitle id="date-filter-title">Date Range Filter</CardTitle>
-          <CardDescription>Optional: filter stats by time period</CardDescription>
+          <CardTitle id="date-filter-title">{m['points.free_stats_date_filter_title']()}</CardTitle>
+          <CardDescription>{m['points.free_stats_date_filter_description']()}</CardDescription>
         </CardHeader>
         <CardContent>
           <div
@@ -233,7 +236,7 @@ function FreeUserStatsPage() {
           >
             <div className="space-y-2">
               <Label htmlFor="start-date" id="start-date-label">
-                Start Date
+                {m['points.free_stats_start_date']()}
               </Label>
               <Input
                 id="start-date"
@@ -247,7 +250,7 @@ function FreeUserStatsPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="end-date" id="end-date-label">
-                End Date
+                {m['points.free_stats_end_date']()}
               </Label>
               <Input
                 id="end-date"
@@ -261,7 +264,7 @@ function FreeUserStatsPage() {
             </div>
           </div>
           <p id="date-filter-hint" className="text-xs text-muted-foreground mt-2">
-            Leave empty for no date restriction
+            {m['points.free_stats_date_hint']()}
           </p>
         </CardContent>
       </Card>
@@ -325,11 +328,11 @@ function FreeUserStatsPage() {
                   id="average-periodic-points-title"
                   className="text-sm font-medium text-muted-foreground"
                 >
-                  Avg Periodic Points/User
+                  {m['points.free_stats_avg_periodic_per_user']()}
                 </p>
                 <p
                   className="text-2xl font-bold"
-                  aria-label={`Avg Periodic Points/User: ${stats.averagePeriodicPointsPerUser.toFixed(2)}`}
+                  aria-label={`${m['points.free_stats_avg_periodic_per_user']()}: ${stats.averagePeriodicPointsPerUser.toFixed(2)}`}
                 >
                   {stats.averagePeriodicPointsPerUser.toFixed(2)}
                 </p>
@@ -337,7 +340,7 @@ function FreeUserStatsPage() {
                   id="average-periodic-points-description"
                   className="text-xs text-muted-foreground"
                 >
-                  Average periodic points per user
+                  {m['points.free_stats_avg_periodic_per_user_desc']()}
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-cyan-50 dark:bg-cyan-950" aria-hidden="true">
@@ -356,16 +359,16 @@ function FreeUserStatsPage() {
             <div className="flex items-center justify-between">
               <div className="space-y-2">
                 <p id="upgrade-rate-title" className="text-sm font-medium text-muted-foreground">
-                  Paid Conversion Rate
+                  {m['points.free_stats_paid_conversion_rate']()}
                 </p>
                 <p
                   className="text-2xl font-bold"
-                  aria-label={`Paid Conversion Rate: ${stats.upgradeRate.toFixed(2)}%`}
+                  aria-label={`${m['points.free_stats_paid_conversion_rate']()}: ${stats.upgradeRate.toFixed(2)}%`}
                 >
                   {stats.upgradeRate.toFixed(2)}%
                 </p>
                 <p id="upgrade-rate-description" className="text-xs text-muted-foreground">
-                  Free-to-paid user conversion rate
+                  {m['points.free_stats_paid_conversion_rate_desc']()}
                 </p>
               </div>
               <div
@@ -397,19 +400,21 @@ function FreeUserStatsPage() {
       <Alert role="status" aria-live="polite">
         <AlertDescription className="text-xs text-muted-foreground flex items-center justify-between">
           <span>
-            Last updated: {format(new Date(stats.lastUpdatedAt), 'yyyy-MM-dd HH:mm:ss')}(
-            {relativeTime})
+            {m['points.free_stats_last_updated']({
+              time: format(new Date(stats.lastUpdatedAt), 'yyyy-MM-dd HH:mm:ss'),
+              relative: relativeTime,
+            })}
           </span>
           <span className="flex items-center gap-1">
             {isRefetching ? (
               <>
                 <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-                Refreshing...
+                {m['points.free_stats_refreshing']()}
               </>
             ) : (
               <>
                 <RefreshCw className="h-3 w-3" aria-hidden="true" />
-                Auto-refreshes every 5 minutes
+                {m['points.free_stats_auto_refresh']()}
               </>
             )}
           </span>

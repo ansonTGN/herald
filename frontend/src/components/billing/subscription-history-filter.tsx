@@ -17,9 +17,10 @@ import type {
   SubscriptionHistoryEventType,
   SubscriptionStatus,
 } from '@/types/billing'
-import { EventTypeLabels, SubscriptionStatusLabels } from '@/types/billing'
+import { getEventTypeLabels, getSubscriptionStatusLabels } from '@/types/billing'
 import { optionalStringEnum } from '@/lib/form-utils'
 import { toDateInputValue, toUtcDateRangeBoundary } from '@/lib/date-utils'
+import { m } from '@/paraglide/messages'
 
 const ALL_FILTER_VALUE = '__all__'
 
@@ -130,13 +131,15 @@ export function SubscriptionHistoryFilter({
                   <form.Field name="userId">
                     {(field) => (
                       <>
-                        <Label htmlFor={field.name}>User ID</Label>
+                        <Label htmlFor={field.name}>
+                          {m['billing.subscription_filter_user_id']()}
+                        </Label>
                         <Input
                           id={field.name}
                           type="text"
                           value={field.state.value ?? ''}
                           onChange={(e) => field.handleChange(e.target.value)}
-                          placeholder="Enter user ID"
+                          placeholder={m['billing.subscription_filter_user_id_placeholder']()}
                           data-testid="filter-user-id"
                         />
                       </>
@@ -149,7 +152,9 @@ export function SubscriptionHistoryFilter({
                   <form.Field name="planId">
                     {(field) => (
                       <>
-                        <Label htmlFor={field.name}>Plan</Label>
+                        <Label htmlFor={field.name}>
+                          {m['billing.subscription_filter_plan']()}
+                        </Label>
                         <Select
                           value={field.state.value ?? ''}
                           onValueChange={(value) =>
@@ -158,10 +163,14 @@ export function SubscriptionHistoryFilter({
                           data-testid="filter-plan"
                         >
                           <SelectTrigger id={field.name}>
-                            <SelectValue placeholder="Select plan" />
+                            <SelectValue
+                              placeholder={m['billing.subscription_filter_select_plan']()}
+                            />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value={ALL_FILTER_VALUE}>All plans</SelectItem>
+                            <SelectItem value={ALL_FILTER_VALUE}>
+                              {m['billing.subscription_filter_all_plans']()}
+                            </SelectItem>
                             {plans?.map((plan) => (
                               <SelectItem key={plan.id} value={plan.id}>
                                 {plan.name}
@@ -179,7 +188,9 @@ export function SubscriptionHistoryFilter({
                   <form.Field name="eventType">
                     {(field) => (
                       <>
-                        <Label htmlFor={field.name}>Event Type</Label>
+                        <Label htmlFor={field.name}>
+                          {m['billing.subscription_filter_event_type']()}
+                        </Label>
                         <Select
                           value={field.state.value ?? ALL_FILTER_VALUE}
                           onValueChange={(value) =>
@@ -192,17 +203,24 @@ export function SubscriptionHistoryFilter({
                           data-testid="filter-event-type"
                         >
                           <SelectTrigger id={field.name}>
-                            <SelectValue placeholder="Select event type" />
+                            <SelectValue
+                              placeholder={m['billing.subscription_filter_select_event_type']()}
+                            />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value={ALL_FILTER_VALUE}>All event types</SelectItem>
-                            {(Object.keys(EventTypeLabels) as SubscriptionHistoryEventType[]).map(
-                              (type) => (
-                                <SelectItem key={type} value={type}>
-                                  {EventTypeLabels[type]}
-                                </SelectItem>
-                              )
-                            )}
+                            <SelectItem value={ALL_FILTER_VALUE}>
+                              {m['billing.subscription_filter_all_event_types']()}
+                            </SelectItem>
+                            {(
+                              Object.entries(getEventTypeLabels()) as [
+                                SubscriptionHistoryEventType,
+                                string,
+                              ][]
+                            ).map(([type, label]) => (
+                              <SelectItem key={type} value={type}>
+                                {label}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </>
@@ -215,7 +233,9 @@ export function SubscriptionHistoryFilter({
                   <form.Field name="subscriptionStatus">
                     {(field) => (
                       <>
-                        <Label htmlFor={field.name}>Subscription Status</Label>
+                        <Label htmlFor={field.name}>
+                          {m['billing.subscription_filter_status']()}
+                        </Label>
                         <Select
                           value={field.state.value ?? ALL_FILTER_VALUE}
                           onValueChange={(value) =>
@@ -226,17 +246,24 @@ export function SubscriptionHistoryFilter({
                           data-testid="filter-status"
                         >
                           <SelectTrigger id={field.name}>
-                            <SelectValue placeholder="Select status" />
+                            <SelectValue
+                              placeholder={m['billing.subscription_filter_select_status']()}
+                            />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value={ALL_FILTER_VALUE}>All statuses</SelectItem>
-                            {(Object.keys(SubscriptionStatusLabels) as SubscriptionStatus[]).map(
-                              (status) => (
-                                <SelectItem key={status} value={status}>
-                                  {SubscriptionStatusLabels[status]}
-                                </SelectItem>
-                              )
-                            )}
+                            <SelectItem value={ALL_FILTER_VALUE}>
+                              {m['billing.subscription_filter_all_statuses']()}
+                            </SelectItem>
+                            {(
+                              Object.entries(getSubscriptionStatusLabels()) as [
+                                SubscriptionStatus,
+                                string,
+                              ][]
+                            ).map(([status, label]) => (
+                              <SelectItem key={status} value={status}>
+                                {label}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </>
@@ -249,7 +276,9 @@ export function SubscriptionHistoryFilter({
                   <form.Field name="fromDate">
                     {(field) => (
                       <>
-                        <Label htmlFor={field.name}>From Date</Label>
+                        <Label htmlFor={field.name}>
+                          {m['billing.subscription_filter_from_date']()}
+                        </Label>
                         <div className="relative">
                           <Input
                             id={field.name}
@@ -270,7 +299,9 @@ export function SubscriptionHistoryFilter({
                   <form.Field name="toDate">
                     {(field) => (
                       <>
-                        <Label htmlFor={field.name}>To Date</Label>
+                        <Label htmlFor={field.name}>
+                          {m['billing.subscription_filter_to_date']()}
+                        </Label>
                         <div className="relative">
                           <Input
                             id={field.name}
@@ -291,7 +322,9 @@ export function SubscriptionHistoryFilter({
                   <form.Field name="sortBy">
                     {(field) => (
                       <>
-                        <Label htmlFor={field.name}>Sort By</Label>
+                        <Label htmlFor={field.name}>
+                          {m['billing.subscription_filter_sort_by']()}
+                        </Label>
                         <Select
                           value={field.state.value}
                           onValueChange={(value) => field.handleChange(value)}
@@ -301,9 +334,15 @@ export function SubscriptionHistoryFilter({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="timestamp">Timestamp</SelectItem>
-                            <SelectItem value="eventType">Event Type</SelectItem>
-                            <SelectItem value="subscriptionId">Subscription ID</SelectItem>
+                            <SelectItem value="timestamp">
+                              {m['billing.subscription_filter_sort_timestamp']()}
+                            </SelectItem>
+                            <SelectItem value="eventType">
+                              {m['billing.subscription_filter_sort_event_type']()}
+                            </SelectItem>
+                            <SelectItem value="subscriptionId">
+                              {m['billing.subscription_filter_sort_subscription_id']()}
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                       </>
@@ -316,7 +355,9 @@ export function SubscriptionHistoryFilter({
                   <form.Field name="sortOrder">
                     {(field) => (
                       <>
-                        <Label htmlFor={field.name}>Sort Order</Label>
+                        <Label htmlFor={field.name}>
+                          {m['billing.subscription_filter_sort_order']()}
+                        </Label>
                         <Select
                           value={field.state.value ?? ''}
                           onValueChange={(value) =>
@@ -328,8 +369,12 @@ export function SubscriptionHistoryFilter({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="desc">Descending</SelectItem>
-                            <SelectItem value="asc">Ascending</SelectItem>
+                            <SelectItem value="desc">
+                              {m['billing.subscription_filter_descending']()}
+                            </SelectItem>
+                            <SelectItem value="asc">
+                              {m['billing.subscription_filter_ascending']()}
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                       </>
@@ -348,7 +393,7 @@ export function SubscriptionHistoryFilter({
                   disabled={loading}
                   data-testid="reset-filter-button"
                 >
-                  Reset
+                  {m['billing.subscription_filter_reset']()}
                 </Button>
                 <Button
                   type="submit"
@@ -356,7 +401,9 @@ export function SubscriptionHistoryFilter({
                   disabled={loading}
                   data-testid="apply-filter-button"
                 >
-                  {loading ? 'Applying...' : 'Apply Filters'}
+                  {loading
+                    ? m['billing.subscription_filter_applying']()
+                    : m['billing.subscription_filter_apply']()}
                 </Button>
               </div>
             </div>

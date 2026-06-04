@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { m } from '@/paraglide/messages'
 
 interface UserRolesDialogProps {
   open: boolean
@@ -83,12 +84,16 @@ export function UserRolesDialog({ open, onOpenChange, userId, userEmail }: UserR
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md" data-testid="user-roles-dialog-content">
         <DialogHeader>
-          <DialogTitle data-testid="user-roles-dialog-title">Manage User Roles</DialogTitle>
+          <DialogTitle data-testid="user-roles-dialog-title">
+            {m['users.manage_roles_title']()}
+          </DialogTitle>
           <DialogDescription data-testid="user-roles-dialog-user">{userEmail}</DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
-          <div className="py-8 text-center text-sm text-muted-foreground">Loading roles...</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            {m['users.manage_roles_loading']()}
+          </div>
         ) : (
           <div className="space-y-4">
             <div>
@@ -96,18 +101,16 @@ export function UserRolesDialog({ open, onOpenChange, userId, userEmail }: UserR
                 className="mb-2 block text-sm font-medium"
                 data-testid="user-roles-dialog-label"
               >
-                Assign Roles
+                {m['users.manage_roles_assign_label']()}
               </label>
               <RoleSelector
                 roles={rolesData ?? []}
                 selectedRoleIds={selectedRoleIds}
                 onChange={handleRoleChange}
                 disabled={isSaving}
-                placeholder="Select roles to assign"
+                placeholder={m['users.manage_roles_select_placeholder']()}
               />
-              <p className="mt-2 text-xs text-muted-foreground">
-                Select one or more roles to assign to this user
-              </p>
+              <p className="mt-2 text-xs text-muted-foreground">{m['users.manage_roles_help']()}</p>
             </div>
 
             <DialogFooter className="border-t pt-4">
@@ -118,7 +121,7 @@ export function UserRolesDialog({ open, onOpenChange, userId, userEmail }: UserR
                 variant="outline"
                 data-testid="user-roles-dialog-cancel"
               >
-                Close
+                {m['common.close']()}
               </Button>
             </DialogFooter>
           </div>

@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import type { PointsPlanConfigResponse } from '@/lib/api-generated'
 import type { PointsPlanConfigFormData } from '@/lib/schemas/points-forms'
 import { pointsPlanConfigSchema } from '@/lib/schemas/points-forms'
+import { m } from '@/paraglide/messages'
 
 interface PointsPlanConfigFormProps {
   config?: PointsPlanConfigResponse | null
@@ -55,7 +56,9 @@ export function PointsPlanConfigForm({
     <Card data-testid="points-plan-config-form">
       {showTitle && (
         <CardHeader>
-          <CardTitle>{isEdit ? 'Edit Points Rule' : 'Create Points Rule'}</CardTitle>
+          <CardTitle>
+            {isEdit ? m['points.plan_config_edit_title']() : m['points.plan_config_create_title']()}
+          </CardTitle>
         </CardHeader>
       )}
       <CardContent>
@@ -71,7 +74,7 @@ export function PointsPlanConfigForm({
               <form.Field name="planId">
                 {(field) => (
                   <div className="space-y-2">
-                    <Label htmlFor={field.name}>Plan *</Label>
+                    <Label htmlFor={field.name}>{m['points.plan_config_form_plan_label']()}</Label>
                     <Select
                       value={field.state.value}
                       onValueChange={field.handleChange}
@@ -79,7 +82,9 @@ export function PointsPlanConfigForm({
                       data-testid="plan-select"
                     >
                       <SelectTrigger id={field.name}>
-                        <SelectValue placeholder="Select a plan" />
+                        <SelectValue
+                          placeholder={m['points.plan_config_form_plan_placeholder']()}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {plans.map((plan) => (
@@ -91,7 +96,7 @@ export function PointsPlanConfigForm({
                     </Select>
                     {isEdit && (
                       <p className="text-xs text-muted-foreground">
-                        Plan cannot be changed after configuration is created
+                        {m['points.plan_config_form_plan_immutable']()}
                       </p>
                     )}
                   </div>
@@ -102,7 +107,9 @@ export function PointsPlanConfigForm({
               <form.Field name="pointsPerPeriod">
                 {(field) => (
                   <div className="space-y-2">
-                    <Label htmlFor={field.name}>Points per Period *</Label>
+                    <Label htmlFor={field.name}>
+                      {m['points.plan_config_form_points_per_period_label']()}
+                    </Label>
                     <Input
                       id={field.name}
                       type="number"
@@ -113,7 +120,7 @@ export function PointsPlanConfigForm({
                       data-testid="points-per-period"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Points awarded for each period (subscribe or renewal)
+                      {m['points.plan_config_form_points_per_period_help']()}
                     </p>
                   </div>
                 )}
@@ -123,9 +130,11 @@ export function PointsPlanConfigForm({
               <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
-                    <Label htmlFor="grant-on-subscribe">Grant on Subscribe</Label>
+                    <Label htmlFor="grant-on-subscribe">
+                      {m['points.plan_config_form_grant_on_subscribe_label']()}
+                    </Label>
                     <p className="text-xs text-muted-foreground">
-                      Award points when user subscribes to this plan
+                      {m['points.plan_config_form_grant_on_subscribe_help']()}
                     </p>
                   </div>
                   <form.Field name="grantOnSubscribe">
@@ -143,7 +152,9 @@ export function PointsPlanConfigForm({
                 <form.Field name="grantPeriodType">
                   {(field) => (
                     <div className="space-y-2">
-                      <Label htmlFor={field.name}>Grant Period</Label>
+                      <Label htmlFor={field.name}>
+                        {m['points.plan_config_form_grant_period_label']()}
+                      </Label>
                       <Select
                         value={field.state.value}
                         onValueChange={(value) =>
@@ -154,14 +165,22 @@ export function PointsPlanConfigForm({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="once">Once</SelectItem>
-                          <SelectItem value="daily">Daily</SelectItem>
-                          <SelectItem value="weekly">Weekly</SelectItem>
-                          <SelectItem value="monthly">Monthly</SelectItem>
+                          <SelectItem value="once">
+                            {m['points.plan_config_form_period_once']()}
+                          </SelectItem>
+                          <SelectItem value="daily">
+                            {m['points.plan_config_form_period_daily']()}
+                          </SelectItem>
+                          <SelectItem value="weekly">
+                            {m['points.plan_config_form_period_weekly']()}
+                          </SelectItem>
+                          <SelectItem value="monthly">
+                            {m['points.plan_config_form_period_monthly']()}
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">
-                        How often points are awarded (on subscription and/or renewal)
+                        {m['points.plan_config_form_grant_period_help']()}
                       </p>
                     </div>
                   )}
@@ -170,7 +189,9 @@ export function PointsPlanConfigForm({
                 <form.Field name="validityDays">
                   {(field) => (
                     <div className="space-y-2">
-                      <Label htmlFor={field.name}>Validity Days *</Label>
+                      <Label htmlFor={field.name}>
+                        {m['points.plan_config_form_validity_days_label']()}
+                      </Label>
                       <Input
                         id={field.name}
                         type="number"
@@ -181,7 +202,7 @@ export function PointsPlanConfigForm({
                         data-testid="validity-days"
                       />
                       <p className="text-xs text-muted-foreground">
-                        Number of days awarded points remain valid
+                        {m['points.plan_config_form_validity_days_help']()}
                       </p>
                     </div>
                   )}
@@ -193,9 +214,9 @@ export function PointsPlanConfigForm({
                 {(field) => (
                   <div className="space-y-2">
                     <Label htmlFor={field.name}>
-                      Maximum Periods (Optional)
+                      {m['points.plan_config_form_max_periods_label']()}
                       <Badge variant="outline" className="ml-2">
-                        Limit
+                        {m['points.plan_config_form_max_periods_badge']()}
                       </Badge>
                     </Label>
                     <Input
@@ -210,7 +231,7 @@ export function PointsPlanConfigForm({
                       data-testid="max-periods"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Maximum number of periods to award points. Leave empty for unlimited.
+                      {m['points.plan_config_form_max_periods_help']()}
                     </p>
                   </div>
                 )}
@@ -229,10 +250,10 @@ export function PointsPlanConfigForm({
                 </Button>
                 <Button type="submit" disabled={isSubmitting} data-testid="submit-button">
                   {isSubmitting
-                    ? 'Saving...'
+                    ? m['shared.saving']()
                     : isEdit
-                      ? 'Update Configuration'
-                      : 'Create Configuration'}
+                      ? m['shared.save_changes']()
+                      : m['shared.create_configuration']()}
                 </Button>
               </div>
             </div>

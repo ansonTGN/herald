@@ -8,6 +8,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { m } from '@/paraglide/messages'
 
 interface RegenerateSecretDialogProps {
   open: boolean
@@ -26,20 +27,21 @@ export function RegenerateSecretDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent data-testid="regenerate-secret-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Regenerate Client Secret?</AlertDialogTitle>
+          <AlertDialogTitle>{m['client_apps.regenerate_title']()}</AlertDialogTitle>
           <AlertDialogDescription>
-            This will invalidate the current client secret for <strong>{clientAppName}</strong>. You
-            will need to update all applications using this client app with the new secret.
+            {m['client_apps.regenerate_description']({ name: clientAppName })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel data-testid="cancel-regenerate-button">Cancel</AlertDialogCancel>
+          <AlertDialogCancel data-testid="cancel-regenerate-button">
+            {m['common.cancel']()}
+          </AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
             className="bg-red-600 hover:bg-red-700"
             data-testid="confirm-regenerate-button"
           >
-            Regenerate Secret
+            {m['client_apps.regenerate_button']()}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

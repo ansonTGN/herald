@@ -2,9 +2,14 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { ClientAppItem, SubscriptionDetailResponse } from '@/lib/api-generated'
-import { getStatusBadgeVariant, type SubscriptionStatus } from '@/types/billing'
+import {
+  getStatusBadgeVariant,
+  getSubscriptionStatusLabels,
+  type SubscriptionStatus,
+} from '@/types/billing'
 import { formatDate } from '@/lib/date-utils'
 import { FileText } from 'lucide-react'
+import { m } from '@/paraglide/messages'
 
 interface SubscriptionSelectorProps {
   subscriptions: Array<{
@@ -28,7 +33,7 @@ export function SubscriptionSelector({
         className="text-center py-8 text-muted-foreground"
         data-testid="subscription-selector-empty"
       >
-        No subscriptions found
+        {m['billing.subscription_not_found']()}
       </div>
     )
   }
@@ -60,7 +65,7 @@ export function SubscriptionSelector({
                       variant={getStatusBadgeVariant(subscription.status as SubscriptionStatus)}
                       className="text-xs"
                     >
-                      {subscription.status}
+                      {getSubscriptionStatusLabels()[subscription.status as SubscriptionStatus]}
                     </Badge>
                   )}
                 </div>
@@ -68,12 +73,20 @@ export function SubscriptionSelector({
                 {subscription ? (
                   <div className="space-y-1.5">
                     <div className="text-sm">
-                      <span className="text-muted-foreground">Subscription Plan: </span>
-                      <span className="font-medium">{subscription.plan?.title || 'None'}</span>
+                      <span className="text-muted-foreground">
+                        {m['billing.subscription_plan_label_colon']()}
+                      </span>
+                      <span className="font-medium">
+                        {subscription.plan?.title || m['billing.subscription_none']()}
+                      </span>
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {subscription.currentPeriodEnd && (
-                        <>Expires: {formatDate(subscription.currentPeriodEnd)}</>
+                        <>
+                          {m['billing.subscription_expires']({
+                            date: formatDate(subscription.currentPeriodEnd),
+                          })}
+                        </>
                       )}
                     </div>
                     {onApplyInvoice && (
@@ -88,12 +101,14 @@ export function SubscriptionSelector({
                         data-testid={`subscription-invoice-button-${subscription.id}`}
                       >
                         <FileText className="mr-2 h-4 w-4" />
-                        Invoice
+                        {m['billing.subscription_invoice_button']()}
                       </Button>
                     )}
                   </div>
                 ) : (
-                  <div className="text-sm text-muted-foreground">No subscription</div>
+                  <div className="text-sm text-muted-foreground">
+                    {m['billing.subscription_no_sub']()}
+                  </div>
                 )}
               </div>
             </CardContent>

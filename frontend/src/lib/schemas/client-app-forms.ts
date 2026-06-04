@@ -1,25 +1,29 @@
 import { z } from 'zod'
+import { m } from '@/paraglide/messages'
 
 const urlSchema = z
   .string()
-  .url('Invalid URL format')
-  .refine((url) => {
-    if (url.toLowerCase().startsWith('javascript:')) return false
-    if (url.startsWith('//')) return false
-    return true
-  }, 'Invalid URL format: javascript: protocol and protocol-relative URLs are not allowed')
+  .url({ error: () => m['client_apps.validation_url_invalid']() })
+  .refine(
+    (url) => {
+      if (url.toLowerCase().startsWith('javascript:')) return false
+      if (url.startsWith('//')) return false
+      return true
+    },
+    { error: () => m['client_apps.validation_url_js_protocol']() }
+  )
 
 const sessionTtlSchema = z
   .number()
-  .int('Session TTL must be an integer')
-  .min(60, 'Session TTL must be at least 60 seconds')
-  .max(86400, 'Session TTL must be at most 86400 seconds (24 hours)')
+  .int({ error: () => m['client_apps.validation_session_ttl_integer']() })
+  .min(60, { error: () => m['client_apps.validation_session_ttl_min']() })
+  .max(86400, { error: () => m['client_apps.validation_session_ttl_max']() })
 
 const sessionRenewalTtlSchema = z
   .number()
-  .int('Session renewal TTL must be an integer')
-  .min(60, 'Session renewal TTL must be at least 60 seconds')
-  .max(604800, 'Session renewal TTL must be at most 604800 seconds (7 days)')
+  .int({ error: () => m['client_apps.validation_session_renewal_ttl_integer']() })
+  .min(60, { error: () => m['client_apps.validation_session_renewal_ttl_min']() })
+  .max(604800, { error: () => m['client_apps.validation_session_renewal_ttl_max']() })
   .nullable()
   .optional()
 
@@ -27,16 +31,25 @@ export const createClientAppSchema = z
   .object({
     clientId: z
       .string()
-      .min(3, 'Client ID must be at least 3 characters')
-      .max(36, 'Client ID must be at most 36 characters')
-      .regex(
-        /^[a-zA-Z0-9-_]+$/,
-        'Client ID must contain only letters, numbers, hyphens, and underscores'
-      ),
-    name: z.string().min(1, 'Name is required').max(100, 'Name must be at most 100 characters'),
-    description: z.string().max(500, 'Description must be at most 500 characters').optional(),
-    redirectUris: z.array(urlSchema).min(1, 'At least one redirect URI is required'),
-    iconUrl: z.string().url('Invalid icon URL').optional().or(z.literal('')),
+      .min(3, { error: () => m['client_apps.validation_client_id_min_length']() })
+      .max(36, { error: () => m['client_apps.validation_client_id_max_length']() })
+      .regex(/^[a-zA-Z0-9-_]+$/, { error: () => m['client_apps.validation_client_id_format']() }),
+    name: z
+      .string()
+      .min(1, { error: () => m['client_apps.validation_name_required']() })
+      .max(100, { error: () => m['client_apps.validation_name_max_length_create']() }),
+    description: z
+      .string()
+      .max(500, { error: () => m['client_apps.validation_description_max_length_create']() })
+      .optional(),
+    redirectUris: z
+      .array(urlSchema)
+      .min(1, { error: () => m['client_apps.validation_redirect_uris_required']() }),
+    iconUrl: z
+      .string()
+      .url({ error: () => m['client_apps.validation_icon_url_invalid']() })
+      .optional()
+      .or(z.literal('')),
     enabled: z.boolean().default(true),
     sessionTtlSeconds: sessionTtlSchema.default(1800),
     sessionRenewalTtlSeconds: sessionRenewalTtlSchema,
@@ -50,17 +63,29 @@ export const createClientAppSchema = z
       return true
     },
     {
-      message: 'Session renewal TTL must be greater than or equal to session TTL',
+      error: () => m['client_apps.validation_session_renewal_gte'](),
       path: ['sessionRenewalTtlSeconds'],
     }
   )
 
 export const updateClientAppSchema = z
   .object({
-    name: z.string().min(1, 'Name is required').max(36, 'Name must be at most 36 characters'),
-    description: z.string().max(255, 'Description must be at most 255 characters').optional(),
-    redirectUris: z.array(urlSchema).min(1, 'At least one redirect URI is required'),
-    iconUrl: z.string().url('Invalid icon URL').optional().or(z.literal('')),
+    name: z
+      .string()
+      .min(1, { error: () => m['client_apps.validation_name_required']() })
+      .max(36, { error: () => m['client_apps.validation_name_max_length_update']() }),
+    description: z
+      .string()
+      .max(255, { error: () => m['client_apps.validation_description_max_length_update']() })
+      .optional(),
+    redirectUris: z
+      .array(urlSchema)
+      .min(1, { error: () => m['client_apps.validation_redirect_uris_required']() }),
+    iconUrl: z
+      .string()
+      .url({ error: () => m['client_apps.validation_icon_url_invalid']() })
+      .optional()
+      .or(z.literal('')),
     enabled: z.boolean(),
     sessionTtlSeconds: sessionTtlSchema,
     sessionRenewalTtlSeconds: sessionRenewalTtlSchema,
@@ -75,7 +100,7 @@ export const updateClientAppSchema = z
       return true
     },
     {
-      message: 'Session renewal TTL must be greater than or equal to session TTL',
+      error: () => m['client_apps.validation_session_renewal_gte'](),
       path: ['sessionRenewalTtlSeconds'],
     }
   )

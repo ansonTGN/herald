@@ -39,11 +39,12 @@ import type { InvoiceResponse } from '@/lib/api-generated'
 import { invoiceListQueryOptions } from '@/data/invoice-query-options'
 import {
   INVOICE_PAGE_SIZE,
-  INVOICE_SOURCE_LABELS,
+  getInvoiceSourceLabel,
   formatInvoiceAmount,
   downloadInvoicePdf,
   getAvailableActions,
 } from '@/lib/invoice-utils'
+import { m } from '@/paraglide/messages'
 
 interface InvoiceFilters {
   status?: string
@@ -86,32 +87,32 @@ function createInvoiceColumns(
     },
     {
       accessorKey: 'invoiceNumber',
-      header: 'Invoice Number',
+      header: m['billing.invoice_number'](),
       cell: ({ row }) => (
         <span className="font-mono text-sm font-medium">{row.getValue('invoiceNumber')}</span>
       ),
     },
     {
       accessorKey: 'billingName',
-      header: 'Buyer',
+      header: m['billing.invoice_buyer'](),
       cell: ({ row }) => <span className="text-sm">{row.getValue('billingName')}</span>,
     },
     {
       accessorKey: 'source',
-      header: 'Source',
+      header: m['billing.invoice_source'](),
       cell: ({ row }) => {
         const source = row.getValue('source') as string
-        return <Badge variant="outline">{INVOICE_SOURCE_LABELS[source] ?? source}</Badge>
+        return <Badge variant="outline">{getInvoiceSourceLabel(source)}</Badge>
       },
     },
     {
       accessorKey: 'status',
-      header: 'Status',
+      header: m['common.status'](),
       cell: ({ row }) => <InvoiceStatusBadge status={row.getValue('status') as string} />,
     },
     {
       accessorKey: 'total',
-      header: 'Total',
+      header: m['billing.invoice_total'](),
       cell: ({ row }) => {
         const total = row.getValue('total') as number
         const currency = row.original.currency
@@ -120,7 +121,7 @@ function createInvoiceColumns(
     },
     {
       accessorKey: 'dueDate',
-      header: 'Due Date',
+      header: m['billing.invoice_due_date'](),
       cell: ({ row }) => {
         const dueDate = row.getValue('dueDate') as string
         return <span className="text-sm">{new Date(dueDate).toLocaleDateString()}</span>
@@ -128,7 +129,7 @@ function createInvoiceColumns(
     },
     {
       accessorKey: 'createdAt',
-      header: 'Created At',
+      header: m['billing.invoice_created_at'](),
       cell: ({ row }) => {
         const createdAt = row.getValue('createdAt') as string
         return <span className="text-sm">{new Date(createdAt).toLocaleDateString()}</span>
@@ -136,7 +137,7 @@ function createInvoiceColumns(
     },
     {
       id: 'actions',
-      header: 'Actions',
+      header: m['billing.invoice_actions'](),
       cell: ({ row }) => {
         const invoice = row.original
         const availableActions = getAvailableActions(invoice.status)
@@ -148,7 +149,7 @@ function createInvoiceColumns(
                 className="h-8 w-8 p-0"
                 data-testid={`invoice-actions-menu-${invoice.id}`}
               >
-                <span className="sr-only">Open menu</span>
+                <span className="sr-only">{m['billing.invoice_open_menu']()}</span>
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -159,7 +160,7 @@ function createInvoiceColumns(
                   data-testid={`invoice-view-${invoice.id}`}
                 >
                   <Eye className="mr-2 h-4 w-4" />
-                  View
+                  {m['billing.invoice_view']()}
                 </DropdownMenuItem>
               )}
               {availableActions.includes('edit') && (
@@ -168,7 +169,7 @@ function createInvoiceColumns(
                   data-testid={`invoice-edit-${invoice.id}`}
                 >
                   <Pencil className="mr-2 h-4 w-4" />
-                  Edit
+                  {m['billing.invoice_edit']()}
                 </DropdownMenuItem>
               )}
               {availableActions.includes('issue') && (
@@ -177,7 +178,7 @@ function createInvoiceColumns(
                   data-testid={`invoice-issue-${invoice.id}`}
                 >
                   <Send className="mr-2 h-4 w-4" />
-                  Issue
+                  {m['billing.invoice_issue']()}
                 </DropdownMenuItem>
               )}
               {availableActions.includes('void') && (
@@ -189,7 +190,7 @@ function createInvoiceColumns(
                     data-testid={`invoice-void-${invoice.id}`}
                   >
                     <Ban className="mr-2 h-4 w-4" />
-                    Void
+                    {m['billing.invoice_void']()}
                   </DropdownMenuItem>
                 </>
               )}
@@ -199,7 +200,7 @@ function createInvoiceColumns(
                   data-testid={`invoice-mark-paid-${invoice.id}`}
                 >
                   <CheckCircle className="mr-2 h-4 w-4" />
-                  Mark Paid
+                  {m['billing.invoice_mark_paid']()}
                 </DropdownMenuItem>
               )}
               {availableActions.includes('downloadPdf') && (
@@ -215,7 +216,7 @@ function createInvoiceColumns(
                     data-testid={`invoice-download-pdf-${invoice.id}`}
                   >
                     <Download className="mr-2 h-4 w-4" />
-                    Download PDF
+                    {m['billing.invoice_download_pdf']()}
                   </DropdownMenuItem>
                 </>
               )}
@@ -227,20 +228,24 @@ function createInvoiceColumns(
   ]
 }
 
-const STATUS_OPTIONS = [
-  { value: 'all', label: 'All Statuses' },
-  { value: 'draft', label: 'Draft' },
-  { value: 'issued', label: 'Issued' },
-  { value: 'paid', label: 'Paid' },
-  { value: 'overdue', label: 'Overdue' },
-  { value: 'void', label: 'Void' },
-]
+function getStatusOptions() {
+  return [
+    { value: 'all', label: m['billing.invoice_status_all']() },
+    { value: 'draft', label: m['billing.invoice_status_draft']() },
+    { value: 'issued', label: m['billing.invoice_status_issued']() },
+    { value: 'paid', label: m['billing.invoice_status_paid']() },
+    { value: 'overdue', label: m['billing.invoice_status_overdue']() },
+    { value: 'void', label: m['billing.invoice_status_void']() },
+  ]
+}
 
-const SOURCE_OPTIONS = [
-  { value: 'all', label: 'All Sources' },
-  { value: 'admin_manual', label: 'Manual' },
-  { value: 'user_application', label: 'Application' },
-]
+function getSourceOptions() {
+  return [
+    { value: 'all', label: m['billing.invoice_source_all']() },
+    { value: 'admin_manual', label: m['billing.invoice_source_manual']() },
+    { value: 'user_application', label: m['billing.invoice_source_application']() },
+  ]
+}
 
 function FilterBar({
   filters,
@@ -258,10 +263,10 @@ function FilterBar({
         }
       >
         <SelectTrigger className="w-[160px]" data-testid="invoice-status-filter">
-          <SelectValue placeholder="All Statuses" />
+          <SelectValue placeholder={m['billing.invoice_status_all']()} />
         </SelectTrigger>
         <SelectContent>
-          {STATUS_OPTIONS.map((opt) => (
+          {getStatusOptions().map((opt) => (
             <SelectItem key={opt.value} value={opt.value}>
               {opt.label}
             </SelectItem>
@@ -276,10 +281,10 @@ function FilterBar({
         }
       >
         <SelectTrigger className="w-[160px]" data-testid="invoice-source-filter">
-          <SelectValue placeholder="All Sources" />
+          <SelectValue placeholder={m['billing.invoice_source_all']()} />
         </SelectTrigger>
         <SelectContent>
-          {SOURCE_OPTIONS.map((opt) => (
+          {getSourceOptions().map((opt) => (
             <SelectItem key={opt.value} value={opt.value}>
               {opt.label}
             </SelectItem>
@@ -305,7 +310,7 @@ function FilterBar({
       <div className="relative">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search invoices..."
+          placeholder={m['billing.invoice_search_placeholder']()}
           className="w-[220px] pl-9"
           value={filters.search ?? ''}
           onChange={(e) => onFiltersChange({ ...filters, search: e.target.value || undefined })}
@@ -364,7 +369,7 @@ export function InvoiceAdminPage({
   return (
     <div className="space-y-6" data-testid="invoice-admin-page">
       <div className="flex items-start justify-between gap-4">
-        <PageHeader title="Invoices" headingTestId="invoice-heading" />
+        <PageHeader title={m['billing.invoice_page_title']()} headingTestId="invoice-heading" />
         <div className="flex gap-2">
           {onOpenSellerConfig && (
             <Button
@@ -373,13 +378,13 @@ export function InvoiceAdminPage({
               data-testid="seller-config-button"
             >
               <Settings className="mr-2 h-4 w-4" />
-              Seller Config
+              {m['billing.invoice_seller_config']()}
             </Button>
           )}
           {onCreateInvoice && (
             <Button onClick={onCreateInvoice} data-testid="create-invoice-button">
               <Plus className="mr-2 h-4 w-4" />
-              Create Invoice
+              {m['billing.invoice_create_button']()}
             </Button>
           )}
         </div>
@@ -389,7 +394,7 @@ export function InvoiceAdminPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Invoice List</CardTitle>
+          <CardTitle>{m['billing.invoice_list_title']()}</CardTitle>
         </CardHeader>
         <CardContent>
           <DataTable
@@ -397,8 +402,8 @@ export function InvoiceAdminPage({
             data={invoices}
             isLoading={isLoading}
             error={error instanceof Error ? error : error ? new Error(String(error)) : undefined}
-            loadingMessage="Loading invoices..."
-            emptyMessage="No invoices yet."
+            loadingMessage={m['billing.invoice_loading']()}
+            emptyMessage={m['billing.invoice_empty']()}
             data-testid="invoice-table"
           />
         </CardContent>

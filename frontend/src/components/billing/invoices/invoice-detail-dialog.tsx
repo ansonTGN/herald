@@ -24,6 +24,7 @@ import { InvoiceStatusBadge } from '@/components/billing/invoices/invoice-status
 import { invoiceDetailQueryOptions } from '@/data/invoice-query-options'
 import { formatInvoiceAmount, PDF_DOWNLOADABLE_STATUSES } from '@/lib/invoice-utils'
 import type { InvoiceDetailResponse } from '@/lib/api-generated'
+import { m } from '@/paraglide/messages'
 
 interface InvoiceDetailDialogProps {
   open: boolean
@@ -32,13 +33,15 @@ interface InvoiceDetailDialogProps {
   invoiceId: string | null
 }
 
-const EVENT_TYPE_LABELS: Record<string, string> = {
-  created: 'Created',
-  updated: 'Updated',
-  issued: 'Issued',
-  paid: 'Paid',
-  void: 'Voided',
-  overdue: 'Overdue',
+function getEventTypeLabels(): Record<string, string> {
+  return {
+    created: m['billing.invoice_event_created'](),
+    updated: m['billing.invoice_event_updated'](),
+    issued: m['billing.invoice_event_issued'](),
+    paid: m['billing.invoice_event_paid'](),
+    void: m['billing.invoice_event_void'](),
+    overdue: m['billing.invoice_event_overdue'](),
+  }
 }
 
 const EVENT_TYPE_COLORS: Record<string, string> = {
@@ -81,15 +84,15 @@ export function InvoiceDetailDialog({
           ) : invoice ? (
             <>
               <DialogTitle className="flex items-center gap-3">
-                Invoice {invoice.invoiceNumber}
+                {m['billing.invoice_detail_title']({ number: invoice.invoiceNumber })}
                 <InvoiceStatusBadge status={invoice.status} />
               </DialogTitle>
-              <DialogDescription>Invoice details and status history</DialogDescription>
+              <DialogDescription>{m['billing.invoice_detail_description']()}</DialogDescription>
             </>
           ) : (
             <>
-              <DialogTitle>Invoice Not Found</DialogTitle>
-              <DialogDescription>The requested invoice could not be loaded.</DialogDescription>
+              <DialogTitle>{m['billing.invoice_not_found']()}</DialogTitle>
+              <DialogDescription>{m['billing.invoice_not_found_description']()}</DialogDescription>
             </>
           )}
         </DialogHeader>
@@ -101,7 +104,7 @@ export function InvoiceDetailDialog({
             <Button variant="outline" asChild>
               <a href={pdfUrl} download data-testid="invoice-download-pdf-button">
                 <Download className="mr-2 h-4 w-4" />
-                Download PDF
+                {m['billing.invoice_download_pdf']()}
               </a>
             </Button>
           )}
@@ -118,7 +121,7 @@ function InvoiceContent({ invoice }: { invoice: InvoiceDetailResponse }) {
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <ContactCard
-          title="Seller"
+          title={m['billing.invoice_seller']()}
           name={invoice.sellerName}
           email={invoice.sellerEmail}
           address={invoice.sellerAddress}
@@ -127,7 +130,7 @@ function InvoiceContent({ invoice }: { invoice: InvoiceDetailResponse }) {
           dataTestId="invoice-seller-info"
         />
         <ContactCard
-          title="Buyer"
+          title={m['billing.invoice_buyer_label']()}
           name={invoice.billingName}
           email={invoice.billingEmail}
           address={invoice.billingAddress}
@@ -138,14 +141,18 @@ function InvoiceContent({ invoice }: { invoice: InvoiceDetailResponse }) {
       </div>
 
       <div data-testid="invoice-line-items-section">
-        <h3 className="mb-2 text-sm font-semibold">Line Items</h3>
+        <h3 className="mb-2 text-sm font-semibold">{m['billing.invoice_line_items']()}</h3>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead className="text-right">Qty</TableHead>
-              <TableHead className="text-right">Unit Price</TableHead>
-              <TableHead className="text-right">Subtotal</TableHead>
+              <TableHead>{m['billing.invoice_line_item_name']()}</TableHead>
+              <TableHead className="text-right">{m['billing.invoice_line_item_qty']()}</TableHead>
+              <TableHead className="text-right">
+                {m['billing.invoice_line_item_unit_price']()}
+              </TableHead>
+              <TableHead className="text-right">
+                {m['billing.invoice_line_item_subtotal']()}
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -200,7 +207,7 @@ function ContactCard({
         {email && <p className="text-muted-foreground">{email}</p>}
         <p className="text-muted-foreground">{address}</p>
         {phone && <p className="text-muted-foreground">{phone}</p>}
-        {taxId && <p className="text-muted-foreground">Tax ID: {taxId}</p>}
+        {taxId && <p className="text-muted-foreground">{m['billing.invoice_tax_id']({ taxId })}</p>}
       </div>
     </div>
   )
@@ -219,23 +226,23 @@ function AmountBreakdown({
       data-testid="invoice-amount-breakdown"
     >
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Subtotal</span>
+        <span className="text-muted-foreground">{m['billing.invoice_subtotal']()}</span>
         <span className="font-mono">{fmt(invoice.subtotal)}</span>
       </div>
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Discount (-)</span>
+        <span className="text-muted-foreground">{m['billing.invoice_discount']()}</span>
         <span className="font-mono text-red-600">-{fmt(invoice.discountAmount)}</span>
       </div>
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Tax (+)</span>
+        <span className="text-muted-foreground">{m['billing.invoice_tax']()}</span>
         <span className="font-mono">+{fmt(invoice.taxAmount)}</span>
       </div>
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Shipping (+)</span>
+        <span className="text-muted-foreground">{m['billing.invoice_shipping']()}</span>
         <span className="font-mono">+{fmt(invoice.shippingAmount)}</span>
       </div>
       <div className="border-t pt-2 flex justify-between font-semibold">
-        <span>Total</span>
+        <span>{m['billing.invoice_total_label']()}</span>
         <span className="font-mono" data-testid="invoice-total-amount">
           {fmt(invoice.total)}
         </span>
@@ -248,11 +255,19 @@ function AdditionalInfo({ invoice }: { invoice: InvoiceDetailResponse }) {
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-4" data-testid="invoice-additional-info">
       {invoice.issueDate && (
-        <InfoField label="Issue Date">{format(new Date(invoice.issueDate), 'PPP')}</InfoField>
+        <InfoField label={m['billing.invoice_issue_date']()}>
+          {format(new Date(invoice.issueDate), 'PPP')}
+        </InfoField>
       )}
-      <InfoField label="Due Date">{format(new Date(invoice.dueDate), 'PPP')}</InfoField>
-      {invoice.paymentTerms && <InfoField label="Payment Terms">{invoice.paymentTerms}</InfoField>}
-      {invoice.notes && <InfoField label="Additional Information">{invoice.notes}</InfoField>}
+      <InfoField label={m['billing.invoice_due_date_label']()}>
+        {format(new Date(invoice.dueDate), 'PPP')}
+      </InfoField>
+      {invoice.paymentTerms && (
+        <InfoField label={m['billing.invoice_payment_terms']()}>{invoice.paymentTerms}</InfoField>
+      )}
+      {invoice.notes && (
+        <InfoField label={m['billing.invoice_additional_info']()}>{invoice.notes}</InfoField>
+      )}
     </div>
   )
 }
@@ -275,9 +290,11 @@ function StatusHistory({ events }: { events: InvoiceDetailResponse['history'] })
 
   return (
     <div data-testid="invoice-status-history">
-      <h3 className="mb-3 text-sm font-semibold">Status History</h3>
+      <h3 className="mb-3 text-sm font-semibold">{m['billing.invoice_status_history']()}</h3>
       {sorted.length === 0 ? (
-        <p className="py-4 text-center text-sm text-muted-foreground">No history events</p>
+        <p className="py-4 text-center text-sm text-muted-foreground">
+          {m['billing.invoice_no_history']()}
+        </p>
       ) : (
         <div className="relative space-y-4 before:absolute before:left-[7px] before:top-2 before:h-[calc(100%-1rem)] before:w-px before:bg-border">
           {sorted.map((event) => (
@@ -291,10 +308,14 @@ function StatusHistory({ events }: { events: InvoiceDetailResponse['history'] })
 
 function HistoryEvent({ event }: { event: InvoiceDetailResponse['history'][number] }) {
   const timestamp = format(new Date(event.createdAt), 'PPp')
-  const label = EVENT_TYPE_LABELS[event.eventType] ?? event.eventType
+  const labels = getEventTypeLabels()
+  const label = labels[event.eventType] ?? event.eventType
   const colorClass =
     EVENT_TYPE_COLORS[event.eventType] ?? 'bg-gray-100 text-gray-800 border-gray-200'
-  const actorLabel = event.actorType === 'system' ? 'System' : 'User'
+  const actorLabel =
+    event.actorType === 'system'
+      ? m['billing.invoice_actor_system']()
+      : m['billing.invoice_actor_user']()
 
   let changeDescription = ''
   if (event.changes && typeof event.changes === 'object' && event.changes !== null) {

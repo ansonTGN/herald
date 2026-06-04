@@ -10,6 +10,7 @@ import type { AuditSearchParams } from '@/lib/schemas/search-params'
 import { AuditFilterBar, hasActiveFilters } from './audit-filter-bar'
 import { AuditEventTable } from './audit-event-table'
 import { AuditEventDetailSheet } from './audit-event-detail-sheet'
+import { m } from '@/paraglide/messages'
 
 interface AuditPageProps {
   realmId: string
@@ -34,7 +35,7 @@ export function AuditPage({ realmId, search }: AuditPageProps) {
 
   useEffect(() => {
     if (error) {
-      toast.error(error.message || 'Failed to load audit logs')
+      toast.error(error.message || m['audit.failed_to_load']())
     }
   }, [error])
 
@@ -68,7 +69,7 @@ export function AuditPage({ realmId, search }: AuditPageProps) {
 
   return (
     <div data-testid="audit-page" className="space-y-6">
-      <PageHeader title="Audit Log" headingTestId="audit-heading" />
+      <PageHeader title={m['audit.page_title']()} headingTestId="audit-heading" />
 
       <AuditFilterBar
         filters={search}
@@ -91,9 +92,7 @@ export function AuditPage({ realmId, search }: AuditPageProps) {
               data={data.items}
               onRowClick={(event) => setSelectedEventId(event.id)}
               emptyMessage={
-                hasActiveFilters(search)
-                  ? 'No matching audit logs. Try adjusting your filters.'
-                  : 'No audit logs yet.'
+                hasActiveFilters(search) ? m['audit.no_matching_logs']() : m['audit.no_logs']()
               }
             />
           ) : null}

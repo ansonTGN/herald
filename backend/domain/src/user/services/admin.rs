@@ -765,31 +765,35 @@ where
     }
 }
 
+/// Password character categories used by `generate_random_password`.
+const PW_CATEGORIES: &[&[u8]] = &[
+    b"abcdefghijklmnopqrstuvwxyz",
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    b"0123456789",
+    b"!@#$%^&*",
+];
+
 /// Generate random password (alphanumeric + special characters, 16 characters)
 /// Guarantees at least one character from each category: lowercase, uppercase, digit, special.
 fn generate_random_password() -> String {
     use rand::Rng;
     use rand::seq::SliceRandom;
 
-    const LOWERCASE: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
-    const UPPERCASE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    const DIGITS: &[u8] = b"0123456789";
-    const SPECIAL: &[u8] = b"!@#$%^&*";
-    const CHARSET: &[u8] =
-        b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
-
+    let all_chars: Vec<u8> = PW_CATEGORIES
+        .iter()
+        .flat_map(|c| c.iter().copied())
+        .collect();
     let mut rng = rand::thread_rng();
 
     // Guarantee one from each category
     let mut chars: Vec<char> = Vec::with_capacity(16);
-    chars.push(LOWERCASE[rng.gen_range(0..LOWERCASE.len())] as char);
-    chars.push(UPPERCASE[rng.gen_range(0..UPPERCASE.len())] as char);
-    chars.push(DIGITS[rng.gen_range(0..DIGITS.len())] as char);
-    chars.push(SPECIAL[rng.gen_range(0..SPECIAL.len())] as char);
+    for &cat in PW_CATEGORIES {
+        chars.push(cat[rng.gen_range(0..cat.len())] as char);
+    }
 
     // Fill remaining slots from full charset
     for _ in 4..16 {
-        chars.push(CHARSET[rng.gen_range(0..CHARSET.len())] as char);
+        chars.push(all_chars[rng.gen_range(0..all_chars.len())] as char);
     }
 
     chars.shuffle(&mut rng);
@@ -1537,7 +1541,11 @@ mod tests {
     }
 
     fn has_special(s: &str) -> bool {
-        s.chars().any(|c| "!@#$%^&*".contains(c))
+        let special_chars = PW_CATEGORIES[3]
+            .iter()
+            .map(|&b| b as char)
+            .collect::<Vec<_>>();
+        s.chars().any(|c| special_chars.contains(&c))
     }
 
     #[test]
@@ -1562,13 +1570,13 @@ mod tests {
 
     #[test]
     fn generate_random_password_only_uses_charset_characters() {
-        let allowed: std::collections::HashSet<char> =
-            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
-                .chars()
-                .collect();
+        let all_chars: std::collections::HashSet<char> = PW_CATEGORIES
+            .iter()
+            .flat_map(|cat| cat.iter().map(|&b| b as char))
+            .collect();
         for _ in 0..50 {
             for c in generate_random_password().chars() {
-                assert!(allowed.contains(&c), "unexpected character: {c}");
+                assert!(all_chars.contains(&c), "unexpected character: {c}");
             }
         }
     }

@@ -13,6 +13,7 @@ import { ArrowUpRight, ArrowDownRight, Clock, ExternalLink } from 'lucide-react'
 import type { PointsTransactionResponse } from '@/lib/api-generated'
 import type { TransactionFilters } from '@/lib/schemas/points-forms'
 import { useActiveFilters } from '@/hooks/use-active-filters'
+import { m } from '@/paraglide/messages'
 
 interface TransactionHistoryTableProps {
   transactions: PointsTransactionResponse[]
@@ -48,7 +49,7 @@ export function TransactionHistoryTable({
       {
         id: 'createdAt',
         accessorKey: 'createdAt',
-        header: 'Time',
+        header: m['points.transaction_col_time'](),
         cell: ({ row }) => {
           const dateStr = row.getValue('createdAt') as string
           return (
@@ -61,7 +62,7 @@ export function TransactionHistoryTable({
       },
       {
         accessorKey: 'transactionType',
-        header: 'Type',
+        header: m['points.transaction_col_type'](),
         cell: ({ row }) => {
           // Since API uses 'type' field, we need to determine from amount sign
           const amount = row.getValue('amount') as number
@@ -74,7 +75,9 @@ export function TransactionHistoryTable({
                 <ArrowDownRight className="h-4 w-4 text-red-600" />
               )}
               <Badge variant={type === 'recharge' ? 'default' : 'secondary'}>
-                {type === 'recharge' ? 'Recharge' : 'Consume'}
+                {type === 'recharge'
+                  ? m['points.transaction_type_recharge']()
+                  : m['points.transaction_type_consume']()}
               </Badge>
             </div>
           )
@@ -82,7 +85,7 @@ export function TransactionHistoryTable({
       },
       {
         accessorKey: 'amount',
-        header: 'Amount',
+        header: m['points.transaction_col_amount'](),
         cell: ({ row }) => {
           const amount = row.getValue('amount') as number
           return (
@@ -98,7 +101,7 @@ export function TransactionHistoryTable({
       },
       {
         accessorKey: 'balanceAfter',
-        header: 'Balance After',
+        header: m['points.transaction_col_balance_after'](),
         cell: ({ row }) => (
           <div className="font-mono" data-testid={`transaction-balance-${row.index}`}>
             {(row.getValue('balanceAfter') as number).toLocaleString()}
@@ -107,7 +110,7 @@ export function TransactionHistoryTable({
       },
       {
         accessorKey: 'description',
-        header: 'Description',
+        header: m['points.transaction_col_description'](),
         cell: ({ row }) => {
           const description = row.getValue('description') as string | null
           const subscriptionId = row.original.subscriptionId
@@ -127,7 +130,7 @@ export function TransactionHistoryTable({
         ? [
             {
               accessorKey: 'clientAppId',
-              header: 'Source',
+              header: m['points.transaction_col_source'](),
               cell: ({ row }: { row: { getValue: (key: string) => unknown; index: number } }) => {
                 const clientAppId = row.getValue('clientAppId') as string | null
                 const clientApp = clientAppsMap.get(clientAppId ?? '')
@@ -146,7 +149,7 @@ export function TransactionHistoryTable({
         : []),
       {
         accessorKey: 'externalRefId',
-        header: 'Ref ID',
+        header: m['points.transaction_col_ref_id'](),
         cell: ({ row }) => {
           const externalRefId = row.getValue('externalRefId') as string | null
           return (
@@ -193,8 +196,10 @@ export function TransactionHistoryTable({
     return (
       <div className="text-center py-12 text-muted-foreground" data-testid="no-transactions">
         <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
-        <p>No transactions found matching your criteria</p>
-        {hasActiveFilters && <p className="text-sm mt-2">Try adjusting your filters</p>}
+        <p>{m['points.transaction_empty']()}</p>
+        {hasActiveFilters && (
+          <p className="text-sm mt-2">{m['points.transaction_empty_filter_hint']()}</p>
+        )}
       </div>
     )
   }

@@ -21,6 +21,7 @@ import {
   clientAppsQueryOptions,
   subscriptionPlanAssignmentsBatchQueryOptions,
 } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 export interface PlanAssignmentSubmitData {
   assignClientAppIds: string[]
@@ -139,13 +140,15 @@ export function PlanAssignmentDialog({
       <DialogContent className="sm:max-w-[600px]" data-testid="plan-assignment-dialog">
         <DialogHeader>
           <DialogTitle data-testid="plan-assignment-dialog-title">
-            Assign Subscription Plan: {plan?.title}
+            {m['billing.plan_assignment_title']({ title: plan?.title ?? '' })}
           </DialogTitle>
-          <DialogDescription>Select apps to assign this subscription plan to.</DialogDescription>
+          <DialogDescription>{m['billing.plan_assignment_description']()}</DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-8">Loading client apps...</div>
+          <div className="flex items-center justify-center py-8">
+            {m['billing.loading_client_apps']()}
+          </div>
         ) : (
           <ScrollArea className="max-h-[400px]">
             <div className="space-y-3 py-4">
@@ -180,7 +183,7 @@ export function PlanAssignmentDialog({
             onClick={() => onOpenChange(false)}
             data-testid="plan-assignment-cancel-button"
           >
-            Cancel
+            {m['common.cancel']()}
           </Button>
           <Button
             type="button"
@@ -188,7 +191,7 @@ export function PlanAssignmentDialog({
             disabled={isSubmitting || isLoading || !hasChanges}
             data-testid="plan-assignment-submit-button"
           >
-            {isSubmitting ? 'Assigning...' : 'Assign Subscription Plan'}
+            {isSubmitting ? m['billing.assigning']() : m['billing.assign_subscription_plan']()}
           </Button>
         </DialogFooter>
       </DialogContent>

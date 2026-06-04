@@ -8,6 +8,7 @@ import { CodeInput } from '@/components/device/code-input'
 import { AuthorizeConfirm } from '@/components/device/authorize-confirm'
 import { getErrorMessage } from '@/lib/error-utils'
 import { filterAndFormat, toBackendCode } from './device-code-utils'
+import { m } from '@/paraglide/messages'
 
 type PageState = 'input' | 'verifying' | 'confirmed' | 'result'
 
@@ -87,7 +88,7 @@ export function DeviceVerificationView({ realmId, initialCode }: DeviceVerificat
     <AuthPageWrapper>
       <Card className="w-full max-w-md" data-testid="device-verification-card">
         <CardHeader>
-          <CardTitle data-testid="device-verification-title">Device Verification</CardTitle>
+          <CardTitle data-testid="device-verification-title">{m['device.title']()}</CardTitle>
         </CardHeader>
         <CardContent>
           {error && (
@@ -102,14 +103,16 @@ export function DeviceVerificationView({ realmId, initialCode }: DeviceVerificat
           {pageState === 'input' && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground text-center">
-                Enter the code displayed on your device.
+                {m['device.enter_code_description']()}
               </p>
               <CodeInput onSubmit={handleCodeSubmit} defaultValue={initialCode} />
             </div>
           )}
 
           {pageState === 'verifying' && (
-            <div className="py-8 text-center text-muted-foreground">Verifying code...</div>
+            <div className="py-8 text-center text-muted-foreground">
+              {m['device.verifying_code']()}
+            </div>
           )}
 
           {pageState === 'confirmed' && verifyResponse && (
@@ -125,11 +128,13 @@ export function DeviceVerificationView({ realmId, initialCode }: DeviceVerificat
             <div className="py-4 text-center" data-testid="device-verification-result">
               {resultCode === 'approved' ? (
                 <div className="space-y-2">
-                  <p className="text-green-600 font-medium">Authorization successful.</p>
-                  <p className="text-sm text-muted-foreground">Please return to your device.</p>
+                  <p className="text-green-600 font-medium">
+                    {m['device.authorization_successful']()}
+                  </p>
+                  <p className="text-sm text-muted-foreground">{m['device.return_to_device']()}</p>
                 </div>
               ) : (
-                <p className="text-red-600 font-medium">Authorization denied.</p>
+                <p className="text-red-600 font-medium">{m['device.authorization_denied']()}</p>
               )}
             </div>
           )}

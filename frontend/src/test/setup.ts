@@ -17,6 +17,11 @@ client.setConfig({
   baseUrl: 'http://localhost:3000',
 })
 
+// Set fixed English locale for all tests to prevent translation functions
+// from causing test instability
+import { setLocale } from '@/paraglide/runtime'
+setLocale('en', { reload: false })
+
 // Reduce timeout for JSDOM mode tests (no browser overhead)
 vi.setConfig({ testTimeout: 5000 })
 

@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ProfileSidebar } from '../profile-sidebar'
 import type { ReactNode } from 'react'
+import { LocaleProvider } from '@/components/shared/locale-provider'
 
 let featureData = {
   user: {
@@ -50,7 +51,11 @@ describe('ProfileSidebar', () => {
       },
     }
 
-    render(<ProfileSidebar />)
+    render(
+      <LocaleProvider>
+        <ProfileSidebar />
+      </LocaleProvider>
+    )
 
     expect(screen.getByTestId('profile-menu-profile')).toBeInTheDocument()
     expect(screen.getByTestId('profile-menu-security')).toBeInTheDocument()

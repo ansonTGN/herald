@@ -11,6 +11,7 @@ import {
   type PrefilledInvoiceReference,
 } from '@/lib/schemas/invoice-forms'
 import { useApplyInvoice } from '@/data/invoice-mutations'
+import { m } from '@/paraglide/messages'
 
 interface ApplyInvoiceFormPageProps {
   realmId: string
@@ -81,7 +82,7 @@ export function ApplyInvoiceFormPage({
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <h1 className="text-2xl font-bold" data-testid="apply-form-title">
-          Apply for Invoice
+          {m['billing.invoice_apply_title']()}
         </h1>
       </div>
 
@@ -97,7 +98,7 @@ export function ApplyInvoiceFormPage({
           <div className="space-y-6">
             <Card data-testid="apply-form-reference-section">
               <CardHeader>
-                <CardTitle>Reference</CardTitle>
+                <CardTitle>{m['billing.invoice_apply_reference']()}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {prefilledReference ? (
@@ -107,11 +108,11 @@ export function ApplyInvoiceFormPage({
                   >
                     <p className="text-sm font-medium">
                       {prefilledReference.type === 'paymentAttempt'
-                        ? 'Points package purchase'
-                        : 'Subscription'}
+                        ? m['billing.invoice_apply_points_package']()
+                        : m['billing.invoice_apply_subscription']()}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Invoice reference is selected from your account history.
+                      {m['billing.invoice_apply_ref_hint']()}
                     </p>
                   </div>
                 ) : (
@@ -119,20 +120,20 @@ export function ApplyInvoiceFormPage({
                     <TextField
                       form={form}
                       name="paymentAttemptId"
-                      label="Payment Attempt ID"
+                      label={m['billing.invoice_apply_payment_attempt_id']()}
                       dataTestId="apply-payment-attempt-id-input"
-                      placeholder="Enter payment attempt ID"
+                      placeholder={m['billing.invoice_apply_payment_attempt_placeholder']()}
                     />
                     <TextField
                       form={form}
                       name="subscriptionId"
-                      label="Subscription ID"
+                      label={m['billing.invoice_apply_subscription_id']()}
                       dataTestId="apply-subscription-id-input"
-                      placeholder="Enter subscription ID"
+                      placeholder={m['billing.invoice_apply_subscription_placeholder']()}
                     />
                     <div className="rounded-md border border-muted bg-muted/40 px-3 py-2">
                       <p className="text-xs text-muted-foreground">
-                        At least one of Payment Attempt ID or Subscription ID is required.
+                        {m['billing.invoice_apply_ref_either']()}
                       </p>
                     </div>
                   </>
@@ -142,21 +143,21 @@ export function ApplyInvoiceFormPage({
 
             <Card data-testid="apply-form-billing-section">
               <CardHeader>
-                <CardTitle>Billing Information</CardTitle>
+                <CardTitle>{m['billing.invoice_apply_billing_info']()}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <TextField
                   form={form}
                   name="billingName"
-                  label="Billing Name"
+                  label={m['billing.invoice_apply_billing_name']()}
                   dataTestId="apply-billing-name-input"
-                  placeholder="Name on invoice"
+                  placeholder={m['billing.invoice_apply_billing_name_placeholder']()}
                   required
                 />
                 <TextField
                   form={form}
                   name="billingEmail"
-                  label="Billing Email"
+                  label={m['billing.invoice_apply_billing_email']()}
                   dataTestId="apply-billing-email-input"
                   type="email"
                   placeholder="billing@example.com"
@@ -164,24 +165,24 @@ export function ApplyInvoiceFormPage({
                 <TextField
                   form={form}
                   name="billingAddress"
-                  label="Billing Address"
+                  label={m['billing.invoice_apply_billing_address']()}
                   dataTestId="apply-billing-address-input"
-                  placeholder="Billing address"
+                  placeholder={m['billing.invoice_placeholder_address']()}
                   required
                 />
                 <TextField
                   form={form}
                   name="billingPhone"
-                  label="Billing Phone"
+                  label={m['billing.invoice_apply_billing_phone']()}
                   dataTestId="apply-billing-phone-input"
                   placeholder="+1 234 567 8900"
                 />
                 <TextField
                   form={form}
                   name="billingTaxId"
-                  label="Tax ID"
+                  label={m['billing.invoice_apply_billing_tax_id']()}
                   dataTestId="apply-billing-tax-id-input"
-                  placeholder="Enter tax identification number"
+                  placeholder={m['billing.invoice_apply_billing_tax_id_placeholder']()}
                   required
                 />
               </CardContent>
@@ -189,13 +190,13 @@ export function ApplyInvoiceFormPage({
 
             <Card data-testid="apply-form-details-section">
               <CardHeader>
-                <CardTitle>Invoice Details</CardTitle>
+                <CardTitle>{m['billing.invoice_apply_invoice_details']()}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <TextField
                   form={form}
                   name="dueDate"
-                  label="Due Date"
+                  label={m['billing.invoice_due_date_label']()}
                   dataTestId="apply-due-date-input"
                   type="date"
                   required
@@ -203,14 +204,14 @@ export function ApplyInvoiceFormPage({
                 <TextareaField
                   form={form}
                   name="notes"
-                  label="Notes"
+                  label={m['billing.invoice_apply_notes']()}
                   dataTestId="apply-notes-input"
-                  placeholder="Additional notes for this invoice request"
+                  placeholder={m['billing.invoice_apply_notes_placeholder']()}
                   rows={3}
                 />
                 <div className="rounded-md border border-muted bg-muted/40 px-3 py-2">
                   <p className="text-xs text-muted-foreground">
-                    Seller info will be auto-filled from Realm config.
+                    {m['billing.invoice_apply_seller_auto']()}
                   </p>
                 </div>
               </CardContent>
@@ -225,10 +226,10 @@ export function ApplyInvoiceFormPage({
             onClick={handleCancel}
             data-testid="apply-invoice-cancel-button"
           >
-            Cancel
+            {m['common.cancel']()}
           </Button>
           <Button type="submit" disabled={isSubmitting} data-testid="apply-invoice-submit-button">
-            {isSubmitting ? 'Submitting...' : 'Submit'}
+            {isSubmitting ? m['billing.invoice_submitting']() : m['billing.invoice_submit']()}
           </Button>
         </div>
       </form>

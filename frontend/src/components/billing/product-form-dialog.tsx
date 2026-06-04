@@ -12,6 +12,7 @@ import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
 import { BaseFormDialog } from '@/components/shared/form-dialog'
 import { getFieldErrorMessage } from '@/lib/form-utils'
 import { TextField, TextareaField } from '@/components/shared/form-fields'
+import { m } from '@/paraglide/messages'
 
 interface ProductFormDialogProps {
   product?: ProductResponse
@@ -60,8 +61,12 @@ export function ProductFormDialog({
     <BaseFormDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={isEditing ? 'Edit Product' : 'Create Product'}
-      description={isEditing ? 'Update product details' : 'Create a new product'}
+      title={isEditing ? m['billing.edit_product']() : m['billing.create_product']()}
+      description={
+        isEditing
+          ? m['billing.edit_product_description']()
+          : m['billing.create_product_description']()
+      }
       className="max-w-lg"
       isSubmitting={isSubmitting}
       data-testid="product-form-dialog"
@@ -73,7 +78,7 @@ export function ProductFormDialog({
             onClick={() => onOpenChange(false)}
             data-testid="product-form-cancel-button"
           >
-            Cancel
+            {m['common.cancel']()}
           </Button>
           <Button
             type="submit"
@@ -81,7 +86,11 @@ export function ProductFormDialog({
             disabled={isSubmitting}
             data-testid="product-form-submit-button"
           >
-            {isSubmitting ? 'Saving...' : isEditing ? 'Update Product' : 'Create Product'}
+            {isSubmitting
+              ? m['shared.saving']()
+              : isEditing
+                ? m['billing.update_product']()
+                : m['billing.create_product']()}
           </Button>
         </>
       }
@@ -100,7 +109,7 @@ export function ProductFormDialog({
               <TextField
                 form={form}
                 name="code"
-                label="Product Code"
+                label={m['billing.label_product_code']()}
                 dataTestId="product-code-input"
                 placeholder="basic-product"
                 disabled={isEditing}
@@ -109,7 +118,7 @@ export function ProductFormDialog({
               <TextField
                 form={form}
                 name="title"
-                label="Title"
+                label={m['billing.label_title']()}
                 dataTestId="product-title-input"
                 placeholder="Basic Product"
                 required
@@ -117,9 +126,9 @@ export function ProductFormDialog({
               <TextareaField
                 form={form}
                 name="description"
-                label="Description"
+                label={m['common.description']()}
                 dataTestId="product-description-input"
-                placeholder="Product description"
+                placeholder={m['common.description']()}
               />
             </div>
 
@@ -128,7 +137,7 @@ export function ProductFormDialog({
                 name="enabled"
                 children={(field) => (
                   <>
-                    <Label htmlFor={field.name}>Enabled</Label>
+                    <Label htmlFor={field.name}>{m['billing.label_enabled']()}</Label>
                     <Switch
                       id={field.name}
                       data-testid="product-enabled-switch"
@@ -144,7 +153,7 @@ export function ProductFormDialog({
                   </>
                 )}
               />
-              <p className="text-xs text-muted-foreground">Enable/disable this product</p>
+              <p className="text-xs text-muted-foreground">{m['billing.help_enabled']()}</p>
             </div>
           </div>
         </AppForm>

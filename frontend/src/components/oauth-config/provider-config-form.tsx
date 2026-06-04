@@ -19,6 +19,7 @@ import {
 } from '@/lib/oauth-provider-constants'
 import { getFieldErrorMessage } from '@/lib/error-utils'
 import { getOAuthConfigSchema, type OAuthConfigFormData } from '@/lib/schemas/oauth-config'
+import { m } from '@/paraglide/messages'
 
 interface ProviderConfigFormProps {
   editingConfig?: OAuthConfigResponse | undefined
@@ -111,7 +112,7 @@ export function ProviderConfigForm({
                 <form.Field name="providerType">
                   {(field) => (
                     <div className="space-y-2">
-                      <Label htmlFor="providerType">Provider Type</Label>
+                      <Label htmlFor="providerType">{m['oauth.form_provider_type_label']()}</Label>
                       <Select
                         value={field.state.value}
                         onValueChange={(value: ProviderType) => {
@@ -149,12 +150,12 @@ export function ProviderConfigForm({
                 <form.Field name="clientId">
                   {(field) => (
                     <div className="space-y-2">
-                      <Label htmlFor="clientId">clientId</Label>
+                      <Label htmlFor="clientId">{m['oauth.form_client_id_label']()}</Label>
                       <Input
                         id="clientId"
                         value={field.state.value ?? ''}
                         onChange={(e) => field.handleChange(e.target.value)}
-                        placeholder="OAuth clientId"
+                        placeholder={m['oauth.form_client_id_placeholder']()}
                         data-testid="oauth-client-id-input"
                       />
                       {(field.state.meta.isTouched || form.state.isSubmitted) &&
@@ -172,10 +173,10 @@ export function ProviderConfigForm({
                   {(field) => (
                     <div className="space-y-2">
                       <Label htmlFor="clientSecret">
-                        clientSecret{' '}
+                        {m['oauth.form_client_secret_label']()}{' '}
                         {isEditing && (
                           <span className="text-xs text-muted-foreground">
-                            (Leave empty to keep existing)
+                            {m['oauth.form_client_secret_keep_hint']()}
                           </span>
                         )}
                       </Label>
@@ -184,7 +185,11 @@ export function ProviderConfigForm({
                         type="password"
                         value={field.state.value ?? ''}
                         onChange={(e) => field.handleChange(e.target.value)}
-                        placeholder={isEditing ? '•••••••••' : 'OAuth clientSecret'}
+                        placeholder={
+                          isEditing
+                            ? m['oauth.form_client_secret_edit_placeholder']()
+                            : m['oauth.form_client_secret_create_placeholder']()
+                        }
                         data-testid="oauth-client-secret-input"
                       />
                       {!isEditing && field.state.meta.errors.length > 0 && (
@@ -202,11 +207,11 @@ export function ProviderConfigForm({
                     {(field) => (
                       <div className="space-y-2">
                         <Label htmlFor="scopes">
-                          Scopes
+                          {m['oauth.form_scopes_label']()}
                           {activeProviderType === 'wechat' && (
                             <span className="text-xs text-muted-foreground">
                               {' '}
-                              (Fixed: snsapi_login)
+                              {m['oauth.form_scopes_wechat_hint']()}
                             </span>
                           )}
                         </Label>
@@ -224,7 +229,7 @@ export function ProviderConfigForm({
                             onChange={(e) =>
                               field.handleChange(e.target.value.split(',').map((s) => s.trim()))
                             }
-                            placeholder="Comma-separated scopes"
+                            placeholder={m['oauth.form_scopes_placeholder']()}
                             data-testid="oauth-scopes-input"
                           />
                         )}
@@ -249,7 +254,7 @@ export function ProviderConfigForm({
                         onCheckedChange={(checked) => field.handleChange(checked === true)}
                         data-testid="oauth-enabled-checkbox"
                       />
-                      <Label htmlFor="enabled">Enable this provider</Label>
+                      <Label htmlFor="enabled">{m['oauth.form_enable_label']()}</Label>
                     </div>
                   )}
                 </form.Field>
@@ -262,7 +267,7 @@ export function ProviderConfigForm({
                     onClick={onCancel}
                     data-testid="oauth-cancel-provider-button"
                   >
-                    Cancel
+                    {m['oauth.form_cancel']()}
                   </Button>
                   <form.Subscribe
                     selector={(state) => ({
@@ -276,7 +281,11 @@ export function ProviderConfigForm({
                         disabled={isPending || !subscribeState.canSubmit}
                         data-testid="oauth-save-provider-button"
                       >
-                        {isPending ? 'Saving...' : isEditing ? 'Save' : 'Create'}
+                        {isPending
+                          ? m['oauth.form_saving']()
+                          : isEditing
+                            ? m['oauth.form_save']()
+                            : m['oauth.form_create']()}
                       </Button>
                     )}
                   </form.Subscribe>

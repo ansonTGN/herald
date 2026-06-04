@@ -7,6 +7,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfigSwitchField } from './config-switch-field'
+import { m } from '@/paraglide/messages'
 
 interface TOTPConfigFormProps {
   realmId: string // For future use
@@ -61,10 +62,8 @@ export function TOTPConfigForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>TOTP Configuration</CardTitle>
-        <CardDescription>
-          Configure Time-based One-Time Password authentication for this realm
-        </CardDescription>
+        <CardTitle>{m['realm_config.totp_title']()}</CardTitle>
+        <CardDescription>{m['realm_config.totp_description']()}</CardDescription>
       </CardHeader>
       <CardContent>
         <AppForm>
@@ -83,8 +82,8 @@ export function TOTPConfigForm({
                   field={field}
                   form={form}
                   id="totp-enabled"
-                  label="Enable TOTP"
-                  description="Allow users to use TOTP for two-factor authentication"
+                  label={m['realm_config.totp_enable_label']()}
+                  description={m['realm_config.totp_enable_description']()}
                   disabled={disabled}
                   errorTestId="totp-enabled-error"
                 />
@@ -99,8 +98,8 @@ export function TOTPConfigForm({
                   field={field}
                   form={form}
                   id="totp-force-enabled"
-                  label="Force TOTP"
-                  description="Require all users to enable TOTP"
+                  label={m['realm_config.totp_force_label']()}
+                  description={m['realm_config.totp_force_description']()}
                   disabled={disabled}
                   errorTestId="totp-force-enabled-error"
                 />
@@ -113,7 +112,7 @@ export function TOTPConfigForm({
                 disabled={isLoading || isSubmitting || disabled}
                 data-testid="totp-save-button"
               >
-                {isSubmitting ? 'Saving...' : 'Save'}
+                {isSubmitting ? m['realm_config.saving']() : m['realm_config.save']()}
               </Button>
             </div>
           </form>

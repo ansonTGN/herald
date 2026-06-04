@@ -3,6 +3,7 @@ import { createPermissionSchema, type CreatePermissionFormData } from '@/lib/sch
 import { createPermissionDefinition } from '@/lib/api-generated'
 import { useRealmId } from '@/stores/auth-store'
 import { queryKeys } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 interface CreatePermissionDialogProps {
   open: boolean
@@ -33,17 +34,17 @@ export function CreatePermissionDialog({
       return `Permission "${permission?.name}" added successfully`
     },
     queryKeysToInvalidate: [queryKeys.permissions(realmId)],
-    nameFieldLabel: 'Permission Name',
-    nameFieldPlaceholder: 'users.view',
-    nameFieldHelpText: 'Format: resource.action (e.g., users.view, roles.manage)',
+    nameFieldLabel: m['permissions.name_label'](),
+    nameFieldPlaceholder: m['permissions.name_placeholder'](),
+    nameFieldHelpText: m['permissions.name_help'](),
     nameFieldTestId: 'permission-create-name-input',
     nameInputId: 'permission-name',
-    descriptionFieldPlaceholder: 'Describe what this permission allows...',
+    descriptionFieldPlaceholder: m['permissions.description_placeholder'](),
     descriptionFieldTestId: 'permission-create-description-input',
     descriptionInputId: 'permission-description',
     submitButtonTestId: 'permission-create-submit-button',
-    submitButtonText: 'Add',
-    submittingButtonText: 'Adding...',
+    submitButtonText: m['permissions.add_button_short'](),
+    submittingButtonText: m['permissions.adding'](),
   }
 
   return (
@@ -51,8 +52,8 @@ export function CreatePermissionDialog({
       open={open}
       onOpenChange={onOpenChange}
       config={config}
-      title="Add Permission"
-      description="Create a new permission for your realm. Permission names must follow the format resource.action (e.g., users.view)."
+      title={m['permissions.add_title']()}
+      description={m['permissions.add_description']()}
     />
   )
 }

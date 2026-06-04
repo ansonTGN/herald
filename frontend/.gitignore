@@ -16,5 +16,8 @@ src/mocks/mockServiceWorker.js
 src/lib/api-generated/
 src/lib/api-schemas.ts
 
+# Paraglide JS compiled output
+src/paraglide/
+
 # Test coverage
 coverage/

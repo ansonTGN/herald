@@ -1,4 +1,5 @@
 import { ConfirmDialog } from '@/components/shared'
+import { m } from '@/paraglide/messages'
 
 interface DeleteClientAppDialogProps {
   open: boolean
@@ -17,10 +18,8 @@ export function DeleteClientAppDialog({
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Delete Client App"
-      description={
-        <>Are you sure you want to delete "{clientAppName}"? This action cannot be undone.</>
-      }
+      title={m['client_apps.delete_title']()}
+      description={<>{m['client_apps.delete_description']({ name: clientAppName })}</>}
       onConfirm={onConfirm}
       contentTestId="delete-confirmation-dialog"
       cancelTestId="cancel-delete-button"

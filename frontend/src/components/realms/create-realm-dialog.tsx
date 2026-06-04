@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { getFieldErrorMessage } from '@/lib/form-utils'
 import { queryKeys } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 interface CreateRealmDialogProps {
   open: boolean
@@ -30,7 +31,7 @@ export function CreateRealmDialog({ open, onOpenChange }: CreateRealmDialogProps
       }),
     getSuccessMessage: (response) => {
       const name = response.data?.name ?? 'Realm'
-      return `Realm "${name}" created successfully`
+      return m['realms.realm_created_success']({ name })
     },
     invalidateQueries: [queryKeys.realmsList()],
     onSuccess: () => {
@@ -57,10 +58,8 @@ export function CreateRealmDialog({ open, onOpenChange }: CreateRealmDialogProps
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]" data-testid="dialog">
         <DialogHeader>
-          <DialogTitle data-testid="dialog-title">Create New Realm</DialogTitle>
-          <DialogDescription>
-            Fill in the realm information below. An admin user will be created automatically.
-          </DialogDescription>
+          <DialogTitle data-testid="dialog-title">{m['realms.create_title']()}</DialogTitle>
+          <DialogDescription>{m['realms.create_description']()}</DialogDescription>
         </DialogHeader>
 
         <AppForm>
@@ -77,7 +76,7 @@ export function CreateRealmDialog({ open, onOpenChange }: CreateRealmDialogProps
               name="id"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor="realm-id">Realm ID</Label>
+                  <Label htmlFor="realm-id">{m['realms.realm_id_label']()}</Label>
                   <Input
                     id="realm-id"
                     value={field.state.value ?? ''}
@@ -99,7 +98,7 @@ export function CreateRealmDialog({ open, onOpenChange }: CreateRealmDialogProps
               name="name"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor="realm-name">Realm Name</Label>
+                  <Label htmlFor="realm-name">{m['realms.realm_name_label']()}</Label>
                   <Input
                     id="realm-name"
                     value={field.state.value ?? ''}
@@ -121,14 +120,14 @@ export function CreateRealmDialog({ open, onOpenChange }: CreateRealmDialogProps
               name="description"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor="realm-description">Description</Label>
+                  <Label htmlFor="realm-description">{m['realms.description_label']()}</Label>
                   <Textarea
                     id="realm-description"
                     value={field.state.value ?? ''}
                     onChange={(e) => field.handleChange(e.target.value)}
                     data-testid="realm-create-description-input"
                     rows={3}
-                    placeholder="Optional description for this realm"
+                    placeholder={m['realms.description_placeholder']()}
                   />
                 </div>
               )}
@@ -139,7 +138,7 @@ export function CreateRealmDialog({ open, onOpenChange }: CreateRealmDialogProps
               name="adminUser.email"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor="admin-email">Admin Email</Label>
+                  <Label htmlFor="admin-email">{m['realms.admin_email_label']()}</Label>
                   <Input
                     id="admin-email"
                     type="email"
@@ -162,7 +161,7 @@ export function CreateRealmDialog({ open, onOpenChange }: CreateRealmDialogProps
               name="adminUser.password"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor="admin-password">Admin Password</Label>
+                  <Label htmlFor="admin-password">{m['realms.admin_password_label']()}</Label>
                   <Input
                     id="admin-password"
                     type="password"
@@ -187,10 +186,10 @@ export function CreateRealmDialog({ open, onOpenChange }: CreateRealmDialogProps
                 onClick={() => onOpenChange(false)}
                 data-testid="dialog-cancel-button"
               >
-                Cancel
+                {m['realms.cancel']()}
               </Button>
               <Button type="submit" disabled={isSubmitting} data-testid="dialog-submit-button">
-                {isSubmitting ? 'Creating...' : 'Create Realm'}
+                {isSubmitting ? m['realms.creating']() : m['realms.create_realm']()}
               </Button>
             </DialogFooter>
           </form>

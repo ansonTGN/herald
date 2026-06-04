@@ -9,6 +9,7 @@ import { PointsPackageList } from '@/components/points-packages/points-package-l
 import { PointsPackageDeleteDialog } from '@/components/points-packages/points-package-delete-dialog'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/shared/page-header'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/points-packages/')({
   component: PointsPackagesPage,
@@ -32,14 +33,14 @@ function PointsPackagesPage() {
       return response.data
     },
     onSuccess: (_, variables) => {
-      toast.success(`Points package "${variables.title}" deleted successfully`)
+      toast.success(m['points.packages_deleted_success']({ title: variables.title }))
       setDeleteConfirmOpen(false)
       setDeletingPackage(undefined)
       queryClient.invalidateQueries({ queryKey: queryKeys.pointsPackages(realmId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error: Error) => {
-      toast.error(`Failed to delete package: ${error.message}`)
+      toast.error(m['points.packages_delete_failed']({ message: error.message }))
     },
   })
 
@@ -73,9 +74,9 @@ function PointsPackagesPage() {
   return (
     <div className="space-y-6" data-testid="points-packages-page">
       <PageHeader
-        title="Points Packages"
+        title={m['points.packages_page_title']()}
         action={{
-          label: 'Create Package',
+          label: m['points.packages_create_button'](),
           onClick: () =>
             navigate({
               to: '/$realmId/manage/points-packages/new',

@@ -13,6 +13,7 @@ import { batchUpsertRealmConfigs } from '@/lib/api-generated/sdk.gen'
 import { buildCreemConfigRequest } from '@/lib/creem-config-utils'
 import { requireFieldOnCreate } from '@/lib/form-utils'
 import { useSaveConfigMutation } from '@/hooks/use-save-config-mutation'
+import { m } from '@/paraglide/messages'
 
 interface CreemConfigFormPageProps {
   realmId: string
@@ -43,7 +44,15 @@ export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfi
     schema: creemConfigSchema,
     defaultValues,
     onSubmit: async ({ value }) => {
-      if (!requireFieldOnCreate(form, isEditing, 'apiKey', value.apiKey, 'API key is required'))
+      if (
+        !requireFieldOnCreate(
+          form,
+          isEditing,
+          'apiKey',
+          value.apiKey,
+          m['billing.creem_api_key_required']()
+        )
+      )
         return
       await saveMutation.mutateAsync(value)
     },
@@ -62,7 +71,7 @@ export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfi
   return (
     <div className="container max-w-3xl mx-auto py-6 px-6" data-testid="creem-config-form-page">
       <PageHeader
-        title={isEditing ? 'Edit Creem Configuration' : 'Configure Creem'}
+        title={isEditing ? m['billing.edit_creem']() : m['billing.configure_creem']()}
         headingTestId="creem-config-form-page-heading"
       />
 
@@ -84,42 +93,38 @@ export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfi
             <SwitchField
               form={form}
               name="enabled"
-              label="Enable Creem"
-              description="Allow users to pay with Creem"
+              label={m['billing.creem_enable']()}
+              description={m['billing.creem_enable_description']()}
               dataTestId="page-creem-enabled-switch"
             />
 
             <PasswordField
               form={form}
               name="apiKey"
-              label="API Key"
+              label={m['billing.creem_api_key']()}
               dataTestId="page-creem-api-key-input"
               placeholder="ck_test_..."
-              helpText={isEditing ? 'Leave empty to keep the existing key' : undefined}
+              helpText={isEditing ? m['billing.creem_api_key_help']() : undefined}
               required={!isEditing}
             />
 
             <NumberField
               form={form}
               name="timeout"
-              label="Timeout"
+              label={m['billing.creem_timeout']()}
               dataTestId="page-creem-timeout-input"
               min={1}
               max={120}
-              helpText="HTTP request timeout in seconds (1-120, default: 30)"
+              helpText={m['billing.creem_timeout_help']()}
             />
 
             <PasswordField
               form={form}
               name="webhookSecret"
-              label="Webhook Secret"
+              label={m['billing.creem_webhook_secret']()}
               dataTestId="page-creem-webhook-secret-input"
               placeholder="whsec_..."
-              helpText={
-                <>
-                  Optional. Starts with <code>whsec_</code>
-                </>
-              }
+              helpText={m['billing.creem_webhook_secret_help']()}
             />
           </div>
         </AppForm>

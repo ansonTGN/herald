@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Badge } from '@/components/ui/badge'
+import { m } from '@/paraglide/messages'
 
 interface Role {
   id: string
@@ -31,7 +32,7 @@ export function RoleSelector({
   selectedRoleIds,
   onChange,
   disabled = false,
-  placeholder = 'Select roles',
+  placeholder = m['shared.select_roles'](),
 }: RoleSelectorProps) {
   const [open, setOpen] = useState(false)
 
@@ -72,9 +73,12 @@ export function RoleSelector({
       </PopoverTrigger>
       <PopoverContent className="w-full p-0" align="start">
         <Command>
-          <CommandInput placeholder="Search roles..." data-testid="role-selector-search" />
+          <CommandInput
+            placeholder={m['shared.search_roles']()}
+            data-testid="role-selector-search"
+          />
           <CommandList>
-            <CommandEmpty>No roles found.</CommandEmpty>
+            <CommandEmpty>{m['shared.no_roles_found']()}</CommandEmpty>
             <CommandGroup>
               {roles.map((role) => (
                 <CommandItem

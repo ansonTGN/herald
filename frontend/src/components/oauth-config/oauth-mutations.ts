@@ -9,6 +9,7 @@ import type {
 import type { OAuthConfigFormData } from '@/lib/schemas/oauth-config'
 import { getErrorMessage } from '@/lib/error-utils'
 import { queryKeys } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 /**
  * Hook for OAuth provider toggle (enable/disable)
@@ -28,13 +29,13 @@ export function useOauthToggleMutation(realmId: string) {
       return response.data
     },
     onSuccess: () => {
-      toast.success('Provider status updated')
+      toast.success(m['oauth.toggle_success']())
       queryClient.invalidateQueries({ queryKey: queryKeys.oauthConfigs(realmId) })
     },
     onError: (error) => {
       const errorMessage = getErrorMessage(error)
       console.error('Provider status update failed:', error)
-      toast.error(`Failed to update provider status: ${errorMessage}`)
+      toast.error(m['oauth.toggle_error']({ message: errorMessage }))
     },
   })
 }
@@ -54,14 +55,14 @@ export function useOauthDeleteMutation(realmId: string, onDeleteSuccess?: () => 
       return response.data
     },
     onSuccess: () => {
-      toast.success('Provider deleted successfully')
+      toast.success(m['oauth.delete_success']())
       queryClient.invalidateQueries({ queryKey: queryKeys.oauthConfigs(realmId) })
       onDeleteSuccess?.()
     },
     onError: (error) => {
       const errorMessage = getErrorMessage(error)
       console.error('Provider delete failed:', error)
-      toast.error(`Failed to delete provider: ${errorMessage}`)
+      toast.error(m['oauth.delete_error']({ message: errorMessage }))
     },
   })
 }
@@ -138,14 +139,19 @@ export function useOauthSaveMutation({
       }
     },
     onSuccess: (data) => {
-      const action = editingConfig ? 'updated' : 'created'
+      const action = editingConfig
+        ? m['oauth.save_action_updated']()
+        : m['oauth.save_action_created']()
       console.log('[OAuth Save Mutation] Success', {
         action,
         providerType: editingConfig?.providerType,
         data,
       })
       toast.success(
-        `OAuth provider "${editingConfig?.providerType || 'new'}" ${action} successfully`
+        m['oauth.save_success']({
+          name: editingConfig?.providerType || 'new',
+          action,
+        })
       )
       queryClient.invalidateQueries({ queryKey: queryKeys.oauthConfigs(realmId) })
       onSuccess?.()
@@ -153,7 +159,7 @@ export function useOauthSaveMutation({
     onError: (error) => {
       const errorMessage = getErrorMessage(error)
       console.error('[OAuth Save Mutation] Provider save failed:', error)
-      toast.error(`Failed to save provider: ${errorMessage}`)
+      toast.error(m['oauth.save_error']({ message: errorMessage }))
     },
   })
 }

@@ -1,4 +1,5 @@
 import { ConfirmDialog } from '@/components/shared'
+import { m } from '@/paraglide/messages'
 
 interface ProductDeleteDialogProps {
   product: {
@@ -23,11 +24,11 @@ export function ProductDeleteDialog({
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Delete Product"
+      title={m['billing.delete_product_title']()}
       description={
         hasPlans
-          ? 'This product cannot be deleted because it has associated plans. Please move or delete all plans first.'
-          : `Are you sure you want to delete product "${product.title}"?`
+          ? m['billing.delete_product_has_plans']()
+          : m['billing.delete_product_description']({ title: product.title })
       }
       onConfirm={onConfirm}
       confirmDisabled={hasPlans || isDeleting}

@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TotpDisableForm } from '@/components/profile/totp/totp-disable-form'
 import { TotpRegenerateForm } from '@/components/profile/totp/totp-regenerate-form'
 import { PageHeader } from '@/components/shared'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/user/security/')({
   component: ProfileSecurity,
@@ -23,15 +24,15 @@ function ProfileSecurity() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Security Settings" headingTestId="security-page-title" />
+      <PageHeader title={m['profile.security_page_title']()} headingTestId="security-page-title" />
 
       <Tabs defaultValue="password">
         <TabsList>
           <TabsTrigger value="password" data-testid="password-tab">
-            Password
+            {m['profile.password_tab']()}
           </TabsTrigger>
           <TabsTrigger value="totp" data-testid="totp-tab">
-            Two-Factor Auth
+            {m['profile.totp_tab']()}
           </TabsTrigger>
         </TabsList>
         <TabsContent value="password" data-testid="password-section-title">
@@ -51,7 +52,7 @@ function ProfileSecurity() {
       <Dialog open={totpDialog === 'disable'} onOpenChange={(open) => !open && setTotpDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Disable TOTP</DialogTitle>
+            <DialogTitle>{m['profile.totp_disable_title']()}</DialogTitle>
           </DialogHeader>
           <TotpDisableForm
             onSuccess={handleDialogClose}
@@ -67,7 +68,7 @@ function ProfileSecurity() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Regenerate TOTP</DialogTitle>
+            <DialogTitle>{m['profile.totp_regenerate_title']()}</DialogTitle>
           </DialogHeader>
           <TotpRegenerateForm onSuccess={handleDialogClose} onCancel={handleDialogClose} />
         </DialogContent>

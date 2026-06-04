@@ -11,6 +11,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { m } from '@/paraglide/messages'
 
 interface ClientAppOption {
   id: string
@@ -46,7 +47,7 @@ export function ClientAppSelector({
           data-testid="client-app-selector-trigger"
         >
           <span className={cn('truncate', !selected && 'text-muted-foreground')}>
-            {selected ? `${selected.name} (${selected.clientId})` : 'Default: admin-api-client'}
+            {selected ? `${selected.name} (${selected.clientId})` : m['shared.default_client']()}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
@@ -54,11 +55,11 @@ export function ClientAppSelector({
       <PopoverContent className="w-full p-0" align="start">
         <Command>
           <CommandInput
-            placeholder="Search client apps..."
+            placeholder={m['shared.search_client_apps']()}
             data-testid="client-app-selector-search"
           />
           <CommandList>
-            <CommandEmpty>No client apps found.</CommandEmpty>
+            <CommandEmpty>{m['shared.no_client_apps_found']()}</CommandEmpty>
             <CommandGroup>
               <CommandItem
                 value="__default__"
@@ -69,7 +70,7 @@ export function ClientAppSelector({
                 data-testid="client-app-selector-default"
               >
                 <Check className={cn('mr-2 h-4 w-4', !value ? 'opacity-100' : 'opacity-0')} />
-                Default: admin-api-client
+                {m['shared.default_client']()}
               </CommandItem>
               {clientApps.map((app) => (
                 <CommandItem

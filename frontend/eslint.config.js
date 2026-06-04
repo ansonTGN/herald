@@ -16,6 +16,7 @@ export default [
       'playwright-report',
       'src/api/**', // 自动生成的 API 代码
       'src/lib/api-generated/**', // 自动生成的 API 客户端代码
+      'src/paraglide/**', // Paraglide JS 编译输出
     ],
   },
   // 基础 JS 配置

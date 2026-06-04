@@ -3,6 +3,7 @@ import { ProviderConfigForm } from './provider-config-form'
 import type { OAuthConfigResponse } from '@/lib/api-generated'
 import type { OAuthConfigFormData } from '@/lib/schemas/oauth-config'
 import { useOauthSaveMutation } from './oauth-mutations'
+import { m } from '@/paraglide/messages'
 
 interface ProviderConfigDialogProps {
   realmId: string
@@ -43,8 +44,8 @@ export function ProviderConfigDialog({
     <BaseFormDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={editingConfig ? 'Edit Provider' : 'Add New Provider'}
-      description="Configure OAuth provider settings for third-party login"
+      title={editingConfig ? m['oauth.edit_provider']() : m['oauth.add_provider_title']()}
+      description={m['oauth.configure_description']()}
       isSubmitting={mutation.isPending}
       data-testid="oauth-config-dialog-title"
     >

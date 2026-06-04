@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { HistoryEventBadge } from './history-event-badge'
 import type { SubscriptionHistoryEvent } from '@/types/billing'
+import { m } from '@/paraglide/messages'
 
 interface UserSubscriptionTimelineProps {
   events: SubscriptionHistoryEvent[]
@@ -57,12 +58,12 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
               {isExpanded ? (
                 <>
                   <ChevronUp className="h-3 w-3 mr-1" />
-                  Hide Details
+                  {m['billing.subscription_hide_details']()}
                 </>
               ) : (
                 <>
                   <ChevronDown className="h-3 w-3 mr-1" />
-                  Show Details
+                  {m['billing.subscription_show_details']()}
                 </>
               )}
             </Button>
@@ -72,14 +73,14 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
         <div className="space-y-1">
           {event.actor && (
             <p className="text-sm">
-              <span className="text-muted-foreground">Actor: </span>
+              <span className="text-muted-foreground">{m['billing.subscription_actor']()}: </span>
               {event.actor}
             </p>
           )}
 
           {event.changes && event.changes.changedFields && (
             <div className="text-sm">
-              <span className="text-muted-foreground">Changed: </span>
+              <span className="text-muted-foreground">{m['billing.subscription_changed']()}: </span>
               <span className="font-medium">{event.changes.changedFields.join(', ')}</span>
             </div>
           )}
@@ -90,18 +91,24 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
               {event.previousState && (
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Previous State
+                    {m['billing.subscription_previous_state']()}
                   </p>
                   <div className="space-y-1 text-sm">
-                    <StateDetail label="Status" value={event.previousState.status} />
-                    <StateDetail label="Tier" value={event.previousState.tier} />
+                    <StateDetail
+                      label={m['billing.subscription_state_detail_status']()}
+                      value={event.previousState.status}
+                    />
+                    <StateDetail
+                      label={m['billing.subscription_state_detail_tier']()}
+                      value={event.previousState.tier}
+                    />
                     {event.previousState.currentPeriodStart &&
                       event.previousState.currentPeriodEnd && (
                         <div>
-                          <span className="text-muted-foreground">Period: </span>
-                          {new Date(
-                            event.previousState.currentPeriodStart
-                          ).toLocaleDateString()} -{' '}
+                          <span className="text-muted-foreground">
+                            {m['billing.subscription_state_detail_period']()}:{' '}
+                          </span>
+                          {new Date(event.previousState.currentPeriodStart).toLocaleDateString()} -{' '}
                           {new Date(event.previousState.currentPeriodEnd).toLocaleDateString()}
                         </div>
                       )}
@@ -112,11 +119,17 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
               {event.newState && (
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    New State
+                    {m['billing.subscription_new_state']()}
                   </p>
                   <div className="space-y-1 text-sm">
-                    <StateDetail label="Status" value={event.newState.status} />
-                    <StateDetail label="Tier" value={event.newState.tier} />
+                    <StateDetail
+                      label={m['billing.subscription_state_detail_status']()}
+                      value={event.newState.status}
+                    />
+                    <StateDetail
+                      label={m['billing.subscription_state_detail_tier']()}
+                      value={event.newState.tier}
+                    />
                     {event.newState.currentPeriodStart && event.newState.currentPeriodEnd && (
                       <div>
                         <span className="text-muted-foreground">Period: </span>
@@ -134,12 +147,16 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
                   {event.changes.previousPlanId && event.changes.newPlanId ? (
                     <>
                       <ArrowUp className="h-4 w-4 text-blue-500" />
-                      <span className="text-muted-foreground">Plan changed</span>
+                      <span className="text-muted-foreground">
+                        {m['billing.subscription_plan_changed']()}
+                      </span>
                     </>
                   ) : event.changes.newPlanId ? (
                     <>
                       <ArrowUp className="h-4 w-4 text-blue-500" />
-                      <span className="text-muted-foreground">Plan assigned</span>
+                      <span className="text-muted-foreground">
+                        {m['billing.subscription_plan_assigned']()}
+                      </span>
                     </>
                   ) : null}
                 </div>
@@ -183,7 +200,7 @@ export function UserSubscriptionTimeline({
         <CardContent className="py-8">
           <div className="flex items-center justify-center text-muted-foreground">
             <Clock className="h-5 w-5 mr-2 animate-spin" />
-            Loading history...
+            {m['billing.subscription_timeline_loading']()}
           </div>
         </CardContent>
       </Card>
@@ -194,7 +211,9 @@ export function UserSubscriptionTimeline({
     return (
       <Card data-testid="subscription-timeline-empty">
         <CardContent className="py-8">
-          <div className="text-center text-muted-foreground">No history available</div>
+          <div className="text-center text-muted-foreground">
+            {m['billing.subscription_no_history_available']()}
+          </div>
         </CardContent>
       </Card>
     )
@@ -203,7 +222,7 @@ export function UserSubscriptionTimeline({
   return (
     <Card data-testid="subscription-timeline">
       <CardHeader>
-        <CardTitle className="text-xl">Subscription History</CardTitle>
+        <CardTitle className="text-xl">{m['billing.subscription_history_title']()}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-0">

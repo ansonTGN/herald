@@ -8,10 +8,11 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { getFieldErrorMessage } from '@/lib/form-utils'
 import { withTimeout } from '@/lib/totp-utils'
 import { z } from 'zod'
+import { m } from '@/paraglide/messages'
 import type { DisableTotpResponse } from '@/lib/api-generated'
 
 const disableTotpSchema = z.object({
-  password: z.string().min(1, 'Password is required'),
+  password: z.string().min(1, m['profile.totp_password_required']()),
 })
 
 interface TotpDisableFormProps {
@@ -20,11 +21,8 @@ interface TotpDisableFormProps {
   isForceTotpEnabled: boolean
 }
 
-const FORCE_TOTP_MESSAGE =
-  'TOTP is required by your Realm administrator. You cannot disable TOTP at this time.'
-
 function getSubmitButtonText(isSubmitting: boolean): string {
-  return isSubmitting ? 'Disabling...' : 'Disable TOTP'
+  return isSubmitting ? m['profile.totp_disabling']() : m['profile.totp_disable_button']()
 }
 
 export function TotpDisableForm({ onSuccess, onCancel, isForceTotpEnabled }: TotpDisableFormProps) {
@@ -33,7 +31,7 @@ export function TotpDisableForm({ onSuccess, onCancel, isForceTotpEnabled }: Tot
       const response = await withTimeout(handleDisableTotp({ body: data }))
       return response.data as DisableTotpResponse
     },
-    getSuccessMessage: () => 'TOTP disabled successfully',
+    getSuccessMessage: () => m['profile.totp_disabled_success'](),
     onSuccess: () => {
       onSuccess()
     },
@@ -51,7 +49,7 @@ export function TotpDisableForm({ onSuccess, onCancel, isForceTotpEnabled }: Tot
     return (
       <Alert data-testid="totp-force-enabled-alert">
         <AlertDescription data-testid="totp-force-enabled-message">
-          {FORCE_TOTP_MESSAGE}
+          {m['profile.totp_force_enabled_message']()}
         </AlertDescription>
       </Alert>
     )
@@ -59,11 +57,8 @@ export function TotpDisableForm({ onSuccess, onCancel, isForceTotpEnabled }: Tot
 
   return (
     <div className="space-y-4" data-testid="totp-disable-form">
-      <h2 className="text-2xl font-bold">Disable TOTP</h2>
-      <p className="text-muted-foreground">
-        Enter your current password to confirm disabling TOTP. This will remove extra security layer
-        from your account.
-      </p>
+      <h2 className="text-2xl font-bold">{m['profile.totp_disable_title']()}</h2>
+      <p className="text-muted-foreground">{m['profile.totp_disable_description']()}</p>
 
       <AppForm>
         <form
@@ -77,7 +72,7 @@ export function TotpDisableForm({ onSuccess, onCancel, isForceTotpEnabled }: Tot
           <form.Field name="password">
             {(field) => (
               <div className="space-y-2">
-                <Label htmlFor="password">Current Password</Label>
+                <Label htmlFor="password">{m['profile.current_password_label']()}</Label>
                 <Input
                   id="password"
                   type="password"
@@ -100,7 +95,7 @@ export function TotpDisableForm({ onSuccess, onCancel, isForceTotpEnabled }: Tot
               onClick={onCancel}
               data-testid="totp-disable-cancel-button"
             >
-              Cancel
+              {m['common.cancel']()}
             </Button>
             <Button
               type="submit"

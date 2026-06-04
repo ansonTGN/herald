@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { getFieldErrorMessage } from '@/lib/error-utils'
+import { m } from '@/paraglide/messages'
 
 interface StripeConfigFormProps {
   realmId: string
@@ -31,9 +32,7 @@ export function StripeConfigForm({
     defaultValues: initialConfig || getStripeConfigDefaults(),
     onSubmit: async ({ value }) => {
       if (disabled) {
-        throw new Error(
-          'Form is disabled. You do not have permission to modify this configuration.'
-        )
+        throw new Error(m['billing.unsaved_changes']())
       }
       try {
         await onSave(value)
@@ -46,10 +45,8 @@ export function StripeConfigForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Stripe Configuration</CardTitle>
-        <CardDescription>
-          Configure Stripe as your payment provider for subscriptions and one-time payments
-        </CardDescription>
+        <CardTitle>{m['billing.stripe_title']()}</CardTitle>
+        <CardDescription>{m['billing.stripe_description']()}</CardDescription>
       </CardHeader>
       <CardContent>
         <AppForm>
@@ -66,8 +63,10 @@ export function StripeConfigForm({
               children={(field) => (
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label htmlFor="stripe-enabled">Enable Stripe</Label>
-                    <p className="text-sm text-muted-foreground">Allow users to pay with Stripe</p>
+                    <Label htmlFor="stripe-enabled">{m['billing.stripe_enable']()}</Label>
+                    <p className="text-sm text-muted-foreground">
+                      {m['billing.stripe_enable_description']()}
+                    </p>
                   </div>
                   <Switch
                     id="stripe-enabled"
@@ -85,7 +84,9 @@ export function StripeConfigForm({
               name="publishableKey"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor="stripe-publishable-key">Publishable Key</Label>
+                  <Label htmlFor="stripe-publishable-key">
+                    {m['billing.stripe_publishable_key']()}
+                  </Label>
                   <Input
                     id="stripe-publishable-key"
                     type="password"
@@ -102,7 +103,7 @@ export function StripeConfigForm({
                       </p>
                     )}
                   <p className="text-xs text-muted-foreground">
-                    Starts with <code>pk_</code>. Found in Stripe Dashboard → Developers → API keys
+                    {m['billing.stripe_publishable_key_help']()}
                   </p>
                 </div>
               )}
@@ -113,7 +114,7 @@ export function StripeConfigForm({
               name="secretKey"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor="stripe-secret-key">Secret Key</Label>
+                  <Label htmlFor="stripe-secret-key">{m['billing.stripe_secret_key']()}</Label>
                   <Input
                     id="stripe-secret-key"
                     type="password"
@@ -130,7 +131,7 @@ export function StripeConfigForm({
                       </p>
                     )}
                   <p className="text-xs text-muted-foreground">
-                    Starts with <code>sk_</code>. Found in Stripe Dashboard → Developers → API keys
+                    {m['billing.stripe_secret_key_help']()}
                   </p>
                 </div>
               )}
@@ -141,7 +142,9 @@ export function StripeConfigForm({
               name="webhookSecret"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor="stripe-webhook-secret">Webhook Secret</Label>
+                  <Label htmlFor="stripe-webhook-secret">
+                    {m['billing.stripe_webhook_secret']()}
+                  </Label>
                   <Input
                     id="stripe-webhook-secret"
                     type="password"
@@ -158,8 +161,7 @@ export function StripeConfigForm({
                       </p>
                     )}
                   <p className="text-xs text-muted-foreground">
-                    Optional. Starts with <code>whsec_</code>. Configure in Stripe Dashboard →
-                    Developers → Webhooks
+                    {m['billing.stripe_webhook_secret_help']()}
                   </p>
                 </div>
               )}
@@ -177,7 +179,7 @@ export function StripeConfigForm({
                     disabled={isLoading || isSubmitting || disabled || !canSubmit}
                     data-testid="stripe-save-button"
                   >
-                    {isSubmitting ? 'Saving...' : 'Save'}
+                    {isSubmitting ? m['shared.saving']() : m['common.save']()}
                   </Button>
                 )}
               />

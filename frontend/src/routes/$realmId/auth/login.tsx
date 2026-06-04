@@ -24,6 +24,7 @@ import { Link } from '@tanstack/react-router'
 import { useOAuthLogin } from '@/hooks/use-oauth-login'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { m } from '@/paraglide/messages'
 
 interface TotpStep {
   tempToken: string
@@ -78,7 +79,7 @@ function LoginPage() {
         window.location.href = data.response.redirectTo
         return
       } else {
-        toast.success('Login successful')
+        toast.success(m['auth.login.login_successful']())
 
         const userRealmId = data.response.realmId || realmId
         let redirectPath = search.redirect || data.redirectPath
@@ -119,7 +120,7 @@ function LoginPage() {
   })
 
   async function handleTotpSuccess(verifyResponse: VerifyTotpResponse): Promise<void> {
-    toast.success('Login successful')
+    toast.success(m['auth.login.login_successful']())
 
     const { redirectPath, redirectTo } = await completeLoginAfterTotp(realmId, verifyResponse)
 
@@ -167,7 +168,7 @@ function LoginPage() {
             {publicConfig?.realmName ?? 'Herald'}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            {publicConfig?.realmDescription || 'Login to your account'}
+            {publicConfig?.realmDescription || m['auth.login.login_to_account']()}
           </p>
         </CardHeader>
         <CardContent>
@@ -185,7 +186,7 @@ function LoginPage() {
               className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm"
               data-testid="oauth-incomplete-error"
             >
-              OAuth 参数不完整。请通过正确的 OAuth 链接访问此页面。
+              {m['auth.oauth_params_incomplete']()}
             </div>
           )}
 
@@ -200,7 +201,7 @@ function LoginPage() {
             <form.Field name="username" validators={{ onChange: loginSchema.shape.username }}>
               {(field) => (
                 <div>
-                  <Label htmlFor="username">Username or Email</Label>
+                  <Label htmlFor="username">{m['auth.login.username_or_email']()}</Label>
                   <Input
                     id="username"
                     type="text"
@@ -222,7 +223,7 @@ function LoginPage() {
             <form.Field name="password" validators={{ onChange: loginSchema.shape.password }}>
               {(field) => (
                 <div>
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password">{m['auth.login.password']()}</Label>
                   <Input
                     id="password"
                     type="password"
@@ -247,7 +248,7 @@ function LoginPage() {
               className="w-full"
               data-testid="login-submit-button"
             >
-              {loginMutation.isPending ? 'Logging in...' : 'Login'}
+              {loginMutation.isPending ? m['auth.login.logging_in']() : m['auth.login.submit']()}
             </Button>
           </form>
 
@@ -258,7 +259,9 @@ function LoginPage() {
                   <span className="w-full border-t" />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
+                  <span className="bg-background px-2 text-muted-foreground">
+                    {m['auth.login.or_continue_with']()}
+                  </span>
                 </div>
               </div>
 
@@ -280,14 +283,14 @@ function LoginPage() {
 
           {isRegistrationAllowed && (
             <div className="mt-4 text-center">
-              <span className="text-sm text-gray-500">Don't have an account? </span>
+              <span className="text-sm text-gray-500">{m['auth.login.no_account']()} </span>
               <Link
                 to="/$realmId/auth/register"
                 params={{ realmId }}
                 className="text-sm font-medium text-blue-600 hover:text-blue-500"
                 data-testid="register-link"
               >
-                Register
+                {m['auth.login.register_link']()}
               </Link>
             </div>
           )}

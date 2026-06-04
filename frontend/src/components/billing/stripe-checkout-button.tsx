@@ -4,6 +4,7 @@ import { CreditCard, Loader2 } from 'lucide-react'
 import { useStripeCheckout } from '@/hooks/use-stripe-checkout'
 import { toast } from 'sonner'
 import type { SubscriptionPlanResponse } from '@/lib/api-generated'
+import { m } from '@/paraglide/messages'
 
 interface StripeCheckoutButtonProps {
   realmId: string
@@ -30,10 +31,10 @@ export function StripeCheckoutButton({
 }: StripeCheckoutButtonProps) {
   const checkoutMutation = useStripeCheckout({
     onSuccess: (_checkoutUrl) => {
-      toast.success('Redirecting to Stripe Checkout...')
+      toast.success(m['billing.stripe_redirecting']())
     },
     onError: (error) => {
-      toast.error(`Failed to create checkout session: ${error.message}`)
+      toast.error(m['billing.stripe_checkout_failed']({ message: error.message }))
     },
   })
 
@@ -74,12 +75,12 @@ export function StripeCheckoutButton({
       {checkoutMutation.isPending ? (
         <>
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Creating...
+          {m['billing.stripe_creating']()}
         </>
       ) : (
         <>
           <CreditCard className="mr-2 h-4 w-4" />
-          Subscribe with Stripe
+          {m['billing.stripe_subscribe']()}
         </>
       )}
     </Button>

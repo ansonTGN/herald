@@ -17,6 +17,7 @@ import type { UserResponse } from '@/lib/api-generated'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog, PageHeader } from '@/components/shared'
 import { ResetPasswordResultDialog } from '@/components/users/reset-password-result-dialog'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/users')({
   component: UsersPage,
@@ -70,10 +71,10 @@ function UsersPage() {
     onSuccess: () => {
       deleteDialog.close()
       queryClient.invalidateQueries({ queryKey: queryKeys.usersList(realmId) })
-      toast.success('User deleted successfully')
+      toast.success(m['users.user_deleted']())
     },
     onError: (error: Error) => {
-      toast.error(error.message ?? 'Failed to delete user')
+      toast.error(error.message ?? m['users.delete_failed']())
     },
   })
 
@@ -90,7 +91,7 @@ function UsersPage() {
       setResetPasswordResult(data.newPassword)
     },
     onError: (error: Error) => {
-      toast.error(error.message ?? 'Failed to reset password')
+      toast.error(error.message ?? m['users.reset_password_failed']())
     },
   })
 
@@ -129,10 +130,10 @@ function UsersPage() {
   return (
     <div data-testid="users-page" className="space-y-6">
       <PageHeader
-        title="Users"
+        title={m['users.page_title']()}
         headingTestId="users-heading"
         action={{
-          label: 'Add User',
+          label: m['users.add_button'](),
           onClick: handleCreateUser,
           testId: 'create-user-button',
         }}
@@ -140,7 +141,7 @@ function UsersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Users</CardTitle>
+          <CardTitle>{m['users.card_title']()}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
@@ -208,8 +209,8 @@ function UsersPage() {
           onOpenChange={(v) => {
             if (!v) deleteDialog.close()
           }}
-          title="Delete User"
-          description={`Are you sure you want to delete user "${deleteDialog.selectedItem.email}"? This action cannot be undone.`}
+          title={m['users.delete_title']()}
+          description={m['users.delete_description']({ email: deleteDialog.selectedItem.email })}
           onConfirm={() => deleteMutation.mutate(deleteDialog.selectedItem!.id)}
           isPending={deleteMutation.isPending}
           contentTestId="delete-user-dialog"
@@ -224,10 +225,12 @@ function UsersPage() {
           onOpenChange={(v) => {
             if (!v) resetPasswordDialog.close()
           }}
-          title="Reset Password"
-          description={`Are you sure you want to reset the password for user "${resetPasswordDialog.selectedItem.email}"? A new random password will be generated.`}
+          title={m['users.reset_password_title']()}
+          description={m['users.reset_password_description']({
+            email: resetPasswordDialog.selectedItem.email,
+          })}
           onConfirm={() => resetPasswordMutation.mutate(resetPasswordDialog.selectedItem!.id)}
-          confirmLabel="Reset Password"
+          confirmLabel={m['users.reset_password_confirm']()}
           confirmClassName="bg-primary text-primary-foreground hover:bg-primary/90"
           isPending={resetPasswordMutation.isPending}
           contentTestId="reset-password-dialog"

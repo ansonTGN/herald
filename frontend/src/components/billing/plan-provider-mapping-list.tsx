@@ -17,6 +17,7 @@ import type { SubscriptionPlanPaymentProviderResponse } from '@/lib/api-generate
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/shared'
 import { formatProviderName } from './format-provider-name'
+import { m } from '@/paraglide/messages'
 
 interface PlanProviderMappingListProps {
   planId: string
@@ -33,7 +34,7 @@ function createMappingColumns(
   return [
     {
       accessorKey: 'paymentProvider',
-      header: 'Payment Provider',
+      header: m['billing.label_payment_provider'](),
       cell: ({ row }) => {
         const provider = row.getValue('paymentProvider') as string
         return (
@@ -45,7 +46,7 @@ function createMappingColumns(
     },
     {
       accessorKey: 'externalProductId',
-      header: 'External Product ID',
+      header: m['billing.col_external_product_id'](),
       cell: ({ row }) => (
         <span className="font-mono text-xs" data-testid={`mapping-product-id-${row.original.id}`}>
           {row.getValue('externalProductId')}
@@ -54,7 +55,7 @@ function createMappingColumns(
     },
     {
       accessorKey: 'externalPriceId',
-      header: 'External Price ID',
+      header: m['billing.col_external_price_id'](),
       cell: ({ row }) => (
         <span className="font-mono text-xs text-muted-foreground">
           {(row.getValue('externalPriceId') as string | null) || '-'}
@@ -63,24 +64,24 @@ function createMappingColumns(
     },
     {
       accessorKey: 'enabled',
-      header: 'Status',
+      header: m['common.status'](),
       cell: ({ row }) => {
         const enabled = row.getValue('enabled') as boolean
         return (
           <Badge variant={enabled ? 'default' : 'secondary'}>
-            {enabled ? 'Enabled' : 'Disabled'}
+            {enabled ? m['common.enabled']() : m['common.disabled']()}
           </Badge>
         )
       },
     },
     {
       id: 'actions',
-      header: 'Actions',
+      header: m['common.actions'](),
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Open menu</span>
+              <span className="sr-only">{m['billing.open_menu']()}</span>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -90,7 +91,7 @@ function createMappingColumns(
               data-testid={`edit-mapping-button-${row.original.id}`}
             >
               <Edit className="mr-2 h-4 w-4" />
-              Edit
+              {m['common.edit']()}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => onToggle(row.original)}
@@ -99,12 +100,12 @@ function createMappingColumns(
               {row.original.enabled ? (
                 <>
                   <ToggleLeft className="mr-2 h-4 w-4" />
-                  Disable
+                  {m['common.disabled']()}
                 </>
               ) : (
                 <>
                   <ToggleRight className="mr-2 h-4 w-4" />
-                  Enable
+                  {m['common.enabled']()}
                 </>
               )}
             </DropdownMenuItem>
@@ -114,7 +115,7 @@ function createMappingColumns(
               data-testid={`delete-mapping-button-${row.original.id}`}
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete
+              {m['common.delete']()}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -149,7 +150,7 @@ export function PlanProviderMappingList({
       return response.data
     },
     onSuccess: () => {
-      toast.success('Payment provider mapping deleted')
+      toast.success(m['billing.mapping_deleted']())
       setDeleteConfirmOpen(false)
       setDeletingMapping(null)
       // Invalidate queries to refresh the mapping list
@@ -159,7 +160,7 @@ export function PlanProviderMappingList({
       queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (err: Error) => {
-      toast.error(`Failed to delete mapping: ${err.message}`)
+      toast.error(m['billing.mapping_delete_failed']({ message: err.message }))
     },
   })
 
@@ -173,8 +174,8 @@ export function PlanProviderMappingList({
       return response.data
     },
     onSuccess: (_, variables) => {
-      const action = variables.enabled ? 'disabled' : 'enabled'
-      toast.success(`Payment provider mapping ${action}`)
+      const action = variables.enabled ? m['common.disabled']() : m['common.enabled']()
+      toast.success(m['billing.mapping_toggled']({ action }))
       // Invalidate queries to refresh the mapping list
       queryClient.invalidateQueries({
         queryKey: subscriptionPlanProvidersQueryOptions(realmId, planId).queryKey,
@@ -182,7 +183,7 @@ export function PlanProviderMappingList({
       queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (err: Error) => {
-      toast.error(`Failed to toggle mapping: ${err.message}`)
+      toast.error(m['billing.mapping_toggle_failed']({ message: err.message }))
     },
   })
 
@@ -197,18 +198,15 @@ export function PlanProviderMappingList({
     }
   }
 
-  const columns = createMappingColumns(onEdit, handleDelete, (m) => toggleMutation.mutate(m))
+  const columns = createMappingColumns(onEdit, handleDelete, (mp) => toggleMutation.mutate(mp))
 
   if (mappings.length === 0 && !isLoading && !error) {
     return (
       <div className="space-y-4" data-testid="provider-mapping-empty-state">
-        <p className="text-sm text-muted-foreground">
-          This plan has no payment providers configured. Add a payment provider to make it available
-          for subscription.
-        </p>
+        <p className="text-sm text-muted-foreground">{m['billing.no_provider_mappings']()}</p>
         <Button onClick={onAdd} data-testid="add-provider-mapping-button">
           <Plus className="mr-2 h-4 w-4" />
-          Add Payment Provider
+          {m['billing.add_payment_provider']()}
         </Button>
       </div>
     )
@@ -217,10 +215,10 @@ export function PlanProviderMappingList({
   return (
     <div className="space-y-4" data-testid="provider-mapping-list">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium">Payment Providers</h4>
+        <h4 className="text-sm font-medium">{m['billing.payment_providers_heading']()}</h4>
         <Button onClick={onAdd} size="sm" data-testid="add-provider-mapping-button">
           <Plus className="mr-2 h-4 w-4" />
-          Add Provider
+          {m['billing.add_provider_short']()}
         </Button>
       </div>
       <DataTable
@@ -228,17 +226,21 @@ export function PlanProviderMappingList({
         data={mappings}
         isLoading={isLoading}
         error={error ?? undefined}
-        loadingMessage="Loading payment providers..."
-        errorMessage={error ? `Error loading providers: ${error.message}` : undefined}
-        emptyMessage="No payment providers configured."
+        loadingMessage={m['billing.loading_providers_short']()}
+        errorMessage={
+          error ? m['billing.error_loading_providers']({ message: error.message }) : undefined
+        }
+        emptyMessage={m['billing.no_providers_configured_short']()}
         data-testid="provider-mapping-table"
       />
 
       <ConfirmDialog
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
-        title="Delete Payment Provider Mapping"
-        description={`Are you sure you want to delete the ${formatProviderName(deletingMapping?.paymentProvider ?? '')} mapping?`}
+        title={m['billing.delete_mapping_title']()}
+        description={m['billing.delete_mapping_description']({
+          name: formatProviderName(deletingMapping?.paymentProvider ?? ''),
+        })}
         onConfirm={confirmDelete}
         isPending={deleteMutation.isPending}
         confirmTestId="confirm-delete-mapping-button"

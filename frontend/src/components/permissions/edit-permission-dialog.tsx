@@ -4,6 +4,7 @@ import { updatePermission } from '@/lib/api-generated'
 import { useRealmId } from '@/stores/auth-store'
 import type { PermissionResponse } from '@/lib/api-generated'
 import { queryKeys } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 interface EditPermissionDialogProps {
   open: boolean
@@ -36,22 +37,22 @@ export function EditPermissionDialog({
       return `Permission "${perm?.name}" updated successfully`
     },
     queryKeysToInvalidate: [queryKeys.permissions(realmId)],
-    nameFieldLabel: 'Permission Name',
+    nameFieldLabel: m['permissions.name_label'](),
     nameFieldPlaceholder: permission.name,
-    descriptionFieldPlaceholder: 'Describe what this permission allows...',
+    descriptionFieldPlaceholder: m['permissions.description_placeholder'](),
     nameFieldTestId: 'permission-edit-name-input',
     nameInputId: 'edit-permission-name',
     descriptionFieldTestId: 'permission-edit-description-input',
     descriptionInputId: 'edit-permission-description',
     submitButtonTestId: 'permission-edit-submit-button',
-    submitButtonText: 'Update',
-    submittingButtonText: 'Updating...',
+    submitButtonText: m['permissions.update_button'](),
+    submittingButtonText: m['permissions.updating'](),
   }
 
   const builtinProtection = {
     isBuiltin: permission.isBuiltin,
-    alertMessage: 'Built-in permissions cannot be modified. You can only change the description.',
-    disabledFieldHelpText: 'Built-in permission names cannot be changed',
+    alertMessage: m['permissions.builtin_alert'](),
+    disabledFieldHelpText: m['permissions.builtin_name_disabled'](),
   }
 
   return (
@@ -59,8 +60,8 @@ export function EditPermissionDialog({
       open={open}
       onOpenChange={onOpenChange}
       config={config}
-      title="Edit Permission"
-      description="Update permission details."
+      title={m['permissions.edit_title']()}
+      description={m['permissions.edit_description']()}
       builtinProtection={builtinProtection}
       currentValues={{
         name: permission.name,

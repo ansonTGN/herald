@@ -6,9 +6,15 @@ import { Badge } from '@/components/ui/badge'
 import { cancelSubscriptionForClientApp } from '@/lib/api-generated'
 import { queryKeys, subscriptionQueryOptions } from '@/data/query-options'
 import { toast } from 'sonner'
-import { getStatusBadgeVariant, getStatusMessage, type SubscriptionStatus } from '@/types/billing'
+import {
+  getStatusBadgeVariant,
+  getStatusMessage,
+  getSubscriptionStatusLabels,
+  type SubscriptionStatus,
+} from '@/types/billing'
 import { formatDate } from '@/lib/date-utils'
 import { ConfirmDialog, PageHeader } from '@/components/shared'
+import { m } from '@/paraglide/messages'
 
 interface SubscriptionManagementProps {
   realmId: string
@@ -31,12 +37,12 @@ export function SubscriptionManagement({ realmId, clientAppId }: SubscriptionMan
       return response.data
     },
     onSuccess: () => {
-      toast.success('Subscription canceled successfully')
+      toast.success(m['billing.subscription_canceled_success']())
       setCancelConfirmOpen(false)
       queryClient.invalidateQueries({ queryKey: queryKeys.subscription(realmId, clientAppId) })
     },
     onError: (error: Error) => {
-      toast.error(`Failed to cancel subscription: ${error.message}`)
+      toast.error(m['billing.subscription_cancel_failed']({ message: error.message }))
     },
   })
 
@@ -49,14 +55,14 @@ export function SubscriptionManagement({ realmId, clientAppId }: SubscriptionMan
   }
 
   if (isLoading) {
-    return <div>Loading...</div>
+    return <div>{m['billing.subscription_info_loading']()}</div>
   }
 
   if (!subscription) {
     return (
       <Card>
         <CardContent className="py-8 text-center text-muted-foreground">
-          No subscription found for this app.
+          {m['billing.subscription_no_subscription']()}
         </CardContent>
       </Card>
     )
@@ -64,20 +70,20 @@ export function SubscriptionManagement({ realmId, clientAppId }: SubscriptionMan
 
   return (
     <div className="space-y-6" data-testid="subscription-management">
-      <PageHeader title="Subscription" />
+      <PageHeader title={m['billing.subscription_page_title']()} />
 
       <Card>
         <CardHeader>
-          <CardTitle>Subscription Details</CardTitle>
+          <CardTitle>{m['billing.subscription_details']()}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Status</span>
+            <span className="text-sm font-medium">{m['billing.subscription_status']()}</span>
             <Badge
               variant={getStatusBadgeVariant(subscription.status as SubscriptionStatus)}
               data-testid="subscription-status-badge"
             >
-              {subscription.status}
+              {getSubscriptionStatusLabels()[subscription.status as SubscriptionStatus]}
             </Badge>
           </div>
           {getStatusMessage(subscription.status as SubscriptionStatus) && (
@@ -90,27 +96,31 @@ export function SubscriptionManagement({ realmId, clientAppId }: SubscriptionMan
           )}
 
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Plan</span>
-            <span className="text-sm">{subscription.plan?.title || 'None'}</span>
+            <span className="text-sm font-medium">{m['billing.subscription_plan']()}</span>
+            <span className="text-sm">
+              {subscription.plan?.title || m['billing.subscription_none']()}
+            </span>
           </div>
 
           {subscription.currentPeriodStart && (
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Current Period Start</span>
+              <span className="text-sm font-medium">
+                {m['billing.subscription_period_start']()}
+              </span>
               <span className="text-sm">{formatDate(subscription.currentPeriodStart)}</span>
             </div>
           )}
 
           {subscription.currentPeriodEnd && (
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Current Period End</span>
+              <span className="text-sm font-medium">{m['billing.subscription_period_end']()}</span>
               <span className="text-sm">{formatDate(subscription.currentPeriodEnd)}</span>
             </div>
           )}
 
           {subscription.cancelAt && (
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Cancel At</span>
+              <span className="text-sm font-medium">{m['billing.subscription_cancel_at']()}</span>
               <span className="text-sm">{formatDate(subscription.cancelAt)}</span>
             </div>
           )}
@@ -122,7 +132,9 @@ export function SubscriptionManagement({ realmId, clientAppId }: SubscriptionMan
               disabled={cancelSubscriptionMutation.isPending}
               data-testid="cancel-subscription-button"
             >
-              {cancelSubscriptionMutation.isPending ? 'Canceling...' : 'Cancel Subscription'}
+              {cancelSubscriptionMutation.isPending
+                ? m['billing.subscription_canceling']()
+                : m['billing.subscription_cancel_button']()}
             </Button>
           )}
         </CardContent>
@@ -132,10 +144,10 @@ export function SubscriptionManagement({ realmId, clientAppId }: SubscriptionMan
       <ConfirmDialog
         open={cancelConfirmOpen}
         onOpenChange={setCancelConfirmOpen}
-        title="Cancel Subscription"
-        description="Are you sure you want to cancel this subscription?"
+        title={m['billing.subscription_cancel_confirm_title']()}
+        description={m['billing.subscription_cancel_confirm_description']()}
         onConfirm={confirmCancelSubscription}
-        confirmLabel="Cancel Subscription"
+        confirmLabel={m['billing.subscription_cancel_button']()}
         isPending={cancelSubscriptionMutation.isPending}
       />
     </div>

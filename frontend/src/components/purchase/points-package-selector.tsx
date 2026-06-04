@@ -1,3 +1,4 @@
+import { m } from '@/paraglide/messages'
 import { type ExtPointsPackageItem } from '@/lib/api-generated'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -21,7 +22,7 @@ export function PointsPackageSelector({
   if (packages.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-        No points packages available for purchase
+        {m['points.selector_no_packages']()}
       </div>
     )
   }
@@ -68,7 +69,7 @@ export function PointsPackageSelector({
                 data-testid="points-package-best-value-badge"
               >
                 <Star className="mr-1 inline h-3 w-3" />
-                Best Value
+                {m['points.selector_best_value']()}
               </div>
             ) : null}
 
@@ -95,12 +96,14 @@ export function PointsPackageSelector({
                   <div className="text-4xl font-bold text-primary">
                     {pkg.points.toLocaleString()}
                   </div>
-                  <div className="text-sm text-muted-foreground">Points</div>
+                  <div className="text-sm text-muted-foreground">
+                    {m['points.selector_points']()}
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between border-t pt-4">
                   <div className="text-sm">
-                    <div className="font-medium">Price</div>
+                    <div className="font-medium">{m['points.selector_price']()}</div>
                     {pkg.originalPrice != null && (
                       <div className="text-sm text-muted-foreground line-through">
                         {formatPrice(pkg.originalPrice, pkg.currency)}
@@ -109,13 +112,13 @@ export function PointsPackageSelector({
                     <div className="text-lg font-bold">{formatPrice(pkg.price, pkg.currency)}</div>
                   </div>
                   <div className="text-right text-sm">
-                    <div className="font-medium">Value</div>
+                    <div className="font-medium">{m['points.selector_value']()}</div>
                     <div className="text-muted-foreground">
                       {(
                         (apiPriceToDisplayPrice(pkg.price, pkg.currency) / pkg.points) *
                         100
                       ).toFixed(4)}{' '}
-                      {pkg.currency} per 100 points
+                      {m['points.selector_per_100']({ currency: pkg.currency })}
                     </div>
                   </div>
                 </div>
@@ -131,9 +134,11 @@ export function PointsPackageSelector({
                       )
                       return daysLeft > 0
                         ? daysLeft <= 7
-                          ? `${daysLeft} days left`
-                          : `Ends ${new Date(pkg.promoEndTime).toLocaleDateString()}`
-                        : 'Ending soon'
+                          ? m['points.selector_days_left']({ days: daysLeft })
+                          : m['points.selector_ends_date']({
+                              date: new Date(pkg.promoEndTime).toLocaleDateString(),
+                            })
+                        : m['points.selector_ending_soon']()
                     })()}
                   </div>
                 )}
@@ -145,7 +150,7 @@ export function PointsPackageSelector({
                   disabled={disabled}
                   data-testid={`points-package-select-button-${pkg.id}`}
                 >
-                  {isSelected ? 'Selected' : 'Select Package'}
+                  {isSelected ? m['points.selector_selected']() : m['points.selector_select']()}
                 </Button>
               </div>
             </CardContent>

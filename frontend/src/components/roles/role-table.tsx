@@ -17,6 +17,7 @@ import { useDialogManager } from '@/hooks/use-dialog-state'
 import { useRealmId } from '@/stores/auth-store'
 import { useQueries } from '@tanstack/react-query'
 import { permissionsQueryOptions, rolePermissionsQueryOptions } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 interface RoleTableProps {
   roles: RoleResponse[]
@@ -51,16 +52,16 @@ export function RoleTable({ roles, isLoading, error }: RoleTableProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Permissions</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>{m['roles.table_name']()}</TableHead>
+              <TableHead>{m['roles.table_description']()}</TableHead>
+              <TableHead>{m['roles.table_permissions']()}</TableHead>
+              <TableHead className="text-right">{m['roles.table_actions']()}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             <TableRow>
               <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                Loading roles...
+                {m['roles.loading']()}
               </TableCell>
             </TableRow>
           </TableBody>
@@ -75,16 +76,16 @@ export function RoleTable({ roles, isLoading, error }: RoleTableProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Permissions</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>{m['roles.table_name']()}</TableHead>
+              <TableHead>{m['roles.table_description']()}</TableHead>
+              <TableHead>{m['roles.table_permissions']()}</TableHead>
+              <TableHead className="text-right">{m['roles.table_actions']()}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             <TableRow>
               <TableCell colSpan={4} className="text-center py-8 text-destructive">
-                Failed to load roles. Please try again later.
+                {m['roles.error']()}
               </TableCell>
             </TableRow>
           </TableBody>
@@ -99,16 +100,16 @@ export function RoleTable({ roles, isLoading, error }: RoleTableProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Permissions</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>{m['roles.table_name']()}</TableHead>
+              <TableHead>{m['roles.table_description']()}</TableHead>
+              <TableHead>{m['roles.table_permissions']()}</TableHead>
+              <TableHead className="text-right">{m['roles.table_actions']()}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             <TableRow>
               <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                No roles found. Create your first role to get started.
+                {m['roles.empty']()}
               </TableCell>
             </TableRow>
           </TableBody>
@@ -123,10 +124,10 @@ export function RoleTable({ roles, isLoading, error }: RoleTableProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Permissions</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>{m['roles.table_name']()}</TableHead>
+              <TableHead>{m['roles.table_description']()}</TableHead>
+              <TableHead>{m['roles.table_permissions']()}</TableHead>
+              <TableHead className="text-right">{m['roles.table_actions']()}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -150,7 +151,7 @@ export function RoleTable({ roles, isLoading, error }: RoleTableProps) {
                     data-testid={`role-permissions-button-${role.id}`}
                   >
                     <Shield className="h-3 w-3" />
-                    Manage Permissions
+                    {m['roles.manage_permissions']()}
                   </Button>
                 </TableCell>
                 <TableCell className="text-right">

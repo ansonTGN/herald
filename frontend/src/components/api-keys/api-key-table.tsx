@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/date-utils'
+import { m } from '@/paraglide/messages'
 
 interface ApiKeyColumnConfig {
   onEdit?: (apiKey: ApiKeyListItem) => void
@@ -39,7 +40,7 @@ function createApiKeyColumns(config: ApiKeyColumnConfig): ColumnDef<ApiKeyListIt
     {
       id: 'name',
       accessorKey: 'name',
-      header: 'Name',
+      header: m['api_keys.table_name'](),
       cell: ({ row }) => (
         <span className="font-medium" data-testid="api-key-name">
           {row.getValue('name')}
@@ -48,7 +49,7 @@ function createApiKeyColumns(config: ApiKeyColumnConfig): ColumnDef<ApiKeyListIt
     },
     {
       id: 'roles',
-      header: 'Roles',
+      header: m['api_keys.table_roles'](),
       cell: ({ row }) => {
         if (isLoading) {
           return <Skeleton className="h-5 w-20" />
@@ -71,7 +72,7 @@ function createApiKeyColumns(config: ApiKeyColumnConfig): ColumnDef<ApiKeyListIt
             ))}
             {remaining > 0 && (
               <Badge variant="outline" data-testid="api-key-roles-overflow">
-                +{remaining} more
+                {m['api_keys.more_roles']({ count: remaining })}
               </Badge>
             )}
           </div>
@@ -80,7 +81,7 @@ function createApiKeyColumns(config: ApiKeyColumnConfig): ColumnDef<ApiKeyListIt
     },
     {
       id: 'clientApp',
-      header: 'Client App',
+      header: m['api_keys.table_client_app'](),
       cell: ({ row }) => (
         <span data-testid="api-key-client-app">
           {row.original.clientAppName ?? row.original.clientAppId ?? '-'}
@@ -89,7 +90,7 @@ function createApiKeyColumns(config: ApiKeyColumnConfig): ColumnDef<ApiKeyListIt
     },
     {
       id: 'enabled',
-      header: 'Status',
+      header: m['api_keys.table_status'](),
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
           <Switch
@@ -101,40 +102,40 @@ function createApiKeyColumns(config: ApiKeyColumnConfig): ColumnDef<ApiKeyListIt
             variant={row.original.enabled ? 'default' : 'secondary'}
             data-testid="api-key-status-badge"
           >
-            {row.original.enabled ? 'Enabled' : 'Disabled'}
+            {row.original.enabled ? m['common.enabled']() : m['common.disabled']()}
           </Badge>
         </div>
       ),
     },
     {
       id: 'expiresAt',
-      header: 'Expires',
+      header: m['api_keys.table_expires'](),
       cell: ({ row }) => (
         <span data-testid="api-key-expires">
-          {row.original.expiresAt ? formatDate(row.original.expiresAt) : 'Never'}
+          {row.original.expiresAt ? formatDate(row.original.expiresAt) : m['api_keys.never']()}
         </span>
       ),
     },
     {
       id: 'lastUsedAt',
-      header: 'Last Used',
+      header: m['api_keys.table_last_used'](),
       cell: ({ row }) => (
         <span data-testid="api-key-last-used">
-          {row.original.lastUsedAt ? formatDate(row.original.lastUsedAt) : 'Never'}
+          {row.original.lastUsedAt ? formatDate(row.original.lastUsedAt) : m['api_keys.never']()}
         </span>
       ),
     },
     {
       id: 'usageCount',
       accessorKey: 'usageCount',
-      header: 'Usage Count',
+      header: m['api_keys.table_usage_count'](),
       cell: ({ row }) => (
         <span data-testid="api-key-usage-count">{row.getValue('usageCount')}</span>
       ),
     },
     {
       id: 'actions',
-      header: 'Actions',
+      header: m['api_keys.table_actions'](),
       cell: ({ row }) => (
         <div className="flex gap-2" data-testid="api-key-actions">
           {canManageRoles && (
@@ -144,7 +145,7 @@ function createApiKeyColumns(config: ApiKeyColumnConfig): ColumnDef<ApiKeyListIt
               onClick={() => onManageRoles?.(row.original)}
               data-testid="manage-api-key-roles-button"
             >
-              Roles
+              {m['api_keys.roles_button']()}
             </Button>
           )}
           <Button
@@ -153,9 +154,9 @@ function createApiKeyColumns(config: ApiKeyColumnConfig): ColumnDef<ApiKeyListIt
             onClick={() => onEdit?.(row.original)}
             data-testid="edit-api-key-button"
             disabled={!canUpdate}
-            title={!canUpdate ? 'You do not have permission to edit API keys' : undefined}
+            title={!canUpdate ? m['api_keys.edit_disabled_title']() : undefined}
           >
-            Edit
+            {m['api_keys.edit_button']()}
           </Button>
           <Button
             variant="ghost"
@@ -163,9 +164,9 @@ function createApiKeyColumns(config: ApiKeyColumnConfig): ColumnDef<ApiKeyListIt
             onClick={() => onDelete?.(row.original)}
             data-testid="delete-api-key-button"
             disabled={!canDelete}
-            title={!canDelete ? 'You do not have permission to delete API keys' : undefined}
+            title={!canDelete ? m['api_keys.delete_disabled_title']() : undefined}
           >
-            Delete
+            {m['api_keys.delete_button']()}
           </Button>
         </div>
       ),
@@ -202,8 +203,8 @@ export function ApiKeyTable({
       data={data ?? []}
       isLoading={isLoading}
       error={error ?? undefined}
-      loadingMessage="Loading API keys..."
-      emptyMessage="No API keys found. Create your first API key to get started."
+      loadingMessage={m['api_keys.loading']()}
+      emptyMessage={m['api_keys.empty']()}
       data-testid="api-keys-table"
     />
   )

@@ -58,9 +58,15 @@ describe('SubscriptionTimeline - Event Rendering', () => {
     render(<SubscriptionTimeline events={mockEvents} />)
 
     const eventContainer = screen.getByTestId('timeline-event-0')
+    // Verify i18n template parts rendered
     expect(within(eventContainer).getByText(/plan changed from/i)).toBeInTheDocument()
-    expect(within(eventContainer).getByText('basic-plan')).toBeInTheDocument()
-    expect(within(eventContainer).getByText('pro-plan')).toBeInTheDocument()
+    expect(within(eventContainer).getByText(/basic-plan/)).toBeInTheDocument()
+    expect(within(eventContainer).getByText(/pro-plan/)).toBeInTheDocument()
+    // Verify plan names are in styled spans (font-medium)
+    const basicPlanEl = within(eventContainer).getByText(/basic-plan/)
+    expect(basicPlanEl.className).toContain('font-medium')
+    const proPlanEl = within(eventContainer).getByText(/pro-plan/)
+    expect(proPlanEl.className).toContain('font-medium')
   })
 
   it('should render view details button for each event', () => {

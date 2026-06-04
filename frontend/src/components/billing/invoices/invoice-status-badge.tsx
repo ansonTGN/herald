@@ -1,8 +1,8 @@
 import { Badge } from '@/components/ui/badge'
-import { INVOICE_STATUS_LABELS, INVOICE_STATUS_COLORS } from '@/lib/invoice-utils'
+import { getInvoiceStatusLabel, INVOICE_STATUS_COLORS } from '@/lib/invoice-utils'
 
 export function InvoiceStatusBadge({ status }: { status: string }) {
-  const label = INVOICE_STATUS_LABELS[status] ?? status
+  const label = getInvoiceStatusLabel(status)
 
   if (status === 'paid') {
     return (

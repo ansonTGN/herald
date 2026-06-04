@@ -12,6 +12,7 @@ import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import { PERMISSION } from '@/lib/constants/auth-constants'
 import { PageHeader, ListPagination } from '@/components/shared'
 import { usePermission } from '@/hooks/use-permission'
+import { m } from '@/paraglide/messages'
 
 interface PointsWalletsPageProps {
   realmId: string
@@ -65,9 +66,9 @@ export function PointsWalletsPage({ realmId }: PointsWalletsPageProps) {
     <>
       <div className="space-y-6" data-testid="points-wallets-page">
         <PageHeader
-          title="Points Wallets"
+          title={m['points.wallets_page_title']()}
           action={{
-            label: 'Grant Points',
+            label: m['points.wallets_grant_points_button'](),
             onClick: () => setGrantDialogOpen(true),
             testId: 'grant-points-button',
             show: hasPermission(PERMISSION.POINTS_MANAGE),
@@ -78,11 +79,11 @@ export function PointsWalletsPage({ realmId }: PointsWalletsPageProps) {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Points Wallets</CardTitle>
+              <CardTitle>{m['points.wallets_card_title']()}</CardTitle>
               <div className="relative w-80">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by user ID..."
+                  placeholder={m['points.wallets_search_placeholder']()}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
@@ -93,7 +94,7 @@ export function PointsWalletsPage({ realmId }: PointsWalletsPageProps) {
           </CardHeader>
           <CardContent>
             {walletsLoading ? (
-              <div className="text-center py-8">Loading wallets...</div>
+              <div className="text-center py-8">{m['points.wallets_loading']()}</div>
             ) : walletsData?.wallets && walletsData.wallets.length > 0 ? (
               <div className="space-y-2">
                 {walletsData.wallets.map((wallet) => (
@@ -120,7 +121,9 @@ export function PointsWalletsPage({ realmId }: PointsWalletsPageProps) {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground">No points wallets found</div>
+              <div className="text-center py-8 text-muted-foreground">
+                {m['points.wallets_empty']()}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -142,7 +145,7 @@ export function PointsWalletsPage({ realmId }: PointsWalletsPageProps) {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <History className="h-4 w-4" />
-                  Transaction History
+                  {m['points.wallets_transaction_history']()}
                 </CardTitle>
               </CardHeader>
               <CardContent>

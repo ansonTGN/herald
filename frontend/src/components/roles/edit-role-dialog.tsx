@@ -4,6 +4,7 @@ import { updateRole } from '@/lib/api-generated'
 import { useRealmId } from '@/stores/auth-store'
 import type { RoleResponse } from '@/lib/api-generated'
 import { queryKeys } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 interface EditRoleDialogProps {
   open: boolean
@@ -33,26 +34,25 @@ export function EditRoleDialog({
       }),
     getSuccessMessage: (response) => {
       const r = (response as { data?: { name?: string } }).data
-      return `Role "${r?.name}" updated successfully`
+      return m['roles.updated_success']({ name: r?.name ?? '' })
     },
     queryKeysToInvalidate: [queryKeys.roles(realmId)],
-    nameFieldLabel: 'Role Name',
+    nameFieldLabel: m['roles.name_label'](),
     nameFieldPlaceholder: role.name,
-    descriptionFieldPlaceholder: 'Describe what this role is for...',
+    descriptionFieldPlaceholder: m['roles.description_placeholder'](),
     nameFieldTestId: 'role-edit-name-input',
     nameInputId: 'edit-role-name',
     descriptionFieldTestId: 'role-edit-description-input',
     descriptionInputId: 'edit-role-description',
     submitButtonTestId: 'role-edit-submit-button',
-    submitButtonText: 'Update',
-    submittingButtonText: 'Updating...',
+    submitButtonText: m['roles.update_button'](),
+    submittingButtonText: m['roles.updating'](),
   }
 
   const builtinProtection = {
     isBuiltin: role.isBuiltin,
-    alertMessage:
-      'Built-in roles are managed by the platform. You can only modify the description.',
-    disabledFieldHelpText: 'Built-in role names cannot be changed',
+    alertMessage: m['roles.builtin_alert'](),
+    disabledFieldHelpText: m['roles.builtin_name_disabled'](),
   }
 
   return (
@@ -60,8 +60,8 @@ export function EditRoleDialog({
       open={open}
       onOpenChange={onOpenChange}
       config={config}
-      title="Edit Role"
-      description="Update role details."
+      title={m['roles.edit_title']()}
+      description={m['roles.edit_description']()}
       builtinProtection={builtinProtection}
       currentValues={{
         name: role.name,

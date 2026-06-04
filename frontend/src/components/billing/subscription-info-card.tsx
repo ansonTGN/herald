@@ -2,8 +2,13 @@ import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { subscriptionQueryOptions } from '@/data/query-options'
-import { getStatusBadgeVariant, type SubscriptionStatus } from '@/types/billing'
+import {
+  getStatusBadgeVariant,
+  getSubscriptionStatusLabels,
+  type SubscriptionStatus,
+} from '@/types/billing'
 import { formatDate } from '@/lib/date-utils'
+import { m } from '@/paraglide/messages'
 
 interface SubscriptionInfoCardProps {
   realmId: string
@@ -40,7 +45,7 @@ export function SubscriptionInfoCard({
     return (
       <Card data-testid="subscription-info-card-error">
         <CardContent className="py-6 text-center text-destructive">
-          Failed to load subscription information
+          {m['billing.subscription_failed_load']()}
         </CardContent>
       </Card>
     )
@@ -53,7 +58,7 @@ export function SubscriptionInfoCard({
           <CardTitle className="text-base">{clientAppName}</CardTitle>
         </CardHeader>
         <CardContent className="py-4">
-          <p className="text-sm text-muted-foreground">No active subscription</p>
+          <p className="text-sm text-muted-foreground">{m['billing.subscription_no_active']()}</p>
         </CardContent>
       </Card>
     )
@@ -66,39 +71,39 @@ export function SubscriptionInfoCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Status</span>
+          <span className="text-sm font-medium">{m['billing.subscription_status']()}</span>
           <Badge
             variant={getStatusBadgeVariant(subscription.status as SubscriptionStatus)}
             data-testid={`subscription-status-${clientAppId}`}
           >
-            {subscription.status}
+            {getSubscriptionStatusLabels()[subscription.status as SubscriptionStatus]}
           </Badge>
         </div>
 
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Plan</span>
+          <span className="text-sm font-medium">{m['billing.subscription_plan']()}</span>
           <span className="text-sm" data-testid={`subscription-plan-${clientAppId}`}>
-            {subscription.plan?.title || 'None'}
+            {subscription.plan?.title || m['billing.subscription_none']()}
           </span>
         </div>
 
         {subscription.currentPeriodStart && (
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Period Start</span>
+            <span className="text-sm font-medium">{m['billing.subscription_period_start']()}</span>
             <span className="text-sm">{formatDate(subscription.currentPeriodStart)}</span>
           </div>
         )}
 
         {subscription.currentPeriodEnd && (
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Period End</span>
+            <span className="text-sm font-medium">{m['billing.subscription_period_end']()}</span>
             <span className="text-sm">{formatDate(subscription.currentPeriodEnd)}</span>
           </div>
         )}
 
         {subscription.cancelAt && (
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Cancel At</span>
+            <span className="text-sm font-medium">{m['billing.subscription_cancel_at']()}</span>
             <span className="text-sm text-muted-foreground">
               {formatDate(subscription.cancelAt)}
             </span>

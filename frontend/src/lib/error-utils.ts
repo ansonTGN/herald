@@ -1,3 +1,5 @@
+import { m } from '@/paraglide/messages'
+
 export function getErrorMessage(error: unknown): string {
   // Handle Error instances
   if (error instanceof Error) {
@@ -27,7 +29,7 @@ export function getErrorMessage(error: unknown): string {
   }
 
   // Fallback
-  return 'An unexpected error occurred'
+  return m['error.generic']()
 }
 
 /**
@@ -36,13 +38,12 @@ export function getErrorMessage(error: unknown): string {
  * @param defaultMessage 默认错误消息
  * @returns 错误消息字符串
  */
-export function handleApiError(
-  error: unknown,
-  defaultMessage: string = 'An error occurred'
-): string {
+export function handleApiError(error: unknown, defaultMessage?: string): string {
+  const fallback = defaultMessage ?? m['error.generic']()
+
   console.error('[API Error]', error)
 
-  let errorMessage = defaultMessage
+  let errorMessage = fallback
 
   // 处理不同类型的错误
   if (typeof error === 'string') {
@@ -58,28 +59,28 @@ export function handleApiError(
       // HTTP 状态码错误
       switch (error.status) {
         case 400:
-          errorMessage = 'Invalid request. Please check your input.'
+          errorMessage = m['error.bad_request']()
           break
         case 401:
-          errorMessage = 'Unauthorized. Please log in again.'
+          errorMessage = m['error.unauthorized']()
           break
         case 403:
-          errorMessage = 'Forbidden. You do not have permission to perform this action.'
+          errorMessage = m['error.forbidden']()
           break
         case 404:
-          errorMessage = 'Resource not found.'
+          errorMessage = m['error.not_found']()
           break
         case 409:
           errorMessage =
             'detail' in error && typeof error.detail === 'string'
               ? error.detail
-              : 'Conflict. This resource already exists.'
+              : m['error.conflict']()
           break
         case 500:
-          errorMessage = 'Server error. Please try again later.'
+          errorMessage = m['error.server_error']()
           break
         default:
-          errorMessage = defaultMessage
+          errorMessage = fallback
       }
     }
   }

@@ -7,6 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { m } from '@/paraglide/messages'
 
 export interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
@@ -27,9 +28,9 @@ export function DataTable<TData, TValue>({
   data,
   isLoading = false,
   error,
-  loadingMessage = 'Loading...',
+  loadingMessage,
   errorMessage,
-  emptyMessage = 'No results.',
+  emptyMessage,
   onRowClick,
   'data-testid': dataTestId,
 }: DataTableProps<TData, TValue>) {
@@ -41,10 +42,13 @@ export function DataTable<TData, TValue>({
 
   const testIdProps = dataTestId ? { 'data-testid': dataTestId } : undefined
 
+  const resolvedLoadingMessage = loadingMessage ?? m['common.loading']()
+  const resolvedEmptyMessage = emptyMessage ?? m['common.no_results']()
+
   if (isLoading) {
     return (
       <div className="py-8 text-center" {...testIdProps}>
-        {loadingMessage}
+        {resolvedLoadingMessage}
       </div>
     )
   }
@@ -52,7 +56,7 @@ export function DataTable<TData, TValue>({
   if (error) {
     return (
       <div className="py-8 text-center text-destructive" {...testIdProps}>
-        {errorMessage ?? `Error: ${error.message}`}
+        {errorMessage ?? m['error.error_prefix']({ message: error.message })}
       </div>
     )
   }
@@ -60,7 +64,7 @@ export function DataTable<TData, TValue>({
   if (data.length === 0) {
     return (
       <div className="py-8 text-center text-muted-foreground" {...testIdProps}>
-        {emptyMessage}
+        {resolvedEmptyMessage}
       </div>
     )
   }

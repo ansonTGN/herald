@@ -6,6 +6,7 @@ import { AlertCircle, Clock, CheckCircle2, XCircle, Loader2 } from 'lucide-react
 import { useEffect } from 'react'
 import { useWechatPay } from '@/hooks/use-wechat-pay'
 import { formatDuration } from '@/lib/time-utils'
+import { m } from '@/paraglide/messages'
 
 interface WechatQrCodePaymentProps {
   realmId: string
@@ -68,35 +69,35 @@ export function WechatQrCodePayment({
         return (
           <Badge variant="secondary" className="gap-1">
             <Loader2 className="h-3 w-3 animate-spin" />
-            Creating Order...
+            {m['billing.wechat_pay_creating_order']()}
           </Badge>
         )
       case 'pending':
         return (
           <Badge variant="default" className="gap-1">
             <Clock className="h-3 w-3" />
-            Waiting for Payment
+            {m['billing.wechat_pay_waiting']()}
           </Badge>
         )
       case 'paid':
         return (
           <Badge variant="default" className="gap-1">
             <CheckCircle2 className="h-3 w-3" />
-            Payment Successful
+            {m['billing.wechat_pay_success']()}
           </Badge>
         )
       case 'expired':
         return (
           <Badge variant="destructive" className="gap-1">
             <XCircle className="h-3 w-3" />
-            QR Code Expired
+            {m['billing.wechat_pay_expired_badge']()}
           </Badge>
         )
       case 'failed':
         return (
           <Badge variant="destructive" className="gap-1">
             <AlertCircle className="h-3 w-3" />
-            Payment Failed
+            {m['billing.wechat_pay_failed_badge']()}
           </Badge>
         )
       default:
@@ -109,8 +110,8 @@ export function WechatQrCodePayment({
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>WeChat Pay</CardTitle>
-            <CardDescription>Scan QR code to complete payment</CardDescription>
+            <CardTitle>{m['billing.wechat_pay_title']()}</CardTitle>
+            <CardDescription>{m['billing.wechat_pay_scan_qr']()}</CardDescription>
           </div>
           {getStatusBadge()}
         </div>
@@ -123,7 +124,9 @@ export function WechatQrCodePayment({
             data-testid="creating-order-state"
           >
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
-            <p className="text-sm text-muted-foreground">Creating payment order...</p>
+            <p className="text-sm text-muted-foreground">
+              {m['billing.wechat_pay_creating_payment']()}
+            </p>
           </div>
         )}
 
@@ -142,14 +145,16 @@ export function WechatQrCodePayment({
                 data-testid="wechat-qr-code"
               />
             </div>
-            <p className="text-sm font-medium">Scan with WeChat to pay</p>
+            <p className="text-sm font-medium">{m['billing.wechat_pay_scan_to_pay']()}</p>
           </div>
         )}
 
         {/* Countdown timer */}
         {!isCreating && codeUrl && !isExpired && timeRemaining > 0 && (
           <div className="text-center">
-            <div className="text-sm text-muted-foreground">Time remaining:</div>
+            <div className="text-sm text-muted-foreground">
+              {m['billing.wechat_pay_time_remaining']()}
+            </div>
             <div className="text-lg font-semibold" data-testid="qr-countdown-display">
               {formatDuration(timeRemaining)}
             </div>
@@ -163,8 +168,8 @@ export function WechatQrCodePayment({
             data-testid="expired-state"
           >
             <XCircle className="h-12 w-12 text-destructive mb-4" />
-            <p className="text-sm font-medium">QR Code Expired</p>
-            <p className="text-xs text-muted-foreground">Please try again</p>
+            <p className="text-sm font-medium">{m['billing.wechat_pay_qr_expired']()}</p>
+            <p className="text-xs text-muted-foreground">{m['billing.wechat_pay_try_again']()}</p>
           </div>
         )}
 
@@ -172,7 +177,7 @@ export function WechatQrCodePayment({
         {isFailed && error && (
           <div className="flex flex-col items-center justify-center py-4" data-testid="error-state">
             <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-            <p className="text-sm font-medium">Payment Failed</p>
+            <p className="text-sm font-medium">{m['billing.wechat_pay_payment_failed']()}</p>
             <p className="text-xs text-muted-foreground">{error.message}</p>
           </div>
         )}
@@ -180,12 +185,12 @@ export function WechatQrCodePayment({
         {/* Payment instructions */}
         {!isCreating && codeUrl && !isExpired && (
           <div className="bg-muted rounded-lg p-4 space-y-2">
-            <h4 className="font-medium text-sm">How to pay:</h4>
+            <h4 className="font-medium text-sm">{m['billing.wechat_pay_how_to_pay']()}</h4>
             <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-              <li>Open WeChat on your phone</li>
-              <li>Tap "Me" → "Pay" → "Scan QR Code"</li>
-              <li>Scan the QR code above</li>
-              <li>Confirm payment</li>
+              <li>{m['billing.wechat_pay_step_open']()}</li>
+              <li>{m['billing.wechat_pay_step_scan']()}</li>
+              <li>{m['billing.wechat_pay_step_scan_code']()}</li>
+              <li>{m['billing.wechat_pay_step_confirm']()}</li>
             </ol>
           </div>
         )}
@@ -202,7 +207,7 @@ export function WechatQrCodePayment({
               className="flex-1"
               data-testid="cancel-payment-button"
             >
-              Cancel Payment
+              {m['billing.wechat_pay_cancel_payment']()}
             </Button>
           )}
         </div>

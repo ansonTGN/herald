@@ -1,8 +1,12 @@
 import { z } from 'zod'
+import { m } from '@/paraglide/messages'
 
-export const emailSchema = z.string().min(1, 'Email is required').email('Invalid email address')
-export const passwordSchema = z.string().min(8, 'Password must be at least 8 characters')
-export const usernameSchema = z.string().min(3, 'Username must be at least 3 characters')
+export const emailSchema = z
+  .string()
+  .min(1, { error: () => m['auth.email_required']() })
+  .email({ error: () => m['auth.email_invalid']() })
+export const passwordSchema = z.string().min(8, { error: () => m['auth.password_min_length']() })
+export const usernameSchema = z.string().min(3, { error: () => m['auth.username_min_length']() })
 
 export const loginSchema = z.object({
   username: usernameSchema.or(emailSchema),
@@ -14,7 +18,7 @@ export const createUserSchema = z.object({
   password: passwordSchema,
   nickname: z.string().min(2).max(50).optional(),
   status: z.number().int().min(0).max(3).optional(),
-  roleIds: z.array(z.string()).min(1, 'At least one role is required'),
+  roleIds: z.array(z.string()).min(1, { error: () => m['auth.role_required']() }),
 })
 
 export const updateUserSchema = z.object({
@@ -25,15 +29,15 @@ export const updateUserSchema = z.object({
 
 export const changePasswordSchema = z
   .object({
-    oldPass: z.string().min(1, 'Current password is required'),
+    oldPass: z.string().min(1, { error: () => m['auth.current_password_required']() }),
     newPass: passwordSchema,
-    confirmPass: z.string().min(8, 'Password must be at least 8 characters'),
+    confirmPass: z.string().min(8, { error: () => m['auth.password_min_length']() }),
   })
   .superRefine((data, ctx) => {
     if (data.newPass !== data.confirmPass) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Passwords don't match",
+        message: m['profile.passwords_dont_match'](),
         path: ['confirmPass'],
       })
     }
@@ -48,18 +52,15 @@ export type ChangePasswordFormData = z.infer<typeof changePasswordSchema>
 // Permission schemas
 export const permissionNameSchema = z
   .string()
-  .min(1, 'Permission name is required')
-  .max(100, 'Permission name must be at most 100 characters')
-  .regex(
-    /^[a-z0-9_]+\.[a-z0-9_]+$/,
-    'Permission name must be in format "resource.action" (e.g., "users.view")'
-  )
-  .refine((val) => !val.includes(' '), 'Permission name cannot contain spaces')
-  .refine((val) => !val.includes('..'), 'Permission name cannot contain ".."')
+  .min(1, { error: () => m['permissions.name_required']() })
+  .max(100, { error: () => m['permissions.name_max_length']() })
+  .regex(/^[a-z0-9_]+\.[a-z0-9_]+$/, { error: () => m['permissions.name_format']() })
+  .refine((val) => !val.includes(' '), { error: () => m['permissions.name_no_spaces']() })
+  .refine((val) => !val.includes('..'), { error: () => m['permissions.name_no_double_dots']() })
 
 export const permissionDescriptionSchema = z
   .string()
-  .max(500, 'Description must be at most 500 characters')
+  .max(500, { error: () => m['permissions.description_max_length']() })
   .optional()
 
 export const createPermissionSchema = z.object({
@@ -78,18 +79,15 @@ export type UpdatePermissionFormData = z.infer<typeof updatePermissionSchema>
 // Role schemas
 export const roleNameSchema = z
   .string()
-  .min(1, 'Role name is required')
-  .max(100, 'Role name must be at most 100 characters')
-  .regex(
-    /^[a-zA-Z0-9_-]+$/,
-    'Role name must contain only letters, numbers, hyphens, and underscores'
-  )
-  .refine((val) => !val.includes(' '), 'Role name cannot contain spaces')
-  .refine((val) => !val.includes('--'), 'Role name cannot contain consecutive hyphens')
+  .min(1, { error: () => m['roles.name_required']() })
+  .max(100, { error: () => m['roles.name_max_length']() })
+  .regex(/^[a-zA-Z0-9_-]+$/, { error: () => m['roles.name_format']() })
+  .refine((val) => !val.includes(' '), { error: () => m['roles.name_no_spaces']() })
+  .refine((val) => !val.includes('--'), { error: () => m['roles.name_no_consecutive_hyphens']() })
 
 export const roleDescriptionSchema = z
   .string()
-  .max(500, 'Description must be at most 500 characters')
+  .max(500, { error: () => m['roles.description_max_length']() })
   .optional()
 
 export const createRoleSchema = z.object({

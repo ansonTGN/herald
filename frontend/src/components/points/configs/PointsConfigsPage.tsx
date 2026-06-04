@@ -17,6 +17,7 @@ import { deletePlanConfig } from '@/lib/api-generated'
 import type { PointsPlanConfigResponse } from '@/lib/api-generated'
 import { toast } from 'sonner'
 import { ConfirmDialog, PageHeader } from '@/components/shared'
+import { m } from '@/paraglide/messages'
 
 interface PointsConfigsPageProps {
   realmId: string
@@ -58,13 +59,13 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
       return response.data
     },
     onSuccess: () => {
-      toast.success('Points plan configuration deleted successfully')
+      toast.success(m['points.configs_deleted_success']())
       setDeleteConfirmOpen(false)
       setDeletingConfig(null)
       queryClient.invalidateQueries({ queryKey: queryKeys.pointsPlanConfigs(realmId) })
     },
     onError: (error: Error) => {
-      toast.error(`Failed to delete configuration: ${error.message}`)
+      toast.error(m['points.configs_delete_failed']({ message: error.message }))
     },
   })
 
@@ -107,9 +108,9 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
   return (
     <div className="space-y-6" data-testid="points-configs-page">
       <PageHeader
-        title="Points Rules"
+        title={m['points.configs_page_title']()}
         action={{
-          label: 'Create Points Rule',
+          label: m['points.configs_create_button'](),
           onClick: handleCreateConfig,
           testId: 'create-config-button',
         }}
@@ -119,7 +120,10 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
         <div className="flex justify-end gap-2">
           <ExportGuideButton
             configs={configs.map((c) => ({
-              planName: plansMap.get(c.planId)?.title || plansMap.get(c.planId)?.name || 'Unknown',
+              planName:
+                plansMap.get(c.planId)?.title ||
+                plansMap.get(c.planId)?.name ||
+                m['points.config_card_unknown_plan'](),
               pointsPerPeriod: c.pointsPerPeriod,
               grantOnSubscribe: c.grantOnSubscribe,
               grantPeriodType: c.grantPeriodType,
@@ -133,13 +137,13 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
             data-testid="view-all-guides-button"
           >
             <Eye className="mr-2 h-4 w-4" />
-            View All Guides
+            {m['points.configs_view_all_guides']()}
           </Button>
         </div>
       )}
 
       {configsLoading ? (
-        <div className="text-center py-8">Loading configurations...</div>
+        <div className="text-center py-8">{m['points.configs_loading']()}</div>
       ) : configs && configs.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {configs.map((config) => {
@@ -148,36 +152,48 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
               <Card key={config.configId} data-testid={`config-card-${config.configId}`}>
                 <CardHeader>
                   <CardTitle className="text-lg">
-                    {plan?.title || plan?.name || 'Unknown Plan'}
+                    {plan?.title || plan?.name || m['points.config_card_unknown_plan']()}
                   </CardTitle>
                   <Badge variant={config.active ? 'default' : 'secondary'}>
-                    {config.active ? 'Active' : 'Inactive'}
+                    {config.active
+                      ? m['points.config_card_active']()
+                      : m['points.config_card_inactive']()}
                   </Badge>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Points per Period</span>
+                    <span className="text-sm text-muted-foreground">
+                      {m['points.config_card_points_per_period']()}
+                    </span>
                     <span className="font-semibold">
                       +{config.pointsPerPeriod.toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Grant Period</span>
+                    <span className="text-sm text-muted-foreground">
+                      {m['points.config_card_grant_period']()}
+                    </span>
                     <span className="font-semibold">{config.grantPeriodType}</span>
                   </div>
                   {config.grantOnSubscribe && (
                     <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Grant on Subscribe</span>
-                      <span className="font-semibold text-green-600">Yes</span>
+                      <span className="text-sm text-muted-foreground">
+                        {m['points.config_card_grant_on_subscribe']()}
+                      </span>
+                      <span className="font-semibold text-green-600">{m['common.yes']()}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Validity Days</span>
+                    <span className="text-sm text-muted-foreground">
+                      {m['points.config_card_validity_days']()}
+                    </span>
                     <span className="font-semibold">{config.validityDays}</span>
                   </div>
                   {config.maxPeriods && (
                     <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Max Periods</span>
+                      <span className="text-sm text-muted-foreground">
+                        {m['points.config_card_max_periods']()}
+                      </span>
                       <span className="font-semibold">{config.maxPeriods.toLocaleString()}</span>
                     </div>
                   )}
@@ -189,7 +205,7 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
                       data-testid={`points-view-guide-${config.configId}`}
                     >
                       <Eye className="h-3 w-3 mr-1" />
-                      View
+                      {m['points.config_card_view']()}
                     </Button>
                     <Button
                       variant="ghost"
@@ -198,7 +214,7 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
                       data-testid={`points-share-guide-${config.configId}`}
                     >
                       <Share2 className="h-3 w-3 mr-1" />
-                      Share
+                      {m['points.config_card_share']()}
                     </Button>
                     <div className="flex-1" />
                     <Button
@@ -207,7 +223,7 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
                       onClick={() => handleEditConfig(config)}
                       data-testid={`edit-config-${config.configId}`}
                     >
-                      Edit
+                      {m['common.edit']()}
                     </Button>
                     <Button
                       variant="destructive"
@@ -215,7 +231,7 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
                       onClick={() => handleDeleteConfig(config)}
                       data-testid={`delete-config-${config.configId}`}
                     >
-                      Delete
+                      {m['common.delete']()}
                     </Button>
                   </div>
                 </CardContent>
@@ -227,7 +243,7 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
         <Card>
           <CardContent className="text-center py-12">
             <Settings className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-            <p className="text-muted-foreground">No points plan configurations found</p>
+            <p className="text-muted-foreground">{m['points.configs_empty']()}</p>
           </CardContent>
         </Card>
       )}
@@ -236,12 +252,12 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
       <ConfirmDialog
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
-        title="Delete Points Rule"
+        title={m['points.configs_delete_title']()}
         description={
           <>
-            Are you sure you want to delete the points configuration for{' '}
-            {deletingConfig && plansMap.get(deletingConfig.planId)?.title}? This action cannot be
-            undone.
+            {m['points.configs_delete_description']({
+              planName: deletingConfig ? (plansMap.get(deletingConfig.planId)?.title ?? '') : '',
+            })}
           </>
         }
         onConfirm={confirmDeleteConfig}
@@ -253,7 +269,10 @@ export function PointsConfigsPage({ realmId }: PointsConfigsPageProps) {
       {selectedGuideConfig && (
         <PointsGuideDialog
           config={selectedGuideConfig}
-          planName={plansMap.get(selectedGuideConfig.planId)?.title || 'Unknown Plan'}
+          planName={
+            plansMap.get(selectedGuideConfig.planId)?.title ||
+            m['points.config_card_unknown_plan']()
+          }
           open={guideDialogOpen}
           onClose={() => setGuideDialogOpen(false)}
         />

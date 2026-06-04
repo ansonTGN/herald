@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { m } from '@/paraglide/messages'
 
 // 保留词列表
 const RESERVED_WORDS = ['admin', 'system', 'api', 'www'] as const
@@ -8,17 +9,17 @@ const RESERVED_WORDS = ['admin', 'system', 'api', 'www'] as const
 // 前端验证可以更宽松，允许连字符和下划线
 export const realmIdSchema = z
   .string()
-  .min(3, '3-64 characters')
-  .max(64, '3-64 characters')
-  .regex(/^[a-zA-Z0-9_-]+$/, 'must be alphanumeric (letters, numbers, hyphens, underscores)')
+  .min(3, { error: () => m['realms.validation_id_length']() })
+  .max(64, { error: () => m['realms.validation_id_length']() })
+  .regex(/^[a-zA-Z0-9_-]+$/, { error: () => m['realms.validation_id_format']() })
   .refine((val) => !RESERVED_WORDS.some((word) => word === val), {
-    message: 'cannot be a reserved word',
+    error: () => m['realms.validation_id_reserved'](),
   })
 
 // 管理员用户信息
 const adminUserSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(8, 'at least 8 characters'),
+  email: z.string().email({ error: () => m['realms.validation_admin_email_invalid']() }),
+  password: z.string().min(8, { error: () => m['realms.validation_admin_password_min_length']() }),
 })
 
 // 创建 Realm Schema
@@ -26,14 +27,20 @@ const adminUserSchema = z.object({
 // 后端 CreateRealmValidator.id 是 Optional<String>，所以前端也设为可选
 export const createRealmSchema = z.object({
   id: realmIdSchema.optional(), // ID is optional - backend will auto-generate if not provided
-  name: z.string().min(1, 'Name is required').max(50, 'Name must be at most 50 characters'),
+  name: z
+    .string()
+    .min(1, { error: () => m['realms.validation_name_required']() })
+    .max(50, { error: () => m['realms.validation_name_max_length']() }),
   description: z.string().optional(),
   adminUser: adminUserSchema, // camelCase 匹配 API
 })
 
 // 更新 Realm Schema
 export const updateRealmSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(50, 'Name must be at most 50 characters'),
+  name: z
+    .string()
+    .min(1, { error: () => m['realms.validation_name_required']() })
+    .max(50, { error: () => m['realms.validation_name_max_length']() }),
   description: z.string().optional(),
 })
 

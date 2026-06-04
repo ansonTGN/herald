@@ -15,6 +15,7 @@ import {
   type SubscriptionDetailResponse,
 } from '@/lib/api-generated'
 import type { ClaimSubscriptionForm } from '@/lib/schemas/billing-forms'
+import { m } from '@/paraglide/messages'
 
 interface MySubscriptionsPageProps {
   realmId: string
@@ -115,10 +116,18 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
 
       if (grantedCount > 0) {
         alert(
-          `Successfully claimed ${claimedCount} subscription${claimedCount > 1 ? 's' : ''}! ${grantedCount} period${grantedCount > 1 ? 's' : ''} of points granted.`
+          claimedCount > 1
+            ? m['billing.my_subscriptions_claimed_success_with_points_plural']({
+                claimedCount,
+                grantedCount,
+              })
+            : m['billing.my_subscriptions_claimed_success_with_points']({
+                claimedCount,
+                grantedCount,
+              })
         )
       } else {
-        alert(`Successfully claimed ${claimedCount} subscription${claimedCount > 1 ? 's' : ''}!`)
+        alert(m['billing.my_subscriptions_claimed_success']({ count: claimedCount }))
       }
 
       // Hide banner after successful claim
@@ -127,13 +136,13 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
     onError: (error: { status?: number; message?: string }) => {
       // Handle error responses
       if (error?.status === 404) {
-        alert('No subscription found. Please check your Customer ID or Contract ID.')
+        alert(m['billing.my_subscriptions_no_subscription_found']())
       } else if (error?.status === 409) {
-        alert(
-          'This Shopify account has already been claimed by another user. Please contact support if you believe this is an error.'
-        )
+        alert(m['billing.my_subscriptions_already_claimed']())
       } else {
-        alert(`Failed to claim subscription: ${error?.message || 'Unknown error'}`)
+        alert(
+          m['billing.my_subscriptions_claim_failed']({ message: error?.message || 'Unknown error' })
+        )
       }
     },
   })
@@ -147,13 +156,25 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
   const getStatusBadge = (status: string) => {
     switch (status.toLowerCase()) {
       case 'active':
-        return <Badge className="bg-green-100 text-green-800">Active</Badge>
+        return (
+          <Badge className="bg-green-100 text-green-800">
+            {m['billing.subscription_status_label_active']()}
+          </Badge>
+        )
       case 'past_due':
-        return <Badge variant="destructive">Past Due</Badge>
+        return (
+          <Badge variant="destructive">{m['billing.subscription_status_label_past_due']()}</Badge>
+        )
       case 'canceled':
-        return <Badge variant="secondary">Canceled</Badge>
+        return (
+          <Badge variant="secondary">{m['billing.subscription_status_label_canceled']()}</Badge>
+        )
       case 'scheduled_cancel':
-        return <Badge className="bg-yellow-100 text-yellow-800">Scheduled Cancel</Badge>
+        return (
+          <Badge className="bg-yellow-100 text-yellow-800">
+            {m['billing.subscription_status_label_scheduled_cancel']()}
+          </Badge>
+        )
       default:
         return <Badge variant="outline">{status}</Badge>
     }
@@ -162,14 +183,14 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Loading subscriptions...</div>
+        <div className="text-muted-foreground">{m['billing.my_subscriptions_loading']()}</div>
       </div>
     )
   }
 
   return (
     <div className="space-y-6" data-testid="my-subscriptions-page">
-      <PageHeader title="My Subscriptions" />
+      <PageHeader title={m['billing.my_subscriptions_title']()} />
 
       {/* Unclaimed Subscription Banner */}
       {showBanner && (
@@ -192,9 +213,11 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <div className="text-4xl mb-4">📦</div>
-            <h3 className="text-lg font-semibold mb-2">No Subscriptions Yet</h3>
+            <h3 className="text-lg font-semibold mb-2">
+              {m['billing.my_subscriptions_empty_title']()}
+            </h3>
             <p className="text-sm text-muted-foreground text-center">
-              You don't have any active subscriptions. Subscribe to a plan to get started!
+              {m['billing.my_subscriptions_empty_description']()}
             </p>
           </CardContent>
         </Card>
@@ -215,16 +238,20 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <div className="text-sm text-muted-foreground">Current Period</div>
+                  <div className="text-sm text-muted-foreground">
+                    {m['billing.my_subscriptions_current_period']()}
+                  </div>
                   <div className="text-sm font-medium">
                     {subscription.currentPeriodStart && subscription.currentPeriodEnd
                       ? `${new Date(subscription.currentPeriodStart).toLocaleDateString()} - ${new Date(subscription.currentPeriodEnd).toLocaleDateString()}`
-                      : 'Not available'}
+                      : m['billing.my_subscriptions_not_available']()}
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-sm text-muted-foreground">Billing Period</div>
+                  <div className="text-sm text-muted-foreground">
+                    {m['billing.my_subscriptions_billing_period']()}
+                  </div>
                   <div className="text-2xl font-bold">{subscription.billingPeriod}</div>
                 </div>
 
@@ -233,7 +260,7 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
                     to="/$realmId/subscription/$subscriptionId/history"
                     params={{ realmId, subscriptionId: subscription.id }}
                   >
-                    View History
+                    {m['billing.my_subscriptions_view_history']()}
                   </Link>
                 </Button>
               </CardContent>

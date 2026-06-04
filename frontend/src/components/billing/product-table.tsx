@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { DataTable } from '@/components/shared/data-table'
+import { m } from '@/paraglide/messages'
 
 interface ProductTableProps {
   data?: ProductResponse[]
@@ -26,7 +27,7 @@ function createProductColumns(
   return [
     {
       accessorKey: 'code',
-      header: 'Code',
+      header: m['billing.col_code'](),
       cell: ({ row }) => (
         <div className="font-medium" data-testid={`product-code-${row.index}`}>
           {(row.getValue('code') as string) || ''}
@@ -35,15 +36,15 @@ function createProductColumns(
     },
     {
       accessorKey: 'title',
-      header: 'Title',
+      header: m['billing.col_title'](),
       cell: ({ row }) => row.getValue('title'),
     },
     {
       accessorKey: 'description',
-      header: 'Description',
+      header: m['common.description'](),
       cell: ({ row }) => {
         const desc = row.getValue('description') as string | null | undefined
-        if (!desc) return <span className="text-muted-foreground">—</span>
+        if (!desc) return <span className="text-muted-foreground">&mdash;</span>
         return (
           <span className="max-w-[200px] truncate block">
             {desc.length > 50 ? `${desc.slice(0, 50)}...` : desc}
@@ -53,29 +54,29 @@ function createProductColumns(
     },
     {
       accessorKey: 'plansCount',
-      header: 'Plans',
+      header: m['billing.col_plans'](),
       cell: ({ row }) => (row.getValue('plansCount') as number).toString(),
     },
     {
       accessorKey: 'enabled',
-      header: 'Status',
+      header: m['common.status'](),
       cell: ({ row }) => {
         const enabled = row.getValue('enabled') as boolean
         return (
           <Badge variant={enabled ? 'default' : 'secondary'}>
-            {enabled ? 'Enabled' : 'Disabled'}
+            {enabled ? m['common.enabled']() : m['common.disabled']()}
           </Badge>
         )
       },
     },
     {
       id: 'actions',
-      header: 'Actions',
+      header: m['common.actions'](),
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Open menu</span>
+              <span className="sr-only">{m['billing.open_menu']()}</span>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -86,7 +87,7 @@ function createProductColumns(
                 data-testid={`edit-product-button-${row.original.id}`}
               >
                 <Edit className="mr-2 h-4 w-4" />
-                Edit
+                {m['common.edit']()}
               </DropdownMenuItem>
             )}
             {onDelete && (
@@ -96,7 +97,7 @@ function createProductColumns(
                 data-testid={`delete-product-button-${row.original.id}`}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                Delete
+                {m['common.delete']()}
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>
@@ -121,9 +122,11 @@ export function ProductTable({
       data={data}
       isLoading={isLoading}
       error={error}
-      loadingMessage="Loading products..."
-      errorMessage={error ? `Error loading products: ${error.message}` : undefined}
-      emptyMessage="No products found. Create your first product."
+      loadingMessage={m['billing.loading_products']()}
+      errorMessage={
+        error ? m['billing.error_loading_products']({ message: error.message }) : undefined
+      }
+      emptyMessage={m['billing.no_products']()}
       data-testid="product-table"
     />
   )

@@ -16,6 +16,7 @@ import { toast } from 'sonner'
 import { type ProductFormData } from '@/lib/schemas/billing-forms'
 import { PageHeader } from '@/components/shared/page-header'
 import { handleApiResponse } from '@/lib/api-utils'
+import { m } from '@/paraglide/messages'
 
 interface ProductPageProps {
   realmId: string
@@ -57,15 +58,15 @@ export function ProductPage({ realmId }: ProductPageProps) {
       }
     },
     onSuccess: (data: ProductResponse, variables) => {
-      const action = variables.editingProductId ? 'updated' : 'created'
-      toast.success(`Product "${data?.title}" ${action} successfully`)
+      const action = variables.editingProductId ? m['billing.updated']() : m['billing.created']()
+      toast.success(m['billing.product_saved']({ title: data?.title, action }))
       setProductFormOpen(false)
       setEditingProduct(undefined)
       queryClient.invalidateQueries({ queryKey: queryKeys.billingProducts(realmId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error: Error) => {
-      toast.error(`Failed to save product: ${error.message}`)
+      toast.error(m['billing.product_save_failed']({ message: error.message }))
     },
   })
 
@@ -76,14 +77,14 @@ export function ProductPage({ realmId }: ProductPageProps) {
       return response.data
     },
     onSuccess: (_, variables) => {
-      toast.success(`Product "${variables.title}" deleted successfully`)
+      toast.success(m['billing.product_deleted']({ title: variables.title }))
       setDeleteConfirmOpen(false)
       setDeletingProduct(undefined)
       queryClient.invalidateQueries({ queryKey: queryKeys.billingProducts(realmId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
     },
     onError: (error: Error) => {
-      toast.error(`Failed to delete product: ${error.message}`)
+      toast.error(m['billing.product_delete_failed']({ message: error.message }))
     },
   })
 
@@ -120,9 +121,9 @@ export function ProductPage({ realmId }: ProductPageProps) {
   return (
     <div className="space-y-6" data-testid="products-page">
       <PageHeader
-        title="Products"
+        title={m['billing.products_title']()}
         action={{
-          label: 'Create Product',
+          label: m['billing.create_product'](),
           onClick: handleCreateProduct,
           testId: 'add-product-button',
           icon: <Plus className="mr-2 h-4 w-4" />,
@@ -131,7 +132,7 @@ export function ProductPage({ realmId }: ProductPageProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Products</CardTitle>
+          <CardTitle>{m['billing.products_title']()}</CardTitle>
         </CardHeader>
         <CardContent>
           <ProductTable

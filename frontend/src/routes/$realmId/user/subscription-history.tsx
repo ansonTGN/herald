@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { getStatusBadgeVariant, type SubscriptionStatus } from '@/types/billing'
 import { FileText } from 'lucide-react'
+import { m } from '@/paraglide/messages'
 
 type SubscriptionWithClientApp = {
   clientApp: ClientAppItem
@@ -128,16 +129,20 @@ function SubscriptionHistoryRoute() {
 
   return (
     <div className="space-y-6" data-testid="subscription-history-page">
-      <PageHeader title="Subscription History" />
+      <PageHeader title={m['billing.subscription_history_page_title']()} />
 
       <Card>
         <CardContent className="space-y-6 pt-6">
           {loadingApps || loadingSubscriptions ? (
-            <div className="text-center py-8 text-muted-foreground">Loading subscriptions...</div>
+            <div className="text-center py-8 text-muted-foreground">
+              {m['billing.my_subscriptions_loading']()}
+            </div>
           ) : hasMultipleSubscriptions ? (
             <>
               <div>
-                <h2 className="text-lg font-semibold mb-4">Select Subscription</h2>
+                <h2 className="text-lg font-semibold mb-4">
+                  {m['billing.subscription_select_title']()}
+                </h2>
                 <SubscriptionSelector
                   subscriptions={subscriptionList ?? []}
                   selectedId={selectedSubscriptionId}
@@ -148,7 +153,9 @@ function SubscriptionHistoryRoute() {
 
               {selectedSubscriptionId && (
                 <div>
-                  <h2 className="text-lg font-semibold mb-4">History Timeline</h2>
+                  <h2 className="text-lg font-semibold mb-4">
+                    {m['billing.subscription_history_timeline']()}
+                  </h2>
                   <UserSubscriptionTimeline
                     events={historyData?.events ?? []}
                     loading={loadingHistory}
@@ -160,7 +167,7 @@ function SubscriptionHistoryRoute() {
             <div>
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <span>Showing history for</span>
+                  <span>{m['billing.subscription_showing_history_for']()}</span>
                   <span className="font-medium text-foreground">
                     {singleSubscription.clientApp.name}
                   </span>
@@ -184,7 +191,7 @@ function SubscriptionHistoryRoute() {
                     data-testid={`subscription-invoice-button-${singleSubscription.subscription.id}`}
                   >
                     <FileText className="mr-2 h-4 w-4" />
-                    Invoice
+                    {m['billing.subscription_invoice_button']()}
                   </Button>
                 )}
               </div>
@@ -194,7 +201,9 @@ function SubscriptionHistoryRoute() {
               />
             </div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">No subscriptions found</div>
+            <div className="text-center py-8 text-muted-foreground">
+              {m['billing.subscription_not_found']()}
+            </div>
           )}
         </CardContent>
       </Card>

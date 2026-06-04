@@ -23,6 +23,7 @@ import { useFormMutation } from '@/hooks/use-form-mutation'
 import { handleApiResponse } from '@/lib/api-utils'
 import { queryKeys } from '@/data/query-options'
 import { ArrowLeft } from 'lucide-react'
+import { m } from '@/paraglide/messages'
 
 interface PointsPackageFormPageProps {
   mode: 'create' | 'edit'
@@ -103,7 +104,10 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
       }).then(handleApiResponse)
     },
     getSuccessMessage: (data) =>
-      `Points package "${data?.title}" ${isCreate ? 'created' : 'updated'} successfully`,
+      m['points.packages_form_saved_success']({
+        title: data?.title ?? '',
+        action: isCreate ? m['common.create']().toLowerCase() : m['common.update']().toLowerCase(),
+      }),
     invalidateQueries: [queryKeys.pointsPackages(realmId), queryKeys.featureAvailability(realmId)],
     onSuccess: () => {
       navigate({ to: '/$realmId/manage/points-packages', params: { realmId } })
@@ -135,12 +139,14 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
         </Button>
         <div>
           <h1 className="text-2xl font-bold" data-testid="page-title">
-            {isCreate ? 'Create Points Package' : 'Edit Points Package'}
+            {isCreate
+              ? m['points.packages_form_create_title']()
+              : m['points.packages_form_edit_title']()}
           </h1>
           <p className="text-muted-foreground text-sm">
             {isCreate
-              ? 'Create a new points package for users to purchase'
-              : 'Update points package details'}
+              ? m['points.packages_form_create_description']()
+              : m['points.packages_form_edit_description']()}
           </p>
         </div>
       </div>
@@ -160,15 +166,14 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
                 <TextField
                   form={form}
                   name="name"
-                  label="Package Name"
+                  label={m['points.packages_form_name_label']()}
                   dataTestId="points-package-name-input"
                   placeholder="basic-points-package"
                   disabled={!isCreate}
                   required
                 />
                 <p className="text-xs text-muted-foreground">
-                  Unique identifier for the package (lowercase letters, numbers, hyphens, and
-                  underscores only)
+                  {m['points.packages_form_name_help']()}
                 </p>
               </div>
 
@@ -176,25 +181,27 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
                 <TextField
                   form={form}
                   name="title"
-                  label="Title"
+                  label={m['points.packages_form_title_label']()}
                   dataTestId="points-package-title-input"
                   placeholder="Basic Points Package"
                   required
                 />
-                <p className="text-xs text-muted-foreground">Display name shown to users</p>
+                <p className="text-xs text-muted-foreground">
+                  {m['points.packages_form_title_help']()}
+                </p>
               </div>
 
               <div className="space-y-2">
                 <TextareaField
                   form={form}
                   name="description"
-                  label="Description"
+                  label={m['points.packages_form_description_label']()}
                   dataTestId="points-package-description-input"
-                  placeholder="A great starter package for new users"
+                  placeholder={m['points.packages_form_description_placeholder']()}
                   rows={3}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Optional description of what users will get
+                  {m['points.packages_form_description_help']()}
                 </p>
               </div>
 
@@ -203,26 +210,30 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
                   <NumberField
                     form={form}
                     name="points"
-                    label="Points"
+                    label={m['points.packages_form_points_label']()}
                     dataTestId="points-package-points-input"
                     placeholder="100"
                     disabled={!isCreate}
                     required
                   />
-                  <p className="text-xs text-muted-foreground">Number of points granted</p>
+                  <p className="text-xs text-muted-foreground">
+                    {m['points.packages_form_points_help']()}
+                  </p>
                 </div>
 
                 <div className="space-y-2">
                   <NumberField
                     form={form}
                     name="price"
-                    label="Price"
+                    label={m['points.packages_form_price_label']()}
                     dataTestId="points-package-price-input"
                     placeholder="9.99"
                     step="0.01"
                     required
                   />
-                  <p className="text-xs text-muted-foreground">Price in specified currency</p>
+                  <p className="text-xs text-muted-foreground">
+                    {m['points.packages_form_price_help']()}
+                  </p>
                 </div>
               </div>
 
@@ -231,13 +242,13 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
                   <TextField
                     form={form}
                     name="currency"
-                    label="Currency"
+                    label={m['points.packages_form_currency_label']()}
                     dataTestId="points-package-currency-select"
                     placeholder="USD"
                     required
                   />
                   <p className="text-xs text-muted-foreground">
-                    ISO 4217 currency code (e.g., USD, EUR, CNY)
+                    {m['points.packages_form_currency_help']()}
                   </p>
                 </div>
 
@@ -245,11 +256,13 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
                   <NumberField
                     form={form}
                     name="sortOrder"
-                    label="Sort Order"
+                    label={m['points.packages_form_sort_order_label']()}
                     dataTestId="points-package-sort-order-input"
                     placeholder="0"
                   />
-                  <p className="text-xs text-muted-foreground">Lower numbers appear first</p>
+                  <p className="text-xs text-muted-foreground">
+                    {m['points.packages_form_sort_order_help']()}
+                  </p>
                 </div>
               </div>
 
@@ -261,9 +274,9 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
                       onCheckedChange={(checked) => field.handleChange(checked)}
                       data-testid="points-package-enabled-switch"
                     />
-                    <Label htmlFor="enabled">Enabled</Label>
+                    <Label htmlFor="enabled">{m['points.packages_form_enabled_label']()}</Label>
                     <p className="text-xs text-muted-foreground">
-                      Allow users to purchase this package
+                      {m['points.packages_form_enabled_help']()}
                     </p>
                   </div>
                 )}
@@ -272,7 +285,7 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
               <form.Field name="packageType">
                 {(field) => (
                   <div className="space-y-2">
-                    <Label>Package Type</Label>
+                    <Label>{m['points.packages_form_type_label']()}</Label>
                     <RadioGroup
                       value={field.state.value}
                       onValueChange={(val) => {
@@ -291,7 +304,9 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
                           id="package-type-standard"
                           data-testid="points-package-type-standard"
                         />
-                        <Label htmlFor="package-type-standard">Standard</Label>
+                        <Label htmlFor="package-type-standard">
+                          {m['points.packages_form_type_standard']()}
+                        </Label>
                       </div>
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem
@@ -299,7 +314,9 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
                           id="package-type-promotional"
                           data-testid="points-package-type-promotional"
                         />
-                        <Label htmlFor="package-type-promotional">Promotional</Label>
+                        <Label htmlFor="package-type-promotional">
+                          {m['points.packages_form_type_promotional']()}
+                        </Label>
                       </div>
                     </RadioGroup>
                   </div>
@@ -315,11 +332,11 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
                           <NumberField
                             form={form}
                             name="originalPrice"
-                            label="Original Price (Before Discount)"
+                            label={m['points.packages_form_original_price_label']()}
                             dataTestId="points-package-original-price-input"
                             placeholder="19.99"
                             step="0.01"
-                            helpText="Must be greater than selling price"
+                            helpText={m['points.packages_form_original_price_help']()}
                             required
                           />
                         </div>
@@ -329,14 +346,14 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
                         <TextField
                           form={form}
                           name="promoStartTime"
-                          label="Promotion Start Time"
+                          label={m['points.packages_form_promo_start_label']()}
                           dataTestId="points-package-promo-start-input"
                           type="datetime-local"
                         />
                         <TextField
                           form={form}
                           name="promoEndTime"
-                          label="Promotion End Time"
+                          label={m['points.packages_form_promo_end_label']()}
                           dataTestId="points-package-promo-end-input"
                           type="datetime-local"
                         />
@@ -355,14 +372,18 @@ export function PointsPackageFormPage({ mode, realmId, pkg }: PointsPackageFormP
               onClick={handleCancel}
               data-testid="points-package-cancel-button"
             >
-              Cancel
+              {m['points.packages_form_cancel']()}
             </Button>
             <Button
               type="submit"
               disabled={isSubmitting}
               data-testid="points-package-submit-button"
             >
-              {isSubmitting ? 'Saving...' : isCreate ? 'Create Package' : 'Save Changes'}
+              {isSubmitting
+                ? m['points.packages_form_saving']()
+                : isCreate
+                  ? m['points.packages_form_create']()
+                  : m['points.packages_form_save']()}
             </Button>
           </div>
         </form>

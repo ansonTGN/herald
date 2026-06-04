@@ -21,11 +21,12 @@ import {
 } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { getFieldErrorMessage } from '@/lib/form-utils'
-import { USER_STATUS_OPTIONS, USER_STATUS } from '@/lib/constants/user'
+import { getUserStatusOptions, USER_STATUS } from '@/lib/constants/user'
 import { useQuery } from '@tanstack/react-query'
 import { useRealmId } from '@/stores/auth-store'
 import { queryKeys, rolesQueryOptions } from '@/data/query-options'
 import { TextField } from '@/components/shared/form-fields'
+import { m } from '@/paraglide/messages'
 
 interface CreateUserDialogProps {
   open: boolean
@@ -35,7 +36,9 @@ interface CreateUserDialogProps {
 
 const DEFAULT_STATUS = USER_STATUS.NORMAL
 
-const STATUS_OPTIONS = USER_STATUS_OPTIONS.filter((opt) => opt.value !== 'all')
+function getStatusOptions() {
+  return getUserStatusOptions().filter((opt) => opt.value !== 'all')
+}
 
 export function CreateUserDialog({
   open,
@@ -65,7 +68,9 @@ export function CreateUserDialog({
       }),
     getSuccessMessage: (response) => {
       const user = response.data
-      return user ? `User "${user.email}" created successfully` : 'User created successfully'
+      return user
+        ? m['users.user_created']({ email: user.email })
+        : m['users.user_created_fallback']()
     },
     invalidateQueries: [queryKeys.usersList(realmId)],
     onSuccess: () => {
@@ -91,8 +96,8 @@ export function CreateUserDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]" data-testid="dialog">
         <DialogHeader>
-          <DialogTitle data-testid="dialog-title">Add New User</DialogTitle>
-          <DialogDescription>Fill in the user information below</DialogDescription>
+          <DialogTitle data-testid="dialog-title">{m['users.add_title']()}</DialogTitle>
+          <DialogDescription>{m['users.add_description']()}</DialogDescription>
         </DialogHeader>
 
         <AppForm>
@@ -107,7 +112,7 @@ export function CreateUserDialog({
             <TextField
               form={form}
               name="email"
-              label="Email"
+              label={m['users.form_email']()}
               inputId="email"
               type="email"
               dataTestId="email-input"
@@ -116,7 +121,7 @@ export function CreateUserDialog({
             <TextField
               form={form}
               name="password"
-              label="Password"
+              label={m['users.form_password']()}
               inputId="password"
               type="password"
               dataTestId="password-input"
@@ -125,7 +130,7 @@ export function CreateUserDialog({
             <TextField
               form={form}
               name="nickname"
-              label="Nickname"
+              label={m['users.form_nickname']()}
               inputId="nickname"
               dataTestId="nickname-input"
             />
@@ -134,17 +139,17 @@ export function CreateUserDialog({
               name="status"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor="status">Status</Label>
+                  <Label htmlFor="status">{m['users.form_status']()}</Label>
                   <Select
                     value={String(field.state.value ?? '')}
                     onValueChange={(value) => field.handleChange(Number(value))}
                     data-testid="user-create-status-select"
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select status" />
+                      <SelectValue placeholder={m['users.form_select_status']()} />
                     </SelectTrigger>
                     <SelectContent>
-                      {STATUS_OPTIONS.map((option) => (
+                      {getStatusOptions().map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
@@ -167,7 +172,7 @@ export function CreateUserDialog({
                 const roleIdsValue = Array.isArray(field.state.value) ? field.state.value : []
                 return (
                   <div className="space-y-2">
-                    <Label>Roles</Label>
+                    <Label>{m['users.form_roles']()}</Label>
                     <div className="space-y-2">
                       {userRoleId && (
                         <div className="flex items-center space-x-2">
@@ -183,7 +188,7 @@ export function CreateUserDialog({
                             data-testid="user-create-role-checkbox"
                           />
                           <Label htmlFor="role-user" className="text-sm font-normal">
-                            User
+                            {m['users.form_role_user']()}
                           </Label>
                         </div>
                       )}
@@ -206,10 +211,10 @@ export function CreateUserDialog({
                 variant="outline"
                 data-testid="dialog-cancel-button"
               >
-                Cancel
+                {m['common.cancel']()}
               </Button>
               <Button type="submit" disabled={isSubmitting} data-testid="dialog-submit-button">
-                {isSubmitting ? 'Adding...' : 'Add User'}
+                {isSubmitting ? m['users.form_adding']() : m['users.add_button']()}
               </Button>
             </DialogFooter>
           </form>

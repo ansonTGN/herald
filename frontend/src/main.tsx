@@ -4,6 +4,7 @@ import { createRouter } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
 import ReactDOM from 'react-dom/client'
+import { LocaleProvider } from '@/components/shared/locale-provider'
 
 // Import route tree
 import { routeTree } from './routeTree.gen'
@@ -49,7 +50,9 @@ const rootElement = document.getElementById('app')!
 ReactDOM.createRoot(rootElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <LocaleProvider>
+        <RouterProvider router={router} />
+      </LocaleProvider>
     </QueryClientProvider>
   </StrictMode>
 )

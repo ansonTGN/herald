@@ -8,7 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { USER_STATUS_OPTIONS } from '@/lib/constants/user'
+import { getUserStatusOptions } from '@/lib/constants/user'
+import { m } from '@/paraglide/messages'
 
 interface UserSearchProps {
   email?: string
@@ -35,7 +36,7 @@ export function UserSearch({
   return (
     <>
       <Input
-        placeholder="Search by email..."
+        placeholder={m['users.search_placeholder']()}
         value={searchInput}
         onChange={(e) => setSearchInput(e.target.value)}
         data-testid="users-search-input"
@@ -48,10 +49,10 @@ export function UserSearch({
           onValueChange={(value) => onStatusChange(value === 'all' ? undefined : value)}
         >
           <SelectTrigger data-testid="users-status-filter" className="w-[160px]">
-            <SelectValue placeholder="All Statuses" />
+            <SelectValue placeholder={m['users.filter_all_statuses']()} />
           </SelectTrigger>
           <SelectContent>
-            {USER_STATUS_OPTIONS.map((option) => (
+            {getUserStatusOptions().map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>

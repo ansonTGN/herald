@@ -29,6 +29,7 @@ import { usePermission } from '@/hooks/use-permission'
 import { PERMISSION } from '@/lib/constants/auth-constants'
 import { getErrorMessage } from '@/lib/error-utils'
 import type { UserResponse } from '@/lib/api-generated'
+import { m } from '@/paraglide/messages'
 
 interface GrantPointsDialogProps {
   open: boolean
@@ -107,7 +108,12 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
         reason: pendingGrant.reason,
         validityDays: pendingGrant.validityDays ?? null,
       })
-      toast.success(`Successfully granted ${pendingGrant.amount} points to ${selectedUser.email}`)
+      toast.success(
+        m['points.grant_dialog_granted_success']({
+          amount: pendingGrant.amount,
+          email: selectedUser.email,
+        })
+      )
       onOpenChange(false)
       resetDialogState()
     } catch (error) {
@@ -129,8 +135,8 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-[425px]" data-testid="grant-points-form-dialog">
           <DialogHeader>
-            <DialogTitle>Grant Points</DialogTitle>
-            <DialogDescription>You do not have permission to grant points.</DialogDescription>
+            <DialogTitle>{m['points.grant_dialog_title']()}</DialogTitle>
+            <DialogDescription>{m['points.grant_dialog_no_permission']()}</DialogDescription>
           </DialogHeader>
         </DialogContent>
       </Dialog>
@@ -143,8 +149,8 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-[425px]" data-testid="grant-points-form-dialog">
           <DialogHeader>
-            <DialogTitle>Grant Points</DialogTitle>
-            <DialogDescription>Grant points to a user in this realm.</DialogDescription>
+            <DialogTitle>{m['points.grant_dialog_title']()}</DialogTitle>
+            <DialogDescription>{m['points.grant_dialog_description']()}</DialogDescription>
           </DialogHeader>
 
           <AppForm>
@@ -165,7 +171,7 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
 
               {/* User selection */}
               <div className="space-y-2">
-                <Label>User *</Label>
+                <Label>{m['points.grant_dialog_user_label']()}</Label>
                 {selectedUser ? (
                   <div className="flex items-center justify-between rounded-md border px-3 py-2">
                     <div>
@@ -175,7 +181,7 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
                       )}
                     </div>
                     <Button type="button" variant="ghost" size="sm" onClick={handleClearUser}>
-                      Change
+                      {m['points.grant_dialog_user_change']()}
                     </Button>
                   </div>
                 ) : (
@@ -186,11 +192,13 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
                     {isSearching && (
                       <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Searching...
+                        {m['points.grant_dialog_user_searching']()}
                       </div>
                     )}
                     {showNoResults && (
-                      <p className="py-2 text-sm text-muted-foreground">No users found</p>
+                      <p className="py-2 text-sm text-muted-foreground">
+                        {m['points.grant_dialog_user_no_results']()}
+                      </p>
                     )}
                     {users.length > 0 && !selectedUser && (
                       <div className="max-h-40 overflow-y-auto rounded-md border">
@@ -238,7 +246,7 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
               <NumberField
                 form={form}
                 name="amount"
-                label="Points Amount"
+                label={m['points.grant_dialog_amount_label']()}
                 inputId="grant-amount"
                 dataTestId="grant-points-amount-input"
                 min={1}
@@ -250,7 +258,9 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
                 <form.Field name="validityDays">
                   {(field) => (
                     <div className="space-y-2">
-                      <Label htmlFor="grant-validity-days">Validity (Days)</Label>
+                      <Label htmlFor="grant-validity-days">
+                        {m['points.grant_dialog_validity_label']()}
+                      </Label>
                       <Input
                         id="grant-validity-days"
                         type="number"
@@ -285,7 +295,7 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
                     data-testid="grant-points-permanent-toggle"
                   />
                   <Label htmlFor="grant-permanent" className="cursor-pointer">
-                    Permanent
+                    {m['points.grant_dialog_permanent_label']()}
                   </Label>
                 </div>
               </div>
@@ -294,10 +304,10 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
               <TextareaField
                 form={form}
                 name="reason"
-                label="Reason"
+                label={m['points.grant_dialog_reason_label']()}
                 inputId="grant-reason"
                 dataTestId="grant-points-reason-input"
-                placeholder="Reason for granting points"
+                placeholder={m['points.grant_dialog_reason_placeholder']()}
                 rows={3}
                 required
               />
@@ -309,14 +319,14 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
                   onClick={() => handleOpenChange(false)}
                   data-testid="grant-points-cancel-button"
                 >
-                  Cancel
+                  {m['common.cancel']()}
                 </Button>
                 <Button
                   type="submit"
                   disabled={grantMutation.isPending}
                   data-testid="grant-points-submit-button"
                 >
-                  Review Grant
+                  {m['points.grant_dialog_review_button']()}
                 </Button>
               </DialogFooter>
             </form>
@@ -328,13 +338,15 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="sm:max-w-[425px]" data-testid="grant-points-confirm-dialog">
           <DialogHeader>
-            <DialogTitle>Confirm Grant</DialogTitle>
-            <DialogDescription>Review the details below before confirming.</DialogDescription>
+            <DialogTitle>{m['points.grant_dialog_confirm_title']()}</DialogTitle>
+            <DialogDescription>{m['points.grant_dialog_confirm_description']()}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 rounded-md border p-4 text-sm">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">User</span>
+              <span className="text-muted-foreground">
+                {m['points.grant_dialog_confirm_user']()}
+              </span>
               <span className="font-medium">
                 {selectedUser?.nickname
                   ? `${selectedUser.nickname} (${selectedUser.email})`
@@ -342,17 +354,25 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Amount</span>
+              <span className="text-muted-foreground">
+                {m['points.grant_dialog_confirm_amount']()}
+              </span>
               <span className="font-medium">{(pendingGrant?.amount ?? 0).toLocaleString()}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Validity</span>
+              <span className="text-muted-foreground">
+                {m['points.grant_dialog_confirm_validity']()}
+              </span>
               <span className="font-medium">
-                {pendingGrant?.validityDays ? `${pendingGrant.validityDays} days` : 'Permanent'}
+                {pendingGrant?.validityDays
+                  ? m['points.grant_dialog_confirm_days']({ days: pendingGrant.validityDays })
+                  : m['points.grant_dialog_confirm_permanent']()}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Reason</span>
+              <span className="text-muted-foreground">
+                {m['points.grant_dialog_confirm_reason']()}
+              </span>
               <span className="font-medium">{pendingGrant?.reason}</span>
             </div>
           </div>
@@ -364,7 +384,7 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
               onClick={() => setConfirmOpen(false)}
               disabled={grantMutation.isPending}
             >
-              Cancel
+              {m['common.cancel']()}
             </Button>
             <Button
               type="button"
@@ -372,7 +392,9 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
               disabled={grantMutation.isPending}
               data-testid="grant-points-confirm-button"
             >
-              {grantMutation.isPending ? 'Granting...' : 'Confirm Grant'}
+              {grantMutation.isPending
+                ? m['points.grant_dialog_confirm_granting']()
+                : m['points.grant_dialog_confirm_button']()}
             </Button>
           </DialogFooter>
         </DialogContent>

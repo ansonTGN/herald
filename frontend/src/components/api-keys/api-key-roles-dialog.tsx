@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { m } from '@/paraglide/messages'
 
 interface ApiKeyRolesDialogProps {
   open: boolean
@@ -75,7 +76,7 @@ export function ApiKeyRolesDialog({
 
       setSelectedRoleIds(newRoleIds)
     } catch {
-      toast.error('Failed to update API key roles')
+      toast.error(m['api_keys.roles_update_failed']())
       // selectedRoleIds is NOT updated on failure -- stays matching server state
     } finally {
       setIsSaving(false)
@@ -88,14 +89,18 @@ export function ApiKeyRolesDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md" data-testid="api-key-roles-dialog-content">
         <DialogHeader>
-          <DialogTitle data-testid="api-key-roles-dialog-title">Manage API Key Roles</DialogTitle>
+          <DialogTitle data-testid="api-key-roles-dialog-title">
+            {m['api_keys.roles_dialog_title']()}
+          </DialogTitle>
           <DialogDescription data-testid="api-key-roles-dialog-name">
             {apiKeyName}
           </DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
-          <div className="py-8 text-center text-sm text-muted-foreground">Loading roles...</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            {m['api_keys.roles_dialog_loading']()}
+          </div>
         ) : (
           <div className="space-y-4">
             <div>
@@ -103,17 +108,17 @@ export function ApiKeyRolesDialog({
                 className="mb-2 block text-sm font-medium"
                 data-testid="api-key-roles-dialog-label"
               >
-                Assign Roles
+                {m['api_keys.roles_dialog_assign_label']()}
               </label>
               <RoleSelector
                 roles={rolesData ?? []}
                 selectedRoleIds={selectedRoleIds}
                 onChange={handleRoleChange}
                 disabled={isSaving}
-                placeholder="Select roles to assign"
+                placeholder={m['api_keys.roles_dialog_placeholder']()}
               />
               <p className="mt-2 text-xs text-muted-foreground">
-                Select one or more roles to assign to this API key
+                {m['api_keys.roles_dialog_help']()}
               </p>
             </div>
 
@@ -125,7 +130,7 @@ export function ApiKeyRolesDialog({
                 variant="outline"
                 data-testid="api-key-roles-dialog-close"
               >
-                Close
+                {m['api_keys.roles_dialog_close']()}
               </Button>
             </DialogFooter>
           </div>

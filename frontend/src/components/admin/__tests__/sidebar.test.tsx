@@ -7,6 +7,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Sidebar } from '../sidebar'
 import { useAuthStore } from '@/stores/auth-store'
+import { LocaleProvider } from '@/components/shared/locale-provider'
 
 let currentPath = '/admin/manage/billing?page=0&pageSize=20&status=all'
 
@@ -75,7 +76,11 @@ describe('Sidebar navigation', () => {
   it('highlights subscription plans on the billing page', async () => {
     currentPath = '/admin/manage/billing?page=0&pageSize=20&status=all'
     const user = userEvent.setup()
-    render(<Sidebar />)
+    render(
+      <LocaleProvider>
+        <Sidebar />
+      </LocaleProvider>
+    )
 
     await user.click(screen.getByTestId('sidebar-menu-products-&-payments'))
 
@@ -89,7 +94,11 @@ describe('Sidebar navigation', () => {
   it('highlights invoices on the invoices page (under Transactions)', async () => {
     currentPath = '/admin/manage/billing/invoices'
     const user = userEvent.setup()
-    render(<Sidebar />)
+    render(
+      <LocaleProvider>
+        <Sidebar />
+      </LocaleProvider>
+    )
 
     await user.click(screen.getByTestId('sidebar-menu-transactions'))
 
@@ -103,7 +112,11 @@ describe('Sidebar navigation', () => {
   it('highlights only payment providers on the payment providers page (under Products & Payments)', async () => {
     currentPath = '/admin/manage/billing/payment-providers'
     const user = userEvent.setup()
-    render(<Sidebar />)
+    render(
+      <LocaleProvider>
+        <Sidebar />
+      </LocaleProvider>
+    )
 
     await user.click(screen.getByTestId('sidebar-menu-products-&-payments'))
 
@@ -117,7 +130,11 @@ describe('Sidebar navigation', () => {
   it('keeps sidebar navigation in its own scroll container when group expands', async () => {
     currentPath = '/admin/manage/billing?page=0&pageSize=20&status=all'
     const user = userEvent.setup()
-    render(<Sidebar />)
+    render(
+      <LocaleProvider>
+        <Sidebar />
+      </LocaleProvider>
+    )
 
     await user.click(screen.getByTestId('sidebar-menu-products-&-payments'))
 

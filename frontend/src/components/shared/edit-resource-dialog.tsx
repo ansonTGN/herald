@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { getFieldErrorMessage } from '@/lib/form-utils'
 import { AlertCircle } from 'lucide-react'
+import { m } from '@/paraglide/messages'
 import type { ResourceFormConfig } from './resource-form-config'
 
 interface BuiltinProtectionConfig {
@@ -126,7 +127,7 @@ export function EditResourceDialog<TData, TResponse = unknown>({
               name="description"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor={config.descriptionInputId}>Description</Label>
+                  <Label htmlFor={config.descriptionInputId}>{m['common.description']()}</Label>
                   <Textarea
                     id={config.descriptionInputId}
                     placeholder={config.descriptionFieldPlaceholder}
@@ -154,7 +155,7 @@ export function EditResourceDialog<TData, TResponse = unknown>({
                 onClick={() => onOpenChange(false)}
                 disabled={isSubmitting}
               >
-                Cancel
+                {m['common.cancel']()}
               </Button>
               <Button
                 type="submit"

@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button'
+import { m } from '@/paraglide/messages'
 
 interface AuthorizeConfirmProps {
   clientAppName: string
@@ -22,7 +23,7 @@ export function AuthorizeConfirm({
         <span className="text-lg font-medium">{clientAppName}</span>
       </div>
       <p className="text-sm text-muted-foreground text-center">
-        The above application is requesting access to your account.
+        {m['device.app_requesting_access']()}
       </p>
       <div className="flex gap-3">
         <Button
@@ -32,7 +33,7 @@ export function AuthorizeConfirm({
           className="flex-1"
           data-testid="device-authorize-button"
         >
-          Authorize
+          {m['device.authorize']()}
         </Button>
         <Button
           variant="outline"
@@ -41,7 +42,7 @@ export function AuthorizeConfirm({
           className="flex-1"
           data-testid="device-deny-button"
         >
-          Deny
+          {m['device.deny']()}
         </Button>
       </div>
     </div>

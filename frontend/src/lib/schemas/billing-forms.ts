@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { m } from '@/paraglide/messages'
 
 // Pre-compiled regex patterns for validation (compiled once at module load)
 const PLAN_NAME_REGEX = /^[a-z0-9_-]+$/
@@ -20,14 +21,17 @@ export type WebhookMode = (typeof WEBHOOK_MODES)[keyof typeof WEBHOOK_MODES]
 export const productFormSchema = z.object({
   code: z
     .string()
-    .min(3, 'Product code must be at least 3 characters')
-    .max(50, 'Product code must not exceed 50 characters')
-    .regex(
-      PLAN_NAME_REGEX,
-      'Product code can only contain lowercase letters, numbers, hyphens, and underscores'
-    ),
-  title: z.string().min(1, 'Title is required').max(100, 'Title must not exceed 100 characters'),
-  description: z.string().max(500, 'Description must not exceed 500 characters').optional(),
+    .min(3, { error: () => m['billing.product_code_min_length']() })
+    .max(50, { error: () => m['billing.product_code_max_length']() })
+    .regex(PLAN_NAME_REGEX, { error: () => m['billing.product_code_format']() }),
+  title: z
+    .string()
+    .min(1, { error: () => m['billing.title_required']() })
+    .max(100, { error: () => m['billing.title_max_length']() }),
+  description: z
+    .string()
+    .max(500, { error: () => m['billing.description_max_length']() })
+    .optional(),
   enabled: z.boolean().default(true),
 })
 
@@ -46,39 +50,47 @@ export function getProductDefaults(product?: Partial<ProductFormData>): ProductF
 // ==================== Subscription Plan Form Schema ====================
 
 export const subscriptionPlanSchema = z.object({
-  productId: z.string().min(1, 'Product is required'),
+  productId: z.string().min(1, { error: () => m['billing.product_required']() }),
   name: z
     .string()
-    .min(1, 'Plan name is required')
-    .max(50, 'Plan name must not exceed 50 characters')
-    .regex(
-      PLAN_NAME_REGEX,
-      'Plan name can only contain lowercase letters, numbers, hyphens, and underscores'
-    ),
-  title: z.string().min(1, 'Title is required').max(100, 'Title must not exceed 100 characters'),
-  description: z.string().max(500, 'Description must not exceed 500 characters').optional(),
+    .min(1, { error: () => m['billing.plan_name_required']() })
+    .max(50, { error: () => m['billing.plan_name_max_length']() })
+    .regex(PLAN_NAME_REGEX, { error: () => m['billing.plan_name_format']() }),
+  title: z
+    .string()
+    .min(1, { error: () => m['billing.title_required']() })
+    .max(100, { error: () => m['billing.title_max_length']() }),
+  description: z
+    .string()
+    .max(500, { error: () => m['billing.description_max_length']() })
+    .optional(),
   type: z.enum(['monthly', 'yearly']),
   price: z
     .number()
-    .min(0.01, 'Price must be at least $0.01')
-    .max(99999.99, 'Price must not exceed $99,999.99')
+    .min(0.01, { error: () => m['billing.price_min']() })
+    .max(99999.99, { error: () => m['billing.price_max']() })
     .transform((val) => Math.round(val * 100)),
   currency: z
     .string()
-    .min(3, 'Currency must be at least 3 characters')
-    .max(3, 'Currency must be exactly 3 characters'),
+    .min(3, { error: () => m['billing.currency_min_length']() })
+    .max(3, { error: () => m['billing.currency_max_length']() }),
   checkoutUrl: z
     .string()
-    .max(2048, 'Checkout URL must not exceed 2048 characters')
+    .max(2048, { error: () => m['billing.checkout_url_max_length']() })
     .optional()
     .transform((val) => (val === '' ? undefined : val))
-    .refine((val) => !val || URL_SCHEMA.safeParse(val).success, 'Invalid URL format'),
+    .refine((val) => !val || URL_SCHEMA.safeParse(val).success, {
+      error: () => m['billing.checkout_url_invalid'](),
+    }),
   trialDays: z
     .number()
-    .min(0, 'Trial days cannot be negative')
-    .max(365, 'Trial days must not exceed 365')
+    .min(0, { error: () => m['billing.trial_days_min']() })
+    .max(365, { error: () => m['billing.trial_days_max']() })
     .default(0),
-  sortOrder: z.number().min(0, 'Sort order cannot be negative').default(0),
+  sortOrder: z
+    .number()
+    .min(0, { error: () => m['billing.sort_order_min']() })
+    .default(0),
   active: z.boolean().default(true),
 })
 
@@ -118,27 +130,29 @@ export function getSubscriptionPlanDefaults(plan?: {
 export const shopifyConfigSchema = z.object({
   shopDomain: z
     .string()
-    .min(1, 'Shop Domain is required')
-    .regex(SHOPIFY_DOMAIN_REGEX, 'Shop Domain must end with .myshopify.com')
+    .min(1, { error: () => m['billing.shopify_domain_required']() })
+    .regex(SHOPIFY_DOMAIN_REGEX, { error: () => m['billing.shopify_domain_format']() })
     .trim()
     .toLowerCase(),
 
   adminAccessToken: z
     .string()
     .trim()
-    .regex(SHOPIFY_ADMIN_TOKEN_REGEX, 'Must start with shpat_')
+    .regex(SHOPIFY_ADMIN_TOKEN_REGEX, { error: () => m['billing.shopify_admin_token_format']() })
     .or(z.literal('')),
 
   storefrontAccessToken: z
     .string()
     .trim()
-    .regex(SHOPIFY_STOREFRONT_TOKEN_REGEX, 'Must start with shp_')
+    .regex(SHOPIFY_STOREFRONT_TOKEN_REGEX, {
+      error: () => m['billing.shopify_storefront_token_format'](),
+    })
     .or(z.literal('')),
 
   appClientSecret: z
     .string()
     .trim()
-    .min(10, 'App Client Secret must be at least 10 characters')
+    .min(10, { error: () => m['billing.shopify_app_secret_min_length']() })
     .or(z.literal('')),
 
   apiVersion: z.string().default('2024-01').optional(),
@@ -151,8 +165,8 @@ export const shopifyConfigSchema = z.object({
   timeout: z
     .number()
     .int()
-    .min(1, 'Timeout must be at least 1 second')
-    .max(120, 'Timeout must not exceed 120 seconds')
+    .min(1, { error: () => m['billing.shopify_timeout_min']() })
+    .max(120, { error: () => m['billing.shopify_timeout_max']() })
     .default(30)
     .optional(),
 
@@ -182,17 +196,21 @@ export const claimSubscriptionSchema = z
     shopifyCustomerId: z
       .string()
       .optional()
-      .refine((val) => !val || val.length > 0, 'Customer ID cannot be empty'),
+      .refine((val) => !val || val.length > 0, {
+        error: () => m['billing.claim_customer_id_empty'](),
+      }),
 
     contractId: z
       .string()
       .optional()
-      .refine((val) => !val || val.length > 0, 'Contract ID cannot be empty'),
+      .refine((val) => !val || val.length > 0, {
+        error: () => m['billing.claim_contract_id_empty'](),
+      }),
 
     grantCurrentPeriod: z.boolean().default(true),
   })
   .refine((data) => data.shopifyCustomerId || data.contractId, {
-    message: 'Either Shopify Customer ID or Contract ID is required',
+    error: () => m['billing.claim_either_required'](),
     path: ['shopifyCustomerId'],
   })
 
@@ -209,14 +227,14 @@ export function getClaimSubscriptionDefaults(): ClaimSubscriptionForm {
 // ==================== Provider Mapping Schema ====================
 
 export const providerMappingSchema = z.object({
-  paymentProvider: z.string().min(1, 'Payment provider is required'),
+  paymentProvider: z.string().min(1, { error: () => m['billing.provider_mapping_required']() }),
   externalProductId: z
     .string()
-    .min(1, 'External product ID is required')
-    .max(255, 'External product ID must not exceed 255 characters'),
+    .min(1, { error: () => m['billing.external_product_id_required']() })
+    .max(255, { error: () => m['billing.external_product_id_max_length']() }),
   externalPriceId: z
     .string()
-    .max(255, 'External price ID must not exceed 255 characters')
+    .max(255, { error: () => m['billing.external_price_id_max_length']() })
     .optional(),
   enabled: z.boolean().optional().default(true),
 })
@@ -243,12 +261,16 @@ export function getProviderMappingDefaults(mapping?: {
 export const wechatConfigSchema = z.object({
   enabled: z.boolean().default(true),
 
-  appId: z.string().min(1, 'App ID is required').regex(/^wx/, 'App ID must start with "wx"').trim(),
+  appId: z
+    .string()
+    .min(1, { error: () => m['billing.wechat_app_id_required']() })
+    .regex(/^wx/, { error: () => m['billing.wechat_app_id_format']() })
+    .trim(),
 
   mchId: z
     .string()
-    .min(1, 'Merchant ID is required')
-    .regex(/^\d+$/, 'Merchant ID must be numeric')
+    .min(1, { error: () => m['billing.wechat_merchant_id_required']() })
+    .regex(/^\d+$/, { error: () => m['billing.wechat_merchant_id_format']() })
     .trim(),
 
   privateKey: z
@@ -257,15 +279,20 @@ export const wechatConfigSchema = z.object({
       (val) =>
         !val ||
         (val.includes('-----BEGIN PRIVATE KEY-----') && val.includes('-----END PRIVATE KEY-----')),
-      'Private Key must be in valid PEM format'
+      { error: () => m['billing.wechat_private_key_format']() }
     )
     .trim(),
 
-  serialNo: z.string().min(1, 'Serial No is required').trim(),
+  serialNo: z
+    .string()
+    .min(1, { error: () => m['billing.wechat_serial_no_required']() })
+    .trim(),
 
   v3Key: z
     .string()
-    .refine((val) => !val || val.length === 32, 'API v3 Key must be exactly 32 bytes')
+    .refine((val) => !val || val.length === 32, {
+      error: () => m['billing.wechat_v3_key_format'](),
+    })
     .trim(),
 
   platformPublicKey: z
@@ -274,15 +301,17 @@ export const wechatConfigSchema = z.object({
       (val) =>
         !val ||
         (val.includes('-----BEGIN PUBLIC KEY-----') && val.includes('-----END PUBLIC KEY-----')),
-      'Platform Public Key must be in valid PEM format'
+      { error: () => m['billing.wechat_platform_key_format']() }
     )
     .trim(),
 
   notifyUrl: z
     .string()
-    .min(1, 'Notify URL is required')
-    .url('Invalid URL format')
-    .refine((val) => val.startsWith('https://'), 'Notify URL must use HTTPS')
+    .min(1, { error: () => m['billing.wechat_notify_url_required']() })
+    .url({ error: () => m['billing.wechat_notify_url_format']() })
+    .refine((val) => val.startsWith('https://'), {
+      error: () => m['billing.wechat_notify_url_https'](),
+    })
     .trim(),
 })
 

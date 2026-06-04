@@ -7,6 +7,7 @@ import { CreateRoleDialog } from '@/components/roles/create-role-dialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared'
 import { useState } from 'react'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/roles')({
   component: RolesPage,
@@ -27,9 +28,9 @@ function RolesPage() {
   return (
     <div className="space-y-6" data-testid="roles-page">
       <PageHeader
-        title="Roles"
+        title={m['roles.page_title']()}
         action={{
-          label: 'Add Role',
+          label: m['roles.add_button'](),
           onClick: () => setCreateDialogOpen(true),
           testId: 'role-create-button',
         }}

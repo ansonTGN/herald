@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { m } from '@/paraglide/messages'
 
 /**
  * Converts a datetime-local input value (e.g. "2026-12-31T23:59") to RFC 3339
@@ -12,7 +13,10 @@ function normalizeExpiresAt(value: string): string | undefined {
 }
 
 export const createApiKeySchema = z.object({
-  name: z.string().min(1, 'Name is required').max(100, 'Name must be at most 100 characters'),
+  name: z
+    .string()
+    .min(1, { error: () => m['api_keys.name_required']() })
+    .max(100, { error: () => m['api_keys.name_max_length']() }),
   clientAppId: z.string().uuid().optional(),
   expiresAt: z
     .string()
@@ -21,7 +25,10 @@ export const createApiKeySchema = z.object({
 })
 
 export const updateApiKeySchema = z.object({
-  name: z.string().min(1, 'Name is required').max(100, 'Name must be at most 100 characters'),
+  name: z
+    .string()
+    .min(1, { error: () => m['api_keys.name_required']() })
+    .max(100, { error: () => m['api_keys.name_max_length']() }),
   enabled: z.boolean(),
   expiresAt: z
     .string()

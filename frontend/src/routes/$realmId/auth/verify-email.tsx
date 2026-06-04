@@ -7,14 +7,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
+import { m } from '@/paraglide/messages'
 
 const VERIFICATION_CODE_LENGTH = 6
 const RESEND_COUNTDOWN_SECONDS = 60
 
 function getResendButtonText(isResending: boolean, canResend: boolean, countdown: number): string {
-  if (isResending) return 'Sending...'
-  if (canResend) return 'Resend Verification Email'
-  return `Resend in ${countdown}s`
+  if (isResending) return m['auth.verify_email.sending']()
+  if (canResend) return m['auth.verify_email.resend_button']()
+  return m['auth.verify_email.resend_in']({ countdown })
 }
 
 export const Route = createFileRoute('/$realmId/auth/verify-email')({
@@ -47,7 +48,7 @@ function VerifyEmailPage() {
       })
 
       if (response.data) {
-        toast.success('Email verified successfully')
+        toast.success(m['auth.verify_email.success']())
         navigate({ to: `/${realmId}/auth/login` })
       }
     } catch (error) {
@@ -70,7 +71,7 @@ function VerifyEmailPage() {
         throwOnError: true,
       })
 
-      toast.success('Verification email sent successfully')
+      toast.success(m['auth.verify_email.resend_success']())
       setCountdown(RESEND_COUNTDOWN_SECONDS)
       setCanResend(false)
     } catch (error) {
@@ -93,16 +94,14 @@ function VerifyEmailPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <Card className="max-w-md w-full">
         <CardHeader>
-          <CardTitle data-testid="verify-email-title">Verify Your Email</CardTitle>
+          <CardTitle data-testid="verify-email-title">{m['auth.verify_email.title']()}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-gray-600 text-center mb-6">
-            Please enter your email and 6-digit verification code sent to your email.
-          </p>
+          <p className="text-gray-600 text-center mb-6">{m['auth.verify_email.description']()}</p>
 
           <form onSubmit={handleVerify} className="space-y-6">
             <div>
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{m['auth.verify_email.email_label']()}</Label>
               <Input
                 id="email"
                 type="email"
@@ -116,7 +115,7 @@ function VerifyEmailPage() {
             </div>
 
             <div>
-              <Label htmlFor="verification-code">Verification Code</Label>
+              <Label htmlFor="verification-code">{m['auth.verify_email.code_label']()}</Label>
               <Input
                 id="verification-code"
                 type="text"
@@ -138,7 +137,9 @@ function VerifyEmailPage() {
               disabled={code.length !== VERIFICATION_CODE_LENGTH || isVerifying}
               className="w-full"
             >
-              {isVerifying ? 'Verifying...' : 'Verify Email'}
+              {isVerifying
+                ? m['auth.verify_email.verifying']()
+                : m['auth.verify_email.verify_button']()}
             </Button>
 
             {verificationError && (

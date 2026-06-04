@@ -21,6 +21,8 @@ import { useRealmId } from '@/stores/auth-store'
 import { PERMISSION } from '@/lib/constants/auth-constants'
 import { realmQueryOptions, featureAvailabilityQueryOptions } from '@/data/query-options'
 import { filterByPermission } from '@/lib/utils/filter-by-permission'
+import { m } from '@/paraglide/messages'
+import { LanguageSwitcher } from '@/components/shared/language-switcher'
 import type { LucideIcon } from 'lucide-react'
 
 interface MenuItem {
@@ -40,6 +42,35 @@ export function Sidebar() {
   const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
   const [openMenus, setOpenMenus] = useState<Set<string>>(new Set(['Authorization']))
   const adminFeatures = features?.admin
+
+  /** Maps menu item id to its translated display label. */
+  const getNavLabel = useCallback((id: string): string => {
+    const map: Record<string, () => string> = {
+      dashboard: m['nav.dashboard'],
+      realms: m['nav.realms'],
+      clients: m['nav.clients'],
+      users: m['nav.users'],
+      authorization: m['nav.authorization'],
+      permissions: m['nav.permissions'],
+      roles: m['nav.roles'],
+      'api-keys': m['nav.api_keys'],
+      'products-payments': m['nav.products_payments'],
+      products: m['nav.products'],
+      'payment-providers': m['nav.payment_providers'],
+      'subscription-plans': m['nav.subscription_plans'],
+      'points-packages': m['nav.points_packages'],
+      'points-rules': m['nav.points_rules'],
+      'points-free-stats': m['nav.free_stats'],
+      'points-realm-config': m['nav.realm_config'],
+      transactions: m['nav.transactions'],
+      invoices: m['nav.invoices'],
+      'subscription-history': m['nav.subscription_history'],
+      'points-wallets': m['nav.points_wallets'],
+      'audit-log': m['nav.audit_log'],
+      settings: m['nav.settings'],
+    }
+    return map[id]?.() ?? id
+  }, [])
 
   const toggleMenu = useCallback((name: string) => {
     setOpenMenus((prev) => {
@@ -235,6 +266,7 @@ export function Sidebar() {
     const hasChildren = item.children && item.children.length > 0
     const isOpen = openMenus.has(item.name)
     const Icon = item.icon
+    const label = getNavLabel(item.id)
 
     if (item.visible === false) {
       return null
@@ -264,7 +296,7 @@ export function Sidebar() {
             data-testid={`sidebar-menu-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
           >
             <Icon className="size-[18px] shrink-0 opacity-60 group-hover:opacity-100 group-[.font-semibold]:opacity-100 transition-opacity" />
-            <span className="truncate">{item.name}</span>
+            <span className="truncate">{label}</span>
           </Link>
         ) : (
           <div
@@ -273,7 +305,7 @@ export function Sidebar() {
             data-testid={`sidebar-menu-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
           >
             <Icon className="size-[18px] shrink-0 opacity-60 group-hover:opacity-100 transition-opacity" />
-            <span className="flex-1 truncate">{item.name}</span>
+            <span className="flex-1 truncate">{label}</span>
             {hasChildren && (
               <ChevronDown
                 className={`size-4 shrink-0 text-sidebar-foreground/40 transition-transform duration-200 ${isOpen ? 'rotate-0' : '-rotate-90'}`}
@@ -308,6 +340,11 @@ export function Sidebar() {
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4" data-testid="sidebar-nav">
         <div className="space-y-0.5">{filteredMenuItems.map((item) => renderMenuItem(item))}</div>
       </nav>
+
+      <div className="mx-4 mb-2 h-px bg-sidebar-border" />
+      <div className="px-4 pb-4">
+        <LanguageSwitcher />
+      </div>
     </div>
   )
 }

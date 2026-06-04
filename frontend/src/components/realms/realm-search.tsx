@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useDebounce } from '@/hooks/use-debounce'
 import { Input } from '@/components/ui/input'
+import { m } from '@/paraglide/messages'
 
 interface RealmSearchProps {
   realmId?: string
@@ -19,7 +20,7 @@ export function RealmSearch({ realmId = '', onSearchChange }: RealmSearchProps) 
 
   return (
     <Input
-      placeholder="Search by realm ID..."
+      placeholder={m['realms.search_placeholder']()}
       value={searchInput}
       onChange={(e) => setSearchInput(e.target.value)}
       data-testid="realms-search-input"

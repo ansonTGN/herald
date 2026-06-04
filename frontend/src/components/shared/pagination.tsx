@@ -6,6 +6,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination'
+import { m } from '@/paraglide/messages'
 
 const MAX_VISIBLE_PAGES = 7
 
@@ -35,8 +36,11 @@ export function ListPagination({
   return (
     <div className="flex items-center justify-between">
       <div className="text-sm text-muted-foreground">
-        Showing {Math.min(page * pageSize + 1, total)} to {Math.min((page + 1) * pageSize, total)}{' '}
-        of {total} results
+        {m['pagination.showing']({
+          from: Math.min(page * pageSize + 1, total),
+          to: Math.min((page + 1) * pageSize, total),
+          total: total,
+        })}
       </div>
 
       <Pagination data-testid={testIdPrefix}>

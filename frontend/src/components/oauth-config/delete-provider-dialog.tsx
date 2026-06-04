@@ -1,5 +1,6 @@
 import { ConfirmDialog } from '@/components/shared'
 import type { OAuthConfigResponse } from '@/lib/api-generated'
+import { m } from '@/paraglide/messages'
 
 interface DeleteProviderDialogProps {
   open: boolean
@@ -20,8 +21,8 @@ export function DeleteProviderDialog({
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Delete Provider Configuration"
-      description={`Are you sure you want to delete the ${provider.providerType} provider? This action cannot be undone and users will no longer be able to use this provider for login.`}
+      title={m['oauth.delete_title']()}
+      description={m['oauth.delete_description']({ providerType: provider.providerType })}
       onConfirm={onConfirm}
       isPending={isPending}
       confirmTestId="provider-delete-confirm-button"

@@ -1,12 +1,19 @@
 import { z } from 'zod'
+import { m } from '@/paraglide/messages'
 
 export const stripeConfigSchema = z.object({
   enabled: z.boolean().default(false),
-  publishableKey: z.string().regex(/^pk_/, 'Publishable key must start with pk_').or(z.literal('')),
-  secretKey: z.string().regex(/^sk_/, 'Secret key must start with sk_').or(z.literal('')),
+  publishableKey: z
+    .string()
+    .regex(/^pk_/, { error: () => m['billing.stripe_key_start_pk']() })
+    .or(z.literal('')),
+  secretKey: z
+    .string()
+    .regex(/^sk_/, { error: () => m['billing.stripe_key_start_sk']() })
+    .or(z.literal('')),
   webhookSecret: z
     .string()
-    .regex(/^whsec_/, 'Webhook secret must start with whsec_')
+    .regex(/^whsec_/, { error: () => m['billing.stripe_webhook_start_whsec']() })
     .optional()
     .or(z.literal('')),
 })

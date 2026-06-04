@@ -27,6 +27,7 @@ import { ArrowLeft } from 'lucide-react'
 import { TextField, SwitchField } from '@/components/shared/form-fields'
 import { RoleSelector } from '@/components/shared/role-selector'
 import { ClientAppSelector } from '@/components/shared/client-app-selector'
+import { m } from '@/paraglide/messages'
 
 type MutationResult = CreateApiKeyResponse | ApiKeyListItem
 
@@ -79,16 +80,14 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
     },
     invalidateQueries: [queryKeys.apiKeysList(realmId)],
     getSuccessMessage: () =>
-      isCreate ? 'API Key created successfully' : 'API Key updated successfully',
+      isCreate ? m['api_keys.created_success']() : m['api_keys.updated_success'](),
     onSuccess: async (data) => {
       if (isCreate) {
         if (selectedRoleIds.length > 0 && canManageRoles) {
           try {
             await updateApiKeyRolesMutation(realmId, data.id, selectedRoleIds)
           } catch {
-            toast.error(
-              'API Key created, but role binding failed. You can manage roles from the list page later.'
-            )
+            toast.error(m['api_keys.role_binding_failed']())
           }
         }
         void navigate({
@@ -137,12 +136,10 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
         </Button>
         <div>
           <h1 className="text-2xl font-bold" data-testid="page-title">
-            {isCreate ? 'Create API Key' : 'Edit API Key'}
+            {isCreate ? m['api_keys.create_title']() : m['api_keys.edit_title']()}
           </h1>
           <p className="text-muted-foreground text-sm">
-            {isCreate
-              ? 'Create a new API key for programmatic access.'
-              : 'Update the API key configuration.'}
+            {isCreate ? m['api_keys.create_description']() : m['api_keys.edit_description']()}
           </p>
         </div>
       </div>
@@ -159,10 +156,10 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
           <TextField
             form={form}
             name="name"
-            label="Name"
+            label={m['api_keys.form_name_label']()}
             inputId="api-key-name"
             dataTestId="api-key-name-input"
-            placeholder="My API Key"
+            placeholder={m['api_keys.form_name_placeholder']()}
             required
           />
 
@@ -171,7 +168,7 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
               name="clientAppId"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label>Client App</Label>
+                  <Label>{m['api_keys.form_client_app_label']()}</Label>
                   <ClientAppSelector
                     clientApps={(clientAppsData?.items ?? []).map((app) => ({
                       id: app.id,
@@ -191,7 +188,7 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
             <SwitchField
               form={form}
               name="enabled"
-              label="Enabled"
+              label={m['api_keys.form_enabled_label']()}
               inputId="api-key-enabled"
               dataTestId="api-key-enabled-switch"
             />
@@ -201,7 +198,7 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
             name="expiresAt"
             children={(field) => (
               <div className="space-y-2">
-                <Label htmlFor="api-key-expires-at">Expires At</Label>
+                <Label htmlFor="api-key-expires-at">{m['api_keys.form_expires_at_label']()}</Label>
                 <div className="flex items-center gap-2">
                   <Input
                     id="api-key-expires-at"
@@ -224,7 +221,7 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
                       onClick={() => field.handleChange(null)}
                       data-testid="api-key-expires-at-clear-button"
                     >
-                      Clear
+                      {m['api_keys.form_clear']()}
                     </Button>
                   )}
                 </div>
@@ -234,17 +231,15 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
 
           {isCreate && canManageRoles && (
             <div className="space-y-2">
-              <Label>Roles (Optional)</Label>
+              <Label>{m['api_keys.form_roles_label']()}</Label>
               <RoleSelector
                 roles={(rolesData ?? []).map((r) => ({ id: r.id, name: r.name }))}
                 selectedRoleIds={selectedRoleIds}
                 onChange={setSelectedRoleIds}
                 disabled={isSubmitting}
-                placeholder="Select roles to assign after creation"
+                placeholder={m['api_keys.form_roles_placeholder']()}
               />
-              <p className="text-xs text-muted-foreground">
-                Selected roles will be assigned to the API key after creation.
-              </p>
+              <p className="text-xs text-muted-foreground">{m['api_keys.form_roles_help']()}</p>
             </div>
           )}
 
@@ -255,16 +250,16 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
               onClick={() => goToList()}
               data-testid="cancel-button"
             >
-              Cancel
+              {m['api_keys.form_cancel']()}
             </Button>
             <Button type="submit" disabled={isSubmitting} data-testid="submit-button">
               {isSubmitting
                 ? isCreate
-                  ? 'Creating...'
-                  : 'Saving...'
+                  ? m['api_keys.form_creating']()
+                  : m['api_keys.form_saving']()
                 : isCreate
-                  ? 'Create'
-                  : 'Save Changes'}
+                  ? m['api_keys.form_create']()
+                  : m['api_keys.form_save_changes']()}
             </Button>
           </div>
         </form>

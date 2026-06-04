@@ -11,6 +11,7 @@ import { User, Settings, LogOut } from 'lucide-react'
 import { useCallback } from 'react'
 import { useAuth } from '@/hooks/use-auth'
 import { logoutFlow } from '@/lib/auth-utils'
+import { m } from '@/paraglide/messages'
 
 interface UserDropdownProps {
   realmId: string
@@ -53,13 +54,13 @@ export function UserDropdown({ realmId }: UserDropdownProps) {
         <DropdownMenuItem asChild data-testid="profile-menu-item">
           <a href={`/${realmId}/user/profile/`}>
             <User className="mr-2 h-4 w-4" />
-            <span>Profile</span>
+            <span>{m['user_menu.profile']()}</span>
           </a>
         </DropdownMenuItem>
         <DropdownMenuItem asChild data-testid="security-menu-item">
           <a href={`/${realmId}/user/security`}>
             <Settings className="mr-2 h-4 w-4" />
-            <span>Security</span>
+            <span>{m['user_menu.security']()}</span>
           </a>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -69,7 +70,7 @@ export function UserDropdown({ realmId }: UserDropdownProps) {
           data-testid="logout-menu-item"
         >
           <LogOut className="mr-2 h-4 w-4" />
-          <span>Logout</span>
+          <span>{m['user_menu.logout']()}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

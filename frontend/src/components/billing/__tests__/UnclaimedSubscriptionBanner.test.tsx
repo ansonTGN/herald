@@ -34,10 +34,10 @@ describe('UnclaimedSubscriptionBanner', () => {
       )
 
       expect(screen.getByTestId('unclaimed-subscription-banner')).toBeInTheDocument()
-      expect(screen.getByText('Unclaimed Shopify Subscription Found')).toBeInTheDocument()
+      expect(screen.getByText('Unclaimed Shopify Subscription(s) Found')).toBeInTheDocument()
       expect(screen.getByTestId('unclaimed-count-display')).toBeInTheDocument()
       expect(
-        screen.getByText(/Found 1 Shopify subscription waiting to be claimed/)
+        screen.getByText(/Found 1 Shopify subscription\(s\) waiting to be claimed/)
       ).toBeInTheDocument()
     })
 
@@ -51,10 +51,10 @@ describe('UnclaimedSubscriptionBanner', () => {
       )
 
       expect(screen.getByTestId('unclaimed-subscription-banner')).toBeInTheDocument()
-      expect(screen.getByText('Unclaimed Shopify Subscriptions Found')).toBeInTheDocument()
+      expect(screen.getByText('Unclaimed Shopify Subscription(s) Found')).toBeInTheDocument()
       expect(screen.getByTestId('unclaimed-count-display')).toBeInTheDocument()
       expect(
-        screen.getByText(/Found 3 Shopify subscriptions waiting to be claimed/)
+        screen.getByText(/Found 3 Shopify subscription\(s\) waiting to be claimed/)
       ).toBeInTheDocument()
       expect(screen.getByText(/Claim them to start receiving/)).toBeInTheDocument()
     })
@@ -72,7 +72,7 @@ describe('UnclaimedSubscriptionBanner', () => {
 
       const claimButton = screen.getByTestId('claim-subscription-button')
       expect(claimButton).toBeInTheDocument()
-      expect(claimButton).toHaveTextContent('Claim Subscription')
+      expect(claimButton).toHaveTextContent('Claim Subscription(s)')
     })
 
     it('GIVEN count is greater than 1 WHEN rendered THEN should show plural Claim Subscriptions button', () => {
@@ -86,7 +86,7 @@ describe('UnclaimedSubscriptionBanner', () => {
 
       const claimButton = screen.getByTestId('claim-subscription-button')
       expect(claimButton).toBeInTheDocument()
-      expect(claimButton).toHaveTextContent('Claim Subscriptions')
+      expect(claimButton).toHaveTextContent('Claim Subscription(s)')
     })
 
     it('GIVEN banner is displayed WHEN Claim Subscription button clicked THEN should call onClaimClick', async () => {

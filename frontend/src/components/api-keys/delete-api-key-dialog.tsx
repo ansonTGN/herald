@@ -1,4 +1,5 @@
 import { ConfirmDialog } from '@/components/shared'
+import { m } from '@/paraglide/messages'
 
 interface DeleteApiKeyDialogProps {
   open: boolean
@@ -17,10 +18,8 @@ export function DeleteApiKeyDialog({
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Delete API Key"
-      description={
-        <>Are you sure you want to delete "{apiKeyName}"? This action cannot be undone.</>
-      }
+      title={m['api_keys.delete_title']()}
+      description={m['api_keys.delete_description']({ name: apiKeyName })}
       onConfirm={onConfirm}
       contentTestId="delete-confirmation-dialog"
       cancelTestId="cancel-delete-button"

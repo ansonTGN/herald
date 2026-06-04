@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { getFieldErrorMessage } from '@/lib/form-utils'
+import { m } from '@/paraglide/messages'
 import type { ResourceFormConfig } from './resource-form-config'
 
 interface CreateResourceDialogProps<TData, TResponse = unknown> {
@@ -105,7 +106,7 @@ export function CreateResourceDialog<TData, TResponse = unknown>({
               name="description"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor={config.descriptionInputId}>Description</Label>
+                  <Label htmlFor={config.descriptionInputId}>{m['common.description']()}</Label>
                   <Textarea
                     id={config.descriptionInputId}
                     placeholder={config.descriptionFieldPlaceholder}
@@ -133,7 +134,7 @@ export function CreateResourceDialog<TData, TResponse = unknown>({
                 onClick={() => onOpenChange(false)}
                 disabled={isSubmitting}
               >
-                Cancel
+                {m['common.cancel']()}
               </Button>
               <Button type="submit" disabled={isSubmitting} data-testid={config.submitButtonTestId}>
                 {isSubmitting ? config.submittingButtonText : config.submitButtonText}

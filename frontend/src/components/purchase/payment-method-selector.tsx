@@ -1,3 +1,4 @@
+import { m } from '@/paraglide/messages'
 import { type PaymentProviderInfo } from '@/lib/api-generated'
 import { Card, CardContent } from '@/components/ui/card'
 import { Check } from 'lucide-react'
@@ -19,7 +20,7 @@ export function PaymentMethodSelector({
   if (availableProviders.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-        No payment providers available
+        {m['points.payment_no_providers']()}
       </div>
     )
   }
@@ -56,7 +57,9 @@ export function PaymentMethodSelector({
                   <div className="text-left">
                     <div className="font-medium">{formatProviderName(provider.platform)}</div>
                     {!isAvailable && (
-                      <div className="text-xs text-muted-foreground">Unavailable</div>
+                      <div className="text-xs text-muted-foreground">
+                        {m['points.payment_unavailable']()}
+                      </div>
                     )}
                   </div>
                 </div>

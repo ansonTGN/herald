@@ -9,6 +9,7 @@ import { createPlanConfig, updatePlanConfig } from '@/lib/api-generated'
 import type { PointsPlanConfigResponse, SubscriptionPlanResponse } from '@/lib/api-generated'
 import type { PointsPlanConfigFormData } from '@/lib/schemas/points-forms'
 import { queryKeys } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 interface PointsPlanConfigFormPageProps {
   mode: 'create' | 'edit'
@@ -75,12 +76,18 @@ export function PointsPlanConfigFormPage({
       return response.data
     },
     onSuccess: async () => {
-      toast.success(`Points rule ${isEditing ? 'updated' : 'created'} successfully`)
+      toast.success(
+        m['points.plan_config_saved_success']({
+          action: isEditing
+            ? m['common.update']().toLowerCase()
+            : m['common.create']().toLowerCase(),
+        })
+      )
       await queryClient.invalidateQueries({ queryKey: queryKeys.pointsPlanConfigs(realmId) })
       handleBack()
     },
     onError: (error: Error) => {
-      toast.error(`Failed to save points rule: ${error.message}`)
+      toast.error(m['points.plan_config_save_failed']({ message: error.message }))
     },
   })
 
@@ -92,9 +99,9 @@ export function PointsPlanConfigFormPage({
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">Points Rule Not Found</h1>
+            <h1 className="text-2xl font-bold">{m['points.plan_config_not_found_title']()}</h1>
             <p className="text-muted-foreground text-sm">
-              The selected points rule no longer exists.
+              {m['points.plan_config_not_found_description']()}
             </p>
           </div>
         </div>
@@ -119,12 +126,14 @@ export function PointsPlanConfigFormPage({
         </Button>
         <div>
           <h1 className="text-2xl font-bold" data-testid="page-title">
-            {isEditing ? 'Edit Points Rule' : 'Create Points Rule'}
+            {isEditing
+              ? m['points.plan_config_edit_title']()
+              : m['points.plan_config_create_title']()}
           </h1>
           <p className="text-muted-foreground text-sm">
             {isEditing
-              ? 'Update how subscription points are granted'
-              : 'Create a subscription points granting rule'}
+              ? m['points.plan_config_edit_description']()
+              : m['points.plan_config_create_description']()}
           </p>
         </div>
       </div>

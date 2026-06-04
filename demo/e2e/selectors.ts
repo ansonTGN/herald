@@ -115,6 +115,9 @@ export const SELECTORS = {
     addButton:
       '[data-testid="add-user-button"], [data-testid="create-user-button"]',
     searchInput: '[data-testid="users-search-input"]',
+    roleCheckbox: '[data-testid="user-create-role-checkbox"]',
+    deleteDialog: '[data-testid="delete-user-dialog"]',
+    confirmDeleteButton: '[data-testid="confirm-delete-user-button"]',
   },
 
   /**

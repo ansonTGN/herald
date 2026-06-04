@@ -19,6 +19,7 @@ import {
 import { type ProviderMappingFormData } from '@/lib/schemas/billing-forms'
 import { PlanProviderMappingForm } from './plan-provider-mapping-form'
 import { PlanProviderMappingList } from './plan-provider-mapping-list'
+import { m } from '@/paraglide/messages'
 
 interface PlanProvidersPageProps {
   realmId: string
@@ -56,12 +57,12 @@ export function PlanProvidersPage({ realmId, planId }: PlanProvidersPageProps) {
       return response.data
     },
     onSuccess: async () => {
-      toast.success('Payment provider mapping added')
+      toast.success(m['billing.mapping_added']())
       formDialog.close()
       await invalidateProviderQueries()
     },
     onError: (error: Error) => {
-      toast.error(`Failed to add provider mapping: ${error.message}`)
+      toast.error(m['billing.mapping_add_failed']({ message: error.message }))
     },
   })
 
@@ -85,12 +86,12 @@ export function PlanProvidersPage({ realmId, planId }: PlanProvidersPageProps) {
       return response.data
     },
     onSuccess: async () => {
-      toast.success('Payment provider mapping updated')
+      toast.success(m['billing.mapping_updated']())
       formDialog.close()
       await invalidateProviderQueries()
     },
     onError: (error: Error) => {
-      toast.error(`Failed to update provider mapping: ${error.message}`)
+      toast.error(m['billing.mapping_update_failed']({ message: error.message }))
     },
   })
 
@@ -114,10 +115,12 @@ export function PlanProvidersPage({ realmId, planId }: PlanProvidersPageProps) {
   return (
     <div className="space-y-6" data-testid="plan-providers-page">
       <PageHeader
-        title="Payment Providers"
-        subtitle={plan?.title ? `For plan: ${plan.title}` : undefined}
+        title={m['billing.provider_mapping_title']()}
+        subtitle={
+          plan?.title ? m['billing.provider_mapping_subtitle']({ title: plan.title }) : undefined
+        }
         action={{
-          label: 'Back to Billing',
+          label: m['billing.back_to_billing'](),
           onClick: () =>
             navigate({
               to: '/$realmId/manage/billing',

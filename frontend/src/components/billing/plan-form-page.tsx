@@ -23,6 +23,7 @@ import { getFieldErrorMessage } from '@/lib/form-utils'
 import { NumberField, TextField, TextareaField } from '@/components/shared/form-fields'
 import { ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
+import { m } from '@/paraglide/messages'
 
 interface PlanFormPageProps {
   mode: 'create' | 'edit'
@@ -60,8 +61,8 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
       }
     },
     onSuccess: async (data: SubscriptionPlanResponse) => {
-      const action = isEditing ? 'updated' : 'created'
-      toast.success(`Subscription Plan "${data?.title}" ${action} successfully`)
+      const action = isEditing ? m['billing.updated']() : m['billing.created']()
+      toast.success(m['billing.plan_saved']({ title: data?.title, action }))
       await queryClient.invalidateQueries({ queryKey: ['subscription-plans', realmId] })
       await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
       navigate({
@@ -71,7 +72,7 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
       })
     },
     onError: (error: Error) => {
-      toast.error(`Failed to save plan: ${error.message}`)
+      toast.error(m['billing.plan_save_failed']({ message: error.message }))
     },
   })
 
@@ -106,10 +107,14 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
         </Button>
         <div>
           <h1 className="text-2xl font-bold" data-testid="plan-form-title">
-            {isEditing ? 'Edit Subscription Plan' : 'Create Subscription Plan'}
+            {isEditing
+              ? m['billing.edit_subscription_plan']()
+              : m['billing.create_subscription_plan']()}
           </h1>
           <p className="text-muted-foreground text-sm">
-            {isEditing ? 'Update subscription plan details' : 'Create a new subscription plan'}
+            {isEditing
+              ? m['billing.edit_plan_description']()
+              : m['billing.create_plan_description']()}
           </p>
         </div>
       </div>
@@ -132,7 +137,7 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
                   children={(field) => (
                     <>
                       <Label>
-                        Product <span className="text-destructive">*</span>
+                        {m['billing.label_product']()} <span className="text-destructive">*</span>
                       </Label>
                       <Select
                         data-testid="plan-product-select"
@@ -140,7 +145,7 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
                         onValueChange={(value) => field.handleChange(value)}
                       >
                         <SelectTrigger data-testid="plan-product-select-trigger">
-                          <SelectValue placeholder="Select a product" />
+                          <SelectValue placeholder={m['billing.placeholder_select_product']()} />
                         </SelectTrigger>
                         <SelectContent>
                           {products?.map((product) => (
@@ -166,7 +171,7 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
                 <TextField
                   form={form}
                   name="name"
-                  label="Plan Name"
+                  label={m['billing.label_plan_name']()}
                   dataTestId="plan-name-input"
                   placeholder="basic-monthly"
                   disabled={isEditing}
@@ -175,7 +180,7 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
                 <TextField
                   form={form}
                   name="title"
-                  label="Title"
+                  label={m['billing.label_title']()}
                   dataTestId="plan-title-input"
                   placeholder="Basic Monthly"
                   required
@@ -183,9 +188,9 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
                 <TextareaField
                   form={form}
                   name="description"
-                  label="Description"
+                  label={m['common.description']()}
                   dataTestId="plan-description-input"
-                  placeholder="Subscription plan description"
+                  placeholder={m['common.description']()}
                 />
               </div>
             </div>
@@ -199,7 +204,8 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
                     children={(field) => (
                       <>
                         <Label>
-                          Billing Period <span className="text-destructive">*</span>
+                          {m['billing.label_billing_period']()}{' '}
+                          <span className="text-destructive">*</span>
                         </Label>
                         <Select
                           data-testid="plan-type-select"
@@ -209,14 +215,14 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
                           }
                         >
                           <SelectTrigger data-testid="plan-type-select-trigger">
-                            <SelectValue placeholder="Select period" />
+                            <SelectValue placeholder={m['billing.placeholder_select_period']()} />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="monthly" data-testid="plan-type-monthly">
-                              Monthly
+                              {m['billing.billing_monthly']()}
                             </SelectItem>
                             <SelectItem value="yearly" data-testid="plan-type-yearly">
-                              Yearly
+                              {m['billing.billing_yearly']()}
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -237,7 +243,8 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
                     children={(field) => (
                       <>
                         <Label>
-                          Currency <span className="text-destructive">*</span>
+                          {m['billing.label_currency']()}{' '}
+                          <span className="text-destructive">*</span>
                         </Label>
                         <Select
                           data-testid="plan-currency-select"
@@ -274,13 +281,13 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
               <NumberField
                 form={form}
                 name="price"
-                label="Price (USD)"
+                label={m['billing.label_price']()}
                 dataTestId="plan-price-input"
                 placeholder="10.00"
                 min={0.01}
                 max={99999.99}
                 step="0.01"
-                helpText="Price in dollars (e.g., 10.00 = $10.00)"
+                helpText={m['billing.help_price']()}
                 required
               />
             </div>
@@ -290,7 +297,7 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
               <TextField
                 form={form}
                 name="checkoutUrl"
-                label="Checkout URL"
+                label={m['billing.label_checkout_url']()}
                 dataTestId="plan-checkout-url-input"
                 placeholder="https://checkout.example.com/..."
                 transformValue={(value) => (value === '' ? undefined : value)}
@@ -302,28 +309,28 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
               <NumberField
                 form={form}
                 name="trialDays"
-                label="Trial Days"
+                label={m['billing.label_trial_days']()}
                 dataTestId="plan-trial-days-input"
                 placeholder="14"
                 min={0}
                 max={365}
-                helpText="Number of free trial days (0 for no trial)"
+                helpText={m['billing.help_trial_days']()}
               />
               <NumberField
                 form={form}
                 name="sortOrder"
-                label="Sort Order"
+                label={m['billing.label_sort_order']()}
                 dataTestId="plan-sort-order-input"
                 placeholder="0"
                 min={0}
-                helpText="Display order in plan list (lower numbers appear first)"
+                helpText={m['billing.help_sort_order']()}
               />
               <div className="flex items-center space-x-2">
                 <form.Field
                   name="active"
                   children={(field) => (
                     <>
-                      <Label htmlFor={field.name}>Active</Label>
+                      <Label htmlFor={field.name}>{m['billing.label_active']()}</Label>
                       <Switch
                         id={field.name}
                         data-testid="plan-active-switch"
@@ -339,9 +346,7 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
                     </>
                   )}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Enable/disable plan for new subscriptions
-                </p>
+                <p className="text-xs text-muted-foreground">{m['billing.help_active']()}</p>
               </div>
             </div>
           </div>
@@ -354,7 +359,7 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
             onClick={handleCancel}
             data-testid="plan-form-cancel-button"
           >
-            Cancel
+            {m['common.cancel']()}
           </Button>
           <Button
             type="submit"
@@ -362,10 +367,10 @@ export function PlanFormPage({ mode, realmId, plan }: PlanFormPageProps) {
             data-testid="plan-form-submit-button"
           >
             {saveMutation.isPending
-              ? 'Saving...'
+              ? m['shared.saving']()
               : isEditing
-                ? 'Update Subscription Plan'
-                : 'Create Subscription Plan'}
+                ? m['billing.update_plan']()
+                : m['billing.create_plan']()}
           </Button>
         </div>
       </form>

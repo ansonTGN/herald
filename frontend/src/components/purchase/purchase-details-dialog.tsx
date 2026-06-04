@@ -1,3 +1,4 @@
+import { m } from '@/paraglide/messages'
 import { useQuery } from '@tanstack/react-query'
 import {
   Dialog,
@@ -34,7 +35,7 @@ export function PurchaseDetailsDialog({
     <Dialog open={open} onOpenChange={onOpenChange} data-testid="purchase-details-dialog">
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Purchase Details</DialogTitle>
+          <DialogTitle>{m['points.purchase_details_title']()}</DialogTitle>
           <DialogDescription>
             Detailed information about your points package purchase
           </DialogDescription>
@@ -52,7 +53,7 @@ export function PurchaseDetailsDialog({
             <div className="rounded-lg border p-4" data-testid="purchase-details-package-info">
               <div className="mb-3 flex items-center gap-2">
                 <Package className="h-5 w-5 text-primary" />
-                <h3 className="font-semibold">Package Information</h3>
+                <h3 className="font-semibold">{m['points.purchase_details_package_info']()}</h3>
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -76,7 +77,7 @@ export function PurchaseDetailsDialog({
             <div className="rounded-lg border p-4" data-testid="purchase-details-payment-info">
               <div className="mb-3 flex items-center gap-2">
                 <CreditCard className="h-5 w-5 text-primary" />
-                <h3 className="font-semibold">Payment Information</h3>
+                <h3 className="font-semibold">{m['points.purchase_details_payment_info']()}</h3>
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">

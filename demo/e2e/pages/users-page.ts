@@ -145,7 +145,7 @@ export class UsersPage extends BasePage {
     }
 
     // Check the default "User" role checkbox (required by createUserSchema)
-    const roleCheckbox = this.page.locator('[data-testid="user-create-role-checkbox"]')
+    const roleCheckbox = this.page.locator(SELECTORS.users.roleCheckbox)
     await expect(roleCheckbox).toBeVisible({ timeout: 10000 })
     const isChecked = await roleCheckbox.isChecked()
     if (!isChecked) {
@@ -232,7 +232,7 @@ export class UsersPage extends BasePage {
    */
   findUserRow(email: string): Locator {
     // Find table row containing the email
-    return this.table.locator(`tr:has-text("${email}")`).first()
+    return this.table.locator(`tr >> text="${email}"`).first()
   }
 
   /**
@@ -290,7 +290,7 @@ export class UsersPage extends BasePage {
     await deleteButton.click()
 
     // Wait for the confirm dialog to appear
-    const confirmDialog = this.page.locator('[data-testid="delete-user-dialog"]')
+    const confirmDialog = this.page.locator(SELECTORS.users.deleteDialog)
     await expect(confirmDialog).toBeVisible({ timeout: 5000 })
   }
 
@@ -298,11 +298,10 @@ export class UsersPage extends BasePage {
    * Confirm user deletion by clicking the confirm button in the AlertDialog
    */
   async confirmDeleteUser(): Promise<void> {
-    const confirmButton = this.page.locator('[data-testid="confirm-delete-user-button"]')
-    await confirmButton.click()
+    const confirmButton = this.page.locator(SELECTORS.users.confirmDeleteButton)
+    await this.smartClick(confirmButton)
 
-    // Wait for the dialog to close
-    const confirmDialog = this.page.locator('[data-testid="delete-user-dialog"]')
+    const confirmDialog = this.page.locator(SELECTORS.users.deleteDialog)
     await expect(confirmDialog).toBeHidden({ timeout: 5000 })
   }
 

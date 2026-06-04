@@ -11,6 +11,7 @@ import type { ClientAppItem } from '@/lib/api-generated'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
+import { m } from '@/paraglide/messages'
 
 interface ClientAppTableProps {
   data?: ClientAppItem[]
@@ -33,7 +34,7 @@ function createClientAppColumns(
   return [
     {
       id: 'icon',
-      header: 'Icon',
+      header: m['client_apps.table_icon'](),
       cell: ({ row }) =>
         row.original.iconUrl ? (
           <img
@@ -51,7 +52,7 @@ function createClientAppColumns(
     {
       id: 'clientId',
       accessorKey: 'clientId',
-      header: 'Client ID',
+      header: m['client_apps.table_client_id'](),
       cell: ({ row }) => (
         <span className="font-mono text-sm" data-testid="client-app-client-id">
           {row.getValue('clientId')}
@@ -61,12 +62,12 @@ function createClientAppColumns(
     {
       id: 'name',
       accessorKey: 'name',
-      header: 'Name',
+      header: m['client_apps.table_name'](),
       cell: ({ row }) => row.getValue('name'),
     },
     {
       id: 'redirectUris',
-      header: 'Redirect URIs',
+      header: m['client_apps.table_redirect_uris'](),
       cell: ({ row }) => (
         <div
           className="max-w-xs truncate"
@@ -79,16 +80,18 @@ function createClientAppColumns(
     },
     {
       id: 'sessionTtlSeconds',
-      header: 'Session TTL',
+      header: m['client_apps.table_session_ttl'](),
       cell: ({ row }) => (
         <span data-testid="client-app-session-ttl">
-          {Math.floor(row.original.sessionTtlSeconds / 60)} min
+          {m['client_apps.session_ttl_minutes']({
+            minutes: Math.floor(row.original.sessionTtlSeconds / 60),
+          })}
         </span>
       ),
     },
     {
       id: 'enabled',
-      header: 'Status',
+      header: m['client_apps.table_status'](),
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
           <Switch
@@ -100,14 +103,16 @@ function createClientAppColumns(
             variant={row.original.enabled ? 'default' : 'secondary'}
             data-testid="client-app-status-badge"
           >
-            {row.original.enabled ? 'Enabled' : 'Disabled'}
+            {row.original.enabled
+              ? m['client_apps.status_enabled_label']()
+              : m['client_apps.status_disabled_label']()}
           </Badge>
         </div>
       ),
     },
     {
       id: 'actions',
-      header: 'Actions',
+      header: m['client_apps.table_actions'](),
       cell: ({ row }) => (
         <div className="flex gap-2" data-testid="client-app-actions">
           <Button
@@ -116,9 +121,9 @@ function createClientAppColumns(
             onClick={() => onEdit?.(row.original)}
             data-testid="edit-client-app-button"
             disabled={!canUpdate}
-            title={!canUpdate ? 'You do not have permission to edit client apps' : undefined}
+            title={!canUpdate ? m['client_apps.edit_disabled_title']() : undefined}
           >
-            Edit
+            {m['client_apps.edit_button']()}
           </Button>
           <Button
             variant="ghost"
@@ -126,9 +131,9 @@ function createClientAppColumns(
             onClick={() => onDelete?.(row.original)}
             data-testid="delete-client-app-button"
             disabled={!canDelete}
-            title={!canDelete ? 'You do not have permission to delete client apps' : undefined}
+            title={!canDelete ? m['client_apps.delete_disabled_title']() : undefined}
           >
-            Delete
+            {m['client_apps.delete_button']()}
           </Button>
         </div>
       ),
@@ -158,7 +163,7 @@ export function ClientAppTable({
     return (
       <div className="rounded-md border p-8">
         <div className="flex items-center justify-center">
-          <div className="text-muted-foreground">Loading client apps...</div>
+          <div className="text-muted-foreground">{m['client_apps.loading']()}</div>
         </div>
       </div>
     )
@@ -168,7 +173,7 @@ export function ClientAppTable({
     return (
       <div className="rounded-md border p-8">
         <div className="flex items-center justify-center text-red-500">
-          Error loading client apps: {error.message}
+          {m['client_apps.error_loading']({ message: error.message })}
         </div>
       </div>
     )
@@ -178,7 +183,7 @@ export function ClientAppTable({
     return (
       <div className="rounded-md border p-8">
         <div className="flex items-center justify-center text-muted-foreground">
-          No client apps found. Create your first client app to get started.
+          {m['client_apps.empty']()}
         </div>
       </div>
     )
@@ -220,7 +225,7 @@ export function ClientAppTable({
           ) : (
             <TableRow>
               <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
+                {m['client_apps.no_results']()}
               </TableCell>
             </TableRow>
           )}

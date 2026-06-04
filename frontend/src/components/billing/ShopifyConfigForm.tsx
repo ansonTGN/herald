@@ -31,6 +31,7 @@ import {
   updateShopifyConfig,
   testShopifyConnection,
 } from '@/lib/api-generated'
+import { m } from '@/paraglide/messages'
 
 interface ShopifyConfigFormDialogProps {
   initialValues?: Partial<ShopifyConfigForm>
@@ -83,9 +84,11 @@ export function ShopifyConfigFormDialog({
     <BaseFormDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={mode === 'create' ? 'Configure Shopify' : 'Edit Shopify Configuration'}
+      title={mode === 'create' ? m['billing.shopify_configure']() : m['billing.shopify_edit']()}
       description={
-        mode === 'create' ? 'Add Shopify as a payment provider' : 'Update Shopify configuration'
+        mode === 'create'
+          ? m['billing.shopify_create_description']()
+          : m['billing.shopify_edit_description']()
       }
       className="max-w-2xl"
       isSubmitting={isSubmitting}
@@ -98,7 +101,7 @@ export function ShopifyConfigFormDialog({
             onClick={() => onOpenChange(false)}
             data-testid="shopify-config-cancel-button"
           >
-            Cancel
+            {m['common.cancel']()}
           </Button>
           {onTestConnection && (
             <Button
@@ -108,7 +111,7 @@ export function ShopifyConfigFormDialog({
               disabled={isTesting || isSubmitting}
               data-testid="shopify-config-test-connection-button"
             >
-              {isTesting ? 'Testing...' : 'Test Connection'}
+              {isTesting ? m['billing.shopify_testing']() : m['billing.shopify_test_connection']()}
             </Button>
           )}
           <Button
@@ -118,10 +121,10 @@ export function ShopifyConfigFormDialog({
             data-testid="shopify-config-submit-button"
           >
             {isSubmitting
-              ? 'Saving...'
+              ? m['shared.saving']()
               : mode === 'create'
-                ? 'Create Configuration'
-                : 'Save Changes'}
+                ? m['shared.create_configuration']()
+                : m['shared.save_changes']()}
           </Button>
         </>
       }
@@ -147,84 +150,88 @@ export function ShopifyConfigFormDialog({
             <TextField
               form={form}
               name="shopDomain"
-              label="Shop Domain"
+              label={m['billing.shopify_label_shop_domain']()}
               dataTestId="shop-domain-input"
               placeholder="demo-store.myshopify.com"
               required
-              helpText="Must end with .myshopify.com"
+              helpText={m['billing.shopify_help_shop_domain']()}
             />
 
             <PasswordField
               form={form}
               name="adminAccessToken"
-              label="Admin Access Token"
+              label={m['billing.shopify_label_admin_token']()}
               dataTestId="admin-access-token-input"
               placeholder="shpat_..."
               required={mode !== 'edit'}
               helpText={
                 mode === 'edit'
-                  ? 'Leave empty to keep the existing token'
-                  : 'Must start with shpat_. Used for Admin API calls.'
+                  ? m['billing.shopify_help_admin_token_edit']()
+                  : m['billing.shopify_help_admin_token_create']()
               }
             />
 
             <PasswordField
               form={form}
               name="storefrontAccessToken"
-              label="Storefront Access Token"
+              label={m['billing.shopify_label_storefront_token']()}
               dataTestId="storefront-access-token-input"
               placeholder="shp_..."
               required={mode !== 'edit'}
               helpText={
                 mode === 'edit'
-                  ? 'Leave empty to keep the existing token'
-                  : 'Must start with shp_. Used for Storefront API calls.'
+                  ? m['billing.shopify_help_storefront_token_edit']()
+                  : m['billing.shopify_help_storefront_token_create']()
               }
             />
 
             <PasswordField
               form={form}
               name="appClientSecret"
-              label="App Client Secret"
+              label={m['billing.shopify_label_app_secret']()}
               dataTestId="app-client-secret-input"
               placeholder="Your app client secret"
               required={mode !== 'edit'}
               helpText={
                 mode === 'edit'
-                  ? 'Leave empty to keep the existing secret'
-                  : 'Used for webhook HMAC verification. Keep this secure!'
+                  ? m['billing.shopify_help_app_secret_edit']()
+                  : m['billing.shopify_help_app_secret_create']()
               }
             />
 
             <TextField
               form={form}
               name="apiVersion"
-              label="API Version"
+              label={m['billing.shopify_label_api_version']()}
               dataTestId="api-version-input"
               placeholder="2024-01"
-              helpText="Shopify Admin API version (default: 2024-01)"
+              helpText={m['billing.shopify_help_api_version']()}
             />
 
             <form.Field
               name="webhookSubscriptionMode"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor={field.name}>Webhook Subscription Mode</Label>
+                  <Label htmlFor={field.name}>{m['billing.shopify_label_webhook_mode']()}</Label>
                   <Select
                     value={field.state.value}
                     onValueChange={(value) => field.handleChange(value as WebhookMode)}
                     data-testid="webhook-subscription-mode-select"
                   >
                     <SelectTrigger id={field.name}>
-                      <SelectValue placeholder="Select webhook mode" />
+                      <SelectValue placeholder={m['billing.shopify_label_webhook_mode']()} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={WEBHOOK_MODES.ADMIN_API}>Admin API</SelectItem>
-                      <SelectItem value={WEBHOOK_MODES.EVENT_BRIDGE}>Event Bridge</SelectItem>
+                      <SelectItem value={WEBHOOK_MODES.ADMIN_API}>
+                        {m['billing.shopify_webhook_admin_api']()}
+                      </SelectItem>
+                      <SelectItem value={WEBHOOK_MODES.EVENT_BRIDGE}>
+                        {m['billing.shopify_webhook_event_bridge']()}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    How webhooks are delivered to your app
+                    {m['billing.shopify_help_webhook_mode']()}
                   </p>
                 </div>
               )}
@@ -233,12 +240,12 @@ export function ShopifyConfigFormDialog({
             <NumberField
               form={form}
               name="timeout"
-              label="Timeout (seconds)"
+              label={m['billing.shopify_label_timeout']()}
               dataTestId="timeout-input"
               placeholder="30"
               min={1}
               max={120}
-              helpText="HTTP request timeout in seconds (1-120, default: 30)"
+              helpText={m['billing.shopify_help_timeout']()}
             />
 
             <form.Field
@@ -254,7 +261,7 @@ export function ShopifyConfigFormDialog({
                     data-testid="skip-connection-test-checkbox"
                   />
                   <Label htmlFor={field.name} className="text-sm font-normal">
-                    Skip connection test (for demo/test environments)
+                    {m['billing.shopify_skip_connection_test']()}
                   </Label>
                 </div>
               )}
@@ -293,7 +300,7 @@ export function ShopifyConfigFormPage({
           isEditing,
           'adminAccessToken',
           value.adminAccessToken,
-          'Admin Access Token is required'
+          m['billing.shopify_label_admin_token']()
         )
       )
         return
@@ -303,7 +310,7 @@ export function ShopifyConfigFormPage({
           isEditing,
           'storefrontAccessToken',
           value.storefrontAccessToken,
-          'Storefront Access Token is required'
+          m['billing.shopify_label_storefront_token']()
         )
       )
         return
@@ -313,7 +320,7 @@ export function ShopifyConfigFormPage({
           isEditing,
           'appClientSecret',
           value.appClientSecret,
-          'App Client Secret is required'
+          m['billing.shopify_label_app_secret']()
         )
       )
         return
@@ -348,18 +355,20 @@ export function ShopifyConfigFormPage({
       return response.data
     },
     onSuccess: async () => {
-      toast.success('Shopify configuration created successfully')
+      toast.success(m['billing.shopify_created']())
       await queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] })
       await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
       navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
     },
     onError: (error: { status?: number; message?: string }) => {
       if (error?.status === 409) {
-        toast.error('A Shopify configuration already exists. Please edit the existing one.')
+        toast.error(m['billing.shopify_conflict']())
       } else if (error?.status === 422) {
-        toast.error('Connection test failed. Please check your credentials.')
+        toast.error(m['billing.shopify_credentials_failed']())
       } else {
-        toast.error(`Failed to create configuration: ${error?.message || 'Unknown error'}`)
+        toast.error(
+          m['billing.shopify_create_failed']({ message: error?.message || 'Unknown error' })
+        )
       }
     },
   })
@@ -384,16 +393,18 @@ export function ShopifyConfigFormPage({
       return response.data
     },
     onSuccess: async () => {
-      toast.success('Shopify configuration updated successfully')
+      toast.success(m['billing.shopify_updated']())
       await queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] })
       await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
       navigate({ to: '/$realmId/manage/billing/payment-providers', params: { realmId } })
     },
     onError: (error: { status?: number; message?: string }) => {
       if (error?.status === 422) {
-        toast.error('Connection test failed. Please check your credentials.')
+        toast.error(m['billing.shopify_credentials_failed']())
       } else {
-        toast.error(`Failed to update configuration: ${error?.message || 'Unknown error'}`)
+        toast.error(
+          m['billing.shopify_update_failed']({ message: error?.message || 'Unknown error' })
+        )
       }
     },
   })
@@ -413,14 +424,18 @@ export function ShopifyConfigFormPage({
     },
     onSuccess: (data) => {
       if (data?.success) {
-        toast.success('Shopify connection test passed')
+        toast.success(m['billing.shopify_connection_passed']())
       } else {
         const errors = data?.errors?.join(', ') || 'Connection test failed'
-        toast.error(`Connection test failed: ${errors}`)
+        toast.error(m['billing.shopify_connection_failed']({ errors }))
       }
     },
     onError: (error: { message?: string }) => {
-      toast.error(`Connection test failed: ${error?.message || 'Unknown error'}`)
+      toast.error(
+        m['billing.shopify_connection_failed_generic']({
+          message: error?.message || 'Unknown error',
+        })
+      )
     },
   })
 
@@ -442,7 +457,7 @@ export function ShopifyConfigFormPage({
   return (
     <div className="container max-w-3xl mx-auto py-6 px-6" data-testid="shopify-config-form-page">
       <PageHeader
-        title={isEditing ? 'Edit Shopify Configuration' : 'Configure Shopify'}
+        title={isEditing ? m['billing.shopify_edit']() : m['billing.shopify_configure']()}
         headingTestId="shopify-config-form-page-heading"
       />
 
@@ -464,84 +479,88 @@ export function ShopifyConfigFormPage({
             <TextField
               form={form}
               name="shopDomain"
-              label="Shop Domain"
+              label={m['billing.shopify_label_shop_domain']()}
               dataTestId="page-shop-domain-input"
               placeholder="demo-store.myshopify.com"
               required
-              helpText="Must end with .myshopify.com"
+              helpText={m['billing.shopify_help_shop_domain']()}
             />
 
             <PasswordField
               form={form}
               name="adminAccessToken"
-              label="Admin Access Token"
+              label={m['billing.shopify_label_admin_token']()}
               dataTestId="page-admin-access-token-input"
               placeholder="shpat_..."
               required={!isEditing}
               helpText={
                 isEditing
-                  ? 'Leave empty to keep the existing token'
-                  : 'Must start with shpat_. Used for Admin API calls.'
+                  ? m['billing.shopify_help_admin_token_edit']()
+                  : m['billing.shopify_help_admin_token_create']()
               }
             />
 
             <PasswordField
               form={form}
               name="storefrontAccessToken"
-              label="Storefront Access Token"
+              label={m['billing.shopify_label_storefront_token']()}
               dataTestId="page-storefront-access-token-input"
               placeholder="shp_..."
               required={!isEditing}
               helpText={
                 isEditing
-                  ? 'Leave empty to keep the existing token'
-                  : 'Must start with shp_. Used for Storefront API calls.'
+                  ? m['billing.shopify_help_storefront_token_edit']()
+                  : m['billing.shopify_help_storefront_token_create']()
               }
             />
 
             <PasswordField
               form={form}
               name="appClientSecret"
-              label="App Client Secret"
+              label={m['billing.shopify_label_app_secret']()}
               dataTestId="page-app-client-secret-input"
               placeholder="Your app client secret"
               required={!isEditing}
               helpText={
                 isEditing
-                  ? 'Leave empty to keep the existing secret'
-                  : 'Used for webhook HMAC verification. Keep this secure!'
+                  ? m['billing.shopify_help_app_secret_edit']()
+                  : m['billing.shopify_help_app_secret_create']()
               }
             />
 
             <TextField
               form={form}
               name="apiVersion"
-              label="API Version"
+              label={m['billing.shopify_label_api_version']()}
               dataTestId="page-api-version-input"
               placeholder="2024-01"
-              helpText="Shopify Admin API version (default: 2024-01)"
+              helpText={m['billing.shopify_help_api_version']()}
             />
 
             <form.Field
               name="webhookSubscriptionMode"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor={field.name}>Webhook Subscription Mode</Label>
+                  <Label htmlFor={field.name}>{m['billing.shopify_label_webhook_mode']()}</Label>
                   <Select
                     value={field.state.value}
                     onValueChange={(value) => field.handleChange(value as WebhookMode)}
                     data-testid="page-webhook-subscription-mode-select"
                   >
                     <SelectTrigger id={field.name}>
-                      <SelectValue placeholder="Select webhook mode" />
+                      <SelectValue placeholder={m['billing.shopify_label_webhook_mode']()} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={WEBHOOK_MODES.ADMIN_API}>Admin API</SelectItem>
-                      <SelectItem value={WEBHOOK_MODES.EVENT_BRIDGE}>Event Bridge</SelectItem>
+                      <SelectItem value={WEBHOOK_MODES.ADMIN_API}>
+                        {m['billing.shopify_webhook_admin_api']()}
+                      </SelectItem>
+                      <SelectItem value={WEBHOOK_MODES.EVENT_BRIDGE}>
+                        {m['billing.shopify_webhook_event_bridge']()}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    How webhooks are delivered to your app
+                    {m['billing.shopify_help_webhook_mode']()}
                   </p>
                 </div>
               )}
@@ -550,12 +569,12 @@ export function ShopifyConfigFormPage({
             <NumberField
               form={form}
               name="timeout"
-              label="Timeout (seconds)"
+              label={m['billing.shopify_label_timeout']()}
               dataTestId="page-timeout-input"
               placeholder="30"
               min={1}
               max={120}
-              helpText="HTTP request timeout in seconds (1-120, default: 30)"
+              helpText={m['billing.shopify_help_timeout']()}
             />
 
             <form.Field
@@ -571,7 +590,7 @@ export function ShopifyConfigFormPage({
                     data-testid="page-skip-connection-test-checkbox"
                   />
                   <Label htmlFor={field.name} className="text-sm font-normal">
-                    Skip connection test (for demo/test environments)
+                    {m['billing.shopify_skip_connection_test']()}
                   </Label>
                 </div>
               )}
@@ -596,10 +615,10 @@ export function ShopifyConfigFormPage({
             {isTesting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Testing...
+                {m['billing.shopify_testing']()}
               </>
             ) : (
-              'Test Connection'
+              m['billing.shopify_test_connection']()
             )}
           </Button>
         </FormActionBar>

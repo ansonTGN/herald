@@ -9,6 +9,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { m } from '@/paraglide/messages'
 
 interface DeleteConfirmDialogProps {
   open: boolean
@@ -33,25 +34,19 @@ export function DeleteConfirmDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent data-testid="delete-confirm-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete {configType} Configuration?</AlertDialogTitle>
+          <AlertDialogTitle>{m['billing.delete_provider_title']({ configType })}</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2">
               {!canDelete ? (
                 <>
-                  <p>
-                    This configuration cannot be deleted because there are {activeSubscriptions}{' '}
-                    active subscription(s) using it.
-                  </p>
-                  <p>
-                    Please cancel or migrate all active subscriptions before deleting this
-                    configuration.
-                  </p>
+                  <p>{m['billing.delete_provider_active_subs']({ count: activeSubscriptions })}</p>
+                  <p>{m['billing.delete_provider_migrate']()}</p>
                 </>
               ) : (
                 <>
-                  <p>Are you sure you want to delete this {configType} configuration?</p>
+                  <p>{m['billing.delete_provider_confirm']({ configType })}</p>
                   <p className="text-destructive font-medium">
-                    This action cannot be undone. All webhook endpoints will stop working.
+                    {m['billing.delete_provider_warning']()}
                   </p>
                 </>
               )}
@@ -61,13 +56,15 @@ export function DeleteConfirmDialog({
 
         {!canDelete && (
           <Alert className="border-destructive bg-destructive/10">
-            <AlertDescription>Active subscriptions: {activeSubscriptions}</AlertDescription>
+            <AlertDescription>
+              {m['billing.active_subscriptions']({ count: activeSubscriptions })}
+            </AlertDescription>
           </Alert>
         )}
 
         <AlertDialogFooter>
           <AlertDialogCancel data-testid="delete-cancel-button" disabled={isDeleting}>
-            Cancel
+            {m['common.cancel']()}
           </AlertDialogCancel>
           {canDelete && (
             <AlertDialogAction
@@ -79,7 +76,7 @@ export function DeleteConfirmDialog({
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               data-testid="delete-confirm-button"
             >
-              {isDeleting ? 'Deleting...' : 'Delete Configuration'}
+              {isDeleting ? m['billing.deleting']() : m['billing.delete_configuration']()}
             </AlertDialogAction>
           )}
         </AlertDialogFooter>

@@ -47,6 +47,8 @@ where
         invoice_repo: Arc<R>,
         pg_pool: PgPool,
     ) -> Self {
+        // TODO: 应从 AppConfig 统一读取，而非单独从环境变量获取。
+        // 当前默认 1h 间隔意味着积分过期最多有 1h 的懒过期窗口。
         let expiration_interval_secs = std::env::var("WORKER_EXPIRATION_INTERVAL_SECS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())

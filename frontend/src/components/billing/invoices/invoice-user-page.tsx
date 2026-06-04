@@ -16,6 +16,7 @@ import {
   INVOICE_PAGE_SIZE,
   PDF_DOWNLOADABLE_STATUSES,
 } from '@/lib/invoice-utils'
+import { m } from '@/paraglide/messages'
 
 function createInvoiceColumns(
   realmId: string,
@@ -32,14 +33,14 @@ function createInvoiceColumns(
     },
     {
       accessorKey: 'invoiceNumber',
-      header: 'Invoice Number',
+      header: m['billing.invoice_number'](),
       cell: ({ row }) => (
         <span className="font-mono text-sm font-medium">{row.getValue('invoiceNumber')}</span>
       ),
     },
     {
       accessorKey: 'total',
-      header: 'Amount',
+      header: m['billing.invoice_total'](),
       cell: ({ row }) => {
         const total = row.getValue('total') as number
         const currency = row.original.currency
@@ -48,12 +49,12 @@ function createInvoiceColumns(
     },
     {
       accessorKey: 'status',
-      header: 'Status',
+      header: m['common.status'](),
       cell: ({ row }) => <InvoiceStatusBadge status={row.getValue('status') as string} />,
     },
     {
       accessorKey: 'dueDate',
-      header: 'Due Date',
+      header: m['billing.invoice_due_date'](),
       cell: ({ row }) => {
         const dueDate = row.getValue('dueDate') as string
         return <span className="text-sm">{new Date(dueDate).toLocaleDateString()}</span>
@@ -61,7 +62,7 @@ function createInvoiceColumns(
     },
     {
       id: 'actions',
-      header: 'Actions',
+      header: m['billing.invoice_actions'](),
       cell: ({ row }) => {
         const invoice = row.original
         const canDownload = PDF_DOWNLOADABLE_STATUSES.has(invoice.status)
@@ -114,10 +115,10 @@ export function InvoiceUserPage({
   return (
     <div className="space-y-6" data-testid="invoice-user-page">
       <PageHeader
-        title="My Invoices"
+        title={m['billing.invoice_my_title']()}
         headingTestId="invoice-user-heading"
         action={{
-          label: 'Apply for Invoice',
+          label: m['billing.invoice_apply_button'](),
           onClick: onApplyInvoice,
           testId: 'apply-invoice-button',
           icon: <Plus className="mr-2 h-4 w-4" />,
@@ -126,7 +127,7 @@ export function InvoiceUserPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Invoices</CardTitle>
+          <CardTitle>{m['billing.invoice_user_list_title']()}</CardTitle>
         </CardHeader>
         <CardContent>
           <DataTable
@@ -134,8 +135,8 @@ export function InvoiceUserPage({
             data={invoices}
             isLoading={isLoading}
             error={error instanceof Error ? error : error ? new Error(String(error)) : undefined}
-            loadingMessage="Loading invoices..."
-            emptyMessage="No invoices yet."
+            loadingMessage={m['billing.invoice_loading']()}
+            emptyMessage={m['billing.invoice_empty']()}
             data-testid="invoice-user-table"
           />
         </CardContent>

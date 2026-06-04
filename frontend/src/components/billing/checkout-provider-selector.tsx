@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { CreditCard, Loader2 } from 'lucide-react'
 import { getEnabledProviders } from '@/lib/billing-utils'
 import { formatProviderName } from './format-provider-name'
+import { m } from '@/paraglide/messages'
 
 interface CheckoutProviderSelectorProps {
   plan: SubscriptionPlanResponse
@@ -20,9 +21,7 @@ export function CheckoutProviderSelector({
   if (enabledProviders.length === 0) {
     return (
       <div className="text-center space-y-2" data-testid="checkout-no-providers">
-        <p className="text-sm text-muted-foreground">
-          This plan has no available payment providers. Please try again later.
-        </p>
+        <p className="text-sm text-muted-foreground">{m['billing.checkout_no_providers']()}</p>
       </div>
     )
   }
@@ -39,12 +38,14 @@ export function CheckoutProviderSelector({
         {isPending ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Processing...
+            {m['billing.checkout_processing']()}
           </>
         ) : (
           <>
             <CreditCard className="mr-2 h-4 w-4" />
-            Subscribe with {formatProviderName(provider.paymentProvider)}
+            {m['billing.checkout_subscribe_with']({
+              name: formatProviderName(provider.paymentProvider),
+            })}
           </>
         )}
       </Button>
@@ -54,7 +55,7 @@ export function CheckoutProviderSelector({
   // Multiple providers - render selection buttons
   return (
     <div className="space-y-3" data-testid="checkout-provider-selector">
-      <p className="text-sm font-medium">Select a payment method:</p>
+      <p className="text-sm font-medium">{m['billing.checkout_select_method']()}</p>
       <div className="flex flex-col gap-2">
         {enabledProviders.map((provider: PaymentProviderSummary) => (
           <Button

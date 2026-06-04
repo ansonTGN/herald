@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Copy, Check } from 'lucide-react'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { m } from '@/paraglide/messages'
 
 interface ShareLinkDialogProps {
   open: boolean
@@ -21,11 +22,11 @@ export function ShareLinkDialog({ open, onClose, guideUrl }: ShareLinkDialogProp
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md" data-testid="share-link-dialog">
         <DialogHeader>
-          <DialogTitle>Share Guide Link</DialogTitle>
+          <DialogTitle>{m['points.share_dialog_title']()}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="text-sm text-muted-foreground">
-            Share this link with users to show them points recharge rules for this plan.
+            {m['points.share_dialog_description']()}
           </div>
           <div className="flex gap-2">
             <Input value={guideUrl} readOnly className="flex-1" />

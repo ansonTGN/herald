@@ -3,6 +3,7 @@ import { createRoleSchema, type CreateRoleFormData } from '@/lib/schemas/common'
 import { createRole } from '@/lib/api-generated'
 import { useRealmId } from '@/stores/auth-store'
 import { queryKeys } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 interface CreateRoleDialogProps {
   open: boolean
@@ -33,21 +34,22 @@ export function CreateRoleDialog({
       }),
     getSuccessMessage: (response) => {
       const role = (response as { data?: { name?: string } }).data
-      return role ? `Role "${role.name}" added successfully` : 'Role added successfully'
+      return role
+        ? m['roles.added_success']({ name: role.name ?? '' })
+        : m['roles.added_success_fallback']()
     },
     queryKeysToInvalidate: [queryKeys.roles(realmId)],
-    nameFieldLabel: 'Role Name',
-    nameFieldPlaceholder: 'user-admin',
-    nameFieldHelpText:
-      'Role names can contain letters, numbers, hyphens, and underscores (e.g., user-admin)',
+    nameFieldLabel: m['roles.name_label'](),
+    nameFieldPlaceholder: m['roles.name_placeholder'](),
+    nameFieldHelpText: m['roles.name_help'](),
     nameFieldTestId: 'role-create-name-input',
     nameInputId: 'role-name',
-    descriptionFieldPlaceholder: 'Describe what this role is for...',
+    descriptionFieldPlaceholder: m['roles.description_placeholder'](),
     descriptionFieldTestId: 'role-create-description-input',
     descriptionInputId: 'role-description',
     submitButtonTestId: 'role-create-submit-button',
-    submitButtonText: 'Add',
-    submittingButtonText: 'Adding...',
+    submitButtonText: m['roles.add_button_short'](),
+    submittingButtonText: m['roles.adding'](),
   }
 
   return (
@@ -55,8 +57,8 @@ export function CreateRoleDialog({
       open={open}
       onOpenChange={onOpenChange}
       config={config}
-      title="Add Role"
-      description="Create a new role for your realm. Roles are used to group permissions and assign them to users."
+      title={m['roles.add_title']()}
+      description={m['roles.add_description']()}
     />
   )
 }

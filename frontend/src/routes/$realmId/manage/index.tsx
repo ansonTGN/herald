@@ -6,6 +6,7 @@ import { StatsCard } from '@/components/dashboard/stats-card'
 import { AuthTrendChart } from '@/components/dashboard/auth-trend-chart'
 import { QuickNav } from '@/components/dashboard/quick-nav'
 import { Skeleton } from '@/components/ui/skeleton'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/')({
   component: ManageDashboard,
@@ -25,8 +26,8 @@ function ManageDashboard() {
           <LayoutDashboard className="h-5 w-5 text-primary" />
         </div>
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-xs text-muted-foreground">Overview of your authentication system</p>
+          <h1 className="text-xl font-semibold tracking-tight">{m['dashboard.title']()}</h1>
+          <p className="text-xs text-muted-foreground">{m['dashboard.subtitle']()}</p>
         </div>
       </div>
 
@@ -36,14 +37,14 @@ function ManageDashboard() {
           data-testid="dashboard-error"
         >
           <p className="text-destructive mb-3">
-            {error instanceof Error ? error.message : 'Failed to load dashboard data'}
+            {error instanceof Error ? error.message : m['dashboard.failed_to_load']()}
           </p>
           <button
             onClick={() => refetch()}
             className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
             data-testid="dashboard-retry-button"
           >
-            Retry
+            {m['common.retry']()}
           </button>
         </div>
       ) : (
@@ -59,25 +60,25 @@ function ManageDashboard() {
             ) : (
               <>
                 <StatsCard
-                  title="Total Users"
+                  title={m['dashboard.total_users']()}
                   value={userStats?.totalUsers ?? 0}
-                  description="users"
+                  description={m['dashboard.users']()}
                   icon={Users}
                   testId="dashboard-total-users-card"
                   linkTo="/$realmId/manage/users"
                   linkParams={{ realmId }}
                 />
                 <StatsCard
-                  title="New Users"
+                  title={m['dashboard.new_users']()}
                   value={userStats?.newUsers ?? 0}
-                  description="past 7 days"
+                  description={m['dashboard.past_7_days']()}
                   icon={UserPlus}
                   testId="dashboard-new-users-card"
                 />
                 <StatsCard
-                  title="Active Users"
+                  title={m['dashboard.active_users']()}
                   value={userStats?.activeUsers ?? 0}
-                  description="past 7 days"
+                  description={m['dashboard.past_7_days']()}
                   icon={Activity}
                   testId="dashboard-active-users-card"
                 />

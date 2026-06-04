@@ -4,6 +4,7 @@ import { useFormMutation } from '@/hooks/use-form-mutation'
 import { useRealmId } from '@/stores/auth-store'
 import type { PermissionResponse } from '@/lib/api-generated'
 import { queryKeys } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 interface DeletePermissionDialogProps {
   open: boolean
@@ -40,8 +41,8 @@ export function DeletePermissionDialog({
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Delete Permission"
-      description={`Are you sure you want to delete the permission "${permission.name}"? This action cannot be undone.`}
+      title={m['permissions.delete_title']()}
+      description={m['permissions.delete_description']({ name: permission.name })}
       onConfirm={handleDelete}
       isPending={isSubmitting}
       confirmTestId="permission-delete-confirm-button"

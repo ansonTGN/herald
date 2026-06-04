@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import type { SubscriptionHistoryEventType } from '@/types/billing'
-import { EventTypeLabels } from '@/types/billing'
+import { getEventTypeLabel } from '@/types/billing'
 
 interface HistoryEventBadgeProps {
   eventType: SubscriptionHistoryEventType
@@ -41,7 +41,7 @@ export function HistoryEventBadge({ eventType, size = 'md', className }: History
       )}
       data-testid={`event-badge-${eventType}`}
     >
-      {EventTypeLabels[eventType]}
+      {getEventTypeLabel(eventType)}
     </span>
   )
 }

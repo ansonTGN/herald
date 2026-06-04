@@ -3,6 +3,7 @@ import { DataTable } from '@/components/shared'
 import { Badge } from '@/components/ui/badge'
 import type { AuditEventResponse } from '@/lib/api-generated'
 import { formatDateTime } from '@/lib/date-utils'
+import { m } from '@/paraglide/messages'
 
 interface AuditEventTableProps {
   data: AuditEventResponse[]
@@ -13,20 +14,20 @@ interface AuditEventTableProps {
 const columns: ColumnDef<AuditEventResponse>[] = [
   {
     accessorKey: 'createdAt',
-    header: 'Time',
+    header: () => m['audit.table_time'](),
     cell: ({ getValue }) => (
       <span className="whitespace-nowrap text-sm">{formatDateTime(getValue() as string)}</span>
     ),
   },
   {
     accessorKey: 'actorName',
-    header: 'Actor',
+    header: () => m['audit.table_actor'](),
     cell: ({ row }) => {
       const name = row.original.actorName
       const id = row.original.actorId
       return (
         <div className="max-w-[200px]">
-          <div className="truncate text-sm font-medium">{name || 'Unknown'}</div>
+          <div className="truncate text-sm font-medium">{name || m['audit.unknown']()}</div>
           <div className="truncate text-xs text-muted-foreground">{id}</div>
         </div>
       )
@@ -34,26 +35,26 @@ const columns: ColumnDef<AuditEventResponse>[] = [
   },
   {
     accessorKey: 'category',
-    header: 'Category',
+    header: () => m['audit.table_category'](),
     cell: ({ getValue }) => (
       <span className="text-sm">{(getValue() as string).replace(/_/g, ' ')}</span>
     ),
   },
   {
     accessorKey: 'action',
-    header: 'Action',
+    header: () => m['audit.table_action'](),
     cell: ({ getValue }) => <span className="font-mono text-sm">{getValue() as string}</span>,
   },
   {
     id: 'target',
-    header: 'Target',
+    header: () => m['audit.table_target'](),
     cell: ({ row }) => {
       const name = row.original.targetName
       const id = row.original.targetId
       const type = row.original.targetType
       return (
         <div className="max-w-[200px]">
-          <div className="truncate text-sm font-medium">{name || 'Unknown'}</div>
+          <div className="truncate text-sm font-medium">{name || m['audit.unknown']()}</div>
           <div className="truncate text-xs text-muted-foreground">
             {type}: {id}
           </div>
@@ -63,7 +64,7 @@ const columns: ColumnDef<AuditEventResponse>[] = [
   },
   {
     accessorKey: 'result',
-    header: 'Result',
+    header: () => m['audit.table_result'](),
     cell: ({ getValue }) => {
       const result = getValue() as string
       const isSuccess = result === 'success'
@@ -80,7 +81,7 @@ const columns: ColumnDef<AuditEventResponse>[] = [
   },
   {
     accessorKey: 'ipAddress',
-    header: 'IP Address',
+    header: () => m['audit.table_ip_address'](),
     cell: ({ getValue }) => (
       <span className="font-mono text-sm">{(getValue() as string) || '-'}</span>
     ),
@@ -90,7 +91,7 @@ const columns: ColumnDef<AuditEventResponse>[] = [
 export function AuditEventTable({
   data,
   onRowClick,
-  emptyMessage = 'No audit logs yet.',
+  emptyMessage = m['audit.no_logs'](),
 }: AuditEventTableProps) {
   return (
     <DataTable

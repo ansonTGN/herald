@@ -1,15 +1,16 @@
 import { z } from 'zod'
+import { m } from '@/paraglide/messages'
 
 export const creemConfigSchema = z.object({
   enabled: z.boolean().default(false),
   apiKey: z
     .string()
-    .regex(/^ck_(test|live)_/, 'API key must start with ck_test_ or ck_live_')
+    .regex(/^ck_(test|live)_/, { error: () => m['billing.creem_api_key_format']() })
     .or(z.literal('')),
   timeout: z.number().min(1).max(120).default(30),
   webhookSecret: z
     .string()
-    .regex(/^whsec_/, 'Webhook secret must start with whsec_')
+    .regex(/^whsec_/, { error: () => m['billing.creem_webhook_start_whsec']() })
     .optional()
     .or(z.literal('')),
 })

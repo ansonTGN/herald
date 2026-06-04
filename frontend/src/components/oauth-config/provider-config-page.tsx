@@ -5,6 +5,7 @@ import { Plus } from 'lucide-react'
 import { ProviderList } from './provider-list'
 import { ProviderConfigDialog } from './provider-config-dialog'
 import type { OAuthConfigResponse } from '@/lib/api-generated'
+import { m } from '@/paraglide/messages'
 
 interface ProviderConfigPageProps {
   realmId: string
@@ -29,10 +30,10 @@ export function ProviderConfigPage({ realmId }: ProviderConfigPageProps) {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Identity Providers</CardTitle>
+            <CardTitle>{m['oauth.identity_providers']()}</CardTitle>
             <Button onClick={handleAdd} data-testid="add-provider-button">
               <Plus className="mr-2 h-4 w-4" />
-              Add Provider
+              {m['oauth.add_provider']()}
             </Button>
           </div>
         </CardHeader>

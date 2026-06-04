@@ -12,6 +12,7 @@ import { getFieldErrorMessage } from '@/lib/form-utils'
 import { TextField } from '@/components/shared/form-fields/text-field'
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys, turnstileStatusQueryOptions } from '@/data/query-options'
+import { m } from '@/paraglide/messages'
 
 const PASSWORD_MIN_LENGTH = 8
 const NICKNAME_MAX_LENGTH = 50
@@ -27,19 +28,14 @@ type RegisterFormData = {
 
 const registerSchema = z
   .object({
-    email: z.string().email('Invalid email address'),
-    password: z
-      .string()
-      .min(PASSWORD_MIN_LENGTH, `Password must be at least ${PASSWORD_MIN_LENGTH} characters`),
-    confirmPassword: z.string().min(1, 'Please confirm your password'),
-    nickname: z
-      .string()
-      .max(NICKNAME_MAX_LENGTH, `Nickname must be less than ${NICKNAME_MAX_LENGTH} characters`)
-      .optional(),
+    email: z.string().email(m['auth.email_invalid']()),
+    password: z.string().min(PASSWORD_MIN_LENGTH, m['auth.password_min_length']()),
+    confirmPassword: z.string().min(1, m['auth.confirm_password_required']()),
+    nickname: z.string().max(NICKNAME_MAX_LENGTH, m['auth.nickname_max_length']()).optional(),
     turnstileToken: z.string().optional(),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: 'Passwords do not match',
+    message: m['auth.passwords_dont_match'](),
     path: ['confirmPassword'],
   })
 
@@ -83,7 +79,7 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
       }
       return result
     },
-    getSuccessMessage: (data) => data.message || 'Registration successful',
+    getSuccessMessage: (data) => data.message || m['auth.register.registration_successful'](),
     invalidateQueries: [queryKeys.usersList(realmId)],
     onSuccess: (data) => onSuccess?.(data.verificationRequired),
   })
@@ -115,7 +111,7 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
         <TextField
           form={form}
           name="email"
-          label="Email"
+          label={m['auth.verify_email.email_label']()}
           type="email"
           dataTestId="register-email-input"
           disabled={isSubmitting}
@@ -123,7 +119,7 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
         <TextField
           form={form}
           name="nickname"
-          label="Nickname (Optional)"
+          label={`${m['auth.register.title']()} (${m['common.optional']()})`}
           dataTestId="register-nickname-input"
           disabled={isSubmitting}
         />

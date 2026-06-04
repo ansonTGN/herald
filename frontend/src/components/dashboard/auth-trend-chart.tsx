@@ -8,6 +8,7 @@ import {
   ChartLegendContent,
   type ChartConfig,
 } from '@/components/ui/chart'
+import { m } from '@/paraglide/messages'
 
 interface AuthTrendChartProps {
   data: Array<{
@@ -18,33 +19,33 @@ interface AuthTrendChartProps {
   testId?: string
 }
 
-const chartConfig = {
-  successCount: {
-    label: 'Login Success',
-    color: 'var(--chart-1)',
-  },
-  failureCount: {
-    label: 'Login Failed',
-    color: 'var(--destructive)',
-  },
-} satisfies ChartConfig
-
 function formatShortDate(dateStr: string): string {
   const date = new Date(dateStr + 'T00:00:00')
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 export function AuthTrendChart({ data, testId }: AuthTrendChartProps) {
+  const chartConfig = {
+    successCount: {
+      label: m['dashboard.login_success'](),
+      color: 'var(--chart-1)',
+    },
+    failureCount: {
+      label: m['dashboard.login_failed'](),
+      color: 'var(--destructive)',
+    },
+  } satisfies ChartConfig
+
   return (
     <Card data-testid={testId}>
       <CardHeader>
-        <CardTitle>Login Activity</CardTitle>
-        <CardDescription>Last 30 days</CardDescription>
+        <CardTitle>{m['dashboard.login_activity']()}</CardTitle>
+        <CardDescription>{m['dashboard.last_30_days']()}</CardDescription>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
           <div className="flex h-[250px] items-center justify-center text-muted-foreground">
-            No data available
+            {m['dashboard.no_data_available']()}
           </div>
         ) : (
           <ChartContainer config={chartConfig} className="h-[250px] w-full">

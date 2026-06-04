@@ -1,3 +1,4 @@
+import { m } from '@/paraglide/messages'
 import { memo, useMemo } from 'react'
 import { format } from 'date-fns'
 import { ChevronRight, Calendar, Coins, CreditCard, AlertCircle, FileText } from 'lucide-react'
@@ -126,7 +127,7 @@ export function PurchaseHistoryList({
         className="flex flex-col items-center justify-center py-12 text-center"
       >
         <AlertCircle className="mb-4 h-12 w-12 text-destructive" />
-        <h3 className="text-lg font-semibold">Failed to load purchase history</h3>
+        <h3 className="text-lg font-semibold">{m['points.purchase_history_error_title']()}</h3>
         <p className="text-sm text-muted-foreground">{error.message}</p>
       </div>
     )
@@ -139,7 +140,7 @@ export function PurchaseHistoryList({
         className="flex flex-col items-center justify-center py-12 text-center"
       >
         <Calendar className="mb-4 h-12 w-12 text-muted-foreground" />
-        <h3 className="text-lg font-semibold">No purchase history</h3>
+        <h3 className="text-lg font-semibold">{m['points.purchase_history_empty_title']()}</h3>
         <p className="text-sm text-muted-foreground">
           You haven't purchased any points packages yet
         </p>
@@ -152,12 +153,12 @@ export function PurchaseHistoryList({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Package</TableHead>
-            <TableHead>Points</TableHead>
-            <TableHead>Amount</TableHead>
-            <TableHead>Provider</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead>{m['points.purchase_history_date']()}</TableHead>
+            <TableHead>{m['points.purchase_history_package']()}</TableHead>
+            <TableHead>{m['points.purchase_history_points']()}</TableHead>
+            <TableHead>{m['points.purchase_history_amount']()}</TableHead>
+            <TableHead>{m['points.purchase_history_provider']()}</TableHead>
+            <TableHead className="text-right">{m['points.purchase_history_actions']()}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

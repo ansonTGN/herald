@@ -14,6 +14,19 @@ import type { PermissionResponse } from '@/lib/api-generated'
 import { EditPermissionDialog } from './edit-permission-dialog'
 import { DeletePermissionDialog } from './delete-permission-dialog'
 import { useDialogManager } from '@/hooks/use-dialog-state'
+import { m } from '@/paraglide/messages'
+
+function TableHeaders() {
+  return (
+    <TableRow>
+      <TableHead>{m['permissions.table_name']()}</TableHead>
+      <TableHead>{m['permissions.table_resource']()}</TableHead>
+      <TableHead>{m['permissions.table_action']()}</TableHead>
+      <TableHead>{m['permissions.table_description']()}</TableHead>
+      <TableHead className="text-right">{m['permissions.table_actions']()}</TableHead>
+    </TableRow>
+  )
+}
 
 interface PermissionTableProps {
   permissions: PermissionResponse[]
@@ -41,18 +54,12 @@ export function PermissionTable({ permissions, isLoading, error }: PermissionTab
       <div className="rounded-md border">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Resource</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
+            <TableHeaders />
           </TableHeader>
           <TableBody>
             <TableRow>
               <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                Loading permissions...
+                {m['permissions.loading']()}
               </TableCell>
             </TableRow>
           </TableBody>
@@ -66,18 +73,12 @@ export function PermissionTable({ permissions, isLoading, error }: PermissionTab
       <div className="rounded-md border">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Resource</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
+            <TableHeaders />
           </TableHeader>
           <TableBody>
             <TableRow>
               <TableCell colSpan={5} className="text-center py-8 text-destructive">
-                Failed to load permissions. Please try again later.
+                {m['permissions.error']()}
               </TableCell>
             </TableRow>
           </TableBody>
@@ -91,18 +92,12 @@ export function PermissionTable({ permissions, isLoading, error }: PermissionTab
       <div className="rounded-md border">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Resource</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
+            <TableHeaders />
           </TableHeader>
           <TableBody>
             <TableRow>
               <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                No permissions found. Create your first permission to get started.
+                {m['permissions.empty']()}
               </TableCell>
             </TableRow>
           </TableBody>
@@ -116,13 +111,7 @@ export function PermissionTable({ permissions, isLoading, error }: PermissionTab
       <div className="rounded-md border" data-testid="permissions-table">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Resource</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
+            <TableHeaders />
           </TableHeader>
           <TableBody>
             {permissions.map((permission) => (

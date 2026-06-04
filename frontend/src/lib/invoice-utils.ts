@@ -1,15 +1,19 @@
 import type { InvoiceLineItemFormData } from '@/lib/schemas/invoice-forms'
+import { m } from '@/paraglide/messages'
 
 export const INVOICE_PAGE_SIZE = 20
 
 export const PDF_DOWNLOADABLE_STATUSES = new Set(['issued', 'paid', 'overdue'])
 
-export const INVOICE_STATUS_LABELS: Record<string, string> = {
-  draft: 'Draft',
-  issued: 'Issued',
-  paid: 'Paid',
-  void: 'Void',
-  overdue: 'Overdue',
+export function getInvoiceStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    draft: m['billing.invoice_status_draft'](),
+    issued: m['billing.invoice_status_issued'](),
+    paid: m['billing.invoice_status_paid'](),
+    void: m['billing.invoice_status_void'](),
+    overdue: m['billing.invoice_status_overdue'](),
+  }
+  return labels[status] ?? status
 }
 
 export const INVOICE_STATUS_COLORS: Record<string, string> = {
@@ -18,9 +22,12 @@ export const INVOICE_STATUS_COLORS: Record<string, string> = {
   void: 'destructive',
 }
 
-export const INVOICE_SOURCE_LABELS: Record<string, string> = {
-  admin_manual: 'Manual',
-  user_application: 'Application',
+export function getInvoiceSourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    admin_manual: m['billing.invoice_source_manual'](),
+    user_application: m['billing.invoice_source_application'](),
+  }
+  return labels[source] ?? source
 }
 
 export function formatInvoiceAmount(amount: number, currency: string): string {

@@ -19,6 +19,7 @@ import {
 } from '@/lib/schemas/invoice-forms'
 import { sellerConfigQueryOptions } from '@/data/invoice-query-options'
 import { useUpsertSellerConfig } from '@/data/invoice-mutations'
+import { m } from '@/paraglide/messages'
 
 interface InvoiceSellerConfigFormProps {
   open: boolean
@@ -68,8 +69,8 @@ export function InvoiceSellerConfigForm({
     <BaseFormDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Seller Configuration"
-      description="Configure the seller information for invoices in this realm"
+      title={m['billing.invoice_seller_config_title']()}
+      description={m['billing.invoice_seller_config_description']()}
       data-testid="seller-config-form-dialog"
       footer={
         <>
@@ -87,7 +88,7 @@ export function InvoiceSellerConfigForm({
             disabled={isSubmitting}
             data-testid="seller-config-save-button"
           >
-            {isSubmitting ? 'Saving...' : 'Save'}
+            {isSubmitting ? m['shared.saving']() : m['common.save']()}
           </Button>
         </>
       }
@@ -105,53 +106,53 @@ export function InvoiceSellerConfigForm({
             <TextField
               form={form}
               name="sellerName"
-              label="Seller Name"
+              label={m['billing.invoice_seller_name_label']()}
               dataTestId="seller-config-name-input"
-              placeholder="Company name"
+              placeholder={m['billing.invoice_seller_placeholder_name']()}
               required
             />
             <TextField
               form={form}
               name="sellerAddress"
-              label="Address"
+              label={m['billing.invoice_seller_address_label']()}
               dataTestId="seller-config-address-input"
-              placeholder="Business address"
+              placeholder={m['billing.invoice_seller_placeholder_address']()}
               required
             />
             <TextField
               form={form}
               name="sellerEmail"
-              label="Email"
+              label={m['billing.invoice_seller_email_label']()}
               dataTestId="seller-config-email-input"
               type="email"
-              placeholder="billing@example.com"
+              placeholder={m['billing.invoice_seller_placeholder_email']()}
             />
             <TextField
               form={form}
               name="sellerPhone"
-              label="Phone"
+              label={m['billing.invoice_seller_phone_label']()}
               dataTestId="seller-config-phone-input"
-              placeholder="+1 234 567 8900"
+              placeholder={m['billing.invoice_seller_placeholder_phone']()}
             />
             <TextField
               form={form}
               name="sellerTaxId"
-              label="Tax ID"
+              label={m['billing.invoice_seller_tax_id_label']()}
               dataTestId="seller-config-tax-id-input"
-              placeholder="Tax identification number"
+              placeholder={m['billing.invoice_seller_placeholder_tax_id']()}
               required
             />
             <form.Field
               name="defaultPaymentTerms"
               children={(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor={field.name}>Default Payment Terms</Label>
+                  <Label htmlFor={field.name}>{m['billing.invoice_default_payment_terms']()}</Label>
                   <Select
                     value={field.state.value ?? ''}
                     onValueChange={(value) => field.handleChange(value)}
                   >
                     <SelectTrigger data-testid="seller-config-payment-terms-input">
-                      <SelectValue placeholder="Select payment terms" />
+                      <SelectValue placeholder={m['billing.invoice_select_payment_terms']()} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Due on Receipt">Due on Receipt</SelectItem>

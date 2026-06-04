@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { filterAndFormat, toBackendCode, rawLength } from './device-code-utils'
+import { m } from '@/paraglide/messages'
 
 interface CodeInputProps {
   onSubmit: (userCode: string) => void
@@ -47,7 +48,7 @@ export function CodeInput({ onSubmit, defaultValue, isLoading }: CodeInputProps)
         className="w-full"
         data-testid="device-code-submit"
       >
-        Verify
+        {m['device.verify_button']()}
       </Button>
     </form>
   )

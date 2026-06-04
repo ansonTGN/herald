@@ -21,6 +21,7 @@ import {
   updateRealmDefaultConfigMutation,
 } from '@/data/query-options'
 import { realmConfigSchema, type RealmConfigFormData } from '@/lib/schemas/points-forms'
+import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/manage/points/realm-config')({
   component: RealmConfigPage,
@@ -31,10 +32,10 @@ function RealmConfigPage() {
   const queryClient = useQueryClient()
 
   const periodTypeLabels = {
-    once: 'One-time grant',
-    daily: 'Daily grant',
-    weekly: 'Weekly grant',
-    monthly: 'Monthly grant',
+    once: m['points.realm_config_period_once'](),
+    daily: m['points.realm_config_period_daily'](),
+    weekly: m['points.realm_config_period_weekly'](),
+    monthly: m['points.realm_config_period_monthly'](),
   }
 
   const { data: config, isLoading, error } = useQuery(realmConfigQueryOptions(realmId))
@@ -53,11 +54,11 @@ function RealmConfigPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.realmConfig(realmId) })
-      toast.success('Configuration updated')
+      toast.success(m['points.realm_config_saved']())
     },
     onError: (error) => {
       console.error('Failed to update realm config:', error)
-      toast.error(error.message || 'Failed to update config, please retry')
+      toast.error(error.message || m['points.realm_config_save_failed']())
     },
   })
 
@@ -94,26 +95,26 @@ function RealmConfigPage() {
   if (error && !isNotFound) {
     return (
       <Alert variant="destructive">
-        <AlertDescription>Failed to load config: {(error as Error).message}</AlertDescription>
+        <AlertDescription>
+          {m['points.realm_config_load_failed']({ message: (error as Error).message })}
+        </AlertDescription>
       </Alert>
     )
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Points Default Configuration</h1>
+      <h1 className="text-xl font-semibold">{m['points.realm_config_page_title']()}</h1>
 
       <Alert>
         <Info className="h-4 w-4" />
-        <AlertDescription>
-          This config only affects newly registered users. Existing users are unaffected.
-        </AlertDescription>
+        <AlertDescription>{m['points.realm_config_info']()}</AlertDescription>
       </Alert>
 
       <Card data-testid="realm-config-form" aria-labelledby="realm-config-title">
         <CardHeader>
-          <CardTitle id="realm-config-title">Default Configuration</CardTitle>
-          <CardDescription>Set points reward rules for free users</CardDescription>
+          <CardTitle id="realm-config-title">{m['points.realm_config_card_title']()}</CardTitle>
+          <CardDescription>{m['points.realm_config_card_description']()}</CardDescription>
         </CardHeader>
         <CardContent>
           <AppForm>
@@ -129,7 +130,7 @@ function RealmConfigPage() {
                 {(field) => (
                   <div className="space-y-2">
                     <Label htmlFor={field.name} id={`${field.name}-label`}>
-                      Registration Bonus Points *
+                      {m['points.realm_config_registration_bonus_label']()}
                     </Label>
                     <Input
                       id={field.name}
@@ -147,7 +148,7 @@ function RealmConfigPage() {
                       disabled={updateMutation.isPending}
                     />
                     <p id={`${field.name}-description`} className="text-xs text-muted-foreground">
-                      One-time bonus points granted on registration
+                      {m['points.realm_config_registration_bonus_help']()}
                     </p>
                     {field.state.meta.errors.length > 0 && (
                       <p
@@ -168,7 +169,7 @@ function RealmConfigPage() {
                 {(field) => (
                   <div className="space-y-2">
                     <Label htmlFor={field.name} id={`${field.name}-label`}>
-                      Grant Period Type *
+                      {m['points.realm_config_grant_period_type_label']()}
                     </Label>
                     <Select
                       value={field.state.value}
@@ -185,7 +186,9 @@ function RealmConfigPage() {
                         aria-invalid={field.state.meta.errors.length > 0}
                         aria-required="true"
                       >
-                        <SelectValue placeholder="Select period type" />
+                        <SelectValue
+                          placeholder={m['points.realm_config_grant_period_type_placeholder']()}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {Object.entries(periodTypeLabels).map(([value, label]) => (
@@ -196,7 +199,7 @@ function RealmConfigPage() {
                       </SelectContent>
                     </Select>
                     <p id={`${field.name}-description`} className="text-xs text-muted-foreground">
-                      Grant period for free user points
+                      {m['points.realm_config_grant_period_help']()}
                     </p>
                     {field.state.meta.errors.length > 0 && (
                       <p
@@ -217,7 +220,7 @@ function RealmConfigPage() {
                 {(field) => (
                   <div className="space-y-2">
                     <Label htmlFor={field.name} id={`${field.name}-label`}>
-                      Periodic Points Amount *
+                      {m['points.realm_config_periodic_amount_label']()}
                     </Label>
                     <Input
                       id={field.name}
@@ -235,7 +238,7 @@ function RealmConfigPage() {
                       disabled={updateMutation.isPending}
                     />
                     <p id={`${field.name}-description`} className="text-xs text-muted-foreground">
-                      Points granted automatically per period
+                      {m['points.realm_config_periodic_amount_help']()}
                     </p>
                     {field.state.meta.errors.length > 0 && (
                       <p
@@ -256,7 +259,7 @@ function RealmConfigPage() {
                 {(field) => (
                   <div className="space-y-2">
                     <Label htmlFor={field.name} id={`${field.name}-label`}>
-                      Periodic Points Validity (Days) *
+                      {m['points.realm_config_validity_days_label']()}
                     </Label>
                     <Input
                       id={field.name}
@@ -274,8 +277,7 @@ function RealmConfigPage() {
                       disabled={updateMutation.isPending}
                     />
                     <p id={`${field.name}-description`} className="text-xs text-muted-foreground">
-                      Validity period for periodic points; expired points are removed (set 0 for
-                      one-time period to make permanent)
+                      {m['points.realm_config_validity_days_help']()}
                     </p>
                     {field.state.meta.errors.length > 0 && (
                       <p
@@ -307,14 +309,14 @@ function RealmConfigPage() {
                       data-testid="save-config-button"
                       aria-label={
                         state.isSubmitting || updateMutation.isPending
-                          ? 'Saving configuration...'
-                          : 'Save Configuration'
+                          ? m['points.realm_config_saving_button']()
+                          : m['points.realm_config_save_button']()
                       }
                       aria-busy={state.isSubmitting || updateMutation.isPending}
                     >
                       {state.isSubmitting || updateMutation.isPending
-                        ? 'Saving...'
-                        : 'Save Configuration'}
+                        ? m['points.realm_config_saving_button']()
+                        : m['points.realm_config_save_button']()}
                     </Button>
                   )}
                 </form.Subscribe>
