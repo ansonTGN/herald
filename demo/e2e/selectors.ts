@@ -68,6 +68,15 @@ export const SELECTORS = {
   },
 
   /**
+   * Language Switcher Selectors
+   */
+  languageSwitcher: {
+    container: '[data-testid="language-switcher"]',
+    enButton: '[data-testid="language-switcher-en"]',
+    zhButton: '[data-testid="language-switcher-zh"]',
+  },
+
+  /**
    * Header Selectors
    */
   header: {
