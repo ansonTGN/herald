@@ -19,4 +19,5 @@
 - [配置](configuration.md) — 配置项说明
 - [部署](deployment.md) — Docker 生产环境部署
 - [Creem 支付流程](billing-creem-payment.md) — 从创建产品到收到付款的端到端操作指南
+- [Stripe 支付对接](billing-stripe-payment.md) — Stripe 支付平台对接操作指南（Webhook 配置、产品映射、支付流程）
 - [第三方后端对接](third-party-integration.md) — 用 SDK 接入 Herald 的认证、权限、积分、订阅

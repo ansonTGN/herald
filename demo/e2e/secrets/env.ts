@@ -19,6 +19,7 @@ export const secrets = {
     publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
     secretKey: process.env.STRIPE_SECRET_KEY,
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+    productId: process.env.STRIPE_PRODUCT_ID,
   },
   wechat: {
     appId: process.env.WECHAT_APP_ID,
@@ -48,7 +49,8 @@ export function hasStripePayment(): boolean {
   return !!(
     secrets.stripe.publishableKey &&
     secrets.stripe.secretKey &&
-    secrets.stripe.webhookSecret
+    secrets.stripe.webhookSecret &&
+    secrets.stripe.productId
   )
 }
 
@@ -86,7 +88,7 @@ export function requireStripePayment(): void {
   if (!hasStripePayment()) {
     throw new Error(
       'Stripe payment credentials not configured. ' +
-        'Set STRIPE_PUBLISHABLE_KEY, STRIPE_SECRET_KEY, and STRIPE_WEBHOOK_SECRET in demo/.env.demo.',
+        'Set STRIPE_PUBLISHABLE_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and STRIPE_PRODUCT_ID in demo/.env.demo.',
     )
   }
 }

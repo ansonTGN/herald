@@ -29,6 +29,7 @@ function RolesPage() {
     <div className="space-y-6" data-testid="roles-page">
       <PageHeader
         title={m['roles.page_title']()}
+        headingTestId="roles-heading"
         action={{
           label: m['roles.add_button'](),
           onClick: () => setCreateDialogOpen(true),

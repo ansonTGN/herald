@@ -61,7 +61,7 @@ Plan 本身不绑定支付平台。你需要单独配置 **Plan Payment Provider
 
 回到套餐列表，你会看到刚创建的套餐。注意 **Payment Providers** 列显示 "Not configured"，这是正常的，下一步来配。
 
-## Step 3: 配置 Creem API Key
+## Step 3: 配置 Creem API Key 和 Webhook
 
 在 Herald 管理后台配置 Creem 的连接信息。
 
@@ -71,10 +71,30 @@ Plan 本身不绑定支付平台。你需要单独配置 **Plan Payment Provider
    - **Enable Creem**：打开开关
    - **API Key**（必填）：填入在 Creem 后台拿到的 API Key，测试环境用 `ck_test_` 开头的 key
    - **Timeout**（可选）：请求超时时间（秒）
-   - **Webhook Secret**（可选）：Webhook 签名验证密钥
+   - **Webhook Secret**（必填）：Webhook 签名验证密钥，创建 Webhook 后获取，见下方
 4. 点击 **Save**
 
 配置完成后，系统创建 Checkout Session 时会自动读取这个 key 来调用 Creem API。
+
+### 创建 Creem Webhook
+
+1. 打开 [Creem Dashboard → Developers → Webhooks](https://creem.io)
+2. 点击 **Create Webhook**
+3. 填写：
+   - **Name**：Herald Webhook（随意取名）
+   - **URL**：`https://你的Herald域名/api/third/pay/{realmId}/creem/webhooks`
+     - 把 `{realmId}` 替换成你的 realm ID，比如 `admin`
+4. 选择事件——必须勾选以下 5 个事件，缺任何一个都会导致对应的支付流程断裂：
+
+| 事件 | Herald 处理逻辑 |
+|------|----------------|
+| `checkout.completed` | 验证结账元数据，记录审计状态。订阅创建推迟到 `subscription.paid` 事件 |
+| `subscription.paid` | 订阅首次支付或续费成功，创建订阅记录，发放积分 |
+| `subscription.update` | 订阅升降级处理，调整积分 |
+| `subscription.canceled` | 订阅取消（即时或期末取消），回收未使用积分 |
+| `refund.created` | 退款，按退款类型回收积分（充值退款按比例回收，订阅退款回收未使用积分） |
+
+5. 创建完成后复制 **Signing secret**，回到 Herald Payment Providers → Creem 配置，填入 **Webhook Secret**
 
 ## Step 4: 为套餐添加 Creem 支付映射
 
@@ -189,9 +209,10 @@ Creem 的 API Key 前缀决定了请求发到哪里：
 
 - [ ] 创建了至少一个 Product
 - [ ] 在 Product 下创建了 Plan（月付或年付）
-- [ ] Payment Providers 页面配置了 Creem（API Key 已填入并启用）
+- [ ] Payment Providers 页面配置了 Creem（API Key 和 Webhook Secret 已填入并启用）
+- [ ] Creem Dashboard 创建了 Webhook 端点，5 个事件全部勾选
+- [ ] Webhook Secret 和 Creem 端点的 Signing secret 一致
 - [ ] 为 Plan 添加了 Creem 支付映射（External Product ID 填了 Creem 的 Product ID）
 - [ ] 映射状态为 Enabled
 - [ ] 把 Plan 分配给了 Client App
-- [ ] Creem Dashboard 配置了 Webhook URL
 - [ ] 用测试 Key 跑通了一次支付流程

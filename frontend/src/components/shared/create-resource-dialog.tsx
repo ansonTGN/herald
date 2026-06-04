@@ -91,7 +91,7 @@ export function CreateResourceDialog<TData, TResponse = unknown>({
                   />
                   {(field.state.meta.isTouched || form.state.isSubmitted) &&
                     field.state.meta.errors.length > 0 && (
-                      <p className="text-sm text-destructive">
+                      <p className="text-sm text-destructive" role="alert">
                         {getFieldErrorMessage(field.state.meta)}
                       </p>
                     )}
@@ -117,7 +117,7 @@ export function CreateResourceDialog<TData, TResponse = unknown>({
                   />
                   {(field.state.meta.isTouched || form.state.isSubmitted) &&
                     field.state.meta.errors.length > 0 && (
-                      <p className="text-sm text-destructive">
+                      <p className="text-sm text-destructive" role="alert">
                         {getFieldErrorMessage(field.state.meta)}
                       </p>
                     )}

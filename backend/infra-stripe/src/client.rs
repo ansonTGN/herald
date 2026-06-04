@@ -104,75 +104,75 @@ impl StripeClient {
 
         let url = format!("{}/v1/checkout/sessions", self.base_url);
 
-        // Build metadata for Stripe
-        let mut metadata = std::collections::HashMap::new();
-        metadata.insert("realm_id".to_string(), request.realm_id.clone());
-        metadata.insert(
-            "client_app_id".to_string(),
-            request.client_app_id.to_string(),
-        );
-        metadata.insert("plan_id".to_string(), request.plan_id.to_string());
+        // Build form-encoded fields (Stripe requires application/x-www-form-urlencoded)
+        let mut form_fields: Vec<(String, String)> = vec![
+            ("success_url".to_string(), request.success_url.clone()),
+            ("cancel_url".to_string(), request.cancel_url.clone()),
+            ("mode".to_string(), "subscription".to_string()),
+            // Metadata fields
+            ("metadata[realm_id]".to_string(), request.realm_id.clone()),
+            (
+                "metadata[client_app_id]".to_string(),
+                request.client_app_id.to_string(),
+            ),
+            ("metadata[plan_id]".to_string(), request.plan_id.to_string()),
+            (
+                "metadata[billing_period]".to_string(),
+                request.billing_period.clone(),
+            ),
+            ("metadata[plan_name]".to_string(), request.plan_name.clone()),
+        ];
+
         if let Some(user_id) = request.user_id {
-            metadata.insert("user_id".to_string(), user_id.to_string());
+            form_fields.push(("metadata[user_id]".to_string(), user_id.to_string()));
         }
-        metadata.insert("billing_period".to_string(), request.billing_period.clone());
-        metadata.insert("plan_name".to_string(), request.plan_name.clone());
+
         if let Some(extra_metadata) = &request.metadata {
-            metadata.extend(extra_metadata.clone());
+            for (key, value) in extra_metadata {
+                form_fields.push((format!("metadata[{key}]"), value.clone()));
+            }
         }
 
-        // Build Stripe checkout session request
-        let mut stripe_request = std::collections::HashMap::new();
-        stripe_request.insert(
-            "success_url".to_string(),
-            serde_json::to_value(request.success_url.clone())?,
-        );
-        stripe_request.insert(
-            "cancel_url".to_string(),
-            serde_json::to_value(request.cancel_url.clone())?,
-        );
-        stripe_request.insert(
-            "mode".to_string(),
-            serde_json::to_value("subscription".to_string())?,
-        );
-        stripe_request.insert("metadata".to_string(), serde_json::to_value(metadata)?);
         if let Some(customer_email) = &request.customer_email {
-            stripe_request.insert(
-                "customer_email".to_string(),
-                serde_json::to_value(customer_email.clone())?,
-            );
+            form_fields.push(("customer_email".to_string(), customer_email.clone()));
         }
 
-        // Build line items
-        let line_item = serde_json::json!({
-            "price_data": {
-                "currency": request.currency,
-                "product_data": {
-                    "name": request.plan_name,
-                    "metadata": {
-                        "plan_id": request.plan_id.to_string()
-                    }
-                },
-                "unit_amount": request.price_amount,
-                "recurring": {
-                    "interval": if request.billing_period == "monthly" { "month" } else { "year" }
-                }
-            },
-            "quantity": 1
-        });
-
-        stripe_request.insert("line_items".to_string(), serde_json::json!([line_item]));
+        // Line items[0] fields
+        form_fields.push((
+            "line_items[0][price_data][currency]".to_string(),
+            request.currency.clone(),
+        ));
+        form_fields.push((
+            "line_items[0][price_data][product_data][name]".to_string(),
+            request.plan_name.clone(),
+        ));
+        form_fields.push((
+            "line_items[0][price_data][product_data][metadata][plan_id]".to_string(),
+            request.plan_id.to_string(),
+        ));
+        form_fields.push((
+            "line_items[0][price_data][unit_amount]".to_string(),
+            request.price_amount.to_string(),
+        ));
+        let interval = if request.billing_period == "monthly" {
+            "month"
+        } else {
+            "year"
+        };
+        form_fields.push((
+            "line_items[0][price_data][recurring][interval]".to_string(),
+            interval.to_string(),
+        ));
+        form_fields.push(("line_items[0][quantity]".to_string(), "1".to_string()));
 
         // Add trial period if specified
         if let Some(trial_days) = request.trial_days
             && trial_days > 0
         {
-            stripe_request.insert(
-                "subscription_data".to_string(),
-                serde_json::json!({
-                    "trial_period_days": trial_days
-                }),
-            );
+            form_fields.push((
+                "subscription_data[trial_period_days]".to_string(),
+                trial_days.to_string(),
+            ));
         }
 
         tracing::info!(
@@ -184,7 +184,7 @@ impl StripeClient {
             .http
             .post(&url)
             .bearer_auth(&self.api_key)
-            .json(&stripe_request)
+            .form(&form_fields)
             .send()
             .await?;
 
@@ -633,6 +633,117 @@ mod tests {
         assert_eq!(result.payment_intent, Some(format!("pi_mock_{short_id}")));
         assert!(result.subscription.is_none());
         assert_eq!(result.metadata["source"], "demo");
+    }
+
+    /// Verifies that create_checkout_session sends form-encoded data (not JSON),
+    /// matching Stripe's requirement for application/x-www-form-urlencoded.
+    #[tokio::test]
+    async fn test_create_checkout_session_sends_form_encoded() {
+        let mock_server = MockServer::start().await;
+        let client =
+            StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "cs_test_123",
+                "url": "https://checkout.stripe.com/test",
+                "customer": null,
+                "status": "open",
+                "payment_intent": "pi_test_123",
+                "subscription": null,
+                "metadata": { "realm_id": "realm-1", "source": "web" }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let plan_id = uuid::Uuid::now_v7();
+        let result = client
+            .create_checkout_session(&CreateCheckoutRequest {
+                client_app_id: uuid::Uuid::now_v7(),
+                plan_id,
+                user_id: Some(uuid::Uuid::now_v7()),
+                customer_email: Some("buyer@example.com".to_string()),
+                success_url: "https://example.com/success".to_string(),
+                cancel_url: "https://example.com/cancel".to_string(),
+                billing_period: "monthly".to_string(),
+                trial_days: Some(14),
+                price_amount: 1999,
+                currency: "usd".to_string(),
+                plan_name: "Pro Plan".to_string(),
+                realm_id: "realm-1".to_string(),
+                webhook_url: None,
+                metadata: Some(std::collections::HashMap::from([(
+                    "source".to_string(),
+                    "web".to_string(),
+                )])),
+            })
+            .await
+            .expect("checkout session should be created");
+
+        assert_eq!(result.id, "cs_test_123");
+        assert_eq!(result.url, "https://checkout.stripe.com/test");
+        assert_eq!(result.status.as_deref(), Some("open"));
+
+        let requests = mock_server
+            .received_requests()
+            .await
+            .expect("request recording should be enabled");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method.as_str(), "POST");
+        assert_eq!(requests[0].url.path(), "/v1/checkout/sessions");
+
+        // Parse form body to verify form-encoding (not JSON)
+        let form: std::collections::HashMap<_, _> = url::form_urlencoded::parse(&requests[0].body)
+            .into_owned()
+            .collect();
+
+        assert_eq!(
+            requests[0]
+                .headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer sk_test_123")
+        );
+        // Verify key fields are form-encoded
+        assert_eq!(form.get("mode"), Some(&"subscription".to_string()));
+        assert_eq!(
+            form.get("success_url"),
+            Some(&"https://example.com/success".to_string())
+        );
+        assert_eq!(
+            form.get("cancel_url"),
+            Some(&"https://example.com/cancel".to_string())
+        );
+        assert_eq!(
+            form.get("customer_email"),
+            Some(&"buyer@example.com".to_string())
+        );
+        // Metadata fields
+        assert_eq!(form.get("metadata[realm_id]"), Some(&"realm-1".to_string()));
+        assert_eq!(
+            form.get("metadata[plan_name]"),
+            Some(&"Pro Plan".to_string())
+        );
+        assert_eq!(form.get("metadata[source]"), Some(&"web".to_string()));
+        // Line items
+        assert_eq!(
+            form.get("line_items[0][price_data][currency]"),
+            Some(&"usd".to_string())
+        );
+        assert_eq!(
+            form.get("line_items[0][price_data][unit_amount]"),
+            Some(&"1999".to_string())
+        );
+        assert_eq!(
+            form.get("line_items[0][price_data][recurring][interval]"),
+            Some(&"month".to_string())
+        );
+        assert_eq!(form.get("line_items[0][quantity]"), Some(&"1".to_string()));
+        // Trial period
+        assert_eq!(
+            form.get("subscription_data[trial_period_days]"),
+            Some(&"14".to_string())
+        );
     }
 
     #[tokio::test]

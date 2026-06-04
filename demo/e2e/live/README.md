@@ -12,6 +12,7 @@ in the role or domain directories under `demo/e2e/`.
 | `auth/oauth/us-ru-003-github-oauth-live.e2e.ts` | US-RU-003 | Partial: GitHub success only | GitHub OAuth | Yes |
 | `billing/wechat-pay/us-wp-005-wechat-qr-live.e2e.ts` | US-WP-005, US-PU-06, US-PA-001, US-PA-002 | Partial: QR rendering only | WeChat Pay | No for QR rendering |
 | `billing/payment-attempt/us-pa-001-creem-checkout-live.e2e.ts` | US-PA-001, US-PA-002, US-PA-003 | Partial: Creem checkout smoke only | Creem | Maybe |
+| `billing/payment-attempt/us-pa-001-stripe-checkout-live.e2e.ts` | US-PA-001, US-PA-002, US-PA-003, US-PV-001 | Partial: Stripe checkout smoke only | Stripe | No |
 
 ## Rules
 
