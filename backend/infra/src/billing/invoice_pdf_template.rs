@@ -16,22 +16,31 @@ pub fn render_invoice_html(detail: &InvoiceDetail) -> String {
     let status = html_escape(inv.status.as_str());
     let currency = html_escape(&inv.currency);
 
-    let billing_name = html_escape(&inv.billing_name);
-    let billing_address = format!("<div>{}</div>", html_escape(&inv.billing_address));
+    let billing_name = html_escape(inv.billing_name.as_deref().unwrap_or(""));
+    let billing_address = inv
+        .billing_address
+        .as_deref()
+        .map_or(String::new(), |addr| {
+            format!("<div>{}</div>", html_escape(addr))
+        });
     let billing_email = opt_div(&inv.billing_email);
     let billing_phone = opt_div(&inv.billing_phone);
-    let billing_tax_id = non_empty_div(&inv.billing_tax_id);
+    let billing_tax_id = opt_div(&inv.billing_tax_id);
 
-    let seller_name = html_escape(&inv.seller_name);
-    let seller_address = format!("<div>{}</div>", html_escape(&inv.seller_address));
+    let seller_name = html_escape(inv.seller_name.as_deref().unwrap_or(""));
+    let seller_address = inv.seller_address.as_deref().map_or(String::new(), |addr| {
+        format!("<div>{}</div>", html_escape(addr))
+    });
     let seller_email = opt_div(&inv.seller_email);
     let seller_phone = opt_div(&inv.seller_phone);
-    let seller_tax_id = non_empty_div(&inv.seller_tax_id);
+    let seller_tax_id = opt_div(&inv.seller_tax_id);
 
     let issue_date = inv
         .issue_date
         .map_or(String::new(), |d| html_escape(&d.to_string()));
-    let due_date = html_escape(&inv.due_date.to_string());
+    let due_date = inv
+        .due_date
+        .map_or(String::new(), |d| html_escape(&d.to_string()));
     let payment_terms = inv
         .payment_terms
         .as_deref()
@@ -260,14 +269,6 @@ fn html_escape(s: &str) -> String {
 fn opt_div(val: &Option<String>) -> String {
     val.as_deref()
         .map_or(String::new(), |s| format!("<div>{}</div>", html_escape(s)))
-}
-
-fn non_empty_div(val: &str) -> String {
-    if val.is_empty() {
-        String::new()
-    } else {
-        format!("<div>{}</div>", html_escape(val))
-    }
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ use validator::Validate;
 
 use herald_core::domain::billing::invoice::{
     AdjustmentMode, InvoiceDetail, InvoiceHistory, InvoiceLineItem, InvoiceListFilters,
-    InvoiceSellerConfig, InvoiceSource, InvoiceStatus,
+    InvoiceProvider, InvoiceSellerConfig, InvoiceSource, InvoiceStatus,
 };
 
 // ---------------------------------------------------------------------------
@@ -243,8 +243,8 @@ pub struct UpdateInvoiceRequest {
     pub billing_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_phone: Option<String>,
-    #[validate(length(min = 1, max = 100))]
-    pub billing_tax_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_tax_id: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seller_name: Option<String>,
@@ -254,8 +254,8 @@ pub struct UpdateInvoiceRequest {
     pub seller_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seller_phone: Option<String>,
-    #[validate(length(min = 1, max = 100))]
-    pub seller_tax_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seller_tax_id: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line_items: Option<Vec<LineItemRequest>>,
@@ -319,6 +319,8 @@ pub struct InvoiceListQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub search: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_from: Option<NaiveDate>,
@@ -349,6 +351,10 @@ impl InvoiceListQuery {
                 .source
                 .as_deref()
                 .and_then(|s| s.parse::<InvoiceSource>().ok()),
+            provider: self
+                .provider
+                .as_deref()
+                .and_then(|s| s.parse::<InvoiceProvider>().ok()),
             search: self.search.clone(),
             date_from: self.date_from,
             date_to: self.date_to,
@@ -368,12 +374,16 @@ pub struct InvoiceResponse {
     pub id: Uuid,
     pub invoice_number: String,
     pub source: String,
-    pub account_id: Uuid,
+    pub account_id: Option<Uuid>,
     pub status: String,
     pub currency: String,
     pub total: i64,
-    pub billing_name: String,
-    pub due_date: NaiveDate,
+    pub billing_name: Option<String>,
+    pub due_date: Option<NaiveDate>,
+    pub provider: String,
+    pub payment_provider: Option<String>,
+    pub external_hosted_url: Option<String>,
+    pub external_pdf_url: Option<String>,
     pub created_at: String,
 }
 
@@ -388,15 +398,22 @@ pub struct InvoiceDetailResponse {
     pub realm_id: String,
     pub invoice_number: String,
     pub source: String,
-    pub account_id: Uuid,
+    pub account_id: Option<Uuid>,
     pub applicant_user_id: Option<Uuid>,
     pub subscription_id: Option<Uuid>,
     pub payment_attempt_id: Option<Uuid>,
     pub status: String,
     pub currency: String,
 
+    pub provider: String,
+    pub payment_provider: Option<String>,
+    pub external_invoice_id: Option<String>,
+    pub external_hosted_url: Option<String>,
+    pub external_pdf_url: Option<String>,
+    pub tax_details: Option<serde_json::Value>,
+
     pub issue_date: Option<NaiveDate>,
-    pub due_date: NaiveDate,
+    pub due_date: Option<NaiveDate>,
     pub issued_at: Option<String>,
     pub paid_at: Option<String>,
     pub voided_at: Option<String>,
@@ -414,17 +431,17 @@ pub struct InvoiceDetailResponse {
     pub shipping_mode: Option<String>,
     pub shipping_value: Option<String>,
 
-    pub billing_name: String,
-    pub billing_address: String,
+    pub billing_name: Option<String>,
+    pub billing_address: Option<String>,
     pub billing_email: Option<String>,
     pub billing_phone: Option<String>,
-    pub billing_tax_id: String,
+    pub billing_tax_id: Option<String>,
 
-    pub seller_name: String,
-    pub seller_address: String,
+    pub seller_name: Option<String>,
+    pub seller_address: Option<String>,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
-    pub seller_tax_id: String,
+    pub seller_tax_id: Option<String>,
 
     pub notes: Option<String>,
     pub payment_terms: Option<String>,
@@ -473,6 +490,10 @@ pub fn summary_to_response(
         total: s.total,
         billing_name: s.billing_name,
         due_date: s.due_date,
+        provider: s.provider.as_str().to_string(),
+        payment_provider: s.payment_provider,
+        external_hosted_url: s.external_hosted_url,
+        external_pdf_url: None,
         created_at: s.created_at.to_rfc3339(),
     }
 }
@@ -490,6 +511,13 @@ pub fn invoice_to_detail_response(detail: InvoiceDetail) -> InvoiceDetailRespons
         payment_attempt_id: detail.invoice.payment_attempt_id,
         status: detail.invoice.status.as_str().to_string(),
         currency: detail.invoice.currency,
+
+        provider: detail.invoice.provider.as_str().to_string(),
+        payment_provider: detail.invoice.payment_provider,
+        external_invoice_id: detail.invoice.external_invoice_id,
+        external_hosted_url: detail.invoice.external_hosted_url,
+        external_pdf_url: detail.invoice.external_pdf_url,
+        tax_details: detail.invoice.tax_details,
 
         issue_date: detail.invoice.issue_date,
         due_date: detail.invoice.due_date,

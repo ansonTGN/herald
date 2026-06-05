@@ -12,7 +12,8 @@
 
 use chrono::Utc;
 use herald_domain::billing::invoice::{
-    AdjustmentMode, Invoice, InvoiceDetail, InvoiceLineItem, InvoiceSource, InvoiceStatus,
+    AdjustmentMode, Invoice, InvoiceDetail, InvoiceLineItem, InvoiceProvider, InvoiceSource,
+    InvoiceStatus,
 };
 
 use super::invoice_pdf_generator::IronPressInvoicePdfGenerator;
@@ -28,14 +29,23 @@ fn sample_invoice() -> Invoice {
         realm_id: "test-realm".to_string(),
         invoice_number: "INV-2026-0001".to_string(),
         source: InvoiceSource::AdminManual,
-        account_id: uuid::Uuid::now_v7(),
+        account_id: Some(uuid::Uuid::now_v7()),
         applicant_user_id: None,
         subscription_id: None,
         payment_attempt_id: None,
         status: InvoiceStatus::Issued,
         currency: "USD".to_string(),
+        provider: InvoiceProvider::Manual,
+        payment_provider: None,
+        external_invoice_id: None,
+        external_order_id: None,
+        external_status: None,
+        external_hosted_url: None,
+        external_pdf_url: None,
+        external_payload: None,
+        tax_details: None,
         issue_date: Some(chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
-        due_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+        due_date: Some(chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap()),
         issued_at: Some(Utc::now()),
         paid_at: None,
         voided_at: None,
@@ -50,16 +60,16 @@ fn sample_invoice() -> Invoice {
         tax_value: Some("10".to_string()),
         shipping_mode: Some(AdjustmentMode::Fixed),
         shipping_value: Some("2.00".to_string()),
-        billing_name: "Acme Corp".to_string(),
-        billing_address: "123 Main St".to_string(),
+        billing_name: Some("Acme Corp".to_string()),
+        billing_address: Some("123 Main St".to_string()),
         billing_email: Some("billing@acme.com".to_string()),
         billing_phone: None,
-        billing_tax_id: String::new(),
-        seller_name: "Seller Inc".to_string(),
-        seller_address: "456 Oak Ave".to_string(),
+        billing_tax_id: Some(String::new()),
+        seller_name: Some("Seller Inc".to_string()),
+        seller_address: Some("456 Oak Ave".to_string()),
         seller_email: Some("seller@example.com".to_string()),
         seller_phone: None,
-        seller_tax_id: String::new(),
+        seller_tax_id: Some(String::new()),
         notes: Some("Thank you for your business!".to_string()),
         payment_terms: Some("Net 30".to_string()),
         void_reason: None,
@@ -70,7 +80,7 @@ fn sample_invoice() -> Invoice {
 
 fn sample_detail_with_items() -> InvoiceDetail {
     let mut invoice = sample_invoice();
-    invoice.billing_name = "Test Buyer".to_string();
+    invoice.billing_name = Some("Test Buyer".to_string());
     invoice.notes = Some("Standard notes".to_string());
 
     InvoiceDetail {
@@ -111,7 +121,7 @@ fn sample_detail_with_items() -> InvoiceDetail {
 async fn test_generate_pdf_with_unicode() {
     let mut detail = sample_detail_with_items();
     // Use Chinese characters in buyer name and notes to test unicode handling
-    detail.invoice.billing_name = "\u{5317}\u{4eac}\u{516c}\u{53f8}".to_string(); // Beijing Company in Chinese
+    detail.invoice.billing_name = Some("\u{5317}\u{4eac}\u{516c}\u{53f8}".to_string()); // Beijing Company in Chinese
     detail.invoice.notes = Some("\u{611f}\u{8c22}\u{60a8}\u{7684}\u{4e1a}\u{52a1}".to_string()); // Thank you for your business
 
     let generator = IronPressInvoicePdfGenerator;

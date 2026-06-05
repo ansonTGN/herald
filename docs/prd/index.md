@@ -56,6 +56,8 @@ docs/
 | [shopify-pay.md](billing/shopify-pay.md) | Shopify Pay 支付集成 | Realm Admin |
 | [wechat-pay.md](billing/wechat-pay.md) | 微信支付集成 | Realm Admin, Regular User |
 | [invoice.md](billing/invoice.md) | Invoice 发票管理 | Realm Admin, Regular User |
+| [invoice-fallback.md](billing/invoice-fallback.md) | Invoice Fallback 外部发票展示 + 自研 Fallback | Realm Admin, Regular User |
+| [product_reduce.md](billing/product_reduce.md) | Product & Subscription Model Reduction | Realm Admin, Third-Party App, System |
 
 ### Integration 集成与扩展
 

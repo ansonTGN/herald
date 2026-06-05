@@ -9,10 +9,10 @@ use sea_orm::DatabaseConnection;
 use uuid::Uuid;
 
 use herald_domain::billing::invoice::{
-    ActorType, AdjustmentMode, Invoice, InvoiceDetail, InvoiceEventType, InvoiceHistory,
-    InvoiceLineItem, InvoiceListFilters, InvoiceRepository, InvoiceSellerConfig, InvoiceStatus,
-    InvoiceStatusTransition, InvoiceSummary, NewInvoice, NewLineItem, PaginatedInvoices,
-    UpdateInvoiceDraft,
+    ActorType, AdjustmentMode, ExternalInvoiceData, Invoice, InvoiceDetail, InvoiceEventType,
+    InvoiceHistory, InvoiceLineItem, InvoiceListFilters, InvoiceProvider, InvoiceRepository,
+    InvoiceSellerConfig, InvoiceSource, InvoiceStatus, InvoiceStatusTransition, InvoiceSummary,
+    NewInvoice, NewLineItem, PaginatedInvoices, UpdateInvoiceDraft,
 };
 use herald_domain::billing::invoice_service::{
     calculate_invoice_amounts, calculate_line_item_subtotal, format_invoice_number,
@@ -39,14 +39,25 @@ struct InvoiceRow {
     realm_id: String,
     invoice_number: String,
     source: String,
-    account_id: Uuid,
+    account_id: Option<Uuid>,
     applicant_user_id: Option<Uuid>,
     subscription_id: Option<Uuid>,
     payment_attempt_id: Option<Uuid>,
     status: String,
     currency: String,
+    // Provider fields
+    provider: String,
+    payment_provider: Option<String>,
+    external_invoice_id: Option<String>,
+    external_order_id: Option<String>,
+    external_status: Option<String>,
+    external_hosted_url: Option<String>,
+    external_pdf_url: Option<String>,
+    external_payload: Option<serde_json::Value>,
+    tax_details: Option<serde_json::Value>,
+    // Dates
     issue_date: Option<chrono::NaiveDate>,
-    due_date: chrono::NaiveDate,
+    due_date: Option<chrono::NaiveDate>,
     issued_at: Option<DateTime<Utc>>,
     paid_at: Option<DateTime<Utc>>,
     voided_at: Option<DateTime<Utc>>,
@@ -61,21 +72,26 @@ struct InvoiceRow {
     tax_value: Option<String>,
     shipping_mode: Option<String>,
     shipping_value: Option<String>,
-    billing_name: String,
-    billing_address: String,
+    billing_name: Option<String>,
+    billing_address: Option<String>,
     billing_email: Option<String>,
     billing_phone: Option<String>,
-    billing_tax_id: String,
-    seller_name: String,
-    seller_address: String,
+    billing_tax_id: Option<String>,
+    seller_name: Option<String>,
+    seller_address: Option<String>,
     seller_email: Option<String>,
     seller_phone: Option<String>,
-    seller_tax_id: String,
+    seller_tax_id: Option<String>,
     notes: Option<String>,
     payment_terms: Option<String>,
     void_reason: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+}
+
+fn parse_provider_from_row(s: &str) -> Result<InvoiceProvider, CoreError> {
+    s.parse::<InvoiceProvider>()
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))
 }
 
 fn row_to_invoice(row: InvoiceRow) -> Result<Invoice, CoreError> {
@@ -90,6 +106,15 @@ fn row_to_invoice(row: InvoiceRow) -> Result<Invoice, CoreError> {
         payment_attempt_id: row.payment_attempt_id,
         status: row.status.parse()?,
         currency: row.currency,
+        provider: parse_provider_from_row(&row.provider)?,
+        payment_provider: row.payment_provider,
+        external_invoice_id: row.external_invoice_id,
+        external_order_id: row.external_order_id,
+        external_status: row.external_status,
+        external_hosted_url: row.external_hosted_url,
+        external_pdf_url: row.external_pdf_url,
+        external_payload: row.external_payload,
+        tax_details: row.tax_details,
         issue_date: row.issue_date,
         due_date: row.due_date,
         issued_at: row.issued_at,
@@ -240,13 +265,16 @@ struct InvoiceSummaryRow {
     realm_id: String,
     invoice_number: String,
     source: String,
-    account_id: Uuid,
+    account_id: Option<Uuid>,
     status: String,
     currency: String,
     total: i64,
-    billing_name: String,
-    due_date: chrono::NaiveDate,
+    billing_name: Option<String>,
+    due_date: Option<chrono::NaiveDate>,
     created_at: DateTime<Utc>,
+    provider: String,
+    payment_provider: Option<String>,
+    external_hosted_url: Option<String>,
 }
 
 fn row_to_summary(row: InvoiceSummaryRow) -> Result<InvoiceSummary, CoreError> {
@@ -262,6 +290,9 @@ fn row_to_summary(row: InvoiceSummaryRow) -> Result<InvoiceSummary, CoreError> {
         billing_name: row.billing_name,
         due_date: row.due_date,
         created_at: row.created_at,
+        provider: parse_provider_from_row(&row.provider)?,
+        payment_provider: row.payment_provider,
+        external_hosted_url: row.external_hosted_url,
     })
 }
 
@@ -277,6 +308,9 @@ struct CountRow {
 const INVOICE_COLUMNS: &str = r#"
     id, realm_id, invoice_number, source, account_id, applicant_user_id,
     subscription_id, payment_attempt_id, status, currency,
+    provider, payment_provider, external_invoice_id, external_order_id,
+    external_status, external_hosted_url, external_pdf_url,
+    external_payload, tax_details,
     issue_date, due_date, issued_at, paid_at, voided_at,
     subtotal, discount_amount, tax_amount, shipping_amount, total,
     discount_mode, discount_value, tax_mode, tax_value, shipping_mode, shipping_value,
@@ -289,6 +323,9 @@ const INVOICE_COLUMNS: &str = r#"
 const INVOICE_COLUMNS_READ: &str = r#"
     id, realm_id, invoice_number, source, account_id, applicant_user_id,
     subscription_id, payment_attempt_id, status, currency,
+    provider, payment_provider, external_invoice_id, external_order_id,
+    external_status, external_hosted_url, external_pdf_url,
+    external_payload, tax_details,
     issue_date, due_date, issued_at, paid_at, voided_at,
     subtotal, discount_amount, tax_amount, shipping_amount, total,
     discount_mode, discount_value::text, tax_mode, tax_value::text, shipping_mode, shipping_value::text,
@@ -299,7 +336,8 @@ const INVOICE_COLUMNS_READ: &str = r#"
 
 const SUMMARY_COLUMNS: &str = r#"
     id, realm_id, invoice_number, source, account_id, status, currency,
-    total, billing_name, due_date, created_at
+    total, billing_name, due_date, created_at,
+    provider, payment_provider, external_hosted_url
 "#;
 
 // ---------------------------------------------------------------------------
@@ -328,7 +366,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             Self::reserve_invoice_number_tx(&mut tx, &input.realm_id, year).await?;
 
         let invoice_row = sqlx::query_as::<_, InvoiceRow>(&format!(
-            "INSERT INTO invoice ({insert_cols}) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::numeric,$23,$24::numeric,$25,$26::numeric,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41) RETURNING {read_cols}",
+            "INSERT INTO invoice ({insert_cols}) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31::numeric,$32,$33::numeric,$34,$35::numeric,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50) RETURNING {read_cols}",
             insert_cols = INVOICE_COLUMNS,
             read_cols = INVOICE_COLUMNS_READ
         ))
@@ -342,6 +380,17 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             .bind(input.payment_attempt_id)
             .bind(InvoiceStatus::Draft.as_str())
             .bind(&input.currency)
+            // Provider fields — manual invoices
+            .bind(InvoiceProvider::Manual.as_str()) // provider
+            .bind(None::<String>) // payment_provider
+            .bind(None::<String>) // external_invoice_id
+            .bind(None::<String>) // external_order_id
+            .bind(None::<String>) // external_status
+            .bind(None::<String>) // external_hosted_url
+            .bind(None::<String>) // external_pdf_url
+            .bind(None::<serde_json::Value>) // external_payload
+            .bind(None::<serde_json::Value>) // tax_details
+            // Dates
             .bind(None::<chrono::NaiveDate>) // issue_date
             .bind(input.due_date)
             .bind(None::<DateTime<Utc>>) // issued_at
@@ -444,17 +493,17 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             )));
         }
 
-        let billing_name = input.billing_name.unwrap_or(existing.billing_name);
-        let billing_address = input.billing_address.unwrap_or(existing.billing_address);
+        let billing_name = input.billing_name.or(existing.billing_name);
+        let billing_address = input.billing_address.or(existing.billing_address);
         let billing_email = input.billing_email.or(existing.billing_email);
         let billing_phone = input.billing_phone.or(existing.billing_phone);
-        let billing_tax_id = input.billing_tax_id;
-        let seller_name = input.seller_name.unwrap_or(existing.seller_name);
-        let seller_address = input.seller_address.unwrap_or(existing.seller_address);
+        let billing_tax_id = input.billing_tax_id.or(existing.billing_tax_id);
+        let seller_name = input.seller_name.or(existing.seller_name);
+        let seller_address = input.seller_address.or(existing.seller_address);
         let seller_email = input.seller_email.or(existing.seller_email);
         let seller_phone = input.seller_phone.or(existing.seller_phone);
-        let seller_tax_id = input.seller_tax_id;
-        let due_date = input.due_date.unwrap_or(existing.due_date);
+        let seller_tax_id = input.seller_tax_id.or(existing.seller_tax_id);
+        let due_date = input.due_date.or(existing.due_date);
         let payment_terms = input.payment_terms.or(existing.payment_terms);
         let notes = input.notes.or(existing.notes);
 
@@ -933,6 +982,103 @@ impl InvoiceRepository for PostgresInvoiceRepository {
 
         Ok(invoice_number)
     }
+
+    async fn upsert_external_invoice(
+        &self,
+        data: ExternalInvoiceData,
+    ) -> Result<Invoice, CoreError> {
+        let now = chrono::Utc::now();
+        let id = Uuid::now_v7();
+
+        let invoice_number = format!(
+            "EXT-{}-{}",
+            data.provider.as_str().to_uppercase(),
+            data.external_invoice_id
+                .as_deref()
+                .unwrap_or(data.external_order_id.as_deref().unwrap_or("unknown"))
+        );
+
+        let source = InvoiceSource::ExternalSync.as_str();
+        let provider = data.provider.as_str();
+        let payment_provider = data
+            .payment_provider
+            .as_deref()
+            .unwrap_or(data.provider.as_str());
+        let status = data.status.as_str();
+
+        // The two branches share the same INSERT + VALUES + bind sequence.
+        // Only the ON CONFLICT clause differs.
+        let on_conflict = if data.external_invoice_id.is_some() {
+            // Branch A: match on (realm_id, external_invoice_id)
+            "ON CONFLICT (realm_id, external_invoice_id) WHERE external_invoice_id IS NOT NULL
+             DO UPDATE SET
+                external_status = EXCLUDED.external_status,
+                external_hosted_url = EXCLUDED.external_hosted_url,
+                external_pdf_url = EXCLUDED.external_pdf_url,
+                external_payload = EXCLUDED.external_payload,
+                tax_details = EXCLUDED.tax_details,
+                status = EXCLUDED.status,
+                updated_at = NOW()"
+        } else {
+            // Branch B: match on (realm_id, external_order_id)
+            "ON CONFLICT (realm_id, external_order_id) WHERE external_order_id IS NOT NULL
+             DO UPDATE SET
+                external_status = EXCLUDED.external_status,
+                external_payload = EXCLUDED.external_payload,
+                tax_details = EXCLUDED.tax_details,
+                status = EXCLUDED.status,
+                updated_at = NOW()"
+        };
+
+        let sql = format!(
+            "INSERT INTO invoice (
+                id, realm_id, invoice_number, source, account_id, status, currency,
+                provider, payment_provider, external_invoice_id, external_order_id,
+                external_status, external_hosted_url, external_pdf_url,
+                external_payload, tax_details,
+                subtotal, discount_amount, tax_amount, shipping_amount, total,
+                created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7,
+                $8, $9, $10, $11,
+                $12, $13, $14,
+                $15, $16,
+                0, 0, 0, 0, $17,
+                $18, $19
+            )
+            {on_conflict}
+            RETURNING {cols}",
+            cols = INVOICE_COLUMNS_READ
+        );
+
+        let row = sqlx::query_as::<_, InvoiceRow>(&sql)
+            .bind(id)
+            .bind(&data.realm_id)
+            .bind(&invoice_number)
+            .bind(source)
+            .bind(data.account_id)
+            .bind(status)
+            .bind(&data.currency)
+            .bind(provider)
+            .bind(payment_provider)
+            .bind(&data.external_invoice_id)
+            .bind(&data.external_order_id)
+            .bind(&data.external_status)
+            .bind(&data.external_hosted_url)
+            .bind(&data.external_pdf_url)
+            .bind(&data.external_payload)
+            .bind(&data.tax_details)
+            .bind(data.total)
+            .bind(now)
+            .bind(now)
+            .fetch_one(self.db.get_postgres_connection_pool())
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to upsert external invoice: {}", e))
+            })?;
+
+        row_to_invoice(row)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1003,7 +1149,10 @@ impl PostgresInvoiceRepository {
         let mut param_idx = 2u32;
 
         if let Some(_user_id) = user_id {
-            conditions.push(format!("applicant_user_id = ${}", param_idx));
+            conditions.push(format!(
+                "(applicant_user_id = ${0} OR account_id = ${0})",
+                param_idx
+            ));
             param_idx += 1;
         }
 
@@ -1014,6 +1163,11 @@ impl PostgresInvoiceRepository {
 
         if filters.source.is_some() {
             conditions.push(format!("source = ${}", param_idx));
+            param_idx += 1;
+        }
+
+        if filters.provider.is_some() {
+            conditions.push(format!("provider = ${}", param_idx));
             param_idx += 1;
         }
 
@@ -1055,6 +1209,9 @@ impl PostgresInvoiceRepository {
         if let Some(ref s) = filters.source {
             count_query = count_query.bind(s.as_str());
         }
+        if let Some(ref p) = filters.provider {
+            count_query = count_query.bind(p.as_str());
+        }
         if let Some(d) = filters.date_from {
             count_query = count_query.bind(d);
         }
@@ -1090,6 +1247,9 @@ impl PostgresInvoiceRepository {
         }
         if let Some(ref s) = filters.source {
             data_query = data_query.bind(s.as_str());
+        }
+        if let Some(ref p) = filters.provider {
+            data_query = data_query.bind(p.as_str());
         }
         if let Some(d) = filters.date_from {
             data_query = data_query.bind(d);

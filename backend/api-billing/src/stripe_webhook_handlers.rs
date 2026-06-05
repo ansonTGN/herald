@@ -16,9 +16,11 @@ use crate::webhook_subscription_helpers::{
     SyncSubscriptionInput, save_subscription_history, sync_subscription,
 };
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::billing::invoice_service::map_stripe_invoice_status;
 use herald_core::domain::billing::{
-    ACTOR_WEBHOOK, BillingPeriod, BillingRepository, HistoryEventType, PaymentEvent, Subscription,
-    SubscriptionHistoryService, SubscriptionStatus, SubscriptionTier,
+    ACTOR_WEBHOOK, BillingPeriod, BillingRepository, ExternalInvoiceData, HistoryEventType,
+    InvoiceProvider, InvoiceRepository, PaymentEvent, Subscription, SubscriptionHistoryService,
+    SubscriptionStatus, SubscriptionTier,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
@@ -1156,6 +1158,110 @@ async fn handle_invoice_payment_succeeded(
     ))
 }
 
+/// Handle invoice.created / invoice.finalized / invoice.paid / invoice.voided events
+///
+/// Syncs Stripe invoice state to Herald external invoice via upsert.
+/// This is distinct from `invoice.payment_succeeded` which handles credit granting.
+async fn handle_stripe_invoice_event(
+    app_state: AppState,
+    event: Value,
+    realm_id: &str,
+    _idempotency_key: &str,
+) -> Result<PointsTransaction, CoreError> {
+    let event_id = parse_event_id(&event)?;
+    let object = &event["data"]["object"];
+
+    let stripe_invoice_id = object["id"]
+        .as_str()
+        .ok_or_else(|| CoreError::BadRequest("Missing Stripe invoice id".to_string()))?
+        .to_string();
+
+    let stripe_status = object["status"].as_str().unwrap_or("draft");
+
+    let status = map_stripe_invoice_status(stripe_status)?;
+
+    let total = object["total"].as_i64().unwrap_or(0);
+
+    let currency = object["currency"].as_str().unwrap_or("usd").to_string();
+
+    let hosted_invoice_url = object["hosted_invoice_url"].as_str().map(str::to_string);
+    let invoice_pdf = object["invoice_pdf"].as_str().map(str::to_string);
+
+    // Resolve account_id: try subscription lookup first, then metadata userId
+    let stripe_subscription_id = object["subscription"].as_str();
+    let mut account_id: Option<Uuid> = None;
+
+    if let Some(stripe_sub_id) = stripe_subscription_id
+        && let Ok(Some(subscription)) = app_state
+            .billing_repository
+            .find_by_external_subscription_id(stripe_sub_id, "stripe")
+            .await
+        && let Some(user_id) = subscription.user_id
+    {
+        account_id = Some(user_id);
+    }
+
+    if account_id.is_none() {
+        account_id = parse_optional_uuid_field(&object["metadata"]["userId"]);
+    }
+
+    if account_id.is_none() {
+        warn!(
+            realm_id = %realm_id,
+            event_id = %event_id,
+            stripe_invoice_id = %stripe_invoice_id,
+            "Could not resolve account_id for Stripe invoice event - creating with account_id=None"
+        );
+    }
+
+    info!(
+        realm_id = %realm_id,
+        event_id = %event_id,
+        stripe_invoice_id = %stripe_invoice_id,
+        stripe_status = %stripe_status,
+        status = %status.as_str(),
+        total,
+        currency = %currency,
+        account_id = ?account_id,
+        "Processing Stripe invoice event - upserting external invoice"
+    );
+
+    let external_data = ExternalInvoiceData {
+        realm_id: realm_id.to_string(),
+        provider: InvoiceProvider::Stripe,
+        payment_provider: Some("stripe".to_string()),
+        external_invoice_id: Some(stripe_invoice_id.clone()),
+        external_order_id: None,
+        external_status: Some(stripe_status.to_string()),
+        external_hosted_url: hosted_invoice_url,
+        external_pdf_url: invoice_pdf,
+        external_payload: Some(object.clone()),
+        tax_details: None,
+        account_id,
+        currency,
+        total,
+        status,
+    };
+
+    app_state
+        .invoice_repository
+        .upsert_external_invoice(external_data)
+        .await?;
+
+    info!(
+        realm_id = %realm_id,
+        event_id = %event_id,
+        stripe_invoice_id = %stripe_invoice_id,
+        "Stripe invoice event processed - external invoice upserted"
+    );
+
+    Ok(create_placeholder_transaction(
+        Uuid::now_v7(),
+        realm_id,
+        TransactionType::SubscriptionGrant,
+    ))
+}
+
 // ============================================================================
 // Main Webhook Handler
 // ============================================================================
@@ -1464,6 +1570,10 @@ async fn process_stripe_event_once(
         }
         "payment_intent.payment_failed" | "invoice.payment_failed" => {
             handle_payment_failed(app_state.clone(), event.clone(), realm_id, idempotency_key).await
+        }
+        "invoice.created" | "invoice.finalized" | "invoice.paid" | "invoice.voided" => {
+            handle_stripe_invoice_event(app_state.clone(), event.clone(), realm_id, idempotency_key)
+                .await
         }
         _ => {
             warn!(

@@ -17,8 +17,8 @@ use crate::webhook_subscription_helpers::{
 use crate::webhooks::verify_webhook_signature;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::billing::{
-    BillingPeriod, BillingRepository, HistoryEventType, PaymentEvent, Subscription,
-    SubscriptionStatus,
+    BillingPeriod, BillingRepository, ExternalInvoiceData, HistoryEventType, InvoiceProvider,
+    InvoiceRepository, InvoiceStatus, PaymentEvent, Subscription, SubscriptionStatus,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
@@ -449,6 +449,98 @@ async fn handle_checkout_completed(
         event_id = %event_id,
         "Checkout completed audited; subscription creation deferred to subscription.paid"
     );
+
+    // --- Creem invoice sync (best-effort, non-blocking) ---
+    // Extract amount/currency with fallback: event.object → payment_attempts → skip with warn
+    let event_object = &event["object"];
+    let amount_from_event = event_object["amount"].as_i64();
+    let currency_from_event = event_object["currency"].as_str().map(String::from);
+
+    let (resolved_amount, resolved_currency, resolved_account_id) = match (
+        amount_from_event,
+        currency_from_event.as_deref(),
+    ) {
+        (Some(amt), Some(cur)) => {
+            // Priority 1: amount and currency from event.object
+            (amt, cur.to_string(), None)
+        }
+        _ => {
+            // Priority 2: query payment_attempts via checkout session ID as provider_reference
+            let checkout_id = event_object["id"].as_str().unwrap_or_default();
+            match app_state
+                .payment_attempt_service
+                .get_payment_attempt_by_provider_reference("creem", checkout_id)
+                .await
+            {
+                Ok(Some(attempt)) => (
+                    attempt.amount,
+                    attempt.currency.clone(),
+                    Some(attempt.user_id),
+                ),
+                Ok(None) => {
+                    // Priority 3: not found, skip sync
+                    warn!(
+                        realm_id = %realm_id,
+                        event_id = %event_id,
+                        checkout_id = %checkout_id,
+                        "No payment_attempt found for Creem checkout — skipping invoice sync"
+                    );
+                    (0, String::new(), None)
+                }
+                Err(e) => {
+                    warn!(
+                        realm_id = %realm_id,
+                        event_id = %event_id,
+                        error = %e,
+                        "Failed to query payment_attempt for Creem checkout — skipping invoice sync"
+                    );
+                    (0, String::new(), None)
+                }
+            }
+        }
+    };
+
+    if !resolved_currency.is_empty() {
+        let external_data = ExternalInvoiceData {
+            realm_id: realm_id.to_string(),
+            provider: InvoiceProvider::Creem,
+            payment_provider: Some("creem".to_string()),
+            external_invoice_id: None,
+            external_order_id: Some(payload.event_id.clone()),
+            external_status: Some("completed".to_string()),
+            external_hosted_url: None,
+            external_pdf_url: None,
+            external_payload: Some(event.clone()),
+            tax_details: None,
+            account_id: resolved_account_id,
+            currency: resolved_currency,
+            total: resolved_amount,
+            status: InvoiceStatus::Paid,
+        };
+
+        match app_state
+            .invoice_repository
+            .upsert_external_invoice(external_data)
+            .await
+        {
+            Ok(_) => {
+                info!(
+                    realm_id = %realm_id,
+                    event_id = %event_id,
+                    external_order_id = %payload.event_id,
+                    "Creem invoice synced successfully"
+                );
+            }
+            Err(e) => {
+                warn!(
+                    realm_id = %realm_id,
+                    event_id = %event_id,
+                    error = %e,
+                    "Failed to sync Creem invoice — payment flow continues"
+                );
+            }
+        }
+    }
 
     Ok(create_placeholder_transaction(
         payload.client_app_id,

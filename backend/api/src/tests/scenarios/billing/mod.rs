@@ -62,6 +62,12 @@ pub mod invoice_admin_scenarios;
 // Invoice PDF scenario tests
 pub mod invoice_pdf_scenarios;
 
+// Invoice Provider & Policy Guard scenario tests
+pub mod invoice_provider_policy_scenarios;
+
+// Invoice External Sync scenario tests (Stripe invoice.* + Creem checkout.completed)
+pub mod invoice_external_sync_scenarios;
+
 // Invoice User scenario tests
 pub mod invoice_user_scenarios;
 

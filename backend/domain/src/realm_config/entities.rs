@@ -327,6 +327,23 @@ pub enum ConfigType {
     /// }
     /// ```
     Email,
+
+    /// Invoice policy configuration
+    ///
+    /// Valid config_key values:
+    /// - `policy`: Invoice policy settings as JSON string
+    ///
+    /// Example policy configuration:
+    /// ```json
+    /// {
+    ///   "config_type": "invoice_policy",
+    ///   "config_key": "policy",
+    ///   "config_value": "{\"policy\":\"provider_first\",\"provider_capabilities\":{\"stripe\":{\"external_invoice_enabled\":true},\"creem\":{\"external_invoice_enabled\":true}}}",
+    ///   "is_secret": false,
+    ///   "enabled": true
+    /// }
+    /// ```
+    InvoicePolicy,
 }
 
 impl From<String> for ConfigType {
@@ -346,6 +363,7 @@ impl ConfigType {
             "stripe" => ConfigType::Stripe,
             "shopify" => ConfigType::Shopify,
             "email" => ConfigType::Email,
+            "invoice_policy" => ConfigType::InvoicePolicy,
             _ => return Err(format!("Invalid config type: {}", s)),
         };
         Ok(config_type)
@@ -363,6 +381,7 @@ impl From<ConfigType> for String {
             ConfigType::Stripe => "stripe".to_string(),
             ConfigType::Shopify => "shopify".to_string(),
             ConfigType::Email => "email".to_string(),
+            ConfigType::InvoicePolicy => "invoice_policy".to_string(),
         }
     }
 }
@@ -378,6 +397,7 @@ impl AsRef<str> for ConfigType {
             ConfigType::Stripe => "stripe",
             ConfigType::Shopify => "shopify",
             ConfigType::Email => "email",
+            ConfigType::InvoicePolicy => "invoice_policy",
         }
     }
 }

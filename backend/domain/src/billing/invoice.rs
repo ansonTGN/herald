@@ -65,6 +65,7 @@ impl std::str::FromStr for InvoiceStatus {
 pub enum InvoiceSource {
     AdminManual,
     UserApplication,
+    ExternalSync,
 }
 
 impl InvoiceSource {
@@ -72,6 +73,7 @@ impl InvoiceSource {
         match self {
             Self::AdminManual => "admin_manual",
             Self::UserApplication => "user_application",
+            Self::ExternalSync => "external_sync",
         }
     }
 }
@@ -83,11 +85,55 @@ impl std::str::FromStr for InvoiceSource {
         match s {
             "admin_manual" => Ok(Self::AdminManual),
             "user_application" => Ok(Self::UserApplication),
+            "external_sync" => Ok(Self::ExternalSync),
             _ => Err(CoreError::BadRequest(format!(
                 "Invalid invoice source: {}",
                 s
             ))),
         }
+    }
+}
+
+/// Invoice source provider — distinguishes self-managed from externally-synced invoices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InvoiceProvider {
+    Manual,
+    Stripe,
+    Creem,
+    Wechat,
+    Shopify,
+}
+
+impl InvoiceProvider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Stripe => "stripe",
+            Self::Creem => "creem",
+            Self::Wechat => "wechat",
+            Self::Shopify => "shopify",
+        }
+    }
+
+    pub fn from_str_opt(s: &str) -> Option<Self> {
+        match s {
+            "manual" => Some(Self::Manual),
+            "stripe" => Some(Self::Stripe),
+            "creem" => Some(Self::Creem),
+            "wechat" => Some(Self::Wechat),
+            "shopify" => Some(Self::Shopify),
+            _ => None,
+        }
+    }
+}
+
+impl std::str::FromStr for InvoiceProvider {
+    type Err = CoreError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_str_opt(s)
+            .ok_or_else(|| CoreError::BadRequest(format!("Invalid invoice provider: {}", s)))
     }
 }
 
@@ -183,16 +229,27 @@ pub struct Invoice {
     pub realm_id: String,
     pub invoice_number: String,
     pub source: InvoiceSource,
-    pub account_id: Uuid,
+    pub account_id: Option<Uuid>,
     pub applicant_user_id: Option<Uuid>,
     pub subscription_id: Option<Uuid>,
     pub payment_attempt_id: Option<Uuid>,
     pub status: InvoiceStatus,
     pub currency: String,
 
+    // Provider fields
+    pub provider: InvoiceProvider,
+    pub payment_provider: Option<String>,
+    pub external_invoice_id: Option<String>,
+    pub external_order_id: Option<String>,
+    pub external_status: Option<String>,
+    pub external_hosted_url: Option<String>,
+    pub external_pdf_url: Option<String>,
+    pub external_payload: Option<serde_json::Value>,
+    pub tax_details: Option<serde_json::Value>,
+
     // Dates
     pub issue_date: Option<chrono::NaiveDate>,
-    pub due_date: chrono::NaiveDate,
+    pub due_date: Option<chrono::NaiveDate>,
     pub issued_at: Option<DateTime<Utc>>,
     pub paid_at: Option<DateTime<Utc>>,
     pub voided_at: Option<DateTime<Utc>>,
@@ -213,18 +270,18 @@ pub struct Invoice {
     pub shipping_value: Option<DecimalStr>,
 
     // Buyer
-    pub billing_name: String,
-    pub billing_address: String,
+    pub billing_name: Option<String>,
+    pub billing_address: Option<String>,
     pub billing_email: Option<String>,
     pub billing_phone: Option<String>,
-    pub billing_tax_id: String,
+    pub billing_tax_id: Option<String>,
 
     // Seller snapshot
-    pub seller_name: String,
-    pub seller_address: String,
+    pub seller_name: Option<String>,
+    pub seller_address: Option<String>,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
-    pub seller_tax_id: String,
+    pub seller_tax_id: Option<String>,
 
     // Extra
     pub notes: Option<String>,
@@ -288,13 +345,18 @@ pub struct InvoiceSummary {
     pub realm_id: String,
     pub invoice_number: String,
     pub source: InvoiceSource,
-    pub account_id: Uuid,
+    pub account_id: Option<Uuid>,
     pub status: InvoiceStatus,
     pub currency: String,
     pub total: i64,
-    pub billing_name: String,
-    pub due_date: chrono::NaiveDate,
+    pub billing_name: Option<String>,
+    pub due_date: Option<chrono::NaiveDate>,
     pub created_at: DateTime<Utc>,
+
+    // Provider fields
+    pub provider: InvoiceProvider,
+    pub payment_provider: Option<String>,
+    pub external_hosted_url: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -367,13 +429,13 @@ pub struct UpdateInvoiceDraft {
     pub billing_address: Option<String>,
     pub billing_email: Option<String>,
     pub billing_phone: Option<String>,
-    pub billing_tax_id: String,
+    pub billing_tax_id: Option<String>,
 
     pub seller_name: Option<String>,
     pub seller_address: Option<String>,
     pub seller_email: Option<String>,
     pub seller_phone: Option<String>,
-    pub seller_tax_id: String,
+    pub seller_tax_id: Option<String>,
 
     pub line_items: Option<Vec<NewLineItem>>,
 
@@ -408,6 +470,7 @@ pub struct InvoiceStatusTransition {
 pub struct InvoiceListFilters {
     pub status: Option<InvoiceStatus>,
     pub source: Option<InvoiceSource>,
+    pub provider: Option<InvoiceProvider>,
     pub search: Option<String>,
     pub date_from: Option<chrono::NaiveDate>,
     pub date_to: Option<chrono::NaiveDate>,
@@ -422,6 +485,25 @@ pub struct PaginatedInvoices<T> {
     pub page: u64,
     pub page_size: u64,
     pub data: Vec<T>,
+}
+
+/// Input data for upserting an externally-synced invoice (e.g. from Stripe webhook or Creem callback).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalInvoiceData {
+    pub realm_id: String,
+    pub provider: InvoiceProvider,
+    pub payment_provider: Option<String>,
+    pub external_invoice_id: Option<String>,
+    pub external_order_id: Option<String>,
+    pub external_status: Option<String>,
+    pub external_hosted_url: Option<String>,
+    pub external_pdf_url: Option<String>,
+    pub external_payload: Option<serde_json::Value>,
+    pub tax_details: Option<serde_json::Value>,
+    pub account_id: Option<Uuid>,
+    pub currency: String,
+    pub total: i64,
+    pub status: InvoiceStatus,
 }
 
 // ---------------------------------------------------------------------------
@@ -488,6 +570,13 @@ pub trait InvoiceRepository: Send + Sync {
         realm_id: &str,
         year: i32,
     ) -> impl Future<Output = Result<String, CoreError>> + Send;
+
+    /// Upsert an externally-synced invoice. Matches on (realm_id, external_invoice_id) or
+    /// (realm_id, external_order_id). Creates if not found, updates if exists.
+    fn upsert_external_invoice(
+        &self,
+        data: ExternalInvoiceData,
+    ) -> impl Future<Output = Result<Invoice, CoreError>> + Send;
 }
 
 impl<T: InvoiceRepository> InvoiceRepository for Arc<T> {
@@ -566,6 +655,13 @@ impl<T: InvoiceRepository> InvoiceRepository for Arc<T> {
     ) -> impl Future<Output = Result<String, CoreError>> + Send {
         (**self).next_invoice_number(realm_id, year)
     }
+
+    fn upsert_external_invoice(
+        &self,
+        data: ExternalInvoiceData,
+    ) -> impl Future<Output = Result<Invoice, CoreError>> + Send {
+        (**self).upsert_external_invoice(data)
+    }
 }
 
 /// PDF generator for invoice documents.
@@ -612,5 +708,26 @@ mod tests {
         assert_eq!(InvoiceEventType::Voided.as_str(), "voided");
         assert_eq!(InvoiceEventType::Overdue.as_str(), "overdue");
         assert_eq!(InvoiceEventType::Updated.as_str(), "updated");
+    }
+
+    #[test]
+    fn invoice_provider_from_str_roundtrip() {
+        for s in ["manual", "stripe", "creem", "wechat", "shopify"] {
+            let provider: InvoiceProvider = s.parse().expect(s);
+            assert_eq!(provider.as_str(), s);
+        }
+    }
+
+    #[test]
+    fn invoice_provider_invalid_returns_error() {
+        let result = "unknown".parse::<InvoiceProvider>();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn invoice_source_external_sync_roundtrip() {
+        let source: InvoiceSource = "external_sync".parse().unwrap();
+        assert_eq!(source.as_str(), "external_sync");
+        assert_eq!(source, InvoiceSource::ExternalSync);
     }
 }

@@ -6,11 +6,28 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct ErrorResponse {
     pub code: u32,
     pub message: String,
     pub details: Option<serde_json::Value>,
+}
+
+impl Serialize for ErrorResponse {
+    /// Custom serialize to include both `message` and `error` fields for
+    /// backward compatibility with API consumers that read `error`.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("ErrorResponse", 4)?;
+        state.serialize_field("code", &self.code)?;
+        state.serialize_field("message", &self.message)?;
+        state.serialize_field("error", &self.message)?;
+        state.serialize_field("details", &self.details)?;
+        state.end()
+    }
 }
 
 #[derive(Debug, Clone)]

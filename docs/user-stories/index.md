@@ -35,7 +35,9 @@ docs/user-stories/
 │   ├── shopify-pay.md    # Shopify 支付
 │   ├── wechat-pay.md     # 微信支付
 │   ├── payment-attempt.md # 支付尝试
-│   └── invoice.md        # 发票
+│   ├── invoice.md        # 发票
+│   ├── invoice-fallback.md # 发票 Fallback
+│   └── entitlement-mapping.md # Entitlement 映射
 └── integration/          # 集成扩展
     └── sdk.md            # SDK 资源管理
 ```
@@ -182,6 +184,18 @@ docs/user-stories/
 | US-IV-010 | 配置销售方信息 | Realm Admin | P0 | [billing/invoice](billing/invoice.md#故事-10配置销售方信息-us-iv-010) |
 | US-IV-011 | 申请发票 | Regular User | P0 | [billing/invoice](billing/invoice.md#故事-11申请发票-us-iv-011) |
 | US-IV-012 | 审核并开具用户申请的发票 | Realm Admin | P0 | [billing/invoice](billing/invoice.md#故事-12审核并开具用户申请的发票-us-iv-012) |
+| US-IF-001 | 配置发票策略 | Realm Admin | P0 | [billing/invoice-fallback](billing/invoice-fallback.md#故事-1配置发票策略-us-if-001) |
+| US-IF-002 | 系统同步 Stripe 发票 | System | P0 | [billing/invoice-fallback](billing/invoice-fallback.md#故事-2系统同步-stripe-发票-us-if-002) |
+| US-IF-003 | 系统同步 Creem 交易税务数据 | System | P0 | [billing/invoice-fallback](billing/invoice-fallback.md#故事-3系统同步-creem-交易税务数据-us-if-003) |
+| US-IF-004 | 查看外部 Provider 发票（管理员） | Realm Admin | P0 | [billing/invoice-fallback](billing/invoice-fallback.md#故事-4查看外部-provider-发票管理员-us-if-004) |
+| US-IF-005 | 查看外部 Provider 发票（普通用户） | Regular User | P1 | [billing/invoice-fallback](billing/invoice-fallback.md#故事-5查看外部-provider-发票普通用户-us-if-005) |
+| US-IF-006 | 下载外部发票 PDF 或查看 Provider 页面 | Realm Admin / Regular User | P1 | [billing/invoice-fallback](billing/invoice-fallback.md#故事-6下载外部发票-pdf-或查看-provider-页面-us-if-006) |
+| US-EM-001 | 查看 Provider Entitlement 映射 | Realm Admin | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-1查看-provider-entitlement-映射-us-em-001) |
+| US-EM-002 | 触发 Provider 产品同步 | Realm Admin | P1 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-2触发-provider-产品同步-us-em-002) |
+| US-EM-003 | Webhook 通过 Metadata 映射订阅 | System | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-3webhook-通过-metadata-映射订阅-us-em-003) |
+| US-EM-004 | 基于 Entitlement 应用积分策略 | System | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-4基于-entitlement-应用积分策略-us-em-004) |
+| US-EM-005 | SDK 通过 Entitlement 查询订阅状态 | Third-Party App | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-5sdk-通过-entitlement-查询订阅状态-us-em-005) |
+| US-EM-006 | 查看订阅投影列表 | Realm Admin | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-6查看订阅投影列表-us-em-006) |
 | US-AU-001 | 查看 Realm 审计日志 | Realm Admin | P0 | [core/audit](core/audit.md#故事-1查看-realm-审计日志-us-au-001) |
 | US-AU-002 | 按条件筛选审计日志 | Realm Admin | P0 | [core/audit](core/audit.md#故事-2按条件筛选审计日志-us-au-002) |
 | US-AU-003 | 查看审计日志详情 | Realm Admin | P1 | [core/audit](core/audit.md#故事-3查看审计日志详情-us-au-003) |
@@ -240,6 +254,9 @@ docs/user-stories/
 | WeChat Pay | [billing/wechat-pay.md](billing/wechat-pay.md) | [WeChat Pay PRD](/docs/prd/billing/wechat-pay.md) |
 | Payment Attempt | [billing/payment-attempt.md](billing/payment-attempt.md) | [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
 | Invoice | [billing/invoice.md](billing/invoice.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
+| Invoice Fallback | [billing/invoice-fallback.md](billing/invoice-fallback.md) | [Invoice Fallback PRD](/docs/prd/billing/invoice-fallback.md) |
+| Invoice Fallback | [billing/invoice-fallback.md](billing/invoice-fallback.md) | [Invoice Fallback PRD](/docs/prd/billing/invoice-fallback.md) |
+| Entitlement Mapping | [billing/entitlement-mapping.md](billing/entitlement-mapping.md) | [Model Reduction PRD](/docs/prd/billing/product_reduce.md) |
 
 ### Integration 集成
 

@@ -4,8 +4,8 @@ use uuid::Uuid;
 use crate::common::entities::app_errors::CoreError;
 
 use super::invoice::{
-    ActorType, AdjustmentMode, Invoice, InvoiceRepository, InvoiceStatus, InvoiceStatusTransition,
-    NewInvoice, NewLineItem, UpdateInvoiceDraft,
+    ActorType, AdjustmentMode, Invoice, InvoiceProvider, InvoiceRepository, InvoiceStatus,
+    InvoiceStatusTransition, NewInvoice, NewLineItem, UpdateInvoiceDraft,
 };
 
 // ---------------------------------------------------------------------------
@@ -198,6 +198,113 @@ fn calculate_adjustment(
 /// Format an invoice number as `INV-{YEAR}-{SEQ:04}`.
 pub fn format_invoice_number(year: i32, seq: i64) -> String {
     format!("INV-{}-{:04}", year, seq)
+}
+
+// ---------------------------------------------------------------------------
+// Provider guards (pure validation)
+// ---------------------------------------------------------------------------
+
+/// Reject write operations on externally-managed invoices.
+///
+/// Returns `Ok(())` for Manual provider (self-managed invoices).
+/// Returns `Forbidden` for any external provider (Stripe, Creem, etc.).
+pub fn validate_external_invoice_readonly(provider: InvoiceProvider) -> Result<(), CoreError> {
+    if provider != InvoiceProvider::Manual {
+        return Err(CoreError::Forbidden(
+            "This invoice is managed by the payment provider".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Reject manual invoice creation for Creem MoR transactions.
+///
+/// Creem acts as Merchant of Record, so Herald must not create a competing invoice.
+pub fn validate_not_creem_mor(payment_provider: Option<&str>) -> Result<(), CoreError> {
+    if payment_provider == Some("creem") {
+        return Err(CoreError::BadRequest(
+            "Creem transactions are managed by Creem as Merchant of Record".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Invoice policy config (parse from JSON config_value)
+// ---------------------------------------------------------------------------
+
+/// Parsed invoice policy configuration from realm_config.
+#[derive(Debug, Clone)]
+pub struct InvoicePolicyConfig {
+    pub policy: String,
+    pub provider_capabilities: serde_json::Value,
+}
+
+/// Parse invoice policy from a JSON config_value string.
+///
+/// Expected format: `{"policy":"provider_first","provider_capabilities":{...}}`
+pub fn parse_invoice_policy_config(config_value: &str) -> Result<InvoicePolicyConfig, CoreError> {
+    let parsed: serde_json::Value = serde_json::from_str(config_value)
+        .map_err(|e| CoreError::BadRequest(format!("Invalid invoice policy config JSON: {}", e)))?;
+
+    let policy = parsed
+        .get("policy")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            CoreError::BadRequest("Invoice policy config missing 'policy' field".to_string())
+        })?
+        .to_string();
+
+    let provider_capabilities = parsed
+        .get("provider_capabilities")
+        .cloned()
+        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+    Ok(InvoicePolicyConfig {
+        policy,
+        provider_capabilities,
+    })
+}
+
+/// Check whether the current invoice policy allows creating invoices.
+///
+/// Returns `Ok(())` for "provider_first" and "manual_only".
+/// Returns `Forbidden` for "none".
+pub fn validate_invoice_policy_allows_creation(
+    config: &InvoicePolicyConfig,
+) -> Result<(), CoreError> {
+    if config.policy == "none" {
+        return Err(CoreError::Forbidden(
+            "Invoice creation is disabled by policy".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Stripe status mapping (pure function)
+// ---------------------------------------------------------------------------
+
+/// Map a Stripe invoice status string to the Herald `InvoiceStatus` enum.
+///
+/// Mapping:
+/// - "draft" -> Draft
+/// - "open" -> Issued
+/// - "paid" -> Paid
+/// - "void" / "voided" -> Void
+/// - "uncollectible" -> Void (simplified; original status preserved in external_status)
+pub fn map_stripe_invoice_status(stripe_status: &str) -> Result<InvoiceStatus, CoreError> {
+    match stripe_status {
+        "draft" => Ok(InvoiceStatus::Draft),
+        "open" => Ok(InvoiceStatus::Issued),
+        "paid" => Ok(InvoiceStatus::Paid),
+        "void" | "voided" => Ok(InvoiceStatus::Void),
+        "uncollectible" => Ok(InvoiceStatus::Void),
+        _ => Err(CoreError::BadRequest(format!(
+            "Unknown Stripe invoice status: {}",
+            stripe_status
+        ))),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1034,5 +1141,152 @@ mod tests {
             None,
         );
         assert!(result.is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // BE-D03: Provider guard tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_validate_external_invoice_readonly_manual_ok() {
+        let result = validate_external_invoice_readonly(InvoiceProvider::Manual);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_external_invoice_readonly_stripe_forbidden() {
+        let result = validate_external_invoice_readonly(InvoiceProvider::Stripe);
+        assert!(result.is_err());
+        match result {
+            Err(CoreError::Forbidden(msg)) => {
+                assert!(msg.contains("payment provider"));
+            }
+            _ => panic!("Expected Forbidden error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_external_invoice_readonly_creem_forbidden() {
+        let result = validate_external_invoice_readonly(InvoiceProvider::Creem);
+        assert!(result.is_err());
+        match result {
+            Err(CoreError::Forbidden(msg)) => {
+                assert!(msg.contains("payment provider"));
+            }
+            _ => panic!("Expected Forbidden error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_not_creem_mor_ok() {
+        // None (no payment provider) should pass
+        assert!(validate_not_creem_mor(None).is_ok());
+        // Stripe should pass
+        assert!(validate_not_creem_mor(Some("stripe")).is_ok());
+        // Empty string should pass
+        assert!(validate_not_creem_mor(Some("")).is_ok());
+    }
+
+    #[test]
+    fn test_validate_not_creem_mor_creem_rejected() {
+        let result = validate_not_creem_mor(Some("creem"));
+        assert!(result.is_err());
+        match result {
+            Err(CoreError::BadRequest(msg)) => {
+                assert!(msg.contains("Merchant of Record"));
+            }
+            _ => panic!("Expected BadRequest error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_invoice_policy_config_valid() {
+        let json = r#"{"policy":"provider_first","provider_capabilities":{"stripe":{"external_invoice_enabled":true}}}"#;
+        let config = parse_invoice_policy_config(json).unwrap();
+        assert_eq!(config.policy, "provider_first");
+        assert!(config.provider_capabilities.is_object());
+    }
+
+    #[test]
+    fn test_parse_invoice_policy_config_invalid_json() {
+        let result = parse_invoice_policy_config("not json");
+        assert!(result.is_err());
+        match result {
+            Err(CoreError::BadRequest(msg)) => {
+                assert!(msg.contains("Invalid invoice policy config JSON"));
+            }
+            _ => panic!("Expected BadRequest error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_invoice_policy_allows_creation_ok() {
+        // provider_first should pass
+        let config_pf = InvoicePolicyConfig {
+            policy: "provider_first".to_string(),
+            provider_capabilities: serde_json::Value::Null,
+        };
+        assert!(validate_invoice_policy_allows_creation(&config_pf).is_ok());
+
+        // manual_only should pass
+        let config_mo = InvoicePolicyConfig {
+            policy: "manual_only".to_string(),
+            provider_capabilities: serde_json::Value::Null,
+        };
+        assert!(validate_invoice_policy_allows_creation(&config_mo).is_ok());
+    }
+
+    #[test]
+    fn test_validate_invoice_policy_allows_creation_none_rejected() {
+        let config = InvoicePolicyConfig {
+            policy: "none".to_string(),
+            provider_capabilities: serde_json::Value::Null,
+        };
+        let result = validate_invoice_policy_allows_creation(&config);
+        assert!(result.is_err());
+        match result {
+            Err(CoreError::Forbidden(msg)) => {
+                assert!(msg.contains("disabled by policy"));
+            }
+            _ => panic!("Expected Forbidden error"),
+        }
+    }
+
+    #[test]
+    fn test_map_stripe_invoice_status_mapping() {
+        assert_eq!(
+            map_stripe_invoice_status("draft").unwrap(),
+            InvoiceStatus::Draft
+        );
+        assert_eq!(
+            map_stripe_invoice_status("open").unwrap(),
+            InvoiceStatus::Issued
+        );
+        assert_eq!(
+            map_stripe_invoice_status("paid").unwrap(),
+            InvoiceStatus::Paid
+        );
+        assert_eq!(
+            map_stripe_invoice_status("void").unwrap(),
+            InvoiceStatus::Void
+        );
+        assert_eq!(
+            map_stripe_invoice_status("voided").unwrap(),
+            InvoiceStatus::Void
+        );
+        assert_eq!(
+            map_stripe_invoice_status("uncollectible").unwrap(),
+            InvoiceStatus::Void
+        );
+
+        // Unknown status should error
+        let result = map_stripe_invoice_status("unknown_status");
+        assert!(result.is_err());
+        match result {
+            Err(CoreError::BadRequest(msg)) => {
+                assert!(msg.contains("Unknown Stripe invoice status"));
+            }
+            _ => panic!("Expected BadRequest error"),
+        }
     }
 }

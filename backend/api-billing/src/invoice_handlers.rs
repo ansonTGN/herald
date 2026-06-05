@@ -13,10 +13,14 @@ use herald_api_base::application::http::server::api_entities::{ApiError, ErrorRe
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::billing::invoice::{
-    ActorType, InvoicePdfGenerator, InvoiceRepository, InvoiceSource, InvoiceStatus,
-    InvoiceStatusTransition, NewInvoice, NewLineItem, UpdateInvoiceDraft,
+    ActorType, InvoiceDetail, InvoicePdfGenerator, InvoiceProvider, InvoiceRepository,
+    InvoiceSource, InvoiceStatus, InvoiceStatusTransition, NewInvoice, NewLineItem,
+    UpdateInvoiceDraft,
 };
-use herald_core::domain::billing::invoice_service::validate_status_transition;
+use herald_core::domain::billing::invoice_service::{
+    InvoicePolicyConfig, parse_invoice_policy_config, validate_external_invoice_readonly,
+    validate_invoice_policy_allows_creation, validate_not_creem_mor, validate_status_transition,
+};
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::infrastructure::billing::IronPressInvoicePdfGenerator;
 
@@ -121,6 +125,59 @@ async fn validate_resource_ownership(
             resource.label(),
             resource_id
         ))),
+    }
+}
+
+/// Check Creem MoR guard and invoice policy for manual invoice creation.
+///
+/// Queries the payment_provider from the payment_attempt (if present) to reject
+/// Creem-managed transactions, then checks the realm's invoice policy.
+async fn validate_invoice_creation_policy(
+    pool: &PgPool,
+    realm_id: &str,
+    payment_attempt_id: Option<Uuid>,
+) -> Result<(), ApiError> {
+    let payment_provider: Option<String> = if let Some(pa_id) = payment_attempt_id {
+        sqlx::query_scalar("SELECT payment_provider FROM payment_attempts WHERE id = $1")
+            .bind(pa_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?
+            .flatten()
+    } else {
+        None
+    };
+
+    validate_not_creem_mor(payment_provider.as_deref())?;
+
+    let policy_config = get_invoice_policy(pool, realm_id).await?;
+    validate_invoice_policy_allows_creation(&policy_config)?;
+
+    Ok(())
+}
+
+/// Load the invoice policy config for a realm.
+///
+/// Queries `realm_config` for the `invoice_policy` / `policy` row.
+/// Returns a default "provider_first" config when no row exists.
+async fn get_invoice_policy(
+    pool: &PgPool,
+    realm_id: &str,
+) -> Result<InvoicePolicyConfig, ApiError> {
+    let config_value: Option<String> = sqlx::query_scalar(
+        "SELECT config_value FROM realm_config WHERE realm_id = $1 AND config_type = 'invoice_policy' AND config_key = 'policy'",
+    )
+    .bind(realm_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
+
+    match config_value {
+        Some(val) => parse_invoice_policy_config(&val).map_err(ApiError::from),
+        None => Ok(InvoicePolicyConfig {
+            policy: "provider_first".to_string(),
+            provider_capabilities: serde_json::Value::Object(serde_json::Map::new()),
+        }),
     }
 }
 
@@ -264,6 +321,8 @@ pub async fn create_invoice(
     if let Some(applicant_id) = request.applicant_user_id {
         validate_account_in_realm(&state.pool, applicant_id, &realm_id).await?;
     }
+
+    validate_invoice_creation_policy(&state.pool, &realm_id, request.payment_attempt_id).await?;
 
     let line_items: Vec<NewLineItem> = request
         .line_items
@@ -421,6 +480,12 @@ pub async fn update_invoice(
             CoreError::BadRequest(format!("Validation failed: {}", e))
         })?;
 
+    // Provider readonly guard: only manual invoices can be updated
+    {
+        let detail = load_detail(&state, &realm_id, invoice_id).await?;
+        validate_external_invoice_readonly(detail.invoice.provider)?;
+    }
+
     let line_items = request.line_items.map(|items| {
         items
             .into_iter()
@@ -501,6 +566,9 @@ pub async fn issue_invoice(
 
     let detail = load_detail(&state, &realm_id, invoice_id).await?;
 
+    // Provider readonly guard: only manual invoices can be issued
+    validate_external_invoice_readonly(detail.invoice.provider)?;
+
     validate_status_transition(
         detail.invoice.status,
         InvoiceStatus::Issued,
@@ -517,7 +585,9 @@ pub async fn issue_invoice(
         .unwrap_or(chrono::Utc::now().date_naive());
 
     // Validate due_date >= issue_date
-    if detail.invoice.due_date < issue_date {
+    if let Some(due) = detail.invoice.due_date
+        && due < issue_date
+    {
         return Err(ApiError::bad_request(
             "due_date must be on or after issue_date",
         ));
@@ -590,6 +660,9 @@ pub async fn void_invoice(
 
     let detail = load_detail(&state, &realm_id, invoice_id).await?;
 
+    // Provider readonly guard: only manual invoices can be voided
+    validate_external_invoice_readonly(detail.invoice.provider)?;
+
     validate_status_transition(
         detail.invoice.status,
         InvoiceStatus::Void,
@@ -653,6 +726,9 @@ pub async fn mark_paid(
     require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
     let detail = load_detail(&state, &realm_id, invoice_id).await?;
+
+    // Provider readonly guard: only manual invoices can be marked as paid
+    validate_external_invoice_readonly(detail.invoice.provider)?;
 
     validate_status_transition(
         detail.invoice.status,
@@ -750,6 +826,8 @@ pub async fn apply_invoice(
         )
         .await?;
     }
+
+    validate_invoice_creation_policy(&state.pool, &realm_id, request.payment_attempt_id).await?;
 
     let seller_config = state
         .invoice_repository
@@ -870,9 +948,11 @@ pub async fn get_my_invoice(
 
     let detail = load_detail(&state, &realm_id, invoice_id).await?;
 
-    if detail.invoice.applicant_user_id != Some(current_user_id) {
-        return Err(ApiError::forbidden("You can only view your own invoices"));
-    }
+    validate_invoice_ownership(
+        &detail,
+        current_user_id,
+        "You can only view your own invoices",
+    )?;
 
     Ok(Json(invoice_to_detail_response(detail)))
 }
@@ -902,6 +982,58 @@ fn build_pdf_response(pdf_bytes: Vec<u8>, invoice_number: &str) -> Response {
         .header(header::CONTENT_DISPOSITION, disposition)
         .body(axum::body::Body::from(pdf_bytes))
         .unwrap()
+}
+
+/// Check that the current user owns the invoice (via applicant_user_id or account_id).
+fn validate_invoice_ownership(
+    detail: &InvoiceDetail,
+    user_id: Uuid,
+    message: &str,
+) -> Result<(), ApiError> {
+    if detail.invoice.applicant_user_id != Some(user_id)
+        && detail.invoice.account_id != Some(user_id)
+    {
+        return Err(ApiError::forbidden(message));
+    }
+    Ok(())
+}
+
+/// Resolve the PDF response using dual-track logic:
+/// - Manual provider: generate PDF via IronPress (caller handles generation)
+/// - External provider with url: 302 redirect
+/// - External provider without url: 404
+fn resolve_external_pdf_response(detail: &InvoiceDetail) -> Option<Result<Response, ApiError>> {
+    match detail.invoice.provider {
+        InvoiceProvider::Manual => None, // caller handles IronPress generation
+        _ => {
+            // External provider: redirect or 404
+            match &detail.invoice.external_pdf_url {
+                Some(url) if !url.is_empty() => {
+                    tracing::info!(
+                        "Redirecting to external PDF URL for invoice {} (provider: {})",
+                        detail.invoice.id,
+                        detail.invoice.provider.as_str()
+                    );
+                    Some(Ok(Response::builder()
+                        .status(StatusCode::FOUND)
+                        .header(axum::http::header::LOCATION, url.as_str())
+                        .body(axum::body::Body::empty())
+                        .unwrap()))
+                }
+                _ => {
+                    tracing::info!(
+                        "No external PDF URL for invoice {} (provider: {})",
+                        detail.invoice.id,
+                        detail.invoice.provider.as_str()
+                    );
+                    Some(Err(ApiError::not_found(format!(
+                        "Invoice PDF is managed by {}",
+                        detail.invoice.provider.as_str()
+                    ))))
+                }
+            }
+        }
+    }
 }
 
 #[utoipa::path(
@@ -937,6 +1069,12 @@ pub async fn download_invoice_pdf(
     let detail = load_detail(&state, &realm_id, invoice_id).await?;
     validate_pdf_status(detail.invoice.status)?;
 
+    // External provider dual-track: redirect or 404
+    if let Some(response) = resolve_external_pdf_response(&detail) {
+        return response;
+    }
+
+    // Manual provider: generate PDF via IronPress
     let generator = IronPressInvoicePdfGenerator;
     let pdf_bytes = generator.generate(&detail).await?;
 
@@ -979,14 +1117,20 @@ pub async fn download_my_invoice_pdf(
 
     let detail = load_detail(&state, &realm_id, invoice_id).await?;
 
-    if detail.invoice.applicant_user_id != Some(current_user_id) {
-        return Err(ApiError::forbidden(
-            "You can only download your own invoices",
-        ));
-    }
+    validate_invoice_ownership(
+        &detail,
+        current_user_id,
+        "You can only download your own invoices",
+    )?;
 
     validate_pdf_status(detail.invoice.status)?;
 
+    // External provider dual-track: redirect or 404
+    if let Some(response) = resolve_external_pdf_response(&detail) {
+        return response;
+    }
+
+    // Manual provider: generate PDF via IronPress
     let generator = IronPressInvoicePdfGenerator;
     let pdf_bytes = generator.generate(&detail).await?;
 
@@ -994,4 +1138,119 @@ pub async fn download_my_invoice_pdf(
         pdf_bytes,
         &detail.invoice.invoice_number,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+    use herald_core::domain::billing::invoice::{
+        Invoice, InvoiceDetail, InvoiceProvider, InvoiceSource, InvoiceStatus,
+    };
+
+    use super::*;
+
+    /// Build a minimal InvoiceDetail for testing, with only the fields that
+    /// matter for PDF dual-track resolution (provider and external_pdf_url).
+    fn make_detail(provider: InvoiceProvider, external_pdf_url: Option<&str>) -> InvoiceDetail {
+        InvoiceDetail {
+            invoice: Invoice {
+                id: Uuid::new_v4(),
+                realm_id: "test-realm".to_string(),
+                invoice_number: "INV-001".to_string(),
+                source: InvoiceSource::AdminManual,
+                account_id: None,
+                applicant_user_id: None,
+                subscription_id: None,
+                payment_attempt_id: None,
+                status: InvoiceStatus::Issued,
+                currency: "usd".to_string(),
+                provider,
+                payment_provider: None,
+                external_invoice_id: None,
+                external_order_id: None,
+                external_status: None,
+                external_hosted_url: None,
+                external_pdf_url: external_pdf_url.map(|s| s.to_string()),
+                external_payload: None,
+                tax_details: None,
+                issue_date: None,
+                due_date: None,
+                issued_at: None,
+                paid_at: None,
+                voided_at: None,
+                subtotal: 0,
+                discount_amount: 0,
+                tax_amount: 0,
+                shipping_amount: 0,
+                total: 0,
+                discount_mode: None,
+                discount_value: None,
+                tax_mode: None,
+                tax_value: None,
+                shipping_mode: None,
+                shipping_value: None,
+                billing_name: None,
+                billing_address: None,
+                billing_email: None,
+                billing_phone: None,
+                billing_tax_id: None,
+                seller_name: None,
+                seller_address: None,
+                seller_email: None,
+                seller_phone: None,
+                seller_tax_id: None,
+                notes: None,
+                payment_terms: None,
+                void_reason: None,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            },
+            line_items: vec![],
+            history: vec![],
+        }
+    }
+
+    #[test]
+    fn manual_provider_returns_none_so_caller_generates_pdf() {
+        let detail = make_detail(InvoiceProvider::Manual, None);
+        assert!(resolve_external_pdf_response(&detail).is_none());
+    }
+
+    #[test]
+    fn external_provider_with_url_returns_redirect() {
+        let detail = make_detail(InvoiceProvider::Stripe, Some("https://stripe.com/pdf/123"));
+        let result = resolve_external_pdf_response(&detail);
+        assert!(result.is_some());
+        let response = result.unwrap().expect("should be Ok");
+        assert!(response.status().is_redirection());
+    }
+
+    #[test]
+    fn external_provider_with_empty_url_returns_404() {
+        let detail = make_detail(InvoiceProvider::Stripe, Some(""));
+        let result = resolve_external_pdf_response(&detail);
+        assert!(result.is_some());
+        let err = result.unwrap().expect_err("should be Err for empty URL");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn external_provider_without_url_returns_404_with_provider_name() {
+        let detail = make_detail(InvoiceProvider::Shopify, None);
+        let result = resolve_external_pdf_response(&detail);
+        assert!(result.is_some());
+        let err = result.unwrap().expect_err("should be Err for missing URL");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn creem_provider_with_url_returns_redirect() {
+        let detail = make_detail(InvoiceProvider::Creem, Some("https://creem.io/pdf/abc"));
+        let result = resolve_external_pdf_response(&detail);
+        let response = result.unwrap().expect("should be Ok");
+        assert!(response.status().is_redirection());
+    }
 }
