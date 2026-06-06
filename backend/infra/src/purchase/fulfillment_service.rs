@@ -2,10 +2,7 @@
 
 use std::sync::Arc;
 
-use herald_domain::billing::{
-    BillingPeriod, Subscription, SubscriptionPlan, SubscriptionPlanType, SubscriptionStatus,
-    SubscriptionTier,
-};
+use herald_domain::billing::{BillingRepository, Subscription, SubscriptionStatus};
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::payment_attempt::PaymentAttempt;
 use herald_domain::points::{CreditSourceType, CreditType, PointsRepository};
@@ -30,7 +27,7 @@ where
     P: PointsRepository,
     PP: PointsPackageRepository,
     PR: PurchaseRepository,
-    B: herald_domain::billing::BillingRepository,
+    B: BillingRepository,
 {
     points_repository: Arc<P>,
     points_package_repository: Arc<PP>,
@@ -43,7 +40,7 @@ where
     P: PointsRepository,
     PP: PointsPackageRepository,
     PR: PurchaseRepository,
-    B: herald_domain::billing::BillingRepository,
+    B: BillingRepository,
 {
     pub fn new(
         points_repository: Arc<P>,
@@ -60,65 +57,12 @@ where
     }
 }
 
-impl<P, PP, PR, B> PostgresFulfillmentService<P, PP, PR, B>
-where
-    P: PointsRepository + Send + Sync,
-    PP: PointsPackageRepository + Send + Sync,
-    PR: PurchaseRepository + Send + Sync,
-    B: herald_domain::billing::BillingRepository + Send + Sync,
-{
-    fn calculate_subscription_period(
-        &self,
-        billing_period: &BillingPeriod,
-    ) -> (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>) {
-        let now = chrono::Utc::now();
-        let period_end = match billing_period {
-            BillingPeriod::Monthly => now + chrono::Duration::days(30),
-            BillingPeriod::Yearly => now + chrono::Duration::days(365),
-        };
-        (now, period_end)
-    }
-
-    fn billing_period_from_plan(plan: &SubscriptionPlan) -> BillingPeriod {
-        match plan.r#type {
-            SubscriptionPlanType::Monthly => BillingPeriod::Monthly,
-            SubscriptionPlanType::Yearly => BillingPeriod::Yearly,
-        }
-    }
-
-    fn determine_tier_from_plan(product_code: &str, plan: &SubscriptionPlan) -> SubscriptionTier {
-        let tier_source = format!(
-            "{} {} {}",
-            product_code.to_ascii_lowercase(),
-            plan.name.to_ascii_lowercase(),
-            plan.title.to_ascii_lowercase()
-        );
-
-        if tier_source.contains("enterprise") {
-            SubscriptionTier::Enterprise
-        } else if tier_source.contains("professional") {
-            SubscriptionTier::Professional
-        } else if tier_source.contains("starter") {
-            SubscriptionTier::Starter
-        } else if tier_source.contains("free") {
-            SubscriptionTier::Free
-        } else if tier_source
-            .split(|c: char| !c.is_ascii_alphanumeric())
-            .any(|word| word == "pro")
-        {
-            SubscriptionTier::Professional
-        } else {
-            SubscriptionTier::Free
-        }
-    }
-}
-
 impl<P, PP, PR, B> FulfillmentService for PostgresFulfillmentService<P, PP, PR, B>
 where
     P: PointsRepository + Send + Sync,
     PP: PointsPackageRepository + Send + Sync,
     PR: PurchaseRepository + Send + Sync,
-    B: herald_domain::billing::BillingRepository + Send + Sync,
+    B: BillingRepository + Send + Sync,
 {
     async fn fulfill_subscription_purchase(
         &self,
@@ -134,7 +78,6 @@ where
         );
 
         // Check for existing subscription by external subscription ID (idempotency check)
-        // This prevents duplicate subscription creation for the same payment attempt
         if let Some(existing_subscription) = self
             .billing_repository
             .find_by_external_subscription_id(&provider_transaction_id, &attempt.payment_provider)
@@ -154,63 +97,54 @@ where
             });
         }
 
-        let plan = self
+        // Look up entitlement mapping by external_product_id (= target_id)
+        let mapping = self
             .billing_repository
-            .find_subscription_plan_by_id(attempt.target_id)
-            .await?
-            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-                realm_id: attempt.realm_id.clone(),
-                plan_id: attempt.target_id.to_string(),
-            })?;
-
-        if plan.realm_id != attempt.realm_id {
-            return Err(CoreError::SubscriptionPlanNotFound {
-                realm_id: attempt.realm_id.clone(),
-                plan_id: attempt.target_id.to_string(),
-            });
-        }
-
-        let product = self
-            .billing_repository
-            .find_product_by_id(&attempt.realm_id, plan.product_id)
+            .find_entitlement_mapping_by_provider_product(
+                &attempt.realm_id,
+                &attempt.payment_provider,
+                &attempt.target_id.to_string(),
+            )
             .await?
             .ok_or_else(|| {
-                CoreError::InternalServerError(format!(
-                    "Product {} not found for subscription plan {}",
-                    plan.product_id, plan.id
+                CoreError::BadRequest(format!(
+                    "No entitlement mapping found for provider '{}' product '{}' in realm '{}'",
+                    attempt.payment_provider, attempt.target_id, attempt.realm_id
                 ))
             })?;
-        let billing_period = Self::billing_period_from_plan(&plan);
-        let tier = Self::determine_tier_from_plan(&product.code, &plan);
-        let (period_start, period_end) = self.calculate_subscription_period(&billing_period);
+
+        let entitlement_key = mapping.entitlement_key.clone();
+
+        let now = chrono::Utc::now();
+        let period_end = now + chrono::Duration::days(30); // Default 30-day period
 
         // Create new subscription
         let subscription = Subscription {
-            id: uuid::Uuid::now_v7(), // Using UUID v7 as required
+            id: uuid::Uuid::now_v7(),
             realm_id: attempt.realm_id.clone(),
             user_id: Some(attempt.user_id),
             external_subscription_id: provider_transaction_id.clone(),
             external_product_id: attempt.target_id.to_string(),
             payment_provider: attempt.payment_provider.clone(),
             status: SubscriptionStatus::Active,
-            tier,
-            current_period_start: Some(period_start),
+            entitlement_key: entitlement_key.clone(),
+            external_price_id: mapping.external_price_id.clone(),
+            provider_metadata: None,
+            synced_at: Some(now),
+            current_period_start: Some(now),
             current_period_end: Some(period_end),
             cancel_at_period_end: false,
-            client_app_id: None, // P0 default - future enhancement
-            plan_id: Some(attempt.target_id),
-            billing_period,
+            client_app_id: None,
             cancel_at: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: now,
+            updated_at: now,
         };
 
         tracing::info!(
             subscription_id = %subscription.id,
             realm_id = %subscription.realm_id,
             user_id = ?subscription.user_id,
-            tier = %subscription.tier.as_str(),
-            billing_period = %subscription.billing_period.as_str(),
+            entitlement_key = %entitlement_key,
             "Creating new subscription from payment attempt"
         );
 
@@ -262,7 +196,6 @@ where
         }
 
         // Check for existing fulfillment (idempotency check - PART 2: credit ledger)
-        // This prevents double-granting in race conditions where purchase record hasn't been created yet
         if let Some(existing_ledger) = self
             .points_repository
             .find_ledger_by_source_id(&attempt.realm_id, &attempt.id.to_string())
@@ -274,7 +207,6 @@ where
                 "Existing credit ledger found for payment attempt, returning existing fulfillment"
             );
 
-            // Found existing ledger - return it instead of granting again
             return Ok(FulfillmentResult {
                 fulfillment_type: FulfillmentType::PointsGranted,
                 subscription_id: None,
@@ -334,8 +266,6 @@ where
         let purchase = match purchase_result {
             Ok(purchase) => purchase,
             Err(e) if is_duplicate_key_error(&e) => {
-                // Unique constraint violation - another concurrent request fulfilled this payment
-                // Fetch the existing fulfillment and return it (idempotent)
                 tracing::info!(
                     payment_attempt_id = %attempt.id,
                     "Concurrent fulfillment detected, returning existing purchase"
@@ -350,7 +280,6 @@ where
                         )
                     })?;
 
-                // If the existing purchase already has a transaction ID, return it
                 if let Some(transaction_id) = existing_purchase.points_transaction_id {
                     return Ok(FulfillmentResult {
                         fulfillment_type: FulfillmentType::PointsGranted,
@@ -368,7 +297,6 @@ where
                     });
                 }
 
-                // Otherwise, update the existing purchase with our transaction ID
                 self.purchase_repository
                     .update_purchase_transaction_id(existing_purchase.id, credit_ledger.id)
                     .await?;
@@ -395,7 +323,6 @@ where
             .update_purchase_transaction_id(purchase.id, credit_ledger.id)
             .await?;
 
-        // Create a points grant record
         let points_grant = PointsGrant {
             transaction_id: credit_ledger.id,
             points_type: "topup_credit".to_string(),
@@ -425,7 +352,6 @@ mod tests {
 
     #[test]
     fn test_is_duplicate_key_error() {
-        // Test detection of duplicate key errors
         let duplicate_error = CoreError::DatabaseError(
             "duplicate key value violates unique constraint \"uq_points_package_purchases_payment_attempt\"".to_string(),
         );

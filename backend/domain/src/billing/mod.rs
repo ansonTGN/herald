@@ -1,19 +1,21 @@
 pub mod entities;
+pub mod entitlement_mapping_service;
 pub mod invoice;
 pub mod invoice_service;
 pub mod policies;
 pub mod ports;
-pub mod services;
+pub mod provider_product_sync_service;
 pub mod shopify_binding;
 pub mod subscription_history;
 pub mod subscription_history_service;
 
 pub use entities::*;
+pub use entitlement_mapping_service::*;
 pub use invoice::*;
 pub use invoice_service::*;
 pub use policies::*;
 pub use ports::*;
-pub use services::*;
+pub use provider_product_sync_service::*;
 pub use shopify_binding::*;
 pub use subscription_history::*;
 pub use subscription_history_service::*;
@@ -21,6 +23,4 @@ pub use subscription_history_service::*;
 // Test modules
 #[cfg(test)]
 mod entities_test;
-#[cfg(test)]
-mod services_test;
 pub mod test_helpers;

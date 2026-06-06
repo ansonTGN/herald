@@ -13,14 +13,13 @@ use uuid::Uuid;
 
 use crate::webhook_common::create_placeholder_transaction;
 use crate::webhook_subscription_helpers::{
-    SyncSubscriptionInput, save_subscription_history, sync_subscription,
+    SyncSubscriptionInput, resolve_entitlement_key, save_subscription_history, sync_subscription,
 };
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::billing::invoice_service::map_stripe_invoice_status;
 use herald_core::domain::billing::{
-    ACTOR_WEBHOOK, BillingPeriod, BillingRepository, ExternalInvoiceData, HistoryEventType,
-    InvoiceProvider, InvoiceRepository, PaymentEvent, Subscription, SubscriptionHistoryService,
-    SubscriptionStatus, SubscriptionTier,
+    ACTOR_WEBHOOK, BillingRepository, ExternalInvoiceData, HistoryEventType, InvoiceProvider,
+    InvoiceRepository, PaymentEvent, Subscription, SubscriptionHistoryService, SubscriptionStatus,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
@@ -33,8 +32,7 @@ struct StripeCheckoutCompletedPayload {
     event_id: String,
     user_id: Uuid,
     client_app_id: Uuid,
-    plan_id: Uuid,
-    billing_period: BillingPeriod,
+    entitlement_key: String,
     is_trial: bool,
     stripe_subscription_id: String,
     stripe_product_id: String,
@@ -44,10 +42,9 @@ struct StripeSubscriptionCreatedPayload {
     event_id: String,
     stripe_subscription_id: String,
     user_id: Uuid,
-    plan_id: Uuid,
+    entitlement_key: String,
     client_app_id: Option<Uuid>,
     external_product_id: String,
-    billing_period: BillingPeriod,
     cancel_at_period_end: bool,
     current_period_start: Option<DateTime<Utc>>,
     current_period_end: DateTime<Utc>,
@@ -58,10 +55,9 @@ struct StripeSubscriptionUpdatedPayload {
     event_id: String,
     stripe_subscription_id: String,
     user_id: Uuid,
-    previous_plan_id: Uuid,
-    current_plan_id: Uuid,
+    previous_entitlement_key: String,
+    current_entitlement_key: String,
     external_product_id: String,
-    billing_period: BillingPeriod,
     cancel_at_period_end: bool,
     current_period_start: Option<DateTime<Utc>>,
     current_period_end: DateTime<Utc>,
@@ -72,7 +68,7 @@ struct StripeSubscriptionDeletedPayload {
     event_id: String,
     stripe_subscription_id: String,
     user_id: Uuid,
-    plan_id: Option<Uuid>,
+    entitlement_key: Option<String>,
     cancel_at_period_end: bool,
     current_period_start: Option<DateTime<Utc>>,
     current_period_end: DateTime<Utc>,
@@ -90,7 +86,7 @@ struct StripeInvoicePaidPayload {
     event_id: String,
     stripe_subscription_id: String,
     user_id: Uuid,
-    plan_id: Uuid,
+    entitlement_key: String,
     current_period_start: Option<DateTime<Utc>>,
     current_period_end: DateTime<Utc>,
 }
@@ -168,13 +164,6 @@ fn parse_optional_stripe_datetime(value: &Value) -> Result<Option<DateTime<Utc>>
     parse_stripe_datetime(value, "timestamp").map(Some)
 }
 
-fn parse_billing_period(value: Option<&str>) -> BillingPeriod {
-    match value.unwrap_or("monthly") {
-        "yearly" => BillingPeriod::Yearly,
-        _ => BillingPeriod::Monthly,
-    }
-}
-
 fn parse_stripe_subscription_status(
     status: Option<&str>,
     cancel_at_period_end: bool,
@@ -201,27 +190,46 @@ fn parse_stripe_subscription_status(
     }
 }
 
+/// Extract herald_entitlement_key from Stripe metadata, falling back to local mapping.
+async fn resolve_stripe_entitlement_key(
+    app_state: &AppState,
+    realm_id: &str,
+    metadata: &Value,
+    external_product_id: &str,
+) -> Result<String, CoreError> {
+    let metadata_key = metadata["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| metadata["entitlementKey"].as_str());
+    resolve_entitlement_key(
+        app_state,
+        realm_id,
+        "stripe",
+        external_product_id,
+        metadata_key,
+    )
+    .await
+}
+
 fn parse_checkout_completed_payload(
     event: &Value,
 ) -> Result<StripeCheckoutCompletedPayload, CoreError> {
-    let client_app_id = parse_uuid_field(
-        &event["data"]["object"]["metadata"]["clientAppId"],
-        "clientAppId",
-    )?;
-    let user_id = parse_uuid_field(&event["data"]["object"]["metadata"]["userId"], "userId")?;
-    let plan_id = parse_uuid_field(&event["data"]["object"]["metadata"]["planId"], "planId")?;
+    let metadata = &event["data"]["object"]["metadata"];
+    let client_app_id = parse_uuid_field(&metadata["clientAppId"], "clientAppId")?;
+    let user_id = parse_uuid_field(&metadata["userId"], "userId")?;
+
+    // Resolve entitlement_key from metadata
+    let entitlement_key = metadata["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| metadata["entitlementKey"].as_str())
+        .unwrap_or("")
+        .to_string();
 
     Ok(StripeCheckoutCompletedPayload {
         event_id: parse_event_id(event)?,
         user_id,
         client_app_id,
-        plan_id,
-        billing_period: parse_billing_period(
-            event["data"]["object"]["metadata"]["billingPeriod"].as_str(),
-        ),
-        is_trial: event["data"]["object"]["metadata"]["trialDays"]
-            .as_u64()
-            .is_some_and(|days| days > 0),
+        entitlement_key,
+        is_trial: metadata["trialDays"].as_u64().is_some_and(|days| days > 0),
         stripe_subscription_id: event["data"]["object"]["subscription"]
             .as_str()
             .map(str::to_string)
@@ -238,12 +246,12 @@ fn parse_checkout_completed_payload(
 fn parse_subscription_created_payload(
     event: &Value,
 ) -> Result<StripeSubscriptionCreatedPayload, CoreError> {
+    let metadata = &event["data"]["object"]["metadata"];
     let stripe_subscription_id = event["data"]["object"]["id"]
         .as_str()
         .ok_or_else(|| CoreError::BadRequest("Missing subscription id".to_string()))?
         .to_string();
-    let user_id = parse_uuid_field(&event["data"]["object"]["metadata"]["userId"], "userId")?;
-    let plan_id = parse_uuid_field(&event["data"]["object"]["metadata"]["planId"], "planId")?;
+    let user_id = parse_uuid_field(&metadata["userId"], "userId")?;
     let cancel_at_period_end = event["data"]["object"]["cancel_at_period_end"]
         .as_bool()
         .unwrap_or(false);
@@ -252,21 +260,25 @@ fn parse_subscription_created_payload(
         cancel_at_period_end,
     )?;
 
+    let external_product_id = event["data"]["object"]["items"]["data"][0]["price"]["product"]
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_default();
+
+    // Resolve entitlement_key from metadata
+    let entitlement_key = metadata["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| metadata["entitlementKey"].as_str())
+        .unwrap_or("")
+        .to_string();
+
     Ok(StripeSubscriptionCreatedPayload {
         event_id: parse_event_id(event)?,
         stripe_subscription_id,
         user_id,
-        plan_id,
-        client_app_id: parse_optional_uuid_field(
-            &event["data"]["object"]["metadata"]["clientAppId"],
-        ),
-        external_product_id: event["data"]["object"]["items"]["data"][0]["price"]["product"]
-            .as_str()
-            .map(str::to_string)
-            .unwrap_or_else(|| format!("prod_test_{}", plan_id)),
-        billing_period: parse_billing_period(
-            event["data"]["object"]["metadata"]["billingPeriod"].as_str(),
-        ),
+        entitlement_key,
+        client_app_id: parse_optional_uuid_field(&metadata["clientAppId"]),
+        external_product_id,
         cancel_at_period_end,
         current_period_start: parse_optional_stripe_datetime(
             &event["data"]["object"]["current_period_start"],
@@ -282,14 +294,21 @@ fn parse_subscription_created_payload(
 fn parse_subscription_updated_payload(
     event: &Value,
 ) -> Result<StripeSubscriptionUpdatedPayload, CoreError> {
-    let previous_plan_id = parse_uuid_field(
-        &event["data"]["previous_attributes"]["items"]["data"][0]["price"]["metadata"]["planId"],
-        "previous planId",
-    )?;
-    let current_plan_id = parse_uuid_field(
-        &event["data"]["object"]["items"]["data"][0]["price"]["metadata"]["planId"],
-        "current planId",
-    )?;
+    let metadata = &event["data"]["object"]["metadata"];
+    let previous_entitlement_key = event["data"]["previous_attributes"]["items"]["data"][0]["price"]["metadata"]["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| event["data"]["previous_attributes"]["items"]["data"][0]["price"]["metadata"]["entitlementKey"].as_str())
+        .unwrap_or("")
+        .to_string();
+    let current_entitlement_key = event["data"]["object"]["items"]["data"][0]["price"]["metadata"]
+        ["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| {
+            event["data"]["object"]["items"]["data"][0]["price"]["metadata"]["entitlementKey"]
+                .as_str()
+        })
+        .unwrap_or("")
+        .to_string();
     let cancel_at_period_end = event["data"]["object"]["cancel_at_period_end"]
         .as_bool()
         .unwrap_or(false);
@@ -304,16 +323,13 @@ fn parse_subscription_updated_payload(
             .as_str()
             .ok_or_else(|| CoreError::BadRequest("Missing subscription id".to_string()))?
             .to_string(),
-        user_id: parse_uuid_field(&event["data"]["object"]["metadata"]["userId"], "userId")?,
-        previous_plan_id,
-        current_plan_id,
+        user_id: parse_uuid_field(&metadata["userId"], "userId")?,
+        previous_entitlement_key,
+        current_entitlement_key,
         external_product_id: event["data"]["object"]["items"]["data"][0]["price"]["product"]
             .as_str()
             .map(str::to_string)
-            .unwrap_or_else(|| format!("prod_test_{}", current_plan_id)),
-        billing_period: parse_billing_period(
-            event["data"]["object"]["metadata"]["billingPeriod"].as_str(),
-        ),
+            .unwrap_or_default(),
         cancel_at_period_end,
         current_period_start: parse_optional_stripe_datetime(
             &event["data"]["object"]["current_period_start"],
@@ -329,14 +345,18 @@ fn parse_subscription_updated_payload(
 fn parse_subscription_deleted_payload(
     event: &Value,
 ) -> Result<StripeSubscriptionDeletedPayload, CoreError> {
+    let metadata = &event["data"]["object"]["metadata"];
     Ok(StripeSubscriptionDeletedPayload {
         event_id: parse_event_id(event)?,
         stripe_subscription_id: event["data"]["object"]["id"]
             .as_str()
             .ok_or_else(|| CoreError::BadRequest("Missing subscription id".to_string()))?
             .to_string(),
-        user_id: parse_uuid_field(&event["data"]["object"]["metadata"]["userId"], "userId")?,
-        plan_id: parse_optional_uuid_field(&event["data"]["object"]["metadata"]["planId"]),
+        user_id: parse_uuid_field(&metadata["userId"], "userId")?,
+        entitlement_key: metadata["herald_entitlement_key"]
+            .as_str()
+            .or_else(|| metadata["entitlementKey"].as_str())
+            .map(str::to_string),
         cancel_at_period_end: event["data"]["object"]["cancel_at_period_end"]
             .as_bool()
             .unwrap_or(false),
@@ -369,14 +389,21 @@ fn parse_charge_refunded_payload(event: &Value) -> Result<StripeChargeRefundedPa
 }
 
 fn parse_invoice_paid_payload(event: &Value) -> Result<StripeInvoicePaidPayload, CoreError> {
+    let metadata = &event["data"]["object"]["metadata"];
+    let entitlement_key = metadata["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| metadata["entitlementKey"].as_str())
+        .unwrap_or("")
+        .to_string();
+
     Ok(StripeInvoicePaidPayload {
         event_id: parse_event_id(event)?,
         stripe_subscription_id: event["data"]["object"]["subscription"]
             .as_str()
             .ok_or_else(|| CoreError::BadRequest("Missing subscription id".to_string()))?
             .to_string(),
-        user_id: parse_uuid_field(&event["data"]["object"]["metadata"]["userId"], "userId")?,
-        plan_id: parse_uuid_field(&event["data"]["object"]["metadata"]["planId"], "planId")?,
+        user_id: parse_uuid_field(&metadata["userId"], "userId")?,
+        entitlement_key,
         current_period_start: parse_optional_stripe_datetime(
             &event["data"]["object"]["current_period_start"],
         )?,
@@ -479,10 +506,10 @@ async fn sync_stripe_subscription(
     user_id: Uuid,
     external_subscription_id: &str,
     client_app_id: Option<Uuid>,
-    plan_id: Uuid,
+    entitlement_key: String,
     external_product_id: String,
+    external_price_id: Option<String>,
     status: SubscriptionStatus,
-    billing_period: BillingPeriod,
     current_period_start: Option<DateTime<Utc>>,
     current_period_end: Option<DateTime<Utc>>,
     cancel_at_period_end: bool,
@@ -497,9 +524,10 @@ async fn sync_stripe_subscription(
             external_subscription_id: external_subscription_id.to_string(),
             external_product_id,
             client_app_id,
-            plan_id: Some(plan_id),
+            entitlement_key,
+            external_price_id,
+            provider_metadata: None,
             status,
-            billing_period,
             current_period_start,
             current_period_end,
             cancel_at_period_end,
@@ -562,13 +590,18 @@ async fn handle_checkout_session_completed(
         "Processing checkout.session.completed event"
     );
 
-    // Parse event payload
-    // Get plan config
-    let _plan_config = app_state
-        .points_repository
-        .find_plan_config(realm_id, payload.plan_id)
+    // Resolve entitlement_key via fallback chain
+    let entitlement_key = if payload.entitlement_key.is_empty() {
+        resolve_stripe_entitlement_key(
+            &app_state,
+            realm_id,
+            &event["data"]["object"]["metadata"],
+            &payload.stripe_product_id,
+        )
         .await?
-        .ok_or(CoreError::NotFound)?;
+    } else {
+        payload.entitlement_key.clone()
+    };
 
     // Determine status
     let status = if payload.is_trial {
@@ -578,6 +611,7 @@ async fn handle_checkout_session_completed(
     };
 
     // Create subscription
+    let now = chrono::Utc::now();
     let subscription = Subscription {
         id: Uuid::now_v7(),
         realm_id: realm_id.to_string(),
@@ -585,17 +619,18 @@ async fn handle_checkout_session_completed(
         external_product_id: payload.stripe_product_id.clone(),
         payment_provider: "stripe".to_string(),
         status,
-        tier: SubscriptionTier::Starter,
+        entitlement_key: entitlement_key.clone(),
+        external_price_id: None,
+        provider_metadata: None,
+        synced_at: Some(now),
         user_id: Some(payload.user_id),
-        current_period_start: Some(chrono::Utc::now()),
+        current_period_start: Some(now),
         current_period_end: None,
         cancel_at_period_end: false,
         client_app_id: Some(payload.client_app_id),
-        plan_id: Some(payload.plan_id),
-        billing_period: payload.billing_period,
         cancel_at: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: now,
+        updated_at: now,
     };
 
     let created_subscription = app_state
@@ -616,7 +651,7 @@ async fn handle_checkout_session_completed(
         realm_id = %realm_id,
         subscription_id = %created_subscription.id,
         client_app_id = %payload.client_app_id,
-        plan_id = %payload.plan_id,
+        entitlement_key = %entitlement_key,
         stripe_subscription_id = ?payload.stripe_subscription_id,
         event_id = %event_id,
         "Checkout completed - subscription created"
@@ -703,16 +738,33 @@ async fn handle_subscription_created(
         "Processing customer.subscription.created event"
     );
 
+    // Resolve entitlement_key via fallback chain
+    let entitlement_key = if payload.entitlement_key.is_empty() {
+        resolve_stripe_entitlement_key(
+            &app_state,
+            realm_id,
+            &event["data"]["object"]["metadata"],
+            &payload.external_product_id,
+        )
+        .await?
+    } else {
+        payload.entitlement_key.clone()
+    };
+
+    let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
+        .as_str()
+        .map(str::to_string);
+
     let (subscription, previous_subscription) = sync_stripe_subscription(
         &app_state,
         realm_id,
         payload.user_id,
         &payload.stripe_subscription_id,
         payload.client_app_id,
-        payload.plan_id,
+        entitlement_key.clone(),
         payload.external_product_id.clone(),
+        external_price_id,
         payload.status.clone(),
-        payload.billing_period.clone(),
         payload.current_period_start,
         Some(payload.current_period_end),
         payload.cancel_at_period_end,
@@ -725,7 +777,7 @@ async fn handle_subscription_created(
         .handle_subscription_paid(
             payload.user_id,
             realm_id,
-            payload.plan_id,
+            &entitlement_key,
             false,
             payload.current_period_end,
             payload.event_id.clone(),
@@ -743,7 +795,7 @@ async fn handle_subscription_created(
     info!(
         realm_id = %realm_id,
         user_id = %payload.user_id,
-        plan_id = %payload.plan_id,
+        entitlement_key = %entitlement_key,
         stripe_subscription_id = %payload.stripe_subscription_id,
         event_id = %event_id,
         current_period_end = %payload.current_period_end,
@@ -775,24 +827,65 @@ async fn handle_subscription_updated(
         "Processing customer.subscription.updated event"
     );
 
-    // Get plan configs to determine if upgrade or downgrade
-    let old_plan = app_state
-        .points_repository
-        .find_plan_config(realm_id, payload.previous_plan_id)
+    // Resolve entitlement_keys via fallback chain
+    let current_entitlement_key = if payload.current_entitlement_key.is_empty() {
+        resolve_stripe_entitlement_key(
+            &app_state,
+            realm_id,
+            &event["data"]["object"]["items"]["data"][0]["price"]["metadata"],
+            &payload.external_product_id,
+        )
         .await?
-        .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-            realm_id: realm_id.to_string(),
-            plan_id: payload.previous_plan_id.to_string(),
+    } else {
+        payload.current_entitlement_key.clone()
+    };
+
+    let previous_entitlement_key = if payload.previous_entitlement_key.is_empty() {
+        // Try to get from existing subscription
+        let from_db = app_state
+            .billing_repository
+            .find_by_external_subscription_id(&payload.stripe_subscription_id, "stripe")
+            .await?
+            .map(|s| s.entitlement_key.clone())
+            .unwrap_or_default();
+
+        if from_db.is_empty() {
+            // Pre-migration subscription with no entitlement_key — resolve via mapping
+            resolve_stripe_entitlement_key(
+                &app_state,
+                realm_id,
+                &event["data"]["previous_attributes"]["items"]["data"][0]["price"]["metadata"],
+                &payload.external_product_id,
+            )
+            .await?
+        } else {
+            from_db
+        }
+    } else {
+        payload.previous_entitlement_key.clone()
+    };
+
+    // Get plan configs to determine if upgrade or downgrade
+    let old_mapping = app_state
+        .points_repository
+        .find_points_policy_by_entitlement_key(realm_id, &previous_entitlement_key)
+        .await?
+        .ok_or_else(|| {
+            CoreError::InternalServerError(format!(
+                "Entitlement mapping not found for previous key '{}' during subscription update",
+                previous_entitlement_key
+            ))
         })?;
 
-    let new_plan = app_state
+    let new_mapping = app_state
         .points_repository
-        .find_plan_config(realm_id, payload.current_plan_id)
+        .find_points_policy_by_entitlement_key(realm_id, &current_entitlement_key)
         .await?
-        .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-            realm_id: realm_id.to_string(),
-            plan_id: payload.current_plan_id.to_string(),
-        })?;
+        .ok_or(CoreError::EntitlementMappingNotFound)?;
+
+    let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
+        .as_str()
+        .map(str::to_string);
 
     let (subscription, previous_subscription) = sync_stripe_subscription(
         &app_state,
@@ -800,10 +893,10 @@ async fn handle_subscription_updated(
         payload.user_id,
         &payload.stripe_subscription_id,
         None,
-        payload.current_plan_id,
+        current_entitlement_key.clone(),
         payload.external_product_id.clone(),
+        external_price_id,
         payload.status.clone(),
-        payload.billing_period.clone(),
         payload.current_period_start,
         Some(payload.current_period_end),
         payload.cancel_at_period_end,
@@ -815,7 +908,22 @@ async fn handle_subscription_updated(
     )
     .await?;
 
-    let is_upgrade = new_plan.points_per_period > old_plan.points_per_period;
+    let is_upgrade = {
+        let old_points = old_mapping.points_per_period.unwrap_or(0);
+        let new_points = new_mapping.points_per_period.unwrap_or(0);
+        if old_points == 0 && new_points == 0 {
+            tracing::info!(
+                realm_id = %realm_id,
+                "Both mappings have no points configured; skipping upgrade/downgrade classification"
+            );
+            return Ok(create_placeholder_transaction(
+                payload.user_id,
+                realm_id,
+                TransactionType::SubscriptionUpgrade,
+            ));
+        }
+        new_points > old_points
+    };
 
     if is_upgrade {
         app_state
@@ -823,8 +931,8 @@ async fn handle_subscription_updated(
             .handle_subscription_upgrade(
                 payload.user_id,
                 realm_id,
-                payload.previous_plan_id,
-                payload.current_plan_id,
+                &previous_entitlement_key,
+                &current_entitlement_key,
                 payload.current_period_end,
             )
             .await?;
@@ -841,8 +949,8 @@ async fn handle_subscription_updated(
             realm_id = %realm_id,
             user_id = %payload.user_id,
             stripe_subscription_id = %payload.stripe_subscription_id,
-            old_plan_id = %payload.previous_plan_id,
-            new_plan_id = %payload.current_plan_id,
+            old_entitlement_key = %previous_entitlement_key,
+            new_entitlement_key = %current_entitlement_key,
             event_id = %event_id,
             "Processed subscription upgrade"
         );
@@ -858,8 +966,8 @@ async fn handle_subscription_updated(
             .handle_subscription_downgrade(
                 payload.user_id,
                 realm_id,
-                payload.previous_plan_id,
-                payload.current_plan_id,
+                &previous_entitlement_key,
+                &current_entitlement_key,
             )
             .await?;
 
@@ -875,8 +983,8 @@ async fn handle_subscription_updated(
             realm_id = %realm_id,
             user_id = %payload.user_id,
             stripe_subscription_id = %payload.stripe_subscription_id,
-            old_plan_id = %payload.previous_plan_id,
-            new_plan_id = %payload.current_plan_id,
+            old_entitlement_key = %previous_entitlement_key,
+            new_entitlement_key = %current_entitlement_key,
             event_id = %event_id,
             "Processed subscription downgrade"
         );
@@ -911,19 +1019,18 @@ async fn handle_subscription_deleted(
         .billing_repository
         .find_by_external_subscription_id(&payload.stripe_subscription_id, "stripe")
         .await?;
-    let plan_id = existing_subscription
+    let entitlement_key = existing_subscription
         .as_ref()
-        .and_then(|subscription| subscription.plan_id)
-        .or(payload.plan_id)
-        .ok_or_else(|| CoreError::BadRequest("Missing or invalid planId".to_string()))?;
+        .map(|s| s.entitlement_key.clone())
+        .or(payload.entitlement_key)
+        .ok_or_else(|| CoreError::BadRequest("Missing or invalid entitlement_key".to_string()))?;
     let external_product_id = existing_subscription
         .as_ref()
         .map(|subscription| subscription.external_product_id.clone())
-        .unwrap_or_else(|| format!("prod_test_{}", plan_id));
-    let billing_period = existing_subscription
+        .unwrap_or_default();
+    let external_price_id = existing_subscription
         .as_ref()
-        .map(|subscription| subscription.billing_period.clone())
-        .unwrap_or(BillingPeriod::Monthly);
+        .and_then(|s| s.external_price_id.clone());
     let cancel_mode = if payload.cancel_at_period_end {
         CancelMode::DefaultCancel
     } else {
@@ -958,10 +1065,10 @@ async fn handle_subscription_deleted(
         existing_subscription
             .as_ref()
             .and_then(|subscription| subscription.client_app_id),
-        plan_id,
+        entitlement_key,
         external_product_id,
+        external_price_id,
         status,
-        billing_period,
         payload.current_period_start,
         Some(payload.current_period_end),
         payload.cancel_at_period_end,
@@ -1093,14 +1200,31 @@ async fn handle_invoice_payment_succeeded(
         .billing_repository
         .find_by_external_subscription_id(&payload.stripe_subscription_id, "stripe")
         .await?;
+
+    // Resolve entitlement_key via fallback chain
+    let entitlement_key = if payload.entitlement_key.is_empty() {
+        let external_product_id = existing_subscription
+            .as_ref()
+            .map(|s| s.external_product_id.clone())
+            .unwrap_or_default();
+        resolve_stripe_entitlement_key(
+            &app_state,
+            realm_id,
+            &event["data"]["object"]["metadata"],
+            &external_product_id,
+        )
+        .await?
+    } else {
+        payload.entitlement_key.clone()
+    };
+
     let external_product_id = existing_subscription
         .as_ref()
         .map(|subscription| subscription.external_product_id.clone())
-        .unwrap_or_else(|| format!("prod_test_{}", payload.plan_id));
-    let billing_period = existing_subscription
+        .unwrap_or_default();
+    let external_price_id = existing_subscription
         .as_ref()
-        .map(|subscription| subscription.billing_period.clone())
-        .unwrap_or(BillingPeriod::Monthly);
+        .and_then(|s| s.external_price_id.clone());
 
     let (subscription, previous_subscription) = sync_stripe_subscription(
         &app_state,
@@ -1110,10 +1234,10 @@ async fn handle_invoice_payment_succeeded(
         existing_subscription
             .as_ref()
             .and_then(|subscription| subscription.client_app_id),
-        payload.plan_id,
+        entitlement_key.clone(),
         external_product_id,
+        external_price_id,
         SubscriptionStatus::Active,
-        billing_period,
         payload.current_period_start,
         Some(payload.current_period_end),
         false,
@@ -1126,7 +1250,7 @@ async fn handle_invoice_payment_succeeded(
         .handle_subscription_paid(
             payload.user_id,
             realm_id,
-            payload.plan_id,
+            &entitlement_key,
             true,
             payload.current_period_end,
             payload.event_id.clone(),
@@ -1144,7 +1268,7 @@ async fn handle_invoice_payment_succeeded(
     info!(
         realm_id = %realm_id,
         user_id = %payload.user_id,
-        plan_id = %payload.plan_id,
+        entitlement_key = %entitlement_key,
         stripe_subscription_id = %payload.stripe_subscription_id,
         event_id = %event_id,
         current_period_end = %payload.current_period_end,

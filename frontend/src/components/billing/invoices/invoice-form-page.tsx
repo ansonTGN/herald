@@ -412,16 +412,16 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
 
 function getEditDefaults(invoice: InvoiceDetailResponse): InvoiceEditFormData {
   return {
-    billingName: invoice.billingName,
+    billingName: invoice.billingName ?? '',
     billingEmail: invoice.billingEmail ?? null,
-    billingAddress: invoice.billingAddress,
+    billingAddress: invoice.billingAddress ?? '',
     billingPhone: invoice.billingPhone ?? null,
-    billingTaxId: invoice.billingTaxId,
-    sellerName: invoice.sellerName,
+    billingTaxId: invoice.billingTaxId ?? '',
+    sellerName: invoice.sellerName ?? '',
     sellerEmail: invoice.sellerEmail ?? null,
-    sellerAddress: invoice.sellerAddress,
+    sellerAddress: invoice.sellerAddress ?? '',
     sellerPhone: invoice.sellerPhone ?? null,
-    sellerTaxId: invoice.sellerTaxId,
+    sellerTaxId: invoice.sellerTaxId ?? '',
     lineItems: invoice.lineItems.map((item) => ({
       name: item.name,
       description: item.description ?? null,
@@ -434,7 +434,7 @@ function getEditDefaults(invoice: InvoiceDetailResponse): InvoiceEditFormData {
     taxValue: invoice.taxValue ?? null,
     shippingMode: (invoice.shippingMode as 'fixed' | null) ?? null,
     shippingValue: invoice.shippingValue ?? null,
-    dueDate: invoice.dueDate,
+    dueDate: invoice.dueDate ?? '',
     paymentTerms: invoice.paymentTerms ?? null,
     notes: invoice.notes ?? null,
   }

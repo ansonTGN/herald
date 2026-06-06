@@ -197,18 +197,6 @@ impl From<herald_core::domain::common::entities::app_errors::CoreError> for ApiE
             CoreError::SerializationError(msg) => {
                 Self::internal(format!("Serialization error: {msg}"))
             }
-            CoreError::ProductNotFound {
-                realm_id,
-                product_id,
-            } => Self::not_found(format!(
-                "Product not found for realm: {realm_id}, product_id: {product_id}"
-            )),
-            CoreError::ProductCodeExists { realm_id, code } => Self::conflict(format!(
-                "Product code '{code}' already exists in realm: {realm_id}"
-            )),
-            CoreError::ProductHasSubscriptionPlans { product_id } => Self::conflict(format!(
-                "Cannot delete product with existing plans: {product_id}"
-            )),
             CoreError::PointsPackageNotFound(msg) => {
                 Self::not_found(format!("Points package not found: {msg}"))
             }
@@ -223,6 +211,9 @@ impl From<herald_core::domain::common::entities::app_errors::CoreError> for ApiE
             )),
             CoreError::InvalidPrice(price) => {
                 Self::bad_request(format!("Invalid price: {price}. Must be greater than 0"))
+            }
+            CoreError::EntitlementMappingNotFound => {
+                Self::not_found("Entitlement mapping not found".to_string())
             }
         }
     }

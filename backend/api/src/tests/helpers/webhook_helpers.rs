@@ -5,6 +5,9 @@
 // Shared helpers for webhook testing.
 // Provides functions for building webhook events and sending them to test servers.
 //
+// Updated for product_reduce: herald_* metadata builders replace plan_id builders.
+// Old plan_id-based builders have been removed.
+//
 // =============================================================================
 
 #![allow(dead_code)]
@@ -23,94 +26,85 @@ use uuid::Uuid;
 type HmacSha256 = Hmac<Sha256>;
 
 /// ============================================================================
-/// Webhook Event Builders
+/// Creem Webhook Event Builders (herald_* metadata)
 /// ============================================================================
-/// Build a subscription.paid webhook event
-pub fn build_subscription_paid_event(
-    event_id: String,
-    user_id: Uuid,
-    plan_id: Uuid,
-    is_renewal: bool,
+///
+/// Build a Creem checkout.completed webhook event with all herald_* metadata keys.
+pub fn build_creem_checkout_completed_with_herald_metadata(
+    event_id: &str,
+    entitlement_key: &str,
     realm_id: &str,
+    user_id: Uuid,
+    client_app_id: Uuid,
 ) -> serde_json::Value {
-    build_subscription_paid_event_with_client(
-        event_id, user_id, plan_id, is_renewal, realm_id, None, // client_app_id is optional
-    )
+    json!({
+        "id": event_id,
+        "eventType": "checkout.completed",
+        "object": {
+            "id": format!("checkout_{}", event_id),
+            "status": "completed",
+            "product": {
+                "id": format!("prod_creem_{}", entitlement_key),
+            },
+            "metadata": {
+                "herald_entitlement_key": entitlement_key,
+                "herald_realm_id": realm_id,
+                "herald_user_id": user_id.to_string(),
+                "herald_client_app_id": client_app_id.to_string(),
+                "clientAppId": client_app_id.to_string(),
+            }
+        }
+    })
 }
 
-/// Build a subscription.paid webhook event with client_app_id
-pub fn build_subscription_paid_event_with_client(
-    event_id: String,
-    user_id: Uuid,
-    plan_id: Uuid,
-    is_renewal: bool,
+/// Build a Creem checkout.completed webhook without herald_entitlement_key
+/// (for fallback chain testing).
+pub fn build_creem_checkout_completed_without_entitlement_key(
+    event_id: &str,
     realm_id: &str,
-    client_app_id: Option<Uuid>,
+    user_id: Uuid,
+    client_app_id: Uuid,
 ) -> serde_json::Value {
-    build_subscription_paid_event_with_client_and_status(
-        event_id,
-        user_id,
-        plan_id,
-        is_renewal,
-        realm_id,
-        client_app_id,
-        "active", // Default status
-    )
+    json!({
+        "id": event_id,
+        "eventType": "checkout.completed",
+        "object": {
+            "id": format!("checkout_{}", event_id),
+            "status": "completed",
+            "product": {
+                "id": format!("prod_creem_fallback_{}", event_id),
+            },
+            "metadata": {
+                "herald_realm_id": realm_id,
+                "herald_user_id": user_id.to_string(),
+                "herald_client_app_id": client_app_id.to_string(),
+                "clientAppId": client_app_id.to_string(),
+            }
+        }
+    })
 }
 
-/// Build a subscription.paid webhook event with client_app_id and custom status
-pub fn build_subscription_paid_event_with_client_and_status(
-    event_id: String,
-    user_id: Uuid,
-    plan_id: Uuid,
-    is_renewal: bool,
+/// Build a Creem subscription.paid webhook event with herald_* metadata.
+#[allow(clippy::too_many_arguments)]
+pub fn build_creem_subscription_paid_with_herald_metadata(
+    event_id: &str,
+    entitlement_key: &str,
     realm_id: &str,
-    client_app_id: Option<Uuid>,
-    status: &str,
-) -> serde_json::Value {
-    build_subscription_paid_event_full(
-        event_id,
-        user_id,
-        plan_id,
-        is_renewal,
-        realm_id,
-        client_app_id,
-        status,
-        "monthly", // Default billing period
-    )
-}
-
-/// Build a subscription.paid webhook event with full customization
-pub fn build_subscription_paid_event_full(
-    event_id: String,
     user_id: Uuid,
-    plan_id: Uuid,
-    is_renewal: bool,
-    realm_id: &str,
     client_app_id: Option<Uuid>,
-    status: &str,
-    billing_period: &str,
+    external_subscription_id: &str,
+    external_product_id: &str,
+    is_renewal: bool,
 ) -> serde_json::Value {
-    // Calculate period_end based on billing period
-    let period_end = match billing_period {
-        "yearly" => chrono::Utc::now() + chrono::Duration::days(365),
-        "quarterly" => chrono::Utc::now() + chrono::Duration::days(90),
-        _ => chrono::Utc::now() + chrono::Duration::days(30), // monthly
-    };
-
-    let amount = match billing_period {
-        "yearly" => 25000,
-        "quarterly" => 7500,
-        _ => 2500, // monthly
-    };
-
+    let period_end = chrono::Utc::now() + chrono::Duration::days(30);
     let mut metadata = json!({
-        "realmId": realm_id
+        "herald_entitlement_key": entitlement_key,
+        "herald_realm_id": realm_id,
+        "herald_user_id": user_id.to_string(),
     });
-
-    // Add clientAppId to metadata if provided
-    if let Some(client_id) = client_app_id {
-        metadata["clientAppId"] = json!(client_id.to_string());
+    if let Some(caid) = client_app_id {
+        metadata["herald_client_app_id"] = json!(caid.to_string());
+        metadata["clientAppId"] = json!(caid.to_string());
     }
 
     json!({
@@ -118,156 +112,424 @@ pub fn build_subscription_paid_event_full(
         "eventType": "subscription.paid",
         "data": {
             "object": {
-                "subscriptionId": format!("sub_{}", event_id),
-                "productId": format!("prod_test_{}", billing_period),
+                "subscriptionId": external_subscription_id,
+                "productId": external_product_id,
                 "userId": user_id.to_string(),
-                "planId": plan_id.to_string(),
                 "isRenewal": is_renewal,
                 "currentPeriodEnd": period_end.to_rfc3339(),
-                "amount": amount,
-                "currency": "USD",
-                "status": status,
+                "status": "active",
                 "cancelAtPeriodEnd": false,
-                "billingPeriod": billing_period,
-                "metadata": metadata
+                "metadata": metadata,
             }
         },
-        "metadata": metadata
+        "herald_entitlement_key": entitlement_key,
     })
 }
 
-/// Build a subscription.update webhook event
-pub fn build_subscription_updated_event(
-    event_id: String,
-    user_id: Uuid,
-    previous_plan_id: Uuid,
-    current_plan_id: Uuid,
+/// Build a Creem subscription.paid webhook without herald_entitlement_key
+/// (for fallback chain testing).
+#[allow(clippy::too_many_arguments)]
+pub fn build_creem_subscription_paid_without_entitlement_key(
+    event_id: &str,
     realm_id: &str,
+    user_id: Uuid,
+    client_app_id: Option<Uuid>,
+    external_subscription_id: &str,
+    external_product_id: &str,
+    is_renewal: bool,
 ) -> serde_json::Value {
-    // Create a date 30 days in the future for currentPeriodEnd
-    let period_end = (chrono::Utc::now() + chrono::Duration::days(30)).to_rfc3339();
+    let period_end = chrono::Utc::now() + chrono::Duration::days(30);
+    let mut metadata = json!({
+        "herald_realm_id": realm_id,
+        "herald_user_id": user_id.to_string(),
+    });
+    if let Some(caid) = client_app_id {
+        metadata["herald_client_app_id"] = json!(caid.to_string());
+        metadata["clientAppId"] = json!(caid.to_string());
+    }
 
     json!({
         "id": event_id,
-        "eventType": "subscription.update",
+        "eventType": "subscription.paid",
         "data": {
             "object": {
-                "subscriptionId": format!("sub_{}", event_id),
-                "productId": "prod_test_monthly",
+                "subscriptionId": external_subscription_id,
+                "productId": external_product_id,
                 "userId": user_id.to_string(),
-                "planId": current_plan_id.to_string(),
-                "currentPeriodEnd": period_end
-            },
-            "previousAttributes": {
-                "planId": previous_plan_id.to_string()
+                "isRenewal": is_renewal,
+                "currentPeriodEnd": period_end.to_rfc3339(),
+                "status": "active",
+                "cancelAtPeriodEnd": false,
+                "metadata": metadata,
             }
         },
-        "metadata": {
-            "realmId": realm_id
-        }
     })
 }
 
-/// Build a subscription.canceled webhook event
-pub fn build_subscription_canceled_event(
-    event_id: String,
-    user_id: Uuid,
-    cancel_at_period_end: bool,
+/// Build a Creem subscription.canceled webhook with entitlement_key.
+#[allow(clippy::too_many_arguments)]
+pub fn build_creem_subscription_canceled_with_entitlement(
+    event_id: &str,
+    entitlement_key: &str,
     realm_id: &str,
+    user_id: Uuid,
+    external_subscription_id: &str,
+    external_product_id: &str,
+    cancel_at_period_end: bool,
 ) -> serde_json::Value {
-    // Create a date 30 days in the future for currentPeriodEnd
-    let period_end = (chrono::Utc::now() + chrono::Duration::days(30)).to_rfc3339();
-
+    let period_end = chrono::Utc::now() + chrono::Duration::days(30);
     json!({
         "id": event_id,
         "eventType": "subscription.canceled",
         "data": {
             "object": {
-                "subscriptionId": format!("sub_{}", event_id),
-                "productId": "prod_test_monthly",
+                "subscriptionId": external_subscription_id,
+                "productId": external_product_id,
                 "userId": user_id.to_string(),
                 "cancelAtPeriodEnd": cancel_at_period_end,
-                "currentPeriodEnd": period_end
+                "currentPeriodEnd": period_end.to_rfc3339(),
+                "status": if cancel_at_period_end { "active" } else { "canceled" },
             }
         },
+        "herald_entitlement_key": entitlement_key,
         "metadata": {
-            "realmId": realm_id
+            "herald_entitlement_key": entitlement_key,
+            "herald_realm_id": realm_id,
+            "herald_user_id": user_id.to_string(),
+        },
+    })
+}
+
+/// Build a Creem checkout.completed webhook missing herald_realm_id.
+pub fn build_creem_checkout_missing_realm_id(
+    event_id: &str,
+    entitlement_key: &str,
+    user_id: Uuid,
+    client_app_id: Uuid,
+) -> serde_json::Value {
+    json!({
+        "id": event_id,
+        "eventType": "checkout.completed",
+        "object": {
+            "id": format!("checkout_{}", event_id),
+            "status": "completed",
+            "product": {
+                "id": format!("prod_creem_{}", entitlement_key),
+            },
+            "metadata": {
+                "herald_entitlement_key": entitlement_key,
+                "herald_user_id": user_id.to_string(),
+                "herald_client_app_id": client_app_id.to_string(),
+                "clientAppId": client_app_id.to_string(),
+            }
         }
     })
 }
 
-/// Build a refund.created webhook event
-pub fn build_refund_created_event(
-    event_id: String,
-    refund_id: String,
-    payment_id: String,
-    amount: i64,
-    original_amount: i64,
-    realm_id: &str,
-) -> serde_json::Value {
-    build_refund_created_event_with_user(
-        event_id,
-        refund_id,
-        payment_id,
-        amount,
-        original_amount,
-        realm_id,
-        Uuid::now_v7(), // Generate a default user ID
-    )
-}
-
-/// Build a refund.created webhook event with explicit user ID
-pub fn build_refund_created_event_with_user(
-    event_id: String,
-    refund_id: String,
-    payment_id: String,
-    amount: i64,
-    original_amount: i64,
+/// Build a Creem checkout.completed webhook with empty herald_entitlement_key.
+pub fn build_creem_checkout_empty_entitlement_key(
+    event_id: &str,
     realm_id: &str,
     user_id: Uuid,
-) -> serde_json::Value {
-    build_refund_created_event_with_user_and_type(
-        event_id,
-        refund_id,
-        payment_id,
-        amount,
-        original_amount,
-        realm_id,
-        user_id,
-        "topup", // Default to topup refund type
-    )
-}
-
-/// Build a refund.created webhook event with explicit user ID and refund type
-pub fn build_refund_created_event_with_user_and_type(
-    event_id: String,
-    refund_id: String,
-    payment_id: String,
-    amount: i64,
-    original_amount: i64,
-    realm_id: &str,
-    user_id: Uuid,
-    refund_type: &str, // "topup" or "subscription"
+    client_app_id: Uuid,
 ) -> serde_json::Value {
     json!({
         "id": event_id,
-        "eventType": "refund.created",
+        "eventType": "checkout.completed",
+        "object": {
+            "id": format!("checkout_{}", event_id),
+            "status": "completed",
+            "product": {
+                "id": format!("prod_creem_empty_{}", event_id),
+            },
+            "metadata": {
+                "herald_entitlement_key": "",
+                "herald_realm_id": realm_id,
+                "herald_user_id": user_id.to_string(),
+                "herald_client_app_id": client_app_id.to_string(),
+                "clientAppId": client_app_id.to_string(),
+            }
+        }
+    })
+}
+
+/// Build a Creem checkout.completed webhook with invalid entitlement_key format.
+pub fn build_creem_checkout_invalid_entitlement_key(
+    event_id: &str,
+    realm_id: &str,
+    user_id: Uuid,
+    client_app_id: Uuid,
+    invalid_key: &str,
+) -> serde_json::Value {
+    json!({
+        "id": event_id,
+        "eventType": "checkout.completed",
+        "object": {
+            "id": format!("checkout_{}", event_id),
+            "status": "completed",
+            "product": {
+                "id": format!("prod_creem_invalid_{}", event_id),
+            },
+            "metadata": {
+                "herald_entitlement_key": invalid_key,
+                "herald_realm_id": realm_id,
+                "herald_user_id": user_id.to_string(),
+                "herald_client_app_id": client_app_id.to_string(),
+                "clientAppId": client_app_id.to_string(),
+            }
+        }
+    })
+}
+
+/// ============================================================================
+/// Stripe Webhook Event Builders (herald_* metadata)
+/// ============================================================================
+///
+/// Build a Stripe checkout.session.completed webhook with herald_* metadata.
+#[allow(clippy::too_many_arguments)]
+pub fn build_stripe_checkout_completed_with_herald_metadata(
+    event_id: &str,
+    entitlement_key: &str,
+    realm_id: &str,
+    user_id: Uuid,
+    client_app_id: Uuid,
+) -> serde_json::Value {
+    json!({
+        "id": event_id,
+        "object": "event",
+        "type": "checkout.session.completed",
+        "api_version": "2020-08-27",
+        "created": chrono::Utc::now().timestamp(),
         "data": {
             "object": {
-                "id": refund_id,
-                "paymentId": payment_id,
-                "amount": amount,
-                "originalAmount": original_amount,
-                "currency": "USD",
-                "reason": "customer_request",
+                "id": format!("cs_test_{}", Uuid::now_v7()),
+                "object": "checkout.session",
+                "status": "complete",
+                "payment_status": "paid",
+                "customer": format!("cus_test_{}", Uuid::now_v7()),
+                "subscription": format!("sub_test_{}", event_id),
+                "payment_intent": format!("pi_test_{}", Uuid::now_v7()),
                 "metadata": {
+                    "herald_entitlement_key": entitlement_key,
+                    "herald_realm_id": realm_id,
+                    "herald_user_id": user_id.to_string(),
+                    "herald_client_app_id": client_app_id.to_string(),
+                    "clientAppId": client_app_id.to_string(),
                     "userId": user_id.to_string(),
-                    "refundType": refund_type
+                },
+                "display_items": [{
+                    "price": {
+                        "product": format!("prod_stripe_{}", entitlement_key)
+                    }
+                }]
+            }
+        }
+    })
+}
+
+/// Build a Stripe checkout.session.completed webhook without herald_entitlement_key
+/// (for fallback chain testing).
+pub fn build_stripe_checkout_completed_without_entitlement_key(
+    event_id: &str,
+    realm_id: &str,
+    user_id: Uuid,
+    client_app_id: Uuid,
+) -> serde_json::Value {
+    json!({
+        "id": event_id,
+        "object": "event",
+        "type": "checkout.session.completed",
+        "api_version": "2020-08-27",
+        "created": chrono::Utc::now().timestamp(),
+        "data": {
+            "object": {
+                "id": format!("cs_test_{}", Uuid::now_v7()),
+                "object": "checkout.session",
+                "status": "complete",
+                "payment_status": "paid",
+                "customer": format!("cus_test_{}", Uuid::now_v7()),
+                "subscription": format!("sub_test_{}", event_id),
+                "payment_intent": format!("pi_test_{}", Uuid::now_v7()),
+                "metadata": {
+                    "herald_realm_id": realm_id,
+                    "herald_user_id": user_id.to_string(),
+                    "herald_client_app_id": client_app_id.to_string(),
+                    "clientAppId": client_app_id.to_string(),
+                    "userId": user_id.to_string(),
+                },
+                "display_items": [{
+                    "price": {
+                        "product": format!("prod_stripe_fallback_{}", event_id)
+                    }
+                }]
+            }
+        }
+    })
+}
+
+/// Build a Stripe customer.subscription.updated webhook with herald_entitlement_key.
+#[allow(clippy::too_many_arguments)]
+pub fn build_stripe_subscription_updated_with_entitlement(
+    event_id: &str,
+    stripe_subscription_id: &str,
+    realm_id: &str,
+    user_id: Uuid,
+    previous_entitlement_key: &str,
+    current_entitlement_key: &str,
+    external_product_id: &str,
+) -> serde_json::Value {
+    let period_end = (chrono::Utc::now() + chrono::Duration::days(30)).timestamp();
+    json!({
+        "id": event_id,
+        "object": "event",
+        "type": "customer.subscription.updated",
+        "api_version": "2020-08-27",
+        "created": chrono::Utc::now().timestamp(),
+        "data": {
+            "object": {
+                "id": stripe_subscription_id,
+                "object": "subscription",
+                "status": "active",
+                "current_period_end": period_end,
+                "items": {
+                    "data": [{
+                        "price": {
+                            "product": external_product_id,
+                            "metadata": {
+                                "herald_entitlement_key": current_entitlement_key,
+                            }
+                        }
+                    }]
+                },
+                "metadata": {
+                    "herald_realm_id": realm_id,
+                    "herald_user_id": user_id.to_string(),
+                    "userId": user_id.to_string(),
+                }
+            },
+            "previous_attributes": {
+                "items": {
+                    "data": [{
+                        "price": {
+                            "product": external_product_id,
+                            "metadata": {
+                                "herald_entitlement_key": previous_entitlement_key,
+                            }
+                        }
+                    }]
                 }
             }
-        },
-        "metadata": {
-            "realmId": realm_id
+        }
+    })
+}
+
+/// Build a Stripe customer.subscription.deleted webhook with entitlement_key.
+pub fn build_stripe_subscription_deleted_with_entitlement(
+    event_id: &str,
+    stripe_subscription_id: &str,
+    realm_id: &str,
+    user_id: Uuid,
+    entitlement_key: &str,
+) -> serde_json::Value {
+    let period_end = (chrono::Utc::now() + chrono::Duration::days(30)).timestamp();
+    json!({
+        "id": event_id,
+        "object": "event",
+        "type": "customer.subscription.deleted",
+        "api_version": "2020-08-27",
+        "created": chrono::Utc::now().timestamp(),
+        "data": {
+            "object": {
+                "id": stripe_subscription_id,
+                "object": "subscription",
+                "status": "canceled",
+                "cancel_at_period_end": false,
+                "current_period_end": period_end,
+                "metadata": {
+                    "herald_realm_id": realm_id,
+                    "herald_user_id": user_id.to_string(),
+                    "herald_entitlement_key": entitlement_key,
+                    "userId": user_id.to_string(),
+                }
+            }
+        }
+    })
+}
+
+/// Build a Stripe invoice.payment_succeeded webhook with herald_* metadata.
+#[allow(clippy::too_many_arguments)]
+pub fn build_stripe_invoice_with_herald_metadata(
+    event_id: &str,
+    stripe_subscription_id: &str,
+    realm_id: &str,
+    user_id: Uuid,
+    entitlement_key: &str,
+    amount_paid: i64,
+) -> serde_json::Value {
+    let period_start = chrono::Utc::now().timestamp();
+    let period_end = (chrono::Utc::now() + chrono::Duration::days(30)).timestamp();
+    json!({
+        "id": event_id,
+        "object": "event",
+        "type": "invoice.payment_succeeded",
+        "api_version": "2020-08-27",
+        "created": chrono::Utc::now().timestamp(),
+        "data": {
+            "object": {
+                "id": format!("in_test_{}", Uuid::now_v7()),
+                "object": "invoice",
+                "status": "paid",
+                "subscription": stripe_subscription_id,
+                "amount_paid": amount_paid,
+                "currency": "usd",
+                "current_period_start": period_start,
+                "current_period_end": period_end,
+                "metadata": {
+                    "herald_realm_id": realm_id,
+                    "herald_user_id": user_id.to_string(),
+                    "herald_entitlement_key": entitlement_key,
+                    "userId": user_id.to_string(),
+                }
+            }
+        }
+    })
+}
+
+/// Build a Stripe checkout.session.completed webhook missing herald_realm_id.
+pub fn build_stripe_checkout_missing_realm_id(
+    event_id: &str,
+    entitlement_key: &str,
+    user_id: Uuid,
+    client_app_id: Uuid,
+) -> serde_json::Value {
+    json!({
+        "id": event_id,
+        "object": "event",
+        "type": "checkout.session.completed",
+        "api_version": "2020-08-27",
+        "created": chrono::Utc::now().timestamp(),
+        "data": {
+            "object": {
+                "id": format!("cs_test_{}", Uuid::now_v7()),
+                "object": "checkout.session",
+                "status": "complete",
+                "payment_status": "paid",
+                "customer": format!("cus_test_{}", Uuid::now_v7()),
+                "subscription": format!("sub_test_{}", event_id),
+                "payment_intent": format!("pi_test_{}", Uuid::now_v7()),
+                "metadata": {
+                    "herald_entitlement_key": entitlement_key,
+                    "herald_user_id": user_id.to_string(),
+                    "herald_client_app_id": client_app_id.to_string(),
+                    "clientAppId": client_app_id.to_string(),
+                    "userId": user_id.to_string(),
+                },
+                "display_items": [{
+                    "price": {
+                        "product": format!("prod_stripe_{}", entitlement_key)
+                    }
+                }]
+            }
         }
     })
 }
@@ -398,13 +660,258 @@ pub fn generate_test_plan_id() -> Uuid {
 }
 
 /// ============================================================================
-/// Database Setup Helpers
+/// Legacy Builders (retained for existing tests that have not yet been migrated)
 /// ============================================================================
-/// Create a test plan and its config in the database
+/// These builders reference the pre-product_reduce schema (plan_id, planId).
+/// New tests should use the herald_* metadata builders above.
+/// BE-T03 / BE-T04 will migrate or remove the tests that depend on these.
 ///
-/// This is needed for webhook tests that require plan configs to exist.
-/// Creates both the plan record (to satisfy foreign key constraints) and
-/// the points_plan_configs record.
+/// Build a subscription.paid webhook event (legacy, uses plan_id)
+pub fn build_subscription_paid_event(
+    event_id: String,
+    user_id: Uuid,
+    plan_id: Uuid,
+    is_renewal: bool,
+    realm_id: &str,
+) -> serde_json::Value {
+    build_subscription_paid_event_with_client(
+        event_id, user_id, plan_id, is_renewal, realm_id, None,
+    )
+}
+
+/// Build a subscription.paid webhook event with client_app_id (legacy)
+pub fn build_subscription_paid_event_with_client(
+    event_id: String,
+    user_id: Uuid,
+    plan_id: Uuid,
+    is_renewal: bool,
+    realm_id: &str,
+    client_app_id: Option<Uuid>,
+) -> serde_json::Value {
+    build_subscription_paid_event_with_client_and_status(
+        event_id,
+        user_id,
+        plan_id,
+        is_renewal,
+        realm_id,
+        client_app_id,
+        "active",
+    )
+}
+
+/// Build a subscription.paid webhook event with client_app_id and custom status (legacy)
+pub fn build_subscription_paid_event_with_client_and_status(
+    event_id: String,
+    user_id: Uuid,
+    plan_id: Uuid,
+    is_renewal: bool,
+    realm_id: &str,
+    client_app_id: Option<Uuid>,
+    status: &str,
+) -> serde_json::Value {
+    build_subscription_paid_event_full(
+        event_id,
+        user_id,
+        plan_id,
+        is_renewal,
+        realm_id,
+        client_app_id,
+        status,
+        "monthly",
+    )
+}
+
+/// Build a subscription.paid webhook event with full customization (legacy)
+pub fn build_subscription_paid_event_full(
+    event_id: String,
+    user_id: Uuid,
+    plan_id: Uuid,
+    is_renewal: bool,
+    realm_id: &str,
+    client_app_id: Option<Uuid>,
+    status: &str,
+    billing_period: &str,
+) -> serde_json::Value {
+    let period_end = match billing_period {
+        "yearly" => chrono::Utc::now() + chrono::Duration::days(365),
+        "quarterly" => chrono::Utc::now() + chrono::Duration::days(90),
+        _ => chrono::Utc::now() + chrono::Duration::days(30),
+    };
+
+    let amount = match billing_period {
+        "yearly" => 25000,
+        "quarterly" => 7500,
+        _ => 2500,
+    };
+
+    let mut metadata = json!({
+        "realmId": realm_id
+    });
+
+    if let Some(client_id) = client_app_id {
+        metadata["clientAppId"] = json!(client_id.to_string());
+    }
+
+    json!({
+        "id": event_id,
+        "eventType": "subscription.paid",
+        "data": {
+            "object": {
+                "subscriptionId": format!("sub_{}", event_id),
+                "productId": format!("prod_test_{}", billing_period),
+                "userId": user_id.to_string(),
+                "planId": plan_id.to_string(),
+                "isRenewal": is_renewal,
+                "currentPeriodEnd": period_end.to_rfc3339(),
+                "amount": amount,
+                "currency": "USD",
+                "status": status,
+                "cancelAtPeriodEnd": false,
+                "billingPeriod": billing_period,
+                "metadata": metadata
+            }
+        },
+        "metadata": metadata
+    })
+}
+
+/// Build a subscription.canceled webhook event (legacy)
+pub fn build_subscription_canceled_event(
+    event_id: String,
+    user_id: Uuid,
+    cancel_at_period_end: bool,
+    realm_id: &str,
+) -> serde_json::Value {
+    let period_end = (chrono::Utc::now() + chrono::Duration::days(30)).to_rfc3339();
+
+    json!({
+        "id": event_id,
+        "eventType": "subscription.canceled",
+        "data": {
+            "object": {
+                "subscriptionId": format!("sub_{}", event_id),
+                "productId": "prod_test_monthly",
+                "userId": user_id.to_string(),
+                "cancelAtPeriodEnd": cancel_at_period_end,
+                "currentPeriodEnd": period_end
+            }
+        },
+        "metadata": {
+            "realmId": realm_id
+        }
+    })
+}
+
+/// Build a subscription.update webhook event (legacy)
+pub fn build_subscription_updated_event(
+    event_id: String,
+    user_id: Uuid,
+    previous_plan_id: Uuid,
+    current_plan_id: Uuid,
+    realm_id: &str,
+) -> serde_json::Value {
+    let period_end = (chrono::Utc::now() + chrono::Duration::days(30)).to_rfc3339();
+
+    json!({
+        "id": event_id,
+        "eventType": "subscription.update",
+        "data": {
+            "object": {
+                "subscriptionId": format!("sub_{}", event_id),
+                "productId": "prod_test_monthly",
+                "userId": user_id.to_string(),
+                "planId": current_plan_id.to_string(),
+                "currentPeriodEnd": period_end
+            },
+            "previousAttributes": {
+                "planId": previous_plan_id.to_string()
+            }
+        },
+        "metadata": {
+            "realmId": realm_id
+        }
+    })
+}
+
+/// Build a refund.created webhook event (legacy)
+pub fn build_refund_created_event(
+    event_id: String,
+    refund_id: String,
+    payment_id: String,
+    amount: i64,
+    original_amount: i64,
+    realm_id: &str,
+) -> serde_json::Value {
+    build_refund_created_event_with_user(
+        event_id,
+        refund_id,
+        payment_id,
+        amount,
+        original_amount,
+        realm_id,
+        Uuid::now_v7(),
+    )
+}
+
+/// Build a refund.created webhook event with explicit user ID (legacy)
+pub fn build_refund_created_event_with_user(
+    event_id: String,
+    refund_id: String,
+    payment_id: String,
+    amount: i64,
+    original_amount: i64,
+    realm_id: &str,
+    user_id: Uuid,
+) -> serde_json::Value {
+    build_refund_created_event_with_user_and_type(
+        event_id,
+        refund_id,
+        payment_id,
+        amount,
+        original_amount,
+        realm_id,
+        user_id,
+        "topup",
+    )
+}
+
+/// Build a refund.created webhook event with explicit user ID and refund type (legacy)
+pub fn build_refund_created_event_with_user_and_type(
+    event_id: String,
+    refund_id: String,
+    payment_id: String,
+    amount: i64,
+    original_amount: i64,
+    realm_id: &str,
+    user_id: Uuid,
+    refund_type: &str,
+) -> serde_json::Value {
+    json!({
+        "id": event_id,
+        "eventType": "refund.created",
+        "data": {
+            "object": {
+                "id": refund_id,
+                "paymentId": payment_id,
+                "amount": amount,
+                "originalAmount": original_amount,
+                "currency": "USD",
+                "reason": "customer_request",
+                "metadata": {
+                    "userId": user_id.to_string(),
+                    "refundType": refund_type
+                }
+            }
+        },
+        "metadata": {
+            "realmId": realm_id
+        }
+    })
+}
+
+/// Legacy: setup_test_plan_config -- inserts into deleted tables (products, subscription_plan, points_plan_configs).
+/// Retained for compilation of existing test modules that have not yet been migrated.
+/// Will fail at runtime; BE-T03/BE-T04 will migrate the callers.
 pub async fn setup_test_plan_config(
     ctx: &crate::tests::schema_test_context::SchemaTestContext,
     realm_id: &str,
@@ -413,75 +920,65 @@ pub async fn setup_test_plan_config(
     setup_test_plan_config_with_points(ctx, realm_id, plan_id, 1000).await;
 }
 
-/// Create a test plan and config with custom point values
-///
-/// This is needed for webhook tests that require different point values for different plans.
-/// Creates both the plan record (to satisfy foreign key constraints) and
-/// the points_plan_configs record with the specified point amounts.
+/// Legacy: setup_test_plan_config_with_points -- inserts into deleted tables.
 pub async fn setup_test_plan_config_with_points(
     ctx: &crate::tests::schema_test_context::SchemaTestContext,
     realm_id: &str,
     plan_id: Uuid,
     points_per_period: i64,
 ) {
-    // Ensure default product exists for this realm
-    let product_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO products (id, realm_id, code, title, description, enabled, created_at, updated_at)
-         VALUES ($1, $2, 'default', 'Default Product', 'Default test product', true, NOW(), NOW())
-         ON CONFLICT (realm_id, code) DO UPDATE SET updated_at = products.updated_at
-         RETURNING id"
-    )
-    .bind(Uuid::now_v7())
-    .bind(realm_id)
-    .fetch_one(&ctx.app_state.pool)
-    .await
-    .expect("Failed to ensure default product");
-
-    // First, create the plan record to satisfy foreign key constraint
-    let plan_name = format!("Test Plan {}", plan_id);
-    sqlx::query(
-        "INSERT INTO subscription_plan (id, realm_id, name, description, title, type, price, currency,
-                          active, trial_days, sort_order, product_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())",
-    )
-    .bind(plan_id)
-    .bind(realm_id)
-    .bind(&plan_name)
-    .bind(format!("{} description", plan_name))
-    .bind(&plan_name) // title
-    .bind("monthly") // type
-    .bind(2500) // price in cents
-    .bind("USD") // currency
-    .bind(true)
-    .bind(0)
-    .bind(1)
-    .bind(product_id)
-    .execute(&ctx.app_state.pool)
-    .await
-    .expect("Failed to create test plan");
-
-    // Then create the points plan config with custom points
-    sqlx::query(
-        "INSERT INTO points_plan_configs (id, realm_id, plan_id, grant_period_type, points_per_period,
-         validity_days, grant_on_subscribe, max_periods, active, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())"
-    )
-    .bind(Uuid::now_v7())
-    .bind(realm_id)
-    .bind(plan_id)
-    .bind("monthly") // grant_period_type
-    .bind(points_per_period) // points_per_period - amount granted each period
-    .bind(0i64) // validity_days - 0 means permanent (matches old behavior)
-    .bind(true) // grant_on_subscribe - always grant on subscribe
-    .bind::<Option<i64>>(None) // max_periods - NULL means unlimited (matches old behavior)
-    .bind(true) // active
-    .execute(&ctx.app_state.pool)
-    .await
-    .expect("Failed to create test plan config");
+    // Attempt to create mapping rows; the old tables no longer exist so this
+    // is a no-op placeholder to allow compilation of existing tests.
+    // BE-T03/BE-T04 will replace callers with entitlement mapping setup.
+    let _ = (ctx, realm_id, plan_id, points_per_period);
 }
 
 /// ============================================================================
-/// Stripe Webhook Helpers
+/// Database Setup Helpers (entitlement mapping for webhook tests)
+/// ============================================================================
+///
+/// Create a test entitlement mapping for webhook tests via direct SQL.
+///
+/// This is self-contained in webhook_helpers.rs (not dependent on billing_helpers.rs)
+/// because BE-T01 and BE-T02 run in parallel.
+///
+/// Returns the mapping ID.
+#[allow(clippy::too_many_arguments)]
+pub async fn setup_test_entitlement_mapping_for_webhook(
+    ctx: &crate::tests::schema_test_context::SchemaTestContext,
+    realm_id: &str,
+    provider: &str,
+    external_product_id: &str,
+    entitlement_key: &str,
+    points_per_period: i64,
+    grant_on_subscribe: bool,
+    enabled: bool,
+) -> Uuid {
+    let mapping_id = Uuid::now_v7();
+
+    sqlx::query(
+        "INSERT INTO provider_entitlement_mappings
+            (id, realm_id, payment_provider, external_product_id, entitlement_key,
+             points_per_period, grant_on_subscribe, enabled, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())",
+    )
+    .bind(mapping_id)
+    .bind(realm_id)
+    .bind(provider)
+    .bind(external_product_id)
+    .bind(entitlement_key)
+    .bind(points_per_period)
+    .bind(grant_on_subscribe)
+    .bind(enabled)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create test entitlement mapping for webhook");
+
+    mapping_id
+}
+
+/// ============================================================================
+/// Stripe Webhook Sending Helpers
 /// ============================================================================
 /// Build a Stripe webhook signature for testing
 ///
@@ -495,205 +992,6 @@ pub fn build_stripe_webhook_signature(payload: &str, secret: &str) -> String {
     let signature = hex::encode(mac.finalize().into_bytes());
 
     format!("t={},v1={}", timestamp, signature)
-}
-
-/// Build a Stripe checkout.session.completed webhook event
-pub fn build_stripe_checkout_session_completed_event(
-    event_id: String,
-    client_app_id: Uuid,
-    plan_id: Uuid,
-    realm_id: &str,
-    user_id: Option<Uuid>,
-    trial_days: Option<u64>,
-) -> serde_json::Value {
-    json!({
-        "id": event_id,
-        "object": "event",
-        "type": "checkout.session.completed",
-        "api_version": "2020-08-27",
-        "created": chrono::Utc::now().timestamp(),
-        "data": {
-            "object": {
-                "id": format!("cs_test_{}", Uuid::now_v7()),
-                "object": "checkout.session",
-                "status": "complete",
-                "payment_status": "paid",
-                "customer": format!("cus_test_{}", Uuid::now_v7()),
-                "subscription": format!("sub_test_{}", Uuid::now_v7()),
-                "payment_intent": format!("pi_test_{}", Uuid::now_v7()),
-                "metadata": {
-                    "realmId": realm_id,
-                    "clientAppId": client_app_id.to_string(),
-                    "planId": plan_id.to_string(),
-                    "userId": user_id.map(|u| u.to_string()).unwrap_or_default(),
-                    "billingPeriod": "monthly",
-                    "planName": "Test Plan",
-                    "trialDays": trial_days.unwrap_or(0)
-                },
-                "display_items": [{
-                    "price": {
-                        "product": format!("prod_test_{}", plan_id)
-                    }
-                }]
-            }
-        }
-    })
-}
-
-/// Build a Stripe invoice.payment_succeeded webhook event (subscription renewal)
-pub fn build_stripe_invoice_payment_succeeded_event(
-    event_id: String,
-    subscription_id: String,
-    realm_id: &str,
-    user_id: &str,
-    plan_id: &str,
-    amount_paid: i64,
-) -> serde_json::Value {
-    let period_start = chrono::Utc::now().timestamp();
-    let period_end = (chrono::Utc::now() + chrono::Duration::days(30)).timestamp();
-
-    json!({
-        "id": event_id,
-        "object": "event",
-        "type": "invoice.payment_succeeded",
-        "api_version": "2020-08-27",
-        "created": chrono::Utc::now().timestamp(),
-        "data": {
-            "object": {
-                "id": format!("in_test_{}", Uuid::now_v7()),
-                "object": "invoice",
-                "status": "paid",
-                "subscription": subscription_id,
-                "amount_paid": amount_paid,
-                "currency": "usd",
-                "current_period_start": period_start,
-                "current_period_end": period_end,
-                "metadata": {
-                    "realmId": realm_id,
-                    "userId": user_id,
-                    "planId": plan_id
-                }
-            }
-        }
-    })
-}
-
-/// Build a Stripe customer.subscription.updated webhook event (plan upgrade/downgrade)
-pub fn build_stripe_subscription_updated_event(
-    event_id: String,
-    stripe_subscription_id: String,
-    realm_id: &str,
-    previous_plan_id: Option<String>,
-    new_plan_id: String,
-) -> serde_json::Value {
-    let period_end = (chrono::Utc::now() + chrono::Duration::days(30)).to_rfc3339();
-
-    json!({
-        "id": event_id,
-        "object": "event",
-        "type": "customer.subscription.updated",
-        "api_version": "2020-08-27",
-        "created": chrono::Utc::now().timestamp(),
-        "data": {
-            "object": {
-                "id": stripe_subscription_id,
-                "object": "subscription",
-                "status": "active",
-                "current_period_end": period_end,
-                "items": {
-                    "data": [{
-                        "price": {
-                            "product": new_plan_id,
-                            "metadata": {
-                                "planId": new_plan_id
-                            }
-                        }
-                    }]
-                },
-                "metadata": {
-                    "realmId": realm_id,
-                    "userId": "test_user_id"
-                }
-            },
-            "previous_attributes": {
-                "items": {
-                    "data": [{
-                        "price": {
-                            "product": previous_plan_id.clone().unwrap_or_else(|| "old_plan".to_string()),
-                            "metadata": {
-                                "planId": previous_plan_id.unwrap_or_else(|| "old_plan".to_string())
-                            }
-                        }
-                    }]
-                }
-            }
-        }
-    })
-}
-
-/// Build a Stripe customer.subscription.deleted webhook event (cancellation)
-pub fn build_stripe_subscription_deleted_event(
-    event_id: String,
-    stripe_subscription_id: String,
-    realm_id: &str,
-    cancel_at_period_end: bool,
-) -> serde_json::Value {
-    let period_end = (chrono::Utc::now() + chrono::Duration::days(30)).to_rfc3339();
-
-    json!({
-        "id": event_id,
-        "object": "event",
-        "type": "customer.subscription.deleted",
-        "api_version": "2020-08-27",
-        "created": chrono::Utc::now().timestamp(),
-        "data": {
-            "object": {
-                "id": stripe_subscription_id,
-                "object": "subscription",
-                "status": if cancel_at_period_end { "active" } else { "canceled" },
-                "cancel_at_period_end": cancel_at_period_end,
-                "current_period_end": period_end,
-                "metadata": {
-                    "realmId": realm_id,
-                    "userId": "test_user_id"
-                }
-            }
-        }
-    })
-}
-
-/// Build a Stripe charge.refunded webhook event
-pub fn build_stripe_charge_refunded_event(
-    event_id: String,
-    charge_id: String,
-    realm_id: &str,
-    user_id: &str,
-    amount_refunded: i64,
-    original_amount: i64,
-) -> serde_json::Value {
-    json!({
-        "id": event_id,
-        "object": "event",
-        "type": "charge.refunded",
-        "api_version": "2020-08-27",
-        "created": chrono::Utc::now().timestamp(),
-        "data": {
-            "object": {
-                "id": charge_id,
-                "object": "charge",
-                "amount": amount_refunded,
-                "amount_refunded": amount_refunded,
-                "currency": "usd",
-                "paid": true,
-                "refunded": amount_refunded == original_amount,
-                "metadata": {
-                    "realmId": realm_id,
-                    "userId": user_id,
-                    "refundType": "subscription"
-                }
-            }
-        }
-    })
 }
 
 /// Send a Stripe webhook event with signature

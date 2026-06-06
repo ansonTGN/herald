@@ -2,7 +2,9 @@
 // PostgresBillingRepository Unit Tests
 // =============================================================================
 //
-// Unit tests for PostgreSQL billing repository operations
+// Unit tests for PostgreSQL billing repository operations.
+// Adapted for product_reduce schema: subscription uses entitlement_key
+// instead of plan_id/tier/billing_period; Product/Plan CRUD removed.
 //
 // =============================================================================
 
@@ -10,13 +12,11 @@ use super::*;
 use chrono::Utc;
 use futures::FutureExt;
 use herald_domain::billing::{
-    BillingPeriod, BillingRepository, Product, Subscription, SubscriptionPlan, SubscriptionStatus,
-    SubscriptionTier, test_helpers::*,
+    BillingRepository, Subscription, SubscriptionStatus, test_helpers::*,
 };
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_test_db::{SharedTestDatabaseHandle, create_isolated_schema_database};
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
-use sha2::{Digest, Sha256};
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, resume_unwind};
 use uuid::Uuid;
@@ -44,8 +44,6 @@ async fn setup_test_db() -> BillingTestDb {
     let (schema, pool, db) = create_isolated_schema_database(3).await;
 
     create_test_realms(&db).await;
-    create_test_products(&db).await;
-    create_test_plans(&db).await;
 
     BillingTestDb { db, pool, schema }
 }
@@ -62,43 +60,6 @@ where
 
     if let Err(panic_payload) = result {
         resume_unwind(panic_payload);
-    }
-}
-
-/// Create test product records
-async fn create_test_products(db: &DatabaseConnection) {
-    let backend = db.get_database_backend();
-
-    for realm_id in test_realm_ids() {
-        let product_id = test_product_id_for_realm(realm_id);
-        let _ = db
-            .execute(Statement::from_string(
-                backend,
-                format!(
-                    "INSERT INTO products (id, realm_id, code, title, description, enabled, created_at, updated_at) VALUES ('{}', '{}', '{}_product', 'Test Product', 'Test product for {}', true, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
-                    product_id, realm_id, realm_id, realm_id
-                ),
-            ))
-            .await;
-    }
-}
-
-/// Create test plan records
-async fn create_test_plans(db: &DatabaseConnection) {
-    let backend = db.get_database_backend();
-
-    for realm_id in test_realm_ids() {
-        let plan_id = Uuid::now_v7();
-        let product_id = test_product_id_for_realm(realm_id);
-        let _ = db
-            .execute(Statement::from_string(
-                backend,
-                format!(
-                    "INSERT INTO subscription_plan (id, realm_id, name, title, description, type, price, currency, checkout_url, active, trial_days, sort_order, product_id, created_at, updated_at) VALUES ('{}', '{}', 'test_plan_{}', 'Test Plan', 'Test plan for {}', 'monthly', 2500, 'USD', NULL, true, 0, 1, '{}', NOW(), NOW()) ON CONFLICT DO NOTHING",
-                    plan_id, realm_id, realm_id, realm_id, product_id
-                ),
-            ))
-            .await;
     }
 }
 
@@ -121,28 +82,15 @@ async fn create_test_realms(db: &DatabaseConnection) {
     }
 }
 
-fn test_product_id_for_realm(realm_id: &str) -> Uuid {
-    let mut bytes = [0_u8; 16];
-    bytes.copy_from_slice(
-        &Sha256::digest(format!("herald-test-product:{realm_id}").as_bytes())[..16],
-    );
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    Uuid::from_bytes(bytes)
-}
-
 /// Returns all test realm IDs used across tests
 fn test_realm_ids() -> Vec<&'static str> {
     vec![
-        "test_plan_move_persist",
-        "test_public_visible",
-        "test_public_hidden",
         "test_create_sub",
         "test_optional_fields",
         "test_find_by_realm",
         "test_find_by_creem",
         "test_update_status",
-        "test_update_tier",
+        "test_update_entitlement",
         "test_update_cancel",
         "test_different_realms_1",
         "test_different_realms_2",
@@ -166,10 +114,6 @@ fn test_realm_ids() -> Vec<&'static str> {
         "test_status_4",
         "test_status_5",
         "test_status_6",
-        "test_tier_0",
-        "test_tier_1",
-        "test_tier_2",
-        "test_tier_3",
     ]
 }
 
@@ -195,7 +139,7 @@ billing_repo_test!(test_repository_create_subscription, |repo| {
     let created = result.unwrap();
     assert_eq!(created.realm_id, "test_create_sub");
     assert_subscription_status(&created, SubscriptionStatus::Active);
-    assert_subscription_tier(&created, SubscriptionTier::Starter);
+    assert_eq!(created.entitlement_key, "starter-plan");
 });
 
 billing_repo_test!(
@@ -206,10 +150,9 @@ billing_repo_test!(
             .with_external_subscription_id("sub_test123")
             .with_external_product_id("prod_professional_yearly")
             .with_status(SubscriptionStatus::Trialing)
-            .with_tier(SubscriptionTier::Professional)
+            .with_entitlement_key("pro-plan")
             .with_period_end(Utc::now() + chrono::Duration::days(14))
             .with_cancel_at_period_end(true)
-            .with_billing_period(BillingPeriod::Yearly)
             .build();
 
         let result = repo.create_subscription(subscription.clone()).await;
@@ -218,7 +161,7 @@ billing_repo_test!(
         let created = result.unwrap();
         assert_eq!(created.realm_id, "test_optional_fields");
         assert_subscription_status(&created, SubscriptionStatus::Trialing);
-        assert_subscription_tier(&created, SubscriptionTier::Professional);
+        assert_eq!(created.entitlement_key, "pro-plan");
         assert_eq!(created.external_subscription_id, "sub_test123");
         assert!(created.cancel_at_period_end);
     }
@@ -298,19 +241,22 @@ billing_repo_test!(test_repository_update_subscription_status, |repo| {
     assert_eq!(updated.realm_id, "test_update_status");
 });
 
-billing_repo_test!(test_repository_update_subscription_tier, |repo| {
-    let subscription = test_subscription("test_update_tier");
-    let mut created = repo.create_subscription(subscription).await.unwrap();
+billing_repo_test!(
+    test_repository_update_subscription_entitlement_key,
+    |repo| {
+        let subscription = test_subscription("test_update_entitlement");
+        let mut created = repo.create_subscription(subscription).await.unwrap();
 
-    created.tier = SubscriptionTier::Professional;
-    created.updated_at = Utc::now();
+        created.entitlement_key = "enterprise-plan".to_string();
+        created.updated_at = Utc::now();
 
-    let result = repo.update_subscription(created.clone()).await;
+        let result = repo.update_subscription(created.clone()).await;
 
-    assert!(result.is_ok());
-    let updated = result.unwrap();
-    assert_subscription_tier(&updated, SubscriptionTier::Professional);
-});
+        assert!(result.is_ok());
+        let updated = result.unwrap();
+        assert_eq!(updated.entitlement_key, "enterprise-plan");
+    }
+);
 
 billing_repo_test!(
     test_repository_update_subscription_cancel_at_period_end,
@@ -411,26 +357,6 @@ billing_repo_test!(test_repository_subscription_all_statuses, |repo| {
 
         let created = repo.create_subscription(sub).await.unwrap();
         assert_subscription_status(&created, status.clone());
-    }
-});
-
-billing_repo_test!(test_repository_subscription_all_tiers, |repo| {
-    let tiers = [
-        SubscriptionTier::Free,
-        SubscriptionTier::Starter,
-        SubscriptionTier::Professional,
-        SubscriptionTier::Enterprise,
-    ];
-
-    for (i, tier) in tiers.iter().enumerate() {
-        let realm_id = format!("test_tier_{}", i);
-        let sub = SubscriptionBuilder::new()
-            .with_realm_id(realm_id)
-            .with_tier(tier.clone())
-            .build();
-
-        let created = repo.create_subscription(sub).await.unwrap();
-        assert_subscription_tier(&created, tier.clone());
     }
 });
 
@@ -546,139 +472,11 @@ billing_repo_test!(test_repository_payment_event_idempotency, |repo| {
     assert!(result.is_err());
 });
 
-billing_repo_test!(test_repository_update_plan_persists_product_id, |repo| {
-    let realm_id = "test_plan_move_persist";
-    let source_product_id = test_product_id_for_realm(realm_id);
-    let target_product_id = Uuid::now_v7();
-
-    repo.create_product(Product {
-        id: target_product_id,
-        realm_id: realm_id.to_string(),
-        code: "target_product".to_string(),
-        title: "Target Product".to_string(),
-        description: None,
-        enabled: true,
-        plans_count: 0,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    })
-    .await
-    .unwrap();
-
-    let created = repo
-        .create_subscription_plan(
-            SubscriptionPlanBuilder::new()
-                .with_realm_id(realm_id)
-                .with_name("move_plan")
-                .with_product_id(source_product_id)
-                .build(),
-        )
-        .await
-        .unwrap();
-
-    let updated = repo
-        .update_subscription_plan(SubscriptionPlan {
-            product_id: target_product_id,
-            updated_at: Utc::now(),
-            ..created.clone()
-        })
-        .await
-        .unwrap();
-
-    assert_eq!(updated.product_id, target_product_id);
-
-    let reloaded = repo
-        .find_subscription_plan_by_id(created.id)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(reloaded.product_id, target_product_id);
-});
-
-billing_repo_test!(
-    test_repository_public_plan_queries_hide_disabled_products,
-    |repo| {
-        let visible_realm = "test_public_visible";
-        let hidden_realm = "test_public_hidden";
-
-        // Use random UUIDs to avoid conflicts in parallel tests
-        let visible_product_id = Uuid::now_v7();
-        let hidden_product_id = Uuid::now_v7();
-
-        // Create product records first
-        repo.create_product(Product {
-            id: visible_product_id,
-            realm_id: visible_realm.to_string(),
-            code: "visible_product".to_string(),
-            title: "Visible Product".to_string(),
-            description: None,
-            enabled: true,
-            plans_count: 0,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        })
-        .await
-        .unwrap();
-
-        repo.create_product(Product {
-            id: hidden_product_id,
-            realm_id: hidden_realm.to_string(),
-            code: "hidden_product".to_string(),
-            title: "Hidden Product".to_string(),
-            description: None,
-            enabled: true,
-            plans_count: 0,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        })
-        .await
-        .unwrap();
-
-        let visible_plan = repo
-            .create_subscription_plan(
-                SubscriptionPlanBuilder::new()
-                    .with_realm_id(visible_realm)
-                    .with_name("visible_plan")
-                    .with_product_id(visible_product_id)
-                    .build(),
-            )
-            .await
-            .unwrap();
-
-        let hidden_plan = repo
-            .create_subscription_plan(
-                SubscriptionPlanBuilder::new()
-                    .with_realm_id(hidden_realm)
-                    .with_name("hidden_plan")
-                    .with_product_id(hidden_product_id)
-                    .build(),
-            )
-            .await
-            .unwrap();
-
-        repo.update_product(hidden_realm, hidden_product_id, None, None, Some(false))
-            .await
-            .unwrap();
-
-        let visible_plans = repo
-            .list_public_plans_by_realm(visible_realm)
-            .await
-            .unwrap();
-        assert!(visible_plans.iter().any(|plan| plan.id == visible_plan.id));
-
-        let hidden_plans = repo.list_public_plans_by_realm(hidden_realm).await.unwrap();
-        assert!(hidden_plans.iter().all(|plan| plan.id != hidden_plan.id));
-
-        let visible_lookup = repo
-            .find_public_plan_by_id(visible_realm, visible_plan.id)
-            .await
-            .unwrap();
-        assert!(visible_lookup.is_some());
-
-        let hidden_lookup = repo
-            .find_public_plan_by_id(hidden_realm, hidden_plan.id)
-            .await
-            .unwrap();
-        assert!(hidden_lookup.is_none());
-    }
-);
+// =============================================================================
+// Legacy Plan/Product Tests (removed - tables no longer exist)
+// =============================================================================
+// The following tests referenced deleted Product/SubscriptionPlan tables and
+// have been removed as part of the product_reduce migration:
+// - test_repository_update_plan_persists_product_id
+// - test_repository_public_plan_queries_hide_disabled_products
+// - test_repository_subscription_all_tiers (SubscriptionTier removed)

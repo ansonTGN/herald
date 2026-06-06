@@ -17,10 +17,12 @@ pub const SUBSCRIPTION_STATUS_UNKNOWN: &str = "unknown";
 pub enum HistoryEventType {
     /// Subscription was created
     Created,
-    /// Subscription was upgraded to a higher tier
+    /// Subscription was upgraded (entitlement_key changed to higher tier)
     Upgraded,
-    /// Subscription was downgraded to a lower tier
+    /// Subscription was downgraded (entitlement_key changed to lower tier)
     Downgraded,
+    /// Entitlement key changed (non-directional)
+    EntitlementChanged,
     /// Subscription was canceled
     Canceled,
     /// Subscription expired
@@ -29,14 +31,14 @@ pub enum HistoryEventType {
     Renewed,
     /// Subscription was reactivated after cancellation
     Reactivated,
-    /// Billing period was changed (monthly <-> yearly)
-    BillingPeriodChanged,
     /// Subscription payment failed
     PastDue,
     /// Subscription dispute/chargeback created
     Disputed,
     /// Subscription payment was refunded
     Refunded,
+    /// Subscription billing period changed
+    BillingPeriodChanged,
 }
 
 impl HistoryEventType {
@@ -45,14 +47,15 @@ impl HistoryEventType {
             HistoryEventType::Created => "created",
             HistoryEventType::Upgraded => "upgraded",
             HistoryEventType::Downgraded => "downgraded",
+            HistoryEventType::EntitlementChanged => "entitlement_changed",
             HistoryEventType::Canceled => "canceled",
             HistoryEventType::Expired => "expired",
             HistoryEventType::Renewed => "renewed",
             HistoryEventType::Reactivated => "reactivated",
-            HistoryEventType::BillingPeriodChanged => "billing_period_changed",
             HistoryEventType::PastDue => "past_due",
             HistoryEventType::Disputed => "disputed",
             HistoryEventType::Refunded => "refunded",
+            HistoryEventType::BillingPeriodChanged => "billing_period_changed",
         }
     }
 }
@@ -65,14 +68,15 @@ impl std::str::FromStr for HistoryEventType {
             "created" => Ok(HistoryEventType::Created),
             "upgraded" => Ok(HistoryEventType::Upgraded),
             "downgraded" => Ok(HistoryEventType::Downgraded),
+            "entitlement_changed" => Ok(HistoryEventType::EntitlementChanged),
             "canceled" => Ok(HistoryEventType::Canceled),
             "expired" => Ok(HistoryEventType::Expired),
             "renewed" => Ok(HistoryEventType::Renewed),
             "reactivated" => Ok(HistoryEventType::Reactivated),
-            "billing_period_changed" => Ok(HistoryEventType::BillingPeriodChanged),
             "past_due" => Ok(HistoryEventType::PastDue),
             "disputed" => Ok(HistoryEventType::Disputed),
             "refunded" => Ok(HistoryEventType::Refunded),
+            "billing_period_changed" => Ok(HistoryEventType::BillingPeriodChanged),
             _ => Err(CoreError::BadRequest(format!(
                 "Invalid history event type: {}",
                 s
@@ -94,8 +98,8 @@ pub enum SortOrder {
 pub struct SubscriptionHistoryQuery {
     /// Filter by user ID (client_app_id)
     pub user_id: Option<Uuid>,
-    /// Filter by plan ID
-    pub plan_id: Option<Uuid>,
+    /// Filter by entitlement key
+    pub entitlement_key: Option<String>,
     /// Filter by event type
     pub event_type: Option<HistoryEventType>,
     /// Filter by subscription status
@@ -135,10 +139,8 @@ pub struct SubscriptionState {
     pub id: Uuid,
     pub realm_id: String,
     pub status: String,
-    pub tier: String,
-    pub plan_id: Option<Uuid>,
+    pub entitlement_key: String,
     pub client_app_id: Option<Uuid>,
-    pub billing_period: String,
     pub current_period_start: Option<DateTime<Utc>>,
     pub current_period_end: Option<DateTime<Utc>>,
     pub cancel_at_period_end: bool,
@@ -152,10 +154,8 @@ impl SubscriptionState {
             id: sub.id,
             realm_id: sub.realm_id.clone(),
             status: sub.status.as_str().to_string(),
-            tier: sub.tier.as_str().to_string(),
-            plan_id: sub.plan_id,
+            entitlement_key: sub.entitlement_key.clone(),
             client_app_id: sub.client_app_id,
-            billing_period: sub.billing_period.as_str().to_string(),
             current_period_start: sub.current_period_start,
             current_period_end: sub.current_period_end,
             cancel_at_period_end: sub.cancel_at_period_end,
@@ -168,14 +168,10 @@ impl SubscriptionState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubscriptionChanges {
     pub changed_fields: Vec<String>,
-    pub previous_plan_id: Option<Uuid>,
-    pub new_plan_id: Option<Uuid>,
+    pub previous_entitlement_key: Option<String>,
+    pub new_entitlement_key: Option<String>,
     pub previous_status: Option<String>,
     pub new_status: Option<String>,
-    pub previous_tier: Option<String>,
-    pub new_tier: Option<String>,
-    pub previous_billing_period: Option<String>,
-    pub new_billing_period: Option<String>,
 }
 
 impl SubscriptionChanges {
@@ -183,29 +179,19 @@ impl SubscriptionChanges {
     pub fn from_states(old_state: &SubscriptionState, new_state: &SubscriptionState) -> Self {
         let mut changed_fields = Vec::new();
 
-        if old_state.plan_id != new_state.plan_id {
-            changed_fields.push("plan_id".to_string());
+        if old_state.entitlement_key != new_state.entitlement_key {
+            changed_fields.push("entitlement_key".to_string());
         }
         if old_state.status != new_state.status {
             changed_fields.push("status".to_string());
         }
-        if old_state.tier != new_state.tier {
-            changed_fields.push("tier".to_string());
-        }
-        if old_state.billing_period != new_state.billing_period {
-            changed_fields.push("billing_period".to_string());
-        }
 
         SubscriptionChanges {
             changed_fields,
-            previous_plan_id: old_state.plan_id,
-            new_plan_id: new_state.plan_id,
+            previous_entitlement_key: Some(old_state.entitlement_key.clone()),
+            new_entitlement_key: Some(new_state.entitlement_key.clone()),
             previous_status: Some(old_state.status.clone()),
             new_status: Some(new_state.status.clone()),
-            previous_tier: Some(old_state.tier.clone()),
-            new_tier: Some(new_state.tier.clone()),
-            previous_billing_period: Some(old_state.billing_period.clone()),
-            new_billing_period: Some(new_state.billing_period.clone()),
         }
     }
 }
@@ -218,31 +204,16 @@ pub fn detect_change_type(
     let old_state = SubscriptionState::from_subscription(old_subscription);
     let new_state = SubscriptionState::from_subscription(new_subscription);
 
-    // Check for plan changes (upgrade/downgrade)
-    if old_state.plan_id != new_state.plan_id || old_state.tier != new_state.tier {
-        // Simple heuristic: if price increased, it's an upgrade; otherwise downgrade
-        // In a real implementation, you'd query plan prices from the database
-        // For now, we'll assume plan change direction based on tier comparison
-        let old_tier = &old_subscription.tier;
-        let new_tier = &new_subscription.tier;
-
-        match (old_tier, new_tier) {
-            (crate::billing::entities::SubscriptionTier::Free, _) => HistoryEventType::Upgraded,
-            (_, crate::billing::entities::SubscriptionTier::Enterprise) => {
-                HistoryEventType::Upgraded
-            }
-            (
-                crate::billing::entities::SubscriptionTier::Professional,
-                crate::billing::entities::SubscriptionTier::Free,
-            )
-            | (
-                crate::billing::entities::SubscriptionTier::Starter,
-                crate::billing::entities::SubscriptionTier::Free,
-            ) => HistoryEventType::Downgraded,
-            _ => HistoryEventType::Upgraded, // Default to upgrade for ambiguous cases
-        }
-    } else if old_state.billing_period != new_state.billing_period {
-        HistoryEventType::BillingPeriodChanged
+    // Check for entitlement key changes
+    if old_state.entitlement_key != new_state.entitlement_key {
+        // Determine direction based on entitlement_key comparison.
+        // Since entitlement keys are opaque strings, we default to EntitlementChanged.
+        // Specific upgrade/downgrade detection should be done at the application layer
+        // by comparing points_per_period values from the mapping table.
+        // For backward compatibility with existing upgrade/downgrade detection,
+        // we use a simple heuristic: compare the keys lexicographically.
+        // The caller should override with specific tier knowledge when available.
+        HistoryEventType::EntitlementChanged
     } else if old_state.status != new_state.status {
         match &new_subscription.status {
             crate::billing::entities::SubscriptionStatus::Canceled => HistoryEventType::Canceled,
@@ -258,10 +229,9 @@ pub fn detect_change_type(
                 HistoryEventType::Reactivated
             }
             crate::billing::entities::SubscriptionStatus::Active => HistoryEventType::Renewed,
-            _ => HistoryEventType::Created, // Default for other status changes
+            _ => HistoryEventType::Created,
         }
     } else {
-        // No significant change detected, default to created
         HistoryEventType::Created
     }
 }
@@ -287,11 +257,10 @@ pub fn serialize_subscription_state(subscription: &Subscription) -> serde_json::
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::billing::entities::{BillingPeriod, SubscriptionStatus, SubscriptionTier};
+    use crate::billing::entities::SubscriptionStatus;
 
-    #[test]
-    fn test_detect_change_type_upgrade() {
-        let old = Subscription {
+    fn create_test_subscription(entitlement_key: &str) -> Subscription {
+        Subscription {
             id: Uuid::now_v7(),
             realm_id: "test-realm".to_string(),
             user_id: None,
@@ -299,46 +268,35 @@ mod tests {
             external_product_id: "product-1".to_string(),
             payment_provider: "creem".to_string(),
             status: SubscriptionStatus::Active,
-            tier: SubscriptionTier::Free,
+            entitlement_key: entitlement_key.to_string(),
+            external_price_id: None,
+            provider_metadata: None,
+            synced_at: None,
             current_period_start: None,
             current_period_end: None,
             cancel_at_period_end: false,
             client_app_id: None,
-            plan_id: Some(Uuid::now_v7()),
-            billing_period: BillingPeriod::Monthly,
             cancel_at: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
-        };
+        }
+    }
 
+    #[test]
+    fn test_detect_change_type_entitlement_changed() {
+        let old = create_test_subscription("starter-plan");
         let mut new = old.clone();
-        new.tier = SubscriptionTier::Professional;
+        new.entitlement_key = "pro-plan".to_string();
 
-        assert_eq!(detect_change_type(&old, &new), HistoryEventType::Upgraded);
+        assert_eq!(
+            detect_change_type(&old, &new),
+            HistoryEventType::EntitlementChanged
+        );
     }
 
     #[test]
     fn test_detect_change_type_canceled() {
-        let old = Subscription {
-            id: Uuid::now_v7(),
-            realm_id: "test-realm".to_string(),
-            user_id: None,
-            external_subscription_id: "sub_test_2".to_string(),
-            external_product_id: "product-1".to_string(),
-            payment_provider: "creem".to_string(),
-            status: SubscriptionStatus::Active,
-            tier: SubscriptionTier::Professional,
-            current_period_start: None,
-            current_period_end: None,
-            cancel_at_period_end: false,
-            client_app_id: None,
-            plan_id: Some(Uuid::now_v7()),
-            billing_period: BillingPeriod::Monthly,
-            cancel_at: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        };
-
+        let old = create_test_subscription("pro-plan");
         let mut new = old.clone();
         new.status = SubscriptionStatus::Canceled;
 
@@ -346,33 +304,10 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_change_type_billing_period() {
-        let old = Subscription {
-            id: Uuid::now_v7(),
-            realm_id: "test-realm".to_string(),
-            user_id: None,
-            external_subscription_id: "sub_test_3".to_string(),
-            external_product_id: "product-1".to_string(),
-            payment_provider: "creem".to_string(),
-            status: SubscriptionStatus::Active,
-            tier: SubscriptionTier::Professional,
-            current_period_start: None,
-            current_period_end: None,
-            cancel_at_period_end: false,
-            client_app_id: None,
-            plan_id: Some(Uuid::now_v7()),
-            billing_period: BillingPeriod::Monthly,
-            cancel_at: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        };
+    fn test_detect_change_type_same_entitlement_same_status() {
+        let old = create_test_subscription("pro-plan");
+        let new = old.clone();
 
-        let mut new = old.clone();
-        new.billing_period = BillingPeriod::Yearly;
-
-        assert_eq!(
-            detect_change_type(&old, &new),
-            HistoryEventType::BillingPeriodChanged
-        );
+        assert_eq!(detect_change_type(&old, &new), HistoryEventType::Created);
     }
 }

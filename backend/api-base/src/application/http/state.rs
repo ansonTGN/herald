@@ -69,17 +69,9 @@ pub struct AppState {
     /// Audit event repository
     pub audit_event_repository: Arc<PostgresAuditEventRepository>,
 
-    /// Billing service (with policy)
-    pub billing_service: Arc<
-        herald_core::domain::billing::SubscriptionPlanService<
-            PostgresBillingRepository,
-            herald_core::infrastructure::authorization::policies::PermissionBasedBillingPolicy,
-        >,
-    >,
-
-    /// Product service (with policy)
-    pub product_service: Arc<
-        herald_core::domain::billing::ProductService<
+    /// Entitlement mapping service (replaces old SubscriptionPlanService + ProductService)
+    pub entitlement_mapping_service: Arc<
+        herald_core::domain::billing::EntitlementMappingService<
             PostgresBillingRepository,
             herald_core::infrastructure::authorization::policies::PermissionBasedBillingPolicy,
         >,

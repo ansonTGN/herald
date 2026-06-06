@@ -3,37 +3,11 @@ use std::future::Future;
 use uuid::Uuid;
 
 use crate::billing::{
-    ClientAppSubscriptionPlan, PaymentEvent, Product, Subscription, SubscriptionHistoryEvent,
-    SubscriptionHistoryQuery, SubscriptionPlan, SubscriptionPlanPaymentProvider,
+    EntitlementMapping, PaymentEvent, Subscription, SubscriptionHistoryEvent,
+    SubscriptionHistoryQuery,
 };
 use crate::common::entities::app_errors::CoreError;
 
-/// Policy trait for billing authorization checks
-///
-/// NOTE: This trait is currently not implemented and commented out.
-/// It should be enabled in the future when billing authorization is needed.
-/*
-#[async_trait::async_trait]
-#[allow(clippy::too_many_arguments)]
-pub trait BillingPolicy: Send + Sync {
-    // Plan permissions
-    async fn can_list_plans(&self, identity: &Identity, realm_id: &str) -> bool;
-    async fn can_create_plan(&self, identity: &Identity, realm_id: &str) -> bool;
-    async fn can_view_plan(&self, identity: &Identity, realm_id: &str) -> bool;
-    async fn can_update_plan(&self, identity: &Identity, realm_id: &str) -> bool;
-    async fn can_delete_plan(&self, identity: &Identity, realm_id: &str) -> bool;
-
-    // Plan assignment permissions
-    async fn can_assign_plan(&self, identity: &Identity, realm_id: &str) -> bool;
-    async fn can_unassign_plan(&self, identity: &Identity, realm_id: &str) -> bool;
-    async fn can_view_plan_assignments(&self, identity: &Identity, realm_id: &str) -> bool;
-    async fn can_toggle_plan_assignment(&self, identity: &Identity, realm_id: &str) -> bool;
-
-    // Subscription permissions
-    async fn can_view_subscription(&self, identity: &Identity, realm_id: &str) -> bool;
-    async fn can_cancel_subscription(&self, identity: &Identity, realm_id: &str) -> bool;
-}
-*/
 /// Repository for billing operations
 pub trait BillingRepository: Send + Sync {
     /// Create a new subscription
@@ -86,82 +60,18 @@ pub trait BillingRepository: Send + Sync {
         id: Uuid,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
-    // ===== SubscriptionPlan CRUD =====
-    fn create_subscription_plan(
-        &self,
-        plan: SubscriptionPlan,
-    ) -> impl Future<Output = Result<SubscriptionPlan, CoreError>> + Send;
-    fn find_subscription_plan_by_id(
-        &self,
-        plan_id: Uuid,
-    ) -> impl Future<Output = Result<Option<SubscriptionPlan>, CoreError>> + Send;
-    fn find_public_plan_by_id(
-        &self,
-        realm_id: &str,
-        plan_id: Uuid,
-    ) -> impl Future<Output = Result<Option<SubscriptionPlan>, CoreError>> + Send;
-    fn list_subscription_plans_by_realm(
-        &self,
-        realm_id: &str,
-    ) -> impl Future<Output = Result<Vec<SubscriptionPlan>, CoreError>> + Send;
-    fn list_public_plans_by_realm(
-        &self,
-        realm_id: &str,
-    ) -> impl Future<Output = Result<Vec<SubscriptionPlan>, CoreError>> + Send;
-    fn update_subscription_plan(
-        &self,
-        plan: SubscriptionPlan,
-    ) -> impl Future<Output = Result<SubscriptionPlan, CoreError>> + Send;
-    fn delete_subscription_plan(
-        &self,
-        plan_id: Uuid,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
-
-    // ===== SubscriptionPlan Assignment =====
-    fn assign_subscription_plan_to_client_app(
-        &self,
-        client_app_id: Uuid,
-        plan_id: Uuid,
-    ) -> impl Future<Output = Result<ClientAppSubscriptionPlan, CoreError>> + Send;
-    fn remove_subscription_plan_from_client_app(
-        &self,
-        assignment_id: Uuid,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
-    fn list_subscription_plans_for_client_app(
-        &self,
-        client_app_id: Uuid,
-    ) -> impl Future<Output = Result<Vec<ClientAppSubscriptionPlan>, CoreError>> + Send;
-    fn find_subscription_plan_assignment(
-        &self,
-        client_app_id: Uuid,
-        plan_id: Uuid,
-    ) -> impl Future<Output = Result<Option<ClientAppSubscriptionPlan>, CoreError>> + Send;
-    fn toggle_subscription_plan_assignment(
-        &self,
-        assignment_id: Uuid,
-        enabled: bool,
-    ) -> impl Future<Output = Result<ClientAppSubscriptionPlan, CoreError>> + Send;
-
-    /// Batch load plan assignments for multiple client apps
-    fn list_subscription_plan_assignments_batch(
-        &self,
-        client_app_ids: &[Uuid],
-    ) -> impl Future<Output = Result<Vec<ClientAppSubscriptionPlan>, CoreError>> + Send;
-
-    // ===== Updated Subscription =====
+    /// Find subscription by client app ID
     fn find_subscription_by_client_app_id(
         &self,
         client_app_id: Uuid,
     ) -> impl Future<Output = Result<Option<Subscription>, CoreError>> + Send;
+
+    /// Cancel subscription
     fn cancel_subscription(
         &self,
         subscription_id: Uuid,
         cancel_at_period_end: bool,
     ) -> impl Future<Output = Result<Subscription, CoreError>> + Send;
-    fn count_active_subscriptions_for_subscription_plan(
-        &self,
-        plan_id: Uuid,
-    ) -> impl Future<Output = Result<i64, CoreError>> + Send;
 
     // ===== Subscription History =====
     /// Save a subscription history event
@@ -185,96 +95,54 @@ pub trait BillingRepository: Send + Sync {
         query: SubscriptionHistoryQuery,
     ) -> impl Future<Output = Result<(Vec<SubscriptionHistoryEvent>, u64), CoreError>> + Send;
 
-    // Product CRUD
-    fn create_product(
+    // ===== Entitlement Mapping CRUD =====
+
+    /// Create an entitlement mapping
+    fn create_entitlement_mapping(
         &self,
-        product: Product,
-    ) -> impl Future<Output = Result<Product, CoreError>> + Send;
-    fn find_product_by_id(
+        mapping: EntitlementMapping,
+    ) -> impl Future<Output = Result<EntitlementMapping, CoreError>> + Send;
+
+    /// Find entitlement mapping by ID
+    fn find_entitlement_mapping_by_id(
         &self,
-        realm_id: &str,
-        product_id: Uuid,
-    ) -> impl Future<Output = Result<Option<Product>, CoreError>> + Send;
-    fn product_code_exists(
-        &self,
-        realm_id: &str,
-        code: &str,
-    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
-    fn list_products(
-        &self,
-        realm_id: &str,
-        enabled_only: Option<bool>,
-    ) -> impl Future<Output = Result<Vec<Product>, CoreError>> + Send;
-    fn update_product(
+        mapping_id: Uuid,
+    ) -> impl Future<Output = Result<Option<EntitlementMapping>, CoreError>> + Send;
+
+    /// List entitlement mappings for a realm with optional filters
+    fn list_entitlement_mappings(
         &self,
         realm_id: &str,
-        product_id: Uuid,
-        title: Option<String>,
-        description: Option<String>,
+        payment_provider: Option<&str>,
         enabled: Option<bool>,
-    ) -> impl Future<Output = Result<Product, CoreError>> + Send;
-    fn delete_product(
+        page: Option<u64>,
+        page_size: Option<u64>,
+    ) -> impl Future<Output = Result<(Vec<EntitlementMapping>, u64), CoreError>> + Send;
+
+    /// Update an entitlement mapping
+    fn update_entitlement_mapping(
+        &self,
+        mapping: EntitlementMapping,
+    ) -> impl Future<Output = Result<EntitlementMapping, CoreError>> + Send;
+
+    /// Upsert an entitlement mapping by (realm_id, payment_provider, external_product_id)
+    fn upsert_entitlement_mapping(
+        &self,
+        mapping: EntitlementMapping,
+    ) -> impl Future<Output = Result<EntitlementMapping, CoreError>> + Send;
+
+    /// Find entitlement mapping by provider and external product ID
+    fn find_entitlement_mapping_by_provider_product(
         &self,
         realm_id: &str,
-        product_id: Uuid,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
-    fn count_subscription_plans_by_product(
-        &self,
-        product_id: Uuid,
-    ) -> impl Future<Output = Result<i64, CoreError>> + Send;
-    fn find_subscription_plans_by_product(
-        &self,
-        realm_id: &str,
-        product_id: Uuid,
-    ) -> impl Future<Output = Result<Vec<SubscriptionPlan>, CoreError>> + Send;
-
-    // ===== SubscriptionPlan Payment Provider Mapping =====
-    /// Create a new plan payment provider mapping
-    fn create_subscription_plan_payment_provider(
-        &self,
-        mapping: SubscriptionPlanPaymentProvider,
-    ) -> impl Future<Output = Result<SubscriptionPlanPaymentProvider, CoreError>> + Send;
-
-    /// Find plan payment provider mapping by ID
-    fn find_subscription_plan_payment_provider_by_id(
-        &self,
-        mapping_id: Uuid,
-    ) -> impl Future<Output = Result<Option<SubscriptionPlanPaymentProvider>, CoreError>> + Send;
-
-    /// Find plan payment provider mapping by plan and provider
-    fn find_subscription_plan_payment_provider_by_plan_and_provider(
-        &self,
-        plan_id: Uuid,
         payment_provider: &str,
-    ) -> impl Future<Output = Result<Option<SubscriptionPlanPaymentProvider>, CoreError>> + Send;
+        external_product_id: &str,
+    ) -> impl Future<Output = Result<Option<EntitlementMapping>, CoreError>> + Send;
 
-    /// List all payment provider mappings for a plan
-    fn list_subscription_plan_payment_providers(
+    /// Find entitlement mapping by entitlement key
+    fn find_entitlement_mapping_by_key(
         &self,
-        plan_id: Uuid,
-    ) -> impl Future<Output = Result<Vec<SubscriptionPlanPaymentProvider>, CoreError>> + Send;
-
-    /// Update plan payment provider mapping
-    fn update_subscription_plan_payment_provider(
-        &self,
-        mapping: SubscriptionPlanPaymentProvider,
-    ) -> impl Future<Output = Result<SubscriptionPlanPaymentProvider, CoreError>> + Send;
-
-    /// Delete plan payment provider mapping
-    fn delete_subscription_plan_payment_provider(
-        &self,
-        mapping_id: Uuid,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
-
-    /// Delete all payment provider mappings for a plan (cascade delete)
-    fn delete_subscription_plan_payment_providers_by_plan(
-        &self,
-        plan_id: Uuid,
-    ) -> impl Future<Output = Result<(), CoreError>> + Send;
-
-    /// Batch load payment provider mappings for multiple plans
-    fn list_subscription_plan_payment_providers_batch(
-        &self,
-        plan_ids: &[Uuid],
-    ) -> impl Future<Output = Result<Vec<SubscriptionPlanPaymentProvider>, CoreError>> + Send;
+        realm_id: &str,
+        entitlement_key: &str,
+    ) -> impl Future<Output = Result<Option<EntitlementMapping>, CoreError>> + Send;
 }

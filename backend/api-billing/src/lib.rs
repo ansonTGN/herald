@@ -5,6 +5,7 @@ pub(crate) mod webhook_common;
 pub(crate) mod webhook_subscription_helpers;
 mod webhooks;
 
+pub mod entitlement_mapping_handlers;
 pub mod feature_availability;
 pub mod handlers;
 pub mod handlers_history;
@@ -33,38 +34,21 @@ pub mod shopify_test_handlers;
 
 pub mod shopify_test_types;
 
-#[cfg(test)]
-mod handlers_test;
-
 /// OpenAPI specification for billing module
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(
-        crate::handlers::list_plans,
-        crate::handlers::create_plan,
-        crate::handlers::get_plan,
-        crate::handlers::update_plan,
-        crate::handlers::delete_plan,
-        crate::handlers::list_products,
-        crate::handlers::create_product,
-        crate::handlers::get_product,
-        crate::handlers::update_product,
-        crate::handlers::delete_product,
-        crate::handlers::get_product_plans,
-        crate::handlers::assign_plan_to_client_app,
-        crate::handlers::list_plan_assignments,
-        crate::handlers::list_plan_assignments_batch,
-        crate::handlers::toggle_plan_assignment,
-        crate::handlers::remove_plan_assignment,
+        // Entitlement Mapping handlers
+        crate::entitlement_mapping_handlers::list_entitlement_mappings,
+        crate::entitlement_mapping_handlers::get_entitlement_mapping,
+        crate::entitlement_mapping_handlers::update_entitlement_mapping,
+        crate::entitlement_mapping_handlers::sync_provider_products,
+        // Subscription handlers
+        crate::handlers::list_subscriptions,
+        crate::handlers::get_subscription,
         crate::handlers::get_subscription_for_client_app,
         crate::handlers::cancel_subscription_for_client_app,
         crate::handlers::create_checkout_session,
-        crate::handlers::list_plan_payment_providers,
-        crate::handlers::add_payment_provider_to_plan,
-        crate::handlers::update_plan_payment_provider,
-        crate::handlers::toggle_plan_payment_provider,
-        crate::handlers::remove_payment_provider_from_plan,
-        crate::handlers::webhook_handler,
         crate::feature_availability::get_feature_availability,
         crate::shopify_claim_handlers::claim_shopify_subscriptions,
         crate::shopify_config_handlers::list_payment_providers,
@@ -114,27 +98,26 @@ mod handlers_test;
         crate::invoice_handlers::download_my_invoice_pdf,
     ),
     components(schemas(
-        crate::types::CreateSubscriptionPlanRequest,
-        crate::types::UpdateSubscriptionPlanRequest,
-        crate::types::SubscriptionPlanResponse,
-        crate::types::ListSubscriptionPlansResponse,
-        crate::types::SubscriptionPlanAssignmentRequest,
-        crate::types::SubscriptionPlanAssignmentResponse,
-        crate::types::ListSubscriptionPlanAssignmentsResponse,
-        crate::types::ToggleSubscriptionPlanAssignmentRequest,
+        // Entitlement Mapping types
+        crate::types::EntitlementMappingResponse,
+        crate::types::EntitlementMappingListResponse,
+        crate::types::EntitlementMappingQuery,
+        crate::types::UpdateEntitlementMappingRequest,
+        crate::types::SyncProviderRequest,
+        crate::types::SyncProviderResponse,
+        crate::types::PartialSyncErrorDto,
+        // Subscription types
         crate::types::SubscriptionDetailResponse,
+        crate::types::SubscriptionListItemResponse,
+        crate::types::SubscriptionListResponse,
+        crate::types::SubscriptionListQuery,
         crate::types::CancelSubscriptionRequest,
         crate::types::CancelSubscriptionResponse,
         crate::types::CreateCheckoutSessionRequest,
         crate::types::CreateCheckoutResponse,
+        // Shopify types
         crate::shopify_claim_types::ShopifyClaimRequest,
         crate::shopify_claim_types::ShopifyClaimResponse,
-        crate::types::CreateProductRequest,
-        crate::types::UpdateProductRequest,
-        crate::types::ProductResponse,
-        crate::types::ListProductsResponse,
-        crate::types::ProductDetailResponse,
-        crate::types::SubscriptionPlanSummaryForProduct,
         crate::shopify_config_types::ShopifyConfigRequest,
         crate::shopify_config_types::ShopifyConfigUpdateRequest,
         crate::shopify_config_types::ShopifyConfigResponse,
@@ -152,14 +135,12 @@ mod handlers_test;
         crate::wechat_config_types::WechatOrderCreateRequest,
         crate::wechat_config_types::WechatOrderCreateResponse,
         crate::wechat_config_types::WechatOrderStatusResponse,
-        crate::types::CreateSubscriptionPlanPaymentProviderRequest,
+        // Feature availability
         crate::feature_availability::FeatureAvailabilityResponse,
         crate::feature_availability::AdminFeatureAvailability,
         crate::feature_availability::UserFeatureAvailability,
         crate::feature_availability::FeatureAvailabilityFacts,
-        crate::types::SubscriptionPlanPaymentProviderResponse,
-        crate::types::UpdateSubscriptionPlanPaymentProviderRequest,
-        crate::types::ToggleSubscriptionPlanPaymentProviderRequest,
+        // Points package types
         crate::points_package_handlers::CreatePointsPackageRequest,
         crate::points_package_handlers::PointsPackageResponse,
         crate::points_package_handlers::ListPointsPackagesResponse,
@@ -198,7 +179,6 @@ mod handlers_test;
 pub struct ApiDoc;
 
 // Re-export handler functions for external use
-pub use handlers::subscription_plan_to_response;
 pub use routes::{billing_public_routes, billing_routes};
 
 pub use routes::billing_test_routes;

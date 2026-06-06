@@ -7,14 +7,14 @@ use axum::{
     routing::{get, patch, post},
 };
 
+use crate::entitlement_mapping_handlers::{
+    get_entitlement_mapping, list_entitlement_mappings, sync_provider_products,
+    update_entitlement_mapping,
+};
 use crate::feature_availability::get_feature_availability;
 use crate::handlers::{
-    add_payment_provider_to_plan, assign_plan_to_client_app, cancel_subscription_for_client_app,
-    create_checkout_session, create_plan, create_product, delete_plan, delete_product, get_plan,
-    get_product, get_product_plans, get_subscription_for_client_app, list_plan_assignments,
-    list_plan_assignments_batch, list_plan_payment_providers, list_plans, list_products,
-    remove_payment_provider_from_plan, remove_plan_assignment, toggle_plan_assignment,
-    toggle_plan_payment_provider, update_plan, update_plan_payment_provider, update_product,
+    cancel_subscription_for_client_app, create_checkout_session, get_subscription,
+    get_subscription_for_client_app, list_subscriptions,
 };
 use crate::handlers_history::{get_subscription_history, list_subscription_history};
 use crate::invoice_handlers::{
@@ -98,61 +98,31 @@ pub fn billing_public_routes() -> Router<AppState> {
 
 pub fn billing_routes() -> Router<AppState> {
     Router::new()
-        // ===== Plan Management =====
+        // ===== Feature Availability =====
         .route(
             "/api/realms/{realmId}/feature-availability",
             get(get_feature_availability),
         )
+        // ===== Entitlement Mapping =====
         .route(
-            "/api/bill/{realmId}/plans",
-            get(list_plans).post(create_plan),
+            "/api/bill/{realmId}/entitlement-mappings",
+            get(list_entitlement_mappings),
         )
         .route(
-            "/api/bill/{realmId}/plans/{planId}",
-            get(get_plan).patch(update_plan).delete(delete_plan),
-        )
-        // ===== Plan Payment Provider Mapping =====
-        .route(
-            "/api/bill/{realmId}/plans/{planId}/providers",
-            get(list_plan_payment_providers).post(add_payment_provider_to_plan),
+            "/api/bill/{realmId}/entitlement-mappings/sync",
+            post(sync_provider_products),
         )
         .route(
-            "/api/bill/{realmId}/plans/{planId}/providers/{mappingId}",
-            patch(update_plan_payment_provider).delete(remove_payment_provider_from_plan),
+            "/api/bill/{realmId}/entitlement-mappings/{mappingId}",
+            get(get_entitlement_mapping).patch(update_entitlement_mapping),
         )
+        // ===== Subscription List/Detail =====
+        .route("/api/bill/{realmId}/subscriptions", get(list_subscriptions))
         .route(
-            "/api/bill/{realmId}/plans/{planId}/providers/{mappingId}/toggle",
-            patch(toggle_plan_payment_provider),
+            "/api/bill/{realmId}/subscriptions/{subscriptionId}",
+            get(get_subscription),
         )
-        // Product Management
-        .route(
-            "/api/bill/{realmId}/products",
-            get(list_products).post(create_product),
-        )
-        .route(
-            "/api/bill/{realmId}/products/{productId}",
-            get(get_product)
-                .patch(update_product)
-                .delete(delete_product),
-        )
-        .route(
-            "/api/bill/{realmId}/products/{productId}/plans",
-            get(get_product_plans),
-        )
-        // ===== Plan Assignment =====
-        .route(
-            "/api/bill/{realmId}/client/plans/batch",
-            get(list_plan_assignments_batch),
-        )
-        .route(
-            "/api/bill/{realmId}/client/{clientAppId}/plans",
-            get(list_plan_assignments).post(assign_plan_to_client_app),
-        )
-        .route(
-            "/api/bill/{realmId}/client/{clientAppId}/plans/{assignmentId}",
-            patch(toggle_plan_assignment).delete(remove_plan_assignment),
-        )
-        // ===== Subscription (Simplified) =====
+        // ===== Subscription (Client App) =====
         .route(
             "/api/bill/{realmId}/client/{clientAppId}/subscription",
             get(get_subscription_for_client_app),

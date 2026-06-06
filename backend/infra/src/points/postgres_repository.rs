@@ -14,8 +14,8 @@ use herald_domain::points::{
     dtos::RevokePointsOutput,
     entities::{
         CreditLedgerStatus, CreditSourceType, CreditType, Paginated, PointsConsumptionAllocation,
-        PointsCreditLedger, PointsPlanConfig, PointsRevocationRecord, PointsTransaction,
-        PointsWallet, RevocationType, TransactionType, WalletStatus,
+        PointsCreditLedger, PointsRevocationRecord, PointsTransaction, PointsWallet,
+        RevocationType, TransactionType, WalletStatus,
     },
     errors::PointsErrorExt,
     expiration_service::ExpirationSummary,
@@ -32,8 +32,8 @@ use crate::points::{
 };
 use herald_entity::{
     account, points_consumption_allocation, points_credit_ledger, points_grant_record,
-    points_grant_schedule, points_plan_config, points_revocation_record, points_transaction,
-    points_wallet, realm_default_config, user_points_config,
+    points_grant_schedule, points_revocation_record, points_transaction, points_wallet,
+    realm_default_config, user_points_config,
 };
 
 /// Custom struct for SQLx query results from points_wallets table
@@ -107,7 +107,6 @@ pub struct PostgresPointsRepository {
 /// Unique constraint names in the database
 mod constraints {
     pub const UK_POINTS_WALLETS_USER_ID: &str = "uk_points_wallets_user_id";
-    pub const UK_POINTS_PLAN_CONFIGS_PLAN_ID: &str = "uk_points_plan_configs_plan_id";
 }
 
 impl PostgresPointsRepository {
@@ -275,25 +274,6 @@ impl PostgresPointsRepository {
         }
     }
 
-    /// Convert database model to domain PointsPlanConfig
-    fn model_to_points_plan_config(
-        model: points_plan_config::Model,
-    ) -> Result<PointsPlanConfig, CoreError> {
-        Ok(PointsPlanConfig {
-            id: model.id,
-            realm_id: model.realm_id,
-            plan_id: model.plan_id,
-            grant_period_type: model.grant_period_type,
-            points_per_period: model.points_per_period,
-            validity_days: model.validity_days,
-            grant_on_subscribe: model.grant_on_subscribe,
-            max_periods: model.max_periods,
-            active: model.active,
-            created_at: chrono::DateTime::from(model.created_at),
-            updated_at: chrono::DateTime::from(model.updated_at),
-        })
-    }
-
     fn model_to_user_points_config(
         model: user_points_config::Model,
     ) -> herald_domain::points::user_config::UserPointsConfig {
@@ -338,7 +318,7 @@ impl PostgresPointsRepository {
             user_id: model.user_id,
             realm_id: model.realm_id,
             subscription_id: model.subscription_id,
-            plan_config_id: model.plan_config_id,
+            entitlement_key: Some(model.entitlement_key),
             grant_period_type,
             base_time: chrono::DateTime::from(model.base_time),
             next_grant_time: chrono::DateTime::from(model.next_grant_time),
@@ -350,29 +330,6 @@ impl PostgresPointsRepository {
             created_at: chrono::DateTime::from(model.created_at),
             updated_at: chrono::DateTime::from(model.updated_at),
         })
-    }
-
-    /// Convert domain PointsPlanConfig to database active model
-    fn points_plan_config_to_active_model(
-        config: PointsPlanConfig,
-    ) -> points_plan_config::ActiveModel {
-        points_plan_config::ActiveModel {
-            id: Set(config.id),
-            realm_id: Set(config.realm_id.clone()),
-            plan_id: Set(config.plan_id),
-            grant_period_type: Set(config.grant_period_type),
-            points_per_period: Set(config.points_per_period),
-            validity_days: Set(config.validity_days),
-            grant_on_subscribe: Set(config.grant_on_subscribe),
-            max_periods: Set(config.max_periods),
-            active: Set(config.active),
-            created_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
-                config.created_at,
-            )),
-            updated_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
-                config.updated_at,
-            )),
-        }
     }
 
     /// Apply transaction filters to a query (shared by find_transactions and count_transactions)
@@ -1497,105 +1454,43 @@ impl PointsRepository for PostgresPointsRepository {
         result.map(Self::model_to_points_transaction).transpose()
     }
 
-    async fn find_plan_config(
+    async fn find_points_policy_by_entitlement_key(
         &self,
         realm_id: &str,
-        plan_id: Uuid,
-    ) -> Result<Option<PointsPlanConfig>, CoreError> {
-        let result = points_plan_config::Entity::find()
-            .filter(points_plan_config::Column::RealmId.eq(realm_id))
-            .filter(points_plan_config::Column::PlanId.eq(plan_id))
-            .filter(points_plan_config::Column::Active.eq(true))
+        entitlement_key: &str,
+    ) -> Result<Option<herald_domain::billing::entities::EntitlementMapping>, CoreError> {
+        use herald_entity::provider_entitlement_mapping;
+
+        let result = provider_entitlement_mapping::Entity::find()
+            .filter(provider_entitlement_mapping::Column::RealmId.eq(realm_id))
+            .filter(provider_entitlement_mapping::Column::EntitlementKey.eq(entitlement_key))
+            .filter(provider_entitlement_mapping::Column::Enabled.eq(true))
             .one(&*self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        result.map(Self::model_to_points_plan_config).transpose()
-    }
-
-    async fn find_plan_config_by_id(
-        &self,
-        id: Uuid,
-    ) -> Result<Option<PointsPlanConfig>, CoreError> {
-        let result = points_plan_config::Entity::find_by_id(id)
-            .one(&*self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        result.map(Self::model_to_points_plan_config).transpose()
-    }
-
-    async fn list_plan_configs(&self, realm_id: &str) -> Result<Vec<PointsPlanConfig>, CoreError> {
-        let results = points_plan_config::Entity::find()
-            .filter(points_plan_config::Column::RealmId.eq(realm_id))
-            .order_by_asc(points_plan_config::Column::PlanId)
-            .all(&*self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        results
-            .into_iter()
-            .map(Self::model_to_points_plan_config)
-            .collect()
-    }
-
-    async fn create_plan_config(
-        &self,
-        config: PointsPlanConfig,
-    ) -> Result<PointsPlanConfig, CoreError> {
-        let active_model = Self::points_plan_config_to_active_model(config);
-
-        let result = active_model.insert(&*self.db).await.map_err(|e| {
-            if e.to_string()
-                .contains(constraints::UK_POINTS_PLAN_CONFIGS_PLAN_ID)
-            {
-                CoreError::BadRequest("Points plan config already exists for this plan".to_string())
-            } else {
-                CoreError::DatabaseError(e.to_string())
-            }
-        })?;
-
-        Self::model_to_points_plan_config(result)
-    }
-
-    async fn update_plan_config(
-        &self,
-        config: PointsPlanConfig,
-    ) -> Result<PointsPlanConfig, CoreError> {
-        let existing = points_plan_config::Entity::find_by_id(config.id)
-            .one(&*self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| CoreError::plan_config_not_found(&config.id.to_string()))?;
-
-        let mut active_model: points_plan_config::ActiveModel = existing.into_active_model();
-        active_model.realm_id = Set(config.realm_id);
-        active_model.plan_id = Set(config.plan_id);
-        active_model.grant_period_type = Set(config.grant_period_type);
-        active_model.points_per_period = Set(config.points_per_period);
-        active_model.validity_days = Set(config.validity_days);
-        active_model.grant_on_subscribe = Set(config.grant_on_subscribe);
-        active_model.max_periods = Set(config.max_periods);
-        active_model.active = Set(config.active);
-        active_model.updated_at = Set(sea_orm::prelude::DateTimeWithTimeZone::from(
-            chrono::Utc::now(),
-        ));
-
-        let updated = active_model
-            .update(&*self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Self::model_to_points_plan_config(updated)
-    }
-
-    async fn delete_plan_config(&self, id: Uuid) -> Result<(), CoreError> {
-        points_plan_config::Entity::delete_by_id(id)
-            .exec(&*self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Ok(())
+        Ok(result.map(
+            |model| herald_domain::billing::entities::EntitlementMapping {
+                id: model.id,
+                realm_id: model.realm_id,
+                payment_provider: model.payment_provider,
+                external_product_id: model.external_product_id,
+                external_price_id: model.external_price_id,
+                entitlement_key: model.entitlement_key,
+                billing_type: model.billing_type.and_then(|s| s.parse().ok()),
+                billing_period: model.billing_period,
+                points_per_period: model.points_per_period.map(|v| v as i64),
+                grant_period_type: model.grant_period_type,
+                validity_days: model.validity_days.map(|v| v as i64),
+                grant_on_subscribe: model.grant_on_subscribe,
+                max_periods: model.max_periods.map(|v| v as i64),
+                enabled: model.enabled,
+                provider_product_info: model.provider_product_info,
+                synced_at: model.synced_at.map(chrono::DateTime::from),
+                created_at: chrono::DateTime::from(model.created_at),
+                updated_at: chrono::DateTime::from(model.updated_at),
+            },
+        ))
     }
 
     async fn list_wallets(
@@ -2856,7 +2751,7 @@ impl PointsRepository for PostgresPointsRepository {
                 user_id: Set(schedule.user_id),
                 realm_id: Set(schedule.realm_id.clone()),
                 subscription_id: Set(schedule.subscription_id),
-                plan_config_id: Set(schedule.plan_config_id),
+                entitlement_key: Set(schedule.entitlement_key.unwrap_or_default()),
                 grant_period_type: Set(schedule.grant_period_type.to_string()),
                 base_time: Set(schedule.base_time.into()),
                 next_grant_time: Set(schedule.next_grant_time.into()),
@@ -3880,7 +3775,7 @@ impl PointsRepository for PostgresPointsRepository {
         &self,
         realm_id: &str,
         user_id: Uuid,
-        plan_id: Uuid,
+        entitlement_key: String,
         points_amount: i64,
         source_type: CreditSourceType,
         period_end: chrono::DateTime<chrono::Utc>,
@@ -3972,7 +3867,7 @@ impl PointsRepository for PostgresPointsRepository {
                 realm_id: realm_id.clone(),
                 credit_type: CreditType::SubscriptionCredit,
                 source_type,
-                source_id: format!("{}:{}", plan_id, idempotency_key),
+                source_id: format!("{}:{}", entitlement_key, idempotency_key),
                 granted_amount: points_amount,
                 used_amount: 0,
                 revoked_amount: 0,

@@ -60,15 +60,8 @@ pub enum CoreError {
     },
     #[error("Serialization error: {0}")]
     SerializationError(String),
-    #[error("Product not found for realm: {realm_id}, product_id: {product_id}")]
-    ProductNotFound {
-        realm_id: String,
-        product_id: String,
-    },
-    #[error("Product code '{code}' already exists in realm: {realm_id}")]
-    ProductCodeExists { realm_id: String, code: String },
-    #[error("Cannot delete product with existing plans: {product_id}")]
-    ProductHasSubscriptionPlans { product_id: String },
+    #[error("Entitlement mapping not found")]
+    EntitlementMappingNotFound,
     #[error("Points package not found: {0}")]
     PointsPackageNotFound(String),
     #[error("Payment provider '{0}' already configured for this package")]
@@ -242,26 +235,9 @@ impl IntoResponse for CoreError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Serialization error: {}", msg),
             ),
-            CoreError::ProductNotFound {
-                realm_id,
-                product_id,
-            } => (
+            CoreError::EntitlementMappingNotFound => (
                 StatusCode::NOT_FOUND,
-                format!(
-                    "Product not found for realm: {}, product_id: {}",
-                    realm_id, product_id
-                ),
-            ),
-            CoreError::ProductCodeExists { realm_id, code } => (
-                StatusCode::CONFLICT,
-                format!(
-                    "Product code '{}' already exists in realm: {}",
-                    code, realm_id
-                ),
-            ),
-            CoreError::ProductHasSubscriptionPlans { product_id } => (
-                StatusCode::CONFLICT,
-                format!("Cannot delete product with existing plans: {}", product_id),
+                "Entitlement mapping not found".to_string(),
             ),
             CoreError::PointsPackageNotFound(msg) => (
                 StatusCode::NOT_FOUND,

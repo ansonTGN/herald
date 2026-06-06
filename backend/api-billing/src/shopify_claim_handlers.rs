@@ -145,20 +145,21 @@ pub async fn claim_shopify_subscriptions(
             continue;
         }
 
-        let plan_config = state
+        // Look up entitlement mapping via plan_id as entitlement_key
+        let entitlement_mapping = state
             .points_repository
-            .find_plan_config(&realm_id, plan_id)
+            .find_points_policy_by_entitlement_key(&realm_id, &plan_id.to_string())
             .await?;
 
-        let Some(plan_config) = plan_config else {
+        let Some(entitlement_mapping) = entitlement_mapping else {
             skipped_subscription_ids.push(subscription_id);
             continue;
         };
 
-        if !plan_config.grant_on_subscribe {
+        if !entitlement_mapping.grant_on_subscribe {
             skipped_subscription_ids.push(subscription_id);
             continue;
-        }
+        };
 
         let claim_event_id = format!(
             "shopify_claim_grant:{}:{}",
@@ -171,7 +172,7 @@ pub async fn claim_shopify_subscriptions(
             .handle_subscription_paid(
                 user_id,
                 &realm_id,
-                plan_id,
+                &entitlement_mapping.entitlement_key,
                 false,
                 period_end,
                 claim_event_id,

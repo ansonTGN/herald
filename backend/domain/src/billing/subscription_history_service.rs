@@ -228,7 +228,7 @@ impl SubscriptionHistoryService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::billing::entities::{BillingPeriod, SubscriptionStatus, SubscriptionTier};
+    use crate::billing::entities::SubscriptionStatus;
 
     fn create_test_subscription() -> Subscription {
         Subscription {
@@ -239,13 +239,14 @@ mod tests {
             external_product_id: "product-1".to_string(),
             payment_provider: "creem".to_string(),
             status: SubscriptionStatus::Active,
-            tier: SubscriptionTier::Professional,
+            entitlement_key: "pro-plan".to_string(),
+            external_price_id: None,
+            provider_metadata: None,
+            synced_at: None,
             current_period_start: Some(Utc::now()),
             current_period_end: Some(Utc::now() + chrono::Duration::days(30)),
             cancel_at_period_end: false,
             client_app_id: Some(Uuid::now_v7()),
-            plan_id: Some(Uuid::now_v7()),
-            billing_period: BillingPeriod::Monthly,
             cancel_at: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),

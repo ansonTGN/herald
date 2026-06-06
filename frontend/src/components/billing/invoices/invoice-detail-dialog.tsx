@@ -122,18 +122,18 @@ function InvoiceContent({ invoice }: { invoice: InvoiceDetailResponse }) {
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <ContactCard
           title={m['billing.invoice_seller']()}
-          name={invoice.sellerName}
+          name={invoice.sellerName ?? ''}
           email={invoice.sellerEmail}
-          address={invoice.sellerAddress}
+          address={invoice.sellerAddress ?? ''}
           phone={invoice.sellerPhone}
           taxId={invoice.sellerTaxId}
           dataTestId="invoice-seller-info"
         />
         <ContactCard
           title={m['billing.invoice_buyer_label']()}
-          name={invoice.billingName}
+          name={invoice.billingName ?? ''}
           email={invoice.billingEmail}
-          address={invoice.billingAddress}
+          address={invoice.billingAddress ?? ''}
           phone={invoice.billingPhone}
           taxId={invoice.billingTaxId}
           dataTestId="invoice-buyer-info"
@@ -260,7 +260,7 @@ function AdditionalInfo({ invoice }: { invoice: InvoiceDetailResponse }) {
         </InfoField>
       )}
       <InfoField label={m['billing.invoice_due_date_label']()}>
-        {format(new Date(invoice.dueDate), 'PPP')}
+        {format(new Date(invoice.dueDate ?? ''), 'PPP')}
       </InfoField>
       {invoice.paymentTerms && (
         <InfoField label={m['billing.invoice_payment_terms']()}>{invoice.paymentTerms}</InfoField>

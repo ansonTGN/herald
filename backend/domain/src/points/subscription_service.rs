@@ -20,7 +20,7 @@ use crate::points::{
 };
 
 const IDEMPOTENCY_KEY_SUBSCRIPTION_PAID: &str = "sub_paid";
-const ERROR_PLAN_NO_GRANT: &str = "Plan does not grant points on subscribe";
+const ERROR_ENTITLEMENT_NO_GRANT: &str = "Entitlement does not grant points on subscribe";
 
 /// Cancellation mode for subscriptions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,55 +65,38 @@ where
 
     /// Handle subscription upgrade
     ///
-    /// Grants the difference in points between old and new plans.
+    /// Grants the difference in points between old and new entitlements.
     /// The difference points expire at the end of the current billing period.
-    ///
-    /// # Arguments
-    /// * `user_id` - The user ID
-    /// * `realm_id` - The realm ID
-    /// * `old_plan_id` - The old plan ID
-    /// * `new_plan_id` - The new plan ID
-    /// * `period_end` - The end of the current billing period
-    ///
-    /// # Returns
-    /// The created credit ledger
     pub async fn handle_subscription_upgrade(
         &self,
         user_id: Uuid,
         realm_id: &str,
-        old_plan_id: Uuid,
-        new_plan_id: Uuid,
+        old_entitlement_key: &str,
+        new_entitlement_key: &str,
         period_end: DateTime<Utc>,
     ) -> Result<PointsCreditLedger, CoreError> {
-        // Query plan configs
-        let old_plan = self
+        let old_mapping = self
             .repo
-            .find_plan_config(realm_id, old_plan_id)
+            .find_points_policy_by_entitlement_key(realm_id, old_entitlement_key)
             .await?
-            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-                realm_id: realm_id.to_string(),
-                plan_id: old_plan_id.to_string(),
-            })?;
+            .ok_or(CoreError::EntitlementMappingNotFound)?;
 
-        let new_plan = self
+        let new_mapping = self
             .repo
-            .find_plan_config(realm_id, new_plan_id)
+            .find_points_policy_by_entitlement_key(realm_id, new_entitlement_key)
             .await?
-            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-                realm_id: realm_id.to_string(),
-                plan_id: new_plan_id.to_string(),
-            })?;
+            .ok_or(CoreError::EntitlementMappingNotFound)?;
 
-        // Calculate difference using safe arithmetic
-        // Using points_per_period as the new field name
-        let difference = new_plan
-            .points_per_period
-            .safe_sub(old_plan.points_per_period)
-            .map_err(|e| CoreError::BadRequest(format!("Invalid plan points: {}", e)))?;
+        let old_points = old_mapping.points_per_period.unwrap_or(0);
+        let new_points = new_mapping.points_per_period.unwrap_or(0);
+
+        let difference = new_points
+            .safe_sub(old_points)
+            .map_err(|e| CoreError::BadRequest(format!("Invalid entitlement points: {}", e)))?;
 
         if difference <= 0 {
             return Err(CoreError::BadRequest(
-                "New plan must have more points than old plan for upgrade".to_string(),
+                "New entitlement must have more points than old for upgrade".to_string(),
             ));
         }
 
@@ -126,16 +109,16 @@ where
                 CreditSourceType::SubscriptionUpgrade,
                 difference,
                 Some(period_end),
-                Some(new_plan_id.to_string()),
-                None, // description
+                Some(new_entitlement_key.to_string()),
+                None,
             )
             .await?;
 
         tracing::info!(
             realm_id = %realm_id,
             user_id = %user_id,
-            old_plan_id = %old_plan_id,
-            new_plan_id = %new_plan_id,
+            old_entitlement_key = %old_entitlement_key,
+            new_entitlement_key = %new_entitlement_key,
             difference,
             period_end = %period_end,
             "Subscription upgrade: granted difference points"
@@ -147,46 +130,33 @@ where
     /// Handle subscription downgrade
     ///
     /// Logs the downgrade event but does NOT revoke any points.
-    /// Users keep their existing points; future renewals will use the new plan.
-    ///
-    /// # Arguments
-    /// * `user_id` - The user ID
-    /// * `realm_id` - The realm ID
-    /// * `old_plan_id` - The old plan ID
-    /// * `new_plan_id` - The new plan ID
+    /// Users keep their existing points; future renewals will use the new entitlement.
     pub async fn handle_subscription_downgrade(
         &self,
         user_id: Uuid,
         realm_id: &str,
-        old_plan_id: Uuid,
-        new_plan_id: Uuid,
+        old_entitlement_key: &str,
+        new_entitlement_key: &str,
     ) -> Result<(), CoreError> {
-        // Query plan configs to validate
-        let _old_plan = self
+        // Validate that both entitlements exist
+        let _old_mapping = self
             .repo
-            .find_plan_config(realm_id, old_plan_id)
+            .find_points_policy_by_entitlement_key(realm_id, old_entitlement_key)
             .await?
-            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-                realm_id: realm_id.to_string(),
-                plan_id: old_plan_id.to_string(),
-            })?;
+            .ok_or(CoreError::EntitlementMappingNotFound)?;
 
-        let _new_plan = self
+        let _new_mapping = self
             .repo
-            .find_plan_config(realm_id, new_plan_id)
+            .find_points_policy_by_entitlement_key(realm_id, new_entitlement_key)
             .await?
-            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-                realm_id: realm_id.to_string(),
-                plan_id: new_plan_id.to_string(),
-            })?;
+            .ok_or(CoreError::EntitlementMappingNotFound)?;
 
-        // Log downgrade event - no points are revoked
         tracing::info!(
             realm_id = %realm_id,
             user_id = %user_id,
-            old_plan_id = %old_plan_id,
-            new_plan_id = %new_plan_id,
-            "Subscription downgraded - no points revoked, future renewals will use new plan"
+            old_entitlement_key = %old_entitlement_key,
+            new_entitlement_key = %new_entitlement_key,
+            "Subscription downgraded - no points revoked, future renewals will use new entitlement"
         );
 
         Ok(())
@@ -194,24 +164,13 @@ where
 
     /// Handle subscription paid event (initial or renewal)
     ///
-    /// Creates a credit ledger for subscription points grant.
+    /// Creates a credit ledger for subscription points grant based on entitlement_key.
     /// The ledger will expire at the end of the billing period.
-    ///
-    /// # Arguments
-    /// * `user_id` - The user ID
-    /// * `realm_id` - The realm ID
-    /// * `plan_id` - The plan ID
-    /// * `is_renewal` - Whether this is a renewal event
-    /// * `period_end` - The end of the billing period
-    /// * `event_id` - The webhook event ID for tracking
-    ///
-    /// # Returns
-    /// The created credit ledger
     pub async fn handle_subscription_paid(
         &self,
         user_id: Uuid,
         realm_id: &str,
-        plan_id: Uuid,
+        entitlement_key: &str,
         is_renewal: bool,
         period_end: DateTime<Utc>,
         event_id: String,
@@ -233,20 +192,17 @@ where
             return self.create_placeholder_ledger(user_id, realm_id).await;
         }
 
-        let plan_config = self
+        let mapping = self
             .repo
-            .find_plan_config(realm_id, plan_id)
+            .find_points_policy_by_entitlement_key(realm_id, entitlement_key)
             .await?
-            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-                realm_id: realm_id.to_string(),
-                plan_id: plan_id.to_string(),
-            })?;
+            .ok_or(CoreError::EntitlementMappingNotFound)?;
 
-        if !plan_config.grant_on_subscribe {
+        if !mapping.grant_on_subscribe {
             tracing::info!(
                 realm_id = %realm_id,
-                plan_id = %plan_id,
-                "Plan does not grant points on subscribe, skipping"
+                entitlement_key = %entitlement_key,
+                "Entitlement does not grant points on subscribe, skipping"
             );
             return self
                 .create_placeholder_transaction_with_ref(user_id, realm_id, &idempotency_key)
@@ -267,16 +223,23 @@ where
             );
         }
 
-        let (points_amount, source_type) = if is_renewal {
-            (
-                plan_config.points_per_period,
-                CreditSourceType::SubscriptionRenewal,
-            )
+        let points_amount = match mapping.points_per_period {
+            Some(amount) if amount > 0 => amount,
+            _ => {
+                tracing::info!(
+                    realm_id = %realm_id,
+                    entitlement_key = %entitlement_key,
+                    "Entitlement has no points_per_period configured, skipping grant"
+                );
+                return self
+                    .create_placeholder_transaction_with_ref(user_id, realm_id, &idempotency_key)
+                    .await;
+            }
+        };
+        let source_type = if is_renewal {
+            CreditSourceType::SubscriptionRenewal
         } else {
-            (
-                plan_config.points_per_period,
-                CreditSourceType::SubscriptionInitial,
-            )
+            CreditSourceType::SubscriptionInitial
         };
 
         let created_ledger = self
@@ -284,7 +247,7 @@ where
             .handle_subscription_paid_atomic(
                 realm_id,
                 user_id,
-                plan_id,
+                entitlement_key.to_string(),
                 points_amount,
                 source_type,
                 period_end,
@@ -296,7 +259,7 @@ where
         tracing::info!(
             realm_id = %realm_id,
             user_id = %user_id,
-            plan_id = %plan_id,
+            entitlement_key = %entitlement_key,
             is_renewal,
             points_amount,
             period_end = %period_end,
@@ -319,7 +282,9 @@ where
             .record_idempotency_key(realm_id, external_ref_id, dummy_transaction_id)
             .await?;
 
-        Err(CoreError::BadRequest(ERROR_PLAN_NO_GRANT.to_string()))
+        Err(CoreError::BadRequest(
+            ERROR_ENTITLEMENT_NO_GRANT.to_string(),
+        ))
     }
 
     async fn create_placeholder_ledger(
@@ -351,15 +316,6 @@ where
     /// Two modes:
     /// - DefaultCancel: Set expiration on existing subscription credits to period_end
     /// - ImmediateCancel: Revoke all unused subscription credits immediately
-    ///
-    /// # Arguments
-    /// * `user_id` - The user ID
-    /// * `realm_id` - The realm ID
-    /// * `cancel_mode` - The cancellation mode
-    /// * `period_end` - Optional period end timestamp for DefaultCancel
-    ///
-    /// # Returns
-    /// Revocation output with details of revoked points
     pub async fn handle_subscription_cancel(
         &self,
         user_id: Uuid,
@@ -369,7 +325,6 @@ where
     ) -> Result<RevokePointsOutput, CoreError> {
         match cancel_mode {
             CancelMode::DefaultCancel => {
-                // Set expiration on all active subscription credits
                 let period_end = period_end.ok_or_else(|| {
                     CoreError::BadRequest("period_end required for DefaultCancel".to_string())
                 })?;
@@ -390,12 +345,11 @@ where
                 Ok(RevokePointsOutput {
                     revocation_id: Uuid::now_v7(),
                     ledger_ids,
-                    total_revoked: 0, // No immediate revocation
+                    total_revoked: 0,
                     revoked_at: Utc::now(),
                 })
             }
             CancelMode::ImmediateCancel => {
-                // Revoke all unused subscription credits immediately
                 let output = self
                     .points_service
                     .revoke_points_by_credit_type(

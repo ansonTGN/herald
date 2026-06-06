@@ -9,8 +9,7 @@ use crate::points::dtos::RevokePointsOutput;
 use crate::points::entities::CreditSourceType;
 use crate::points::entities::{
     CreditLedgerStatus, CreditType, Paginated, PointsConsumptionAllocation, PointsCreditLedger,
-    PointsPlanConfig, PointsRevocationRecord, PointsTransaction, PointsWallet, RevocationType,
-    TransactionType,
+    PointsRevocationRecord, PointsTransaction, PointsWallet, RevocationType, TransactionType,
 };
 use crate::points::services::realm_config_service::FreeUserStatistics;
 use crate::points::{
@@ -222,39 +221,14 @@ pub trait PointsRepository: Send + Sync {
         external_ref_id: &str,
     ) -> impl Future<Output = Result<Option<PointsTransaction>, CoreError>> + Send;
 
-    /// Find plan config by plan ID
-    fn find_plan_config(
+    /// Find points policy by entitlement_key
+    fn find_points_policy_by_entitlement_key(
         &self,
         realm_id: &str,
-        plan_id: Uuid,
-    ) -> impl Future<Output = Result<Option<PointsPlanConfig>, CoreError>> + Send;
-
-    /// Find plan config by config ID
-    fn find_plan_config_by_id(
-        &self,
-        id: Uuid,
-    ) -> impl Future<Output = Result<Option<PointsPlanConfig>, CoreError>> + Send;
-
-    /// List all plan configs for a realm
-    fn list_plan_configs(
-        &self,
-        realm_id: &str,
-    ) -> impl Future<Output = Result<Vec<PointsPlanConfig>, CoreError>> + Send;
-
-    /// Create a plan config
-    fn create_plan_config(
-        &self,
-        config: PointsPlanConfig,
-    ) -> impl Future<Output = Result<PointsPlanConfig, CoreError>> + Send;
-
-    /// Update a plan config
-    fn update_plan_config(
-        &self,
-        config: PointsPlanConfig,
-    ) -> impl Future<Output = Result<PointsPlanConfig, CoreError>> + Send;
-
-    /// Delete a plan config
-    fn delete_plan_config(&self, id: Uuid) -> impl Future<Output = Result<(), CoreError>> + Send;
+        entitlement_key: &str,
+    ) -> impl Future<
+        Output = Result<Option<crate::billing::entities::EntitlementMapping>, CoreError>,
+    > + Send;
 
     /// List accounts with filters
     fn list_wallets(
@@ -628,7 +602,7 @@ pub trait PointsRepository: Send + Sync {
         &self,
         realm_id: &str,
         user_id: Uuid,
-        plan_id: Uuid,
+        entitlement_key: String,
         points_amount: i64,
         source_type: CreditSourceType,
         period_end: chrono::DateTime<chrono::Utc>,

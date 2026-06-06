@@ -176,17 +176,13 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
     let invoice_repository = Arc::new(PostgresInvoiceRepository::new(db.clone()));
     let audit_event_repository = Arc::new(PostgresAuditEventRepository::new(db.clone()));
 
-    // Create billing service with permission-based policy
+    // Create entitlement mapping service with permission-based policy
     let billing_policy = PermissionBasedBillingPolicy::new(permission_checker.clone());
-    let billing_service = Arc::new(billing::SubscriptionPlanService::new(
-        billing_repository.clone(),
-        Arc::new(billing_policy.clone()),
-    ));
-    let product_service = Arc::new(billing::ProductService::new(
+    let entitlement_mapping_service = Arc::new(billing::EntitlementMappingService::new(
         billing_repository.clone(),
         Arc::new(billing_policy),
     ));
-    info!("Billing service initialized with PermissionBasedBillingPolicy");
+    info!("Entitlement mapping service initialized with PermissionBasedBillingPolicy");
 
     // Create points service with permission-based policy
     let points_repository = Arc::new(PostgresPointsRepository::new(
@@ -325,8 +321,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         billing_repository: billing_repository.clone(),
         invoice_repository: invoice_repository.clone(),
         audit_event_repository: audit_event_repository.clone(),
-        billing_service: billing_service.clone(),
-        product_service: product_service.clone(),
+        entitlement_mapping_service: entitlement_mapping_service.clone(),
         public_base_url: config.frontend.url.clone(),
         permission_checker: permission_checker.clone(),
         app_env: config.server.app_env.clone(),
@@ -420,8 +415,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         billing_repository,
         invoice_repository,
         audit_event_repository,
-        billing_service,
-        product_service,
+        entitlement_mapping_service,
         public_base_url: config.frontend.url.clone(),
         permission_checker,
         app_env: config.server.app_env.clone(),

@@ -12,13 +12,13 @@ use uuid::Uuid;
 
 use crate::webhook_common::create_placeholder_transaction;
 use crate::webhook_subscription_helpers::{
-    SyncSubscriptionInput, save_subscription_history, sync_subscription,
+    SyncSubscriptionInput, resolve_entitlement_key, save_subscription_history, sync_subscription,
 };
 use crate::webhooks::verify_webhook_signature;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::billing::{
-    BillingPeriod, BillingRepository, ExternalInvoiceData, HistoryEventType, InvoiceProvider,
-    InvoiceRepository, InvoiceStatus, PaymentEvent, Subscription, SubscriptionStatus,
+    BillingRepository, ExternalInvoiceData, HistoryEventType, InvoiceProvider, InvoiceRepository,
+    InvoiceStatus, PaymentEvent, Subscription, SubscriptionStatus,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
@@ -30,8 +30,7 @@ use herald_core::domain::purchase::{CompletePaymentAttemptInput, PaymentCompleti
 struct CreemCheckoutCompletedPayload {
     event_id: String,
     client_app_id: Uuid,
-    plan_id: Uuid,
-    billing_period: BillingPeriod,
+    entitlement_key: String,
     is_trial: bool,
     creem_product_id: String,
 }
@@ -39,12 +38,11 @@ struct CreemCheckoutCompletedPayload {
 struct CreemSubscriptionPaidPayload {
     event_id: String,
     user_id: Uuid,
-    plan_id: Uuid,
+    entitlement_key: String,
     client_app_id: Option<Uuid>,
     external_subscription_id: String,
     external_product_id: String,
     is_renewal: bool,
-    billing_period: BillingPeriod,
     cancel_at_period_end: bool,
     current_period_start: Option<DateTime<Utc>>,
     current_period_end: DateTime<Utc>,
@@ -54,12 +52,11 @@ struct CreemSubscriptionPaidPayload {
 struct CreemSubscriptionUpdatedPayload {
     event_id: String,
     user_id: Uuid,
-    previous_plan_id: Uuid,
-    current_plan_id: Uuid,
+    previous_entitlement_key: String,
+    current_entitlement_key: String,
     client_app_id: Option<Uuid>,
     external_subscription_id: String,
     external_product_id: String,
-    billing_period: BillingPeriod,
     cancel_at_period_end: bool,
     current_period_start: Option<DateTime<Utc>>,
     current_period_end: DateTime<Utc>,
@@ -69,11 +66,10 @@ struct CreemSubscriptionUpdatedPayload {
 struct CreemSubscriptionCanceledPayload {
     event_id: String,
     user_id: Uuid,
-    plan_id: Option<Uuid>,
+    entitlement_key: Option<String>,
     client_app_id: Option<Uuid>,
     external_subscription_id: String,
     external_product_id: String,
-    billing_period: BillingPeriod,
     cancel_at_period_end: bool,
     current_period_start: Option<DateTime<Utc>>,
     current_period_end: Option<DateTime<Utc>>,
@@ -166,13 +162,6 @@ fn parse_optional_creem_datetime(value: &Value) -> Result<Option<DateTime<Utc>>,
     parse_creem_datetime(value, "timestamp").map(Some)
 }
 
-fn parse_billing_period(primary: Option<&str>, fallback: Option<&str>) -> BillingPeriod {
-    match primary.or(fallback).unwrap_or("monthly") {
-        "yearly" => BillingPeriod::Yearly,
-        _ => BillingPeriod::Monthly,
-    }
-}
-
 fn parse_creem_status(
     status: Option<&str>,
     cancel_at_period_end: bool,
@@ -207,14 +196,17 @@ fn parse_checkout_completed_payload(
 ) -> Result<CreemCheckoutCompletedPayload, CoreError> {
     let metadata = &event["object"]["metadata"];
 
+    // Resolve entitlement_key from metadata
+    let entitlement_key = metadata["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| metadata["entitlementKey"].as_str())
+        .unwrap_or("")
+        .to_string();
+
     Ok(CreemCheckoutCompletedPayload {
         event_id: parse_event_id(event)?,
         client_app_id: parse_uuid_field(&metadata["clientAppId"], "clientAppId")?,
-        plan_id: parse_uuid_field(&metadata["planId"], "planId")?,
-        billing_period: parse_billing_period(
-            metadata["billingPeriod"].as_str(),
-            metadata["billing_period"].as_str(),
-        ),
+        entitlement_key,
         is_trial: metadata["trialDays"].as_u64().is_some_and(|days| days > 0),
         creem_product_id: event["object"]["product"]["id"]
             .as_str()
@@ -229,10 +221,19 @@ fn parse_subscription_paid_payload(
     let object = creem_event_object(event);
     let cancel_at_period_end = object["cancelAtPeriodEnd"].as_bool().unwrap_or(false);
 
+    // Resolve entitlement_key from metadata
+    let entitlement_key = object["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| object["metadata"]["herald_entitlement_key"].as_str())
+        .or_else(|| object["entitlementKey"].as_str())
+        .or_else(|| object["metadata"]["entitlementKey"].as_str())
+        .unwrap_or("")
+        .to_string();
+
     Ok(CreemSubscriptionPaidPayload {
         event_id: parse_event_id(event)?,
         user_id: parse_uuid_field(&object["userId"], "userId")?,
-        plan_id: parse_uuid_field(&object["planId"], "planId")?,
+        entitlement_key,
         client_app_id: parse_optional_uuid_field(&object["clientAppId"])
             .or_else(|| parse_optional_uuid_field(&object["metadata"]["clientAppId"])),
         external_subscription_id: object["subscriptionId"]
@@ -246,10 +247,6 @@ fn parse_subscription_paid_payload(
             .map(str::to_string)
             .ok_or_else(|| CoreError::BadRequest("Missing productId".to_string()))?,
         is_renewal: object["isRenewal"].as_bool().unwrap_or(false),
-        billing_period: parse_billing_period(
-            object["billingPeriod"].as_str(),
-            object["billing_period"].as_str(),
-        ),
         cancel_at_period_end,
         current_period_start: parse_optional_creem_datetime(&object["currentPeriodStart"])
             .or_else(|_| parse_optional_creem_datetime(&object["current_period_start"]))?,
@@ -272,11 +269,26 @@ fn parse_subscription_updated_payload(
     let previous_attributes = creem_event_data(event, "previousAttributes");
     let cancel_at_period_end = object["cancelAtPeriodEnd"].as_bool().unwrap_or(false);
 
+    // Resolve entitlement_keys from metadata
+    let current_entitlement_key = object["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| object["metadata"]["herald_entitlement_key"].as_str())
+        .or_else(|| object["entitlementKey"].as_str())
+        .or_else(|| object["metadata"]["entitlementKey"].as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let previous_entitlement_key = previous_attributes["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| previous_attributes["entitlementKey"].as_str())
+        .unwrap_or("")
+        .to_string();
+
     Ok(CreemSubscriptionUpdatedPayload {
         event_id: parse_event_id(event)?,
         user_id: parse_uuid_field(&object["userId"], "userId")?,
-        previous_plan_id: parse_uuid_field(&previous_attributes["planId"], "previous planId")?,
-        current_plan_id: parse_uuid_field(&object["planId"], "current planId")?,
+        previous_entitlement_key,
+        current_entitlement_key,
         client_app_id: parse_optional_uuid_field(&object["clientAppId"])
             .or_else(|| parse_optional_uuid_field(&object["metadata"]["clientAppId"])),
         external_subscription_id: object["subscriptionId"]
@@ -289,10 +301,6 @@ fn parse_subscription_updated_payload(
             .or_else(|| object["product"]["id"].as_str())
             .map(str::to_string)
             .ok_or_else(|| CoreError::BadRequest("Missing productId".to_string()))?,
-        billing_period: parse_billing_period(
-            object["billingPeriod"].as_str(),
-            object["billing_period"].as_str(),
-        ),
         cancel_at_period_end,
         current_period_start: parse_optional_creem_datetime(&object["currentPeriodStart"])
             .or_else(|_| parse_optional_creem_datetime(&object["current_period_start"]))?,
@@ -319,10 +327,18 @@ fn parse_subscription_canceled_payload(
         SubscriptionStatus::Canceled
     };
 
+    // Resolve entitlement_key from metadata
+    let entitlement_key = object["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| object["metadata"]["herald_entitlement_key"].as_str())
+        .or_else(|| object["entitlementKey"].as_str())
+        .or_else(|| object["metadata"]["entitlementKey"].as_str())
+        .map(str::to_string);
+
     Ok(CreemSubscriptionCanceledPayload {
         event_id: parse_event_id(event)?,
         user_id: parse_uuid_field(&object["userId"], "userId")?,
-        plan_id: parse_optional_uuid_field(&object["planId"]),
+        entitlement_key,
         client_app_id: parse_optional_uuid_field(&object["clientAppId"])
             .or_else(|| parse_optional_uuid_field(&object["metadata"]["clientAppId"])),
         external_subscription_id: object["subscriptionId"]
@@ -335,10 +351,6 @@ fn parse_subscription_canceled_payload(
             .or_else(|| object["product"]["id"].as_str())
             .map(str::to_string)
             .ok_or_else(|| CoreError::BadRequest("Missing productId".to_string()))?,
-        billing_period: parse_billing_period(
-            object["billingPeriod"].as_str(),
-            object["billing_period"].as_str(),
-        ),
         cancel_at_period_end,
         current_period_start: parse_optional_creem_datetime(&object["currentPeriodStart"])
             .or_else(|_| parse_optional_creem_datetime(&object["current_period_start"]))?,
@@ -382,10 +394,9 @@ async fn sync_creem_subscription(
     user_id: Uuid,
     creem_subscription_id: &str,
     client_app_id: Option<Uuid>,
-    plan_id: Option<Uuid>,
+    entitlement_key: String,
     creem_product_id: String,
     status: SubscriptionStatus,
-    billing_period: BillingPeriod,
     current_period_start: Option<DateTime<Utc>>,
     current_period_end: Option<DateTime<Utc>>,
     cancel_at_period_end: bool,
@@ -400,9 +411,10 @@ async fn sync_creem_subscription(
             external_subscription_id: creem_subscription_id.to_string(),
             external_product_id: creem_product_id,
             client_app_id,
-            plan_id,
+            entitlement_key,
+            external_price_id: None,
+            provider_metadata: None,
             status,
-            billing_period,
             current_period_start,
             current_period_end,
             cancel_at_period_end,
@@ -433,17 +445,24 @@ async fn handle_checkout_completed(
         "Processing checkout.completed event"
     );
 
-    let _plan_config = app_state
-        .points_repository
-        .find_plan_config(realm_id, payload.plan_id)
+    // Resolve entitlement_key via fallback chain
+    let entitlement_key = if payload.entitlement_key.is_empty() {
+        resolve_entitlement_key(
+            &app_state,
+            realm_id,
+            "creem",
+            &payload.creem_product_id,
+            None,
+        )
         .await?
-        .ok_or(CoreError::NotFound)?;
+    } else {
+        payload.entitlement_key.clone()
+    };
 
     info!(
         realm_id = %realm_id,
         client_app_id = %payload.client_app_id,
-        plan_id = %payload.plan_id,
-        billing_period = ?payload.billing_period,
+        entitlement_key = %entitlement_key,
         is_trial = payload.is_trial,
         creem_product_id = %payload.creem_product_id,
         event_id = %event_id,
@@ -451,7 +470,7 @@ async fn handle_checkout_completed(
     );
 
     // --- Creem invoice sync (best-effort, non-blocking) ---
-    // Extract amount/currency with fallback: event.object → payment_attempts → skip with warn
+    // Extract amount/currency with fallback: event.object -> payment_attempts -> skip with warn
     let event_object = &event["object"];
     let amount_from_event = event_object["amount"].as_i64();
     let currency_from_event = event_object["currency"].as_str().map(String::from);
@@ -483,7 +502,7 @@ async fn handle_checkout_completed(
                         realm_id = %realm_id,
                         event_id = %event_id,
                         checkout_id = %checkout_id,
-                        "No payment_attempt found for Creem checkout — skipping invoice sync"
+                        "No payment_attempt found for Creem checkout -- skipping invoice sync"
                     );
                     (0, String::new(), None)
                 }
@@ -492,7 +511,7 @@ async fn handle_checkout_completed(
                         realm_id = %realm_id,
                         event_id = %event_id,
                         error = %e,
-                        "Failed to query payment_attempt for Creem checkout — skipping invoice sync"
+                        "Failed to query payment_attempt for Creem checkout -- skipping invoice sync"
                     );
                     (0, String::new(), None)
                 }
@@ -536,7 +555,7 @@ async fn handle_checkout_completed(
                     realm_id = %realm_id,
                     event_id = %event_id,
                     error = %e,
-                    "Failed to sync Creem invoice — payment flow continues"
+                    "Failed to sync Creem invoice -- payment flow continues"
                 );
             }
         }
@@ -603,12 +622,26 @@ async fn handle_subscription_paid(
         "Processing subscription.paid event"
     );
 
+    // Resolve entitlement_key via fallback chain
+    let entitlement_key = if payload.entitlement_key.is_empty() {
+        resolve_entitlement_key(
+            &app_state,
+            realm_id,
+            "creem",
+            &payload.external_product_id,
+            None,
+        )
+        .await?
+    } else {
+        payload.entitlement_key.clone()
+    };
+
     let _ledger = app_state
         .subscription_service
         .handle_subscription_paid(
             payload.user_id,
             realm_id,
-            payload.plan_id,
+            &entitlement_key,
             payload.is_renewal,
             payload.current_period_end,
             payload.event_id.clone(),
@@ -621,10 +654,9 @@ async fn handle_subscription_paid(
         payload.user_id,
         payload.external_subscription_id.as_str(),
         payload.client_app_id,
-        Some(payload.plan_id),
+        entitlement_key.clone(),
         payload.external_product_id,
         payload.status,
-        payload.billing_period,
         payload.current_period_start,
         Some(payload.current_period_end),
         payload.cancel_at_period_end,
@@ -650,7 +682,7 @@ async fn handle_subscription_paid(
     info!(
         realm_id = %realm_id,
         user_id = %payload.user_id,
-        plan_id = %payload.plan_id,
+        entitlement_key = %entitlement_key,
         event_id = %event_id,
         is_renewal = payload.is_renewal,
         period_end = %payload.current_period_end,
@@ -686,25 +718,107 @@ async fn handle_subscription_updated(
         "Processing subscription.update event"
     );
 
-    let old_plan = app_state
-        .points_repository
-        .find_plan_config(realm_id, payload.previous_plan_id)
+    // Resolve entitlement_keys via fallback chain
+    let current_entitlement_key = if payload.current_entitlement_key.is_empty() {
+        resolve_entitlement_key(
+            &app_state,
+            realm_id,
+            "creem",
+            &payload.external_product_id,
+            None,
+        )
         .await?
-        .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-            realm_id: realm_id.to_string(),
-            plan_id: payload.previous_plan_id.to_string(),
+    } else {
+        payload.current_entitlement_key.clone()
+    };
+
+    let previous_entitlement_key = if payload.previous_entitlement_key.is_empty() {
+        // Try to get from existing subscription
+        let from_db = app_state
+            .billing_repository
+            .find_by_external_subscription_id(&payload.external_subscription_id, "creem")
+            .await?
+            .map(|s| s.entitlement_key.clone())
+            .unwrap_or_default();
+
+        if from_db.is_empty() {
+            // Pre-migration subscription with no entitlement_key — resolve via mapping
+            resolve_entitlement_key(
+                &app_state,
+                realm_id,
+                "creem",
+                &payload.external_product_id,
+                None,
+            )
+            .await?
+        } else {
+            from_db
+        }
+    } else {
+        payload.previous_entitlement_key.clone()
+    };
+
+    let old_mapping = app_state
+        .points_repository
+        .find_points_policy_by_entitlement_key(realm_id, &previous_entitlement_key)
+        .await?
+        .ok_or_else(|| {
+            CoreError::InternalServerError(format!(
+                "Entitlement mapping not found for previous key '{}' during subscription update",
+                previous_entitlement_key
+            ))
         })?;
 
-    let new_plan = app_state
+    let new_mapping = app_state
         .points_repository
-        .find_plan_config(realm_id, payload.current_plan_id)
+        .find_points_policy_by_entitlement_key(realm_id, &current_entitlement_key)
         .await?
-        .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-            realm_id: realm_id.to_string(),
-            plan_id: payload.current_plan_id.to_string(),
+        .ok_or_else(|| {
+            CoreError::InternalServerError(format!(
+                "Entitlement mapping not found for current key '{}' during subscription update",
+                current_entitlement_key
+            ))
         })?;
 
-    let is_upgrade = new_plan.points_per_period > old_plan.points_per_period;
+    let old_points = old_mapping.points_per_period.unwrap_or(0);
+    let new_points = new_mapping.points_per_period.unwrap_or(0);
+    if old_points == 0 && new_points == 0 {
+        tracing::info!(
+            realm_id = %realm_id,
+            "Both mappings have no points configured; skipping upgrade/downgrade classification"
+        );
+        // Still sync the subscription but skip points handling
+        if let Some((subscription, previous)) = sync_creem_subscription(
+            &app_state,
+            realm_id,
+            payload.user_id,
+            payload.external_subscription_id.as_str(),
+            payload.client_app_id,
+            current_entitlement_key,
+            payload.external_product_id,
+            payload.status,
+            payload.current_period_start,
+            Some(payload.current_period_end),
+            payload.cancel_at_period_end,
+            None,
+        )
+        .await?
+        {
+            save_subscription_history(
+                &app_state,
+                previous.as_ref(),
+                &subscription,
+                HistoryEventType::EntitlementChanged,
+            )
+            .await?;
+        }
+        return Ok(create_placeholder_transaction(
+            payload.user_id,
+            realm_id,
+            TransactionType::SubscriptionUpgrade,
+        ));
+    }
+    let is_upgrade = new_points > old_points;
 
     let history_event_type = if is_upgrade {
         app_state
@@ -712,8 +826,8 @@ async fn handle_subscription_updated(
             .handle_subscription_upgrade(
                 payload.user_id,
                 realm_id,
-                payload.previous_plan_id,
-                payload.current_plan_id,
+                &previous_entitlement_key,
+                &current_entitlement_key,
                 payload.current_period_end,
             )
             .await?;
@@ -724,8 +838,8 @@ async fn handle_subscription_updated(
             .handle_subscription_downgrade(
                 payload.user_id,
                 realm_id,
-                payload.previous_plan_id,
-                payload.current_plan_id,
+                &previous_entitlement_key,
+                &current_entitlement_key,
             )
             .await?;
         HistoryEventType::Downgraded
@@ -737,10 +851,9 @@ async fn handle_subscription_updated(
         payload.user_id,
         payload.external_subscription_id.as_str(),
         payload.client_app_id,
-        Some(payload.current_plan_id),
+        current_entitlement_key,
         payload.external_product_id,
         payload.status,
-        payload.billing_period,
         payload.current_period_start,
         Some(payload.current_period_end),
         payload.cancel_at_period_end,
@@ -816,23 +929,46 @@ async fn handle_subscription_canceled(
         .handle_subscription_cancel(payload.user_id, realm_id, cancel_mode, period_end)
         .await?;
 
-    if let Some(plan_id) = payload.plan_id
-        && let Some((subscription, previous)) = sync_creem_subscription(
+    // Resolve entitlement_key via fallback chain
+    let entitlement_key = if let Some(key) = &payload.entitlement_key {
+        if !key.is_empty() {
+            key.clone()
+        } else {
+            resolve_entitlement_key(
+                &app_state,
+                realm_id,
+                "creem",
+                &payload.external_product_id,
+                None,
+            )
+            .await?
+        }
+    } else {
+        resolve_entitlement_key(
             &app_state,
             realm_id,
-            payload.user_id,
-            payload.external_subscription_id.as_str(),
-            payload.client_app_id,
-            Some(plan_id),
-            payload.external_product_id,
-            payload.status,
-            payload.billing_period,
-            payload.current_period_start,
-            payload.current_period_end,
-            payload.cancel_at_period_end,
-            cancel_at,
+            "creem",
+            &payload.external_product_id,
+            None,
         )
         .await?
+    };
+
+    if let Some((subscription, previous)) = sync_creem_subscription(
+        &app_state,
+        realm_id,
+        payload.user_id,
+        payload.external_subscription_id.as_str(),
+        payload.client_app_id,
+        entitlement_key,
+        payload.external_product_id,
+        payload.status,
+        payload.current_period_start,
+        payload.current_period_end,
+        payload.cancel_at_period_end,
+        cancel_at,
+    )
+    .await?
     {
         save_subscription_history(
             &app_state,

@@ -4,11 +4,8 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use chrono::Utc;
-use herald_core::domain::points::{PointsErrorExt, grant_schedule::GrantPeriodType};
-use serde::Deserialize;
 use sqlx::Row;
 use uuid::Uuid;
-use validator::Validate;
 
 use crate::payment_email::formal_payment_email;
 use crate::types::{
@@ -16,43 +13,39 @@ use crate::types::{
     CancelSubscriptionResponse,
     CreateCheckoutResponse,
     CreateCheckoutSessionRequest,
-    CreateProductRequest,
-    // Subscription plan types
-    CreateSubscriptionPlanRequest,
-    ListProductsQuery,
-    ListProductsResponse,
-    ListSubscriptionPlanAssignmentsResponse,
-    ListSubscriptionPlansResponse,
-    ProductDetailResponse,
-    ProductResponse,
     // Subscription types
     SubscriptionDetailResponse,
-    // Subscription plan assignment types
-    SubscriptionPlanAssignmentRequest,
-    SubscriptionPlanAssignmentResponse,
-    SubscriptionPlanPaymentProviderResponse,
-    SubscriptionPlanResponse,
-    SubscriptionPlanSummaryForProduct,
-    ToggleSubscriptionPlanAssignmentRequest,
-    ToggleSubscriptionPlanPaymentProviderRequest,
-    UpdateProductRequest,
-    UpdateSubscriptionPlanPaymentProviderRequest,
-    UpdateSubscriptionPlanRequest,
+    SubscriptionListItemResponse,
+    SubscriptionListQuery,
+    SubscriptionListResponse,
 };
 use crate::webhooks::verify_webhook_signature;
+
+fn subscription_to_response(sub: &Subscription) -> SubscriptionDetailResponse {
+    SubscriptionDetailResponse {
+        id: sub.id,
+        client_app_id: sub.client_app_id,
+        entitlement_key: sub.entitlement_key.clone(),
+        external_price_id: sub.external_price_id.clone(),
+        payment_provider: sub.payment_provider.clone(),
+        status: sub.status.as_str().to_string(),
+        current_period_start: sub.current_period_start.map(|dt| dt.to_rfc3339()),
+        current_period_end: sub.current_period_end.map(|dt| dt.to_rfc3339()),
+        cancel_at: sub.cancel_at.map(|dt| dt.to_rfc3339()),
+        cancel_at_period_end: Some(sub.cancel_at_period_end),
+        provider_metadata: sub.provider_metadata.clone(),
+        synced_at: sub.synced_at.map(|dt| dt.to_rfc3339()),
+        created_at: sub.created_at.to_rfc3339(),
+        updated_at: sub.updated_at.to_rfc3339(),
+    }
+}
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 // Import the trait and types from herald_core
-use herald_core::domain::audit::{
-    ActorType, AuditAction, AuditCategory, AuditEventRepository, AuditResult, AuditTargetType,
-    NewAuditEvent,
-};
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::PermissionService;
 use herald_core::domain::billing::{
-    ACTOR_WEBHOOK, BillingRepository, ClientAppSubscriptionPlan, CreateProductInput, Product,
-    Subscription, SubscriptionHistoryService, SubscriptionPlan, SubscriptionPlanType,
-    SubscriptionStatus, SubscriptionTier, UpdateProductInput,
+    ACTOR_WEBHOOK, BillingRepository, Subscription, SubscriptionHistoryService, SubscriptionStatus,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::PointsRepository;
@@ -65,145 +58,14 @@ use herald_core::infrastructure::stripe::{
 };
 
 // ============================================================================
-// Conversion Helpers
-// ============================================================================
-
-/// Convert domain SubscriptionPlan to API SubscriptionPlanResponse (without providers)
-pub fn subscription_plan_to_response(plan: SubscriptionPlan) -> SubscriptionPlanResponse {
-    subscription_plan_to_response_with_providers_inner(plan, Vec::new())
-}
-
-/// Convert domain SubscriptionPlan with payment providers to API SubscriptionPlanResponse
-pub async fn subscription_plan_to_response_with_providers(
-    plan: SubscriptionPlan,
-    state: &AppState,
-) -> Result<SubscriptionPlanResponse, ApiError> {
-    let providers = state
-        .billing_repository
-        .list_subscription_plan_payment_providers(plan.id)
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                "Failed to load payment providers for plan {}: {}",
-                plan.id,
-                e
-            );
-            ApiError::internal("Failed to load payment providers".to_string())
-        })?;
-
-    Ok(subscription_plan_to_response_with_providers_inner(
-        plan, providers,
-    ))
-}
-
-/// Inner helper to convert SubscriptionPlan with providers to response
-fn subscription_plan_to_response_with_providers_inner(
-    plan: SubscriptionPlan,
-    providers: Vec<herald_core::domain::billing::SubscriptionPlanPaymentProvider>,
-) -> SubscriptionPlanResponse {
-    let payment_providers: Vec<crate::types::PaymentProviderSummary> = providers
-        .into_iter()
-        .map(|p| crate::types::PaymentProviderSummary {
-            id: p.id,
-            payment_provider: p.payment_provider,
-            external_product_id: p.external_product_id,
-            external_price_id: p.external_price_id,
-            enabled: p.enabled,
-        })
-        .collect();
-
-    SubscriptionPlanResponse {
-        id: plan.id,
-        realm_id: plan.realm_id,
-        name: plan.name,
-        title: plan.title,
-        description: plan.description,
-        r#type: plan.r#type.as_str().to_string(),
-        price: plan.price,
-        currency: plan.currency,
-        checkout_url: plan.checkout_url,
-        active: plan.active,
-        trial_days: plan.trial_days,
-        sort_order: plan.sort_order,
-        product_id: plan.product_id,
-        payment_providers,
-        created_at: plan.created_at.to_rfc3339(),
-        updated_at: plan.updated_at.to_rfc3339(),
-    }
-}
-
-/// Convert domain SubscriptionPlanPaymentProvider to API response
-pub fn subscription_plan_payment_provider_to_response(
-    mapping: herald_core::domain::billing::SubscriptionPlanPaymentProvider,
-) -> SubscriptionPlanPaymentProviderResponse {
-    SubscriptionPlanPaymentProviderResponse {
-        id: mapping.id,
-        plan_id: mapping.plan_id,
-        payment_provider: mapping.payment_provider,
-        external_product_id: mapping.external_product_id,
-        external_price_id: mapping.external_price_id,
-        enabled: mapping.enabled,
-        created_at: mapping.created_at.to_rfc3339(),
-        updated_at: mapping.updated_at.to_rfc3339(),
-    }
-}
-
-/// Convert domain ClientAppSubscriptionPlan to API SubscriptionPlanAssignmentResponse
-fn client_app_subscription_plan_to_response(
-    assignment: ClientAppSubscriptionPlan,
-) -> SubscriptionPlanAssignmentResponse {
-    SubscriptionPlanAssignmentResponse {
-        id: assignment.id,
-        client_app_id: assignment.client_app_id,
-        plan_id: assignment.plan_id,
-        enabled: assignment.enabled,
-        created_at: assignment.created_at.to_rfc3339(),
-    }
-}
-
-/// Parse Creem subscription status string to SubscriptionStatus enum
-fn parse_creem_status(status_str: &str) -> Result<SubscriptionStatus, CoreError> {
-    match status_str.to_lowercase().as_str() {
-        "active" => Ok(SubscriptionStatus::Active),
-        "trialing" => Ok(SubscriptionStatus::Trialing),
-        "canceled" => Ok(SubscriptionStatus::Canceled),
-        "expired" => Ok(SubscriptionStatus::Expired),
-        "incomplete" => Ok(SubscriptionStatus::Incomplete),
-        "paused" => Ok(SubscriptionStatus::Paused),
-        "past_due" => Ok(SubscriptionStatus::PastDue),
-        "scheduled_cancel" => Ok(SubscriptionStatus::ScheduledCancel),
-        "dispute" => Ok(SubscriptionStatus::Dispute),
-        _ => Err(CoreError::BadRequest(format!(
-            "Invalid subscription status: {}",
-            status_str
-        ))),
-    }
-}
-
-// ============================================================================
-// Realm-specific Creem Client Helper
+// Realm-specific Client Helpers
 // ============================================================================
 
 /// Get Creem client for a specific realm
-///
-/// This function loads the Creem configuration from the database for the given realm,
-/// falling back to TOML config if not found. It creates a CreemClient instance
-/// with the realm-specific API key and timeout settings.
-///
-/// # Arguments
-///
-/// * `realm_id` - The realm ID to load config for
-/// * `state` - Application state containing database pool and TOML config
-///
-/// # Returns
-///
-/// * `Ok(CreemClient)` - Creem client configured for the realm
-/// * `Err(ApiError)` - Error loading config or creating client
 async fn get_creem_client_for_realm(
     realm_id: &str,
     state: &AppState,
 ) -> Result<CreemClient, ApiError> {
-    // Load Creem API key from database
     let api_key = sqlx::query_scalar::<_, String>(
         "SELECT config_value
          FROM realm_config
@@ -222,7 +84,6 @@ async fn get_creem_client_for_realm(
         ApiError::internal(format!("Creem not configured for realm: {}", realm_id))
     })?;
 
-    // Load timeout from database (default to 30 if not found)
     let timeout = sqlx::query_scalar::<_, String>(
         "SELECT config_value
          FROM realm_config
@@ -241,28 +102,14 @@ async fn get_creem_client_for_realm(
 
     tracing::info!("Loaded Creem config from database for realm: {}", realm_id);
 
-    // Create Creem client with realm-specific config
     CreemClient::new(api_key, timeout).map_err(ApiError::from)
 }
 
 /// Get Stripe client for a realm
-///
-/// This function loads the Stripe API key from the database for the given realm.
-/// The API key is stored in the realm_config table with config_type='stripe'
-/// and config_key='api_key'.
-///
-/// # Arguments
-/// * `realm_id` - The realm ID
-/// * `state` - Application state containing database pool
-///
-/// # Returns
-/// * `Ok(StripeClient)` - Stripe client configured for the realm
-/// * `Err(ApiError)` - Error loading config or creating client
 async fn get_stripe_client_for_realm(
     realm_id: &str,
     state: &AppState,
 ) -> Result<StripeClient, ApiError> {
-    // Load Stripe API key from database
     let api_key = sqlx::query_scalar::<_, String>(
         "SELECT config_value
          FROM realm_config
@@ -281,7 +128,6 @@ async fn get_stripe_client_for_realm(
         ApiError::internal(format!("Stripe not configured for realm: {}", realm_id))
     })?;
 
-    // Load timeout from database (default to 30 if not found)
     let timeout = sqlx::query_scalar::<_, String>(
         "SELECT config_value
          FROM realm_config
@@ -300,7 +146,6 @@ async fn get_stripe_client_for_realm(
 
     tracing::info!("Loaded Stripe config from database for realm: {}", realm_id);
 
-    // Create Stripe client with realm-specific config
     Ok(StripeClient::new(api_key, timeout)?)
 }
 
@@ -313,16 +158,6 @@ async fn get_stripe_client_for_realm(
 /// This helper function:
 /// 1. Verifies realm boundary (identity's realm must match requested realm)
 /// 2. Checks business permissions (billing.view or billing.manage)
-///
-/// # Arguments
-/// * `state` - Application state containing permission checker
-/// * `identity` - User identity containing user_id and realm_id
-/// * `realm_id` - Requested realm ID
-/// * `action` - Permission action: "view" or "manage"
-///
-/// # Returns
-/// * `Ok(())` if permission is granted
-/// * `Err(ApiError)` with 403 status if permission is denied
 pub async fn require_billing_permission(
     state: &AppState,
     identity: &Identity,
@@ -366,830 +201,195 @@ pub async fn require_billing_permission(
     Ok(())
 }
 
-async fn ensure_mapping_belongs_to_plan(
-    state: &AppState,
-    realm_id: &str,
-    plan_id: Uuid,
-    mapping_id: Uuid,
-) -> Result<(), ApiError> {
-    let mapping = state
-        .billing_repository
-        .find_subscription_plan_payment_provider_by_id(mapping_id)
-        .await?
-        .ok_or_else(|| {
-            ApiError::from(CoreError::BadRequest(format!(
-                "Payment provider mapping not found: {}",
-                mapping_id
-            )))
-        })?;
-
-    let plan = state
-        .billing_repository
-        .find_subscription_plan_by_id(plan_id)
-        .await?
-        .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-            realm_id: realm_id.to_string(),
-            plan_id: plan_id.to_string(),
-        })?;
-
-    if plan.realm_id != realm_id {
-        return Err(ApiError::from(CoreError::SubscriptionPlanNotFound {
-            realm_id: realm_id.to_string(),
-            plan_id: plan_id.to_string(),
-        }));
-    }
-
-    if mapping.plan_id != plan_id {
-        return Err(ApiError::bad_request(format!(
-            "Payment provider mapping {} does not belong to plan {}",
-            mapping_id, plan_id
-        )));
-    }
-
-    Ok(())
-}
-
 // ============================================================================
-// Plan Management Handlers
+// Subscription Handlers
 // ============================================================================
 
-/// List all plans for a realm
+/// List subscriptions for a realm
+/// TODO: Migrate raw SQL to BillingRepository trait method for schema-safety.
 #[utoipa::path(
     get,
-    path = "/api/bill/{realmId}/plans",
+    path = "/api/bill/{realmId}/subscriptions",
     tag = "billing",
     params(
         ("realmId" = String, Path, description = "Realm ID")
     ),
     responses(
-        (status = 200, description = "Plans listed successfully", body = ListSubscriptionPlansResponse),
+        (status = 200, description = "Subscriptions listed successfully", body = SubscriptionListResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn list_plans(
+pub async fn list_subscriptions(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path(realm_id): Path<String>,
-) -> Result<Json<ListSubscriptionPlansResponse>, ApiError> {
-    tracing::info!("Listing plans for realm: {}", realm_id);
+    Query(query): Query<SubscriptionListQuery>,
+) -> Result<Json<SubscriptionListResponse>, ApiError> {
+    tracing::info!("Listing subscriptions for realm: {}", realm_id);
 
-    // Check billing.view permission
     require_billing_permission(&state, &identity, &realm_id, "view").await?;
 
-    let plans = state
-        .billing_service
-        .list_plans(identity, &realm_id)
-        .await?;
+    // Build query conditions
+    let mut conditions = vec!["realm_id = $1".to_string()];
+    let mut param_idx = 2u32;
 
-    // Batch load all payment providers for all plans to avoid N+1 queries
-    let plan_ids: Vec<Uuid> = plans.iter().map(|p| p.id).collect();
-    let all_providers = state
-        .billing_repository
-        .list_subscription_plan_payment_providers_batch(&plan_ids)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to load payment providers for plans: {}", e);
-            ApiError::internal("Failed to load payment providers".to_string())
-        })?;
+    let entitlement_key_param;
+    let status_param;
+    let payment_provider_param;
 
-    // Group providers by plan_id
-    let mut providers_by_plan: std::collections::HashMap<
-        Uuid,
-        Vec<herald_core::domain::billing::SubscriptionPlanPaymentProvider>,
-    > = std::collections::HashMap::new();
-    for provider in all_providers {
-        providers_by_plan
-            .entry(provider.plan_id)
-            .or_default()
-            .push(provider);
+    if let Some(ref ek) = query.entitlement_key {
+        conditions.push(format!("entitlement_key = ${}", param_idx));
+        entitlement_key_param = Some(ek.clone());
+        param_idx += 1;
+    } else {
+        entitlement_key_param = None;
     }
 
-    // Convert plans to responses with their providers
-    let plan_responses: Vec<SubscriptionPlanResponse> = plans
-        .into_iter()
-        .map(|plan| {
-            let providers = providers_by_plan.get(&plan.id).cloned().unwrap_or_default();
-            subscription_plan_to_response_with_providers_inner(plan, providers)
+    if let Some(ref s) = query.status {
+        conditions.push(format!("status = ${}", param_idx));
+        status_param = Some(s.clone());
+        param_idx += 1;
+    } else {
+        status_param = None;
+    }
+
+    if let Some(ref pp) = query.payment_provider {
+        conditions.push(format!("payment_provider = ${}", param_idx));
+        payment_provider_param = Some(pp.clone());
+        param_idx += 1;
+    } else {
+        payment_provider_param = None;
+    }
+
+    let where_clause = conditions.join(" AND ");
+
+    let page = query.page.unwrap_or(1).max(1);
+    let page_size = query.page_size.unwrap_or(20);
+    let offset = (page - 1) * page_size;
+
+    // Count query
+    let count_sql = format!(
+        "SELECT COUNT(*) as count FROM subscription WHERE {}",
+        where_clause
+    );
+    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql).bind(&realm_id);
+    if let Some(ref ek) = entitlement_key_param {
+        count_query = count_query.bind(ek);
+    }
+    if let Some(ref s) = status_param {
+        count_query = count_query.bind(s);
+    }
+    if let Some(ref pp) = payment_provider_param {
+        count_query = count_query.bind(pp);
+    }
+    let total = count_query.fetch_one(&state.pool).await.map_err(|e| {
+        tracing::error!(realm_id = %realm_id, error = %e, "Failed to count subscriptions");
+        ApiError::internal("Failed to count subscriptions".to_string())
+    })?;
+
+    // Data query
+    let data_sql = format!(
+        "SELECT id, client_app_id, entitlement_key, external_price_id, payment_provider, status, \
+         current_period_start, current_period_end, synced_at, created_at, updated_at \
+         FROM subscription WHERE {} ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
+        where_clause,
+        param_idx,
+        param_idx + 1
+    );
+    let mut data_query = sqlx::query(&data_sql).bind(&realm_id);
+    if let Some(ref ek) = entitlement_key_param {
+        data_query = data_query.bind(ek);
+    }
+    if let Some(ref s) = status_param {
+        data_query = data_query.bind(s);
+    }
+    if let Some(ref pp) = payment_provider_param {
+        data_query = data_query.bind(pp);
+    }
+    // Bind LIMIT and OFFSET
+    data_query = data_query.bind(page_size as i64).bind(offset as i64);
+
+    let rows = data_query.fetch_all(&state.pool).await.map_err(|e| {
+        tracing::error!(realm_id = %realm_id, error = %e, "Failed to list subscriptions");
+        ApiError::internal("Failed to list subscriptions".to_string())
+    })?;
+
+    let items: Vec<SubscriptionListItemResponse> = rows
+        .iter()
+        .map(|row| SubscriptionListItemResponse {
+            id: row.get("id"),
+            client_app_id: row.get("client_app_id"),
+            entitlement_key: row.get("entitlement_key"),
+            external_price_id: row.get("external_price_id"),
+            payment_provider: row.get("payment_provider"),
+            status: row.get::<String, _>("status"),
+            current_period_start: row
+                .get::<Option<chrono::DateTime<chrono::Utc>>, _>("current_period_start")
+                .map(|dt| dt.to_rfc3339()),
+            current_period_end: row
+                .get::<Option<chrono::DateTime<chrono::Utc>>, _>("current_period_end")
+                .map(|dt| dt.to_rfc3339()),
+            synced_at: row
+                .get::<Option<chrono::DateTime<chrono::Utc>>, _>("synced_at")
+                .map(|dt| dt.to_rfc3339()),
+            created_at: row
+                .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                .to_rfc3339(),
+            updated_at: row
+                .get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
+                .to_rfc3339(),
         })
         .collect();
 
-    Ok(Json(ListSubscriptionPlansResponse {
-        plans: plan_responses,
-    }))
+    Ok(Json(SubscriptionListResponse { items, total }))
 }
 
-/// Create a new plan for a realm
-#[utoipa::path(
-    post,
-    path = "/api/bill/{realmId}/plans",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID")
-    ),
-    request_body = CreateSubscriptionPlanRequest,
-    responses(
-        (status = 201, description = "Plan created successfully", body = SubscriptionPlanResponse),
-        (status = 400, description = "Bad request", body = ErrorResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn create_plan(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path(realm_id): Path<String>,
-    Json(request): Json<CreateSubscriptionPlanRequest>,
-) -> Result<Json<SubscriptionPlanResponse>, ApiError> {
-    tracing::info!("Creating plan '{}' for realm: {}", request.name, realm_id);
-
-    // Check billing.manage permission
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
-
-    // Validate request using validator crate
-    request
-        .validate()
-        .map_err(|e: validator::ValidationErrors| {
-            CoreError::BadRequest(format!("Validation failed: {}", e))
-        })?;
-
-    let plan_type: SubscriptionPlanType = request.r#type.parse()?;
-
-    let input = herald_core::domain::billing::CreateSubscriptionPlanInput {
-        realm_id: realm_id.clone(),
-        name: request.name.clone(),
-        title: request.title.clone(),
-        description: request.description,
-        r#type: plan_type,
-        price: request.price,
-        currency: request.currency.clone(),
-        checkout_url: request.checkout_url,
-        trial_days: request.trial_days,
-        sort_order: request.sort_order,
-        product_id: request.product_id,
-    };
-
-    let plan = state
-        .billing_service
-        .create_plan(identity, &realm_id, input)
-        .await?;
-
-    Ok(Json(subscription_plan_to_response(plan)))
-}
-
-/// Get a specific plan
+/// Get a specific subscription
 #[utoipa::path(
     get,
-    path = "/api/bill/{realmId}/plans/{planId}",
+    path = "/api/bill/{realmId}/subscriptions/{subscriptionId}",
     tag = "billing",
     params(
         ("realmId" = String, Path, description = "Realm ID"),
-        ("planId" = Uuid, Path, description = "Plan ID")
+        ("subscriptionId" = Uuid, Path, description = "Subscription ID")
     ),
     responses(
-        (status = 200, description = "Plan found", body = SubscriptionPlanResponse),
+        (status = 200, description = "Subscription found", body = SubscriptionDetailResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Plan not found", body = ErrorResponse),
+        (status = 404, description = "Subscription not found", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn get_plan(
+pub async fn get_subscription(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-    Path((realm_id, plan_id)): Path<(String, Uuid)>,
-) -> Result<Json<SubscriptionPlanResponse>, ApiError> {
-    tracing::info!("Getting plan {} for realm: {}", plan_id, realm_id);
+    Path((realm_id, subscription_id)): Path<(String, Uuid)>,
+) -> Result<Json<SubscriptionDetailResponse>, ApiError> {
+    tracing::info!(
+        "Getting subscription {} for realm: {}",
+        subscription_id,
+        realm_id
+    );
 
-    // Check billing.view permission
     require_billing_permission(&state, &identity, &realm_id, "view").await?;
 
-    let plan = state
-        .billing_service
-        .get_plan(identity, &realm_id, plan_id)
-        .await?;
+    let subscription = state
+        .billing_repository
+        .find_subscription_by_id(subscription_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("Subscription not found"))?;
 
-    // Load payment providers for this plan
-    let response = subscription_plan_to_response_with_providers(plan, &state).await?;
-
-    Ok(Json(response))
-}
-
-/// Update a plan
-#[utoipa::path(
-    patch,
-    path = "/api/bill/{realmId}/plans/{planId}",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("planId" = Uuid, Path, description = "Plan ID")
-    ),
-    request_body = UpdateSubscriptionPlanRequest,
-    responses(
-        (status = 200, description = "Plan updated successfully", body = SubscriptionPlanResponse),
-        (status = 400, description = "Bad request", body = ErrorResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Plan not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn update_plan(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, plan_id)): Path<(String, Uuid)>,
-    Json(request): Json<UpdateSubscriptionPlanRequest>,
-) -> Result<Json<SubscriptionPlanResponse>, ApiError> {
-    tracing::info!("Updating plan {} for realm: {}", plan_id, realm_id);
-
-    // Check billing.manage permission
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
-
-    let input = herald_core::domain::billing::UpdateSubscriptionPlanInput {
-        title: request.title,
-        description: request.description,
-        r#type: request.r#type.map(|s| s.parse()).transpose()?,
-        price: request.price,
-        currency: request.currency,
-        checkout_url: request.checkout_url,
-        active: request.active,
-        trial_days: request.trial_days,
-        sort_order: request.sort_order,
-        product_id: request.product_id,
-    };
-
-    let plan = state
-        .billing_service
-        .update_plan(identity, &realm_id, plan_id, input)
-        .await?;
-
-    Ok(Json(subscription_plan_to_response(plan)))
-}
-
-/// Delete a plan
-#[utoipa::path(
-    delete,
-    path = "/api/bill/{realmId}/plans/{planId}",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("planId" = Uuid, Path, description = "Plan ID")
-    ),
-    responses(
-        (status = 204, description = "Plan deleted successfully"),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions or plan has active subscriptions", body = ErrorResponse),
-        (status = 404, description = "Plan not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn delete_plan(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, plan_id)): Path<(String, Uuid)>,
-) -> Result<StatusCode, ApiError> {
-    tracing::info!("Deleting plan {} for realm: {}", plan_id, realm_id);
-
-    // Check billing.manage permission
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
-
-    state
-        .billing_service
-        .delete_plan(identity, &realm_id, plan_id)
-        .await?;
-
-    Ok(StatusCode::NO_CONTENT)
-}
-
-// ============================================================================
-// Plan Payment Provider Mapping Handlers
-// ============================================================================
-
-/// List payment providers configured for a plan
-#[utoipa::path(
-    get,
-    path = "/api/bill/{realmId}/plans/{planId}/providers",
-    tag = "Billing - Plan Payment Providers",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("planId" = Uuid, Path, description = "Plan ID")
-    ),
-    responses(
-        (status = 200, description = "Payment providers listed successfully", body = Vec<SubscriptionPlanPaymentProviderResponse>),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Plan not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn list_plan_payment_providers(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, plan_id)): Path<(String, Uuid)>,
-) -> Result<Json<Vec<SubscriptionPlanPaymentProviderResponse>>, ApiError> {
-    tracing::info!(
-        "Listing payment providers for plan {} in realm: {}",
-        plan_id,
-        realm_id
-    );
-
-    // Check billing.view permission
-    require_billing_permission(&state, &identity, &realm_id, "view").await?;
-
-    let providers = state
-        .billing_service
-        .list_plan_payment_providers(identity, &realm_id, plan_id)
-        .await?;
-
-    Ok(Json(
-        providers
-            .into_iter()
-            .map(subscription_plan_payment_provider_to_response)
-            .collect(),
-    ))
-}
-
-/// Add a payment provider mapping to a plan
-#[utoipa::path(
-    post,
-    path = "/api/bill/{realmId}/plans/{planId}/providers",
-    tag = "Billing - Plan Payment Providers",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("planId" = Uuid, Path, description = "Plan ID")
-    ),
-    request_body = crate::types::CreateSubscriptionPlanPaymentProviderRequest,
-    responses(
-        (status = 201, description = "Payment provider mapping created successfully", body = SubscriptionPlanPaymentProviderResponse),
-        (status = 400, description = "Bad request - Payment provider already configured", body = ErrorResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Plan not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn add_payment_provider_to_plan(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, plan_id)): Path<(String, Uuid)>,
-    Json(request): Json<crate::types::CreateSubscriptionPlanPaymentProviderRequest>,
-) -> Result<Json<SubscriptionPlanPaymentProviderResponse>, ApiError> {
-    tracing::info!(
-        "Adding payment provider '{}' to plan {} in realm: {}",
-        request.payment_provider,
-        plan_id,
-        realm_id
-    );
-
-    // Check billing.manage permission
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
-
-    // Validate request
-    request
-        .validate()
-        .map_err(|e: validator::ValidationErrors| {
-            CoreError::BadRequest(format!("Validation failed: {}", e))
-        })?;
-
-    let mapping = state
-        .billing_service
-        .add_payment_provider_to_plan(
-            identity,
-            &realm_id,
-            plan_id,
-            request.payment_provider,
-            request.external_product_id,
-            request.external_price_id,
-            request.enabled.unwrap_or(true),
-        )
-        .await?;
-
-    Ok(Json(subscription_plan_payment_provider_to_response(
-        mapping,
-    )))
-}
-
-/// Update a payment provider mapping
-#[utoipa::path(
-    patch,
-    path = "/api/bill/{realmId}/plans/{planId}/providers/{mappingId}",
-    tag = "Billing - Plan Payment Providers",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("planId" = Uuid, Path, description = "Plan ID"),
-        ("mappingId" = Uuid, Path, description = "Payment Provider Mapping ID")
-    ),
-    request_body = UpdateSubscriptionPlanPaymentProviderRequest,
-    responses(
-        (status = 200, description = "Payment provider mapping updated successfully", body = SubscriptionPlanPaymentProviderResponse),
-        (status = 400, description = "Bad request", body = ErrorResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Mapping not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn update_plan_payment_provider(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, plan_id, mapping_id)): Path<(String, Uuid, Uuid)>,
-    Json(request): Json<UpdateSubscriptionPlanPaymentProviderRequest>,
-) -> Result<Json<SubscriptionPlanPaymentProviderResponse>, ApiError> {
-    tracing::info!(
-        "Updating payment provider mapping {} in realm: {}",
-        mapping_id,
-        realm_id
-    );
-
-    // Check billing.manage permission
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
-
-    // Validate request
-    request
-        .validate()
-        .map_err(|e: validator::ValidationErrors| {
-            CoreError::BadRequest(format!("Validation failed: {}", e))
-        })?;
-
-    ensure_mapping_belongs_to_plan(&state, &realm_id, plan_id, mapping_id).await?;
-
-    let mapping = state
-        .billing_service
-        .update_plan_payment_provider(
-            identity,
-            &realm_id,
-            mapping_id,
-            request.external_product_id,
-            request.external_price_id,
-            request.enabled,
-        )
-        .await?;
-
-    Ok(Json(subscription_plan_payment_provider_to_response(
-        mapping,
-    )))
-}
-
-/// Toggle payment provider enabled status
-#[utoipa::path(
-    patch,
-    path = "/api/bill/{realmId}/plans/{planId}/providers/{mappingId}/toggle",
-    tag = "Billing - Plan Payment Providers",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("planId" = Uuid, Path, description = "Plan ID"),
-        ("mappingId" = Uuid, Path, description = "Payment Provider Mapping ID")
-    ),
-    request_body = ToggleSubscriptionPlanPaymentProviderRequest,
-    responses(
-        (status = 200, description = "Payment provider mapping toggled successfully", body = SubscriptionPlanPaymentProviderResponse),
-        (status = 400, description = "Bad request", body = ErrorResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Mapping not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn toggle_plan_payment_provider(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, plan_id, mapping_id)): Path<(String, Uuid, Uuid)>,
-    Json(request): Json<ToggleSubscriptionPlanPaymentProviderRequest>,
-) -> Result<Json<SubscriptionPlanPaymentProviderResponse>, ApiError> {
-    tracing::info!(
-        "Toggling payment provider mapping {} to enabled: {} in realm: {}",
-        mapping_id,
-        request.enabled,
-        realm_id
-    );
-
-    // Check billing.manage permission
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
-
-    ensure_mapping_belongs_to_plan(&state, &realm_id, plan_id, mapping_id).await?;
-
-    let mapping = state
-        .billing_service
-        .toggle_plan_payment_provider(identity, &realm_id, mapping_id, request.enabled)
-        .await?;
-
-    Ok(Json(subscription_plan_payment_provider_to_response(
-        mapping,
-    )))
-}
-
-/// Remove a payment provider mapping from a plan
-#[utoipa::path(
-    delete,
-    path = "/api/bill/{realmId}/plans/{planId}/providers/{mappingId}",
-    tag = "Billing - Plan Payment Providers",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("planId" = Uuid, Path, description = "Plan ID"),
-        ("mappingId" = Uuid, Path, description = "Payment Provider Mapping ID")
-    ),
-    responses(
-        (status = 204, description = "Payment provider mapping removed successfully"),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Mapping not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn remove_payment_provider_from_plan(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, plan_id, mapping_id)): Path<(String, Uuid, Uuid)>,
-) -> Result<StatusCode, ApiError> {
-    tracing::info!(
-        "Removing payment provider mapping {} from realm: {}",
-        mapping_id,
-        realm_id
-    );
-
-    // Check billing.manage permission
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
-
-    ensure_mapping_belongs_to_plan(&state, &realm_id, plan_id, mapping_id).await?;
-
-    state
-        .billing_service
-        .remove_payment_provider_from_plan(identity, &realm_id, mapping_id)
-        .await?;
-
-    Ok(StatusCode::NO_CONTENT)
-}
-
-// ============================================================================
-// Plan Assignment Handlers
-// ============================================================================
-
-/// Assign a plan to a client app
-#[utoipa::path(
-    post,
-    path = "/api/bill/{realmId}/client/{clientAppId}/plans",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("clientAppId" = Uuid, Path, description = "Client App ID")
-    ),
-    request_body = SubscriptionPlanAssignmentRequest,
-    responses(
-        (status = 201, description = "Plan assigned successfully", body = SubscriptionPlanAssignmentResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Plan not found", body = ErrorResponse),
-        (status = 409, description = "Plan already assigned", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn assign_plan_to_client_app(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, client_app_id)): Path<(String, Uuid)>,
-    Json(request): Json<SubscriptionPlanAssignmentRequest>,
-) -> Result<Json<SubscriptionPlanAssignmentResponse>, ApiError> {
-    tracing::info!(
-        "Assigning plan {} to client app {} for realm: {}",
-        request.plan_id,
-        client_app_id,
-        realm_id
-    );
-
-    // Check billing.manage permission
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
-
-    let assignment = state
-        .billing_service
-        .assign_plan_to_client_app(identity, &realm_id, client_app_id, request.plan_id)
-        .await?;
-
-    Ok(Json(client_app_subscription_plan_to_response(assignment)))
-}
-
-/// List plans assigned to a client app
-#[utoipa::path(
-    get,
-    path = "/api/bill/{realmId}/client/{clientAppId}/plans",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("clientAppId" = Uuid, Path, description = "Client App ID")
-    ),
-    responses(
-        (status = 200, description = "Plans listed successfully", body = ListSubscriptionPlanAssignmentsResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn list_plan_assignments(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, client_app_id)): Path<(String, Uuid)>,
-) -> Result<Json<ListSubscriptionPlanAssignmentsResponse>, ApiError> {
-    tracing::info!(
-        "Listing plan assignments for client app {} in realm: {}",
-        client_app_id,
-        realm_id
-    );
-
-    // Check billing.view permission
-    require_billing_permission(&state, &identity, &realm_id, "view").await?;
-
-    let assignments = state
-        .billing_service
-        .list_plans_for_client_app(identity, &realm_id, client_app_id)
-        .await?;
-
-    Ok(Json(ListSubscriptionPlanAssignmentsResponse {
-        assignments: assignments
-            .into_iter()
-            .map(client_app_subscription_plan_to_response)
-            .collect(),
-    }))
-}
-
-/// Query parameters for batch plan assignments endpoint
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BatchPlanAssignmentsQuery {
-    pub client_app_ids: Option<String>,
-}
-
-/// Batch list plan assignments for multiple client apps
-#[utoipa::path(
-    get,
-    path = "/api/bill/{realmId}/client/plans/batch",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("clientAppIds" = Option<String>, Query, description = "Comma-separated client app IDs (UUIDs)")
-    ),
-    responses(
-        (status = 200, description = "Plan assignments listed successfully", body = ListSubscriptionPlanAssignmentsResponse),
-        (status = 400, description = "Bad request - Invalid client app IDs", body = ErrorResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn list_plan_assignments_batch(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path(realm_id): Path<String>,
-    Query(query): Query<BatchPlanAssignmentsQuery>,
-) -> Result<Json<ListSubscriptionPlanAssignmentsResponse>, ApiError> {
-    // Parse client_app_ids from query parameter
-    let client_app_ids_str = query.client_app_ids.ok_or_else(|| {
-        ApiError::bad_request("clientAppIds query parameter is required".to_string())
-    })?;
-
-    let client_app_ids: Vec<Uuid> = client_app_ids_str
-        .split(',')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| {
-            Uuid::parse_str(s)
-                .map_err(|_| ApiError::bad_request(format!("Invalid UUID in clientAppIds: {}", s)))
-        })
-        .collect::<Result<Vec<_>, ApiError>>()?;
-
-    if client_app_ids.is_empty() {
-        return Ok(Json(ListSubscriptionPlanAssignmentsResponse {
-            assignments: Vec::new(),
-        }));
+    if subscription.realm_id != realm_id {
+        return Err(ApiError::not_found("Subscription not found"));
     }
 
-    tracing::info!(
-        "Batch listing plan assignments for {} client apps in realm: {}",
-        client_app_ids.len(),
-        realm_id
-    );
-
-    // Check billing.view permission
-    require_billing_permission(&state, &identity, &realm_id, "view").await?;
-
-    let assignments = state
-        .billing_repository
-        .list_subscription_plan_assignments_batch(&client_app_ids)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to batch list plan assignments: {}", e);
-            ApiError::internal("Failed to list plan assignments".to_string())
-        })?;
-
-    Ok(Json(ListSubscriptionPlanAssignmentsResponse {
-        assignments: assignments
-            .into_iter()
-            .map(client_app_subscription_plan_to_response)
-            .collect(),
-    }))
+    Ok(Json(subscription_to_response(&subscription)))
 }
-
-/// Toggle plan assignment enabled status
-#[utoipa::path(
-    patch,
-    path = "/api/bill/{realmId}/client/{clientAppId}/plans/{assignmentId}",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("clientAppId" = Uuid, Path, description = "Client App ID"),
-        ("assignmentId" = Uuid, Path, description = "Assignment ID")
-    ),
-    request_body = ToggleSubscriptionPlanAssignmentRequest,
-    responses(
-        (status = 200, description = "Assignment toggled successfully", body = SubscriptionPlanAssignmentResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Assignment not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn toggle_plan_assignment(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, _client_app_id, assignment_id)): Path<(String, Uuid, Uuid)>,
-    Json(request): Json<ToggleSubscriptionPlanAssignmentRequest>,
-) -> Result<Json<SubscriptionPlanAssignmentResponse>, ApiError> {
-    tracing::info!(
-        "Toggling assignment {} to enabled: {} for realm: {}",
-        assignment_id,
-        request.enabled,
-        realm_id
-    );
-
-    // Check billing.manage permission
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
-
-    let assignment = state
-        .billing_service
-        .toggle_plan_assignment(identity, &realm_id, assignment_id, request.enabled)
-        .await?;
-
-    Ok(Json(client_app_subscription_plan_to_response(assignment)))
-}
-
-/// Remove plan assignment from client app
-#[utoipa::path(
-    delete,
-    path = "/api/bill/{realmId}/client/{clientAppId}/plans/{assignmentId}",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("clientAppId" = Uuid, Path, description = "Client App ID"),
-        ("assignmentId" = Uuid, Path, description = "Assignment ID")
-    ),
-    responses(
-        (status = 204, description = "Assignment removed successfully"),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Assignment not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn remove_plan_assignment(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, _client_app_id, assignment_id)): Path<(String, Uuid, Uuid)>,
-) -> Result<StatusCode, ApiError> {
-    tracing::info!(
-        "Removing plan assignment {} for realm: {}",
-        assignment_id,
-        realm_id
-    );
-
-    // Check billing.manage permission
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
-
-    state
-        .billing_service
-        .remove_plan_from_client_app(identity, &realm_id, assignment_id)
-        .await?;
-
-    Ok(StatusCode::NO_CONTENT)
-}
-
-// ============================================================================
-// Subscription Handlers (Simplified)
-// ============================================================================
 
 /// Get subscription for a client app
 #[utoipa::path(
@@ -1220,7 +420,6 @@ pub async fn get_subscription_for_client_app(
         realm_id
     );
 
-    // Check billing.view permission (includes realm boundary check)
     require_billing_permission(&state, &identity, &realm_id, "view").await?;
 
     let subscription = state
@@ -1229,33 +428,7 @@ pub async fn get_subscription_for_client_app(
         .await?
         .ok_or_else(|| CoreError::SubscriptionNotFound(client_app_id.to_string()))?;
 
-    // Fetch plan if available
-    let plan_response = if let Some(plan_id) = subscription.plan_id {
-        state
-            .billing_repository
-            .find_subscription_plan_by_id(plan_id)
-            .await
-            .ok()
-            .flatten()
-            .map(subscription_plan_to_response)
-    } else {
-        None
-    };
-
-    Ok(Json(SubscriptionDetailResponse {
-        id: subscription.id,
-        client_app_id: subscription.client_app_id,
-        plan_id: subscription.plan_id,
-        plan: plan_response,
-        status: subscription.status.as_str().to_string(),
-        billing_period: subscription.billing_period.to_string(),
-        current_period_start: subscription.current_period_start.map(|dt| dt.to_rfc3339()),
-        current_period_end: subscription.current_period_end.map(|dt| dt.to_rfc3339()),
-        cancel_at: subscription.cancel_at.map(|dt| dt.to_rfc3339()),
-        cancel_at_period_end: Some(subscription.cancel_at_period_end),
-        created_at: subscription.created_at.to_rfc3339(),
-        updated_at: subscription.updated_at.to_rfc3339(),
-    }))
+    Ok(Json(subscription_to_response(&subscription)))
 }
 
 /// Cancel subscription for a client app
@@ -1290,11 +463,8 @@ pub async fn cancel_subscription_for_client_app(
         request.cancel_at_period_end
     );
 
-    // Check billing.manage permission (includes realm boundary check)
     require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
-    // client_app_id is already a UUID, use it directly
-    // Get subscription first
     let subscription = state
         .billing_repository
         .find_subscription_by_client_app_id(client_app_id)
@@ -1325,7 +495,7 @@ pub async fn cancel_subscription_for_client_app(
     }))
 }
 
-/// Create checkout session for a plan
+/// Create checkout session for an entitlement
 #[utoipa::path(
     post,
     path = "/api/bill/{realmId}/client/{clientAppId}/checkout",
@@ -1340,7 +510,7 @@ pub async fn cancel_subscription_for_client_app(
         (status = 400, description = "Bad request", body = ErrorResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Plan not found", body = ErrorResponse),
+        (status = 404, description = "Entitlement mapping not found", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -1352,84 +522,52 @@ pub async fn create_checkout_session(
     Json(request): Json<CreateCheckoutSessionRequest>,
 ) -> Result<Json<CreateCheckoutResponse>, ApiError> {
     tracing::info!(
-        "Creating checkout session for client app {} with plan {} in realm: {}",
+        "Creating checkout session for client app {} with entitlement {} in realm: {}",
         client_app_id,
-        request.plan_id,
+        request.entitlement_key,
         realm_id
     );
 
-    // Check billing.manage permission
     require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
-    // Get plan
-    let plan = state
+    // Look up entitlement mapping by entitlement_key
+    let mapping = state
         .billing_repository
-        .find_subscription_plan_by_id(request.plan_id)
-        .await?
-        .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-            realm_id: realm_id.clone(),
-            plan_id: request.plan_id.to_string(),
-        })?;
-
-    // Verify plan belongs to realm
-    if plan.realm_id != realm_id {
-        return Err(ApiError::from(CoreError::SubscriptionPlanNotFound {
-            realm_id,
-            plan_id: request.plan_id.to_string(),
-        }));
-    }
-
-    // Verify plan is active
-    if !plan.active {
-        return Err(ApiError::bad_request(format!(
-            "Plan {} is not active",
-            plan.id
-        )));
-    }
-
-    // Verify plan type matches requested billing period
-    let plan_type_str = plan.r#type.as_str();
-    if plan_type_str != request.billing_period.as_str() {
-        return Err(ApiError::bad_request(format!(
-            "Plan type ({}) does not match requested billing period ({})",
-            plan_type_str, request.billing_period
-        )));
-    }
-
-    let provider_mappings = state
-        .billing_repository
-        .list_subscription_plan_payment_providers(plan.id)
+        .find_entitlement_mapping_by_key(&realm_id, &request.entitlement_key)
         .await
         .map_err(|e| {
             tracing::error!(
-                "Failed to load payment providers for plan {}: {}",
-                plan.id,
-                e
+                entitlement_key = %request.entitlement_key,
+                error = %e,
+                "Failed to look up entitlement mapping"
             );
-            ApiError::internal("Failed to load payment providers".to_string())
-        })?;
-
-    let payment_provider = request.payment_provider.clone();
-
-    // Look up the SubscriptionPlanPaymentProvider mapping to get the external product ID
-    let provider_mapping = provider_mappings
-        .into_iter()
-        .find(|mapping| mapping.payment_provider == payment_provider)
+            ApiError::internal("Failed to look up entitlement mapping".to_string())
+        })?
         .ok_or_else(|| {
-            ApiError::bad_request(format!(
-                "Payment provider '{}' is not configured for this plan",
-                payment_provider
+            ApiError::not_found(format!(
+                "Entitlement mapping not found for key: {}",
+                request.entitlement_key
             ))
         })?;
 
-    if !provider_mapping.enabled {
+    if !mapping.enabled {
         return Err(ApiError::bad_request(format!(
-            "Payment provider '{}' is not enabled for this plan",
-            payment_provider
+            "Entitlement mapping '{}' is not enabled",
+            request.entitlement_key
         )));
     }
 
-    let product_id = provider_mapping.external_product_id;
+    let payment_provider = request.payment_provider.clone();
+
+    // Verify payment provider matches mapping
+    if mapping.payment_provider != payment_provider {
+        return Err(ApiError::bad_request(format!(
+            "Payment provider '{}' does not match mapping provider '{}'",
+            payment_provider, mapping.payment_provider
+        )));
+    }
+
+    let external_product_id = mapping.external_product_id.clone();
     let user_email = formal_payment_email(&identity);
     if matches!(payment_provider.as_str(), "stripe" | "creem") && user_email.is_none() {
         return Err(ApiError::bad_request(
@@ -1437,39 +575,58 @@ pub async fn create_checkout_session(
         ));
     }
 
-    // Route to appropriate payment provider based on request parameter
+    // Route to appropriate payment provider
+    let entitlement_key = request.entitlement_key.clone();
     let checkout_url = match payment_provider.as_str() {
         "stripe" => {
-            tracing::info!("Creating Stripe checkout session for plan: {}", plan.id);
+            tracing::info!(
+                "Creating Stripe checkout session for entitlement: {}",
+                request.entitlement_key
+            );
 
-            // Get realm-specific Stripe client
             let stripe_client = get_stripe_client_for_realm(&realm_id, &state).await?;
 
-            // Create Stripe checkout request
-            // client_app_id is already a UUID, use it directly
             let stripe_request = StripeCreateCheckoutRequest {
                 client_app_id,
-                plan_id: plan.id,
+                plan_id: mapping.id, // Use mapping ID as reference
                 user_id: Uuid::parse_str(&identity.user_id()).ok(),
                 customer_email: user_email.clone(),
                 success_url: format!("{}/billing/success", state.public_base_url),
                 cancel_url: format!("{}/billing/cancel", state.public_base_url),
-                billing_period: request.billing_period.clone(),
-                trial_days: if plan.trial_days > 0 {
-                    Some(plan.trial_days as u32)
-                } else {
-                    None
+                billing_period: mapping.billing_period.clone().unwrap_or_default(),
+                trial_days: None,
+                price_amount: {
+                    let price = mapping
+                        .provider_product_info
+                        .as_ref()
+                        .and_then(|info| info.get("price"))
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    if price <= 0 {
+                        return Err(ApiError::bad_request(
+                            "Checkout requires a positive price. Configure a valid price in the entitlement mapping's provider_product_info.".to_string(),
+                        ));
+                    }
+                    price
                 },
-                price_amount: plan.price as i64,
-                currency: plan.currency.clone(),
-                plan_name: plan.name.clone(),
+                currency: mapping
+                    .provider_product_info
+                    .as_ref()
+                    .and_then(|info| info.get("currency"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("usd")
+                    .to_string(),
+                plan_name: entitlement_key.clone(),
                 realm_id: realm_id.clone(),
-                // Stripe webhook endpoint is derived from the public base URL and realm route.
                 webhook_url: Some(format!(
                     "{}/api/third/pay/{}/stripe/webhooks",
                     state.public_base_url, realm_id
                 )),
-                metadata: None,
+                metadata: Some({
+                    let mut map = std::collections::HashMap::new();
+                    map.insert("entitlementKey".to_string(), entitlement_key.clone());
+                    map
+                }),
             };
 
             let session = stripe_client
@@ -1483,14 +640,15 @@ pub async fn create_checkout_session(
             session.url
         }
         "creem" => {
-            tracing::info!("Creating Creem checkout session for plan: {}", plan.id);
+            tracing::info!(
+                "Creating Creem checkout session for entitlement: {}",
+                request.entitlement_key
+            );
 
-            // Get realm-specific Creem client
             let creem_client = get_creem_client_for_realm(&realm_id, &state).await?;
 
-            // Create Creem checkout request
             let creem_request = CreemCreateCheckoutRequest {
-                product_id,
+                product_id: external_product_id,
                 success_url: Some(format!("{}/billing/success", state.public_base_url)),
                 customer: herald_core::infrastructure::creem::CreemCheckoutCustomer {
                     email: user_email.clone(),
@@ -1500,8 +658,7 @@ pub async fn create_checkout_session(
                     map.insert("realmId".to_string(), realm_id.clone());
                     map.insert("userId".to_string(), identity.user_id());
                     map.insert("clientAppId".to_string(), client_app_id.to_string());
-                    map.insert("planId".to_string(), request.plan_id.to_string());
-                    map.insert("billing_period".to_string(), request.billing_period.clone());
+                    map.insert("entitlementKey".to_string(), entitlement_key.clone());
                     Some(map)
                 },
             };
@@ -1531,7 +688,6 @@ pub async fn create_checkout_session(
         realm_id
     );
 
-    // Generate a UUID for the checkout session (for API compatibility)
     let checkout_id = Uuid::now_v7();
 
     Ok(Json(CreateCheckoutResponse {
@@ -1540,20 +696,41 @@ pub async fn create_checkout_session(
     }))
 }
 
+// ============================================================================
+// Creem Webhook Handlers (BE-D04 will fully adapt these)
+// ============================================================================
+
+/// Convert a billing_period string (e.g. "monthly", "yearly") to days
+fn period_to_days(period: &str) -> i64 {
+    match period.to_ascii_lowercase().as_str() {
+        "yearly" | "annual" | "year" => 365,
+        "quarterly" | "quarter" => 90,
+        "weekly" | "week" => 7,
+        _ => 30, // monthly and unknown default to 30
+    }
+}
+
+/// Parse Creem subscription status string to SubscriptionStatus enum
+fn parse_creem_status(status_str: &str) -> Result<SubscriptionStatus, CoreError> {
+    match status_str.to_lowercase().as_str() {
+        "active" => Ok(SubscriptionStatus::Active),
+        "trialing" => Ok(SubscriptionStatus::Trialing),
+        "canceled" => Ok(SubscriptionStatus::Canceled),
+        "expired" => Ok(SubscriptionStatus::Expired),
+        "incomplete" => Ok(SubscriptionStatus::Incomplete),
+        "paused" => Ok(SubscriptionStatus::Paused),
+        "past_due" => Ok(SubscriptionStatus::PastDue),
+        "scheduled_cancel" => Ok(SubscriptionStatus::ScheduledCancel),
+        "dispute" => Ok(SubscriptionStatus::Dispute),
+        _ => Err(CoreError::BadRequest(format!(
+            "Invalid subscription status: {}",
+            status_str
+        ))),
+    }
+}
+
 /// Get webhook secret for a realm
-///
-/// This function loads the webhook secret from the database for the given realm.
-/// The webhook secret is stored in the realm_config table with config_type='creem'
-/// and config_key='webhook_secret'.
-///
-/// # Arguments
-/// * `realm_id` - The realm ID
-/// * `pool` - Database connection pool
-///
-/// # Returns
-/// * `Result<String, CoreError>` - The webhook secret
 async fn get_webhook_secret(realm_id: &str, pool: &sqlx::PgPool) -> Result<String, CoreError> {
-    // Load webhook secret from database
     let secret = sqlx::query_scalar::<_, String>(
         "SELECT config_value
          FROM realm_config
@@ -1582,21 +759,6 @@ async fn get_webhook_secret(realm_id: &str, pool: &sqlx::PgPool) -> Result<Strin
 }
 
 /// Handle webhook events from Creem payment provider
-///
-/// Processes asynchronous payment events from Creem including:
-/// - `checkout.completed`: One-time payment successful
-/// - `subscription.paid`: Recurring subscription payment
-/// - `subscription.canceled`: Subscription canceled
-/// - `subscription.expired`: Subscription period ended
-///
-/// # Security
-///
-/// Webhook signature is verified using HMAC-SHA256 with the webhook secret.
-///
-/// # Idempotency
-///
-/// Each webhook event is tracked in database to prevent duplicate processing.
-/// The `creem_event_id` is used as an idempotency key.
 #[utoipa::path(
     post,
     path = "/billing/webhooks",
@@ -1613,13 +775,9 @@ pub async fn webhook_handler(
     headers: HeaderMap,
     body: bytes::Bytes,
 ) -> Result<StatusCode, CoreError> {
-    // 1. Parse the webhook payload first (for input validation)
     let event: CreemWebhookEvent = serde_json::from_slice(&body)?;
-
-    // 2. Extract realm_id from event metadata (input validation before auth)
     let realm_id = extract_realm_id(&event)?;
 
-    // 3. Extract and validate signature header
     let signature_header = headers
         .get("creem-signature")
         .and_then(|v| v.to_str().ok())
@@ -1628,10 +786,8 @@ pub async fn webhook_handler(
             CoreError::InvalidWebhookSignature
         })?;
 
-    // 4. Get webhook secret for this realm
     let webhook_secret = get_webhook_secret(&realm_id, &state.pool).await?;
 
-    // 5. Verify the signature
     verify_webhook_signature(&body, signature_header, &webhook_secret).map_err(|e| {
         tracing::error!(
             error = %e,
@@ -1670,10 +826,8 @@ async fn handle_webhook_with_idempotency(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     event: CreemWebhookEvent,
 ) -> Result<(), CoreError> {
-    // Extract realm_id from event metadata
     let realm_id = extract_realm_id(&event)?;
 
-    // Idempotency registration: insert once, ignore duplicate.
     sqlx::query(
         r#"
         INSERT INTO payment_event (id, realm_id, creem_event_id, event_type, subscription_id, payload, processed, created_at)
@@ -1693,7 +847,6 @@ async fn handle_webhook_with_idempotency(
     .await
     .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-    // Lock event row to serialize same-event concurrent processing.
     let event_row =
         sqlx::query("SELECT id, processed FROM payment_event WHERE creem_event_id = $1 FOR UPDATE")
             .bind(&event.id)
@@ -1716,7 +869,6 @@ async fn handle_webhook_with_idempotency(
         return Ok(());
     }
 
-    // Process the event.
     match event.event_type.as_str() {
         "checkout.completed" => handle_checkout_completed(state, &event).await?,
         "subscription.active" => handle_subscription_active(state, &event, realm_id).await?,
@@ -1737,7 +889,6 @@ async fn handle_webhook_with_idempotency(
         }
     }
 
-    // Mark as processed in the same transaction that serialized event handling.
     sqlx::query("UPDATE payment_event SET processed = true WHERE id = $1")
         .bind(payment_event_id)
         .execute(&mut **tx)
@@ -1758,90 +909,10 @@ pub(crate) fn extract_realm_id(event: &CreemWebhookEvent) -> Result<String, Core
         .ok_or_else(|| CoreError::BadRequest("Missing realm_id in event metadata".to_string()))
 }
 
-/// Recharge points for a subscription event
-///
-/// This function is called by billing webhook handlers to automatically recharge points
-/// when a subscription is created or renewed.
-async fn recharge_points_for_subscription(
-    state: &AppState,
-    realm_id: &str,
-    user_id: Uuid,
-    plan_id: Uuid,
-    recharge_type: herald_core::domain::points::RechargeType,
-    event_id: String,
-) -> Result<(), CoreError> {
-    // Get plan config for this plan - use repository directly for internal operations
-    let plan_config: Vec<herald_core::domain::points::PointsPlanConfig> =
-        state.points_repository.list_plan_configs(realm_id).await?;
-
-    // Find config for this plan
-    let config = plan_config
-        .into_iter()
-        .find(|c| c.plan_id == plan_id)
-        .ok_or_else(|| CoreError::plan_config_not_found(&plan_id.to_string()))?;
-
-    let amount = match recharge_type {
-        herald_core::domain::points::RechargeType::Subscribe => {
-            // Only grant points on subscribe if grant_on_subscribe is true
-            if !config.active || !config.grant_on_subscribe || config.points_per_period <= 0 {
-                tracing::info!(
-                    plan_id = %plan_id,
-                    "Points recharge skipped: config inactive, grant_on_subscribe false, or no points"
-                );
-                return Ok(());
-            }
-            config.points_per_period
-        }
-        herald_core::domain::points::RechargeType::Renewal => {
-            // For renewals, grant points if this is a periodic grant (not "once")
-            if !config.active
-                || config.grant_period_type == GrantPeriodType::Once.as_str()
-                || config.points_per_period <= 0
-            {
-                tracing::info!(
-                    plan_id = %plan_id,
-                    "Points recharge skipped: config inactive, one-time grant, or no points"
-                );
-                return Ok(());
-            }
-            config.points_per_period
-        }
-    };
-
-    // Compute expires_at from plan config validity_days
-    let expires_at = if config.validity_days > 0 {
-        Some(chrono::Utc::now() + chrono::Duration::days(config.validity_days))
-    } else {
-        None
-    };
-
-    let _transaction = state
-        .points_service
-        .recharge_points_internal(
-            realm_id,
-            user_id,
-            amount,
-            recharge_type.clone(),
-            Some(event_id),
-            expires_at,
-        )
-        .await?;
-
-    tracing::info!(
-        realm_id = %realm_id,
-        plan_id = %plan_id,
-        amount,
-        recharge_type = %recharge_type.as_str(),
-        "Points recharged successfully for subscription event"
-    );
-
-    Ok(())
-}
-
 /// Type alias for subscription metadata extracted from webhook events
-type SubscriptionMetadata = (Option<Uuid>, Option<Uuid>, Option<Uuid>);
+type SubscriptionMetadata = (Option<Uuid>, Option<Uuid>, Option<String>);
 
-/// Extract user_id, client_app_id and plan_id from webhook event metadata
+/// Extract user_id, client_app_id and entitlement_key from webhook event metadata
 pub(crate) fn extract_subscription_metadata(
     event: &CreemWebhookEvent,
 ) -> Result<SubscriptionMetadata, CoreError> {
@@ -1859,30 +930,29 @@ pub(crate) fn extract_subscription_metadata(
         .and_then(|id: &serde_json::Value| id.as_str())
         .and_then(|s: &str| Uuid::parse_str(s).ok());
 
-    let plan_id = event
+    // Extract entitlement_key (replaces planId)
+    let entitlement_key = event
         .object
         .get("metadata")
-        .and_then(|m: &serde_json::Value| m.get("planId"))
-        .and_then(|id: &serde_json::Value| id.as_str())
-        .and_then(|s: &str| Uuid::parse_str(s).ok());
+        .and_then(|m: &serde_json::Value| m.get("entitlementKey"))
+        .and_then(|v: &serde_json::Value| v.as_str())
+        .map(|s: &str| s.to_string());
 
-    Ok((user_id, client_app_id, plan_id))
+    Ok((user_id, client_app_id, entitlement_key))
 }
 
 /// Handle checkout.completed event
+/// DEPRECATED: Legacy Creem webhook handler, not wired to routes.
+/// Active handler is in webhook_handlers.rs::handle_checkout_completed.
 async fn handle_checkout_completed(
     state: &AppState,
     event: &CreemWebhookEvent,
 ) -> Result<(), CoreError> {
     tracing::info!("Handling checkout.completed: {}", event.id);
 
-    // Extract realm_id from event metadata
     let realm_id = extract_realm_id(event)?;
+    let (user_id, client_app_id, entitlement_key) = extract_subscription_metadata(event)?;
 
-    // Extract subscription metadata
-    let (user_id, client_app_id, plan_id) = extract_subscription_metadata(event)?;
-
-    // Check if subscription already exists (idempotency)
     let creem_sub_id = format!("sub_{}", event.id);
     if let Some(_existing_sub) = state
         .billing_repository
@@ -1893,72 +963,48 @@ async fn handle_checkout_completed(
             "Subscription already exists for checkout.completed: {}",
             creem_sub_id
         );
-        return Ok(()); // Idempotent: already processed
+        return Ok(());
     }
 
-    // For checkout.completed, we create a new subscription
     let now = Utc::now();
 
-    // Check if plan exists and validate
-    let plan = if let Some(pid) = plan_id {
-        match state
-            .billing_repository
-            .find_subscription_plan_by_id(pid)
-            .await
-        {
-            Ok(Some(plan)) => {
-                if plan.realm_id != realm_id {
-                    return Err(CoreError::BadRequest(
-                        "Plan realm mismatch in webhook metadata".to_string(),
-                    ));
+    // Determine entitlement_key: from metadata, or fallback to provider mapping
+    let entitlement_key = match entitlement_key {
+        Some(key) if !key.is_empty() => key,
+        _ => {
+            // Fallback: look up by provider + external_product_id
+            let external_product_id = event
+                .object
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("default_product");
+            match state
+                .billing_repository
+                .find_entitlement_mapping_by_provider_product(
+                    &realm_id,
+                    "creem",
+                    external_product_id,
+                )
+                .await?
+            {
+                Some(mapping) => mapping.entitlement_key,
+                None => {
+                    return Err(CoreError::BadRequest(format!(
+                        "No entitlement mapping found for provider 'creem', product '{}' in realm '{}'. Configure an entitlement mapping before processing webhooks.",
+                        external_product_id, realm_id
+                    )));
                 }
-                Some(plan)
-            }
-            Ok(None) => {
-                // Plan not found, log warning but continue with defaults
-                tracing::warn!(
-                    plan_id = %pid,
-                    "Plan not found in webhook metadata, using default values"
-                );
-                None
-            }
-            Err(e) => return Err(e),
-        }
-    } else {
-        None
-    };
-
-    // Determine subscription status based on plan trial_days
-    let (status, current_period_end) = if let Some(ref p) = plan {
-        if p.trial_days > 0 {
-            // Trial period: subscription starts in trialing status
-            let trial_end = now + chrono::Duration::days(p.trial_days as i64);
-            (SubscriptionStatus::Trialing, trial_end)
-        } else {
-            // No trial: subscription starts in active status
-            (SubscriptionStatus::Active, now + chrono::Duration::days(30))
-        }
-    } else {
-        // No plan associated: default to active
-        (SubscriptionStatus::Active, now + chrono::Duration::days(30))
-    };
-
-    // Determine billing period from plan
-    let billing_period = if let Some(ref p) = plan {
-        match p.r#type {
-            SubscriptionPlanType::Monthly => {
-                herald_core::domain::billing::entities::BillingPeriod::Monthly
-            }
-            SubscriptionPlanType::Yearly => {
-                herald_core::domain::billing::entities::BillingPeriod::Yearly
             }
         }
-    } else {
-        herald_core::domain::billing::entities::BillingPeriod::Monthly
     };
 
-    // Create new subscription for checkout completion
-    let tier = SubscriptionTier::Starter; // Default tier for new subscriptions
+    // Resolve billing period from entitlement mapping
+    let period_days = state
+        .points_repository
+        .find_points_policy_by_entitlement_key(&realm_id, &entitlement_key)
+        .await?
+        .and_then(|m| m.billing_period.as_deref().map(period_to_days))
+        .unwrap_or(30);
 
     let sub = Subscription {
         id: Uuid::now_v7(),
@@ -1972,22 +1018,22 @@ async fn handle_checkout_completed(
             .unwrap_or("default_product")
             .to_string(),
         payment_provider: "creem".to_string(),
-        status,
-        tier,
+        status: SubscriptionStatus::Active,
+        entitlement_key,
+        external_price_id: None,
+        provider_metadata: None,
+        synced_at: Some(now),
         client_app_id,
-        plan_id,
-        billing_period,
-        cancel_at: None,
         current_period_start: Some(now),
-        current_period_end: Some(current_period_end),
+        current_period_end: Some(now + chrono::Duration::days(period_days)),
         cancel_at_period_end: false,
+        cancel_at: None,
         created_at: now,
         updated_at: now,
     };
 
     let sub = state.billing_repository.create_subscription(sub).await?;
 
-    // Create history event
     let history_event = SubscriptionHistoryService::create_subscription_created_event(
         &sub,
         Some(ACTOR_WEBHOOK.to_string()),
@@ -1996,29 +1042,6 @@ async fn handle_checkout_completed(
         .billing_repository
         .save_history_event(history_event)
         .await?;
-
-    // Recharge points if user_id and plan_id are present
-    if let Some(pid) = plan_id
-        && let Some(uid) = user_id
-        && let Err(e) = recharge_points_for_subscription(
-            state,
-            &realm_id,
-            uid,
-            pid,
-            herald_core::domain::points::RechargeType::Subscribe,
-            event.id.clone(),
-        )
-        .await
-    {
-        tracing::error!(
-            error = %e,
-            subscription_id = %sub.id,
-            plan_id = %pid,
-            user_id = %uid,
-            "Failed to recharge points for checkout completion"
-        );
-        // Don't fail the webhook processing, just log the error
-    }
 
     tracing::info!(
         "Subscription created from checkout.completed for realm: {}",
@@ -2029,6 +1052,8 @@ async fn handle_checkout_completed(
 }
 
 /// Handle subscription.paid event
+/// DEPRECATED: Legacy Creem webhook handler, not wired to routes.
+/// Active handler is in webhook_handlers.rs::handle_subscription_paid.
 async fn handle_subscription_paid(
     state: &AppState,
     event: &CreemWebhookEvent,
@@ -2036,13 +1061,11 @@ async fn handle_subscription_paid(
 ) -> Result<(), CoreError> {
     tracing::info!("Handling subscription.paid for realm: {}", realm_id);
 
-    // Parse subscription object
     let creem_sub: CreemSubscription =
         serde_json::from_value(event.object.clone()).map_err(|e| {
             CoreError::InternalServerError(format!("Failed to parse subscription object: {}", e))
         })?;
 
-    // Check if subscription already exists
     let existing_sub = state
         .billing_repository
         .find_by_external_subscription_id(&creem_sub.id, "creem")
@@ -2050,64 +1073,8 @@ async fn handle_subscription_paid(
     let is_new_subscription = existing_sub.is_none();
 
     let now = Utc::now();
-
-    // Extract user_id, client_app_id and plan_id from webhook metadata
-    let (user_id, client_app_id, plan_id) = extract_subscription_metadata(event)?;
-
-    // Parse the actual status from Creem instead of hardcoding
+    let (user_id, client_app_id, entitlement_key) = extract_subscription_metadata(event)?;
     let status = parse_creem_status(&creem_sub.status)?;
-
-    // If plan_id is present in metadata, validate product/currency consistency.
-    if let Some(pid) = plan_id
-        && let Some(plan) = state
-            .billing_repository
-            .find_subscription_plan_by_id(pid)
-            .await?
-    {
-        if plan.realm_id != realm_id {
-            return Err(CoreError::BadRequest(
-                "Plan realm mismatch in webhook metadata".to_string(),
-            ));
-        }
-
-        // Validate external_product_id using SubscriptionPlanPaymentProvider mapping
-        let providers = state
-            .billing_repository
-            .list_subscription_plan_payment_providers(plan.id)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    "Failed to load payment providers for plan {}: {}",
-                    plan.id,
-                    e
-                );
-                CoreError::DatabaseError(format!("Failed to validate payment provider: {}", e))
-            })?;
-
-        let creem_provider = providers
-            .iter()
-            .find(|p| p.payment_provider == "creem" && p.enabled)
-            .ok_or_else(|| {
-                CoreError::BadRequest(
-                    "Plan does not have an active Creem payment provider configured".to_string(),
-                )
-            })?;
-
-        if creem_provider.external_product_id != creem_sub.product.id {
-            return Err(CoreError::BadRequest(
-                "Plan external_product_id does not match webhook product".to_string(),
-            ));
-        }
-
-        if !plan
-            .currency
-            .eq_ignore_ascii_case(&creem_sub.product.currency)
-        {
-            return Err(CoreError::BadRequest(
-                "Plan currency does not match webhook product currency".to_string(),
-            ));
-        }
-    }
 
     if let Some(mut sub) = existing_sub {
         if !sub.status.can_transition_to(&status) {
@@ -2121,7 +1088,6 @@ async fn handle_subscription_paid(
             return Ok(());
         }
 
-        // Update existing subscription
         sub.status = status;
         sub.current_period_start = creem_sub
             .current_period_start
@@ -2130,11 +1096,21 @@ async fn handle_subscription_paid(
             .current_period_end
             .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0));
         sub.updated_at = now;
+        if let Some(ek) = entitlement_key {
+            sub.entitlement_key = ek;
+        }
 
         state.billing_repository.update_subscription(sub).await?;
     } else {
-        // Create new subscription
-        let tier = determine_tier_from_product(&creem_sub.product.id);
+        let entitlement_key = match entitlement_key {
+            Some(key) => key,
+            None => {
+                return Err(CoreError::BadRequest(
+                    "Cannot create subscription without entitlement_key. No mapping found."
+                        .to_string(),
+                ));
+            }
+        };
 
         let sub = Subscription {
             id: Uuid::now_v7(),
@@ -2143,12 +1119,12 @@ async fn handle_subscription_paid(
             external_subscription_id: creem_sub.id.clone(),
             external_product_id: creem_sub.product.id.clone(),
             payment_provider: "creem".to_string(),
-            status, // Use parsed status instead of hardcoding
-            tier,
+            status,
+            entitlement_key,
+            external_price_id: None,
+            provider_metadata: None,
+            synced_at: Some(now),
             client_app_id,
-            plan_id,
-            billing_period: herald_core::domain::billing::entities::BillingPeriod::Monthly,
-            cancel_at: None,
             current_period_start: creem_sub
                 .current_period_start
                 .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)),
@@ -2156,6 +1132,7 @@ async fn handle_subscription_paid(
                 .current_period_end
                 .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)),
             cancel_at_period_end: creem_sub.cancel_at_period_end.unwrap_or(false),
+            cancel_at: None,
             created_at: now,
             updated_at: now,
         };
@@ -2172,45 +1149,7 @@ async fn handle_subscription_paid(
     }
 
     tracing::info!("Subscription activated for realm: {}", realm_id);
-
-    if let Some(pid) = plan_id {
-        if let Some(uid) = user_id {
-            let recharge_type = if is_new_subscription {
-                herald_core::domain::points::RechargeType::Subscribe
-            } else {
-                herald_core::domain::points::RechargeType::Renewal
-            };
-
-            if let Err(e) = recharge_points_for_subscription(
-                state,
-                &realm_id,
-                uid,
-                pid,
-                recharge_type.clone(),
-                event.id.clone(),
-            )
-            .await
-            {
-                tracing::error!(
-                    error = %e,
-                    subscription_id = %creem_sub.id,
-                    plan_id = %pid,
-                    user_id = %uid,
-                    recharge_type = %recharge_type.as_str(),
-                    "Failed to recharge points for subscription event"
-                );
-                // Don't fail the webhook processing, just log the error
-            }
-        } else {
-            tracing::warn!(
-                subscription_id = %creem_sub.id,
-                plan_id = %pid,
-                event_id = %event.id,
-                "Skipping points recharge for subscription event because userId metadata is missing"
-            );
-        }
-    }
-
+    let _ = (is_new_subscription, user_id);
     Ok(())
 }
 
@@ -2243,7 +1182,6 @@ async fn handle_subscription_canceled(
             return Ok(());
         }
 
-        // Create history event before updating
         let cancel_at_period_end = creem_sub.cancel_at_period_end.unwrap_or(false);
         let history_event = SubscriptionHistoryService::create_subscription_canceled_event(
             &sub,
@@ -2257,8 +1195,6 @@ async fn handle_subscription_canceled(
             .billing_repository
             .update_subscription(sub.clone())
             .await?;
-
-        // Save history event
         state
             .billing_repository
             .save_history_event(history_event)
@@ -2298,7 +1234,6 @@ async fn handle_subscription_expired(
         }
 
         sub.status = SubscriptionStatus::Expired;
-        sub.tier = SubscriptionTier::Free; // Downgrade to free
         sub.updated_at = Utc::now();
         state.billing_repository.update_subscription(sub).await?;
     }
@@ -2313,7 +1248,6 @@ async fn handle_subscription_active(
     realm_id: String,
 ) -> Result<(), CoreError> {
     tracing::info!("Handling subscription.active for realm: {}", realm_id);
-
     handle_subscription_update_internal(state, event, realm_id, SubscriptionStatus::Active).await
 }
 
@@ -2324,7 +1258,6 @@ async fn handle_subscription_trialing(
     realm_id: String,
 ) -> Result<(), CoreError> {
     tracing::info!("Handling subscription.trialing for realm: {}", realm_id);
-
     handle_subscription_update_internal(state, event, realm_id, SubscriptionStatus::Trialing).await
 }
 
@@ -2335,11 +1268,10 @@ async fn handle_subscription_paused(
     realm_id: String,
 ) -> Result<(), CoreError> {
     tracing::info!("Handling subscription.paused for realm: {}", realm_id);
-
     handle_subscription_update_internal(state, event, realm_id, SubscriptionStatus::Paused).await
 }
 
-/// Handle subscription.updated event (plan upgrade/downgrade)
+/// Handle subscription.updated event
 async fn handle_subscription_updated(
     state: &AppState,
     event: &CreemWebhookEvent,
@@ -2347,15 +1279,12 @@ async fn handle_subscription_updated(
 ) -> Result<(), CoreError> {
     tracing::info!("Handling subscription.updated for realm: {}", realm_id);
 
-    // Parse subscription object
     let creem_sub: CreemSubscription =
         serde_json::from_value(event.object.clone()).map_err(|e| {
             CoreError::InternalServerError(format!("Failed to parse subscription object: {}", e))
         })?;
 
-    // Use the actual status from Creem
     let status = parse_creem_status(&creem_sub.status)?;
-
     handle_subscription_update_internal(state, event, realm_id, status).await
 }
 
@@ -2392,7 +1321,6 @@ async fn handle_subscription_past_due(
             .update_subscription(sub.clone())
             .await?;
 
-        // Create history event
         let history_event = SubscriptionHistoryService::create_subscription_past_due_event(
             &sub,
             Some(ACTOR_WEBHOOK.to_string()),
@@ -2439,7 +1367,6 @@ async fn handle_dispute_created(
             .update_subscription(sub.clone())
             .await?;
 
-        // Create history event with dispute details
         let changes = serde_json::json!({
             "dispute_id": dispute.id,
             "amount": dispute.amount,
@@ -2469,12 +1396,11 @@ async fn handle_subscription_scheduled_cancel(
         "Handling subscription.scheduled_cancel for realm: {}",
         realm_id
     );
-
     handle_subscription_update_internal(state, event, realm_id, SubscriptionStatus::ScheduledCancel)
         .await
 }
 
-/// Handle refund.created event (audit only - no access revocation)
+/// Handle refund.created event (audit only)
 async fn handle_refund_created(
     state: &AppState,
     event: &CreemWebhookEvent,
@@ -2534,10 +1460,8 @@ async fn handle_subscription_update_internal(
         .await?;
 
     let now = Utc::now();
-    // Note: client_app_id and plan_id are not used in update handlers, only in paid event
     let _metadata = extract_subscription_metadata(event)?;
 
-    // Save status string before moving the value
     let status_str = expected_status.as_str();
 
     if let Some(sub) = existing_sub {
@@ -2552,7 +1476,6 @@ async fn handle_subscription_update_internal(
             return Ok(());
         }
 
-        // Create updated subscription for history event
         let mut updated_sub = sub.clone();
         updated_sub.status = expected_status;
         updated_sub.external_product_id = creem_sub.product.id.clone();
@@ -2565,7 +1488,6 @@ async fn handle_subscription_update_internal(
         updated_sub.cancel_at_period_end = creem_sub.cancel_at_period_end.unwrap_or(false);
         updated_sub.updated_at = now;
 
-        // Create history event
         let history_event = SubscriptionHistoryService::create_subscription_updated_event(
             &sub,
             &updated_sub,
@@ -2588,412 +1510,4 @@ async fn handle_subscription_update_internal(
         realm_id
     );
     Ok(())
-}
-
-/// Determine subscription tier from product ID
-pub(crate) fn determine_tier_from_product(product_id: &str) -> SubscriptionTier {
-    // Check in order of specificity (most specific first)
-    // Product IDs are case-sensitive
-
-    // Check for enterprise
-    if product_id.contains("enterprise") {
-        SubscriptionTier::Enterprise
-    }
-    // Check for professional (contains "pro", so check before "pro")
-    else if product_id.contains("professional") {
-        SubscriptionTier::Professional
-    }
-    // Check for starter
-    else if product_id.contains("starter") {
-        SubscriptionTier::Starter
-    }
-    // Check for free before pro (since "free" doesn't contain "pro")
-    else if product_id.contains("free") {
-        SubscriptionTier::Free
-    }
-    // Check for pro as a separate word (not part of another word)
-    else if product_id.split('_').any(|word| word == "pro") {
-        SubscriptionTier::Professional
-    } else {
-        SubscriptionTier::Free
-    }
-}
-
-// ============================================================================
-// Product Management Handlers
-// ============================================================================
-
-/// Convert domain Product to API ProductResponse
-pub fn product_to_response(product: Product) -> ProductResponse {
-    ProductResponse {
-        id: product.id,
-        realm_id: product.realm_id,
-        code: product.code,
-        title: product.title,
-        description: product.description,
-        enabled: product.enabled,
-        plans_count: product.plans_count,
-        created_at: product.created_at.to_rfc3339(),
-        updated_at: product.updated_at.to_rfc3339(),
-    }
-}
-
-async fn record_product_audit(
-    state: &AppState,
-    identity: &Identity,
-    realm_id: &str,
-    action: AuditAction,
-    product_id: Uuid,
-    product_code: Option<String>,
-    result: AuditResult,
-) {
-    if let Err(e) = state
-        .audit_event_repository
-        .create(NewAuditEvent {
-            realm_id: realm_id.to_string(),
-            category: AuditCategory::Billing,
-            action,
-            actor_id: identity.user_id().to_string(),
-            actor_type: Some(ActorType::Admin),
-            actor_name: identity.as_user().map(|u| u.email.clone()),
-            target_type: AuditTargetType::Product,
-            target_id: product_id.to_string(),
-            target_name: product_code,
-            result,
-            details: None,
-            ip_address: None,
-            user_agent: None,
-            trace_id: None,
-        })
-        .await
-    {
-        tracing::warn!(error = %e, "Failed to record product audit event");
-    }
-}
-
-/// Convert domain SubscriptionPlan to SubscriptionPlanSummaryForProduct
-fn subscription_plan_to_product_summary(
-    plan: SubscriptionPlan,
-) -> SubscriptionPlanSummaryForProduct {
-    SubscriptionPlanSummaryForProduct {
-        id: plan.id,
-        name: plan.name,
-        title: plan.title,
-        r#type: plan.r#type.as_str().to_string(),
-        price: plan.price,
-        currency: plan.currency,
-        active: plan.active,
-        sort_order: plan.sort_order,
-    }
-}
-
-/// List all products for a realm
-#[utoipa::path(
-    get,
-    path = "/api/bill/{realmId}/products",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID")
-    ),
-    responses(
-        (status = 200, description = "Products listed successfully", body = ListProductsResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn list_products(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path(realm_id): Path<String>,
-    Query(query): Query<ListProductsQuery>,
-) -> Result<Json<ListProductsResponse>, ApiError> {
-    tracing::info!("Listing products for realm: {}", realm_id);
-
-    // Check billing.view permission
-    require_billing_permission(&state, &identity, &realm_id, "view").await?;
-
-    let products = state
-        .product_service
-        .list_products(identity, &realm_id, query.enabled)
-        .await?;
-
-    Ok(Json(ListProductsResponse {
-        products: products.into_iter().map(product_to_response).collect(),
-    }))
-}
-
-/// Create a new product for a realm
-#[utoipa::path(
-    post,
-    path = "/api/bill/{realmId}/products",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID")
-    ),
-    request_body = CreateProductRequest,
-    responses(
-        (status = 201, description = "Product created successfully", body = ProductResponse),
-        (status = 400, description = "Bad request", body = ErrorResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn create_product(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path(realm_id): Path<String>,
-    Json(request): Json<CreateProductRequest>,
-) -> Result<(StatusCode, Json<ProductResponse>), ApiError> {
-    tracing::info!(
-        "Creating product '{}' for realm: {}",
-        request.code,
-        realm_id
-    );
-
-    // Check billing.manage permission
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
-
-    request
-        .validate()
-        .map_err(|e: validator::ValidationErrors| {
-            CoreError::BadRequest(format!("Validation failed: {}", e))
-        })?;
-
-    let input = CreateProductInput {
-        realm_id: realm_id.clone(),
-        code: request.code,
-        title: request.title,
-        description: request.description,
-    };
-
-    let product = state
-        .product_service
-        .create_product(identity.clone(), &realm_id, input)
-        .await?;
-
-    record_product_audit(
-        &state,
-        &identity,
-        &realm_id,
-        AuditAction::ProductCreate,
-        product.id,
-        Some(product.code.clone()),
-        AuditResult::Success,
-    )
-    .await;
-
-    Ok((StatusCode::CREATED, Json(product_to_response(product))))
-}
-
-/// Get a specific product with its plans
-#[utoipa::path(
-    get,
-    path = "/api/bill/{realmId}/products/{productId}",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("productId" = Uuid, Path, description = "Product ID")
-    ),
-    responses(
-        (status = 200, description = "Product found", body = ProductDetailResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Product not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn get_product(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, product_id)): Path<(String, Uuid)>,
-) -> Result<Json<ProductDetailResponse>, ApiError> {
-    tracing::info!("Getting product {} for realm: {}", product_id, realm_id);
-
-    // Check billing.view permission
-    require_billing_permission(&state, &identity, &realm_id, "view").await?;
-
-    let product = state
-        .product_service
-        .get_product(identity, &realm_id, product_id)
-        .await?;
-
-    let plans = state
-        .billing_repository
-        .find_subscription_plans_by_product(&realm_id, product_id)
-        .await?;
-
-    Ok(Json(ProductDetailResponse {
-        id: product.id,
-        realm_id: product.realm_id,
-        code: product.code,
-        title: product.title,
-        description: product.description,
-        enabled: product.enabled,
-        plans_count: product.plans_count,
-        plans: plans
-            .into_iter()
-            .map(subscription_plan_to_product_summary)
-            .collect(),
-        created_at: product.created_at.to_rfc3339(),
-        updated_at: product.updated_at.to_rfc3339(),
-    }))
-}
-
-/// Update a product
-#[utoipa::path(
-    patch,
-    path = "/api/bill/{realmId}/products/{productId}",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("productId" = Uuid, Path, description = "Product ID")
-    ),
-    request_body = UpdateProductRequest,
-    responses(
-        (status = 200, description = "Product updated successfully", body = ProductResponse),
-        (status = 400, description = "Bad request", body = ErrorResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Product not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn update_product(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, product_id)): Path<(String, Uuid)>,
-    Json(request): Json<UpdateProductRequest>,
-) -> Result<(StatusCode, Json<ProductResponse>), ApiError> {
-    tracing::info!("Updating product {} for realm: {}", product_id, realm_id);
-
-    // Check billing.manage permission
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
-
-    request
-        .validate()
-        .map_err(|e: validator::ValidationErrors| {
-            CoreError::BadRequest(format!("Validation failed: {}", e))
-        })?;
-
-    let input = UpdateProductInput {
-        title: request.title,
-        description: request.description,
-        enabled: request.enabled,
-    };
-
-    let product = state
-        .product_service
-        .update_product(identity.clone(), &realm_id, product_id, input)
-        .await?;
-
-    record_product_audit(
-        &state,
-        &identity,
-        &realm_id,
-        AuditAction::ProductUpdate,
-        product.id,
-        Some(product.code.clone()),
-        AuditResult::Success,
-    )
-    .await;
-
-    Ok((StatusCode::OK, Json(product_to_response(product))))
-}
-
-/// Delete a product
-#[utoipa::path(
-    delete,
-    path = "/api/bill/{realmId}/products/{productId}",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("productId" = Uuid, Path, description = "Product ID")
-    ),
-    responses(
-        (status = 204, description = "Product deleted successfully"),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions or product has associated plans", body = ErrorResponse),
-        (status = 404, description = "Product not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn delete_product(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, product_id)): Path<(String, Uuid)>,
-) -> Result<StatusCode, ApiError> {
-    tracing::info!("Deleting product {} for realm: {}", product_id, realm_id);
-
-    // Check billing.manage permission
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
-
-    state
-        .product_service
-        .delete_product(identity.clone(), &realm_id, product_id)
-        .await?;
-
-    record_product_audit(
-        &state,
-        &identity,
-        &realm_id,
-        AuditAction::ProductDelete,
-        product_id,
-        None,
-        AuditResult::Success,
-    )
-    .await;
-
-    Ok(StatusCode::NO_CONTENT)
-}
-
-/// Get plans for a specific product
-#[utoipa::path(
-    get,
-    path = "/api/bill/{realmId}/products/{productId}/plans",
-    tag = "billing",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("productId" = Uuid, Path, description = "Product ID")
-    ),
-    responses(
-        (status = 200, description = "Product plans listed successfully", body = ListSubscriptionPlansResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - Insufficient permissions", body = ErrorResponse),
-        (status = 404, description = "Product not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn get_product_plans(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, product_id)): Path<(String, Uuid)>,
-) -> Result<Json<ListSubscriptionPlansResponse>, ApiError> {
-    tracing::info!(
-        "Getting plans for product {} in realm: {}",
-        product_id,
-        realm_id
-    );
-
-    // Check billing.view permission
-    require_billing_permission(&state, &identity, &realm_id, "view").await?;
-
-    let plans = state
-        .product_service
-        .list_plans_for_product(identity, &realm_id, product_id)
-        .await?;
-
-    Ok(Json(ListSubscriptionPlansResponse {
-        plans: plans
-            .into_iter()
-            .map(subscription_plan_to_response)
-            .collect(),
-    }))
 }

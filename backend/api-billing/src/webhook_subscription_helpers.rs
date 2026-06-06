@@ -1,11 +1,11 @@
 use chrono::{DateTime, Utc};
+use serde_json::Value;
 use uuid::Uuid;
 
-use crate::handlers::determine_tier_from_product;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::billing::{
-    ACTOR_WEBHOOK, BillingPeriod, BillingRepository, HistoryEventType, Subscription,
-    SubscriptionHistoryEvent, SubscriptionTier, calculate_changes, serialize_subscription_state,
+    ACTOR_WEBHOOK, BillingRepository, HistoryEventType, Subscription, SubscriptionHistoryEvent,
+    calculate_changes, serialize_subscription_state,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 
@@ -16,9 +16,10 @@ pub(crate) struct SyncSubscriptionInput {
     pub external_subscription_id: String,
     pub external_product_id: String,
     pub client_app_id: Option<Uuid>,
-    pub plan_id: Option<Uuid>,
+    pub entitlement_key: String,
+    pub external_price_id: Option<String>,
+    pub provider_metadata: Option<Value>,
     pub status: herald_core::domain::billing::SubscriptionStatus,
-    pub billing_period: BillingPeriod,
     pub current_period_start: Option<DateTime<Utc>>,
     pub current_period_end: Option<DateTime<Utc>>,
     pub cancel_at_period_end: bool,
@@ -52,6 +53,60 @@ pub(crate) async fn save_subscription_history(
     Ok(())
 }
 
+/// Resolve entitlement_key using fallback chain:
+/// 1. Use provided herald_entitlement_key from metadata (if non-empty)
+/// 2. Look up local mapping by provider + external_product_id
+/// 3. Fail loud with diagnostic log
+pub(crate) async fn resolve_entitlement_key(
+    app_state: &AppState,
+    realm_id: &str,
+    provider: &str,
+    external_product_id: &str,
+    metadata_entitlement_key: Option<&str>,
+) -> Result<String, CoreError> {
+    // Step 1: Use metadata entitlement_key if present and non-empty
+    if let Some(key) = metadata_entitlement_key
+        && !key.is_empty()
+    {
+        tracing::info!(
+            realm_id = %realm_id,
+            provider = %provider,
+            entitlement_key = %key,
+            "Resolved entitlement_key from webhook metadata"
+        );
+        return Ok(key.to_string());
+    }
+
+    // Step 2: Fallback to local mapping by provider + external_product_id
+    let mapping = app_state
+        .billing_repository
+        .find_entitlement_mapping_by_provider_product(realm_id, provider, external_product_id)
+        .await?;
+
+    if let Some(mapping) = mapping {
+        tracing::info!(
+            realm_id = %realm_id,
+            provider = %provider,
+            external_product_id = %external_product_id,
+            entitlement_key = %mapping.entitlement_key,
+            "Resolved entitlement_key from local mapping fallback"
+        );
+        return Ok(mapping.entitlement_key);
+    }
+
+    // Step 3: Fail loud
+    tracing::error!(
+        realm_id = %realm_id,
+        provider = %provider,
+        external_product_id = %external_product_id,
+        "Cannot resolve entitlement_key: no herald_entitlement_key in metadata and no local mapping found"
+    );
+    Err(CoreError::BadRequest(format!(
+        "Cannot resolve entitlement_key for provider={} external_product_id={}: no metadata key and no local mapping",
+        provider, external_product_id
+    )))
+}
+
 pub(crate) async fn sync_subscription(
     app_state: &AppState,
     input: SyncSubscriptionInput,
@@ -63,9 +118,10 @@ pub(crate) async fn sync_subscription(
         external_subscription_id,
         external_product_id,
         client_app_id,
-        plan_id,
+        entitlement_key,
+        external_price_id,
+        provider_metadata,
         status,
-        billing_period,
         current_period_start,
         current_period_end,
         cancel_at_period_end,
@@ -100,11 +156,6 @@ pub(crate) async fn sync_subscription(
         ));
     }
 
-    let tier = if external_product_id.is_empty() {
-        SubscriptionTier::Starter
-    } else {
-        determine_tier_from_product(&external_product_id)
-    };
     let now = Utc::now();
 
     if let Some(mut subscription) = existing {
@@ -114,7 +165,14 @@ pub(crate) async fn sync_subscription(
         subscription.external_product_id = external_product_id.clone();
         subscription.payment_provider = provider.to_string();
         subscription.status = status;
-        subscription.tier = tier;
+        subscription.entitlement_key = if entitlement_key.is_empty() {
+            subscription.entitlement_key.clone()
+        } else {
+            entitlement_key
+        };
+        subscription.external_price_id = external_price_id.or(subscription.external_price_id);
+        subscription.provider_metadata = provider_metadata.or(subscription.provider_metadata);
+        subscription.synced_at = Some(now);
         if let Some(user_id) = user_id {
             subscription.user_id = Some(user_id);
         }
@@ -122,10 +180,6 @@ pub(crate) async fn sync_subscription(
         subscription.current_period_end = current_period_end.or(previous.current_period_end);
         subscription.cancel_at_period_end = cancel_at_period_end;
         subscription.cancel_at = cancel_at;
-        if let Some(plan_id) = plan_id {
-            subscription.plan_id = Some(plan_id);
-        }
-        subscription.billing_period = billing_period;
         if client_app_id.is_some() {
             subscription.client_app_id = client_app_id;
         }
@@ -145,13 +199,14 @@ pub(crate) async fn sync_subscription(
             external_product_id,
             payment_provider: provider.to_string(),
             status,
-            tier,
+            entitlement_key,
+            external_price_id,
+            provider_metadata,
+            synced_at: Some(now),
             current_period_start,
             current_period_end,
             cancel_at_period_end,
             client_app_id,
-            plan_id,
-            billing_period,
             cancel_at,
             created_at: now,
             updated_at: now,

@@ -27,9 +27,6 @@ use herald_api_base::application::http::state::AppState;
         crate::permission::check_permission,
         crate::subscription::get_subscription,
         crate::billing::get_subscription,
-        crate::billing::list_plans,
-        crate::billing::list_plan_assignments,
-        crate::billing::list_plan_assignments_batch,
         crate::points::get_balance_ext,
         crate::points::consume_points_ext,
         crate::points::grant_points_ext,
@@ -49,10 +46,6 @@ use herald_api_base::application::http::state::AppState;
         crate::permission::PermissionCheckResponse,
         crate::subscription::SubscriptionResponse,
         crate::billing::SubscriptionDetail,
-        crate::billing::SubscriptionPlan,
-        crate::billing::SubscriptionPlanAssignment,
-        crate::billing::SubscriptionPlansListResponse,
-        crate::billing::SubscriptionPlanAssignmentsListResponse,
         crate::points::ExtPointsBalanceResponse,
         crate::points::ExtConsumePointsRequest,
         crate::points::ExtConsumePointsResponse,
@@ -96,18 +89,6 @@ pub fn create_router(state: AppState) -> Router<AppState> {
         .route(
             "/bill/{realmId}/client/{clientAppId}/subscription",
             axum::routing::get(billing::get_subscription),
-        )
-        .route(
-            "/bill/{realmId}/plans",
-            axum::routing::get(billing::list_plans),
-        )
-        .route(
-            "/bill/{realmId}/client/plans/batch",
-            axum::routing::get(billing::list_plan_assignments_batch),
-        )
-        .route(
-            "/bill/{realmId}/client/{clientAppId}/plans",
-            axum::routing::get(billing::list_plan_assignments),
         )
         .route(
             "/points/{realmId}/balance",

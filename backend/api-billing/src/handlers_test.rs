@@ -2,8 +2,7 @@
 // Billing Utility Function Tests
 // =============================================================================
 
-use crate::handlers::{determine_tier_from_product, extract_realm_id};
-use herald_core::domain::billing::SubscriptionTier;
+use crate::handlers::extract_realm_id;
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::infrastructure::creem::CreemWebhookEvent;
 
@@ -111,68 +110,4 @@ fn test_handler_extract_realm_id_nested() {
     let result = extract_realm_id(&event);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), "realm_nested");
-}
-
-// =============================================================================
-// determine_tier_from_product Tests
-// =============================================================================
-
-#[test]
-fn test_handler_determine_tier_from_product() {
-    assert_eq!(
-        determine_tier_from_product("prod_starter_monthly"),
-        SubscriptionTier::Starter
-    );
-    assert_eq!(
-        determine_tier_from_product("prod_starter_yearly"),
-        SubscriptionTier::Starter
-    );
-    assert_eq!(
-        determine_tier_from_product("prod_professional_monthly"),
-        SubscriptionTier::Professional
-    );
-    assert_eq!(
-        determine_tier_from_product("prod_pro_monthly"),
-        SubscriptionTier::Professional
-    );
-    assert_eq!(
-        determine_tier_from_product("prod_enterprise_monthly"),
-        SubscriptionTier::Enterprise
-    );
-    assert_eq!(
-        determine_tier_from_product("prod_free"),
-        SubscriptionTier::Free
-    );
-    assert_eq!(
-        determine_tier_from_product("unknown_product"),
-        SubscriptionTier::Free
-    );
-}
-
-#[test]
-fn test_handler_determine_tier_case_sensitivity() {
-    assert_eq!(
-        determine_tier_from_product("prod_STARTER_monthly"),
-        SubscriptionTier::Free
-    );
-    assert_eq!(
-        determine_tier_from_product("PROD_STARTER_MONTHLY"),
-        SubscriptionTier::Free
-    );
-}
-
-#[test]
-fn test_handler_determine_tier_partial_matches() {
-    assert_eq!(
-        determine_tier_from_product("super_starter_plan"),
-        SubscriptionTier::Starter
-    );
-    assert_eq!(
-        determine_tier_from_product("my_pro_plan"),
-        SubscriptionTier::Professional
-    );
-    assert_eq!(
-        determine_tier_from_product("big_enterprise_bundle"),
-        SubscriptionTier::Enterprise
-    );
 }

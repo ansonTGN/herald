@@ -95,16 +95,30 @@ pub async fn create_wechat_order(
     .await
     .map_err(|e| ApiError::internal(format!("Failed to create WeChat Pay client: {}", e)))?;
 
-    let plan = state
+    // Look up entitlement mapping for price info (replaces plan lookup)
+    // Note: WeChat support is minimal - using entitlement mapping for price
+    let mapping = state
         .billing_repository
-        .find_public_plan_by_id(&realm_id, plan_id)
+        .find_entitlement_mapping_by_provider_product(&realm_id, "wechat", &plan_id.to_string())
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to find plan: {}", e)))?
-        .ok_or_else(|| ApiError::not_found("Plan not found"))?;
+        .map_err(|e| ApiError::internal(format!("Failed to find entitlement mapping: {}", e)))?
+        .ok_or_else(|| {
+            ApiError::not_found("Entitlement mapping not found for this WeChat product")
+        })?;
 
-    let amount = plan.price;
+    let price = mapping
+        .provider_product_info
+        .as_ref()
+        .and_then(|info| info.get("price")?.as_i64())
+        .unwrap_or(0);
+    if price <= 0 {
+        return Err(ApiError::bad_request(
+            "WeChat order requires a positive price. Configure a valid price in the entitlement mapping's provider_product_info.".to_string(),
+        ));
+    }
+    let amount = price as i32;
 
-    let description = format!("Herald Plan: {}", plan.name);
+    let description = format!("Herald: {}", mapping.entitlement_key);
 
     let create_params = CreateOrderParams {
         realm_id: realm_id.clone(),

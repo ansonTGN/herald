@@ -40,16 +40,11 @@ pub struct SubscriptionResponse {
     /// - "none": No subscription
     pub status: String,
 
-    /// Subscription tier
-    /// - "free": Free tier
-    /// - "starter": Starter plan
-    /// - "professional": Professional plan
-    /// - "enterprise": Enterprise plan
-    pub tier: String,
+    /// Entitlement key for the subscription
+    pub entitlement_key: String,
 
-    /// Plan name (only present if has_subscription=true)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub plan_name: Option<String>,
+    /// Payment provider (stripe, creem, etc.)
+    pub payment_provider: String,
 }
 
 /// Get subscription status for a client app
@@ -145,23 +140,10 @@ pub async fn get_subscription(
     // 4. Build response
     let response = match subscription {
         Some(sub) => {
-            // Fetch plan name if plan_id exists (fixed: plan.title -> plan.name)
-            let plan_name = match sub.plan_id {
-                Some(plan_id) => state
-                    .billing_repository
-                    .find_public_plan_by_id(&client_app_realm_id, plan_id)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|plan| plan.name),
-                None => None,
-            };
-
             tracing::info!(
                 client_app_id = %client_app_id,
                 status = %sub.status.as_str(),
-                tier = %sub.tier.as_str(),
-                plan_name = ?plan_name,
+                entitlement_key = %sub.entitlement_key,
                 "Subscription found"
             );
 
@@ -169,8 +151,8 @@ pub async fn get_subscription(
                 client_app_id: client_app_id.to_string(),
                 has_subscription: true,
                 status: sub.status.as_str().to_string(),
-                tier: sub.tier.as_str().to_string(),
-                plan_name,
+                entitlement_key: sub.entitlement_key.clone(),
+                payment_provider: sub.payment_provider.clone(),
             }
         }
         None => {
@@ -183,8 +165,8 @@ pub async fn get_subscription(
                 client_app_id: client_app_id.to_string(),
                 has_subscription: false,
                 status: "none".to_string(),
-                tier: "free".to_string(),
-                plan_name: None,
+                entitlement_key: String::new(),
+                payment_provider: String::new(),
             }
         }
     };

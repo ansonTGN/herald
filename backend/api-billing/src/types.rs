@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
-use validator::Validate;
 
 /// Response from checkout session creation
 #[derive(Debug, Serialize, ToSchema)]
@@ -11,176 +10,123 @@ pub struct CreateCheckoutResponse {
     pub checkout_id: Uuid,
 }
 
-// ===== Plan Management Types =====
+// ===== Entitlement Mapping Types =====
 
-/// Request to create a subscription plan
-#[derive(Debug, Deserialize, ToSchema, Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateSubscriptionPlanRequest {
-    #[validate(length(min = 1, max = 100))]
-    pub name: String,
-    #[validate(length(min = 1))]
-    pub title: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(length(max = 500))]
-    pub description: Option<String>,
-    // Keep field-level rename for Rust keyword conflict
-    #[serde(rename = "type")]
-    #[validate(custom(function = "validate_billing_type"))]
-    pub r#type: String, // "monthly" | "yearly"
-    #[validate(range(min = 0))]
-    pub price: i32, // Price in cents
-    #[validate(custom(function = "validate_currency"))]
-    pub currency: String, // USD, EUR, CNY
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(url)]
-    pub checkout_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 0))]
-    pub trial_days: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 0))]
-    pub sort_order: Option<i32>,
-    pub product_id: Uuid,
-}
-
-/// Custom validator for billing type
-fn validate_billing_type(type_str: &str) -> Result<(), validator::ValidationError> {
-    if ["monthly", "yearly"].contains(&type_str) {
-        Ok(())
-    } else {
-        Err(validator::ValidationError::new("invalid billing type"))
-    }
-}
-
-/// Custom validator for currency
-fn validate_currency(currency: &str) -> Result<(), validator::ValidationError> {
-    if ["USD", "EUR", "CNY"].contains(&currency) {
-        Ok(())
-    } else {
-        Err(validator::ValidationError::new("invalid currency"))
-    }
-}
-
-/// Request to update a subscription plan
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateSubscriptionPlanRequest {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    // Keep field-level rename for Rust keyword conflict
-    #[serde(rename = "type")]
-    pub r#type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub price: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub currency: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub checkout_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub trial_days: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sort_order: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub product_id: Option<Uuid>,
-}
-
-/// Response for subscription plan query
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SubscriptionPlanResponse {
-    pub id: Uuid,
-    pub realm_id: String,
-    pub name: String,
-    pub title: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    // Keep field-level rename for Rust keyword conflict
-    #[serde(rename = "type")]
-    pub r#type: String,
-    pub price: i32,
-    pub currency: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub checkout_url: Option<String>,
-    pub active: bool,
-    pub trial_days: i32,
-    pub sort_order: i32,
-    pub product_id: Uuid,
-    /// Payment providers configured for this plan (summary view)
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub payment_providers: Vec<PaymentProviderSummary>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-/// Summary of payment provider configuration for a plan
+/// Response for a single entitlement mapping
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PaymentProviderSummary {
+pub struct EntitlementMappingResponse {
     pub id: Uuid,
     pub payment_provider: String,
     pub external_product_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_price_id: Option<String>,
+    pub entitlement_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_period: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points_per_period: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_period_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validity_days: Option<i64>,
+    pub grant_on_subscribe: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_periods: Option<i64>,
     pub enabled: bool,
-}
-
-/// Response for listing subscription plans
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ListSubscriptionPlansResponse {
-    pub plans: Vec<SubscriptionPlanResponse>,
-}
-
-// ===== Plan Assignment Types =====
-
-/// Request to assign a subscription plan to a client app
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SubscriptionPlanAssignmentRequest {
-    pub plan_id: Uuid,
-}
-
-/// Response for subscription plan assignment
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SubscriptionPlanAssignmentResponse {
-    pub id: Uuid,
-    pub client_app_id: Uuid,
-    pub plan_id: Uuid,
-    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_product_info: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synced_at: Option<String>,
     pub created_at: String,
+    pub updated_at: String,
 }
 
-/// Response for listing subscription plan assignments
+/// Response for listing entitlement mappings
 #[derive(Debug, Serialize, ToSchema)]
-pub struct ListSubscriptionPlanAssignmentsResponse {
-    pub assignments: Vec<SubscriptionPlanAssignmentResponse>,
+#[serde(rename_all = "camelCase")]
+pub struct EntitlementMappingListResponse {
+    pub items: Vec<EntitlementMappingResponse>,
+    pub total: i64,
 }
 
-/// Request to toggle subscription plan assignment
+/// Query parameters for listing entitlement mappings
+#[derive(Debug, Deserialize, ToSchema, IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub struct EntitlementMappingQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payment_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_size: Option<u64>,
+}
+
+/// Request to update an entitlement mapping
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct ToggleSubscriptionPlanAssignmentRequest {
-    pub enabled: bool,
+#[serde(rename_all = "camelCase")]
+pub struct UpdateEntitlementMappingRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entitlement_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points_per_period: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_period_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validity_days: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_on_subscribe: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_periods: Option<i64>,
 }
 
-// ===== Subscription Types (Simplified) =====
+/// Request to sync provider products
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncProviderRequest {
+    pub payment_provider: String,
+}
 
-/// Response for subscription detail (includes plan info)
+/// Response from provider product sync
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncProviderResponse {
+    pub products_synced: i64,
+    pub prices_synced: i64,
+    pub sync_status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub partial_errors: Vec<PartialSyncErrorDto>,
+}
+
+/// Partial sync error detail
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PartialSyncErrorDto {
+    pub external_id: String,
+    pub reason: String,
+}
+
+// ===== Subscription Types =====
+
+/// Response for subscription detail
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionDetailResponse {
     pub id: Uuid,
     pub client_app_id: Option<Uuid>,
-    pub plan_id: Option<Uuid>,
+    pub entitlement_key: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub plan: Option<SubscriptionPlanResponse>,
+    pub external_price_id: Option<String>,
+    pub payment_provider: String,
     pub status: String,
-    pub billing_period: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_period_start: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -189,8 +135,57 @@ pub struct SubscriptionDetailResponse {
     pub cancel_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cancel_at_period_end: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synced_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// Response for subscription list item
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionListItemResponse {
+    pub id: Uuid,
+    pub client_app_id: Option<Uuid>,
+    pub entitlement_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_price_id: Option<String>,
+    pub payment_provider: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_period_start: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_period_end: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synced_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Response for listing subscriptions
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionListResponse {
+    pub items: Vec<SubscriptionListItemResponse>,
+    pub total: i64,
+}
+
+/// Query parameters for listing subscriptions
+#[derive(Debug, Deserialize, ToSchema, IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionListQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entitlement_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payment_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_size: Option<u64>,
 }
 
 /// Request to cancel subscription
@@ -209,174 +204,10 @@ pub struct CancelSubscriptionResponse {
     pub message: String,
 }
 
-/// Request to create checkout session for a plan
+/// Request to create checkout session
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateCheckoutSessionRequest {
-    pub plan_id: Uuid,
+    pub entitlement_key: String,
     pub payment_provider: String,
-    pub billing_period: String,
-}
-
-/// Subscription plan summary in subscription history responses
-#[derive(Debug, Clone, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SubscriptionPlanSummary {
-    pub id: Uuid,
-    pub name: String,
-    pub title: String,
-}
-
-// Product Management Types
-
-fn validate_product_code(code: &str) -> Result<(), validator::ValidationError> {
-    if code
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-    {
-        Ok(())
-    } else {
-        Err(validator::ValidationError::new("invalid_product_code"))
-    }
-}
-
-/// Request to create a product
-#[derive(Debug, Deserialize, ToSchema, Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateProductRequest {
-    #[validate(length(min = 3, max = 50))]
-    #[validate(custom(function = "validate_product_code"))]
-    pub code: String,
-    #[validate(length(min = 1, max = 100))]
-    pub title: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(length(max = 500))]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-}
-
-/// Request to update a product
-#[derive(Debug, Deserialize, ToSchema, Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateProductRequest {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(length(min = 1, max = 100))]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(length(max = 500))]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-}
-
-/// Response for product query
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ProductResponse {
-    pub id: Uuid,
-    pub realm_id: String,
-    pub code: String,
-    pub title: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    pub enabled: bool,
-    pub plans_count: i64,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-/// Response for listing products
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ListProductsQuery {
-    pub enabled: Option<bool>,
-}
-
-/// Response for listing products
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ListProductsResponse {
-    pub products: Vec<ProductResponse>,
-}
-
-/// Response for product detail (includes plan summary and plans_count)
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ProductDetailResponse {
-    pub id: Uuid,
-    pub realm_id: String,
-    pub code: String,
-    pub title: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    pub enabled: bool,
-    pub plans_count: i64,
-    pub plans: Vec<SubscriptionPlanSummaryForProduct>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-/// Subscription plan summary within product detail response
-#[derive(Debug, Clone, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SubscriptionPlanSummaryForProduct {
-    pub id: Uuid,
-    pub name: String,
-    pub title: String,
-    pub r#type: String,
-    pub price: i32,
-    pub currency: String,
-    pub active: bool,
-    pub sort_order: i32,
-}
-
-// ===== Plan Payment Provider Mapping Types =====
-
-/// Request to add a payment provider to a subscription plan
-#[derive(Debug, Deserialize, ToSchema, Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateSubscriptionPlanPaymentProviderRequest {
-    #[validate(length(min = 1))]
-    pub payment_provider: String,
-    #[validate(length(min = 1))]
-    pub external_product_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub external_price_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-}
-
-/// Response for subscription plan payment provider mapping
-#[derive(Debug, Clone, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SubscriptionPlanPaymentProviderResponse {
-    pub id: Uuid,
-    pub plan_id: Uuid,
-    pub payment_provider: String,
-    pub external_product_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub external_price_id: Option<String>,
-    pub enabled: bool,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-/// Request to update a subscription plan payment provider mapping
-#[derive(Debug, Deserialize, ToSchema, Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateSubscriptionPlanPaymentProviderRequest {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(length(min = 1))]
-    pub external_product_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub external_price_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-}
-
-/// Request to toggle subscription plan payment provider enabled status
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ToggleSubscriptionPlanPaymentProviderRequest {
-    pub enabled: bool,
 }

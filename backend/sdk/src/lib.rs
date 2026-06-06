@@ -52,10 +52,9 @@ pub struct PermissionCheckResponse {
 pub struct SubscriptionDetail {
     pub id: String,
     pub client_app_id: Option<String>,
-    pub plan_id: Option<String>,
-    pub plan: Option<SubscriptionPlan>,
     pub status: String,
-    pub billing_period: String,
+    pub entitlement_key: String,
+    pub payment_provider: String,
     pub current_period_start: Option<String>,
     pub current_period_end: Option<String>,
     pub cancel_at: Option<String>,
@@ -943,23 +942,9 @@ mod tests {
         let subscription_response = json!({
             "id": "sub-123",
             "clientAppId": "client1",
-            "planId": "plan-basic",
             "status": "active",
-            "billingPeriod": "monthly",
-            "plan": {
-                "id": "plan-basic",
-                "realmId": "realm1",
-                "name": "basic",
-                "title": "Basic Plan",
-                "description": "Basic subscription plan",
-                "type": "standard",
-                "price": 1000,
-                "currency": "USD",
-                "checkoutUrl": null,
-                "active": true,
-                "trialDays": 0,
-                "sortOrder": 1
-            },
+            "entitlementKey": "basic-plan",
+            "paymentProvider": "stripe",
             "currentPeriodStart": null,
             "currentPeriodEnd": null,
             "cancelAt": null,
@@ -984,8 +969,7 @@ mod tests {
         );
         let subscription = result.unwrap();
         assert_eq!(subscription.status, "active");
-        assert!(subscription.plan.is_some());
-        assert_eq!(subscription.plan.unwrap().name, "basic");
+        assert_eq!(subscription.entitlement_key, "basic-plan");
 
         server.verify().await;
     }

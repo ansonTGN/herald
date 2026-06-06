@@ -3,84 +3,6 @@ use uuid::Uuid;
 
 use crate::common::entities::app_errors::CoreError;
 
-/// Helper for parsing string enums with a default error message
-fn parse_enum<T, F>(s: &str, error_prefix: &str, variants: F) -> Result<T, CoreError>
-where
-    F: Fn(&str) -> Option<T>,
-{
-    variants(s).ok_or_else(|| CoreError::BadRequest(format!("{}: {}", error_prefix, s)))
-}
-
-/// Subscription plan type enum
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum SubscriptionPlanType {
-    Monthly,
-    Yearly,
-}
-
-impl SubscriptionPlanType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            SubscriptionPlanType::Monthly => "monthly",
-            SubscriptionPlanType::Yearly => "yearly",
-        }
-    }
-}
-
-impl std::str::FromStr for SubscriptionPlanType {
-    type Err = CoreError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse_enum(
-            s.to_lowercase().as_str(),
-            "Invalid subscription plan type",
-            |s| match s {
-                "monthly" => Some(SubscriptionPlanType::Monthly),
-                "yearly" => Some(SubscriptionPlanType::Yearly),
-                _ => None,
-            },
-        )
-    }
-}
-
-/// Payment provider enum
-///
-/// DEPRECATED: This enum is hardcoded and doesn't allow dynamic payment providers.
-/// Use String type for payment_provider field instead. Values should be read from
-/// realm_config.config_type (ConfigType::Creem, ConfigType::Stripe, etc.).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum PaymentProvider {
-    Creem,
-    Stripe,
-}
-
-impl PaymentProvider {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            PaymentProvider::Creem => "creem",
-            PaymentProvider::Stripe => "stripe",
-        }
-    }
-}
-
-impl std::str::FromStr for PaymentProvider {
-    type Err = CoreError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse_enum(
-            s.to_lowercase().as_str(),
-            "Invalid payment provider",
-            |s| match s {
-                "creem" => Some(PaymentProvider::Creem),
-                "stripe" => Some(PaymentProvider::Stripe),
-                _ => None,
-            },
-        )
-    }
-}
-
 /// Subscription entity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Subscription {
@@ -96,13 +18,18 @@ pub struct Subscription {
     /// Used to determine which external IDs are populated
     pub payment_provider: String,
     pub status: SubscriptionStatus,
-    pub tier: SubscriptionTier,
+    /// Herald entitlement key replacing plan_id + tier
+    pub entitlement_key: String,
+    /// External price ID from the payment provider
+    pub external_price_id: Option<String>,
+    /// Provider-specific metadata as JSON
+    pub provider_metadata: Option<serde_json::Value>,
+    /// Last sync timestamp from provider
+    pub synced_at: Option<chrono::DateTime<chrono::Utc>>,
     pub current_period_start: Option<chrono::DateTime<chrono::Utc>>,
     pub current_period_end: Option<chrono::DateTime<chrono::Utc>>,
     pub cancel_at_period_end: bool,
     pub client_app_id: Option<Uuid>,
-    pub plan_id: Option<Uuid>,
-    pub billing_period: BillingPeriod,
     pub cancel_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -233,44 +160,6 @@ impl std::str::FromStr for SubscriptionStatus {
     }
 }
 
-/// Subscription tier
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum SubscriptionTier {
-    #[default]
-    Free,
-    Starter,
-    Professional,
-    Enterprise,
-}
-
-impl SubscriptionTier {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            SubscriptionTier::Free => "free",
-            SubscriptionTier::Starter => "starter",
-            SubscriptionTier::Professional => "professional",
-            SubscriptionTier::Enterprise => "enterprise",
-        }
-    }
-}
-
-impl std::str::FromStr for SubscriptionTier {
-    type Err = crate::common::entities::app_errors::CoreError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
-            "free" => Ok(SubscriptionTier::Free),
-            "starter" => Ok(SubscriptionTier::Starter),
-            "professional" => Ok(SubscriptionTier::Professional),
-            "enterprise" => Ok(SubscriptionTier::Enterprise),
-            _ => Err(crate::common::entities::app_errors::CoreError::BadRequest(
-                format!("Invalid subscription tier: {}", s),
-            )),
-        }
-    }
-}
-
 /// Payment event entity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaymentEvent {
@@ -288,120 +177,57 @@ pub struct PaymentEvent {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// SubscriptionPlan domain entity
+/// EntitlementMapping domain entity - maps provider products to Herald entitlement keys
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SubscriptionPlan {
+pub struct EntitlementMapping {
     pub id: Uuid,
     pub realm_id: String,
-    pub name: String,
-    pub title: String,
-    pub description: Option<String>,
-
-    // Pricing information
-    #[serde(rename = "type")]
-    pub r#type: SubscriptionPlanType,
-    pub price: i32,       // Price in cents
-    pub currency: String, // USD, EUR, CNY
-
-    // Checkout URL (third-party payment page)
-    pub checkout_url: Option<String>,
-
-    // Plan status
-    pub active: bool,
-    pub trial_days: i32,
-    pub sort_order: i32,
-    pub product_id: Uuid,
-
-    // Timestamps
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-/// SubscriptionPlan Payment Provider mapping entity
-///
-/// This entity manages the relationship between SubscriptionPlans and Payment Providers,
-/// allowing a single SubscriptionPlan to support multiple payment platforms.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SubscriptionPlanPaymentProvider {
-    pub id: Uuid,
-    pub plan_id: Uuid,
-    /// Payment provider name (dynamic: stripe, creem, shopify, etc.)
-    /// NOT an enum - supports future payment providers without database migration
     pub payment_provider: String,
-    /// External product ID from the payment provider
     pub external_product_id: String,
-    /// External price ID from the payment provider (optional)
     pub external_price_id: Option<String>,
-    /// Whether this mapping is enabled for checkout
+    pub entitlement_key: String,
+    pub billing_type: Option<BillingType>,
+    pub billing_period: Option<String>,
+    pub points_per_period: Option<i64>,
+    pub grant_period_type: Option<String>,
+    pub validity_days: Option<i64>,
+    pub grant_on_subscribe: bool,
+    pub max_periods: Option<i64>,
     pub enabled: bool,
+    pub provider_product_info: Option<serde_json::Value>,
+    pub synced_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Client App SubscriptionPlan junction domain entity
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClientAppSubscriptionPlan {
-    pub id: Uuid,
-    pub client_app_id: Uuid,
-    pub plan_id: Uuid,
-    pub enabled: bool,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-}
-
-/// Billing period enum
+/// Billing type enum for entitlement mappings
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum BillingPeriod {
-    Monthly,
-    Yearly,
+#[serde(rename_all = "snake_case")]
+pub enum BillingType {
+    Recurring,
+    OneTime,
 }
 
-impl BillingPeriod {
+impl BillingType {
     pub fn as_str(&self) -> &'static str {
         match self {
-            BillingPeriod::Monthly => "monthly",
-            BillingPeriod::Yearly => "yearly",
+            BillingType::Recurring => "recurring",
+            BillingType::OneTime => "one_time",
         }
     }
 }
 
-impl std::fmt::Display for BillingPeriod {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
+impl std::str::FromStr for BillingType {
+    type Err = CoreError;
 
-impl From<String> for BillingPeriod {
-    fn from(s: String) -> Self {
-        match s.to_lowercase().as_str() {
-            "monthly" => BillingPeriod::Monthly,
-            "yearly" => BillingPeriod::Yearly,
-            _ => BillingPeriod::Monthly, // Default
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "recurring" => Ok(BillingType::Recurring),
+            "one_time" => Ok(BillingType::OneTime),
+            _ => Err(CoreError::BadRequest(format!(
+                "Invalid billing type: {}",
+                s
+            ))),
         }
     }
-}
-
-impl From<&str> for BillingPeriod {
-    fn from(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "monthly" => BillingPeriod::Monthly,
-            "yearly" => BillingPeriod::Yearly,
-            _ => BillingPeriod::Monthly, // Default
-        }
-    }
-}
-
-// Product Entity
-
-/// Product domain entity - catalog object for organizing SubscriptionPlans
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Product {
-    pub id: Uuid,
-    pub realm_id: String,
-    pub code: String,
-    pub title: String,
-    pub description: Option<String>,
-    pub enabled: bool,
-    pub plans_count: i64,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
 }

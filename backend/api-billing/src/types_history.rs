@@ -4,7 +4,6 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::types::SubscriptionPlanSummary;
 use herald_api_base::application::http::common::pagination::PaginationMeta;
 
 /// Subscription history event for API responses
@@ -44,7 +43,7 @@ pub struct UserInfo {
 pub struct SubscriptionSummary {
     pub id: Uuid,
     pub status: String,
-    pub plan: Option<SubscriptionPlanSummary>,
+    pub entitlement_key: Option<String>,
 }
 
 /// Subscription history list response with user and subscription details
@@ -75,10 +74,10 @@ pub struct SubscriptionHistoryEventWithUser {
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionHistoryListQuery {
-    /// Filter by user ID (client_app_id)
+    /// Filter by user ID
     pub user_id: Option<Uuid>,
-    /// Filter by plan ID
-    pub plan_id: Option<Uuid>,
+    /// Filter by entitlement key
+    pub entitlement_key: Option<String>,
     /// Filter by event type
     pub event_type: Option<String>,
     /// Filter by subscription status

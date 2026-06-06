@@ -24,8 +24,7 @@ pub struct FeatureAvailabilityResponse {
 pub struct AdminFeatureAvailability {
     pub billing_visible: bool,
     pub billing_config_visible: bool,
-    pub products_visible: bool,
-    pub plans_visible: bool,
+    pub entitlement_mappings_visible: bool,
     pub invoices_visible: bool,
     pub subscription_history_visible: bool,
     pub points_visible: bool,
@@ -45,9 +44,8 @@ pub struct UserFeatureAvailability {
 #[serde(rename_all = "camelCase")]
 pub struct FeatureAvailabilityFacts {
     pub has_payment_providers: bool,
-    pub has_products: bool,
-    pub has_plans: bool,
-    pub has_plan_payment_mappings: bool,
+    pub has_entitlement_mappings: bool,
+    pub has_enabled_mappings: bool,
     pub has_points_packages: bool,
     pub has_points_package_payment_mappings: bool,
     pub has_invoice_seller_config: bool,
@@ -58,10 +56,8 @@ pub struct FeatureAvailabilityFacts {
 #[derive(Debug, Clone)]
 struct FeatureFacts {
     has_payment_providers: bool,
-    has_products: bool,
-    has_plans: bool,
-    has_active_plans: bool,
-    has_plan_payment_mappings: bool,
+    has_entitlement_mappings: bool,
+    has_enabled_mappings: bool,
     has_points_packages: bool,
     has_points_package_payment_mappings: bool,
     has_invoice_seller_config: bool,
@@ -98,7 +94,7 @@ pub async fn get_feature_availability(
 
     let admin_billing_visible = can_view_billing;
     let admin_points_visible = can_view_points;
-    let user_subscription_visible = facts.has_active_plans;
+    let user_subscription_visible = facts.has_enabled_mappings;
     let user_points_visible = facts.has_points_packages;
     let user_invoices_visible = facts.has_invoice_seller_config;
 
@@ -106,8 +102,7 @@ pub async fn get_feature_availability(
         admin: AdminFeatureAvailability {
             billing_visible: admin_billing_visible,
             billing_config_visible: admin_billing_visible,
-            products_visible: admin_billing_visible,
-            plans_visible: admin_billing_visible,
+            entitlement_mappings_visible: admin_billing_visible,
             invoices_visible: admin_billing_visible,
             subscription_history_visible: admin_billing_visible,
             points_visible: admin_points_visible,
@@ -121,9 +116,8 @@ pub async fn get_feature_availability(
         },
         facts: FeatureAvailabilityFacts {
             has_payment_providers: facts.has_payment_providers,
-            has_products: facts.has_products,
-            has_plans: facts.has_plans,
-            has_plan_payment_mappings: facts.has_plan_payment_mappings,
+            has_entitlement_mappings: facts.has_entitlement_mappings,
+            has_enabled_mappings: facts.has_enabled_mappings,
             has_points_packages: facts.has_points_packages,
             has_points_package_payment_mappings: facts.has_points_package_payment_mappings,
             has_invoice_seller_config: facts.has_invoice_seller_config,
@@ -189,16 +183,8 @@ async fn load_feature_facts(state: &AppState, realm_id: &str) -> Result<FeatureF
         )
         SELECT
             EXISTS (SELECT 1 FROM configured_providers) AS has_payment_providers,
-            EXISTS (SELECT 1 FROM products WHERE realm_id = $1) AS has_products,
-            EXISTS (SELECT 1 FROM subscription_plan WHERE realm_id = $1) AS has_plans,
-            EXISTS (SELECT 1 FROM subscription_plan WHERE realm_id = $1 AND active = true) AS has_active_plans,
-            EXISTS (
-                SELECT 1
-                FROM subscription_plan_payment_provider spp
-                JOIN subscription_plan sp ON sp.id = spp.plan_id
-                JOIN configured_providers cp ON cp.provider = spp.payment_provider
-                WHERE sp.realm_id = $1 AND spp.enabled = true
-            ) AS has_plan_payment_mappings,
+            EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1) AS has_entitlement_mappings,
+            EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1 AND enabled = true) AS has_enabled_mappings,
             EXISTS (SELECT 1 FROM points_packages WHERE realm_id = $1 AND enabled = true) AS has_points_packages,
             EXISTS (
                 SELECT 1
@@ -226,10 +212,8 @@ async fn load_feature_facts(state: &AppState, realm_id: &str) -> Result<FeatureF
 
     Ok(FeatureFacts {
         has_payment_providers: row.get("has_payment_providers"),
-        has_products: row.get("has_products"),
-        has_plans: row.get("has_plans"),
-        has_active_plans: row.get("has_active_plans"),
-        has_plan_payment_mappings: row.get("has_plan_payment_mappings"),
+        has_entitlement_mappings: row.get("has_entitlement_mappings"),
+        has_enabled_mappings: row.get("has_enabled_mappings"),
         has_points_packages: row.get("has_points_packages"),
         has_points_package_payment_mappings: row.get("has_points_package_payment_mappings"),
         has_invoice_seller_config: row.get("has_invoice_seller_config"),

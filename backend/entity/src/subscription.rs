@@ -14,8 +14,14 @@ pub struct Model {
     #[sea_orm(default_value = "creem")]
     pub payment_provider: String,
     pub status: String,
-    #[sea_orm(default_value = "free")]
-    pub tier: String,
+    #[sea_orm(default_value = "")]
+    pub entitlement_key: String,
+    #[sea_orm(nullable)]
+    pub external_price_id: Option<String>,
+    #[sea_orm(nullable)]
+    pub provider_metadata: Option<Json>,
+    #[sea_orm(nullable)]
+    pub synced_at: Option<DateTimeWithTimeZone>,
     #[sea_orm(nullable)]
     pub current_period_start: Option<DateTimeWithTimeZone>,
     #[sea_orm(nullable)]
@@ -25,10 +31,6 @@ pub struct Model {
     #[sea_orm(nullable)]
     pub client_app_id: Option<Uuid>,
     #[sea_orm(nullable)]
-    pub plan_id: Option<Uuid>,
-    #[sea_orm(default_value = "monthly")]
-    pub billing_period: String,
-    #[sea_orm(nullable)]
     pub cancel_at: Option<DateTimeWithTimeZone>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
@@ -36,12 +38,6 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::subscription_plan::Entity",
-        from = "Column::PlanId",
-        to = "super::subscription_plan::Column::Id"
-    )]
-    SubscriptionPlan,
     #[sea_orm(
         belongs_to = "super::client_app::Entity",
         from = "Column::ClientAppId",
@@ -54,12 +50,6 @@ pub enum Relation {
         to = "super::account::Column::Id"
     )]
     Account,
-}
-
-impl Related<super::subscription_plan::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SubscriptionPlan.def()
-    }
 }
 
 impl Related<super::client_app::Entity> for Entity {

@@ -179,15 +179,11 @@ impl AsyncTestContext for SchemaTestContext {
             herald_core::infrastructure::billing::PostgresBillingRepository::new(sea_conn.clone()),
         );
 
-        // Create billing service with PermissionBasedBillingPolicy for testing
-        use herald_core::domain::billing::SubscriptionPlanService;
+        // Create entitlement mapping service with PermissionBasedBillingPolicy for testing
+        use herald_core::domain::billing::EntitlementMappingService;
         use herald_core::infrastructure::authorization::policies::PermissionBasedBillingPolicy;
         let billing_policy = PermissionBasedBillingPolicy::new(permission_checker.clone());
-        let billing_service = Arc::new(SubscriptionPlanService::new(
-            billing_repository.clone(),
-            Arc::new(billing_policy.clone()),
-        ));
-        let product_service = Arc::new(herald_core::domain::billing::ProductService::new(
+        let entitlement_mapping_service = Arc::new(EntitlementMappingService::new(
             billing_repository.clone(),
             Arc::new(billing_policy),
         ));
@@ -300,8 +296,7 @@ impl AsyncTestContext for SchemaTestContext {
             audit_event_repository: Arc::new(
                 herald_core::infrastructure::audit::PostgresAuditEventRepository::new(sea_conn.clone()),
             ),
-            billing_service,
-            product_service,
+            entitlement_mapping_service,
             public_base_url: "http://localhost:8080".to_string(),
             permission_checker: permission_checker.clone(),
             app_env: "test".to_string(),

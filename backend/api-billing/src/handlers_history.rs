@@ -6,7 +6,6 @@ use std::str::FromStr;
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::types::SubscriptionPlanSummary;
 use crate::types_history::{
     SubscriptionHistoryEventResponse, SubscriptionHistoryEventWithUser,
     SubscriptionHistoryListQuery, SubscriptionHistoryListResponse, SubscriptionHistoryResponse,
@@ -93,7 +92,7 @@ pub async fn get_subscription_history(
     params(
         ("realmId" = String, Path, description = "Realm ID"),
         ("userId" = Option<Uuid>, Query, description = "Filter by user ID (client_app_id)"),
-        ("planId" = Option<Uuid>, Query, description = "Filter by plan ID"),
+        ("entitlementKey" = Option<String>, Query, description = "Filter by entitlement key"),
         ("eventType" = Option<String>, Query, description = "Filter by event type"),
         ("subscriptionStatus" = Option<String>, Query, description = "Filter by subscription status"),
         ("fromDate" = Option<String>, Query, description = "Filter by date range start (ISO 8601)"),
@@ -145,7 +144,7 @@ pub async fn list_subscription_history(
 
     let repo_query = SubscriptionHistoryQuery {
         user_id: query.user_id,
-        plan_id: query.plan_id,
+        entitlement_key: query.entitlement_key,
         event_type,
         subscription_status: query.subscription_status,
         from_date: query.from_date,
@@ -190,32 +189,16 @@ async fn convert_events_with_details(
             .find_subscription_by_id(event.subscription_id)
             .await
         {
-            let plan = if let Some(plan_id) = subscription.plan_id {
-                state
-                    .billing_repository
-                    .find_subscription_plan_by_id(plan_id)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|p| SubscriptionPlanSummary {
-                        id: p.id,
-                        name: p.name,
-                        title: p.title,
-                    })
-            } else {
-                None
-            };
-
             SubscriptionSummary {
                 id: subscription.id,
                 status: subscription.status.as_str().to_string(),
-                plan,
+                entitlement_key: Some(subscription.entitlement_key),
             }
         } else {
             SubscriptionSummary {
                 id: event.subscription_id,
                 status: SUBSCRIPTION_STATUS_UNKNOWN.to_string(),
-                plan: None,
+                entitlement_key: None,
             }
         };
 

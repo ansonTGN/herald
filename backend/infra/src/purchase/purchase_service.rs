@@ -278,38 +278,59 @@ where
                 })
             }
             PurchasableTarget::SubscriptionPlan => {
-                let plan = self
+                // Look up entitlement mapping by target_id (which is now the external_product_id)
+                let mapping = self
                     .billing_repository
-                    .find_subscription_plan_by_id(target_id)
+                    .find_entitlement_mapping_by_provider_product(
+                        realm_id,
+                        payment_provider,
+                        &target_id.to_string(),
+                    )
                     .await?
-                    .ok_or_else(|| CoreError::plan_not_found(&target_id.to_string()))?;
-
-                if plan.realm_id != realm_id || !plan.active {
-                    return Err(CoreError::plan_not_found(&target_id.to_string()));
-                }
-
-                let provider_mapping = self
-                    .billing_repository
-                    .list_subscription_plan_payment_providers(plan.id)
-                    .await?
-                    .into_iter()
-                    .find(|mapping| {
-                        mapping.payment_provider == payment_provider && mapping.enabled
-                    })
                     .ok_or_else(|| {
                         CoreError::Conflict(format!(
-                            "Payment provider {payment_provider} not configured for this subscription plan"
+                            "No entitlement mapping found for provider '{payment_provider}' product '{}' in realm '{}'",
+                            target_id, realm_id
                         ))
                     })?;
+
+                if !mapping.enabled {
+                    return Err(CoreError::Conflict(format!(
+                        "Entitlement mapping for provider '{payment_provider}' product '{}' is disabled",
+                        target_id
+                    )));
+                }
+
+                // Extract price info from provider_product_info if available
+                let (amount, currency, title) = mapping
+                    .provider_product_info
+                    .as_ref()
+                    .and_then(|info| {
+                        let price = info.get("price")?.as_i64()?;
+                        let curr = info.get("currency")?.as_str()?.to_string();
+                        let name = info
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&mapping.entitlement_key)
+                            .to_string();
+                        Some((price, curr, name))
+                    })
+                    .unwrap_or_else(|| {
+                        (
+                            0, // No price info available
+                            "usd".to_string(),
+                            mapping.entitlement_key.clone(),
+                        )
+                    });
 
                 Ok(PurchaseTargetSnapshot {
                     target_type: parsed_target_type,
                     target_id,
-                    amount: i64::from(plan.price),
-                    currency: plan.currency,
-                    title: plan.title,
-                    provider_external_product_id: Some(provider_mapping.external_product_id),
-                    billing_period: Some(plan.r#type.as_str().to_string()),
+                    amount,
+                    currency,
+                    title,
+                    provider_external_product_id: Some(mapping.external_product_id.clone()),
+                    billing_period: mapping.billing_period.clone(),
                 })
             }
         }
@@ -481,8 +502,8 @@ where
         })?;
         let client = self.get_creem_client_for_realm(realm_id).await?;
         let mut metadata = HashMap::new();
-        metadata.insert("realmId".to_string(), realm_id.to_string());
-        metadata.insert("userId".to_string(), user_id.to_string());
+        metadata.insert("heraldRealmId".to_string(), realm_id.to_string());
+        metadata.insert("heraldUserId".to_string(), user_id.to_string());
         metadata.insert("targetType".to_string(), target_type.to_string());
         metadata.insert("targetId".to_string(), target_id.to_string());
         metadata.insert("attemptId".to_string(), attempt_id.to_string());
@@ -531,11 +552,11 @@ where
         let client = self.get_stripe_client_for_realm(realm_id).await?;
 
         let mut metadata = HashMap::new();
+        metadata.insert("heraldRealmId".to_string(), realm_id.to_string());
+        metadata.insert("heraldUserId".to_string(), user_id.to_string());
+        metadata.insert("targetType".to_string(), target_type.to_string());
+        metadata.insert("targetId".to_string(), target_id.to_string());
         if target_type == "points_package" {
-            metadata.insert("realmId".to_string(), realm_id.to_string());
-            metadata.insert("userId".to_string(), user_id.to_string());
-            metadata.insert("targetType".to_string(), target_type.to_string());
-            metadata.insert("targetId".to_string(), target_id.to_string());
             metadata.insert("pointsPackageId".to_string(), target_id.to_string());
         }
         metadata.insert("attemptId".to_string(), attempt_id.to_string());

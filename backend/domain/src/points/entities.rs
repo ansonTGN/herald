@@ -556,22 +556,6 @@ pub struct PointsTransaction {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Points Plan Config entity
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PointsPlanConfig {
-    pub id: Uuid,
-    pub realm_id: String,
-    pub plan_id: Uuid,
-    pub grant_period_type: String,
-    pub points_per_period: i64,
-    pub validity_days: i64,
-    pub grant_on_subscribe: bool,
-    pub max_periods: Option<i64>,
-    pub active: bool,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
 /// Points Balance DTO
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PointsBalance {

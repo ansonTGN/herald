@@ -795,3 +795,84 @@ pub async fn assert_account_matches_ledger_sums(
         subscription_balance, sub_ledger_sum
     );
 }
+
+// ============================================================================
+// Entitlement-Based Points Verification Helpers (BE-T03)
+// ============================================================================
+
+/// Verify points were granted with correct entitlement_key association.
+///
+/// Checks that at least `expected_amount` subscription credit was granted
+/// for the given entitlement_key by inspecting the credit ledger.
+pub async fn verify_points_granted_for_entitlement(
+    ctx: &SchemaTestContext,
+    user_id: Uuid,
+    entitlement_key: &str,
+    expected_amount: i64,
+) {
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(granted_amount), 0)::BIGINT FROM points_credit_ledger
+         WHERE user_id = $1 AND credit_type = 'subscription_credit' AND source_id LIKE $2",
+    )
+    .bind(user_id)
+    .bind(format!("{}:%", entitlement_key))
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .unwrap();
+
+    assert!(
+        total >= expected_amount,
+        "Expected at least {} subscription credit granted, got {}",
+        expected_amount,
+        total
+    );
+}
+
+/// Get current points balance for a user (total_balance from wallet).
+///
+/// Returns 0 if the user has no wallet.
+pub async fn get_points_balance_for_user(ctx: &SchemaTestContext, user_id: Uuid) -> i64 {
+    let balance: Option<i64> = sqlx::query_scalar(
+        "SELECT total_balance FROM points_wallets WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_optional(&ctx.app_state.pool)
+    .await
+    .unwrap()
+    .flatten();
+
+    balance.unwrap_or(0)
+}
+
+/// Get points grant schedule by entitlement_key.
+///
+/// Returns Vec of (id, entitlement_key, points_per_period, granted_periods, max_periods, active).
+pub async fn get_points_grant_schedule_by_entitlement(
+    ctx: &SchemaTestContext,
+    entitlement_key: &str,
+) -> Vec<(Uuid, String, i64, i64, Option<i64>, bool)> {
+    let rows = sqlx::query(
+        "SELECT id, entitlement_key, points_per_period, granted_periods, max_periods, active
+         FROM points_grant_schedules
+         WHERE entitlement_key = $1
+         ORDER BY created_at DESC",
+    )
+    .bind(entitlement_key)
+    .fetch_all(&ctx.app_state.pool)
+    .await
+    .unwrap();
+
+    rows.into_iter()
+        .map(|row| {
+            use sqlx::Row;
+            (
+                row.get("id"),
+                row.get("entitlement_key"),
+                row.get("points_per_period"),
+                row.get("granted_periods"),
+                row.get("max_periods"),
+                row.get("active"),
+            )
+        })
+        .collect()
+}

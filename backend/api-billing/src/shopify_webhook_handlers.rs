@@ -10,6 +10,7 @@ use herald_core::application::{WebhookContext, WebhookProcessResult};
 
 use crate::shopify_webhook_utils::verify_webhook_hmac;
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::billing::BillingRepository;
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
@@ -173,9 +174,15 @@ async fn handle_orders_paid(
         .find_subscription_with_user(subscription_id)
         .await?
         .ok_or(CoreError::NotFound)?;
-    if let (Some(user_id), Some(plan_id)) =
-        (subscription_record.user_id, subscription_record.plan_id)
-    {
+
+    // TODO: Shopify provider contract design deferred (design section 1.3).
+    // For now, use plan_id as entitlement_key fallback (ShopifySubscriptionRecord still uses plan_id).
+    if let Some(user_id) = subscription_record.user_id {
+        // Resolve entitlement_key: try to find mapping, fallback to plan_id string
+        let entitlement_key = subscription_record
+            .plan_id
+            .map(|pid| pid.to_string())
+            .unwrap_or_default();
         let period_end = subscription_record
             .current_period_end
             .unwrap_or_else(|| chrono::Utc::now() + chrono::Duration::days(30));
@@ -184,7 +191,7 @@ async fn handle_orders_paid(
             .handle_subscription_paid(
                 user_id,
                 &realm_id,
-                plan_id,
+                &entitlement_key,
                 true,
                 period_end,
                 format!("shopify_order_paid_{}", order_id),
@@ -268,18 +275,45 @@ async fn handle_subscription_contracts_create(
     let contract = parse_subscription_contract_payload(&payload)
         .map_err(|e| CoreError::BadRequest(format!("Invalid Shopify contract payload: {}", e)))?;
 
+    // TODO: Shopify provider contract design deferred (design section 1.3).
+    // Currently uses herald_plan_id -> resolve to entitlement_key via mapping.
+    // Full Shopify provider contract design will replace this with herald_entitlement_key.
     let herald_plan_id = contract.herald_plan_id.ok_or_else(|| {
         CoreError::BadRequest("Missing casPlanId in contract attributes".to_string())
     })?;
 
-    state
-        .points_repository
-        .find_plan_config(&realm_id, herald_plan_id)
-        .await?
-        .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-            realm_id: realm_id.clone(),
-            plan_id: herald_plan_id.to_string(),
-        })?;
+    // Look up entitlement mapping: first by provider + external_product_id,
+    // then by entitlement_key for backward compat
+    let mapping = state
+        .billing_repository
+        .find_entitlement_mapping_by_provider_product(
+            &realm_id,
+            "shopify",
+            &herald_plan_id.to_string(),
+        )
+        .await?;
+
+    let mapping = match mapping {
+        Some(m) => Some(m),
+        None => {
+            state
+                .points_repository
+                .find_points_policy_by_entitlement_key(&realm_id, &herald_plan_id.to_string())
+                .await?
+        }
+    };
+
+    if mapping.is_none() {
+        warn!(
+            realm_id = %realm_id,
+            plan_id = %herald_plan_id,
+            "No entitlement mapping found for Shopify plan_id; using plan_id string as entitlement_key"
+        );
+    }
+
+    let entitlement_key = mapping
+        .map(|m| m.entitlement_key.clone())
+        .unwrap_or_else(|| herald_plan_id.to_string());
 
     let client_app_id = contract.herald_client_app_id;
     let shop_domain = shopify_repo.get_shop_domain(&realm_id).await?;
@@ -322,7 +356,7 @@ async fn handle_subscription_contracts_create(
     info!(
         realm_id = %realm_id,
         user_id = ?resolved_user_id,
-        plan_id = %herald_plan_id,
+        entitlement_key = %entitlement_key,
         subscription_id = %subscription_id,
         binding_id = %binding_id,
         contract_id = %contract.id,
@@ -335,7 +369,7 @@ async fn handle_subscription_contracts_create(
             .handle_subscription_paid(
                 user_id,
                 &realm_id,
-                herald_plan_id,
+                &entitlement_key,
                 false,
                 contract.current_period_end,
                 format!("shopify_create_{}", contract.id),
@@ -354,7 +388,7 @@ async fn handle_subscription_contracts_create(
         info!(
             realm_id = %realm_id,
             user_id = %user_id,
-            plan_id = %herald_plan_id,
+            entitlement_key = %entitlement_key,
             period_end = %contract.current_period_end,
             "Granted initial subscription points"
         );
@@ -387,6 +421,7 @@ async fn handle_subscription_contracts_update(
     let contract = parse_subscription_contract_payload(&payload)
         .map_err(|e| CoreError::BadRequest(format!("Invalid Shopify contract payload: {}", e)))?;
 
+    // TODO: Shopify provider contract design deferred (design section 1.3).
     let herald_plan_id = contract.herald_plan_id.ok_or_else(|| {
         CoreError::BadRequest("Missing casPlanId in contract attributes".to_string())
     })?;
@@ -425,7 +460,7 @@ async fn handle_subscription_contracts_update(
             CoreError::NotFound
         })?;
 
-    let (_sub_id, old_plan_id_option, _sub_realm_id) = subscription;
+    let (_sub_id, _old_plan_id_option, _sub_realm_id) = subscription;
     let subscription_record = shopify_repo
         .find_subscription_with_user(_sub_id)
         .await?
@@ -433,10 +468,13 @@ async fn handle_subscription_contracts_update(
     let mapped_status = map_shopify_status(&contract.status);
     let previous_status = subscription_record.status.clone();
 
-    let old_plan_id = old_plan_id_option.ok_or_else(|| {
-        error!(contract_id = %contract.id, "Subscription missing plan_id");
-        CoreError::BadRequest("Subscription missing plan_id".to_string())
-    })?;
+    // Resolve old entitlement_key from subscription record
+    // TODO: Shopify provider contract design deferred (design section 1.3).
+    // ShopifySubscriptionRecord still uses plan_id; use it as entitlement_key fallback
+    let old_entitlement_key = subscription_record
+        .plan_id
+        .map(|pid| pid.to_string())
+        .unwrap_or_default();
 
     shopify_repo
         .update_subscription_plan(_sub_id, herald_plan_id, contract.current_period_end)
@@ -449,29 +487,23 @@ async fn handle_subscription_contracts_update(
         .update_binding_revision(binding_id, new_revision_id)
         .await?;
 
-    let old_plan_config = state
+    // Resolve new entitlement_key
+    // TODO: Shopify provider contract design deferred (design section 1.3).
+    let new_mapping = state
         .points_repository
-        .find_plan_config(&realm_id, old_plan_id)
-        .await?
-        .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-            realm_id: realm_id.clone(),
-            plan_id: old_plan_id.to_string(),
-        })?;
+        .find_points_policy_by_entitlement_key(&realm_id, &herald_plan_id.to_string())
+        .await?;
 
-    let new_plan_config = state
-        .points_repository
-        .find_plan_config(&realm_id, herald_plan_id)
-        .await?
-        .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-            realm_id: realm_id.clone(),
-            plan_id: herald_plan_id.to_string(),
-        })?;
+    let new_entitlement_key = new_mapping
+        .as_ref()
+        .map(|m| m.entitlement_key.clone())
+        .unwrap_or_else(|| herald_plan_id.to_string());
 
     let Some(user_id) = subscription_record.user_id else {
         info!(
             realm_id = %realm_id,
             subscription_id = %subscription_id,
-            new_plan_id = %herald_plan_id,
+            new_entitlement_key = %new_entitlement_key,
             status = %mapped_status,
             "Updated unclaimed Shopify subscription without user-level side effects"
         );
@@ -500,14 +532,31 @@ async fn handle_subscription_contracts_update(
         return Ok(());
     }
 
-    if new_plan_config.points_per_period > old_plan_config.points_per_period {
+    // Resolve old entitlement points for comparison
+    let old_mapping = state
+        .points_repository
+        .find_points_policy_by_entitlement_key(&realm_id, &old_entitlement_key)
+        .await?;
+
+    let old_points = old_mapping.and_then(|m| m.points_per_period).unwrap_or(0);
+    let new_points = new_mapping.and_then(|m| m.points_per_period).unwrap_or(0);
+
+    if old_points == 0 && new_points == 0 {
+        info!(
+            realm_id = %realm_id,
+            "Both mappings have no points configured; skipping upgrade/downgrade classification"
+        );
+        return Ok(());
+    }
+
+    if new_points > old_points {
         state
             .subscription_service
             .handle_subscription_upgrade(
                 user_id,
                 &realm_id,
-                old_plan_id,
-                herald_plan_id,
+                &old_entitlement_key,
+                &new_entitlement_key,
                 contract.current_period_end,
             )
             .await?;
@@ -515,22 +564,27 @@ async fn handle_subscription_contracts_update(
         info!(
             realm_id = %realm_id,
             user_id = %user_id,
-            old_plan_id = %old_plan_id,
-            new_plan_id = %herald_plan_id,
+            old_entitlement_key = %old_entitlement_key,
+            new_entitlement_key = %new_entitlement_key,
             revision_id = %new_revision_id,
             "Processed subscription upgrade - granted difference points"
         );
-    } else if new_plan_config.points_per_period < old_plan_config.points_per_period {
+    } else if new_points < old_points {
         state
             .subscription_service
-            .handle_subscription_downgrade(user_id, &realm_id, old_plan_id, herald_plan_id)
+            .handle_subscription_downgrade(
+                user_id,
+                &realm_id,
+                &old_entitlement_key,
+                &new_entitlement_key,
+            )
             .await?;
 
         info!(
             realm_id = %realm_id,
             user_id = %user_id,
-            old_plan_id = %old_plan_id,
-            new_plan_id = %herald_plan_id,
+            old_entitlement_key = %old_entitlement_key,
+            new_entitlement_key = %new_entitlement_key,
             revision_id = %new_revision_id,
             "Processed subscription downgrade - no points revoked"
         );
@@ -539,7 +593,7 @@ async fn handle_subscription_contracts_update(
             realm_id = %realm_id,
             subscription_id = %_sub_id,
             revision_id = %new_revision_id,
-            "Plan unchanged - updated metadata only"
+            "Entitlement unchanged - updated metadata only"
         );
     }
 
@@ -585,16 +639,18 @@ async fn handle_billing_attempt_success(
             CoreError::NotFound
         })?;
 
-    let (_sub_id, plan_id_option, sub_realm_id) = subscription;
+    let (_sub_id, _plan_id_option, sub_realm_id) = subscription;
     let subscription_record = shopify_repo
         .find_subscription_with_user(subscription_id)
         .await?
         .ok_or(CoreError::NotFound)?;
 
-    let plan_id = plan_id_option.ok_or_else(|| {
-        error!(subscription_id = %subscription_id, "Subscription missing plan_id");
-        CoreError::BadRequest("Subscription missing plan_id".to_string())
-    })?;
+    // TODO: Shopify provider contract design deferred (design section 1.3).
+    // ShopifySubscriptionRecord still uses plan_id; use it as entitlement_key fallback
+    let entitlement_key = subscription_record
+        .plan_id
+        .map(|pid| pid.to_string())
+        .unwrap_or_default();
 
     shopify_repo
         .update_binding_billing_attempt(binding_id, &attempt.id, attempt.order_id.as_deref())
@@ -626,7 +682,7 @@ async fn handle_billing_attempt_success(
         .handle_subscription_paid(
             user_id,
             &sub_realm_id,
-            plan_id,
+            &entitlement_key,
             true,
             period_end,
             format!("shopify_renewal_{}", attempt.id),
@@ -646,7 +702,7 @@ async fn handle_billing_attempt_success(
         realm_id = %sub_realm_id,
         user_id = %user_id,
         subscription_id = %subscription_id,
-        plan_id = %plan_id,
+        entitlement_key = %entitlement_key,
         billing_attempt_id = %attempt.id,
         order_id = ?attempt.order_id,
         period_end = %period_end,

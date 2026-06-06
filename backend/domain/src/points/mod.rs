@@ -18,8 +18,8 @@ pub mod user_config;
 pub use entities::{
     CreditLedgerStatus, CreditSourceType, CreditType, IdempotencyKey, IdempotencyResult,
     IdempotencyStatus, PointsBalance, PointsConsumptionAllocation, PointsCreditLedger,
-    PointsPlanConfig, PointsRevocationRecord, PointsTransaction, PointsWallet, RechargeType,
-    RevocationType, SafeArithmetics, TransactionType, WalletStatus,
+    PointsRevocationRecord, PointsTransaction, PointsWallet, RechargeType, RevocationType,
+    SafeArithmetics, TransactionType, WalletStatus,
 };
 pub use errors::PointsErrorExt;
 pub use expiration_service::{ExpirationService, ExpirationSummary};

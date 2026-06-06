@@ -2,7 +2,10 @@
 // Billing Test Helpers
 // =============================================================================
 //
-// Shared helpers for billing-related API tests (subscription_scenarios, plan_scenarios)
+// Shared helpers for billing-related API tests.
+// Adapted for product_reduce: subscription uses entitlement_key instead of
+// plan_id/tier/billing_period; Product/Plan helpers removed; entitlement
+// mapping helpers added.
 //
 // =============================================================================
 
@@ -16,7 +19,6 @@ use axum::{
 use herald_core::domain::billing::entities::SubscriptionStatus;
 use hex;
 use hmac::{Hmac, Mac};
-use serde_json::json;
 use sha2::Sha256;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -54,148 +56,162 @@ pub async fn setup_billing_admin_session_with_user(
 }
 
 /// ============================================================================
-/// Test Data Creation Helpers
-/// ============================================================================
+/// Entitlement Mapping Test Data Creation Helpers
+/// =============================================================================
 ///
-/// Ensure a default product exists for the given realm and return its ID.
-///
-/// Creates a default product if one does not already exist for the realm.
-/// This is needed because the plan table has a NOT NULL product_id FK column.
-pub async fn ensure_default_product(ctx: &mut TestContext, realm_id: &str) -> Uuid {
-    // Check if default product already exists for this realm
-    let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM products WHERE realm_id = $1 AND code = 'default' LIMIT 1",
-    )
-    .bind(realm_id)
-    .fetch_optional(&ctx.app_state.pool)
-    .await
-    .unwrap();
-
-    if let Some(id) = existing {
-        return id;
-    }
-
-    // Create default product
-    let product_id = Uuid::now_v7();
-    sqlx::query(
-        "INSERT INTO products (id, realm_id, code, title, description, enabled, created_at, updated_at)
-         VALUES ($1, $2, 'default', 'Default Product', 'Default test product', true, NOW(), NOW())"
-    )
-    .bind(product_id)
-    .bind(realm_id)
-    .execute(&ctx.app_state.pool)
-    .await
-    .expect("Failed to create default product");
-
-    product_id
-}
-
-/// Create a test plan config via direct SQL insertion
-///
-/// Uses the new flexible grant period schema (grant_period_type, points_per_period, etc.)
-///
-/// Returns the config_id
-pub async fn create_test_plan_config(
+/// Create a test entitlement mapping via direct SQL insertion.
+/// Returns the mapping ID.
+pub async fn setup_test_entitlement_mapping(
     ctx: &mut TestContext,
     realm_id: &str,
-    plan_id: Uuid,
+    payment_provider: &str,
+    external_product_id: &str,
+    entitlement_key: &str,
+) -> Uuid {
+    let mapping_id = Uuid::now_v7();
+
+    sqlx::query(
+        "INSERT INTO provider_entitlement_mappings
+            (id, realm_id, payment_provider, external_product_id, entitlement_key,
+             grant_on_subscribe, enabled, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, false, false, NOW(), NOW())",
+    )
+    .bind(mapping_id)
+    .bind(realm_id)
+    .bind(payment_provider)
+    .bind(external_product_id)
+    .bind(entitlement_key)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create test entitlement mapping");
+
+    mapping_id
+}
+
+/// Create a test entitlement mapping with full points policy via direct SQL insertion.
+///
+/// Returns the mapping ID.
+#[allow(clippy::too_many_arguments)]
+pub async fn setup_test_entitlement_mapping_with_points(
+    ctx: &mut TestContext,
+    realm_id: &str,
+    payment_provider: &str,
+    external_product_id: &str,
+    entitlement_key: &str,
     points_per_period: i64,
-    validity_days: i64,
+    grant_on_subscribe: bool,
+    enabled: bool,
 ) -> Uuid {
-    let config_id = Uuid::now_v7();
+    let mapping_id = Uuid::now_v7();
 
     sqlx::query(
-        "INSERT INTO points_plan_configs (id, realm_id, plan_id, grant_period_type, points_per_period, validity_days, grant_on_subscribe, max_periods, active)
-         VALUES ($1, $2, $3, 'monthly', $4, $5, true, NULL, true)"
+        "INSERT INTO provider_entitlement_mappings
+            (id, realm_id, payment_provider, external_product_id, entitlement_key,
+             points_per_period, grant_on_subscribe, enabled, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())",
     )
-    .bind(config_id)
+    .bind(mapping_id)
     .bind(realm_id)
-    .bind(plan_id)
+    .bind(payment_provider)
+    .bind(external_product_id)
+    .bind(entitlement_key)
     .bind(points_per_period)
-    .bind(validity_days)
+    .bind(grant_on_subscribe)
+    .bind(enabled)
     .execute(&ctx.app_state.pool)
     .await
-    .expect("Failed to create plan config");
+    .expect("Failed to create test entitlement mapping with points");
 
-    config_id
+    mapping_id
 }
 
-/// Create a test plan via direct SQL insertion
-///
-/// Returns the plan_id
-pub async fn create_test_plan(ctx: &mut TestContext, realm_id: &str, name: &str) -> Uuid {
-    create_test_plan_with_attrs(ctx, realm_id, name, "monthly", 2500).await
-}
-
-/// Create a test plan with custom attributes via direct SQL insertion
-pub async fn create_test_plan_with_attrs(
+/// Create a full entitlement mapping with all optional fields via direct SQL.
+#[allow(clippy::too_many_arguments)]
+pub async fn setup_test_entitlement_mapping_full(
     ctx: &mut TestContext,
     realm_id: &str,
-    name: &str,
-    plan_type: &str,
-    price_cents: i64,
+    payment_provider: &str,
+    external_product_id: &str,
+    external_price_id: Option<&str>,
+    entitlement_key: &str,
+    billing_type: Option<&str>,
+    billing_period: Option<&str>,
+    points_per_period: Option<i64>,
+    grant_period_type: Option<&str>,
+    validity_days: Option<i64>,
+    grant_on_subscribe: bool,
+    max_periods: Option<i64>,
+    enabled: bool,
+    provider_product_info: Option<serde_json::Value>,
 ) -> Uuid {
-    let plan_id = Uuid::now_v7();
-    let product_id = ensure_default_product(ctx, realm_id).await;
+    let mapping_id = Uuid::now_v7();
 
     sqlx::query(
-        "INSERT INTO subscription_plan (id, realm_id, name, description, title, type, price, currency,
-                          active, trial_days, sort_order, product_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())",
+        "INSERT INTO provider_entitlement_mappings
+            (id, realm_id, payment_provider, external_product_id, external_price_id, entitlement_key,
+             billing_type, billing_period, points_per_period, grant_period_type, validity_days,
+             grant_on_subscribe, max_periods, enabled, provider_product_info, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())",
     )
-    .bind(plan_id)
+    .bind(mapping_id)
     .bind(realm_id)
-    .bind(name)
-    .bind(format!("{} description", name))
-    .bind(name) // title
-    .bind(plan_type) // type
-    .bind(price_cents) // price in cents
-    .bind("USD") // currency
-    .bind(true)
-    .bind(0)
-    .bind(1)
-    .bind(product_id) // product_id
+    .bind(payment_provider)
+    .bind(external_product_id)
+    .bind(external_price_id)
+    .bind(entitlement_key)
+    .bind(billing_type)
+    .bind(billing_period)
+    .bind(points_per_period)
+    .bind(grant_period_type)
+    .bind(validity_days)
+    .bind(grant_on_subscribe)
+    .bind(max_periods)
+    .bind(enabled)
+    .bind(provider_product_info)
     .execute(&ctx.app_state.pool)
     .await
-    .unwrap();
+    .expect("Failed to create full test entitlement mapping");
 
-    // Create a default points plan config with 1000 points per period, 30-day validity
-    create_test_plan_config(ctx, realm_id, plan_id, 1000, 30).await;
-
-    plan_id
+    mapping_id
 }
 
-/// Create a test subscription via direct SQL insertion
+/// ============================================================================
+/// Subscription Test Data Creation Helpers
+/// =============================================================================
 ///
-/// Returns the subscription_id
-pub async fn create_test_subscription(
+/// Create a test subscription with entitlement_key via direct SQL insertion.
+/// Uses the new schema (entitlement_key, external_price_id, provider_metadata).
+/// Returns the subscription ID.
+pub async fn create_test_subscription_with_entitlement(
     ctx: &mut TestContext,
     realm_id: &str,
     client_app_id: Uuid,
-    plan_id: Uuid,
-    billing_period: &str,
+    entitlement_key: &str,
+    external_price_id: &str,
 ) -> Uuid {
     let subscription_id = Uuid::now_v7();
     let external_subscription_id = format!("sub_test_{}", subscription_id);
 
     sqlx::query(
-        "INSERT INTO subscription (id, realm_id, plan_id, client_app_id, status, billing_period, tier,
-                                 external_product_id, external_subscription_id, payment_provider,
-                                 current_period_start, current_period_end,
-                                 cancel_at_period_end, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, 'active', $5, 'free', $6, $7, 'creem', NOW(), NOW() + INTERVAL '30 days',
+        "INSERT INTO subscription
+            (id, realm_id, client_app_id, status, entitlement_key, external_price_id,
+             external_subscription_id, external_product_id, payment_provider,
+             current_period_start, current_period_end,
+             cancel_at_period_end, created_at, updated_at)
+         VALUES ($1, $2, $3, 'active', $4, $5,
+                 $6, $7, 'creem', NOW(), NOW() + INTERVAL '30 days',
                  false, NOW(), NOW())",
     )
     .bind(subscription_id)
     .bind(realm_id)
-    .bind(plan_id)
     .bind(client_app_id)
-    .bind(billing_period)
-    .bind(format!("prod_{}", subscription_id))  // external_product_id
-    .bind(&external_subscription_id)  // external_subscription_id
+    .bind(entitlement_key)
+    .bind(external_price_id)
+    .bind(&external_subscription_id)
+    .bind(format!("prod_{}", subscription_id))
     .execute(&ctx.app_state.pool)
     .await
-    .unwrap();
+    .expect("Failed to create test subscription with entitlement");
 
     subscription_id
 }
@@ -220,9 +236,8 @@ pub async fn delete_subscriptions_by_client_app(ctx: &mut TestContext, client_ap
 
 /// ============================================================================
 /// Client App Creation Helper
-/// ============================================================================
+/// =============================================================================
 ///
-/// JSON payload for creating a basic client app
 pub fn client_app_create_json(client_id: &str, name: &str, redirect_uris: &[&str]) -> String {
     use serde_json::json;
 
@@ -239,59 +254,8 @@ pub fn client_app_create_json(client_id: &str, name: &str, redirect_uris: &[&str
 /// ============================================================================
 /// Payment Flow Helpers
 /// ============================================================================
-/// Create a checkout session via API
 ///
-/// Returns the checkout session response JSON
-pub async fn create_checkout_session(
-    _ctx: &TestContext,
-    app: &axum::Router,
-    realm_id: &str,
-    client_app_id: Uuid,
-    plan_id: Uuid,
-    billing_period: &str,
-    admin_token: &str,
-) -> serde_json::Value {
-    let request_payload = json!({
-        "planId": plan_id.to_string(),
-        "billingPeriod": billing_period,
-        "successUrl": "https://example.com/success",
-        "cancelUrl": "https://example.com/cancel"
-    });
-
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!(
-                    "/api/bill/{}/client/{}/checkout",
-                    realm_id, client_app_id
-                ))
-                .header("Content-Type", "application/json")
-                .header("cookie", format!("X-Auth={}", admin_token))
-                .body(Body::from(request_payload.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "Failed to create checkout session"
-    );
-
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    serde_json::from_slice(&body).unwrap()
-}
-
-/// Send a webhook event to the system
-///
-/// # Arguments
-/// * `app` - The axum router
-/// * `realm_id` - The realm ID
-/// * `payload` - Webhook payload
-/// * `webhook_secret` - Webhook secret for signature generation
+/// Send a webhook event to the system (Creem)
 ///
 /// Returns the HTTP response
 pub async fn send_webhook_event(
@@ -322,13 +286,6 @@ pub async fn send_webhook_event(
 }
 
 /// Verify subscription status in database
-///
-/// # Arguments
-/// * `ctx` - Test context
-/// * `subscription_id` - Subscription ID to check
-/// * `expected_status` - Expected subscription status
-///
-/// Panics if subscription doesn't exist or status doesn't match
 pub async fn verify_subscription_status(
     ctx: &TestContext,
     subscription_id: Uuid,
@@ -352,12 +309,6 @@ pub async fn verify_subscription_status(
 }
 
 /// Verify payment event exists in database
-///
-/// # Arguments
-/// * `ctx` - Test context
-/// * `creem_event_id` - Creem event ID to check
-///
-/// Returns true if payment event exists
 pub async fn verify_payment_event_exists(ctx: &TestContext, creem_event_id: &str) -> bool {
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM payment_event WHERE external_event_id = $1 AND payment_provider = 'creem'")
@@ -370,12 +321,6 @@ pub async fn verify_payment_event_exists(ctx: &TestContext, creem_event_id: &str
 }
 
 /// Get subscription by client app ID
-///
-/// # Arguments
-/// * `ctx` - Test context
-/// * `client_app_id` - Client app ID
-///
-/// Returns the subscription ID if exists
 pub async fn get_subscription_by_client_app(
     ctx: &TestContext,
     client_app_id: Uuid,
@@ -388,80 +333,10 @@ pub async fn get_subscription_by_client_app(
 }
 
 /// ============================================================================
-/// Multi-Period Plan Creation Helpers
-/// ============================================================================
-/// Create a yearly test plan
-///
-/// Returns the plan_id
-pub async fn create_test_plan_yearly(ctx: &mut TestContext, realm_id: &str, name: &str) -> Uuid {
-    create_test_plan_with_attrs(ctx, realm_id, name, "yearly", 25000).await
-}
-
-/// Create a quarterly test plan
-///
-/// Returns the plan_id
-pub async fn create_test_plan_quarterly(ctx: &mut TestContext, realm_id: &str, name: &str) -> Uuid {
-    create_test_plan_with_attrs(ctx, realm_id, name, "quarterly", 7500).await
-}
-
-/// Create a test plan with trial days
-///
-/// # Arguments
-/// * `ctx` - Test context
-/// * `realm_id` - Realm ID
-/// * `name` - Plan name
-/// * `plan_type` - Plan type (monthly, yearly, quarterly)
-/// * `price_cents` - Price in cents
-/// * `trial_days` - Number of trial days
-///
-/// Returns the plan_id
-pub async fn create_test_plan_with_trial(
-    ctx: &mut TestContext,
-    realm_id: &str,
-    name: &str,
-    plan_type: &str,
-    price_cents: i64,
-    trial_days: i32,
-) -> Uuid {
-    let plan_id = Uuid::now_v7();
-    let product_id = ensure_default_product(ctx, realm_id).await;
-
-    sqlx::query(
-        "INSERT INTO subscription_plan (id, realm_id, name, description, title, type, price, currency,
-                          active, trial_days, sort_order, product_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())",
-    )
-    .bind(plan_id)
-    .bind(realm_id)
-    .bind(name)
-    .bind(format!("{} description", name))
-    .bind(name) // title
-    .bind(plan_type) // type
-    .bind(price_cents) // price in cents
-    .bind("USD") // currency
-    .bind(true)
-    .bind(trial_days)
-    .bind(1)
-    .bind(product_id) // product_id
-    .execute(&ctx.app_state.pool)
-    .await
-    .unwrap();
-
-    // Create a default points plan config with 1000 points per period, 30-day validity
-    create_test_plan_config(ctx, realm_id, plan_id, 1000, 30).await;
-
-    plan_id
-}
-
-/// ============================================================================
 /// Subscription Status Transition Helpers
 /// ============================================================================
-/// Update subscription status directly via SQL
 ///
-/// # Arguments
-/// * `ctx` - Test context
-/// * `subscription_id` - Subscription ID
-/// * `new_status` - New status
+/// Update subscription status directly via SQL
 pub async fn update_subscription_status(
     ctx: &mut TestContext,
     subscription_id: Uuid,
@@ -488,12 +363,6 @@ pub async fn update_subscription_status(
 }
 
 /// Update subscription period dates
-///
-/// # Arguments
-/// * `ctx` - Test context
-/// * `subscription_id` - Subscription ID
-/// * `period_start` - New period start
-/// * `period_end` - New period end
 pub async fn update_subscription_period(
     ctx: &mut TestContext,
     subscription_id: Uuid,
@@ -514,6 +383,7 @@ pub async fn update_subscription_period(
 /// ============================================================================
 /// Cleanup Helpers
 /// ============================================================================
+///
 /// Clean up payment events for a specific subscription
 pub async fn cleanup_payment_events(ctx: &mut TestContext, subscription_id: Uuid) {
     sqlx::query("DELETE FROM payment_event WHERE subscription_id = $1")
@@ -536,11 +406,9 @@ pub async fn cleanup_payment_event_by_creem_id(ctx: &mut TestContext, creem_even
 
 /// ============================================================================
 /// Stripe Configuration Helpers
-/// ============================================================================
-/// Setup Stripe configuration for a test realm
+/// =============================================================================
 ///
-/// This helper inserts Stripe configuration into the realm_config table,
-/// which is where the Stripe client reads it from.
+/// Setup Stripe configuration for a test realm
 pub async fn setup_stripe_config(
     ctx: &TestContext,
     realm_id: &str,
@@ -587,113 +455,7 @@ pub async fn setup_stripe_config(
     .expect("Failed to insert Stripe timeout");
 }
 
-/// Create a test plan with Stripe as the payment provider
-///
-/// # Arguments
-/// * `ctx` - Test context
-/// * `realm_id` - Realm ID
-/// * `name` - Plan name
-/// * `plan_type` - Plan type (monthly, yearly, quarterly)
-/// * `price_cents` - Price in cents
-/// * `stripe_product_id` - Stripe product ID
-///
-/// Returns the plan_id
-pub async fn create_stripe_test_plan(
-    ctx: &mut TestContext,
-    realm_id: &str,
-    name: &str,
-    plan_type: &str,
-    price_cents: i64,
-    _stripe_product_id: &str,
-) -> Uuid {
-    let plan_id = Uuid::now_v7();
-    let product_id = ensure_default_product(ctx, realm_id).await;
-
-    sqlx::query(
-        "INSERT INTO subscription_plan (id, realm_id, name, description, title, type, price, currency,
-                          active, trial_days, sort_order, product_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())",
-    )
-    .bind(plan_id)
-    .bind(realm_id)
-    .bind(name)
-    .bind(format!("{} description", name))
-    .bind(name) // title
-    .bind(plan_type) // type
-    .bind(price_cents) // price in cents
-    .bind("USD") // currency
-    .bind(true)
-    .bind(0)
-    .bind(1)
-    .bind(product_id) // product_id
-    .execute(&ctx.app_state.pool)
-    .await
-    .unwrap();
-
-    // Create a default points plan config with 1000 points per period, 30-day validity
-    create_test_plan_config(ctx, realm_id, plan_id, 1000, 30).await;
-
-    plan_id
-}
-
-/// Create a test plan with Stripe and trial days
-///
-/// # Arguments
-/// * `ctx` - Test context
-/// * `realm_id` - Realm ID
-/// * `name` - Plan name
-/// * `plan_type` - Plan type (monthly, yearly, quarterly)
-/// * `price_cents` - Price in cents
-/// * `stripe_product_id` - Stripe product ID
-/// * `trial_days` - Number of trial days
-///
-/// Returns the plan_id
-pub async fn create_stripe_test_plan_with_trial(
-    ctx: &mut TestContext,
-    realm_id: &str,
-    name: &str,
-    plan_type: &str,
-    price_cents: i64,
-    _stripe_product_id: &str,
-    trial_days: i32,
-) -> Uuid {
-    let plan_id = Uuid::now_v7();
-    let product_id = ensure_default_product(ctx, realm_id).await;
-
-    sqlx::query(
-        "INSERT INTO subscription_plan (id, realm_id, name, description, title, type, price, currency,
-                          active, trial_days, sort_order, product_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())",
-    )
-    .bind(plan_id)
-    .bind(realm_id)
-    .bind(name)
-    .bind(format!("{} description", name))
-    .bind(name) // title
-    .bind(plan_type) // type
-    .bind(price_cents) // price in cents
-    .bind("USD") // currency
-    .bind(true)
-    .bind(trial_days)
-    .bind(1)
-    .bind(product_id) // product_id
-    .execute(&ctx.app_state.pool)
-    .await
-    .unwrap();
-
-    // Create a default points plan config with 1000 points per period, 30-day validity
-    create_test_plan_config(ctx, realm_id, plan_id, 1000, 30).await;
-
-    plan_id
-}
-
 /// Verify payment event exists with Stripe event ID
-///
-/// # Arguments
-/// * `ctx` - Test context
-/// * `stripe_event_id` - Stripe event ID to check
-///
-/// Returns true if payment event exists
 pub async fn verify_stripe_payment_event_exists(ctx: &TestContext, stripe_event_id: &str) -> bool {
     let count: i64 =
         sqlx::query_scalar(
@@ -708,12 +470,6 @@ pub async fn verify_stripe_payment_event_exists(ctx: &TestContext, stripe_event_
 }
 
 /// Get subscription by Stripe subscription ID
-///
-/// # Arguments
-/// * `ctx` - Test context
-/// * `stripe_subscription_id` - Stripe subscription ID
-///
-/// Returns the subscription ID if exists
 pub async fn get_subscription_by_stripe_id(
     ctx: &TestContext,
     stripe_subscription_id: &str,
@@ -730,9 +486,8 @@ pub async fn get_subscription_by_stripe_id(
 /// ============================================================================
 /// User-Facing Ext API Helpers
 /// ============================================================================
-/// List user-visible points packages via the external API endpoint.
 ///
-/// Uses API Key authentication (X-API-Key header).
+/// List user-visible points packages via the external API endpoint.
 ///
 /// Returns (StatusCode, response body as serde_json::Value)
 pub async fn list_user_visible_points_packages_via_ext_api(

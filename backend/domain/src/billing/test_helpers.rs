@@ -2,17 +2,11 @@
 // Billing Test Helpers
 // =============================================================================
 //
-// Consolidated test helpers for billing-related tests.
-// Reduces duplication across postgres_repository_test.rs, entities_test.rs,
-// and services_test.rs.
+// Test helpers for billing-related tests.
 //
 // =============================================================================
 
-use crate::billing::{
-    BillingPeriod, ClientAppSubscriptionPlan, CreateSubscriptionPlanInput, PaymentEvent,
-    Subscription, SubscriptionPlan, SubscriptionPlanType, SubscriptionStatus, SubscriptionTier,
-    UpdateSubscriptionPlanInput,
-};
+use crate::billing::{PaymentEvent, Subscription, SubscriptionStatus};
 use chrono::Utc;
 use serde_json;
 use uuid::Uuid;
@@ -20,147 +14,6 @@ use uuid::Uuid;
 // =============================================================================
 // Builders
 // =============================================================================
-
-/// Builder for creating test SubscriptionPlan instances
-#[derive(Debug, Clone)]
-pub struct SubscriptionPlanBuilder {
-    id: Option<Uuid>,
-    realm_id: String,
-    name: String,
-    title: String,
-    description: Option<String>,
-    plan_type: SubscriptionPlanType,
-    price: i32,
-    currency: String,
-    checkout_url: Option<String>,
-    active: bool,
-    trial_days: i32,
-    sort_order: i32,
-    product_id: Uuid,
-}
-
-impl Default for SubscriptionPlanBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SubscriptionPlanBuilder {
-    pub fn new() -> Self {
-        Self {
-            id: None,
-            realm_id: "test-realm".to_string(),
-            name: "test_plan".to_string(),
-            title: "Test Plan".to_string(),
-            description: Some("Test Description".to_string()),
-            plan_type: SubscriptionPlanType::Monthly,
-            price: 1000,
-            currency: "USD".to_string(),
-            checkout_url: Some("https://app.example.com/billing/checkout?plan_id=test".to_string()),
-            active: true,
-            trial_days: 0,
-            sort_order: 1,
-            product_id: Uuid::now_v7(),
-        }
-    }
-
-    pub fn with_id(mut self, id: Uuid) -> Self {
-        self.id = Some(id);
-        self
-    }
-
-    pub fn with_realm_id(mut self, realm_id: impl Into<String>) -> Self {
-        self.realm_id = realm_id.into();
-        self
-    }
-
-    pub fn with_name(mut self, name: impl Into<String>) -> Self {
-        let name = name.into();
-        self.name = name.clone();
-        self.title.clone_from(&name);
-        self
-    }
-
-    pub fn with_title(mut self, title: impl Into<String>) -> Self {
-        self.title = title.into();
-        self
-    }
-
-    pub fn with_description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
-        self
-    }
-
-    pub fn with_no_description(mut self) -> Self {
-        self.description = None;
-        self
-    }
-
-    pub fn with_type(mut self, plan_type: SubscriptionPlanType) -> Self {
-        self.plan_type = plan_type;
-        self
-    }
-
-    pub fn with_price(mut self, price: i32) -> Self {
-        self.price = price;
-        self
-    }
-
-    pub fn with_currency(mut self, currency: impl Into<String>) -> Self {
-        self.currency = currency.into();
-        self
-    }
-
-    pub fn with_checkout_url(mut self, url: impl Into<String>) -> Self {
-        self.checkout_url = Some(url.into());
-        self
-    }
-
-    pub fn with_no_checkout_url(mut self) -> Self {
-        self.checkout_url = None;
-        self
-    }
-
-    pub fn with_active(mut self, active: bool) -> Self {
-        self.active = active;
-        self
-    }
-
-    pub fn with_trial_days(mut self, days: i32) -> Self {
-        self.trial_days = days;
-        self
-    }
-
-    pub fn with_sort_order(mut self, order: i32) -> Self {
-        self.sort_order = order;
-        self
-    }
-
-    pub fn with_product_id(mut self, product_id: Uuid) -> Self {
-        self.product_id = product_id;
-        self
-    }
-
-    pub fn build(self) -> SubscriptionPlan {
-        SubscriptionPlan {
-            id: self.id.unwrap_or_else(Uuid::now_v7),
-            realm_id: self.realm_id,
-            name: self.name,
-            title: self.title,
-            description: self.description,
-            r#type: self.plan_type,
-            price: self.price,
-            currency: self.currency,
-            checkout_url: self.checkout_url,
-            active: self.active,
-            trial_days: self.trial_days,
-            sort_order: self.sort_order,
-            product_id: self.product_id,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        }
-    }
-}
 
 /// Builder for creating test Subscription instances
 #[derive(Debug, Clone)]
@@ -172,13 +25,14 @@ pub struct SubscriptionBuilder {
     external_product_id: String,
     payment_provider: String,
     status: SubscriptionStatus,
-    tier: SubscriptionTier,
+    entitlement_key: String,
+    external_price_id: Option<String>,
+    provider_metadata: Option<serde_json::Value>,
+    synced_at: Option<chrono::DateTime<chrono::Utc>>,
     current_period_start: Option<chrono::DateTime<chrono::Utc>>,
     current_period_end: Option<chrono::DateTime<chrono::Utc>>,
     cancel_at_period_end: bool,
     client_app_id: Option<Uuid>,
-    plan_id: Option<Uuid>,
-    billing_period: BillingPeriod,
     cancel_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
@@ -198,13 +52,14 @@ impl SubscriptionBuilder {
             external_product_id: "prod_starter_monthly".to_string(),
             payment_provider: "creem".to_string(),
             status: SubscriptionStatus::Active,
-            tier: SubscriptionTier::Starter,
+            entitlement_key: "starter-plan".to_string(),
+            external_price_id: None,
+            provider_metadata: None,
+            synced_at: None,
             current_period_start: Some(Utc::now()),
             current_period_end: Some(Utc::now() + chrono::Duration::days(30)),
             cancel_at_period_end: false,
             client_app_id: None,
-            plan_id: None,
-            billing_period: BillingPeriod::Monthly,
             cancel_at: None,
         }
     }
@@ -249,8 +104,18 @@ impl SubscriptionBuilder {
         self
     }
 
-    pub fn with_tier(mut self, tier: SubscriptionTier) -> Self {
-        self.tier = tier;
+    pub fn with_entitlement_key(mut self, key: impl Into<String>) -> Self {
+        self.entitlement_key = key.into();
+        self
+    }
+
+    pub fn with_external_price_id(mut self, id: impl Into<String>) -> Self {
+        self.external_price_id = Some(id.into());
+        self
+    }
+
+    pub fn with_provider_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.provider_metadata = Some(metadata);
         self
     }
 
@@ -289,21 +154,6 @@ impl SubscriptionBuilder {
         self
     }
 
-    pub fn with_plan_id(mut self, id: Uuid) -> Self {
-        self.plan_id = Some(id);
-        self
-    }
-
-    pub fn with_no_plan_id(mut self) -> Self {
-        self.plan_id = None;
-        self
-    }
-
-    pub fn with_billing_period(mut self, period: BillingPeriod) -> Self {
-        self.billing_period = period;
-        self
-    }
-
     pub fn with_cancel_at(mut self, cancel_at: chrono::DateTime<chrono::Utc>) -> Self {
         self.cancel_at = Some(cancel_at);
         self
@@ -323,13 +173,14 @@ impl SubscriptionBuilder {
             external_product_id: self.external_product_id,
             payment_provider: self.payment_provider,
             status: self.status,
-            tier: self.tier,
+            entitlement_key: self.entitlement_key,
+            external_price_id: self.external_price_id,
+            provider_metadata: self.provider_metadata,
+            synced_at: self.synced_at,
             current_period_start: self.current_period_start,
             current_period_end: self.current_period_end,
             cancel_at_period_end: self.cancel_at_period_end,
             client_app_id: self.client_app_id,
-            plan_id: self.plan_id,
-            billing_period: self.billing_period,
             cancel_at: self.cancel_at,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -450,270 +301,6 @@ impl PaymentEventBuilder {
     }
 }
 
-/// Builder for creating test CreateSubscriptionPlanInput instances
-#[derive(Debug, Clone)]
-pub struct CreateSubscriptionPlanInputBuilder {
-    realm_id: String,
-    name: String,
-    title: String,
-    description: Option<String>,
-    plan_type: SubscriptionPlanType,
-    price: i32,
-    currency: String,
-    checkout_url: Option<String>,
-    trial_days: Option<i32>,
-    sort_order: Option<i32>,
-    product_id: Uuid,
-}
-
-impl Default for CreateSubscriptionPlanInputBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl CreateSubscriptionPlanInputBuilder {
-    pub fn new() -> Self {
-        Self {
-            realm_id: "test-realm".to_string(),
-            name: "test_plan".to_string(),
-            title: "Test Plan".to_string(),
-            description: Some("Test Description".to_string()),
-            plan_type: SubscriptionPlanType::Monthly,
-            price: 1000,
-            currency: "USD".to_string(),
-            checkout_url: Some("https://app.example.com/billing/checkout?plan_id=test".to_string()),
-            trial_days: Some(0),
-            sort_order: Some(1),
-            product_id: Uuid::now_v7(),
-        }
-    }
-
-    pub fn with_realm_id(mut self, realm_id: impl Into<String>) -> Self {
-        self.realm_id = realm_id.into();
-        self
-    }
-
-    pub fn with_name(mut self, name: impl Into<String>) -> Self {
-        let name = name.into();
-        self.name = name.clone();
-        self.title.clone_from(&name);
-        self
-    }
-
-    pub fn with_title(mut self, title: impl Into<String>) -> Self {
-        self.title = title.into();
-        self
-    }
-
-    pub fn with_description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
-        self
-    }
-
-    pub fn with_no_description(mut self) -> Self {
-        self.description = None;
-        self
-    }
-
-    pub fn with_type(mut self, plan_type: SubscriptionPlanType) -> Self {
-        self.plan_type = plan_type;
-        self
-    }
-
-    pub fn with_price(mut self, price: i32) -> Self {
-        self.price = price;
-        self
-    }
-
-    pub fn with_currency(mut self, currency: impl Into<String>) -> Self {
-        self.currency = currency.into();
-        self
-    }
-
-    pub fn with_checkout_url(mut self, url: impl Into<String>) -> Self {
-        self.checkout_url = Some(url.into());
-        self
-    }
-
-    pub fn with_trial_days(mut self, days: i32) -> Self {
-        self.trial_days = Some(days);
-        self
-    }
-
-    pub fn with_no_trial_days(mut self) -> Self {
-        self.trial_days = None;
-        self
-    }
-
-    pub fn with_sort_order(mut self, order: i32) -> Self {
-        self.sort_order = Some(order);
-        self
-    }
-
-    pub fn with_no_sort_order(mut self) -> Self {
-        self.sort_order = None;
-        self
-    }
-
-    pub fn with_product_id(mut self, product_id: Uuid) -> Self {
-        self.product_id = product_id;
-        self
-    }
-
-    pub fn build(self) -> CreateSubscriptionPlanInput {
-        CreateSubscriptionPlanInput {
-            realm_id: self.realm_id,
-            name: self.name,
-            title: self.title,
-            description: self.description,
-            r#type: self.plan_type,
-            price: self.price,
-            currency: self.currency,
-            checkout_url: self.checkout_url,
-            trial_days: self.trial_days,
-            sort_order: self.sort_order,
-            product_id: self.product_id,
-        }
-    }
-}
-
-/// Builder for creating test UpdateSubscriptionPlanInput instances
-#[derive(Debug, Clone, Default)]
-pub struct UpdateSubscriptionPlanInputBuilder {
-    title: Option<String>,
-    description: Option<String>,
-    plan_type: Option<SubscriptionPlanType>,
-    price: Option<i32>,
-    currency: Option<String>,
-    checkout_url: Option<String>,
-    active: Option<bool>,
-    trial_days: Option<i32>,
-    sort_order: Option<i32>,
-    product_id: Option<Uuid>,
-}
-
-impl UpdateSubscriptionPlanInputBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_title(mut self, title: impl Into<String>) -> Self {
-        self.title = Some(title.into());
-        self
-    }
-
-    pub fn with_no_title(mut self) -> Self {
-        self.title = None;
-        self
-    }
-
-    pub fn with_description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
-        self
-    }
-
-    pub fn with_no_description(mut self) -> Self {
-        self.description = None;
-        self
-    }
-
-    pub fn with_type(mut self, plan_type: SubscriptionPlanType) -> Self {
-        self.plan_type = Some(plan_type);
-        self
-    }
-
-    pub fn with_no_type(mut self) -> Self {
-        self.plan_type = None;
-        self
-    }
-
-    pub fn with_price(mut self, price: i32) -> Self {
-        self.price = Some(price);
-        self
-    }
-
-    pub fn with_no_price(mut self) -> Self {
-        self.price = None;
-        self
-    }
-
-    pub fn with_currency(mut self, currency: impl Into<String>) -> Self {
-        self.currency = Some(currency.into());
-        self
-    }
-
-    pub fn with_no_currency(mut self) -> Self {
-        self.currency = None;
-        self
-    }
-
-    pub fn with_checkout_url(mut self, url: impl Into<String>) -> Self {
-        self.checkout_url = Some(url.into());
-        self
-    }
-
-    pub fn with_no_checkout_url(mut self) -> Self {
-        self.checkout_url = None;
-        self
-    }
-
-    pub fn with_active(mut self, active: bool) -> Self {
-        self.active = Some(active);
-        self
-    }
-
-    pub fn with_no_active(mut self) -> Self {
-        self.active = None;
-        self
-    }
-
-    pub fn with_trial_days(mut self, days: i32) -> Self {
-        self.trial_days = Some(days);
-        self
-    }
-
-    pub fn with_no_trial_days(mut self) -> Self {
-        self.trial_days = None;
-        self
-    }
-
-    pub fn with_sort_order(mut self, order: i32) -> Self {
-        self.sort_order = Some(order);
-        self
-    }
-
-    pub fn with_no_sort_order(mut self) -> Self {
-        self.sort_order = None;
-        self
-    }
-
-    pub fn with_product_id(mut self, product_id: Uuid) -> Self {
-        self.product_id = Some(product_id);
-        self
-    }
-
-    pub fn with_no_product_id(mut self) -> Self {
-        self.product_id = None;
-        self
-    }
-
-    pub fn build(self) -> UpdateSubscriptionPlanInput {
-        UpdateSubscriptionPlanInput {
-            title: self.title,
-            description: self.description,
-            r#type: self.plan_type,
-            price: self.price,
-            currency: self.currency,
-            checkout_url: self.checkout_url,
-            active: self.active,
-            trial_days: self.trial_days,
-            sort_order: self.sort_order,
-            product_id: self.product_id,
-        }
-    }
-}
-
 // =============================================================================
 // Convenience Functions
 // =============================================================================
@@ -735,29 +322,6 @@ pub fn test_payment_event(
         .build()
 }
 
-/// Create a basic test subscription plan with the given realm_id and name
-pub fn test_plan(realm_id: impl Into<String>, name: impl Into<String>) -> SubscriptionPlan {
-    SubscriptionPlanBuilder::new()
-        .with_realm_id(realm_id)
-        .with_name(name)
-        .build()
-}
-
-/// Create a basic test client app subscription plan
-pub fn test_client_app_plan(
-    client_app_id: Uuid,
-    plan_id: Uuid,
-    enabled: bool,
-) -> ClientAppSubscriptionPlan {
-    ClientAppSubscriptionPlan {
-        id: Uuid::now_v7(),
-        client_app_id,
-        plan_id,
-        enabled,
-        created_at: Utc::now(),
-    }
-}
-
 // =============================================================================
 // Assertion Helpers
 // =============================================================================
@@ -768,32 +332,5 @@ pub fn assert_subscription_status(subscription: &Subscription, expected: Subscri
         subscription.status, expected,
         "Expected subscription status {:?}, got {:?}",
         expected, subscription.status
-    );
-}
-
-/// Assert that a subscription has the expected tier
-pub fn assert_subscription_tier(subscription: &Subscription, expected: SubscriptionTier) {
-    assert_eq!(
-        subscription.tier, expected,
-        "Expected subscription tier {:?}, got {:?}",
-        expected, subscription.tier
-    );
-}
-
-/// Assert that a subscription plan has the expected price
-pub fn assert_plan_price(plan: &SubscriptionPlan, expected_price: i32) {
-    assert_eq!(
-        plan.price, expected_price,
-        "Expected plan price {}, got {}",
-        expected_price, plan.price
-    );
-}
-
-/// Assert that a subscription plan is active or inactive
-pub fn assert_plan_active(plan: &SubscriptionPlan, expected_active: bool) {
-    assert_eq!(
-        plan.active, expected_active,
-        "Expected plan.active={}, got {}",
-        expected_active, plan.active
     );
 }

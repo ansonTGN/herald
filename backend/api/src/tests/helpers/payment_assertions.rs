@@ -10,7 +10,7 @@
 #![allow(dead_code)]
 
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
-use herald_core::domain::billing::entities::{BillingPeriod, Subscription, SubscriptionStatus};
+use herald_core::domain::billing::entities::{Subscription, SubscriptionStatus};
 use uuid::Uuid;
 
 /// ============================================================================
@@ -31,16 +31,16 @@ pub fn assert_subscription_status(actual: SubscriptionStatus, expected: Subscrip
     );
 }
 
-/// Assert subscription has expected billing period
+/// Assert subscription has expected entitlement key
 ///
 /// # Arguments
 /// * `subscription` - Subscription to check
-/// * `expected_period` - Expected billing period
-pub fn assert_billing_period_correct(subscription: &Subscription, expected_period: BillingPeriod) {
+/// * `expected_key` - Expected entitlement key
+pub fn assert_entitlement_key_correct(subscription: &Subscription, expected_key: &str) {
     assert_eq!(
-        subscription.billing_period, expected_period,
-        "Expected billing period {:?}, but got {:?}",
-        expected_period, subscription.billing_period
+        subscription.entitlement_key, expected_key,
+        "Expected entitlement key {:?}, but got {:?}",
+        expected_key, subscription.entitlement_key
     );
 }
 
@@ -381,23 +381,17 @@ pub async fn get_subscription_status(
     status_str.parse().unwrap()
 }
 
-/// Get subscription billing period from database by ID
+/// Get subscription entitlement key from database by ID
 ///
 /// # Arguments
 /// * `ctx` - Test context
 /// * `subscription_id` - Subscription ID
-pub async fn get_subscription_billing_period(
-    ctx: &TestContext,
-    subscription_id: Uuid,
-) -> BillingPeriod {
-    let period_str: String =
-        sqlx::query_scalar("SELECT billing_period FROM subscription WHERE id = $1")
-            .bind(subscription_id)
-            .fetch_one(&ctx.app_state.pool)
-            .await
-            .unwrap();
-
-    BillingPeriod::from(period_str)
+pub async fn get_subscription_entitlement_key(ctx: &TestContext, subscription_id: Uuid) -> String {
+    sqlx::query_scalar("SELECT entitlement_key FROM subscription WHERE id = $1")
+        .bind(subscription_id)
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .unwrap()
 }
 
 /// Count subscriptions by status

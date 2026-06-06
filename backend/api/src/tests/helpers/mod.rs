@@ -39,6 +39,7 @@ pub mod points_package_helpers;
 pub mod rbac_helpers;
 #[cfg(test)]
 pub mod shopify_helpers;
+pub mod subscription_test_helpers;
 pub mod test_commons;
 #[cfg(test)]
 pub mod test_setup_helpers;

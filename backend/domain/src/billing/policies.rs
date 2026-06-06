@@ -1,38 +1,31 @@
 // Billing Policy - Permission control for billing operations
 // PermissionBasedBillingPolicy moved to infrastructure/authorization/policies.rs
 
+use std::future::Future;
+
 use crate::authentication::Identity;
 
-/// Billing Policy - 计费管理权限
+/// Billing Policy - Permission control for billing operations
 #[allow(clippy::manual_async_fn)]
 pub trait BillingPolicy: Send + Sync {
-    /// 检查用户是否可以查看计费计划
-    fn can_view_subscription_plans(&self, identity: Identity) -> impl Future<Output = bool> + Send;
+    /// Check if user can view billing
+    fn can_view_billing(&self, identity: Identity) -> impl Future<Output = bool> + Send;
 
-    /// 检查用户是否可以管理计费计划
-    fn can_manage_subscription_plans(
-        &self,
-        identity: Identity,
-    ) -> impl Future<Output = bool> + Send;
+    /// Check if user can manage billing
+    fn can_manage_billing(&self, identity: Identity) -> impl Future<Output = bool> + Send;
 }
 
-/// 允许所有策略（开发/测试用）
+/// Allow-all policy (for development/testing)
 #[derive(Debug, Clone)]
 pub struct AllowAllBillingPolicy;
 
 #[allow(clippy::manual_async_fn)]
 impl BillingPolicy for AllowAllBillingPolicy {
-    fn can_view_subscription_plans(
-        &self,
-        _identity: Identity,
-    ) -> impl Future<Output = bool> + Send {
+    fn can_view_billing(&self, _identity: Identity) -> impl Future<Output = bool> + Send {
         async move { true }
     }
 
-    fn can_manage_subscription_plans(
-        &self,
-        _identity: Identity,
-    ) -> impl Future<Output = bool> + Send {
+    fn can_manage_billing(&self, _identity: Identity) -> impl Future<Output = bool> + Send {
         async move { true }
     }
 }

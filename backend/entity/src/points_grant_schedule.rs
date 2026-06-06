@@ -11,7 +11,8 @@ pub struct Model {
     pub user_id: Uuid,
     pub realm_id: String,
     pub subscription_id: Option<Uuid>,
-    pub plan_config_id: Option<Uuid>,
+    #[sea_orm(default_value = "")]
+    pub entitlement_key: String,
     pub grant_period_type: String,
     pub base_time: DateTimeWithTimeZone,
     pub next_grant_time: DateTimeWithTimeZone,

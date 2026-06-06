@@ -1,22 +1,18 @@
-use sea_orm::DatabaseBackend;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
-    FromQueryResult, IntoActiveModel, JoinType, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, RelationTrait, Set, Statement,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, JoinType,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set,
 };
 use std::str::FromStr;
 use uuid::Uuid;
 
-use herald_domain::billing::entities::{BillingPeriod, SubscriptionPlanType};
+use herald_domain::billing::entities::EntitlementMapping;
 use herald_domain::billing::{
-    BillingRepository, ClientAppSubscriptionPlan, HistoryEventType, PaymentEvent, Product,
-    SortOrder, Subscription, SubscriptionHistoryEvent, SubscriptionHistoryQuery, SubscriptionPlan,
-    SubscriptionPlanPaymentProvider,
+    BillingRepository, HistoryEventType, PaymentEvent, SortOrder, Subscription,
+    SubscriptionHistoryEvent, SubscriptionHistoryQuery,
 };
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_entity::{
-    client_app_subscription_plan, payment_event, product, subscription, subscription_history,
-    subscription_plan,
+    payment_event, provider_entitlement_mapping, subscription, subscription_history,
 };
 
 /// PostgreSQL implementation of billing repository
@@ -39,13 +35,14 @@ impl PostgresBillingRepository {
             external_product_id: model.external_product_id,
             payment_provider: model.payment_provider,
             status: model.status.parse()?,
-            tier: model.tier.parse()?,
+            entitlement_key: model.entitlement_key,
+            external_price_id: model.external_price_id,
+            provider_metadata: model.provider_metadata,
+            synced_at: model.synced_at.map(chrono::DateTime::from),
             current_period_start: model.current_period_start.map(chrono::DateTime::from),
             current_period_end: model.current_period_end.map(chrono::DateTime::from),
             cancel_at_period_end: model.cancel_at_period_end,
             client_app_id: model.client_app_id,
-            plan_id: model.plan_id,
-            billing_period: BillingPeriod::from(model.billing_period),
             cancel_at: model.cancel_at.map(chrono::DateTime::from),
             created_at: chrono::DateTime::from(model.created_at),
             updated_at: chrono::DateTime::from(model.updated_at),
@@ -68,119 +65,62 @@ impl PostgresBillingRepository {
         }
     }
 
-    /// Converts database model to domain SubscriptionPlan
-    fn model_to_subscription_plan(
-        model: subscription_plan::Model,
-    ) -> Result<SubscriptionPlan, CoreError> {
-        Ok(SubscriptionPlan {
+    /// Converts database model to domain EntitlementMapping
+    fn model_to_entitlement_mapping(
+        model: provider_entitlement_mapping::Model,
+    ) -> EntitlementMapping {
+        EntitlementMapping {
             id: model.id,
             realm_id: model.realm_id,
-            name: model.name,
-            title: model.title,
-            description: model.description,
-            r#type: parse_subscription_plan_type(&model.r#type),
-            price: model.price,
-            currency: model.currency,
-            checkout_url: model.checkout_url,
-            active: model.active,
-            trial_days: model.trial_days,
-            sort_order: model.sort_order,
-            product_id: model.product_id,
+            payment_provider: model.payment_provider,
+            external_product_id: model.external_product_id,
+            external_price_id: model.external_price_id,
+            entitlement_key: model.entitlement_key,
+            billing_type: model.billing_type.and_then(|s| s.parse().ok()),
+            billing_period: model.billing_period,
+            points_per_period: model.points_per_period.map(|v| v as i64),
+            grant_period_type: model.grant_period_type,
+            validity_days: model.validity_days.map(|v| v as i64),
+            grant_on_subscribe: model.grant_on_subscribe,
+            max_periods: model.max_periods.map(|v| v as i64),
+            enabled: model.enabled,
+            provider_product_info: model.provider_product_info,
+            synced_at: model.synced_at.map(chrono::DateTime::from),
             created_at: chrono::DateTime::from(model.created_at),
             updated_at: chrono::DateTime::from(model.updated_at),
-        })
-    }
-
-    fn model_to_client_app_subscription_plan(
-        model: client_app_subscription_plan::Model,
-    ) -> ClientAppSubscriptionPlan {
-        ClientAppSubscriptionPlan {
-            id: model.id,
-            client_app_id: model.client_app_id,
-            plan_id: model.plan_id,
-            enabled: model.enabled,
-            created_at: chrono::DateTime::from(model.created_at),
         }
     }
 
-    async fn find_subscription_plan_model(
-        &self,
-        realm_id: Option<&str>,
-        plan_id: Uuid,
-        public_only: bool,
-    ) -> Result<Option<subscription_plan::Model>, CoreError> {
-        let mut query =
-            subscription_plan::Entity::find().filter(subscription_plan::Column::Id.eq(plan_id));
-        if let Some(realm_id) = realm_id {
-            query = query.filter(subscription_plan::Column::RealmId.eq(realm_id));
-        }
-        if public_only {
-            query = query
-                .join(
-                    JoinType::InnerJoin,
-                    subscription_plan::Relation::Product.def(),
-                )
-                .filter(subscription_plan::Column::Active.eq(true))
-                .filter(product::Column::Enabled.eq(true));
-        }
-
-        query
-            .one(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))
-    }
-
-    /// Converts domain SubscriptionPlan to database active model
-    fn subscription_plan_to_active_model(plan: SubscriptionPlan) -> subscription_plan::ActiveModel {
-        subscription_plan::ActiveModel {
-            id: Set(plan.id),
-            realm_id: Set(plan.realm_id),
-            name: Set(plan.name),
-            title: Set(plan.title),
-            description: Set(plan.description),
-            r#type: Set(plan.r#type.as_str().to_string()),
-            price: Set(plan.price),
-            currency: Set(plan.currency),
-            checkout_url: Set(plan.checkout_url),
-            active: Set(plan.active),
-            trial_days: Set(plan.trial_days),
-            sort_order: Set(plan.sort_order),
-            product_id: Set(plan.product_id),
+    /// Converts domain EntitlementMapping to database active model
+    fn entitlement_mapping_to_active_model(
+        mapping: EntitlementMapping,
+    ) -> provider_entitlement_mapping::ActiveModel {
+        provider_entitlement_mapping::ActiveModel {
+            id: Set(mapping.id),
+            realm_id: Set(mapping.realm_id),
+            payment_provider: Set(mapping.payment_provider),
+            external_product_id: Set(mapping.external_product_id),
+            external_price_id: Set(mapping.external_price_id),
+            entitlement_key: Set(mapping.entitlement_key),
+            billing_type: Set(mapping.billing_type.map(|t| t.as_str().to_string())),
+            billing_period: Set(mapping.billing_period),
+            points_per_period: Set(mapping.points_per_period.map(|v| v as i32)),
+            grant_period_type: Set(mapping.grant_period_type),
+            validity_days: Set(mapping.validity_days.map(|v| v as i32)),
+            grant_on_subscribe: Set(mapping.grant_on_subscribe),
+            max_periods: Set(mapping.max_periods.map(|v| v as i32)),
+            enabled: Set(mapping.enabled),
+            provider_product_info: Set(mapping.provider_product_info),
+            synced_at: Set(mapping
+                .synced_at
+                .map(sea_orm::prelude::DateTimeWithTimeZone::from)),
             created_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
-                plan.created_at,
+                mapping.created_at,
             )),
             updated_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
-                plan.updated_at,
+                mapping.updated_at,
             )),
         }
-    }
-
-    /// Converts database model to domain Product
-    fn model_to_product_with_count(model: product::Model, plans_count: i64) -> Product {
-        Product {
-            id: model.id,
-            realm_id: model.realm_id,
-            code: model.code,
-            title: model.title,
-            description: model.description,
-            enabled: model.enabled,
-            plans_count,
-            created_at: chrono::DateTime::from(model.created_at),
-            updated_at: chrono::DateTime::from(model.updated_at),
-        }
-    }
-
-    async fn model_to_product(
-        model: product::Model,
-        db: &DatabaseConnection,
-    ) -> Result<Product, CoreError> {
-        let plans_count = subscription_plan::Entity::find()
-            .filter(subscription_plan::Column::ProductId.eq(model.id))
-            .count(db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Ok(Self::model_to_product_with_count(model, plans_count as i64))
     }
 
     /// Converts database model to domain SubscriptionHistoryEvent
@@ -233,40 +173,6 @@ impl PostgresBillingRepository {
     }
 }
 
-/// Helper struct for deserializing subscription plan payment provider query results
-#[derive(FromQueryResult)]
-struct SubscriptionPlanPaymentProviderQueryResult {
-    id: Uuid,
-    plan_id: Uuid,
-    payment_provider: String,
-    external_product_id: String,
-    external_price_id: Option<String>,
-    enabled: bool,
-    created_at: sea_orm::prelude::DateTimeWithTimeZone,
-    updated_at: sea_orm::prelude::DateTimeWithTimeZone,
-}
-
-/// Converts query result to domain SubscriptionPlanPaymentProvider
-fn query_result_to_subscription_plan_payment_provider(
-    result: SubscriptionPlanPaymentProviderQueryResult,
-) -> SubscriptionPlanPaymentProvider {
-    SubscriptionPlanPaymentProvider {
-        id: result.id,
-        plan_id: result.plan_id,
-        payment_provider: result.payment_provider,
-        external_product_id: result.external_product_id,
-        external_price_id: result.external_price_id,
-        enabled: result.enabled,
-        created_at: chrono::DateTime::from(result.created_at),
-        updated_at: chrono::DateTime::from(result.updated_at),
-    }
-}
-
-/// Parse subscription plan type string, defaulting to Monthly on unknown input
-fn parse_subscription_plan_type(s: &str) -> SubscriptionPlanType {
-    s.parse().unwrap_or(SubscriptionPlanType::Monthly)
-}
-
 impl BillingRepository for PostgresBillingRepository {
     async fn create_subscription(&self, sub: Subscription) -> Result<Subscription, CoreError> {
         let model = subscription::ActiveModel {
@@ -277,7 +183,12 @@ impl BillingRepository for PostgresBillingRepository {
             external_product_id: Set(sub.external_product_id.clone()),
             payment_provider: Set(sub.payment_provider.clone()),
             status: Set(sub.status.as_str().to_string()),
-            tier: Set(sub.tier.as_str().to_string()),
+            entitlement_key: Set(sub.entitlement_key.clone()),
+            external_price_id: Set(sub.external_price_id.clone()),
+            provider_metadata: Set(sub.provider_metadata.clone()),
+            synced_at: Set(sub
+                .synced_at
+                .map(sea_orm::prelude::DateTimeWithTimeZone::from)),
             current_period_start: Set(sub
                 .current_period_start
                 .map(sea_orm::prelude::DateTimeWithTimeZone::from)),
@@ -286,8 +197,6 @@ impl BillingRepository for PostgresBillingRepository {
                 .map(sea_orm::prelude::DateTimeWithTimeZone::from)),
             cancel_at_period_end: Set(sub.cancel_at_period_end),
             client_app_id: Set(sub.client_app_id),
-            plan_id: Set(sub.plan_id),
-            billing_period: Set(sub.billing_period.to_string()),
             cancel_at: Set(sub
                 .cancel_at
                 .map(sea_orm::prelude::DateTimeWithTimeZone::from)),
@@ -346,7 +255,12 @@ impl BillingRepository for PostgresBillingRepository {
         active_model.external_product_id = Set(sub.external_product_id.clone());
         active_model.payment_provider = Set(sub.payment_provider.clone());
         active_model.status = Set(sub.status.as_str().to_string());
-        active_model.tier = Set(sub.tier.as_str().to_string());
+        active_model.entitlement_key = Set(sub.entitlement_key.clone());
+        active_model.external_price_id = Set(sub.external_price_id.clone());
+        active_model.provider_metadata = Set(sub.provider_metadata.clone());
+        active_model.synced_at = Set(sub
+            .synced_at
+            .map(sea_orm::prelude::DateTimeWithTimeZone::from));
         active_model.current_period_start = Set(sub
             .current_period_start
             .map(sea_orm::prelude::DateTimeWithTimeZone::from));
@@ -355,8 +269,6 @@ impl BillingRepository for PostgresBillingRepository {
             .map(sea_orm::prelude::DateTimeWithTimeZone::from));
         active_model.cancel_at_period_end = Set(sub.cancel_at_period_end);
         active_model.client_app_id = Set(sub.client_app_id);
-        active_model.plan_id = Set(sub.plan_id);
-        active_model.billing_period = Set(sub.billing_period.to_string());
         active_model.cancel_at = Set(sub
             .cancel_at
             .map(sea_orm::prelude::DateTimeWithTimeZone::from));
@@ -414,471 +326,6 @@ impl BillingRepository for PostgresBillingRepository {
         Ok(())
     }
 
-    // ===== Plan CRUD =====
-
-    async fn create_subscription_plan(
-        &self,
-        plan: SubscriptionPlan,
-    ) -> Result<SubscriptionPlan, CoreError> {
-        let plan_name = plan.name.clone();
-        let realm_id = plan.realm_id.clone();
-        let active_model = Self::subscription_plan_to_active_model(plan);
-
-        let result = subscription_plan::Entity::insert(active_model)
-            .exec(&self.db)
-            .await
-            .map_err(|e| {
-                // Check for unique constraint violation
-                if e.to_string()
-                    .contains("subscription_plan_realm_id_name_key")
-                {
-                    CoreError::BadRequest(format!(
-                        "Subscription plan with name '{}' already exists in realm '{}'",
-                        plan_name, realm_id
-                    ))
-                } else {
-                    CoreError::DatabaseError(e.to_string())
-                }
-            })?;
-
-        self.find_subscription_plan_by_id(result.last_insert_id)
-            .await?
-            .ok_or(CoreError::NotFound)
-    }
-
-    async fn find_subscription_plan_by_id(
-        &self,
-        plan_id: Uuid,
-    ) -> Result<Option<SubscriptionPlan>, CoreError> {
-        let result = self
-            .find_subscription_plan_model(None, plan_id, false)
-            .await?;
-
-        result.map(Self::model_to_subscription_plan).transpose()
-    }
-
-    async fn find_public_plan_by_id(
-        &self,
-        realm_id: &str,
-        plan_id: Uuid,
-    ) -> Result<Option<SubscriptionPlan>, CoreError> {
-        let result = self
-            .find_subscription_plan_model(Some(realm_id), plan_id, true)
-            .await?;
-
-        result.map(Self::model_to_subscription_plan).transpose()
-    }
-
-    async fn list_subscription_plans_by_realm(
-        &self,
-        realm_id: &str,
-    ) -> Result<Vec<SubscriptionPlan>, CoreError> {
-        let results = subscription_plan::Entity::find()
-            .filter(subscription_plan::Column::RealmId.eq(realm_id))
-            // Note: Removed Active.eq(true) filter to allow listing of disabled plans
-            // This enables admins to see and re-enable disabled plans
-            .order_by_asc(subscription_plan::Column::SortOrder)
-            .all(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        results
-            .into_iter()
-            .map(Self::model_to_subscription_plan)
-            .collect()
-    }
-
-    async fn list_public_plans_by_realm(
-        &self,
-        realm_id: &str,
-    ) -> Result<Vec<SubscriptionPlan>, CoreError> {
-        let results = subscription_plan::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                subscription_plan::Relation::Product.def(),
-            )
-            .filter(subscription_plan::Column::RealmId.eq(realm_id))
-            .filter(subscription_plan::Column::Active.eq(true))
-            .filter(product::Column::Enabled.eq(true))
-            .order_by_asc(subscription_plan::Column::SortOrder)
-            .all(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        results
-            .into_iter()
-            .map(Self::model_to_subscription_plan)
-            .collect()
-    }
-
-    async fn update_subscription_plan(
-        &self,
-        plan: SubscriptionPlan,
-    ) -> Result<SubscriptionPlan, CoreError> {
-        let existing = subscription_plan::Entity::find_by_id(plan.id)
-            .one(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| CoreError::SubscriptionPlanNotFound {
-                realm_id: plan.realm_id.clone(),
-                plan_id: plan.id.to_string(),
-            })?;
-
-        let mut active_model: subscription_plan::ActiveModel = existing.into_active_model();
-        // Copy only updatable fields from the helper
-        let helper = Self::subscription_plan_to_active_model(plan);
-        active_model.realm_id = helper.realm_id;
-        active_model.name = helper.name;
-        active_model.title = helper.title;
-        active_model.description = helper.description;
-        active_model.r#type = helper.r#type;
-        active_model.price = helper.price;
-        active_model.currency = helper.currency;
-        active_model.checkout_url = helper.checkout_url;
-        active_model.active = helper.active;
-        active_model.trial_days = helper.trial_days;
-        active_model.sort_order = helper.sort_order;
-        active_model.product_id = helper.product_id;
-        active_model.updated_at = helper.updated_at;
-
-        let result = active_model
-            .update(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Self::model_to_subscription_plan(result)
-    }
-
-    async fn delete_subscription_plan(&self, plan_id: Uuid) -> Result<(), CoreError> {
-        subscription_plan::Entity::delete_by_id(plan_id)
-            .exec(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Ok(())
-    }
-
-    // ===== Plan Assignment =====
-
-    async fn assign_subscription_plan_to_client_app(
-        &self,
-        client_app_id: Uuid,
-        plan_id: Uuid,
-    ) -> Result<ClientAppSubscriptionPlan, CoreError> {
-        let active_model = client_app_subscription_plan::ActiveModel {
-            id: Set(Uuid::now_v7()),
-            client_app_id: Set(client_app_id),
-            plan_id: Set(plan_id),
-            enabled: Set(true),
-            created_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
-                chrono::Utc::now(),
-            )),
-        };
-
-        let result = client_app_subscription_plan::Entity::insert(active_model)
-            .exec(&self.db)
-            .await
-            .map_err(|e| {
-                if matches!(e, sea_orm::DbErr::Exec(_) if e.to_string().contains("duplicate key")) {
-                    CoreError::Conflict(
-                        "Subscription plan already assigned to client app".to_string(),
-                    )
-                } else {
-                    CoreError::DatabaseError(e.to_string())
-                }
-            })?;
-
-        // Find and return the created assignment
-        let assignment = client_app_subscription_plan::Entity::find_by_id(result.last_insert_id)
-            .one(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-            .ok_or(CoreError::NotFound)?;
-
-        Ok(Self::model_to_client_app_subscription_plan(assignment))
-    }
-
-    async fn remove_subscription_plan_from_client_app(
-        &self,
-        assignment_id: Uuid,
-    ) -> Result<(), CoreError> {
-        client_app_subscription_plan::Entity::delete_by_id(assignment_id)
-            .exec(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Ok(())
-    }
-
-    async fn list_subscription_plans_for_client_app(
-        &self,
-        client_app_id: Uuid,
-    ) -> Result<Vec<ClientAppSubscriptionPlan>, CoreError> {
-        let results = client_app_subscription_plan::Entity::find()
-            .filter(client_app_subscription_plan::Column::ClientAppId.eq(client_app_id))
-            .filter(client_app_subscription_plan::Column::Enabled.eq(true))
-            .all(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Ok(results
-            .into_iter()
-            .map(Self::model_to_client_app_subscription_plan)
-            .collect())
-    }
-
-    async fn find_subscription_plan_assignment(
-        &self,
-        client_app_id: Uuid,
-        plan_id: Uuid,
-    ) -> Result<Option<ClientAppSubscriptionPlan>, CoreError> {
-        client_app_subscription_plan::Entity::find()
-            .filter(client_app_subscription_plan::Column::ClientAppId.eq(client_app_id))
-            .filter(client_app_subscription_plan::Column::PlanId.eq(plan_id))
-            .one(&self.db)
-            .await
-            .map(|opt| opt.map(Self::model_to_client_app_subscription_plan))
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))
-    }
-
-    async fn toggle_subscription_plan_assignment(
-        &self,
-        assignment_id: Uuid,
-        enabled: bool,
-    ) -> Result<ClientAppSubscriptionPlan, CoreError> {
-        let assignment = client_app_subscription_plan::Entity::find_by_id(assignment_id)
-            .one(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-            .ok_or(CoreError::NotFound)?;
-
-        let mut active_model: client_app_subscription_plan::ActiveModel =
-            assignment.into_active_model();
-        active_model.enabled = Set(enabled);
-
-        let updated = active_model
-            .update(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Ok(Self::model_to_client_app_subscription_plan(updated))
-    }
-
-    async fn list_subscription_plan_assignments_batch(
-        &self,
-        client_app_ids: &[Uuid],
-    ) -> Result<Vec<ClientAppSubscriptionPlan>, CoreError> {
-        if client_app_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let results = client_app_subscription_plan::Entity::find()
-            .filter(
-                client_app_subscription_plan::Column::ClientAppId
-                    .is_in(client_app_ids.iter().copied()),
-            )
-            .filter(client_app_subscription_plan::Column::Enabled.eq(true))
-            .all(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Ok(results
-            .into_iter()
-            .map(Self::model_to_client_app_subscription_plan)
-            .collect())
-    }
-
-    async fn create_product(&self, product: Product) -> Result<Product, CoreError> {
-        let active_model = product::ActiveModel {
-            id: Set(product.id),
-            realm_id: Set(product.realm_id.clone()),
-            code: Set(product.code.clone()),
-            title: Set(product.title.clone()),
-            description: Set(product.description.clone()),
-            enabled: Set(product.enabled),
-            created_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
-                product.created_at,
-            )),
-            updated_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(
-                product.updated_at,
-            )),
-        };
-
-        product::Entity::insert(active_model)
-            .exec(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Ok(product)
-    }
-
-    async fn find_product_by_id(
-        &self,
-        realm_id: &str,
-        product_id: Uuid,
-    ) -> Result<Option<Product>, CoreError> {
-        let result = product::Entity::find_by_id(product_id)
-            .filter(product::Column::RealmId.eq(realm_id))
-            .one(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        match result {
-            Some(model) => Ok(Some(Self::model_to_product(model, &self.db).await?)),
-            None => Ok(None),
-        }
-    }
-
-    async fn product_code_exists(&self, realm_id: &str, code: &str) -> Result<bool, CoreError> {
-        let count = product::Entity::find()
-            .filter(product::Column::RealmId.eq(realm_id))
-            .filter(product::Column::Code.eq(code))
-            .count(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Ok(count > 0)
-    }
-
-    async fn list_products(
-        &self,
-        realm_id: &str,
-        enabled_only: Option<bool>,
-    ) -> Result<Vec<Product>, CoreError> {
-        let mut query = product::Entity::find().filter(product::Column::RealmId.eq(realm_id));
-
-        if let Some(enabled) = enabled_only {
-            query = query.filter(product::Column::Enabled.eq(enabled));
-        }
-
-        let results = query
-            .order_by_asc(product::Column::CreatedAt)
-            .all(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        if results.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let product_ids: Vec<Uuid> = results.iter().map(|m| m.id).collect();
-        let plan_product_ids: Vec<Uuid> = subscription_plan::Entity::find()
-            .filter(subscription_plan::Column::ProductId.is_in(product_ids))
-            .all(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-            .into_iter()
-            .map(|p| p.product_id)
-            .collect();
-
-        let mut counts: std::collections::HashMap<Uuid, i64> = std::collections::HashMap::new();
-        for pid in plan_product_ids {
-            *counts.entry(pid).or_insert(0) += 1;
-        }
-
-        Ok(results
-            .into_iter()
-            .map(|model| {
-                let count = counts.get(&model.id).copied().unwrap_or(0);
-                Self::model_to_product_with_count(model, count)
-            })
-            .collect())
-    }
-
-    async fn update_product(
-        &self,
-        realm_id: &str,
-        product_id: Uuid,
-        title: Option<String>,
-        description: Option<String>,
-        enabled: Option<bool>,
-    ) -> Result<Product, CoreError> {
-        let existing = product::Entity::find_by_id(product_id)
-            .filter(product::Column::RealmId.eq(realm_id))
-            .one(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-            .ok_or(CoreError::ProductNotFound {
-                realm_id: realm_id.to_string(),
-                product_id: product_id.to_string(),
-            })?;
-
-        let mut active_model: product::ActiveModel = existing.into_active_model();
-        if let Some(title) = title {
-            active_model.title = Set(title);
-        }
-        if let Some(description) = description {
-            active_model.description = Set(Some(description));
-        }
-        if let Some(enabled) = enabled {
-            active_model.enabled = Set(enabled);
-        }
-        active_model.updated_at = Set(sea_orm::prelude::DateTimeWithTimeZone::from(
-            chrono::Utc::now(),
-        ));
-
-        let updated = active_model
-            .update(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Self::model_to_product(updated, &self.db).await
-    }
-
-    async fn delete_product(&self, realm_id: &str, product_id: Uuid) -> Result<(), CoreError> {
-        let existing = product::Entity::find_by_id(product_id)
-            .filter(product::Column::RealmId.eq(realm_id))
-            .one(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-            .ok_or(CoreError::ProductNotFound {
-                realm_id: realm_id.to_string(),
-                product_id: product_id.to_string(),
-            })?;
-
-        let active_model: product::ActiveModel = existing.into_active_model();
-        active_model
-            .delete(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Ok(())
-    }
-
-    async fn count_subscription_plans_by_product(
-        &self,
-        product_id: Uuid,
-    ) -> Result<i64, CoreError> {
-        let count = subscription_plan::Entity::find()
-            .filter(subscription_plan::Column::ProductId.eq(product_id))
-            .count(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Ok(count as i64)
-    }
-
-    async fn find_subscription_plans_by_product(
-        &self,
-        realm_id: &str,
-        product_id: Uuid,
-    ) -> Result<Vec<SubscriptionPlan>, CoreError> {
-        let results = subscription_plan::Entity::find()
-            .filter(subscription_plan::Column::RealmId.eq(realm_id))
-            .filter(subscription_plan::Column::ProductId.eq(product_id))
-            .order_by_asc(subscription_plan::Column::SortOrder)
-            .all(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        results
-            .into_iter()
-            .map(Self::model_to_subscription_plan)
-            .collect()
-    }
-
-    // ===== Updated Subscription =====
-
     async fn find_subscription_by_client_app_id(
         &self,
         client_app_id: Uuid,
@@ -923,28 +370,12 @@ impl BillingRepository for PostgresBillingRepository {
             active_model.status = Set("canceled".to_string());
         }
 
-        let updated = active_model
+        let updated: subscription::Model = active_model
             .update(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
         Self::model_to_subscription(updated)
-    }
-
-    async fn count_active_subscriptions_for_subscription_plan(
-        &self,
-        plan_id: Uuid,
-    ) -> Result<i64, CoreError> {
-        use sea_orm::EntityTrait;
-
-        let count = subscription::Entity::find()
-            .filter(subscription::Column::PlanId.eq(plan_id))
-            .filter(subscription::Column::Status.eq("active"))
-            .count(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Ok(count as i64)
     }
 
     // ===== Subscription History =====
@@ -1003,7 +434,7 @@ impl BillingRepository for PostgresBillingRepository {
             .filter(subscription_history::Column::RealmId.eq(realm_id));
 
         let requires_subscription_join = query.user_id.is_some()
-            || query.plan_id.is_some()
+            || query.entitlement_key.is_some()
             || query.subscription_status.is_some();
 
         if requires_subscription_join {
@@ -1020,11 +451,11 @@ impl BillingRepository for PostgresBillingRepository {
         }
 
         if let Some(user_id) = query.user_id {
-            select = select.filter(subscription::Column::ClientAppId.eq(user_id));
+            select = select.filter(subscription::Column::UserId.eq(user_id));
         }
 
-        if let Some(plan_id) = query.plan_id {
-            select = select.filter(subscription::Column::PlanId.eq(plan_id));
+        if let Some(entitlement_key) = query.entitlement_key {
+            select = select.filter(subscription::Column::EntitlementKey.eq(entitlement_key));
         }
 
         if let Some(subscription_status) = query.subscription_status {
@@ -1102,262 +533,180 @@ impl BillingRepository for PostgresBillingRepository {
         Ok((events, total))
     }
 
-    // ===== Plan Payment Provider Mapping =====
+    // ===== Entitlement Mapping CRUD =====
 
-    async fn create_subscription_plan_payment_provider(
+    async fn create_entitlement_mapping(
         &self,
-        mapping: SubscriptionPlanPaymentProvider,
-    ) -> Result<SubscriptionPlanPaymentProvider, CoreError> {
-        let query = r#"
-            INSERT INTO subscription_plan_payment_provider (
-                id, plan_id, payment_provider, external_product_id,
-                external_price_id, enabled, created_at, updated_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            ON CONFLICT (plan_id, payment_provider) DO NOTHING
-            RETURNING id, plan_id, payment_provider, external_product_id,
-                      external_price_id, enabled, created_at, updated_at
-        "#;
-
-        let stmt = Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            query,
-            [
-                mapping.id.into(),
-                mapping.plan_id.into(),
-                mapping.payment_provider.clone().into(),
-                mapping.external_product_id.clone().into(),
-                mapping.external_price_id.clone().into(),
-                mapping.enabled.into(),
-                sea_orm::prelude::DateTimeWithTimeZone::from(mapping.created_at).into(),
-                sea_orm::prelude::DateTimeWithTimeZone::from(mapping.updated_at).into(),
-            ],
-        );
-
-        let result = SubscriptionPlanPaymentProviderQueryResult::find_by_statement(stmt)
-            .one(&self.db)
-            .await
-            .map_err(|e| {
-                if e.to_string().contains("duplicate key") {
-                    CoreError::BadRequest(format!(
-                        "Payment provider '{}' is already configured for this plan",
-                        mapping.payment_provider
-                    ))
-                } else {
-                    CoreError::DatabaseError(format!(
-                        "Failed to create plan payment provider: {}",
-                        e
-                    ))
-                }
-            })?
-            .ok_or_else(|| {
-                CoreError::DatabaseError(
-                    "Failed to create plan payment provider: no result".to_string(),
-                )
-            })?;
-
-        Ok(query_result_to_subscription_plan_payment_provider(result))
+        mapping: EntitlementMapping,
+    ) -> Result<EntitlementMapping, CoreError> {
+        let active_model = Self::entitlement_mapping_to_active_model(mapping);
+        let result = active_model.insert(&self.db).await.map_err(|e| {
+            if e.to_string().contains("duplicate key")
+                || e.to_string()
+                    .contains("provider_entitlement_mappings_realm_id_payment_provider_external_product_id_key")
+            {
+                CoreError::Conflict("Entitlement mapping already exists for this provider and product".to_string())
+            } else {
+                CoreError::DatabaseError(e.to_string())
+            }
+        })?;
+        Ok(Self::model_to_entitlement_mapping(result))
     }
 
-    async fn find_subscription_plan_payment_provider_by_id(
+    async fn find_entitlement_mapping_by_id(
         &self,
         mapping_id: Uuid,
-    ) -> Result<Option<SubscriptionPlanPaymentProvider>, CoreError> {
-        let query = r#"
-            SELECT id, plan_id, payment_provider, external_product_id,
-                   external_price_id, enabled, created_at, updated_at
-            FROM subscription_plan_payment_provider
-            WHERE id = $1
-        "#;
-
-        let stmt =
-            Statement::from_sql_and_values(DatabaseBackend::Postgres, query, [mapping_id.into()]);
-
-        let result = SubscriptionPlanPaymentProviderQueryResult::find_by_statement(stmt)
+    ) -> Result<Option<EntitlementMapping>, CoreError> {
+        let result = provider_entitlement_mapping::Entity::find_by_id(mapping_id)
             .one(&self.db)
             .await
-            .map_err(|e| {
-                CoreError::DatabaseError(format!("Failed to find plan payment provider: {}", e))
-            })?;
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        Ok(result.map(query_result_to_subscription_plan_payment_provider))
+        Ok(result.map(Self::model_to_entitlement_mapping))
     }
 
-    async fn find_subscription_plan_payment_provider_by_plan_and_provider(
+    async fn list_entitlement_mappings(
         &self,
-        plan_id: Uuid,
-        payment_provider: &str,
-    ) -> Result<Option<SubscriptionPlanPaymentProvider>, CoreError> {
-        let query = r#"
-            SELECT id, plan_id, payment_provider, external_product_id,
-                   external_price_id, enabled, created_at, updated_at
-            FROM subscription_plan_payment_provider
-            WHERE plan_id = $1 AND payment_provider = $2
-        "#;
+        realm_id: &str,
+        payment_provider: Option<&str>,
+        enabled: Option<bool>,
+        page: Option<u64>,
+        page_size: Option<u64>,
+    ) -> Result<(Vec<EntitlementMapping>, u64), CoreError> {
+        let page = page.unwrap_or(1);
+        let page_size = page_size.unwrap_or(20).min(100);
 
-        let stmt = Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            query,
-            [plan_id.into(), payment_provider.to_string().into()],
-        );
+        let mut query = provider_entitlement_mapping::Entity::find()
+            .filter(provider_entitlement_mapping::Column::RealmId.eq(realm_id));
 
-        let result = SubscriptionPlanPaymentProviderQueryResult::find_by_statement(stmt)
-            .one(&self.db)
-            .await
-            .map_err(|e| {
-                CoreError::DatabaseError(format!("Failed to find plan payment provider: {}", e))
-            })?;
-
-        Ok(result.map(query_result_to_subscription_plan_payment_provider))
-    }
-
-    async fn list_subscription_plan_payment_providers(
-        &self,
-        plan_id: Uuid,
-    ) -> Result<Vec<SubscriptionPlanPaymentProvider>, CoreError> {
-        let query = r#"
-            SELECT id, plan_id, payment_provider, external_product_id,
-                   external_price_id, enabled, created_at, updated_at
-            FROM subscription_plan_payment_provider
-            WHERE plan_id = $1
-            ORDER BY created_at ASC
-        "#;
-
-        let stmt =
-            Statement::from_sql_and_values(DatabaseBackend::Postgres, query, [plan_id.into()]);
-
-        let results = SubscriptionPlanPaymentProviderQueryResult::find_by_statement(stmt)
-            .all(&self.db)
-            .await
-            .map_err(|e| {
-                CoreError::DatabaseError(format!("Failed to list plan payment providers: {}", e))
-            })?;
-
-        Ok(results
-            .into_iter()
-            .map(query_result_to_subscription_plan_payment_provider)
-            .collect())
-    }
-
-    async fn update_subscription_plan_payment_provider(
-        &self,
-        mapping: SubscriptionPlanPaymentProvider,
-    ) -> Result<SubscriptionPlanPaymentProvider, CoreError> {
-        let query = r#"
-            UPDATE subscription_plan_payment_provider
-            SET external_product_id = $2,
-                external_price_id = $3,
-                enabled = $4,
-                updated_at = $5
-            WHERE id = $1
-            RETURNING id, plan_id, payment_provider, external_product_id,
-                      external_price_id, enabled, created_at, updated_at
-        "#;
-
-        let stmt = Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            query,
-            [
-                mapping.id.into(),
-                mapping.external_product_id.clone().into(),
-                mapping.external_price_id.clone().into(),
-                mapping.enabled.into(),
-                sea_orm::prelude::DateTimeWithTimeZone::from(mapping.updated_at).into(),
-            ],
-        );
-
-        let result = SubscriptionPlanPaymentProviderQueryResult::find_by_statement(stmt)
-            .one(&self.db)
-            .await
-            .map_err(|e| {
-                CoreError::DatabaseError(format!("Failed to update plan payment provider: {}", e))
-            })?
-            .ok_or_else(|| {
-                CoreError::DatabaseError(
-                    "Failed to update plan payment provider: no result".to_string(),
-                )
-            })?;
-
-        Ok(query_result_to_subscription_plan_payment_provider(result))
-    }
-
-    async fn delete_subscription_plan_payment_provider(
-        &self,
-        mapping_id: Uuid,
-    ) -> Result<(), CoreError> {
-        let query = r#"
-            DELETE FROM subscription_plan_payment_provider
-            WHERE id = $1
-        "#;
-
-        let stmt =
-            Statement::from_sql_and_values(DatabaseBackend::Postgres, query, [mapping_id.into()]);
-
-        self.db.execute(stmt).await.map_err(|e| {
-            CoreError::DatabaseError(format!("Failed to delete plan payment provider: {}", e))
-        })?;
-
-        Ok(())
-    }
-
-    async fn delete_subscription_plan_payment_providers_by_plan(
-        &self,
-        plan_id: Uuid,
-    ) -> Result<(), CoreError> {
-        let query = r#"
-            DELETE FROM subscription_plan_payment_provider
-            WHERE plan_id = $1
-        "#;
-
-        let stmt =
-            Statement::from_sql_and_values(DatabaseBackend::Postgres, query, [plan_id.into()]);
-
-        self.db.execute(stmt).await.map_err(|e| {
-            CoreError::DatabaseError(format!(
-                "Failed to delete plan payment providers by plan: {}",
-                e
-            ))
-        })?;
-
-        Ok(())
-    }
-
-    async fn list_subscription_plan_payment_providers_batch(
-        &self,
-        plan_ids: &[Uuid],
-    ) -> Result<Vec<SubscriptionPlanPaymentProvider>, CoreError> {
-        if plan_ids.is_empty() {
-            return Ok(Vec::new());
+        if let Some(provider) = payment_provider {
+            query =
+                query.filter(provider_entitlement_mapping::Column::PaymentProvider.eq(provider));
+        }
+        if let Some(enabled) = enabled {
+            query = query.filter(provider_entitlement_mapping::Column::Enabled.eq(enabled));
         }
 
-        // Build IN clause with parameterized values
-        let query = r#"
-            SELECT id, plan_id, payment_provider, external_product_id,
-                   external_price_id, enabled, created_at, updated_at
-            FROM subscription_plan_payment_provider
-            WHERE plan_id = ANY($1)
-            ORDER BY created_at ASC
-        "#;
-
-        let stmt = Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            query,
-            [plan_ids.to_vec().into()],
-        );
-
-        let results = SubscriptionPlanPaymentProviderQueryResult::find_by_statement(stmt)
-            .all(&self.db)
+        let total = query
+            .clone()
+            .count(&self.db)
             .await
-            .map_err(|e| {
-                CoreError::DatabaseError(format!(
-                    "Failed to list plan payment providers batch: {}",
-                    e
-                ))
-            })?;
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        Ok(results
+        let results = query
+            .order_by_asc(provider_entitlement_mapping::Column::CreatedAt)
+            .paginate(&self.db, page_size)
+            .fetch_page(page - 1)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        let mappings = results
             .into_iter()
-            .map(query_result_to_subscription_plan_payment_provider)
-            .collect())
+            .map(Self::model_to_entitlement_mapping)
+            .collect();
+
+        Ok((mappings, total))
+    }
+
+    async fn update_entitlement_mapping(
+        &self,
+        mapping: EntitlementMapping,
+    ) -> Result<EntitlementMapping, CoreError> {
+        let existing = provider_entitlement_mapping::Entity::find_by_id(mapping.id)
+            .one(&self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+            .ok_or(CoreError::NotFound)?;
+
+        let mut active_model: provider_entitlement_mapping::ActiveModel =
+            existing.into_active_model();
+        let update = Self::entitlement_mapping_to_active_model(mapping);
+        active_model.entitlement_key = update.entitlement_key;
+        active_model.billing_type = update.billing_type;
+        active_model.billing_period = update.billing_period;
+        active_model.points_per_period = update.points_per_period;
+        active_model.grant_period_type = update.grant_period_type;
+        active_model.validity_days = update.validity_days;
+        active_model.grant_on_subscribe = update.grant_on_subscribe;
+        active_model.max_periods = update.max_periods;
+        active_model.enabled = update.enabled;
+        active_model.provider_product_info = update.provider_product_info;
+        active_model.synced_at = update.synced_at;
+        active_model.updated_at = update.updated_at;
+
+        let result = active_model
+            .update(&self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(Self::model_to_entitlement_mapping(result))
+    }
+
+    async fn upsert_entitlement_mapping(
+        &self,
+        mapping: EntitlementMapping,
+    ) -> Result<EntitlementMapping, CoreError> {
+        // Try to find existing by unique constraint
+        let existing = self
+            .find_entitlement_mapping_by_provider_product(
+                &mapping.realm_id,
+                &mapping.payment_provider,
+                &mapping.external_product_id,
+            )
+            .await?;
+
+        match existing {
+            Some(mut existing_mapping) => {
+                // Update existing
+                existing_mapping.entitlement_key = mapping.entitlement_key;
+                existing_mapping.external_price_id = mapping.external_price_id;
+                existing_mapping.billing_type = mapping.billing_type;
+                existing_mapping.billing_period = mapping.billing_period;
+                existing_mapping.points_per_period = mapping.points_per_period;
+                existing_mapping.grant_period_type = mapping.grant_period_type;
+                existing_mapping.validity_days = mapping.validity_days;
+                existing_mapping.grant_on_subscribe = mapping.grant_on_subscribe;
+                existing_mapping.max_periods = mapping.max_periods;
+                existing_mapping.enabled = mapping.enabled;
+                existing_mapping.provider_product_info = mapping.provider_product_info;
+                existing_mapping.synced_at = mapping.synced_at;
+                existing_mapping.updated_at = chrono::Utc::now();
+                self.update_entitlement_mapping(existing_mapping).await
+            }
+            None => self.create_entitlement_mapping(mapping).await,
+        }
+    }
+
+    async fn find_entitlement_mapping_by_provider_product(
+        &self,
+        realm_id: &str,
+        payment_provider: &str,
+        external_product_id: &str,
+    ) -> Result<Option<EntitlementMapping>, CoreError> {
+        let result = provider_entitlement_mapping::Entity::find()
+            .filter(provider_entitlement_mapping::Column::RealmId.eq(realm_id))
+            .filter(provider_entitlement_mapping::Column::PaymentProvider.eq(payment_provider))
+            .filter(provider_entitlement_mapping::Column::ExternalProductId.eq(external_product_id))
+            .one(&self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(result.map(Self::model_to_entitlement_mapping))
+    }
+
+    async fn find_entitlement_mapping_by_key(
+        &self,
+        realm_id: &str,
+        entitlement_key: &str,
+    ) -> Result<Option<EntitlementMapping>, CoreError> {
+        let result = provider_entitlement_mapping::Entity::find()
+            .filter(provider_entitlement_mapping::Column::RealmId.eq(realm_id))
+            .filter(provider_entitlement_mapping::Column::EntitlementKey.eq(entitlement_key))
+            .filter(provider_entitlement_mapping::Column::Enabled.eq(true))
+            .one(&self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(result.map(Self::model_to_entitlement_mapping))
     }
 }

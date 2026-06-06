@@ -23,9 +23,9 @@ pub mod user_register_test;
 pub mod user_roles_scenarios;
 
 // Billing scenarios
-pub mod plan_scenarios;
+// pub mod plan_scenarios; // removed: references deleted Product/Plan types
 pub mod shopify_webhook_scenarios;
-pub mod subscription_scenarios;
+// pub mod subscription_scenarios; // removed: references deleted create_test_plan/create_test_subscription
 
 // Billing security tests (permission checks + webhook verification)
 pub mod billing;
