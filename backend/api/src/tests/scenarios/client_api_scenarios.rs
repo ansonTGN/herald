@@ -542,14 +542,8 @@ async fn scenario_subscription_active(ctx: &mut SchemaTestContext) {
     // 使用现有的 _client_app_id，创建订阅
     let client_app_uuid =
         Uuid::parse_str(&ctx._client_app_id).expect("Failed to parse client_app_id as UUID");
-    create_third_party_test_subscription(
-        ctx,
-        &client_app_uuid,
-        "active",
-        "professional",
-        Some("Pro Plan"),
-    )
-    .await;
+    create_third_party_test_subscription(ctx, &client_app_uuid, "active", "professional", None)
+        .await;
 
     // Step 2: 调用订阅查询 API
     let request = create_request_with_api_key(
@@ -569,8 +563,8 @@ async fn scenario_subscription_active(ctx: &mut SchemaTestContext) {
     assert_eq!(json["clientAppId"], ctx._client_app_id);
     assert_eq!(json["hasSubscription"], true);
     assert_eq!(json["status"], "active");
-    assert_eq!(json["tier"], "professional");
-    assert_eq!(json["planName"], "Pro Plan");
+    assert_eq!(json["entitlementKey"], "professional");
+    assert_eq!(json["paymentProvider"], "creem");
 }
 
 /// ============================================================================
@@ -606,8 +600,8 @@ async fn scenario_subscription_none(ctx: &mut SchemaTestContext) {
     assert_eq!(json["clientAppId"], ctx._client_app_id);
     assert_eq!(json["hasSubscription"], false);
     assert_eq!(json["status"], "none");
-    assert_eq!(json["tier"], "free");
-    assert!(json["planName"].is_null());
+    assert_eq!(json["entitlementKey"], "");
+    assert_eq!(json["paymentProvider"], "");
 }
 
 /// ============================================================================

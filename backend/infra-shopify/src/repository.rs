@@ -15,7 +15,7 @@ type SubscriptionQueryResult = (
     Uuid,
     String,
     Option<Uuid>,
-    Option<Uuid>,
+    Option<String>,
     String,
     Option<DateTime<Utc>>,
 );
@@ -42,7 +42,7 @@ pub struct ShopifySubscriptionRecord {
     pub id: Uuid,
     pub realm_id: String,
     pub user_id: Option<Uuid>,
-    pub plan_id: Option<Uuid>,
+    pub entitlement_key: Option<String>,
     pub status: String,
     pub current_period_end: Option<DateTime<Utc>>,
 }
@@ -165,27 +165,25 @@ impl ShopifyRepository {
         realm_uuid: &str,
         contract: &ShopifySubscriptionContractWebhook,
         user_id: Option<Uuid>,
-        plan_id: Uuid,
+        entitlement_key: &str,
         client_app_id: Option<Uuid>,
-        billing_period: &str,
     ) -> Result<Uuid, CoreError> {
         let subscription_id = uuid::Uuid::now_v7();
 
         sqlx::query(
             "INSERT INTO subscription
              (id, realm_id, user_id, external_subscription_id, external_product_id, payment_provider,
-              status, tier, current_period_end, plan_id, client_app_id, billing_period)
-             VALUES ($1, $2, $3, $4, $5, 'shopify', 'active', 'pro', $6, $7, $8, $9)",
+              status, entitlement_key, current_period_end, client_app_id, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, 'shopify', 'active', $6, $7, $8, NOW(), NOW())",
         )
         .bind(subscription_id)
         .bind(realm_uuid)
         .bind(user_id)
         .bind(&contract.id)
         .bind(&contract.selling_plan_id)
+        .bind(entitlement_key)
         .bind(contract.current_period_end)
-        .bind(plan_id)
         .bind(client_app_id)
-        .bind(billing_period)
         .execute(&self.pool)
         .await
         .map_err(|e| {
@@ -200,16 +198,16 @@ impl ShopifyRepository {
     pub async fn find_subscription_by_external_id(
         &self,
         external_subscription_id: &str,
-    ) -> Result<Option<(Uuid, Option<Uuid>, String)>, CoreError> {
+    ) -> Result<Option<(Uuid, Option<String>, String)>, CoreError> {
         let result = sqlx::query_as(
-            "SELECT id, plan_id, realm_id
+            "SELECT id, entitlement_key, realm_id
              FROM subscription
              WHERE external_subscription_id = $1",
         )
         .bind(external_subscription_id)
         .fetch_optional(&self.pool)
         .await?
-        .map(|row: (Uuid, Option<Uuid>, String)| row);
+        .map(|row: (Uuid, Option<String>, String)| row);
 
         Ok(result)
     }
@@ -219,7 +217,7 @@ impl ShopifyRepository {
         subscription_id: Uuid,
     ) -> Result<Option<ShopifySubscriptionRecord>, CoreError> {
         let result = sqlx::query_as(
-            "SELECT id, realm_id, user_id, plan_id, status, current_period_end
+            "SELECT id, realm_id, user_id, entitlement_key, status, current_period_end
              FROM subscription
              WHERE id = $1",
         )
@@ -228,11 +226,11 @@ impl ShopifyRepository {
         .await
         .map_err(|e| CoreError::InternalServerError(format!("Database error: {}", e)))?
         .map(
-            |(id, realm_id, user_id, plan_id, status, current_period_end): SubscriptionQueryResult| ShopifySubscriptionRecord {
+            |(id, realm_id, user_id, entitlement_key, status, current_period_end): SubscriptionQueryResult| ShopifySubscriptionRecord {
                 id,
                 realm_id,
                 user_id,
-                plan_id,
+                entitlement_key,
                 status,
                 current_period_end,
             },
@@ -241,19 +239,18 @@ impl ShopifyRepository {
         Ok(result)
     }
 
-    /// Get subscription plan ID
-    pub async fn get_subscription_plan_id(
+    /// Get subscription entitlement key
+    pub async fn get_subscription_entitlement_key(
         &self,
         subscription_id: Uuid,
-    ) -> Result<Option<Uuid>, CoreError> {
-        let plan_id: Option<Uuid> =
-            sqlx::query_scalar("SELECT plan_id FROM subscription WHERE id = $1")
+    ) -> Result<Option<String>, CoreError> {
+        let entitlement_key: Option<String> =
+            sqlx::query_scalar("SELECT entitlement_key FROM subscription WHERE id = $1")
                 .bind(subscription_id)
                 .fetch_optional(&self.pool)
-                .await?
-                .flatten();
+                .await?;
 
-        Ok(plan_id)
+        Ok(entitlement_key)
     }
 
     /// Get subscription realm ID
@@ -277,21 +274,21 @@ impl ShopifyRepository {
         Ok(realm_id)
     }
 
-    /// Update subscription plan
-    pub async fn update_subscription_plan(
+    /// Update subscription entitlement key
+    pub async fn update_subscription_entitlement_key(
         &self,
         subscription_id: Uuid,
-        plan_id: Uuid,
+        entitlement_key: &str,
         current_period_end: DateTime<Utc>,
     ) -> Result<(), CoreError> {
         sqlx::query(
             "UPDATE subscription
-             SET plan_id = $1,
+             SET entitlement_key = $1,
                  current_period_end = $2,
                  updated_at = NOW()
              WHERE id = $3",
         )
-        .bind(plan_id)
+        .bind(entitlement_key)
         .bind(current_period_end)
         .bind(subscription_id)
         .execute(&self.pool)
@@ -720,7 +717,7 @@ impl ShopifyRepository {
         shopify_customer_id: &str,
     ) -> Result<Vec<ShopifySubscriptionRecord>, CoreError> {
         let rows = sqlx::query_as(
-            "SELECT s.id, s.realm_id, s.user_id, s.plan_id, s.status, s.current_period_end
+            "SELECT s.id, s.realm_id, s.user_id, s.entitlement_key, s.status, s.current_period_end
              FROM subscription s
              JOIN shopify_subscription_binding b ON b.subscription_id = s.id
              WHERE s.realm_id = $1
@@ -738,11 +735,11 @@ impl ShopifyRepository {
         Ok(rows
             .into_iter()
             .map(
-                |(id, realm_id, user_id, plan_id, status, current_period_end): SubscriptionQueryResult| ShopifySubscriptionRecord {
+                |(id, realm_id, user_id, entitlement_key, status, current_period_end): SubscriptionQueryResult| ShopifySubscriptionRecord {
                     id,
                     realm_id,
                     user_id,
-                    plan_id,
+                    entitlement_key,
                     status,
                     current_period_end,
                 },

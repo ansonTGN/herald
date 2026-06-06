@@ -761,6 +761,7 @@ pub fn build_subscription_paid_event_full(
                 "productId": format!("prod_test_{}", billing_period),
                 "userId": user_id.to_string(),
                 "planId": plan_id.to_string(),
+                "entitlementKey": plan_id.to_string(),
                 "isRenewal": is_renewal,
                 "currentPeriodEnd": period_end.to_rfc3339(),
                 "amount": amount,
@@ -821,10 +822,12 @@ pub fn build_subscription_updated_event(
                 "productId": "prod_test_monthly",
                 "userId": user_id.to_string(),
                 "planId": current_plan_id.to_string(),
+                "entitlementKey": current_plan_id.to_string(),
                 "currentPeriodEnd": period_end
             },
             "previousAttributes": {
-                "planId": previous_plan_id.to_string()
+                "planId": previous_plan_id.to_string(),
+                "entitlementKey": previous_plan_id.to_string()
             }
         },
         "metadata": {
@@ -909,9 +912,7 @@ pub fn build_refund_created_event_with_user_and_type(
     })
 }
 
-/// Legacy: setup_test_plan_config -- inserts into deleted tables (products, subscription_plan, points_plan_configs).
-/// Retained for compilation of existing test modules that have not yet been migrated.
-/// Will fail at runtime; BE-T03/BE-T04 will migrate the callers.
+/// Setup a test plan config by creating a provider_entitlement_mappings entry.
 pub async fn setup_test_plan_config(
     ctx: &crate::tests::schema_test_context::SchemaTestContext,
     realm_id: &str,
@@ -920,17 +921,52 @@ pub async fn setup_test_plan_config(
     setup_test_plan_config_with_points(ctx, realm_id, plan_id, 1000).await;
 }
 
-/// Legacy: setup_test_plan_config_with_points -- inserts into deleted tables.
+/// Setup a test plan config with custom points_per_period by creating a provider_entitlement_mappings entry.
 pub async fn setup_test_plan_config_with_points(
     ctx: &crate::tests::schema_test_context::SchemaTestContext,
     realm_id: &str,
     plan_id: Uuid,
     points_per_period: i64,
 ) {
-    // Attempt to create mapping rows; the old tables no longer exist so this
-    // is a no-op placeholder to allow compilation of existing tests.
-    // BE-T03/BE-T04 will replace callers with entitlement mapping setup.
-    let _ = (ctx, realm_id, plan_id, points_per_period);
+    let external_product_id = format!("prod_test_{}", plan_id);
+    let entitlement_key = plan_id.to_string();
+
+    // Create mapping with plan-specific external_product_id (for events that include entitlementKey)
+    sqlx::query(
+        "INSERT INTO provider_entitlement_mappings
+            (id, realm_id, payment_provider, external_product_id, entitlement_key,
+             billing_type, billing_period, points_per_period, grant_on_subscribe,
+             validity_days, enabled, created_at, updated_at)
+         VALUES ($1, $2, 'creem', $3, $4, 'recurring', 'monthly', $5, true, 30, true, NOW(), NOW())
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(plan_id)
+    .bind(realm_id)
+    .bind(&external_product_id)
+    .bind(&entitlement_key)
+    .bind(points_per_period)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create test entitlement mapping");
+
+    // Create additional mapping with generic "prod_test_monthly" for update/cancel events
+    // that resolve entitlement_key via product ID lookup
+    let generic_mapping_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO provider_entitlement_mappings
+            (id, realm_id, payment_provider, external_product_id, entitlement_key,
+             billing_type, billing_period, points_per_period, grant_on_subscribe,
+             validity_days, enabled, created_at, updated_at)
+         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 'recurring', 'monthly', $4, true, 30, true, NOW(), NOW())
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(generic_mapping_id)
+    .bind(realm_id)
+    .bind(&entitlement_key)
+    .bind(points_per_period)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create generic test entitlement mapping");
 }
 
 /// ============================================================================

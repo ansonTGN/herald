@@ -573,7 +573,8 @@ mod tests {
                     "realmId": realm_id,
                     "clientAppId": client_app_id.to_string(),
                     "planId": plan_id.to_string(),
-                    "billingPeriod": "monthly"
+                    "billingPeriod": "monthly",
+                    "entitlementKey": plan_id.to_string()
                 }
             }
         });
@@ -651,7 +652,8 @@ mod tests {
                     "realmId": realm_id,
                     "clientAppId": client_app_id.to_string(),
                     "planId": plan_id.to_string(),
-                    "billingPeriod": "monthly"
+                    "billingPeriod": "monthly",
+                    "entitlementKey": plan_id.to_string()
                 }
             }
         });
@@ -691,7 +693,8 @@ mod tests {
                     "realmId": realm_id,
                     "clientAppId": client_app_id.to_string(),
                     "planId": plan_id.to_string(),
-                    "billingPeriod": "monthly"
+                    "billingPeriod": "monthly",
+                    "entitlementKey": plan_id.to_string()
                 }
             }
         });

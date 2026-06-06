@@ -175,13 +175,10 @@ async fn handle_orders_paid(
         .await?
         .ok_or(CoreError::NotFound)?;
 
-    // TODO: Shopify provider contract design deferred (design section 1.3).
-    // For now, use plan_id as entitlement_key fallback (ShopifySubscriptionRecord still uses plan_id).
     if let Some(user_id) = subscription_record.user_id {
-        // Resolve entitlement_key: try to find mapping, fallback to plan_id string
         let entitlement_key = subscription_record
-            .plan_id
-            .map(|pid| pid.to_string())
+            .entitlement_key
+            .clone()
             .unwrap_or_default();
         let period_end = subscription_record
             .current_period_end
@@ -338,30 +335,46 @@ async fn handle_subscription_contracts_create(
         None
     };
 
-    let subscription_id = shopify_repo
-        .create_subscription(
-            &realm_id,
-            &contract,
-            resolved_user_id,
-            herald_plan_id,
-            client_app_id,
-            "monthly",
-        )
+    // Idempotent create: if binding already exists, reuse existing subscription
+    let existing_binding = shopify_repo
+        .find_binding_by_contract_id(&contract.id)
         .await?;
 
-    let binding_id = shopify_repo
-        .create_binding(subscription_id, &realm_id, &shop_domain, &contract)
-        .await?;
+    let (subscription_id, _binding_id) = if let Some((bid, sid, _, _)) = existing_binding {
+        info!(
+            realm_id = %realm_id,
+            contract_id = %contract.id,
+            subscription_id = %sid,
+            binding_id = %bid,
+            "Shopify binding already exists, skipping create"
+        );
+        (sid, bid)
+    } else {
+        let sid = shopify_repo
+            .create_subscription(
+                &realm_id,
+                &contract,
+                resolved_user_id,
+                &entitlement_key,
+                client_app_id,
+            )
+            .await?;
 
-    info!(
-        realm_id = %realm_id,
-        user_id = ?resolved_user_id,
-        entitlement_key = %entitlement_key,
-        subscription_id = %subscription_id,
-        binding_id = %binding_id,
-        contract_id = %contract.id,
-        "Created Shopify subscription binding and subscription record"
-    );
+        let bid = shopify_repo
+            .create_binding(sid, &realm_id, &shop_domain, &contract)
+            .await?;
+
+        info!(
+            realm_id = %realm_id,
+            user_id = ?resolved_user_id,
+            entitlement_key = %entitlement_key,
+            subscription_id = %sid,
+            binding_id = %bid,
+            contract_id = %contract.id,
+            "Created Shopify subscription binding and subscription record"
+        );
+        (sid, bid)
+    };
 
     if let Some(user_id) = resolved_user_id {
         state
@@ -460,7 +473,7 @@ async fn handle_subscription_contracts_update(
             CoreError::NotFound
         })?;
 
-    let (_sub_id, _old_plan_id_option, _sub_realm_id) = subscription;
+    let (_sub_id, _old_entitlement_key_option, _sub_realm_id) = subscription;
     let subscription_record = shopify_repo
         .find_subscription_with_user(_sub_id)
         .await?
@@ -468,27 +481,12 @@ async fn handle_subscription_contracts_update(
     let mapped_status = map_shopify_status(&contract.status);
     let previous_status = subscription_record.status.clone();
 
-    // Resolve old entitlement_key from subscription record
-    // TODO: Shopify provider contract design deferred (design section 1.3).
-    // ShopifySubscriptionRecord still uses plan_id; use it as entitlement_key fallback
     let old_entitlement_key = subscription_record
-        .plan_id
-        .map(|pid| pid.to_string())
+        .entitlement_key
+        .clone()
         .unwrap_or_default();
 
-    shopify_repo
-        .update_subscription_plan(_sub_id, herald_plan_id, contract.current_period_end)
-        .await?;
-    shopify_repo
-        .update_subscription_status(_sub_id, mapped_status)
-        .await?;
-
-    shopify_repo
-        .update_binding_revision(binding_id, new_revision_id)
-        .await?;
-
     // Resolve new entitlement_key
-    // TODO: Shopify provider contract design deferred (design section 1.3).
     let new_mapping = state
         .points_repository
         .find_points_policy_by_entitlement_key(&realm_id, &herald_plan_id.to_string())
@@ -498,6 +496,21 @@ async fn handle_subscription_contracts_update(
         .as_ref()
         .map(|m| m.entitlement_key.clone())
         .unwrap_or_else(|| herald_plan_id.to_string());
+
+    shopify_repo
+        .update_subscription_entitlement_key(
+            _sub_id,
+            &new_entitlement_key,
+            contract.current_period_end,
+        )
+        .await?;
+    shopify_repo
+        .update_subscription_status(_sub_id, mapped_status)
+        .await?;
+
+    shopify_repo
+        .update_binding_revision(binding_id, new_revision_id)
+        .await?;
 
     let Some(user_id) = subscription_record.user_id else {
         info!(
@@ -639,17 +652,15 @@ async fn handle_billing_attempt_success(
             CoreError::NotFound
         })?;
 
-    let (_sub_id, _plan_id_option, sub_realm_id) = subscription;
+    let (_sub_id, _entitlement_key_option, sub_realm_id) = subscription;
     let subscription_record = shopify_repo
         .find_subscription_with_user(subscription_id)
         .await?
         .ok_or(CoreError::NotFound)?;
 
-    // TODO: Shopify provider contract design deferred (design section 1.3).
-    // ShopifySubscriptionRecord still uses plan_id; use it as entitlement_key fallback
     let entitlement_key = subscription_record
-        .plan_id
-        .map(|pid| pid.to_string())
+        .entitlement_key
+        .clone()
         .unwrap_or_default();
 
     shopify_repo

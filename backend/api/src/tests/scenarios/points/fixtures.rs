@@ -216,47 +216,36 @@ pub async fn create_test_transaction(
     transaction_id
 }
 
-/// Create a test plan (billing plan)
+/// Create a test plan (provider entitlement mapping)
 ///
 /// Returns the plan ID
-pub async fn create_test_plan(pool: &PgPool, realm_id: &str, _plan_name: &str, price: i64) -> Uuid {
+pub async fn create_test_plan(pool: &PgPool, realm_id: &str, plan_name: &str, price: i64) -> Uuid {
     let plan_id = Uuid::now_v7();
-
-    // Ensure default product exists for this realm
-    let product_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO products (id, realm_id, code, title, description, enabled, created_at, updated_at)
-         VALUES ($1, $2, 'default', 'Default Product', 'Default test product', true, NOW(), NOW())
-         ON CONFLICT (realm_id, code) DO UPDATE SET updated_at = products.updated_at
-         RETURNING id"
-    )
-    .bind(Uuid::now_v7())
-    .bind(realm_id)
-    .fetch_one(pool)
-    .await
-    .expect("Failed to ensure default product");
+    let external_product_id = format!("prod_test_{}", plan_name);
 
     sqlx::query(
-        "INSERT INTO subscription_plan (id, realm_id, name, title, type, price, currency, active, product_id)
-         VALUES ($1, $2, $3, $4, 'monthly', $5, 'USD', true, $6)",
+        "INSERT INTO provider_entitlement_mappings
+            (id, realm_id, payment_provider, external_product_id, entitlement_key,
+             points_per_period, grant_on_subscribe, enabled, created_at, updated_at)
+         VALUES ($1, $2, 'creem', $3, $4, $5, true, true, NOW(), NOW())",
     )
     .bind(plan_id)
     .bind(realm_id)
-    .bind(_plan_name)
-    .bind(_plan_name)
+    .bind(&external_product_id)
+    .bind(plan_id.to_string())
     .bind(price)
-    .bind(product_id)
     .execute(pool)
     .await
-    .expect("Failed to create billing plan");
+    .expect("Failed to create entitlement mapping");
 
     plan_id
 }
 
 /// Create a test plan configuration
 ///
-/// Uses the new flexible grant period schema
+/// Updates the existing provider_entitlement_mappings entry with points config
 ///
-/// Returns the config ID
+/// Returns the plan ID
 pub async fn create_test_plan_config(
     pool: &PgPool,
     realm_id: &str,
@@ -264,22 +253,21 @@ pub async fn create_test_plan_config(
     points_per_period: i64,
     validity_days: i64,
 ) -> Uuid {
-    let config_id = Uuid::now_v7();
-
+    // Update the entitlement mapping with points config
     sqlx::query(
-        "INSERT INTO points_plan_configs (id, realm_id, plan_id, grant_period_type, points_per_period, validity_days, grant_on_subscribe, max_periods, active)
-         VALUES ($1, $2, $3, 'monthly', $4, $5, true, NULL, true)",
+        "UPDATE provider_entitlement_mappings
+         SET points_per_period = $1, validity_days = $2, updated_at = NOW()
+         WHERE id = $3 AND realm_id = $4",
     )
-    .bind(config_id)
-    .bind(realm_id)
-    .bind(plan_id)
     .bind(points_per_period)
     .bind(validity_days)
+    .bind(plan_id)
+    .bind(realm_id)
     .execute(pool)
     .await
-    .expect("Failed to create plan config");
+    .expect("Failed to update plan config");
 
-    config_id
+    plan_id
 }
 
 /// Create a test subscription
@@ -292,8 +280,6 @@ pub async fn create_test_subscription(
     realm_id: &str,
 ) -> Uuid {
     let subscription_id = Uuid::now_v7();
-
-    // Create a client app for this subscription
     let client_app_id = Uuid::now_v7();
     let client_id = format!("client-{}", Uuid::now_v7());
 
@@ -309,16 +295,19 @@ pub async fn create_test_subscription(
     .await
     .expect("Failed to create client app for subscription");
 
-    // Insert into subscription table (singular, not plural)
     sqlx::query(
-        "INSERT INTO subscription (id, realm_id, external_subscription_id, external_product_id, payment_provider, status, tier, current_period_start, current_period_end, cancel_at_period_end, plan_id, client_app_id, billing_period, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, 'creem', 'active', 'professional', NOW(), NOW() + INTERVAL '30 days', false, $5, $6, 'monthly', NOW(), NOW())",
+        "INSERT INTO subscription
+            (id, realm_id, external_subscription_id, external_product_id, payment_provider,
+             status, entitlement_key, current_period_start, current_period_end,
+             cancel_at_period_end, client_app_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'creem', 'active', $5, NOW(), NOW() + INTERVAL '30 days',
+                 false, $6, NOW(), NOW())",
     )
     .bind(subscription_id)
     .bind(realm_id)
     .bind(format!("ext-sub-{}", subscription_id))
     .bind("test_product_id")
-    .bind(plan_id)
+    .bind(plan_id.to_string())
     .bind(client_app_id)
     .execute(pool)
     .await

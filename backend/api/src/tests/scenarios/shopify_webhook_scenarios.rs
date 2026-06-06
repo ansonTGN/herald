@@ -621,15 +621,16 @@ mod tests {
         .await;
 
         assert_shopify_webhook_success(&response);
-        let mut updated_plan_id = old_plan_id;
+        let mut updated_entitlement_key = String::new();
         let mut final_points = initial_points;
 
         for _ in 0..30 {
-            updated_plan_id = sqlx::query_scalar("SELECT plan_id FROM subscription WHERE id = $1")
-                .bind(subscription_id)
-                .fetch_one(&ctx.app_state.pool)
-                .await
-                .expect("Subscription not found");
+            updated_entitlement_key =
+                sqlx::query_scalar("SELECT entitlement_key FROM subscription WHERE id = $1")
+                    .bind(subscription_id)
+                    .fetch_one(&ctx.app_state.pool)
+                    .await
+                    .expect("Subscription not found");
 
             final_points = sqlx::query_scalar(
                 "SELECT COALESCE(subscription_balance, 0) FROM points_wallets
@@ -641,14 +642,20 @@ mod tests {
             .await
             .unwrap_or(0);
 
-            if updated_plan_id == new_plan_id && final_points == initial_points + 1000 {
+            if updated_entitlement_key == new_plan_id.to_string()
+                && final_points == initial_points + 1000
+            {
                 break;
             }
 
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
 
-        assert_eq!(updated_plan_id, new_plan_id, "Plan should be updated");
+        assert_eq!(
+            updated_entitlement_key,
+            new_plan_id.to_string(),
+            "entitlement_key should be updated to new plan"
+        );
 
         assert_eq!(
             final_points,

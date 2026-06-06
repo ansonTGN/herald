@@ -196,8 +196,8 @@ pub async fn create_test_user_with_permissions(
 /// * `ctx` - 测试上下文
 /// * `client_app_id` - 客户端应用 ID
 /// * `status` - 订阅状态 ("active", "canceled", "expired", "trialing")
-/// * `tier` - 订阅层级 ("free", "starter", "professional", "enterprise")
-/// * `plan_name` - 方案名称
+/// * `entitlement_key` - 权益标识 (e.g. "professional", "starter")
+/// * `plan_name` - 方案名称（未使用，保留签名兼容）
 ///
 /// # Returns
 /// 返回 subscription_id
@@ -213,73 +213,35 @@ pub async fn create_test_user_with_permissions(
 ///     &client_app_id,
 ///     "active",
 ///     "professional",
-///     "Pro Plan"
+///     None
 /// ).await;
 /// ```
 pub async fn create_third_party_test_subscription(
     ctx: &TestContext,
     client_app_id: &uuid::Uuid,
     status: &str,
-    tier: &str,
-    plan_name: Option<&str>,
+    entitlement_key: &str,
+    _plan_name: Option<&str>,
 ) -> String {
     let subscription_id = Uuid::now_v7();
-    let plan_id_uuid = if let Some(name) = plan_name {
-        // 创建 Plan 记录 (使用新 schema)
-        let plan_id = Uuid::now_v7();
 
-        // Ensure default product exists
-        let product_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO products (id, realm_id, code, title, description, enabled, created_at, updated_at)
-             VALUES ($1, $2, 'default', 'Default Product', 'Default test product', true, NOW(), NOW())
-             ON CONFLICT (realm_id, code) DO UPDATE SET updated_at = products.updated_at
-             RETURNING id"
-        )
-        .bind(Uuid::now_v7())
-        .bind(&ctx._realm_id)
-        .fetch_one(&ctx.app_state.pool)
-        .await
-        .expect("Failed to ensure default product");
-
-        sqlx::query(
-            "INSERT INTO subscription_plan (id, realm_id, name, description, title, type, price, currency,
-                              active, trial_days, sort_order, product_id, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, 'monthly', $6, 'USD', true, 0, 0, $7, NOW(), NOW())"
-        )
-        .bind(plan_id)
-        .bind(&ctx._realm_id)
-        .bind(name)
-        .bind(format!("{} description", name))
-        .bind(name)  // title
-        .bind(2900)  // price
-        .bind(product_id)
-        .execute(&ctx.app_state.pool)
-        .await
-        .expect("Failed to create plan");
-        Some(plan_id)
-    } else {
-        None
-    };
-
-    // Note: Using external_product_id and payment_provider as per schema
+    // Note: external_product_id is required by the schema but not used for third-party API tests
     sqlx::query(
         r#"
-        INSERT INTO subscription (id, realm_id, client_app_id, plan_id, status, tier, billing_period,
-                                 external_subscription_id, external_product_id, payment_provider,
-                                 current_period_start, current_period_end, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        INSERT INTO subscription
+            (id, realm_id, external_subscription_id, external_product_id, payment_provider,
+             client_app_id, status, entitlement_key, current_period_start, current_period_end,
+             created_at, updated_at)
+        VALUES ($1, $2, $3, $4, 'creem', $5, $6, $7, $8, $9, $10, $10)
         "#,
     )
     .bind(subscription_id)
     .bind(&ctx._realm_id)
+    .bind(format!("ext_sub_{}", subscription_id))
+    .bind("test_product_dummy")
     .bind(*client_app_id)
-    .bind(plan_id_uuid)
     .bind(status)
-    .bind(tier)
-    .bind("monthly") // billing_period
-    .bind(format!("ext_sub_{}", subscription_id)) // external_subscription_id
-    .bind("test_product_dummy") // external_product_id (required by schema)
-    .bind("creem") // payment_provider
+    .bind(entitlement_key)
     .bind(Utc::now())
     .bind(Utc::now() + Duration::days(30))
     .bind(Utc::now())

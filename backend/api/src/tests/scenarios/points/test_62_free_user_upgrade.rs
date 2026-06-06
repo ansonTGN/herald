@@ -343,6 +343,22 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     let _plan_config_id =
         create_test_plan_config(&ctx._app_state.pool, &ctx._realm_id, plan_id, 1000, 30).await;
 
+    // Create additional mapping for "prod_test_monthly" so cancel webhook can resolve entitlement_key
+    let generic_mapping_id = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO provider_entitlement_mappings
+            (id, realm_id, payment_provider, external_product_id, entitlement_key,
+             points_per_period, grant_on_subscribe, validity_days, enabled, created_at, updated_at)
+         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 1000, true, 30, true, NOW(), NOW())
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(generic_mapping_id)
+    .bind(&ctx._realm_id)
+    .bind(plan_id.to_string())
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to create generic entitlement mapping for cancel webhook");
+
     // Configure Creem webhook for this realm
     ctx.with_creem_config(
         &ctx._realm_id,

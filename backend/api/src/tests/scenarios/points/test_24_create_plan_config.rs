@@ -1,30 +1,27 @@
 // =============================================================================
-// Points System Scenario Test 24: Create Plan Config
+// Points System Scenario Test 24: Update Entitlement Mapping Points Policy
 // =============================================================================
 //
 // **User Story**: US-PO-01 (Configure Points Plans)
 // **Priority**: P0
 //
-// **Scenario**: Admin Creates Plan Configuration
+// **Scenario**: Admin Updates Entitlement Mapping Points Policy
 //
 // **Given**:
 // - An admin user
-// - A valid plan_id
+// - An existing entitlement mapping (created via sync or DB)
 //
 // **When**:
-// - The admin calls `POST /api/points/{realmId}/plan-configs` with:
-//   - plan_id: valid UUID
-//   - points_on_subscribe: 1000
-//   - points_on_renewal: 1000
-//   - renewal_enabled: true
-//   - renewal_period_type: "monthly"
-//   - max_accumulation: 10000
+// - The admin calls `PATCH /api/bill/{realmId}/entitlement-mappings/{mappingId}` with:
+//   - grantPeriodType: "monthly"
+//   - pointsPerPeriod: 1000
+//   - validityDays: 30
+//   - grantOnSubscribe: true
+//   - maxPeriods: 12
 //
 // **Then**:
-// - Response contains config_id
 // - Response contains all submitted values
-// - Response active is true
-// - HTTP status is 201 Created
+// - HTTP status is 200 OK
 //
 // =============================================================================
 
@@ -43,15 +40,16 @@ use tower::ServiceExt;
 async fn test_scenario_admin_create_plan_config(ctx: &mut TestContext) {
     let app = ctx.create_unified_test_router();
 
-    println!("[Step 1] Create admin and billing plan");
+    println!("[Step 1] Create admin and entitlement mapping");
 
     let admin_email = "admin24@example.com";
     let admin_password = "admin123";
     create_test_admin(&ctx._app_state.pool, &ctx._realm_id, admin_email).await;
 
-    let plan_id = create_test_plan(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2999).await;
+    let mapping_id =
+        create_test_plan(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2999).await;
 
-    println!("[Step 1] ✓ Created admin and plan");
+    println!("[Step 1] ✓ Created admin and entitlement mapping");
 
     println!("[Step 2] Admin logs in");
 
@@ -84,17 +82,15 @@ async fn test_scenario_admin_create_plan_config(ctx: &mut TestContext) {
 
     println!("[Step 2] ✓ Admin logged in");
 
-    println!("[Step 3] Admin creates plan config");
+    println!("[Step 3] Admin updates entitlement mapping points policy");
 
-    // New grant period system design (flexible发放周期)
-    let grant_period_type = "monthly"; // once / daily / weekly / monthly
-    let points_per_period = 1000; // 每次发放积分数
-    let validity_days = 30; // 有效期天数（0=永久有效）
-    let grant_on_subscribe = true; // 订阅时是否立即发放
-    let max_periods = Some(12i64); // 最大发放期数（null=无限期）
+    let grant_period_type = "monthly";
+    let points_per_period = 1000;
+    let validity_days = 30;
+    let grant_on_subscribe = true;
+    let max_periods = Some(12i64);
 
-    let create_payload = json!({
-        "planId": plan_id.to_string(),
+    let update_payload = json!({
         "grantPeriodType": grant_period_type,
         "pointsPerPeriod": points_per_period,
         "validityDays": validity_days,
@@ -103,16 +99,19 @@ async fn test_scenario_admin_create_plan_config(ctx: &mut TestContext) {
     });
 
     let request = Request::builder()
-        .method("POST")
-        .uri(format!("/api/points/{}/plan-configs", ctx._realm_id))
+        .method("PATCH")
+        .uri(format!(
+            "/api/bill/{}/entitlement-mappings/{}",
+            ctx._realm_id, mapping_id
+        ))
         .header("content-type", "application/json")
         .header("cookie", format!("X-Auth={}", token))
-        .body(Body::from(create_payload.to_string()))
+        .body(Body::from(update_payload.to_string()))
         .unwrap();
 
     let response = app.clone().oneshot(request).await.unwrap();
 
-    assert_eq!(response.status(), StatusCode::CREATED);
+    assert_eq!(response.status(), StatusCode::OK);
 
     let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
@@ -120,15 +119,6 @@ async fn test_scenario_admin_create_plan_config(ctx: &mut TestContext) {
     let body: serde_json::Value =
         serde_json::from_slice(&body_bytes).expect("Failed to parse JSON");
 
-    assert!(
-        body["configId"].is_string(),
-        "Response should contain configId"
-    );
-    assert_eq!(
-        body["planId"].as_str(),
-        Some(plan_id.to_string().as_str()),
-        "Plan ID should match"
-    );
     assert_eq!(
         body["grantPeriodType"].as_str(),
         Some(grant_period_type),
@@ -154,11 +144,6 @@ async fn test_scenario_admin_create_plan_config(ctx: &mut TestContext) {
         max_periods,
         "Max periods should match"
     );
-    assert_eq!(
-        body["active"].as_bool(),
-        Some(true),
-        "Active should be true"
-    );
 
-    println!("\n✅ Scenario 5.1 完成：管理员成功创建积分套餐配置");
+    println!("\n✅ Scenario 24 完成：管理员成功更新积分套餐配置");
 }
