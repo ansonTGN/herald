@@ -8,6 +8,7 @@ import {
   markPaid,
   upsertSellerConfig,
   applyInvoice,
+  upsertRealmConfig,
 } from '@/lib/api-generated'
 import type { CreateInvoiceRequest, UpdateInvoiceRequest } from '@/lib/api-generated'
 import type {
@@ -15,6 +16,7 @@ import type {
   InvoiceEditFormData,
   InvoiceSellerConfigFormData,
   ApplyInvoiceFormData,
+  InvoicePolicyConfigFormData,
 } from '@/lib/schemas/invoice-forms'
 import { displayPriceToCents } from '@/lib/invoice-utils'
 import { getErrorMessage } from '@/lib/error-utils'
@@ -254,6 +256,34 @@ export function useApplyInvoice(realmId: string) {
     onError: (error) => {
       const errorMessage = getErrorMessage(error)
       toast.error(`Failed to apply for invoice: ${errorMessage}`)
+    },
+  })
+}
+
+export function useUpsertInvoicePolicy(realmId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (values: InvoicePolicyConfigFormData) => {
+      const response = await upsertRealmConfig({
+        path: { realmId },
+        body: {
+          configType: 'invoice_policy',
+          configKey: 'settings',
+          configValue: JSON.stringify(values),
+          enabled: true,
+        },
+      })
+      if (response.error) throw response.error
+      return response.data
+    },
+    onSuccess: () => {
+      toast.success('Invoice policy saved')
+      queryClient.invalidateQueries({ queryKey: invoiceKeys.policyConfig(realmId) })
+    },
+    onError: (error) => {
+      const errorMessage = getErrorMessage(error)
+      toast.error(`Failed to save invoice policy: ${errorMessage}`)
     },
   })
 }

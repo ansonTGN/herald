@@ -12,6 +12,8 @@ import {
   Settings,
   Plus,
   Search,
+  Shield,
+  ExternalLink,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -43,6 +45,9 @@ import {
   formatInvoiceAmount,
   downloadInvoicePdf,
   getAvailableActions,
+  getProviderLabel,
+  isExternalInvoice,
+  getViewInProviderUrl,
 } from '@/lib/invoice-utils'
 import { m } from '@/paraglide/messages'
 
@@ -52,6 +57,7 @@ interface InvoiceFilters {
   dateFrom?: string
   dateTo?: string
   search?: string
+  provider?: string
 }
 
 interface InvoiceAdminPageProps {
@@ -60,6 +66,7 @@ interface InvoiceAdminPageProps {
   onEditInvoice?: (invoice: InvoiceResponse) => void
   onCreateInvoice?: () => void
   onOpenSellerConfig?: () => void
+  onOpenPolicyConfig?: () => void
   onIssueInvoice?: (invoice: InvoiceResponse) => void
   onVoidInvoice?: (invoice: InvoiceResponse) => void
   onMarkPaidInvoice?: (invoice: InvoiceResponse) => void
@@ -106,6 +113,22 @@ function createInvoiceColumns(
       },
     },
     {
+      accessorKey: 'provider',
+      header: m['billing.invoice_provider'](),
+      cell: ({ row }) => {
+        const provider = row.original.provider
+        const label = getProviderLabel(provider)
+        if (provider === 'manual') {
+          return <Badge variant="outline">{label}</Badge>
+        }
+        return (
+          <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200">
+            {label}
+          </Badge>
+        )
+      },
+    },
+    {
       accessorKey: 'status',
       header: m['common.status'](),
       cell: ({ row }) => <InvoiceStatusBadge status={row.getValue('status') as string} />,
@@ -140,7 +163,7 @@ function createInvoiceColumns(
       header: m['billing.invoice_actions'](),
       cell: ({ row }) => {
         const invoice = row.original
-        const availableActions = getAvailableActions(invoice.status)
+        const availableActions = getAvailableActions(invoice.status, invoice.provider)
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -220,6 +243,22 @@ function createInvoiceColumns(
                   </DropdownMenuItem>
                 </>
               )}
+              {isExternalInvoice(invoice.provider) && getViewInProviderUrl(invoice) && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => {
+                      window.open(getViewInProviderUrl(invoice)!, '_blank', 'noopener,noreferrer')
+                    }}
+                    data-testid={`invoice-view-provider-${invoice.id}`}
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    {m['billing.invoice_view_in_provider']({
+                      provider: getProviderLabel(invoice.provider),
+                    })}
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )
@@ -244,6 +283,17 @@ function getSourceOptions() {
     { value: 'all', label: m['billing.invoice_source_all']() },
     { value: 'admin_manual', label: m['billing.invoice_source_manual']() },
     { value: 'user_application', label: m['billing.invoice_source_application']() },
+  ]
+}
+
+function getProviderOptions() {
+  return [
+    { value: 'all', label: m['billing.invoice_provider_all']() },
+    { value: 'manual', label: getProviderLabel('manual') },
+    { value: 'stripe', label: getProviderLabel('stripe') },
+    { value: 'creem', label: getProviderLabel('creem') },
+    { value: 'wechat', label: getProviderLabel('wechat') },
+    { value: 'shopify', label: getProviderLabel('shopify') },
   ]
 }
 
@@ -292,6 +342,24 @@ function FilterBar({
         </SelectContent>
       </Select>
 
+      <Select
+        value={filters.provider ?? 'all'}
+        onValueChange={(value) =>
+          onFiltersChange({ ...filters, provider: value === 'all' ? undefined : value })
+        }
+      >
+        <SelectTrigger className="w-[160px]" data-testid="invoice-provider-filter">
+          <SelectValue placeholder={m['billing.invoice_provider_all']()} />
+        </SelectTrigger>
+        <SelectContent>
+          {getProviderOptions().map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
       <Input
         type="date"
         className="w-[150px]"
@@ -327,6 +395,7 @@ export function InvoiceAdminPage({
   onEditInvoice,
   onCreateInvoice,
   onOpenSellerConfig,
+  onOpenPolicyConfig,
   onIssueInvoice,
   onVoidInvoice,
   onMarkPaidInvoice,
@@ -379,6 +448,16 @@ export function InvoiceAdminPage({
             >
               <Settings className="mr-2 h-4 w-4" />
               {m['billing.invoice_seller_config']()}
+            </Button>
+          )}
+          {onOpenPolicyConfig && (
+            <Button
+              variant="outline"
+              onClick={onOpenPolicyConfig}
+              data-testid="policy-config-button"
+            >
+              <Shield className="mr-2 h-4 w-4" />
+              {m['billing.invoice_policy_title']()}
             </Button>
           )}
           {onCreateInvoice && (

@@ -19,10 +19,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Download, Clock, User } from 'lucide-react'
+import { Download, Clock, User, ExternalLink } from 'lucide-react'
 import { InvoiceStatusBadge } from '@/components/billing/invoices/invoice-status-badge'
 import { invoiceDetailQueryOptions } from '@/data/invoice-query-options'
-import { formatInvoiceAmount, PDF_DOWNLOADABLE_STATUSES } from '@/lib/invoice-utils'
+import {
+  formatInvoiceAmount,
+  PDF_DOWNLOADABLE_STATUSES,
+  isExternalInvoice,
+  getProviderLabel,
+  getViewInProviderUrl,
+} from '@/lib/invoice-utils'
 import type { InvoiceDetailResponse } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
 
@@ -65,7 +71,11 @@ export function InvoiceDetailDialog({
   })
 
   const pdfUrl = invoiceId ? `/api/bill/${realmId}/invoices/${invoiceId}/pdf` : null
-  const canDownloadPdf = !!invoice && PDF_DOWNLOADABLE_STATUSES.has(invoice.status)
+  const provider = invoice?.provider
+  const isExternal = invoice ? isExternalInvoice(provider!) : false
+  const externalPdfUrl = invoice?.externalPdfUrl ?? null
+  const externalHostedUrl = invoice?.externalHostedUrl ?? null
+  const canDownloadPdf = !isExternal && !!invoice && PDF_DOWNLOADABLE_STATUSES.has(invoice.status)
 
   if (!open) return null
 
@@ -85,7 +95,7 @@ export function InvoiceDetailDialog({
             <>
               <DialogTitle className="flex items-center gap-3">
                 {m['billing.invoice_detail_title']({ number: invoice.invoiceNumber })}
-                <InvoiceStatusBadge status={invoice.status} />
+                <InvoiceStatusBadge status={invoice.status} provider={invoice.provider} />
               </DialogTitle>
               <DialogDescription>{m['billing.invoice_detail_description']()}</DialogDescription>
             </>
@@ -100,7 +110,33 @@ export function InvoiceDetailDialog({
         {isLoading ? <LoadingSkeleton /> : invoice ? <InvoiceContent invoice={invoice} /> : null}
 
         <DialogFooter showCloseButton>
-          {canDownloadPdf && pdfUrl && (
+          {isExternal && externalPdfUrl && (
+            <Button variant="outline" asChild>
+              <a
+                href={externalPdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="invoice-download-pdf-button"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                {m['billing.invoice_download_pdf']()}
+              </a>
+            </Button>
+          )}
+          {isExternal && !externalPdfUrl && externalHostedUrl && (
+            <Button variant="outline" asChild>
+              <a
+                href={externalHostedUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="invoice-view-pdf-button"
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                {m['billing.invoice_view_in_provider']({ provider: getProviderLabel(provider!) })}
+              </a>
+            </Button>
+          )}
+          {!isExternal && canDownloadPdf && pdfUrl && (
             <Button variant="outline" asChild>
               <a href={pdfUrl} download data-testid="invoice-download-pdf-button">
                 <Download className="mr-2 h-4 w-4" />
@@ -116,24 +152,48 @@ export function InvoiceDetailDialog({
 
 function InvoiceContent({ invoice }: { invoice: InvoiceDetailResponse }) {
   const fmt = (amount: number) => formatInvoiceAmount(amount, invoice.currency)
+  const provider = invoice.provider
+  const isExt = isExternalInvoice(provider)
+  const externalUrl = getViewInProviderUrl(invoice)
 
   return (
     <div className="space-y-6">
+      {isExt && (
+        <div
+          className="rounded-md border border-blue-200 bg-blue-50 p-3 flex items-center justify-between"
+          data-testid="invoice-external-provider-banner"
+        >
+          <p className="text-sm text-blue-800">
+            {m['billing.invoice_external_managed']({ provider: getProviderLabel(provider) })}
+          </p>
+          {externalUrl && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open(externalUrl, '_blank', 'noopener,noreferrer')}
+              data-testid="invoice-view-in-provider-button"
+            >
+              <ExternalLink className="mr-2 h-4 w-4" />
+              {m['billing.invoice_view_in_provider']({ provider: getProviderLabel(provider) })}
+            </Button>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <ContactCard
           title={m['billing.invoice_seller']()}
-          name={invoice.sellerName ?? ''}
+          name={invoice.sellerName ?? '—'}
           email={invoice.sellerEmail}
-          address={invoice.sellerAddress ?? ''}
+          address={invoice.sellerAddress ?? '—'}
           phone={invoice.sellerPhone}
           taxId={invoice.sellerTaxId}
           dataTestId="invoice-seller-info"
         />
         <ContactCard
           title={m['billing.invoice_buyer_label']()}
-          name={invoice.billingName ?? ''}
+          name={invoice.billingName ?? '—'}
           email={invoice.billingEmail}
-          address={invoice.billingAddress ?? ''}
+          address={invoice.billingAddress ?? '—'}
           phone={invoice.billingPhone}
           taxId={invoice.billingTaxId}
           dataTestId="invoice-buyer-info"

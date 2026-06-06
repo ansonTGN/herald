@@ -74,7 +74,37 @@ const ACTION_RULES: Record<string, InvoiceAction[]> = {
   void: ['view'],
 }
 
-export function getAvailableActions(status: string): InvoiceAction[] {
+export function isExternalInvoice(provider: string | undefined): boolean {
+  return !!provider && provider !== 'manual'
+}
+
+export function getProviderLabel(provider: string): string {
+  switch (provider) {
+    case 'manual':
+      return m['billing.invoice_provider_manual']()
+    case 'wechat':
+      return m['billing.invoice_provider_wechat']()
+    case 'stripe':
+      return 'Stripe'
+    case 'creem':
+      return 'Creem'
+    case 'shopify':
+      return 'Shopify'
+    default:
+      return provider
+  }
+}
+
+export function getViewInProviderUrl(invoice: {
+  provider: string
+  externalHostedUrl?: string | null
+}): string | null {
+  if (invoice.provider === 'manual') return null
+  return invoice.externalHostedUrl ?? null
+}
+
+export function getAvailableActions(status: string, provider?: string): InvoiceAction[] {
+  if (provider && provider !== 'manual') return ['view']
   return ACTION_RULES[status] ?? ['view']
 }
 

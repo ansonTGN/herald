@@ -23,6 +23,7 @@ function makeInvoice(overrides: Partial<InvoiceResponse> = {}): InvoiceResponse 
     accountId: 'acc-1',
     billingName: 'Test Buyer',
     source: 'user_application',
+    provider: 'manual',
     status: 'issued',
     total: 9900,
     currency: 'CNY',
@@ -272,6 +273,151 @@ describe('InvoiceUserPage', () => {
       // Verify we're back on page 0 by checking page 0 content appears
       await waitFor(() => {
         expect(screen.getByText('INV-P001')).toBeInTheDocument()
+      })
+    })
+  })
+
+  // ==================== External Invoice Provider Badge ====================
+
+  describe('provider badge', () => {
+    it('shows provider badge for external invoice (stripe)', async () => {
+      const invoice = makeInvoice({
+        id: 'inv-stripe',
+        provider: 'stripe',
+        status: 'issued',
+      })
+      server.use(
+        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+          return HttpResponse.json(makeListResponse([invoice]))
+        })
+      )
+
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+
+      await waitFor(() => {
+        // Provider badge appears in both the provider column and the status badge
+        const stripeBadges = screen.getAllByText('Stripe')
+        expect(stripeBadges.length).toBeGreaterThanOrEqual(1)
+      })
+    })
+
+    it('shows no provider badge for manual invoice', async () => {
+      const invoice = makeInvoice({
+        id: 'inv-manual',
+        provider: 'manual',
+        status: 'issued',
+      })
+      server.use(
+        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+          return HttpResponse.json(makeListResponse([invoice]))
+        })
+      )
+
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('invoice-user-table')).toBeInTheDocument()
+      })
+
+      // "Provider" header exists but no badge value in that column
+      expect(screen.queryByText('Stripe')).not.toBeInTheDocument()
+      expect(screen.queryByText('Creem')).not.toBeInTheDocument()
+    })
+  })
+
+  // ==================== External Invoice Actions ====================
+
+  describe('external invoice actions', () => {
+    it('shows PDF download link for external invoice with externalPdfUrl', async () => {
+      const invoice = makeInvoice({
+        id: 'inv-ext-pdf',
+        provider: 'stripe',
+        status: 'issued',
+        externalPdfUrl: 'https://stripe.example.com/invoice.pdf',
+      })
+      server.use(
+        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+          return HttpResponse.json(makeListResponse([invoice]))
+        })
+      )
+
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+
+      await waitFor(() => {
+        const link = screen.getByTestId('invoice-download-pdf-inv-ext-pdf')
+        expect(link).toBeInTheDocument()
+        expect(link.closest('a')).toHaveAttribute('href', 'https://stripe.example.com/invoice.pdf')
+        expect(link.closest('a')).toHaveAttribute('target', '_blank')
+      })
+    })
+
+    it('shows View link for external invoice with hosted URL but no PDF', async () => {
+      const invoice = makeInvoice({
+        id: 'inv-ext-hosted',
+        provider: 'creem',
+        status: 'issued',
+        externalPdfUrl: null,
+        externalHostedUrl: 'https://creem.example.com/hosted',
+      })
+      server.use(
+        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+          return HttpResponse.json(makeListResponse([invoice]))
+        })
+      )
+
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+
+      await waitFor(() => {
+        const link = screen.getByTestId('invoice-view-provider-inv-ext-hosted')
+        expect(link).toBeInTheDocument()
+        expect(link.closest('a')).toHaveAttribute('href', 'https://creem.example.com/hosted')
+        expect(link).toHaveTextContent('Creem')
+      })
+    })
+
+    it('shows Managed by text for external invoice without any URL', async () => {
+      const invoice = makeInvoice({
+        id: 'inv-ext-nourl',
+        provider: 'stripe',
+        status: 'issued',
+        externalPdfUrl: null,
+        externalHostedUrl: null,
+      })
+      server.use(
+        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+          return HttpResponse.json(makeListResponse([invoice]))
+        })
+      )
+
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('invoice-managed-external-inv-ext-nourl')).toBeInTheDocument()
+        expect(screen.getByTestId('invoice-managed-external-inv-ext-nourl')).toHaveTextContent(
+          'Managed by Stripe'
+        )
+      })
+    })
+
+    it('shows regular PDF download button for manual invoice', async () => {
+      const invoice = makeInvoice({
+        id: 'inv-manual-pdf',
+        provider: 'manual',
+        status: 'issued',
+      })
+      server.use(
+        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+          return HttpResponse.json(makeListResponse([invoice]))
+        })
+      )
+
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+
+      await waitFor(() => {
+        const button = screen.getByTestId('invoice-download-pdf-inv-manual-pdf')
+        expect(button).toBeInTheDocument()
+        // Manual invoice uses onClick button, not <a> link
+        expect(button.closest('a')).toBeNull()
       })
     })
   })

@@ -30,6 +30,7 @@ import {
   calculateTotals,
   centsToDisplayPrice,
   formatInvoiceAmount,
+  isExternalInvoice,
 } from '@/lib/invoice-utils'
 import { Plus, Trash2, ArrowLeft } from 'lucide-react'
 import { m } from '@/paraglide/messages'
@@ -127,6 +128,13 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
       params: { realmId },
     })
   }, [navigate, realmId])
+
+  // Guard: redirect external invoices back to list — they cannot be edited
+  useEffect(() => {
+    if (isEditing && invoice && isExternalInvoice(invoice.provider)) {
+      navigate({ to: '/$realmId/manage/billing/invoices', params: { realmId } })
+    }
+  }, [isEditing, invoice, navigate, realmId])
 
   return (
     <div

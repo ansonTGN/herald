@@ -25,7 +25,15 @@ export function ApplyInvoiceFormPage({
   returnTo,
 }: ApplyInvoiceFormPageProps) {
   const navigate = useNavigate()
-  const { mutate: apply, isPending: isSubmitting } = useApplyInvoice(realmId)
+  const applyMutation = useApplyInvoice(realmId)
+  const { mutate: apply, isPending: isSubmitting } = applyMutation
+  const isCreemRejection =
+    !!applyMutation.error &&
+    typeof applyMutation.error === 'object' &&
+    'message' in applyMutation.error &&
+    typeof applyMutation.error.message === 'string' &&
+    applyMutation.error.message.includes('Creem') &&
+    applyMutation.error.message.includes('Merchant of Record')
   const defaultValues = useMemo(
     () => getApplyFormDefaults(prefilledReference),
     [prefilledReference]
@@ -85,6 +93,15 @@ export function ApplyInvoiceFormPage({
           {m['billing.invoice_apply_title']()}
         </h1>
       </div>
+
+      {isCreemRejection && (
+        <div
+          className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+          data-testid="apply-invoice-creem-rejection"
+        >
+          {m['billing.invoice_apply_creem_rejection']()}
+        </div>
+      )}
 
       <form
         onSubmit={(e) => {

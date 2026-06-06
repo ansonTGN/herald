@@ -15,6 +15,7 @@ import {
 import { InvoiceAdminPage } from '@/components/billing/invoices/invoice-admin-page'
 import { InvoiceDetailDialog } from '@/components/billing/invoices/invoice-detail-dialog'
 import { InvoiceSellerConfigForm } from '@/components/billing/invoices/invoice-seller-config-form'
+import { InvoicePolicyForm } from '@/components/billing/invoices/invoice-policy-form'
 import { useIssueInvoice, useVoidInvoice, useMarkPaid } from '@/data/invoice-mutations'
 import type { InvoiceResponse } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
@@ -30,6 +31,7 @@ function InvoiceAdminRoute() {
   const [detailInvoiceId, setDetailInvoiceId] = useState<string | null>(null)
 
   const [sellerConfigOpen, setSellerConfigOpen] = useState(false)
+  const [policyConfigOpen, setPolicyConfigOpen] = useState(false)
 
   const [issueTarget, setIssueTarget] = useState<InvoiceResponse | null>(null)
   const [issueDate, setIssueDate] = useState('')
@@ -68,6 +70,10 @@ function InvoiceAdminRoute() {
     setSellerConfigOpen(true)
   }, [])
 
+  const handleOpenPolicyConfig = useCallback(() => {
+    setPolicyConfigOpen(true)
+  }, [])
+
   const handleIssueInvoice = useCallback((invoice: InvoiceResponse) => {
     setIssueTarget(invoice)
     setIssueDate('')
@@ -90,6 +96,7 @@ function InvoiceAdminRoute() {
         onEditInvoice={handleEditInvoice}
         onViewInvoice={handleViewInvoice}
         onOpenSellerConfig={handleOpenSellerConfig}
+        onOpenPolicyConfig={handleOpenPolicyConfig}
         onIssueInvoice={handleIssueInvoice}
         onVoidInvoice={handleVoidInvoice}
         onMarkPaidInvoice={handleMarkPaidInvoice}
@@ -107,6 +114,12 @@ function InvoiceAdminRoute() {
       <InvoiceSellerConfigForm
         open={sellerConfigOpen}
         onOpenChange={setSellerConfigOpen}
+        realmId={realmId}
+      />
+
+      <InvoicePolicyForm
+        open={policyConfigOpen}
+        onOpenChange={setPolicyConfigOpen}
         realmId={realmId}
       />
 

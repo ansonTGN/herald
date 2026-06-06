@@ -5,11 +5,13 @@ import {
   listMyInvoices,
   getMyInvoice,
   getSellerConfig,
+  listRealmConfigsByType,
 } from '@/lib/api-generated'
 import type {
   InvoiceListResponse,
   InvoiceDetailResponse,
   SellerConfigResponse,
+  RealmConfigResponse,
 } from '@/lib/api-generated'
 import { TIME_CONSTANTS } from '@/lib/constants'
 
@@ -30,6 +32,7 @@ export const invoiceKeys = {
     ['invoices', realmId, 'my', 'list', query] as const,
   myDetail: (realmId: string, invoiceId: string) =>
     ['invoices', realmId, 'my', 'detail', invoiceId] as const,
+  policyConfig: (realmId: string) => ['invoices', realmId, 'policy-config'] as const,
 }
 
 export function invoiceListQueryOptions(
@@ -42,6 +45,7 @@ export function invoiceListQueryOptions(
     dateTo?: string
     page?: number
     pageSize?: number
+    provider?: string
   }
 ) {
   return queryOptions({
@@ -105,6 +109,7 @@ export function myInvoiceListQueryOptions(
     dateTo?: string
     page?: number
     pageSize?: number
+    provider?: string
   }
 ) {
   return queryOptions({
@@ -132,6 +137,25 @@ export function myInvoiceDetailQueryOptions(realmId: string, invoiceId: string) 
       })
       if (response.error) throw response.error
       return response.data as InvoiceDetailResponse
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+}
+
+export function invoicePolicyConfigQueryOptions(realmId: string) {
+  return queryOptions({
+    queryKey: invoiceKeys.policyConfig(realmId),
+    queryFn: async () => {
+      const response = await listRealmConfigsByType({
+        path: { realmId, configType: 'invoice_policy' },
+      })
+      if (response.error) {
+        const status = (response.error as { status?: number }).status
+        if (status === 404) return []
+        throw response.error
+      }
+      return response.data as RealmConfigResponse[]
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_5_MIN,

@@ -195,6 +195,33 @@ export const voidInvoiceSchema = z.object({
 
 export type VoidInvoiceFormData = z.infer<typeof voidInvoiceSchema>
 
+export const invoicePolicyConfigSchema = z.object({
+  policy: z.enum(['provider_first', 'manual_only', 'none']),
+  providerCapabilities: z
+    .record(
+      z.string(),
+      z.object({
+        externalInvoiceEnabled: z.boolean(),
+      })
+    )
+    .optional()
+    .default({}),
+})
+
+export type InvoicePolicyConfigFormData = z.infer<typeof invoicePolicyConfigSchema>
+
+export function getInvoicePolicyDefaults(): InvoicePolicyConfigFormData {
+  return {
+    policy: 'provider_first',
+    providerCapabilities: {
+      stripe: { externalInvoiceEnabled: true },
+      creem: { externalInvoiceEnabled: true },
+      wechat: { externalInvoiceEnabled: false },
+      shopify: { externalInvoiceEnabled: false },
+    },
+  }
+}
+
 function computeDueDate(terms: string | null | undefined): string {
   const days = parsePaymentTermsDays(terms)
   if (days === undefined) return ''

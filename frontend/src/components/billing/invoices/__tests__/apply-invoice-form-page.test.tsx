@@ -287,4 +287,52 @@ describe('ApplyInvoiceFormPage', () => {
       })
     })
   })
+
+  // ==================== Creem Rejection ====================
+
+  describe('Creem MoR rejection', () => {
+    it('shows inline rejection alert when backend returns 400', async () => {
+      server.use(
+        sellerConfigHandler(),
+        http.post(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, async () => {
+          return HttpResponse.json(
+            { code: 400, message: 'Creem transactions are managed by Creem as Merchant of Record' },
+            { status: 400 }
+          )
+        })
+      )
+
+      const user = userEvent.setup()
+      renderWithProviders(<ApplyInvoiceFormPage realmId={REALM_ID} />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('apply-form-page')).toBeInTheDocument()
+      })
+
+      // Fill required fields and submit
+      await user.type(screen.getByTestId('apply-payment-attempt-id-input'), 'pay-123')
+      await user.type(screen.getByTestId('apply-billing-name-input'), 'John Doe')
+      await user.type(screen.getByTestId('apply-billing-address-input'), '123 Billing St')
+      await user.type(screen.getByTestId('apply-billing-tax-id-input'), 'TAX123456')
+      await user.click(screen.getByTestId('apply-invoice-submit-button'))
+
+      // Should show the Creem rejection alert
+      await waitFor(() => {
+        expect(screen.getByTestId('apply-invoice-creem-rejection')).toBeInTheDocument()
+      })
+
+      // Should NOT have navigated (submit failed)
+      expect(mockNavigate).not.toHaveBeenCalled()
+    })
+
+    it('does not show rejection alert when no error', async () => {
+      renderWithProviders(<ApplyInvoiceFormPage realmId={REALM_ID} />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('apply-form-page')).toBeInTheDocument()
+      })
+
+      expect(screen.queryByTestId('apply-invoice-creem-rejection')).not.toBeInTheDocument()
+    })
+  })
 })

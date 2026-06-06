@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/react-table'
-import { Download, Plus } from 'lucide-react'
+import { Download, ExternalLink, Plus } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataTable } from '@/components/shared/data-table'
@@ -13,6 +14,8 @@ import { myInvoiceListQueryOptions } from '@/data/invoice-query-options'
 import {
   formatInvoiceAmount,
   downloadInvoicePdf,
+  getProviderLabel,
+  isExternalInvoice,
   INVOICE_PAGE_SIZE,
   PDF_DOWNLOADABLE_STATUSES,
 } from '@/lib/invoice-utils'
@@ -39,6 +42,19 @@ function createInvoiceColumns(
       ),
     },
     {
+      accessorKey: 'provider',
+      header: m['billing.invoice_provider'](),
+      cell: ({ row }) => {
+        const provider = row.original.provider
+        if (provider === 'manual') return null
+        return (
+          <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+            {getProviderLabel(provider)}
+          </Badge>
+        )
+      },
+    },
+    {
       accessorKey: 'total',
       header: m['billing.invoice_total'](),
       cell: ({ row }) => {
@@ -50,7 +66,12 @@ function createInvoiceColumns(
     {
       accessorKey: 'status',
       header: m['common.status'](),
-      cell: ({ row }) => <InvoiceStatusBadge status={row.getValue('status') as string} />,
+      cell: ({ row }) => (
+        <InvoiceStatusBadge
+          status={row.getValue('status') as string}
+          provider={row.original.provider}
+        />
+      ),
     },
     {
       accessorKey: 'dueDate',
@@ -65,6 +86,56 @@ function createInvoiceColumns(
       header: m['billing.invoice_actions'](),
       cell: ({ row }) => {
         const invoice = row.original
+        const provider = invoice.provider
+        const isExternal = isExternalInvoice(provider)
+        const externalPdfUrl = invoice.externalPdfUrl ?? null
+        const externalHostedUrl = invoice.externalHostedUrl ?? null
+
+        if (isExternal && externalPdfUrl) {
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              asChild
+              data-testid={`invoice-download-pdf-${invoice.id}`}
+            >
+              <a href={externalPdfUrl} target="_blank" rel="noopener noreferrer">
+                <Download className="mr-1 h-4 w-4" />
+                PDF
+              </a>
+            </Button>
+          )
+        }
+
+        if (isExternal && externalHostedUrl) {
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              asChild
+              data-testid={`invoice-view-provider-${invoice.id}`}
+            >
+              <a href={externalHostedUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="mr-1 h-4 w-4" />
+                {getProviderLabel(provider)}
+              </a>
+            </Button>
+          )
+        }
+
+        if (isExternal) {
+          return (
+            <span
+              className="text-xs text-muted-foreground"
+              data-testid={`invoice-managed-external-${invoice.id}`}
+            >
+              {m['billing.invoice_external_managed_short']({
+                provider: getProviderLabel(provider),
+              })}
+            </span>
+          )
+        }
+
         const canDownload = PDF_DOWNLOADABLE_STATUSES.has(invoice.status)
         if (!canDownload) return null
         return (
