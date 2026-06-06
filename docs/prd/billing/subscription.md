@@ -65,14 +65,10 @@
 
 ### 2.1 包含功能
 
-- 订阅套餐管理（创建、编辑、删除、查看）
-- 套餐分配到 Client App
 - 支持多种支付平台：Creem（模拟支付平台，已实现）、Stripe（已实现，详见 `docs/prd/billing/stripe-payment.md`）、Shopify Pay（已实现，详见 `docs/prd/billing/shopify-pay.md`）、微信支付（已实现，详见 `docs/prd/billing/wechat-pay.md`）；支付宝待实现
-- 灵活的订阅套餐管理（月付/年付）
-- 套餐基本信息管理（name、title、description、type、price、currency、checkout_url）
-- Plan 多支付平台映射配置（一个 Plan 可关联多个支付平台）
-- 前端套餐管理页面
-- 前端套餐分配对话框
+- Provider Entitlement 映射管理（查看、配置积分策略、启用/禁用）
+- 支付方商品同步与 provider-sourced cache
+- 前端 Entitlement 映射管理页面
 - 查询单个订阅的变更时间线
 - 按用户、套餐、时间等维度查询订阅历史（Realm Admin）
 - 显示变更类型（创建、升级、降级、取消、续费等）
@@ -194,12 +190,10 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 | 操作 | 需要权限 | 说明 |
 |------|---------|------|
-| 查看套餐列表 | `billing.view` | 所有已认证用户 |
-| 创建套餐 | `billing.manage` | Realm Admin |
-| 编辑套餐 | `billing.manage` | Realm Admin |
-| 删除套餐 | `billing.manage` | Realm Admin |
-| 分配套餐 | `billing.manage` | Realm Admin |
-| 查看订阅统计 | `billing.view` | Realm Admin |
+| 查看 Entitlement 映射 | `billing.view` | Realm Admin |
+| 触发 Provider 同步 | `billing.manage` | Realm Admin |
+| 查看/禁用映射 | `billing.manage` | Realm Admin |
+| 查看订阅投影 | `billing.view` | Realm Admin |
 | 管理订阅 | `billing.manage` | Realm Admin |
 | 查看订阅变更历史（Realm Admin） | `billing.view` | Realm Admin |
 | 查看自己的订阅变更历史 | 认证用户 | Regular User |
@@ -252,17 +246,15 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 当前支持 Creem（模拟支付平台）、Stripe、Shopify Pay、微信支付；支付宝待实现
 - 每个 realm 使用独立的 webhook URL，实现多租户隔离
 
-**订阅套餐管理**：
-- 创建订阅套餐：填写套餐基本信息（name, title, description, type, price, currency, checkout_url, trial_days, sort_order），不需要同时配置支付平台映射
-- 编辑订阅套餐：除 name 外所有字段可修改
-- 删除订阅套餐：仅无活跃订阅时可删除
-- 查看订阅套餐列表：支持按启用状态、计费周期筛选
-- 配置 Plan 的支付平台映射：为套餐添加、编辑、删除支付平台映射
+**Entitlement 映射管理**：
+- 查看 Provider Entitlement 映射列表：显示 provider、external IDs、entitlement_key、积分策略、同步状态
+- 触发 Provider 产品同步：手动触发全量同步，更新 provider-sourced cache
+- 启用/禁用映射：禁用后不触发积分发放/回收，重新启用后恢复
 
-**套餐分配管理**：
-- 将套餐分配到 Client App
-- 查看套餐分配情况
-- 移除套餐分配
+**Provider 同步与缓存**：
+- 全量同步：调用支付方 API 读取 Product/Price 信息并更新本地缓存
+- 增量同步：webhook 事件触发，更新订阅投影或缓存
+- 查看同步状态（最后同步时间、来源、结果）
 
 **订阅生命周期管理**：
 - 创建订阅：用户在第三方应用选择套餐 -> 重定向到支付页面 -> 完成支付 -> Webhook 通知 -> 创建订阅记录

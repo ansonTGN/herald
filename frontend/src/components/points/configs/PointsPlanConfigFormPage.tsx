@@ -1,21 +1,25 @@
-import { useMemo } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { PointsPlanConfigForm } from '../PointsPlanConfigForm'
-import { createPlanConfig, updatePlanConfig } from '@/lib/api-generated'
-import type { PointsPlanConfigResponse, SubscriptionPlanResponse } from '@/lib/api-generated'
 import type { PointsPlanConfigFormData } from '@/lib/schemas/points-forms'
 import { queryKeys } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
+import type { LocalPointsPlanConfig } from '@/types/points-plan-config'
+
+interface PlanOption {
+  id: string
+  name: string
+  title: string
+}
 
 interface PointsPlanConfigFormPageProps {
   mode: 'create' | 'edit'
   realmId: string
-  config?: PointsPlanConfigResponse
-  plans: SubscriptionPlanResponse[]
+  config?: LocalPointsPlanConfig
+  plans: PlanOption[]
 }
 
 export function PointsPlanConfigFormPage({
@@ -32,48 +36,13 @@ export function PointsPlanConfigFormPage({
     navigate({ to: '/$realmId/manage/points/configs', params: { realmId } })
   }
 
-  const formPlans = useMemo(
-    () =>
-      plans.map((plan) => ({
-        id: plan.id,
-        name: plan.name,
-        title: plan.title,
-      })),
-    [plans]
-  )
-
+  // TODO: createPlanConfig/updatePlanConfig APIs were removed by product_reduce.
+  // These mutations will fail until points are migrated to entitlement-based config.
   const saveMutation = useMutation({
-    mutationFn: async (data: PointsPlanConfigFormData) => {
-      if (isEditing && config) {
-        const response = await updatePlanConfig({
-          path: { realmId, configId: config.configId },
-          body: {
-            points_per_period: data.pointsPerPeriod,
-            grant_on_subscribe: data.grantOnSubscribe,
-            grant_period_type: data.grantPeriodType,
-            max_periods: data.maxPeriods,
-            validity_days: data.validityDays,
-          },
-        })
-        if (response.error) throw response.error
-        if (!response.data) throw new Error('Failed to update points rule')
-        return response.data
-      }
-
-      const response = await createPlanConfig({
-        path: { realmId },
-        body: {
-          planId: data.planId,
-          pointsPerPeriod: data.pointsPerPeriod,
-          grantOnSubscribe: data.grantOnSubscribe,
-          grantPeriodType: data.grantPeriodType,
-          maxPeriods: data.maxPeriods,
-          validityDays: data.validityDays,
-        },
-      })
-      if (response.error) throw response.error
-      if (!response.data) throw new Error('Failed to create points rule')
-      return response.data
+    mutationFn: async (_data: PointsPlanConfigFormData) => {
+      throw new Error(
+        'Not implemented: points config save is pending migration to entitlement-based config'
+      )
     },
     onSuccess: async () => {
       toast.success(
@@ -140,7 +109,7 @@ export function PointsPlanConfigFormPage({
 
       <PointsPlanConfigForm
         config={config ?? null}
-        plans={formPlans}
+        plans={plans}
         onSubmit={(data) => saveMutation.mutate(data)}
         onCancel={handleBack}
         isSubmitting={saveMutation.isPending}

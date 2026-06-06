@@ -166,6 +166,47 @@ fn parse_optional_creem_datetime(value: &Value) -> Result<Option<DateTime<Utc>>,
     parse_creem_datetime(value, "timestamp").map(Some)
 }
 
+/// Extract tax details from a Creem checkout.completed event object.
+///
+/// Creem (Merchant of Record) includes tax fields in the checkout object.
+/// Common field names: tax_amount, tax_rate, tax_country, tax_region.
+/// Returns None if no tax fields are present.
+fn extract_creem_tax_details(object: &Value) -> Option<serde_json::Value> {
+    let tax_amount = object.get("tax_amount").and_then(|v| v.as_i64());
+    let tax_rate = object.get("tax_rate").and_then(|v| v.as_f64());
+    let tax_country = object
+        .get("tax_country")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let tax_region = object
+        .get("tax_region")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    if tax_amount.is_none() && tax_rate.is_none() && tax_country.is_none() && tax_region.is_none() {
+        return None;
+    }
+
+    let mut map = serde_json::Map::new();
+    if let Some(amount) = tax_amount {
+        map.insert("tax_amount".to_string(), serde_json::Value::from(amount));
+    }
+    if let Some(rate) = tax_rate {
+        map.insert("tax_rate".to_string(), serde_json::json!(rate));
+    }
+    if let Some(country) = tax_country {
+        map.insert(
+            "tax_country".to_string(),
+            serde_json::Value::String(country),
+        );
+    }
+    if let Some(region) = tax_region {
+        map.insert("tax_region".to_string(), serde_json::Value::String(region));
+    }
+
+    Some(serde_json::Value::Object(map))
+}
+
 fn parse_creem_status(
     status: Option<&str>,
     cancel_at_period_end: bool,
@@ -242,13 +283,10 @@ fn parse_subscription_paid_payload(
 
     Ok(CreemSubscriptionPaidPayload {
         event_id: parse_event_id(event)?,
-        user_id: parse_uuid_field(
-            metadata_value(&object, "herald_user_id", "userId"),
-            "userId",
-        )?,
+        user_id: parse_uuid_field(metadata_value(object, "herald_user_id", "userId"), "userId")?,
         entitlement_key,
         client_app_id: parse_optional_uuid_field(metadata_value(
-            &object,
+            object,
             "herald_client_app_id",
             "clientAppId",
         ))
@@ -309,14 +347,11 @@ fn parse_subscription_updated_payload(
 
     Ok(CreemSubscriptionUpdatedPayload {
         event_id: parse_event_id(event)?,
-        user_id: parse_uuid_field(
-            metadata_value(&object, "herald_user_id", "userId"),
-            "userId",
-        )?,
+        user_id: parse_uuid_field(metadata_value(object, "herald_user_id", "userId"), "userId")?,
         previous_entitlement_key,
         current_entitlement_key,
         client_app_id: parse_optional_uuid_field(metadata_value(
-            &object,
+            object,
             "herald_client_app_id",
             "clientAppId",
         ))
@@ -373,13 +408,10 @@ fn parse_subscription_canceled_payload(
 
     Ok(CreemSubscriptionCanceledPayload {
         event_id: parse_event_id(event)?,
-        user_id: parse_uuid_field(
-            metadata_value(&object, "herald_user_id", "userId"),
-            "userId",
-        )?,
+        user_id: parse_uuid_field(metadata_value(object, "herald_user_id", "userId"), "userId")?,
         entitlement_key,
         client_app_id: parse_optional_uuid_field(metadata_value(
-            &object,
+            object,
             "herald_client_app_id",
             "clientAppId",
         ))
@@ -571,6 +603,9 @@ async fn handle_checkout_completed(
         }
     };
 
+    // Extract tax details from Creem event payload (MoR tax fields)
+    let tax_details = extract_creem_tax_details(event_object);
+
     if !resolved_currency.is_empty() {
         let external_data = ExternalInvoiceData {
             realm_id: realm_id.to_string(),
@@ -582,7 +617,7 @@ async fn handle_checkout_completed(
             external_hosted_url: None,
             external_pdf_url: None,
             external_payload: Some(event.clone()),
-            tax_details: None,
+            tax_details,
             account_id: resolved_account_id,
             currency: resolved_currency,
             total: resolved_amount,

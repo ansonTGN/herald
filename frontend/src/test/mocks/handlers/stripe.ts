@@ -49,8 +49,8 @@ const CHECKOUT_ERROR_SCENARIOS: Record<string, { status: number; body: object }>
       message: 'Validation failed',
       code: STRIPE_ERROR_CODES.VALIDATION_ERROR,
       errors: {
-        planId: ['Plan not found'],
-        billingPeriod: ['Must be monthly or yearly'],
+        entitlementKey: ['Entitlement key not found'],
+        paymentProvider: ['Must be a valid payment provider'],
       },
     },
   },
@@ -66,20 +66,20 @@ const CHECKOUT_ERROR_SCENARIOS: Record<string, { status: number; body: object }>
 // ===== Checkout Creation Handlers =====
 
 /**
- * Unified checkout handler that handles all scenarios based on planId
+ * Unified checkout handler that handles all scenarios based on entitlementKey
  */
 const handleCheckout = async ({ request }: { request: Request }) => {
-  const url = new URL(request.url)
-  const planId = url.searchParams.get('planId')
+  const body = (await request.json()) as { entitlementKey?: string; paymentProvider?: string }
+  const entitlementKey = body.entitlementKey
 
   // Handle timeout scenario
-  if (planId === 'timeout-test') {
+  if (entitlementKey === 'timeout-test') {
     await delay(30000)
     return HttpResponse.json(CHECKOUT_SUCCESS_RESPONSE)
   }
 
   // Check for error scenarios
-  const errorScenario = CHECKOUT_ERROR_SCENARIOS[planId || '']
+  const errorScenario = CHECKOUT_ERROR_SCENARIOS[entitlementKey || '']
   if (errorScenario) {
     return HttpResponse.json(errorScenario.body, { status: errorScenario.status })
   }

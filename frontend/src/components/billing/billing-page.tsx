@@ -1,234 +1,100 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
-import { useDialogManager } from '@/hooks/use-dialog-state'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Plus } from 'lucide-react'
-import { type SubscriptionPlanResponse } from '@/lib/api-generated'
-import { deletePlan, assignPlanToClientApp, removePlanAssignment } from '@/lib/api-generated'
-import { subscriptionPlansQueryOptions, queryKeys } from '@/data/query-options'
-import { PlanTable } from './plan-table'
-import { PlanAssignmentDialog, type PlanAssignmentSubmitData } from './plan-assignment-dialog'
-import { ListPagination } from '@/components/shared'
-import { toast } from 'sonner'
-import { ConfirmDialog, PageHeader } from '@/components/shared'
-import type { BillingSearchSchema } from '@/routes/$realmId/manage/billing/index'
+import { Link } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
+import { CreditCard, FileText, History, Layers, ListChecks } from 'lucide-react'
+import { featureAvailabilityQueryOptions } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
+import type { LucideIcon } from 'lucide-react'
 
 interface BillingPageProps {
   realmId: string
-  search: BillingSearchSchema
 }
 
-export function BillingPage({ realmId, search }: BillingPageProps) {
-  const queryClient = useQueryClient()
-  const navigate = useNavigate()
+interface NavCard {
+  title: string
+  description: string
+  route: string
+  icon: LucideIcon
+  visible: boolean
+  testId: string
+}
 
-  const { data: plansData, isLoading } = useQuery(
-    subscriptionPlansQueryOptions(realmId, {
-      page: search.page,
-      pageSize: search.pageSize,
-    })
-  )
+export function BillingPage({ realmId }: BillingPageProps) {
+  const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
+  const adminFeatures = features?.admin
 
-  const plans = plansData?.items ?? []
-  const pagination = plansData
-
-  const handlePageChange = (newPage: number) => {
-    navigate({
-      to: '/$realmId/manage/billing',
-      params: { realmId },
-      search: { ...search, page: newPage },
-    })
-  }
-
-  // Dialog states
-  const assignDialog = useDialogManager<SubscriptionPlanResponse>()
-  const deleteDialog = useDialogManager<SubscriptionPlanResponse>()
-
-  const deletePlanMutation = useMutation({
-    mutationFn: async (planId: string) => {
-      const response = await deletePlan({ path: { realmId, planId } })
-      if (response.error) throw response.error
-      return response.data
+  const cards: NavCard[] = [
+    {
+      title: m['billing.nav_entitlement_mappings'](),
+      description: m['billing.nav_entitlement_mappings_desc'](),
+      route: `/${realmId}/manage/billing/entitlement-mappings`,
+      icon: Layers,
+      visible: adminFeatures?.entitlementMappingsVisible ?? true,
+      testId: 'billing-nav-entitlement-mappings',
     },
-    onSuccess: async (_, planId) => {
-      const plan = plans?.find((p) => p.id === planId)
-      toast.success(m['billing.plan_deleted']({ title: plan?.title ?? '' }))
-
-      // 先等待数据刷新完成
-      await queryClient.invalidateQueries({
-        queryKey: ['subscription-plans', realmId],
-      })
-      await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
-
-      // 再关闭对话框
-      deleteDialog.close()
+    {
+      title: m['billing.nav_subscriptions'](),
+      description: m['billing.nav_subscriptions_desc'](),
+      route: `/${realmId}/manage/billing/subscriptions`,
+      icon: ListChecks,
+      visible: adminFeatures?.billingVisible ?? true,
+      testId: 'billing-nav-subscriptions',
     },
-    onError: (error: Error) => {
-      toast.error(m['billing.plan_delete_failed']({ message: error.message }))
+    {
+      title: m['billing.nav_payment_providers'](),
+      description: m['billing.nav_payment_providers_desc'](),
+      route: `/${realmId}/manage/billing/payment-providers`,
+      icon: CreditCard,
+      visible: adminFeatures?.billingConfigVisible ?? true,
+      testId: 'billing-nav-payment-providers',
     },
-  })
-
-  const assignPlanMutation = useMutation({
-    mutationFn: async ({
-      planId,
-      assignClientAppIds,
-      removeAssignments,
-    }: {
-      planId: string
-      assignClientAppIds: string[]
-      removeAssignments: Array<{ clientAppId: string; assignmentId: string }>
-    }) => {
-      const assignRequests = assignClientAppIds.map((clientAppId) =>
-        assignPlanToClientApp({
-          path: { realmId, clientAppId },
-          body: { planId },
-        }).then((response) => {
-          if (response.error) throw response.error
-          return response.data
-        })
-      )
-      const removeRequests = removeAssignments.map(({ clientAppId, assignmentId }) =>
-        removePlanAssignment({
-          path: { realmId, clientAppId, assignmentId },
-        }).then((response) => {
-          if (response.error) throw response.error
-          return response.data
-        })
-      )
-
-      await Promise.all([...assignRequests, ...removeRequests])
-      return { assigned: assignClientAppIds.length, removed: removeAssignments.length }
+    {
+      title: m['billing.nav_invoices'](),
+      description: m['billing.nav_invoices_desc'](),
+      route: `/${realmId}/manage/billing/invoices`,
+      icon: FileText,
+      visible: adminFeatures?.invoicesVisible ?? true,
+      testId: 'billing-nav-invoices',
     },
-    onSuccess: async (_, variables) => {
-      const { assignClientAppIds, removeAssignments } = variables
-      if (assignClientAppIds.length > 0 && removeAssignments.length > 0) {
-        toast.success(
-          m['billing.plan_assigned']({
-            assigned: assignClientAppIds.length,
-            removed: removeAssignments.length,
-          })
-        )
-      } else if (assignClientAppIds.length > 0) {
-        toast.success(m['billing.plan_assigned_only']({ count: assignClientAppIds.length }))
-      } else {
-        toast.success(m['billing.plan_removed_only']({ count: removeAssignments.length }))
-      }
-      assignDialog.close()
-      // Invalidate queries and wait for refetch to complete
-      await queryClient.invalidateQueries({ queryKey: ['subscription-plans', realmId] })
-      await queryClient.invalidateQueries({ queryKey: queryKeys.planAssignmentsList(realmId) })
-      await queryClient.invalidateQueries({ queryKey: queryKeys.featureAvailability(realmId) })
+    {
+      title: m['billing.nav_subscription_history'](),
+      description: m['billing.nav_subscription_history_desc'](),
+      route: `/${realmId}/manage/subscription-history`,
+      icon: History,
+      visible: adminFeatures?.subscriptionHistoryVisible ?? true,
+      testId: 'billing-nav-subscription-history',
     },
-    onError: (error: Error) => {
-      toast.error(m['billing.plan_assign_failed']({ message: error.message }))
-    },
-  })
+  ]
 
-  function handleCreatePlan() {
-    navigate({
-      to: '/$realmId/manage/billing/plans/new',
-      params: { realmId },
-    })
-  }
-
-  function handleEditPlan(plan: SubscriptionPlanResponse) {
-    navigate({
-      to: '/$realmId/manage/billing/plans/$planId/edit',
-      params: { realmId, planId: plan.id },
-    })
-  }
-
-  function handleDeletePlan(plan: SubscriptionPlanResponse) {
-    deleteDialog.open(plan)
-  }
-
-  async function confirmDeletePlan() {
-    if (!deleteDialog.selectedItem) return
-    await deletePlanMutation.mutateAsync(deleteDialog.selectedItem.id)
-  }
-
-  function handleAssignPlan(plan: SubscriptionPlanResponse) {
-    assignDialog.open(plan)
-  }
-
-  function handleAssignSubmit(data: PlanAssignmentSubmitData) {
-    if (!assignDialog.selectedItem) return
-    assignPlanMutation.mutate({ planId: assignDialog.selectedItem.id, ...data })
-  }
-
-  function handleManageProviders(plan: SubscriptionPlanResponse) {
-    navigate({
-      to: '/$realmId/manage/billing/plans/$planId/providers',
-      params: { realmId, planId: plan.id },
-    })
-  }
+  const visibleCards = cards.filter((card) => card.visible)
 
   return (
-    <div className="space-y-6" data-testid="billing-page">
-      <div className="flex items-start justify-between gap-4">
-        <PageHeader title={m['billing.subscription_plans_title']()} />
-        <div className="flex gap-2">
-          <Button onClick={handleCreatePlan} data-testid="add-plan-button">
-            <Plus className="mr-2 h-4 w-4" />
-            {m['billing.add_subscription_plan']()}
-          </Button>
-        </div>
+    <div data-testid="billing-page" className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">{m['billing.page_title']()}</h1>
+        <p className="text-muted-foreground mt-1">{m['billing.page_description']()}</p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{m['billing.plans_card_title']()}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {plans && plans.length > 0 ? (
-            <PlanTable
-              data={plans}
-              isLoading={isLoading}
-              onEdit={handleEditPlan}
-              onDelete={handleDeletePlan}
-              onAssign={handleAssignPlan}
-              onManageProviders={handleManageProviders}
-            />
-          ) : isLoading ? (
-            <div className="text-center py-8">{m['common.loading']()}</div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">{m['billing.no_plans']()}</div>
-          )}
-        </CardContent>
-      </Card>
-
-      {pagination && (
-        <ListPagination
-          page={pagination.page}
-          pageSize={pagination.pageSize}
-          total={pagination.total}
-          onPageChange={handlePageChange}
-          testIdPrefix="plan-pagination"
-        />
-      )}
-
-      <PlanAssignmentDialog
-        plan={assignDialog.selectedItem ?? undefined}
-        realmId={realmId}
-        open={assignDialog.isOpen}
-        onOpenChange={assignDialog.onOpenChange}
-        onSubmit={handleAssignSubmit}
-        isSubmitting={assignPlanMutation.isPending}
-      />
-
-      <ConfirmDialog
-        open={deleteDialog.isOpen}
-        onOpenChange={deleteDialog.onOpenChange}
-        title={m['billing.delete_plan_title']()}
-        description={m['billing.delete_plan_description']({
-          title: deleteDialog.selectedItem?.title ?? '',
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {visibleCards.map((card) => {
+          const Icon = card.icon
+          return (
+            <Link
+              key={card.testId}
+              to={card.route}
+              className="group rounded-lg border bg-card p-6 transition-colors hover:bg-accent hover:text-accent-foreground"
+              data-testid={card.testId}
+            >
+              <div className="flex items-center gap-3">
+                <div className="rounded-md bg-primary/10 p-2">
+                  <Icon className="size-5 text-primary" />
+                </div>
+                <h3 className="font-semibold">{card.title}</h3>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">{card.description}</p>
+            </Link>
+          )
         })}
-        onConfirm={confirmDeletePlan}
-        isPending={deletePlanMutation.isPending}
-        confirmTestId="confirm-delete-button"
-      />
+      </div>
     </div>
   )
 }

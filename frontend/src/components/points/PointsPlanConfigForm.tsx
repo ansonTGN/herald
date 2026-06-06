@@ -12,13 +12,13 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import type { PointsPlanConfigResponse } from '@/lib/api-generated'
 import type { PointsPlanConfigFormData } from '@/lib/schemas/points-forms'
 import { pointsPlanConfigSchema } from '@/lib/schemas/points-forms'
 import { m } from '@/paraglide/messages'
+import type { LocalPointsPlanConfig } from '@/types/points-plan-config'
 
 interface PointsPlanConfigFormProps {
-  config?: PointsPlanConfigResponse | null
+  config?: LocalPointsPlanConfig | null
   plans: Array<{ id: string; name: string; title: string }>
   onSubmit: (data: PointsPlanConfigFormData) => void
   onCancel: () => void

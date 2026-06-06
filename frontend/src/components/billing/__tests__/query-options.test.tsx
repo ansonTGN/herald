@@ -85,7 +85,7 @@ describe('Filter Parameter Handling', () => {
   it('should handle complete filters', () => {
     const filters: HistoryFilters = {
       userId: 'user-1',
-      planId: 'plan-1',
+      entitlementKey: 'basic',
       eventType: 'upgraded',
       subscriptionStatus: 'active',
       fromDate: '2025-01-01',
@@ -131,7 +131,7 @@ describe('Filter Parameter Handling', () => {
       'realm-1',
       {
         userId: 'user-1',
-        planId: 'plan-1',
+        entitlementKey: 'basic',
         eventType: 'upgraded',
         subscriptionStatus: 'active',
         fromDate: '2025-01-01T00:00:00.000Z',
@@ -147,7 +147,7 @@ describe('Filter Parameter Handling', () => {
     const requestUrl = new URL(fetchMock.mock.calls[0][0], 'http://localhost')
 
     expect(requestUrl.searchParams.get('userId')).toBe('user-1')
-    expect(requestUrl.searchParams.get('planId')).toBe('plan-1')
+    expect(requestUrl.searchParams.get('entitlementKey')).toBe('basic')
     expect(requestUrl.searchParams.get('eventType')).toBe('upgraded')
     expect(requestUrl.searchParams.get('subscriptionStatus')).toBe('active')
     expect(requestUrl.searchParams.get('fromDate')).toBe('2025-01-01T00:00:00.000Z')

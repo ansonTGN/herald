@@ -1,7 +1,8 @@
 import React from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import type { SubscriptionHistoryEvent, SubscriptionStatus } from '@/types/billing'
+import type { SubscriptionHistoryEvent } from '@/types/billing'
+import type { SubscriptionStatus } from '@/types/billing'
 
 /**
  * Creates a test QueryClient wrapper for React Query hooks testing
@@ -41,9 +42,8 @@ export function mockSubscriptionHistoryEvent(
       id: 'sub-1',
       realmId: 'realm-1',
       status: 'active',
-      tier: 'basic',
-      planId: 'basic-plan',
-      billingPeriod: 'monthly',
+      entitlementKey: 'basic',
+      paymentProvider: 'stripe',
       cancelAtPeriodEnd: false,
     },
     ...overrides,
@@ -60,25 +60,23 @@ export function mockSubscriptionState(
     id: 'sub-1',
     realmId: 'realm-1',
     status: 'active',
-    tier: 'basic',
-    planId: 'basic-plan',
-    billingPeriod: 'monthly',
+    entitlementKey: 'basic',
     cancelAtPeriodEnd: false,
     ...overrides,
   }
 }
 
 /**
- * Type guard for SubscriptionState (re-export for test convenience)
+ * Type for SubscriptionState test mock (re-export for test convenience)
  */
 export type SubscriptionState = {
   id: string
   realmId: string
   status: SubscriptionStatus
-  tier: string
-  planId?: string
+  entitlementKey: string
+  paymentProvider?: string
+  externalPriceId?: string
   clientAppId?: string
-  billingPeriod: string
   currentPeriodStart?: string
   currentPeriodEnd?: string
   cancelAtPeriodEnd: boolean

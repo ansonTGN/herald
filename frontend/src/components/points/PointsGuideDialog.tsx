@@ -1,11 +1,11 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Calendar, Info } from 'lucide-react'
-import type { PointsPlanConfigResponse } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
+import type { LocalPointsPlanConfig } from '@/types/points-plan-config'
 
 interface PointsGuideDialogProps {
-  config: PointsPlanConfigResponse | null
+  config: LocalPointsPlanConfig | null
   planName: string
   open: boolean
   onClose: () => void

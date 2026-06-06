@@ -140,6 +140,9 @@ pub struct SubscriptionState {
     pub realm_id: String,
     pub status: String,
     pub entitlement_key: String,
+    /// External product ID tracks the provider's product/plan identifier.
+    /// A change with the same entitlement_key indicates a billing period change.
+    pub external_product_id: Option<String>,
     pub client_app_id: Option<Uuid>,
     pub current_period_start: Option<DateTime<Utc>>,
     pub current_period_end: Option<DateTime<Utc>>,
@@ -155,6 +158,7 @@ impl SubscriptionState {
             realm_id: sub.realm_id.clone(),
             status: sub.status.as_str().to_string(),
             entitlement_key: sub.entitlement_key.clone(),
+            external_product_id: Some(sub.external_product_id.clone()),
             client_app_id: sub.client_app_id,
             current_period_start: sub.current_period_start,
             current_period_end: sub.current_period_end,
@@ -172,6 +176,8 @@ pub struct SubscriptionChanges {
     pub new_entitlement_key: Option<String>,
     pub previous_status: Option<String>,
     pub new_status: Option<String>,
+    pub previous_external_product_id: Option<String>,
+    pub new_external_product_id: Option<String>,
 }
 
 impl SubscriptionChanges {
@@ -185,6 +191,9 @@ impl SubscriptionChanges {
         if old_state.status != new_state.status {
             changed_fields.push("status".to_string());
         }
+        if old_state.external_product_id != new_state.external_product_id {
+            changed_fields.push("external_product_id".to_string());
+        }
 
         SubscriptionChanges {
             changed_fields,
@@ -192,6 +201,8 @@ impl SubscriptionChanges {
             new_entitlement_key: Some(new_state.entitlement_key.clone()),
             previous_status: Some(old_state.status.clone()),
             new_status: Some(new_state.status.clone()),
+            previous_external_product_id: old_state.external_product_id.clone(),
+            new_external_product_id: new_state.external_product_id.clone(),
         }
     }
 }
@@ -231,6 +242,10 @@ pub fn detect_change_type(
             crate::billing::entities::SubscriptionStatus::Active => HistoryEventType::Renewed,
             _ => HistoryEventType::Created,
         }
+    } else if old_state.external_product_id != new_state.external_product_id {
+        // Same entitlement_key and status, but external_product_id changed.
+        // This indicates a billing period change (e.g. monthly -> yearly on same tier).
+        HistoryEventType::BillingPeriodChanged
     } else {
         HistoryEventType::Created
     }

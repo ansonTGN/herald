@@ -83,16 +83,22 @@ pub enum WalletUpdate {
         topup: i64,
         subscription: i64,
         granted: i64,
+        registration: i64,
+        free_periodic: i64,
     },
     Grant {
         topup: i64,
         subscription: i64,
         granted: i64,
+        registration: i64,
+        free_periodic: i64,
     },
     Revocation {
         topup: i64,
         subscription: i64,
         granted: i64,
+        registration: i64,
+        free_periodic: i64,
     },
 }
 

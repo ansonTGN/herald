@@ -92,20 +92,14 @@ function SubscriptionDetailHistoryRoute() {
                 </p>
                 <p className="text-lg font-semibold">{subscription.status}</p>
               </div>
-              {subscription.planId && (
+              {subscription.entitlementKey && (
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">
                     {m['billing.subscription_plan']()}
                   </p>
-                  <p className="text-lg font-semibold">{subscription.planId}</p>
+                  <p className="text-lg font-semibold">{subscription.entitlementKey}</p>
                 </div>
               )}
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  {m['billing.subscription_billing_period']()}
-                </p>
-                <p className="text-lg font-semibold">{subscription.billingPeriod}</p>
-              </div>
             </div>
           </CardContent>
         </Card>

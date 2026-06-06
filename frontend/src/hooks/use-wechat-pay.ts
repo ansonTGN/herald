@@ -11,6 +11,9 @@ import {
 
 export interface UseWechatPayOptions {
   realmId: string
+  // NOTE: This still uses `planId` because the backend WeChat handler (api-billing) sends
+  // `planId` in the order body. When migrating to `entitlementKey`, both this frontend hook
+  // and the backend WeChat handler must be updated together.
   planId: string
   clientAppId?: string
   pollInterval?: number // Default 3000ms

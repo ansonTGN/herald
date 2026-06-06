@@ -272,22 +272,19 @@ async fn handle_subscription_contracts_create(
     let contract = parse_subscription_contract_payload(&payload)
         .map_err(|e| CoreError::BadRequest(format!("Invalid Shopify contract payload: {}", e)))?;
 
-    // TODO: Shopify provider contract design deferred (design section 1.3).
-    // Currently uses herald_plan_id -> resolve to entitlement_key via mapping.
-    // Full Shopify provider contract design will replace this with herald_entitlement_key.
-    let herald_plan_id = contract.herald_plan_id.ok_or_else(|| {
-        CoreError::BadRequest("Missing casPlanId in contract attributes".to_string())
+    // Resolve entitlement key: prefer herald_entitlement_key from contract attributes,
+    // fall back to casPlanId for backward compatibility.
+    let resolved_key = contract.resolve_entitlement_key().ok_or_else(|| {
+        CoreError::BadRequest(
+            "Missing herald_entitlement_key or casPlanId in contract attributes".to_string(),
+        )
     })?;
 
     // Look up entitlement mapping: first by provider + external_product_id,
     // then by entitlement_key for backward compat
     let mapping = state
         .billing_repository
-        .find_entitlement_mapping_by_provider_product(
-            &realm_id,
-            "shopify",
-            &herald_plan_id.to_string(),
-        )
+        .find_entitlement_mapping_by_provider_product(&realm_id, "shopify", &resolved_key)
         .await?;
 
     let mapping = match mapping {
@@ -295,7 +292,7 @@ async fn handle_subscription_contracts_create(
         None => {
             state
                 .points_repository
-                .find_points_policy_by_entitlement_key(&realm_id, &herald_plan_id.to_string())
+                .find_points_policy_by_entitlement_key(&realm_id, &resolved_key)
                 .await?
         }
     };
@@ -303,14 +300,14 @@ async fn handle_subscription_contracts_create(
     if mapping.is_none() {
         warn!(
             realm_id = %realm_id,
-            plan_id = %herald_plan_id,
-            "No entitlement mapping found for Shopify plan_id; using plan_id string as entitlement_key"
+            resolved_key = %resolved_key,
+            "No entitlement mapping found for Shopify key; using resolved key string as entitlement_key"
         );
     }
 
     let entitlement_key = mapping
         .map(|m| m.entitlement_key.clone())
-        .unwrap_or_else(|| herald_plan_id.to_string());
+        .unwrap_or(resolved_key);
 
     let client_app_id = contract.herald_client_app_id;
     let shop_domain = shopify_repo.get_shop_domain(&realm_id).await?;
@@ -434,9 +431,12 @@ async fn handle_subscription_contracts_update(
     let contract = parse_subscription_contract_payload(&payload)
         .map_err(|e| CoreError::BadRequest(format!("Invalid Shopify contract payload: {}", e)))?;
 
-    // TODO: Shopify provider contract design deferred (design section 1.3).
-    let herald_plan_id = contract.herald_plan_id.ok_or_else(|| {
-        CoreError::BadRequest("Missing casPlanId in contract attributes".to_string())
+    // Resolve entitlement key: prefer herald_entitlement_key from contract attributes,
+    // fall back to casPlanId for backward compatibility.
+    let resolved_key = contract.resolve_entitlement_key().ok_or_else(|| {
+        CoreError::BadRequest(
+            "Missing herald_entitlement_key or casPlanId in contract attributes".to_string(),
+        )
     })?;
 
     let existing_binding = shopify_repo
@@ -489,13 +489,13 @@ async fn handle_subscription_contracts_update(
     // Resolve new entitlement_key
     let new_mapping = state
         .points_repository
-        .find_points_policy_by_entitlement_key(&realm_id, &herald_plan_id.to_string())
+        .find_points_policy_by_entitlement_key(&realm_id, &resolved_key)
         .await?;
 
     let new_entitlement_key = new_mapping
         .as_ref()
         .map(|m| m.entitlement_key.clone())
-        .unwrap_or_else(|| herald_plan_id.to_string());
+        .unwrap_or(resolved_key);
 
     shopify_repo
         .update_subscription_entitlement_key(

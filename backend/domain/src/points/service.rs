@@ -356,6 +356,8 @@ where
             topup_balance: 0,
             subscription_balance: 0,
             granted_balance: 0,
+            registration_balance: 0,
+            free_periodic_balance: 0,
             total_topup_granted: 0,
             total_subscription_granted: 0,
             total_recharged: 0,
@@ -382,6 +384,17 @@ where
             return Err(CoreError::invalid_amount(
                 "Recharge amount must be positive",
             ));
+        }
+
+        // Check wallet status before recharging
+        let account = self.repository.find_by_user_id(realm_id, user_id).await?;
+        if let Some(account) = &account
+            && account.status != WalletStatus::Active
+        {
+            return Err(CoreError::BadRequest(format!(
+                "Cannot recharge points to {} wallet",
+                account.status.as_str()
+            )));
         }
 
         let (credit_type, source_type) = match recharge_type {
@@ -701,6 +714,17 @@ where
             return Err(CoreError::BadRequest(
                 "Grant amount must be positive".to_string(),
             ));
+        }
+
+        // Check wallet status before granting
+        let account = self.repository.find_by_user_id(realm_id, user_id).await?;
+        if let Some(account) = &account
+            && account.status != WalletStatus::Active
+        {
+            return Err(CoreError::BadRequest(format!(
+                "Cannot grant points to {} wallet",
+                account.status.as_str()
+            )));
         }
 
         let saved_ledger = self

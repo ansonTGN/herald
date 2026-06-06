@@ -1,30 +1,30 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { CreditCard, Loader2 } from 'lucide-react'
 import { useStripeCheckout } from '@/hooks/use-stripe-checkout'
 import { toast } from 'sonner'
-import type { SubscriptionPlanResponse } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
 
 interface StripeCheckoutButtonProps {
   realmId: string
   clientAppId: string
-  plan: SubscriptionPlanResponse
-  billingPeriod?: 'monthly' | 'yearly'
+  entitlementKey: string
   variant?: 'default' | 'outline' | 'ghost' | 'destructive'
   size?: 'default' | 'sm' | 'lg' | 'icon'
   className?: string
 }
 
 /**
- * Button component for initiating Stripe Checkout
- * Displays loading state and handles errors
+ * Button component for initiating Stripe Checkout.
+ * Displays loading state and handles errors.
+ *
+ * @precondition Callers MUST verify that Stripe is available as a payment provider
+ * before rendering this component. The component does not perform this check internally.
  */
 export function StripeCheckoutButton({
   realmId,
   clientAppId,
-  plan,
-  billingPeriod = 'monthly',
+  entitlementKey,
   variant = 'default',
   size = 'default',
   className,
@@ -43,25 +43,14 @@ export function StripeCheckoutButton({
       await checkoutMutation.mutateAsync({
         realmId,
         clientAppId,
-        planId: plan.id,
+        entitlementKey,
         paymentProvider: 'stripe',
-        billingPeriod,
       })
     } catch (error) {
       // Error is already handled by the mutation callbacks
       console.error('Checkout error:', error)
     }
-  }, [checkoutMutation, realmId, clientAppId, plan.id, billingPeriod])
-
-  // Memoize provider check to avoid recomputing on every render
-  const stripeMapping = useMemo(
-    () => plan.paymentProviders?.find((p) => p.paymentProvider === 'stripe' && p.enabled),
-    [plan.paymentProviders]
-  )
-
-  if (!stripeMapping) {
-    return null
-  }
+  }, [checkoutMutation, realmId, clientAppId, entitlementKey])
 
   return (
     <Button
@@ -70,7 +59,7 @@ export function StripeCheckoutButton({
       variant={variant}
       size={size}
       className={className}
-      data-testid={`plan-stripe-checkout-button-${plan.id}`}
+      data-testid={`stripe-checkout-button-${entitlementKey}`}
     >
       {checkoutMutation.isPending ? (
         <>

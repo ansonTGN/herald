@@ -96,11 +96,29 @@ export function SubscriptionManagement({ realmId, clientAppId }: SubscriptionMan
           )}
 
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">{m['billing.subscription_plan']()}</span>
+            <span className="text-sm font-medium">
+              {m['billing.subscription_entitlement_key']()}
+            </span>
             <span className="text-sm">
-              {subscription.plan?.title || m['billing.subscription_none']()}
+              {subscription.entitlementKey || m['billing.subscription_none']()}
             </span>
           </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">
+              {m['billing.subscription_payment_provider']()}
+            </span>
+            <span className="text-sm">
+              {subscription.paymentProvider || m['billing.subscription_none']()}
+            </span>
+          </div>
+
+          {subscription.syncedAt && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">{m['billing.subscription_synced_at']()}</span>
+              <span className="text-sm">{formatDate(subscription.syncedAt)}</span>
+            </div>
+          )}
 
           {subscription.currentPeriodStart && (
             <div className="flex items-center justify-between">

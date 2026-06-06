@@ -1,8 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useSuspenseQuery } from '@tanstack/react-query'
 import { lazy, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
-import { subscriptionPlansQueryOptions } from '@/data/query-options'
 
 const PointsPlanConfigFormPage = lazy(() =>
   import('@/components/points/configs/PointsPlanConfigFormPage').then((m) => ({
@@ -16,7 +14,6 @@ export const Route = createFileRoute('/$realmId/manage/points/configs/new')({
 
 function NewPointsPlanConfigPage() {
   const { realmId } = Route.useParams()
-  const { data: plansData } = useSuspenseQuery(subscriptionPlansQueryOptions(realmId))
 
   return (
     <Suspense
@@ -26,7 +23,7 @@ function NewPointsPlanConfigPage() {
         </div>
       }
     >
-      <PointsPlanConfigFormPage mode="create" realmId={realmId} plans={plansData?.items ?? []} />
+      <PointsPlanConfigFormPage mode="create" realmId={realmId} plans={[]} />
     </Suspense>
   )
 }

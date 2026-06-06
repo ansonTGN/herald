@@ -42,9 +42,27 @@ pub struct ShopifySubscriptionContractWebhook {
     #[serde(default)]
     #[serde(rename = "casClientAppId")]
     pub herald_client_app_id: Option<Uuid>,
+    /// Primary entitlement key from contract attributes.
+    /// Falls back to casPlanId for backward compatibility.
+    #[serde(default)]
+    #[serde(rename = "herald_entitlement_key")]
+    pub herald_entitlement_key: Option<String>,
+    /// Legacy plan ID - kept for backward compatibility.
+    /// Used as fallback when herald_entitlement_key is not present.
     #[serde(default)]
     #[serde(rename = "casPlanId")]
     pub herald_plan_id: Option<Uuid>,
+}
+
+impl ShopifySubscriptionContractWebhook {
+    /// Resolve the entitlement key from the contract payload.
+    /// Uses herald_entitlement_key first, falls back to casPlanId as string.
+    pub fn resolve_entitlement_key(&self) -> Option<String> {
+        self.herald_entitlement_key
+            .clone()
+            .filter(|s| !s.is_empty())
+            .or_else(|| self.herald_plan_id.map(|id| id.to_string()))
+    }
 }
 
 /// Shopify Billing Attempt Webhook Payload
@@ -143,6 +161,60 @@ mod tests {
         assert_eq!(contract.status, "ACTIVE");
         assert!(contract.herald_user_id.is_some());
         assert!(contract.herald_plan_id.is_some());
+        // casPlanId used as fallback when herald_entitlement_key missing
+        assert_eq!(
+            contract.resolve_entitlement_key(),
+            Some("550e8400-e29b-41d4-a716-446655440002".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_entitlement_key_prefers_herald_key() {
+        let json = r#"
+        {
+            "id": "gid://shopify/SubscriptionContract/12345",
+            "adminGraphqlApiId": "gid://shopify/SubscriptionContract/12345",
+            "customerId": "gid://shopify/Customer/67890",
+            "sellingPlanId": "gid://shopify/SellingPlan/22222",
+            "currentPeriodEnd": "2026-05-01T00:00:00Z",
+            "status": "ACTIVE",
+            "herald_entitlement_key": "pro-monthly",
+            "casPlanId": "550e8400-e29b-41d4-a716-446655440002"
+        }
+        "#;
+
+        let value: serde_json::Value = serde_json::from_str(json).unwrap();
+        let contract = parse_subscription_contract_payload(&value).unwrap();
+
+        // herald_entitlement_key takes priority
+        assert_eq!(
+            contract.resolve_entitlement_key(),
+            Some("pro-monthly".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_entitlement_key_falls_back_to_casplanid() {
+        let json = r#"
+        {
+            "id": "gid://shopify/SubscriptionContract/12345",
+            "adminGraphqlApiId": "gid://shopify/SubscriptionContract/12345",
+            "customerId": "gid://shopify/Customer/67890",
+            "sellingPlanId": "gid://shopify/SellingPlan/22222",
+            "currentPeriodEnd": "2026-05-01T00:00:00Z",
+            "status": "ACTIVE",
+            "casPlanId": "550e8400-e29b-41d4-a716-446655440002"
+        }
+        "#;
+
+        let value: serde_json::Value = serde_json::from_str(json).unwrap();
+        let contract = parse_subscription_contract_payload(&value).unwrap();
+
+        // Falls back to casPlanId as string
+        assert_eq!(
+            contract.resolve_entitlement_key(),
+            Some("550e8400-e29b-41d4-a716-446655440002".to_string())
+        );
     }
 
     #[test]
@@ -216,5 +288,7 @@ mod tests {
         assert!(contract.herald_user_id.is_none());
         assert!(contract.herald_client_app_id.is_none());
         assert!(contract.herald_plan_id.is_none());
+        assert!(contract.herald_entitlement_key.is_none());
+        assert!(contract.resolve_entitlement_key().is_none());
     }
 }

@@ -20,22 +20,13 @@ import {
   getTurnstileStatus,
   getProfile,
   handleGetTotpStatus,
-  listPlans,
-  getPlan,
-  listProducts,
-  getProduct,
-  getProductPlans,
   getSubscriptionForClientApp,
-  listPlanAssignments,
-  listPlanAssignmentsBatch,
   listWallets,
   getWallet,
   listTransactions,
-  listPlanConfigs,
   getRealmDefaultConfig,
   updateRealmDefaultConfig,
   getFreeUserStatistics,
-  listPlanPaymentProviders,
   listPointsPackages,
   getPointsPackage,
   getPointsPackagePurchaseHistory,
@@ -51,14 +42,19 @@ import {
   getApiKey,
   adminGetApiKeyRoles,
   adminUpdateApiKeyRoles,
+  getEntitlementMapping,
+  getSubscription,
 } from '@/lib/api-generated'
 import { handleApiResponse } from '@/lib/api-utils'
 import type {
   OAuthConfigResponse,
-  SubscriptionPlanResponse,
   PaymentAttemptStatusResponse,
   PointsWalletResponse,
   PointsPackageResponse,
+  EntitlementMappingListResponse,
+  EntitlementMappingResponse,
+  SubscriptionListResponse,
+  SubscriptionDetailResponse,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -66,6 +62,7 @@ import type {
   GlobalSubscriptionHistoryResponse,
 } from '@/types/billing'
 import { TIME_CONSTANTS, QUERY_KEYS } from '@/lib/constants'
+import { client } from '@/lib/api-generated/client.gen'
 
 // ==================== Enhanced Error Handling ====================
 
@@ -176,26 +173,10 @@ export const queryKeys = {
   profile: () => [QUERY_KEYS.PROFILE] as const,
   totpStatus: () => [QUERY_KEYS.TOTP_STATUS] as const,
   turnstileStatus: (realmId: string) => [QUERY_KEYS.TURNSTILE_STATUS, realmId] as const,
-  billingPlans: (realmId: string, filters?: { page?: number; pageSize?: number }) =>
-    [QUERY_KEYS.BILLING_PLANS, realmId, filters] as const,
-  billingPlan: (realmId: string, planId: string) =>
-    [QUERY_KEYS.BILLING_PLAN, realmId, planId] as const,
-  billingProducts: (realmId: string) => [QUERY_KEYS.BILLING_PRODUCTS, realmId] as const,
-  billingProduct: (realmId: string, productId: string) =>
-    [QUERY_KEYS.BILLING_PRODUCT, realmId, productId] as const,
-  billingProductPlans: (realmId: string, productId: string) =>
-    [QUERY_KEYS.BILLING_PRODUCT_PLANS, realmId, productId] as const,
-  planProviders: (realmId: string, planId: string) =>
-    [QUERY_KEYS.PLAN_PROVIDERS, realmId, planId] as const,
   subscription: (realmId: string, clientAppId: string) =>
     [QUERY_KEYS.SUBSCRIPTION, realmId, clientAppId] as const,
   subscriptionDetails: (realmId: string, subscriptionId: string) =>
     [QUERY_KEYS.SUBSCRIPTION_DETAILS, realmId, subscriptionId] as const,
-  planAssignments: (realmId: string, clientAppId: string) =>
-    [QUERY_KEYS.PLAN_ASSIGNMENTS, realmId, clientAppId] as const,
-  planAssignmentsList: (realmId: string) => [QUERY_KEYS.PLAN_ASSIGNMENTS, realmId] as const,
-  planAssignmentsBatch: (realmId: string, clientAppIds: string[]) =>
-    [QUERY_KEYS.PLAN_ASSIGNMENTS, realmId, 'batch', clientAppIds] as const,
   subscriptionHistory: (realmId: string, subscriptionId: string) =>
     [QUERY_KEYS.SUBSCRIPTION_HISTORY, realmId, subscriptionId] as const,
   globalSubscriptionHistory: (
@@ -238,14 +219,14 @@ export const queryKeys = {
   apiKey: (realmId: string, id: string) => [QUERY_KEYS.API_KEY, realmId, id] as const,
   apiKeyRoles: (realmId: string, apiKeyId: string) =>
     [QUERY_KEYS.API_KEY_ROLES, realmId, apiKeyId] as const,
-}
-
-function extractNestedArray<T>(response: unknown, key: string): T[] {
-  if (!response || typeof response !== 'object') {
-    return []
-  }
-  const value = (response as Record<string, unknown>)[key]
-  return Array.isArray(value) ? (value as T[]) : []
+  entitlementMappings: (realmId: string, filters: Record<string, unknown>) =>
+    [QUERY_KEYS.ENTITLEMENT_MAPPINGS, realmId, filters] as const,
+  entitlementMapping: (realmId: string, mappingId: string) =>
+    [QUERY_KEYS.ENTITLEMENT_MAPPING, realmId, mappingId] as const,
+  subscriptions: (realmId: string, filters: Record<string, unknown>) =>
+    [QUERY_KEYS.ADMIN_SUBSCRIPTIONS, realmId, filters] as const,
+  adminSubscription: (realmId: string, subscriptionId: string) =>
+    [QUERY_KEYS.ADMIN_SUBSCRIPTION, realmId, subscriptionId] as const,
 }
 
 // ==================== Public Config ====================
@@ -277,12 +258,11 @@ export const realmQueryOptions = (realmId: string) =>
     staleTime: STALE_TIME_5_MIN,
   })
 
-export interface FeatureAvailabilityResponse {
+export type FeatureAvailabilityResponse = {
   admin: {
     billingVisible: boolean
     billingConfigVisible: boolean
-    productsVisible: boolean
-    plansVisible: boolean
+    entitlementMappingsVisible: boolean
     invoicesVisible: boolean
     subscriptionHistoryVisible: boolean
     pointsVisible: boolean
@@ -296,9 +276,8 @@ export interface FeatureAvailabilityResponse {
   }
   facts: {
     hasPaymentProviders: boolean
-    hasProducts: boolean
-    hasPlans: boolean
-    hasPlanPaymentMappings: boolean
+    hasEntitlementMappings: boolean
+    hasEnabledMappings: boolean
     hasPointsPackages: boolean
     hasPointsPackagePaymentMappings: boolean
     hasInvoiceSellerConfig: boolean
@@ -564,125 +543,6 @@ export const totpStatusQueryOptions = queryOptions({
   gcTime: GC_TIME_5_MIN,
 })
 
-// ==================== Subscription Plans ====================
-
-export const subscriptionPlansQueryOptions = (
-  realmId: string,
-  filters?: {
-    page?: number
-    pageSize?: number
-  }
-) =>
-  queryOptions({
-    queryKey: queryKeys.billingPlans(realmId, filters),
-    queryFn: async () => {
-      const response = await listPlans({ path: { realmId } })
-      if (response.error) throw response.error
-      const allPlans = extractNestedArray<SubscriptionPlanResponse>(response.data, 'plans')
-
-      // Client-side pagination (backend doesn't support pagination for plans)
-      const page = filters?.page ?? 0
-      const pageSize = filters?.pageSize ?? 20
-      const total = allPlans.length
-      const startIndex = page * pageSize
-      const endIndex = startIndex + pageSize
-      const items = allPlans.slice(startIndex, endIndex)
-
-      return {
-        page,
-        pageSize,
-        total,
-        items,
-      }
-    },
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_5_MIN,
-  })
-
-export const subscriptionPlanQueryOptions = (realmId: string, planId: string) =>
-  queryOptions({
-    queryKey: queryKeys.billingPlan(realmId, planId),
-    queryFn: async () => {
-      const response = await getPlan({ path: { realmId, planId } })
-      if (response.error) throw response.error
-      return response.data
-    },
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_5_MIN,
-  })
-
-export const subscriptionPlanProvidersQueryOptions = (realmId: string, planId: string) =>
-  queryOptions({
-    queryKey: queryKeys.planProviders(realmId, planId),
-    queryFn: async () => {
-      const response = await listPlanPaymentProviders({
-        path: { realmId, planId },
-      })
-      if (response.error) throw new Error(response.error.message)
-      return response.data ?? []
-    },
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_5_MIN,
-  })
-
-// ==================== Products ====================
-
-export const productsQueryOptions = (realmId: string) =>
-  queryOptions({
-    queryKey: queryKeys.billingProducts(realmId),
-    queryFn: async () => {
-      const response = await listProducts({
-        path: { realmId },
-      })
-      if (response.error) throw response.error
-      return extractNestedArray<{
-        id: string
-        code: string
-        title: string
-        description?: string | null
-        enabled: boolean
-        plansCount: number
-        realmId: string
-        createdAt: string
-        updatedAt: string
-      }>(response.data, 'products')
-    },
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_5_MIN,
-  })
-
-export const productQueryOptions = (realmId: string, productId: string) =>
-  queryOptions({
-    queryKey: queryKeys.billingProduct(realmId, productId),
-    queryFn: async () => {
-      const response = await getProduct({ path: { realmId, productId } })
-      if (response.error) throw response.error
-      return response.data
-    },
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_5_MIN,
-  })
-
-export const productPlansQueryOptions = (realmId: string, productId: string) =>
-  queryOptions({
-    queryKey: queryKeys.billingProductPlans(realmId, productId),
-    queryFn: async () => {
-      const response = await getProductPlans({ path: { realmId, productId } })
-      if (response.error) throw response.error
-      return extractNestedArray<{
-        id: string
-        name: string
-        title: string
-        active: boolean
-        price: number
-        currency: string
-        type: string
-      }>(response.data, 'plans')
-    },
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_5_MIN,
-  })
-
 // ==================== Subscriptions ====================
 
 export const subscriptionQueryOptions = (realmId: string, clientAppId: string) =>
@@ -722,39 +582,6 @@ export const userSubscriptionsQueryOptions = <TData>(
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
     gcTime: GC_TIME_5_MIN,
-  })
-
-// ==================== Subscription Plan Assignments ====================
-
-export const subscriptionPlanAssignmentsQueryOptions = (realmId: string, clientAppId: string) =>
-  queryOptions({
-    queryKey: queryKeys.planAssignments(realmId, clientAppId),
-    queryFn: async () => {
-      const response = await listPlanAssignments({ path: { realmId, clientAppId } })
-      if (response.error) throw response.error
-      return response.data?.assignments || []
-    },
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_5_MIN,
-  })
-
-export const subscriptionPlanAssignmentsBatchQueryOptions = (
-  realmId: string,
-  clientAppIds: string[]
-) =>
-  queryOptions({
-    queryKey: queryKeys.planAssignmentsBatch(realmId, clientAppIds),
-    queryFn: async () => {
-      const response = await listPlanAssignmentsBatch({
-        path: { realmId },
-        query: { clientAppIds: clientAppIds.join(',') },
-      })
-      if (response.error) throw response.error
-      return response.data?.assignments || []
-    },
-    enabled: clientAppIds.length > 0,
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_5_MIN,
   })
 
 // ==================== Subscription History ====================
@@ -911,13 +738,13 @@ export const pointsTransactionsQueryOptions = (
     staleTime: STALE_TIME_2_MIN,
   })
 
+// TODO: Points plan configs API was removed by product_reduce.
+// Return empty array until points are migrated to entitlement-based config.
 export const pointsPlanConfigsQueryOptions = (realmId: string) =>
   queryOptions({
     queryKey: queryKeys.pointsPlanConfigs(realmId),
-    queryFn: async () => {
-      const response = await listPlanConfigs({ path: { realmId } })
-      if (response.error) throw response.error
-      return extractNestedArray<{
+    queryFn: async () =>
+      [] as Array<{
         configId: string
         realmId: string
         planId: string
@@ -929,8 +756,7 @@ export const pointsPlanConfigsQueryOptions = (realmId: string) =>
         active: boolean
         createdAt: string
         updatedAt: string
-      }>(response.data, 'configs')
-    },
+      }>,
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
   })
@@ -1282,3 +1108,96 @@ export const updateApiKeyRolesMutation = async (
     handleApiErrorWithStatus(error)
   }
 }
+
+// ==================== Entitlement Mappings ====================
+
+export interface EntitlementMappingFilters {
+  paymentProvider?: string
+  enabled?: boolean
+  page?: number
+  pageSize?: number
+}
+
+export const entitlementMappingsQueryOptions = (
+  realmId: string,
+  filters: EntitlementMappingFilters = {}
+) =>
+  queryOptions({
+    queryKey: queryKeys.entitlementMappings(realmId, filters as Record<string, unknown>),
+    queryFn: async () => {
+      const query: Record<string, unknown> = {}
+      if (filters.paymentProvider !== undefined) query.paymentProvider = filters.paymentProvider
+      if (filters.enabled !== undefined) query.enabled = filters.enabled
+      if (filters.page !== undefined) query.page = filters.page
+      if (filters.pageSize !== undefined) query.pageSize = filters.pageSize
+
+      const response = await client.get<EntitlementMappingListResponse>({
+        url: `/api/bill/${realmId}/entitlement-mappings`,
+        query,
+      })
+      if (response.error) throw response.error
+      return response.data
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+  })
+
+export const entitlementMappingQueryOptions = (realmId: string, mappingId: string) =>
+  queryOptions({
+    queryKey: queryKeys.entitlementMapping(realmId, mappingId),
+    queryFn: async () => {
+      const response = await getEntitlementMapping({
+        path: { realmId, mappingId },
+      })
+      if (response.error) throw response.error
+      return response.data as EntitlementMappingResponse
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+  })
+
+// ==================== Admin Subscriptions ====================
+
+export interface SubscriptionFilters {
+  entitlementKey?: string
+  status?: string
+  paymentProvider?: string
+  page?: number
+  pageSize?: number
+}
+
+export const subscriptionsQueryOptions = (realmId: string, filters: SubscriptionFilters = {}) =>
+  queryOptions({
+    queryKey: queryKeys.subscriptions(realmId, filters as Record<string, unknown>),
+    queryFn: async () => {
+      const query: Record<string, unknown> = {}
+      if (filters.entitlementKey !== undefined) query.entitlementKey = filters.entitlementKey
+      if (filters.status !== undefined) query.status = filters.status
+      if (filters.paymentProvider !== undefined) query.paymentProvider = filters.paymentProvider
+      if (filters.page !== undefined) query.page = filters.page
+      if (filters.pageSize !== undefined) query.pageSize = filters.pageSize
+
+      const response = await client.get<SubscriptionListResponse>({
+        url: `/api/bill/${realmId}/subscriptions`,
+        query,
+      })
+      if (response.error) throw response.error
+      return response.data
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+  })
+
+export const subscriptionDetailQueryOptions = (realmId: string, subscriptionId: string) =>
+  queryOptions({
+    queryKey: queryKeys.adminSubscription(realmId, subscriptionId),
+    queryFn: async () => {
+      const response = await getSubscription({
+        path: { realmId, subscriptionId },
+      })
+      if (response.error) throw response.error
+      return response.data as SubscriptionDetailResponse
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+  })

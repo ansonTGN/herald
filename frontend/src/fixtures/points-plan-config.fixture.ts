@@ -1,6 +1,6 @@
-import type { PointsPlanConfigResponse } from '@/lib/api-generated'
+import type { LocalPointsPlanConfig } from '@/types/points-plan-config'
 
-export const mockPointsPlanConfig: PointsPlanConfigResponse = {
+export const mockPointsPlanConfig: LocalPointsPlanConfig = {
   configId: 'cfg-123',
   planId: 'plan-123',
   realmId: 'realm-123',
@@ -14,14 +14,14 @@ export const mockPointsPlanConfig: PointsPlanConfigResponse = {
   updatedAt: '2025-03-15T00:00:00Z',
 }
 
-export const mockPointsPlanConfigWithoutMax: PointsPlanConfigResponse = {
+export const mockPointsPlanConfigWithoutMax: LocalPointsPlanConfig = {
   ...mockPointsPlanConfig,
   configId: 'cfg-456',
   planId: 'plan-456',
   maxPeriods: null,
 }
 
-export const mockPointsPlanConfigWeekly: PointsPlanConfigResponse = {
+export const mockPointsPlanConfigWeekly: LocalPointsPlanConfig = {
   ...mockPointsPlanConfig,
   configId: 'cfg-789',
   planId: 'plan-789',
@@ -36,36 +36,6 @@ export const mockPlanConfigsList = [
 ]
 
 export const mockPlansList = [
-  {
-    id: 'plan-123',
-    name: 'basic-monthly',
-    title: 'Basic Monthly',
-    type: 'monthly',
-    price: 1000,
-    currency: 'USD',
-    paymentProvider: 'creem',
-    externalProductId: 'prod_basic_monthly',
-    active: true,
-    trialDays: 0,
-    sortOrder: 0,
-    createdAt: '2025-01-01T00:00:00Z',
-    updatedAt: '2025-03-15T00:00:00Z',
-    realmId: 'realm-123',
-  },
-  {
-    id: 'plan-456',
-    name: 'pro-yearly',
-    title: 'Pro Yearly',
-    type: 'yearly',
-    price: 10000,
-    currency: 'USD',
-    paymentProvider: 'creem',
-    externalProductId: 'prod_pro_yearly',
-    active: true,
-    trialDays: 0,
-    sortOrder: 1,
-    createdAt: '2025-01-01T00:00:00Z',
-    updatedAt: '2025-03-15T00:00:00Z',
-    realmId: 'realm-123',
-  },
+  { id: 'plan-123', name: 'basic-monthly', title: 'Basic Monthly' },
+  { id: 'plan-456', name: 'pro-yearly', title: 'Pro Yearly' },
 ]

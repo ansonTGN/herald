@@ -1,26 +1,24 @@
-import { type PaymentProviderSummary } from '@/lib/api-generated'
+import { type PaymentProviderInfo } from '@/lib/api-generated'
 import { formatProviderName } from '@/components/billing/format-provider-name'
 
 /**
  * Filters payment providers to only include enabled ones
  */
-export function getEnabledProviders(
-  providers?: PaymentProviderSummary[]
-): PaymentProviderSummary[] {
+export function getEnabledProviders(providers?: PaymentProviderInfo[]): PaymentProviderInfo[] {
   return (providers ?? []).filter((p) => p.enabled)
 }
 
 /**
  * Formats payment provider names for display in a comma-separated list
  */
-export function formatProviderNames(providers: PaymentProviderSummary[]): string {
-  return providers.map((p) => formatProviderName(p.paymentProvider)).join(', ')
+export function formatProviderNames(providers: PaymentProviderInfo[]): string {
+  return providers.map((p) => formatProviderName(p.platform)).join(', ')
 }
 
 /**
  * Gets formatted names of enabled providers
  */
-export function getEnabledProviderNames(providers?: PaymentProviderSummary[]): string {
+export function getEnabledProviderNames(providers?: PaymentProviderInfo[]): string {
   return formatProviderNames(getEnabledProviders(providers))
 }
 

@@ -3,10 +3,16 @@ import { format } from 'date-fns'
 import { Clock, User, ChevronRight, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
 import { HistoryEventBadge } from './history-event-badge'
 import type { SubscriptionHistoryEvent, SubscriptionStatus } from '@/types/billing'
 import { getSubscriptionStatusLabels } from '@/types/billing'
-import { cn } from '@/lib/utils'
 import { m } from '@/paraglide/messages'
 
 interface SubscriptionTimelineProps {
@@ -63,12 +69,12 @@ const TimelineEvent = memo(({ event, index, onEventClick }: TimelineEventProps) 
             {/* Change summary */}
             {event.changes && (
               <div className="text-sm">
-                {event.changes.previousPlanId && event.changes.newPlanId && (
+                {event.changes.previousEntitlementKey && event.changes.newEntitlementKey && (
                   <span>
                     {m['billing.subscription_plan_changed_from']()}{' '}
-                    <span className="font-medium">{event.changes.previousPlanId}</span>{' '}
+                    <span className="font-medium">{event.changes.previousEntitlementKey}</span>{' '}
                     {m['billing.subscription_plan_changed_to']()}{' '}
-                    <span className="font-medium">{event.changes.newPlanId}</span>
+                    <span className="font-medium">{event.changes.newEntitlementKey}</span>
                   </span>
                 )}
               </div>
@@ -95,21 +101,14 @@ TimelineEvent.displayName = 'TimelineEvent'
 
 function EventDetailDialog({ event, open, onOpenChange }: EventDetailDialogProps) {
   return (
-    <div
-      className={cn(
-        'fixed inset-0 z-50 flex items-center justify-center',
-        open ? 'block' : 'hidden'
-      )}
-      data-testid="event-detail-dialog"
-    >
-      <div className="fixed inset-0 bg-black/50" onClick={() => onOpenChange(false)} />
-      <Card className="relative z-50 mx-4 max-w-lg p-6">
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold">{m['billing.subscription_event_details']()}</h3>
-          <p className="text-sm text-muted-foreground">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg" data-testid="event-detail-dialog">
+        <DialogHeader>
+          <DialogTitle>{m['billing.subscription_event_details']()}</DialogTitle>
+          <DialogDescription>
             {m['billing.subscription_event_id']({ id: event.id })}
-          </p>
-        </div>
+          </DialogDescription>
+        </DialogHeader>
 
         <div className="space-y-4">
           <div>
@@ -149,18 +148,20 @@ function EventDetailDialog({ event, open, onOpenChange }: EventDetailDialogProps
                     event.previousState.status as SubscriptionStatus
                   ] || event.previousState.status}
                 </p>
-                {event.previousState.planId && (
-                  <p className="text-sm">
-                    <span className="font-medium">{m['billing.subscription_plan_label']()}:</span>{' '}
-                    {event.previousState.planId}
-                  </p>
-                )}
-                {event.previousState.billingPeriod && (
+                {event.previousState.entitlementKey && (
                   <p className="text-sm">
                     <span className="font-medium">
-                      {m['billing.subscription_billing_label']()}:
+                      {m['billing.subscription_entitlement_key_label']()}:
                     </span>{' '}
-                    {event.previousState.billingPeriod}
+                    {event.previousState.entitlementKey}
+                  </p>
+                )}
+                {event.previousState.paymentProvider && (
+                  <p className="text-sm">
+                    <span className="font-medium">
+                      {m['billing.subscription_payment_provider_label']()}:
+                    </span>{' '}
+                    {event.previousState.paymentProvider}
                   </p>
                 )}
               </div>
@@ -180,18 +181,20 @@ function EventDetailDialog({ event, open, onOpenChange }: EventDetailDialogProps
                   {getSubscriptionStatusLabels()[event.newState.status as SubscriptionStatus] ||
                     event.newState.status}
                 </p>
-                {event.newState.planId && (
-                  <p className="text-sm">
-                    <span className="font-medium">{m['billing.subscription_plan_label']()}:</span>{' '}
-                    {event.newState.planId}
-                  </p>
-                )}
-                {event.newState.billingPeriod && (
+                {event.newState.entitlementKey && (
                   <p className="text-sm">
                     <span className="font-medium">
-                      {m['billing.subscription_billing_label']()}:
+                      {m['billing.subscription_entitlement_key_label']()}:
                     </span>{' '}
-                    {event.newState.billingPeriod}
+                    {event.newState.entitlementKey}
+                  </p>
+                )}
+                {event.newState.paymentProvider && (
+                  <p className="text-sm">
+                    <span className="font-medium">
+                      {m['billing.subscription_payment_provider_label']()}:
+                    </span>{' '}
+                    {event.newState.paymentProvider}
                   </p>
                 )}
               </div>
@@ -222,12 +225,8 @@ function EventDetailDialog({ event, open, onOpenChange }: EventDetailDialogProps
             </div>
           )}
         </div>
-
-        <div className="mt-6 flex justify-end">
-          <Button onClick={() => onOpenChange(false)}>{m['common.close']()}</Button>
-        </div>
-      </Card>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

@@ -30,7 +30,6 @@ import { Route as RealmIdManageSubscriptionRouteImport } from './routes/$realmId
 import { Route as RealmIdManageSettingsRouteImport } from './routes/$realmId/manage/settings'
 import { Route as RealmIdManageRolesRouteImport } from './routes/$realmId/manage/roles'
 import { Route as RealmIdManageRealmsRouteImport } from './routes/$realmId/manage/realms'
-import { Route as RealmIdManageProductsRouteImport } from './routes/$realmId/manage/products'
 import { Route as RealmIdManagePointsPackagesRouteImport } from './routes/$realmId/manage/points-packages'
 import { Route as RealmIdManagePointsRouteImport } from './routes/$realmId/manage/points'
 import { Route as RealmIdManagePermissionsRouteImport } from './routes/$realmId/manage/permissions'
@@ -57,9 +56,10 @@ import { Route as RealmIdManagePointsFreeStatsRouteImport } from './routes/$real
 import { Route as RealmIdManagePointsConfigsRouteImport } from './routes/$realmId/manage/points/configs'
 import { Route as RealmIdManagePointsPackagesNewRouteImport } from './routes/$realmId/manage/points-packages/new'
 import { Route as RealmIdManageClientAppsNewRouteImport } from './routes/$realmId/manage/client-apps/new'
-import { Route as RealmIdManageBillingPlansRouteImport } from './routes/$realmId/manage/billing/plans'
+import { Route as RealmIdManageBillingSubscriptionsRouteImport } from './routes/$realmId/manage/billing/subscriptions'
 import { Route as RealmIdManageBillingPaymentProvidersRouteImport } from './routes/$realmId/manage/billing/payment-providers'
 import { Route as RealmIdManageBillingInvoicesRouteImport } from './routes/$realmId/manage/billing/invoices'
+import { Route as RealmIdManageBillingEntitlementMappingsRouteImport } from './routes/$realmId/manage/billing/entitlement-mappings'
 import { Route as RealmIdManageApiKeysRevealRouteImport } from './routes/$realmId/manage/api-keys/reveal'
 import { Route as RealmIdManageApiKeysNewRouteImport } from './routes/$realmId/manage/api-keys/new'
 import { Route as RealmIdManagePointsConfigsIndexRouteImport } from './routes/$realmId/manage/points/configs/index'
@@ -69,7 +69,6 @@ import { Route as RealmIdManagePointsConfigsNewRouteImport } from './routes/$rea
 import { Route as RealmIdManagePointsPackagesPackageIdProvidersRouteImport } from './routes/$realmId/manage/points-packages/$packageId/providers'
 import { Route as RealmIdManagePointsPackagesPackageIdEditRouteImport } from './routes/$realmId/manage/points-packages/$packageId.edit'
 import { Route as RealmIdManageClientAppsClientAppIdEditRouteImport } from './routes/$realmId/manage/client-apps/$clientAppId.edit'
-import { Route as RealmIdManageBillingPlansNewRouteImport } from './routes/$realmId/manage/billing/plans/new'
 import { Route as RealmIdManageBillingPaymentProvidersWechatRouteImport } from './routes/$realmId/manage/billing/payment-providers/wechat'
 import { Route as RealmIdManageBillingPaymentProvidersStripeRouteImport } from './routes/$realmId/manage/billing/payment-providers/stripe'
 import { Route as RealmIdManageBillingPaymentProvidersShopifyRouteImport } from './routes/$realmId/manage/billing/payment-providers/shopify'
@@ -77,8 +76,6 @@ import { Route as RealmIdManageBillingPaymentProvidersCreemRouteImport } from '.
 import { Route as RealmIdManageBillingInvoicesNewRouteImport } from './routes/$realmId/manage/billing/invoices/new'
 import { Route as RealmIdManageApiKeysApiKeyIdEditRouteImport } from './routes/$realmId/manage/api-keys/$apiKeyId.edit'
 import { Route as RealmIdManagePointsConfigsConfigIdEditRouteImport } from './routes/$realmId/manage/points/configs/$configId.edit'
-import { Route as RealmIdManageBillingPlansPlanIdProvidersRouteImport } from './routes/$realmId/manage/billing/plans/$planId/providers'
-import { Route as RealmIdManageBillingPlansPlanIdEditRouteImport } from './routes/$realmId/manage/billing/plans/$planId.edit'
 import { Route as RealmIdManageBillingInvoicesInvoiceIdEditRouteImport } from './routes/$realmId/manage/billing/invoices/$invoiceId.edit'
 
 const RealmIdRouteRoute = RealmIdRouteRouteImport.update({
@@ -189,11 +186,6 @@ const RealmIdManageRolesRoute = RealmIdManageRolesRouteImport.update({
 const RealmIdManageRealmsRoute = RealmIdManageRealmsRouteImport.update({
   id: '/realms',
   path: '/realms',
-  getParentRoute: () => RealmIdManageRouteRoute,
-} as any)
-const RealmIdManageProductsRoute = RealmIdManageProductsRouteImport.update({
-  id: '/products',
-  path: '/products',
   getParentRoute: () => RealmIdManageRouteRoute,
 } as any)
 const RealmIdManagePointsPackagesRoute =
@@ -342,10 +334,10 @@ const RealmIdManageClientAppsNewRoute =
     path: '/new',
     getParentRoute: () => RealmIdManageClientAppsRoute,
   } as any)
-const RealmIdManageBillingPlansRoute =
-  RealmIdManageBillingPlansRouteImport.update({
-    id: '/plans',
-    path: '/plans',
+const RealmIdManageBillingSubscriptionsRoute =
+  RealmIdManageBillingSubscriptionsRouteImport.update({
+    id: '/subscriptions',
+    path: '/subscriptions',
     getParentRoute: () => RealmIdManageBillingRoute,
   } as any)
 const RealmIdManageBillingPaymentProvidersRoute =
@@ -358,6 +350,12 @@ const RealmIdManageBillingInvoicesRoute =
   RealmIdManageBillingInvoicesRouteImport.update({
     id: '/invoices',
     path: '/invoices',
+    getParentRoute: () => RealmIdManageBillingRoute,
+  } as any)
+const RealmIdManageBillingEntitlementMappingsRoute =
+  RealmIdManageBillingEntitlementMappingsRouteImport.update({
+    id: '/entitlement-mappings',
+    path: '/entitlement-mappings',
     getParentRoute: () => RealmIdManageBillingRoute,
   } as any)
 const RealmIdManageApiKeysRevealRoute =
@@ -413,12 +411,6 @@ const RealmIdManageClientAppsClientAppIdEditRoute =
     path: '/$clientAppId/edit',
     getParentRoute: () => RealmIdManageClientAppsRoute,
   } as any)
-const RealmIdManageBillingPlansNewRoute =
-  RealmIdManageBillingPlansNewRouteImport.update({
-    id: '/new',
-    path: '/new',
-    getParentRoute: () => RealmIdManageBillingPlansRoute,
-  } as any)
 const RealmIdManageBillingPaymentProvidersWechatRoute =
   RealmIdManageBillingPaymentProvidersWechatRouteImport.update({
     id: '/wechat',
@@ -461,18 +453,6 @@ const RealmIdManagePointsConfigsConfigIdEditRoute =
     path: '/$configId/edit',
     getParentRoute: () => RealmIdManagePointsConfigsRoute,
   } as any)
-const RealmIdManageBillingPlansPlanIdProvidersRoute =
-  RealmIdManageBillingPlansPlanIdProvidersRouteImport.update({
-    id: '/$planId/providers',
-    path: '/$planId/providers',
-    getParentRoute: () => RealmIdManageBillingPlansRoute,
-  } as any)
-const RealmIdManageBillingPlansPlanIdEditRoute =
-  RealmIdManageBillingPlansPlanIdEditRouteImport.update({
-    id: '/$planId/edit',
-    path: '/$planId/edit',
-    getParentRoute: () => RealmIdManageBillingPlansRoute,
-  } as any)
 const RealmIdManageBillingInvoicesInvoiceIdEditRoute =
   RealmIdManageBillingInvoicesInvoiceIdEditRouteImport.update({
     id: '/$invoiceId/edit',
@@ -497,7 +477,6 @@ export interface FileRoutesByFullPath {
   '/$realmId/manage/permissions': typeof RealmIdManagePermissionsRoute
   '/$realmId/manage/points': typeof RealmIdManagePointsRouteWithChildren
   '/$realmId/manage/points-packages': typeof RealmIdManagePointsPackagesRouteWithChildren
-  '/$realmId/manage/products': typeof RealmIdManageProductsRoute
   '/$realmId/manage/realms': typeof RealmIdManageRealmsRoute
   '/$realmId/manage/roles': typeof RealmIdManageRolesRoute
   '/$realmId/manage/settings': typeof RealmIdManageSettingsRoute
@@ -515,9 +494,10 @@ export interface FileRoutesByFullPath {
   '/$realmId/manage/': typeof RealmIdManageIndexRoute
   '/$realmId/manage/api-keys/new': typeof RealmIdManageApiKeysNewRoute
   '/$realmId/manage/api-keys/reveal': typeof RealmIdManageApiKeysRevealRoute
+  '/$realmId/manage/billing/entitlement-mappings': typeof RealmIdManageBillingEntitlementMappingsRoute
   '/$realmId/manage/billing/invoices': typeof RealmIdManageBillingInvoicesRouteWithChildren
   '/$realmId/manage/billing/payment-providers': typeof RealmIdManageBillingPaymentProvidersRouteWithChildren
-  '/$realmId/manage/billing/plans': typeof RealmIdManageBillingPlansRouteWithChildren
+  '/$realmId/manage/billing/subscriptions': typeof RealmIdManageBillingSubscriptionsRoute
   '/$realmId/manage/client-apps/new': typeof RealmIdManageClientAppsNewRoute
   '/$realmId/manage/points-packages/new': typeof RealmIdManagePointsPackagesNewRoute
   '/$realmId/manage/points/configs': typeof RealmIdManagePointsConfigsRouteWithChildren
@@ -540,7 +520,6 @@ export interface FileRoutesByFullPath {
   '/$realmId/manage/billing/payment-providers/shopify': typeof RealmIdManageBillingPaymentProvidersShopifyRoute
   '/$realmId/manage/billing/payment-providers/stripe': typeof RealmIdManageBillingPaymentProvidersStripeRoute
   '/$realmId/manage/billing/payment-providers/wechat': typeof RealmIdManageBillingPaymentProvidersWechatRoute
-  '/$realmId/manage/billing/plans/new': typeof RealmIdManageBillingPlansNewRoute
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/$realmId/manage/points-packages/$packageId/edit': typeof RealmIdManagePointsPackagesPackageIdEditRoute
   '/$realmId/manage/points-packages/$packageId/providers': typeof RealmIdManagePointsPackagesPackageIdProvidersRoute
@@ -549,8 +528,6 @@ export interface FileRoutesByFullPath {
   '/$realmId/manage/billing/payment-providers/': typeof RealmIdManageBillingPaymentProvidersIndexRoute
   '/$realmId/manage/points/configs/': typeof RealmIdManagePointsConfigsIndexRoute
   '/$realmId/manage/billing/invoices/$invoiceId/edit': typeof RealmIdManageBillingInvoicesInvoiceIdEditRoute
-  '/$realmId/manage/billing/plans/$planId/edit': typeof RealmIdManageBillingPlansPlanIdEditRoute
-  '/$realmId/manage/billing/plans/$planId/providers': typeof RealmIdManageBillingPlansPlanIdProvidersRoute
   '/$realmId/manage/points/configs/$configId/edit': typeof RealmIdManagePointsConfigsConfigIdEditRoute
 }
 export interface FileRoutesByTo {
@@ -564,7 +541,6 @@ export interface FileRoutesByTo {
   '/$realmId/device/$userCode': typeof RealmIdDeviceUserCodeRoute
   '/$realmId/manage/permissions': typeof RealmIdManagePermissionsRoute
   '/$realmId/manage/points': typeof RealmIdManagePointsRouteWithChildren
-  '/$realmId/manage/products': typeof RealmIdManageProductsRoute
   '/$realmId/manage/realms': typeof RealmIdManageRealmsRoute
   '/$realmId/manage/roles': typeof RealmIdManageRolesRoute
   '/$realmId/manage/settings': typeof RealmIdManageSettingsRoute
@@ -580,7 +556,8 @@ export interface FileRoutesByTo {
   '/$realmId/manage': typeof RealmIdManageIndexRoute
   '/$realmId/manage/api-keys/new': typeof RealmIdManageApiKeysNewRoute
   '/$realmId/manage/api-keys/reveal': typeof RealmIdManageApiKeysRevealRoute
-  '/$realmId/manage/billing/plans': typeof RealmIdManageBillingPlansRouteWithChildren
+  '/$realmId/manage/billing/entitlement-mappings': typeof RealmIdManageBillingEntitlementMappingsRoute
+  '/$realmId/manage/billing/subscriptions': typeof RealmIdManageBillingSubscriptionsRoute
   '/$realmId/manage/client-apps/new': typeof RealmIdManageClientAppsNewRoute
   '/$realmId/manage/points-packages/new': typeof RealmIdManagePointsPackagesNewRoute
   '/$realmId/manage/points/free-stats': typeof RealmIdManagePointsFreeStatsRoute
@@ -602,7 +579,6 @@ export interface FileRoutesByTo {
   '/$realmId/manage/billing/payment-providers/shopify': typeof RealmIdManageBillingPaymentProvidersShopifyRoute
   '/$realmId/manage/billing/payment-providers/stripe': typeof RealmIdManageBillingPaymentProvidersStripeRoute
   '/$realmId/manage/billing/payment-providers/wechat': typeof RealmIdManageBillingPaymentProvidersWechatRoute
-  '/$realmId/manage/billing/plans/new': typeof RealmIdManageBillingPlansNewRoute
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/$realmId/manage/points-packages/$packageId/edit': typeof RealmIdManagePointsPackagesPackageIdEditRoute
   '/$realmId/manage/points-packages/$packageId/providers': typeof RealmIdManagePointsPackagesPackageIdProvidersRoute
@@ -611,8 +587,6 @@ export interface FileRoutesByTo {
   '/$realmId/manage/billing/payment-providers': typeof RealmIdManageBillingPaymentProvidersIndexRoute
   '/$realmId/manage/points/configs': typeof RealmIdManagePointsConfigsIndexRoute
   '/$realmId/manage/billing/invoices/$invoiceId/edit': typeof RealmIdManageBillingInvoicesInvoiceIdEditRoute
-  '/$realmId/manage/billing/plans/$planId/edit': typeof RealmIdManageBillingPlansPlanIdEditRoute
-  '/$realmId/manage/billing/plans/$planId/providers': typeof RealmIdManageBillingPlansPlanIdProvidersRoute
   '/$realmId/manage/points/configs/$configId/edit': typeof RealmIdManagePointsConfigsConfigIdEditRoute
 }
 export interface FileRoutesById {
@@ -633,7 +607,6 @@ export interface FileRoutesById {
   '/$realmId/manage/permissions': typeof RealmIdManagePermissionsRoute
   '/$realmId/manage/points': typeof RealmIdManagePointsRouteWithChildren
   '/$realmId/manage/points-packages': typeof RealmIdManagePointsPackagesRouteWithChildren
-  '/$realmId/manage/products': typeof RealmIdManageProductsRoute
   '/$realmId/manage/realms': typeof RealmIdManageRealmsRoute
   '/$realmId/manage/roles': typeof RealmIdManageRolesRoute
   '/$realmId/manage/settings': typeof RealmIdManageSettingsRoute
@@ -651,9 +624,10 @@ export interface FileRoutesById {
   '/$realmId/manage/': typeof RealmIdManageIndexRoute
   '/$realmId/manage/api-keys/new': typeof RealmIdManageApiKeysNewRoute
   '/$realmId/manage/api-keys/reveal': typeof RealmIdManageApiKeysRevealRoute
+  '/$realmId/manage/billing/entitlement-mappings': typeof RealmIdManageBillingEntitlementMappingsRoute
   '/$realmId/manage/billing/invoices': typeof RealmIdManageBillingInvoicesRouteWithChildren
   '/$realmId/manage/billing/payment-providers': typeof RealmIdManageBillingPaymentProvidersRouteWithChildren
-  '/$realmId/manage/billing/plans': typeof RealmIdManageBillingPlansRouteWithChildren
+  '/$realmId/manage/billing/subscriptions': typeof RealmIdManageBillingSubscriptionsRoute
   '/$realmId/manage/client-apps/new': typeof RealmIdManageClientAppsNewRoute
   '/$realmId/manage/points-packages/new': typeof RealmIdManagePointsPackagesNewRoute
   '/$realmId/manage/points/configs': typeof RealmIdManagePointsConfigsRouteWithChildren
@@ -676,7 +650,6 @@ export interface FileRoutesById {
   '/$realmId/manage/billing/payment-providers/shopify': typeof RealmIdManageBillingPaymentProvidersShopifyRoute
   '/$realmId/manage/billing/payment-providers/stripe': typeof RealmIdManageBillingPaymentProvidersStripeRoute
   '/$realmId/manage/billing/payment-providers/wechat': typeof RealmIdManageBillingPaymentProvidersWechatRoute
-  '/$realmId/manage/billing/plans/new': typeof RealmIdManageBillingPlansNewRoute
   '/$realmId/manage/client-apps/$clientAppId/edit': typeof RealmIdManageClientAppsClientAppIdEditRoute
   '/$realmId/manage/points-packages/$packageId/edit': typeof RealmIdManagePointsPackagesPackageIdEditRoute
   '/$realmId/manage/points-packages/$packageId/providers': typeof RealmIdManagePointsPackagesPackageIdProvidersRoute
@@ -685,8 +658,6 @@ export interface FileRoutesById {
   '/$realmId/manage/billing/payment-providers/': typeof RealmIdManageBillingPaymentProvidersIndexRoute
   '/$realmId/manage/points/configs/': typeof RealmIdManagePointsConfigsIndexRoute
   '/$realmId/manage/billing/invoices/$invoiceId/edit': typeof RealmIdManageBillingInvoicesInvoiceIdEditRoute
-  '/$realmId/manage/billing/plans/$planId/edit': typeof RealmIdManageBillingPlansPlanIdEditRoute
-  '/$realmId/manage/billing/plans/$planId/providers': typeof RealmIdManageBillingPlansPlanIdProvidersRoute
   '/$realmId/manage/points/configs/$configId/edit': typeof RealmIdManagePointsConfigsConfigIdEditRoute
 }
 export interface FileRouteTypes {
@@ -708,7 +679,6 @@ export interface FileRouteTypes {
     | '/$realmId/manage/permissions'
     | '/$realmId/manage/points'
     | '/$realmId/manage/points-packages'
-    | '/$realmId/manage/products'
     | '/$realmId/manage/realms'
     | '/$realmId/manage/roles'
     | '/$realmId/manage/settings'
@@ -726,9 +696,10 @@ export interface FileRouteTypes {
     | '/$realmId/manage/'
     | '/$realmId/manage/api-keys/new'
     | '/$realmId/manage/api-keys/reveal'
+    | '/$realmId/manage/billing/entitlement-mappings'
     | '/$realmId/manage/billing/invoices'
     | '/$realmId/manage/billing/payment-providers'
-    | '/$realmId/manage/billing/plans'
+    | '/$realmId/manage/billing/subscriptions'
     | '/$realmId/manage/client-apps/new'
     | '/$realmId/manage/points-packages/new'
     | '/$realmId/manage/points/configs'
@@ -751,7 +722,6 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/payment-providers/shopify'
     | '/$realmId/manage/billing/payment-providers/stripe'
     | '/$realmId/manage/billing/payment-providers/wechat'
-    | '/$realmId/manage/billing/plans/new'
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/$realmId/manage/points-packages/$packageId/edit'
     | '/$realmId/manage/points-packages/$packageId/providers'
@@ -760,8 +730,6 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/payment-providers/'
     | '/$realmId/manage/points/configs/'
     | '/$realmId/manage/billing/invoices/$invoiceId/edit'
-    | '/$realmId/manage/billing/plans/$planId/edit'
-    | '/$realmId/manage/billing/plans/$planId/providers'
     | '/$realmId/manage/points/configs/$configId/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -775,7 +743,6 @@ export interface FileRouteTypes {
     | '/$realmId/device/$userCode'
     | '/$realmId/manage/permissions'
     | '/$realmId/manage/points'
-    | '/$realmId/manage/products'
     | '/$realmId/manage/realms'
     | '/$realmId/manage/roles'
     | '/$realmId/manage/settings'
@@ -791,7 +758,8 @@ export interface FileRouteTypes {
     | '/$realmId/manage'
     | '/$realmId/manage/api-keys/new'
     | '/$realmId/manage/api-keys/reveal'
-    | '/$realmId/manage/billing/plans'
+    | '/$realmId/manage/billing/entitlement-mappings'
+    | '/$realmId/manage/billing/subscriptions'
     | '/$realmId/manage/client-apps/new'
     | '/$realmId/manage/points-packages/new'
     | '/$realmId/manage/points/free-stats'
@@ -813,7 +781,6 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/payment-providers/shopify'
     | '/$realmId/manage/billing/payment-providers/stripe'
     | '/$realmId/manage/billing/payment-providers/wechat'
-    | '/$realmId/manage/billing/plans/new'
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/$realmId/manage/points-packages/$packageId/edit'
     | '/$realmId/manage/points-packages/$packageId/providers'
@@ -822,8 +789,6 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/payment-providers'
     | '/$realmId/manage/points/configs'
     | '/$realmId/manage/billing/invoices/$invoiceId/edit'
-    | '/$realmId/manage/billing/plans/$planId/edit'
-    | '/$realmId/manage/billing/plans/$planId/providers'
     | '/$realmId/manage/points/configs/$configId/edit'
   id:
     | '__root__'
@@ -843,7 +808,6 @@ export interface FileRouteTypes {
     | '/$realmId/manage/permissions'
     | '/$realmId/manage/points'
     | '/$realmId/manage/points-packages'
-    | '/$realmId/manage/products'
     | '/$realmId/manage/realms'
     | '/$realmId/manage/roles'
     | '/$realmId/manage/settings'
@@ -861,9 +825,10 @@ export interface FileRouteTypes {
     | '/$realmId/manage/'
     | '/$realmId/manage/api-keys/new'
     | '/$realmId/manage/api-keys/reveal'
+    | '/$realmId/manage/billing/entitlement-mappings'
     | '/$realmId/manage/billing/invoices'
     | '/$realmId/manage/billing/payment-providers'
-    | '/$realmId/manage/billing/plans'
+    | '/$realmId/manage/billing/subscriptions'
     | '/$realmId/manage/client-apps/new'
     | '/$realmId/manage/points-packages/new'
     | '/$realmId/manage/points/configs'
@@ -886,7 +851,6 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/payment-providers/shopify'
     | '/$realmId/manage/billing/payment-providers/stripe'
     | '/$realmId/manage/billing/payment-providers/wechat'
-    | '/$realmId/manage/billing/plans/new'
     | '/$realmId/manage/client-apps/$clientAppId/edit'
     | '/$realmId/manage/points-packages/$packageId/edit'
     | '/$realmId/manage/points-packages/$packageId/providers'
@@ -895,8 +859,6 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/payment-providers/'
     | '/$realmId/manage/points/configs/'
     | '/$realmId/manage/billing/invoices/$invoiceId/edit'
-    | '/$realmId/manage/billing/plans/$planId/edit'
-    | '/$realmId/manage/billing/plans/$planId/providers'
     | '/$realmId/manage/points/configs/$configId/edit'
   fileRoutesById: FileRoutesById
 }
@@ -1052,13 +1014,6 @@ declare module '@tanstack/react-router' {
       path: '/realms'
       fullPath: '/$realmId/manage/realms'
       preLoaderRoute: typeof RealmIdManageRealmsRouteImport
-      parentRoute: typeof RealmIdManageRouteRoute
-    }
-    '/$realmId/manage/products': {
-      id: '/$realmId/manage/products'
-      path: '/products'
-      fullPath: '/$realmId/manage/products'
-      preLoaderRoute: typeof RealmIdManageProductsRouteImport
       parentRoute: typeof RealmIdManageRouteRoute
     }
     '/$realmId/manage/points-packages': {
@@ -1243,11 +1198,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RealmIdManageClientAppsNewRouteImport
       parentRoute: typeof RealmIdManageClientAppsRoute
     }
-    '/$realmId/manage/billing/plans': {
-      id: '/$realmId/manage/billing/plans'
-      path: '/plans'
-      fullPath: '/$realmId/manage/billing/plans'
-      preLoaderRoute: typeof RealmIdManageBillingPlansRouteImport
+    '/$realmId/manage/billing/subscriptions': {
+      id: '/$realmId/manage/billing/subscriptions'
+      path: '/subscriptions'
+      fullPath: '/$realmId/manage/billing/subscriptions'
+      preLoaderRoute: typeof RealmIdManageBillingSubscriptionsRouteImport
       parentRoute: typeof RealmIdManageBillingRoute
     }
     '/$realmId/manage/billing/payment-providers': {
@@ -1262,6 +1217,13 @@ declare module '@tanstack/react-router' {
       path: '/invoices'
       fullPath: '/$realmId/manage/billing/invoices'
       preLoaderRoute: typeof RealmIdManageBillingInvoicesRouteImport
+      parentRoute: typeof RealmIdManageBillingRoute
+    }
+    '/$realmId/manage/billing/entitlement-mappings': {
+      id: '/$realmId/manage/billing/entitlement-mappings'
+      path: '/entitlement-mappings'
+      fullPath: '/$realmId/manage/billing/entitlement-mappings'
+      preLoaderRoute: typeof RealmIdManageBillingEntitlementMappingsRouteImport
       parentRoute: typeof RealmIdManageBillingRoute
     }
     '/$realmId/manage/api-keys/reveal': {
@@ -1327,13 +1289,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RealmIdManageClientAppsClientAppIdEditRouteImport
       parentRoute: typeof RealmIdManageClientAppsRoute
     }
-    '/$realmId/manage/billing/plans/new': {
-      id: '/$realmId/manage/billing/plans/new'
-      path: '/new'
-      fullPath: '/$realmId/manage/billing/plans/new'
-      preLoaderRoute: typeof RealmIdManageBillingPlansNewRouteImport
-      parentRoute: typeof RealmIdManageBillingPlansRoute
-    }
     '/$realmId/manage/billing/payment-providers/wechat': {
       id: '/$realmId/manage/billing/payment-providers/wechat'
       path: '/wechat'
@@ -1382,20 +1337,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/$realmId/manage/points/configs/$configId/edit'
       preLoaderRoute: typeof RealmIdManagePointsConfigsConfigIdEditRouteImport
       parentRoute: typeof RealmIdManagePointsConfigsRoute
-    }
-    '/$realmId/manage/billing/plans/$planId/providers': {
-      id: '/$realmId/manage/billing/plans/$planId/providers'
-      path: '/$planId/providers'
-      fullPath: '/$realmId/manage/billing/plans/$planId/providers'
-      preLoaderRoute: typeof RealmIdManageBillingPlansPlanIdProvidersRouteImport
-      parentRoute: typeof RealmIdManageBillingPlansRoute
-    }
-    '/$realmId/manage/billing/plans/$planId/edit': {
-      id: '/$realmId/manage/billing/plans/$planId/edit'
-      path: '/$planId/edit'
-      fullPath: '/$realmId/manage/billing/plans/$planId/edit'
-      preLoaderRoute: typeof RealmIdManageBillingPlansPlanIdEditRouteImport
-      parentRoute: typeof RealmIdManageBillingPlansRoute
     }
     '/$realmId/manage/billing/invoices/$invoiceId/edit': {
       id: '/$realmId/manage/billing/invoices/$invoiceId/edit'
@@ -1486,39 +1427,23 @@ const RealmIdManageBillingPaymentProvidersRouteWithChildren =
     RealmIdManageBillingPaymentProvidersRouteChildren,
   )
 
-interface RealmIdManageBillingPlansRouteChildren {
-  RealmIdManageBillingPlansNewRoute: typeof RealmIdManageBillingPlansNewRoute
-  RealmIdManageBillingPlansPlanIdEditRoute: typeof RealmIdManageBillingPlansPlanIdEditRoute
-  RealmIdManageBillingPlansPlanIdProvidersRoute: typeof RealmIdManageBillingPlansPlanIdProvidersRoute
-}
-
-const RealmIdManageBillingPlansRouteChildren: RealmIdManageBillingPlansRouteChildren =
-  {
-    RealmIdManageBillingPlansNewRoute: RealmIdManageBillingPlansNewRoute,
-    RealmIdManageBillingPlansPlanIdEditRoute:
-      RealmIdManageBillingPlansPlanIdEditRoute,
-    RealmIdManageBillingPlansPlanIdProvidersRoute:
-      RealmIdManageBillingPlansPlanIdProvidersRoute,
-  }
-
-const RealmIdManageBillingPlansRouteWithChildren =
-  RealmIdManageBillingPlansRoute._addFileChildren(
-    RealmIdManageBillingPlansRouteChildren,
-  )
-
 interface RealmIdManageBillingRouteChildren {
+  RealmIdManageBillingEntitlementMappingsRoute: typeof RealmIdManageBillingEntitlementMappingsRoute
   RealmIdManageBillingInvoicesRoute: typeof RealmIdManageBillingInvoicesRouteWithChildren
   RealmIdManageBillingPaymentProvidersRoute: typeof RealmIdManageBillingPaymentProvidersRouteWithChildren
-  RealmIdManageBillingPlansRoute: typeof RealmIdManageBillingPlansRouteWithChildren
+  RealmIdManageBillingSubscriptionsRoute: typeof RealmIdManageBillingSubscriptionsRoute
   RealmIdManageBillingIndexRoute: typeof RealmIdManageBillingIndexRoute
 }
 
 const RealmIdManageBillingRouteChildren: RealmIdManageBillingRouteChildren = {
+  RealmIdManageBillingEntitlementMappingsRoute:
+    RealmIdManageBillingEntitlementMappingsRoute,
   RealmIdManageBillingInvoicesRoute:
     RealmIdManageBillingInvoicesRouteWithChildren,
   RealmIdManageBillingPaymentProvidersRoute:
     RealmIdManageBillingPaymentProvidersRouteWithChildren,
-  RealmIdManageBillingPlansRoute: RealmIdManageBillingPlansRouteWithChildren,
+  RealmIdManageBillingSubscriptionsRoute:
+    RealmIdManageBillingSubscriptionsRoute,
   RealmIdManageBillingIndexRoute: RealmIdManageBillingIndexRoute,
 }
 
@@ -1610,7 +1535,6 @@ interface RealmIdManageRouteRouteChildren {
   RealmIdManagePermissionsRoute: typeof RealmIdManagePermissionsRoute
   RealmIdManagePointsRoute: typeof RealmIdManagePointsRouteWithChildren
   RealmIdManagePointsPackagesRoute: typeof RealmIdManagePointsPackagesRouteWithChildren
-  RealmIdManageProductsRoute: typeof RealmIdManageProductsRoute
   RealmIdManageRealmsRoute: typeof RealmIdManageRealmsRoute
   RealmIdManageRolesRoute: typeof RealmIdManageRolesRoute
   RealmIdManageSettingsRoute: typeof RealmIdManageSettingsRoute
@@ -1629,7 +1553,6 @@ const RealmIdManageRouteRouteChildren: RealmIdManageRouteRouteChildren = {
   RealmIdManagePointsRoute: RealmIdManagePointsRouteWithChildren,
   RealmIdManagePointsPackagesRoute:
     RealmIdManagePointsPackagesRouteWithChildren,
-  RealmIdManageProductsRoute: RealmIdManageProductsRoute,
   RealmIdManageRealmsRoute: RealmIdManageRealmsRoute,
   RealmIdManageRolesRoute: RealmIdManageRolesRoute,
   RealmIdManageSettingsRoute: RealmIdManageSettingsRoute,

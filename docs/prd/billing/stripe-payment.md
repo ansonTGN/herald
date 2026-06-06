@@ -55,7 +55,7 @@
 - Disputes 处理
 - 多币种转换（使用 Stripe 原生币种支持）
 - 税务计算（使用 Stripe Tax 或后续集成）
-- `payment_intent.payment_failed` 和 `invoice.payment_failed` 事件处理（待实现）
+- `payment_intent.payment_failed` 和 `invoice.payment_failed` 事件处理（✅ RESOLVED — 已在 `stripe_webhook_handlers.rs` 中实现）
 
 ### 2.3 依赖项
 
@@ -90,9 +90,9 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
   - **配置项差异说明**：Account ID 未作为独立 config_key 实现；Environment（test/live）由 API Key 前缀自动决定（`sk_test_*` / `sk_live_*`）；Webhook Endpoint URL 由 `public_base_url` 动态拼接，不作为独立配置项
 - **密钥加密存储**：API Key 必须加密存储在数据库中
 - **密钥脱敏**：Secret Key 查看时显示脱敏信息
-- **编辑时密钥保留**：更新配置时，敏感字段（Secret Key、Webhook Secret）为可选，留空则保留现有值；非敏感字段正常更新（待修复：当前代码缺少密钥保留逻辑，更新时需传完整值）
+- **编辑时密钥保留**：更新配置时，敏感字段（Secret Key、Webhook Secret）为可选，留空则保留现有值；非敏感字段正常更新（✅ RESOLVED — `is_empty_stripe_secret` in `realm_config/mod.rs` L32-36 detects empty secrets and preserves existing values）
 - **权限控制**：只有 Realm Admin 可以查看和更新 Stripe 配置
-- **删除保护**：无活跃订阅时才可删除配置（待修复：当前代码缺少删除前活跃订阅检查）
+- **删除保护**：无活跃订阅时才可删除配置（✅ RESOLVED — `ensure_stripe_config_deletable` in `realm_config/mod.rs` L38-61 checks active subscriptions before allowing deletion）
 - **数据隔离**：不同 Realm 的支付数据完全隔离；用户只能查看自己的支付历史；Realm Admin 只能查看所属 Realm 的支付数据
 
 ### 4.2 关键状态与异常
@@ -111,7 +111,7 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 - **Stripe 配置管理**：每个 Realm 通过通用 `realm_config` API（`/api/realms/{realmId}/config`，ConfigType::Stripe）配置独立 Stripe 账户，支持创建、查看（脱敏）、更新、删除配置
 - **一次性支付处理**：创建 Payment Intent → 获取 Client Secret → 确认支付 → 处理支付结果
 - **订阅支付处理**：创建 Stripe Subscription → 处理首次支付 → 处理续费事件 → 取消订阅
-- **Webhook 事件处理**：验证 Stripe Signature（HMAC-SHA256 + 时间戳重放防护）→ 解析事件类型 → 执行业务逻辑 → 更新本地状态 → 记录事件日志；已实现事件：checkout.session.completed、customer.subscription.created/updated/deleted、charge.refunded；待实现事件：payment_intent.payment_failed、invoice.payment_failed
+- **Webhook 事件处理**：验证 Stripe Signature（HMAC-SHA256 + 时间戳重放防护）→ 解析事件类型 → 执行业务逻辑 → 更新本地状态 → 记录事件日志；已实现事件：checkout.session.completed、customer.subscription.created/updated/deleted、charge.refunded、payment_intent.payment_failed、invoice.payment_failed（✅ RESOLVED — `handle_payment_failed` in `stripe_webhook_handlers.rs` L735-763）
 - **支付历史查询**：用户查看自己的支付历史，Realm Admin 查看 Realm 所有支付记录，支持按状态/时间/金额筛选和分页
 
 ### 5.2 验收目标
@@ -161,10 +161,10 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 
 | 项 | 状态 | 说明 |
 |----|------|------|
-| 密钥保留逻辑 | 待修复 | 更新配置时，敏感字段（api_key、webhook_secret）留空应保留现有值，当前代码缺少此逻辑 |
-| 删除保护 | 待修复 | 删除配置前应检查是否存在活跃订阅，当前代码未实现此检查 |
-| payment_intent.payment_failed 事件 | 待实现 | 支付失败事件尚未处理 |
-| invoice.payment_failed 事件 | 待实现 | 发票支付失败事件尚未处理 |
+| 密钥保留逻辑 | ✅ RESOLVED | `is_empty_stripe_secret` in `realm_config/mod.rs` L32-36 detects empty secrets and preserves existing values |
+| 删除保护 | ✅ RESOLVED | `ensure_stripe_config_deletable` in `realm_config/mod.rs` L38-61 checks active subscriptions before allowing deletion |
+| payment_intent.payment_failed 事件 | ✅ RESOLVED | `handle_payment_failed` in `stripe_webhook_handlers.rs` L735-763 |
+| invoice.payment_failed 事件 | ✅ RESOLVED | Handled by same `handle_payment_failed` in `stripe_webhook_handlers.rs` L735-763 |
 | Account ID 配置项 | 未实现 | Account ID 未作为独立 config_key 实现，如需要可通过 metadata 扩展 |
 | Environment 配置项 | 不需要 | test/live 环境由 API Key 前缀（`sk_test_*` / `sk_live_*`）自动决定，无需独立配置 |
 | Webhook URL 配置项 | 不需要 | 由 `public_base_url` 动态拼接，不作为独立配置项 |

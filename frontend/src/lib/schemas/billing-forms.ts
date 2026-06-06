@@ -2,11 +2,9 @@ import { z } from 'zod'
 import { m } from '@/paraglide/messages'
 
 // Pre-compiled regex patterns for validation (compiled once at module load)
-const PLAN_NAME_REGEX = /^[a-z0-9_-]+$/
 const SHOPIFY_DOMAIN_REGEX = /\.myshopify\.com$/
 const SHOPIFY_ADMIN_TOKEN_REGEX = /^shpat_/
 const SHOPIFY_STOREFRONT_TOKEN_REGEX = /^shp_/
-const URL_SCHEMA = z.string().url()
 
 // Webhook subscription mode constants
 export const WEBHOOK_MODES = {
@@ -15,115 +13,6 @@ export const WEBHOOK_MODES = {
 } as const
 
 export type WebhookMode = (typeof WEBHOOK_MODES)[keyof typeof WEBHOOK_MODES]
-
-// ==================== Product Form Schema ====================
-
-export const productFormSchema = z.object({
-  code: z
-    .string()
-    .min(3, { error: () => m['billing.product_code_min_length']() })
-    .max(50, { error: () => m['billing.product_code_max_length']() })
-    .regex(PLAN_NAME_REGEX, { error: () => m['billing.product_code_format']() }),
-  title: z
-    .string()
-    .min(1, { error: () => m['billing.title_required']() })
-    .max(100, { error: () => m['billing.title_max_length']() }),
-  description: z
-    .string()
-    .max(500, { error: () => m['billing.description_max_length']() })
-    .optional(),
-  enabled: z.boolean().default(true),
-})
-
-export type ProductFormData = z.infer<typeof productFormSchema>
-
-export function getProductDefaults(product?: Partial<ProductFormData>): ProductFormData {
-  return {
-    code: '',
-    title: '',
-    description: '',
-    enabled: true,
-    ...product,
-  } as ProductFormData
-}
-
-// ==================== Subscription Plan Form Schema ====================
-
-export const subscriptionPlanSchema = z.object({
-  productId: z.string().min(1, { error: () => m['billing.product_required']() }),
-  name: z
-    .string()
-    .min(1, { error: () => m['billing.plan_name_required']() })
-    .max(50, { error: () => m['billing.plan_name_max_length']() })
-    .regex(PLAN_NAME_REGEX, { error: () => m['billing.plan_name_format']() }),
-  title: z
-    .string()
-    .min(1, { error: () => m['billing.title_required']() })
-    .max(100, { error: () => m['billing.title_max_length']() }),
-  description: z
-    .string()
-    .max(500, { error: () => m['billing.description_max_length']() })
-    .optional(),
-  type: z.enum(['monthly', 'yearly']),
-  price: z
-    .number()
-    .min(0.01, { error: () => m['billing.price_min']() })
-    .max(99999.99, { error: () => m['billing.price_max']() })
-    .transform((val) => Math.round(val * 100)),
-  currency: z
-    .string()
-    .min(3, { error: () => m['billing.currency_min_length']() })
-    .max(3, { error: () => m['billing.currency_max_length']() }),
-  checkoutUrl: z
-    .string()
-    .max(2048, { error: () => m['billing.checkout_url_max_length']() })
-    .optional()
-    .transform((val) => (val === '' ? undefined : val))
-    .refine((val) => !val || URL_SCHEMA.safeParse(val).success, {
-      error: () => m['billing.checkout_url_invalid'](),
-    }),
-  trialDays: z
-    .number()
-    .min(0, { error: () => m['billing.trial_days_min']() })
-    .max(365, { error: () => m['billing.trial_days_max']() })
-    .default(0),
-  sortOrder: z
-    .number()
-    .min(0, { error: () => m['billing.sort_order_min']() })
-    .default(0),
-  active: z.boolean().default(true),
-})
-
-export type SubscriptionPlanFormData = z.infer<typeof subscriptionPlanSchema>
-
-export function getSubscriptionPlanDefaults(plan?: {
-  productId?: string
-  name?: string
-  title?: string
-  description?: string | null
-  type?: string
-  price?: number
-  currency?: string
-  checkoutUrl?: string | null
-  trialDays?: number
-  sortOrder?: number
-  active?: boolean
-}): SubscriptionPlanFormData {
-  return {
-    productId: '',
-    name: '',
-    title: '',
-    description: '',
-    type: 'monthly',
-    currency: 'USD',
-    checkoutUrl: undefined,
-    trialDays: 0,
-    sortOrder: 0,
-    active: true,
-    ...plan,
-    price: plan?.price != null ? plan.price / 100 : undefined,
-  } as SubscriptionPlanFormData
-}
 
 // ==================== Shopify Config Schema ====================
 
@@ -224,38 +113,6 @@ export function getClaimSubscriptionDefaults(): ClaimSubscriptionForm {
   } as ClaimSubscriptionForm
 }
 
-// ==================== Provider Mapping Schema ====================
-
-export const providerMappingSchema = z.object({
-  paymentProvider: z.string().min(1, { error: () => m['billing.provider_mapping_required']() }),
-  externalProductId: z
-    .string()
-    .min(1, { error: () => m['billing.external_product_id_required']() })
-    .max(255, { error: () => m['billing.external_product_id_max_length']() }),
-  externalPriceId: z
-    .string()
-    .max(255, { error: () => m['billing.external_price_id_max_length']() })
-    .optional(),
-  enabled: z.boolean().optional().default(true),
-})
-
-export type ProviderMappingFormData = z.infer<typeof providerMappingSchema>
-
-export function getProviderMappingDefaults(mapping?: {
-  paymentProvider?: string
-  externalProductId?: string
-  externalPriceId?: string | null
-  enabled?: boolean
-}): ProviderMappingFormData {
-  return {
-    paymentProvider: '',
-    externalProductId: '',
-    externalPriceId: '',
-    enabled: true,
-    ...mapping,
-  } as ProviderMappingFormData
-}
-
 // ==================== WeChat Config Schema ====================
 
 export const wechatConfigSchema = z.object({
@@ -329,4 +186,44 @@ export function getWechatConfigDefaults(config?: Partial<WechatConfigForm>): Wec
     notifyUrl: '',
     ...config,
   } as WechatConfigForm
+}
+
+// ==================== Entitlement Mapping Update Schema ====================
+
+const ENTITLEMENT_KEY_REGEX = /^[a-z0-9-]{1,64}$/
+
+export const entitlementMappingUpdateSchema = z.object({
+  entitlementKey: z
+    .string()
+    .min(1, { error: () => m['billing.entitlement_key_required']() })
+    .regex(ENTITLEMENT_KEY_REGEX, { error: () => m['billing.entitlement_key_format']() }),
+
+  enabled: z.boolean().default(false),
+
+  pointsPerPeriod: z.number().int().min(0).optional().nullable(),
+
+  grantPeriodType: z.enum(['once', 'daily', 'weekly', 'monthly']).optional().nullable(),
+
+  validityDays: z.number().int().min(1).optional().nullable(),
+
+  grantOnSubscribe: z.boolean().default(false),
+
+  maxPeriods: z.number().int().min(1).optional().nullable(),
+})
+
+export type EntitlementMappingUpdateFormData = z.infer<typeof entitlementMappingUpdateSchema>
+
+export function getEntitlementMappingUpdateDefaults(
+  config?: Partial<EntitlementMappingUpdateFormData>
+): EntitlementMappingUpdateFormData {
+  return {
+    entitlementKey: '',
+    enabled: false,
+    pointsPerPeriod: null,
+    grantPeriodType: null,
+    validityDays: null,
+    grantOnSubscribe: false,
+    maxPeriods: null,
+    ...config,
+  } as EntitlementMappingUpdateFormData
 }

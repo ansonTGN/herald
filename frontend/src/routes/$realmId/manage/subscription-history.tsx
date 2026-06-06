@@ -5,11 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SubscriptionHistoryList } from '@/components/billing/subscription-history-list'
 import { SubscriptionHistoryFilter } from '@/components/billing/subscription-history-filter'
-import {
-  subscriptionPlansQueryOptions,
-  globalSubscriptionHistoryQueryOptions,
-  requireFeature,
-} from '@/data/query-options'
+import { globalSubscriptionHistoryQueryOptions, requireFeature } from '@/data/query-options'
 import type { HistoryFilters, SubscriptionHistoryEventWithUser } from '@/types/billing'
 import { toast } from 'sonner'
 import { PageHeader, ListPagination } from '@/components/shared'
@@ -35,10 +31,6 @@ function SubscriptionHistoryRoute() {
   })
   const [page, setPage] = useState(1)
   const pageSize = 20
-
-  // Query plans for filter dropdown
-  const { data: plansData } = useQuery(subscriptionPlansQueryOptions(realmId))
-  const plans = plansData?.items ?? []
 
   // Query subscription history
   const {
@@ -127,7 +119,6 @@ function SubscriptionHistoryRoute() {
         filters={filters}
         onFiltersChange={handleFiltersChange}
         onReset={handleResetFilters}
-        plans={plans?.map((plan) => ({ id: plan.id, name: plan.title || plan.id }))}
         loading={isLoading}
       />
 

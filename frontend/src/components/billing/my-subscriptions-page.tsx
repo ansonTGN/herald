@@ -15,6 +15,7 @@ import {
   type SubscriptionDetailResponse,
 } from '@/lib/api-generated'
 import type { ClaimSubscriptionForm } from '@/lib/schemas/billing-forms'
+import { formatProviderName } from '@/components/billing/format-provider-name'
 import { m } from '@/paraglide/messages'
 
 interface MySubscriptionsPageProps {
@@ -229,7 +230,7 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
                 <div className="flex items-start justify-between">
                   <div>
                     <CardTitle className="text-lg">
-                      {subscription.plan?.title ?? subscription.plan?.name ?? 'Subscription'}
+                      {subscription.entitlementKey ?? 'Subscription'}
                     </CardTitle>
                     <CardDescription className="mt-1">{clientApp.name}</CardDescription>
                   </div>
@@ -250,9 +251,11 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
 
                 <div>
                   <div className="text-sm text-muted-foreground">
-                    {m['billing.my_subscriptions_billing_period']()}
+                    {m['billing.subscription_payment_provider']()}
                   </div>
-                  <div className="text-2xl font-bold">{subscription.billingPeriod}</div>
+                  <div className="text-2xl font-bold">
+                    {formatProviderName(subscription.paymentProvider ?? '')}
+                  </div>
                 </div>
 
                 <Button asChild variant="outline" size="sm" className="w-full">

@@ -201,6 +201,19 @@ pub struct EntitlementMapping {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+impl EntitlementMapping {
+    /// Returns the billing kind string for use in provider metadata.
+    ///
+    /// Maps billing_type to the PRD-defined values: "subscription" for recurring,
+    /// "points_package" for one-time. Defaults to "subscription" when unset.
+    pub fn billing_kind(&self) -> String {
+        match self.billing_type {
+            Some(BillingType::OneTime) => "points_package".to_string(),
+            _ => "subscription".to_string(),
+        }
+    }
+}
+
 /// Billing type enum for entitlement mappings
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

@@ -621,6 +621,7 @@ pub async fn create_checkout_session(
                         "herald_entitlement_key".to_string(),
                         entitlement_key.clone(),
                     );
+                    map.insert("herald_billing_kind".to_string(), mapping.billing_kind());
                     map
                 }),
             };
@@ -661,6 +662,7 @@ pub async fn create_checkout_session(
                         "herald_entitlement_key".to_string(),
                         entitlement_key.clone(),
                     );
+                    map.insert("herald_billing_kind".to_string(), mapping.billing_kind());
                     Some(map)
                 },
             };

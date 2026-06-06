@@ -99,8 +99,12 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
                       value={event.previousState.status}
                     />
                     <StateDetail
-                      label={m['billing.subscription_state_detail_tier']()}
-                      value={event.previousState.tier}
+                      label={m['billing.subscription_entitlement_key_label']()}
+                      value={event.previousState.entitlementKey}
+                    />
+                    <StateDetail
+                      label={m['billing.subscription_payment_provider_label']()}
+                      value={event.previousState.paymentProvider}
                     />
                     {event.previousState.currentPeriodStart &&
                       event.previousState.currentPeriodEnd && (
@@ -127,12 +131,18 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
                       value={event.newState.status}
                     />
                     <StateDetail
-                      label={m['billing.subscription_state_detail_tier']()}
-                      value={event.newState.tier}
+                      label={m['billing.subscription_entitlement_key_label']()}
+                      value={event.newState.entitlementKey}
+                    />
+                    <StateDetail
+                      label={m['billing.subscription_payment_provider_label']()}
+                      value={event.newState.paymentProvider}
                     />
                     {event.newState.currentPeriodStart && event.newState.currentPeriodEnd && (
                       <div>
-                        <span className="text-muted-foreground">Period: </span>
+                        <span className="text-muted-foreground">
+                          {m['billing.subscription_state_detail_period']()}:{' '}
+                        </span>
                         {new Date(event.newState.currentPeriodStart).toLocaleDateString()} -{' '}
                         {new Date(event.newState.currentPeriodEnd).toLocaleDateString()}
                       </div>
@@ -141,26 +151,27 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
                 </div>
               )}
 
-              {/* Plan change indicator */}
-              {event.changes && (event.changes.previousPlanId || event.changes.newPlanId) && (
-                <div className="flex items-center gap-2 text-sm pt-2 border-t border-border/50">
-                  {event.changes.previousPlanId && event.changes.newPlanId ? (
-                    <>
-                      <ArrowUp className="h-4 w-4 text-blue-500" />
-                      <span className="text-muted-foreground">
-                        {m['billing.subscription_plan_changed']()}
-                      </span>
-                    </>
-                  ) : event.changes.newPlanId ? (
-                    <>
-                      <ArrowUp className="h-4 w-4 text-blue-500" />
-                      <span className="text-muted-foreground">
-                        {m['billing.subscription_plan_assigned']()}
-                      </span>
-                    </>
-                  ) : null}
-                </div>
-              )}
+              {/* Entitlement change indicator */}
+              {event.changes &&
+                (event.changes.previousEntitlementKey || event.changes.newEntitlementKey) && (
+                  <div className="flex items-center gap-2 text-sm pt-2 border-t border-border/50">
+                    {event.changes.previousEntitlementKey && event.changes.newEntitlementKey ? (
+                      <>
+                        <ArrowUp className="h-4 w-4 text-blue-500" />
+                        <span className="text-muted-foreground">
+                          {m['billing.subscription_plan_changed']()}
+                        </span>
+                      </>
+                    ) : event.changes.newEntitlementKey ? (
+                      <>
+                        <ArrowUp className="h-4 w-4 text-blue-500" />
+                        <span className="text-muted-foreground">
+                          {m['billing.subscription_plan_assigned']()}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                )}
             </div>
           )}
         </div>

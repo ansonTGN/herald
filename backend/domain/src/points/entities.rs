@@ -255,17 +255,19 @@ impl CreditType {
         matches!(self, CreditType::GrantedCredit)
     }
 
-    /// Returns the (topup_delta, subscription_delta, granted_delta) balance deltas for this credit type.
+    /// Returns the (topup_delta, subscription_delta, granted_delta, registration_delta, free_periodic_delta)
+    /// balance deltas for this credit type.
     ///
     /// Subscription credits count toward subscription balance, granted credits toward granted balance,
-    /// and all other credits count toward topup balance.
-    pub fn wallet_balance_delta(&self, amount: i64) -> (i64, i64, i64) {
+    /// registration credits toward registration balance, free periodic credits toward free_periodic balance,
+    /// and topup credits toward topup balance.
+    pub fn wallet_balance_delta(&self, amount: i64) -> (i64, i64, i64, i64, i64) {
         match self {
-            CreditType::SubscriptionCredit => (0, amount, 0),
-            CreditType::GrantedCredit => (0, 0, amount),
-            CreditType::TopupCredit
-            | CreditType::RegistrationCredit
-            | CreditType::FreePeriodicCredit => (amount, 0, 0),
+            CreditType::TopupCredit => (amount, 0, 0, 0, 0),
+            CreditType::SubscriptionCredit => (0, amount, 0, 0, 0),
+            CreditType::GrantedCredit => (0, 0, amount, 0, 0),
+            CreditType::RegistrationCredit => (0, 0, 0, amount, 0),
+            CreditType::FreePeriodicCredit => (0, 0, 0, 0, amount),
         }
     }
 }
@@ -523,10 +525,12 @@ pub struct PointsWallet {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
-    pub total_balance: i64, // Computed: topup_balance + subscription_balance + granted_balance
+    pub total_balance: i64, // Computed: topup_balance + subscription_balance + granted_balance + registration_balance + free_periodic_balance
     pub topup_balance: i64,
     pub subscription_balance: i64,
     pub granted_balance: i64,
+    pub registration_balance: i64,
+    pub free_periodic_balance: i64,
     pub total_topup_granted: i64,
     pub total_subscription_granted: i64,
     pub total_recharged: i64,
@@ -564,6 +568,8 @@ pub struct PointsBalance {
     pub topup_balance: i64,
     pub subscription_balance: i64,
     pub granted_balance: i64,
+    pub registration_balance: i64,
+    pub free_periodic_balance: i64,
     pub total_recharged: i64,
     pub total_consumed: i64,
     pub unit: String,
@@ -578,6 +584,8 @@ impl From<PointsWallet> for PointsBalance {
             topup_balance: account.topup_balance,
             subscription_balance: account.subscription_balance,
             granted_balance: account.granted_balance,
+            registration_balance: account.registration_balance,
+            free_periodic_balance: account.free_periodic_balance,
             total_recharged: account.total_recharged,
             total_consumed: account.total_consumed,
             unit: "points".to_string(),

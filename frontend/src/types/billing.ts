@@ -48,14 +48,10 @@ export interface SubscriptionHistoryEvent {
 // Change details for subscription modifications
 export interface SubscriptionChanges {
   changedFields?: string[]
-  previousPlanId?: string
-  newPlanId?: string
+  previousEntitlementKey?: string
+  newEntitlementKey?: string
   previousStatus?: string
   newStatus?: string
-  previousTier?: string
-  newTier?: string
-  previousBillingPeriod?: string
-  newBillingPeriod?: string
 }
 
 // Subscription state snapshot
@@ -63,10 +59,10 @@ export interface SubscriptionState {
   id: string
   realmId: string
   status: SubscriptionStatus
-  tier: string
-  planId?: string
+  entitlementKey: string
+  paymentProvider?: string
+  externalPriceId?: string
   clientAppId?: string
-  billingPeriod: string
   currentPeriodStart?: string
   currentPeriodEnd?: string
   cancelAtPeriodEnd: boolean
@@ -79,22 +75,17 @@ export interface UserInfo {
   email: string
 }
 
-// Plan summary in subscription history
-export interface PlanSummary {
-  id: string
-  title: string
-  description?: string
-  price?: number
-  currency?: string
-  interval?: string
-  tier?: string
+// Entitlement summary in subscription history
+export interface EntitlementSummary {
+  entitlementKey: string
+  paymentProvider: string
 }
 
 // Subscription summary in history
 export interface SubscriptionSummary {
   id: string
   status: SubscriptionStatus
-  plan?: PlanSummary
+  entitlement?: EntitlementSummary
 }
 
 // Subscription history event with user and subscription details
@@ -106,7 +97,7 @@ export interface SubscriptionHistoryEventWithUser extends SubscriptionHistoryEve
 // Filter conditions for history queries
 export interface HistoryFilters {
   userId?: string
-  planId?: string
+  entitlementKey?: string
   eventType?: SubscriptionHistoryEventType
   subscriptionStatus?: SubscriptionStatus
   fromDate?: string

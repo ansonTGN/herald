@@ -69,11 +69,10 @@
 - 不统一所有支付平台的支付时序（Shopify 不进入 PaymentAttempt）
 - 不引入第二套订阅聚合系统
 - 不改变现有的积分发放逻辑（subscription_credit 和 topup_credit 分离）
-- 不改变 Product/Plan 的现有编目结构
 
 ### 2.3 依赖项
 
-- **Product/Plan 编目系统**：积分包和订阅套餐都属于商品编目系统
+- **Entitlement 映射系统**：通过 `entitlement_key` 和 `provider_entitlement_mappings` 标识订阅权益和支付方商品映射（详见 `docs/prd/billing/product_reduce.md`）
 - **积分系统**：积分包履约时发放 topup_credit；订阅履约不直接发放 subscription_credit，积分发放延迟到后续支付平台（Stripe/Wechat）webhook 事件触发
 - **订阅系统**：订阅购买时创建或更新 Subscription
 - **支付平台配置**：已配置 Wechat/Stripe/Creem/Shopify 等支付平台

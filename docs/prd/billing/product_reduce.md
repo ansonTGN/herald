@@ -162,7 +162,7 @@ Herald 当前维护本地 Product、SubscriptionPlan、Subscription 三层目录
 |------|---------|------|
 | 查看 Entitlement 映射 | `billing.view` | Realm Admin |
 | 触发 Provider 同步 | `billing.manage` | Realm Admin |
-| 查看/禁用映射 | `billing.manage` | Realm Admin |
+| 禁用/启用 Entitlement 映射 | `billing.manage` | Realm Admin |
 | 查看订阅投影 | `billing.view` | Realm Admin |
 | SDK 查询订阅状态 | 认证 + SDK 凭证 | Third-Party App |
 

@@ -955,6 +955,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         let rows = sqlx::query_as::<_, InvoiceRow>(&format!(
             "SELECT {cols} FROM invoice
              WHERE status = 'issued'
+               AND provider = 'manual'
                AND due_date < $1
              ORDER BY due_date ASC
              LIMIT $2",

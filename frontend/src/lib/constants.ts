@@ -47,14 +47,7 @@ export const QUERY_KEYS = {
   TURNSTILE_STATUS: 'turnstile-status',
   USER_SUBSCRIPTIONS: 'user-subscriptions',
   SUBSCRIPTION_DETAILS: 'subscription-details',
-  BILLING_PLANS: 'subscription-plans',
-  BILLING_PLAN: 'subscription-plan',
-  BILLING_PRODUCTS: 'billing-products',
-  BILLING_PRODUCT: 'billing-product',
-  BILLING_PRODUCT_PLANS: 'billing-product-plans',
-  PLAN_PROVIDERS: 'subscription-plan-providers',
   SUBSCRIPTION: 'subscription',
-  PLAN_ASSIGNMENTS: 'subscription-plan-assignments',
   SUBSCRIPTION_HISTORY: 'subscription-history',
   GLOBAL_SUBSCRIPTION_HISTORY: 'global-subscription-history',
   POINTS_WALLETS: 'points-wallets',
@@ -76,6 +69,10 @@ export const QUERY_KEYS = {
   API_KEYS: 'api-keys',
   API_KEY: 'api-key',
   API_KEY_ROLES: 'api-key-roles',
+  ENTITLEMENT_MAPPINGS: 'entitlement-mappings',
+  ENTITLEMENT_MAPPING: 'entitlement-mapping',
+  ADMIN_SUBSCRIPTIONS: 'admin-subscriptions',
+  ADMIN_SUBSCRIPTION: 'admin-subscription',
 } as const
 
 /**

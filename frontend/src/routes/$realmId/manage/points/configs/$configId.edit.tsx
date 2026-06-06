@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { lazy, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
-import { pointsPlanConfigsQueryOptions, subscriptionPlansQueryOptions } from '@/data/query-options'
+import { pointsPlanConfigsQueryOptions } from '@/data/query-options'
 
 const PointsPlanConfigFormPage = lazy(() =>
   import('@/components/points/configs/PointsPlanConfigFormPage').then((m) => ({
@@ -17,7 +17,6 @@ export const Route = createFileRoute('/$realmId/manage/points/configs/$configId/
 function EditPointsPlanConfigPage() {
   const { realmId, configId } = Route.useParams()
   const { data: configs } = useSuspenseQuery(pointsPlanConfigsQueryOptions(realmId))
-  const { data: plansData } = useSuspenseQuery(subscriptionPlansQueryOptions(realmId))
   const config = configs.find((item) => item.configId === configId)
 
   return (
@@ -28,12 +27,7 @@ function EditPointsPlanConfigPage() {
         </div>
       }
     >
-      <PointsPlanConfigFormPage
-        mode="edit"
-        realmId={realmId}
-        config={config}
-        plans={plansData?.items ?? []}
-      />
+      <PointsPlanConfigFormPage mode="edit" realmId={realmId} config={config} plans={[]} />
     </Suspense>
   )
 }

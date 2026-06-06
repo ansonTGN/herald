@@ -77,7 +77,7 @@ export function SubscriptionSelector({
                         {m['billing.subscription_plan_label_colon']()}
                       </span>
                       <span className="font-medium">
-                        {subscription.plan?.title || m['billing.subscription_none']()}
+                        {subscription.entitlementKey || m['billing.subscription_none']()}
                       </span>
                     </div>
                     <div className="text-xs text-muted-foreground">

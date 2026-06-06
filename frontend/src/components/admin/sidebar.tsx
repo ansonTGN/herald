@@ -55,9 +55,9 @@ export function Sidebar() {
       roles: m['nav.roles'],
       'api-keys': m['nav.api_keys'],
       'products-payments': m['nav.products_payments'],
-      products: m['nav.products'],
       'payment-providers': m['nav.payment_providers'],
       'subscription-plans': m['nav.subscription_plans'],
+      'entitlement-mappings': m['nav.entitlement_mappings'],
       'points-packages': m['nav.points_packages'],
       'points-rules': m['nav.points_rules'],
       'points-free-stats': m['nav.free_stats'],
@@ -150,14 +150,6 @@ export function Sidebar() {
         permission: null,
         children: [
           {
-            id: 'products',
-            name: 'Products',
-            path: `/${realmId}/manage/products`,
-            icon: Briefcase,
-            permission: PERMISSION.BILLING_VIEW,
-            visible: adminFeatures?.productsVisible ?? true,
-          },
-          {
             id: 'payment-providers',
             name: 'Payment Providers',
             path: `/${realmId}/manage/billing/payment-providers`,
@@ -166,12 +158,12 @@ export function Sidebar() {
             visible: adminFeatures?.billingConfigVisible ?? true,
           },
           {
-            id: 'subscription-plans',
-            name: 'Subscription Plans',
-            path: `/${realmId}/manage/billing`,
+            id: 'entitlement-mappings',
+            name: 'Entitlement Mappings',
+            path: `/${realmId}/manage/billing/entitlement-mappings`,
             icon: CreditCard,
             permission: PERMISSION.BILLING_VIEW,
-            visible: adminFeatures?.plansVisible ?? true,
+            visible: adminFeatures?.entitlementMappingsVisible ?? true,
           },
           {
             id: 'points-packages',

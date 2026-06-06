@@ -1,33 +1,21 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import { userEvent } from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StripeCheckoutButton } from '../stripe-checkout-button'
 import { useStripeCheckout } from '@/hooks/use-stripe-checkout'
-import type { SubscriptionPlanResponse } from '@/lib/api-generated'
 
 vi.mock('@/hooks/use-stripe-checkout')
 
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}))
+
 describe('Stripe Integration', () => {
   let queryClient: QueryClient
-
-  const mockStripePlan: SubscriptionPlanResponse = {
-    id: 'plan-stripe-123',
-    name: 'pro-monthly',
-    title: 'Pro Monthly',
-    description: 'Pro plan with Stripe',
-    type: 'monthly',
-    price: 2000,
-    currency: 'USD',
-    realmId: 'realm-1',
-    productId: 'product-1',
-    sortOrder: 1,
-    active: true,
-    trialDays: 0,
-    checkoutUrl: null,
-    paymentProviders: [{ id: 'pp-1', paymentProvider: 'stripe', enabled: true }],
-    createdAt: '2025-01-01T00:00:00Z',
-    updatedAt: '2025-01-01T00:00:00Z',
-  }
 
   beforeEach(() => {
     queryClient = new QueryClient({
@@ -54,18 +42,54 @@ describe('Stripe Integration', () => {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   )
 
-  test('does not show checkout button when Stripe provider is disabled', () => {
-    const disabledPlan: SubscriptionPlanResponse = {
-      ...mockStripePlan,
-      paymentProviders: [{ id: 'pp-1', paymentProvider: 'stripe', enabled: false }],
-    }
-
+  test('renders checkout button with entitlement key', () => {
     render(
-      <StripeCheckoutButton realmId="test-realm" clientAppId="test-app" plan={disabledPlan} />,
+      <StripeCheckoutButton
+        realmId="test-realm"
+        clientAppId="test-app"
+        entitlementKey="pro-monthly"
+      />,
       { wrapper }
     )
 
-    const button = screen.queryByTestId('plan-stripe-checkout-button-plan-stripe-123')
-    expect(button).not.toBeInTheDocument()
+    expect(screen.getByTestId('stripe-checkout-button-pro-monthly')).toBeInTheDocument()
+  })
+
+  test('calls mutation with correct payload on click', async () => {
+    const user = userEvent.setup()
+    const mutateAsync = vi
+      .fn()
+      .mockResolvedValue({ checkoutUrl: 'https://checkout.stripe.com/pay' })
+
+    vi.mocked(useStripeCheckout).mockReturnValue({
+      mutateAsync,
+      mutate: vi.fn(),
+      isPending: false,
+      isSuccess: false,
+      isError: false,
+      error: null,
+      data: null,
+      reset: vi.fn(),
+    })
+
+    render(
+      <StripeCheckoutButton
+        realmId="test-realm"
+        clientAppId="test-app"
+        entitlementKey="pro-monthly"
+      />,
+      { wrapper }
+    )
+
+    await user.click(screen.getByTestId('stripe-checkout-button-pro-monthly'))
+
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith({
+        realmId: 'test-realm',
+        clientAppId: 'test-app',
+        entitlementKey: 'pro-monthly',
+        paymentProvider: 'stripe',
+      })
+    })
   })
 })

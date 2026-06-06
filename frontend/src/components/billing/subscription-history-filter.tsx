@@ -51,7 +51,7 @@ const sortOrderEnum = z.enum(['asc', 'desc'])
 
 const historyFilterSchema = z.object({
   userId: z.string().optional(),
-  planId: z.string().optional(),
+  entitlementKey: z.string().optional(),
   eventType: optionalStringEnum(eventTypeEnum) as z.ZodType<
     SubscriptionHistoryEventType | undefined
   >,
@@ -68,7 +68,6 @@ interface SubscriptionHistoryFilterProps {
   filters: HistoryFilters
   onFiltersChange: (filters: HistoryFilters) => void
   onReset: () => void
-  plans?: Array<{ id: string; name: string }>
   loading?: boolean
   className?: string
 }
@@ -77,7 +76,6 @@ export function SubscriptionHistoryFilter({
   filters,
   onFiltersChange,
   onReset,
-  plans,
   loading,
   className,
 }: SubscriptionHistoryFilterProps) {
@@ -85,7 +83,7 @@ export function SubscriptionHistoryFilter({
     schema: historyFilterSchema,
     defaultValues: {
       userId: filters.userId || '',
-      planId: filters.planId || '',
+      entitlementKey: filters.entitlementKey || '',
       eventType: filters.eventType,
       subscriptionStatus: filters.subscriptionStatus,
       fromDate: filters.fromDate || '',
@@ -96,7 +94,7 @@ export function SubscriptionHistoryFilter({
     onSubmit: async ({ value }) => {
       const newFilters: HistoryFilters = {
         userId: value.userId || undefined,
-        planId: value.planId || undefined,
+        entitlementKey: value.entitlementKey || undefined,
         eventType: value.eventType,
         subscriptionStatus: value.subscriptionStatus,
         fromDate: value.fromDate ? toUtcDateRangeBoundary(value.fromDate, 'start') : undefined,
@@ -147,37 +145,24 @@ export function SubscriptionHistoryFilter({
                   </form.Field>
                 </div>
 
-                {/* Plan */}
+                {/* Entitlement Key */}
                 <div className="space-y-1">
-                  <form.Field name="planId">
+                  <form.Field name="entitlementKey">
                     {(field) => (
                       <>
                         <Label htmlFor={field.name}>
-                          {m['billing.subscription_filter_plan']()}
+                          {m['billing.subscription_filter_entitlement_key']()}
                         </Label>
-                        <Select
+                        <Input
+                          id={field.name}
+                          type="text"
                           value={field.state.value ?? ''}
-                          onValueChange={(value) =>
-                            field.handleChange(value === ALL_FILTER_VALUE ? '' : value)
-                          }
-                          data-testid="filter-plan"
-                        >
-                          <SelectTrigger id={field.name}>
-                            <SelectValue
-                              placeholder={m['billing.subscription_filter_select_plan']()}
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={ALL_FILTER_VALUE}>
-                              {m['billing.subscription_filter_all_plans']()}
-                            </SelectItem>
-                            {plans?.map((plan) => (
-                              <SelectItem key={plan.id} value={plan.id}>
-                                {plan.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          onChange={(e) => field.handleChange(e.target.value)}
+                          placeholder={m[
+                            'billing.subscription_filter_entitlement_key_placeholder'
+                          ]()}
+                          data-testid="filter-entitlement-key"
+                        />
                       </>
                     )}
                   </form.Field>

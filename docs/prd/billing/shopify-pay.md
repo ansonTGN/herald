@@ -146,7 +146,7 @@ Shopify Pay 集成是 Herald 系统支付平台选项之一，与 Creem（模拟
 - **接口能力范围**：Shopify webhook 处理的能力边界；不在 PRD 中列出端点、schema 或状态码细节
 - **访问控制原则**：必须遵守 realm 隔离、webhook 验证、幂等处理和事件顺序约束
 - **Webhook 事件主题**：subscription_contracts/create、subscription_contracts/update、subscription_billing_attempts/success、subscription_billing_attempts/failure、refunds/create
-- **待实现事件主题**：orders/paid（用于一次性订单支付确认）、app/uninstalled（用于应用卸载时清理配置和关联数据）
+- **待实现事件主题**：~~orders/paid（用于一次性订单支付确认）~~ ✅ RESOLVED — implemented in `shopify_webhook_handlers.rs` L134-136/L144-207；~~app/uninstalled（用于应用卸载时清理配置和关联数据）~~ ✅ RESOLVED — implemented in `shopify_webhook_handlers.rs` L209-256
 - **兼容性要求**：与 Shopify Admin API、Storefront API 的详细契约应下沉到技术设计或接口说明
 
 ---

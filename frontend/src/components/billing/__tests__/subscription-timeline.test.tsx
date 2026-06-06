@@ -46,9 +46,9 @@ describe('SubscriptionTimeline - Event Rendering', () => {
         eventType: 'upgraded',
         actor: 'admin@example.com',
         changes: {
-          changedFields: ['planId', 'tier'],
-          previousPlanId: 'basic-plan',
-          newPlanId: 'pro-plan',
+          changedFields: ['entitlementKey'],
+          previousEntitlementKey: 'basic-plan',
+          newEntitlementKey: 'pro-plan',
         },
       }),
     },
@@ -131,18 +131,16 @@ describe('SubscriptionTimeline - Event Detail Dialog', () => {
           id: 'sub-1',
           realmId: 'realm-1',
           status: 'active',
-          tier: 'basic',
-          planId: 'basic-plan',
-          billingPeriod: 'monthly',
+          entitlementKey: 'basic-plan',
+          paymentProvider: 'stripe',
           cancelAtPeriodEnd: false,
         },
         newState: {
           id: 'sub-1',
           realmId: 'realm-1',
           status: 'active',
-          tier: 'pro',
-          planId: 'pro-plan',
-          billingPeriod: 'monthly',
+          entitlementKey: 'pro-plan',
+          paymentProvider: 'stripe',
           cancelAtPeriodEnd: false,
         },
       }),
@@ -171,9 +169,9 @@ describe('SubscriptionTimeline - Event Detail Dialog', () => {
 
     // Check that dialog contains previous state section
     expect(screen.getByText(/previous state/i)).toBeInTheDocument()
-    // Check that status and plan are mentioned (using getAllByText since there are multiple)
+    // Check that status and entitlement are mentioned (using getAllByText since there are multiple)
     expect(screen.getAllByText('Status:').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Plan:').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Entitlement:').length).toBeGreaterThan(0)
     expect(screen.getAllByText('basic-plan').length).toBeGreaterThan(0)
   })
 
@@ -185,9 +183,9 @@ describe('SubscriptionTimeline - Event Detail Dialog', () => {
 
     // Check that dialog contains new state section
     expect(screen.getByText(/new state/i)).toBeInTheDocument()
-    // Check that status and plan are mentioned (using getAllByText since there are multiple)
+    // Check that status and entitlement are mentioned (using getAllByText since there are multiple)
     expect(screen.getAllByText('Status:').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Plan:').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Entitlement:').length).toBeGreaterThan(0)
     expect(screen.getAllByText('pro-plan').length).toBeGreaterThan(0)
   })
 
@@ -198,7 +196,7 @@ describe('SubscriptionTimeline - Event Detail Dialog', () => {
           id: '1',
           eventType: 'upgraded',
           changes: {
-            changedFields: ['planId', 'tier', 'billingPeriod'],
+            changedFields: ['entitlementKey', 'paymentProvider'],
           },
         }),
       },
@@ -211,9 +209,8 @@ describe('SubscriptionTimeline - Event Detail Dialog', () => {
 
     expect(screen.getByText(/changes/i)).toBeInTheDocument()
     expect(screen.getByText(/changed fields:/i)).toBeInTheDocument()
-    expect(screen.getByText('planId')).toBeInTheDocument()
-    expect(screen.getByText('tier')).toBeInTheDocument()
-    expect(screen.getByText('billingPeriod')).toBeInTheDocument()
+    expect(screen.getByText('entitlementKey')).toBeInTheDocument()
+    expect(screen.getByText('paymentProvider')).toBeInTheDocument()
   })
 })
 

@@ -19,7 +19,8 @@ Object.defineProperty(window, 'location', {
 describe('useStripeCheckout', () => {
   const mockRealmId = 'test-realm'
   const mockClientAppId = 'test-app'
-  const mockPlanId = 'plan-123'
+  const mockEntitlementKey = 'basic'
+  const mockPaymentProvider = 'stripe'
   const mockCheckoutUrl = 'https://checkout.stripe.com/pay/test'
 
   let queryClient: QueryClient
@@ -56,14 +57,14 @@ describe('useStripeCheckout', () => {
     result.current.mutate({
       realmId: mockRealmId,
       clientAppId: mockClientAppId,
-      planId: mockPlanId,
-      billingPeriod: 'monthly',
+      entitlementKey: mockEntitlementKey,
+      paymentProvider: mockPaymentProvider,
     })
 
     await waitFor(() => {
       expect(createCheckoutSession).toHaveBeenCalledWith({
         path: { realmId: mockRealmId, clientAppId: mockClientAppId },
-        body: { planId: mockPlanId, billingPeriod: 'monthly' },
+        body: { entitlementKey: mockEntitlementKey, paymentProvider: mockPaymentProvider },
       })
     })
 
@@ -87,8 +88,8 @@ describe('useStripeCheckout', () => {
     result.current.mutate({
       realmId: mockRealmId,
       clientAppId: mockClientAppId,
-      planId: mockPlanId,
-      billingPeriod: 'yearly',
+      entitlementKey: 'pro',
+      paymentProvider: 'stripe',
     })
 
     await waitFor(() => {
@@ -111,8 +112,8 @@ describe('useStripeCheckout', () => {
     result.current.mutate({
       realmId: mockRealmId,
       clientAppId: mockClientAppId,
-      planId: mockPlanId,
-      billingPeriod: 'monthly',
+      entitlementKey: mockEntitlementKey,
+      paymentProvider: mockPaymentProvider,
     })
 
     await waitFor(() => {
@@ -121,7 +122,7 @@ describe('useStripeCheckout', () => {
     })
   })
 
-  test('passes correct parameters for different billing periods', async () => {
+  test('passes correct parameters for different entitlement keys', async () => {
     const mockResponse = {
       data: { checkoutUrl: mockCheckoutUrl },
       error: undefined,
@@ -131,18 +132,18 @@ describe('useStripeCheckout', () => {
 
     const { result } = renderHook(() => useStripeCheckout(), { wrapper })
 
-    // Test yearly billing
+    // Test with a different entitlement key
     result.current.mutate({
       realmId: mockRealmId,
       clientAppId: mockClientAppId,
-      planId: mockPlanId,
-      billingPeriod: 'yearly',
+      entitlementKey: 'pro',
+      paymentProvider: 'stripe',
     })
 
     await waitFor(() => {
       expect(createCheckoutSession).toHaveBeenCalledWith({
         path: { realmId: mockRealmId, clientAppId: mockClientAppId },
-        body: { planId: mockPlanId, billingPeriod: 'yearly' },
+        body: { entitlementKey: 'pro', paymentProvider: 'stripe' },
       })
     })
   })
@@ -165,8 +166,8 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        planId: mockPlanId,
-        billingPeriod: 'monthly',
+        entitlementKey: mockEntitlementKey,
+        paymentProvider: mockPaymentProvider,
       })
 
       await waitFor(() => {
@@ -193,8 +194,8 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        planId: mockPlanId,
-        billingPeriod: 'monthly',
+        entitlementKey: mockEntitlementKey,
+        paymentProvider: mockPaymentProvider,
       })
 
       await waitFor(() => {
@@ -220,8 +221,8 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        planId: mockPlanId,
-        billingPeriod: 'monthly',
+        entitlementKey: mockEntitlementKey,
+        paymentProvider: mockPaymentProvider,
       })
 
       await waitFor(() => {
@@ -256,8 +257,8 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        planId: mockPlanId,
-        billingPeriod: 'monthly',
+        entitlementKey: mockEntitlementKey,
+        paymentProvider: mockPaymentProvider,
       })
 
       // Wait a bit for mutation to start
@@ -287,8 +288,8 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        planId: mockPlanId,
-        billingPeriod: 'monthly',
+        entitlementKey: mockEntitlementKey,
+        paymentProvider: mockPaymentProvider,
       })
 
       await waitFor(() => {
@@ -318,8 +319,8 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        planId: mockPlanId,
-        billingPeriod: 'monthly',
+        entitlementKey: mockEntitlementKey,
+        paymentProvider: mockPaymentProvider,
       })
 
       await waitFor(() => {
@@ -334,8 +335,8 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        planId: mockPlanId,
-        billingPeriod: 'monthly',
+        entitlementKey: mockEntitlementKey,
+        paymentProvider: mockPaymentProvider,
       })
 
       await waitFor(() => {
@@ -362,8 +363,8 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        planId: mockPlanId,
-        billingPeriod: 'monthly',
+        entitlementKey: mockEntitlementKey,
+        paymentProvider: mockPaymentProvider,
       })
 
       await waitFor(() => {
@@ -382,8 +383,8 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        planId: mockPlanId,
-        billingPeriod: 'monthly',
+        entitlementKey: mockEntitlementKey,
+        paymentProvider: mockPaymentProvider,
       })
 
       await waitFor(() => {
@@ -405,8 +406,8 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        planId: 'plan1',
-        billingPeriod: 'monthly',
+        entitlementKey: 'basic',
+        paymentProvider: 'stripe',
       })
 
       await waitFor(() => {
@@ -421,8 +422,8 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        planId: 'plan2',
-        billingPeriod: 'yearly',
+        entitlementKey: 'pro',
+        paymentProvider: 'stripe',
       })
 
       await waitFor(() => {

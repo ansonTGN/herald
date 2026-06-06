@@ -10,12 +10,14 @@ pub struct Model {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
-    // Computed total balance (topup_balance + subscription_balance + granted_balance)
+    // Computed total balance (topup_balance + subscription_balance + granted_balance + registration_balance + free_periodic_balance)
     pub total_balance: i64,
     // Type-specific balance fields
     pub topup_balance: i64,
     pub subscription_balance: i64,
     pub granted_balance: i64,
+    pub registration_balance: i64,
+    pub free_periodic_balance: i64,
     // Type-specific grant tracking
     pub total_topup_granted: i64,
     pub total_subscription_granted: i64,

@@ -54,10 +54,10 @@ export const handlers = [
           id: subscriptionId as string,
           realmId: realmId as string,
           status: 'active',
-          tier: 'basic',
-          planId: 'basic-plan',
+          entitlementKey: 'basic',
+          paymentProvider: 'stripe',
+          externalPriceId: 'price_basic',
           clientAppId: 'app-1',
-          billingPeriod: 'monthly',
           cancelAtPeriodEnd: false,
         },
       },
@@ -68,30 +68,28 @@ export const handlers = [
         timestamp: '2025-01-20T10:30:00Z',
         actor: 'user@example.com',
         changes: {
-          changedFields: ['planId', 'tier'],
-          previousPlanId: 'basic-plan',
-          newPlanId: 'pro-plan',
-          previousTier: 'basic',
-          newTier: 'pro',
+          changedFields: ['entitlementKey'],
+          previousEntitlementKey: 'basic',
+          newEntitlementKey: 'pro',
         },
         previousState: {
           id: subscriptionId as string,
           realmId: realmId as string,
           status: 'active',
-          tier: 'basic',
-          planId: 'basic-plan',
+          entitlementKey: 'basic',
+          paymentProvider: 'stripe',
+          externalPriceId: 'price_basic',
           clientAppId: 'app-1',
-          billingPeriod: 'monthly',
           cancelAtPeriodEnd: false,
         },
         newState: {
           id: subscriptionId as string,
           realmId: realmId as string,
           status: 'active',
-          tier: 'pro',
-          planId: 'pro-plan',
+          entitlementKey: 'pro',
+          paymentProvider: 'stripe',
+          externalPriceId: 'price_pro',
           clientAppId: 'app-1',
-          billingPeriod: 'monthly',
           cancelAtPeriodEnd: false,
         },
       },
@@ -110,20 +108,20 @@ export const handlers = [
           id: subscriptionId as string,
           realmId: realmId as string,
           status: 'active',
-          tier: 'pro',
-          planId: 'pro-plan',
+          entitlementKey: 'pro',
+          paymentProvider: 'stripe',
+          externalPriceId: 'price_pro',
           clientAppId: 'app-1',
-          billingPeriod: 'monthly',
           cancelAtPeriodEnd: false,
         },
         newState: {
           id: subscriptionId as string,
           realmId: realmId as string,
           status: 'canceled',
-          tier: 'pro',
-          planId: 'pro-plan',
+          entitlementKey: 'pro',
+          paymentProvider: 'stripe',
+          externalPriceId: 'price_pro',
           clientAppId: 'app-1',
-          billingPeriod: 'monthly',
           cancelAtPeriodEnd: true,
           cancelAt: '2025-03-15T00:00:00Z',
         },
@@ -143,7 +141,7 @@ export const handlers = [
     const url = new URL(request.url)
     const eventType = url.searchParams.get('eventType') as any
     const userId = url.searchParams.get('userId')
-    const planId = url.searchParams.get('planId')
+    const entitlementKey = url.searchParams.get('entitlementKey')
     const subscriptionStatus = url.searchParams.get('subscriptionStatus')
     const page = parseInt(url.searchParams.get('page') || '1')
     const pageSize = parseInt(url.searchParams.get('pageSize') || '20')
@@ -162,13 +160,9 @@ export const handlers = [
         subscription: {
           id: 'sub-1',
           status: 'active',
-          plan: {
-            id: 'basic-plan',
-            title: 'Basic Plan',
-            price: 9.99,
-            currency: 'USD',
-            interval: 'monthly',
-            tier: 'basic',
+          entitlement: {
+            entitlementKey: 'basic',
+            paymentProvider: 'stripe',
           },
         },
       },
@@ -185,13 +179,9 @@ export const handlers = [
         subscription: {
           id: 'sub-2',
           status: 'active',
-          plan: {
-            id: 'pro-plan',
-            title: 'Pro Plan',
-            price: 29.99,
-            currency: 'USD',
-            interval: 'monthly',
-            tier: 'pro',
+          entitlement: {
+            entitlementKey: 'pro',
+            paymentProvider: 'stripe',
           },
         },
       },
@@ -205,8 +195,10 @@ export const handlers = [
     if (userId) {
       filteredEvents = filteredEvents.filter((e) => e.user?.id === userId)
     }
-    if (planId) {
-      filteredEvents = filteredEvents.filter((e) => e.subscription.plan?.id === planId)
+    if (entitlementKey) {
+      filteredEvents = filteredEvents.filter(
+        (e) => e.subscription.entitlement?.entitlementKey === entitlementKey
+      )
     }
     if (subscriptionStatus) {
       filteredEvents = filteredEvents.filter((e) => e.subscription.status === subscriptionStatus)

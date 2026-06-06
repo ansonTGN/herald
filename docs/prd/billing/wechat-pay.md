@@ -96,7 +96,7 @@
 - **双重确认**：Webhook 回调 + 主动查询双重保障支付状态一致性
 - **幂等处理**：同一商户订单号（out_trade_no）不重复发放积分
 - **金额校验**：回调金额与订单金额必须一致才确认支付
-- **安全加密**：私钥和 API v3 Key 加密存储；回调数据解密验证（当前解密算法与微信规范不符，见实现差异 BUG-002）
+- **安全加密**：私钥和 API v3 Key 加密存储；回调数据解密验证（✅ RESOLVED — AES-256-GCM 已实现，见实现差异 BUG-002）
 - **数据隔离**：不同 Realm 的支付数据完全隔离；一个 Realm 绑定一个微信支付商户号
 - **金额单位**：微信支付金额单位为分（整数），需与 Herald 内部金额表示转换
 - **二维码有效期**：订单创建后 2 小时内有效
@@ -104,10 +104,10 @@
 ### 4.2 关键状态与异常
 
 - **trade_state 处理**：支付回调 event_type 为 `TRANSACTION.SUCCESS` / `TRANSACTION.CLOSED`；退款回调为独立通知流，event_type 为 `REFUND.SUCCESS` / `REFUND.ABNORMAL` / `REFUND.CLOSED`；查询订单返回的 trade_state 包含 SUCCESS / NOTPAY / CLOSED / REFUND 等（当前实现仅处理支付回调的 TRANSACTION.SUCCESS 和 TRANSACTION.CLOSED，未处理退款回调通知，见实现差异 BUG-006）
-- **签名验证失败**：返回 401，记录审计日志（当前签名验证算法与微信规范不符，见实现差异 BUG-001）
+- **签名验证失败**：返回 401，记录审计日志（✅ RESOLVED — RSA-SHA256 已实现，见实现差异 BUG-001）
 - **金额不一致**：记录告警，不执行业务逻辑
 - **商户响应时限**：需在 5 秒内返回 200 响应，否则微信会重试
-- **过期订单处理**：创建超过 2 小时仍未支付的订单，关单前先查询微信侧实际状态，确认未支付才执行关单；如果实际已支付则按支付成功处理（当前无定时任务实现，见实现差异 BUG-004；关单前未查询微信侧状态，见实现差异 BUG-007）
+- **过期订单处理**：创建超过 2 小时仍未支付的订单，关单前先查询微信侧实际状态，确认未支付才执行关单；如果实际已支付则按支付成功处理（当前无定时任务实现，见实现差异 BUG-004；✅ 关单前查询已实现，见实现差异 BUG-007）
 
 ---
 
@@ -117,8 +117,8 @@
 
 - **微信支付配置管理**：支持创建、查看（脱敏）、更新、删除配置
 - **Native 支付下单**：使用 out_trade_no 调用微信统一下单 API → 获取 code_url → 前端渲染二维码 → 用户扫码支付
-- **Webhook 回调处理**：验证签名（PRD 规范为 SHA256-RSA，当前实现为 HMAC-SHA256，见实现差异 BUG-001）→ 解密回调数据（PRD 规范为 AEAD_AES_256_GCM，当前实现为 AES-128-GCM + MD5 派生密钥，见实现差异 BUG-002）→ 校验金额 → 根据 trade_state 执行业务逻辑 → 5 秒内返回 200
-- **支付状态主动查询**：作为 Webhook 补充，前端轮询触发后端查询微信订单状态（当前实现仅查询本地数据库，未调用微信 API query_order，见实现差异 BUG-003）；系统定时任务补偿查询超过 5 分钟未收到回调的订单（待实现）
+- **Webhook 回调处理**：验证签名（✅ RESOLVED — SHA256-RSA 已实现，见实现差异 BUG-001）→ 解密回调数据（✅ RESOLVED — AEAD_AES_256_GCM 已实现，见实现差异 BUG-002）→ 校验金额 → 根据 trade_state 执行业务逻辑 → 5 秒内返回 200
+- **支付状态主动查询**：作为 Webhook 补充，前端轮询触发后端查询微信订单状态（✅ RESOLVED — 已实现调用微信 API query_order，见实现差异 BUG-003）；系统定时任务补偿查询超过 5 分钟未收到回调的订单（待实现）
 - **过期订单管理**：定时扫描创建超过 2 小时仍未支付的订单 → 查询微信侧实际状态 → 确认未支付后关单
 - **系统集成**：复用现有 Subscription 领域模型、Points 系统、Subscription History、Payment Event；微信支付订单号与 Herald 订单建立映射
 
@@ -139,7 +139,7 @@
 **适用性**: 适用
 
 - **接口能力范围**：微信支付集成的能力边界；不在 PRD 中列出端点、schema 或状态码细节
-- **访问控制原则**：必须遵守 realm 隔离、Webhook 签名验证（PRD 规范为 SHA256-RSA，见实现差异 BUG-001）、回调数据解密（PRD 规范为 AEAD_AES_256_GCM，见实现差异 BUG-002）、幂等处理和金额校验约束
+- **访问控制原则**：必须遵守 realm 隔离、Webhook 签名验证（✅ RESOLVED — SHA256-RSA 已实现，见实现差异 BUG-001）、回调数据解密（✅ RESOLVED — AEAD_AES_256_GCM 已实现，见实现差异 BUG-002）、幂等处理和金额校验约束
 - **Webhook 回调 trade_state**：SUCCESS、NOTPAY、CLOSED、REFUND
 - **幂等键**：Native 支付下单使用 out_trade_no 作为幂等键
 - **Notify URL 隔离**：按 realm 隔离
@@ -197,7 +197,7 @@
 - **影响**：生产环境无法通过微信签名验证，真实 Webhook 回调将被拒绝（401）
 - **代码位置**：`wechat_webhook_handlers.rs` → `verify_signature()` 函数
 - **修复方向**：改为使用微信平台证书（public key）进行 RSA-SHA256 验签，需引入平台证书管理（下载/缓存微信平台证书）
-- **状态**：待修复
+- **状态**：✅ RESOLVED — `verify_signature` in `wechat_webhook_handlers.rs` L360-380 now uses RSA-SHA256 with platform public key
 
 ### BUG-002：回调解密算法不符（严重）
 
@@ -206,7 +206,7 @@
 - **影响**：生产环境无法正确解密微信回调数据，解密失败导致支付确认丢失
 - **代码位置**：`wechat_webhook_handlers.rs` → `decrypt_resource_data()` 函数
 - **修复方向**：改为 AES-256-GCM，直接使用 v3_key 的 UTF-8 字节（32 字节）作为密钥，associated_data 参与认证但非明文传输
-- **状态**：待修复
+- **状态**：✅ RESOLVED — `decrypt_resource_data` in `wechat_webhook_handlers.rs` L387-416 now uses AES-256-GCM with v3_key as 256-bit key
 
 ### BUG-003：支付状态主动查询未调用微信 API（P0）
 
@@ -215,7 +215,7 @@
 - **影响**：Webhook 未到达时（网络故障等），本地状态与微信实际状态不一致
 - **代码位置**：`wechat_order_handlers.rs` → `get_wechat_order_status()` 函数
 - **修复方向**：查询时调用 `WechatPayClient::query_order()` 同步微信侧状态到本地
-- **状态**：待修复
+- **状态**：✅ RESOLVED — `wechat_order_handlers.rs` L230-244 now calls `query_order` API to sync WeChat-side status
 
 ### BUG-004：过期订单自动关闭未实现（P1）
 
@@ -241,7 +241,7 @@
 - **影响**：在 Webhook 延迟到达的窗口期内，可能关闭实际已支付的订单
 - **代码位置**：`wechat_order_handlers.rs` → `close_wechat_order()` 函数
 - **修复方向**：关单前先调用 `WechatPayClient::query_order()` 确认微信侧状态
-- **状态**：待修复
+- **状态**：✅ RESOLVED — `close_wechat_order` in `wechat_order_handlers.rs` L330-361 now queries WeChat-side status before closing
 
 ---
 

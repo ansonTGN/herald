@@ -16,8 +16,7 @@ describe('UserSubscriptionTimeline - Event Sorting', () => {
         id: 'sub-1',
         realmId: 'realm-1',
         status: 'active',
-        tier: 'basic',
-        billingPeriod: 'monthly',
+        entitlementKey: 'basic',
         cancelAtPeriodEnd: false,
       },
     },
@@ -28,18 +27,15 @@ describe('UserSubscriptionTimeline - Event Sorting', () => {
       timestamp: '2025-01-20T10:30:00Z',
       actor: 'admin@example.com',
       changes: {
-        changedFields: ['planId', 'tier'],
-        previousPlanId: 'basic-plan',
-        newPlanId: 'pro-plan',
-        previousTier: 'basic',
-        newTier: 'pro',
+        changedFields: ['entitlementKey'],
+        previousEntitlementKey: 'basic-plan',
+        newEntitlementKey: 'pro-plan',
       },
       newState: {
         id: 'sub-1',
         realmId: 'realm-1',
         status: 'active',
-        tier: 'pro',
-        billingPeriod: 'monthly',
+        entitlementKey: 'pro',
         cancelAtPeriodEnd: false,
       },
     },
@@ -58,8 +54,7 @@ describe('UserSubscriptionTimeline - Event Sorting', () => {
         id: 'sub-1',
         realmId: 'realm-1',
         status: 'canceled',
-        tier: 'pro',
-        billingPeriod: 'monthly',
+        entitlementKey: 'pro',
         cancelAtPeriodEnd: true,
       },
     },
@@ -113,24 +108,22 @@ describe('UserSubscriptionTimeline - Expand/Collapse Details', () => {
       timestamp: '2025-01-20T10:30:00Z',
       actor: 'admin@example.com',
       changes: {
-        changedFields: ['planId', 'tier'],
-        previousPlanId: 'basic-plan',
-        newPlanId: 'pro-plan',
+        changedFields: ['entitlementKey'],
+        previousEntitlementKey: 'basic-plan',
+        newEntitlementKey: 'pro-plan',
       },
       previousState: {
         id: 'sub-1',
         realmId: 'realm-1',
         status: 'active',
-        tier: 'basic',
-        billingPeriod: 'monthly',
+        entitlementKey: 'basic',
         cancelAtPeriodEnd: false,
       },
       newState: {
         id: 'sub-1',
         realmId: 'realm-1',
         status: 'active',
-        tier: 'pro',
-        billingPeriod: 'monthly',
+        entitlementKey: 'pro',
         cancelAtPeriodEnd: false,
       },
     },
@@ -210,8 +203,7 @@ describe('UserSubscriptionTimeline - Expand/Collapse Details', () => {
           id: 'sub-1',
           realmId: 'realm-1',
           status: 'active',
-          tier: 'pro',
-          billingPeriod: 'monthly',
+          entitlementKey: 'pro',
           cancelAtPeriodEnd: false,
         },
       },
@@ -225,8 +217,7 @@ describe('UserSubscriptionTimeline - Expand/Collapse Details', () => {
           id: 'sub-1',
           realmId: 'realm-1',
           status: 'active',
-          tier: 'basic',
-          billingPeriod: 'monthly',
+          entitlementKey: 'basic',
           cancelAtPeriodEnd: false,
         },
       },
@@ -265,31 +256,27 @@ describe('UserSubscriptionTimeline - State Display', () => {
       timestamp: '2025-01-20T10:30:00Z',
       actor: 'admin@example.com',
       changes: {
-        changedFields: ['planId', 'tier'],
-        previousPlanId: 'basic-plan',
-        newPlanId: 'pro-plan',
+        changedFields: ['entitlementKey'],
+        previousEntitlementKey: 'basic-plan',
+        newEntitlementKey: 'pro-plan',
       },
       previousState: {
         id: 'sub-1',
         realmId: 'realm-1',
         status: 'active',
-        tier: 'basic',
-        planId: 'basic-plan',
-        billingPeriod: 'monthly',
+        entitlementKey: 'basic-plan',
+        cancelAtPeriodEnd: false,
         currentPeriodStart: '2025-01-01T00:00:00Z',
         currentPeriodEnd: '2025-02-01T00:00:00Z',
-        cancelAtPeriodEnd: false,
       },
       newState: {
         id: 'sub-1',
         realmId: 'realm-1',
         status: 'active',
-        tier: 'pro',
-        planId: 'pro-plan',
-        billingPeriod: 'monthly',
+        entitlementKey: 'pro-plan',
+        cancelAtPeriodEnd: false,
         currentPeriodStart: '2025-01-01T00:00:00Z',
         currentPeriodEnd: '2025-02-01T00:00:00Z',
-        cancelAtPeriodEnd: false,
       },
     },
   ]
@@ -305,8 +292,8 @@ describe('UserSubscriptionTimeline - State Display', () => {
     // Check that we have multiple Status: labels (both previous and new state)
     expect(screen.getAllByText(/Status:/i).length).toBeGreaterThan(0)
     expect(screen.getAllByText('active').length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/Tier:/i).length).toBeGreaterThan(0)
-    expect(screen.getAllByText('basic').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Entitlement:/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('basic-plan').length).toBeGreaterThan(0)
   })
 
   it('should display new state when expanded', async () => {
@@ -317,7 +304,7 @@ describe('UserSubscriptionTimeline - State Display', () => {
     await user.click(showButton)
 
     expect(screen.getByText(/New State/i)).toBeInTheDocument()
-    expect(screen.getByText('pro')).toBeInTheDocument()
+    expect(screen.getByText('pro-plan')).toBeInTheDocument()
   })
 
   it('should display billing period when both dates are present', async () => {
@@ -350,16 +337,14 @@ describe('UserSubscriptionTimeline - State Display', () => {
         timestamp: '2025-01-20T10:30:00Z',
         actor: 'system',
         changes: {
-          changedFields: ['planId'],
-          newPlanId: 'basic-plan',
+          changedFields: ['entitlementKey'],
+          newEntitlementKey: 'basic-plan',
         },
         newState: {
           id: 'sub-1',
           realmId: 'realm-1',
           status: 'active',
-          tier: 'basic',
-          planId: 'basic-plan',
-          billingPeriod: 'monthly',
+          entitlementKey: 'basic-plan',
           cancelAtPeriodEnd: false,
         },
       },
@@ -456,8 +441,7 @@ describe('UserSubscriptionTimeline - Edge Cases', () => {
           id: 'sub-1',
           realmId: 'realm-1',
           status: 'active',
-          tier: 'basic',
-          billingPeriod: 'monthly',
+          entitlementKey: 'basic',
           cancelAtPeriodEnd: false,
         },
       },
@@ -485,8 +469,7 @@ describe('UserSubscriptionTimeline - Edge Cases', () => {
           id: 'sub-1',
           realmId: 'realm-1',
           status: 'active',
-          tier: 'basic',
-          billingPeriod: 'monthly',
+          entitlementKey: 'basic',
           cancelAtPeriodEnd: false,
         },
       },
@@ -514,8 +497,7 @@ describe('UserSubscriptionTimeline - Edge Cases', () => {
           id: 'sub-1',
           realmId: 'realm-1',
           status: 'active',
-          tier: 'pro',
-          billingPeriod: 'monthly',
+          entitlementKey: 'pro',
           cancelAtPeriodEnd: false,
         },
       },
@@ -542,16 +524,15 @@ describe('UserSubscriptionTimeline - Edge Cases', () => {
         timestamp: '2025-01-20T10:30:00Z',
         actor: 'admin@example.com',
         changes: {
-          changedFields: ['billingPeriod'],
-          previousBillingPeriod: 'monthly',
-          newBillingPeriod: 'yearly',
+          changedFields: ['status'],
+          previousStatus: 'active',
+          newStatus: 'past_due',
         },
         newState: {
           id: 'sub-1',
           realmId: 'realm-1',
-          status: 'active',
-          tier: 'basic',
-          billingPeriod: 'yearly',
+          status: 'past_due',
+          entitlementKey: 'basic',
           cancelAtPeriodEnd: false,
         },
       },

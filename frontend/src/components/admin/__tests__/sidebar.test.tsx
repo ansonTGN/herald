@@ -73,8 +73,8 @@ describe('Sidebar navigation', () => {
     useAuthStore.getState().reset()
   })
 
-  it('highlights subscription plans on the billing page', async () => {
-    currentPath = '/admin/manage/billing?page=0&pageSize=20&status=all'
+  it('highlights entitlement mappings on the entitlement-mappings page', async () => {
+    currentPath = '/admin/manage/billing/entitlement-mappings'
     const user = userEvent.setup()
     render(
       <LocaleProvider>
@@ -84,10 +84,10 @@ describe('Sidebar navigation', () => {
 
     await user.click(screen.getByTestId('sidebar-menu-products-&-payments'))
 
-    const subscriptionPlansLink = screen.getByTestId('sidebar-menu-subscription-plans')
+    const entitlementMappingsLink = screen.getByTestId('sidebar-menu-entitlement-mappings')
     const paymentProvidersLink = screen.getByTestId('sidebar-menu-payment-providers')
 
-    expect(subscriptionPlansLink).toHaveClass('font-semibold')
+    expect(entitlementMappingsLink).toHaveClass('font-semibold')
     expect(paymentProvidersLink).not.toHaveClass('font-semibold')
   })
 
@@ -121,10 +121,10 @@ describe('Sidebar navigation', () => {
     await user.click(screen.getByTestId('sidebar-menu-products-&-payments'))
 
     const providersLink = screen.getByTestId('sidebar-menu-payment-providers')
-    const productsLink = screen.getByTestId('sidebar-menu-products')
+    const entitlementMappingsLink = screen.getByTestId('sidebar-menu-entitlement-mappings')
 
     expect(providersLink).toHaveClass('font-semibold')
-    expect(productsLink).not.toHaveClass('font-semibold')
+    expect(entitlementMappingsLink).not.toHaveClass('font-semibold')
   })
 
   it('keeps sidebar navigation in its own scroll container when group expands', async () => {
