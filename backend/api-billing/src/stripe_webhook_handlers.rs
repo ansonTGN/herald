@@ -79,6 +79,7 @@ struct StripeChargeRefundedPayload {
     charge_id: String,
     amount_refunded: i64,
     user_id: Uuid,
+    subscription_id: Option<Uuid>,
     refund_type: String,
 }
 
@@ -120,6 +121,10 @@ fn parse_uuid_field(value: &Value, field_name: &str) -> Result<Uuid, CoreError> 
 
 fn parse_optional_uuid_field(value: &Value) -> Option<Uuid> {
     value.as_str().and_then(|s| Uuid::parse_str(s).ok())
+}
+
+fn metadata_value<'a>(metadata: &'a Value, primary: &str, fallback: &str) -> &'a Value {
+    metadata.get(primary).unwrap_or(&metadata[fallback])
 }
 
 fn parse_attempt_id(value: &Value) -> Option<Uuid> {
@@ -214,8 +219,14 @@ fn parse_checkout_completed_payload(
     event: &Value,
 ) -> Result<StripeCheckoutCompletedPayload, CoreError> {
     let metadata = &event["data"]["object"]["metadata"];
-    let client_app_id = parse_uuid_field(&metadata["clientAppId"], "clientAppId")?;
-    let user_id = parse_uuid_field(&metadata["userId"], "userId")?;
+    let client_app_id = parse_uuid_field(
+        metadata_value(metadata, "herald_client_app_id", "clientAppId"),
+        "clientAppId",
+    )?;
+    let user_id = parse_uuid_field(
+        metadata_value(metadata, "herald_user_id", "userId"),
+        "userId",
+    )?;
 
     // Resolve entitlement_key from metadata
     let entitlement_key = metadata["herald_entitlement_key"]
@@ -229,7 +240,10 @@ fn parse_checkout_completed_payload(
         user_id,
         client_app_id,
         entitlement_key,
-        is_trial: metadata["trialDays"].as_u64().is_some_and(|days| days > 0),
+        is_trial: metadata["herald_trial_days"]
+            .as_u64()
+            .or_else(|| metadata["trialDays"].as_u64())
+            .is_some_and(|days| days > 0),
         stripe_subscription_id: event["data"]["object"]["subscription"]
             .as_str()
             .map(str::to_string)
@@ -251,7 +265,10 @@ fn parse_subscription_created_payload(
         .as_str()
         .ok_or_else(|| CoreError::BadRequest("Missing subscription id".to_string()))?
         .to_string();
-    let user_id = parse_uuid_field(&metadata["userId"], "userId")?;
+    let user_id = parse_uuid_field(
+        metadata_value(metadata, "herald_user_id", "userId"),
+        "userId",
+    )?;
     let cancel_at_period_end = event["data"]["object"]["cancel_at_period_end"]
         .as_bool()
         .unwrap_or(false);
@@ -277,7 +294,11 @@ fn parse_subscription_created_payload(
         stripe_subscription_id,
         user_id,
         entitlement_key,
-        client_app_id: parse_optional_uuid_field(&metadata["clientAppId"]),
+        client_app_id: parse_optional_uuid_field(metadata_value(
+            metadata,
+            "herald_client_app_id",
+            "clientAppId",
+        )),
         external_product_id,
         cancel_at_period_end,
         current_period_start: parse_optional_stripe_datetime(
@@ -323,7 +344,10 @@ fn parse_subscription_updated_payload(
             .as_str()
             .ok_or_else(|| CoreError::BadRequest("Missing subscription id".to_string()))?
             .to_string(),
-        user_id: parse_uuid_field(&metadata["userId"], "userId")?,
+        user_id: parse_uuid_field(
+            metadata_value(metadata, "herald_user_id", "userId"),
+            "userId",
+        )?,
         previous_entitlement_key,
         current_entitlement_key,
         external_product_id: event["data"]["object"]["items"]["data"][0]["price"]["product"]
@@ -352,7 +376,10 @@ fn parse_subscription_deleted_payload(
             .as_str()
             .ok_or_else(|| CoreError::BadRequest("Missing subscription id".to_string()))?
             .to_string(),
-        user_id: parse_uuid_field(&metadata["userId"], "userId")?,
+        user_id: parse_uuid_field(
+            metadata_value(metadata, "herald_user_id", "userId"),
+            "userId",
+        )?,
         entitlement_key: metadata["herald_entitlement_key"]
             .as_str()
             .or_else(|| metadata["entitlementKey"].as_str())
@@ -380,7 +407,19 @@ fn parse_charge_refunded_payload(event: &Value) -> Result<StripeChargeRefundedPa
         amount_refunded: event["data"]["object"]["amount_refunded"]
             .as_i64()
             .ok_or_else(|| CoreError::BadRequest("Missing or invalid amount".to_string()))?,
-        user_id: parse_uuid_field(&event["data"]["object"]["metadata"]["userId"], "userId")?,
+        user_id: parse_uuid_field(
+            metadata_value(
+                &event["data"]["object"]["metadata"],
+                "herald_user_id",
+                "userId",
+            ),
+            "userId",
+        )?,
+        subscription_id: parse_optional_uuid_field(metadata_value(
+            &event["data"]["object"]["metadata"],
+            "herald_subscription_id",
+            "subscriptionId",
+        )),
         refund_type: event["data"]["object"]["metadata"]["refundType"]
             .as_str()
             .unwrap_or("subscription")
@@ -402,7 +441,10 @@ fn parse_invoice_paid_payload(event: &Value) -> Result<StripeInvoicePaidPayload,
             .as_str()
             .ok_or_else(|| CoreError::BadRequest("Missing subscription id".to_string()))?
             .to_string(),
-        user_id: parse_uuid_field(&metadata["userId"], "userId")?,
+        user_id: parse_uuid_field(
+            metadata_value(metadata, "herald_user_id", "userId"),
+            "userId",
+        )?,
         entitlement_key,
         current_period_start: parse_optional_stripe_datetime(
             &event["data"]["object"]["current_period_start"],
@@ -1169,6 +1211,28 @@ async fn handle_charge_refunded(
                 "Subscription refund - revoked unused subscription credits"
             );
         }
+    }
+
+    if let Some(subscription_id) = payload.subscription_id
+        && let Some(subscription) = app_state
+            .billing_repository
+            .find_subscription_by_id(subscription_id)
+            .await?
+    {
+        let history_event = SubscriptionHistoryService::create_subscription_refunded_event(
+            &subscription,
+            serde_json::json!({
+                "provider": "stripe",
+                "chargeId": payload.charge_id,
+                "amountRefunded": payload.amount_refunded,
+                "refundType": payload.refund_type,
+            }),
+            Some(ACTOR_WEBHOOK.to_string()),
+        );
+        app_state
+            .billing_repository
+            .save_history_event(history_event)
+            .await?;
     }
 
     Ok(create_placeholder_transaction(

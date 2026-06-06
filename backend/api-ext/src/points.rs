@@ -43,6 +43,9 @@ const USER_RATE_LIMIT: RateLimitConfig = RateLimitConfig {
 pub struct ExtPointsBalanceResponse {
     pub user_id: String,
     pub balance: i64,
+    pub topup_balance: i64,
+    pub subscription_balance: i64,
+    pub granted_balance: i64,
     pub total_recharged: i64,
     pub total_consumed: i64,
     pub unit: String,
@@ -202,6 +205,9 @@ pub async fn get_balance_ext(
     let response = ExtPointsBalanceResponse {
         user_id: balance.user_id.to_string(),
         balance: balance.balance,
+        topup_balance: balance.topup_balance,
+        subscription_balance: balance.subscription_balance,
+        granted_balance: balance.granted_balance,
         total_recharged: balance.total_recharged,
         total_consumed: balance.total_consumed,
         unit: balance.unit.clone(),

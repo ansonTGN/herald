@@ -45,14 +45,6 @@ where
         identity: Identity,
         realm_id: &str,
     ) -> Result<RealmDefaultConfig, CoreError> {
-        // Check manage permissions
-        ensure_policy(
-            self.policy
-                .can_manage_points_configs(identity.clone())
-                .await,
-            "Insufficient permissions to view realm config",
-        )?;
-
         // Check realm boundary
         ensure_realm_access(&identity, realm_id, "access config")?;
 
@@ -68,14 +60,6 @@ where
         identity: Identity,
         input: CreateRealmConfigInput,
     ) -> Result<RealmDefaultConfig, CoreError> {
-        // Check manage permissions
-        ensure_policy(
-            self.policy
-                .can_manage_points_configs(identity.clone())
-                .await,
-            "Insufficient permissions to create realm config",
-        )?;
-
         // Check realm boundary
         ensure_realm_access(&identity, &input.realm_id, "create config")?;
 
@@ -112,14 +96,6 @@ where
         realm_id: &str,
         input: UpdateRealmConfigInput,
     ) -> Result<RealmDefaultConfig, CoreError> {
-        // Check manage permissions
-        ensure_policy(
-            self.policy
-                .can_manage_points_configs(identity.clone())
-                .await,
-            "Insufficient permissions to update realm config",
-        )?;
-
         // Check realm boundary
         ensure_realm_access(&identity, realm_id, "update config")?;
 

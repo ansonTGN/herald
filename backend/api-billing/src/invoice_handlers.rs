@@ -136,8 +136,9 @@ async fn validate_invoice_creation_policy(
     pool: &PgPool,
     realm_id: &str,
     payment_attempt_id: Option<Uuid>,
+    subscription_id: Option<Uuid>,
 ) -> Result<(), ApiError> {
-    let payment_provider: Option<String> = if let Some(pa_id) = payment_attempt_id {
+    let mut payment_provider: Option<String> = if let Some(pa_id) = payment_attempt_id {
         sqlx::query_scalar("SELECT payment_provider FROM payment_attempts WHERE id = $1")
             .bind(pa_id)
             .fetch_optional(pool)
@@ -147,6 +148,20 @@ async fn validate_invoice_creation_policy(
     } else {
         None
     };
+
+    if payment_provider.is_none()
+        && let Some(sub_id) = subscription_id
+    {
+        payment_provider = sqlx::query_scalar(
+            "SELECT payment_provider FROM subscription WHERE id = $1 AND realm_id = $2",
+        )
+        .bind(sub_id)
+        .bind(realm_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?
+        .flatten();
+    }
 
     validate_not_creem_mor(payment_provider.as_deref())?;
 
@@ -344,7 +359,13 @@ pub async fn create_invoice(
         validate_account_in_realm(&state.pool, applicant_id, &realm_id).await?;
     }
 
-    validate_invoice_creation_policy(&state.pool, &realm_id, request.payment_attempt_id).await?;
+    validate_invoice_creation_policy(
+        &state.pool,
+        &realm_id,
+        request.payment_attempt_id,
+        request.subscription_id,
+    )
+    .await?;
 
     let line_items: Vec<NewLineItem> = request
         .line_items
@@ -855,7 +876,13 @@ pub async fn apply_invoice(
         .await?;
     }
 
-    validate_invoice_creation_policy(&state.pool, &realm_id, request.payment_attempt_id).await?;
+    validate_invoice_creation_policy(
+        &state.pool,
+        &realm_id,
+        request.payment_attempt_id,
+        request.subscription_id,
+    )
+    .await?;
 
     let seller_config = state
         .invoice_repository

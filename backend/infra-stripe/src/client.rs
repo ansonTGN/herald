@@ -110,21 +110,30 @@ impl StripeClient {
             ("cancel_url".to_string(), request.cancel_url.clone()),
             ("mode".to_string(), "subscription".to_string()),
             // Metadata fields
-            ("metadata[realm_id]".to_string(), request.realm_id.clone()),
             (
-                "metadata[client_app_id]".to_string(),
+                "metadata[herald_realm_id]".to_string(),
+                request.realm_id.clone(),
+            ),
+            (
+                "metadata[herald_client_app_id]".to_string(),
                 request.client_app_id.to_string(),
             ),
-            ("metadata[plan_id]".to_string(), request.plan_id.to_string()),
             (
-                "metadata[billing_period]".to_string(),
+                "metadata[herald_mapping_id]".to_string(),
+                request.plan_id.to_string(),
+            ),
+            (
+                "metadata[herald_billing_period]".to_string(),
                 request.billing_period.clone(),
             ),
-            ("metadata[plan_name]".to_string(), request.plan_name.clone()),
+            (
+                "metadata[herald_plan_name]".to_string(),
+                request.plan_name.clone(),
+            ),
         ];
 
         if let Some(user_id) = request.user_id {
-            form_fields.push(("metadata[user_id]".to_string(), user_id.to_string()));
+            form_fields.push(("metadata[herald_user_id]".to_string(), user_id.to_string()));
         }
 
         if let Some(extra_metadata) = &request.metadata {
@@ -147,7 +156,7 @@ impl StripeClient {
             request.plan_name.clone(),
         ));
         form_fields.push((
-            "line_items[0][price_data][product_data][metadata][plan_id]".to_string(),
+            "line_items[0][price_data][product_data][metadata][herald_mapping_id]".to_string(),
             request.plan_id.to_string(),
         ));
         form_fields.push((
@@ -719,9 +728,12 @@ mod tests {
             Some(&"buyer@example.com".to_string())
         );
         // Metadata fields
-        assert_eq!(form.get("metadata[realm_id]"), Some(&"realm-1".to_string()));
         assert_eq!(
-            form.get("metadata[plan_name]"),
+            form.get("metadata[herald_realm_id]"),
+            Some(&"realm-1".to_string())
+        );
+        assert_eq!(
+            form.get("metadata[herald_plan_name]"),
             Some(&"Pro Plan".to_string())
         );
         assert_eq!(form.get("metadata[source]"), Some(&"web".to_string()));

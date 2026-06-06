@@ -104,6 +104,10 @@ fn parse_optional_uuid_field(value: &Value) -> Option<Uuid> {
     value.as_str().and_then(|s| Uuid::parse_str(s).ok())
 }
 
+fn metadata_value<'a>(metadata: &'a Value, primary: &str, fallback: &str) -> &'a Value {
+    metadata.get(primary).unwrap_or(&metadata[fallback])
+}
+
 fn parse_attempt_id(value: &Value) -> Option<Uuid> {
     value
         .as_str()
@@ -205,9 +209,15 @@ fn parse_checkout_completed_payload(
 
     Ok(CreemCheckoutCompletedPayload {
         event_id: parse_event_id(event)?,
-        client_app_id: parse_uuid_field(&metadata["clientAppId"], "clientAppId")?,
+        client_app_id: parse_uuid_field(
+            metadata_value(metadata, "herald_client_app_id", "clientAppId"),
+            "clientAppId",
+        )?,
         entitlement_key,
-        is_trial: metadata["trialDays"].as_u64().is_some_and(|days| days > 0),
+        is_trial: metadata["herald_trial_days"]
+            .as_u64()
+            .or_else(|| metadata["trialDays"].as_u64())
+            .is_some_and(|days| days > 0),
         creem_product_id: event["object"]["product"]["id"]
             .as_str()
             .map(str::to_string)
@@ -232,10 +242,23 @@ fn parse_subscription_paid_payload(
 
     Ok(CreemSubscriptionPaidPayload {
         event_id: parse_event_id(event)?,
-        user_id: parse_uuid_field(&object["userId"], "userId")?,
+        user_id: parse_uuid_field(
+            metadata_value(&object, "herald_user_id", "userId"),
+            "userId",
+        )?,
         entitlement_key,
-        client_app_id: parse_optional_uuid_field(&object["clientAppId"])
-            .or_else(|| parse_optional_uuid_field(&object["metadata"]["clientAppId"])),
+        client_app_id: parse_optional_uuid_field(metadata_value(
+            &object,
+            "herald_client_app_id",
+            "clientAppId",
+        ))
+        .or_else(|| {
+            parse_optional_uuid_field(metadata_value(
+                &object["metadata"],
+                "herald_client_app_id",
+                "clientAppId",
+            ))
+        }),
         external_subscription_id: object["subscriptionId"]
             .as_str()
             .or_else(|| object["id"].as_str())
@@ -286,11 +309,24 @@ fn parse_subscription_updated_payload(
 
     Ok(CreemSubscriptionUpdatedPayload {
         event_id: parse_event_id(event)?,
-        user_id: parse_uuid_field(&object["userId"], "userId")?,
+        user_id: parse_uuid_field(
+            metadata_value(&object, "herald_user_id", "userId"),
+            "userId",
+        )?,
         previous_entitlement_key,
         current_entitlement_key,
-        client_app_id: parse_optional_uuid_field(&object["clientAppId"])
-            .or_else(|| parse_optional_uuid_field(&object["metadata"]["clientAppId"])),
+        client_app_id: parse_optional_uuid_field(metadata_value(
+            &object,
+            "herald_client_app_id",
+            "clientAppId",
+        ))
+        .or_else(|| {
+            parse_optional_uuid_field(metadata_value(
+                &object["metadata"],
+                "herald_client_app_id",
+                "clientAppId",
+            ))
+        }),
         external_subscription_id: object["subscriptionId"]
             .as_str()
             .or_else(|| object["id"].as_str())
@@ -337,10 +373,23 @@ fn parse_subscription_canceled_payload(
 
     Ok(CreemSubscriptionCanceledPayload {
         event_id: parse_event_id(event)?,
-        user_id: parse_uuid_field(&object["userId"], "userId")?,
+        user_id: parse_uuid_field(
+            metadata_value(&object, "herald_user_id", "userId"),
+            "userId",
+        )?,
         entitlement_key,
-        client_app_id: parse_optional_uuid_field(&object["clientAppId"])
-            .or_else(|| parse_optional_uuid_field(&object["metadata"]["clientAppId"])),
+        client_app_id: parse_optional_uuid_field(metadata_value(
+            &object,
+            "herald_client_app_id",
+            "clientAppId",
+        ))
+        .or_else(|| {
+            parse_optional_uuid_field(metadata_value(
+                &object["metadata"],
+                "herald_client_app_id",
+                "clientAppId",
+            ))
+        }),
         external_subscription_id: object["subscriptionId"]
             .as_str()
             .or_else(|| object["id"].as_str())
@@ -379,7 +428,10 @@ fn parse_refund_created_payload(event: &Value) -> Result<CreemRefundCreatedPaylo
         original_amount: object["originalAmount"].as_i64().ok_or_else(|| {
             CoreError::BadRequest("Missing or invalid originalAmount".to_string())
         })?,
-        user_id: parse_uuid_field(&object["metadata"]["userId"], "userId")?,
+        user_id: parse_uuid_field(
+            metadata_value(&object["metadata"], "herald_user_id", "userId"),
+            "userId",
+        )?,
         refund_type: object["metadata"]["refundType"]
             .as_str()
             .unwrap_or("subscription")
@@ -636,18 +688,6 @@ async fn handle_subscription_paid(
         payload.entitlement_key.clone()
     };
 
-    let _ledger = app_state
-        .subscription_service
-        .handle_subscription_paid(
-            payload.user_id,
-            realm_id,
-            &entitlement_key,
-            payload.is_renewal,
-            payload.current_period_end,
-            payload.event_id.clone(),
-        )
-        .await?;
-
     if let Some((subscription, previous)) = sync_creem_subscription(
         &app_state,
         realm_id,
@@ -677,6 +717,32 @@ async fn handle_subscription_paid(
             history_event_type,
         )
         .await?;
+    }
+
+    let grant_result = app_state
+        .subscription_service
+        .handle_subscription_paid(
+            payload.user_id,
+            realm_id,
+            &entitlement_key,
+            payload.is_renewal,
+            payload.current_period_end,
+            payload.event_id.clone(),
+        )
+        .await;
+
+    if let Err(error) = grant_result {
+        if matches!(error, CoreError::EntitlementMappingNotFound) {
+            info!(
+                realm_id = %realm_id,
+                user_id = %payload.user_id,
+                entitlement_key = %entitlement_key,
+                event_id = %event_id,
+                "Subscription projection synced; skipping points grant because entitlement mapping is disabled or missing"
+            );
+        } else {
+            return Err(error);
+        }
     }
 
     info!(

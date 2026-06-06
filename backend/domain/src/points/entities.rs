@@ -561,6 +561,9 @@ pub struct PointsTransaction {
 pub struct PointsBalance {
     pub user_id: Uuid,
     pub balance: i64,
+    pub topup_balance: i64,
+    pub subscription_balance: i64,
+    pub granted_balance: i64,
     pub total_recharged: i64,
     pub total_consumed: i64,
     pub unit: String,
@@ -572,6 +575,9 @@ impl From<PointsWallet> for PointsBalance {
         PointsBalance {
             user_id: account.user_id,
             balance: account.total_balance,
+            topup_balance: account.topup_balance,
+            subscription_balance: account.subscription_balance,
+            granted_balance: account.granted_balance,
             total_recharged: account.total_recharged,
             total_consumed: account.total_consumed,
             unit: "points".to_string(),

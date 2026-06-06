@@ -10,7 +10,7 @@ use herald_core::application::{WebhookContext, WebhookProcessResult};
 
 use crate::shopify_webhook_utils::verify_webhook_hmac;
 use herald_api_base::application::http::state::AppState;
-use herald_core::domain::billing::BillingRepository;
+use herald_core::domain::billing::{ACTOR_WEBHOOK, BillingRepository, SubscriptionHistoryService};
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
@@ -844,6 +844,29 @@ async fn handle_refunds_create(
             );
             e
         })?;
+
+    if let Some(subscription) = state
+        .billing_repository
+        .find_subscription_by_id(subscription_id)
+        .await?
+    {
+        let history_event = SubscriptionHistoryService::create_subscription_refunded_event(
+            &subscription,
+            serde_json::json!({
+                "provider": "shopify",
+                "refundId": refund.id,
+                "orderId": refund.order_id,
+                "amount": refund.refund_amount,
+                "currency": refund.currency,
+                "reason": refund.reason,
+            }),
+            Some(ACTOR_WEBHOOK.to_string()),
+        );
+        state
+            .billing_repository
+            .save_history_event(history_event)
+            .await?;
+    }
 
     info!(
         realm_id = %sub_realm_id,

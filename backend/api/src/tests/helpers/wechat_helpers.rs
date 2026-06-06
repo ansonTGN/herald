@@ -287,40 +287,36 @@ pub async fn send_wechat_webhook_with_valid_signature_and_encryption(
     app: &axum::Router,
     realm_id: &str,
     decrypted_data: &serde_json::Value,
-    _private_key_pem: &str,
+    private_key_pem: &str,
     v3_key: &str,
 ) -> axum::response::Response {
+    use aes_gcm::aead::Payload;
     use aes_gcm::aead::{Aead, KeyInit};
     use base64::Engine;
 
     let timestamp = chrono::Utc::now().timestamp().to_string();
-    let nonce_str = Uuid::now_v7().to_string();
+    let nonce_str = Uuid::now_v7().to_string()[..12].to_string();
 
     // Encrypt the data using AES-256-GCM (same as WeChat Pay)
-    let associated_data = ""; // Empty associated data for testing
+    let associated_data = "transaction";
     let plaintext = serde_json::to_string(decrypted_data).unwrap();
-    let plaintext_bytes = plaintext.as_bytes();
-
-    // Derive key from API v3 key (MD5 hash) - same as handler
-    // Use Aes128Gcm since MD5 produces 128-bit key
-    let key_bytes = md5::compute(v3_key).0;
 
     // Create cipher and generate nonce
-    let cipher = aes_gcm::Aes128Gcm::new_from_slice(&key_bytes).unwrap();
-    let nonce_bytes = aes_gcm::Nonce::from_slice(&nonce_str.as_bytes()[..12]); // First 12 bytes
-
-    // Encrypt: prepend associated_data to plaintext
-    let mut ad_and_plaintext = associated_data.as_bytes().to_vec();
-    ad_and_plaintext.extend_from_slice(plaintext_bytes);
+    let cipher = aes_gcm::Aes256Gcm::new_from_slice(v3_key.as_bytes()).unwrap();
+    let nonce_bytes = aes_gcm::Nonce::from_slice(nonce_str.as_bytes());
 
     let ciphertext = cipher
-        .encrypt(nonce_bytes, ad_and_plaintext.as_ref())
+        .encrypt(
+            nonce_bytes,
+            Payload {
+                msg: plaintext.as_bytes(),
+                aad: associated_data.as_bytes(),
+            },
+        )
         .unwrap();
 
     // Encode to base64
     let ciphertext_b64 = base64::engine::general_purpose::STANDARD.encode(&ciphertext);
-    let nonce_b64 = base64::engine::general_purpose::STANDARD.encode(&nonce_str.as_bytes()[..12]);
-    let associated_data_b64 = base64::engine::general_purpose::STANDARD.encode(associated_data);
 
     // Build notification payload with encrypted resource
     let payload = json!({
@@ -330,16 +326,16 @@ pub async fn send_wechat_webhook_with_valid_signature_and_encryption(
         "eventType": "TRANSACTION.SUCCESS",
         "resource": {
             "ciphertext": ciphertext_b64,
-            "nonce": nonce_b64,
-            "associatedData": associated_data_b64
+            "nonce": nonce_str,
+            "associatedData": associated_data
         },
         "summary": "支付成功"
     });
 
     let body_str = serde_json::to_string(&payload).unwrap();
 
-    // Generate valid HMAC-SHA256 signature for testing
-    let signature = generate_wechat_signature(&timestamp, &nonce_str, &body_str, v3_key);
+    // Generate valid SHA256-RSA signature for testing
+    let signature = generate_wechat_signature(&timestamp, &nonce_str, &body_str, private_key_pem);
 
     app.clone()
         .oneshot(
@@ -410,18 +406,28 @@ pub async fn send_wechat_webhook_raw(
 /// Signature Generation Helper
 /// ============================================================================
 /// Generate valid WeChat Pay webhook signature for testing
-fn generate_wechat_signature(timestamp: &str, nonce: &str, body: &str, v3_key: &str) -> String {
+fn generate_wechat_signature(
+    timestamp: &str,
+    nonce: &str,
+    body: &str,
+    private_key_pem: &str,
+) -> String {
     use base64::Engine;
-    use hmac::Mac;
+    use rsa::RsaPrivateKey;
+    use rsa::pkcs1::DecodeRsaPrivateKey;
+    use rsa::pkcs1v15::Pkcs1v15Sign;
+    use rsa::pkcs8::DecodePrivateKey;
+    use sha2::{Digest, Sha256};
 
     // Create message: timestamp + "\n" + nonce + "\n" + body
     let message = format!("{}\n{}\n{}", timestamp, nonce, body);
-
-    // Compute HMAC-SHA256
-    let mut mac = <hmac::Hmac<sha2::Sha256> as hmac::Mac>::new_from_slice(v3_key.as_bytes())
-        .expect("HMAC can take key of any size");
-    mac.update(message.as_bytes());
-    let signature_bytes = mac.finalize().into_bytes();
+    let digest = Sha256::digest(message.as_bytes());
+    let private_key = RsaPrivateKey::from_pkcs8_pem(private_key_pem)
+        .or_else(|_| RsaPrivateKey::from_pkcs1_pem(private_key_pem))
+        .expect("valid RSA private key");
+    let signature_bytes = private_key
+        .sign(Pkcs1v15Sign::new::<Sha256>(), &digest)
+        .expect("RSA signature");
 
     // Base64 encode
     base64::engine::general_purpose::STANDARD.encode(signature_bytes)

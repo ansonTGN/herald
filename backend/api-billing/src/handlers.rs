@@ -617,7 +617,10 @@ pub async fn create_checkout_session(
                 )),
                 metadata: Some({
                     let mut map = std::collections::HashMap::new();
-                    map.insert("entitlementKey".to_string(), entitlement_key.clone());
+                    map.insert(
+                        "herald_entitlement_key".to_string(),
+                        entitlement_key.clone(),
+                    );
                     map
                 }),
             };
@@ -648,10 +651,16 @@ pub async fn create_checkout_session(
                 },
                 metadata: {
                     let mut map = std::collections::HashMap::new();
-                    map.insert("realmId".to_string(), realm_id.clone());
-                    map.insert("userId".to_string(), identity.user_id());
-                    map.insert("clientAppId".to_string(), client_app_id.to_string());
-                    map.insert("entitlementKey".to_string(), entitlement_key.clone());
+                    map.insert("herald_realm_id".to_string(), realm_id.clone());
+                    map.insert("herald_user_id".to_string(), identity.user_id());
+                    map.insert(
+                        "herald_client_app_id".to_string(),
+                        client_app_id.to_string(),
+                    );
+                    map.insert(
+                        "herald_entitlement_key".to_string(),
+                        entitlement_key.clone(),
+                    );
                     Some(map)
                 },
             };
