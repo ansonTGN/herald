@@ -1,6 +1,6 @@
 # Herald 用户故事
 
-本目录包含 Herald 系统的用户故事，遵循 [`spec/product/user-story.md`](/spec/product/user-story.md) 编写规范。
+本目录包含 Herald 系统的用户故事，遵循用户故事编写规范（已迁移至外部 skills 仓库）。
 
 ---
 
@@ -22,7 +22,7 @@ docs/user-stories/
 ## 编写新用户故事
 
 1. 参考 [`_roles.md`](_roles.md) 确认角色定义
-2. 遵循 [`spec/product/user-story.md`](/spec/product/user-story.md) 的 INVEST 原则
+2. 遵循 INVEST 原则
 3. 使用 GWT 格式编写验收标准
 4. 在用户故事文件开头引用 `_roles.md` 中的对应角色
 
@@ -66,7 +66,7 @@ docs/user-stories/
 
 ## 相关文档
 
-- [`spec/product/user-story.md`](/spec/product/user-story.md) - 用户故事编写规范
+
 - [`_roles.md`](_roles.md) - 统一角色定义参考
 - [`index.md`](index.md) - 用户故事索引
 - [`docs/prd/index.md`](/docs/prd/index.md) - PRD 文档索引

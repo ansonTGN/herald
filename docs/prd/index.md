@@ -69,7 +69,6 @@ docs/
 ## 相关文档
 
 - **用户故事索引**: [docs/user-stories/index.md](/docs/user-stories/index.md)
-- **PRD 编写规范**: [spec/product/prd.md](/spec/product/prd.md)
 
 ## PRD 分层约束
 
