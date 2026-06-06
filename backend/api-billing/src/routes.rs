@@ -16,7 +16,10 @@ use crate::handlers::{
     cancel_subscription_for_client_app, create_checkout_session, get_subscription,
     get_subscription_for_client_app, list_subscriptions,
 };
-use crate::handlers_history::{get_subscription_history, list_subscription_history};
+use crate::handlers_history::{
+    get_my_subscription_history, get_subscription_history, list_my_subscription_history,
+    list_subscription_history,
+};
 use crate::invoice_handlers::{
     apply_invoice, create_invoice, download_invoice_pdf, download_my_invoice_pdf, get_invoice,
     get_my_invoice, get_seller_config, issue_invoice, list_invoices, list_my_invoices, mark_paid,
@@ -147,6 +150,14 @@ pub fn billing_routes() -> Router<AppState> {
         .route(
             "/api/bill/{realmId}/subscriptions/history",
             get(list_subscription_history),
+        )
+        .route(
+            "/api/bill/{realmId}/my/subscriptions/history",
+            get(list_my_subscription_history),
+        )
+        .route(
+            "/api/bill/{realmId}/my/subscriptions/{subscriptionId}/history",
+            get(get_my_subscription_history),
         )
         // ===== Points Package Management =====
         .route(

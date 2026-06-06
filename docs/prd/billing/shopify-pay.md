@@ -101,7 +101,7 @@ Shopify Pay 集成是 Herald 系统支付平台选项之一，与 Creem（模拟
   - 禁止路径：subscription_id → points_credit_ledger → user_id（ledger 是派生数据）
 - **预留字段**：`shopify_subscription_binding.customer_payment_method_id` 为数据库预留字段，当前代码未实际写入，预留用于未来支付方式变更场景
 - **修订版本控制**：升级/降级时比较 contract 的 revision_id，只有更高版本才能覆盖本地状态
-- **升级降级规则**：升级（新计划积分更多）发放差额积分；降级（新计划积分更少）仅更新 Subscription 和 history，不回收既有积分
+- **升级降级规则**：升级立即回收旧套餐全部 `subscription_credit`，再按新套餐发放完整周期积分；降级仅更新 Subscription 和 history，不回收既有积分
 - **数据隔离**：不同 Realm 的支付数据完全隔离；一个 Realm 绑定一个 Shopify Shop
 
 ### 4.2 关键状态与异常
@@ -122,7 +122,7 @@ Shopify Pay 集成是 Herald 系统支付平台选项之一，与 Creem（模拟
 - **Shopify 配置管理**：支持创建、查看（脱敏）、更新、删除配置；支持连接测试（Admin API 和 Storefront API）
 - **Webhook 驱动订阅创建**：接收 subscription_contracts/create webhook → 验证 HMAC 签名 → 幂等检查 → 提取 Herald 标识符 → 归属判断（含 casUserId / 存在 binding / 无标识符三种情况）→ 创建本地 Subscription 和绑定记录
 - **续费和积分发放**：接收 subscription_billing_attempts/success webhook → 验证签名 → 查找 Subscription → 调用积分发放 → 更新周期边界
-- **升级/降级处理**：接收 subscription_contracts/update webhook → revision_id 比对 → 执行升级差额积分发放或降级状态更新
+- **升级/降级处理**：接收 subscription_contracts/update webhook → revision_id 比对 → 升级时回收旧套餐全部 `subscription_credit` 并发放新套餐完整周期积分，降级时仅更新状态
 - **取消处理**：接收 subscription_contracts/update webhook → 映射 Shopify 状态到 Herald 状态（ScheduledCancel / Canceled）
 - **退款处理**：接收 refunds/create webhook → 记录退款事件 → 进入现有退款积分回收路径
 - **订阅认领**：用户登录后通过 Shopify Customer ID、Contract ID 或 Order ID 认领未归属订阅 → 更新 user_id → 补发当前有效周期权益 → 记录审计日志；其中 Order ID 路径通过 `shopify_subscription_binding.last_order_id` 反查 `customer_id`

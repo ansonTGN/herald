@@ -266,7 +266,7 @@ And 系统立即发放付费积分
 
 ## 相关文档
 
-- **PRD**: [docs/prd/billing/points-free-user.md](/docs/prd/billing/points-free-user.md) - 免费用户积分系统产品需求文档
+- **PRD**: [docs/prd/billing/points.md](/docs/prd/billing/points.md) - 积分系统产品需求文档（含免费用户积分）
 - **PRD**: [docs/prd/billing/points.md](/docs/prd/billing/points.md) - 积分系统产品需求文档
 - **用户故事**: [docs/user-stories/billing/points-admin.md](/docs/user-stories/billing/points-admin.md) - 积分管理用户故事
 - **用户故事**: [docs/user-stories/billing/points-user.md](/docs/user-stories/billing/points-user.md) - 用户积分查询用户故事

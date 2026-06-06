@@ -120,6 +120,7 @@ mod tests {
             actor_type: ActorType::User,
             void_reason: None,
             issue_date: None,
+            paid_at: None,
         })
         .await
         .unwrap();
@@ -221,6 +222,7 @@ mod tests {
                     actor_type: ActorType::User,
                     void_reason: None,
                     issue_date: None,
+                    paid_at: None,
                 })
                 .await
                 .unwrap();
@@ -234,6 +236,7 @@ mod tests {
                         actor_type: ActorType::User,
                         void_reason: None,
                         issue_date: None,
+                        paid_at: None,
                     })
                     .await
                     .unwrap();
@@ -246,6 +249,7 @@ mod tests {
                         actor_type: ActorType::User,
                         void_reason: case.void_reason.map(|s| s.to_string()),
                         issue_date: None,
+                        paid_at: None,
                     })
                     .await
                     .unwrap();
@@ -301,6 +305,7 @@ mod tests {
             actor_type: ActorType::User,
             void_reason: None,
             issue_date: None,
+            paid_at: None,
         })
         .await
         .unwrap();
@@ -378,6 +383,7 @@ mod tests {
                 actor_type: ActorType::User,
                 void_reason: None,
                 issue_date: None,
+                paid_at: None,
             })
             .await
             .unwrap();
@@ -397,6 +403,7 @@ mod tests {
             actor_type: ActorType::User,
             void_reason: None,
             issue_date: None,
+            paid_at: None,
         })
         .await
         .unwrap();
@@ -476,6 +483,7 @@ mod tests {
             actor_type: ActorType::User,
             void_reason: None,
             issue_date: None,
+            paid_at: None,
         })
         .await
         .unwrap();

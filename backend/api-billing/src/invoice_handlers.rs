@@ -181,6 +181,28 @@ async fn get_invoice_policy(
     }
 }
 
+fn validate_optional_non_blank(value: Option<&str>, field_name: &str) -> Result<(), ApiError> {
+    if value.is_some_and(|s| s.trim().is_empty()) {
+        return Err(ApiError::bad_request(format!(
+            "{} must not be blank",
+            field_name
+        )));
+    }
+    Ok(())
+}
+
+fn parse_optional_paid_at(
+    value: Option<&str>,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, ApiError> {
+    value
+        .map(|paid_at| {
+            chrono::DateTime::parse_from_rfc3339(paid_at)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .map_err(|_| ApiError::bad_request("paidAt must be a valid RFC3339 timestamp"))
+        })
+        .transpose()
+}
+
 // ============================================================================
 // Seller Config Handlers
 // ============================================================================
@@ -479,6 +501,8 @@ pub async fn update_invoice(
         .map_err(|e: validator::ValidationErrors| {
             CoreError::BadRequest(format!("Validation failed: {}", e))
         })?;
+    validate_optional_non_blank(request.billing_tax_id.as_deref(), "billing_tax_id")?;
+    validate_optional_non_blank(request.seller_tax_id.as_deref(), "seller_tax_id")?;
 
     // Provider readonly guard: only manual invoices can be updated
     {
@@ -621,6 +645,7 @@ pub async fn issue_invoice(
             actor_type: ActorType::User,
             void_reason: None,
             issue_date: Some(issue_date),
+            paid_at: None,
         })
         .await?;
 
@@ -684,6 +709,7 @@ pub async fn void_invoice(
             actor_type: ActorType::User,
             void_reason: request.void_reason,
             issue_date: None,
+            paid_at: None,
         })
         .await?;
 
@@ -716,7 +742,7 @@ pub async fn mark_paid(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     Path((realm_id, invoice_id)): Path<(String, Uuid)>,
-    Json(_request): Json<MarkPaidRequest>,
+    Json(request): Json<MarkPaidRequest>,
 ) -> Result<Json<InvoiceDetailResponse>, ApiError> {
     tracing::info!(
         "Marking invoice {} as paid for realm: {}",
@@ -740,6 +766,7 @@ pub async fn mark_paid(
         None,
     )?;
 
+    let paid_at = parse_optional_paid_at(request.paid_at.as_deref())?;
     let actor_user_id = Uuid::parse_str(&identity.user_id()).ok();
     state
         .invoice_repository
@@ -751,6 +778,7 @@ pub async fn mark_paid(
             actor_type: ActorType::User,
             void_reason: None,
             issue_date: None,
+            paid_at,
         })
         .await?;
 

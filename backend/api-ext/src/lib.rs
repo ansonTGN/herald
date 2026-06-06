@@ -30,6 +30,8 @@ use herald_api_base::application::http::state::AppState;
         crate::points::get_balance_ext,
         crate::points::consume_points_ext,
         crate::points::grant_points_ext,
+        crate::points::get_transaction_ext,
+        crate::points::get_transaction_by_external_ref_ext,
         crate::points_package::list_points_packages_ext,
         crate::realm::create_realm,
         crate::realm::list_realms,
@@ -51,6 +53,7 @@ use herald_api_base::application::http::state::AppState;
         crate::points::ExtConsumePointsResponse,
         crate::points::ExtGrantPointsRequest,
         crate::points::ExtGrantPointsResponse,
+        crate::points::ExtTransactionResponse,
         crate::points_package::ExtPointsPackageItem,
         crate::points_package::ExtPointsPackageListResponse,
         crate::realm::CreateRealmExtRequest,
@@ -101,6 +104,10 @@ pub fn create_router(state: AppState) -> Router<AppState> {
         .route(
             "/points/{realmId}/grant",
             axum::routing::post(points::grant_points_ext),
+        )
+        .route(
+            "/points/{realmId}/transactions/by-external-ref/{externalRefId}",
+            axum::routing::get(points::get_transaction_by_external_ref_ext),
         )
         .route(
             "/points/{realmId}/transactions/{transactionId}",

@@ -127,6 +127,7 @@ impl SubscriptionStatus {
             | (SubscriptionStatus::Dispute, SubscriptionStatus::Expired)
             | (SubscriptionStatus::Dispute, SubscriptionStatus::PastDue)
             // From ScheduledCancel
+            | (SubscriptionStatus::ScheduledCancel, SubscriptionStatus::Active)
             | (SubscriptionStatus::ScheduledCancel, SubscriptionStatus::Canceled)
             | (SubscriptionStatus::ScheduledCancel, SubscriptionStatus::Expired)
             // From Canceled

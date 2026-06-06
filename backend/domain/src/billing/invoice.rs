@@ -463,6 +463,8 @@ pub struct InvoiceStatusTransition {
     pub void_reason: Option<String>,
     /// Issue date to set when transitioning to Issued. If None, repository defaults to today.
     pub issue_date: Option<chrono::NaiveDate>,
+    /// Paid timestamp to set when transitioning to Paid. If None, repository defaults to now.
+    pub paid_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Filters for listing invoices.

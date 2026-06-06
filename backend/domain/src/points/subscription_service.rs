@@ -13,7 +13,6 @@ use crate::points::{
     dtos::RevokePointsOutput,
     entities::{
         CreditLedgerStatus, CreditSourceType, CreditType, PointsCreditLedger, RevocationType,
-        SafeArithmetics,
     },
     ports::PointsRepository,
     service::PointsService,
@@ -65,8 +64,8 @@ where
 
     /// Handle subscription upgrade
     ///
-    /// Grants the difference in points between old and new entitlements.
-    /// The difference points expire at the end of the current billing period.
+    /// Revokes all old subscription credits, then grants the new entitlement's full points.
+    /// The new points expire at the end of the recalculated billing period.
     pub async fn handle_subscription_upgrade(
         &self,
         user_id: Uuid,
@@ -75,7 +74,7 @@ where
         new_entitlement_key: &str,
         period_end: DateTime<Utc>,
     ) -> Result<PointsCreditLedger, CoreError> {
-        let old_mapping = self
+        let _old_mapping = self
             .repo
             .find_points_policy_by_entitlement_key(realm_id, old_entitlement_key)
             .await?
@@ -87,18 +86,23 @@ where
             .await?
             .ok_or(CoreError::EntitlementMappingNotFound)?;
 
-        let old_points = old_mapping.points_per_period.unwrap_or(0);
         let new_points = new_mapping.points_per_period.unwrap_or(0);
-
-        let difference = new_points
-            .safe_sub(old_points)
-            .map_err(|e| CoreError::BadRequest(format!("Invalid entitlement points: {}", e)))?;
-
-        if difference <= 0 {
+        if new_points <= 0 {
             return Err(CoreError::BadRequest(
-                "New entitlement must have more points than old for upgrade".to_string(),
+                "New entitlement must grant points for upgrade".to_string(),
             ));
         }
+
+        let revoked = self
+            .points_service
+            .revoke_points_by_credit_type(
+                realm_id,
+                user_id,
+                CreditType::SubscriptionCredit,
+                RevocationType::UpgradeRevoke,
+                "Subscription upgrade replaced old subscription credits".to_string(),
+            )
+            .await?;
 
         let created_ledger = self
             .repo
@@ -107,7 +111,7 @@ where
                 user_id,
                 CreditType::SubscriptionCredit,
                 CreditSourceType::SubscriptionUpgrade,
-                difference,
+                new_points,
                 Some(period_end),
                 Some(new_entitlement_key.to_string()),
                 None,
@@ -119,9 +123,10 @@ where
             user_id = %user_id,
             old_entitlement_key = %old_entitlement_key,
             new_entitlement_key = %new_entitlement_key,
-            difference,
+            revoked_points = revoked.total_revoked,
+            new_points,
             period_end = %period_end,
-            "Subscription upgrade: granted difference points"
+            "Subscription upgrade: reclaimed old subscription credits and granted new points"
         );
 
         Ok(created_ledger)

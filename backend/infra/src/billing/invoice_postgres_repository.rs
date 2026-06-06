@@ -805,7 +805,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             InvoiceStatus::Paid => (
                 InvoiceStatus::Paid.as_str(),
                 None,
-                Some(now),
+                Some(input.paid_at.unwrap_or(now)),
                 None,
                 None,
                 None,

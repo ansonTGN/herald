@@ -140,7 +140,7 @@ docs/user-stories/
 | US-PP-012 | Shopify Subscription 续费和状态同步 | System | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-6shopify-订阅续费与状态同步-us-pp-012) |
 | US-PP-013 | 用户认领 Shopify 订阅 | Herald User | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-7用户认领-shopify-订阅-us-pp-013) |
 | US-PP-014 | Webhook 处理未归属订阅 | System | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-8webhook-处理未归属订阅-us-pp-014) |
-| US-PP-015 | 通过 Customer Binding 自动归属 | System | P1 | [billing/shopify-pay](billing/shopify-pay.md#故事-9通过-customer-binding-自动归属-us-pp-015) |
+| US-PP-015 | 通过 Customer Binding 自动归属 | System | P1 | [billing/shopify-pay](billing/shopify-pay.md#故事-9通过用户绑定自动归属-us-pp-015) |
 | US-PP-016 | 编辑促销积分包 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-7编辑促销积分包-us-pp-016) |
 | US-PP-017 | 用户查看促销积分包 | Regular User | P0 | [billing/points-package](billing/points-package.md#故事-8用户查看促销积分包-us-pp-017) |
 | US-PP-018 | 促销包自动过期 | Realm Admin | P1 | [billing/points-package](billing/points-package.md#故事-9促销包自动过期-us-pp-018) |
@@ -149,7 +149,7 @@ docs/user-stories/
 | US-WP-003 | 编辑微信支付平台配置 | Realm Admin | P1 | [billing/wechat-pay](billing/wechat-pay.md#故事-3编辑微信支付平台配置-us-wp-003) |
 | US-WP-004 | 删除微信支付平台配置 | Realm Admin | P1 | [billing/wechat-pay](billing/wechat-pay.md#故事-4删除微信支付平台配置-us-wp-004) |
 | US-WP-005 | 用户通过微信扫码支付 | Regular User | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-5用户通过微信扫码支付-us-wp-005) |
-| US-WP-006 | 微信支付 Webhook 回调处理 | System | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-6微信支付-webhook-回调处理-us-wp-006) |
+| US-WP-006 | 微信支付 Webhook 回调处理 | System | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-6微信支付回调处理-us-wp-006) |
 | US-WP-007 | 主动查询支付状态 | System | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-7主动查询支付状态-us-wp-007) |
 | US-WP-008 | 关闭过期支付订单 | System | P1 | [billing/wechat-pay](billing/wechat-pay.md#故事-8关闭过期支付订单-us-wp-008) |
 | US-PP-001 | 创建积分包 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-1创建积分包-us-pp-001) |
@@ -160,7 +160,7 @@ docs/user-stories/
 | US-PP-006 | 创建促销积分包 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-6创建促销积分包-us-pp-006) |
 | US-PU-006 | 购买积分包 | Regular User | P0 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-1购买积分包-us-pu-006) |
 | US-PU-007 | 查看积分包购买记录 | Regular User | P1 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-2查看积分包购买记录-us-pu-007) |
-| US-PU-008 | 积分包与订阅购买的区别 | Regular User | P1 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-3积分包与订阅购买的区别-us-pu-008) |
+| US-PU-008 | 积分包与订阅购买的区别 | Regular User | P1 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-3理解积分包与订阅购买的区别-us-pu-008) |
 | US-PA-001 | 创建支付尝试（订阅或积分包） | System | P0 | [billing/payment-attempt](billing/payment-attempt.md#故事-1创建支付尝试订阅或积分包-us-pa-001) |
 | US-PA-002 | 查询支付尝试状态 | System | P0 | [billing/payment-attempt](billing/payment-attempt.md#故事-2查询支付尝试状态-us-pa-002) |
 | US-PA-003 | 处理支付成功后的履约 | System | P0 | [billing/payment-attempt](billing/payment-attempt.md#故事-3处理支付成功后的履约-us-pa-003) |
@@ -198,7 +198,7 @@ docs/user-stories/
 | US-DC-002 | 用户在验证页面完成授权 | Regular User | P0 | [auth/device-code](auth/device-code.md#故事-2用户在验证页面完成授权-us-dc-002) |
 | US-DC-003 | CLI 工具轮询获取令牌 | Third-Party App | P0 | [auth/device-code](auth/device-code.md#故事-3cli-工具轮询获取令牌-us-dc-003) |
 | US-DC-004 | Realm Admin 配置 Device Code Grant | Realm Admin | P1 | [auth/device-code](auth/device-code.md#故事-4realm-admin-配置-device-code-grant-us-dc-004) |
-| US-DC-005 | 设备验证页面 API | Third-Party App | P1 | [auth/device-code](auth/device-code.md#故事-5设备验证页面-api-us-dc-005) |
+| US-DC-005 | 设备验证页面 API | Third-Party App | P1 | [auth/device-code](auth/device-code.md#故事-5自定义设备码验证体验-us-dc-005) |
 | US-TP-012 | 通过 SDK 管理 Realm | Third-Party App | P1 | [integration/sdk](integration/sdk.md#故事-1通过-sdk-管理-realm-us-tp-012) |
 | US-TP-013 | 通过 SDK 管理用户 | Third-Party App | P0 | [integration/sdk](integration/sdk.md#故事-2通过-sdk-管理用户-us-tp-013) |
 | US-TP-014 | 通过 SDK 管理 Client App | Third-Party App | P1 | [integration/sdk](integration/sdk.md#故事-3通过-sdk-管理-client-app-us-tp-014) |

@@ -6,6 +6,7 @@ mod tests {
 
         assert!(SubscriptionStatus::Pending.can_transition_to(&SubscriptionStatus::Active));
         assert!(SubscriptionStatus::Active.can_transition_to(&SubscriptionStatus::Canceled));
+        assert!(SubscriptionStatus::ScheduledCancel.can_transition_to(&SubscriptionStatus::Active));
         assert!(SubscriptionStatus::Canceled.can_transition_to(&SubscriptionStatus::Expired));
 
         assert!(!SubscriptionStatus::Canceled.can_transition_to(&SubscriptionStatus::Active));

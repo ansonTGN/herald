@@ -415,6 +415,7 @@ invoice_repo_test!(test_list_overdue_candidates, |repo| {
         actor_type: ActorType::User,
         void_reason: None,
         issue_date: None,
+        paid_at: None,
     })
     .await
     .unwrap();
@@ -451,6 +452,7 @@ invoice_repo_test!(test_excludes_non_issued_status, |repo| {
         actor_type: ActorType::User,
         void_reason: None,
         issue_date: None,
+        paid_at: None,
     })
     .await
     .unwrap();
@@ -462,6 +464,7 @@ invoice_repo_test!(test_excludes_non_issued_status, |repo| {
         actor_type: ActorType::User,
         void_reason: None,
         issue_date: None,
+        paid_at: None,
     })
     .await
     .unwrap();
@@ -500,6 +503,7 @@ invoice_repo_test!(test_transition_records_history, |repo| {
             actor_type: ActorType::User,
             void_reason: None,
             issue_date: None,
+            paid_at: None,
         })
         .await
         .unwrap();
@@ -556,6 +560,7 @@ invoice_repo_test!(test_transition_updates_timestamps, |repo| {
             actor_type: ActorType::User,
             void_reason: None,
             issue_date: None,
+            paid_at: None,
         })
         .await
         .unwrap();
@@ -582,6 +587,7 @@ invoice_repo_test!(test_transition_updates_timestamps, |repo| {
             actor_type: ActorType::User,
             void_reason: None,
             issue_date: None,
+            paid_at: None,
         })
         .await
         .unwrap();
@@ -613,6 +619,7 @@ invoice_repo_test!(test_transition_void_sets_reason, |repo| {
             actor_type: ActorType::User,
             void_reason: Some("Customer cancelled".to_string()),
             issue_date: None,
+            paid_at: None,
         })
         .await
         .unwrap();

@@ -21,6 +21,18 @@ fn is_duplicate_key_error(err: &CoreError) -> bool {
         false
     }
 }
+
+fn billing_period_to_days(period: Option<&str>) -> i64 {
+    match period.map(|p| p.trim().to_ascii_lowercase()).as_deref() {
+        Some("daily") | Some("day") => 1,
+        Some("weekly") | Some("week") => 7,
+        Some("monthly") | Some("month") => 30,
+        Some("quarterly") | Some("quarter") => 90,
+        Some("yearly") | Some("annual") | Some("annually") | Some("year") => 365,
+        _ => 30,
+    }
+}
+
 /// Implementation of fulfillment service for unified purchase handling
 pub struct PostgresFulfillmentService<P, PP, PR, B>
 where
@@ -116,7 +128,8 @@ where
         let entitlement_key = mapping.entitlement_key.clone();
 
         let now = chrono::Utc::now();
-        let period_end = now + chrono::Duration::days(30); // Default 30-day period
+        let period_days = billing_period_to_days(mapping.billing_period.as_deref());
+        let period_end = now + chrono::Duration::days(period_days);
 
         // Create new subscription
         let subscription = Subscription {
@@ -145,6 +158,7 @@ where
             realm_id = %subscription.realm_id,
             user_id = ?subscription.user_id,
             entitlement_key = %entitlement_key,
+            period_days,
             "Creating new subscription from payment attempt"
         );
 

@@ -22,6 +22,7 @@ use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::points::dtos::{ConsumePointsInput, GrantPointsInput};
 use herald_core::domain::points::entities::CreditSourceType;
+use herald_core::domain::points::ports::TransactionFilters;
 
 const REALM_RATE_LIMIT_PREFIX: &str = "points:realm:";
 const USER_RATE_LIMIT_PREFIX: &str = "points:user:";
@@ -703,6 +704,30 @@ pub struct ExtTransactionResponse {
     pub created_at: String,
 }
 
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtTransactionByRefQuery {
+    pub user_id: Option<String>,
+}
+
+fn transaction_to_response(
+    transaction: &herald_core::domain::points::entities::PointsTransaction,
+) -> ExtTransactionResponse {
+    ExtTransactionResponse {
+        transaction_id: transaction.id.to_string(),
+        wallet_id: transaction.wallet_id.to_string(),
+        user_id: transaction.user_id.to_string(),
+        transaction_type: transaction.transaction_type.to_string(),
+        amount: transaction.amount,
+        balance_after: transaction.balance_after,
+        description: transaction.description.clone(),
+        client_app_id: transaction.client_app_id.map(|id| id.to_string()),
+        subscription_id: transaction.subscription_id.map(|id| id.to_string()),
+        external_ref_id: transaction.external_ref_id.clone(),
+        created_at: transaction.created_at.to_rfc3339(),
+    }
+}
+
 /// Get transaction by ID
 ///
 /// Returns details of a specific points transaction.
@@ -804,20 +829,7 @@ pub async fn get_transaction_ext(
         }
     };
 
-    // 4. Build response
-    let response = ExtTransactionResponse {
-        transaction_id: transaction.id.to_string(),
-        wallet_id: transaction.wallet_id.to_string(),
-        user_id: transaction.user_id.to_string(),
-        transaction_type: transaction.transaction_type.to_string(),
-        amount: transaction.amount,
-        balance_after: transaction.balance_after,
-        description: transaction.description,
-        client_app_id: transaction.client_app_id.map(|id| id.to_string()),
-        subscription_id: transaction.subscription_id.map(|id| id.to_string()),
-        external_ref_id: transaction.external_ref_id,
-        created_at: transaction.created_at.to_rfc3339(),
-    };
+    let response = transaction_to_response(&transaction);
 
     tracing::info!(
         transaction_id = %transaction.id,
@@ -825,4 +837,108 @@ pub async fn get_transaction_ext(
     );
 
     Json(response).into_response()
+}
+
+/// Get transaction by external reference ID
+///
+/// Returns details of a specific points transaction by `externalRefId`.
+#[utoipa::path(
+    get,
+    path = "/api/ext/points/{realmId}/transactions/by-external-ref/{externalRefId}",
+    tag = "ext",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("externalRefId" = String, Path, description = "External reference ID"),
+        ExtTransactionByRefQuery
+    ),
+    responses(
+        (status = 200, description = "Transaction retrieved successfully", body = ExtTransactionResponse),
+        (status = 400, description = "Bad request - invalid user ID or non-unique external reference", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - Invalid or missing API Key", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Cross-realm access attempt", body = ErrorResponse),
+        (status = 404, description = "Not found - Transaction not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    security(("api_key" = []))
+)]
+pub async fn get_transaction_by_external_ref_ext(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path((realm_id, external_ref_id)): Path<(String, String)>,
+    Query(query): Query<ExtTransactionByRefQuery>,
+) -> Response {
+    let api_key_realm_id = identity.realm_id();
+
+    tracing::info!(
+        api_key_realm_id = %api_key_realm_id,
+        request_realm_id = %realm_id,
+        external_ref_id = %external_ref_id,
+        "Transaction query by external ref requested"
+    );
+
+    if external_ref_id.trim().is_empty() {
+        return json_error(StatusCode::BAD_REQUEST, ErrorCode::ValidationError);
+    }
+
+    if !identity.has_access_to_realm(&realm_id) {
+        return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    if let Err(resp) =
+        require_principal_permission(&state, &identity, &realm_id, "points", "view").await
+    {
+        return resp.into_response();
+    }
+
+    let user_id = match query.user_id {
+        Some(raw_user_id) => match raw_user_id.parse::<Uuid>() {
+            Ok(uuid) => Some(uuid),
+            Err(_) => return json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidUserIdFormat),
+        },
+        None => None,
+    };
+
+    let filters = TransactionFilters {
+        user_id,
+        external_ref_id,
+        page: Some(1),
+        page_size: Some(2),
+        ..Default::default()
+    };
+
+    let result = match state
+        .points_service
+        .list_transactions(identity.clone(), &realm_id, filters)
+        .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            tracing::error!("Failed to get transaction by external ref: {}", e);
+            return match e {
+                herald_core::domain::common::entities::app_errors::CoreError::Unauthorized => {
+                    json_error(StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized)
+                }
+                herald_core::domain::common::entities::app_errors::CoreError::Forbidden(_) => {
+                    json_error(StatusCode::FORBIDDEN, ErrorCode::Forbidden)
+                }
+                _ => json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError),
+            };
+        }
+    };
+
+    if result.data.is_empty() {
+        return json_error(StatusCode::NOT_FOUND, ErrorCode::TransactionNotFound);
+    }
+    if result.data.len() > 1 {
+        return json_error(StatusCode::BAD_REQUEST, ErrorCode::ValidationError);
+    }
+
+    let transaction = result.data.into_iter().next().expect("checked non-empty");
+    if let Some(client_app_id) = transaction.client_app_id
+        && let Err(resp) = ensure_client_app_scope(&state, &identity, client_app_id).await
+    {
+        return resp;
+    }
+
+    Json(transaction_to_response(&transaction)).into_response()
 }
