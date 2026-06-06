@@ -165,7 +165,7 @@ pub struct FulfillPaymentRequest {
 // ============================================================================
 
 fn validate_purchasable_target(target_type: &str) -> Result<(), validator::ValidationError> {
-    if matches!(target_type, "subscription_plan" | "points_package") {
+    if matches!(target_type, "subscription_entitlement" | "points_package") {
         Ok(())
     } else {
         Err(validator::ValidationError::new("invalid target_type"))

@@ -172,7 +172,7 @@ Steps 8 and 9 run concurrently. `tokio::select!` waits for either one to finish 
 A Rust crate published for third-party applications. Wraps all endpoints under `/api/ext/`:
 
 - `check_permission` — permission check (with moka local cache, auto-invalidation)
-- `get_subscription` / `list_plans` / `list_plan_assignments` — subscription queries
+- `get_subscription` — subscription status query with `entitlement_key`
 - `get_balance` / `consume_points` — points queries and consumption
 
 The constructor takes `base_url` and `api_key`. All requests include the `X-API-Key` header automatically. Permission checks use a local moka cache with a 5-minute TTL; when a token expires, associated cache entries are cleared in batch.

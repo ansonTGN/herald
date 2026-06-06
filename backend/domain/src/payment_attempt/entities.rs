@@ -31,14 +31,14 @@ pub struct PaymentAttempt {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PurchasableTarget {
-    SubscriptionPlan,
+    SubscriptionEntitlement,
     PointsPackage,
 }
 
 impl std::fmt::Display for PurchasableTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::SubscriptionPlan => write!(f, "subscription_plan"),
+            Self::SubscriptionEntitlement => write!(f, "subscription_entitlement"),
             Self::PointsPackage => write!(f, "points_package"),
         }
     }
@@ -49,7 +49,7 @@ impl std::str::FromStr for PurchasableTarget {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "subscription_plan" => Ok(Self::SubscriptionPlan),
+            "subscription_entitlement" => Ok(Self::SubscriptionEntitlement),
             "points_package" => Ok(Self::PointsPackage),
             _ => Err(CoreError::BadRequest(format!(
                 "Invalid purchasable target: {s}"

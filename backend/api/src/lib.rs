@@ -49,7 +49,9 @@ use herald_core::infrastructure::authorization::{
     RedisCache, RedisPermissionChecker,
     policies::{PermissionBasedBillingPolicy, PermissionBasedPointsPolicy},
 };
-use herald_core::infrastructure::billing::{PostgresBillingRepository, PostgresInvoiceRepository};
+use herald_core::infrastructure::billing::{
+    ConfiguredProviderProductApi, PostgresBillingRepository, PostgresInvoiceRepository,
+};
 use herald_core::infrastructure::client_api_keys::{ApiKeyCache, ClientApiKeyRepository};
 use herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository;
 use herald_core::infrastructure::points::{PostgresPointsRepository, RedisIdempotencyStore};
@@ -180,9 +182,17 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
     let billing_policy = PermissionBasedBillingPolicy::new(permission_checker.clone());
     let entitlement_mapping_service = Arc::new(billing::EntitlementMappingService::new(
         billing_repository.clone(),
-        Arc::new(billing_policy),
+        Arc::new(billing_policy.clone()),
     ));
     info!("Entitlement mapping service initialized with PermissionBasedBillingPolicy");
+
+    let provider_product_api = Arc::new(ConfiguredProviderProductApi::new(pg_pool.clone()));
+    let provider_product_sync_service = Arc::new(billing::ProviderProductSyncService::new(
+        billing_repository.clone(),
+        Arc::new(billing_policy),
+        provider_product_api,
+    ));
+    info!("Provider product sync service initialized");
 
     // Create points service with permission-based policy
     let points_repository = Arc::new(PostgresPointsRepository::new(
@@ -322,6 +332,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         invoice_repository: invoice_repository.clone(),
         audit_event_repository: audit_event_repository.clone(),
         entitlement_mapping_service: entitlement_mapping_service.clone(),
+        provider_product_sync_service: provider_product_sync_service.clone(),
         public_base_url: config.frontend.url.clone(),
         permission_checker: permission_checker.clone(),
         app_env: config.server.app_env.clone(),
@@ -416,6 +427,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         invoice_repository,
         audit_event_repository,
         entitlement_mapping_service,
+        provider_product_sync_service,
         public_base_url: config.frontend.url.clone(),
         permission_checker,
         app_env: config.server.app_env.clone(),

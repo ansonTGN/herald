@@ -253,19 +253,6 @@ pub fn assert_subscription_period_duration(
 /// ============================================================================
 /// Subscription Field Assertions
 /// ============================================================================
-/// Assert subscription has expected plan
-///
-/// # Arguments
-/// * `actual_plan_id` - Actual plan ID
-/// * `expected_plan_id` - Expected plan ID
-pub fn assert_subscription_plan(actual_plan_id: Uuid, expected_plan_id: Uuid) {
-    assert_eq!(
-        actual_plan_id, expected_plan_id,
-        "Expected subscription to have plan_id {}, but got {}",
-        expected_plan_id, actual_plan_id
-    );
-}
-
 /// Assert subscription has expected client app
 ///
 /// # Arguments

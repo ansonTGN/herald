@@ -172,7 +172,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 发布给第三方应用的 Rust crate。封装了 `/api/ext/` 下的所有接口：
 
 - `check_permission` — 权限检查（带 moka 本地缓存，自动失效）
-- `get_subscription` / `list_plans` / `list_plan_assignments` — 订阅查询
+- `get_subscription` — 订阅状态查询，返回 `entitlement_key`
 - `get_balance` / `consume_points` — 积分查询和消费
 
 构造函数接收 `base_url` 和 `api_key`，所有请求自动带上 `X-API-Key` header。权限检查有本地缓存（moka），5 分钟 TTL，token 过期时批量清除关联缓存。

@@ -471,12 +471,3 @@ billing_repo_test!(test_repository_payment_event_idempotency, |repo| {
     // Should fail due to UNIQUE constraint
     assert!(result.is_err());
 });
-
-// =============================================================================
-// Legacy Plan/Product Tests (removed - tables no longer exist)
-// =============================================================================
-// The following tests referenced deleted Product/SubscriptionPlan tables and
-// have been removed as part of the product_reduce migration:
-// - test_repository_update_plan_persists_product_id
-// - test_repository_public_plan_queries_hide_disabled_products
-// - test_repository_subscription_all_tiers (SubscriptionTier removed)

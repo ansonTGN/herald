@@ -391,94 +391,6 @@ COMMENT ON TABLE email_verification_code IS 'Verification codes for email confir
 -- Billing Tables
 -- ====================================
 
--- Products table
-CREATE TABLE products (
-    id UUID PRIMARY KEY DEFAULT uuidv7(),
-    realm_id TEXT NOT NULL,
-    code TEXT NOT NULL,
-    title TEXT NOT NULL DEFAULT '',
-    description TEXT,
-    enabled BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_products_realm_code UNIQUE (realm_id, code)
-);
-
-CREATE INDEX idx_products_realm_id ON products(realm_id);
-CREATE INDEX idx_products_realm_enabled ON products(realm_id, enabled);
-COMMENT ON TABLE products IS 'Product catalog items';
-
--- Subscription plan table (subscription plans)
-CREATE TABLE subscription_plan (
-    id UUID PRIMARY KEY DEFAULT uuidv7(),
-    realm_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT,
-    title TEXT NOT NULL DEFAULT '',
-    type text NOT NULL DEFAULT 'monthly',
-    price INTEGER NOT NULL DEFAULT 0,
-    currency text NOT NULL DEFAULT 'USD',
-    product_id UUID NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
-    external_price_id TEXT,
-    checkout_url TEXT,
-    monthly_price_cents INTEGER,
-    yearly_price_cents INTEGER,
-    creem_product_id_monthly TEXT,
-    creem_product_id_yearly TEXT,
-    active BOOLEAN DEFAULT true,
-    trial_days INTEGER DEFAULT 0,
-    sort_order INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_subscription_plan_realm_name UNIQUE (realm_id, name)
-);
-
-CREATE INDEX idx_subscription_plan_realm_id ON subscription_plan(realm_id);
-CREATE INDEX idx_subscription_plan_active ON subscription_plan(active);
-CREATE INDEX idx_subscription_plan_type ON subscription_plan(type);
-CREATE INDEX idx_subscription_plan_product_id ON subscription_plan(product_id);
-CREATE INDEX idx_subscription_plan_realm_product ON subscription_plan(realm_id, product_id);
-COMMENT ON TABLE subscription_plan IS 'Subscription pricing plans for billing';
-COMMENT ON COLUMN subscription_plan.type IS 'Plan type: monthly or yearly billing';
-
--- Subscription Plan Payment Provider mapping
-CREATE TABLE subscription_plan_payment_provider (
-    id UUID PRIMARY KEY DEFAULT uuidv7(),
-    plan_id UUID NOT NULL,
-    payment_provider text NOT NULL,
-    external_product_id TEXT NOT NULL,
-    external_price_id TEXT,
-    enabled BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT fk_subscription_plan_payment_provider_plan
-        FOREIGN KEY (plan_id) REFERENCES subscription_plan(id) ON DELETE CASCADE,
-    CONSTRAINT uq_subscription_plan_payment_provider_plan_provider UNIQUE (plan_id, payment_provider)
-);
-
-CREATE INDEX idx_subscription_plan_payment_provider_plan_id ON subscription_plan_payment_provider(plan_id);
-CREATE INDEX idx_subscription_plan_payment_provider_provider ON subscription_plan_payment_provider(payment_provider);
-COMMENT ON TABLE subscription_plan_payment_provider IS 'Payment provider mappings for plans, allowing multiple providers per plan';
-COMMENT ON COLUMN subscription_plan_payment_provider.plan_id IS 'Reference to the plan';
-COMMENT ON COLUMN subscription_plan_payment_provider.payment_provider IS 'Payment provider name (stripe, creem, shopify, etc.)';
-COMMENT ON COLUMN subscription_plan_payment_provider.external_product_id IS 'External product ID from the payment provider';
-COMMENT ON COLUMN subscription_plan_payment_provider.external_price_id IS 'External price ID from the payment provider (optional)';
-COMMENT ON COLUMN subscription_plan_payment_provider.enabled IS 'Whether this payment provider mapping is enabled for checkout';
-
--- Client App Subscription Plan junction table
-CREATE TABLE client_app_subscription_plan (
-    id UUID PRIMARY KEY DEFAULT uuidv7(),
-    client_app_id UUID NOT NULL,
-    plan_id UUID NOT NULL,
-    enabled BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_client_app_subscription_plan UNIQUE (client_app_id, plan_id)
-);
-
-CREATE INDEX idx_client_app_subscription_plan_client_app_id ON client_app_subscription_plan(client_app_id);
-CREATE INDEX idx_client_app_subscription_plan_plan_id ON client_app_subscription_plan(plan_id);
-COMMENT ON TABLE client_app_subscription_plan IS 'Associates client apps with available plans';
-
 -- Subscription table
 CREATE TABLE subscription (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
@@ -486,15 +398,16 @@ CREATE TABLE subscription (
     user_id UUID REFERENCES account(id) ON DELETE SET NULL,
     external_subscription_id TEXT NOT NULL,
     external_product_id TEXT NOT NULL,
+    external_price_id TEXT,
     payment_provider text NOT NULL DEFAULT 'creem',
     status text NOT NULL,
-    tier text NOT NULL DEFAULT 'free',
+    entitlement_key TEXT NOT NULL DEFAULT '',
+    provider_metadata JSONB,
+    synced_at TIMESTAMPTZ,
     current_period_start TIMESTAMPTZ,
     current_period_end TIMESTAMPTZ,
     cancel_at_period_end BOOLEAN DEFAULT false,
-    plan_id UUID,
     client_app_id UUID UNIQUE,
-    billing_period text DEFAULT 'monthly',
     cancel_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -505,12 +418,11 @@ CREATE INDEX idx_subscription_realm_id ON subscription(realm_id);
 CREATE INDEX idx_subscription_external_provider
     ON subscription(external_subscription_id, payment_provider);
 CREATE INDEX idx_subscription_status ON subscription(status);
-CREATE INDEX idx_subscription_plan_id ON subscription(plan_id);
+CREATE INDEX idx_subscription_entitlement_key ON subscription(entitlement_key);
 CREATE INDEX idx_subscription_client_app_id ON subscription(client_app_id);
-CREATE INDEX idx_subscription_billing_period ON subscription(billing_period);
 CREATE INDEX idx_subscription_user_id ON subscription(user_id);
 CREATE INDEX idx_subscription_realm_user_id ON subscription(realm_id, user_id);
-COMMENT ON TABLE subscription IS 'Client app subscriptions to billing plans';
+COMMENT ON TABLE subscription IS 'Client app subscriptions mapped to entitlement keys';
 
 -- Payment Event table
 CREATE TABLE payment_event (

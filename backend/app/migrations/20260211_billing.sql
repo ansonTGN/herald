@@ -152,29 +152,6 @@ COMMENT ON COLUMN points_transactions.updated_at IS 'When transaction was last u
 COMMENT ON INDEX idx_transactions_external_ref IS 'Idempotency constraint for webhook event processing based on user_id + external_ref_id';
 
 -- ====================================
--- Points Plan Configs
--- ====================================
-CREATE TABLE points_plan_configs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    realm_id TEXT NOT NULL,
-    plan_id UUID NOT NULL REFERENCES subscription_plan(id) ON DELETE CASCADE,
-    grant_period_type text NOT NULL DEFAULT 'once' CHECK (grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
-    points_per_period BIGINT NOT NULL DEFAULT 0 CHECK (points_per_period >= 0),
-    validity_days BIGINT NOT NULL DEFAULT 0 CHECK (validity_days >= 0),
-    grant_on_subscribe BOOLEAN NOT NULL DEFAULT TRUE,
-    max_periods BIGINT CHECK (max_periods IS NULL OR max_periods > 0),
-    active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uk_points_plan_configs_plan_id UNIQUE (plan_id)
-);
-
-CREATE INDEX idx_points_plan_configs_realm_id ON points_plan_configs(realm_id);
-CREATE INDEX idx_points_plan_configs_plan_id ON points_plan_configs(plan_id);
-
-COMMENT ON TABLE points_plan_configs IS 'Configuration mapping billing plans to flexible points grant rules';
-
--- ====================================
 -- Idempotency Keys
 -- ====================================
 CREATE TABLE idempotency_keys (
@@ -352,7 +329,7 @@ CREATE TABLE points_grant_schedules (
     user_id UUID NOT NULL,
     realm_id TEXT NOT NULL,
     subscription_id UUID,
-    plan_config_id UUID,
+    entitlement_key TEXT NOT NULL DEFAULT '',
     grant_period_type text NOT NULL CHECK (grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
     base_time TIMESTAMPTZ NOT NULL,
     next_grant_time TIMESTAMPTZ NOT NULL,

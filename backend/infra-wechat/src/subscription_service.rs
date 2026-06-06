@@ -33,7 +33,7 @@ impl WechatSubscriptionService {
     /// - Keep this service focused on WeChat API integration only
     ///
     /// This method:
-    /// 1. Loads the plan details to get points amount and billing period
+    /// 1. Loads the entitlement mapping details to get points amount and billing period
     /// 2. Creates a subscription record
     /// 3. Grants points to the user
     /// 4. Records the payment event for idempotency
@@ -41,52 +41,51 @@ impl WechatSubscriptionService {
         &self,
         realm_id: &str,
         user_id: Uuid,
-        plan_id: Uuid,
+        mapping_id: Uuid,
         transaction_id: &str,
         _amount: i32, // Amount is already verified in webhook handler
     ) -> Result<SubscriptionResult, CoreError> {
-        // Load plan details
-        let plan_row = sqlx::query(
+        // Load entitlement mapping details
+        let mapping_row = sqlx::query(
             r#"
-            SELECT id, type, price
-            FROM subscription_plan WHERE id = $1
+            SELECT id, billing_period, points_per_period
+            FROM provider_entitlement_mappings WHERE id = $1
             "#,
         )
-        .bind(plan_id)
+        .bind(mapping_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| {
-            tracing::error!(plan_id = %plan_id, error = %e, "Failed to load plan");
+            tracing::error!(mapping_id = %mapping_id, error = %e, "Failed to load entitlement mapping");
             CoreError::InternalServerError(format!("Database error: {}", e))
         })?;
 
-        let plan_row = plan_row.ok_or_else(|| {
-            tracing::error!(plan_id = %plan_id, "Plan not found");
-            CoreError::BillingError("Plan not found".to_string())
+        let mapping_row = mapping_row.ok_or_else(|| {
+            tracing::error!(mapping_id = %mapping_id, "Entitlement mapping not found");
+            CoreError::BillingError("Entitlement mapping not found".to_string())
         })?;
 
-        // Get plan type and price
-        let plan_type: String = plan_row.try_get("type").unwrap_or_else(|_| {
+        // Get billing period and points
+        let billing_period: String = mapping_row.try_get("billing_period").unwrap_or_else(|_| {
             tracing::warn!(
-                plan_id = %plan_id,
-                "Failed to read plan type from database, defaulting to 'monthly'"
+                mapping_id = %mapping_id,
+                "Failed to read billing period from database, defaulting to 'monthly'"
             );
             "monthly".to_string()
         });
-        let price_cents: i32 = plan_row.try_get("price").unwrap_or_else(|_| {
-            tracing::warn!(
-                plan_id = %plan_id,
-                "Failed to read plan price from database, defaulting to 0"
-            );
-            0
-        });
+        let points_amount: i32 = mapping_row
+            .try_get("points_per_period")
+            .unwrap_or_else(|_| {
+                tracing::warn!(
+                    mapping_id = %mapping_id,
+                    "Failed to read points_per_period from database, defaulting to 0"
+                );
+                0
+            });
 
-        // Calculate points (1 cent = 1 point for WeChat Pay)
-        let points_amount = price_cents;
-
-        // Calculate subscription expiration based on plan type
+        // Calculate subscription expiration based on billing period
         let now = Utc::now();
-        let expires_at: Option<DateTime<Utc>> = match plan_type.as_str() {
+        let expires_at: Option<DateTime<Utc>> = match billing_period.as_str() {
             "monthly" => Some(now + chrono::Duration::days(30)),
             "yearly" => Some(now + chrono::Duration::days(365)),
             _ => None,
@@ -96,18 +95,19 @@ impl WechatSubscriptionService {
         let subscription_id = Uuid::now_v7();
         sqlx::query(
             r#"
-            INSERT INTO subscription (id, user_id, realm_id, plan_id, payment_provider, status, external_subscription_id, external_product_id, current_period_end, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, 'wechat', 'active', $5, $6, $7, $8, $8)
+            INSERT INTO subscription (id, user_id, realm_id, entitlement_key, payment_provider, status, external_subscription_id, external_product_id, current_period_end, created_at, updated_at)
+            SELECT $1, $2, $3, entitlement_key, 'wechat', 'active', $4, external_product_id, $5, $6, $6
+            FROM provider_entitlement_mappings
+            WHERE id = $7
             "#,
         )
         .bind(subscription_id)
         .bind(user_id)
         .bind(realm_id)
-        .bind(plan_id)
         .bind(transaction_id)
-        .bind(format!("PLAN_{}", plan_id))  // Use plan_id as external_product_id
         .bind(expires_at)
         .bind(now)
+        .bind(mapping_id)
         .execute(&self.pool)
         .await
         .map_err(|e| {

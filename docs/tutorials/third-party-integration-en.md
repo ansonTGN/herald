@@ -596,16 +596,7 @@ if sub.status == "active" {
 }
 ```
 
-List available plans:
-
-```rust
-let plans = herald_client.list_plans("my-realm").await?;
-for plan in &plans {
-    println!("{}: {} ({} {})", plan.name, plan.title, plan.price, plan.currency);
-}
-```
-
-Plans are configured in the Herald admin console. Payment is handled between Herald and the payment provider; your backend only queries status and plans via SDK.
+Subscription entitlements are synced from payment-provider products into Herald `entitlement_key` values. Payment is handled between Herald and the payment provider; your backend only queries subscription status and the current entitlement via SDK.
 
 ## 7. Deployment
 
@@ -634,4 +625,3 @@ Three renewal strategies:
 | Progressive | `session_ttl=300, renewal_ttl=7200` | 5 minutes initially, extends to 2 hours on first renewal |
 
 Progressive works well for admin panels: short sessions for quick tasks, auto-renewal for extended use, expire when the browser closes.
-

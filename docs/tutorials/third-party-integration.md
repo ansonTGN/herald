@@ -598,16 +598,7 @@ if sub.status == "active" {
 }
 ```
 
-查询可用的套餐计划展示给用户选择：
-
-```rust
-let plans = herald_client.list_plans("my-realm").await?;
-for plan in &plans {
-    println!("{}: {} ({} 分)", plan.title, plan.name, plan.price);
-}
-```
-
-套餐计划通过 Herald 管理后台配置，支付流程由 Herald 和支付平台处理，你的后端只需要调 SDK 查状态和查计划。
+订阅权益由支付平台产品同步到 Herald 的 `entitlement_key`。支付流程由 Herald 和支付平台处理，你的后端只需要调 SDK 查订阅状态和当前权益。
 
 ## 7. 部署
 
@@ -636,4 +627,3 @@ Cookie 名称：`X-Auth`，属性：`httpOnly`、`secure`（生产环境）、`s
 | 渐进 | `session_ttl=300, renewal_ttl=7200` | 初始 5 分钟，首次续期后延长到 2 小时 |
 
 渐进模式适合管理后台：短时间操作够了，长时间使用自动续期，关掉浏览器就过期。
-

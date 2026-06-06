@@ -43,7 +43,7 @@ mod test_11_consume_edge_cases;
 mod test_13_concurrent_consumption;
 mod test_14_api_key_validation;
 mod test_15_consume_idempotency;
-mod test_24_create_plan_config;
+mod test_24_entitlement_points_policy;
 mod test_27_api_key_cannot_access_points_admin_configs;
 mod test_31_closed_account_consumption;
 mod test_32_frozen_account_consumption;

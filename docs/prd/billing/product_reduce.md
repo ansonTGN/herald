@@ -28,10 +28,9 @@
 - `docs/user-stories/billing/points-admin.md`
   - [US-PO-001 ~ US-PO-008]: 积分管理故事需从 plan-based 迁移到 entitlement-based
 
-### 1.3 废弃的现有故事
+### 1.3 已删除的现有故事
 
-- `docs/user-stories/billing/product-management.md`
-  - [US-PR-001 ~ US-PR-006]: Product 编目管理故事全部废弃，本地 Product/Plan CRUD 不再提供
+- Product 编目管理故事 [US-PR-001 ~ US-PR-006] 已删除；本地 Product/Plan CRUD 不再提供
 
 ### 1.4 优先级汇总
 
@@ -264,6 +263,6 @@ Herald 当前维护本地 Product、SubscriptionPlan、Subscription 三层目录
 - 待更新 PRD：`docs/prd/billing/points.md`
 - 待更新 PRD：`docs/prd/billing/unified-purchase.md`
 - 待更新 PRD：`docs/prd/billing/stripe-payment.md`
-- 将废弃 PRD：`docs/prd/billing/product-catalog.md`
+- 已删除本地 Product/Plan 编目 PRD
 - 相关 PRD：`docs/prd/billing/shopify-pay.md`
 - 相关 PRD：`docs/prd/billing/wechat-pay.md`

@@ -48,7 +48,6 @@ docs/
 | PRD 文档 | 标题 | 相关角色 |
 |---------|------|---------|
 | [subscription.md](billing/subscription.md) | 订阅计费与变更历史 | Realm Admin, Regular User |
-| [product-catalog.md](billing/product-catalog.md) | Product 编目管理 | Realm Admin |
 | [points.md](billing/points.md) | 积分系统（含免费用户积分） | Realm Admin, Regular User |
 | [points-grant.md](billing/points-grant.md) | 积分发放（管理员/SDK 主动发放） | Realm Admin, Third-Party App |
 | [unified-purchase.md](billing/unified-purchase.md) | 统一购买架构 | Realm Admin, Regular User |

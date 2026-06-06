@@ -113,7 +113,7 @@
 
 免费用户积分系统为未付费用户提供基础的积分体验，包括注册时的初始积分赠送和定期自动积分发放。该系统独立于订阅计费系统，通过 Realm 级别的配置实现灵活的免费用户积分策略。
 
-当前 PRD 基线仍以 Plan 级积分配置为主。随着 Billing 编目向 Realm -> Product -> Plan 演进，Points 只要求与 Product 语义兼容；是否升级为 Product 分层积分规则，属于后续版本能力，不作为本 PRD 的当前必做范围。
+当前 PRD 基线以 `entitlement_key` 级积分配置为主。Billing 不再维护本地 Plan/Product 目录，Points 通过 `provider_entitlement_mappings.entitlement_key` 查找订阅积分策略。
 
 积分包系统在常驻包基础上扩展了促销包能力：管理员可为积分包设置折扣价、原价和促销时段，用户在购买页面可看到带折扣标识的促销包。促销包与常驻包在数据模型上统一，通过包类型区分。购买流程、支付回调、积分发放逻辑不变。
 
@@ -247,10 +247,10 @@
 - ext API 查询单笔交易：支持通过 external_ref_id 查询单笔交易详情
 
 **Product 兼容约束**：
-- 当前正式配置对象仍是 Plan
-- Product 的引入不改变现有积分字段语义
-- 当 Plan 归属于 Product 后，积分规则查询和展示需要能够正确关联到所属 Product 上下文
-- Product 级默认规则、按 Client App 差异化规则、规则优先级覆盖等属于后续版本
+- 本地 Product/Plan 已废弃，不作为积分配置对象
+- 当前正式配置对象是 `entitlement_key`
+- 积分策略字段保存在 provider entitlement mapping 上，包括 points_per_period、grant_period_type、validity_days、grant_on_subscribe、max_periods
+- Product 级默认规则、按 Client App 差异化规则、规则优先级覆盖等不在当前范围
 
 ### 4.2 关键状态与异常
 
@@ -353,7 +353,7 @@
 - 积分消费优先级采用过期时间优先策略（而非类型优先策略），逻辑简单且符合用户利益
 - 免费用户积分系统独立于订阅系统，不需要创建 $0 订阅记录
 - 免费用户升级时免费定期积分立即回收（归零），避免积分混乱
-- 当前正式配置对象仍是 Plan，Product 兼容作为后续版本扩展
+- 当前正式配置对象是 `entitlement_key`，不再使用 Plan 级配置
 - 积分补偿使用现有 grant_points_internal 方法，无需新增 API
 - 促销包与常驻包在数据模型上统一，通过包类型字段区分，不新建独立的促销包表
 - 促销包过期判断在查询时进行（应用层计算），不通过定时任务修改包状态
@@ -371,6 +371,6 @@
 - 用户故事：`docs/user-stories/billing/points-package.md`（含促销包故事 US-PP-006, US-PP-016~018）
 - 用户故事：`docs/user-stories/billing/points-package-purchase.md`
 - 相关 PRD：`docs/prd/billing/subscription.md`
-- 相关 PRD：`docs/prd/billing/product-catalog.md`
+- 相关 PRD：`docs/prd/billing/product_reduce.md`
 - 相关 PRD：`docs/prd/billing/unified-purchase.md`
 - 需求来源：`.ai/future/points_plus.md`

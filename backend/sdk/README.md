@@ -5,7 +5,7 @@ Rust SDK for [Herald](https://github.com/timzaak/herald) — a multi-tenant auth
 ## Features
 
 - **Permission checking** with built-in caching and token-based invalidation
-- **Subscription management** — get subscription details, list plans, list plan assignments
+- **Subscription management** — get subscription details with `entitlement_key`
 - **Points system** — check balance, consume points with idempotency support
 - Async/await native, built on `reqwest`
 

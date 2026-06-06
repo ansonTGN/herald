@@ -107,7 +107,7 @@ CREATE TABLE payment_attempts (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT chk_payment_attempt_provider CHECK (payment_provider IN ('wechat', 'stripe', 'creem')),
-    CONSTRAINT chk_target_type CHECK (target_type IN ('subscription_plan', 'points_package')),
+    CONSTRAINT chk_target_type CHECK (target_type IN ('subscription_entitlement', 'points_package')),
     CONSTRAINT chk_status CHECK (status IN ('Pending', 'RequiresAction', 'Succeeded', 'Failed', 'Cancelled', 'Expired'))
 );
 
@@ -122,7 +122,7 @@ CREATE INDEX idx_payment_attempts_provider_reference ON payment_attempts(payment
 
 -- Comments for documentation
 COMMENT ON TABLE payment_attempts IS 'Unified payment attempt tracking for initiator-based payment platforms';
-COMMENT ON COLUMN payment_attempts.target_type IS 'Type of purchasable target: subscription_plan or points_package';
+COMMENT ON COLUMN payment_attempts.target_type IS 'Type of purchasable target: subscription_entitlement or points_package';
 COMMENT ON COLUMN payment_attempts.target_id IS 'ID of the subscription plan or points package being purchased';
 COMMENT ON COLUMN payment_attempts.provider_reference IS 'Platform-specific order reference (out_trade_no for WeChat, session ID for Stripe)';
 COMMENT ON COLUMN payment_attempts.provider_status IS 'Raw status from payment platform';

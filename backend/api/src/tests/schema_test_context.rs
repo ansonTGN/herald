@@ -185,8 +185,19 @@ impl AsyncTestContext for SchemaTestContext {
         let billing_policy = PermissionBasedBillingPolicy::new(permission_checker.clone());
         let entitlement_mapping_service = Arc::new(EntitlementMappingService::new(
             billing_repository.clone(),
-            Arc::new(billing_policy),
+            Arc::new(billing_policy.clone()),
         ));
+        let provider_product_sync_service = Arc::new(
+            herald_core::domain::billing::ProviderProductSyncService::new(
+                billing_repository.clone(),
+                Arc::new(billing_policy),
+                Arc::new(
+                    herald_core::infrastructure::billing::ConfiguredProviderProductApi::new(
+                        pool_with_schema.clone(),
+                    ),
+                ),
+            ),
+        );
 
         // API Key cache and repository
         let api_key_cache = herald_core::infrastructure::client_api_keys::ApiKeyCache::new(
@@ -297,6 +308,7 @@ impl AsyncTestContext for SchemaTestContext {
                 herald_core::infrastructure::audit::PostgresAuditEventRepository::new(sea_conn.clone()),
             ),
             entitlement_mapping_service,
+            provider_product_sync_service,
             public_base_url: "http://localhost:8080".to_string(),
             permission_checker: permission_checker.clone(),
             app_env: "test".to_string(),

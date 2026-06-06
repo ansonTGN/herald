@@ -45,19 +45,6 @@ pub enum CoreError {
     InvalidWebhookSecret,
     #[error("Duplicate webhook event: {0}")]
     DuplicateWebhookEvent(String),
-    #[error("Subscription plan not found for realm: {realm_id}, plan_id: {plan_id}")]
-    SubscriptionPlanNotFound { realm_id: String, plan_id: String },
-    #[error("Duplicate subscription plan name for realm: {realm_id}, name: {name}")]
-    DuplicateSubscriptionPlan { realm_id: String, name: String },
-    #[error("Subscription plan has active subscriptions and cannot be deleted: {plan_id}")]
-    SubscriptionPlanHasActiveSubscriptions { plan_id: String },
-    #[error(
-        "Subscription plan not assigned to client app: client_app_id={client_app_id}, plan_id={plan_id}"
-    )]
-    SubscriptionPlanNotAssignedToClientApp {
-        client_app_id: String,
-        plan_id: String,
-    },
     #[error("Serialization error: {0}")]
     SerializationError(String),
     #[error("Entitlement mapping not found")]
@@ -199,37 +186,6 @@ impl IntoResponse for CoreError {
             CoreError::DuplicateWebhookEvent(msg) => (
                 StatusCode::CONFLICT,
                 format!("Duplicate webhook event: {}", msg),
-            ),
-            CoreError::SubscriptionPlanNotFound { realm_id, plan_id } => (
-                StatusCode::NOT_FOUND,
-                format!(
-                    "Subscription plan not found for realm: {}, plan_id: {}",
-                    realm_id, plan_id
-                ),
-            ),
-            CoreError::DuplicateSubscriptionPlan { realm_id, name } => (
-                StatusCode::CONFLICT,
-                format!(
-                    "Duplicate subscription plan name for realm: {}, name: {}",
-                    realm_id, name
-                ),
-            ),
-            CoreError::SubscriptionPlanHasActiveSubscriptions { plan_id } => (
-                StatusCode::BAD_REQUEST,
-                format!(
-                    "Subscription plan has active subscriptions and cannot be deleted: {}",
-                    plan_id
-                ),
-            ),
-            CoreError::SubscriptionPlanNotAssignedToClientApp {
-                client_app_id,
-                plan_id,
-            } => (
-                StatusCode::NOT_FOUND,
-                format!(
-                    "Subscription plan not assigned to client app: client_app_id={}, plan_id={}",
-                    client_app_id, plan_id
-                ),
             ),
             CoreError::SerializationError(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,

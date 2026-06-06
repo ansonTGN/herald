@@ -122,7 +122,7 @@ Herald 当前已在 Billing 领域引入了多支付平台支持，但不同平�
 - **价格与积分校验**：价格或积分数必须为正数
 - **删除保护**：有购买记录的积分包不可删除
 - **支付平台前置条件**：未配置支付平台时用户不可发起购买
-- **购买对象区分**：支持 subscription_plan 和 points_package 两种购买对象类型
+- **购买对象区分**：支持 subscription_entitlement 和 points_package 两种购买对象类型
 - **履约分流**：订阅购买创建/更新 Subscription（积分发放由支付平台 webhook 事件触发，不在履约时直接发放 subscription_credit）；积分包购买仅发放 topup_credit
 - **履约幂等性**：重复支付成功通知不重复履约
 - **平台分型规则**：Wechat/Stripe/Creem 进入 PaymentAttempt 模型；Shopify 保持 webhook-driven 订阅同步，不进入 PaymentAttempt
@@ -144,7 +144,7 @@ Herald 当前已在 Billing 领域引入了多支付平台支持，但不同平�
 
 - **积分包（PointsPackage）模型**：支持创建、编辑、删除和启用/禁用积分包；支持配置积分包的支付平台映射（PointsPackagePaymentProvider）
 - **PaymentAttempt 模型**：统一发起式支付平台的支付尝试，包含支付平台、购买对象类型、购买对象 ID、金额、货币、状态
-- **购买对象（PurchasableTarget）区分**：支持 subscription_plan 和 points_package 两种购买对象
+- **购买对象（PurchasableTarget）区分**：支持 subscription_entitlement 和 points_package 两种购买对象
 - **履约分流逻辑**：根据购买对象类型执行不同的履约逻辑，确保幂等性
 - **多支付平台协调**：不同平台保持其原生支付时序
 
@@ -224,4 +224,4 @@ Herald 当前已在 Billing 领域引入了多支付平台支持，但不同平�
 ## 9. 参考资料
 
 - 用户故事：`docs/user-stories/billing/points-package.md`、`docs/user-stories/billing/points-package-purchase.md`、`docs/user-stories/billing/payment-attempt.md`
-- 相关 PRD：`docs/prd/billing/subscription.md`、`docs/prd/billing/product-catalog.md`、`docs/prd/billing/points.md`、`docs/prd/billing/wechat-pay.md`、`docs/prd/billing/shopify-pay.md`
+- 相关 PRD：`docs/prd/billing/subscription.md`、`docs/prd/billing/product_reduce.md`、`docs/prd/billing/points.md`、`docs/prd/billing/wechat-pay.md`、`docs/prd/billing/shopify-pay.md`

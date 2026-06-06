@@ -11,25 +11,25 @@
 
 ### 1.1 故事引用
 
-- `[US-BI-001]` 创建订阅套餐，优先级 P0，来源 `docs/user-stories/billing/subscription.md`
+- `[US-BI-001]` 管理 Entitlement 映射，优先级 P0，来源 `docs/user-stories/billing/subscription.md`
   - 角色：Realm Admin
-  - 摘要：在 Product 上下文中创建订阅套餐，定义价格和计费信息
+  - 摘要：维护支付方商品到 Herald `entitlement_key` 的映射和积分策略
 
-- `[US-BI-002]` 编辑订阅套餐，优先级 P0，来源 `docs/user-stories/billing/subscription.md`
+- `[US-BI-002]` 编辑 Entitlement 映射，优先级 P0，来源 `docs/user-stories/billing/subscription.md`
   - 角色：Realm Admin
-  - 摘要：在 Product 上下文中编辑订阅套餐，更新价格和描述
+  - 摘要：更新 `entitlement_key`、启用状态、积分发放策略和 provider 商品缓存
 
-- `[US-BI-003]` 配置 Plan 的支付平台映射，优先级 P0，来源 `docs/user-stories/billing/subscription.md`
+- `[US-BI-003]` 同步支付方商品，优先级 P0，来源 `docs/user-stories/billing/subscription.md`
   - 角色：Realm Admin
-  - 摘要：为 Plan 配置一个或多个支付平台映射，使该套餐可在不同支付平台上售卖
+  - 摘要：从 Stripe/Creem 等支付方同步商品并生成本地 entitlement 映射
 
-- `[US-BI-004]` 删除订阅套餐，优先级 P0，来源 `docs/user-stories/billing/subscription.md`
+- `[US-BI-004]` 禁用 Entitlement 映射，优先级 P0，来源 `docs/user-stories/billing/subscription.md`
   - 角色：Realm Admin
-  - 摘要：在 Product 上下文中删除订阅套餐，移除不再需要的套餐
+  - 摘要：禁用映射后不再允许新购买，也不触发积分发放/回收
 
-- `[US-BI-005]` 分配套餐到 Client App，优先级 P0，来源 `docs/user-stories/billing/subscription.md`
+- `[US-BI-005]` 发起订阅 Checkout，优先级 P0，来源 `docs/user-stories/billing/subscription.md`
   - 角色：Realm Admin
-  - 摘要：将套餐分配到 Client App，控制哪些应用可以提供哪些订阅
+  - 摘要：通过 `entitlement_key + payment_provider` 创建支付方 checkout
 
 - `[US-BI-006]` 查看订阅列表，优先级 P0，来源 `docs/user-stories/billing/subscription.md`
   - 角色：Realm Admin
@@ -114,16 +114,16 @@
 
 Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理和计费方案功能。涵盖支付平台配置、订阅套餐管理、套餐分配、订阅升级/降级、订阅变更历史等功能。
 
-系统采用简化模型：Herald 不管理套餐的功能（features）和配额（quotas），由第三方应用自行管理。套餐只包含基本信息（name, title, description, type, price, currency, checkout_url）。Realm Admin 可以创建套餐并分配到 Client App，最终用户通过第三方应用进行订阅和支付。
+系统采用 provider-sourced entitlement 模型：Herald 不维护本地 Product/Plan 目录，不创建、编辑或删除本地套餐。支付平台商品和价格是商业目录来源，Herald 只维护 `provider_entitlement_mappings`，用 `entitlement_key` 表示第三方应用可识别的订阅权益。
 
-**编目边界**：Billing 编目正在从 `Realm -> Plan` 演进为 `Realm -> Product -> Plan`；Product 的主定义以 `docs/prd/billing/product-catalog.md` 为准，本文档继续聚焦订阅、支付与 Plan 计费语义。
+**编目边界**：本地 Product/Plan 编目已废弃并删除。当前模型以 `docs/prd/billing/product_reduce.md` 定义的 `entitlement_key` 和 provider mapping 为准。
 
 ### 3.2 关键特性
 
 - 支持多种支付平台（Creem、Stripe、Shopify Pay、微信支付；支付宝待实现）
-- 灵活的订阅套餐管理（月付/年付）
-- Plan 多支付平台映射：一个 Plan 可关联多个支付平台的商品/价格配置，无需为每个支付平台复制 Plan
-- 套餐分配到 Client App，控制哪些应用可以提供哪些订阅
+- Provider entitlement 映射管理
+- 通过 `entitlement_key` 统一表示订阅权益
+- 支付方商品同步与 provider-sourced cache
 - 订阅升级/降级（按比例计费）
 - Webhook 集成和事件处理
 - 完整的订阅变更历史记录
@@ -135,16 +135,13 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 ### 4.1 业务规则
 
-**套餐管理规则**：
+**Entitlement 映射规则**：
 
-- Plan 表示业务套餐本身，不包含支付平台映射信息；一个 Plan 可以关联多个支付平台配置
-- Plan Payment Provider 是 Plan 的下属配置对象，每个映射分别保存外部商品、价格、checkout 等接入信息
-- Plan 是订阅和计费的直接承载对象，Product 是 Plan 的上层编目对象
-- 套餐的 `name` 字段是唯一标识符，用于 API 调用和前端路由，创建后不可修改
-  > 代码实现拒绝 name 变更：当传入的 name 与现有 name 不同时返回错误。
-- 套餐的 `title` 字段是用户友好的显示名称
+- `entitlement_key` 是 Herald 内部和第三方应用识别订阅权益的稳定业务标识
+- `provider_entitlement_mappings` 记录 provider、external_product_id、external_price_id、entitlement_key、billing_type、billing_period 和 provider_product_info
+- provider 商品/价格展示信息来自支付方同步缓存，不由 Herald 本地手工维护
 - `features` 和 `quotas` 由第三方应用自行管理，Herald 不存储这些信息
-- 更新价格影响新订阅用户，已订阅用户保持原价格直到续费
+- 更新价格以支付方为准；Herald 通过同步刷新 provider_product_info
 - 更新 checkout_url 立即生效，所有新订阅用户使用新 URL
 
 **删除规则**：
@@ -301,13 +298,12 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 **适用性**: 适用
 
 **能力边界**：
-- 套餐 CRUD 操作：Plan 本身的增删改查
-- 支付平台映射管理：独立的 CRUD 接口，与套餐主体解耦
-- 套餐分配管理：将套餐分配到 Client App 或移除分配
-- 订阅查询：套餐列表、订阅状态、订阅变更历史
-- SDK 查询：第三方应用查询用户订阅和套餐状态，返回套餐及支持的支付平台列表
-- Checkout 发起：显式传递 plan_id + payment_provider 参数
-- Webhook 接收：根据外部商品/价格标识定位到正确的 Plan 和支付平台映射
+- 不提供本地 Product/Plan CRUD
+- Entitlement mapping 查询、更新、禁用和 provider 产品同步由 Billing Admin API 提供
+- 订阅查询：订阅状态、`entitlement_key`、支付平台、周期和订阅变更历史
+- SDK 查询：第三方应用查询 client app 当前订阅状态，返回 `entitlement_key`
+- Checkout 发起：显式传递 `entitlement_key + payment_provider`
+- Webhook 接收：优先使用 `herald_entitlement_key`，fallback 到本地 provider mapping
 
 **访问控制与数据边界**：
 - 所有接口遵守 realm 隔离原则
@@ -363,19 +359,19 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 ### 8.1 已确认决策
 
-- **简化模型**：Herald 不管理套餐的功能（features）和配额（quotas），由第三方应用自行管理
-- **多支付平台映射**：采用 Plan + Plan Payment Provider 映射模型，一个 Plan 可关联多个支付平台，无需为每个支付平台复制 Plan
+- **简化模型**：Herald 不管理权益的功能（features）和配额（quotas），由第三方应用自行管理
+- **Entitlement 映射**：采用 provider 商品到 `entitlement_key` 的映射模型，不维护本地 Plan
 - **Webhook 隔离**：每个 realm 使用独立的 webhook URL，realm_id 从 URL 路径提取实现多租户隔离
-- **编目演进**：Billing 编目从 `Realm -> Plan` 演进为 `Realm -> Product -> Plan`，Product 主定义以 product-catalog PRD 为准
+- **编目决策**：本地 Product/Plan 编目已废弃，当前模型以 `entitlement_key` 为准
 - **退款边界**：支付平台处理金额退款，Herald 处理积分回收。退款不作为独立订阅状态，`refund.created`/`charge.refunded` 事件仅记录审计日志并触发积分回收，不改变订阅状态
-- **订阅过期降级**：订阅过期后自动将 tier 降级为 Free，确保用户失去付费权限
+- **订阅过期降级**：订阅过期后状态变为 expired/canceled；具体权限降级由第三方应用根据 `entitlement_key` 和订阅状态处理
 
 ---
 
 ## 9. 参考资料
 
 - 用户故事：`docs/user-stories/billing/subscription.md`
-- 相关 PRD：`docs/prd/billing/product-catalog.md`
+- 相关 PRD：`docs/prd/billing/product_reduce.md`
 - 相关 PRD：`docs/prd/billing/points.md`
 - 相关 PRD：`docs/prd/billing/stripe-payment.md`
 - 相关 PRD：`docs/prd/billing/shopify-pay.md`

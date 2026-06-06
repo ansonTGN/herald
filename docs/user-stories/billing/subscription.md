@@ -743,5 +743,4 @@ And 我无法查看其他用户的订阅历史记录
 ## 相关文档
 
 - **PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - Billing 订阅计费产品需求文档
-- **用户故事**: [docs/user-stories/billing/product-management.md](/docs/user-stories/billing/product-management.md) - Product 管理用户故事
 - **用户故事**: [docs/user-stories/billing/points-admin.md](/docs/user-stories/billing/points-admin.md) - 积分管理用户故事

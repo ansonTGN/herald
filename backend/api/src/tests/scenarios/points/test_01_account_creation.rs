@@ -10,10 +10,10 @@
 // **Given**:
 // - A user with valid authentication
 // - No existing points account for the user
-// - A plan configuration with points on subscribe
+// - An entitlement points policy with points on subscribe
 //
 // **When**:
-// - The user subscribes to a plan (triggers webhook)
+// - The user subscribes to an entitlement (triggers webhook)
 // - The webhook calls `/api/internal/points/recharge`
 //
 // **Then**:
@@ -37,29 +37,31 @@ use uuid::Uuid;
 #[tokio::test]
 async fn test_scenario_account_creation_on_subscribe(ctx: &mut TestContext) {
     // ============================================================================
-    // Given: A user with valid authentication, no existing points account, and a plan config
+    // Given: A user with valid authentication, no existing points account, and an entitlement points policy
     // ============================================================================
     println!("[Step 1] Create test user");
     let user_id = create_test_user(&ctx._app_state.pool, &ctx._realm_id, "user1@example.com").await;
 
-    let plan_id = create_test_plan(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2999).await;
+    let mapping_id =
+        create_test_entitlement_mapping(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2999)
+            .await;
     let points_on_subscribe = 1000;
 
-    let config_id = create_test_plan_config(
+    let config_id = configure_test_entitlement_points(
         &ctx._app_state.pool,
         &ctx._realm_id,
-        plan_id,
+        mapping_id,
         points_on_subscribe,
         1000,
     )
     .await;
 
     let subscription_id =
-        create_test_subscription(&ctx._app_state.pool, user_id, plan_id, &ctx._realm_id).await;
+        create_test_subscription(&ctx._app_state.pool, user_id, mapping_id, &ctx._realm_id).await;
 
     println!(
-        "[Step 1] ✓ Test data created: user={}, plan={}, config={}, subscription={}",
-        user_id, plan_id, config_id, subscription_id
+        "[Step 1] ✓ Test data created: user={}, mapping={}, config={}, subscription={}",
+        user_id, mapping_id, config_id, subscription_id
     );
 
     use herald_core::domain::points::entities::RechargeType;

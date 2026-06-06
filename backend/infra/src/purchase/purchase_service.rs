@@ -189,7 +189,7 @@ where
         _completed_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<FulfillmentResult, CoreError> {
         match attempt.target_type {
-            PurchasableTarget::SubscriptionPlan => {
+            PurchasableTarget::SubscriptionEntitlement => {
                 self.fulfillment_service
                     .fulfill_subscription_purchase(&attempt, provider_transaction_id)
                     .await
@@ -277,19 +277,15 @@ where
                     billing_period: None,
                 })
             }
-            PurchasableTarget::SubscriptionPlan => {
-                // Look up entitlement mapping by target_id (which is now the external_product_id)
+            PurchasableTarget::SubscriptionEntitlement => {
                 let mapping = self
                     .billing_repository
-                    .find_entitlement_mapping_by_provider_product(
-                        realm_id,
-                        payment_provider,
-                        &target_id.to_string(),
-                    )
+                    .find_entitlement_mapping_by_id(target_id)
                     .await?
+                    .filter(|mapping| mapping.realm_id == realm_id && mapping.payment_provider == payment_provider)
                     .ok_or_else(|| {
                         CoreError::Conflict(format!(
-                            "No entitlement mapping found for provider '{payment_provider}' product '{}' in realm '{}'",
+                            "No entitlement mapping found for provider '{payment_provider}' target '{}' in realm '{}'",
                             target_id, realm_id
                         ))
                     })?;

@@ -177,23 +177,6 @@ impl From<herald_core::domain::common::entities::app_errors::CoreError> for ApiE
             CoreError::DuplicateWebhookEvent(msg) => {
                 Self::conflict(format!("Duplicate webhook event: {msg}"))
             }
-            CoreError::SubscriptionPlanNotFound { realm_id, plan_id } => Self::not_found(format!(
-                "Subscription plan not found for realm: {realm_id}, plan_id: {plan_id}"
-            )),
-            CoreError::DuplicateSubscriptionPlan { realm_id, name } => Self::conflict(format!(
-                "Duplicate subscription plan name for realm: {realm_id}, name: {name}"
-            )),
-            CoreError::SubscriptionPlanHasActiveSubscriptions { plan_id } => {
-                Self::bad_request(format!(
-                    "Subscription plan has active subscriptions and cannot be deleted: {plan_id}"
-                ))
-            }
-            CoreError::SubscriptionPlanNotAssignedToClientApp {
-                client_app_id,
-                plan_id,
-            } => Self::not_found(format!(
-                "Subscription plan not assigned to client app: client_app_id={client_app_id}, plan_id={plan_id}"
-            )),
             CoreError::SerializationError(msg) => {
                 Self::internal(format!("Serialization error: {msg}"))
             }

@@ -10,7 +10,7 @@ use axum::{
 };
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::billing::BillingRepository;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -164,13 +164,4 @@ pub async fn get_subscription(
     Json(response).into_response()
 }
 
-/// Query parameters for batch plan assignments endpoint
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BatchPlanAssignmentsQuery {
-    pub client_app_ids: Option<String>,
-}
-
-// Note: list_plans, list_plan_assignments, and list_plan_assignments_batch
-// have been removed as part of product_reduce. Plans are no longer managed locally.
 // Entitlement mappings are managed via the admin billing API.

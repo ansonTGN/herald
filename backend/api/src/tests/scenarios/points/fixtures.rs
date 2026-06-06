@@ -216,12 +216,17 @@ pub async fn create_test_transaction(
     transaction_id
 }
 
-/// Create a test plan (provider entitlement mapping)
+/// Create a test entitlement mapping.
 ///
-/// Returns the plan ID
-pub async fn create_test_plan(pool: &PgPool, realm_id: &str, plan_name: &str, price: i64) -> Uuid {
-    let plan_id = Uuid::now_v7();
-    let external_product_id = format!("prod_test_{}", plan_name);
+/// Returns the mapping ID.
+pub async fn create_test_entitlement_mapping(
+    pool: &PgPool,
+    realm_id: &str,
+    entitlement_name: &str,
+    points_per_period: i64,
+) -> Uuid {
+    let mapping_id = Uuid::now_v7();
+    let external_product_id = format!("prod_test_{}", entitlement_name);
 
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
@@ -229,27 +234,27 @@ pub async fn create_test_plan(pool: &PgPool, realm_id: &str, plan_name: &str, pr
              points_per_period, grant_on_subscribe, enabled, created_at, updated_at)
          VALUES ($1, $2, 'creem', $3, $4, $5, true, true, NOW(), NOW())",
     )
-    .bind(plan_id)
+    .bind(mapping_id)
     .bind(realm_id)
     .bind(&external_product_id)
-    .bind(plan_id.to_string())
-    .bind(price)
+    .bind(mapping_id.to_string())
+    .bind(points_per_period)
     .execute(pool)
     .await
     .expect("Failed to create entitlement mapping");
 
-    plan_id
+    mapping_id
 }
 
-/// Create a test plan configuration
+/// Configure a test entitlement mapping points policy.
 ///
 /// Updates the existing provider_entitlement_mappings entry with points config
 ///
-/// Returns the plan ID
-pub async fn create_test_plan_config(
+/// Returns the mapping ID.
+pub async fn configure_test_entitlement_points(
     pool: &PgPool,
     realm_id: &str,
-    plan_id: Uuid,
+    mapping_id: Uuid,
     points_per_period: i64,
     validity_days: i64,
 ) -> Uuid {
@@ -261,13 +266,13 @@ pub async fn create_test_plan_config(
     )
     .bind(points_per_period)
     .bind(validity_days)
-    .bind(plan_id)
+    .bind(mapping_id)
     .bind(realm_id)
     .execute(pool)
     .await
-    .expect("Failed to update plan config");
+    .expect("Failed to update entitlement points policy");
 
-    plan_id
+    mapping_id
 }
 
 /// Create a test subscription
@@ -276,7 +281,7 @@ pub async fn create_test_plan_config(
 pub async fn create_test_subscription(
     pool: &PgPool,
     _user_id: Uuid,
-    plan_id: Uuid,
+    mapping_id: Uuid,
     realm_id: &str,
 ) -> Uuid {
     let subscription_id = Uuid::now_v7();
@@ -307,7 +312,7 @@ pub async fn create_test_subscription(
     .bind(realm_id)
     .bind(format!("ext-sub-{}", subscription_id))
     .bind("test_product_id")
-    .bind(plan_id.to_string())
+    .bind(mapping_id.to_string())
     .bind(client_app_id)
     .execute(pool)
     .await

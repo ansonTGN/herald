@@ -7,13 +7,14 @@ use uuid::Uuid;
 use crate::handlers::require_billing_permission;
 use crate::types::{
     EntitlementMappingListResponse, EntitlementMappingQuery, EntitlementMappingResponse,
-    SyncProviderRequest, SyncProviderResponse, UpdateEntitlementMappingRequest,
+    PartialSyncErrorDto, SyncProviderRequest, SyncProviderResponse,
+    UpdateEntitlementMappingRequest,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::billing::BillingRepository;
 use herald_core::domain::billing::entities::EntitlementMapping;
+use herald_core::domain::billing::{BillingRepository, SyncStatus};
 
 /// Convert domain EntitlementMapping to API response
 fn mapping_to_response(m: EntitlementMapping) -> EntitlementMappingResponse {
@@ -292,12 +293,31 @@ pub async fn sync_provider_products(
 
     require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
-    // Provider product sync requires the ProviderApiPort infrastructure
-    // which is wired in BE-D05. For now, return an error indicating
-    // the sync service is not yet wired.
-    // NOTE: This handler will be fully functional once BE-D05 adds
-    // provider_product_sync_service to AppState.
-    Err(ApiError::internal(
-        "Provider product sync service not yet configured. This feature will be available after infrastructure wiring (BE-D05).".to_string(),
-    ))
+    let result = state
+        .provider_product_sync_service
+        .sync_provider_products(identity, &realm_id, &request.payment_provider)
+        .await
+        .map_err(ApiError::from)?;
+
+    let sync_status = match result.sync_status {
+        SyncStatus::Completed => "completed",
+        SyncStatus::Partial => "partial",
+        SyncStatus::Failed => "failed",
+    }
+    .to_string();
+
+    Ok(Json(SyncProviderResponse {
+        products_synced: result.products_synced as i64,
+        prices_synced: result.prices_synced as i64,
+        sync_status,
+        error: result.error,
+        partial_errors: result
+            .partial_errors
+            .into_iter()
+            .map(|error| PartialSyncErrorDto {
+                external_id: error.external_id,
+                reason: error.reason,
+            })
+            .collect(),
+    }))
 }

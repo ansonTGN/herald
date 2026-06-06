@@ -37,7 +37,7 @@ use tower::ServiceExt;
 
 #[test_context(TestContext)]
 #[tokio::test]
-async fn test_scenario_admin_create_plan_config(ctx: &mut TestContext) {
+async fn test_scenario_admin_update_entitlement_points_policy(ctx: &mut TestContext) {
     let app = ctx.create_unified_test_router();
 
     println!("[Step 1] Create admin and entitlement mapping");
@@ -47,7 +47,8 @@ async fn test_scenario_admin_create_plan_config(ctx: &mut TestContext) {
     create_test_admin(&ctx._app_state.pool, &ctx._realm_id, admin_email).await;
 
     let mapping_id =
-        create_test_plan(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2999).await;
+        create_test_entitlement_mapping(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2999)
+            .await;
 
     println!("[Step 1] ✓ Created admin and entitlement mapping");
 

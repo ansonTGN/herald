@@ -63,34 +63,6 @@ pub struct SubscriptionDetail {
     pub updated_at: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SubscriptionPlan {
-    pub id: String,
-    pub realm_id: String,
-    pub name: String,
-    pub title: String,
-    pub description: Option<String>,
-    #[serde(rename = "type")]
-    pub plan_type: String,
-    pub price: i32,
-    pub currency: String,
-    pub checkout_url: Option<String>,
-    pub active: bool,
-    pub trial_days: i32,
-    pub sort_order: i32,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SubscriptionPlanAssignment {
-    pub id: String,
-    pub client_app_id: String,
-    pub plan_id: String,
-    pub enabled: bool,
-    pub created_at: String,
-}
-
 /// Points balance response
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -291,18 +263,6 @@ struct ClientAppListResponse {
     items: Vec<ClientAppItem>,
 }
 
-#[derive(Debug, Deserialize)]
-struct PlanListResponse {
-    #[serde(rename = "plans")]
-    items: Vec<SubscriptionPlan>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PlanAssignmentListResponse {
-    #[serde(rename = "assignments")]
-    items: Vec<SubscriptionPlanAssignment>,
-}
-
 type TokenIndex = Arc<DashMap<String, Vec<PermissionCheckRequest>>>;
 
 async fn handle_response<T>(response: reqwest::Response) -> Result<T, Error>
@@ -470,52 +430,6 @@ impl Client {
         let resp = handle_response(response).await;
         debug!(status = %status, "API Response for get_subscription: {:?}", resp);
         resp
-    }
-
-    /// List all available plans for a realm
-    ///
-    /// # Arguments
-    /// * `realm_id` - The realm ID
-    ///
-    /// # Returns
-    /// * `Ok(Vec<SubscriptionPlan>)` if the request succeeds
-    /// * `Err(Error)` if network or parsing fails
-    pub async fn list_plans(&self, realm_id: &str) -> Result<Vec<SubscriptionPlan>, Error> {
-        let url = format!("{}/api/ext/bill/{}/plans", self.base_url, realm_id);
-
-        let response = self.build_request(Method::GET, &url).send().await?;
-
-        let status = response.status();
-        let resp: Result<PlanListResponse, Error> = handle_response(response).await;
-        debug!(status = %status, "API Response for list_plans: {:?}", resp);
-        Ok(resp?.items)
-    }
-
-    /// List plan assignments for a client app
-    ///
-    /// # Arguments
-    /// * `realm_id` - The realm ID
-    /// * `client_app_id` - The client app ID
-    ///
-    /// # Returns
-    /// * `Ok(Vec<PlanAssignment>)` if the request succeeds
-    /// * `Err(Error)` if network or parsing fails
-    pub async fn list_plan_assignments(
-        &self,
-        realm_id: &str,
-        client_app_id: &str,
-    ) -> Result<Vec<SubscriptionPlanAssignment>, Error> {
-        let url = format!(
-            "{}/api/ext/bill/{}/client/{}/plans",
-            self.base_url, realm_id, client_app_id
-        );
-
-        let response = self.build_request(Method::GET, &url).send().await?;
-
-        let status = response.status();
-        let resp: Result<PlanAssignmentListResponse, Error> = handle_response(response).await;
-        debug!(status = %status, "API Response for list_plan_assignments: {:?}", resp);
-        Ok(resp?.items)
     }
 
     /// Get user points balance
@@ -970,104 +884,6 @@ mod tests {
         let subscription = result.unwrap();
         assert_eq!(subscription.status, "active");
         assert_eq!(subscription.entitlement_key, "basic-plan");
-
-        server.verify().await;
-    }
-
-    #[tokio::test]
-    async fn test_list_plans_success() {
-        let server = MockServer::start().await;
-        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
-
-        let plans_response = json!({
-            "plans": [
-                {
-                    "id": "plan-basic",
-                    "realmId": "realm1",
-                    "name": "basic",
-                    "title": "Basic Plan",
-                    "description": "Basic subscription plan",
-                    "type": "standard",
-                    "price": 1000,
-                    "currency": "USD",
-                    "checkoutUrl": null,
-                    "active": true,
-                    "trialDays": 0,
-                    "sortOrder": 1
-                },
-                {
-                    "id": "plan-premium",
-                    "realmId": "realm1",
-                    "name": "premium",
-                    "title": "Premium Plan",
-                    "description": "Premium subscription plan",
-                    "type": "standard",
-                    "price": 2500,
-                    "currency": "USD",
-                    "checkoutUrl": null,
-                    "active": true,
-                    "trialDays": 0,
-                    "sortOrder": 2
-                }
-            ]
-        });
-
-        Mock::given(method("GET"))
-            .and(path("/api/ext/bill/realm1/plans"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(&plans_response))
-            .expect(1)
-            .mount(&server)
-            .await;
-
-        let result = client.list_plans("realm1").await;
-
-        assert!(
-            result.is_ok(),
-            "list_plans should succeed, got error: {:?}",
-            result
-        );
-        let plans = result.unwrap();
-        assert_eq!(plans.len(), 2);
-        assert!(plans.iter().any(|p| p.name == "basic"));
-        assert!(plans.iter().any(|p| p.name == "premium"));
-
-        server.verify().await;
-    }
-
-    #[tokio::test]
-    async fn test_list_plan_assignments_success() {
-        let server = MockServer::start().await;
-        let client = Client::new(server.uri(), "test-api-key".to_string(), None);
-
-        let assignments_response = json!({
-            "assignments": [
-                {
-                    "id": "assign-1",
-                    "clientAppId": "client1",
-                    "planId": "plan-basic",
-                    "enabled": true,
-                    "createdAt": "2025-01-01T00:00:00Z"
-                }
-            ]
-        });
-
-        Mock::given(method("GET"))
-            .and(path("/api/ext/bill/realm1/client/client1/plans"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(&assignments_response))
-            .expect(1)
-            .mount(&server)
-            .await;
-
-        let result = client.list_plan_assignments("realm1", "client1").await;
-
-        assert!(
-            result.is_ok(),
-            "list_plan_assignments should succeed, got error: {:?}",
-            result
-        );
-        let assignments = result.unwrap();
-        assert_eq!(assignments.len(), 1);
-        assert!(assignments[0].enabled);
 
         server.verify().await;
     }

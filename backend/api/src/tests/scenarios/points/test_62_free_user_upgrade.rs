@@ -14,7 +14,9 @@
 //
 // =============================================================================
 
-use crate::tests::scenarios::points::fixtures::{create_test_plan, create_test_plan_config};
+use crate::tests::scenarios::points::fixtures::{
+    configure_test_entitlement_points, create_test_entitlement_mapping,
+};
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
@@ -141,14 +143,22 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
     println!("[Step 1] ✓ Verified initial state: 1000 registration + 50 periodic = 1050 total");
 
     // ============================================================================
-    // When: the user subscribes to "pro-monthly" plan
+    // When: the user subscribes to "pro-monthly" entitlement
     // ============================================================================
-    println!("[Step 2] User upgrades to pro-monthly plan");
+    println!("[Step 2] User upgrades to pro-monthly entitlement");
 
-    // Create subscription plan
-    let plan_id = create_test_plan(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2900).await;
-    let _plan_config_id =
-        create_test_plan_config(&ctx._app_state.pool, &ctx._realm_id, plan_id, 1000, 30).await;
+    // Create subscription entitlement mapping
+    let mapping_id =
+        create_test_entitlement_mapping(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2900)
+            .await;
+    let _mapping_config_id = configure_test_entitlement_points(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+        mapping_id,
+        1000,
+        30,
+    )
+    .await;
 
     // Configure Creem webhook for this realm
     ctx.with_creem_config(
@@ -164,7 +174,7 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
     let event = build_subscription_paid_event(
         event_id.clone(),
         user_id,
-        plan_id,
+        mapping_id,
         false, // initial subscription
         &ctx._realm_id,
     );
@@ -339,9 +349,17 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     let user_id = uuid::Uuid::parse_str(&user_id).expect("Invalid user ID");
 
     // Create subscription via webhook
-    let plan_id = create_test_plan(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2900).await;
-    let _plan_config_id =
-        create_test_plan_config(&ctx._app_state.pool, &ctx._realm_id, plan_id, 1000, 30).await;
+    let mapping_id =
+        create_test_entitlement_mapping(&ctx._app_state.pool, &ctx._realm_id, "pro-monthly", 2900)
+            .await;
+    let _mapping_config_id = configure_test_entitlement_points(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+        mapping_id,
+        1000,
+        30,
+    )
+    .await;
 
     // Create additional mapping for "prod_test_monthly" so cancel webhook can resolve entitlement_key
     let generic_mapping_id = uuid::Uuid::now_v7();
@@ -354,7 +372,7 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     )
     .bind(generic_mapping_id)
     .bind(&ctx._realm_id)
-    .bind(plan_id.to_string())
+    .bind(mapping_id.to_string())
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to create generic entitlement mapping for cancel webhook");
@@ -373,7 +391,7 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     let event = build_subscription_paid_event(
         event_id.clone(),
         user_id,
-        plan_id,
+        mapping_id,
         false, // initial subscription
         &ctx._realm_id,
     );

@@ -25,7 +25,6 @@ docs/user-stories/
 │   └── device-code.md    # Device Code
 ├── billing/              # 计费相关
 │   ├── subscription.md   # 订阅套餐
-│   ├── product-management.md # 产品管理
 │   ├── points-admin.md   # 积分管理
 │   ├── points-user.md    # 积分查询
 │   ├── points-free-user.md # 免费用户积分
@@ -112,12 +111,6 @@ docs/user-stories/
 | US-BI-007 | 第三方应用查询套餐状态（SDK 集成） | Billing User | P0 | [billing/subscription](billing/subscription.md#故事-7第三方应用查询套餐状态sdk-集成-us-bi-007) |
 | US-BI-008 | 查看订阅变更历史 | Billing User | P1 | [billing/subscription](billing/subscription.md#故事-8查看订阅变更历史-us-bi-008) |
 | US-BI-009 | 查看自己的订阅变更历史 | Billing User | P1 | [billing/subscription](billing/subscription.md#故事-9查看自己的订阅变更历史-us-bi-009) |
-| US-PR-001 | 创建 Product | Realm Admin | P0 | [billing/product-management](billing/product-management.md#故事-1创建-product-us-pr-001) |
-| US-PR-002 | 编辑 Product | Realm Admin | P0 | [billing/product-management](billing/product-management.md#故事-2编辑-product-us-pr-002) |
-| US-PR-003 | 查看 Product 列表 | Realm Admin | P0 | [billing/product-management](billing/product-management.md#故事-3查看-product-列表-us-pr-003) |
-| US-PR-004 | 启用/禁用 Product | Realm Admin | P1 | [billing/product-management](billing/product-management.md#故事-4启用禁用-product-us-pr-004) |
-| US-PR-005 | 删除 Product | Realm Admin | P1 | [billing/product-management](billing/product-management.md#故事-5删除-product-us-pr-005) |
-| US-PR-006 | 在 Product 下管理 Plan | Realm Admin | P0 | [billing/product-management](billing/product-management.md#故事-6在-product-下管理-plan-us-pr-006) |
 | US-PO-001 | 配置积分套餐 | Points Admin | P0 | [billing/points-admin](billing/points-admin.md#故事-1配置积分套餐-us-po-001) |
 | US-PO-002 | 查看所有用户积分账户 | Points Admin | P1 | [billing/points-admin](billing/points-admin.md#故事-2查看所有用户积分账户-us-po-002) |
 | US-PO-003 | 查看用户积分交易历史 | Points Admin | P1 | [billing/points-admin](billing/points-admin.md#故事-3查看用户积分交易历史-us-po-003) |
@@ -245,7 +238,6 @@ docs/user-stories/
 | 角色 | 文档 | 相关 PRD |
 |------|------|---------|
 | Billing User | [billing/subscription.md](billing/subscription.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
-| Product Admin | [billing/product-management.md](billing/product-management.md) | [Product Catalog PRD](/docs/prd/billing/product-catalog.md) |
 | Points Admin | [billing/points-admin.md](billing/points-admin.md) | [Points PRD](/docs/prd/billing/points.md) |
 | Points User | [billing/points-user.md](billing/points-user.md), [billing/points-free-user.md](billing/points-free-user.md) | [Points PRD](/docs/prd/billing/points.md), [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
 | Points Package | [billing/points-package.md](billing/points-package.md), [billing/points-package-purchase.md](billing/points-package-purchase.md) | [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |

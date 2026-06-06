@@ -1,17 +1,9 @@
 -- ====================================
 -- Product Reduce Migration
 -- ====================================
--- Drops legacy product/plan catalog tables, creates provider_entitlement_mappings,
--- and alters subscription/points_grant_schedules to use entitlement_key.
+-- Creates provider_entitlement_mappings for provider-sourced subscription catalog.
 
--- 1. DROP tables in dependency order (children first)
-DROP TABLE IF EXISTS points_plan_configs;
-DROP TABLE IF EXISTS client_app_subscription_plan;
-DROP TABLE IF EXISTS subscription_plan_payment_provider;
-DROP TABLE IF EXISTS subscription_plan;
-DROP TABLE IF EXISTS products;
-
--- 2. CREATE provider_entitlement_mappings
+-- 1. CREATE provider_entitlement_mappings
 CREATE TABLE provider_entitlement_mappings (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     realm_id TEXT NOT NULL,
@@ -46,28 +38,3 @@ COMMENT ON COLUMN provider_entitlement_mappings.entitlement_key IS 'Herald entit
 COMMENT ON COLUMN provider_entitlement_mappings.billing_type IS 'recurring or one_time';
 COMMENT ON COLUMN provider_entitlement_mappings.payment_provider IS 'Payment provider: stripe, creem, wechat, shopify';
 COMMENT ON COLUMN provider_entitlement_mappings.provider_product_info IS 'Cached provider product info (name, price, currency, etc.)';
-
--- 3. ALTER subscription: add new columns, drop old columns and indexes
-ALTER TABLE subscription
-    ADD COLUMN entitlement_key TEXT NOT NULL DEFAULT '',
-    ADD COLUMN external_price_id TEXT,
-    ADD COLUMN provider_metadata JSONB,
-    ADD COLUMN synced_at TIMESTAMPTZ;
-
--- Drop old indexes if they exist
-DROP INDEX IF EXISTS idx_subscription_plan_id;
-DROP INDEX IF EXISTS idx_subscription_billing_period;
-
--- Drop old columns
-ALTER TABLE subscription
-    DROP COLUMN IF EXISTS plan_id,
-    DROP COLUMN IF EXISTS tier,
-    DROP COLUMN IF EXISTS billing_period;
-
--- Add new index
-CREATE INDEX idx_subscription_entitlement_key ON subscription(entitlement_key);
-
--- 4. ALTER points_grant_schedules: drop plan_config_id, add entitlement_key
-ALTER TABLE points_grant_schedules
-    DROP COLUMN IF EXISTS plan_config_id,
-    ADD COLUMN entitlement_key TEXT NOT NULL DEFAULT '';

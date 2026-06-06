@@ -13,7 +13,7 @@ pub struct CreatePaymentAttemptInput {
     pub realm_id: String,
     pub user_id: Uuid,
     pub payment_provider: String,
-    pub target_type: String, // "subscription_plan" or "points_package"
+    pub target_type: String, // "subscription_entitlement" or "points_package"
     pub target_id: Uuid,
     pub amount: i64,
     pub currency: String,

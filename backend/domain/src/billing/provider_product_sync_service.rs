@@ -7,6 +7,26 @@ use crate::billing::ports::BillingRepository;
 use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::ensure_policy;
 
+fn default_entitlement_key(payment_provider: &str, external_product_id: &str) -> String {
+    let normalized: String = external_product_id
+        .chars()
+        .filter_map(|c| {
+            if c.is_ascii_alphanumeric() {
+                Some(c.to_ascii_lowercase())
+            } else if c == '-' || c == '_' {
+                Some('-')
+            } else {
+                None
+            }
+        })
+        .take(32)
+        .collect();
+
+    format!("{}-{}", payment_provider, normalized)
+        .trim_end_matches('-')
+        .to_string()
+}
+
 /// External provider product info returned by ProviderApiPort
 #[derive(Debug, Clone)]
 pub struct ProviderProduct {
@@ -112,14 +132,25 @@ where
         let mut partial_errors = Vec::new();
 
         for product in products {
-            let entitlement_key = format!(
-                "{}-{}",
-                payment_provider,
-                &product.external_product_id[..product.external_product_id.len().min(32)]
+            let existing = self
+                .repository
+                .find_entitlement_mapping_by_provider_product(
+                    realm_id,
+                    payment_provider,
+                    &product.external_product_id,
+                )
+                .await?;
+
+            let entitlement_key = existing.as_ref().map_or_else(
+                || default_entitlement_key(payment_provider, &product.external_product_id),
+                |mapping| mapping.entitlement_key.clone(),
             );
 
             let mapping = EntitlementMapping {
-                id: uuid::Uuid::now_v7(),
+                id: existing
+                    .as_ref()
+                    .map(|mapping| mapping.id)
+                    .unwrap_or_else(uuid::Uuid::now_v7),
                 realm_id: realm_id.to_string(),
                 payment_provider: payment_provider.to_string(),
                 external_product_id: product.external_product_id.clone(),
@@ -130,12 +161,18 @@ where
                     .as_deref()
                     .and_then(|s: &str| s.parse().ok()),
                 billing_period: product.billing_period.clone(),
-                points_per_period: None,
-                grant_period_type: None,
-                validity_days: None,
-                grant_on_subscribe: false,
-                max_periods: None,
-                enabled: false,
+                points_per_period: existing
+                    .as_ref()
+                    .and_then(|mapping| mapping.points_per_period),
+                grant_period_type: existing
+                    .as_ref()
+                    .and_then(|mapping| mapping.grant_period_type.clone()),
+                validity_days: existing.as_ref().and_then(|mapping| mapping.validity_days),
+                grant_on_subscribe: existing
+                    .as_ref()
+                    .is_some_and(|mapping| mapping.grant_on_subscribe),
+                max_periods: existing.as_ref().and_then(|mapping| mapping.max_periods),
+                enabled: existing.as_ref().is_some_and(|mapping| mapping.enabled),
                 provider_product_info: Some(serde_json::json!({
                     "name": product.name,
                     "description": product.description,
@@ -145,7 +182,10 @@ where
                     "billing_period": product.billing_period,
                 })),
                 synced_at: Some(chrono::Utc::now()),
-                created_at: chrono::Utc::now(),
+                created_at: existing
+                    .as_ref()
+                    .map(|mapping| mapping.created_at)
+                    .unwrap_or_else(chrono::Utc::now),
                 updated_at: chrono::Utc::now(),
             };
 

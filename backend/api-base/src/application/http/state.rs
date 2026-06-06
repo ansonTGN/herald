@@ -11,8 +11,12 @@ use herald_core::domain::user::services::admin::{
 };
 use herald_core::infrastructure::audit::PostgresAuditEventRepository;
 use herald_core::infrastructure::authorization::RedisPermissionChecker;
-use herald_core::infrastructure::authorization::policies::PermissionBasedPointsPolicy;
-use herald_core::infrastructure::billing::{PostgresBillingRepository, PostgresInvoiceRepository};
+use herald_core::infrastructure::authorization::policies::{
+    PermissionBasedBillingPolicy, PermissionBasedPointsPolicy,
+};
+use herald_core::infrastructure::billing::{
+    ConfiguredProviderProductApi, PostgresBillingRepository, PostgresInvoiceRepository,
+};
 use herald_core::infrastructure::client_api_keys::{ApiKeyCache, ClientApiKeyRepository};
 use herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository;
 use herald_core::infrastructure::points::PostgresPointsRepository;
@@ -42,6 +46,12 @@ type PurchaseServiceImpl = PurchaseService<
     >,
 >;
 
+type ProviderProductSyncServiceImpl = herald_core::domain::billing::ProviderProductSyncService<
+    PostgresBillingRepository,
+    PermissionBasedBillingPolicy,
+    ConfiguredProviderProductApi,
+>;
+
 /// AppState for API handlers
 /// Contains database connections and configuration for HTTP endpoints
 #[derive(Clone)]
@@ -69,13 +79,16 @@ pub struct AppState {
     /// Audit event repository
     pub audit_event_repository: Arc<PostgresAuditEventRepository>,
 
-    /// Entitlement mapping service (replaces old SubscriptionPlanService + ProductService)
+    /// Entitlement mapping service
     pub entitlement_mapping_service: Arc<
         herald_core::domain::billing::EntitlementMappingService<
             PostgresBillingRepository,
-            herald_core::infrastructure::authorization::policies::PermissionBasedBillingPolicy,
+            PermissionBasedBillingPolicy,
         >,
     >,
+
+    /// Provider product sync service
+    pub provider_product_sync_service: Arc<ProviderProductSyncServiceImpl>,
 
     /// Points repository
     pub points_repository: Arc<PostgresPointsRepository>,
