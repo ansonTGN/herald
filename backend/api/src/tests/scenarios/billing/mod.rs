@@ -23,6 +23,9 @@ pub mod webhook_entitlement_scenarios;
 // Entitlement subscription scenarios (authored by BE-T03)
 pub mod entitlement_subscription_scenarios;
 
+// Subscription checkout session scenarios
+pub mod checkout_session_scenarios;
+
 // Subscription points entitlement scenarios (authored by BE-T03)
 pub mod subscription_points_entitlement_scenarios;
 

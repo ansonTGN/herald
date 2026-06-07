@@ -172,3 +172,95 @@ async fn test_scenario_user_view_own_balance(ctx: &mut TestContext) {
 
     println!("\n✅ Scenario 1.2 完成：用户成功查看自己的积分余额");
 }
+
+/// ============================================================================
+/// Scenario 1.3: GET wallet auto-creates an empty wallet
+/// ============================================================================
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_scenario_get_wallet_auto_creates_empty_wallet(ctx: &mut TestContext) {
+    let app = ctx.create_unified_test_router();
+
+    // Given: A user exists but has no points wallet yet.
+    let email = "user2-auto-create@example.com";
+    let password = "password123";
+    let user_id =
+        create_test_user_with_auth(&ctx._app_state.pool, &ctx._realm_id, email, password).await;
+
+    let wallet_count_before: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM points_wallets WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(&ctx._app_state.pool)
+            .await
+            .expect("Failed to count wallets before request");
+    assert_eq!(
+        wallet_count_before, 0,
+        "Precondition matters: this scenario verifies GET creates the missing wallet"
+    );
+
+    // When: The user logs in and requests their own wallet.
+    let login_payload = json!({
+        "clientId": ctx._client_id,
+        "email": email,
+        "password": password,
+        "turnstileToken": "dummy"
+    });
+
+    let login_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/auth/{}/login", ctx._realm_id))
+        .header("content-type", "application/json")
+        .header("x-forwarded-for", "3.3.3.4")
+        .body(Body::from(login_payload.to_string()))
+        .unwrap();
+
+    let login_response = app.clone().oneshot(login_request).await.unwrap();
+    assert_eq!(login_response.status(), StatusCode::OK);
+
+    let set_cookie = login_response
+        .headers()
+        .get(header::SET_COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .expect("Should return Set-Cookie header");
+    let token = crate::tests::extract_set_cookie_token(set_cookie, "X-Auth")
+        .expect("Should extract X-Auth token");
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/points/{}/wallets/{}", ctx._realm_id, user_id))
+        .header("cookie", format!("X-Auth={}", token))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+
+    // Then: The response is an empty active wallet, and the wallet is persisted.
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Get wallet should auto-create and return 200 OK"
+    );
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("Failed to read response body");
+    let body: serde_json::Value =
+        serde_json::from_slice(&body_bytes).expect("Failed to parse JSON");
+
+    assert_eq!(body["balance"].as_i64(), Some(0));
+    assert_eq!(body["status"].as_str(), Some("active"));
+    assert_eq!(body["totalRecharged"].as_i64(), Some(0));
+    assert_eq!(body["totalConsumed"].as_i64(), Some(0));
+    assert_eq!(body["userId"].as_str(), Some(user_id.to_string().as_str()));
+
+    let wallet_count_after: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM points_wallets WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(&ctx._app_state.pool)
+            .await
+            .expect("Failed to count wallets after request");
+    assert_eq!(
+        wallet_count_after, 1,
+        "GET must persist the auto-created wallet so later points operations share the same account"
+    );
+}

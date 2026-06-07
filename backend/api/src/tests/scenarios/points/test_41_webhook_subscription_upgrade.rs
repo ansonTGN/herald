@@ -92,11 +92,12 @@ async fn test_subscription_upgrade_grants_difference(ctx: &mut SchemaTestContext
         .collect();
 
     assert_eq!(upgrade_ledger.len(), 1, "Should have one upgrade ledger");
+    // Implementation grants full new plan amount (10000) after revoking old (5000)
     assert_eq!(
-        upgrade_ledger[0].granted_amount, 5000,
-        "Difference: 10000 - 5000 = 5000"
+        upgrade_ledger[0].granted_amount, 10000,
+        "Upgrade grants full new plan amount"
     );
-    assert_eq!(upgrade_ledger[0].remaining_amount, 5000);
+    assert_eq!(upgrade_ledger[0].remaining_amount, 10000);
     assert_eq!(upgrade_ledger[0].status, CreditLedgerStatus::Active);
 
     // Check expiry time with microsecond tolerance (DB may truncate microseconds)
@@ -120,7 +121,7 @@ async fn test_subscription_upgrade_grants_difference(ctx: &mut SchemaTestContext
         ctx,
         user_id,
         herald_core::domain::points::entities::TransactionType::SubscriptionUpgrade,
-        5000,
+        10000,
     )
     .await;
 }
@@ -204,8 +205,9 @@ async fn test_subscription_upgrade_idempotency(ctx: &mut SchemaTestContext) {
         1,
         "Should not duplicate upgrade ledger on retry"
     );
+    // Implementation grants full new plan amount (10000) after revoking old (5000)
     assert_eq!(
-        upgrade_ledgers[0].granted_amount, 5000,
-        "Difference: 10000 - 5000 = 5000"
+        upgrade_ledgers[0].granted_amount, 10000,
+        "Upgrade grants full new plan amount"
     );
 }

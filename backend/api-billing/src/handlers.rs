@@ -95,7 +95,26 @@ async fn get_creem_client_for_realm(
 
     tracing::info!("Loaded Creem config from database for realm: {}", realm_id);
 
-    CreemClient::new(api_key, timeout).map_err(ApiError::from)
+    let mock_base_url = sqlx::query_scalar::<_, String>(
+        "SELECT config_value
+         FROM realm_config
+         WHERE realm_id = $1 AND config_type = 'creem' AND config_key = 'mock_base_url' AND enabled = true
+         LIMIT 1",
+    )
+    .bind(realm_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to load Creem mock base URL from database: {}", e);
+        ApiError::internal(format!("Database error: {}", e))
+    })?;
+
+    match mock_base_url {
+        Some(base_url) => {
+            CreemClient::with_base_url(api_key, base_url, timeout).map_err(ApiError::from)
+        }
+        None => CreemClient::new(api_key, timeout).map_err(ApiError::from),
+    }
 }
 
 /// Get Stripe client for a realm
@@ -139,7 +158,24 @@ async fn get_stripe_client_for_realm(
 
     tracing::info!("Loaded Stripe config from database for realm: {}", realm_id);
 
-    Ok(StripeClient::new(api_key, timeout)?)
+    let mock_base_url = sqlx::query_scalar::<_, String>(
+        "SELECT config_value
+         FROM realm_config
+         WHERE realm_id = $1 AND config_type = 'stripe' AND config_key = 'mock_base_url' AND enabled = true
+         LIMIT 1",
+    )
+    .bind(realm_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to load Stripe mock base URL from database: {}", e);
+        ApiError::internal(format!("Database error: {}", e))
+    })?;
+
+    match mock_base_url {
+        Some(base_url) => Ok(StripeClient::with_base_url(api_key, base_url, timeout)?),
+        None => Ok(StripeClient::new(api_key, timeout)?),
+    }
 }
 
 // ============================================================================

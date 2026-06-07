@@ -184,8 +184,8 @@ mod tests {
     ) -> Uuid {
         let sub_id = Uuid::now_v7();
         sqlx::query(
-            "INSERT INTO subscription (id, realm_id, external_subscription_id, external_product_id, status, entitlement_key, user_id, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, 'active', 'pro', $5, NOW(), NOW())"
+            "INSERT INTO subscription (id, realm_id, external_subscription_id, external_product_id, payment_provider, status, entitlement_key, user_id, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 'stripe', 'active', 'pro', $5, NOW(), NOW())"
         )
         .bind(sub_id)
         .bind(realm_id)
