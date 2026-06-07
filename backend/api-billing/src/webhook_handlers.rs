@@ -281,9 +281,16 @@ fn parse_subscription_paid_payload(
         .unwrap_or("")
         .to_string();
 
+    let user_id_value = object
+        .get("herald_user_id")
+        .or_else(|| object.get("metadata").and_then(|m| m.get("herald_user_id")))
+        .or_else(|| object.get("userId"))
+        .or_else(|| object.get("metadata").and_then(|m| m.get("userId")))
+        .unwrap_or(&Value::Null);
+
     Ok(CreemSubscriptionPaidPayload {
         event_id: parse_event_id(event)?,
-        user_id: parse_uuid_field(metadata_value(object, "herald_user_id", "userId"), "userId")?,
+        user_id: parse_uuid_field(user_id_value, "userId")?,
         entitlement_key,
         client_app_id: parse_optional_uuid_field(metadata_value(
             object,
@@ -345,9 +352,16 @@ fn parse_subscription_updated_payload(
         .unwrap_or("")
         .to_string();
 
+    let user_id_value = object
+        .get("herald_user_id")
+        .or_else(|| object.get("metadata").and_then(|m| m.get("herald_user_id")))
+        .or_else(|| object.get("userId"))
+        .or_else(|| object.get("metadata").and_then(|m| m.get("userId")))
+        .unwrap_or(&Value::Null);
+
     Ok(CreemSubscriptionUpdatedPayload {
         event_id: parse_event_id(event)?,
-        user_id: parse_uuid_field(metadata_value(object, "herald_user_id", "userId"), "userId")?,
+        user_id: parse_uuid_field(user_id_value, "userId")?,
         previous_entitlement_key,
         current_entitlement_key,
         client_app_id: parse_optional_uuid_field(metadata_value(
@@ -406,9 +420,16 @@ fn parse_subscription_canceled_payload(
         .or_else(|| object["metadata"]["entitlementKey"].as_str())
         .map(str::to_string);
 
+    let user_id_value = object
+        .get("herald_user_id")
+        .or_else(|| object.get("metadata").and_then(|m| m.get("herald_user_id")))
+        .or_else(|| object.get("userId"))
+        .or_else(|| object.get("metadata").and_then(|m| m.get("userId")))
+        .unwrap_or(&Value::Null);
+
     Ok(CreemSubscriptionCanceledPayload {
         event_id: parse_event_id(event)?,
-        user_id: parse_uuid_field(metadata_value(object, "herald_user_id", "userId"), "userId")?,
+        user_id: parse_uuid_field(user_id_value, "userId")?,
         entitlement_key,
         client_app_id: parse_optional_uuid_field(metadata_value(
             object,
@@ -554,10 +575,15 @@ async fn handle_checkout_completed(
     );
 
     // --- Creem invoice sync (best-effort, non-blocking) ---
-    // Extract amount/currency with fallback: event.object -> payment_attempts -> skip with warn
+    // Extract amount/currency with fallback: event.object -> event.object.product -> payment_attempts -> skip with warn
     let event_object = &event["object"];
-    let amount_from_event = event_object["amount"].as_i64();
-    let currency_from_event = event_object["currency"].as_str().map(String::from);
+    let amount_from_event = event_object["amount"]
+        .as_i64()
+        .or_else(|| event_object["product"]["price"].as_i64());
+    let currency_from_event = event_object["currency"]
+        .as_str()
+        .or_else(|| event_object["product"]["currency"].as_str())
+        .map(String::from);
 
     let (resolved_amount, resolved_currency, resolved_account_id) = match (
         amount_from_event,
@@ -607,11 +633,12 @@ async fn handle_checkout_completed(
     let tax_details = extract_creem_tax_details(event_object);
 
     if !resolved_currency.is_empty() {
+        let checkout_id = event_object["id"].as_str().map(String::from);
         let external_data = ExternalInvoiceData {
             realm_id: realm_id.to_string(),
             provider: InvoiceProvider::Creem,
             payment_provider: Some("creem".to_string()),
-            external_invoice_id: None,
+            external_invoice_id: checkout_id,
             external_order_id: Some(payload.event_id.clone()),
             external_status: Some("completed".to_string()),
             external_hosted_url: None,

@@ -622,6 +622,12 @@ pub async fn create_checkout_session(
                         entitlement_key.clone(),
                     );
                     map.insert("herald_billing_kind".to_string(), mapping.billing_kind());
+                    map.insert("herald_user_id".to_string(), identity.user_id());
+                    map.insert("herald_realm_id".to_string(), realm_id.clone());
+                    map.insert(
+                        "herald_client_app_id".to_string(),
+                        client_app_id.to_string(),
+                    );
                     map
                 }),
             };

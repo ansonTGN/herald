@@ -652,52 +652,97 @@ async fn handle_checkout_session_completed(
         SubscriptionStatus::Active
     };
 
-    // Create subscription
-    let now = chrono::Utc::now();
-    let subscription = Subscription {
-        id: Uuid::now_v7(),
-        realm_id: realm_id.to_string(),
-        external_subscription_id: payload.stripe_subscription_id.clone(),
-        external_product_id: payload.stripe_product_id.clone(),
-        payment_provider: "stripe".to_string(),
-        status,
-        entitlement_key: entitlement_key.clone(),
-        external_price_id: None,
-        provider_metadata: None,
-        synced_at: Some(now),
-        user_id: Some(payload.user_id),
-        current_period_start: Some(now),
-        current_period_end: None,
-        cancel_at_period_end: false,
-        client_app_id: Some(payload.client_app_id),
-        cancel_at: None,
-        created_at: now,
-        updated_at: now,
+    // Check if subscription already exists (customer.subscription.created webhook
+    // may have arrived first and already created it via sync_subscription).
+    let existing_subscription = app_state
+        .billing_repository
+        .find_by_external_subscription_id(&payload.stripe_subscription_id, "stripe")
+        .await?;
+
+    let _created_subscription = if let Some(mut existing) = existing_subscription {
+        info!(
+            realm_id = %realm_id,
+            subscription_id = %existing.id,
+            stripe_subscription_id = ?payload.stripe_subscription_id,
+            event_id = %event_id,
+            "Checkout completed - subscription already exists from subscription.created webhook, updating"
+        );
+
+        let previous = existing.clone();
+        existing.status = status;
+        existing.entitlement_key = entitlement_key.clone();
+        existing.synced_at = Some(chrono::Utc::now());
+        if existing.user_id.is_none() {
+            existing.user_id = Some(payload.user_id);
+        }
+        if existing.client_app_id.is_none() {
+            existing.client_app_id = Some(payload.client_app_id);
+        }
+        existing.updated_at = chrono::Utc::now();
+
+        let updated = app_state
+            .billing_repository
+            .update_subscription(existing)
+            .await?;
+
+        save_subscription_history(
+            &app_state,
+            Some(&previous),
+            &updated,
+            HistoryEventType::Created,
+        )
+        .await?;
+
+        updated
+    } else {
+        let now = chrono::Utc::now();
+        let subscription = Subscription {
+            id: Uuid::now_v7(),
+            realm_id: realm_id.to_string(),
+            external_subscription_id: payload.stripe_subscription_id.clone(),
+            external_product_id: payload.stripe_product_id.clone(),
+            payment_provider: "stripe".to_string(),
+            status,
+            entitlement_key: entitlement_key.clone(),
+            external_price_id: None,
+            provider_metadata: None,
+            synced_at: Some(now),
+            user_id: Some(payload.user_id),
+            current_period_start: Some(now),
+            current_period_end: None,
+            cancel_at_period_end: false,
+            client_app_id: Some(payload.client_app_id),
+            cancel_at: None,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let created = app_state
+            .billing_repository
+            .create_subscription(subscription)
+            .await?;
+
+        let history_event = SubscriptionHistoryService::create_subscription_created_event(
+            &created,
+            Some(ACTOR_WEBHOOK.to_string()),
+        );
+        app_state
+            .billing_repository
+            .save_history_event(history_event)
+            .await?;
+
+        info!(
+            realm_id = %realm_id,
+            subscription_id = %created.id,
+            client_app_id = %payload.client_app_id,
+            entitlement_key = %entitlement_key,
+            stripe_subscription_id = ?payload.stripe_subscription_id,
+            event_id = %event_id,
+            "Checkout completed - subscription created"
+        );
+
+        created
     };
-
-    let created_subscription = app_state
-        .billing_repository
-        .create_subscription(subscription)
-        .await?;
-
-    let history_event = SubscriptionHistoryService::create_subscription_created_event(
-        &created_subscription,
-        Some(ACTOR_WEBHOOK.to_string()),
-    );
-    app_state
-        .billing_repository
-        .save_history_event(history_event)
-        .await?;
-
-    info!(
-        realm_id = %realm_id,
-        subscription_id = %created_subscription.id,
-        client_app_id = %payload.client_app_id,
-        entitlement_key = %entitlement_key,
-        stripe_subscription_id = ?payload.stripe_subscription_id,
-        event_id = %event_id,
-        "Checkout completed - subscription created"
-    );
 
     // Return a placeholder transaction for compatibility
     // Actual subscription points will be granted by customer.subscription.created event

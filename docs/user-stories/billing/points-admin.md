@@ -2,88 +2,95 @@
 
 > 角色定义见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)
 
-**边界说明**：当前积分配置仍以 Plan 为主。Product 在当前阶段主要作为 Billing 编目上下文，用于帮助管理员理解某个 Plan 的所属产品线，而不是独立的积分配置层级。
+**边界说明**：积分策略按 `entitlement_key` 配置，存储在 Entitlement Mapping 中。管理员在 Entitlement Mappings 页面配置每个映射的积分发放规则（每期积分、订阅时是否发放、有效期等）。Product/Plan 本地 CRUD 已移除。
 
 ## 用户故事
 
-### 故事 1：配置积分套餐 [US-PO-001]
+### 故事 1：配置 Entitlement 积分策略 [US-PO-001]
 
 **优先级**: P0
 
 **【用户故事】**
 **作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
-**我希望**：配置每个套餐的积分赠送规则（每期积分、订阅时是否发放）
+**我希望**：配置每个 Entitlement Mapping 的积分发放规则（每期积分、订阅时是否发放）
 **从而**：用户订阅后自动获得相应积分
 
 **【验收标准】**
 
 > 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
-**场景 1：创建积分套餐配置**
+**场景 1：配置 Entitlement 积分策略**
 ```gherkin
 Given 我是 realm-1 的管理员
-And 已存在订阅套餐 "pro-monthly"
-When 我在积分套餐配置页面点击 "Create Config" 按钮
-And 我填写配置信息：
-  | Plan              | pro-monthly |
+And 已从 Stripe 同步了产品，存在 Entitlement Mapping "pro-plan"
+When 我在 Entitlement Mappings 页面编辑 "pro-plan"
+And 我填写积分策略信息：
   | Points per Period | 1000        |
   | Grant on Subscribe | true       |
   | Grant Period Type | monthly     |
   | Validity Days     | 30          |
   | Max Periods       | 10          |
-And 我提交表单
-Then 积分套餐配置创建成功
-And 系统显示成功消息："Points plan config created successfully"
-And 配置列表显示新创建的配置
-And 配置列表可显示该 Plan 所属的 Product 上下文
+And 我保存更改
+Then 积分策略配置成功
+And Entitlement Mapping "pro-plan" 显示积分策略为已配置
 ```
 
-**场景 2：查看套餐积分配置**
+**场景 2：查看 Entitlement 积分配置**
 ```gherkin
 Given 我是 realm-1 的管理员
-And 已存在套餐 "pro-monthly" 的积分配置
-When 我在积分套餐配置页面查看该套餐
-Then 我看到以下积分配置信息：
+And Entitlement Mapping "pro-plan" 已配置积分策略
+When 我查看 "pro-plan" 的详情
+Then 我看到以下积分策略信息：
   | 字段                    | 值       |
   | 每期发放积分             | 1000     |
   | 订阅时是否发放           | 是       |
   | 发放周期类型             | 月度     |
   | 积分有效期（天）         | 30       |
   | 最大发放期数             | 10       |
-And 我可以看到该套餐所属的 Product 名称
 ```
 
-**场景 3：编辑积分套餐配置**
+**场景 3：编辑积分策略**
 ```gherkin
 Given 我是 realm-1 的管理员
-And 已存在套餐 "pro-monthly" 的积分配置
-When 我编辑该配置：
+And Entitlement Mapping "pro-plan" 已配置积分策略
+When 我编辑该映射的积分策略：
   | Points per Period  | 1200 |
   | Grant on Subscribe | true |
 And 我保存更改
-Then 积分套餐配置更新成功
-And 新订阅将使用更新后的配置
+Then 积分策略更新成功
+And 新订阅将使用更新后的策略
 ```
 
 **场景 4：关闭订阅时积分发放**
 ```gherkin
 Given 我是 realm-1 的管理员
-And 已存在套餐 "basic-monthly" 的积分配置
-And 该套餐已启用订阅时积分发放（Grant on Subscribe = true）
+And Entitlement Mapping "basic-plan" 已配置积分策略
+And 该映射已启用订阅时积分发放（Grant on Subscribe = true）
 When 我将 "Grant on Subscribe" 设置为 false
 And 我保存更改
 Then 订阅时不再额外发放积分
 And 按周期的定期发放仍正常执行
 ```
 
-**场景 5：删除积分套餐配置**
+**场景 5：Entitlement 无积分策略**
 ```gherkin
 Given 我是 realm-1 的管理员
-And 已存在套餐 "old-plan" 的积分配置
-And 该套餐没有活跃订阅
-When 我删除该配置
-Then 积分套餐配置删除成功
-And 配置列表不再显示该套餐的配置
+And Entitlement Mapping "free-plan" 未配置积分策略
+When 用户通过 "free-plan" 订阅
+Then 系统跳过积分发放
+And 记录诊断："No points policy found for entitlement 'free-plan'"
+```
+
+**场景 6：禁用映射后积分策略不执行**
+```gherkin
+Given 我是 realm-1 的管理员
+And Entitlement Mapping "pro-plan" 已配置积分策略
+And 该映射状态为 "disabled"
+When Webhook 收到 "pro-plan" 的订阅事件
+Then 订阅投影仍正常更新
+And 但积分策略不执行（不发放积分）
+When 管理员重新启用该映射
+Then 后续订阅事件恢复积分策略执行
 ```
 
 
@@ -185,7 +192,7 @@ When 我在积分账户列表中点击 user-1
 Then 我看到 user-1 的交易历史列表
 And 列表显示每笔交易的详细信息：
   | 交易 ID | 交易类型 | 积分类型 | 金额 | 交易后余额 | 描述 | 时间 |
-  | txn-001 | 订阅续费 | 会员积分 | 1000 | 1000 | 订阅 pro 套餐续费 | 2026-03-13 12:00 |
+  | txn-001 | 订阅续费 | 会员积分 | 1000 | 1000 | entitlement pro-plan 续费 | 2026-03-13 12:00 |
   | txn-002 | 消耗 | 会员积分 | -100 | 900 | 调用 AI API | 2026-03-13 12:30 |
   | txn-003 | 退款回收 | 充值积分 | -350 | 550 | 退款回收：50% 退款 | 2026-03-13 13:00 |
   | txn-004 | 过期回收 | 会员积分 | -200 | 350 | 会员积分过期 | 2026-03-15 00:00 |
@@ -235,101 +242,82 @@ And 页面显示总交易数和当前页码
 ```
 
 
-### 故事 4：管理积分套餐配置 [US-PO-004]
+### 故事 4：管理 Entitlement 积分策略 [US-PO-004]
 
 **优先级**: P2
 
 **【用户故事】**
 **作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
-**我希望**：创建、编辑、删除积分套餐配置
+**我希望**：批量管理多个 Entitlement Mapping 的积分策略
 **从而**：灵活调整积分赠送策略
 
 **【验收标准】**
 
 > 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
-**场景 1：批量创建多个套餐配置**
+**场景 1：为多个 Entitlement 配置积分策略**
 ```gherkin
 Given 我是 realm-1 的管理员
-And 已存在多个订阅套餐：
-  | 套餐名称  |
-  | 基础月付  |
-  | 专业月付  |
-  | 企业版    |
-When 我为每个套餐创建积分配置：
-  | 套餐名称  | 每期积分 | 订阅时发放 | 周期类型  |
-  | 基础月付  | 500      | 是         | monthly   |
-  | 专业月付  | 1000     | 是         | monthly   |
-  | 企业版    | 2000     | 是         | monthly   |
-Then 所有套餐配置创建成功
-And 配置列表显示所有套餐
+And 已从支付方同步了多个 Entitlement Mapping：
+  | Entitlement Key |
+  | basic-plan      |
+  | pro-plan        |
+  | enterprise-plan |
+When 我为每个 Entitlement 配置积分策略：
+  | Entitlement Key | 每期积分 | 订阅时发放 | 周期类型  |
+  | basic-plan      | 500      | 是         | monthly   |
+  | pro-plan        | 1000     | 是         | monthly   |
+  | enterprise-plan | 2000     | 是         | monthly   |
+Then 所有 Entitlement 策略配置成功
+And Entitlement Mappings 列表显示所有配置
 ```
 
-**场景 2：编辑已有配置**
+**场景 2：编辑已有策略**
 ```gherkin
 Given 我是 realm-1 的管理员
-And 已存在套餐 "pro-monthly" 的配置
-When 我编辑该配置：
+And Entitlement Mapping "pro-plan" 已配置积分策略
+When 我编辑该映射的策略：
   | 字段               | 原值  | 新值  |
   | Points per Period  | 1000  | 1500  |
   | Grant on Subscribe | true  | false |
 And 我保存更改
-Then 配置更新成功
-And 新的订阅和续费将使用新配置
+Then 策略更新成功
+And 新的订阅和续费将使用新策略
 And 历史交易记录不受影响
 ```
 
-**场景 3：删除套餐配置（无活跃订阅）**
+**场景 3：禁用有活跃订阅的 Entitlement 的积分策略**
 ```gherkin
 Given 我是 realm-1 的管理员
-And 已存在套餐 "old-plan" 的配置
-And 该套餐没有活跃订阅
-When 我删除该配置
-Then 配置删除成功
-And 配置列表不再显示该套餐
-```
-
-**场景 4：删除套餐配置（有活跃订阅）**
-```gherkin
-Given 我是 realm-1 的管理员
-And 已存在套餐 "pro-monthly" 的配置
-And 该套餐有 10 个活跃订阅
-When 我尝试删除该配置
-Then 系统显示警告消息："该套餐有 10 个活跃订阅，无法删除配置"
-And 配置未被删除
-```
-
-**场景 5：批量编辑多个套餐配置**
-```gherkin
-Given 我是 realm-1 的管理员
-And 已存在多个套餐配置
-When 我选择多个套餐
-And 我批量修改 "Max Periods" 为 20
-Then 所有选中的套餐配置更新成功
-And 所有套餐的最大发放期数都是 20
+And Entitlement Mapping "pro-plan" 有 10 个活跃订阅
+When 我禁用该映射
+Then 映射状态变为 disabled
+And Webhook 仍更新订阅投影
+And 但积分策略不执行
+And 系统提示："10 active subscriptions affected"
 ```
 
 
-### 故事 5：查看套餐充值引导 [US-PO-005]
+### 故事 5：查看 Entitlement 充值引导 [US-PO-005]
 
 **优先级**: P2
 
 **【用户故事】**
 **作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
-**我希望**：查看套餐的积分配置信息
+**我希望**：查看 Entitlement 的积分策略信息
 **从而**：向用户说明积分赠送规则
 
 **【验收标准】**
 
 > 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
 
-**场景 1：查看单个套餐的充值引导**
+**场景 1：查看单个 Entitlement 的积分规则**
 ```gherkin
 Given 我是 realm-1 的管理员
-And 已存在套餐 "pro-monthly" 及其积分配置
-When 我查看该套餐的积分引导信息
+And Entitlement Mapping "pro-plan" 已配置积分策略
+When 我查看该映射的积分引导信息
 Then 我看到清晰的充值说明：
-  | 套餐名称           | 专业版（月付）                  |
+  | Entitlement Key    | pro-plan                       |
   | 每期发放积分       | 1000                           |
   | 订阅时是否额外发放 | 是                             |
   | 发放周期           | 月度                           |
@@ -337,37 +325,18 @@ Then 我看到清晰的充值说明：
   | 最大发放期数       | 10                             |
 ```
 
-**场景 2：查看所有套餐的充值引导列表**
+**场景 2：查看所有 Entitlement 的积分规则对比**
 ```gherkin
 Given 我是 realm-1 的管理员
-And 已存在多个套餐配置
-When 我查看套餐充值引导页面
-Then 我看到所有套餐的充值规则对比：
-  | 套餐名称  | 每期积分 | 订阅时发放 | 周期 | 最大期数 |
-  | 基础版    | 500      | 是         | 月度 | 5       |
-  | 专业版    | 1000     | 是         | 月度 | 10      |
-  | 企业版    | 2000     | 是         | 月度 | 无限制  |
+And 已存在多个已配置积分策略的 Entitlement Mapping
+When 我查看积分策略总览页面
+Then 我看到所有 Entitlement 的积分规则对比：
+  | Entitlement Key | 每期积分 | 订阅时发放 | 周期 | 最大期数 |
+  | basic-plan      | 500      | 是         | 月度 | 5       |
+  | pro-plan        | 1000     | 是         | 月度 | 10      |
+  | enterprise-plan | 2000     | 是         | 月度 | 无限制  |
 ```
 
-**场景 3：导出充值引导文档**
-```gherkin
-Given 我是 realm-1 的管理员
-And 已存在多个套餐配置
-When 我点击 "Export Guide" 按钮
-Then 系统生成充值引导文档
-And 文档包含所有套餐的积分规则
-And 我可以下载或分享该文档给用户
-```
-
-**场景 4：向用户展示充值规则（通过分享链接）**
-```gherkin
-Given 我是 realm-1 的管理员
-And 已存在套餐 "pro-monthly" 的积分配置
-When 我生成套餐充值规则的分享链接
-Then 链接包含套餐的积分配置信息
-And 我可以将链接分享给用户
-And 用户点击链接可以查看充值规则
-```
 
 ---
 
@@ -667,15 +636,17 @@ And 发放操作未执行
 
 | 优先级 | 用户故事数量 | 关键故事 |
 |--------|------------|---------|
-| P0 | 3 | US-PO-01: 配置积分套餐, US-PO-06: 配置 Realm 默认积分策略, US-PO-08: 主动发放积分 |
+| P0 | 3 | US-PO-01: 配置 Entitlement 积分策略, US-PO-06: 配置 Realm 默认积分策略, US-PO-08: 主动发放积分 |
 | P1 | 3 | US-PO-02: 查看所有用户积分账户, US-PO-03: 查看用户积分交易历史, US-PO-07: 查看免费用户积分统计 |
-| P2 | 2 | US-PO-04: 管理积分套餐配置, US-PO-05: 查看套餐充值引导 |
+| P2 | 2 | US-PO-04: 管理 Entitlement 积分策略, US-PO-05: 查看 Entitlement 充值引导 |
 
 ---
 
 ## 相关文档
 
 - **PRD**: [docs/prd/billing/points.md](/docs/prd/billing/points.md) - 积分系统产品需求文档
+- **PRD**: [docs/prd/billing/product_reduce.md](/docs/prd/billing/product_reduce.md) - Product/Plan 本地模型废弃与 Entitlement 映射
+- **用户故事**: [docs/user-stories/billing/entitlement-mapping.md](/docs/user-stories/billing/entitlement-mapping.md) - Entitlement Mapping 用户故事
 - **用户故事**: [docs/user-stories/billing/points-user.md](/docs/user-stories/billing/points-user.md) - 用户积分查询用户故事
 - **用户故事**: [docs/user-stories/billing/points-free-user.md](/docs/user-stories/billing/points-free-user.md) - 免费用户积分用户故事
 - **依赖 PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - Billing 订阅计费产品需求文档

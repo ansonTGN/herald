@@ -16,7 +16,7 @@ backend/
 ├── core/                # Assembly layer — dependency injection, ApplicationService Builder
 ├── api/                 # Main API crate (Axum route registration, middleware, AppState)
 ├── api-base/            # Shared API utilities (AppState definition, common HTTP helpers)
-├── api-billing/         # Billing handlers (plans, payments, invoices, webhooks)
+├── api-billing/         # Billing handlers (entitlement mappings, subscriptions, payments, invoices, webhooks)
 ├── api-admin/           # Admin panel handlers (user management, roles, permission definitions)
 ├── api-auth/            # Auth handlers (registration, login, password reset)
 ├── api-ext/             # External API handlers (API Key auth, for third-party consumption)
@@ -84,7 +84,7 @@ Key submodules:
 | `authentication` | Login, registration, session management |
 | `authorization` | RBAC permission model (roles, policies, permission definitions) |
 | `audit` | Audit event model and collection (user management, RBAC changes, auth events) |
-| `billing` | Plan management, subscription lifecycle |
+| `billing` | Entitlement mappings, subscription projection, payment webhook handling |
 | `points` | Points accounts, top-up, consumption, expiration, idempotency |
 | `points_package` | Points package definitions |
 | `payment_attempt` | Unified payment attempts (abstracting over payment channels) |
@@ -133,7 +133,7 @@ Eight crates form the API layer:
 | `api-base` | `AppState` definition (shared across all api sub-crates) | — |
 | `api-auth` | Registration, login, password reset, email verification | session |
 | `api-admin` | User CRUD, role management, permission definition management | session + inject_identity |
-| `api-billing` | Plans, subscriptions, payment webhooks (Stripe/Creem/WeChat/Shopify), invoices, points package purchases | mixed |
+| `api-billing` | Entitlement mappings, subscription projection, payment webhooks (Stripe/Creem/WeChat/Shopify), invoices, points package purchases | mixed |
 | `api-oauth` | OAuth login (GitHub/Google/WeChat), OAuth configuration management | mixed |
 | `api-ext` | Third-party API: permission checks, subscription queries, points balance and consumption, isolated by the API key's bound client app | API Key |
 | `api-points` | Points balance, transaction history, consumption, top-up | session or API Key |
@@ -187,7 +187,7 @@ File-based routing via TanStack Router. The route structure mirrors the `fronten
 $realmId/
 ├── auth/          # Login, registration, email verification
 ├── user/          # User profile (settings, security, points, subscriptions, invoices)
-├── manage/        # Admin panel (users, roles, permissions, plans, billing, points, audit logs, Client Apps, settings)
+├── manage/        # Admin panel (users, roles, permissions, entitlement mappings, billing, points, audit logs, Client Apps, settings)
 ├── points/        # Points balance and transaction history
 ├── subscription/  # User subscription status
 └── device/        # Device Code authorization page

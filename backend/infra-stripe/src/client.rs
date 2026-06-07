@@ -174,6 +174,38 @@ impl StripeClient {
         ));
         form_fields.push(("line_items[0][quantity]".to_string(), "1".to_string()));
 
+        // Propagate all metadata keys to subscription_data[metadata] so that
+        // when Stripe creates the subscription from the checkout session, the
+        // subscription object carries the same herald_ metadata.  Without this,
+        // customer.subscription.created events have empty metadata and the
+        // webhook handler cannot resolve userId.
+        form_fields.push((
+            "subscription_data[metadata][herald_realm_id]".to_string(),
+            request.realm_id.clone(),
+        ));
+        form_fields.push((
+            "subscription_data[metadata][herald_client_app_id]".to_string(),
+            request.client_app_id.to_string(),
+        ));
+        form_fields.push((
+            "subscription_data[metadata][herald_mapping_id]".to_string(),
+            request.mapping_id.to_string(),
+        ));
+        if let Some(user_id) = request.user_id {
+            form_fields.push((
+                "subscription_data[metadata][herald_user_id]".to_string(),
+                user_id.to_string(),
+            ));
+        }
+        if let Some(extra_metadata) = &request.metadata {
+            for (key, value) in extra_metadata {
+                form_fields.push((
+                    format!("subscription_data[metadata][{key}]"),
+                    value.clone(),
+                ));
+            }
+        }
+
         // Add trial period if specified
         if let Some(trial_days) = request.trial_days
             && trial_days > 0

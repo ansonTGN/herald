@@ -173,10 +173,61 @@ where
             "Subscription created successfully"
         );
 
+        // Grant subscription credits if mapping is configured for it
+        let points_granted = if mapping.grant_on_subscribe {
+            match mapping.points_per_period {
+                Some(points) if points > 0 => {
+                    let credit_ledger = self
+                        .points_repository
+                        .grant_points_atomic(
+                            &attempt.realm_id,
+                            attempt.user_id,
+                            CreditType::SubscriptionCredit,
+                            CreditSourceType::SubscriptionInitial,
+                            points,
+                            Some(period_end),
+                            Some(entitlement_key.clone()),
+                            None,
+                        )
+                        .await?;
+
+                    tracing::info!(
+                        subscription_id = %created_subscription.id,
+                        user_id = %attempt.user_id,
+                        points,
+                        "Subscription credits granted on subscribe"
+                    );
+
+                    Some(PointsGrant {
+                        transaction_id: credit_ledger.id,
+                        points_type: "subscription_credit".to_string(),
+                        points,
+                        description: format!(
+                            "Subscription grant: {} points for {}",
+                            points, entitlement_key
+                        ),
+                    })
+                }
+                _ => {
+                    tracing::info!(
+                        subscription_id = %created_subscription.id,
+                        "No points_per_period configured, skipping credit grant"
+                    );
+                    None
+                }
+            }
+        } else {
+            tracing::info!(
+                subscription_id = %created_subscription.id,
+                "grant_on_subscribe is false, skipping credit grant"
+            );
+            None
+        };
+
         Ok(FulfillmentResult {
             fulfillment_type: FulfillmentType::SubscriptionCreated,
             subscription_id: Some(created_subscription.id),
-            points_granted: None,
+            points_granted,
             granted_at: created_subscription.created_at,
         })
     }

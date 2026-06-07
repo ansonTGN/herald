@@ -1,10 +1,10 @@
-# Creem 支付流程：从创建产品到收到付款
+# Creem 支付对接
 
-面向 Realm Admin 的端到端操作指南。跟着做完，你的用户就能通过 Creem 完成订阅支付。
+面向 Realm Admin 的 Creem 对接操作指南。跟着做完，你的用户就能通过 Creem 完成订阅支付。
 
 ## 给谁看
 
-负责管理 Herald 计费配置的 Realm Admin。不需要写代码，全程在管理后台操作（Creem API Key 配置除外）。
+负责管理 Herald 计费配置的 Realm Admin。不需要写代码，全程在管理后台操作。
 
 ## 前置条件
 
@@ -12,61 +12,26 @@
 - 已创建至少一个 Realm 和一个 Client App
 - 已在 [Creem](https://creem.io) 注册账号，拿到 API Key（测试环境用 `ck_test_` 开头的 key）
 
+## Creem 和 Stripe 的区别
+
+Creem 没有类似 Stripe Product/Price 的 metadata 功能。这意味着 Herald 无法像 Stripe 那样从支付方商品自动导入 entitlement_key。Creem 的商品信息需要你在 Herald 中手动配置 entitlement 和积分策略。
+
+其他流程（Checkout、Webhook、订阅投影）和 Stripe 基本一致。
+
 ## 核心概念
 
-先花两分钟搞清楚几个东西的关系，后面操作就顺畅了。
+Herald 不维护本地商品目录。你在 Creem Dashboard 创建 Product，拿到 Product ID，然后在 Herald 里配置 Entitlement Mapping。用户付款后，Creem 通过 Webhook 通知 Herald，Herald 用 metadata 里的 `herald_entitlement_key`（写入 Checkout 请求，Creem 在 Webhook 中原样返回）找到对应的映射，创建订阅投影、发放积分。
 
-**Product（产品）**是你卖的东西的大类，比如"AI 写作助手"。**Plan（套餐）**是具体的计费方案，挂在产品下面，比如"月付 $9.99"和"年付 $99"。一个产品可以有多个套餐。
-
-Plan 本身不绑定支付平台。你需要单独配置 **Plan Payment Provider Mapping（支付映射）**，告诉系统这个套餐在 Creem 里对应哪个商品。一个套餐可以同时映射到多个支付平台，但本教程只用 Creem。
-
-最后，把套餐**分配**给 Client App，用户才能在你的应用里看到并购买它。
-
-数据流向：Product → Plan → Mapping（映射到 Creem） → 分配给 App → 用户购买 → Creem 回调 → 订阅生效
+数据流向：Creem Product → Herald Entitlement Mapping（手动配置） → 用户 Checkout → Creem Webhook（返回 herald_* metadata）→ Herald 订阅投影 + 积分发放
 
 ---
 
-## Step 1: 创建产品
-
-1. 在左侧菜单找到 **Products & Payments** 分组，点击 **Products**
-2. 点击 **Add Product** 按钮
-3. 填写表单：
-   - **Code**（必填）：产品的唯一标识，只能用小写字母、数字、横线。比如 `ai-writing`
-   - **Title**（必填）：显示名称，比如 "AI Writing Assistant"
-   - **Description**（可选）：产品描述
-   - **Enabled**：默认开启，保持不动
-4. 点击 **Create Product**
-5. 看到 "Product 'AI Writing Assistant' created successfully" 提示，说明创建成功
-
-创建成功后，Products 页面的表格里会出现你的产品。
-
-## Step 2: 创建订阅套餐
-
-1. 在左侧菜单 **Products & Payments** 分组下点击 **Subscription Plans**
-2. 点击 **Add Subscription Plan** 按钮，进入创建页面
-3. 填写表单：
-   - **Product**（必填）：下拉选择刚创建的产品，比如 "AI Writing Assistant"
-   - **Plan Name**（必填）：套餐标识符，创建后不可修改。比如 `basic-monthly`
-   - **Title**（必填）：给用户看的名字，比如 "Basic Monthly"
-   - **Description**（可选）：套餐描述，比如 "适合个人用户"
-   - **Billing Period**（必填）：选 Monthly 或 Yearly
-   - **Currency**（必填）：选 USD、EUR 或 GBP
-   - **Price**（必填）：单位是分。填 `999` 表示 $9.99
-   - **Checkout URL**（可选）：自定义支付页面地址，一般留空即可
-   - **Trial Days**（可选）：免费试用天数，0 表示无试用期
-   - **Sort Order**（可选）：排列顺序，数字越小越靠前
-   - **Active**：默认开启，保持不动
-4. 点击 **Create Subscription Plan**
-5. 看到 "Subscription Plan 'Basic Monthly' created successfully" 提示
-
-回到套餐列表，你会看到刚创建的套餐。注意 **Payment Providers** 列显示 "Not configured"，这是正常的，下一步来配。
-
-## Step 3: 配置 Creem API Key 和 Webhook
+## Step 1: 配置 Creem API Key 和 Webhook
 
 在 Herald 管理后台配置 Creem 的连接信息。
 
-1. 在左侧菜单 **Products & Payments** 分组下点击 **Payment Providers**
-2. 在未配置的支付渠道列表中找到 **Creem**，点击 **Configure**
+1. 在左侧菜单找到 **Payment Providers**，点击进入
+2. 找到 **Creem**，点击 **Configure**
 3. 填写配置表单：
    - **Enable Creem**：打开开关
    - **API Key**（必填）：填入在 Creem 后台拿到的 API Key，测试环境用 `ck_test_` 开头的 key
@@ -74,125 +39,28 @@ Plan 本身不绑定支付平台。你需要单独配置 **Plan Payment Provider
    - **Webhook Secret**（必填）：Webhook 签名验证密钥，创建 Webhook 后获取，见下方
 4. 点击 **Save**
 
-配置完成后，系统创建 Checkout Session 时会自动读取这个 key 来调用 Creem API。
-
 ### 创建 Creem Webhook
 
-1. 打开 [Creem Dashboard → Developers → Webhooks](https://creem.io)
+1. 打开 Creem Dashboard 的 Webhooks 页面
 2. 点击 **Create Webhook**
 3. 填写：
    - **Name**：Herald Webhook（随意取名）
    - **URL**：`https://你的Herald域名/api/third/pay/{realmId}/creem/webhooks`
      - 把 `{realmId}` 替换成你的 realm ID，比如 `admin`
-4. 选择事件——必须勾选以下 5 个事件，缺任何一个都会导致对应的支付流程断裂：
+
+4. 选择事件——必须勾选以下 5 个，缺任何一个会导致对应的支付流程断裂：
 
 | 事件 | Herald 处理逻辑 |
 |------|----------------|
-| `checkout.completed` | 验证结账元数据，记录审计状态。订阅创建推迟到 `subscription.paid` 事件 |
-| `subscription.paid` | 订阅首次支付或续费成功，创建订阅记录，发放积分 |
+| `checkout.completed` | 验证结账 metadata，记录审计状态。订阅创建推迟到 `subscription.paid` 事件 |
+| `subscription.paid` | 订阅首次支付或续费成功，创建订阅投影，发放积分 |
 | `subscription.update` | 订阅升降级处理，调整积分 |
 | `subscription.canceled` | 订阅取消（即时或期末取消），回收未使用积分 |
-| `refund.created` | 退款，按退款类型回收积分（充值退款按比例回收，订阅退款回收未使用积分） |
+| `refund.created` | 退款，按退款类型回收积分 |
 
 5. 创建完成后复制 **Signing secret**，回到 Herald Payment Providers → Creem 配置，填入 **Webhook Secret**
 
-## Step 4: 为套餐添加 Creem 支付映射
-
-这一步把套餐和 Creem 平台上的商品关联起来。
-
-### 前提：在 Creem 后台创建商品
-
-在 Herald 之外，你需要先到 [Creem Dashboard](https://creem.io) 创建一个 Product，拿到 **Product ID**（形如 `prod_xxxxxxxx`）。Creem 的商品价格等信息在 Creem 后台管理。
-
-### 在 Herald 中配置映射
-
-1. 回到 **Subscription Plans** 页面
-2. 找到刚创建的套餐，点击右侧操作菜单里的 **Manage Providers**
-3. 在弹出的对话框中，点击 **Add Provider**
-4. 填写映射信息：
-   - **Payment Provider**（必填）：下拉选择 **Creem**
-   - **External Product ID**（必填）：填入在 Creem 后台拿到的 Product ID，比如 `prod_abc123`
-   - **External Price ID**（可选）：Creem 的价格 ID，如果有的话填上
-   - **Enabled**：默认开启
-5. 点击 **Add Provider**
-
-配置成功后，套餐列表的 **Payment Providers** 列会从 "Not configured" 变成显示 "Creem" 标签。
-
-## Step 5: 分配套餐到 Client App
-
-用户只能看到分配给当前 Client App 的套餐。如果没分配，用户看不到任何购买选项。
-
-1. 在 **Subscription Plans** 页面，找到你的套餐
-2. 点击右侧操作菜单里的 **Assign to App**
-3. 在弹出的对话框中，勾选你要分配的 Client App
-4. 点击确认
-
-一个套餐可以分配给多个 Client App。反过来，一个 Client App 也可以有多个套餐。
-
-## Step 6: 用户发起支付
-
-配置到这里就完成了。接下来是用户侧的流程，你不需要操作 Herald 后台。
-
-1. 用户在你的应用中选择套餐
-2. 你的应用调用 Herald 的 Checkout API（传入 plan_id、payment_provider=creem、billing_period）
-3. Herald 调用 Creem API 创建支付会话，返回一个支付 URL
-4. 用户跳转到 Creem 的支付页面，完成付款
-5. Creem 通过 Webhook 通知 Herald 支付结果
-6. Herald 更新订阅状态、发放积分
-
-用户支付的完整流程在你的应用端完成，Herald 负责后端的套餐查询、支付会话创建和 Webhook 处理。
-
-## Step 7: 确认结果
-
-用户完成支付后，你可以在 Herald 后台查看结果。
-
-### 查看订阅状态
-
-1. 在左侧菜单 **Transactions** 分组下点击 **Subscription History**
-2. 查看订阅记录，确认状态为 Active
-
-### 查看支付映射状态
-
-1. 回到 **Subscription Plans** 页面
-2. 点击套餐的 **Manage Providers**，确认映射状态为 Enabled
-
-如果 Webhook 正常回调，订阅状态会在几秒内更新。如果迟迟没变化，看下面的常见问题。
-
----
-
-## 常见问题
-
-### Webhook 没收到
-
-Creem 通过 Webhook 通知支付结果。确保 Herald 部署的公网地址可以从 Creem 服务器访问到。
-
-Webhook 端点地址格式：`https://你的域名/api/third/pay/{realmId}/creem/webhooks`
-
-你需要在 Creem Dashboard 的 Webhook 配置里填写这个地址。
-
-### 套餐在应用里看不到
-
-检查以下三点：
-
-1. 套餐的 **Active** 状态是否开启
-2. 套餐是否已**分配**给对应的 Client App
-3. 套餐的 Creem 映射是否为 **Enabled** 状态
-
-三项都满足，用户才能看到并购买。
-
-### 支付成功但订阅未激活
-
-大概率是 Webhook 没到达 Herald。检查 Herald 日志里有没有收到 `POST /api/third/pay/{realmId}/creem/webhooks` 请求。常见原因：
-
-- Creem Dashboard 里的 Webhook URL 配错了
-- Herald 服务器防火墙拦截了 Creem 的回调请求
-- SSL 证书有问题
-
-### "Creem not configured for realm" 报错
-
-说明 Step 3 的 API Key 没配好。检查 realm_config 表里是否有 `config_type = 'creem'`、`config_key = 'api_key'`、`enabled = true` 的记录。
-
-### 测试环境和生产环境的区别
+### 测试环境和生产环境
 
 Creem 的 API Key 前缀决定了请求发到哪里：
 
@@ -201,18 +69,112 @@ Creem 的 API Key 前缀决定了请求发到哪里：
 
 开发阶段用测试 key，上线前换成生产 key。
 
+## Step 2: 在 Creem 创建商品
+
+在 Creem Dashboard 创建你的 Product，记下 **Product ID**（形如 `prod_xxxxxxxx`）。Creem 的商品价格等信息在 Creem 后台管理。
+
+Herald 不会自动知道你在 Creem 创建了什么商品。下一步需要同步。
+
+## Step 3: 同步 Creem 商品到 Herald
+
+1. 在 Herald 管理后台左侧菜单点击 **Entitlement Mappings**
+2. 点击 **Sync Provider Products** 按钮
+3. 选择支付方 **Creem**
+4. 等待同步完成
+
+同步完成后你会看到从 Creem 拉取的商品列表。每条记录包含 External Product ID 和自动生成的 Entitlement Key（格式为 `creem-{normalized_product_id}`）。
+
+因为 Creem 没有 Product metadata，同步只能拉取商品 ID 和基本信息。entitlement_key 和积分策略需要手动配置。
+
+## Step 4: 配置 Entitlement Mapping
+
+这一步是 Creem 对接和 Stripe 的主要差异。Stripe 可以从 metadata 导入 entitlement_key，Creem 不行，必须在 Herald 中手动配置。
+
+1. 在 **Entitlement Mappings** 列表中，找到要配置的 Creem 映射
+2. 点击编辑，填写以下字段：
+   - **Entitlement Key**（必填）：改成你能识别的名字，比如 `pro-monthly`。这个 key 在 SDK 查询、积分策略、Webhook 处理中都会用到
+   - **Billing Type**：Recurring（订阅）或 OneTime（一次性购买）
+   - **Points Per Period**：每个计费周期发放多少积分
+   - **Grant On Subscribe**：首次订阅时是否发放积分
+   - **Validity Days**：积分有效期（天），0 或不填表示永不过期
+   - **Enabled**：是否启用。禁用后 Webhook 仍更新订阅投影，但不触发积分发放
+3. 点击保存
+
+## Step 5: 用户支付流程
+
+配置完成后，用户侧的流程如下。
+
+1. 用户在你的应用中选择套餐
+2. 你的应用调用 Herald 的 Checkout API（传入 `entitlement_key`、`payment_provider=creem`）
+3. Herald 查 Entitlement Mapping 找到 Creem 商品 ID
+4. Herald 调 Creem API 创建支付会话，metadata 写入 `herald_entitlement_key`、`herald_user_id`、`herald_client_app_id`、`herald_realm_id`、`herald_billing_kind`
+5. 返回 Creem 支付页面 URL
+6. 用户在 Creem 页面完成付款
+7. Creem 发 Webhook（`checkout.completed` → `subscription.paid`）
+8. Herald 从 metadata 解析 entitlement_key，创建订阅投影、发放积分
+9. 后续续费由 Creem 自动处理，发 `subscription.paid` 事件，Herald 发放续费积分
+
+Creem 的 Webhook 会返回 Checkout 请求时写入的 metadata。Herald 靠这个来识别用户和 entitlement。
+
+## Step 6: 确认结果
+
+### 查看 Entitlement Mapping 状态
+
+1. 在 **Entitlement Mappings** 页面，确认映射的 Enabled 状态和积分策略配置
+
+### 查看订阅状态
+
+1. 在左侧菜单点击 **Subscriptions**，查看订阅投影列表
+2. 确认 `entitlement_key`、`status`、`payment_provider` 字段正确
+
+### 查看变更历史
+
+1. 点击 **Subscription History**，查看订阅的完整变更时间线
+
+Webhook 正常回调的话，状态会在几秒内更新。迟迟没变化，看下面的常见问题。
+
+---
+
+## 常见问题
+
+### Webhook 没收到
+
+确保 Herald 部署的公网地址可以从 Creem 服务器访问。Webhook 端点地址格式：`https://你的域名/api/third/pay/{realmId}/creem/webhooks`
+
+在 Creem Dashboard 的 Webhook 配置里检查 URL 是否正确。
+
+### 套餐在应用里看不到
+
+1. Entitlement Mapping 的 **Enabled** 状态是否开启
+2. Creem API Key 是否已配置并启用
+3. 已执行过 **Sync Provider Products**
+
+### 支付成功但订阅未激活
+
+检查 Herald 日志里有没有收到 `POST /api/third/pay/{realmId}/creem/webhooks` 请求。
+
+常见原因：
+- Creem Dashboard 里的 Webhook URL 配错了
+- Herald 服务器防火墙拦截了 Creem 的回调请求
+- SSL 证书有问题
+
+### "Creem not configured for realm" 报错
+
+Step 1 的 API Key 没配好。检查 Payment Providers 页面 Creem 的配置。
+
+### 同步失败
+
+如果 Creem API 不可用导致同步失败，现有的映射数据不受影响，仍可正常使用。等 API 恢复后重试同步即可。
+
 ---
 
 ## 操作清单
 
-配完后对照检查：
-
-- [ ] 创建了至少一个 Product
-- [ ] 在 Product 下创建了 Plan（月付或年付）
 - [ ] Payment Providers 页面配置了 Creem（API Key 和 Webhook Secret 已填入并启用）
 - [ ] Creem Dashboard 创建了 Webhook 端点，5 个事件全部勾选
 - [ ] Webhook Secret 和 Creem 端点的 Signing secret 一致
-- [ ] 为 Plan 添加了 Creem 支付映射（External Product ID 填了 Creem 的 Product ID）
+- [ ] 在 Creem 创建了 Product，记下了 Product ID
+- [ ] 在 Herald Entitlement Mappings 页面执行了 Sync Provider Products
+- [ ] 手动配置了 Entitlement Key 和积分策略（Creem 无法自动导入）
 - [ ] 映射状态为 Enabled
-- [ ] 把 Plan 分配给了 Client App
 - [ ] 用测试 Key 跑通了一次支付流程

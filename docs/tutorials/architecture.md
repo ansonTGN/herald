@@ -16,7 +16,7 @@ backend/
 ├── core/                # 组装层 — 依赖注入、ApplicationService Builder
 ├── api/                 # 主 API crate（Axum 路由注册、中间件、AppState）
 ├── api-base/            # 共享 API 工具（AppState 定义、通用 HTTP 工具）
-├── api-billing/         # 计费相关 handler（套餐、支付、发票、webhook）
+├── api-billing/         # 计费相关 handler（Entitlement 映射、订阅、支付、发票、webhook）
 ├── api-admin/           # 管理后台 handler（用户管理、角色、权限定义）
 ├── api-auth/            # 认证 handler（注册、登录、密码重置）
 ├── api-ext/             # 外部 API handler（API Key 认证，供第三方调用）
@@ -84,7 +84,7 @@ SeaORM 自动生成的实体定义。覆盖用户、角色、权限、订阅、�
 | `authentication` | 登录、注册、session 管理 |
 | `authorization` | RBAC 权限模型（角色、策略、权限定义） |
 | `audit` | 审计事件模型、事件采集（用户管理、RBAC 变更、认证事件） |
-| `billing` | 套餐管理、订阅生命周期 |
+| `billing` | Entitlement 映射、订阅投影、支付 webhook 处理 |
 | `points` | 积分账户、充值、消费、过期、幂等 |
 | `points_package` | 积分包定义 |
 | `payment_attempt` | 统一支付尝试（抽象不同支付渠道） |
@@ -133,7 +133,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 | `api-base` | `AppState` 定义（共享给所有 api 子 crate） | — |
 | `api-auth` | 注册、登录、密码重置、邮箱验证 | session |
 | `api-admin` | 用户 CRUD、角色管理、权限定义管理 | session + inject_identity |
-| `api-billing` | 套餐、订阅、支付 webhook（Stripe/Creem/微信/Shopify）、发票、积分包购买 | 混合 |
+| `api-billing` | Entitlement 映射、订阅投影、支付 webhook（Stripe/Creem/微信/Shopify）、发票、积分包购买 | 混合 |
 | `api-oauth` | OAuth 登录（GitHub/Google/微信）、Device Code Grant（RFC 8628）、OAuth 配置管理 | 混合 |
 | `api-ext` | 第三方 API：权限检查、订阅查询、积分余额和消费，按 API Key 绑定的 Client App 隔离 | API Key |
 | `api-points` | 积分余额、交易历史、消费、充值 | session 或 API Key |
@@ -187,7 +187,7 @@ API Key 绑定到一个 Client App。默认绑定 `admin-api-client` 的 Key 是
 $realmId/
 ├── auth/          # 登录、注册、邮箱验证
 ├── user/          # 用户个人中心（资料、安全、积分、订阅、发票）
-├── manage/        # 管理后台（用户、角色、权限、套餐、计费、积分、审计日志、Client App、设置）
+├── manage/        # 管理后台（用户、角色、权限、Entitlement 映射、计费、积分、审计日志、Client App、设置）
 ├── points/        # 积分余额和交易历史
 ├── subscription/  # 用户订阅状态
 └── device/        # Device Code 授权页面

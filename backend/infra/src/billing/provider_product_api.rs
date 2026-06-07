@@ -159,7 +159,7 @@ impl ConfiguredProviderProductApi {
 
         let response = self
             .http
-            .get(format!("{}/v1/products", base_url))
+            .get(format!("{}/v1/products/search?page_number=1&page_size=100", base_url))
             .header("x-api-key", api_key)
             .send()
             .await?;
@@ -176,8 +176,8 @@ impl ConfiguredProviderProductApi {
 
         let body: Value = response.json().await?;
         let products = body
-            .as_array()
-            .or_else(|| body["data"].as_array())
+            .get("items")
+            .and_then(|v| v.as_array())
             .into_iter()
             .flatten()
             .filter_map(|product| {
