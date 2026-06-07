@@ -7,9 +7,6 @@ pub trait PurchaseErrorExt {
     /// Subscription plan not found
     fn plan_not_found(plan_id: &str) -> Self;
 
-    /// Points package not found
-    fn package_not_found(package_id: &str) -> Self;
-
     /// Fulfillment already completed for payment attempt
     fn already_fulfilled(attempt_id: &str) -> Self;
 
@@ -24,11 +21,6 @@ pub trait PurchaseErrorExt {
 impl PurchaseErrorExt for CoreError {
     fn plan_not_found(plan_id: &str) -> Self {
         tracing::debug!("Subscription plan not found: {}", plan_id);
-        CoreError::NotFound
-    }
-
-    fn package_not_found(package_id: &str) -> Self {
-        tracing::debug!("Points package not found: {}", package_id);
         CoreError::NotFound
     }
 

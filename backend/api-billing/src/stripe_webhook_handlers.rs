@@ -34,8 +34,9 @@ struct StripeCheckoutCompletedPayload {
     client_app_id: Uuid,
     entitlement_key: String,
     is_trial: bool,
-    stripe_subscription_id: String,
+    stripe_subscription_id: Option<String>,
     stripe_product_id: String,
+    mode: Option<String>,
 }
 
 struct StripeSubscriptionCreatedPayload {
@@ -246,14 +247,14 @@ fn parse_checkout_completed_payload(
             .is_some_and(|days| days > 0),
         stripe_subscription_id: event["data"]["object"]["subscription"]
             .as_str()
-            .map(str::to_string)
-            .ok_or_else(|| CoreError::BadRequest("Missing subscription id".to_string()))?,
+            .map(str::to_string),
         stripe_product_id: event["data"]["object"]["display_items"]
             .as_array()
             .and_then(|items| items.first())
             .and_then(|item| item["price"]["product"].as_str())
             .map(str::to_string)
             .unwrap_or_default(),
+        mode: event["data"]["object"]["mode"].as_str().map(str::to_string),
     })
 }
 
@@ -510,6 +511,7 @@ async fn fulfill_payment_attempt(
             source: PaymentCompletionSource::ProviderWebhook {
                 provider: "stripe".to_string(),
             },
+            billing_type_override: None,
         })
         .await?;
 
@@ -590,13 +592,22 @@ async fn sync_stripe_subscription(
 
 /// Handle checkout.session.completed events
 ///
-/// Creates a subscription when a Stripe checkout is completed.
+/// Dispatches based on checkout mode:
+/// - With attemptId in metadata: completes the payment attempt and fulfills (both one-time and recurring)
+/// - Without attemptId + mode=payment: logs warning, no fulfillment (orphan one-time event)
+/// - Without attemptId + mode=subscription (or absent): creates subscription (legacy/legacy webhook)
 async fn handle_checkout_session_completed(
     app_state: AppState,
     event: Value,
     realm_id: &str,
     _idempotency_key: &str,
 ) -> Result<PointsTransaction, CoreError> {
+    // Extract mode from the checkout session for dispatch
+    let mode = event["data"]["object"]["mode"].as_str().map(str::to_string);
+
+    // If attemptId is present in metadata, fulfill via payment attempt flow.
+    // This covers both one-time (mode=payment) and recurring (mode=subscription) purchases
+    // initiated through PurchaseService.
     if let Some(attempt_id) = parse_attempt_id(&event["data"]["object"]["metadata"]["attemptId"]) {
         let provider_transaction_id = event["data"]["object"]["subscription"]
             .as_str()
@@ -606,6 +617,13 @@ async fn handle_checkout_session_completed(
             .to_string();
         let completed_at = parse_optional_stripe_datetime(&event["data"]["object"]["created"])?
             .unwrap_or_else(Utc::now);
+
+        info!(
+            realm_id = %realm_id,
+            attempt_id = %attempt_id,
+            mode = ?mode,
+            "Processing checkout.session.completed with attemptId - fulfilling payment attempt"
+        );
 
         fulfill_payment_attempt(
             &app_state,
@@ -619,12 +637,38 @@ async fn handle_checkout_session_completed(
         return Ok(create_placeholder_transaction(
             attempt_id,
             realm_id,
-            TransactionType::SubscriptionGrant,
+            TransactionType::Recharge,
         ));
     }
 
+    // No attemptId — dispatch based on mode
     let payload = parse_checkout_completed_payload(&event)?;
     let event_id = payload.event_id.as_str();
+
+    match (mode.as_deref(), payload.stripe_subscription_id.as_deref()) {
+        // mode=payment without attemptId: one-time checkout we cannot fulfill
+        (Some("payment"), _) => {
+            warn!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                user_id = %payload.user_id,
+                "checkout.session.completed with mode=payment but no attemptId - cannot fulfill, recording audit event"
+            );
+
+            return Ok(create_placeholder_transaction(
+                payload.user_id,
+                realm_id,
+                TransactionType::Recharge,
+            ));
+        }
+        // mode=subscription or absent with subscription id: proceed with subscription creation
+        _ => {}
+    }
+
+    // Subscription flow requires a subscription id
+    let stripe_subscription_id = payload.stripe_subscription_id.as_deref().ok_or_else(|| {
+        CoreError::BadRequest("Missing subscription id for subscription checkout".to_string())
+    })?;
 
     info!(
         realm_id = %realm_id,
@@ -656,14 +700,14 @@ async fn handle_checkout_session_completed(
     // may have arrived first and already created it via sync_subscription).
     let existing_subscription = app_state
         .billing_repository
-        .find_by_external_subscription_id(&payload.stripe_subscription_id, "stripe")
+        .find_by_external_subscription_id(stripe_subscription_id, "stripe")
         .await?;
 
     let _created_subscription = if let Some(mut existing) = existing_subscription {
         info!(
             realm_id = %realm_id,
             subscription_id = %existing.id,
-            stripe_subscription_id = ?payload.stripe_subscription_id,
+            stripe_subscription_id = %stripe_subscription_id,
             event_id = %event_id,
             "Checkout completed - subscription already exists from subscription.created webhook, updating"
         );
@@ -699,7 +743,7 @@ async fn handle_checkout_session_completed(
         let subscription = Subscription {
             id: Uuid::now_v7(),
             realm_id: realm_id.to_string(),
-            external_subscription_id: payload.stripe_subscription_id.clone(),
+            external_subscription_id: stripe_subscription_id.to_string(),
             external_product_id: payload.stripe_product_id.clone(),
             payment_provider: "stripe".to_string(),
             status,
@@ -736,7 +780,7 @@ async fn handle_checkout_session_completed(
             subscription_id = %created.id,
             client_app_id = %payload.client_app_id,
             entitlement_key = %entitlement_key,
-            stripe_subscription_id = ?payload.stripe_subscription_id,
+            stripe_subscription_id = %stripe_subscription_id,
             event_id = %event_id,
             "Checkout completed - subscription created"
         );

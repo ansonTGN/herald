@@ -276,18 +276,7 @@ impl AsyncTestContext for SchemaTestContext {
             ),
         ));
 
-        // Create points package and payment services
-        let points_package_repository = Arc::new(
-            herald_core::infrastructure::points_package::PostgresPointsPackageRepository::new(
-                Arc::new(sea_conn.clone()),
-            ),
-        );
-        let points_package_service = Arc::new(
-            herald_core::domain::points_package::PointsPackageService::new(
-                points_package_repository.clone(),
-            ),
-        );
-
+        // Create payment services
         let payment_attempt_repository = Arc::new(
             herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository::new(
                 Arc::new(sea_conn.clone()),
@@ -306,12 +295,10 @@ impl AsyncTestContext for SchemaTestContext {
             )),
         );
 
-        // Create fulfillment service with 4 parameters (including billing_repository)
+        // Create fulfillment service
         let fulfillment_service = Arc::new(
             herald_core::infrastructure::purchase::PostgresFulfillmentService::new(
                 points_repository.clone(),
-                points_package_repository.clone(),
-                purchase_repository.clone(),
                 billing_repository.clone(),
             ),
         );
@@ -322,9 +309,7 @@ impl AsyncTestContext for SchemaTestContext {
                 pool_with_schema.clone(),
                 "http://localhost:8080".to_string(),
                 billing_repository.clone(),
-                points_package_repository.clone(),
                 payment_attempt_service.clone(),
-                purchase_repository.clone(),
                 fulfillment_service.clone(),
             ));
 
@@ -368,7 +353,6 @@ impl AsyncTestContext for SchemaTestContext {
             role_assignment_service,
             user_permission_service,
             permission_management_service,
-            points_package_service,
             payment_attempt_service,
             purchase_repository,
             fulfillment_service,

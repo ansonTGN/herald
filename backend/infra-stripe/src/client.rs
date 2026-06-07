@@ -87,6 +87,8 @@ impl StripeClient {
         &self,
         request: &CreateCheckoutRequest,
     ) -> Result<CheckoutSession, CoreError> {
+        let is_payment_mode = request.mode.as_deref() == Some("payment");
+
         if self.base_url == "mock://stripe" {
             let mapping_id = &request.mapping_id.to_string();
             let short_id = &mapping_id[mapping_id.len().saturating_sub(8)..];
@@ -96,19 +98,33 @@ impl StripeClient {
                 url: format!("mock://stripe/checkout/{id}"),
                 customer: None,
                 status: Some("open".to_string()),
-                payment_intent: Some(format!("pi_mock_{short_id}")),
-                subscription: None,
+                payment_intent: if is_payment_mode {
+                    Some(format!("pi_mock_{short_id}"))
+                } else {
+                    None
+                },
+                subscription: if is_payment_mode {
+                    None
+                } else {
+                    Some(format!("sub_mock_{short_id}"))
+                },
                 metadata: serde_json::to_value(&request.metadata).unwrap_or_default(),
             });
         }
 
         let url = format!("{}/v1/checkout/sessions", self.base_url);
 
+        let mode_value = if is_payment_mode {
+            "payment"
+        } else {
+            "subscription"
+        };
+
         // Build form-encoded fields (Stripe requires application/x-www-form-urlencoded)
         let mut form_fields: Vec<(String, String)> = vec![
             ("success_url".to_string(), request.success_url.clone()),
             ("cancel_url".to_string(), request.cancel_url.clone()),
-            ("mode".to_string(), "subscription".to_string()),
+            ("mode".to_string(), mode_value.to_string()),
             // Metadata fields
             (
                 "metadata[herald_realm_id]".to_string(),
@@ -163,54 +179,91 @@ impl StripeClient {
             "line_items[0][price_data][unit_amount]".to_string(),
             request.price_amount.to_string(),
         ));
-        let interval = if request.billing_period == "monthly" {
-            "month"
-        } else {
-            "year"
-        };
-        form_fields.push((
-            "line_items[0][price_data][recurring][interval]".to_string(),
-            interval.to_string(),
-        ));
+
+        // Recurring interval only for subscription mode
+        if !is_payment_mode {
+            let interval = if request.billing_period == "monthly" {
+                "month"
+            } else {
+                "year"
+            };
+            form_fields.push((
+                "line_items[0][price_data][recurring][interval]".to_string(),
+                interval.to_string(),
+            ));
+        }
+
         form_fields.push(("line_items[0][quantity]".to_string(), "1".to_string()));
 
-        // Propagate all metadata keys to subscription_data[metadata] so that
-        // when Stripe creates the subscription from the checkout session, the
-        // subscription object carries the same herald_ metadata.  Without this,
-        // customer.subscription.created events have empty metadata and the
-        // webhook handler cannot resolve userId.
-        form_fields.push((
-            "subscription_data[metadata][herald_realm_id]".to_string(),
-            request.realm_id.clone(),
-        ));
-        form_fields.push((
-            "subscription_data[metadata][herald_client_app_id]".to_string(),
-            request.client_app_id.to_string(),
-        ));
-        form_fields.push((
-            "subscription_data[metadata][herald_mapping_id]".to_string(),
-            request.mapping_id.to_string(),
-        ));
-        if let Some(user_id) = request.user_id {
+        if is_payment_mode {
+            // For one-time payments, propagate metadata to payment_intent_data
+            // so the metadata is available on the PaymentIntent object
             form_fields.push((
-                "subscription_data[metadata][herald_user_id]".to_string(),
-                user_id.to_string(),
+                "payment_intent_data[metadata][herald_realm_id]".to_string(),
+                request.realm_id.clone(),
             ));
-        }
-        if let Some(extra_metadata) = &request.metadata {
-            for (key, value) in extra_metadata {
-                form_fields.push((format!("subscription_data[metadata][{key}]"), value.clone()));
+            form_fields.push((
+                "payment_intent_data[metadata][herald_client_app_id]".to_string(),
+                request.client_app_id.to_string(),
+            ));
+            form_fields.push((
+                "payment_intent_data[metadata][herald_mapping_id]".to_string(),
+                request.mapping_id.to_string(),
+            ));
+            if let Some(user_id) = request.user_id {
+                form_fields.push((
+                    "payment_intent_data[metadata][herald_user_id]".to_string(),
+                    user_id.to_string(),
+                ));
             }
-        }
-
-        // Add trial period if specified
-        if let Some(trial_days) = request.trial_days
-            && trial_days > 0
-        {
+            if let Some(extra_metadata) = &request.metadata {
+                for (key, value) in extra_metadata {
+                    form_fields.push((
+                        format!("payment_intent_data[metadata][{key}]"),
+                        value.clone(),
+                    ));
+                }
+            }
+        } else {
+            // Propagate all metadata keys to subscription_data[metadata] so that
+            // when Stripe creates the subscription from the checkout session, the
+            // subscription object carries the same herald_ metadata.  Without this,
+            // customer.subscription.created events have empty metadata and the
+            // webhook handler cannot resolve userId.
             form_fields.push((
-                "subscription_data[trial_period_days]".to_string(),
-                trial_days.to_string(),
+                "subscription_data[metadata][herald_realm_id]".to_string(),
+                request.realm_id.clone(),
             ));
+            form_fields.push((
+                "subscription_data[metadata][herald_client_app_id]".to_string(),
+                request.client_app_id.to_string(),
+            ));
+            form_fields.push((
+                "subscription_data[metadata][herald_mapping_id]".to_string(),
+                request.mapping_id.to_string(),
+            ));
+            if let Some(user_id) = request.user_id {
+                form_fields.push((
+                    "subscription_data[metadata][herald_user_id]".to_string(),
+                    user_id.to_string(),
+                ));
+            }
+            if let Some(extra_metadata) = &request.metadata {
+                for (key, value) in extra_metadata {
+                    form_fields
+                        .push((format!("subscription_data[metadata][{key}]"), value.clone()));
+                }
+            }
+
+            // Add trial period if specified
+            if let Some(trial_days) = request.trial_days
+                && trial_days > 0
+            {
+                form_fields.push((
+                    "subscription_data[trial_period_days]".to_string(),
+                    trial_days.to_string(),
+                ));
+            }
         }
 
         tracing::info!(
@@ -657,6 +710,7 @@ mod tests {
                     "source".to_string(),
                     "demo".to_string(),
                 )])),
+                mode: None, // defaults to subscription mode
             })
             .await
             .expect("mock checkout session should be created");
@@ -668,8 +722,8 @@ mod tests {
         );
         assert!(result.customer.is_none());
         assert_eq!(result.status.as_deref(), Some("open"));
-        assert_eq!(result.payment_intent, Some(format!("pi_mock_{short_id}")));
-        assert!(result.subscription.is_none());
+        assert!(result.payment_intent.is_none());
+        assert_eq!(result.subscription, Some(format!("sub_mock_{short_id}")));
         assert_eq!(result.metadata["source"], "demo");
     }
 
@@ -714,6 +768,7 @@ mod tests {
                     "source".to_string(),
                     "web".to_string(),
                 )])),
+                mode: None, // subscription mode (default)
             })
             .await
             .expect("checkout session should be created");
@@ -811,5 +866,236 @@ mod tests {
             .await;
 
         assert!(matches!(result, Err(CoreError::BadRequest(_))));
+    }
+
+    /// Verify that payment mode sends payment_intent_data[metadata] and skips
+    /// recurring interval and subscription_data.
+    #[tokio::test]
+    async fn test_create_checkout_session_payment_mode_uses_payment_intent_data() {
+        let mock_server = MockServer::start().await;
+        let client =
+            StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "cs_test_payment",
+                "url": "https://checkout.stripe.com/payment",
+                "customer": null,
+                "status": "open",
+                "payment_intent": "pi_test_payment",
+                "subscription": null,
+                "metadata": { "realm_id": "realm-2", "source": "one-time" }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mapping_id = uuid::Uuid::now_v7();
+        let user_id = uuid::Uuid::now_v7();
+        let result = client
+            .create_checkout_session(&CreateCheckoutRequest {
+                client_app_id: uuid::Uuid::now_v7(),
+                mapping_id,
+                user_id: Some(user_id),
+                customer_email: Some("buyer@example.com".to_string()),
+                success_url: "https://example.com/success".to_string(),
+                cancel_url: "https://example.com/cancel".to_string(),
+                billing_period: "monthly".to_string(), // irrelevant for payment mode
+                trial_days: None,
+                price_amount: 500,
+                currency: "usd".to_string(),
+                plan_name: "Points Pack 100".to_string(),
+                realm_id: "realm-2".to_string(),
+                webhook_url: None,
+                metadata: Some(std::collections::HashMap::from([(
+                    "source".to_string(),
+                    "one-time".to_string(),
+                )])),
+                mode: Some("payment".to_string()),
+            })
+            .await
+            .expect("checkout session should be created in payment mode");
+
+        assert_eq!(result.id, "cs_test_payment");
+
+        let requests = mock_server
+            .received_requests()
+            .await
+            .expect("request recording should be enabled");
+        assert_eq!(requests.len(), 1);
+
+        let form: std::collections::HashMap<_, _> = url::form_urlencoded::parse(&requests[0].body)
+            .into_owned()
+            .collect();
+
+        // Mode should be "payment" (not "subscription")
+        assert_eq!(form.get("mode"), Some(&"payment".to_string()));
+
+        // Should NOT have recurring interval
+        assert!(
+            form.get("line_items[0][price_data][recurring][interval]")
+                .is_none(),
+            "payment mode should not include recurring interval"
+        );
+
+        // Should NOT have subscription_data
+        assert!(
+            form.keys().all(|k| !k.starts_with("subscription_data[")),
+            "payment mode should not include subscription_data fields"
+        );
+
+        // Should have payment_intent_data[metadata] with herald_ keys
+        assert_eq!(
+            form.get("payment_intent_data[metadata][herald_realm_id]"),
+            Some(&"realm-2".to_string())
+        );
+        assert_eq!(
+            form.get("payment_intent_data[metadata][herald_mapping_id]"),
+            Some(&mapping_id.to_string())
+        );
+        assert_eq!(
+            form.get("payment_intent_data[metadata][herald_user_id]"),
+            Some(&user_id.to_string())
+        );
+        assert_eq!(
+            form.get("payment_intent_data[metadata][source]"),
+            Some(&"one-time".to_string())
+        );
+
+        // Should still have line item price data (without recurring)
+        assert_eq!(
+            form.get("line_items[0][price_data][currency]"),
+            Some(&"usd".to_string())
+        );
+        assert_eq!(
+            form.get("line_items[0][price_data][unit_amount]"),
+            Some(&"500".to_string())
+        );
+    }
+
+    /// Verify that subscription mode (default/None) still includes
+    /// subscription_data and recurring interval.
+    #[tokio::test]
+    async fn test_create_checkout_session_subscription_mode_includes_subscription_data() {
+        let mock_server = MockServer::start().await;
+        let client =
+            StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "cs_test_sub",
+                "url": "https://checkout.stripe.com/sub",
+                "customer": null,
+                "status": "open",
+                "payment_intent": null,
+                "subscription": "sub_test_sub",
+                "metadata": {}
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mapping_id = uuid::Uuid::now_v7();
+        let user_id = uuid::Uuid::now_v7();
+        let result = client
+            .create_checkout_session(&CreateCheckoutRequest {
+                client_app_id: uuid::Uuid::now_v7(),
+                mapping_id,
+                user_id: Some(user_id),
+                customer_email: Some("buyer@example.com".to_string()),
+                success_url: "https://example.com/success".to_string(),
+                cancel_url: "https://example.com/cancel".to_string(),
+                billing_period: "yearly".to_string(),
+                trial_days: None,
+                price_amount: 9999,
+                currency: "usd".to_string(),
+                plan_name: "Annual Plan".to_string(),
+                realm_id: "realm-3".to_string(),
+                webhook_url: None,
+                metadata: None,
+                mode: None, // subscription mode (default)
+            })
+            .await
+            .expect("checkout session should be created");
+
+        assert_eq!(result.id, "cs_test_sub");
+
+        let requests = mock_server
+            .received_requests()
+            .await
+            .expect("request recording should be enabled");
+        assert_eq!(requests.len(), 1);
+
+        let form: std::collections::HashMap<_, _> = url::form_urlencoded::parse(&requests[0].body)
+            .into_owned()
+            .collect();
+
+        // Mode should be "subscription"
+        assert_eq!(form.get("mode"), Some(&"subscription".to_string()));
+
+        // Should have recurring interval
+        assert_eq!(
+            form.get("line_items[0][price_data][recurring][interval]"),
+            Some(&"year".to_string())
+        );
+
+        // Should have subscription_data[metadata]
+        assert_eq!(
+            form.get("subscription_data[metadata][herald_realm_id]"),
+            Some(&"realm-3".to_string())
+        );
+        assert_eq!(
+            form.get("subscription_data[metadata][herald_mapping_id]"),
+            Some(&mapping_id.to_string())
+        );
+        assert_eq!(
+            form.get("subscription_data[metadata][herald_user_id]"),
+            Some(&user_id.to_string())
+        );
+
+        // Should NOT have payment_intent_data
+        assert!(
+            form.keys().all(|k| !k.starts_with("payment_intent_data[")),
+            "subscription mode should not include payment_intent_data fields"
+        );
+    }
+
+    /// Verify mock handler returns payment_intent for payment mode and
+    /// subscription for subscription mode.
+    #[tokio::test]
+    async fn test_mock_checkout_session_payment_mode_returns_payment_intent() {
+        let client = StripeClient::with_base_url(
+            "sk_test_demo".to_string(),
+            "mock://stripe".to_string(),
+            30,
+        )
+        .unwrap();
+
+        let mapping_id = uuid::Uuid::now_v7();
+        let mapping_id_str = mapping_id.to_string();
+        let short_id = &mapping_id_str[mapping_id_str.len() - 8..];
+
+        let result = client
+            .create_checkout_session(&CreateCheckoutRequest {
+                client_app_id: uuid::Uuid::now_v7(),
+                mapping_id,
+                user_id: Some(uuid::Uuid::now_v7()),
+                customer_email: Some("buyer@example.com".to_string()),
+                success_url: "https://example.com/success".to_string(),
+                cancel_url: "https://example.com/cancel".to_string(),
+                billing_period: "monthly".to_string(),
+                trial_days: None,
+                price_amount: 500,
+                currency: "usd".to_string(),
+                plan_name: "Points Pack".to_string(),
+                realm_id: "realm-1".to_string(),
+                webhook_url: None,
+                metadata: None,
+                mode: Some("payment".to_string()),
+            })
+            .await
+            .expect("mock checkout session should be created in payment mode");
+
+        assert_eq!(result.id, format!("cs_mock_{short_id}"));
+        assert_eq!(result.payment_intent, Some(format!("pi_mock_{short_id}")));
+        assert!(result.subscription.is_none());
     }
 }

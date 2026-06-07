@@ -180,21 +180,6 @@ impl From<herald_core::domain::common::entities::app_errors::CoreError> for ApiE
             CoreError::SerializationError(msg) => {
                 Self::internal(format!("Serialization error: {msg}"))
             }
-            CoreError::PointsPackageNotFound(msg) => {
-                Self::not_found(format!("Points package not found: {msg}"))
-            }
-            CoreError::PaymentProviderAlreadyConfigured(provider) => Self::conflict(format!(
-                "Payment provider '{provider}' already configured for this package"
-            )),
-            CoreError::PackageHasPurchaseRecords => {
-                Self::conflict("Cannot delete package with existing purchase records")
-            }
-            CoreError::InvalidPointsAmount(amount) => Self::bad_request(format!(
-                "Invalid points amount: {amount}. Must be greater than 0"
-            )),
-            CoreError::InvalidPrice(price) => {
-                Self::bad_request(format!("Invalid price: {price}. Must be greater than 0"))
-            }
             CoreError::EntitlementMappingNotFound => {
                 Self::not_found("Entitlement mapping not found".to_string())
             }

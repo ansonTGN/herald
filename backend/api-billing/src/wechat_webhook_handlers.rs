@@ -226,6 +226,7 @@ pub async fn wechat_webhook_handler(
                         source: PaymentCompletionSource::ProviderWebhook {
                             provider: "wechat".to_string(),
                         },
+                        billing_type_override: None,
                     })
                     .await
                     .map_err(|e| {

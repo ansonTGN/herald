@@ -350,7 +350,7 @@ mod tests {
             realm_id: "test-realm".to_string(),
             user_id: Uuid::now_v7(),
             payment_provider: "stripe".to_string(),
-            target_type: PurchasableTarget::PointsPackage,
+            target_type: PurchasableTarget::EntitlementMapping,
             target_id: Uuid::now_v7(),
             amount: 1000,
             currency: "USD".to_string(),

@@ -39,7 +39,6 @@ use herald_core::application::WebhookService;
 use herald_core::domain::billing;
 use herald_core::domain::payment_attempt;
 use herald_core::domain::points;
-use herald_core::domain::points_package;
 use herald_core::domain::user::services::admin::{
     AdminUserServiceImpl, PermissionManagementServiceImpl, RoleAssignmentServiceImpl,
     UserPermissionServiceImpl,
@@ -55,7 +54,6 @@ use herald_core::infrastructure::billing::{
 use herald_core::infrastructure::client_api_keys::{ApiKeyCache, ClientApiKeyRepository};
 use herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository;
 use herald_core::infrastructure::points::{PostgresPointsRepository, RedisIdempotencyStore};
-use herald_core::infrastructure::points_package::PostgresPointsPackageRepository;
 use herald_core::infrastructure::purchase::{
     PostgresFulfillmentService, PostgresPurchaseRepository, PurchaseService,
 };
@@ -260,14 +258,6 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
     ));
     info!("Admin user services initialized");
 
-    // Create points package service
-    let points_package_repository =
-        Arc::new(PostgresPointsPackageRepository::new(Arc::new(db.clone())));
-    let points_package_service = Arc::new(points_package::PointsPackageService::new(
-        points_package_repository.clone(),
-    ));
-    info!("Points package service initialized");
-
     // Create payment attempt service
     let payment_attempt_repository =
         Arc::new(PostgresPaymentAttemptRepository::new(Arc::new(db.clone())));
@@ -283,8 +273,6 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
     // Create fulfillment service
     let fulfillment_service = Arc::new(PostgresFulfillmentService::new(
         points_repository.clone(),
-        points_package_repository.clone(),
-        purchase_repository.clone(),
         billing_repository.clone(),
     ));
     info!("Fulfillment service initialized");
@@ -293,9 +281,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         pg_pool.clone(),
         config.frontend.url.clone(),
         billing_repository.clone(),
-        points_package_repository.clone(),
         payment_attempt_service.clone(),
-        purchase_repository.clone(),
         fulfillment_service.clone(),
     ));
     info!("Purchase service initialized");
@@ -355,7 +341,6 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         role_assignment_service: role_assignment_service.clone(),
         user_permission_service: user_permission_service.clone(),
         permission_management_service: permission_management_service.clone(),
-        points_package_service: points_package_service.clone(),
         payment_attempt_service: payment_attempt_service.clone(),
         fulfillment_service: fulfillment_service.clone(),
         purchase_repository: purchase_repository.clone(),
@@ -446,7 +431,6 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         role_assignment_service,
         user_permission_service,
         permission_management_service,
-        points_package_service,
         payment_attempt_service,
         fulfillment_service,
         purchase_repository,

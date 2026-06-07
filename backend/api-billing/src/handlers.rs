@@ -615,6 +615,12 @@ pub async fn create_checkout_session(
 
             let stripe_client = get_stripe_client_for_realm(&realm_id, &state).await?;
 
+            let mode = if mapping.billing_kind() == "one_time" {
+                Some("payment".to_string())
+            } else {
+                None
+            };
+
             let stripe_request = StripeCreateCheckoutRequest {
                 client_app_id,
                 mapping_id: mapping.id,
@@ -666,6 +672,7 @@ pub async fn create_checkout_session(
                     );
                     map
                 }),
+                mode,
             };
 
             let session = stripe_client

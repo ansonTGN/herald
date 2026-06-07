@@ -35,19 +35,11 @@ pub enum Relation {
         to = "super::account::Column::Id"
     )]
     User,
-    #[sea_orm(has_many = "super::points_package_purchase::Entity")]
-    Purchases,
 }
 
 impl Related<super::account::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::User.def()
-    }
-}
-
-impl Related<super::points_package_purchase::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Purchases.def()
     }
 }
 

@@ -708,4 +708,26 @@ impl BillingRepository for PostgresBillingRepository {
 
         Ok(result.map(Self::model_to_entitlement_mapping))
     }
+
+    async fn list_one_time_mappings(
+        &self,
+        realm_id: &str,
+    ) -> Result<Vec<EntitlementMapping>, CoreError> {
+        use sea_orm::QueryFilter;
+
+        let results = provider_entitlement_mapping::Entity::find()
+            .filter(provider_entitlement_mapping::Column::RealmId.eq(realm_id))
+            .filter(provider_entitlement_mapping::Column::Enabled.eq(true))
+            .filter(provider_entitlement_mapping::Column::BillingType.eq("one_time"))
+            .filter(provider_entitlement_mapping::Column::ProviderProductInfo.is_not_null())
+            .order_by_asc(provider_entitlement_mapping::Column::CreatedAt)
+            .all(&self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(results
+            .into_iter()
+            .map(Self::model_to_entitlement_mapping)
+            .collect())
+    }
 }

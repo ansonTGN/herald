@@ -1,3 +1,12 @@
 {
-  "tasks": []
+  "tasks": [
+    {
+      "id": "4556269d",
+      "cron": "0 6 8 6 *",
+      "prompt": "/t-task-check points-package-one-time-payment --phase frontend",
+      "createdAt": 1780846126502,
+      "createdBySessionId": "9f75f894-6c0f-40e1-9784-42e02dd96772",
+      "createdByPid": 39036
+    }
+  ]
 }

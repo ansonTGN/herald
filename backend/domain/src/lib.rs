@@ -22,7 +22,6 @@ pub mod dashboard;
 pub mod oauth;
 pub mod payment_attempt;
 pub mod points;
-pub mod points_package;
 pub mod purchase;
 pub mod rbac_init;
 pub mod realm;
@@ -38,5 +37,4 @@ pub use audit::{
     AuditResult, AuditTargetType, NewAuditEvent, PaginatedAuditEvents,
 };
 pub use authentication::Identity;
-pub use payment_attempt::PurchasableTarget;
 pub use totp_key_management::{RealmTotpKeyRepository, RealmTotpKeyService};

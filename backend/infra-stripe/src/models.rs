@@ -65,6 +65,9 @@ pub struct CreateCheckoutRequest {
     /// Extra metadata to merge into the Stripe checkout session metadata
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<std::collections::HashMap<String, String>>,
+    /// Checkout mode: "subscription" (default) or "payment" (one-time)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
 }
 
 /// Request to create a Stripe payment intent.

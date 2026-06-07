@@ -4,7 +4,6 @@ use std::time::Instant;
 
 use herald_core::application::{ApplicationService, WebhookService};
 use herald_core::domain::payment_attempt::PaymentAttemptService;
-use herald_core::domain::points_package::PointsPackageService;
 use herald_core::domain::user::services::admin::{
     AdminUserServiceImpl, PermissionManagementServiceImpl, RoleAssignmentServiceImpl,
     UserPermissionServiceImpl,
@@ -20,7 +19,6 @@ use herald_core::infrastructure::billing::{
 use herald_core::infrastructure::client_api_keys::{ApiKeyCache, ClientApiKeyRepository};
 use herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository;
 use herald_core::infrastructure::points::PostgresPointsRepository;
-use herald_core::infrastructure::points_package::PostgresPointsPackageRepository;
 use herald_core::infrastructure::purchase::PurchaseService;
 use herald_core::infrastructure::purchase::{
     PostgresFulfillmentService, PostgresPurchaseRepository,
@@ -35,15 +33,8 @@ use sea_orm::DatabaseConnection;
 /// Type alias for the PurchaseService to reduce complexity in AppState
 type PurchaseServiceImpl = PurchaseService<
     PostgresBillingRepository,
-    PostgresPointsPackageRepository,
     PostgresPaymentAttemptRepository,
-    PostgresPurchaseRepository,
-    PostgresFulfillmentService<
-        PostgresPointsRepository,
-        PostgresPointsPackageRepository,
-        PostgresPurchaseRepository,
-        PostgresBillingRepository,
-    >,
+    PostgresFulfillmentService<PostgresPointsRepository, PostgresBillingRepository>,
 >;
 
 type ProviderProductSyncServiceImpl = herald_core::domain::billing::ProviderProductSyncService<
@@ -199,25 +190,16 @@ pub struct AppState {
     >,
 
     // ============================================================================
-    // Points Package & Payment Services
+    // Payment Services
     // ============================================================================
-    /// Points package service
-    pub points_package_service: Arc<PointsPackageService<PostgresPointsPackageRepository>>,
-
     /// Payment attempt service
     pub payment_attempt_service: Arc<PaymentAttemptService<PostgresPaymentAttemptRepository>>,
 
     /// Fulfillment service (for unified purchase handling)
-    pub fulfillment_service: Arc<
-        PostgresFulfillmentService<
-            PostgresPointsRepository,
-            PostgresPointsPackageRepository,
-            PostgresPurchaseRepository,
-            PostgresBillingRepository,
-        >,
-    >,
+    pub fulfillment_service:
+        Arc<PostgresFulfillmentService<PostgresPointsRepository, PostgresBillingRepository>>,
 
-    /// Purchase repository (for purchase history and records)
+    /// Purchase repository (retained for API compatibility)
     pub purchase_repository: Arc<PostgresPurchaseRepository>,
 
     /// Purchase service (routes attempts into fulfillment)

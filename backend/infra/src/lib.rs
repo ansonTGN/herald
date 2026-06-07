@@ -11,7 +11,6 @@ pub mod dashboard;
 pub mod oauth;
 pub mod payment_attempt;
 pub mod points;
-pub mod points_package;
 pub mod purchase;
 pub mod realm;
 pub mod realm_config;

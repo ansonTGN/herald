@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     middleware::{Next, from_fn},
     response::{IntoResponse, Response},
-    routing::{get, patch, post},
+    routing::{get, post},
 };
 
 use crate::entitlement_mapping_handlers::{
@@ -25,14 +25,9 @@ use crate::invoice_handlers::{
     get_my_invoice, get_seller_config, issue_invoice, list_invoices, list_my_invoices, mark_paid,
     update_invoice, upsert_seller_config, void_invoice,
 };
-use crate::points_package_handlers::{
-    create_payment_provider_mapping, create_points_package, delete_payment_provider_mapping,
-    delete_points_package, get_points_package, list_payment_provider_mappings,
-    list_points_packages, update_payment_provider_mapping, update_points_package,
-};
 use crate::purchase_handlers::{
     cancel_payment_attempt, create_payment_attempt, fulfill_payment, get_payment_attempt_status,
-    get_points_package_purchase_details, get_points_package_purchase_history,
+    get_purchase_history,
 };
 use crate::shopify_claim_handlers::claim_shopify_subscriptions;
 use crate::shopify_config_handlers::{
@@ -159,26 +154,6 @@ pub fn billing_routes() -> Router<AppState> {
             "/api/bill/{realmId}/my/subscriptions/{subscriptionId}/history",
             get(get_my_subscription_history),
         )
-        // ===== Points Package Management =====
-        .route(
-            "/api/bill/{realmId}/points-packages",
-            get(list_points_packages).post(create_points_package),
-        )
-        .route(
-            "/api/bill/{realmId}/points-packages/{packageId}",
-            get(get_points_package)
-                .patch(update_points_package)
-                .delete(delete_points_package),
-        )
-        // ===== Points Package Payment Provider Mappings =====
-        .route(
-            "/api/bill/{realmId}/points-packages/{packageId}/providers",
-            get(list_payment_provider_mappings).post(create_payment_provider_mapping),
-        )
-        .route(
-            "/api/bill/{realmId}/points-packages/{packageId}/providers/{mappingId}",
-            patch(update_payment_provider_mapping).delete(delete_payment_provider_mapping),
-        )
         // ===== Purchase Flow =====
         .route(
             "/api/bill/{realmId}/purchase/payment-attempts",
@@ -194,20 +169,8 @@ pub fn billing_routes() -> Router<AppState> {
         )
         // ===== Purchase History =====
         .route(
-            "/api/bill/{realmId}/purchase/points-packages/history",
-            get(get_points_package_purchase_history),
-        )
-        .route(
-            "/api/bill/{realmId}/purchase/points-packages/history/{purchaseId}",
-            get(get_points_package_purchase_details),
-        )
-        .route(
-            "/api/realms/{realmId}/billing/purchase/points-packages/history",
-            get(get_points_package_purchase_history),
-        )
-        .route(
-            "/api/realms/{realmId}/billing/purchase/points-packages/history/{purchaseId}",
-            get(get_points_package_purchase_details),
+            "/api/bill/{realmId}/purchase/history",
+            get(get_purchase_history),
         )
         // ===== Payment Provider Configuration =====
         .route(

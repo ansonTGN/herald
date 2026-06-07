@@ -49,16 +49,6 @@ pub enum CoreError {
     SerializationError(String),
     #[error("Entitlement mapping not found")]
     EntitlementMappingNotFound,
-    #[error("Points package not found: {0}")]
-    PointsPackageNotFound(String),
-    #[error("Payment provider '{0}' already configured for this package")]
-    PaymentProviderAlreadyConfigured(String),
-    #[error("Cannot delete package with existing purchase records")]
-    PackageHasPurchaseRecords,
-    #[error("Invalid points amount: {0}. Must be greater than 0")]
-    InvalidPointsAmount(i64),
-    #[error("Invalid price: {0}. Must be greater than 0")]
-    InvalidPrice(i64),
 }
 
 // From impls for external error types
@@ -194,29 +184,6 @@ impl IntoResponse for CoreError {
             CoreError::EntitlementMappingNotFound => (
                 StatusCode::NOT_FOUND,
                 "Entitlement mapping not found".to_string(),
-            ),
-            CoreError::PointsPackageNotFound(msg) => (
-                StatusCode::NOT_FOUND,
-                format!("Points package not found: {}", msg),
-            ),
-            CoreError::PaymentProviderAlreadyConfigured(provider) => (
-                StatusCode::CONFLICT,
-                format!(
-                    "Payment provider '{}' already configured for this package",
-                    provider
-                ),
-            ),
-            CoreError::PackageHasPurchaseRecords => (
-                StatusCode::CONFLICT,
-                "Cannot delete package with existing purchase records".to_string(),
-            ),
-            CoreError::InvalidPointsAmount(amount) => (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid points amount: {}. Must be greater than 0.", amount),
-            ),
-            CoreError::InvalidPrice(price) => (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid price: {}. Must be greater than 0.", price),
             ),
         };
 

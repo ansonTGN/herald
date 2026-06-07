@@ -7,20 +7,19 @@ use std::sync::Arc;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use herald_domain::billing::BillingRepository;
+use herald_domain::billing::entities::BillingType;
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::payment_attempt::entities::{PaymentAttempt, PaymentContext};
 use herald_domain::payment_attempt::{
     CreatePaymentAttemptInput, PaymentAttemptRepository, PaymentAttemptService, PurchasableTarget,
 };
-use herald_domain::purchase::entities::PointsPackagePurchase;
-use herald_domain::purchase::errors::{PurchaseErrorExt, PurchaseResult};
+use herald_domain::purchase::errors::PurchaseResult;
 use herald_domain::purchase::ports::{FulfillmentResult, FulfillmentService};
-use herald_domain::purchase::repositories::PurchaseRepository;
 use herald_domain::purchase::services::{
     CompletePaymentAttemptInput, CreatedPaymentAttempt, PaymentCompletionSource,
     PreparePaymentAttemptInput, PreparedPaymentAttempt, PurchaseTargetSnapshot,
 };
-use herald_domain::{billing::BillingRepository, points_package::PointsPackageRepository};
 use herald_infra_creem::{CreateCheckoutRequest as CreemCreateCheckoutRequest, CreemClient};
 use herald_infra_stripe::{CreateCheckoutRequest as StripeCreateCheckoutRequest, StripeClient};
 use herald_infra_wechat::client::WechatPayClient;
@@ -28,47 +27,37 @@ use herald_infra_wechat::models::{CreateOrderParams, WechatOrderStatus, WechatPa
 use herald_infra_wechat::repository::WechatOrderRepository;
 
 /// Purchase service for unified purchase orchestration and fulfillment
-pub struct PurchaseService<B, PP, PA, PR, F>
+pub struct PurchaseService<B, PA, F>
 where
     B: BillingRepository,
-    PP: PointsPackageRepository,
     PA: PaymentAttemptRepository,
-    PR: PurchaseRepository,
     F: FulfillmentService,
 {
     pool: PgPool,
     public_base_url: String,
     billing_repository: Arc<B>,
-    points_package_repository: Arc<PP>,
     payment_attempt_service: Arc<PaymentAttemptService<PA>>,
-    purchase_repository: Arc<PR>,
     fulfillment_service: Arc<F>,
 }
 
-impl<B, PP, PA, PR, F> PurchaseService<B, PP, PA, PR, F>
+impl<B, PA, F> PurchaseService<B, PA, F>
 where
     B: BillingRepository,
-    PP: PointsPackageRepository,
     PA: PaymentAttemptRepository,
-    PR: PurchaseRepository,
     F: FulfillmentService,
 {
     pub fn new(
         pool: PgPool,
         public_base_url: String,
         billing_repository: Arc<B>,
-        points_package_repository: Arc<PP>,
         payment_attempt_service: Arc<PaymentAttemptService<PA>>,
-        purchase_repository: Arc<PR>,
         fulfillment_service: Arc<F>,
     ) -> Self {
         Self {
             pool,
             public_base_url,
             billing_repository,
-            points_package_repository,
             payment_attempt_service,
-            purchase_repository,
             fulfillment_service,
         }
     }
@@ -149,54 +138,44 @@ where
         Ok(CreatedPaymentAttempt { attempt, context })
     }
 
-    pub async fn list_points_package_purchases(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        payment_provider: Option<String>,
-        limit: Option<u64>,
-        offset: Option<u64>,
-    ) -> PurchaseResult<Vec<PointsPackagePurchase>> {
-        self.purchase_repository
-            .list_points_package_purchases(realm_id, user_id, payment_provider, limit, offset)
-            .await
-    }
-
-    pub async fn get_points_package_purchase(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        purchase_id: Uuid,
-    ) -> PurchaseResult<PointsPackagePurchase> {
-        let purchase = self
-            .purchase_repository
-            .find_points_package_purchase_by_id(realm_id, purchase_id)
-            .await?
-            .ok_or(CoreError::NotFound)?;
-
-        if purchase.user_id != user_id {
-            return Err(CoreError::Forbidden("Access denied".to_string()));
-        }
-
-        Ok(purchase)
-    }
-
-    /// Fulfill a payment attempt based on target type
+    /// Fulfill a payment attempt based on billing type from entitlement mapping.
+    /// When `billing_type_override` is provided, it takes precedence over the mapping's
+    /// stored billing_type (e.g. when provider webhook metadata overrides the DB value).
     pub async fn fulfill_payment_attempt(
         &self,
         attempt: PaymentAttempt,
         provider_transaction_id: String,
         _completed_at: chrono::DateTime<chrono::Utc>,
+        billing_type_override: Option<BillingType>,
     ) -> Result<FulfillmentResult, CoreError> {
-        match attempt.target_type {
-            PurchasableTarget::SubscriptionEntitlement => {
+        // If no override, look up entitlement mapping to determine billing type
+        let billing_type = if let Some(bt) = billing_type_override {
+            bt
+        } else {
+            let mapping = self
+                .billing_repository
+                .find_entitlement_mapping_by_id(attempt.target_id)
+                .await?
+                .ok_or_else(|| {
+                    CoreError::not_found(&format!(
+                        "Entitlement mapping {} for fulfillment",
+                        attempt.target_id
+                    ))
+                })?;
+
+            mapping.billing_type.unwrap_or(BillingType::Recurring)
+        };
+
+        match billing_type {
+            BillingType::OneTime => {
                 self.fulfillment_service
-                    .fulfill_subscription_purchase(&attempt, provider_transaction_id)
+                    .fulfill_one_time_purchase(&attempt, provider_transaction_id)
                     .await
             }
-            PurchasableTarget::PointsPackage => {
+            _ => {
+                // Recurring or None -> subscription flow
                 self.fulfillment_service
-                    .fulfill_points_package_purchase(&attempt, provider_transaction_id)
+                    .fulfill_subscription_purchase(&attempt, provider_transaction_id)
                     .await
             }
         }
@@ -228,6 +207,7 @@ where
             marked_attempt,
             input.provider_transaction_id,
             input.completed_at,
+            input.billing_type_override,
         )
         .await
     }
@@ -241,95 +221,58 @@ where
     ) -> PurchaseResult<PurchaseTargetSnapshot> {
         let parsed_target_type = target_type.parse::<PurchasableTarget>()?;
 
-        match parsed_target_type {
-            PurchasableTarget::PointsPackage => {
-                let package = self
-                    .points_package_repository
-                    .find_points_package_by_id(realm_id, target_id)
-                    .await?
-                    .ok_or_else(|| CoreError::package_not_found(&target_id.to_string()))?;
+        // All purchasable targets are now EntitlementMapping
+        let mapping = self
+            .billing_repository
+            .find_entitlement_mapping_by_id(target_id)
+            .await?
+            .filter(|m| m.realm_id == realm_id && m.payment_provider == payment_provider)
+            .ok_or_else(|| {
+                CoreError::Conflict(format!(
+                    "No entitlement mapping found for provider '{payment_provider}' target '{}' in realm '{}'",
+                    target_id, realm_id
+                ))
+            })?;
 
-                if !package.enabled {
-                    return Err(CoreError::package_not_found(&target_id.to_string()));
-                }
-
-                let provider_mapping = self
-                    .points_package_repository
-                    .list_payment_provider_mappings(target_id)
-                    .await?
-                    .into_iter()
-                    .find(|mapping| {
-                        mapping.payment_provider == payment_provider && mapping.enabled
-                    })
-                    .ok_or_else(|| {
-                        CoreError::Conflict(format!(
-                            "Payment provider {payment_provider} not configured for this points package"
-                        ))
-                    })?;
-
-                Ok(PurchaseTargetSnapshot {
-                    target_type: parsed_target_type,
-                    target_id,
-                    amount: package.price,
-                    currency: package.currency,
-                    title: package.title,
-                    provider_external_product_id: provider_mapping.external_product_id,
-                    billing_period: None,
-                })
-            }
-            PurchasableTarget::SubscriptionEntitlement => {
-                let mapping = self
-                    .billing_repository
-                    .find_entitlement_mapping_by_id(target_id)
-                    .await?
-                    .filter(|mapping| mapping.realm_id == realm_id && mapping.payment_provider == payment_provider)
-                    .ok_or_else(|| {
-                        CoreError::Conflict(format!(
-                            "No entitlement mapping found for provider '{payment_provider}' target '{}' in realm '{}'",
-                            target_id, realm_id
-                        ))
-                    })?;
-
-                if !mapping.enabled {
-                    return Err(CoreError::Conflict(format!(
-                        "Entitlement mapping for provider '{payment_provider}' product '{}' is disabled",
-                        target_id
-                    )));
-                }
-
-                // Extract price info from provider_product_info if available
-                let (amount, currency, title) = mapping
-                    .provider_product_info
-                    .as_ref()
-                    .and_then(|info| {
-                        let price = info.get("price")?.as_i64()?;
-                        let curr = info.get("currency")?.as_str()?.to_string();
-                        let name = info
-                            .get("name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(&mapping.entitlement_key)
-                            .to_string();
-                        Some((price, curr, name))
-                    })
-                    .unwrap_or_else(|| {
-                        (
-                            0, // No price info available
-                            "usd".to_string(),
-                            mapping.entitlement_key.clone(),
-                        )
-                    });
-
-                Ok(PurchaseTargetSnapshot {
-                    target_type: parsed_target_type,
-                    target_id,
-                    amount,
-                    currency,
-                    title,
-                    provider_external_product_id: Some(mapping.external_product_id.clone()),
-                    billing_period: mapping.billing_period.clone(),
-                })
-            }
+        if !mapping.enabled {
+            return Err(CoreError::Conflict(format!(
+                "Entitlement mapping for provider '{payment_provider}' product '{}' is disabled",
+                target_id
+            )));
         }
+
+        // Extract price info from provider_product_info if available
+        let (amount, currency, title) = mapping
+            .provider_product_info
+            .as_ref()
+            .and_then(|info| {
+                let price = info.get("price")?.as_i64()?;
+                let curr = info.get("currency")?.as_str()?.to_string();
+                let name = info
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&mapping.entitlement_key)
+                    .to_string();
+                Some((price, curr, name))
+            })
+            .unwrap_or_else(|| {
+                (
+                    0, // No price info available
+                    "usd".to_string(),
+                    mapping.entitlement_key.clone(),
+                )
+            });
+
+        Ok(PurchaseTargetSnapshot {
+            target_type: parsed_target_type,
+            target_id,
+            amount,
+            currency,
+            title,
+            provider_external_product_id: Some(mapping.external_product_id.clone()),
+            billing_period: mapping.billing_period.clone(),
+            billing_type: mapping.billing_type,
+        })
     }
 
     async fn build_payment_context(
@@ -552,10 +495,12 @@ where
         metadata.insert("heraldUserId".to_string(), user_id.to_string());
         metadata.insert("targetType".to_string(), target_type.to_string());
         metadata.insert("targetId".to_string(), target_id.to_string());
-        if target_type == "points_package" {
-            metadata.insert("pointsPackageId".to_string(), target_id.to_string());
-        }
         metadata.insert("attemptId".to_string(), attempt_id.to_string());
+
+        let mode = match target.billing_type {
+            Some(BillingType::OneTime) => Some("payment".to_string()),
+            _ => None, // defaults to "subscription" in the client
+        };
 
         let session = client
             .create_checkout_session(&StripeCreateCheckoutRequest {
@@ -583,6 +528,7 @@ where
                     self.public_base_url, realm_id
                 )),
                 metadata: Some(metadata),
+                mode,
             })
             .await
             .map_err(|e| {
@@ -591,11 +537,7 @@ where
                 ))
             })?;
 
-        let client_secret = if target_type == "points_package" {
-            None
-        } else {
-            session.payment_intent.or_else(|| Some(session.id.clone()))
-        };
+        let client_secret = session.payment_intent.or_else(|| Some(session.id.clone()));
 
         Ok((
             Some(session.id),

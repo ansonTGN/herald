@@ -20,7 +20,6 @@ pub use infrastructure::creem::CreemClient;
 pub use infrastructure::oauth::ReqwestHttpClient;
 pub use infrastructure::payment_attempt::PostgresPaymentAttemptRepository;
 pub use infrastructure::points::PostgresPointsRepository;
-pub use infrastructure::points_package::PostgresPointsPackageRepository;
 pub use infrastructure::purchase::{PostgresFulfillmentService, PostgresPurchaseRepository};
 pub use infrastructure::stripe::StripeClient;
 pub use infrastructure::webhook::{IdempotencyResult, WebhookEventRepository};

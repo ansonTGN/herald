@@ -205,10 +205,10 @@ impl EntitlementMapping {
     /// Returns the billing kind string for use in provider metadata.
     ///
     /// Maps billing_type to the PRD-defined values: "subscription" for recurring,
-    /// "points_package" for one-time. Defaults to "subscription" when unset.
+    /// "one_time" for one-time. Defaults to "subscription" when unset.
     pub fn billing_kind(&self) -> String {
         match self.billing_type {
-            Some(BillingType::OneTime) => "points_package".to_string(),
+            Some(BillingType::OneTime) => "one_time".to_string(),
             _ => "subscription".to_string(),
         }
     }

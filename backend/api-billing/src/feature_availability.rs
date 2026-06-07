@@ -28,7 +28,6 @@ pub struct AdminFeatureAvailability {
     pub invoices_visible: bool,
     pub subscription_history_visible: bool,
     pub points_visible: bool,
-    pub points_packages_visible: bool,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -46,8 +45,7 @@ pub struct FeatureAvailabilityFacts {
     pub has_payment_providers: bool,
     pub has_entitlement_mappings: bool,
     pub has_enabled_mappings: bool,
-    pub has_points_packages: bool,
-    pub has_points_package_payment_mappings: bool,
+    pub has_one_time_mappings: bool,
     pub has_invoice_seller_config: bool,
     pub has_invoices: bool,
     pub has_subscription_history: bool,
@@ -58,8 +56,7 @@ struct FeatureFacts {
     has_payment_providers: bool,
     has_entitlement_mappings: bool,
     has_enabled_mappings: bool,
-    has_points_packages: bool,
-    has_points_package_payment_mappings: bool,
+    has_one_time_mappings: bool,
     has_invoice_seller_config: bool,
     has_invoices: bool,
     has_subscription_history: bool,
@@ -95,7 +92,7 @@ pub async fn get_feature_availability(
     let admin_billing_visible = can_view_billing;
     let admin_points_visible = can_view_points;
     let user_subscription_visible = facts.has_enabled_mappings;
-    let user_points_visible = facts.has_points_packages;
+    let user_points_visible = facts.has_one_time_mappings;
     let user_invoices_visible = facts.has_invoice_seller_config;
 
     Ok(Json(FeatureAvailabilityResponse {
@@ -106,11 +103,10 @@ pub async fn get_feature_availability(
             invoices_visible: admin_billing_visible,
             subscription_history_visible: admin_billing_visible,
             points_visible: admin_points_visible,
-            points_packages_visible: admin_points_visible,
         },
         user: UserFeatureAvailability {
             points_visible: user_points_visible,
-            points_purchase_visible: facts.has_points_package_payment_mappings,
+            points_purchase_visible: facts.has_one_time_mappings,
             subscription_visible: user_subscription_visible,
             invoices_visible: user_invoices_visible,
         },
@@ -118,8 +114,7 @@ pub async fn get_feature_availability(
             has_payment_providers: facts.has_payment_providers,
             has_entitlement_mappings: facts.has_entitlement_mappings,
             has_enabled_mappings: facts.has_enabled_mappings,
-            has_points_packages: facts.has_points_packages,
-            has_points_package_payment_mappings: facts.has_points_package_payment_mappings,
+            has_one_time_mappings: facts.has_one_time_mappings,
             has_invoice_seller_config: facts.has_invoice_seller_config,
             has_invoices: facts.has_invoices,
             has_subscription_history: facts.has_subscription_history,
@@ -185,14 +180,7 @@ async fn load_feature_facts(state: &AppState, realm_id: &str) -> Result<FeatureF
             EXISTS (SELECT 1 FROM configured_providers) AS has_payment_providers,
             EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1) AS has_entitlement_mappings,
             EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1 AND enabled = true) AS has_enabled_mappings,
-            EXISTS (SELECT 1 FROM points_packages WHERE realm_id = $1 AND enabled = true) AS has_points_packages,
-            EXISTS (
-                SELECT 1
-                FROM points_package_payment_providers ppp
-                JOIN points_packages pp ON pp.id = ppp.points_package_id
-                JOIN configured_providers cp ON cp.provider = ppp.payment_provider
-                WHERE pp.realm_id = $1 AND pp.enabled = true AND ppp.enabled = true
-            ) AS has_points_package_payment_mappings,
+            EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1 AND billing_type = 'one_time' AND enabled = true) AS has_one_time_mappings,
             EXISTS (SELECT 1 FROM invoice_seller_config WHERE realm_id = $1) AS has_invoice_seller_config,
             EXISTS (SELECT 1 FROM invoice WHERE realm_id = $1) AS has_invoices,
             EXISTS (SELECT 1 FROM subscription_history WHERE realm_id = $1) AS has_subscription_history
@@ -214,8 +202,7 @@ async fn load_feature_facts(state: &AppState, realm_id: &str) -> Result<FeatureF
         has_payment_providers: row.get("has_payment_providers"),
         has_entitlement_mappings: row.get("has_entitlement_mappings"),
         has_enabled_mappings: row.get("has_enabled_mappings"),
-        has_points_packages: row.get("has_points_packages"),
-        has_points_package_payment_mappings: row.get("has_points_package_payment_mappings"),
+        has_one_time_mappings: row.get("has_one_time_mappings"),
         has_invoice_seller_config: row.get("has_invoice_seller_config"),
         has_invoices: row.get("has_invoices"),
         has_subscription_history: row.get("has_subscription_history"),

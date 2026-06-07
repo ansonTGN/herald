@@ -165,3 +165,112 @@ pub async fn get_subscription(
 }
 
 // Entitlement mappings are managed via the admin billing API.
+
+/// Single one-time mapping item for external API
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OneTimeMappingItem {
+    pub id: String,
+    pub entitlement_key: String,
+    pub provider_product_info: Option<serde_json::Value>,
+    pub points_per_period: Option<i64>,
+    pub payment_provider: String,
+    pub validity_days: Option<i64>,
+}
+
+/// Response for one-time mappings external endpoint
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OneTimeMappingExtResponse {
+    pub items: Vec<OneTimeMappingItem>,
+}
+
+/// Get purchasable one-time entitlement mappings
+///
+/// Returns enabled one-time entitlement mappings that have provider product info configured.
+/// Used by frontend/SDK to display purchasable products.
+///
+/// # Authentication
+/// Requires valid API Key via X-API-Key header
+///
+/// # Realm Isolation
+/// The API key must belong to the same realm as the requested realm.
+/// Cross-realm requests will return 403 Forbidden.
+#[utoipa::path(
+    get,
+    path = "/api/ext/{realmId}/one-time-mappings",
+    tag = "ext",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    responses(
+        (status = 200, description = "One-time mappings retrieved", body = OneTimeMappingExtResponse),
+        (status = 401, description = "Unauthorized - Invalid or missing API Key", body = ErrorResponse),
+        (status = 403, description = "Forbidden - Cross-realm access attempt", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    security(("api_key" = []))
+)]
+pub async fn get_one_time_mappings(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path(realm_id): Path<String>,
+) -> Response {
+    let api_key_realm_id = identity.realm_id();
+
+    tracing::info!(
+        api_key_realm_id = %api_key_realm_id,
+        request_realm_id = %realm_id,
+        "One-time mappings query requested"
+    );
+
+    // 1. Check realm isolation
+    if !identity.has_access_to_realm(&realm_id) {
+        tracing::warn!(
+            api_key_realm_id = %api_key_realm_id,
+            request_realm_id = %realm_id,
+            "Cross-realm access attempt blocked"
+        );
+        return json_error(StatusCode::FORBIDDEN, ErrorCode::CrossRealmAccessForbidden);
+    }
+
+    if let Err(resp) =
+        require_principal_permission(&state, &identity, &realm_id, "billing", "view").await
+    {
+        return resp.into_response();
+    }
+
+    // 2. Query one-time mappings
+    let mappings = match state
+        .billing_repository
+        .list_one_time_mappings(&realm_id)
+        .await
+    {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::error!("Failed to query one-time mappings: {}", e);
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError);
+        }
+    };
+
+    // 3. Build response
+    let items: Vec<OneTimeMappingItem> = mappings
+        .into_iter()
+        .map(|m| OneTimeMappingItem {
+            id: m.id.to_string(),
+            entitlement_key: m.entitlement_key,
+            provider_product_info: m.provider_product_info,
+            points_per_period: m.points_per_period,
+            payment_provider: m.payment_provider,
+            validity_days: m.validity_days,
+        })
+        .collect();
+
+    tracing::info!(
+        realm_id = %realm_id,
+        count = items.len(),
+        "One-time mappings retrieved"
+    );
+
+    Json(OneTimeMappingExtResponse { items }).into_response()
+}

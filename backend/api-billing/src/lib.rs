@@ -12,7 +12,6 @@ pub mod handlers_history;
 pub mod invoice_handlers;
 pub mod invoice_types;
 mod payment_email;
-pub mod points_package_handlers;
 pub mod purchase_handlers;
 pub mod routes;
 pub mod shopify_claim_handlers;
@@ -68,21 +67,11 @@ pub mod shopify_test_types;
         crate::wechat_order_handlers::create_wechat_order,
         crate::wechat_order_handlers::get_wechat_order_status,
         crate::wechat_order_handlers::close_wechat_order,
-        crate::points_package_handlers::create_points_package,
-        crate::points_package_handlers::list_points_packages,
-        crate::points_package_handlers::get_points_package,
-        crate::points_package_handlers::update_points_package,
-        crate::points_package_handlers::delete_points_package,
-        crate::points_package_handlers::list_payment_provider_mappings,
-        crate::points_package_handlers::create_payment_provider_mapping,
-        crate::points_package_handlers::update_payment_provider_mapping,
-        crate::points_package_handlers::delete_payment_provider_mapping,
         crate::purchase_handlers::create_payment_attempt,
         crate::purchase_handlers::get_payment_attempt_status,
         crate::purchase_handlers::cancel_payment_attempt,
         crate::purchase_handlers::fulfill_payment,
-        crate::purchase_handlers::get_points_package_purchase_history,
-        crate::purchase_handlers::get_points_package_purchase_details,
+        crate::purchase_handlers::get_purchase_history,
         // Invoice handlers
         crate::invoice_handlers::get_seller_config,
         crate::invoice_handlers::upsert_seller_config,
@@ -150,15 +139,6 @@ pub mod shopify_test_types;
         crate::feature_availability::AdminFeatureAvailability,
         crate::feature_availability::UserFeatureAvailability,
         crate::feature_availability::FeatureAvailabilityFacts,
-        // Points package types
-        crate::points_package_handlers::CreatePointsPackageRequest,
-        crate::points_package_handlers::PointsPackageResponse,
-        crate::points_package_handlers::ListPointsPackagesResponse,
-        crate::points_package_handlers::UpdatePointsPackageRequest,
-        crate::points_package_handlers::CreatePaymentProviderMappingRequest,
-        crate::points_package_handlers::PaymentProviderMappingResponse,
-        crate::points_package_handlers::ListPaymentProviderMappingsResponse,
-        crate::points_package_handlers::UpdatePaymentProviderMappingRequest,
         crate::purchase_handlers::CreatePaymentAttemptRequest,
         crate::purchase_handlers::CreatePaymentAttemptResponse,
         crate::purchase_handlers::PaymentContextDto,

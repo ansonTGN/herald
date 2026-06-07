@@ -42,8 +42,8 @@ pub trait FulfillmentService: Send + Sync {
         provider_transaction_id: String,
     ) -> Result<FulfillmentResult, CoreError>;
 
-    /// Fulfill a points package purchase
-    async fn fulfill_points_package_purchase(
+    /// Fulfill a one-time purchase (e.g. topup_credit via entitlement mapping)
+    async fn fulfill_one_time_purchase(
         &self,
         attempt: &PaymentAttempt,
         provider_transaction_id: String,

@@ -6,13 +6,12 @@ use herald_domain::billing::{BillingRepository, Subscription, SubscriptionStatus
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::payment_attempt::PaymentAttempt;
 use herald_domain::points::{CreditSourceType, CreditType, PointsRepository};
-use herald_domain::points_package::PointsPackageRepository;
 use herald_domain::purchase::{
-    CreatePointsPackagePurchaseInput, FulfillmentResult, FulfillmentService, FulfillmentType,
-    PointsGrant, PurchaseRepository,
+    FulfillmentResult, FulfillmentService, FulfillmentType, PointsGrant,
 };
 
 /// Helper function to detect duplicate key errors (unique constraint violations)
+#[allow(dead_code)]
 fn is_duplicate_key_error(err: &CoreError) -> bool {
     if let CoreError::DatabaseError(msg) = err {
         let msg_lower = msg.to_lowercase();
@@ -34,46 +33,31 @@ fn billing_period_to_days(period: Option<&str>) -> i64 {
 }
 
 /// Implementation of fulfillment service for unified purchase handling
-pub struct PostgresFulfillmentService<P, PP, PR, B>
+pub struct PostgresFulfillmentService<P, B>
 where
     P: PointsRepository,
-    PP: PointsPackageRepository,
-    PR: PurchaseRepository,
     B: BillingRepository,
 {
     points_repository: Arc<P>,
-    points_package_repository: Arc<PP>,
-    purchase_repository: Arc<PR>,
     billing_repository: Arc<B>,
 }
 
-impl<P, PP, PR, B> PostgresFulfillmentService<P, PP, PR, B>
+impl<P, B> PostgresFulfillmentService<P, B>
 where
     P: PointsRepository,
-    PP: PointsPackageRepository,
-    PR: PurchaseRepository,
     B: BillingRepository,
 {
-    pub fn new(
-        points_repository: Arc<P>,
-        points_package_repository: Arc<PP>,
-        purchase_repository: Arc<PR>,
-        billing_repository: Arc<B>,
-    ) -> Self {
+    pub fn new(points_repository: Arc<P>, billing_repository: Arc<B>) -> Self {
         Self {
             points_repository,
-            points_package_repository,
-            purchase_repository,
             billing_repository,
         }
     }
 }
 
-impl<P, PP, PR, B> FulfillmentService for PostgresFulfillmentService<P, PP, PR, B>
+impl<P, B> FulfillmentService for PostgresFulfillmentService<P, B>
 where
     P: PointsRepository + Send + Sync,
-    PP: PointsPackageRepository + Send + Sync,
-    PR: PurchaseRepository + Send + Sync,
     B: BillingRepository + Send + Sync,
 {
     async fn fulfill_subscription_purchase(
@@ -232,35 +216,20 @@ where
         })
     }
 
-    async fn fulfill_points_package_purchase(
+    async fn fulfill_one_time_purchase(
         &self,
         attempt: &PaymentAttempt,
         provider_transaction_id: String,
     ) -> Result<FulfillmentResult, CoreError> {
-        // Check for existing fulfillment (idempotency check - PART 1: purchase record)
-        if let Some(existing_purchase) = self
-            .purchase_repository
-            .find_points_package_purchase_by_attempt_id(attempt.id)
-            .await?
-            && let Some(transaction_id) = existing_purchase.points_transaction_id
-        {
-            return Ok(FulfillmentResult {
-                fulfillment_type: FulfillmentType::PointsGranted,
-                subscription_id: None,
-                points_granted: Some(PointsGrant {
-                    transaction_id,
-                    points_type: "topup_credit".to_string(),
-                    points: existing_purchase.points,
-                    description: format!(
-                        "Purchased points package {} (Payment: {})",
-                        existing_purchase.points_package_id, provider_transaction_id
-                    ),
-                }),
-                granted_at: existing_purchase.updated_at,
-            });
-        }
+        tracing::info!(
+            payment_attempt_id = %attempt.id,
+            realm_id = %attempt.realm_id,
+            user_id = %attempt.user_id,
+            target_id = %attempt.target_id,
+            "Fulfilling one-time purchase"
+        );
 
-        // Check for existing fulfillment (idempotency check - PART 2: credit ledger)
+        // Idempotency: check ledger by source_id first
         if let Some(existing_ledger) = self
             .points_repository
             .find_ledger_by_source_id(&attempt.realm_id, &attempt.id.to_string())
@@ -280,7 +249,7 @@ where
                     points_type: "topup_credit".to_string(),
                     points: existing_ledger.granted_amount,
                     description: format!(
-                        "Purchased points package (Payment: {})",
+                        "One-time purchase (Payment: {})",
                         provider_transaction_id
                     ),
                 }),
@@ -288,16 +257,33 @@ where
             });
         }
 
-        // Fetch the points package to get the amount
-        let package = self
-            .points_package_repository
-            .find_points_package_by_id(&attempt.realm_id, attempt.target_id)
+        // Read mapping from billing_repository by target_id
+        let mapping = self
+            .billing_repository
+            .find_entitlement_mapping_by_id(attempt.target_id)
             .await?
             .ok_or_else(|| {
-                CoreError::not_found(&format!("Points package {}", attempt.target_id))
+                CoreError::not_found(&format!(
+                    "Entitlement mapping {} for one-time purchase",
+                    attempt.target_id
+                ))
             })?;
 
-        // Grant topup_credit points to the user
+        // Read points_per_period from mapping for points count
+        let points = mapping.points_per_period.ok_or_else(|| {
+            CoreError::InternalServerError(format!(
+                "Entitlement mapping '{}' has no points_per_period configured",
+                mapping.entitlement_key
+            ))
+        })?;
+
+        // Calculate expiration from validity_days
+        let expires_at = mapping
+            .validity_days
+            .map(|days| chrono::Utc::now() + chrono::Duration::days(days));
+
+        // Grant TopupCredit via points_repository
+        // Use attempt.id as source_id for idempotency lookup
         let credit_ledger = self
             .points_repository
             .grant_points_atomic(
@@ -305,96 +291,31 @@ where
                 attempt.user_id,
                 CreditType::TopupCredit,
                 CreditSourceType::Topup,
-                package.points,
-                None, // No expiration for purchased points
+                points,
+                expires_at,
                 Some(attempt.id.to_string()),
-                None, // description
+                Some(format!(
+                    "One-time purchase: {} ({} points) via {}",
+                    mapping.entitlement_key, points, provider_transaction_id
+                )),
             )
             .await?;
 
-        // Create purchase record - this may fail with unique constraint violation
-        // if another concurrent request already fulfilled this payment attempt
-        let purchase_result = self
-            .purchase_repository
-            .create_points_package_purchase(CreatePointsPackagePurchaseInput {
-                realm_id: attempt.realm_id.clone(),
-                user_id: attempt.user_id,
-                points_package_id: package.id,
-                payment_attempt_id: attempt.id,
-                points: package.points,
-                amount: attempt.amount,
-                currency: attempt.currency.clone(),
-                payment_provider: attempt.payment_provider.clone(),
-            })
-            .await;
-
-        let purchase = match purchase_result {
-            Ok(purchase) => purchase,
-            Err(e) if is_duplicate_key_error(&e) => {
-                tracing::info!(
-                    payment_attempt_id = %attempt.id,
-                    "Concurrent fulfillment detected, returning existing purchase"
-                );
-                let existing_purchase = self
-                    .purchase_repository
-                    .find_points_package_purchase_by_attempt_id(attempt.id)
-                    .await?
-                    .ok_or_else(|| {
-                        CoreError::InternalServerError(
-                            "Purchase record missing after unique constraint violation".to_string(),
-                        )
-                    })?;
-
-                if let Some(transaction_id) = existing_purchase.points_transaction_id {
-                    return Ok(FulfillmentResult {
-                        fulfillment_type: FulfillmentType::PointsGranted,
-                        subscription_id: None,
-                        points_granted: Some(PointsGrant {
-                            transaction_id,
-                            points_type: "topup_credit".to_string(),
-                            points: existing_purchase.points,
-                            description: format!(
-                                "Purchased points package {} (Payment: {})",
-                                existing_purchase.points_package_id, provider_transaction_id
-                            ),
-                        }),
-                        granted_at: existing_purchase.updated_at,
-                    });
-                }
-
-                self.purchase_repository
-                    .update_purchase_transaction_id(existing_purchase.id, credit_ledger.id)
-                    .await?;
-
-                return Ok(FulfillmentResult {
-                    fulfillment_type: FulfillmentType::PointsGranted,
-                    subscription_id: None,
-                    points_granted: Some(PointsGrant {
-                        transaction_id: credit_ledger.id,
-                        points_type: "topup_credit".to_string(),
-                        points: package.points,
-                        description: format!(
-                            "Purchased points package: {} (Payment: {})",
-                            package.title, provider_transaction_id
-                        ),
-                    }),
-                    granted_at: chrono::Utc::now(),
-                });
-            }
-            Err(e) => return Err(e),
-        };
-
-        self.purchase_repository
-            .update_purchase_transaction_id(purchase.id, credit_ledger.id)
-            .await?;
+        tracing::info!(
+            payment_attempt_id = %attempt.id,
+            user_id = %attempt.user_id,
+            points,
+            entitlement_key = %mapping.entitlement_key,
+            "One-time purchase fulfilled, topup_credit granted"
+        );
 
         let points_grant = PointsGrant {
             transaction_id: credit_ledger.id,
             points_type: "topup_credit".to_string(),
-            points: package.points,
+            points,
             description: format!(
-                "Purchased points package: {} (Payment: {})",
-                package.title, provider_transaction_id
+                "One-time purchase: {} ({} points) via {}",
+                mapping.entitlement_key, points, provider_transaction_id
             ),
         };
 
@@ -417,9 +338,8 @@ mod tests {
 
     #[test]
     fn test_is_duplicate_key_error() {
-        let duplicate_error = CoreError::DatabaseError(
-            "duplicate key value violates unique constraint \"uq_points_package_purchases_payment_attempt\"".to_string(),
-        );
+        let duplicate_error =
+            CoreError::DatabaseError("duplicate key value violates unique constraint".to_string());
         assert!(is_duplicate_key_error(&duplicate_error));
 
         let unique_constraint_error =
@@ -431,5 +351,15 @@ mod tests {
 
         let db_error = CoreError::DatabaseError("connection failed".to_string());
         assert!(!is_duplicate_key_error(&db_error));
+    }
+
+    #[test]
+    fn test_billing_period_to_days() {
+        assert_eq!(billing_period_to_days(Some("daily")), 1);
+        assert_eq!(billing_period_to_days(Some("day")), 1);
+        assert_eq!(billing_period_to_days(Some("weekly")), 7);
+        assert_eq!(billing_period_to_days(Some("month")), 30);
+        assert_eq!(billing_period_to_days(Some("yearly")), 365);
+        assert_eq!(billing_period_to_days(None), 30);
     }
 }

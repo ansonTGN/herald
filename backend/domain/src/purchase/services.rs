@@ -3,6 +3,7 @@
 
 use uuid::Uuid;
 
+use crate::billing::entities::BillingType;
 use crate::payment_attempt::PurchasableTarget;
 use crate::payment_attempt::entities::{PaymentAttempt, PaymentContext};
 
@@ -26,6 +27,7 @@ pub struct PurchaseTargetSnapshot {
     pub title: String,
     pub provider_external_product_id: Option<String>,
     pub billing_period: Option<String>,
+    pub billing_type: Option<BillingType>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -53,4 +55,8 @@ pub struct CompletePaymentAttemptInput {
     pub provider_transaction_id: String,
     pub completed_at: chrono::DateTime<chrono::Utc>,
     pub source: PaymentCompletionSource,
+    /// Override the billing_type read from the entitlement mapping.
+    /// Used when the provider webhook carries billing_type metadata that
+    /// should take precedence over the mapping's stored billing_type.
+    pub billing_type_override: Option<BillingType>,
 }

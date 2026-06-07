@@ -6,6 +6,7 @@ use axum::{
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
@@ -119,36 +120,37 @@ pub struct FulfillPaymentResponse {
     pub granted_at: String,
 }
 
-#[derive(Debug, Deserialize, Validate)]
-pub struct PurchaseHistoryFilters {
-    #[serde(skip_serializing_if = "Option::is_none")]
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct PurchaseHistoryQuery {
+    pub page: Option<u64>,
+    pub page_size: Option<u64>,
     pub payment_provider: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset: Option<u64>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PurchaseHistoryResponse {
-    pub purchases: Vec<PurchaseHistoryItemDto>,
+    pub items: Vec<PurchaseHistoryItemDto>,
+    pub total: i64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PurchaseHistoryItemDto {
-    pub id: Uuid,
-    pub realm_id: String,
-    pub user_id: Uuid,
-    pub points_package_id: Uuid,
-    pub payment_attempt_id: Uuid,
-    pub points: i64,
+    pub attempt_id: Uuid,
+    pub target_mapping_id: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub product_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points: Option<i64>,
     pub amount: i64,
     pub currency: String,
     pub payment_provider: String,
+    pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub points_transaction_id: Option<Uuid>,
+    pub completed_at: Option<String>,
     pub created_at: String,
 }
 
@@ -165,7 +167,7 @@ pub struct FulfillPaymentRequest {
 // ============================================================================
 
 fn validate_purchasable_target(target_type: &str) -> Result<(), validator::ValidationError> {
-    if matches!(target_type, "subscription_entitlement" | "points_package") {
+    if matches!(target_type, "entitlement_mapping") {
         Ok(())
     } else {
         Err(validator::ValidationError::new("invalid target_type"))
@@ -407,6 +409,7 @@ pub async fn fulfill_payment(
             provider_transaction_id: input.provider_transaction_id,
             completed_at,
             source: PaymentCompletionSource::InternalApi,
+            billing_type_override: None,
         })
         .await
         .map_err(|e| core_error_to_api_error(e, "Fulfill payment"))?;
@@ -416,110 +419,118 @@ pub async fn fulfill_payment(
 
 #[utoipa::path(
     get,
-    path = "/api/realms/{realmId}/billing/purchase/points-packages/history",
+    path = "/api/bill/{realmId}/purchase/history",
     params(
         ("realmId" = String, Path, description = "Realm ID"),
-        ("paymentProvider" = Option<String>, Query, description = "Filter by payment provider"),
-        ("limit" = Option<u64>, Query, description = "Limit number of results (default 50, max 100)"),
-        ("offset" = Option<u64>, Query, description = "Offset for pagination")
+        PurchaseHistoryQuery
     ),
     responses(
         (status = 200, description = "Purchase history retrieved", body = PurchaseHistoryResponse),
-        (status = 401, description = "Unauthorized")
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden")
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn get_points_package_purchase_history(
+pub async fn get_purchase_history(
     State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
     Path(realm_id): Path<String>,
-    Query(filters): Query<PurchaseHistoryFilters>,
+    Extension(identity): Extension<Identity>,
+    Query(filters): Query<PurchaseHistoryQuery>,
 ) -> Result<Json<PurchaseHistoryResponse>, ApiError> {
-    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "purchase APIs")?;
+    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "purchase history")?;
 
-    if let Some(ref provider) = filters.payment_provider
-        && !matches!(provider.as_str(), "wechat" | "stripe" | "creem")
-    {
-        return Err(ApiError::bad_request("Invalid payment_provider"));
-    }
+    let page = filters.page.unwrap_or(1).max(1);
+    let page_size = filters.page_size.unwrap_or(20).min(100);
+    let offset = (page - 1) * page_size;
 
-    let limit = filters.limit.unwrap_or(20).min(100);
+    // Build WHERE clause fragments with parameters
+    let provider_filter = filters.payment_provider.as_deref().unwrap_or("");
+    let start_filter = filters.start_date.as_deref().unwrap_or("");
+    let end_filter = filters.end_date.as_deref().unwrap_or("");
 
-    let purchases = state
-        .purchase_service
-        .list_points_package_purchases(
-            &realm_id,
-            user_id,
-            filters.payment_provider,
-            Some(limit),
-            filters.offset,
-        )
-        .await
-        .map_err(|e| core_error_to_api_error(e, "Fetch purchase history"))?;
+    // Count query
+    let count_row = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM payment_attempts pa \
+         WHERE pa.realm_id = $1 AND pa.user_id = $2 \
+         AND pa.status = 'Succeeded' AND pa.target_type = 'entitlement_mapping' \
+         AND ($3 = '' OR pa.payment_provider = $3) \
+         AND ($4 = '' OR pa.created_at >= $4::timestamptz) \
+         AND ($5 = '' OR pa.created_at <= $5::timestamptz)",
+    )
+    .bind(&realm_id)
+    .bind(user_id)
+    .bind(provider_filter)
+    .bind(start_filter)
+    .bind(end_filter)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(realm_id = %realm_id, error = %e, "Failed to count purchase history");
+        ApiError::internal("Failed to count purchase history")
+    })?;
 
-    let purchase_dtos: Vec<PurchaseHistoryItemDto> = purchases
+    // Data query
+    let rows = sqlx::query(
+        "SELECT pa.id AS attempt_id, pa.target_id AS target_mapping_id, \
+         pem.provider_product_info, pem.points_per_period, \
+         pa.amount, pa.currency, pa.payment_provider, pa.status, \
+         pa.completed_at, pa.created_at \
+         FROM payment_attempts pa \
+         LEFT JOIN provider_entitlement_mappings pem ON pa.target_id = pem.id \
+         WHERE pa.realm_id = $1 AND pa.user_id = $2 \
+         AND pa.status = 'Succeeded' AND pa.target_type = 'entitlement_mapping' \
+         AND ($3 = '' OR pa.payment_provider = $3) \
+         AND ($4 = '' OR pa.created_at >= $4::timestamptz) \
+         AND ($5 = '' OR pa.created_at <= $5::timestamptz) \
+         ORDER BY pa.created_at DESC \
+         LIMIT $6 OFFSET $7",
+    )
+    .bind(&realm_id)
+    .bind(user_id)
+    .bind(provider_filter)
+    .bind(start_filter)
+    .bind(end_filter)
+    .bind(page_size as i64)
+    .bind(offset as i64)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(realm_id = %realm_id, error = %e, "Failed to fetch purchase history");
+        ApiError::internal("Failed to fetch purchase history")
+    })?;
+
+    let items: Vec<PurchaseHistoryItemDto> = rows
         .into_iter()
-        .map(|p| PurchaseHistoryItemDto {
-            id: p.id,
-            realm_id: p.realm_id,
-            user_id: p.user_id,
-            points_package_id: p.points_package_id,
-            payment_attempt_id: p.payment_attempt_id,
-            points: p.points,
-            amount: p.amount,
-            currency: p.currency,
-            payment_provider: p.payment_provider,
-            points_transaction_id: p.points_transaction_id,
-            created_at: p.created_at.to_rfc3339(),
+        .map(|row| {
+            let product_info: Option<serde_json::Value> = row.get("provider_product_info");
+            let product_name = product_info
+                .as_ref()
+                .and_then(|v| v.get("name"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let points_per_period: Option<i32> = row.get("points_per_period");
+            let completed_at: Option<chrono::DateTime<chrono::Utc>> = row.get("completed_at");
+
+            PurchaseHistoryItemDto {
+                attempt_id: row.get("attempt_id"),
+                target_mapping_id: row.get("target_mapping_id"),
+                product_name,
+                points: points_per_period.map(|p| p as i64),
+                amount: row.get("amount"),
+                currency: row.get("currency"),
+                payment_provider: row.get("payment_provider"),
+                status: row.get("status"),
+                completed_at: completed_at.map(|dt| dt.to_rfc3339()),
+                created_at: {
+                    let created_at: chrono::DateTime<chrono::Utc> = row.get("created_at");
+                    created_at.to_rfc3339()
+                },
+            }
         })
         .collect();
 
     Ok(Json(PurchaseHistoryResponse {
-        purchases: purchase_dtos,
+        items,
+        total: count_row,
     }))
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/realms/{realmId}/billing/purchase/points-packages/history/{purchaseId}",
-    params(
-        ("realmId" = String, Path, description = "Realm ID"),
-        ("purchaseId" = Uuid, Path, description = "Purchase ID")
-    ),
-    responses(
-        (status = 200, description = "Purchase details retrieved", body = PurchaseHistoryItemDto),
-        (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden - not your purchase"),
-        (status = 404, description = "Purchase not found")
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn get_points_package_purchase_details(
-    State(state): State<AppState>,
-    Extension(identity): Extension<Identity>,
-    Path((realm_id, purchase_id)): Path<(String, Uuid)>,
-) -> Result<Json<PurchaseHistoryItemDto>, ApiError> {
-    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "purchase APIs")?;
-
-    let purchase = state
-        .purchase_service
-        .get_points_package_purchase(&realm_id, user_id, purchase_id)
-        .await
-        .map_err(|e| core_error_to_api_error(e, "Fetch purchase"))?;
-
-    let purchase_dto = PurchaseHistoryItemDto {
-        id: purchase.id,
-        realm_id: purchase.realm_id,
-        user_id: purchase.user_id,
-        points_package_id: purchase.points_package_id,
-        payment_attempt_id: purchase.payment_attempt_id,
-        points: purchase.points,
-        amount: purchase.amount,
-        currency: purchase.currency,
-        payment_provider: purchase.payment_provider,
-        points_transaction_id: purchase.points_transaction_id,
-        created_at: purchase.created_at.to_rfc3339(),
-    };
-
-    Ok(Json(purchase_dto))
 }

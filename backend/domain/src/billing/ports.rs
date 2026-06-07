@@ -145,4 +145,10 @@ pub trait BillingRepository: Send + Sync {
         realm_id: &str,
         entitlement_key: &str,
     ) -> impl Future<Output = Result<Option<EntitlementMapping>, CoreError>> + Send;
+
+    /// List enabled one-time entitlement mappings with product info for external API
+    fn list_one_time_mappings(
+        &self,
+        realm_id: &str,
+    ) -> impl Future<Output = Result<Vec<EntitlementMapping>, CoreError>> + Send;
 }

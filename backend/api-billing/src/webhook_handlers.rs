@@ -17,8 +17,8 @@ use crate::webhook_subscription_helpers::{
 use crate::webhooks::verify_webhook_signature;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::billing::{
-    BillingRepository, ExternalInvoiceData, HistoryEventType, InvoiceProvider, InvoiceRepository,
-    InvoiceStatus, PaymentEvent, Subscription, SubscriptionStatus,
+    BillingRepository, BillingType, ExternalInvoiceData, HistoryEventType, InvoiceProvider,
+    InvoiceRepository, InvoiceStatus, PaymentEvent, Subscription, SubscriptionStatus,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
@@ -33,6 +33,7 @@ struct CreemCheckoutCompletedPayload {
     entitlement_key: String,
     is_trial: bool,
     creem_product_id: String,
+    attempt_id: Option<Uuid>,
 }
 
 struct CreemSubscriptionPaidPayload {
@@ -263,7 +264,20 @@ fn parse_checkout_completed_payload(
             .as_str()
             .map(str::to_string)
             .unwrap_or_default(),
+        attempt_id: parse_attempt_id(&metadata["attemptId"]),
     })
+}
+
+/// Normalize Creem billing type strings to domain BillingType.
+///
+/// Creem uses "onetime" for one-time products. The domain uses "one_time".
+/// Also handles "subscription" as an alias for "recurring".
+fn normalize_creem_billing_type(raw: &str) -> BillingType {
+    match raw.to_ascii_lowercase().as_str() {
+        "onetime" | "one_time" => BillingType::OneTime,
+        "recurring" | "subscription" => BillingType::Recurring,
+        _ => BillingType::Recurring,
+    }
 }
 
 fn parse_subscription_paid_payload(
@@ -526,10 +540,8 @@ async fn sync_creem_subscription(
 
 /// Handle checkout.completed events
 ///
-/// Validates checkout metadata and records audit state.
-///
-/// Subscription creation is deferred until `subscription.paid`, when Creem sends
-/// a stable provider subscription ID.
+/// For one-time products, completes payment attempt and grants topup_credit.
+/// For recurring products, records audit state and defers to subscription.paid.
 async fn handle_checkout_completed(
     app_state: AppState,
     event: Value,
@@ -559,19 +571,53 @@ async fn handle_checkout_completed(
         payload.entitlement_key.clone()
     };
 
+    // --- Determine billing_type via 3-tier fallback ---
+    let metadata = &event["object"]["metadata"];
+    let event_object = &event["object"];
+
+    let billing_type = {
+        // Priority 1: metadata herald_billing_kind
+        let from_metadata = metadata["herald_billing_kind"]
+            .as_str()
+            .map(normalize_creem_billing_type);
+
+        // Priority 2: Creem product.billing_type
+        let from_product = event_object["product"]["billing_type"]
+            .as_str()
+            .map(normalize_creem_billing_type);
+
+        // Priority 3: mapping lookup by provider product ID
+        let from_mapping = if from_metadata.is_none() && from_product.is_none() {
+            app_state
+                .entitlement_mapping_service
+                .find_mapping_by_provider_product(realm_id, "creem", &payload.creem_product_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|m| m.billing_type)
+        } else {
+            None
+        };
+
+        from_metadata
+            .or(from_product)
+            .or(from_mapping)
+            .unwrap_or(BillingType::Recurring)
+    };
+
     info!(
         realm_id = %realm_id,
         client_app_id = %payload.client_app_id,
         entitlement_key = %entitlement_key,
         is_trial = payload.is_trial,
         creem_product_id = %payload.creem_product_id,
+        billing_type = %billing_type.as_str(),
         event_id = %event_id,
-        "Checkout completed audited; subscription creation deferred to subscription.paid"
+        "Checkout completed -- dispatching by billing_type"
     );
 
     // --- Creem invoice sync (best-effort, non-blocking) ---
     // Extract amount/currency with fallback: event.object -> event.object.product -> payment_attempts -> skip with warn
-    let event_object = &event["object"];
     let amount_from_event = event_object["amount"]
         .as_i64()
         .or_else(|| event_object["product"]["price"].as_i64());
@@ -670,11 +716,78 @@ async fn handle_checkout_completed(
         }
     }
 
-    Ok(create_placeholder_transaction(
-        payload.client_app_id,
-        realm_id,
-        TransactionType::SubscriptionGrant,
-    ))
+    // --- Dispatch by billing_type ---
+    match billing_type {
+        BillingType::OneTime => {
+            if let Some(attempt_id) = payload.attempt_id {
+                let provider_transaction_id = event_object["id"]
+                    .as_str()
+                    .ok_or_else(|| CoreError::BadRequest("Missing checkout id".to_string()))?
+                    .to_string();
+                let completed_at = parse_optional_creem_datetime(&event_object["createdAt"])?
+                    .or_else(|| {
+                        parse_optional_creem_datetime(&event_object["created_at"])
+                            .ok()
+                            .flatten()
+                    })
+                    .unwrap_or_else(Utc::now);
+
+                app_state
+                    .purchase_service
+                    .complete_succeeded_payment_attempt(CompletePaymentAttemptInput {
+                        attempt_id,
+                        provider_status: "succeeded".to_string(),
+                        provider_transaction_id,
+                        completed_at,
+                        source: PaymentCompletionSource::ProviderWebhook {
+                            provider: "creem".to_string(),
+                        },
+                        billing_type_override: Some(BillingType::OneTime),
+                    })
+                    .await?;
+
+                info!(
+                    realm_id = %realm_id,
+                    event_id = %event_id,
+                    attempt_id = %attempt_id,
+                    billing_type = "one_time",
+                    "One-time checkout completed -- payment attempt fulfilled, topup_credit granted"
+                );
+
+                Ok(create_placeholder_transaction(
+                    attempt_id,
+                    realm_id,
+                    TransactionType::SubscriptionGrant,
+                ))
+            } else {
+                warn!(
+                    realm_id = %realm_id,
+                    event_id = %event_id,
+                    billing_type = "one_time",
+                    "One-time checkout completed without attemptId -- auditing but not fulfilling"
+                );
+
+                Ok(create_placeholder_transaction(
+                    payload.client_app_id,
+                    realm_id,
+                    TransactionType::SubscriptionGrant,
+                ))
+            }
+        }
+        BillingType::Recurring => {
+            info!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                "Recurring checkout completed -- subscription creation deferred to subscription.paid"
+            );
+
+            Ok(create_placeholder_transaction(
+                payload.client_app_id,
+                realm_id,
+                TransactionType::SubscriptionGrant,
+            ))
+        }
+    }
 }
 
 /// Handle subscription.paid events
@@ -712,6 +825,7 @@ async fn handle_subscription_paid(
                 source: PaymentCompletionSource::ProviderWebhook {
                     provider: "creem".to_string(),
                 },
+                billing_type_override: None,
             })
             .await?;
 
@@ -1513,4 +1627,106 @@ pub async fn handle_creem_webhook(
     );
 
     Ok(StatusCode::OK)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_creem_billing_type_maps_known_variants() {
+        assert_eq!(
+            normalize_creem_billing_type("onetime"),
+            BillingType::OneTime
+        );
+        assert_eq!(
+            normalize_creem_billing_type("one_time"),
+            BillingType::OneTime
+        );
+        assert_eq!(
+            normalize_creem_billing_type("recurring"),
+            BillingType::Recurring
+        );
+        assert_eq!(
+            normalize_creem_billing_type("subscription"),
+            BillingType::Recurring
+        );
+    }
+
+    #[test]
+    fn normalize_creem_billing_type_case_insensitive() {
+        assert_eq!(
+            normalize_creem_billing_type("OneTime"),
+            BillingType::OneTime
+        );
+        assert_eq!(
+            normalize_creem_billing_type("ONETIME"),
+            BillingType::OneTime
+        );
+    }
+
+    #[test]
+    fn normalize_creem_billing_type_unknown_defaults_recurring() {
+        assert_eq!(
+            normalize_creem_billing_type("unknown"),
+            BillingType::Recurring
+        );
+        assert_eq!(normalize_creem_billing_type(""), BillingType::Recurring);
+    }
+
+    #[test]
+    fn parse_checkout_completed_extracts_attempt_id() {
+        let event: Value = serde_json::json!({
+            "id": "evt_test",
+            "object": {
+                "metadata": {
+                    "herald_client_app_id": "00000000-0000-0000-0000-000000000001",
+                    "herald_entitlement_key": "test-key",
+                    "attemptId": "11111111-1111-1111-1111-111111111111"
+                },
+                "product": { "id": "prod_123" }
+            }
+        });
+
+        let payload = parse_checkout_completed_payload(&event).unwrap();
+        assert_eq!(
+            payload.attempt_id,
+            Some(Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap())
+        );
+    }
+
+    #[test]
+    fn parse_checkout_completed_no_attempt_id_returns_none() {
+        let event: Value = serde_json::json!({
+            "id": "evt_test",
+            "object": {
+                "metadata": {
+                    "herald_client_app_id": "00000000-0000-0000-0000-000000000001",
+                    "herald_entitlement_key": "test-key"
+                },
+                "product": { "id": "prod_123" }
+            }
+        });
+
+        let payload = parse_checkout_completed_payload(&event).unwrap();
+        assert!(payload.attempt_id.is_none());
+    }
+
+    #[test]
+    fn parse_checkout_completed_nil_attempt_id_treated_as_absent() {
+        let event: Value = serde_json::json!({
+            "id": "evt_test",
+            "object": {
+                "metadata": {
+                    "herald_client_app_id": "00000000-0000-0000-0000-000000000001",
+                    "herald_entitlement_key": "test-key",
+                    "attemptId": "00000000-0000-0000-0000-000000000000"
+                },
+                "product": { "id": "prod_123" }
+            }
+        });
+
+        let payload = parse_checkout_completed_payload(&event).unwrap();
+        assert!(payload.attempt_id.is_none());
+    }
 }
