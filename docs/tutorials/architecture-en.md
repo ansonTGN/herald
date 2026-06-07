@@ -86,9 +86,8 @@ Key submodules:
 | `audit` | Audit event model and collection (user management, RBAC changes, auth events) |
 | `billing` | Entitlement mappings, subscription projection, payment webhook handling |
 | `points` | Points accounts, top-up, consumption, expiration, idempotency |
-| `points_package` | Points package definitions |
 | `payment_attempt` | Unified payment attempts (abstracting over payment channels) |
-| `purchase` | Purchase fulfillment (points package top-up or subscription activation) |
+| `purchase` | Purchase fulfillment (one-time top-up or subscription activation) |
 | `realm` | Tenant management |
 | `realm_config` | Tenant configuration (payment provider secrets, etc.) |
 | `client` | Third-party application management |
@@ -133,7 +132,7 @@ Eight crates form the API layer:
 | `api-base` | `AppState` definition (shared across all api sub-crates) | — |
 | `api-auth` | Registration, login, password reset, email verification | session |
 | `api-admin` | User CRUD, role management, permission definition management | session + inject_identity |
-| `api-billing` | Entitlement mappings, subscription projection, payment webhooks (Stripe/Creem/WeChat/Shopify), invoices, points package purchases | mixed |
+| `api-billing` | Entitlement mappings, subscription projection, payment webhooks (Stripe/Creem/WeChat/Shopify), invoices, one-time purchases | mixed |
 | `api-oauth` | OAuth login (GitHub/Google/WeChat), OAuth configuration management | mixed |
 | `api-ext` | Third-party API: permission checks, subscription queries, points balance and consumption, isolated by the API key's bound client app | API Key |
 | `api-points` | Points balance, transaction history, consumption, top-up | session or API Key |

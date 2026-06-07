@@ -54,8 +54,11 @@ CREATE TABLE points_wallets (
     realm_id TEXT NOT NULL,
     topup_balance BIGINT NOT NULL DEFAULT 0 CHECK (topup_balance >= 0),
     subscription_balance BIGINT NOT NULL DEFAULT 0 CHECK (subscription_balance >= 0),
+    granted_balance BIGINT NOT NULL DEFAULT 0 CHECK (granted_balance >= 0),
+    registration_balance BIGINT NOT NULL DEFAULT 0 CHECK (registration_balance >= 0),
+    free_periodic_balance BIGINT NOT NULL DEFAULT 0 CHECK (free_periodic_balance >= 0),
     total_balance BIGINT GENERATED ALWAYS AS (
-        topup_balance + subscription_balance
+        topup_balance + subscription_balance + granted_balance + registration_balance + free_periodic_balance
     ) STORED CHECK (total_balance >= 0),
     total_recharged BIGINT NOT NULL DEFAULT 0 CHECK (total_recharged >= 0),
     total_consumed BIGINT NOT NULL DEFAULT 0 CHECK (total_consumed >= 0),
@@ -105,7 +108,8 @@ CREATE TABLE points_transactions (
         'cancel_revoke',
         'idempotency_record',
         'expiration',
-        'refund'
+        'refund',
+        'grant'
     )),
     amount BIGINT NOT NULL,
     balance_after BIGINT NOT NULL CHECK (balance_after >= 0),
@@ -115,7 +119,8 @@ CREATE TABLE points_transactions (
         'topup_credit',
         'subscription_credit',
         'registration_credit',
-        'free_periodic_credit'
+        'free_periodic_credit',
+        'granted_credit'
     )),
     description TEXT,
     client_app_id UUID REFERENCES client_app(id) ON DELETE SET NULL,
@@ -184,7 +189,8 @@ CREATE TABLE points_credit_ledger (
         'topup_credit',
         'subscription_credit',
         'registration_credit',
-        'free_periodic_credit'
+        'free_periodic_credit',
+        'granted_credit'
     )),
     source_type text NOT NULL CHECK (source_type IN (
         'subscription_initial',
@@ -193,7 +199,9 @@ CREATE TABLE points_credit_ledger (
         'topup',
         'system_grant',
         'registration',
-        'free_periodic_grant'
+        'free_periodic_grant',
+        'admin_grant',
+        'sdk_grant'
     )),
     source_id TEXT NOT NULL,
     granted_amount BIGINT NOT NULL CHECK (granted_amount > 0),

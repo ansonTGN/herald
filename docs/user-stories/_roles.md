@@ -80,8 +80,8 @@ Herald 系统（System Actor，非角色）
 | api_keys.manage | API Key 创建、更新、删除、轮换 |
 | billing.view | 查看账单、订阅历史、支付配置 |
 | billing.manage | 账单管理、支付 Provider 配置管理 |
-| points.view | 查看积分、积分包、积分规则 |
-| points.manage | 积分管理、积分包管理、Provider 映射管理 |
+| points.view | 查看积分、积分规则 |
+| points.manage | 积分管理、Provider 映射管理 |
 | audit.view | 查看审计日志列表和详情 |
 
 **边界约束**：
@@ -120,8 +120,8 @@ Herald 系统（System Actor，非角色）
 | api_keys.manage | API Key 创建、更新、删除、轮换 |
 | billing.view | 查看账单、订阅历史、支付配置 |
 | billing.manage | 账单管理、支付 Provider 配置管理 |
-| points.view | 查看积分、积分包、积分规则 |
-| points.manage | 积分管理、积分包管理、Provider 映射管理 |
+| points.view | 查看积分、积分规则 |
+| points.manage | 积分管理、Provider 映射管理 |
 | audit.view | 查看审计日志列表和详情 |
 
 > **与 Admin Realm 管理员的差异**：Realm Admin 缺少 `realm.view` 和 `realm.manage` 权限（这些仅在 admin realm 中存在），其余权限相同。

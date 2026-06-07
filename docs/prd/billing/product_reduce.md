@@ -64,7 +64,7 @@
 - **数据库 schema 设计**：具体表结构和迁移方案属于技术设计
 - **数据迁移脚本**：项目未上线，无生产数据，不需要数据迁移
 - **各支付方集成细节**：Stripe、Creem、WeChat、Shopify 各自的 metadata 承载方式和 webhook 契约由各自 PRD 和技术设计覆盖
-- **Checkout/Purchase 流程重设计**：统一购买路径的调整由 `docs/prd/billing/unified-purchase.md` 更新覆盖
+- **Checkout/Purchase 流程重设计**：统一购买路径的调整由 `docs/prd/billing/points-package-one-time-payment.md` 覆盖
 - **Shopify 独立集成适配**：Shopify webhook 对 plan_id 的深度依赖需要单独的 provider contract 设计
 
 ### 2.3 依赖项
@@ -261,7 +261,6 @@ Herald 当前维护本地 Product、SubscriptionPlan、Subscription 三层目录
 - 技术研究：Product & Subscription Model Reduction 技术预研报告
 - 待更新 PRD：`docs/prd/billing/subscription.md`
 - 待更新 PRD：`docs/prd/billing/points.md`
-- 待更新 PRD：`docs/prd/billing/unified-purchase.md`
 - 待更新 PRD：`docs/prd/billing/stripe-payment.md`
 - 已删除本地 Product/Plan 编目 PRD
 - 相关 PRD：`docs/prd/billing/shopify-pay.md`

@@ -86,9 +86,8 @@ SeaORM 自动生成的实体定义。覆盖用户、角色、权限、订阅、�
 | `audit` | 审计事件模型、事件采集（用户管理、RBAC 变更、认证事件） |
 | `billing` | Entitlement 映射、订阅投影、支付 webhook 处理 |
 | `points` | 积分账户、充值、消费、过期、幂等 |
-| `points_package` | 积分包定义 |
 | `payment_attempt` | 统一支付尝试（抽象不同支付渠道） |
-| `purchase` | 购买履约（积分包充值 or 订阅开通） |
+| `purchase` | 购买履约（一次性充值 or 订阅开通） |
 | `realm` | 租户管理 |
 | `realm_config` | 租户配置（支付渠道密钥等） |
 | `client` | 第三方应用管理 |
@@ -133,7 +132,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 | `api-base` | `AppState` 定义（共享给所有 api 子 crate） | — |
 | `api-auth` | 注册、登录、密码重置、邮箱验证 | session |
 | `api-admin` | 用户 CRUD、角色管理、权限定义管理 | session + inject_identity |
-| `api-billing` | Entitlement 映射、订阅投影、支付 webhook（Stripe/Creem/微信/Shopify）、发票、积分包购买 | 混合 |
+| `api-billing` | Entitlement 映射、订阅投影、支付 webhook（Stripe/Creem/微信/Shopify）、发票、一次性购买 | 混合 |
 | `api-oauth` | OAuth 登录（GitHub/Google/微信）、Device Code Grant（RFC 8628）、OAuth 配置管理 | 混合 |
 | `api-ext` | 第三方 API：权限检查、订阅查询、积分余额和消费，按 API Key 绑定的 Client App 隔离 | API Key |
 | `api-points` | 积分余额、交易历史、消费、充值 | session 或 API Key |

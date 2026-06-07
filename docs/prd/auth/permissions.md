@@ -142,8 +142,8 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 | api_keys.manage | api_keys | manage | API Key 创建、更新、删除、轮换 |
 | billing.view | billing | view | 查看账单、订阅历史、支付配置 |
 | billing.manage | billing | manage | 账单管理、支付 Provider 配置管理 |
-| points.view | points | view | 查看积分、积分包、积分规则 |
-| points.manage | points | manage | 积分管理、积分包管理、Provider 映射管理 |
+| points.view | points | view | 查看积分、积分规则 |
+| points.manage | points | manage | 积分管理、Provider 映射管理 |
 | audit.view | audit | view | 查看审计日志列表和详情 |
 
 **Admin Realm 额外权限**:
@@ -280,7 +280,6 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 | Products | `billing.view` |
 | Payment Providers | `billing.view` |
 | Subscription Plans | `billing.view` |
-| Points Packages | `points.view` |
 | Points Rules | `points.view` |
 | Invoices | `billing.view` |
 | Subscription History | `billing.view` |
@@ -302,7 +301,7 @@ Herald 系统实现完整的 RBAC（基于角色的访问控制）权限管理�
 | API Keys | `api_keys.view` | `api_keys.manage` |
 | API Key role assignment | `api_keys.view` | `roles.manage` |
 | Products / Plans / Invoices / Providers | `billing.view` | `billing.manage` |
-| Points Packages / Rules / Wallets | `points.view` | `points.manage` |
+| Points Rules / Wallets | `points.view` | `points.manage` |
 | Settings | `settings.view` | `settings.manage` |
 
 ---

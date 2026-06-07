@@ -20,10 +20,10 @@
 **场景 0：个人中心 Points 入口按积分包开通状态显示**
 ```gherkin
 Given 我已登录 realm-1
-And realm-1 存在 enabled PointsPackage
+And realm-1 存在可购买的积分产品
 When 我打开个人中心
 Then 侧边栏显示 "Points" 菜单
-When realm-1 不存在 enabled PointsPackage
+When realm-1 不存在可购买的积分产品
 Then 侧边栏不显示 "Points" 菜单
 And 我直接访问"我的积分"页面时被引导回个人资料页
 ```
@@ -31,7 +31,7 @@ And 我直接访问"我的积分"页面时被引导回个人资料页
 **场景 1：查看个人积分余额（包含分类余额）**
 ```gherkin
 Given 我已登录 realm-1
-And realm-1 存在 enabled PointsPackage
+And realm-1 存在可购买的积分产品
 And 我的用户 ID 是 user-1
 And 我的积分账户有余额 5000
 And 余额包含：充值积分 3000，会员积分 2000

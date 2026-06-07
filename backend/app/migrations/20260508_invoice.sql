@@ -31,8 +31,10 @@ CREATE TABLE invoice (
     id UUID PRIMARY KEY,
     realm_id TEXT NOT NULL REFERENCES realm(id) ON DELETE CASCADE,
     invoice_number TEXT NOT NULL,
-    source TEXT NOT NULL CHECK (source IN ('admin_manual', 'user_application')),
-    account_id UUID NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('admin_manual', 'user_application', 'external_sync')),
+    provider VARCHAR(20) NOT NULL DEFAULT 'manual',
+    payment_provider VARCHAR(20),
+    account_id UUID,
     applicant_user_id UUID,
     subscription_id UUID REFERENCES subscription(id) ON DELETE SET NULL,
     payment_attempt_id UUID,
@@ -41,7 +43,7 @@ CREATE TABLE invoice (
 
     -- Dates
     issue_date DATE,
-    due_date DATE NOT NULL,
+    due_date DATE,
     issued_at TIMESTAMPTZ,
     paid_at TIMESTAMPTZ,
     voided_at TIMESTAMPTZ,
@@ -51,7 +53,7 @@ CREATE TABLE invoice (
     discount_amount BIGINT NOT NULL DEFAULT 0,
     tax_amount BIGINT NOT NULL DEFAULT 0,
     shipping_amount BIGINT NOT NULL DEFAULT 0,
-    total BIGINT NOT NULL DEFAULT 0 CHECK (total >= 0),
+    total BIGINT NOT NULL DEFAULT 0 CHECK (total >= 0 OR provider != 'manual'),
 
     -- Discount/tax/shipping mode and raw input value
     discount_mode TEXT CHECK (discount_mode IN ('fixed', 'percent')),
@@ -62,18 +64,27 @@ CREATE TABLE invoice (
     shipping_value NUMERIC(12, 4),
 
     -- Buyer info
-    billing_name TEXT NOT NULL,
-    billing_address TEXT NOT NULL CHECK (BTRIM(billing_address) <> ''),
+    billing_name TEXT,
+    billing_address TEXT CHECK (billing_address IS NULL OR BTRIM(billing_address) <> ''),
     billing_email TEXT,
     billing_phone TEXT,
-    billing_tax_id TEXT NOT NULL,
+    billing_tax_id TEXT,
 
     -- Seller info (snapshot at creation time)
-    seller_name TEXT NOT NULL,
-    seller_address TEXT NOT NULL CHECK (BTRIM(seller_address) <> ''),
+    seller_name TEXT,
+    seller_address TEXT CHECK (seller_address IS NULL OR BTRIM(seller_address) <> ''),
     seller_email TEXT,
     seller_phone TEXT,
-    seller_tax_id TEXT NOT NULL,
+    seller_tax_id TEXT,
+
+    -- External invoice data
+    external_invoice_id TEXT,
+    external_order_id TEXT,
+    external_status TEXT,
+    external_hosted_url TEXT,
+    external_pdf_url TEXT,
+    external_payload JSONB,
+    tax_details JSONB,
 
     -- Additional fields
     notes TEXT,
@@ -89,13 +100,25 @@ CREATE TABLE invoice (
 CREATE INDEX idx_invoice_realm_status ON invoice(realm_id, status);
 CREATE INDEX idx_invoice_realm_account ON invoice(realm_id, account_id);
 CREATE INDEX idx_invoice_realm_created ON invoice(realm_id, created_at DESC);
+CREATE UNIQUE INDEX uk_invoice_realm_external_id ON invoice(realm_id, external_invoice_id) WHERE external_invoice_id IS NOT NULL;
+CREATE UNIQUE INDEX uk_invoice_realm_external_order_id ON invoice(realm_id, external_order_id) WHERE external_order_id IS NOT NULL;
+CREATE INDEX idx_invoice_realm_provider ON invoice(realm_id, provider);
 
 COMMENT ON TABLE invoice IS 'Invoice records with buyer/seller snapshots and monetary amounts';
 COMMENT ON COLUMN invoice.invoice_number IS 'Formatted as INV-{YEAR}-{SEQ}';
-COMMENT ON COLUMN invoice.source IS 'admin_manual = created by realm admin; user_application = applied by end user';
+COMMENT ON COLUMN invoice.source IS 'admin_manual = created by realm admin; user_application = applied by end user; external_sync = synced from external platform';
 COMMENT ON COLUMN invoice.subtotal IS 'Sum of all line item subtotals in smallest currency unit';
 COMMENT ON COLUMN invoice.total IS 'subtotal - discount_amount + tax_amount + shipping_amount';
 COMMENT ON COLUMN invoice.discount_mode IS 'fixed = flat amount in currency unit; percent = percentage of subtotal';
+COMMENT ON COLUMN invoice.provider IS 'Invoice source provider: manual, stripe, creem, wechat, shopify';
+COMMENT ON COLUMN invoice.payment_provider IS 'Actual payment platform that collected payment';
+COMMENT ON COLUMN invoice.external_invoice_id IS 'External invoice ID (e.g. Stripe invoice ID)';
+COMMENT ON COLUMN invoice.external_order_id IS 'External order ID (e.g. Creem order ID)';
+COMMENT ON COLUMN invoice.external_status IS 'Raw status from external platform';
+COMMENT ON COLUMN invoice.external_hosted_url IS 'External hosted page URL';
+COMMENT ON COLUMN invoice.external_pdf_url IS 'External PDF download URL';
+COMMENT ON COLUMN invoice.external_payload IS 'Raw external invoice data snapshot (debug only)';
+COMMENT ON COLUMN invoice.tax_details IS 'External tax details (e.g. from Creem MoR)';
 
 -- ====================================
 -- Invoice Line Item

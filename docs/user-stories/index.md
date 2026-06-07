@@ -28,7 +28,6 @@ docs/user-stories/
 │   ├── points-admin.md   # 积分管理
 │   ├── points-user.md    # 积分查询
 │   ├── points-free-user.md # 免费用户积分
-│   ├── points-package.md # 积分包
 │   ├── points-package-purchase.md # 积分包购买
 │   ├── payment-provider.md # 支付平台配置
 │   ├── shopify-pay.md    # Shopify 支付
@@ -141,9 +140,6 @@ docs/user-stories/
 | US-PP-013 | 用户认领 Shopify 订阅 | Herald User | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-7用户认领-shopify-订阅-us-pp-013) |
 | US-PP-014 | Webhook 处理未归属订阅 | System | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-8webhook-处理未归属订阅-us-pp-014) |
 | US-PP-015 | 通过 Customer Binding 自动归属 | System | P1 | [billing/shopify-pay](billing/shopify-pay.md#故事-9通过用户绑定自动归属-us-pp-015) |
-| US-PP-016 | 编辑促销积分包 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-7编辑促销积分包-us-pp-016) |
-| US-PP-017 | 用户查看促销积分包 | Regular User | P0 | [billing/points-package](billing/points-package.md#故事-8用户查看促销积分包-us-pp-017) |
-| US-PP-018 | 促销包自动过期 | Realm Admin | P1 | [billing/points-package](billing/points-package.md#故事-9促销包自动过期-us-pp-018) |
 | US-WP-001 | 配置微信支付平台 | Realm Admin | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-1配置微信支付平台-us-wp-001) |
 | US-WP-002 | 查看微信支付平台配置 | Realm Admin | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-2查看微信支付平台配置-us-wp-002) |
 | US-WP-003 | 编辑微信支付平台配置 | Realm Admin | P1 | [billing/wechat-pay](billing/wechat-pay.md#故事-3编辑微信支付平台配置-us-wp-003) |
@@ -152,12 +148,6 @@ docs/user-stories/
 | US-WP-006 | 微信支付 Webhook 回调处理 | System | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-6微信支付回调处理-us-wp-006) |
 | US-WP-007 | 主动查询支付状态 | System | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-7主动查询支付状态-us-wp-007) |
 | US-WP-008 | 关闭过期支付订单 | System | P1 | [billing/wechat-pay](billing/wechat-pay.md#故事-8关闭过期支付订单-us-wp-008) |
-| US-PP-001 | 创建积分包 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-1创建积分包-us-pp-001) |
-| US-PP-002 | 编辑积分包 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-2编辑积分包-us-pp-002) |
-| US-PP-003 | 配置积分包的支付平台映射 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-3配置积分包的支付平台映射-us-pp-003) |
-| US-PP-004 | 查看积分包列表 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-4查看积分包列表-us-pp-004) |
-| US-PP-005 | 删除积分包 | Realm Admin | P1 | [billing/points-package](billing/points-package.md#故事-5删除积分包-us-pp-005) |
-| US-PP-006 | 创建促销积分包 | Realm Admin | P0 | [billing/points-package](billing/points-package.md#故事-6创建促销积分包-us-pp-006) |
 | US-PU-006 | 购买积分包 | Regular User | P0 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-1购买积分包-us-pu-006) |
 | US-PU-007 | 查看积分包购买记录 | Regular User | P1 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-2查看积分包购买记录-us-pu-007) |
 | US-PU-008 | 积分包与订阅购买的区别 | Regular User | P1 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-3理解积分包与订阅购买的区别-us-pu-008) |
@@ -239,12 +229,12 @@ docs/user-stories/
 |------|------|---------|
 | Billing User | [billing/subscription.md](billing/subscription.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Points Admin | [billing/points-admin.md](billing/points-admin.md) | [Points PRD](/docs/prd/billing/points.md) |
-| Points User | [billing/points-user.md](billing/points-user.md), [billing/points-free-user.md](billing/points-free-user.md) | [Points PRD](/docs/prd/billing/points.md), [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
-| Points Package | [billing/points-package.md](billing/points-package.md), [billing/points-package-purchase.md](billing/points-package-purchase.md) | [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
+| Points User | [billing/points-user.md](billing/points-user.md), [billing/points-free-user.md](billing/points-free-user.md) | [Points PRD](/docs/prd/billing/points.md), [Points One-Time Payment PRD](/docs/prd/billing/points-package-one-time-payment.md) |
+| Points Package Purchase | [billing/points-package-purchase.md](billing/points-package-purchase.md) | [Points One-Time Payment PRD](/docs/prd/billing/points-package-one-time-payment.md) |
 | Payment Provider | [billing/payment-provider.md](billing/payment-provider.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Shopify Pay | [billing/shopify-pay.md](billing/shopify-pay.md) | [Shopify Pay PRD](/docs/prd/billing/shopify-pay.md) |
 | WeChat Pay | [billing/wechat-pay.md](billing/wechat-pay.md) | [WeChat Pay PRD](/docs/prd/billing/wechat-pay.md) |
-| Payment Attempt | [billing/payment-attempt.md](billing/payment-attempt.md) | [Unified Purchase PRD](/docs/prd/billing/unified-purchase.md) |
+| Payment Attempt | [billing/payment-attempt.md](billing/payment-attempt.md) | [Points One-Time Payment PRD](/docs/prd/billing/points-package-one-time-payment.md) |
 | Invoice | [billing/invoice.md](billing/invoice.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
 | Invoice Fallback | [billing/invoice-fallback.md](billing/invoice-fallback.md) | [Invoice Fallback PRD](/docs/prd/billing/invoice-fallback.md) |
 | Invoice Fallback | [billing/invoice-fallback.md](billing/invoice-fallback.md) | [Invoice Fallback PRD](/docs/prd/billing/invoice-fallback.md) |
