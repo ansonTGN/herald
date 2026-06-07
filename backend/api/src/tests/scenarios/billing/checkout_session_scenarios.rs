@@ -119,7 +119,7 @@ async fn test_stripe_checkout_session_returns_provider_url(ctx: &mut TestContext
     let realm_id = ctx._realm_id.clone();
     let client_app_id = create_client_app(ctx, &realm_id).await;
     let token = setup_billing_admin_session(ctx, "checkout-stripe@test.com").await;
-    let entitlement_key = "checkout_stripe_monthly";
+    let entitlement_key = "checkout-stripe-monthly";
     create_subscription_mapping(ctx, &realm_id, entitlement_key, "stripe", true).await;
 
     let mock_server = MockServer::start().await;
@@ -186,7 +186,7 @@ async fn test_checkout_session_rejects_disabled_mapping(ctx: &mut TestContext) {
     let realm_id = ctx._realm_id.clone();
     let client_app_id = create_client_app(ctx, &realm_id).await;
     let token = setup_billing_admin_session(ctx, "checkout-disabled@test.com").await;
-    let entitlement_key = "checkout_disabled_monthly";
+    let entitlement_key = "checkout-disabled-monthly";
     create_subscription_mapping(ctx, &realm_id, entitlement_key, "stripe", false).await;
     setup_stripe_config(ctx, &realm_id, "sk_test_fake_key", "whsec_test").await;
 
@@ -210,7 +210,7 @@ async fn test_checkout_session_rejects_provider_mismatch(ctx: &mut TestContext) 
     let realm_id = ctx._realm_id.clone();
     let client_app_id = create_client_app(ctx, &realm_id).await;
     let token = setup_billing_admin_session(ctx, "checkout-provider-mismatch@test.com").await;
-    let entitlement_key = "checkout_provider_mismatch";
+    let entitlement_key = "checkout-provider-mismatch";
     create_subscription_mapping(ctx, &realm_id, entitlement_key, "stripe", true).await;
 
     let (status, _body, body_text) =
@@ -233,7 +233,7 @@ async fn test_checkout_session_reports_missing_stripe_config(ctx: &mut TestConte
     let realm_id = ctx._realm_id.clone();
     let client_app_id = create_client_app(ctx, &realm_id).await;
     let token = setup_billing_admin_session(ctx, "checkout-no-stripe-config@test.com").await;
-    let entitlement_key = "checkout_no_stripe_config";
+    let entitlement_key = "checkout-no-stripe-config";
     create_subscription_mapping(ctx, &realm_id, entitlement_key, "stripe", true).await;
 
     let (status, _body, body_text) =
@@ -256,7 +256,7 @@ async fn test_creem_checkout_session_returns_provider_url(ctx: &mut TestContext)
     let realm_id = ctx._realm_id.clone();
     let client_app_id = create_client_app(ctx, &realm_id).await;
     let token = setup_billing_admin_session(ctx, "checkout-creem@test.com").await;
-    let entitlement_key = "checkout_creem_monthly";
+    let entitlement_key = "checkout-creem-monthly";
     create_subscription_mapping(ctx, &realm_id, entitlement_key, "creem", true).await;
 
     let mock_server = MockServer::start().await;

@@ -702,7 +702,6 @@ impl BillingRepository for PostgresBillingRepository {
         let result = provider_entitlement_mapping::Entity::find()
             .filter(provider_entitlement_mapping::Column::RealmId.eq(realm_id))
             .filter(provider_entitlement_mapping::Column::EntitlementKey.eq(entitlement_key))
-            .filter(provider_entitlement_mapping::Column::Enabled.eq(true))
             .one(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
