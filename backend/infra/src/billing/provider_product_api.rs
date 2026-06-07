@@ -159,7 +159,10 @@ impl ConfiguredProviderProductApi {
 
         let response = self
             .http
-            .get(format!("{}/v1/products/search?page_number=1&page_size=100", base_url))
+            .get(format!(
+                "{}/v1/products/search?page_number=1&page_size=100",
+                base_url
+            ))
             .header("x-api-key", api_key)
             .send()
             .await?;

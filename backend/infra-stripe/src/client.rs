@@ -199,10 +199,7 @@ impl StripeClient {
         }
         if let Some(extra_metadata) = &request.metadata {
             for (key, value) in extra_metadata {
-                form_fields.push((
-                    format!("subscription_data[metadata][{key}]"),
-                    value.clone(),
-                ));
+                form_fields.push((format!("subscription_data[metadata][{key}]"), value.clone()));
             }
         }
 
