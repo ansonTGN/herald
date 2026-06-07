@@ -493,7 +493,7 @@ pub fn summary_to_response(
         provider: s.provider.as_str().to_string(),
         payment_provider: s.payment_provider,
         external_hosted_url: s.external_hosted_url,
-        external_pdf_url: None,
+        external_pdf_url: s.external_pdf_url,
         created_at: s.created_at.to_rfc3339(),
     }
 }

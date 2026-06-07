@@ -533,6 +533,8 @@ pub struct PointsWallet {
     pub free_periodic_balance: i64,
     pub total_topup_granted: i64,
     pub total_subscription_granted: i64,
+    // Historical column name. Semantically this is total_topup_granted + total_subscription_granted,
+    // not all granted credit types.
     pub total_recharged: i64,
     pub total_consumed: i64,
     pub status: WalletStatus,
@@ -570,6 +572,7 @@ pub struct PointsBalance {
     pub granted_balance: i64,
     pub registration_balance: i64,
     pub free_periodic_balance: i64,
+    // Compatibility name for paid topup + subscription grants.
     pub total_recharged: i64,
     pub total_consumed: i64,
     pub unit: String,

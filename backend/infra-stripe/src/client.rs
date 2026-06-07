@@ -88,8 +88,8 @@ impl StripeClient {
         request: &CreateCheckoutRequest,
     ) -> Result<CheckoutSession, CoreError> {
         if self.base_url == "mock://stripe" {
-            let plan_id = &request.plan_id.to_string();
-            let short_id = &plan_id[plan_id.len().saturating_sub(8)..];
+            let mapping_id = &request.mapping_id.to_string();
+            let short_id = &mapping_id[mapping_id.len().saturating_sub(8)..];
             let id = format!("cs_mock_{short_id}");
             return Ok(CheckoutSession {
                 id: id.clone(),
@@ -120,7 +120,7 @@ impl StripeClient {
             ),
             (
                 "metadata[herald_mapping_id]".to_string(),
-                request.plan_id.to_string(),
+                request.mapping_id.to_string(),
             ),
             (
                 "metadata[herald_billing_period]".to_string(),
@@ -157,7 +157,7 @@ impl StripeClient {
         ));
         form_fields.push((
             "line_items[0][price_data][product_data][metadata][herald_mapping_id]".to_string(),
-            request.plan_id.to_string(),
+            request.mapping_id.to_string(),
         ));
         form_fields.push((
             "line_items[0][price_data][unit_amount]".to_string(),
@@ -185,8 +185,8 @@ impl StripeClient {
         }
 
         tracing::info!(
-            "Creating Stripe checkout session for plan: {}",
-            request.plan_id
+            "Creating Stripe checkout session for mapping: {}",
+            request.mapping_id
         );
 
         let response = self
@@ -605,14 +605,14 @@ mod tests {
         )
         .unwrap();
 
-        let plan_id = uuid::Uuid::now_v7();
-        let plan_id_str = plan_id.to_string();
-        let short_id = &plan_id_str[plan_id_str.len() - 8..];
+        let mapping_id = uuid::Uuid::now_v7();
+        let mapping_id_str = mapping_id.to_string();
+        let short_id = &mapping_id_str[mapping_id_str.len() - 8..];
 
         let result = client
             .create_checkout_session(&CreateCheckoutRequest {
                 client_app_id: uuid::Uuid::now_v7(),
-                plan_id,
+                mapping_id,
                 user_id: Some(uuid::Uuid::now_v7()),
                 customer_email: Some("buyer@example.com".to_string()),
                 success_url: "https://example.com/success".to_string(),
@@ -665,11 +665,11 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let plan_id = uuid::Uuid::now_v7();
+        let mapping_id = uuid::Uuid::now_v7();
         let result = client
             .create_checkout_session(&CreateCheckoutRequest {
                 client_app_id: uuid::Uuid::now_v7(),
-                plan_id,
+                mapping_id,
                 user_id: Some(uuid::Uuid::now_v7()),
                 customer_email: Some("buyer@example.com".to_string()),
                 success_url: "https://example.com/success".to_string(),
@@ -736,7 +736,15 @@ mod tests {
             form.get("metadata[herald_plan_name]"),
             Some(&"Pro Plan".to_string())
         );
+        assert_eq!(
+            form.get("metadata[herald_mapping_id]"),
+            Some(&mapping_id.to_string())
+        );
         assert_eq!(form.get("metadata[source]"), Some(&"web".to_string()));
+        assert_eq!(
+            form.get("line_items[0][price_data][product_data][metadata][herald_mapping_id]"),
+            Some(&mapping_id.to_string())
+        );
         // Line items
         assert_eq!(
             form.get("line_items[0][price_data][currency]"),

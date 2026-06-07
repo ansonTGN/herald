@@ -21,7 +21,7 @@ pub struct Model {
     // Type-specific grant tracking
     pub total_topup_granted: i64,
     pub total_subscription_granted: i64,
-    // Legacy fields (kept for backward compatibility)
+    // Legacy compatibility field: topup + subscription grants, not all grant types.
     pub total_recharged: i64,
     pub total_consumed: i64,
     pub status: String,

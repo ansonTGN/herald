@@ -275,6 +275,7 @@ struct InvoiceSummaryRow {
     provider: String,
     payment_provider: Option<String>,
     external_hosted_url: Option<String>,
+    external_pdf_url: Option<String>,
 }
 
 fn row_to_summary(row: InvoiceSummaryRow) -> Result<InvoiceSummary, CoreError> {
@@ -293,6 +294,7 @@ fn row_to_summary(row: InvoiceSummaryRow) -> Result<InvoiceSummary, CoreError> {
         provider: parse_provider_from_row(&row.provider)?,
         payment_provider: row.payment_provider,
         external_hosted_url: row.external_hosted_url,
+        external_pdf_url: row.external_pdf_url,
     })
 }
 
@@ -337,7 +339,7 @@ const INVOICE_COLUMNS_READ: &str = r#"
 const SUMMARY_COLUMNS: &str = r#"
     id, realm_id, invoice_number, source, account_id, status, currency,
     total, billing_name, due_date, created_at,
-    provider, payment_provider, external_hosted_url
+    provider, payment_provider, external_hosted_url, external_pdf_url
 "#;
 
 // ---------------------------------------------------------------------------

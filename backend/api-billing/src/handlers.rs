@@ -581,7 +581,7 @@ pub async fn create_checkout_session(
 
             let stripe_request = StripeCreateCheckoutRequest {
                 client_app_id,
-                plan_id: mapping.id, // Use mapping ID as reference
+                mapping_id: mapping.id,
                 user_id: Uuid::parse_str(&identity.user_id()).ok(),
                 customer_email: user_email.clone(),
                 success_url: format!("{}/billing/success", state.public_base_url),

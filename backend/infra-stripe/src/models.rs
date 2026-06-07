@@ -26,9 +26,9 @@ pub struct CreateCheckoutRequest {
     /// Client app ID
     #[serde(rename = "clientAppId")]
     pub client_app_id: Uuid,
-    /// Plan ID
-    #[serde(rename = "planId")]
-    pub plan_id: Uuid,
+    /// Herald entitlement mapping ID
+    #[serde(rename = "mappingId")]
+    pub mapping_id: Uuid,
     /// User ID (for subscription tracking)
     #[serde(rename = "userId")]
     pub user_id: Option<Uuid>,

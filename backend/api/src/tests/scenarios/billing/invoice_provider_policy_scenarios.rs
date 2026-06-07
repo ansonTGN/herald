@@ -277,6 +277,14 @@ mod tests {
         let has_stripe = data.iter().any(|inv| inv["provider"] == "stripe");
         assert!(has_manual, "Expected at least one manual invoice in list");
         assert!(has_stripe, "Expected at least one stripe invoice in list");
+        let stripe_invoice = data
+            .iter()
+            .find(|inv| inv["provider"] == "stripe")
+            .expect("Expected a stripe invoice in list");
+        assert_eq!(
+            stripe_invoice["externalPdfUrl"], "https://stripe.com/invoice/001/pdf",
+            "Expected list response to include externalPdfUrl for provider invoices"
+        );
     }
 
     // =========================================================================

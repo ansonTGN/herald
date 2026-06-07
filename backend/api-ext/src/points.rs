@@ -48,6 +48,9 @@ pub struct ExtPointsBalanceResponse {
     pub granted_balance: i64,
     pub registration_balance: i64,
     pub free_periodic_balance: i64,
+    /// Total points granted through paid topups and subscription entitlements.
+    pub total_paid_granted: i64,
+    /// Deprecated compatibility alias for total_paid_granted.
     pub total_recharged: i64,
     pub total_consumed: i64,
     pub unit: String,
@@ -212,6 +215,7 @@ pub async fn get_balance_ext(
         granted_balance: balance.granted_balance,
         registration_balance: balance.registration_balance,
         free_periodic_balance: balance.free_periodic_balance,
+        total_paid_granted: balance.total_recharged,
         total_recharged: balance.total_recharged,
         total_consumed: balance.total_consumed,
         unit: balance.unit.clone(),

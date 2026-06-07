@@ -21,32 +21,67 @@ import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
 import type { Page } from '@playwright/test'
 import { SELECTORS } from '../selectors'
 import { TRANSACTION_TYPES, RENEWAL_PERIOD_TYPES, POINTS_ROUTES, generateTestEmail, updateRealmConfig, verifyConfigValidation, verifyChartDisplayed, verifyStatisticsDisplayed, registerUser, navigateToPointsPageAndVerify } from '../helpers/points-helpers'
-import { createSubscriptionPlan as createPlanFromUI } from './helpers/billing-page.helpers'
 import { DEMO_ADMIN } from '../helpers/auth'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
+
 // ============================================================================
-// Helper: Create Subscription Plan
+// Helper: Ensure Entitlement Mapping Exists
 // ============================================================================
 
 /**
- * Create a subscription plan through UI
- * This is required before creating points plan configurations
+ * Sync provider products and configure an entitlement mapping with the given key.
+ * This is required before creating points plan configurations.
  */
-async function createSubscriptionPlan(page: Page, planName: string, planTitle?: string): Promise<void> {
-  await page.goto(`/${DEMO_ADMIN.realmId}/manage/billing`)
-  await expect(page.getByTestId('billing-page')).toBeVisible()
+async function ensureEntitlementMapping(page: Page, entitlementKey: string): Promise<void> {
+  // Sync provider products
+  const syncResp = await page.request.post(
+    `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings/sync`,
+    { data: { paymentProvider: 'creem' } },
+  )
 
-  await createPlanFromUI(page, {
-    planName,
-    title: planTitle || 'Test Plan',
-    description: 'Test plan for points configuration',
-    price: '10',
-    type: 'monthly',
-    currency: 'usd',
-    provider: 'creem',
-    externalProductId: `prod_${planName}`,
-  })
+  if (!syncResp.ok()) {
+    console.log(`[ensureMapping] Sync returned ${syncResp.status()}, attempting with stripe`)
+    await page.request.post(
+      `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings/sync`,
+      { data: { paymentProvider: 'stripe' } },
+    )
+  }
+
+  // Check if mapping with this key already exists
+  const mappingsResp = await page.request.get(
+    `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings`,
+  )
+  if (mappingsResp.ok()) {
+    const body = await mappingsResp.json()
+    const items = body.items ?? body
+    if (Array.isArray(items)) {
+      const existing = items.find((m: any) => m.entitlementKey === entitlementKey)
+      if (existing) return
+
+      // Configure the first unmapped entry with our key
+      const unmapped = items.find((m: any) => !m.entitlementKey || m.entitlementKey === '')
+      if (unmapped) {
+        await page.request.patch(
+          `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings/${unmapped.id}`,
+          {
+            data: {
+              entitlementKey,
+              enabled: true,
+              pointsPerPeriod: 1000,
+              grantPeriodType: 'monthly',
+              validityDays: 30,
+              grantOnSubscribe: true,
+            },
+          },
+        )
+        return
+      }
+    }
+  }
+
+  console.log(`[ensureMapping] Could not create mapping for key "${entitlementKey}"`)
 }
 
 test.describe('[Points Admin] Comprehensive Demo Tests', () => {
@@ -74,17 +109,15 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
 
   test.describe('US-PO-01: Configure Points Plans', () => {
     test('should manage points plan configurations', async ({ page, loginPage, demoLogger, testStartTime }) => {
-      const planName = `pro-monthly-${testStartTime}`
-      const planTitle = `Test Plan ${testStartTime}`
+      const entitlementKey = `test-entitlement-${testStartTime}`
 
       await test.step('Given: 管理员已登录', async () => {
         await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', DEMO_ADMIN.realmId)
       })
 
-      await test.step('Given: 已存在订阅套餐', async () => {
-        // Create subscription plan first (required prerequisite)
-        await createSubscriptionPlan(page, planName, planTitle)
-        demoLogger.testCode.log('[Test] ✓ Subscription plan created')
+      await test.step('Given: 已存在 entitlement mapping', async () => {
+        await ensureEntitlementMapping(page, entitlementKey)
+        demoLogger.testCode.log('[Test] ✓ Entitlement mapping created')
       })
 
       await test.step('When: 访问积分配置页面', async () => {
@@ -98,9 +131,8 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
         await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
 
         // Shadcn UI Select interaction: use role-based selector (combobox) to click trigger
-        // Note: The dropdown displays plan.title (not plan.id/name), so we must select by title
-        await page.getByRole('combobox', { name: 'Plan *' }).click()
-        await page.getByRole('option', { name: planTitle }).first().click()
+        await page.getByRole('combobox', { name: /Entitlement Key|Plan/i }).click()
+        await page.getByRole('option', { name: entitlementKey }).first().click()
 
         // Fill points per period
         await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).fill('1000')
@@ -279,19 +311,15 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
 
   test.describe('US-PO-04: Manage Points Plan Configurations', () => {
     test('should batch create and manage plan configs', async ({ page, loginPage, demoLogger, testStartTime }) => {
-      const planBasicName = `plan-basic-monthly-${testStartTime}`
-      const planProName = `plan-pro-monthly-${testStartTime}`
-      const planBasicTitle = `Basic Plan ${testStartTime}`
-      const planProTitle = `Pro Plan ${testStartTime}`
+      const entitlementKeyBasic = `basic-entitlement-${testStartTime}`
+      const entitlementKeyPro = `pro-entitlement-${testStartTime}`
 
-      await test.step('Given: 管理员已登录并存在多个订阅套餐', async () => {
+      await test.step('Given: 管理员已登录并存在多个 entitlement mapping', async () => {
         await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', DEMO_ADMIN.realmId)
 
-        // Create subscription plans first (required prerequisite)
-        // Use unique titles for each plan to avoid duplicate dropdown entries
-        await createSubscriptionPlan(page, planBasicName, planBasicTitle)
-        await createSubscriptionPlan(page, planProName, planProTitle)
-        demoLogger.testCode.log('[Test] ✓ Subscription plans created')
+        await ensureEntitlementMapping(page, entitlementKeyBasic)
+        await ensureEntitlementMapping(page, entitlementKeyPro)
+        demoLogger.testCode.log('[Test] ✓ Entitlement mappings created')
 
         await page.goto(`/${DEMO_ADMIN.realmId}/manage/points/configs`)
         await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
@@ -302,9 +330,8 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
         await page.locator(SELECTORS.pointsAdmin.createPlanConfigButton).click()
 
         // Shadcn UI Select interaction: use role-based selector (combobox) to click trigger
-        // Note: The dropdown displays plan.title (not plan.id/name), so we must select by title
-        await page.getByRole('combobox', { name: 'Plan *' }).click()
-        await page.getByRole('option', { name: planBasicTitle }).first().click()
+        await page.getByRole('combobox', { name: /Entitlement Key|Plan/i }).click()
+        await page.getByRole('option', { name: entitlementKeyBasic }).first().click()
 
         await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).fill('500')
 
@@ -331,9 +358,8 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
         await page.locator(SELECTORS.pointsAdmin.createPlanConfigButton).click()
 
         // Shadcn UI Select interaction: use role-based selector (combobox) to click trigger
-        // Note: The dropdown displays plan.title (not plan.id/name), so we must select by title
-        await page.getByRole('combobox', { name: 'Plan *' }).click()
-        await page.getByRole('option', { name: planProTitle }).first().click()
+        await page.getByRole('combobox', { name: /Entitlement Key|Plan/i }).click()
+        await page.getByRole('option', { name: entitlementKeyPro }).first().click()
 
         await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).fill('1000')
 
@@ -395,15 +421,13 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
 
   test.describe('US-PO-05: View Plan Recharge Guide', () => {
     test('should view and share plan recharge guides', async ({ page, loginPage, demoLogger, testStartTime }) => {
-      const planName = `guide-plan-${testStartTime}`
-      const planTitle = `Guide Test Plan ${testStartTime}`
+      const entitlementKey = `guide-entitlement-${testStartTime}`
 
-      await test.step('Given: 管理员已登录并存在套餐配置', async () => {
+      await test.step('Given: 管理员已登录并存在 entitlement mapping', async () => {
         await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', DEMO_ADMIN.realmId)
 
-        // Create subscription plan first (required prerequisite)
-        await createSubscriptionPlan(page, planName, planTitle)
-        demoLogger.testCode.log('[Test] ✓ Subscription plan created')
+        await ensureEntitlementMapping(page, entitlementKey)
+        demoLogger.testCode.log('[Test] ✓ Entitlement mapping created')
 
         // Create points plan config
         await page.goto(`/${DEMO_ADMIN.realmId}/manage/points/configs`)
@@ -413,9 +437,9 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
         // Form is now on a dedicated page (navigated to /configs/new), not a dialog
         await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
 
-        // Select the plan by title
-        await page.getByRole('combobox', { name: 'Plan *' }).click()
-        await page.getByRole('option', { name: planTitle }).first().click()
+        // Select the entitlement key
+        await page.getByRole('combobox', { name: /Entitlement Key|Plan/i }).click()
+        await page.getByRole('option', { name: entitlementKey }).first().click()
 
         await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).fill('500')
 

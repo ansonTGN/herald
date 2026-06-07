@@ -560,7 +560,7 @@ where
         let session = client
             .create_checkout_session(&StripeCreateCheckoutRequest {
                 client_app_id: target_id,
-                plan_id: target_id,
+                mapping_id: target_id,
                 user_id: Some(user_id),
                 customer_email: Some(
                     user_email

@@ -34,6 +34,7 @@ describe('pointsWalletsQueryOptions', () => {
               userId: 'user-1',
               realmId: 'realm-1',
               balance: 500,
+              totalPaidGranted: 1000,
               totalRecharged: 1000,
               totalConsumed: 500,
               status: 'active',

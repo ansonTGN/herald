@@ -13,6 +13,9 @@ pub struct PointsWalletResponse {
     pub user_id: Uuid,
     pub realm_id: String,
     pub balance: i64,
+    /// Total points granted through paid topups and subscription entitlements.
+    pub total_paid_granted: i64,
+    /// Deprecated compatibility alias for total_paid_granted.
     pub total_recharged: i64,
     pub total_consumed: i64,
     pub status: String,
@@ -28,6 +31,9 @@ pub struct PointsWalletResponse {
 pub struct PointsBalanceResponse {
     pub user_id: Uuid,
     pub balance: i64,
+    /// Total points granted through paid topups and subscription entitlements.
+    pub total_paid_granted: i64,
+    /// Deprecated compatibility alias for total_paid_granted.
     pub total_recharged: i64,
     pub total_consumed: i64,
     pub unit: String,
@@ -257,6 +263,7 @@ mod tests {
             user_id: uuid::Uuid::now_v7(),
             realm_id: "test-realm".to_string(),
             balance: 100,
+            total_paid_granted: 100,
             total_recharged: 100,
             total_consumed: 0,
             status: "active".to_string(),
@@ -279,8 +286,12 @@ mod tests {
             "Should contain camelCase 'realmId'"
         );
         assert!(
+            json.contains("\"totalPaidGranted\""),
+            "Should contain camelCase 'totalPaidGranted'"
+        );
+        assert!(
             json.contains("\"totalRecharged\""),
-            "Should contain camelCase 'totalRecharged'"
+            "Should keep compatibility field 'totalRecharged'"
         );
         assert!(
             json.contains("\"totalConsumed\""),
@@ -307,6 +318,10 @@ mod tests {
             "Should not contain snake_case 'realm_id'"
         );
         assert!(
+            !json.contains("\"total_paid_granted\""),
+            "Should not contain snake_case 'total_paid_granted'"
+        );
+        assert!(
             !json.contains("\"total_recharged\""),
             "Should not contain snake_case 'total_recharged'"
         );
@@ -329,6 +344,7 @@ mod tests {
         let balance = PointsBalanceResponse {
             user_id: uuid::Uuid::now_v7(),
             balance: 50,
+            total_paid_granted: 100,
             total_recharged: 100,
             total_consumed: 50,
             unit: "points".to_string(),
@@ -345,8 +361,12 @@ mod tests {
             "Should contain camelCase 'userId'"
         );
         assert!(
+            json.contains("\"totalPaidGranted\""),
+            "Should contain camelCase 'totalPaidGranted'"
+        );
+        assert!(
             json.contains("\"totalRecharged\""),
-            "Should contain camelCase 'totalRecharged'"
+            "Should keep compatibility field 'totalRecharged'"
         );
         assert!(
             json.contains("\"totalConsumed\""),
@@ -363,6 +383,10 @@ mod tests {
         assert!(
             !json.contains("\"user_id\""),
             "Should not contain snake_case 'user_id'"
+        );
+        assert!(
+            !json.contains("\"total_paid_granted\""),
+            "Should not contain snake_case 'total_paid_granted'"
         );
         assert!(
             !json.contains("\"total_recharged\""),

@@ -140,7 +140,7 @@
 - **销售方默认付款条款**：销售方配置（`SellerConfigRequest`）包含 `default_payment_terms` 可选字段，用户申请发票时自动填充为发票的 `payment_terms`；管理员手动创建时也可单独指定
 - **发票编号唯一性**：发票编号（invoice_number）在 realm + 年范围内唯一，格式 INV-{YEAR}-{SEQ}
 - **编辑约束**：仅 draft 状态可编辑行项目、费用和双方信息；编辑后自动重算金额
-- **开具约束**：空发票不可开具；开具时记录开票日期；支持通过 `issue_date` 可选参数覆盖开票日期（默认为当天）
+- **开具约束**：空发票不可开具；开具时记录开票日期；支持通过 `issue_date` 可选参数覆盖开票日期（默认为当天）；若存在 `due_date`，则 `due_date` 必须大于等于 `issue_date`；开具时 `billing_email` 和 `billing_phone` 至少需填写一个非空值，用于联系开票对象
 - **标记已付约束**：仅 issued / overdue 状态可标记已付；支持通过 `paid_at` 可选时间戳参数覆盖实际付款时间（默认为当前时间）
 - **作废约束**：已付款发票不可作废；可作废 draft 和 issued 状态
 - **来源标记**：发票来源（admin_manual / user_application）需持久化，用于筛选和审计

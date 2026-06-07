@@ -25,6 +25,7 @@ fn wallet_to_response(
         user_id: account.user_id,
         realm_id: account.realm_id,
         balance: account.total_balance,
+        total_paid_granted: account.total_recharged,
         total_recharged: account.total_recharged,
         total_consumed: account.total_consumed,
         status: account.status.as_str().to_string(),

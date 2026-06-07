@@ -69,6 +69,8 @@ pub struct SubscriptionDetail {
 pub struct PointsBalanceResponse {
     pub user_id: String,
     pub balance: i64,
+    #[serde(default)]
+    pub total_paid_granted: i64,
     pub total_recharged: i64,
     pub total_consumed: i64,
     pub unit: String,

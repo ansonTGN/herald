@@ -130,6 +130,7 @@ Herald 发票系统从纯自研模式升级为"外部平台发票优先 + 自研
 ### 4.2 关键状态与异常
 
 - **外部发票状态**：由 provider 驱动更新，Herald 只做状态映射和只读展示；自研发票状态机（draft → issued → paid / void / overdue）保持不变
+- **逾期标记范围**：系统自动逾期任务仅处理 `provider='manual'` 的自研发票；外部 provider 发票的逾期或关闭状态由 provider webhook/API 同步驱动
 - **Provider 未启用外部发票能力**：当 provider_first 策略下某 provider 未启用外部发票时，该 provider 的交易降级到 manual fallback
 - **Stripe 未启用 Invoicing**：Stripe Dashboard 未启用 Stripe Invoicing 时，不会发送 invoice.* webhook 事件，Stripe 支付的交易走 manual fallback
 - **Creem 无 PDF URL**：Creem API 当前不返回发票 PDF URL，用户需通过 Creem 平台查看完整发票

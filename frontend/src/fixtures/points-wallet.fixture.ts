@@ -8,6 +8,7 @@ export const mockPointsWallet: PointsWalletResponse = {
   currency: 'points',
   unit: 'points',
   status: 'active',
+  totalPaidGranted: 10000,
   totalRecharged: 10000,
   totalConsumed: 5000,
   createdAt: '2025-01-01T00:00:00Z',
@@ -28,6 +29,7 @@ export const mockPointsWalletClosed: PointsWalletResponse = {
   userId: 'user-789',
   status: 'closed',
   balance: 0,
+  totalPaidGranted: 1000,
   totalRecharged: 1000,
   totalConsumed: 1000,
 }
