@@ -222,4 +222,32 @@ export class BasePage {
   protected async screenshot(name: string): Promise<void> {
     await this.page.screenshot({ path: `test-results/screenshots/${name}.png` })
   }
+
+  /**
+   * Select an option from a Radix Select component.
+   *
+   * Clicks the trigger, waits for the dropdown content to appear,
+   * then selects by data-value or falls back to text match.
+   *
+   * @param triggerLocator Locator for the SelectTrigger element
+   * @param value The option value to select (matches data-value attribute)
+   */
+  protected async selectRadixOption(triggerLocator: Locator, value: string): Promise<void> {
+    await this.smartClick(triggerLocator)
+
+    const listbox = this.page.locator('[data-slot="select-content"]')
+    await expect(listbox).toBeVisible({ timeout: 3000 })
+
+    const optionByValue = listbox.locator(`[data-value="${value}"]`)
+    const optionCount = await optionByValue.count()
+
+    if (optionCount > 0) {
+      await optionByValue.click()
+    } else {
+      const optionByText = listbox.locator(`[data-slot="select-item"]`).filter({ hasText: value })
+      await optionByText.first().click()
+    }
+
+    await expect(listbox).toBeHidden({ timeout: 3000 })
+  }
 }

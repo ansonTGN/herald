@@ -26,6 +26,8 @@ import { ClientAppsPage } from '../pages/client-apps-page'
 import { AuditPage } from '../pages/audit-page'
 import { DashboardPage } from '../pages/dashboard-page'
 import { ApiKeysPage } from '../pages/api-keys-page'
+import { EntitlementMappingsPage } from '../pages/entitlement-mappings-page'
+import { AdminSubscriptionListPage } from '../pages/admin-subscription-list-page'
 import { SELECTORS } from '../selectors'
 
 /**
@@ -60,6 +62,8 @@ export const test = base.extend<{
   auditPage: AuditPage
   dashboardPage: DashboardPage
   apiKeyPage: ApiKeysPage
+  entitlementMappingsPage: EntitlementMappingsPage
+  adminSubscriptionListPage: AdminSubscriptionListPage
   testStartTime: number
   page: Page
 }>({
@@ -366,6 +370,59 @@ export const test = base.extend<{
     await apiKeyPage.goto()
 
     await use(apiKeyPage)
+  },
+
+  /**
+   * Fixture: Entitlement Mappings Page
+   *
+   * Automatically:
+   * 1. Verifies environment
+   * 2. Logs in as admin
+   * 3. Navigates to /{realmId}/manage/billing/entitlement-mappings
+   *
+   * Use for:
+   * - Entitlement mapping list viewing and filtering
+   * - Provider product sync tests
+   * - Mapping detail dialog and configuration tests
+   */
+  entitlementMappingsPage: async ({ page, demoLogger, testStartTime, loginPage }, use) => {
+    await verifyTestEnvironment(page, {
+      requiredRealms: ['admin'],
+      requiredUsers: ['admin@cas.com'],
+    })
+
+    await loginPage.loginAsAdmin('admin@cas.com', 'password', 'admin')
+
+    const entitlementMappingsPage = new EntitlementMappingsPage(page, demoLogger)
+    await entitlementMappingsPage.goto('admin')
+
+    await use(entitlementMappingsPage)
+  },
+
+  /**
+   * Fixture: Admin Subscription List Page
+   *
+   * Automatically:
+   * 1. Verifies environment
+   * 2. Logs in as admin
+   * 3. Navigates to /{realmId}/manage/billing/subscriptions
+   *
+   * Use for:
+   * - Subscription projection list viewing and filtering
+   * - Subscription status verification tests
+   */
+  adminSubscriptionListPage: async ({ page, demoLogger, testStartTime, loginPage }, use) => {
+    await verifyTestEnvironment(page, {
+      requiredRealms: ['admin'],
+      requiredUsers: ['admin@cas.com'],
+    })
+
+    await loginPage.loginAsAdmin('admin@cas.com', 'password', 'admin')
+
+    const adminSubscriptionListPage = new AdminSubscriptionListPage(page, demoLogger)
+    await adminSubscriptionListPage.goto('admin')
+
+    await use(adminSubscriptionListPage)
   },
 })
 

@@ -1,3 +1,9 @@
+/**
+ * @deprecated Product management pages have been removed.
+ * This file is kept for reference only. Stale test files that import from this file
+ * have been quarantined with .skip suffix.
+ */
+
 import { Page, expect } from '@playwright/test'
 import { clickRowMenuItem } from './table-actions.helpers'
 

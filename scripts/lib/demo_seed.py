@@ -592,23 +592,19 @@ END $$;
 
 
 def _ensure_realm001_subscription_data(user_id: str, logger: "Logger | None") -> None:
-    """Ensure subscription data exists for realm-001 (subscription timeline tests)."""
+    """Ensure subscription data exists for realm-001 (subscription timeline tests).
+
+    Uses the post-entitlement-migration schema: no products/subscription_plan tables.
+    The subscription table now uses entitlement_key instead of plan_id/tier/billing_period.
+    """
     sql = f"""
 DO $$
 DECLARE
     v_user_id UUID := '{user_id}'::uuid;
     v_client_app_id UUID;
-    v_plan_id UUID;
     v_subscription_id UUID;
-    v_product_id UUID;
     v_test_timestamp TIMESTAMPTZ := TIMESTAMPTZ '2026-03-24 12:00:00+00';
 BEGIN
-    -- Ensure product exists
-    INSERT INTO products (id, realm_id, code, title, description, enabled)
-    VALUES (uuidv7(), '{POINTS_REALM_ID}', 'default', 'Default Product', 'Default product for realm-001 demo', TRUE)
-    ON CONFLICT (realm_id, code) DO UPDATE SET title = EXCLUDED.title
-    RETURNING id INTO v_product_id;
-
     -- Get existing client app
     SELECT id INTO v_client_app_id
     FROM client_app
@@ -619,49 +615,31 @@ BEGIN
         RAISE EXCEPTION 'Client app {POINTS_CLIENT_APP_ID} not found in {POINTS_REALM_ID}';
     END IF;
 
-    -- Create billing plan
-    INSERT INTO subscription_plan (
-        id, realm_id, name, description, title, type, price, currency,
-        active, trial_days, sort_order, product_id
+    -- Ensure entitlement mapping exists for this realm (provider-sourced catalog)
+    INSERT INTO provider_entitlement_mappings (
+        id, realm_id, payment_provider, external_product_id,
+        entitlement_key, billing_type, enabled
     ) VALUES (
         uuidv7(),
         '{POINTS_REALM_ID}',
-        'realm001-subscription-plan',
-        'Subscription plan for realm-001 demo',
-        'Realm 001 Subscription Plan',
-        'monthly',
-        1000,
-        'USD',
-        TRUE,
-        0,
-        0,
-        v_product_id
+        'stripe',
+        'realm001-product-subscription',
+        'professional',
+        'recurring',
+        TRUE
     )
-    ON CONFLICT (realm_id, name) DO UPDATE
-        SET title = EXCLUDED.title,
-            description = EXCLUDED.description,
-            active = TRUE
-    RETURNING id INTO v_plan_id;
-
-    -- Assign payment provider to plan
-    INSERT INTO subscription_plan_payment_provider (id, plan_id, payment_provider, external_product_id)
-    VALUES (uuidv7(), v_plan_id, 'stripe', 'realm001-product-subscription')
-    ON CONFLICT (plan_id, payment_provider) DO UPDATE
-        SET external_product_id = EXCLUDED.external_product_id;
-
-    -- Assign plan to client app
-    INSERT INTO client_app_subscription_plan (id, client_app_id, plan_id, enabled)
-    VALUES (uuidv7(), v_client_app_id, v_plan_id, TRUE)
-    ON CONFLICT (client_app_id, plan_id) DO UPDATE
-        SET enabled = TRUE;
+    ON CONFLICT (realm_id, payment_provider, external_product_id) DO UPDATE
+        SET entitlement_key = EXCLUDED.entitlement_key,
+            billing_type = EXCLUDED.billing_type,
+            enabled = TRUE;
 
     -- Create subscription
     DELETE FROM subscription WHERE client_app_id = v_client_app_id;
 
     INSERT INTO subscription (
         id, realm_id, user_id, external_subscription_id, external_product_id,
-        payment_provider, status, tier, current_period_start,
-        current_period_end, plan_id, client_app_id, billing_period
+        payment_provider, status, entitlement_key,
+        current_period_start, current_period_end, client_app_id
     ) VALUES (
         uuidv7(),
         '{POINTS_REALM_ID}',
@@ -673,9 +651,7 @@ BEGIN
         'professional',
         v_test_timestamp - INTERVAL '30 days',
         v_test_timestamp + INTERVAL '30 days',
-        v_plan_id,
-        v_client_app_id,
-        'monthly'
+        v_client_app_id
     )
     RETURNING id INTO v_subscription_id;
 
@@ -694,7 +670,7 @@ BEGIN
         'webhook',
         NULL,
         NULL,
-        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
+        '{{"status": "active", "entitlement_key": "professional", "cancel_at_period_end": false}}'::jsonb,
         '{POINTS_REALM_ID}'
     ),
     (
@@ -703,9 +679,9 @@ BEGIN
         'upgraded',
         v_test_timestamp - INTERVAL '15 days',
         'webhook',
-        '{{"changed_fields": ["tier"], "previous_tier": "starter", "new_tier": "professional"}}'::jsonb,
-        '{{"status": "active", "tier": "starter", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
-        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
+        '{{"changed_fields": ["entitlement_key"], "previous_entitlement_key": "starter", "new_entitlement_key": "professional"}}'::jsonb,
+        '{{"status": "active", "entitlement_key": "starter", "cancel_at_period_end": false}}'::jsonb,
+        '{{"status": "active", "entitlement_key": "professional", "cancel_at_period_end": false}}'::jsonb,
         '{POINTS_REALM_ID}'
     ),
     (
@@ -715,8 +691,8 @@ BEGIN
         v_test_timestamp - INTERVAL '5 days',
         'system',
         NULL,
-        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
-        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
+        '{{"status": "active", "entitlement_key": "professional", "cancel_at_period_end": false}}'::jsonb,
+        '{{"status": "active", "entitlement_key": "professional", "cancel_at_period_end": false}}'::jsonb,
         '{POINTS_REALM_ID}'
     );
 
@@ -928,22 +904,16 @@ def _ensure_subscription_history_demo_data(admin_opener: urllib.request.OpenerDi
     _info(logger, f"Ensuring subscription history test data for {SUBSCRIPTION_TEST_USER_EMAIL}...")
 
     # Use SQL to create or update subscription demo data
+    # Post-entitlement-migration: no products/subscription_plan tables.
+    # The subscription table uses entitlement_key instead of plan_id/tier/billing_period.
     sql = f"""
 DO $$
 DECLARE
     v_user_id UUID := '{test_user_id}'::uuid;
     v_client_app_id UUID;
-    v_plan_id UUID;
     v_subscription_id UUID;
-    v_product_id UUID;
     v_test_timestamp TIMESTAMPTZ := TIMESTAMPTZ '2026-03-24 12:00:00+00';
 BEGIN
-    -- Ensure default product exists
-    INSERT INTO products (id, realm_id, code, title, description, enabled)
-    VALUES (uuidv7(), '{ADMIN_REALM}', 'default', 'Default Product', 'Default product for demo seed', TRUE)
-    ON CONFLICT (realm_id, code) DO UPDATE SET title = EXCLUDED.title
-    RETURNING id INTO v_product_id;
-
     -- Get or create client app (use admin-web-console)
     SELECT id INTO v_client_app_id
     FROM client_app
@@ -954,49 +924,31 @@ BEGIN
         RAISE EXCEPTION 'Client app {SUBSCRIPTION_TEST_CLIENT_ID} not found in {ADMIN_REALM}';
     END IF;
 
-    -- Create billing plan
-    INSERT INTO subscription_plan (
-        id, realm_id, name, description, title, type, price, currency,
-        active, trial_days, sort_order, product_id
+    -- Ensure entitlement mapping exists for admin realm
+    INSERT INTO provider_entitlement_mappings (
+        id, realm_id, payment_provider, external_product_id,
+        entitlement_key, billing_type, enabled
     ) VALUES (
         uuidv7(),
         '{ADMIN_REALM}',
-        'test-subscription-plan',
-        'Test subscription plan for demo',
-        'Test Subscription Plan',
-        'monthly',
-        1000,
-        'USD',
-        TRUE,
-        0,
-        0,
-        v_product_id
+        'stripe',
+        'test-product-subscription',
+        'professional',
+        'recurring',
+        TRUE
     )
-    ON CONFLICT (realm_id, name) DO UPDATE
-        SET title = EXCLUDED.title,
-            description = EXCLUDED.description,
-            active = TRUE
-    RETURNING id INTO v_plan_id;
-
-    -- Assign payment provider to plan
-    INSERT INTO subscription_plan_payment_provider (id, plan_id, payment_provider, external_product_id)
-    VALUES (uuidv7(), v_plan_id, 'stripe', 'test-product-subscription')
-    ON CONFLICT (plan_id, payment_provider) DO UPDATE
-        SET external_product_id = EXCLUDED.external_product_id;
-
-    -- Assign plan to client app
-    INSERT INTO client_app_subscription_plan (id, client_app_id, plan_id, enabled)
-    VALUES (uuidv7(), v_client_app_id, v_plan_id, TRUE)
-    ON CONFLICT (client_app_id, plan_id) DO UPDATE
-        SET enabled = TRUE;
+    ON CONFLICT (realm_id, payment_provider, external_product_id) DO UPDATE
+        SET entitlement_key = EXCLUDED.entitlement_key,
+            billing_type = EXCLUDED.billing_type,
+            enabled = TRUE;
 
     -- Create subscription
     DELETE FROM subscription WHERE client_app_id = v_client_app_id;
 
     INSERT INTO subscription (
         id, realm_id, external_subscription_id, external_product_id,
-        payment_provider, status, tier, current_period_start,
-        current_period_end, plan_id, client_app_id, billing_period
+        payment_provider, status, entitlement_key,
+        current_period_start, current_period_end, client_app_id
     ) VALUES (
         uuidv7(),
         '{ADMIN_REALM}',
@@ -1007,9 +959,7 @@ BEGIN
         'professional',
         v_test_timestamp - INTERVAL '30 days',
         v_test_timestamp + INTERVAL '30 days',
-        v_plan_id,
-        v_client_app_id,
-        'monthly'
+        v_client_app_id
     )
     RETURNING id INTO v_subscription_id;
 
@@ -1028,7 +978,7 @@ BEGIN
         'webhook',
         NULL,
         NULL,
-        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
+        '{{"status": "active", "entitlement_key": "professional", "cancel_at_period_end": false}}'::jsonb,
         '{ADMIN_REALM}'
     ),
     (
@@ -1037,9 +987,9 @@ BEGIN
         'upgraded',
         v_test_timestamp - INTERVAL '15 days',
         'webhook',
-        '{{"changed_fields": ["tier"], "previous_tier": "starter", "new_tier": "professional"}}'::jsonb,
-        '{{"status": "active", "tier": "starter", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
-        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
+        '{{"changed_fields": ["entitlement_key"], "previous_entitlement_key": "starter", "new_entitlement_key": "professional"}}'::jsonb,
+        '{{"status": "active", "entitlement_key": "starter", "cancel_at_period_end": false}}'::jsonb,
+        '{{"status": "active", "entitlement_key": "professional", "cancel_at_period_end": false}}'::jsonb,
         '{ADMIN_REALM}'
     ),
     (
@@ -1049,8 +999,8 @@ BEGIN
         v_test_timestamp - INTERVAL '5 days',
         'system',
         NULL,
-        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
-        '{{"status": "active", "tier": "professional", "billing_period": "monthly", "cancel_at_period_end": false}}'::jsonb,
+        '{{"status": "active", "entitlement_key": "professional", "cancel_at_period_end": false}}'::jsonb,
+        '{{"status": "active", "entitlement_key": "professional", "cancel_at_period_end": false}}'::jsonb,
         '{ADMIN_REALM}'
     );
 
@@ -1163,20 +1113,21 @@ def _error(logger: "Logger | None", message: str) -> None:
 
 
 def _ensure_invoice_seller_config(logger: "Logger | None") -> None:
-    """Ensure invoice_seller_config exists for realm-001 so invoice menu is visible."""
-    sql = f"""
-    INSERT INTO invoice_seller_config (realm_id, seller_name, seller_address, seller_email, seller_phone, seller_tax_id, default_payment_terms)
-    VALUES ('{POINTS_REALM_ID}', 'Herald Demo Corp', '123 Demo Street, Demo City', 'billing@realm-001.demo', '+1-000-000-0000', 'DEMO-TAX-001', 'Net 30')
-    ON CONFLICT (realm_id) DO UPDATE
-        SET seller_name = EXCLUDED.seller_name,
-            seller_address = EXCLUDED.seller_address,
-            seller_email = EXCLUDED.seller_email,
-            seller_phone = EXCLUDED.seller_phone,
-            seller_tax_id = EXCLUDED.seller_tax_id,
-            default_payment_terms = EXCLUDED.default_payment_terms;
-    """
-    _sql_exec(sql)
-    _info(logger, "[OK] Invoice seller config ready for realm-001")
+    """Ensure invoice_seller_config exists for both admin and realm-001 so invoice pages are visible."""
+    for realm_id, label in [(POINTS_REALM_ID, "realm-001"), (ADMIN_REALM, "admin")]:
+        sql = f"""
+        INSERT INTO invoice_seller_config (realm_id, seller_name, seller_address, seller_email, seller_phone, seller_tax_id, default_payment_terms)
+        VALUES ('{realm_id}', 'Herald Demo Corp', '123 Demo Street, Demo City', 'billing@{label}.demo', '+1-000-000-0000', 'DEMO-TAX-{label}', 'Net 30')
+        ON CONFLICT (realm_id) DO UPDATE
+            SET seller_name = EXCLUDED.seller_name,
+                seller_address = EXCLUDED.seller_address,
+                seller_email = EXCLUDED.seller_email,
+                seller_phone = EXCLUDED.seller_phone,
+                seller_tax_id = EXCLUDED.seller_tax_id,
+                default_payment_terms = EXCLUDED.default_payment_terms;
+        """
+        _sql_exec(sql)
+    _info(logger, "[OK] Invoice seller config ready for admin and realm-001")
 
 
 def _ensure_shopify_unclaimed_subscription(logger: "Logger | None") -> None:
@@ -1200,91 +1151,39 @@ def _ensure_shopify_unclaimed_subscription(logger: "Logger | None") -> None:
         _info(logger, "Unclaimed Shopify subscription already exists for realm-001")
         return
 
-    # Get the plan ID from realm-001
-    plan_id = _sql_scalar(
-        f"""
-        SELECT id::text
-        FROM subscription_plan
-        WHERE realm_id = '{POINTS_REALM_ID}'
-          AND name = 'realm001-subscription-plan'
-        LIMIT 1;
-        """
+    # Ensure entitlement mapping exists for Shopify provider
+    _info(logger, "Ensuring Shopify entitlement mapping for realm-001...")
+    sql = f"""
+    INSERT INTO provider_entitlement_mappings (
+        id, realm_id, payment_provider, external_product_id,
+        entitlement_key, billing_type, enabled
+    ) VALUES (
+        uuidv7(),
+        '{POINTS_REALM_ID}',
+        'shopify',
+        'shopify-product-subscription',
+        'professional',
+        'recurring',
+        TRUE
     )
-
-    if not plan_id:
-        _info(logger, "Creating billing plan for Shopify unclaimed subscription...")
-        # Create a plan if it doesn't exist
-        sql = f"""
-        DO $$
-        DECLARE
-            v_product_id UUID;
-            v_plan_id UUID;
-        BEGIN
-            -- Ensure product exists
-            INSERT INTO products (id, realm_id, code, title, description, enabled)
-            VALUES (uuidv7(), '{POINTS_REALM_ID}', 'shopify-default', 'Shopify Default Product', 'Default product for Shopify demo', TRUE)
-            ON CONFLICT (realm_id, code) DO UPDATE SET title = EXCLUDED.title
-            RETURNING id INTO v_product_id;
-
-            -- Create billing plan
-            INSERT INTO subscription_plan (
-                id, realm_id, name, description, title, type, price, currency,
-                active, trial_days, sort_order, product_id
-            ) VALUES (
-                uuidv7(),
-                '{POINTS_REALM_ID}',
-                'realm001-subscription-plan',
-                'Subscription plan for realm-001 demo',
-                'Realm 001 Subscription Plan',
-                'monthly',
-                1000,
-                'USD',
-                TRUE,
-                0,
-                0,
-                v_product_id
-            )
-            ON CONFLICT (realm_id, name) DO UPDATE
-                SET title = EXCLUDED.title,
-                    description = EXCLUDED.description,
-                    active = TRUE
-            RETURNING id INTO v_plan_id;
-
-            -- Assign payment provider to plan
-            INSERT INTO subscription_plan_payment_provider (id, plan_id, payment_provider, external_product_id)
-            VALUES (uuidv7(), v_plan_id, 'shopify', 'shopify-product-subscription')
-            ON CONFLICT (plan_id, payment_provider) DO UPDATE
-                SET external_product_id = EXCLUDED.external_product_id;
-
-            RAISE NOTICE 'Plan created: %', v_plan_id;
-        END $$;
-        """
-        _sql_exec(sql)
-        plan_id = _sql_scalar(
-            f"""
-            SELECT id::text
-            FROM subscription_plan
-            WHERE realm_id = '{POINTS_REALM_ID}'
-              AND name = 'realm001-subscription-plan'
-            LIMIT 1;
-            """
-        )
-
-    if not plan_id:
-        raise SeedError("Failed to create or find billing plan for Shopify subscription")
+    ON CONFLICT (realm_id, payment_provider, external_product_id) DO UPDATE
+        SET entitlement_key = EXCLUDED.entitlement_key,
+            billing_type = EXCLUDED.billing_type,
+            enabled = TRUE;
+    """
+    _sql_exec(sql)
 
     # Create unclaimed subscription via SQL (simpler than HTTP API for demo seed)
     sql = f"""
     DO $$
     DECLARE
         v_subscription_id UUID := uuidv7();
-        v_plan_id UUID := '{plan_id}'::uuid;
     BEGIN
         -- Create subscription with user_id = NULL (unclaimed)
         INSERT INTO subscription (
             id, realm_id, user_id, external_subscription_id, external_product_id,
-            payment_provider, status, tier, current_period_start,
-            current_period_end, plan_id, billing_period, created_at, updated_at
+            payment_provider, status, entitlement_key,
+            current_period_start, current_period_end, created_at, updated_at
         ) VALUES (
             v_subscription_id,
             '{POINTS_REALM_ID}',
@@ -1296,8 +1195,6 @@ def _ensure_shopify_unclaimed_subscription(logger: "Logger | None") -> None:
             'professional',
             NOW(),
             NOW() + INTERVAL '30 days',
-            v_plan_id,
-            'monthly',
             NOW(),
             NOW()
         );

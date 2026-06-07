@@ -2,12 +2,20 @@
  * Billing Page Helpers
  *
  * Shared helper functions for billing management tests
+ *
+ * @deprecated Plan management functions are deprecated. Product/Plan pages have been removed.
+ * This file is kept for reference only. Stale test files that import from this file
+ * have been quarantined with .skip suffix.
  */
 
 import { Page, expect } from '@playwright/test'
 import { clickRowMenuItem } from './table-actions.helpers'
 import { createProduct } from './product-page.helpers'
 
+/**
+ * @deprecated SubscriptionPlanFormData references deleted plan/product components.
+ * Product/Plan pages have been removed.
+ */
 export interface SubscriptionPlanFormData {
   planName: string
   title: string
@@ -27,6 +35,8 @@ export interface SubscriptionPlanFormData {
 
 /**
  * Helper function to create a subscription plan.
+ * @deprecated References deleted plan-form-page, add-plan-button, plan-* selectors.
+ * Product/Plan pages have been removed.
  * If productTitle is not provided, automatically navigates to products page,
  * creates a default product, then returns to the billing plans page.
  */
@@ -170,6 +180,7 @@ export async function createSubscriptionPlan(page: Page, formData: SubscriptionP
 
 /**
  * Helper function to navigate to edit page for a plan
+ * @deprecated References deleted plan-form-page. Product/Plan pages have been removed.
  */
 export async function openEditSubscriptionPlanDialog(page: Page, planName: string): Promise<void> {
   await clickRowMenuItem(page, planName, 'Edit')
@@ -178,11 +189,17 @@ export async function openEditSubscriptionPlanDialog(page: Page, planName: strin
   await expect(page.getByTestId('plan-form-page')).toBeVisible()
 }
 
+/**
+ * @deprecated References deleted plan table row actions. Product/Plan pages have been removed.
+ */
 export async function openDeleteSubscriptionPlanDialog(page: Page, planName: string): Promise<void> {
   await clickRowMenuItem(page, planName, 'Delete')
   await expect(page.getByText(/Are you sure you want to delete/i)).toBeVisible()
 }
 
+/**
+ * @deprecated References deleted plan table row actions. Product/Plan pages have been removed.
+ */
 export async function openAssignSubscriptionPlanDialog(page: Page, planName: string): Promise<void> {
   await clickRowMenuItem(page, planName, 'Assign to App')
   await expect(page.getByRole('dialog')).toBeVisible()
@@ -190,6 +207,7 @@ export async function openAssignSubscriptionPlanDialog(page: Page, planName: str
 
 /**
  * Helper function to confirm delete in confirmation dialog
+ * @deprecated References deleted confirm-delete-button. Product/Plan pages have been removed.
  */
 export async function confirmDeleteSubscriptionPlan(page: Page): Promise<void> {
   await page.getByTestId('confirm-delete-button').click()
@@ -213,6 +231,7 @@ export async function confirmDeleteSubscriptionPlanAndWait(page: Page): Promise<
  * Verify a plan name is visible in the billing page table.
  * Scrolls the element into view first to handle cases where the table has many rows
  * and the target row is below the viewport.
+ * @deprecated References deleted plan table. Product/Plan pages have been removed.
  */
 export async function verifyPlanVisible(page: Page, planName: string, timeout = 5000): Promise<void> {
   const planText = page.getByText(planName)

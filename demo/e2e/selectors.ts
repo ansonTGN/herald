@@ -65,6 +65,7 @@ export const SELECTORS = {
     menuPermissions: '[data-testid="sidebar-menu-permissions"]',
     menuApiKeys: '[data-testid="sidebar-menu-api-keys"]',
     menuAuditLog: '[data-testid="sidebar-menu-audit-log"]',
+    menuEntitlementMappings: '[data-testid="sidebar-menu-entitlement-mappings"]',
   },
 
   /**
@@ -521,52 +522,60 @@ export const SELECTORS = {
    */
   billing: {
     page: '[data-testid="billing-page"]',
-    // Plan table
-    table: '[data-testid="plans-table"]',
-    addPlanButton: '[data-testid="add-plan-button"]',
-    // Plan form page (navigated to from billing page)
-    planFormPage: '[data-testid="plan-form-page"]',
-    planFormBackButton: '[data-testid="plan-form-back-button"]',
-    planFormTitle: '[data-testid="plan-form-title"]',
-    planNameInput: '[data-testid="plan-name-input"]',
-    planTitleInput: '[data-testid="plan-title-input"]',
-    planDescriptionInput: '[data-testid="plan-description-input"]',
-    planTypeSelectTrigger: '[data-testid="plan-type-select-trigger"]',
-    planTypeMonthly: '[data-testid="plan-type-monthly"]',
-    planTypeYearly: '[data-testid="plan-type-yearly"]',
-    planPriceInput: '[data-testid="plan-price-input"]',
-    planCurrencySelectTrigger: '[data-testid="plan-currency-select-trigger"]',
-    planCurrencyUsd: '[data-testid="plan-currency-usd"]',
-    planTrialDaysInput: '[data-testid="plan-trial-days-input"]',
-    planCheckoutUrlInput: '[data-testid="plan-checkout-url-input"]',
-    planProductSelectTrigger: '[data-testid="plan-product-select-trigger"]',
-    planFormSubmitButton: '[data-testid="plan-form-submit-button"]',
-    planFormCancelButton: '[data-testid="plan-form-cancel-button"]',
-    // Provider mapping page
-    providerMappingPage: '[data-testid="plan-providers-page"]',
-    providerMappingList: '[data-testid="provider-mapping-list"]',
-    addProviderMappingButton: '[data-testid="add-provider-mapping-button"]',
-    providerMappingFormDialog: '[data-testid="provider-mapping-form-dialog"]',
-    providerMappingProviderSelectTrigger:
-      '[data-testid="provider-mapping-provider-select-trigger"]',
-    providerMappingExternalProductIdInput:
-      '[data-testid="provider-mapping-product-id-input"]',
-    providerMappingExternalPriceIdInput:
-      '[data-testid="provider-mapping-price-id-input"]',
-    providerMappingSubmitButton:
-      '[data-testid="provider-mapping-submit-button"]',
-    providerMappingCancelButton:
-      '[data-testid="provider-mapping-cancel-button"]',
-    providerMappingBackButton: '[data-testid="back-to-billing-button"]',
-    // Dynamic provider mapping buttons
-    editMappingButton: (id: string) =>
-      `[data-testid="edit-mapping-button-${id}"]`,
-    toggleMappingButton: (id: string) =>
-      `[data-testid="toggle-mapping-button-${id}"]`,
-    deleteMappingButton: (id: string) =>
-      `[data-testid="delete-mapping-button-${id}"]`,
-    // Delete confirmation dialog
-    confirmDeleteButton: '[data-testid="confirm-delete-button"]',
+    // Billing page navigation cards
+    navEntitlementMappings: '[data-testid="billing-nav-entitlement-mappings"]',
+    navSubscriptions: '[data-testid="billing-nav-subscriptions"]',
+  },
+
+  /**
+   * Entitlement Mappings Page Selectors
+   * Route: /{realmId}/manage/billing/entitlement-mappings
+   */
+  entitlementMappings: {
+    page: '[data-testid="entitlement-mappings-page"]',
+    heading: '[data-testid="entitlement-mappings-heading"]',
+    table: '[data-testid="entitlement-mappings-table"]',
+    providerFilterSelect: '[data-testid="provider-filter-select"]',
+    mappingRow: (id: string) => `[data-testid="mapping-row-${id}"]`,
+    firstMappingRow: () => '[data-testid^="mapping-row-"]',
+    mappingEnabledToggle: (id: string) => `[data-testid="mapping-enabled-toggle-${id}"]`,
+    providerSyncButton: '[data-testid="provider-sync-button"]',
+    syncProviderSelect: '[data-testid="sync-provider-select"]',
+    syncButton: '[data-testid="sync-button"]',
+    // Detail dialog
+    detailDialog: '[data-testid="entitlement-mapping-detail-dialog"]',
+    entitlementKeyInput: '[data-testid="entitlement-key-input"]',
+    pointsPerPeriodInput: '[data-testid="points-per-period-input"]',
+    grantPeriodTypeSelect: '[data-testid="grant-period-type-select"]',
+    validityDaysInput: '[data-testid="validity-days-input"]',
+    grantOnSubscribeSwitch: '[data-testid="grant-on-subscribe-switch"]',
+    maxPeriodsInput: '[data-testid="max-periods-input"]',
+    mappingEnabledSwitch: '[data-testid="mapping-enabled-switch"]',
+    saveMappingButton: '[data-testid="save-mapping-button"]',
+    providerProductInfoCard: '[data-testid="provider-product-info-card"]',
+    // Empty state
+    emptyState: '[data-testid="entitlement-mappings-empty-state"]',
+    // Pagination
+    pagination: '[data-testid="entitlement-mappings-pagination"]',
+  },
+
+  /**
+   * Admin Subscription List Page Selectors
+   * Route: /{realmId}/manage/billing/subscriptions
+   */
+  adminSubscriptionList: {
+    page: '[data-testid="admin-subscription-list-page"]',
+    heading: '[data-testid="admin-subscription-list-heading"]',
+    table: '[data-testid="admin-subscription-list-table"]',
+    entitlementKeyFilterInput: '[data-testid="entitlement-key-filter-input"]',
+    statusFilterSelect: '[data-testid="status-filter-select"]',
+    paymentProviderFilterSelect: '[data-testid="payment-provider-filter-select"]',
+    subscriptionRow: (id: string) => `[data-testid="subscription-row-${id}"]`,
+    firstSubscriptionRow: () => '[data-testid^="subscription-row-"]',
+    // Empty state
+    emptyState: '[data-testid="admin-subscription-list-empty-state"]',
+    // Pagination
+    pagination: '[data-testid="admin-subscription-list-pagination"]',
   },
 
   /**
