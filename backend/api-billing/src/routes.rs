@@ -8,8 +8,8 @@ use axum::{
 };
 
 use crate::entitlement_mapping_handlers::{
-    get_entitlement_mapping, list_entitlement_mappings, sync_provider_products,
-    update_entitlement_mapping,
+    get_entitlement_mapping, list_entitlement_mappings, list_one_time_mappings,
+    sync_provider_products, update_entitlement_mapping,
 };
 use crate::feature_availability::get_feature_availability;
 use crate::handlers::{
@@ -105,6 +105,10 @@ pub fn billing_routes() -> Router<AppState> {
         .route(
             "/api/bill/{realmId}/entitlement-mappings",
             get(list_entitlement_mappings),
+        )
+        .route(
+            "/api/bill/{realmId}/one-time-mappings",
+            get(list_one_time_mappings),
         )
         .route(
             "/api/bill/{realmId}/entitlement-mappings/sync",

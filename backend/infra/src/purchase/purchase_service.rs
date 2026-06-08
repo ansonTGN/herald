@@ -18,8 +18,37 @@ use herald_domain::purchase::errors::PurchaseResult;
 use herald_domain::purchase::ports::{FulfillmentResult, FulfillmentService};
 use herald_domain::purchase::services::{
     CompletePaymentAttemptInput, CreatedPaymentAttempt, PaymentCompletionSource,
-    PreparePaymentAttemptInput, PreparedPaymentAttempt, PurchaseTargetSnapshot,
+    PreparePaymentAttemptInput, PreparedPaymentAttempt, PurchaseTargetSnapshot, metadata_keys,
 };
+/// Build common herald metadata map for payment providers.
+fn build_herald_metadata(
+    realm_id: &str,
+    user_id: Uuid,
+    target_type: &str,
+    target_id: Uuid,
+    attempt_id: Uuid,
+) -> HashMap<String, String> {
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        metadata_keys::HERALD_REALM_ID.to_string(),
+        realm_id.to_string(),
+    );
+    metadata.insert(
+        metadata_keys::HERALD_USER_ID.to_string(),
+        user_id.to_string(),
+    );
+    metadata.insert(
+        metadata_keys::TARGET_TYPE.to_string(),
+        target_type.to_string(),
+    );
+    metadata.insert(metadata_keys::TARGET_ID.to_string(), target_id.to_string());
+    metadata.insert(
+        metadata_keys::ATTEMPT_ID.to_string(),
+        attempt_id.to_string(),
+    );
+    metadata
+}
+
 use herald_infra_creem::{CreateCheckoutRequest as CreemCreateCheckoutRequest, CreemClient};
 use herald_infra_stripe::{CreateCheckoutRequest as StripeCreateCheckoutRequest, StripeClient};
 use herald_infra_wechat::client::WechatPayClient;
@@ -139,8 +168,8 @@ where
     }
 
     /// Fulfill a payment attempt based on billing type from entitlement mapping.
-    /// When `billing_type_override` is provided, it takes precedence over the mapping's
-    /// stored billing_type (e.g. when provider webhook metadata overrides the DB value).
+    /// When `billing_type_override` is provided, it takes precedence.
+    /// When absent, defaults to Recurring (subscription flow).
     pub async fn fulfill_payment_attempt(
         &self,
         attempt: PaymentAttempt,
@@ -148,23 +177,7 @@ where
         _completed_at: chrono::DateTime<chrono::Utc>,
         billing_type_override: Option<BillingType>,
     ) -> Result<FulfillmentResult, CoreError> {
-        // If no override, look up entitlement mapping to determine billing type
-        let billing_type = if let Some(bt) = billing_type_override {
-            bt
-        } else {
-            let mapping = self
-                .billing_repository
-                .find_entitlement_mapping_by_id(attempt.target_id)
-                .await?
-                .ok_or_else(|| {
-                    CoreError::not_found(&format!(
-                        "Entitlement mapping {} for fulfillment",
-                        attempt.target_id
-                    ))
-                })?;
-
-            mapping.billing_type.unwrap_or(BillingType::Recurring)
-        };
+        let billing_type = billing_type_override.unwrap_or(BillingType::Recurring);
 
         match billing_type {
             BillingType::OneTime => {
@@ -172,8 +185,7 @@ where
                     .fulfill_one_time_purchase(&attempt, provider_transaction_id)
                     .await
             }
-            _ => {
-                // Recurring or None -> subscription flow
+            BillingType::Recurring => {
                 self.fulfillment_service
                     .fulfill_subscription_purchase(&attempt, provider_transaction_id)
                     .await
@@ -440,12 +452,7 @@ where
             CoreError::Conflict("Creem product mapping missing external_product_id".into())
         })?;
         let client = self.get_creem_client_for_realm(realm_id).await?;
-        let mut metadata = HashMap::new();
-        metadata.insert("heraldRealmId".to_string(), realm_id.to_string());
-        metadata.insert("heraldUserId".to_string(), user_id.to_string());
-        metadata.insert("targetType".to_string(), target_type.to_string());
-        metadata.insert("targetId".to_string(), target_id.to_string());
-        metadata.insert("attemptId".to_string(), attempt_id.to_string());
+        let metadata = build_herald_metadata(realm_id, user_id, target_type, target_id, attempt_id);
 
         let session = client
             .create_checkout_session(&CreemCreateCheckoutRequest {
@@ -490,12 +497,7 @@ where
     ) -> PurchaseResult<(Option<String>, PaymentContext)> {
         let client = self.get_stripe_client_for_realm(realm_id).await?;
 
-        let mut metadata = HashMap::new();
-        metadata.insert("heraldRealmId".to_string(), realm_id.to_string());
-        metadata.insert("heraldUserId".to_string(), user_id.to_string());
-        metadata.insert("targetType".to_string(), target_type.to_string());
-        metadata.insert("targetId".to_string(), target_id.to_string());
-        metadata.insert("attemptId".to_string(), attempt_id.to_string());
+        let metadata = build_herald_metadata(realm_id, user_id, target_type, target_id, attempt_id);
 
         let mode = match target.billing_type {
             Some(BillingType::OneTime) => Some("payment".to_string()),

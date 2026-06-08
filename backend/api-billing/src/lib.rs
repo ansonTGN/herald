@@ -42,6 +42,7 @@ pub mod shopify_test_types;
         crate::entitlement_mapping_handlers::get_entitlement_mapping,
         crate::entitlement_mapping_handlers::update_entitlement_mapping,
         crate::entitlement_mapping_handlers::sync_provider_products,
+        crate::entitlement_mapping_handlers::list_one_time_mappings,
         // Subscription handlers
         crate::handlers::list_subscriptions,
         crate::handlers::get_subscription,
@@ -99,6 +100,8 @@ pub mod shopify_test_types;
         crate::types::SyncProviderRequest,
         crate::types::SyncProviderResponse,
         crate::types::PartialSyncErrorDto,
+        crate::types::OneTimeMappingItem,
+        crate::types::OneTimeMappingListResponse,
         // Subscription types
         crate::types::SubscriptionDetailResponse,
         crate::types::SubscriptionListItemResponse,

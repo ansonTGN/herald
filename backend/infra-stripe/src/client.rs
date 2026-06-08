@@ -124,7 +124,7 @@ impl StripeClient {
         let mut form_fields: Vec<(String, String)> = vec![
             ("success_url".to_string(), request.success_url.clone()),
             ("cancel_url".to_string(), request.cancel_url.clone()),
-            ("mode".to_string(), mode_value.to_string()),
+            ("mode".to_string(), mode_value.to_owned()),
             // Metadata fields
             (
                 "metadata[herald_realm_id]".to_string(),
@@ -932,8 +932,7 @@ mod tests {
 
         // Should NOT have recurring interval
         assert!(
-            form.get("line_items[0][price_data][recurring][interval]")
-                .is_none(),
+            !form.contains_key("line_items[0][price_data][recurring][interval]"),
             "payment mode should not include recurring interval"
         );
 

@@ -508,14 +508,14 @@ pub async fn get_purchase_history(
                 .and_then(|v| v.get("name"))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            let points_per_period: Option<i32> = row.get("points_per_period");
+            let points_per_period: Option<i64> = row.get("points_per_period");
             let completed_at: Option<chrono::DateTime<chrono::Utc>> = row.get("completed_at");
 
             PurchaseHistoryItemDto {
                 attempt_id: row.get("attempt_id"),
                 target_mapping_id: row.get("target_mapping_id"),
                 product_name,
-                points: points_per_period.map(|p| p as i64),
+                points: points_per_period,
                 amount: row.get("amount"),
                 currency: row.get("currency"),
                 payment_provider: row.get("payment_provider"),

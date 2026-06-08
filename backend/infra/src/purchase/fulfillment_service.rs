@@ -10,17 +10,6 @@ use herald_domain::purchase::{
     FulfillmentResult, FulfillmentService, FulfillmentType, PointsGrant,
 };
 
-/// Helper function to detect duplicate key errors (unique constraint violations)
-#[allow(dead_code)]
-fn is_duplicate_key_error(err: &CoreError) -> bool {
-    if let CoreError::DatabaseError(msg) = err {
-        let msg_lower = msg.to_lowercase();
-        msg_lower.contains("duplicate key") || msg_lower.contains("unique constraint")
-    } else {
-        false
-    }
-}
-
 fn billing_period_to_days(period: Option<&str>) -> i64 {
     match period.map(|p| p.trim().to_ascii_lowercase()).as_deref() {
         Some("daily") | Some("day") => 1,
@@ -93,19 +82,16 @@ where
             });
         }
 
-        // Look up entitlement mapping by external_product_id (= target_id)
+        // Look up entitlement mapping by ID with realm isolation check
         let mapping = self
             .billing_repository
-            .find_entitlement_mapping_by_provider_product(
-                &attempt.realm_id,
-                &attempt.payment_provider,
-                &attempt.target_id.to_string(),
-            )
+            .find_entitlement_mapping_by_id(attempt.target_id)
             .await?
+            .filter(|m| m.realm_id == attempt.realm_id)
             .ok_or_else(|| {
-                CoreError::BadRequest(format!(
-                    "No entitlement mapping found for provider '{}' product '{}' in realm '{}'",
-                    attempt.payment_provider, attempt.target_id, attempt.realm_id
+                CoreError::not_found(&format!(
+                    "Entitlement mapping {} for subscription fulfillment",
+                    attempt.target_id
                 ))
             })?;
 
@@ -257,11 +243,12 @@ where
             });
         }
 
-        // Read mapping from billing_repository by target_id
+        // Read mapping from billing_repository by target_id with realm isolation check
         let mapping = self
             .billing_repository
             .find_entitlement_mapping_by_id(attempt.target_id)
             .await?
+            .filter(|m| m.realm_id == attempt.realm_id)
             .ok_or_else(|| {
                 CoreError::not_found(&format!(
                     "Entitlement mapping {} for one-time purchase",
@@ -335,23 +322,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_is_duplicate_key_error() {
-        let duplicate_error =
-            CoreError::DatabaseError("duplicate key value violates unique constraint".to_string());
-        assert!(is_duplicate_key_error(&duplicate_error));
-
-        let unique_constraint_error =
-            CoreError::DatabaseError("unique constraint violation".to_string());
-        assert!(is_duplicate_key_error(&unique_constraint_error));
-
-        let other_error = CoreError::NotFound;
-        assert!(!is_duplicate_key_error(&other_error));
-
-        let db_error = CoreError::DatabaseError("connection failed".to_string());
-        assert!(!is_duplicate_key_error(&db_error));
-    }
 
     #[test]
     fn test_billing_period_to_days() {

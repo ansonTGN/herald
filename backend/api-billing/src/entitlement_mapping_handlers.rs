@@ -7,8 +7,8 @@ use uuid::Uuid;
 use crate::handlers::require_billing_permission;
 use crate::types::{
     EntitlementMappingListResponse, EntitlementMappingQuery, EntitlementMappingResponse,
-    PartialSyncErrorDto, SyncProviderRequest, SyncProviderResponse,
-    UpdateEntitlementMappingRequest,
+    OneTimeMappingItem, OneTimeMappingListResponse, PartialSyncErrorDto, SyncProviderRequest,
+    SyncProviderResponse, UpdateEntitlementMappingRequest,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
@@ -259,6 +259,59 @@ pub async fn update_entitlement_mapping(
         })?;
 
     Ok(Json(mapping_to_response(updated)))
+}
+
+/// List enabled one-time entitlement mappings for a realm
+#[utoipa::path(
+    get,
+    path = "/api/bill/{realmId}/one-time-mappings",
+    tag = "billing",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    responses(
+        (status = 200, description = "One-time mappings listed successfully", body = OneTimeMappingListResponse),
+        (status = 401, description = "Unauthorized", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 403, description = "Forbidden - Insufficient permissions", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 500, description = "Internal server error", body = herald_api_base::application::http::server::api_entities::ErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_one_time_mappings(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path(realm_id): Path<String>,
+) -> Result<Json<OneTimeMappingListResponse>, ApiError> {
+    tracing::info!("Listing one-time mappings for realm: {}", realm_id);
+
+    require_billing_permission(&state, &identity, &realm_id, "view").await?;
+
+    let mappings = state
+        .billing_repository
+        .list_one_time_mappings(&realm_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                realm_id = %realm_id,
+                error = %e,
+                "Failed to list one-time mappings"
+            );
+            ApiError::internal("Failed to list one-time mappings".to_string())
+        })?;
+
+    let items: Vec<OneTimeMappingItem> = mappings
+        .into_iter()
+        .map(|m| OneTimeMappingItem {
+            id: m.id.to_string(),
+            entitlement_key: m.entitlement_key,
+            provider_product_info: m.provider_product_info,
+            points_per_period: m.points_per_period,
+            payment_provider: m.payment_provider,
+            validity_days: m.validity_days,
+        })
+        .collect();
+
+    Ok(Json(OneTimeMappingListResponse { items }))
 }
 
 /// Sync provider products into entitlement mappings

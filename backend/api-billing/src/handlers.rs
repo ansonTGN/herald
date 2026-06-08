@@ -18,6 +18,21 @@ use crate::types::{
     SubscriptionListQuery,
     SubscriptionListResponse,
 };
+
+use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
+use herald_api_base::application::http::state::AppState;
+// Import the trait and types from herald_core
+use herald_core::domain::authentication::Identity;
+use herald_core::domain::authorization::PermissionService;
+use herald_core::domain::billing::{BillingRepository, Subscription};
+use herald_core::domain::common::entities::app_errors::CoreError;
+use herald_core::infrastructure::creem::{
+    CreateCheckoutRequest as CreemCreateCheckoutRequest, CreemClient,
+};
+use herald_core::infrastructure::stripe::{
+    CreateCheckoutRequest as StripeCreateCheckoutRequest, StripeClient,
+};
+
 fn subscription_to_response(sub: &Subscription) -> SubscriptionDetailResponse {
     SubscriptionDetailResponse {
         id: sub.id,
@@ -36,19 +51,6 @@ fn subscription_to_response(sub: &Subscription) -> SubscriptionDetailResponse {
         updated_at: sub.updated_at.to_rfc3339(),
     }
 }
-use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
-use herald_api_base::application::http::state::AppState;
-// Import the trait and types from herald_core
-use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::PermissionService;
-use herald_core::domain::billing::{BillingRepository, Subscription};
-use herald_core::domain::common::entities::app_errors::CoreError;
-use herald_core::infrastructure::creem::{
-    CreateCheckoutRequest as CreemCreateCheckoutRequest, CreemClient,
-};
-use herald_core::infrastructure::stripe::{
-    CreateCheckoutRequest as StripeCreateCheckoutRequest, StripeClient,
-};
 
 // ============================================================================
 // Realm-specific Client Helpers

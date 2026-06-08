@@ -520,6 +520,9 @@ impl PostgresPointsRepository {
             (CreditType::SubscriptionCredit, CreditSourceType::SubscriptionUpgrade) => {
                 TransactionType::SubscriptionUpgrade
             }
+            (CreditType::SubscriptionCredit, CreditSourceType::SubscriptionDowngrade) => {
+                TransactionType::SubscriptionDowngrade
+            }
             (CreditType::GrantedCredit, CreditSourceType::AdminGrant)
             | (CreditType::GrantedCredit, CreditSourceType::SdkGrant) => TransactionType::Grant,
             _ => TransactionType::Recharge,

@@ -10,7 +10,10 @@ use serde_json::Value;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::webhook_common::create_placeholder_transaction;
+use crate::webhook_common::{
+    create_placeholder_transaction, metadata_value, parse_attempt_id, parse_event_id,
+    parse_optional_uuid_field, parse_uuid_field,
+};
 use crate::webhook_subscription_helpers::{
     SyncSubscriptionInput, resolve_entitlement_key, save_subscription_history, sync_subscription,
 };
@@ -25,6 +28,7 @@ use herald_core::domain::points::IdempotencyResult;
 use herald_core::domain::points::entities::{PointsTransaction, TransactionType};
 use herald_core::domain::points::ports::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
+use herald_core::domain::purchase::metadata_keys;
 use herald_core::domain::purchase::{CompletePaymentAttemptInput, PaymentCompletionSource};
 
 struct CreemCheckoutCompletedPayload {
@@ -85,35 +89,6 @@ struct CreemRefundCreatedPayload {
     original_amount: i64,
     user_id: Uuid,
     refund_type: String,
-}
-
-fn parse_event_id(event: &Value) -> Result<String, CoreError> {
-    event["id"]
-        .as_str()
-        .map(str::to_string)
-        .ok_or_else(|| CoreError::BadRequest("Missing event id".to_string()))
-}
-
-fn parse_uuid_field(value: &Value, field_name: &str) -> Result<Uuid, CoreError> {
-    value
-        .as_str()
-        .and_then(|s| Uuid::parse_str(s).ok())
-        .ok_or_else(|| CoreError::BadRequest(format!("Missing or invalid {}", field_name)))
-}
-
-fn parse_optional_uuid_field(value: &Value) -> Option<Uuid> {
-    value.as_str().and_then(|s| Uuid::parse_str(s).ok())
-}
-
-fn metadata_value<'a>(metadata: &'a Value, primary: &str, fallback: &str) -> &'a Value {
-    metadata.get(primary).unwrap_or(&metadata[fallback])
-}
-
-fn parse_attempt_id(value: &Value) -> Option<Uuid> {
-    value
-        .as_str()
-        .and_then(|raw| Uuid::parse_str(raw).ok())
-        .filter(|id| *id != Uuid::nil())
 }
 
 fn creem_event_object(event: &Value) -> &Value {
@@ -264,7 +239,7 @@ fn parse_checkout_completed_payload(
             .as_str()
             .map(str::to_string)
             .unwrap_or_default(),
-        attempt_id: parse_attempt_id(&metadata["attemptId"]),
+        attempt_id: parse_attempt_id(&metadata[metadata_keys::ATTEMPT_ID]),
     })
 }
 
@@ -757,7 +732,7 @@ async fn handle_checkout_completed(
                 Ok(create_placeholder_transaction(
                     attempt_id,
                     realm_id,
-                    TransactionType::SubscriptionGrant,
+                    TransactionType::Recharge,
                 ))
             } else {
                 warn!(
@@ -770,7 +745,7 @@ async fn handle_checkout_completed(
                 Ok(create_placeholder_transaction(
                     payload.client_app_id,
                     realm_id,
-                    TransactionType::SubscriptionGrant,
+                    TransactionType::Recharge,
                 ))
             }
         }
@@ -801,7 +776,7 @@ async fn handle_subscription_paid(
 ) -> Result<PointsTransaction, CoreError> {
     let object = creem_event_object(&event);
 
-    if let Some(attempt_id) = parse_attempt_id(&object["metadata"]["attemptId"]) {
+    if let Some(attempt_id) = parse_attempt_id(&object["metadata"][metadata_keys::ATTEMPT_ID]) {
         let provider_transaction_id = object["subscriptionId"]
             .as_str()
             .or_else(|| object["id"].as_str())
@@ -1164,7 +1139,11 @@ async fn handle_subscription_updated(
     Ok(create_placeholder_transaction(
         user_id,
         realm_id,
-        TransactionType::SubscriptionUpgrade,
+        if is_upgrade {
+            TransactionType::SubscriptionUpgrade
+        } else {
+            TransactionType::SubscriptionDowngrade
+        },
     ))
 }
 
@@ -1332,19 +1311,6 @@ async fn handle_refund_created(
 
     match payload.refund_type.as_str() {
         "topup" => {
-            let (current_schema, backend_pid): (Option<String>, Option<i32>) =
-                sqlx::query_as("SELECT current_schema(), pg_backend_pid()")
-                    .fetch_one(&app_state.pool)
-                    .await
-                    .ok()
-                    .unwrap_or((None, None));
-            info!(
-                current_schema = ?current_schema,
-                backend_pid = ?backend_pid,
-                pool_addr = &format!("{:p}", &app_state.pool),
-                "Webhook handler: Current database schema before revocation"
-            );
-
             let _output = app_state
                 .points_service
                 .revoke_topup_proportional(

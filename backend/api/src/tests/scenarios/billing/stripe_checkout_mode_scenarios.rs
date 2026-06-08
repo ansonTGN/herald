@@ -395,8 +395,7 @@ async fn test_stripe_checkout_one_time_skips_recurring_fields(ctx: &mut TestCont
         .collect();
 
     assert!(
-        form.get("line_items[0][price_data][recurring][interval]")
-            .is_none(),
+        !form.contains_key("line_items[0][price_data][recurring][interval]"),
         "One-time mapping should NOT include line_items[0][price_data][recurring][interval]"
     );
 

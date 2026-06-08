@@ -11,21 +11,26 @@ use std::time::Duration;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::webhook_common::create_placeholder_transaction;
+use crate::webhook_common::{
+    create_placeholder_transaction, metadata_value, parse_attempt_id, parse_event_id,
+    parse_optional_uuid_field, parse_uuid_field,
+};
 use crate::webhook_subscription_helpers::{
     SyncSubscriptionInput, resolve_entitlement_key, save_subscription_history, sync_subscription,
 };
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::billing::invoice_service::map_stripe_invoice_status;
 use herald_core::domain::billing::{
-    ACTOR_WEBHOOK, BillingRepository, ExternalInvoiceData, HistoryEventType, InvoiceProvider,
-    InvoiceRepository, PaymentEvent, Subscription, SubscriptionHistoryService, SubscriptionStatus,
+    ACTOR_WEBHOOK, BillingRepository, BillingType, ExternalInvoiceData, HistoryEventType,
+    InvoiceProvider, InvoiceRepository, PaymentEvent, Subscription, SubscriptionHistoryService,
+    SubscriptionStatus,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
 use herald_core::domain::points::entities::{PointsTransaction, TransactionType};
 use herald_core::domain::points::ports::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
+use herald_core::domain::purchase::metadata_keys;
 use herald_core::domain::purchase::{CompletePaymentAttemptInput, PaymentCompletionSource};
 
 struct StripeCheckoutCompletedPayload {
@@ -36,7 +41,6 @@ struct StripeCheckoutCompletedPayload {
     is_trial: bool,
     stripe_subscription_id: Option<String>,
     stripe_product_id: String,
-    mode: Option<String>,
 }
 
 struct StripeSubscriptionCreatedPayload {
@@ -104,35 +108,6 @@ struct StripePaymentFailedPayload {
     provider_reference: String,
     provider_status: String,
     completed_at: DateTime<Utc>,
-}
-
-fn parse_event_id(event: &Value) -> Result<String, CoreError> {
-    event["id"]
-        .as_str()
-        .map(str::to_string)
-        .ok_or_else(|| CoreError::BadRequest("Missing event id".to_string()))
-}
-
-fn parse_uuid_field(value: &Value, field_name: &str) -> Result<Uuid, CoreError> {
-    value
-        .as_str()
-        .and_then(|s| Uuid::parse_str(s).ok())
-        .ok_or_else(|| CoreError::BadRequest(format!("Missing or invalid {}", field_name)))
-}
-
-fn parse_optional_uuid_field(value: &Value) -> Option<Uuid> {
-    value.as_str().and_then(|s| Uuid::parse_str(s).ok())
-}
-
-fn metadata_value<'a>(metadata: &'a Value, primary: &str, fallback: &str) -> &'a Value {
-    metadata.get(primary).unwrap_or(&metadata[fallback])
-}
-
-fn parse_attempt_id(value: &Value) -> Option<Uuid> {
-    value
-        .as_str()
-        .and_then(|raw| Uuid::parse_str(raw).ok())
-        .filter(|id| *id != Uuid::nil())
 }
 
 fn parse_stripe_datetime(value: &Value, field_name: &str) -> Result<DateTime<Utc>, CoreError> {
@@ -254,7 +229,6 @@ fn parse_checkout_completed_payload(
             .and_then(|item| item["price"]["product"].as_str())
             .map(str::to_string)
             .unwrap_or_default(),
-        mode: event["data"]["object"]["mode"].as_str().map(str::to_string),
     })
 }
 
@@ -461,9 +435,10 @@ fn parse_payment_intent_succeeded_payload(
     event: &Value,
 ) -> Result<StripePaymentIntentSucceededPayload, CoreError> {
     let object = &event["data"]["object"];
-    let attempt_id = parse_attempt_id(&object["metadata"]["attemptId"]).ok_or_else(|| {
-        CoreError::BadRequest("Missing attemptId in payment intent metadata".to_string())
-    })?;
+    let attempt_id =
+        parse_attempt_id(&object["metadata"][metadata_keys::ATTEMPT_ID]).ok_or_else(|| {
+            CoreError::BadRequest("Missing attemptId in payment intent metadata".to_string())
+        })?;
 
     Ok(StripePaymentIntentSucceededPayload {
         attempt_id,
@@ -479,7 +454,7 @@ fn parse_payment_failed_payload(
     event: &Value,
 ) -> Result<Option<StripePaymentFailedPayload>, CoreError> {
     let object = &event["data"]["object"];
-    let Some(attempt_id) = parse_attempt_id(&object["metadata"]["attemptId"]) else {
+    let Some(attempt_id) = parse_attempt_id(&object["metadata"][metadata_keys::ATTEMPT_ID]) else {
         return Ok(None);
     };
 
@@ -500,6 +475,7 @@ async fn fulfill_payment_attempt(
     provider_status: &str,
     provider_transaction_id: String,
     completed_at: DateTime<Utc>,
+    billing_type_override: Option<BillingType>,
 ) -> Result<(), CoreError> {
     app_state
         .purchase_service
@@ -511,7 +487,7 @@ async fn fulfill_payment_attempt(
             source: PaymentCompletionSource::ProviderWebhook {
                 provider: "stripe".to_string(),
             },
-            billing_type_override: None,
+            billing_type_override,
         })
         .await?;
 
@@ -608,7 +584,9 @@ async fn handle_checkout_session_completed(
     // If attemptId is present in metadata, fulfill via payment attempt flow.
     // This covers both one-time (mode=payment) and recurring (mode=subscription) purchases
     // initiated through PurchaseService.
-    if let Some(attempt_id) = parse_attempt_id(&event["data"]["object"]["metadata"]["attemptId"]) {
+    if let Some(attempt_id) =
+        parse_attempt_id(&event["data"]["object"]["metadata"][metadata_keys::ATTEMPT_ID])
+    {
         let provider_transaction_id = event["data"]["object"]["subscription"]
             .as_str()
             .or_else(|| event["data"]["object"]["payment_intent"].as_str())
@@ -625,12 +603,18 @@ async fn handle_checkout_session_completed(
             "Processing checkout.session.completed with attemptId - fulfilling payment attempt"
         );
 
+        let billing_type_override = mode.as_deref().and_then(|m| match m {
+            "payment" => Some(BillingType::OneTime),
+            _ => None,
+        });
+
         fulfill_payment_attempt(
             &app_state,
             attempt_id,
             "succeeded",
             provider_transaction_id,
             completed_at,
+            billing_type_override,
         )
         .await?;
 
@@ -645,24 +629,20 @@ async fn handle_checkout_session_completed(
     let payload = parse_checkout_completed_payload(&event)?;
     let event_id = payload.event_id.as_str();
 
-    match (mode.as_deref(), payload.stripe_subscription_id.as_deref()) {
+    if mode.as_deref() == Some("payment") {
         // mode=payment without attemptId: one-time checkout we cannot fulfill
-        (Some("payment"), _) => {
-            warn!(
-                realm_id = %realm_id,
-                event_id = %event_id,
-                user_id = %payload.user_id,
-                "checkout.session.completed with mode=payment but no attemptId - cannot fulfill, recording audit event"
-            );
+        warn!(
+            realm_id = %realm_id,
+            event_id = %event_id,
+            user_id = %payload.user_id,
+            "checkout.session.completed with mode=payment but no attemptId - cannot fulfill, recording audit event"
+        );
 
-            return Ok(create_placeholder_transaction(
-                payload.user_id,
-                realm_id,
-                TransactionType::Recharge,
-            ));
-        }
-        // mode=subscription or absent with subscription id: proceed with subscription creation
-        _ => {}
+        return Ok(create_placeholder_transaction(
+            payload.user_id,
+            realm_id,
+            TransactionType::Recharge,
+        ));
     }
 
     // Subscription flow requires a subscription id
@@ -811,6 +791,7 @@ async fn handle_payment_intent_succeeded(
         "succeeded",
         payload.payment_intent_id,
         payload.completed_at,
+        None,
     )
     .await?;
 
@@ -1120,10 +1101,12 @@ async fn handle_subscription_updated(
             "Processed subscription downgrade"
         );
 
+        // Placeholder for idempotency; actual downgrade classification is in
+        // subscription_history via HistoryEventType::Downgraded above.
         Ok(create_placeholder_transaction(
             payload.user_id,
             realm_id,
-            TransactionType::SubscriptionUpgrade,
+            TransactionType::SubscriptionDowngrade,
         ))
     }
 }

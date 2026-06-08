@@ -11,5 +11,5 @@ pub use errors::{PurchaseErrorExt, PurchaseResult};
 pub use ports::{FulfillmentResult, FulfillmentService, FulfillmentType, PointsGrant};
 pub use services::{
     CompletePaymentAttemptInput, CreatedPaymentAttempt, PaymentCompletionSource,
-    PreparePaymentAttemptInput, PreparedPaymentAttempt, PurchaseTargetSnapshot,
+    PreparePaymentAttemptInput, PreparedPaymentAttempt, PurchaseTargetSnapshot, metadata_keys,
 };

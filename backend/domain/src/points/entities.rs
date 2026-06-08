@@ -104,6 +104,7 @@ pub enum TransactionType {
     SubscriptionGrant,
     SubscriptionRenewal,
     SubscriptionUpgrade,
+    SubscriptionDowngrade,
     RegistrationGrant,
     FreePeriodicGrant,
     RefundRevoke,
@@ -123,6 +124,7 @@ impl TransactionType {
             TransactionType::SubscriptionGrant => "subscription_grant",
             TransactionType::SubscriptionRenewal => "subscription_renewal",
             TransactionType::SubscriptionUpgrade => "subscription_upgrade",
+            TransactionType::SubscriptionDowngrade => "subscription_downgrade",
             TransactionType::RegistrationGrant => "registration_grant",
             TransactionType::FreePeriodicGrant => "free_periodic_grant",
             TransactionType::RefundRevoke => "refund_revoke",
@@ -149,6 +151,7 @@ impl std::str::FromStr for TransactionType {
                 "subscription_grant" => Some(TransactionType::SubscriptionGrant),
                 "subscription_renewal" => Some(TransactionType::SubscriptionRenewal),
                 "subscription_upgrade" => Some(TransactionType::SubscriptionUpgrade),
+                "subscription_downgrade" => Some(TransactionType::SubscriptionDowngrade),
                 "registration_grant" => Some(TransactionType::RegistrationGrant),
                 "free_periodic_grant" => Some(TransactionType::FreePeriodicGrant),
                 "refund_revoke" => Some(TransactionType::RefundRevoke),
@@ -307,6 +310,8 @@ pub enum CreditSourceType {
     SubscriptionRenewal,
     /// 订阅升级（回收老积分，发放新积分）
     SubscriptionUpgrade,
+    /// 订阅降级（仅记录，不回收积分）
+    SubscriptionDowngrade,
     /// 充值购买
     Topup,
     /// 注册赠送
@@ -335,6 +340,7 @@ impl CreditSourceType {
             CreditSourceType::SubscriptionInitial => "subscription_initial",
             CreditSourceType::SubscriptionRenewal => "subscription_renewal",
             CreditSourceType::SubscriptionUpgrade => "subscription_upgrade",
+            CreditSourceType::SubscriptionDowngrade => "subscription_downgrade",
             CreditSourceType::Topup => "topup",
             CreditSourceType::Registration => "registration",
             CreditSourceType::FreePeriodicGrant => "free_periodic_grant",
@@ -360,6 +366,7 @@ impl std::str::FromStr for CreditSourceType {
                 "subscription_initial" => Some(CreditSourceType::SubscriptionInitial),
                 "subscription_renewal" => Some(CreditSourceType::SubscriptionRenewal),
                 "subscription_upgrade" => Some(CreditSourceType::SubscriptionUpgrade),
+                "subscription_downgrade" => Some(CreditSourceType::SubscriptionDowngrade),
                 "topup" => Some(CreditSourceType::Topup),
                 "registration" => Some(CreditSourceType::Registration),
                 "free_periodic_grant" => Some(CreditSourceType::FreePeriodicGrant),

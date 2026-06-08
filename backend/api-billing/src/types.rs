@@ -114,6 +114,30 @@ pub struct PartialSyncErrorDto {
     pub reason: String,
 }
 
+// ===== One-Time Mapping Types =====
+
+/// Single one-time mapping item for frontend display
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OneTimeMappingItem {
+    pub id: String,
+    pub entitlement_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_product_info: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points_per_period: Option<i64>,
+    pub payment_provider: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validity_days: Option<i64>,
+}
+
+/// Response for listing one-time mappings
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OneTimeMappingListResponse {
+    pub items: Vec<OneTimeMappingItem>,
+}
+
 // ===== Subscription Types =====
 
 /// Response for subscription detail

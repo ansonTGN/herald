@@ -7,6 +7,16 @@ use crate::billing::entities::BillingType;
 use crate::payment_attempt::PurchasableTarget;
 use crate::payment_attempt::entities::{PaymentAttempt, PaymentContext};
 
+/// Metadata keys written into provider checkout sessions and read back by webhook handlers.
+/// Both sides must use these constants to prevent mismatches.
+pub mod metadata_keys {
+    pub const HERALD_REALM_ID: &str = "heraldRealmId";
+    pub const HERALD_USER_ID: &str = "heraldUserId";
+    pub const TARGET_TYPE: &str = "targetType";
+    pub const TARGET_ID: &str = "targetId";
+    pub const ATTEMPT_ID: &str = "attemptId";
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparePaymentAttemptInput {
     pub realm_id: String,
