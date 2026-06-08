@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,11 +13,12 @@ import { PurchaseDetailsDialog } from '@/components/purchase/purchase-details-di
 import {
   pointsWalletQueryOptions,
   pointsTransactionsQueryOptions,
-  pointsPackagePurchaseHistoryQueryOptions,
+  purchaseHistoryQueryOptions,
   featureAvailabilityQueryOptions,
 } from '@/data/query-options'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import type { TransactionFilters as TransactionFiltersType } from '@/lib/schemas/points-forms'
+import type { PurchaseHistoryItemDto } from '@/lib/api-generated'
 import { ListPagination } from '@/components/shared'
 import { m } from '@/paraglide/messages'
 
@@ -35,10 +36,7 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
   const [transactionsPage, setTransactionsPage] = useState(1)
   const [transactionFilters, setTransactionFilters] = useState<TransactionFiltersType>({})
   const [purchaseHistoryPage, setPurchaseHistoryPage] = useState(1)
-  const [selectedPurchaseId, setSelectedPurchaseId] = useState<string | null>(null)
-
-  // Dialog open state is derived from selectedPurchaseId
-  const purchaseDetailsOpen = selectedPurchaseId !== null
+  const [selectedPurchase, setSelectedPurchase] = useState<PurchaseHistoryItemDto | null>(null)
 
   const { data: wallet, isLoading: walletLoading } = useQuery(
     pointsWalletQueryOptions(realmId, userId)
@@ -54,14 +52,38 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
   )
 
   const { data: purchaseHistoryData, isLoading: purchaseHistoryLoading } = useQuery(
-    pointsPackagePurchaseHistoryQueryOptions(realmId, {
-      userId: userId,
+    purchaseHistoryQueryOptions(realmId, {
       page: purchaseHistoryPage,
       pageSize: DEFAULT_PAGE_SIZE,
     })
   )
   const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
   const invoicesVisible = features?.user.invoicesVisible === true
+
+  // Dialog open state is derived from selectedPurchase
+  const purchaseDetailsOpen = selectedPurchase !== null
+
+  const handleDetailsClick = useCallback(
+    (attemptId: string) => {
+      const purchase = purchaseHistoryData?.items?.find((p) => p.attemptId === attemptId)
+      if (purchase) setSelectedPurchase(purchase)
+    },
+    [purchaseHistoryData?.items]
+  )
+
+  const handleApplyInvoice = useCallback(
+    (attemptId: string) => {
+      navigate({
+        to: '/$realmId/user/invoices/new',
+        params: { realmId },
+        search: {
+          paymentAttemptId: attemptId,
+          returnTo: `/${realmId}/user/points`,
+        },
+      })
+    },
+    [realmId, navigate]
+  )
 
   return (
     <div className="space-y-6" data-testid="user-points-page">
@@ -143,53 +165,33 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
             </CardHeader>
             <CardContent>
               <PurchaseHistoryList
-                purchases={purchaseHistoryData?.purchases || []}
+                purchases={purchaseHistoryData?.items || []}
                 isLoading={purchaseHistoryLoading}
-                onDetailsClick={(purchaseId) => {
-                  setSelectedPurchaseId(purchaseId)
-                }}
-                onApplyInvoice={
-                  invoicesVisible
-                    ? (paymentAttemptId) => {
-                        navigate({
-                          to: '/$realmId/user/invoices/new',
-                          params: { realmId },
-                          search: {
-                            paymentAttemptId,
-                            returnTo: `/${realmId}/user/points`,
-                          },
-                        })
-                      }
-                    : undefined
-                }
+                onDetailsClick={handleDetailsClick}
+                onApplyInvoice={invoicesVisible ? handleApplyInvoice : undefined}
               />
             </CardContent>
           </Card>
-          {purchaseHistoryData &&
-            purchaseHistoryData.purchases &&
-            purchaseHistoryData.purchases.length > 0 && (
-              <ListPagination
-                page={purchaseHistoryPage - 1}
-                pageSize={DEFAULT_PAGE_SIZE}
-                total={purchaseHistoryData.purchases.length}
-                onPageChange={(page) => setPurchaseHistoryPage(page + 1)}
-                testIdPrefix="purchase-pagination"
-              />
-            )}
+          {purchaseHistoryData && purchaseHistoryData.total > 0 && (
+            <ListPagination
+              page={purchaseHistoryPage - 1}
+              pageSize={DEFAULT_PAGE_SIZE}
+              total={purchaseHistoryData.total}
+              onPageChange={(page) => setPurchaseHistoryPage(page + 1)}
+              testIdPrefix="purchase-pagination"
+            />
+          )}
         </TabsContent>
       </Tabs>
 
       {/* Purchase Details Dialog */}
-      {selectedPurchaseId && (
-        <PurchaseDetailsDialog
-          purchaseId={selectedPurchaseId}
-          realmId={realmId}
-          open={purchaseDetailsOpen}
-          onOpenChange={(open) => {
-            if (!open) setSelectedPurchaseId(null)
-          }}
-        />
-      )}
+      <PurchaseDetailsDialog
+        purchase={selectedPurchase}
+        open={purchaseDetailsOpen}
+        onOpenChange={(open) => {
+          if (!open) setSelectedPurchase(null)
+        }}
+      />
     </div>
   )
 }

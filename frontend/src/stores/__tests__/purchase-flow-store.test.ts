@@ -29,22 +29,22 @@ describe('Purchase Flow Store', () => {
   })
 
   describe('setPurchaseState', () => {
-    it('should set purchase state', () => {
+    it('should set purchase state with entitlement_mapping target type', () => {
       const { setPurchaseState } = usePurchaseFlowStore.getState()
 
       setPurchaseState({
         realmId: 'test-realm',
         userId: 'test-user',
-        targetType: 'points_package',
-        targetId: 'test-package',
+        targetType: 'entitlement_mapping',
+        targetId: '550e8400-e29b-41d4-a716-446655440000',
         paymentProvider: 'stripe',
       })
 
       const state = usePurchaseFlowStore.getState()
       expect(state.realmId).toBe('test-realm')
       expect(state.userId).toBe('test-user')
-      expect(state.targetType).toBe('points_package')
-      expect(state.targetId).toBe('test-package')
+      expect(state.targetType).toBe('entitlement_mapping')
+      expect(state.targetId).toBe('550e8400-e29b-41d4-a716-446655440000')
       expect(state.paymentProvider).toBe('stripe')
     })
   })
@@ -81,8 +81,8 @@ describe('Purchase Flow Store', () => {
       setPurchaseState({
         realmId: 'test-realm',
         userId: 'test-user',
-        targetType: 'points_package',
-        targetId: 'test-package',
+        targetType: 'entitlement_mapping',
+        targetId: '550e8400-e29b-41d4-a716-446655440000',
         paymentProvider: 'stripe',
       })
 
@@ -191,6 +191,49 @@ describe('Purchase Flow Store', () => {
       // No realmId or userId set
       expect(canRecover()).toBe(false)
     })
+
+    it('should recover with entitlement_mapping target type', () => {
+      const { setPurchaseState, setPaymentAttempt, canRecover } = usePurchaseFlowStore.getState()
+
+      const futureExpiry = new Date(Date.now() + 15 * 60 * 1000).toISOString()
+
+      setPurchaseState({
+        realmId: 'test-realm',
+        userId: 'test-user',
+        targetType: 'entitlement_mapping',
+        targetId: '550e8400-e29b-41d4-a716-446655440000',
+      })
+
+      setPaymentAttempt('attempt-123', 'Pending', { paymentProvider: 'creem' }, futureExpiry)
+
+      expect(canRecover()).toBe(true)
+
+      const state = usePurchaseFlowStore.getState()
+      expect(state.targetType).toBe('entitlement_mapping')
+      expect(state.targetId).toBe('550e8400-e29b-41d4-a716-446655440000')
+    })
+
+    it('should recover RequiresAction status with entitlement_mapping', () => {
+      const { setPurchaseState, setPaymentAttempt, canRecover } = usePurchaseFlowStore.getState()
+
+      const futureExpiry = new Date(Date.now() + 15 * 60 * 1000).toISOString()
+
+      setPurchaseState({
+        realmId: 'test-realm',
+        userId: 'test-user',
+        targetType: 'entitlement_mapping',
+        targetId: '550e8400-e29b-41d4-a716-446655440000',
+      })
+
+      setPaymentAttempt(
+        'attempt-456',
+        'RequiresAction',
+        { paymentProvider: 'stripe' },
+        futureExpiry
+      )
+
+      expect(canRecover()).toBe(true)
+    })
   })
 
   describe('State persistence and recovery', () => {
@@ -202,8 +245,8 @@ describe('Purchase Flow Store', () => {
       setPurchaseState({
         realmId: 'test-realm',
         userId: 'test-user',
-        targetType: 'points_package',
-        targetId: 'test-package',
+        targetType: 'entitlement_mapping',
+        targetId: '550e8400-e29b-41d4-a716-446655440000',
         paymentProvider: 'stripe',
       })
 
@@ -261,6 +304,36 @@ describe('Purchase Flow Store', () => {
         const state = usePurchaseFlowStore.getState()
         expect(state.realmId).toBe(null)
       }).not.toThrow()
+    })
+
+    it('should clear stale points_package state on rehydration', () => {
+      // Simulate stale persisted state from an old deployment where
+      // targetType was still 'points_package'. The rehydration guard
+      // in onRehydrateStorage must detect this and clear all purchase state.
+      const staleState = JSON.stringify({
+        state: {
+          realmId: 'test-realm',
+          userId: 'test-user',
+          targetType: 'points_package',
+          targetId: 'old-package-id',
+          paymentProvider: 'stripe',
+          attemptId: null,
+          attemptStatus: null,
+          paymentContext: null,
+          expiresAt: null,
+        },
+        version: 0,
+      })
+      localStorage.setItem('cas-purchase-flow', staleState)
+
+      // Trigger rehydration from the stale localStorage data
+      usePurchaseFlowStore.persist.rehydrate()
+
+      const state = usePurchaseFlowStore.getState()
+      expect(state.targetType).toBeNull()
+      expect(state.targetId).toBeNull()
+      expect(state.realmId).toBeNull()
+      expect(state.userId).toBeNull()
     })
   })
 
@@ -389,10 +462,10 @@ describe('Purchase Flow Store', () => {
       })
     })
 
-    it('should handle all target types', () => {
+    it('should handle all valid target types', () => {
       const { setPurchaseState } = usePurchaseFlowStore.getState()
 
-      const targetTypes = ['points_package', 'subscription'] as const
+      const targetTypes = ['entitlement_mapping', 'subscription_plan'] as const
 
       targetTypes.forEach((targetType) => {
         setPurchaseState({

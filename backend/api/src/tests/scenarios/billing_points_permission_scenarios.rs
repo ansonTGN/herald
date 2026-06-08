@@ -2,22 +2,18 @@
 // Billing & Points Permission Scenario Tests
 // =============================================================================
 //
-// Verifies that billing.view/manage and points.view/manage are enforced as
-// distinct permissions for billing and points endpoints.
+// Verifies that billing.view/manage are enforced as distinct permissions for
+// billing endpoints.
 //
 // User Stories covered:
 // - US-RA-009: Permission hierarchy -- billing.view/manage enforcement
-// - US-BP-001: Points package permission model -- points.view/manage
 //
 // Reference: docs/user-stories/core/realm-admin.md (US-RA-009)
-// Reference: docs/user-stories/core/builtin-protection.md (US-BP-001)
 //
 // Routes:
 //   GET  /api/bill/{realmId}/subscriptions/history     -> requires billing.view
 //   GET  /api/third/pay/{realmId}/providers            -> billing.view (only enabled) or billing.manage (all)
 //   POST /api/third/pay/{realmId}/providers/shopify    -> requires billing.manage
-//   GET  /api/bill/{realmId}/points-packages           -> requires points.view
-//   POST /api/bill/{realmId}/points-packages           -> requires points.manage
 //
 // =============================================================================
 
@@ -275,92 +271,5 @@ async fn test_scenario_billing_view_denies_provider_create(ctx: &mut TestContext
         resp.status(),
         StatusCode::FORBIDDEN,
         "User with billing.view only should get 403 Forbidden for provider create"
-    );
-}
-
-// =============================================================================
-// Scenario 5: points.view grants points package list (US-BP-001)
-// =============================================================================
-
-// User Story: docs/user-stories/core/builtin-protection.md (US-BP-001)
-// Covers: User with points.view can list points packages
-//
-// Given a user with ONLY points.view permission,
-// When calling GET /api/bill/{realmId}/points-packages,
-// Then response is 200 OK.
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_points_view_grants_package_list(ctx: &mut TestContext) {
-    let app = ctx.create_unified_test_router();
-
-    // Given: user with points.view permission
-    let (user_token, user_id) =
-        create_admin_session_with_user(ctx, "points-view-list@test.com", 1800).await;
-    grant_single_permission(ctx, &user_id, "points", "view").await;
-
-    // When: calling points packages list endpoint
-    let req = Request::builder()
-        .method("GET")
-        .uri(format!("/api/bill/{}/points-packages", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
-        .body(Body::empty())
-        .unwrap();
-
-    let resp = app.clone().oneshot(req).await.unwrap();
-
-    // Then: 200 OK
-    assert_eq!(
-        resp.status(),
-        StatusCode::OK,
-        "User with points.view should get 200 OK for points package list"
-    );
-}
-
-// =============================================================================
-// Scenario 6: points.manage grants points package CRUD (US-BP-001)
-// =============================================================================
-
-// User Story: docs/user-stories/core/builtin-protection.md (US-BP-001)
-// Covers: User with points.manage can create points packages
-//
-// Given a user with ONLY points.manage permission,
-// When calling POST /api/bill/{realmId}/points-packages to create a package,
-// Then response is success (not 403).
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_points_manage_grants_package_crud(ctx: &mut TestContext) {
-    let app = ctx.create_unified_test_router();
-
-    // Given: user with points.manage permission
-    let (user_token, user_id) =
-        create_admin_session_with_user(ctx, "points-manage-crud@test.com", 1800).await;
-    grant_single_permission(ctx, &user_id, "points", "manage").await;
-
-    // When: attempting to create a points package
-    let body = serde_json::json!({
-        "name": "test-package-perm",
-        "title": "Test Package for Permission",
-        "description": "Created by permission test",
-        "points": 100,
-        "price": 999,
-        "currency": "USD"
-    });
-    let req = Request::builder()
-        .method("POST")
-        .uri(format!("/api/bill/{}/points-packages", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(body.to_string()))
-        .unwrap();
-
-    let resp = app.clone().oneshot(req).await.unwrap();
-
-    // Then: not 403 -- points.manage grants permission to create packages.
-    // Note: response may be 201 (created) or another error, but must NOT be
-    // 403 Forbidden.
-    assert_ne!(
-        resp.status(),
-        StatusCode::FORBIDDEN,
-        "User with points.manage should NOT get 403 Forbidden for package create"
     );
 }

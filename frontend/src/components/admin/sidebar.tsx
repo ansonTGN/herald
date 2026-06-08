@@ -11,7 +11,6 @@ import {
   Briefcase,
   CreditCard,
   History,
-  Coins,
   FileText,
   ScrollText,
 } from 'lucide-react'
@@ -58,7 +57,6 @@ export function Sidebar() {
       'payment-providers': m['nav.payment_providers'],
       'subscription-plans': m['nav.subscription_plans'],
       'entitlement-mappings': m['nav.entitlement_mappings'],
-      'points-packages': m['nav.points_packages'],
       'points-rules': m['nav.points_rules'],
       'points-free-stats': m['nav.free_stats'],
       'points-realm-config': m['nav.realm_config'],
@@ -164,14 +162,6 @@ export function Sidebar() {
             icon: CreditCard,
             permission: PERMISSION.BILLING_VIEW,
             visible: adminFeatures?.entitlementMappingsVisible ?? true,
-          },
-          {
-            id: 'points-packages',
-            name: 'Points Packages',
-            path: `/${realmId}/manage/points-packages`,
-            icon: Coins,
-            permission: PERMISSION.POINTS_VIEW,
-            visible: adminFeatures?.pointsPackagesVisible ?? true,
           },
           {
             id: 'points-rules',

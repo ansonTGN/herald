@@ -55,11 +55,6 @@ pub mod shopify_config_authz_scenarios;
 // Shopify Config Encryption scenario tests
 pub mod shopify_config_encryption_scenarios;
 
-// Points Package scenario tests
-pub mod points_package_authz_scenarios;
-pub mod points_package_promo_scenarios;
-pub mod points_package_purchase_scenarios;
-
 // WeChat Pay config scenario tests
 pub mod wechat_config_authz_scenarios;
 

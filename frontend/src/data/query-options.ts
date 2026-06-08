@@ -27,13 +27,10 @@ import {
   getRealmDefaultConfig,
   updateRealmDefaultConfig,
   getFreeUserStatistics,
-  listPointsPackages,
-  getPointsPackage,
-  getPointsPackagePurchaseHistory,
-  getPointsPackagePurchaseDetails,
   getPaymentAttemptStatus,
   listPaymentProviders,
-  listPaymentProviderMappings,
+  listOneTimeMappings,
+  getPurchaseHistory,
   listAuditEvents,
   getAuditEvent,
   getDashboardStats,
@@ -50,11 +47,12 @@ import type {
   OAuthConfigResponse,
   PaymentAttemptStatusResponse,
   PointsWalletResponse,
-  PointsPackageResponse,
   EntitlementMappingListResponse,
   EntitlementMappingResponse,
   SubscriptionListResponse,
   SubscriptionDetailResponse,
+  OneTimeMappingExtResponse,
+  PurchaseHistoryResponse,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -199,14 +197,12 @@ export const queryKeys = {
   freeUserStats: (realmId: string, dateRange?: { startDate?: string; endDate?: string }) =>
     [QUERY_KEYS.FREE_USER_STATS, realmId, dateRange] as const,
   userRoles: () => [QUERY_KEYS.USER_ROLES] as const,
-  pointsPackages: (realmId: string) => [QUERY_KEYS.POINTS_PACKAGES, realmId] as const,
-  extPointsPackages: (realmId: string) => [QUERY_KEYS.EXT_POINTS_PACKAGES, realmId] as const,
-  pointsPackage: (realmId: string, packageId: string) =>
-    [QUERY_KEYS.POINTS_PACKAGE, realmId, packageId] as const,
-  pointsPackagePurchases: (realmId: string, filters: Record<string, unknown>) =>
-    [QUERY_KEYS.POINTS_PACKAGE_PURCHASES, realmId, filters] as const,
+  oneTimeMappings: (realmId: string) => [QUERY_KEYS.ONE_TIME_MAPPINGS_EXT, realmId] as const,
+  purchaseHistory: (realmId: string, filters: Record<string, unknown>) =>
+    [QUERY_KEYS.PURCHASE_HISTORY, realmId, filters] as const,
   paymentAttemptStatus: (realmId: string, attemptId: string) =>
     [QUERY_KEYS.PAYMENT_ATTEMPT_STATUS, realmId, attemptId] as const,
+  paymentProviders: (realmId: string) => [QUERY_KEYS.PAYMENT_PROVIDERS, realmId] as const,
   audit: (realmId: string, filters?: Record<string, unknown>) =>
     [QUERY_KEYS.AUDIT_EVENTS, realmId, filters ?? {}] as const,
   auditDetail: (realmId: string, eventId: string) =>
@@ -266,7 +262,6 @@ export type FeatureAvailabilityResponse = {
     invoicesVisible: boolean
     subscriptionHistoryVisible: boolean
     pointsVisible: boolean
-    pointsPackagesVisible: boolean
   }
   user: {
     pointsVisible: boolean
@@ -278,8 +273,7 @@ export type FeatureAvailabilityResponse = {
     hasPaymentProviders: boolean
     hasEntitlementMappings: boolean
     hasEnabledMappings: boolean
-    hasPointsPackages: boolean
-    hasPointsPackagePaymentMappings: boolean
+    hasOneTimeMappings: boolean
     hasInvoiceSellerConfig: boolean
     hasInvoices: boolean
     hasSubscriptionHistory: boolean
@@ -826,94 +820,61 @@ export const freeUserStatsQueryOptions = (
     refetchInterval: TIME_CONSTANTS.FIVE_MINUTES,
   })
 
-// ==================== Points Packages ====================
+// ==================== One-Time Mappings ====================
 
-export const pointsPackagesQueryOptions = (realmId: string) =>
+export const oneTimeMappingsQueryOptions = (realmId: string) =>
   queryOptions({
-    queryKey: queryKeys.pointsPackages(realmId),
+    queryKey: queryKeys.oneTimeMappings(realmId),
     queryFn: async () => {
-      const response = await listPointsPackages({
+      const response = await listOneTimeMappings({
         path: { realmId },
       })
       if (response.error) throw response.error
-      // Response has .packages property, not .items
-      return response.data?.packages ?? []
+      return (response.data as OneTimeMappingExtResponse).items ?? []
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_5_MIN,
   })
 
-export const pointsPackagesExtQueryOptions = (realmId: string) =>
-  queryOptions({
-    queryKey: queryKeys.extPointsPackages(realmId),
-    queryFn: async () => {
-      const res = await fetch(`/api/bill/${realmId}/points-packages?visible=true`, {
-        credentials: 'include',
-      })
-      if (!res.ok) throw new Error(`Failed to load packages: ${res.status}`)
-      const data = await res.json()
-      return (data as { packages: PointsPackageResponse[] }).packages ?? []
-    },
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_5_MIN,
-  })
+// ==================== Purchase History ====================
 
-export const pointsPackageQueryOptions = (realmId: string, packageId: string) =>
-  queryOptions({
-    queryKey: queryKeys.pointsPackage(realmId, packageId),
-    queryFn: async () => {
-      const response = await getPointsPackage({
-        path: { realmId, packageId },
-      })
-      if (response.error) throw response.error
-      return response.data
-    },
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_5_MIN,
-  })
+export interface PurchaseHistoryFilters {
+  page?: number
+  pageSize?: number
+  paymentProvider?: string
+  startDate?: string
+  endDate?: string
+}
 
-export const pointsPackagePurchaseHistoryQueryOptions = (
+export const purchaseHistoryQueryOptions = (
   realmId: string,
-  filters: {
-    page?: number
-    pageSize?: number
-    userId?: string
-    status?: string
-    startTime?: string
-    endTime?: string
-  }
+  filters: PurchaseHistoryFilters = {}
 ) =>
   queryOptions({
-    queryKey: queryKeys.pointsPackagePurchases(realmId, filters),
+    queryKey: queryKeys.purchaseHistory(realmId, filters as Record<string, unknown>),
     queryFn: async () => {
-      const page = filters.page ?? 1
-      const pageSize = filters.pageSize ?? 20
-      const response = await getPointsPackagePurchaseHistory({
+      const query: Record<string, unknown> = {}
+      if (filters.page !== undefined) query.page = filters.page
+      if (filters.pageSize !== undefined) query.page_size = filters.pageSize
+      if (filters.paymentProvider !== undefined) query.payment_provider = filters.paymentProvider
+      if (filters.startDate !== undefined) query.start_date = filters.startDate
+      if (filters.endDate !== undefined) query.end_date = filters.endDate
+
+      const response = await getPurchaseHistory({
         path: { realmId },
-        query: {
-          offset: (page - 1) * pageSize,
-          limit: pageSize,
+        query: query as {
+          page?: number | null
+          page_size?: number | null
+          payment_provider?: string | null
+          start_date?: string | null
+          end_date?: string | null
         },
       })
       if (response.error) throw response.error
-      return response.data
+      return response.data as PurchaseHistoryResponse
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
-  })
-
-export const pointsPackagePurchaseDetailsQueryOptions = (realmId: string, purchaseId: string) =>
-  queryOptions({
-    queryKey: ['points-package-purchase-details', realmId, purchaseId] as const,
-    queryFn: async () => {
-      const response = await getPointsPackagePurchaseDetails({
-        path: { realmId, purchaseId },
-      })
-      if (response.error) throw response.error
-      return response.data
-    },
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_5_MIN,
   })
 
 export const paymentAttemptStatusQueryOptions = (realmId: string, attemptId: string) =>
@@ -947,27 +908,13 @@ export const paymentAttemptStatusQueryOptions = (realmId: string, attemptId: str
 
 export const paymentProvidersQueryOptions = (realmId: string) =>
   queryOptions({
-    queryKey: ['payment-providers', realmId] as const,
+    queryKey: queryKeys.paymentProviders(realmId),
     queryFn: async () => {
       const response = await listPaymentProviders({
         path: { realmId },
       })
       if (response.error) throw response.error
       return response.data?.providers ?? []
-    },
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_5_MIN,
-  })
-
-export const paymentProviderMappingsQueryOptions = (realmId: string, packageId: string) =>
-  queryOptions({
-    queryKey: ['payment-provider-mappings', realmId, packageId] as const,
-    queryFn: async () => {
-      const response = await listPaymentProviderMappings({
-        path: { realmId, packageId },
-      })
-      if (response.error) throw response.error
-      return response.data?.mappings ?? []
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_5_MIN,

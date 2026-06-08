@@ -4,24 +4,23 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertCircle, ArrowLeft, ArrowRight, Loader2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Loader2, Check } from 'lucide-react'
 import { createPaymentAttempt, cancelPaymentAttempt } from '@/lib/api-generated'
-import type { PaymentAttemptStatusResponse } from '@/lib/api-generated'
+import type { PaymentAttemptStatusResponse, OneTimeMappingItem } from '@/lib/api-generated'
 import {
-  pointsPackagesExtQueryOptions,
+  oneTimeMappingsQueryOptions,
   paymentProvidersQueryOptions,
   paymentAttemptStatusQueryOptions,
   queryKeys,
   requireFeature,
 } from '@/data/query-options'
-import { PointsPackageSelector } from '@/components/purchase/points-package-selector'
 import { PaymentMethodSelector } from '@/components/purchase/payment-method-selector'
 import { PaymentAttemptStatus } from '@/components/purchase/payment-attempt-status'
 import { usePurchaseFlowActions, usePaymentAttempt } from '@/stores/purchase-flow-store'
 import { usePurchaseFlowStore } from '@/stores/purchase-flow-store'
 import { useAuthStore } from '@/stores/auth-store'
+import { formatInvoiceAmount, extractProviderPrice } from '@/lib/invoice-utils'
 import { toast } from 'sonner'
-import { formatPrice } from '@/lib/schemas/points-package-forms'
 
 export const Route = createFileRoute('/$realmId/user/purchase-points')({
   beforeLoad: ({ context, params }) =>
@@ -34,6 +33,70 @@ export const Route = createFileRoute('/$realmId/user/purchase-points')({
 
 type PurchaseStep = 'packages' | 'payment' | 'processing' | 'complete'
 
+function MappingCard({
+  mapping,
+  isSelected,
+  onSelect,
+}: {
+  mapping: OneTimeMappingItem
+  isSelected: boolean
+  onSelect: () => void
+}) {
+  const priceInfo = extractProviderPrice(mapping.providerProductInfo)
+  const hasProvider = !!mapping.paymentProvider
+
+  return (
+    <Card
+      className={`cursor-pointer transition-all ${
+        isSelected
+          ? 'border-primary ring-2 ring-primary'
+          : 'border-muted-foreground/25 hover:border-muted-foreground/50'
+      } ${!hasProvider ? 'opacity-60' : ''}`}
+      onClick={hasProvider ? onSelect : undefined}
+      data-testid={`mapping-card-${mapping.entitlementKey}`}
+    >
+      <CardContent className="p-4">
+        <div className="flex w-full items-center justify-between">
+          <div className="flex-1 space-y-1">
+            <div className="font-medium">{mapping.entitlementKey}</div>
+            {mapping.pointsPerPeriod != null && (
+              <div className="text-sm text-muted-foreground">
+                {m['points.purchase_mapping_points']({
+                  points: mapping.pointsPerPeriod.toLocaleString(),
+                })}
+              </div>
+            )}
+            {mapping.validityDays != null && (
+              <div className="text-sm text-muted-foreground">
+                {m['points.purchase_mapping_validity']({ days: String(mapping.validityDays) })}
+              </div>
+            )}
+            {priceInfo ? (
+              <div className="text-sm font-medium">
+                {formatInvoiceAmount(priceInfo.amount, priceInfo.currency)}
+              </div>
+            ) : (
+              <div className="text-sm text-muted-foreground">
+                {m['points.purchase_price_at_checkout']()}
+              </div>
+            )}
+            {!hasProvider && (
+              <div className="text-xs text-muted-foreground" data-testid="no-provider-hint">
+                {m['points.purchase_no_provider']()}
+              </div>
+            )}
+          </div>
+          {isSelected && (
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary">
+              <Check className="h-4 w-4 text-primary-foreground" />
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 function PurchasePointsPage() {
   const { realmId } = Route.useParams()
   const navigate = useNavigate()
@@ -42,7 +105,7 @@ function PurchasePointsPage() {
 
   // Purchase flow state
   const [currentStep, setCurrentStep] = useState<PurchaseStep>('packages')
-  const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null)
+  const [selectedMappingId, setSelectedMappingId] = useState<string | null>(null)
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null)
 
   // Store actions
@@ -52,9 +115,9 @@ function PurchasePointsPage() {
   const { attemptId } = paymentAttempt
   const paymentProvider = usePurchaseFlowStore((state) => state.paymentProvider)
 
-  // Fetch packages and providers
-  const { data: packages, isLoading: packagesLoading } = useQuery(
-    pointsPackagesExtQueryOptions(realmId)
+  // Fetch mappings and providers
+  const { data: mappings, isLoading: mappingsLoading } = useQuery(
+    oneTimeMappingsQueryOptions(realmId)
   )
   const { data: providers, isLoading: providersLoading } = useQuery(
     paymentProvidersQueryOptions(realmId)
@@ -104,7 +167,7 @@ function PurchasePointsPage() {
         if (user?.id) {
           queryClient.invalidateQueries({ queryKey: queryKeys.pointsWallet(realmId, user.id) })
         }
-        queryClient.invalidateQueries({ queryKey: ['points-package-purchases', realmId] })
+        queryClient.invalidateQueries({ queryKey: queryKeys.purchaseHistory(realmId, {}) })
       } else if (
         paymentStatus.status === 'Failed' ||
         paymentStatus.status === 'Cancelled' ||
@@ -135,12 +198,12 @@ function PurchasePointsPage() {
 
   // Create payment attempt mutation
   const createPaymentMutation = useMutation({
-    mutationFn: async (data: { packageId: string; provider: string }) => {
+    mutationFn: async (data: { mappingId: string; provider: string }) => {
       const response = await createPaymentAttempt({
         path: { realmId },
         body: {
-          targetType: 'points_package',
-          targetId: data.packageId,
+          targetType: 'entitlement_mapping',
+          targetId: data.mappingId,
           paymentProvider: data.provider,
         },
       })
@@ -152,8 +215,8 @@ function PurchasePointsPage() {
         setPurchaseState({
           realmId,
           userId: user?.id || null,
-          targetType: 'points_package',
-          targetId: selectedPackageId,
+          targetType: 'entitlement_mapping',
+          targetId: selectedMappingId,
           paymentProvider: selectedProvider,
         })
 
@@ -191,13 +254,13 @@ function PurchasePointsPage() {
     },
   })
 
-  const selectedPackage = packages?.find((p) => p.id === selectedPackageId)
+  const selectedMapping = mappings?.find((m) => m.id === selectedMappingId)
 
   const handleNextStep = () => {
-    if (currentStep === 'packages' && selectedPackageId) {
+    if (currentStep === 'packages' && selectedMappingId) {
       setCurrentStep('payment')
-    } else if (currentStep === 'payment' && selectedPackageId && selectedProvider) {
-      createPaymentMutation.mutate({ packageId: selectedPackageId, provider: selectedProvider })
+    } else if (currentStep === 'payment' && selectedMappingId && selectedProvider) {
+      createPaymentMutation.mutate({ mappingId: selectedMappingId, provider: selectedProvider })
     }
   }
 
@@ -220,7 +283,7 @@ function PurchasePointsPage() {
   }
 
   const isNextDisabled = () => {
-    if (currentStep === 'packages') return !selectedPackageId
+    if (currentStep === 'packages') return !selectedMappingId
     if (currentStep === 'payment') return !selectedProvider || createPaymentMutation.isPending
     return true
   }
@@ -236,12 +299,32 @@ function PurchasePointsPage() {
                 {m['points.purchase_select_package_description']()}
               </p>
             </div>
-            <PointsPackageSelector
-              packages={packages || []}
-              selectedPackageId={selectedPackageId}
-              onSelect={setSelectedPackageId}
-              disabled={packagesLoading}
-            />
+            {mappingsLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : !mappings || mappings.length === 0 ? (
+              <div
+                className="rounded-lg border border-dashed p-8 text-center text-muted-foreground"
+                data-testid="purchase-empty-state"
+              >
+                {m['points.purchase_no_mappings']()}
+              </div>
+            ) : (
+              <div
+                className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
+                data-testid="mapping-cards"
+              >
+                {mappings.map((mapping) => (
+                  <MappingCard
+                    key={mapping.id}
+                    mapping={mapping}
+                    isSelected={selectedMappingId === mapping.id}
+                    onSelect={() => setSelectedMappingId(mapping.id)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )
 
@@ -252,9 +335,14 @@ function PurchasePointsPage() {
               <h2 className="text-2xl font-bold">{m['points.purchase_payment_title']()}</h2>
               <p className="text-muted-foreground">
                 {m['points.purchase_payment_description']({
-                  points: selectedPackage?.points.toLocaleString() ?? '',
-                  price: selectedPackage
-                    ? formatPrice(selectedPackage.price, selectedPackage.currency)
+                  points: selectedMapping?.pointsPerPeriod?.toLocaleString() ?? '',
+                  price: selectedMapping
+                    ? (() => {
+                        const priceInfo = extractProviderPrice(selectedMapping.providerProductInfo)
+                        return priceInfo
+                          ? formatInvoiceAmount(priceInfo.amount, priceInfo.currency)
+                          : m['points.purchase_price_at_checkout']()
+                      })()
                     : '',
                 })}
               </p>

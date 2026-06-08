@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
+import { formatInvoiceAmount, extractProviderPrice } from '@/lib/invoice-utils'
 import {
   Dialog,
   DialogContent,
@@ -47,18 +48,10 @@ function formatProviderName(provider: string): string {
   return names[provider] ?? provider
 }
 
-function getProviderProductDisplay(providerProductInfo: unknown): {
-  name?: string
-  price?: number
-  currency?: string
-} {
-  if (!providerProductInfo || typeof providerProductInfo !== 'object') return {}
+function getProviderProductName(providerProductInfo: unknown): string | undefined {
+  if (!providerProductInfo || typeof providerProductInfo !== 'object') return undefined
   const info = providerProductInfo as Record<string, unknown>
-  return {
-    name: typeof info.name === 'string' ? info.name : undefined,
-    price: typeof info.price === 'number' ? info.price : undefined,
-    currency: typeof info.currency === 'string' ? info.currency : undefined,
-  }
+  return typeof info.name === 'string' ? info.name : undefined
 }
 
 export function EntitlementMappingDetailDialog({
@@ -358,17 +351,18 @@ export function EntitlementMappingDetailDialog({
 }
 
 function ProviderProductInfoCard({ info }: { info: unknown }) {
-  const display = getProviderProductDisplay(info)
-  if (!display.name && display.price === undefined && !display.currency) return null
+  const name = getProviderProductName(info)
+  const priceInfo = extractProviderPrice(info)
+  if (!name && !priceInfo) return null
 
   return (
     <div className="rounded-md border p-3 space-y-1" data-testid="provider-product-info-card">
       <p className="text-xs font-medium text-muted-foreground">Provider Product Info</p>
       <div className="flex gap-4 text-sm">
-        {display.name && <span>{display.name}</span>}
-        {display.price !== undefined && (
+        {name && <span>{name}</span>}
+        {priceInfo && (
           <span className="font-mono">
-            {display.price / 100} {display.currency?.toUpperCase() ?? ''}
+            {formatInvoiceAmount(priceInfo.amount, priceInfo.currency)}
           </span>
         )}
       </div>

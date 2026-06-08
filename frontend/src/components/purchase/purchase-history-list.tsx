@@ -11,21 +11,23 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { PurchaseHistoryItemDto } from '@/lib/api-generated'
+import { formatInvoiceAmount, getPaymentStatusBadgeVariant } from '@/lib/invoice-utils'
 
 interface PurchaseHistoryListProps {
   purchases: PurchaseHistoryItemDto[]
   isLoading: boolean
   error?: Error
-  onDetailsClick: (purchaseId: string) => void
-  onApplyInvoice?: (paymentAttemptId: string) => void
+  onDetailsClick: (attemptId: string) => void
+  onApplyInvoice?: (attemptId: string) => void
 }
 
 interface HistoryTableRowProps {
   purchase: PurchaseHistoryItemDto
-  onDetailsClick: (purchaseId: string) => void
-  onApplyInvoice?: (paymentAttemptId: string) => void
+  onDetailsClick: (attemptId: string) => void
+  onApplyInvoice?: (attemptId: string) => void
 }
 
 const HistoryTableRow = memo(
@@ -39,30 +41,27 @@ const HistoryTableRow = memo(
     }, [purchase.createdAt])
 
     return (
-      <TableRow data-testid={`purchase-history-item-${purchase.id}`}>
+      <TableRow data-testid={`purchase-history-item-${purchase.attemptId}`}>
         <TableCell className="font-medium">{timestamp}</TableCell>
         <TableCell>
-          {purchase.pointsPackageId ? (
-            <div>
-              <div className="text-sm font-medium">Package #{purchase.pointsPackageId}</div>
-              <div className="text-xs text-muted-foreground">
-                {purchase.points.toLocaleString()} points
-              </div>
-            </div>
-          ) : (
-            <span className="text-sm text-muted-foreground">-</span>
+          {purchase.productName ?? (
+            <span className="text-sm text-muted-foreground">
+              {m['points.purchase_history_unknown_product']()}
+            </span>
           )}
         </TableCell>
         <TableCell>
-          <div className="flex items-center gap-2">
-            <Coins className="h-4 w-4 text-primary" />
-            <span className="font-medium">{purchase.points.toLocaleString()}</span>
-          </div>
+          {purchase.points != null ? (
+            <div className="flex items-center gap-2">
+              <Coins className="h-4 w-4 text-primary" />
+              <span className="font-medium">{purchase.points.toLocaleString()}</span>
+            </div>
+          ) : (
+            <span className="text-sm text-muted-foreground">--</span>
+          )}
         </TableCell>
         <TableCell>
-          <div className="text-sm">
-            {purchase.amount.toFixed(2)} {purchase.currency}
-          </div>
+          <div className="text-sm">{formatInvoiceAmount(purchase.amount, purchase.currency)}</div>
         </TableCell>
         <TableCell>
           <div className="flex items-center gap-2">
@@ -70,27 +69,32 @@ const HistoryTableRow = memo(
             <span className="text-sm">{purchase.paymentProvider}</span>
           </div>
         </TableCell>
+        <TableCell>
+          <Badge variant={getPaymentStatusBadgeVariant(purchase.status)} className="text-xs">
+            {purchase.status}
+          </Badge>
+        </TableCell>
         <TableCell className="text-right">
           <div className="flex justify-end gap-1">
             {onApplyInvoice && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => onApplyInvoice(purchase.paymentAttemptId)}
-                data-testid={`purchase-history-invoice-button-${purchase.id}`}
+                onClick={() => onApplyInvoice(purchase.attemptId)}
+                data-testid={`purchase-history-invoice-button-${purchase.attemptId}`}
               >
                 <FileText className="h-4 w-4" />
-                <span className="sr-only">Apply for invoice</span>
+                <span className="sr-only">{m['points.purchase_history_invoice_sr']()}</span>
               </Button>
             )}
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onDetailsClick(purchase.id)}
-              data-testid={`purchase-history-details-button-${purchase.id}`}
+              onClick={() => onDetailsClick(purchase.attemptId)}
+              data-testid={`purchase-history-details-button-${purchase.attemptId}`}
             >
               <ChevronRight className="h-4 w-4" />
-              <span className="sr-only">View details</span>
+              <span className="sr-only">{m['points.purchase_history_details_sr']()}</span>
             </Button>
           </div>
         </TableCell>
@@ -142,7 +146,7 @@ export function PurchaseHistoryList({
         <Calendar className="mb-4 h-12 w-12 text-muted-foreground" />
         <h3 className="text-lg font-semibold">{m['points.purchase_history_empty_title']()}</h3>
         <p className="text-sm text-muted-foreground">
-          You haven't purchased any points packages yet
+          {m['points.purchase_history_empty_description']()}
         </p>
       </div>
     )
@@ -154,17 +158,18 @@ export function PurchaseHistoryList({
         <TableHeader>
           <TableRow>
             <TableHead>{m['points.purchase_history_date']()}</TableHead>
-            <TableHead>{m['points.purchase_history_package']()}</TableHead>
+            <TableHead>{m['points.purchase_history_product']()}</TableHead>
             <TableHead>{m['points.purchase_history_points']()}</TableHead>
             <TableHead>{m['points.purchase_history_amount']()}</TableHead>
             <TableHead>{m['points.purchase_history_provider']()}</TableHead>
+            <TableHead>{m['points.purchase_history_status']()}</TableHead>
             <TableHead className="text-right">{m['points.purchase_history_actions']()}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {purchases.map((purchase) => (
             <HistoryTableRow
-              key={purchase.id}
+              key={purchase.attemptId}
               purchase={purchase}
               onDetailsClick={onDetailsClick}
               onApplyInvoice={onApplyInvoice}

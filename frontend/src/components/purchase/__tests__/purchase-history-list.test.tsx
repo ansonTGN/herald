@@ -5,16 +5,15 @@ import { PurchaseHistoryList } from '../purchase-history-list'
 import type { PurchaseHistoryItemDto } from '@/lib/api-generated'
 
 const purchase: PurchaseHistoryItemDto = {
-  id: 'purchase-1',
-  realmId: 'realm-1',
-  userId: 'user-1',
-  pointsPackageId: 'package-1',
-  paymentAttemptId: '11111111-1111-1111-1111-111111111111',
+  attemptId: 'attempt-1',
+  targetMappingId: 'mapping-1',
+  productName: 'Test Product',
   points: 100,
-  amount: 10,
-  currency: 'CNY',
+  amount: 999,
+  currency: 'USD',
   paymentProvider: 'stripe',
-  pointsTransactionId: null,
+  status: 'Succeeded',
+  completedAt: '2025-01-01T00:05:00Z',
   createdAt: '2025-01-01T00:00:00Z',
 }
 
@@ -29,10 +28,10 @@ describe('PurchaseHistoryList invoice action', () => {
       />
     )
 
-    expect(screen.getByTestId('purchase-history-invoice-button-purchase-1')).toBeInTheDocument()
+    expect(screen.getByTestId('purchase-history-invoice-button-attempt-1')).toBeInTheDocument()
   })
 
-  it('calls onApplyInvoice with purchase.paymentAttemptId', async () => {
+  it('calls onApplyInvoice with purchase.attemptId', async () => {
     const user = userEvent.setup()
     const onApplyInvoice = vi.fn()
 
@@ -45,9 +44,62 @@ describe('PurchaseHistoryList invoice action', () => {
       />
     )
 
-    await user.click(screen.getByTestId('purchase-history-invoice-button-purchase-1'))
+    await user.click(screen.getByTestId('purchase-history-invoice-button-attempt-1'))
 
     expect(onApplyInvoice).toHaveBeenCalledTimes(1)
-    expect(onApplyInvoice).toHaveBeenCalledWith('11111111-1111-1111-1111-111111111111')
+    expect(onApplyInvoice).toHaveBeenCalledWith('attempt-1')
+  })
+})
+
+describe('PurchaseHistoryList status badge', () => {
+  it('renders status badge with correct variant for Succeeded', () => {
+    render(
+      <PurchaseHistoryList purchases={[purchase]} isLoading={false} onDetailsClick={vi.fn()} />
+    )
+
+    const badge = screen.getByText('Succeeded')
+    expect(badge).toBeInTheDocument()
+  })
+
+  it('renders status badge for Failed', () => {
+    const failedPurchase = { ...purchase, attemptId: 'attempt-2', status: 'Failed' }
+    render(
+      <PurchaseHistoryList
+        purchases={[failedPurchase]}
+        isLoading={false}
+        onDetailsClick={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Failed')).toBeInTheDocument()
+  })
+})
+
+describe('PurchaseHistoryList null handling', () => {
+  it('renders -- for null points', () => {
+    const noPointsPurchase = { ...purchase, attemptId: 'attempt-3', points: null }
+    render(
+      <PurchaseHistoryList
+        purchases={[noPointsPurchase]}
+        isLoading={false}
+        onDetailsClick={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('--')).toBeInTheDocument()
+  })
+
+  it('renders i18n fallback text for null productName', () => {
+    const noNamePurchase = { ...purchase, attemptId: 'attempt-4', productName: null }
+    render(
+      <PurchaseHistoryList
+        purchases={[noNamePurchase]}
+        isLoading={false}
+        onDetailsClick={vi.fn()}
+      />
+    )
+
+    // Should show localized fallback text instead of UUID fragment
+    expect(screen.getByText('Unknown Product')).toBeInTheDocument()
   })
 })

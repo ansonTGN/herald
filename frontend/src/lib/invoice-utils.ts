@@ -52,6 +52,64 @@ export function centsToDisplayPrice(cents: number): string {
   return (cents / 100).toFixed(2)
 }
 
+export function getPaymentStatusBadgeVariant(
+  status: string
+): 'default' | 'secondary' | 'destructive' | 'outline' {
+  switch (status) {
+    case 'Succeeded':
+      return 'default'
+    case 'Pending':
+      return 'secondary'
+    case 'Failed':
+      return 'destructive'
+    case 'Cancelled':
+    case 'Expired':
+      return 'outline'
+    default:
+      return 'outline'
+  }
+}
+
+/**
+ * Extract display price from providerProductInfo for both Stripe and Creem.
+ * Handles both string and number price fields.
+ * Returns null if price cannot be determined.
+ */
+export function extractProviderPrice(
+  providerProductInfo: unknown
+): { amount: number; currency: string } | null {
+  if (!providerProductInfo || typeof providerProductInfo !== 'object') return null
+  const info = providerProductInfo as Record<string, unknown>
+
+  // Stripe: { price_data: { unit_amount, currency } }
+  if (info.price_data && typeof info.price_data === 'object') {
+    const priceData = info.price_data as Record<string, unknown>
+    if (typeof priceData.unit_amount === 'number' && typeof priceData.currency === 'string') {
+      return { amount: priceData.unit_amount, currency: priceData.currency }
+    }
+  }
+
+  // Creem / generic: { price, currency }
+  // Creem may send price as a string like "9.99"
+  if (typeof info.currency === 'string') {
+    let amount: number | undefined
+    if (typeof info.price === 'number') {
+      amount = info.price
+    } else if (typeof info.price === 'string') {
+      const parsed = parseFloat(info.price)
+      if (!isNaN(parsed)) {
+        amount = parsed
+      }
+    }
+    if (amount !== undefined) {
+      // If amount looks like a display value (e.g. 9.99), convert to cents
+      return { amount: Math.round(amount * 100), currency: info.currency }
+    }
+  }
+
+  return null
+}
+
 export function downloadInvoicePdf(url: string, filename: string) {
   const link = document.createElement('a')
   link.href = url

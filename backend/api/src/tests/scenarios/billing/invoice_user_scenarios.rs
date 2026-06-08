@@ -164,7 +164,7 @@ mod tests {
         let pa_id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at)
-             VALUES ($1, $2, $3, 'stripe', 'subscription_entitlement', $4, 5000, 'USD', 'Succeeded', NOW() + interval '1 hour')"
+             VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4, 5000, 'USD', 'Succeeded', NOW() + interval '1 hour')"
         )
         .bind(pa_id)
         .bind(realm_id)

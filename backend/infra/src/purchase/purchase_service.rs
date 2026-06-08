@@ -169,7 +169,8 @@ where
 
     /// Fulfill a payment attempt based on billing type from entitlement mapping.
     /// When `billing_type_override` is provided, it takes precedence.
-    /// When absent, defaults to Recurring (subscription flow).
+    /// When absent, resolves from the entitlement mapping — returns an error if
+    /// the mapping is missing or has no billing_type set.
     pub async fn fulfill_payment_attempt(
         &self,
         attempt: PaymentAttempt,
@@ -177,7 +178,29 @@ where
         _completed_at: chrono::DateTime<chrono::Utc>,
         billing_type_override: Option<BillingType>,
     ) -> Result<FulfillmentResult, CoreError> {
-        let billing_type = billing_type_override.unwrap_or(BillingType::Recurring);
+        let billing_type = if let Some(bt) = billing_type_override {
+            bt
+        } else {
+            // Resolve billing_type from the entitlement mapping
+            let mapping = self
+                .billing_repository
+                .find_entitlement_mapping_by_id(attempt.target_id)
+                .await?
+                .filter(|m| m.realm_id == attempt.realm_id)
+                .ok_or_else(|| {
+                    CoreError::BillingError(format!(
+                        "Entitlement mapping '{}' not found for realm '{}'",
+                        attempt.target_id, attempt.realm_id
+                    ))
+                })?;
+
+            mapping.billing_type.ok_or_else(|| {
+                CoreError::BillingError(format!(
+                    "Entitlement mapping '{}' has no billing_type set",
+                    attempt.target_id
+                ))
+            })?
+        };
 
         match billing_type {
             BillingType::OneTime => {

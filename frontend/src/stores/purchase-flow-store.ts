@@ -11,13 +11,18 @@ import { useShallow } from 'zustand/react/shallow'
 import type { PaymentContextDto } from '@/lib/api-generated'
 
 /**
- * Purchase flow state
+ * Valid target types for purchase flow.
+ * Used to reject stale persisted values from old versions (e.g. 'points_package').
  */
+const VALID_TARGET_TYPES = ['subscription_plan', 'entitlement_mapping'] as const
+
+type TargetType = (typeof VALID_TARGET_TYPES)[number]
+
 export interface PurchaseFlowState {
   // Current purchase state
   realmId: string | null
   userId: string | null
-  targetType: 'subscription_plan' | 'points_package' | null
+  targetType: TargetType | null
   targetId: string | null
   paymentProvider: string | null
 
@@ -77,6 +82,14 @@ const initialState: PurchaseFlowState = {
 function validateState(state: PurchaseFlowState): Partial<PurchaseFlowState> | null {
   // Clear state if critical fields are missing
   if (!state.realmId || !state.userId) {
+    return null
+  }
+
+  // Stale target type from a removed feature — the entire purchase state is invalid
+  if (
+    state.targetType &&
+    !VALID_TARGET_TYPES.includes(state.targetType as (typeof VALID_TARGET_TYPES)[number])
+  ) {
     return null
   }
 
@@ -182,27 +195,26 @@ export const usePurchaseFlowStore = create<PurchaseFlowState & PurchaseFlowActio
           expiresAt: state.expiresAt,
         }),
         onRehydrateStorage: () => (state) => {
-          // Validate and clean state on rehydration
-          if (state) {
-            const validated = validateState(state)
-            if (!validated) {
-              // Clear corrupted state
-              state.realmId = null
-              state.userId = null
-              state.targetType = null
-              state.targetId = null
-              state.paymentProvider = null
-              state.attemptId = null
-              state.attemptStatus = null
-              state.paymentContext = null
-              state.expiresAt = null
-            } else if (validated.attemptId === null) {
-              // Clear invalid attempt state
-              state.attemptId = null
-              state.attemptStatus = null
-              state.paymentContext = null
-              state.expiresAt = null
-            }
+          if (!state) return
+          const validated = validateState(state)
+          if (!validated) {
+            state.realmId = null
+            state.userId = null
+            state.targetType = null
+            state.targetId = null
+            state.paymentProvider = null
+            state.attemptId = null
+            state.attemptStatus = null
+            state.paymentContext = null
+            state.expiresAt = null
+          } else if (validated !== state) {
+            state.targetType = validated.targetType ?? null
+            state.targetId = validated.targetId ?? null
+            state.paymentProvider = validated.paymentProvider ?? null
+            state.attemptId = validated.attemptId ?? null
+            state.attemptStatus = validated.attemptStatus ?? null
+            state.paymentContext = validated.paymentContext ?? null
+            state.expiresAt = validated.expiresAt ?? null
           }
         },
       }

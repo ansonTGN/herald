@@ -1,0 +1,479 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import {
+  queryKeys,
+  oneTimeMappingsQueryOptions,
+  purchaseHistoryQueryOptions,
+  paymentAttemptStatusQueryOptions,
+  paymentProvidersQueryOptions,
+} from '@/data/query-options'
+import { QUERY_KEYS } from '@/lib/constants'
+import type { PurchaseHistoryItemDto } from '@/lib/api-generated'
+
+// Mock SDK functions used by query options under test
+vi.mock('@/lib/api-generated/sdk.gen', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/lib/api-generated/sdk.gen')>()
+  return {
+    ...original,
+    listOneTimeMappings: vi.fn(),
+    getPurchaseHistory: vi.fn(),
+    getPaymentAttemptStatus: vi.fn(),
+    listPaymentProviders: vi.fn(),
+  }
+})
+
+import {
+  listOneTimeMappings,
+  getPurchaseHistory,
+  getPaymentAttemptStatus,
+  listPaymentProviders,
+} from '@/lib/api-generated/sdk.gen'
+
+// ==================== Factory functions ====================
+
+function makeOneTimeMappingItem(
+  overrides?: Partial<{ id: string; entitlementKey: string; paymentProvider: string }>
+) {
+  return {
+    id: 'mapping-001',
+    entitlementKey: 'premium-access',
+    paymentProvider: 'stripe',
+    ...overrides,
+  }
+}
+
+function makeOneTimeMappingResponse(
+  overrides?: Partial<{ items: ReturnType<typeof makeOneTimeMappingItem>[] }>
+) {
+  return {
+    items: [makeOneTimeMappingItem()],
+    ...overrides,
+  }
+}
+
+function makePurchaseHistoryItem(
+  overrides?: Partial<PurchaseHistoryItemDto>
+): PurchaseHistoryItemDto {
+  return {
+    attemptId: 'attempt-001',
+    targetMappingId: 'mapping-001',
+    productName: 'Premium Access',
+    points: 1000,
+    amount: 9.99,
+    currency: 'USD',
+    paymentProvider: 'stripe',
+    status: 'Succeeded',
+    completedAt: '2025-01-15T10:30:00Z',
+    createdAt: '2025-01-15T10:00:00Z',
+    ...overrides,
+  }
+}
+
+function makePurchaseHistoryResponse(
+  overrides?: Partial<{ items: PurchaseHistoryItemDto[]; total: number }>
+) {
+  return {
+    items: [makePurchaseHistoryItem()],
+    total: 1,
+    ...overrides,
+  }
+}
+
+// ==================== oneTimeMappings query keys ====================
+
+describe('oneTimeMappings query keys', () => {
+  it('differentiates different realms', () => {
+    const keyRealm1 = queryKeys.oneTimeMappings('realm-1')
+    const keyRealm2 = queryKeys.oneTimeMappings('realm-2')
+    expect(keyRealm1).not.toEqual(keyRealm2)
+  })
+
+  it('has correct key structure', () => {
+    const key = queryKeys.oneTimeMappings('realm-1')
+    expect(key).toEqual([QUERY_KEYS.ONE_TIME_MAPPINGS_EXT, 'realm-1'])
+  })
+})
+
+// ==================== oneTimeMappingsQueryOptions ====================
+
+describe('oneTimeMappingsQueryOptions', () => {
+  beforeEach(() => {
+    vi.mocked(listOneTimeMappings).mockResolvedValue({
+      data: makeOneTimeMappingResponse({ items: [makeOneTimeMappingItem()] }),
+      error: undefined,
+    })
+  })
+
+  it('calls listOneTimeMappings with correct realm path param', async () => {
+    const options = oneTimeMappingsQueryOptions('realm-42')
+    await options.queryFn()
+
+    expect(listOneTimeMappings).toHaveBeenCalledWith({
+      path: { realmId: 'realm-42' },
+    })
+  })
+
+  it('returns items array from response', async () => {
+    const items = [makeOneTimeMappingItem({ id: 'm-1' }), makeOneTimeMappingItem({ id: 'm-2' })]
+    vi.mocked(listOneTimeMappings).mockResolvedValue({
+      data: makeOneTimeMappingResponse({ items }),
+      error: undefined,
+    })
+
+    const options = oneTimeMappingsQueryOptions('realm-1')
+    const result = await options.queryFn()
+
+    expect(result).toEqual(items)
+  })
+
+  it('returns empty array when response items are null', async () => {
+    vi.mocked(listOneTimeMappings).mockResolvedValue({
+      data: { items: null } as any,
+      error: undefined,
+    })
+
+    const options = oneTimeMappingsQueryOptions('realm-1')
+    const result = await options.queryFn()
+
+    expect(result).toEqual([])
+  })
+
+  it('throws when API returns error', async () => {
+    vi.mocked(listOneTimeMappings).mockResolvedValue({
+      data: undefined,
+      error: { message: 'Unauthorized', status: 401 },
+    })
+
+    const options = oneTimeMappingsQueryOptions('realm-1')
+
+    await expect(options.queryFn()).rejects.toEqual({
+      message: 'Unauthorized',
+      status: 401,
+    })
+  })
+})
+
+// ==================== purchaseHistory query keys ====================
+
+describe('purchaseHistory query keys', () => {
+  it('differentiates different realms with same filters', () => {
+    const keyRealm1 = queryKeys.purchaseHistory('realm-1', {})
+    const keyRealm2 = queryKeys.purchaseHistory('realm-2', {})
+    expect(keyRealm1).not.toEqual(keyRealm2)
+  })
+
+  it('differentiates empty filters from paymentProvider filter', () => {
+    const keyEmpty = queryKeys.purchaseHistory('realm-1', {})
+    const keyFiltered = queryKeys.purchaseHistory('realm-1', { paymentProvider: 'stripe' })
+    expect(keyEmpty).not.toEqual(keyFiltered)
+  })
+
+  it('differentiates empty filters from startDate filter', () => {
+    const keyEmpty = queryKeys.purchaseHistory('realm-1', {})
+    const keyFiltered = queryKeys.purchaseHistory('realm-1', { startDate: '2025-01-01' })
+    expect(keyEmpty).not.toEqual(keyFiltered)
+  })
+
+  it('differentiates different filter values', () => {
+    const keyStripe = queryKeys.purchaseHistory('realm-1', { paymentProvider: 'stripe' })
+    const keyCreem = queryKeys.purchaseHistory('realm-1', { paymentProvider: 'creem' })
+    expect(keyStripe).not.toEqual(keyCreem)
+  })
+
+  it('differentiates combined filters from single filter', () => {
+    const keyCombined = queryKeys.purchaseHistory('realm-1', {
+      paymentProvider: 'stripe',
+      startDate: '2025-01-01',
+    })
+    const keySingle = queryKeys.purchaseHistory('realm-1', { paymentProvider: 'stripe' })
+    expect(keyCombined).not.toEqual(keySingle)
+  })
+
+  it('has correct key structure', () => {
+    const key = queryKeys.purchaseHistory('realm-1', { paymentProvider: 'stripe' })
+    expect(key[0]).toBe(QUERY_KEYS.PURCHASE_HISTORY)
+    expect(key[1]).toBe('realm-1')
+  })
+})
+
+// ==================== purchaseHistoryQueryOptions ====================
+
+describe('purchaseHistoryQueryOptions', () => {
+  beforeEach(() => {
+    vi.mocked(getPurchaseHistory).mockResolvedValue({
+      data: makePurchaseHistoryResponse(),
+      error: undefined,
+    })
+  })
+
+  it('calls getPurchaseHistory with empty query when no filters provided', async () => {
+    const options = purchaseHistoryQueryOptions('realm-1')
+    await options.queryFn()
+
+    expect(getPurchaseHistory).toHaveBeenCalledWith({
+      path: { realmId: 'realm-1' },
+      query: {},
+    })
+  })
+
+  it('passes paymentProvider filter as snake_case query param', async () => {
+    const options = purchaseHistoryQueryOptions('realm-1', {
+      paymentProvider: 'stripe',
+    })
+    await options.queryFn()
+
+    const callArgs = vi.mocked(getPurchaseHistory).mock.calls[0][0]
+    expect(callArgs.query).toEqual({
+      payment_provider: 'stripe',
+    })
+  })
+
+  it('passes startDate and endDate as snake_case query params', async () => {
+    const options = purchaseHistoryQueryOptions('realm-1', {
+      startDate: '2025-01-01',
+      endDate: '2025-06-30',
+    })
+    await options.queryFn()
+
+    const callArgs = vi.mocked(getPurchaseHistory).mock.calls[0][0]
+    expect(callArgs.query).toEqual({
+      start_date: '2025-01-01',
+      end_date: '2025-06-30',
+    })
+  })
+
+  it('passes page and pageSize as snake_case query params', async () => {
+    const options = purchaseHistoryQueryOptions('realm-1', {
+      page: 2,
+      pageSize: 50,
+    })
+    await options.queryFn()
+
+    const callArgs = vi.mocked(getPurchaseHistory).mock.calls[0][0]
+    expect(callArgs.query).toEqual({
+      page: 2,
+      page_size: 50,
+    })
+  })
+
+  it('passes all filters combined', async () => {
+    const options = purchaseHistoryQueryOptions('realm-1', {
+      page: 1,
+      pageSize: 25,
+      paymentProvider: 'creem',
+      startDate: '2025-01-01',
+      endDate: '2025-12-31',
+    })
+    await options.queryFn()
+
+    const callArgs = vi.mocked(getPurchaseHistory).mock.calls[0][0]
+    expect(callArgs.query).toEqual({
+      page: 1,
+      page_size: 25,
+      payment_provider: 'creem',
+      start_date: '2025-01-01',
+      end_date: '2025-12-31',
+    })
+  })
+
+  it('returns response with items and total', async () => {
+    const items = [
+      makePurchaseHistoryItem({ attemptId: 'a-1' }),
+      makePurchaseHistoryItem({ attemptId: 'a-2' }),
+    ]
+    vi.mocked(getPurchaseHistory).mockResolvedValue({
+      data: makePurchaseHistoryResponse({ items, total: 2 }),
+      error: undefined,
+    })
+
+    const options = purchaseHistoryQueryOptions('realm-1')
+    const result = await options.queryFn()
+
+    expect(result.items).toEqual(items)
+    expect(result.total).toBe(2)
+  })
+
+  it('returns empty items and zero total', async () => {
+    vi.mocked(getPurchaseHistory).mockResolvedValue({
+      data: makePurchaseHistoryResponse({ items: [], total: 0 }),
+      error: undefined,
+    })
+
+    const options = purchaseHistoryQueryOptions('realm-1')
+    const result = await options.queryFn()
+
+    expect(result.items).toEqual([])
+    expect(result.total).toBe(0)
+  })
+
+  it('throws when API returns error', async () => {
+    vi.mocked(getPurchaseHistory).mockResolvedValue({
+      data: undefined,
+      error: { message: 'Server error', status: 500 },
+    })
+
+    const options = purchaseHistoryQueryOptions('realm-1')
+
+    await expect(options.queryFn()).rejects.toEqual({
+      message: 'Server error',
+      status: 500,
+    })
+  })
+})
+
+// ==================== paymentAttemptStatusQueryOptions (retained) ====================
+
+describe('paymentAttemptStatusQueryOptions', () => {
+  const mockAttemptResponse = {
+    id: 'attempt-001',
+    status: 'Pending',
+    targetType: 'entitlement_mapping',
+    targetId: 'mapping-001',
+    amount: 9.99,
+    currency: 'USD',
+    createdAt: '2025-01-15T10:00:00Z',
+    expiresAt: '2025-01-15T12:00:00Z',
+    completedAt: null,
+    fulfillment: null,
+    providerStatus: null,
+  }
+
+  beforeEach(() => {
+    vi.mocked(getPaymentAttemptStatus).mockResolvedValue({
+      data: mockAttemptResponse,
+      error: undefined,
+    })
+  })
+
+  it('calls getPaymentAttemptStatus with correct path params', async () => {
+    const options = paymentAttemptStatusQueryOptions('realm-1', 'attempt-001')
+    await options.queryFn()
+
+    expect(getPaymentAttemptStatus).toHaveBeenCalledWith({
+      path: { realmId: 'realm-1', attemptId: 'attempt-001' },
+    })
+  })
+
+  it('resolves with attempt status data', async () => {
+    const options = paymentAttemptStatusQueryOptions('realm-1', 'attempt-001')
+    const result = await options.queryFn()
+
+    expect(result).toEqual(mockAttemptResponse)
+  })
+
+  it('throws when attemptId is empty string', async () => {
+    const options = paymentAttemptStatusQueryOptions('realm-1', '')
+
+    await expect(options.queryFn()).rejects.toThrow('attemptId is required')
+  })
+
+  it('throws when API returns error', async () => {
+    vi.mocked(getPaymentAttemptStatus).mockResolvedValue({
+      data: undefined,
+      error: { message: 'Not found', status: 404 },
+    })
+
+    const options = paymentAttemptStatusQueryOptions('realm-1', 'attempt-001')
+
+    await expect(options.queryFn()).rejects.toEqual({
+      message: 'Not found',
+      status: 404,
+    })
+  })
+
+  it('has refetchInterval that polls for pending status', () => {
+    const options = paymentAttemptStatusQueryOptions('realm-1', 'attempt-001')
+
+    // Simulate pending state
+    const result = options.refetchInterval!({
+      state: { data: { ...mockAttemptResponse, status: 'Pending' } },
+    } as any)
+
+    expect(result).toBe(60000) // ONE_MINUTE
+  })
+
+  it('has refetchInterval that stops polling for succeeded status', () => {
+    const options = paymentAttemptStatusQueryOptions('realm-1', 'attempt-001')
+
+    const result = options.refetchInterval!({
+      state: { data: { ...mockAttemptResponse, status: 'Succeeded' } },
+    } as any)
+
+    expect(result).toBe(false)
+  })
+
+  it('has refetchInterval that stops polling for failed status', () => {
+    const options = paymentAttemptStatusQueryOptions('realm-1', 'attempt-001')
+
+    const result = options.refetchInterval!({
+      state: { data: { ...mockAttemptResponse, status: 'Failed' } },
+    } as any)
+
+    expect(result).toBe(false)
+  })
+
+  it('has refetchInterval that returns false for undefined query state', () => {
+    const options = paymentAttemptStatusQueryOptions('realm-1', 'attempt-001')
+
+    const result = options.refetchInterval!(undefined as any)
+
+    expect(result).toBe(false)
+  })
+})
+
+// ==================== paymentProvidersQueryOptions (retained) ====================
+
+describe('paymentProvidersQueryOptions', () => {
+  const mockProviders = [
+    { provider: 'stripe', name: 'Stripe', enabled: true },
+    { provider: 'creem', name: 'Creem', enabled: true },
+  ]
+
+  beforeEach(() => {
+    vi.mocked(listPaymentProviders).mockResolvedValue({
+      data: { providers: mockProviders },
+      error: undefined,
+    } as any)
+  })
+
+  it('calls listPaymentProviders with correct path param', async () => {
+    const options = paymentProvidersQueryOptions('realm-1')
+    await options.queryFn()
+
+    expect(listPaymentProviders).toHaveBeenCalledWith({
+      path: { realmId: 'realm-1' },
+    })
+  })
+
+  it('returns providers array from response', async () => {
+    const options = paymentProvidersQueryOptions('realm-1')
+    const result = await options.queryFn()
+
+    expect(result).toEqual(mockProviders)
+  })
+
+  it('returns empty array when providers is undefined', async () => {
+    vi.mocked(listPaymentProviders).mockResolvedValue({
+      data: { providers: undefined } as any,
+      error: undefined,
+    } as any)
+
+    const options = paymentProvidersQueryOptions('realm-1')
+    const result = await options.queryFn()
+
+    expect(result).toEqual([])
+  })
+
+  it('throws when API returns error', async () => {
+    vi.mocked(listPaymentProviders).mockResolvedValue({
+      data: undefined,
+      error: { message: 'Unauthorized', status: 401 },
+    })
+
+    const options = paymentProvidersQueryOptions('realm-1')
+
+    await expect(options.queryFn()).rejects.toEqual({
+      message: 'Unauthorized',
+      status: 401,
+    })
+  })
+})

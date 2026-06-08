@@ -565,7 +565,7 @@ mod tests {
         let pa_id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at, created_at)
-             VALUES ($1, $2, $3, 'stripe', 'subscription_entitlement', $4, 5000, 'USD', 'completed', NOW() + INTERVAL '1 hour', NOW())",
+             VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4, 5000, 'USD', 'completed', NOW() + INTERVAL '1 hour', NOW())",
         )
         .bind(pa_id)
         .bind(realm_id.as_str())
@@ -631,7 +631,7 @@ mod tests {
         let pa_id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at, created_at)
-             VALUES ($1, $2, $3, 'creem', 'subscription_entitlement', $4, 10000, 'USD', 'completed', NOW() + INTERVAL '1 hour', NOW())",
+             VALUES ($1, $2, $3, 'creem', 'entitlement_mapping', $4, 10000, 'USD', 'completed', NOW() + INTERVAL '1 hour', NOW())",
         )
         .bind(pa_id)
         .bind(realm_id.as_str())
@@ -719,7 +719,7 @@ mod tests {
         let pa_id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at, created_at)
-             VALUES ($1, $2, $3, 'creem', 'subscription_entitlement', $4, 5000, 'USD', 'completed', NOW() + INTERVAL '1 hour', NOW())",
+             VALUES ($1, $2, $3, 'creem', 'entitlement_mapping', $4, 5000, 'USD', 'completed', NOW() + INTERVAL '1 hour', NOW())",
         )
         .bind(pa_id)
         .bind(realm_id.as_str())
