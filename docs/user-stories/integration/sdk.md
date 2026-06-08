@@ -244,4 +244,4 @@ Then 返回权限不足错误
 
 - **SDK 增强**: [docs/prd/integration/sdk.md](/docs/prd/integration/sdk.md)
 - **Client App 管理**: [docs/prd/integration/client-app.md](/docs/prd/integration/client-app.md)
-- **积分发放**: [docs/prd/billing/points-grant.md](/docs/prd/billing/points-grant.md)
+- **积分发放**: [docs/prd/billing/points.md](/docs/prd/billing/points.md) - 积分系统（含发放功能）

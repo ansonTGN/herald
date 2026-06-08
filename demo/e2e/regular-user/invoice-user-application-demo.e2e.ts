@@ -79,35 +79,36 @@ function seedPaymentAttempt(realmId: string, userEmail: string): string {
   return paId
 }
 
-function seedPointsPackagePurchase(
+function seedPurchaseAttempt(
   realmId: string,
   userEmail: string,
   marker: string
-): { purchaseId: string; paymentAttemptId: string } {
+): { paymentAttemptId: string } {
   const userId = execPgSql(
     `SELECT id FROM account WHERE email = '${userEmail}' AND realm_id = '${realmId}'`
   )
   if (!userId) throw new Error(`User not found: ${userEmail} in realm ${realmId}`)
 
-  const packageId = randomUUID()
+  // Find or create a one-time entitlement mapping
+  let mappingId = execPgSql(
+    `SELECT id FROM provider_entitlement_mappings WHERE realm_id = '${realmId}' AND billing_type = 'one_time' LIMIT 1`
+  )
+  if (!mappingId) {
+    mappingId = randomUUID()
+    execPgSql(
+      `INSERT INTO provider_entitlement_mappings (id, realm_id, entitlement_key, billing_type, credit_amount, credit_type, price_amount, price_currency, payment_provider, is_active, created_at, updated_at) ` +
+        `VALUES ('${mappingId}', '${realmId}', 'demo-credit-pack-${marker}', 'one_time', 100, 'topup_credit', 1000, 'CNY', 'stripe', true, NOW(), NOW())`
+    )
+  }
+
+  // Create a succeeded payment attempt for the entitlement mapping
   const paymentAttemptId = randomUUID()
-  const purchaseId = randomUUID()
-  const packageName = `invoice-demo-${marker}`
-
   execPgSql(
-    `INSERT INTO points_packages (id, realm_id, name, title, points, price, currency, enabled, created_at, updated_at) ` +
-      `VALUES ('${packageId}', '${realmId}', '${packageName}', 'Invoice Demo Package', 100, 1000, 'CNY', true, NOW(), NOW())`
-  )
-  execPgSql(
-    `INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at, completed_at, created_at, updated_at) ` +
-      `VALUES ('${paymentAttemptId}', '${realmId}', '${userId}', 'stripe', 'points_package', '${packageId}', 1000, 'CNY', 'Succeeded', NOW() + INTERVAL '1 hour', NOW(), NOW(), NOW())`
-  )
-  execPgSql(
-    `INSERT INTO points_package_purchases (id, realm_id, user_id, points_package_id, payment_attempt_id, points, amount, currency, payment_provider, created_at, updated_at) ` +
-      `VALUES ('${purchaseId}', '${realmId}', '${userId}', '${packageId}', '${paymentAttemptId}', 100, 1000, 'CNY', 'stripe', NOW(), NOW())`
+    `INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, completed_at, created_at, updated_at) ` +
+      `VALUES ('${paymentAttemptId}', '${realmId}', '${userId}', 'stripe', 'entitlement_mapping', '${mappingId}', 1000, 'CNY', 'Succeeded', NOW(), NOW(), NOW())`
   )
 
-  return { purchaseId, paymentAttemptId }
+  return { paymentAttemptId }
 }
 
 function ensureDemoUser(realmId: string, email: string, password: string): void {
@@ -238,7 +239,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
       const sellerName = `Seller-Purchase-${testStartTime}`
       const user = DEMO_USERS.user1
       const billingName = `PurchaseInvoice-${testStartTime}`
-      const purchase = seedPointsPackagePurchase(REALM_ID, user.email, String(testStartTime))
+      const { paymentAttemptId } = seedPurchaseAttempt(REALM_ID, user.email, String(testStartTime))
 
       await test.step('Given: admin configures seller info', async () => {
         await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', REALM_ID)
@@ -260,13 +261,13 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
         await page.goto(`/${REALM_ID}/user/points`)
         await page.getByTestId('points-tab-purchase-history').click()
-        await expect(page.getByTestId(`purchase-history-item-${purchase.purchaseId}`)).toBeVisible({
+        await expect(page.getByTestId(`purchase-history-item-${paymentAttemptId}`)).toBeVisible({
           timeout: 10000,
         })
       })
 
       await test.step('And: user clicks invoice action for the purchase', async () => {
-        await page.getByTestId(`purchase-history-invoice-button-${purchase.purchaseId}`).click()
+        await page.getByTestId(`purchase-history-invoice-button-${paymentAttemptId}`).click()
         await expect(page.getByTestId('apply-form-page')).toBeVisible({
           timeout: 10000,
         })
@@ -290,7 +291,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
       })
 
       await demoLogger.testCode.log(
-        `User applied from purchase history using payment attempt ${purchase.paymentAttemptId}`
+        `User applied from purchase history using payment attempt ${paymentAttemptId}`
       )
     })
 

@@ -112,7 +112,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 系统采用 provider-sourced entitlement 模型：Herald 不维护本地 Product/Plan 目录，不创建、编辑或删除本地套餐。支付平台商品和价格是商业目录来源，Herald 只维护 `provider_entitlement_mappings`，用 `entitlement_key` 表示第三方应用可识别的订阅权益。
 
-**编目边界**：本地 Product/Plan 编目已废弃并删除。当前模型以 `docs/prd/billing/product_reduce.md` 定义的 `entitlement_key` 和 provider mapping 为准。
+**编目边界**：Herald 不维护本地 Product/Plan 目录。支付方是商业目录的 source of truth，Herald 只维护 `provider_entitlement_mappings` 用 `entitlement_key` 表示第三方应用可识别的订阅权益。
 
 ### 3.2 关键特性
 
@@ -139,6 +139,11 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - `features` 和 `quotas` 由第三方应用自行管理，Herald 不存储这些信息
 - 更新价格以支付方为准；Herald 通过同步刷新 provider_product_info
 - 更新 checkout_url 立即生效，所有新订阅用户使用新 URL
+- Provider-to-Entitlement 映射是 Herald 本地的 allowlist 和只读缓存，不是本地商业目录
+- 映射数据以 Herald 本地配置为准；Stripe Product/Price metadata 可作为导入入口，Creem 需要在 Herald 中配置 entitlement 和积分策略
+- 映射承载的信息包括：provider、external_product_id、external_price_id（Creem 不适用）、entitlement_key、积分策略字段、provider_product_info、synced_at
+- 禁用映射后，匹配该映射的 webhook 订阅事件仍更新订阅投影，但不触发积分策略的发放或回收；管理员重新启用后恢复积分策略执行
+- 映射同步失败不应静默降级为默认策略，应 fail loud 并记录诊断
 
 **删除规则**：
 - 无法删除有活跃订阅的套餐
@@ -167,6 +172,49 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - Webhook 签名验证失败时拒绝处理请求
 - 支持事件幂等性处理，防止重复处理
 - 订阅状态转换需通过合法性验证
+
+**Provider Metadata 契约**：
+- 所有 Herald 使用的 metadata key 使用 `herald_` 前缀，统一命名避免混用
+- 必填 metadata：`herald_realm_id`、`herald_client_app_id`、`herald_user_id`、`herald_entitlement_key`
+- 计费类型标识：`herald_billing_kind`，值为 `subscription` 或 `points_package`
+- Stripe 分层策略：稳定映射放 Product/Price metadata，请求特定信息（user、client app）放 Checkout Session/Subscription metadata
+- Creem：metadata 写入 checkout 请求，后续 webhook 返回该 metadata
+- Checkout 创建时验证必填 metadata，缺失时拒绝创建
+
+**Webhook Entitlement 解析链**：
+- Webhook 通过 metadata 提取 herald_entitlement_key 等映射信息
+- 解析 fallback 链：webhook metadata 中的 herald_entitlement_key → 本地 mapping（按 provider + external_product_id 查询）→ fail loud
+- 用户绑定优先使用 Subscription metadata，fallback 到本地 mapping
+- Metadata 缺失 entitlement_key 时 fail loud，记录诊断，不静默跳过
+
+**Provider 同步规则**：
+- 全量同步：管理员手动触发，调用支付方 API 读取所有 Product/Price 信息并更新 provider-sourced cache；Stripe 可同时导入 metadata
+- 增量同步：webhook 事件触发，从 webhook payload 中提取 metadata、外部 ID 和可用产品信息更新订阅投影或缓存
+- 同步失败时本地缓存继续服务，但记录失败诊断
+- 管理员可查看同步状态（最后同步时间、同步来源、同步结果）
+
+**购买对象统一**：
+- 购买目标统一为 entitlement_mapping，通过 mapping 的 billing_type 决定履约
+- billing_type=one_time → 发放 topup_credit，不创建 subscription
+- billing_type=recurring → 创建/更新 subscription，积分由后续 webhook 事件触发
+
+**One-time vs Recurring Webhook 分发规则**：
+- Stripe：checkout.session.completed 按 mode 分发
+  - mode=payment（one-time）：完成支付尝试，发放 topup_credit
+  - mode=subscription（recurring）：走现有 subscription 创建/同步逻辑
+- Creem：checkout.completed 按 metadata 或 mapping 的 billing type 分发
+  - one-time：完成支付尝试，发放 topup_credit
+  - recurring：等待 subscription.paid 事件
+
+**One-time 购买规则**：
+- 购买成功后发放 topup_credit，不创建 subscription 记录
+- 发放积分数量从 mapping 的 points_per_period 读取
+- 积分有效期从 mapping 的 validity_days 读取
+- grant_on_subscribe 字段对 one-time mapping 不适用，购买成功默认发放
+- 用户购买页列出 enabled 且 billing_type=one_time 的 entitlement mappings
+- 没有启用的 one-time mapping 时不显示购买入口
+- 促销策略由支付平台管理（Stripe Coupons/Promotion Codes、Creem Discount Codes），Herald 不在本地实现促销逻辑
+- 购买记录基于支付尝试记录和积分交易记录查询
 
 **积分充值联动规则**：
 - 首次订阅时，根据积分套餐配置中的 `points_on_subscribe` 进行充值
@@ -339,6 +387,13 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 用户可在订阅详情中查看该订阅的完整变更时间线
 - 历史记录按时间倒序排列，显示变更类型、操作者、变更详情和前后状态对比
 
+**One-time 购买页面**：
+- 用户购买页列出 enabled 且 billing_type=one_time 的 entitlement mappings
+- 产品信息（名称、价格、描述）从 mapping 的 provider_product_info 读取
+- 支付平台选择基于 mapping 关联的 provider
+- 没有启用的 one-time mapping 时不显示购买入口
+- 购买历史基于支付尝试记录和积分交易记录查询
+
 **状态反馈**：
 - 创建套餐成功后提示："Please configure payment providers for this plan"
 - 删除套餐时提示："This will delete all payment provider mappings for this plan"
@@ -355,18 +410,25 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - **Entitlement 映射**：采用 provider 商品到 `entitlement_key` 的映射模型，不维护本地 Plan
 - **Webhook 隔离**：每个 realm 使用独立的 webhook URL，realm_id 从 URL 路径提取实现多租户隔离
 - **编目决策**：本地 Product/Plan 编目已废弃，当前模型以 `entitlement_key` 为准
+- **积分策略归属**：Herald 本地 mapping/entitlement policy 是积分策略 source of truth；provider metadata 只作为可选导入来源
+- **Entitlement 映射表保留**：保留 provider-to-entitlement 映射作为 allowlist 和积分策略同步缓存，不纯粹依赖 provider metadata 运行时解析
+- **Metadata 统一契约**：使用 `herald_*` 前缀统一 metadata key
 - **退款边界**：支付平台处理金额退款，Herald 处理积分回收。退款不作为独立订阅状态，`refund.created`/`charge.refunded` 事件仅记录审计日志并触发积分回收，不改变订阅状态
 - **订阅过期降级**：订阅过期后状态变为 expired/canceled；具体权限降级由第三方应用根据 `entitlement_key` 和订阅状态处理
+- **One-time 购买不创建 subscription**：one-time 购买发放 topup_credit，不创建 subscription 记录
+- **billing_type 决定履约路径**：entitlement_mapping 的 billing_type 区分 one-time 和 recurring 购买
+- **促销策略委托支付平台**：Herald 不在本地实现促销逻辑，由支付平台优惠券/折扣码管理
+- **购买历史数据源**：基于支付尝试记录和积分交易记录查询，不依赖本地产品目录
 
 ---
 
 ## 9. 参考资料
 
 - 用户故事：`docs/user-stories/billing/subscription.md`
-- 相关 PRD：`docs/prd/billing/product_reduce.md`
 - 相关 PRD：`docs/prd/billing/points.md`
 - 相关 PRD：`docs/prd/billing/stripe-payment.md`
 - 相关 PRD：`docs/prd/billing/shopify-pay.md`
 - 相关 PRD：`docs/prd/billing/wechat-pay.md`
 - 相关 PRD：`docs/prd/core/realm-settings.md`
+- 用户故事：`docs/user-stories/billing/entitlement-mapping.md`
 - Realm Admin 用户故事：`docs/user-stories/core/realm-admin.md`

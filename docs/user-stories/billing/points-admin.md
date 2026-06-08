@@ -644,10 +644,9 @@ And 发放操作未执行
 
 ## 相关文档
 
-- **PRD**: [docs/prd/billing/points.md](/docs/prd/billing/points.md) - 积分系统产品需求文档
-- **PRD**: [docs/prd/billing/product_reduce.md](/docs/prd/billing/product_reduce.md) - Product/Plan 本地模型废弃与 Entitlement 映射
+- **PRD**: [docs/prd/billing/points.md](/docs/prd/billing/points.md) - 积分系统产品需求文档（含积分发放）
 - **用户故事**: [docs/user-stories/billing/entitlement-mapping.md](/docs/user-stories/billing/entitlement-mapping.md) - Entitlement Mapping 用户故事
 - **用户故事**: [docs/user-stories/billing/points-user.md](/docs/user-stories/billing/points-user.md) - 用户积分查询用户故事
 - **用户故事**: [docs/user-stories/billing/points-free-user.md](/docs/user-stories/billing/points-free-user.md) - 免费用户积分用户故事
 - **依赖 PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - Billing 订阅计费产品需求文档
-- **依赖 PRD**: [docs/prd/billing/points-grant.md](/docs/prd/billing/points-grant.md) - 积分发放产品需求文档
+- **依赖 PRD**: [docs/prd/billing/points.md](/docs/prd/billing/points.md) - 积分系统产品需求文档

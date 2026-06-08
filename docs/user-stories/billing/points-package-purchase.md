@@ -250,5 +250,5 @@ And 系统显示订阅信息和下次续费时间
 
 ## 相关文档
 
-- **PRD**: `docs/prd/billing/points-package-one-time-payment.md` - 积分包一次性支付产品需求文档
+- **PRD**: `docs/prd/billing/subscription.md` - 订阅计费 PRD（含 One-time 购买规则）
 - **PRD**: `docs/prd/billing/points.md` - 积分系统产品需求文档

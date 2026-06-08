@@ -308,7 +308,6 @@ And 我无法查看其他用户的订阅历史记录
 
 ## 相关文档
 
-- **PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - Billing 订阅计费产品需求文档
-- **PRD**: [docs/prd/billing/product_reduce.md](/docs/prd/billing/product_reduce.md) - Product/Plan 本地模型废弃与 Entitlement 映射
+- **PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - Billing 订阅计费产品需求文档（含 Entitlement 映射、Metadata 契约）
 - **用户故事**: [docs/user-stories/billing/entitlement-mapping.md](/docs/user-stories/billing/entitlement-mapping.md) - Entitlement Mapping 用户故事（替代 US-BI-001 ~ US-BI-005）
 - **用户故事**: [docs/user-stories/billing/points-admin.md](/docs/user-stories/billing/points-admin.md) - 积分管理用户故事

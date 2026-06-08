@@ -2,10 +2,10 @@
  * WeChat QR Code Payment Flow Demo Test
  *
  * Related User Stories: US-PU-06, US-WP-005, US-PA-001, US-PA-002
- * Coverage: partial demo; covers QR rendering after initiating a points-package
- *   WeChat payment.
+ * Coverage: partial demo; covers QR rendering after initiating a one-time
+ *   entitlement mapping WeChat payment.
  * Not Covered: payment success, points fulfillment, new balance, no subscription
- *   record, failure/retry, expiry, disabled provider, or package-list scenarios.
+ *   record, failure/retry, expiry, disabled provider, or mapping-list scenarios.
  *
  * Verifies that selecting WeChat as payment provider renders the QR code
  * section with correct UI elements. Does NOT verify payment completion

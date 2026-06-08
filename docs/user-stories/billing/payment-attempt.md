@@ -289,6 +289,6 @@ And 前端提供"重新支付"按钮
 
 ## 相关文档
 
-- **PRD**: `docs/prd/billing/points-package-one-time-payment.md` - 积分包一次性支付产品需求文档
+- **PRD**: `docs/prd/billing/subscription.md` - 订阅计费 PRD（含 One-time 购买规则）
 - **用户故事**: `billing/wechat-pay.md` - 微信支付用户故事
 - **用户故事**: `billing/points-package-purchase.md` - 积分包购买用户故事

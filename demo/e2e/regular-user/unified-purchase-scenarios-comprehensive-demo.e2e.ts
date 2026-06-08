@@ -22,10 +22,10 @@
  *
  * IMPORTANT: Data Creation Strategy
  * ==================================
- * This test uses Demo Seed data (realm-001 with pre-configured points packages).
+ * This test uses Demo seed data (realm-001 with pre-configured one-time entitlement mappings).
  * Per spec/demo/e2e-testing.md Section 8:
  * - Demo Seed creates: realm-001, admin@realm-001.com, user@realm-001.com
- * - Demo Seed creates: Points packages with Stripe/WeChat payment mappings
+ * - Demo Seed creates: One-time entitlement mappings with Stripe/WeChat payment providers
  * - Test only validates USER-SIDE operations, no admin data creation
  *
  * Payment completion through UI is NOT tested here because:
@@ -37,6 +37,7 @@
 import { test, expect } from "../fixtures/demo-page.fixtures";
 import { verifyTestEnvironment } from "../helpers/environment-setup";
 import { SELECTORS } from "../selectors";
+import { selectFirstMappingAndProceed } from "../helpers/unified-purchase.helpers";
 
 const REALM_ID = "realm-001";
 const USER_EMAIL = "user@realm-001.com";
@@ -56,28 +57,17 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
     // ============================================================================
     // P0 Scenarios: Critical Happy Paths
     // ============================================================================
-    // Note: Using Demo Seed data (realm-001 with pre-configured points packages)
+    // Note: Using Demo Seed data (realm-001 with pre-configured one-time entitlement mappings)
     // Per spec/demo/e2e-testing.md Section 8: No admin data creation in tests
 
     let wechatAttemptId: string;
     let stripeAttemptId: string;
 
     await test.step("[P0] User: Login and Purchase via WeChat Pay", async () => {
-      // Use loginAsUser from LoginPage which includes proper waiting logic
       await loginPage.loginAsUser(USER_EMAIL, "password", REALM_ID);
-      // Note: loginAsUser waits for navigation to **/${REALM_ID}, then frontend redirects to /user/profile
-      // We explicitly navigate to purchase-points page (no auto-redirect expected)
 
       await page.goto(`/${REALM_ID}/user/purchase-points`);
-      await page
-        .getByTestId(/^points-package-select-button-/)
-        .first()
-        .click();
-      // Wait for package selection state to update
-      await expect(page.getByTestId(/^points-package-selected-/)).toBeVisible();
-      // Wait for Next button to be ready and clickable (use role-based selector with text fallback)
-      await expect(page.getByRole("button", { name: "Next" })).toBeVisible();
-      await page.getByRole("button", { name: "Next" }).click();
+      await selectFirstMappingAndProceed(page);
 
       await page.getByTestId("payment-method-select-wechat").click();
       // Wait for payment method selection state to update
@@ -106,10 +96,6 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
     });
 
     await test.step("[P0] User: WeChat Pay Payment Status", async () => {
-      // In a real demo environment, payment would complete via webhook callback
-      // For demo purposes, we verify the payment initiation and pending status
-      // Payment completion (Succeeded state) requires external webhook simulation
-
       await expect(
         page.getByRole("heading", { name: "WeChat Pay" }),
       ).toBeVisible();
@@ -124,19 +110,12 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
     });
 
     await test.step("[P0] User: Purchase via Stripe", async () => {
-      // Clear previous purchase flow state to start fresh
       await page.evaluate(() => {
         localStorage.removeItem("cas-purchase-flow");
       });
 
       await page.goto(`/${REALM_ID}/user/purchase-points`);
-      await page
-        .getByTestId(/^points-package-select-button-/)
-        .first()
-        .click();
-      // Wait for package selection state to update
-      await expect(page.getByTestId(/^points-package-selected-/)).toBeVisible();
-      await page.getByRole("button", { name: "Next" }).click();
+      await selectFirstMappingAndProceed(page);
 
       await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
@@ -161,10 +140,6 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
     });
 
     await test.step("[P0] User: Stripe Payment Status", async () => {
-      // In a real demo environment, payment would complete via webhook callback
-      // For demo purposes, we verify the payment initiation and pending status
-      // Payment completion (Succeeded state) requires external webhook simulation
-
       await expect(
         page.getByRole("heading", { name: "Redirecting..." }),
       ).toBeVisible();
@@ -181,19 +156,12 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
     });
 
     await test.step("[P0] User: Page Refresh During Payment", async () => {
-      // Clear previous purchase flow state to start fresh
       await page.evaluate(() => {
         localStorage.removeItem("cas-purchase-flow");
       });
 
       await page.goto(`/${REALM_ID}/user/purchase-points`);
-      await page
-        .getByTestId(/^points-package-select-button-/)
-        .first()
-        .click();
-      // Wait for package selection state to update
-      await expect(page.getByTestId(/^points-package-selected-/)).toBeVisible();
-      await page.getByRole("button", { name: "Next" }).click();
+      await selectFirstMappingAndProceed(page);
       await page.getByTestId("payment-method-select-wechat").click();
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
@@ -242,19 +210,12 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
     });
 
     await test.step("[P0] User: Multiple Rapid Clicks Prevention", async () => {
-      // Clear previous purchase flow state to start fresh
       await page.evaluate(() => {
         localStorage.removeItem("cas-purchase-flow");
       });
 
       await page.goto(`/${REALM_ID}/user/purchase-points`);
-      await page
-        .getByTestId(/^points-package-select-button-/)
-        .first()
-        .click();
-      // Wait for package selection state to update
-      await expect(page.getByTestId(/^points-package-selected-/)).toBeVisible();
-      await page.getByRole("button", { name: "Next" }).click();
+      await selectFirstMappingAndProceed(page);
       await page.getByTestId("payment-method-select-wechat").click();
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
@@ -289,11 +250,11 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
 
     await test.step("[P0] User: Cross-User State Isolation", async () => {
       // Store current user state
-      const selectedPackage = await page.evaluate(() => {
+      const selectedTarget = await page.evaluate(() => {
         const state = localStorage.getItem("cas-purchase-flow");
         if (state) {
           const parsed = JSON.parse(state);
-          return parsed?.state?.selectedPackageId;
+          return parsed?.state?.targetId;
         }
         return null;
       });
@@ -307,8 +268,6 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
 
       // Login again using LoginPage
       await loginPage.loginAsUser(USER_EMAIL, "password", REALM_ID);
-      // Note: loginAsUser waits for navigation to **/${REALM_ID}, then frontend redirects to /user/profile
-      // We explicitly navigate to purchase-points page (no auto-redirect expected)
 
       await page.goto(`/${REALM_ID}/user/purchase-points`);
 
@@ -316,7 +275,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
         const state = localStorage.getItem("cas-purchase-flow");
         if (state) {
           const parsed = JSON.parse(state);
-          return parsed?.state?.selectedPackageId;
+          return parsed?.state?.targetId;
         }
         return null;
       });
@@ -333,19 +292,12 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
     // ============================================================================
 
     await test.step("[P1] User: Payment Attempt Expiration", async () => {
-      // Clear previous purchase flow state to start fresh
       await page.evaluate(() => {
         localStorage.removeItem("cas-purchase-flow");
       });
 
       await page.goto(`/${REALM_ID}/user/purchase-points`);
-      await page
-        .getByTestId(/^points-package-select-button-/)
-        .first()
-        .click();
-      // Wait for package selection state to update
-      await expect(page.getByTestId(/^points-package-selected-/)).toBeVisible();
-      await page.getByRole("button", { name: "Next" }).click();
+      await selectFirstMappingAndProceed(page);
       await page.getByTestId("payment-method-select-wechat").click();
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
@@ -357,10 +309,6 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
 
       // Verify countdown timer is displayed
       await expect(page.getByText("Time Remaining")).toBeVisible();
-
-      // Note: Actual expiration requires waiting for the countdown timer
-      // In a real scenario, the payment would expire after the configured timeout
-      // For demo purposes, we verify the UI shows the countdown
 
       console.log("[P1] ✓ Payment countdown timer verified");
       console.log(
@@ -397,7 +345,6 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       await page.getByTestId("points-tab-purchase-history").click();
 
       // Verify filter UI elements exist (even if empty state is shown)
-      // Note: Filter functionality is tested, but actual filtering requires completed purchases
       await expect(
         page.getByText("Points Package Purchase History"),
       ).toBeVisible();
@@ -411,19 +358,12 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
     });
 
     await test.step("[P1] User: Network Error During Polling", async () => {
-      // Clear previous purchase flow state to start fresh
       await page.evaluate(() => {
         localStorage.removeItem("cas-purchase-flow");
       });
 
       await page.goto(`/${REALM_ID}/user/purchase-points`);
-      await page
-        .getByTestId(/^points-package-select-button-/)
-        .first()
-        .click();
-      // Wait for package selection state to update
-      await expect(page.getByTestId(/^points-package-selected-/)).toBeVisible();
-      await page.getByRole("button", { name: "Next" }).click();
+      await selectFirstMappingAndProceed(page);
       await page.getByTestId("payment-method-select-wechat").click();
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
@@ -461,7 +401,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       // Verify the page handles corrupted state gracefully
       // Frontend should clear invalid state and show fresh page
       await expect(
-        page.getByRole("heading", { name: "Select Points Package" }),
+        page.locator(SELECTORS.purchasePoints.page),
       ).toBeVisible();
 
       const storageState = await page.evaluate(() => {
@@ -471,6 +411,6 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       console.log("[P1] ✓ Corrupted localStorage handled gracefully");
     });
 
-    console.log("✅ All comprehensive scenarios completed successfully!");
+    console.log("All comprehensive scenarios completed successfully!");
   });
 });

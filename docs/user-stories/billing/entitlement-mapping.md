@@ -352,9 +352,7 @@ And 每条变更记录显示：
 
 ## 相关文档
 
-- **PRD**: [docs/prd/billing/product_reduce.md](/docs/prd/billing/product_reduce.md) - Product & Subscription Model Reduction 产品需求文档
-- **PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - 订阅计费 PRD（需更新）
-- **PRD**: [docs/prd/billing/points.md](/docs/prd/billing/points.md) - 积分系统 PRD（需更新）
-- **PRD**: [docs/prd/billing/product_reduce.md](/docs/prd/billing/product_reduce.md) - Product/Plan 本地模型废弃与 Entitlement 映射
+- **PRD**: [docs/prd/billing/subscription.md](/docs/prd/billing/subscription.md) - 订阅计费 PRD（含 Entitlement 映射、Metadata 契约）
+- **PRD**: [docs/prd/billing/points.md](/docs/prd/billing/points.md) - 积分系统 PRD
 - **技术研究**: [.ai/tech-research/product_reduce.md](/.ai/tech-research/product_reduce.md) - 技术预研报告
 - **需求来源**: Product and Subscription Local Model Reduction — 移除本地 Product/Plan 商业目录，将目录和订阅生命周期交给支付方

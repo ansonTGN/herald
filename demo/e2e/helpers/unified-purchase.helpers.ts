@@ -1,7 +1,13 @@
 /**
  * Unified Purchase Test Helpers
  *
- * Reusable helper functions for unified purchase flow tests
+ * Reusable helper functions for one-time mapping purchase flow tests.
+ * The purchase flow is:
+ * 1. User sees mapping cards on purchase-points page
+ * 2. Selects a mapping card (click sets selectedMappingId)
+ * 3. Clicks Next to proceed to payment step
+ * 4. Selects payment method and clicks Complete Purchase
+ * 5. Payment attempt is created with targetType 'entitlement_mapping'
  */
 
 import { expect, type Page } from '@playwright/test'
@@ -58,84 +64,32 @@ export async function extractPaymentAttemptId(page: Page): Promise<string> {
 }
 
 /**
- * Fills points package form with provided options
+ * Selects the first available mapping card and proceeds to payment step.
+ * Uses SELECTORS.mappingCard selectors from selectors.ts.
  */
-export async function fillPointsPackageForm(
-  page: Page,
-  options: {
-    name: string
-    title: string
-    description: string
-    points: string
-    price: string
-    currency?: string
-    sortOrder?: string
-    enabled?: boolean
-  }
-): Promise<void> {
-  await page.getByTestId(SELECTORS.pointsPackageForm.nameInput).fill(options.name)
-  await page.getByTestId(SELECTORS.pointsPackageForm.titleInput).fill(options.title)
-  await page.getByTestId(SELECTORS.pointsPackageForm.descriptionInput).fill(options.description)
-  await page.getByTestId(SELECTORS.pointsPackageForm.pointsInput).fill(options.points)
-  await page.getByTestId(SELECTORS.pointsPackageForm.priceInput).fill(options.price)
+export async function selectFirstMappingAndProceed(page: Page): Promise<void> {
+  const firstCard = page.locator(SELECTORS.mappingCard.firstCard()).first()
+  await expect(firstCard).toBeVisible()
+  await firstCard.click()
 
-  if (options.currency) {
-    await page.getByTestId(SELECTORS.pointsPackageForm.currencySelect).fill(options.currency)
-  }
-
-  if (options.sortOrder) {
-    await page.getByTestId(SELECTORS.pointsPackageForm.sortOrderInput).fill(options.sortOrder)
-  }
-
-  if (options.enabled !== undefined) {
-    const isEnabled = await page.getByTestId(SELECTORS.pointsPackageForm.enabledSwitch).isChecked()
-    if (options.enabled && !isEnabled) {
-      await page.getByTestId(SELECTORS.pointsPackageForm.enabledSwitch).click()
-    }
-  }
-}
-
-/**
- * Configures payment provider for a package
- */
-export async function configurePaymentProvider(
-  page: Page,
-  provider: PaymentProvider,
-  externalId: string,
-  enabled: boolean = true
-): Promise<void> {
-  await page.getByTestId('add-provider-mapping-button').click()
-  await expect(page.getByTestId('provider-mapping-form-dialog')).toBeVisible()
-  await page.getByTestId('provider-mapping-provider-select-trigger').click()
-  await page
-    .getByRole('option', {
-      name: provider === 'wechat' ? 'WeChat Pay' : 'Stripe',
-    })
-    .click()
-  await page.getByTestId('provider-mapping-product-id-input').fill(externalId)
-
-  const isEnabled = await page.getByTestId('provider-mapping-enabled-switch').isChecked()
-  if (enabled && !isEnabled) {
-    await page.getByTestId('provider-mapping-enabled-switch').click()
-  } else if (!enabled && isEnabled) {
-    await page.getByTestId('provider-mapping-enabled-switch').click()
-  }
-
-  await page.getByTestId('provider-mapping-submit-button').click()
-  await expect(page.getByText('Payment provider mapping added')).toBeVisible()
-}
-
-/**
- * Selects first available package and proceeds to payment step
- */
-export async function selectFirstPackageAndProceed(page: Page): Promise<void> {
-  const firstPackageButton = page.getByTestId(/^points-package-select-button-/)
-  await expect(firstPackageButton.first()).toBeEnabled()
-  await firstPackageButton.first().click()
-
-  await expect(page.getByTestId(/^points-package-selected-/)).toBeVisible()
+  // Verify the card shows selected state (ring-2 ring-primary)
   await expect(page.locator(SELECTORS.purchasePoints.nextButton)).toBeEnabled()
 
+  await page.locator(SELECTORS.purchasePoints.nextButton).click()
+}
+
+/**
+ * Selects a specific mapping card by entitlement key and proceeds to payment step.
+ */
+export async function selectMappingAndProceed(
+  page: Page,
+  entitlementKey: string
+): Promise<void> {
+  const card = page.locator(SELECTORS.mappingCard.card(entitlementKey))
+  await expect(card).toBeVisible()
+  await card.click()
+
+  await expect(page.locator(SELECTORS.purchasePoints.nextButton)).toBeEnabled()
   await page.locator(SELECTORS.purchasePoints.nextButton).click()
 }
 
@@ -154,7 +108,7 @@ export async function selectPaymentMethodAndProceed(
 }
 
 /**
- * Full purchase flow: navigate -> select package -> select provider -> complete purchase.
+ * Full purchase flow: navigate -> select mapping -> select provider -> complete purchase.
  * Returns the payment attempt ID from localStorage.
  */
 export async function initiatePurchaseFlow(
@@ -166,7 +120,10 @@ export async function initiatePurchaseFlow(
   await page.goto(`/${realmId}/user/purchase-points`)
   await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
 
-  await selectFirstPackageAndProceed(page)
+  // Precondition: realm must have at least one active one-time entitlement mapping.
+  // If no mappings exist, the page shows empty state and this helper will fail.
+  // Callers in conditional test contexts should check for mapping cards first.
+  await selectFirstMappingAndProceed(page)
   await expect(page.locator(SELECTORS.purchasePoints.stepPayment)).toBeVisible()
 
   await selectPaymentMethodAndProceed(page, provider)

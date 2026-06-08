@@ -229,16 +229,15 @@ docs/user-stories/
 |------|------|---------|
 | Billing User | [billing/subscription.md](billing/subscription.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Points Admin | [billing/points-admin.md](billing/points-admin.md) | [Points PRD](/docs/prd/billing/points.md) |
-| Points User | [billing/points-user.md](billing/points-user.md), [billing/points-free-user.md](billing/points-free-user.md) | [Points PRD](/docs/prd/billing/points.md), [Points One-Time Payment PRD](/docs/prd/billing/points-package-one-time-payment.md) |
-| Points Package Purchase | [billing/points-package-purchase.md](billing/points-package-purchase.md) | [Points One-Time Payment PRD](/docs/prd/billing/points-package-one-time-payment.md) |
+| Points User | [billing/points-user.md](billing/points-user.md), [billing/points-free-user.md](billing/points-free-user.md) | [Points PRD](/docs/prd/billing/points.md), [Subscription PRD](/docs/prd/billing/subscription.md) |
+| Points Package Purchase | [billing/points-package-purchase.md](billing/points-package-purchase.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Payment Provider | [billing/payment-provider.md](billing/payment-provider.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Shopify Pay | [billing/shopify-pay.md](billing/shopify-pay.md) | [Shopify Pay PRD](/docs/prd/billing/shopify-pay.md) |
 | WeChat Pay | [billing/wechat-pay.md](billing/wechat-pay.md) | [WeChat Pay PRD](/docs/prd/billing/wechat-pay.md) |
-| Payment Attempt | [billing/payment-attempt.md](billing/payment-attempt.md) | [Points One-Time Payment PRD](/docs/prd/billing/points-package-one-time-payment.md) |
+| Payment Attempt | [billing/payment-attempt.md](billing/payment-attempt.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Invoice | [billing/invoice.md](billing/invoice.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
-| Invoice Fallback | [billing/invoice-fallback.md](billing/invoice-fallback.md) | [Invoice Fallback PRD](/docs/prd/billing/invoice-fallback.md) |
-| Invoice Fallback | [billing/invoice-fallback.md](billing/invoice-fallback.md) | [Invoice Fallback PRD](/docs/prd/billing/invoice-fallback.md) |
-| Entitlement Mapping | [billing/entitlement-mapping.md](billing/entitlement-mapping.md) | [Model Reduction PRD](/docs/prd/billing/product_reduce.md) |
+| Invoice Fallback | [billing/invoice-fallback.md](billing/invoice-fallback.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
+| Entitlement Mapping | [billing/entitlement-mapping.md](billing/entitlement-mapping.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 
 ### Integration 集成
 

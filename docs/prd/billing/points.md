@@ -35,13 +35,17 @@
 - US-PU-007: 查看积分包购买记录 (P1)
 - US-PU-008: 理解积分包与订阅购买的区别 (P1)
 
-> 注：本地积分包管理（US-PP-001~005）和促销积分包（US-PP-006, US-PP-016~018）已由支付平台产品管理 + Entitlement 映射取代，详见 `docs/prd/billing/points-package-one-time-payment.md`。
+**积分发放（管理员/SDK）**: `docs/user-stories/billing/points-admin.md` / `docs/user-stories/integration/sdk.md`
+- US-PO-008: 主动发放积分 (P0) — 管理员向指定用户发放积分，支持设置有效期和发放原因
+- US-TP-017: 通过 SDK 发放积分 (P0) — 第三方应用通过 SDK 向用户发放积分
+
+> 注：本地积分包管理（US-PP-001~005）和促销积分包（US-PP-006, US-PP-016~018）已由支付平台产品管理 + Entitlement 映射取代。
 
 ### 1.2 优先级汇总
 
 | 优先级 | 数量 | 关键故事 |
 |--------|------|----------|
-| P0 | 8 | US-PO-001, US-PO-006, US-PU-001, US-PU-004, US-PU-006, US-FU-001, US-FU-002 |
+| P0 | 10 | US-PO-001, US-PO-006, US-PO-008, US-PU-001, US-PU-004, US-PU-006, US-FU-001, US-FU-002, US-TP-017 |
 | P1 | 7 | US-PO-002, US-PO-003, US-PO-007, US-PU-002, US-PU-005, US-PU-007, US-PU-008, US-FU-003 |
 | P2 | 3 | US-PO-004, US-PO-005, US-PU-003 |
 
@@ -69,7 +73,9 @@
 - 定期免费积分：免费用户按配置周期自动获得积分（支持 once/daily/weekly/monthly，不可累积）
 - 免费用户升级：免费用户升级到付费套餐时的积分处理
 - 独立积分调度：免费用户积分发放不依赖订阅系统
-- 一次性积分购买：用户通过 one-time entitlement mapping 产品购买充值积分，详见 `docs/prd/billing/points-package-one-time-payment.md`
+- 一次性积分购买：用户通过 one-time entitlement mapping 产品购买充值积分
+- 管理员主动发放积分：向指定用户发放指定数量的积分，附带发放原因和可选有效期
+- SDK 发放积分：第三方应用通过 SDK 向用户发放积分，附带原因和可选有效期
 
 ### 2.2 不包含功能 (Out of Scope)
 
@@ -88,7 +94,7 @@
 - **用户注册系统**：需要在用户注册时触发积分发放；影响注册初始积分发放
 - **积分系统核心**：复用积分账本、交易记录等核心功能；影响积分发放、查询、消费
 - **定时任务系统**：需要定时任务按周期自动发放积分；影响定期积分发放（once/daily/weekly/monthly）
-- **一次性积分购买**：依赖 EntitlementMapping 和 PaymentAttempt，详见 `docs/prd/billing/points-package-one-time-payment.md`
+- **一次性积分购买**：依赖 EntitlementMapping 和 PaymentAttempt（见 `docs/prd/billing/subscription.md`）
 
 ---
 
@@ -102,7 +108,7 @@
 
 当前 PRD 基线以 `entitlement_key` 级积分配置为主。Billing 不再维护本地 Plan/Product 目录，Points 通过 `provider_entitlement_mappings.entitlement_key` 查找订阅积分策略。
 
-一次性积分购买已从本地积分包目录迁移到支付平台产品 + Entitlement 映射架构，详见 `docs/prd/billing/points-package-one-time-payment.md`。
+一次性积分购买已从本地积分包目录迁移到支付平台产品 + Entitlement 映射架构。
 
 ### 3.2 关键特性
 
@@ -138,6 +144,7 @@
 - **会员积分（subscription_credit）**：通过订阅套餐获得，按订阅周期发放，周期结束自动过期，优先于充值积分消费
 - **注册初始积分（registration_credit）**：用户注册时自动获得，永久有效，升级到付费套餐后保留，每个用户只能获得一次
 - **免费定期积分（free_periodic_credit）**：免费用户按配置周期自动获得（once/daily/weekly/monthly），按配置有效期，不累积（上一期未用完的积分在本期过期），升级到付费套餐后立即回收
+- **发放积分（granted_credit）**：由管理员或 SDK 主动发放获得，可配置有效期（N 天有效或永久有效），遵循基于过期时间的消费优先级规则
 
 **积分消费优先级**：
 - 按过期时间优先消费即将过期的积分（expires_at 升序，NULL 排最后表示永久有效）
@@ -197,6 +204,14 @@
 - 创建付费订阅的积分发放调度
 - 立即发放付费套餐的第一期积分（如果配置了 grant_on_subscribe）
 
+**发放规则（granted_credit）**：
+- 积分数量必须大于 0
+- 发放原因为必填项
+- 有效期可选：指定天数（> 0）或永久有效（不设置）
+- 管理员只能向本 Realm 内用户发放积分
+- SDK 发放受 API Key 权限控制，遵循 Realm 隔离
+- 发放操作生成交易记录（类型为 grant），包含操作者标识（管理员身份或 API Key / Client App 标识）
+
 **防止滥用**：
 - 每个用户只能有一个用户积分配置记录（基于 user_id 唯一约束）
 - 注册时检查是否已存在配置记录，不允许重复注册获取注册初始积分
@@ -255,6 +270,10 @@
 - 配置变更后影响新注册用户，不影响现有用户
 - 支持 4 种免费积分周期类型：once、daily、weekly、monthly
 - 异步任务积分补偿：通过 external_ref_id 关联原始消费交易，补偿积分继承原积分类型和过期时间，保证幂等性
+- 管理员发放接口：支持指定用户、积分数量、有效期（天数或永久）、发放原因；需 `points.manage` 权限
+- SDK 发放方法：与现有 SDK 方法风格一致，支持指定用户、积分数量、有效期、发放原因
+- 发放成功后创建交易记录（类型为 grant），更新用户积分余额
+- 前端管理页面新增"发放积分"入口和表单（用户选择、数量输入、有效期设置、原因输入）
 
 ### 5.2 验收目标
 
@@ -267,6 +286,12 @@
 - 管理员能查看全租户积分数据，普通用户仅能查看自己的数据
 - 免费用户升级到付费套餐时注册初始积分保留，免费定期积分立即回收
 - 积分过期机制正常工作
+- 管理员能在管理后台向指定用户成功发放积分，积分正确到账
+- SDK 能通过 API 向指定用户发放积分，返回发放结果
+- 发放的积分类型为 granted_credit，在用户余额中按类型正确显示
+- 发放交易的消费优先级遵循现有过期时间优先规则
+- 所有发放操作生成可追溯的交易记录，包含发放原因
+- 发放时跨 Realm 用户、数量无效、缺少原因等场景正确拒绝
 
 ---
 
@@ -298,6 +323,10 @@
 - 交易历史：支持按时间范围、交易类型、来源应用筛选
 - 状态反馈：积分变更时（发放、消费、过期、回收）提供明确的状态提示
 - 免费用户积分：展示即将过期的积分提醒
+- 积分发放入口：在积分管理页面或用户积分账户详情页提供"发放积分"按钮
+- 发放表单字段：用户选择（下拉搜索）、积分数量（正整数）、有效期（天数输入或"永久有效"选项）、发放原因（文本输入）
+- 发放确认：提交前显示确认弹窗，包含发放摘要（用户、数量、有效期），需管理员二次确认
+- 交易历史中"发放"类型记录可按现有筛选规则查看
 - 金额/积分变化场景必须突出变化量、变更影响范围和不可逆风险提示
 
 ---
@@ -313,6 +342,10 @@
 - 当前正式配置对象是 `entitlement_key`，不再使用 Plan 级配置
 - 积分补偿使用现有 grant_points_internal 方法，无需新增 API
 - 价格使用最小货币单位（分）存储，避免浮点精度问题
+- 不创建独立的活动/活动实体，积分发放直接附带原因
+- 发放原因为必填项，有效期可选（天数或永久有效）
+- SDK 发放方法与现有 SDK 风格一致
+- granted_credit 不因类型获得消费优先级特殊处理，沿用过期时间优先规则
 
 ---
 
@@ -323,6 +356,5 @@
 - 用户故事：`docs/user-stories/billing/points-free-user.md`
 - 用户故事：`docs/user-stories/billing/points-package-purchase.md`
 - 相关 PRD：`docs/prd/billing/subscription.md`
-- 相关 PRD：`docs/prd/billing/product_reduce.md`
-- 相关 PRD：`docs/prd/billing/points-package-one-time-payment.md`
+- 相关 PRD：`docs/prd/billing/subscription.md`
 - 需求来源：`.ai/future/points_plus.md`

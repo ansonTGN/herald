@@ -59,12 +59,38 @@
   - 角色：Realm Admin
   - 摘要：审核用户申请的发票，确认后开具或作废
 
+**外部 Provider 发票（Invoice Fallback）**: `docs/user-stories/billing/invoice-fallback.md`
+
+- `[US-IF-001]` 配置发票策略，优先级 P0
+  - 角色：Realm Admin
+  - 摘要：配置 Realm 发票策略（provider_first / manual_only / none）和各支付平台的外部发票能力开关
+
+- `[US-IF-002]` 系统同步 Stripe 发票，优先级 P0
+  - 角色：Herald 系统
+  - 摘要：通过 Stripe webhook 自动同步 Stripe 发票数据到 Herald
+
+- `[US-IF-003]` 系统同步 Creem 交易税务数据，优先级 P0
+  - 角色：Herald 系统
+  - 摘要：同步 Creem MoR 交易的税务数据到 Herald
+
+- `[US-IF-004]` 查看外部 Provider 发票（管理员），优先级 P0
+  - 角色：Realm Admin
+  - 摘要：在发票列表中查看外部 provider 同步的发票（只读）
+
+- `[US-IF-005]` 查看外部 Provider 发票（普通用户），优先级 P1
+  - 角色：Regular User
+  - 摘要：在"我的发票"中查看外部 provider 同步的发票（只读）
+
+- `[US-IF-006]` 下载外部发票 PDF 或查看 Provider 页面，优先级 P1
+  - 角色：Realm Admin / Regular User
+  - 摘要：通过外部 URL 下载或查看 provider 管理的发票 PDF
+
 ### 1.2 优先级汇总表
 
 | 优先级 | 数量 | 关键故事 |
 |--------|------|----------|
-| P0 | 9 | 创建发票、编辑草稿、查看列表、查看详情、开具发票、标记已付、配置销售方、申请发票、审核开具 |
-| P1 | 3 | 作废发票、查看我的发票、系统标记逾期 |
+| P0 | 13 | 创建发票、编辑草稿、查看列表、查看详情、开具发票、标记已付、配置销售方、申请发票、审核开具、配置发票策略、同步 Stripe 发票、同步 Creem 税务、管理员查看外部发票 |
+| P1 | 5 | 作废发票、查看我的发票、系统标记逾期、用户查看外部发票、下载外部 PDF |
 | P2 | 0 | - |
 
 ---
@@ -89,6 +115,15 @@
 - 发票审计追踪（状态变更历史）
 - 发票可关联 Subscription 和 Payment Attempt（上下文入口自动传递关联 ID；独立表单仍可手动填写）
 - PDF 发票生成和下载
+- 发票策略配置：Realm Admin 配置 `invoice_policy`（provider_first / manual_only / none）和每个支付平台的外部发票能力开关
+- Stripe 发票同步：通过 webhook 自动同步 Stripe Invoicing 产生的发票数据到 Herald（只读镜像）
+- Creem 交易税务数据同步：Creem MoR 交易支付成功后同步税务数据到 Herald
+- 只读展示外部 Provider 发票：provider-owned 发票在 Herald 中只读展示，禁止创建、编辑、开具、作废、标记已付
+- 自研发票 Fallback：provider 不支持或未启用外部发票时，走 Herald 自研发票系统
+- Provider 来源标识：发票列表和详情页显示发票来源 provider（Manual / Stripe / Creem）
+- 外部 PDF / 托管页面跳转：有外部 PDF URL 时直接重定向下载；有托管页面 URL 时显示 "View in Provider" 链接
+- Creem MoR 保护：Creem MoR 交易不允许创建 Herald manual 发票
+- 发票列表 provider 筛选：支持按 provider 类型筛选发票
 
 ### 2.2 不包含功能
 
@@ -99,6 +134,10 @@
 - 在线支付集成（发票仅手动标记已付）
 - 发票模板自定义
 - 多币种自动转换
+- 微信电子发票 API 接入（后续独立迭代）
+- Shopify 订单/发票文档同步（后续独立迭代）
+- Herald 主动调用 Stripe Invoice API 创建发票（仅 webhook 被动同步）
+- Herald 主动调用 Creem API 查询交易税务（仅通过支付回调同步）
 
 ### 2.3 依赖项
 
@@ -114,9 +153,13 @@
 
 ### 3.1 功能描述
 
-为 Herald 多租户系统增补发票功能。主流程为：Realm Admin 配置销售方信息 → Regular User 申请发票 → Realm Admin 审核开具。同时保留 Admin 手动创建发票的辅助路径。发票与现有 billing 模块集成，可关联 Subscription 和 Payment Attempt，但不自动生成。
+为 Herald 多租户系统增补发票功能。系统采用"外部平台发票优先 + 自研发票 Fallback"的双模式架构。
 
-### 3.2 关键特性
+**自研发票主流程**：Realm Admin 配置销售方信息 → Regular User 申请发票 → Realm Admin 审核开具。同时保留 Admin 手动创建发票的辅助路径。
+
+**外部 Provider 发票**：当支付平台（如 Stripe、Creem）提供发票/税务能力时，Herald 通过 webhook 被动同步外部发票数据并只读展示。发票来源由实际收款 payment_provider 的发票能力决定，而非按产品或 Realm 全局决定。
+
+发票与现有 billing 模块集成，可关联 Subscription 和 Payment Attempt，但不自动生成。
 
 - **以用户申请为主**：Regular User 主动申请发票，Admin 审核
 - **销售方信息预配置**：Realm Admin 一次性配置，后续自动填充
@@ -125,6 +168,10 @@
 - 折扣 / 税费支持固定金额和百分比两种模式；运费仅支持固定金额模式
 - 发票编号在租户内按年自动递增
 - 严格的租户数据隔离
+- **发票跟随实际收款 provider**：同一产品支持多支付平台时，发票归属由实际 payment_provider 的发票能力决定
+- **三种发票策略**：provider_first（优先外部 provider）、manual_only（仅自研）、none（不提供自研发票入口）
+- **只读展示 provider-owned 发票**：数据由 webhook/API 同步，不可通过 Herald API 修改
+- **Creem MoR 不可覆盖**：Creem 作为 Merchant of Record 的交易，Herald 不得创建 manual 发票
 
 ---
 
@@ -148,12 +195,41 @@
 - **金额计算规则**：line_item.subtotal = quantity x unit_price；invoice.subtotal = SUM(line_items.subtotal)；invoice.total = subtotal - discount_amount + tax_amount + shipping_amount；所有金额以最小货币单位（分）存储。折扣、税费、运费均以 subtotal 为基准计算，税费未考虑折扣影响（即税费不基于折后金额）
 - **运费模式限制**：运费（shipping_mode）仅支持固定金额（fixed）模式，不支持百分比模式（数据库 CHECK 约束限制）
 
+**Provider 发票规则**：
+
+- **发票来源路由**：根据 payment_attempt / subscription 上的实际 payment_provider 和该 provider 的外部发票能力配置决定发票来源；不按产品或 Realm 全局决定
+- **invoice_policy 行为矩阵**：
+
+  | 操作 | provider_first | manual_only | none |
+  |------|---------------|-------------|------|
+  | 发票列表 | 展示自研 + 外部 provider 同步数据 | 展示自研数据 | 仅展示外部 provider 同步数据 |
+  | 发票详情 | 外部发票只读，自研发票按现有逻辑 | 全部按现有逻辑 | 外部发票只读 |
+  | 创建发票 | 仅 manual fallback 场景 | 允许 | 不允许 |
+  | 编辑/开具/作废/标记已付 | 仅 manual 发票 | 全部允许 | 不允许 |
+  | 用户申请发票 | 仅 manual fallback 场景 | 允许 | 不允许 |
+  | PDF 下载 | 外部发票用外部 URL，自研发票用 IronPress | IronPress 生成 | 外部 URL |
+  | "View in Provider" 链接 | 有 external_hosted_url 时显示 | 不显示 | 有时显示 |
+
+- **Creem MoR 约束**：Creem 交易的发票必须由 Creem 管理；无论 invoice_policy 设置如何，Herald 不得为 Creem 交易创建 manual 发票
+- **Stripe 发票同步触发**：通过 Stripe webhook 被动同步（invoice.created / invoice.finalized / invoice.voided / invoice.paid），Herald 不主动调用 Stripe Invoice API 创建发票
+- **Stripe 发票状态映射**：Stripe `draft` → Herald `draft`，Stripe `open` → Herald `issued`，Stripe `paid` → Herald `paid`，Stripe `void` → Herald `void`
+- **Creem 税务数据同步**：Creem 交易支付成功后同步交易金额、税额、税区等税务信息作为发票记录
+- **Provider 切换兼容**：Realm 从 manual_only 切到 provider_first 时，已有 manual 发票保持 provider='manual' 不变，策略切换只影响新发票的路由决策
+- **发票编号规则**：外部 provider 发票使用 provider 分配的编号（如 Stripe 的发票编号），自研发票继续使用 INV-{YEAR}-{SEQ} 格式
+- **Webhook 幂等性**：复用现有 payment_event 表的 external_event_id 唯一约束，重复 webhook 更新而非创建
+- **外部发票不可操作**：provider != 'manual' 的发票禁止通过 Herald API 执行创建、编辑、开具、作废、标记已付操作
+- **权限复用**：管理端继续使用 `billing.view` / `billing.manage` 权限控制，不新增发票细粒度权限
+
 ### 4.2 关键状态与异常
 
 - **发票状态机**：draft → issued → paid / void / overdue
 - **逾期标记**：系统定时检查到期日已过的 issued 发票，自动标记为 overdue
 - **审计追踪**：所有状态变更操作需记录审计事件（actor、timestamp、changes）
 - **权限边界**：管理端接口通过 `billing.view` / `billing.manage` 权限检查控制访问（非直接检查 Realm Admin 角色），用户端复用登录用户身份判断；Regular User 只能查询和申请自己的发票
+- **外部发票状态**：由 provider 驱动更新，Herald 只做状态映射和只读展示；自研发票状态机保持不变
+- **逾期标记范围**：系统自动逾期任务仅处理 `provider='manual'` 的自研发票；外部 provider 发票的逾期或关闭状态由 provider webhook/API 同步驱动
+- **Provider 未启用外部发票能力**：当 provider_first 策略下某 provider 未启用外部发票时，该 provider 的交易降级到 manual fallback
+- **Creem 无 PDF URL**：Creem API 当前不返回发票 PDF URL，用户需通过 Creem 平台查看完整发票
 
 ---
 
@@ -171,6 +247,13 @@
 - **标记已付**：手动将已开具或逾期发票标记为已付款；支持通过 `paid_at` 可选参数指定实际付款时间
 - **逾期标记**：系统定时检查到期日已过的 issued 发票，自动标记为 overdue
 - **PDF 生成和下载**：支持发票 PDF 生成和下载
+- **发票策略配置**：Realm Admin 在 Billing 设置中配置 invoice_policy 和每个支付平台的外部发票能力开关
+- **Stripe 发票 webhook 同步**：Herald 自动接收 Stripe 的 invoice.* 事件，同步发票数据到本地，状态按映射规则转换
+- **Creem 交易税务同步**：Creem 支付成功后，系统创建 provider='creem' 的发票记录，同步交易税务数据
+- **外部发票只读展示**：发票列表和详情页显示 provider 来源标识；provider != manual 的发票隐藏所有编辑操作按钮，显示 "View in Provider" 链接
+- **自研发票 Fallback**：invoice_policy=provider_first 时，不支持外部发票的 provider 交易仍可使用 Herald 自研发票
+- **外部 PDF / 页面跳转**：有 external_pdf_url 时重定向下载；有 external_hosted_url 时显示跳转链接
+- **发票列表 provider 筛选**：支持按 provider 类型（Manual / Stripe / Creem）筛选发票列表
 
 ### 5.2 验收目标
 
@@ -182,6 +265,14 @@
 - 发票编号在租户内唯一且按年递增
 - 状态变更全部记录到审计历史
 - Regular User 只能查看和申请自己的发票，无法访问他人发票
+- Realm Admin 能配置 invoice_policy，启用/禁用各 provider 的外部发票能力
+- Stripe Invoicing 产生的发票能通过 webhook 自动同步到 Herald 并正确映射状态
+- Creem MoR 交易的税务数据能同步到 Herald 并只读展示
+- 外部 provider 发票在管理端和用户端均为只读，无法通过 Herald API 修改
+- 自研发票功能在 manual_only 和 fallback 场景下完全保持不变
+- Creem MoR 交易无法创建 Herald manual 发票
+- 发票列表能按 provider 筛选，能区分显示不同来源的发票
+- PDF 下载正确区分自研（IronPress）和外部（URL 重定向）
 
 ---
 
@@ -189,10 +280,12 @@
 
 **适用性**: 适用
 
-- **接口能力范围**：发票 CRUD、销售方信息配置、发票开具/作废/标记已付、用户申请发票、PDF 生成下载的能力边界；在 api-billing crate 中新增
+- **接口能力范围**：发票 CRUD、销售方信息配置、发票开具/作废/标记已付、用户申请发票、PDF 生成下载、发票策略配置、provider 筛选查询的能力边界；在 api-billing crate 中新增
 - **访问控制原则**：管理端接口通过 `billing.view` / `billing.manage` 权限检查控制（`require_billing_permission` 辅助函数实现）；用户端接口复用登录用户身份判断；Realm Admin 可管理本 Realm 所有发票；Regular User 只能查询和申请自己的发票；销售方信息配置 API 归属 Realm Billing 设置，需 `billing.manage` 权限
-- **租户/Realm 数据边界**：发票按 Realm 隔离；发票编号在 realm + 年范围内唯一
+- **租户/Realm 数据边界**：发票按 Realm 隔离；发票编号在 realm + 年范围内唯一；发票策略配置按 Realm 独立；provider 能力开关按 Realm + Provider 独立
 - **状态操作约束**：仅 draft 可编辑；issued / overdue 可标记已付或作废；paid 不可修改
+- **外部发票写操作禁止**：现有发票 CRUD API 对 provider != manual 的发票禁止写操作（创建、编辑、开具、作废、标记已付）
+- **兼容性要求**：现有 invoice API 响应向后兼容（新增字段可选，默认 provider='manual'）；自研发票的全部 API 行为不变
 
 ---
 
@@ -203,20 +296,24 @@
 - **管理后台**（Realm Admin）：
   - 入口：Realm 管理后台的 Billing 区域新增 "Invoices" 菜单；只按管理权限控制，不因当前 Realm 尚未配置销售方信息或尚无发票记录而隐藏
   - 销售方配置：Billing 设置页面新增销售方信息配置区域（公司名称、地址、邮箱、电话、税号）
-  - 发票列表页：表格展示编号、开票对象、金额、状态、来源、到期日，支持状态、来源和日期筛选
+  - 发票列表页：表格展示编号、开票对象、金额、状态、来源、provider、到期日，支持状态、来源、provider 和日期筛选；外部 provider 发票行不显示编辑/开具/作废/标记已付操作
   - 待审核视图：筛选来源为 "user_application" 且状态为 "draft" 的发票，快速审核
+  - 发票详情页：provider != manual 时切换为只读模式，隐藏所有操作按钮，显示 provider 标识和 "View in Provider" 链接（有 external_hosted_url 时）
   - 发票创建/编辑表单：行项目动态添加删除，实时计算金额汇总
   - 发票详情页：展示完整发票信息、行项目和状态历史时间线
   - 状态操作：Issue、Void、Mark as Paid 按钮根据当前状态启用/禁用
+  - 发票策略配置入口：Billing 设置页面新增发票策略区域，包含 invoice_policy 选择和每个已启用支付平台的外部发票能力开关
+  - PDF 下载：外部发票使用外部 URL 重定向；自研发票使用现有 IronPress 生成
 
 - **个人页面**（Regular User）：
   - 入口：当 Realm 已配置销售方信息时，用户个人中心显示 "My Invoices" 菜单；未配置时隐藏
   - 申请发票入口：当 Realm 已配置销售方信息时，在支付记录或订阅详情旁提供 "Apply for Invoice" 按钮；未配置时不展示
   - 申请表单：选择支付记录、填写开票抬头（名称、地址、邮箱、税号）
-  - 列表页：展示属于自己的发票，包含编号、金额、状态、到期日、申请状态
-  - 详情页：查看发票完整信息
+  - 列表页：展示属于自己的发票，包含编号、金额、状态、到期日、申请状态、provider 来源标识
+  - 详情页：查看发票完整信息；外部发票只读，显示 "View in Provider" 链接
+  - 申请发票：Creem 交易的申请入口不可用；其他 provider 交易根据 invoice_policy 决定是否可申请
 
-- **状态反馈**：操作成功后显示对应成功消息；状态不合法时禁用按钮并提示原因；金额变动后实时更新汇总区域
+- **状态反馈**：操作成功后显示对应成功消息；状态不合法时禁用按钮并提示原因；金额变动后实时更新汇总区域；操作外部 provider 发票时提示 "This invoice is managed by {Provider}"
 
 ---
 
@@ -228,10 +325,20 @@
 - 不新增 Invoice 细粒度权限，管理端使用 `billing.view` / `billing.manage` 权限控制，用户端复用登录用户身份判断
 - 发票可关联 Subscription 和 Payment Attempt 但不自动生成
 - 发票编号格式为 INV-{YEAR}-{SEQ}，租户内按年递增
+- 发票来源跟随实际收款 payment_provider，而非跟随产品或 Realm 全局选择
+- 三种发票策略：provider_first / manual_only / none
+- Stripe 发票同步通过 webhook 被动驱动，Herald 不主动调用 Stripe Invoice API 创建发票
+- Creem MoR 交易的发票不可被 Herald manual 覆盖，无论 invoice_policy 设置
+- 已有 manual 发票在策略切换后保持 provider='manual' 不变
+- 外部发票 PDF 有 URL 时直接重定向，无 URL 时提示由 provider 管理
+- 外部发票编号使用 provider 分配的编号，自研发票继续 INV-{YEAR}-{SEQ}
 
 ---
 
 ## 9. 参考资料
 
 - 用户故事：`docs/user-stories/billing/invoice.md`
+- 用户故事：`docs/user-stories/billing/invoice-fallback.md`
+- 技术预研：`.ai/tech-research/invoice_fallback.md`
 - 相关 PRD：`docs/prd/billing/subscription.md`
+- 相关 PRD：`docs/prd/billing/stripe-payment.md`

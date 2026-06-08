@@ -47,16 +47,12 @@ docs/
 
 | PRD 文档 | 标题 | 相关角色 |
 |---------|------|---------|
-| [subscription.md](billing/subscription.md) | 订阅计费与变更历史 | Realm Admin, Regular User |
-| [points.md](billing/points.md) | 积分系统（含免费用户积分） | Realm Admin, Regular User |
-| [points-grant.md](billing/points-grant.md) | 积分发放（管理员/SDK 主动发放） | Realm Admin, Third-Party App |
+| [subscription.md](billing/subscription.md) | 订阅计费、Entitlement 映射、Webhook 处理（含 One-time 购买） | Realm Admin, Regular User, Third-Party App, System |
+| [points.md](billing/points.md) | 积分系统（含发放、免费用户积分） | Realm Admin, Regular User, Third-Party App |
 | [stripe-payment.md](billing/stripe-payment.md) | Stripe 支付集成 | Realm Admin |
 | [shopify-pay.md](billing/shopify-pay.md) | Shopify Pay 支付集成 | Realm Admin |
 | [wechat-pay.md](billing/wechat-pay.md) | 微信支付集成 | Realm Admin, Regular User |
-| [invoice.md](billing/invoice.md) | Invoice 发票管理 | Realm Admin, Regular User |
-| [invoice-fallback.md](billing/invoice-fallback.md) | Invoice Fallback 外部发票展示 + 自研 Fallback | Realm Admin, Regular User |
-| [product_reduce.md](billing/product_reduce.md) | Product & Subscription Model Reduction | Realm Admin, Third-Party App, System |
-| [points-package-one-time-payment.md](billing/points-package-one-time-payment.md) | Points Package One-Time Payment（本地积分包迁移） | Realm Admin, Regular User, System |
+| [invoice.md](billing/invoice.md) | Invoice 发票管理（含 Provider 发票同步和自研 Fallback） | Realm Admin, Regular User |
 
 ### Integration 集成与扩展
 

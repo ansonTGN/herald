@@ -805,72 +805,6 @@ export const SELECTORS = {
   },
 
   /**
-   * Unified Purchase - Points Packages (Admin)
-   * Route: /{realmId}/manage/points-packages
-   */
-  pointsPackages: {
-    page: '[data-testid="points-packages-page"]',
-    table: '[data-testid="points-packages-table"]',
-    addButton: '[data-testid="add-points-package-button"]',
-    loadingSkeleton: '[data-testid="points-packages-loading-skeleton"]',
-    emptyState: '[data-testid="points-packages-empty-state"]',
-    error: '[data-testid="points-packages-error"]',
-    // Package list items
-    editButton: (id: string) =>
-      `[data-testid="points-package-edit-button-${id}"]`,
-    configureButton: (id: string) =>
-      `[data-testid="points-package-configure-button-${id}"]`,
-    deleteButton: (id: string) =>
-      `[data-testid="points-package-delete-button-${id}"]`,
-  },
-
-  /**
-   * Unified Purchase - Points Package Form Page
-   */
-  pointsPackageForm: {
-    page: '[data-testid="points-package-form-page"]',
-    nameInput: '[data-testid="points-package-name-input"]',
-    titleInput: '[data-testid="points-package-title-input"]',
-    descriptionInput: '[data-testid="points-package-description-input"]',
-    pointsInput: '[data-testid="points-package-points-input"]',
-    priceInput: '[data-testid="points-package-price-input"]',
-    currencySelect: '[data-testid="points-package-currency-select"]',
-    sortOrderInput: '[data-testid="points-package-sort-order-input"]',
-    enabledSwitch: '[data-testid="points-package-enabled-switch"]',
-    cancelButton: '[data-testid="points-package-cancel-button"]',
-    submitButton: '[data-testid="points-package-submit-button"]',
-    // Promo package fields
-    packageTypeStandard: '[data-testid="points-package-type-standard"]',
-    packageTypePromotional: '[data-testid="points-package-type-promotional"]',
-    originalPriceInput: '[data-testid="points-package-original-price-input"]',
-    promoStartInput: '[data-testid="points-package-promo-start-input"]',
-    promoEndInput: '[data-testid="points-package-promo-end-input"]',
-  },
-
-  /**
-   * Unified Purchase - Payment Provider Config Form
-   */
-  paymentProviderConfig: {
-    page: '[data-testid="points-package-providers-page"]',
-    providerSelect: '[data-testid="provider-mapping-provider-select-trigger"]',
-    // WeChat Pay fields
-    wechatAppId: '[data-testid="wechat-app-id"]',
-    wechatMerchantId: '[data-testid="wechat-merchant-id"]',
-    wechatSerialNo: '[data-testid="wechat-serial-no"]',
-    wechatV3Key: '[data-testid="wechat-v3-key"]',
-    // Stripe fields
-    stripeProductId: '[data-testid="stripe-product-id"]',
-    stripePriceId: '[data-testid="stripe-price-id"]',
-    // Provider-specific fields
-    externalIdInput: () => '[data-testid="provider-mapping-product-id-input"]',
-    enabledSwitch: () => '[data-testid="provider-mapping-enabled-switch"]',
-    addButton: '[data-testid="provider-mapping-submit-button"]',
-    // Common fields
-    cancelButton: '[data-testid="provider-config-cancel-button"]',
-    submitButton: '[data-testid="provider-config-submit-button"]',
-  },
-
-  /**
    * Unified Purchase - Purchase Points Page (User)
    * Route: /{realmId}/user/purchase-points
    */
@@ -880,25 +814,23 @@ export const SELECTORS = {
     backButton: '[data-testid="purchase-back-button"]',
     nextButton: '[data-testid="purchase-next-button"]',
     // Steps
-    stepPackages: '[data-testid="purchase-step-packages"]',
+    stepPackages: '[data-testid="purchase-step-packages"]', // Mapping card selection step
     stepPayment: '[data-testid="purchase-step-payment"]',
     stepProcessing: '[data-testid="purchase-step-processing"]',
     stepComplete: '[data-testid="purchase-step-complete"]',
   },
 
   /**
-   * Unified Purchase - Points Package Selector (User)
+   * Mapping Card Selectors (One-Time Purchase)
+   * Displayed on purchase-points page within the mapping-cards grid.
+   * Each card uses data-testid="mapping-card-{entitlementKey}".
    */
-  packageSelector: {
-    container: '[data-testid="points-packages-selector"]',
-    card: (id: string) => `[data-testid="points-package-card-${id}"]`,
-    selectButton: (id: string) =>
-      `[data-testid="points-package-select-button-${id}"]`,
-    selected: (id: string) => `[data-testid="points-package-selected-${id}"]`,
-    bestValueBadge: '[data-testid="points-package-best-value-badge"]',
-    // Promo package display elements
-    discountBadge: '[data-testid="points-package-discount-badge"]',
-    limitedTimeLabel: '[data-testid="points-package-limited-time"]',
+  mappingCard: {
+    grid: '[data-testid="mapping-cards"]',
+    card: (entitlementKey: string) => `[data-testid="mapping-card-${entitlementKey}"]`,
+    firstCard: () => '[data-testid^="mapping-card-"]',
+    noProviderHint: '[data-testid="no-provider-hint"]',
+    emptyState: '[data-testid="purchase-empty-state"]',
   },
 
   /**
