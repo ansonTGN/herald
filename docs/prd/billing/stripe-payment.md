@@ -43,6 +43,7 @@
 - 订阅支付处理（周期性计费）
 - 一次性支付处理（Payment Intents）
 - Webhook 事件处理（支付状态同步）
+- 争议处理——`charge.dispute.created`/`charge.dispute.closed` 事件处理，标记订阅 Disputed 状态，争议解决后根据结果恢复或取消订阅（证据提交由 Stripe Dashboard 完成）
 - 退款处理——`charge.refunded` 事件处理，支持 topup（按比例回收积分）和 subscription（回收未使用积分）两种退款类型的积分回收
 - Demo/Mock 模式——支持 `mock://stripe` 作为 base URL，用于测试环境模拟 Stripe 响应
 - 支付历史记录查询
@@ -52,9 +53,9 @@
 - 批量导入配置
 - 平台健康检查（仅支持 Webhook 连接测试）
 - 其他支付网关的详细实现（Creem 是模拟平台，其他平台需单独 PRD）
-- Disputes 处理
 - 多币种转换（使用 Stripe 原生币种支持）
 - 税务计算（使用 Stripe Tax 或后续集成）
+- Disputes 证据提交（Herald 只处理争议状态标记、审计记录和权益/积分策略；证据提交由 Stripe Dashboard 完成）
 - `payment_intent.payment_failed` 和 `invoice.payment_failed` 事件处理（✅ RESOLVED — 已在 `stripe_webhook_handlers.rs` 中实现）
 
 ### 2.3 依赖项
@@ -111,7 +112,7 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 - **Stripe 配置管理**：每个 Realm 通过通用 `realm_config` API（`/api/realms/{realmId}/config`，ConfigType::Stripe）配置独立 Stripe 账户，支持创建、查看（脱敏）、更新、删除配置
 - **一次性支付处理**：创建 Payment Intent → 获取 Client Secret → 确认支付 → 处理支付结果
 - **订阅支付处理**：创建 Stripe Subscription → 处理首次支付 → 处理续费事件 → 取消订阅
-- **Webhook 事件处理**：验证 Stripe Signature（HMAC-SHA256 + 时间戳重放防护）→ 解析事件类型 → 执行业务逻辑 → 更新本地状态 → 记录事件日志；已实现事件：checkout.session.completed、customer.subscription.created/updated/deleted、charge.refunded、payment_intent.payment_failed、invoice.payment_failed（✅ RESOLVED — `handle_payment_failed` in `stripe_webhook_handlers.rs` L735-763）
+- **Webhook 事件处理**：验证 Stripe Signature（HMAC-SHA256 + 时间戳重放防护）→ 解析事件类型 → 执行业务逻辑 → 更新本地状态 → 记录事件日志；事件覆盖：checkout.session.completed/expired/async_payment_succeeded/async_payment_failed、customer.subscription.created/updated/deleted/paused/resumed、charge.refunded、charge.dispute.created/closed、payment_intent.succeeded、payment_intent.payment_failed、invoice.payment_succeeded、invoice.payment_failed、invoice.payment_action_required、invoice.created/finalized/paid/voided
 - **支付历史查询**：用户查看自己的支付历史，Realm Admin 查看 Realm 所有支付记录，支持按状态/时间/金额筛选和分页
 
 ### 5.2 验收目标
@@ -165,6 +166,11 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 | 删除保护 | ✅ RESOLVED | `ensure_stripe_config_deletable` in `realm_config/mod.rs` L38-61 checks active subscriptions before allowing deletion |
 | payment_intent.payment_failed 事件 | ✅ RESOLVED | `handle_payment_failed` in `stripe_webhook_handlers.rs` L735-763 |
 | invoice.payment_failed 事件 | ✅ RESOLVED | Handled by same `handle_payment_failed` in `stripe_webhook_handlers.rs` L735-763 |
+| Disputes 处理 | ✅ RESOLVED | `charge.dispute.created/closed` 标记争议状态；无法从 metadata 映射本地订阅时记录并忽略 |
+| checkout.session.expired | ✅ RESOLVED | Checkout 会话过期未支付时标记 PaymentAttempt 为 failed |
+| checkout.session.async_payment_* | ✅ RESOLVED | 延迟支付方式（银行转账等）的成功/失败处理；`completed` 不再对未结算支付过早履约 |
+| customer.subscription.paused/resumed | ✅ RESOLVED | 订阅暂停/恢复状态同步 |
+| invoice.payment_action_required | ✅ RESOLVED | 支付需额外操作（3D Secure 等）时记录日志 |
 | Account ID 配置项 | 未实现 | Account ID 未作为独立 config_key 实现，如需要可通过 metadata 扩展 |
 | Environment 配置项 | 不需要 | test/live 环境由 API Key 前缀（`sk_test_*` / `sk_live_*`）自动决定，无需独立配置 |
 | Webhook URL 配置项 | 不需要 | 由 `public_base_url` 动态拼接，不作为独立配置项 |

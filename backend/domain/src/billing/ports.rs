@@ -151,4 +151,13 @@ pub trait BillingRepository: Send + Sync {
         &self,
         realm_id: &str,
     ) -> impl Future<Output = Result<Vec<EntitlementMapping>, CoreError>> + Send;
+
+    /// Find the external subscription ID associated with a payment intent,
+    /// by tracing through previously stored payment events (e.g. checkout.session.completed).
+    fn find_external_subscription_id_by_payment_intent(
+        &self,
+        payment_intent: &str,
+        provider: &str,
+        realm_id: &str,
+    ) -> impl Future<Output = Result<Option<String>, CoreError>> + Send;
 }

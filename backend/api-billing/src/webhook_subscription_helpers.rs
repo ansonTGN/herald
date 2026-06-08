@@ -24,6 +24,9 @@ pub(crate) struct SyncSubscriptionInput {
     pub current_period_end: Option<DateTime<Utc>>,
     pub cancel_at_period_end: bool,
     pub cancel_at: Option<DateTime<Utc>>,
+    /// Pre-fetched subscription to avoid a redundant DB lookup.
+    /// When provided, `sync_subscription` skips the `find_by_external_subscription_id` query.
+    pub existing_subscription: Option<Subscription>,
 }
 
 pub(crate) async fn save_subscription_history(
@@ -126,23 +129,29 @@ pub(crate) async fn sync_subscription(
         current_period_end,
         cancel_at_period_end,
         cancel_at,
+        existing_subscription,
     } = input;
 
     let existing = {
-        let existing = app_state
-            .billing_repository
-            .find_by_external_subscription_id(&external_subscription_id, provider)
-            .await?;
-
-        if existing.is_some() {
-            existing
-        } else if let Some(client_app_id) = client_app_id {
-            app_state
-                .billing_repository
-                .find_subscription_by_client_app_id(client_app_id)
-                .await?
+        if let Some(prefetched) = existing_subscription {
+            // Use the pre-fetched subscription to avoid a redundant DB query
+            Some(prefetched)
         } else {
-            None
+            let existing = app_state
+                .billing_repository
+                .find_by_external_subscription_id(&external_subscription_id, provider)
+                .await?;
+
+            if existing.is_some() {
+                existing
+            } else if let Some(client_app_id) = client_app_id {
+                app_state
+                    .billing_repository
+                    .find_subscription_by_client_app_id(client_app_id)
+                    .await?
+            } else {
+                None
+            }
         }
     };
 

@@ -704,8 +704,8 @@ END $$;
 
 
 def _ensure_points_package_payment_demo_data(logger: "Logger | None") -> None:
-    """Ensure demo points packages have Stripe payment mappings."""
-    _info(logger, "Ensuring points package payment demo data...")
+    """Ensure payment provider config and one-time entitlement mappings for demo."""
+    _info(logger, "Ensuring payment provider config and one-time mappings demo data...")
     wechat_private_key = (
         Path("backend/api/src/fixtures/rsa_test_key.pem")
         .read_text(encoding="utf-8")
@@ -714,8 +714,6 @@ def _ensure_points_package_payment_demo_data(logger: "Logger | None") -> None:
     )
     sql = f"""
 DO $$
-DECLARE
-    v_package_id UUID;
 BEGIN
     INSERT INTO realm_config (
         realm_id, config_type, config_key, config_value, is_secret, enabled, metadata
@@ -742,62 +740,36 @@ BEGIN
             metadata = EXCLUDED.metadata,
             updated_at = now();
 
-    INSERT INTO points_packages (
-        id, realm_id, name, title, description, points, price, currency, sort_order, enabled
-    ) VALUES (
-        uuidv7(),
-        '{POINTS_REALM_ID}',
-        'credits-500',
-        '500 Credits',
-        'Demo top-up package for Stripe payment flow',
-        500,
-        500,
-        'USD',
-        10,
-        true
-    )
-    ON CONFLICT (realm_id, name) DO UPDATE
-        SET title = EXCLUDED.title,
-            description = EXCLUDED.description,
-            points = EXCLUDED.points,
-            price = EXCLUDED.price,
-            currency = EXCLUDED.currency,
-            enabled = true,
-            updated_at = now()
-    RETURNING id INTO v_package_id;
-
-    INSERT INTO points_package_payment_providers (
-        id, points_package_id, payment_provider, enabled, external_product_id
+    -- One-time entitlement mappings (used by one-time-mapping-purchase demo tests)
+    -- provider_product_info is required (NOT NULL filter in list_one_time_mappings query)
+    INSERT INTO provider_entitlement_mappings (
+        id, realm_id, payment_provider, external_product_id,
+        entitlement_key, billing_type, points_per_period, validity_days, enabled,
+        provider_product_info
     ) VALUES
-        (
-            uuidv7(),
-            v_package_id,
-            'stripe',
-            true,
-            'prod_demo_points_500'
-        ),
-        (
-            uuidv7(),
-            v_package_id,
-            'wechat',
-            true,
-            'wx_demo_points_500'
-        ),
-        (
-            uuidv7(),
-            v_package_id,
-            'creem',
-            true,
-            'creem_demo_points_500'
-        )
-    ON CONFLICT (points_package_id, payment_provider) DO UPDATE
-        SET enabled = true,
-            external_product_id = EXCLUDED.external_product_id,
-            updated_at = now();
+        (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_500',  'credits-500',  'one_time', 500,  365, TRUE,
+         '{{"name": "500 Credits", "price": 500, "currency": "USD"}}'::jsonb),
+        (uuidv7(), '{POINTS_REALM_ID}', 'wechat', 'prod_wechat_onetime_500',  'credits-500',  'one_time', 500,  365, TRUE,
+         '{{"name": "500 Credits", "price": 500, "currency": "USD"}}'::jsonb),
+        (uuidv7(), '{POINTS_REALM_ID}', 'creem',  'prod_creem_onetime_500',   'credits-500',  'one_time', 500,  365, TRUE,
+         '{{"name": "500 Credits", "price": 500, "currency": "USD"}}'::jsonb),
+        (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_1000', 'credits-1000', 'one_time', 1000, 365, TRUE,
+         '{{"name": "1000 Credits", "price": 900, "currency": "USD"}}'::jsonb),
+        (uuidv7(), '{POINTS_REALM_ID}', 'wechat', 'prod_wechat_onetime_1000', 'credits-1000', 'one_time', 1000, 365, TRUE,
+         '{{"name": "1000 Credits", "price": 900, "currency": "USD"}}'::jsonb),
+        (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_2000', 'credits-2000', 'one_time', 2000, 365, TRUE,
+         '{{"name": "2000 Credits", "price": 1600, "currency": "USD"}}'::jsonb)
+    ON CONFLICT (realm_id, payment_provider, external_product_id) DO UPDATE
+        SET entitlement_key = EXCLUDED.entitlement_key,
+            billing_type = EXCLUDED.billing_type,
+            points_per_period = EXCLUDED.points_per_period,
+            validity_days = EXCLUDED.validity_days,
+            enabled = TRUE,
+            provider_product_info = EXCLUDED.provider_product_info;
 END $$;
 """
     _sql_exec(sql)
-    _info(logger, "[OK] Points package payment demo data ready")
+    _info(logger, "[OK] Payment provider config and one-time mappings demo data ready")
 
 
 def _ensure_admin_realm_points_config(logger: "Logger | None") -> None:

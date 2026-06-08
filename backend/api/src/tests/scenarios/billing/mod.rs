@@ -80,3 +80,12 @@ pub mod invoice_overdue_scenarios;
 // User Story: US-EM-001, US-PU-006, US-PU-007, US-PA-001
 // Covers: Design section 4.2 "API Interface Design"
 pub mod one_time_api_scenarios;
+
+// Stripe webhook patch scenario tests (new webhook event handlers)
+// Covers: checkout.session.expired/async_*, dispute.created/closed,
+//         subscription paused/resumed/updated/deleted
+pub mod stripe_webhook_patch_scenarios;
+
+// Creem webhook patch scenario tests (new webhook event handlers)
+// Covers: subscription lifecycle events, dispute.created
+pub mod creem_webhook_patch_scenarios;

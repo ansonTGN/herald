@@ -54,18 +54,48 @@ Stripe 通过 Webhook 把支付结果推送给 Herald。这是整个对接中最
 
 点击 **Select events**，勾选以下事件。缺任何一个会导致对应的支付流程断裂。
 
+### 结账事件
+
 | 事件 | Stripe 中的路径 | Herald 处理逻辑 |
 |------|----------------|----------------|
 | `checkout.session.completed` | Checkout → checkout.session.completed | 完成结账，创建订阅或完成一次性支付 |
-| `customer.subscription.created` | Customers → customer.subscription.created | 新订阅创建，发放积分 |
-| `customer.subscription.updated` | Customers → customer.subscription.updated | 订阅升降级处理 |
-| `customer.subscription.deleted` | Customers → customer.subscription.deleted | 订阅取消 |
-| `charge.refunded` | Payments → charge.refunded | 退款，按比例回收积分 |
-| `invoice.payment_succeeded` | Billing → invoice.payment_succeeded | 续费成功，发放续费积分 |
-| `payment_intent.succeeded` | Payments → payment_intent.succeeded | 一次性支付（积分包购买）成功 |
-| `payment_intent.payment_failed` | Payments → payment_intent.payment_failed | 支付失败标记 |
+| `checkout.session.expired` | Checkout → checkout.session.expired | 结账会话过期，标记支付尝试失败 |
+| `checkout.session.async_payment_succeeded` | Checkout → checkout.session.async_payment_succeeded | 异步支付（如银行转账）成功，完成支付尝试 |
+| `checkout.session.async_payment_failed` | Checkout → checkout.session.async_payment_failed | 异步支付失败，标记支付尝试失败 |
 
-以上 8 个事件必须全部勾选。Herald 收到不在列表中的事件会记录日志并返回 200，安全忽略。
+### 订阅事件
+
+| 事件 | Stripe 中的路径 | Herald 处理逻辑 |
+|------|----------------|----------------|
+| `customer.subscription.created` | Customers → customer.subscription.created | 新订阅创建，同步订阅投影并发放积分 |
+| `customer.subscription.updated` | Customers → customer.subscription.updated | 订阅升降级处理 |
+| `customer.subscription.paused` | Customers → customer.subscription.paused | 订阅暂停，同步状态 |
+| `customer.subscription.resumed` | Customers → customer.subscription.resumed | 订阅恢复，同步状态 |
+| `customer.subscription.deleted` | Customers → customer.subscription.deleted | 订阅取消，回收积分 |
+
+### 支付与退款事件
+
+| 事件 | Stripe 中的路径 | Herald 处理逻辑 |
+|------|----------------|----------------|
+| `payment_intent.succeeded` | Payments → payment_intent.succeeded | 一次性支付（积分包购买）成功 |
+| `payment_intent.payment_failed` | Payments → payment_intent.payment_failed | 支付失败，标记支付尝试 |
+| `charge.refunded` | Payments → charge.refunded | 退款，按比例回收积分 |
+| `charge.dispute.created` | Payments → charge.dispute.created | 争议发起，标记订阅为争议状态 |
+| `charge.dispute.closed` | Payments → charge.dispute.closed | 争议结案：败诉则取消订阅，胜诉则恢复 |
+
+### 账单与发票事件
+
+| 事件 | Stripe 中的路径 | Herald 处理逻辑 |
+|------|----------------|----------------|
+| `invoice.payment_succeeded` | Billing → invoice.payment_succeeded | 续费成功，发放续费积分并同步订阅状态 |
+| `invoice.payment_failed` | Billing → invoice.payment_failed | 账单支付失败，标记支付尝试 |
+| `invoice.payment_action_required` | Billing → invoice.payment_action_required | 需要客户操作（如 3D Secure），记录日志 |
+| `invoice.created` | Billing → invoice.created | 同步 Stripe 发票到 Herald 外部发票 |
+| `invoice.finalized` | Billing → invoice.finalized | 同步 Stripe 发票到 Herald 外部发票 |
+| `invoice.paid` | Billing → invoice.paid | 同步 Stripe 发票到 Herald 外部发票 |
+| `invoice.voided` | Billing → invoice.voided | 同步 Stripe 发票到 Herald 外部发票 |
+
+以上 20 个事件必须全部勾选。Herald 收到不在列表中的事件会记录日志并返回 200，安全忽略。
 
 ### 获取 Webhook Secret
 
@@ -229,7 +259,7 @@ Stripe 测试环境使用以下卡号：
 ## 操作清单
 
 - [ ] Payment Providers 页面配置了 Stripe（Publishable Key、Secret Key、Webhook Secret 已填入并启用）
-- [ ] Stripe Dashboard 创建了 Webhook 端点，8 个事件全部勾选
+- [ ] Stripe Dashboard 创建了 Webhook 端点，20 个事件全部勾选
 - [ ] Webhook Secret 和 Stripe 端点的 Signing secret 一致
 - [ ] 在 Stripe 创建了 Product，记下了 Product ID
 - [ ] 在 Herald Entitlement Mappings 页面执行了 Sync Provider Products

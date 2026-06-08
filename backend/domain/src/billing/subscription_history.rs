@@ -33,6 +33,10 @@ pub enum HistoryEventType {
     Reactivated,
     /// Subscription payment failed
     PastDue,
+    /// Subscription was scheduled to cancel at period end
+    ScheduledCancel,
+    /// Subscription was paused
+    Paused,
     /// Subscription dispute/chargeback created
     Disputed,
     /// Subscription payment was refunded
@@ -53,6 +57,8 @@ impl HistoryEventType {
             HistoryEventType::Renewed => "renewed",
             HistoryEventType::Reactivated => "reactivated",
             HistoryEventType::PastDue => "past_due",
+            HistoryEventType::ScheduledCancel => "scheduled_cancel",
+            HistoryEventType::Paused => "paused",
             HistoryEventType::Disputed => "disputed",
             HistoryEventType::Refunded => "refunded",
             HistoryEventType::BillingPeriodChanged => "billing_period_changed",
@@ -74,6 +80,8 @@ impl std::str::FromStr for HistoryEventType {
             "renewed" => Ok(HistoryEventType::Renewed),
             "reactivated" => Ok(HistoryEventType::Reactivated),
             "past_due" => Ok(HistoryEventType::PastDue),
+            "scheduled_cancel" => Ok(HistoryEventType::ScheduledCancel),
+            "paused" => Ok(HistoryEventType::Paused),
             "disputed" => Ok(HistoryEventType::Disputed),
             "refunded" => Ok(HistoryEventType::Refunded),
             "billing_period_changed" => Ok(HistoryEventType::BillingPeriodChanged),
@@ -235,12 +243,22 @@ pub fn detect_change_type(
                     crate::billing::entities::SubscriptionStatus::Canceled
                         | crate::billing::entities::SubscriptionStatus::Paused
                         | crate::billing::entities::SubscriptionStatus::Expired
+                        | crate::billing::entities::SubscriptionStatus::ScheduledCancel
+                        | crate::billing::entities::SubscriptionStatus::Dispute
                 ) =>
             {
                 HistoryEventType::Reactivated
             }
             crate::billing::entities::SubscriptionStatus::Active => HistoryEventType::Renewed,
-            _ => HistoryEventType::Created,
+            crate::billing::entities::SubscriptionStatus::Paused => HistoryEventType::Paused,
+            crate::billing::entities::SubscriptionStatus::PastDue => HistoryEventType::PastDue,
+            crate::billing::entities::SubscriptionStatus::ScheduledCancel => {
+                HistoryEventType::ScheduledCancel
+            }
+            crate::billing::entities::SubscriptionStatus::Dispute => HistoryEventType::Disputed,
+            crate::billing::entities::SubscriptionStatus::Incomplete
+            | crate::billing::entities::SubscriptionStatus::Trialing
+            | crate::billing::entities::SubscriptionStatus::Pending => HistoryEventType::Created,
         }
     } else if old_state.external_product_id != new_state.external_product_id {
         // Same entitlement_key and status, but external_product_id changed.
@@ -324,5 +342,80 @@ mod tests {
         let new = old.clone();
 
         assert_eq!(detect_change_type(&old, &new), HistoryEventType::Created);
+    }
+
+    // Bug 1 regression: status transitions must map to their specific event types, not Created.
+    #[test]
+    fn test_detect_change_type_status_specific_mappings() {
+        let base = create_test_subscription("pro-plan");
+
+        // Paused -> should emit Paused
+        {
+            let mut old = base.clone();
+            old.status = SubscriptionStatus::Active;
+            let mut new = old.clone();
+            new.status = SubscriptionStatus::Paused;
+            assert_eq!(detect_change_type(&old, &new), HistoryEventType::Paused);
+        }
+
+        // PastDue -> should emit PastDue
+        {
+            let mut old = base.clone();
+            old.status = SubscriptionStatus::Active;
+            let mut new = old.clone();
+            new.status = SubscriptionStatus::PastDue;
+            assert_eq!(detect_change_type(&old, &new), HistoryEventType::PastDue);
+        }
+
+        // ScheduledCancel -> should emit ScheduledCancel
+        {
+            let mut old = base.clone();
+            old.status = SubscriptionStatus::Active;
+            let mut new = old.clone();
+            new.status = SubscriptionStatus::ScheduledCancel;
+            assert_eq!(
+                detect_change_type(&old, &new),
+                HistoryEventType::ScheduledCancel
+            );
+        }
+
+        // Dispute -> should emit Disputed
+        {
+            let mut old = base.clone();
+            old.status = SubscriptionStatus::Active;
+            let mut new = old.clone();
+            new.status = SubscriptionStatus::Dispute;
+            assert_eq!(detect_change_type(&old, &new), HistoryEventType::Disputed);
+        }
+    }
+
+    // Bug 2 regression: ScheduledCancel -> Active and Dispute -> Active are reactivations.
+    #[test]
+    fn test_detect_change_type_reactivation_from_scheduled_cancel_and_dispute() {
+        let base = create_test_subscription("pro-plan");
+
+        // ScheduledCancel -> Active should emit Reactivated
+        {
+            let mut old = base.clone();
+            old.status = SubscriptionStatus::ScheduledCancel;
+            let mut new = old.clone();
+            new.status = SubscriptionStatus::Active;
+            assert_eq!(
+                detect_change_type(&old, &new),
+                HistoryEventType::Reactivated
+            );
+        }
+
+        // Dispute -> Active should emit Reactivated
+        {
+            let mut old = base.clone();
+            old.status = SubscriptionStatus::Dispute;
+            let mut new = old.clone();
+            new.status = SubscriptionStatus::Active;
+            assert_eq!(
+                detect_change_type(&old, &new),
+                HistoryEventType::Reactivated
+            );
+        }
     }
 }

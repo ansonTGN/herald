@@ -276,6 +276,9 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 | `renewed` | 续费订阅 | 成功续费 |
 | `reactivated` | 激活订阅 | 已取消的订阅重新激活 |
 | `billing_period_changed` | 计费周期变更 | 从月付改为年付或反之 |
+| `past_due` | 支付逾期 | 续费支付失败 |
+| `disputed` | 争议中 | 客户发起拒付（chargeback） |
+| `paused` | 暂停订阅 | 订阅被暂停 |
 
 **异常场景**：
 - 删除有活跃订阅的套餐：拒绝操作并提示活跃订阅数量
@@ -311,8 +314,8 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 取消订阅：当前计费周期结束生效
 
 **Webhook 事件处理**：
-- 支持 Creem 的 checkout.completed、subscription.active/trialing/paid/paused/canceled/expired/update 事件
-- 支持 Stripe 的 checkout.session.completed、customer.subscription.updated/deleted、charge.refunded、invoice.payment_succeeded、payment_intent.succeeded 事件（详见 `docs/prd/billing/stripe-payment.md`）
+- 支持 Creem 的 checkout.completed、subscription.active/trialing/paid/paused/canceled/expired/update/scheduled_cancel、subscription.past_due、dispute.created、refund.created 事件
+- 支持 Stripe 的 checkout.session.completed/expired/async_payment_succeeded/async_payment_failed、customer.subscription.created/updated/deleted/paused/resumed、charge.refunded、charge.dispute.created/closed、invoice.payment_succeeded/payment_failed/payment_action_required/created/finalized/paid/voided、payment_intent.succeeded/payment_failed 事件（详见 `docs/prd/billing/stripe-payment.md`）
 - 签名验证、事件幂等性处理、状态转换验证
 - 与积分系统联动：首次订阅充值、定期续费充值、退款积分回收
 

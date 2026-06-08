@@ -48,15 +48,34 @@ Herald 不维护本地商品目录。你在 Creem Dashboard 创建 Product，拿
    - **URL**：`https://你的Herald域名/api/third/pay/{realmId}/creem/webhooks`
      - 把 `{realmId}` 替换成你的 realm ID，比如 `admin`
 
-4. 选择事件——必须勾选以下 5 个，缺任何一个会导致对应的支付流程断裂：
+4. 选择事件——必须勾选以下 12 个，缺任何一个会导致对应的支付流程断裂：
+
+### 结账事件
 
 | 事件 | Herald 处理逻辑 |
 |------|----------------|
 | `checkout.completed` | 验证结账 metadata，记录审计状态。订阅创建推迟到 `subscription.paid` 事件 |
+
+### 订阅事件
+
+| 事件 | Herald 处理逻辑 |
+|------|----------------|
 | `subscription.paid` | 订阅首次支付或续费成功，创建订阅投影，发放积分 |
 | `subscription.update` | 订阅升降级处理，调整积分 |
 | `subscription.canceled` | 订阅取消（即时或期末取消），回收未使用积分 |
+| `subscription.active` | 订阅激活，同步订阅状态 |
+| `subscription.trialing` | 订阅试用，同步订阅状态 |
+| `subscription.paused` | 订阅暂停，同步订阅状态 |
+| `subscription.past_due` | 订阅逾期，同步订阅状态 |
+| `subscription.scheduled_cancel` | 订阅计划取消，同步订阅状态并设置到期时间 |
+| `subscription.expired` | 订阅过期，取消订阅并回收积分 |
+
+### 退款与争议事件
+
+| 事件 | Herald 处理逻辑 |
+|------|----------------|
 | `refund.created` | 退款，按退款类型回收积分 |
+| `dispute.created` | 争议发起，标记订阅为争议状态 |
 
 5. 创建完成后复制 **Signing secret**，回到 Herald Payment Providers → Creem 配置，填入 **Webhook Secret**
 
@@ -171,7 +190,7 @@ Step 1 的 API Key 没配好。检查 Payment Providers 页面 Creem 的配置�
 ## 操作清单
 
 - [ ] Payment Providers 页面配置了 Creem（API Key 和 Webhook Secret 已填入并启用）
-- [ ] Creem Dashboard 创建了 Webhook 端点，5 个事件全部勾选
+- [ ] Creem Dashboard 创建了 Webhook 端点，12 个事件全部勾选
 - [ ] Webhook Secret 和 Creem 端点的 Signing secret 一致
 - [ ] 在 Creem 创建了 Product，记下了 Product ID
 - [ ] 在 Herald Entitlement Mappings 页面执行了 Sync Provider Products

@@ -23,7 +23,7 @@ use herald_core::domain::billing::invoice_service::map_stripe_invoice_status;
 use herald_core::domain::billing::{
     ACTOR_WEBHOOK, BillingRepository, BillingType, ExternalInvoiceData, HistoryEventType,
     InvoiceProvider, InvoiceRepository, PaymentEvent, Subscription, SubscriptionHistoryService,
-    SubscriptionStatus,
+    SubscriptionStatus, detect_change_type,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
@@ -82,6 +82,7 @@ struct StripeSubscriptionDeletedPayload {
 struct StripeChargeRefundedPayload {
     event_id: String,
     charge_id: String,
+    amount: i64,
     amount_refunded: i64,
     user_id: Uuid,
     subscription_id: Option<Uuid>,
@@ -379,9 +380,14 @@ fn parse_charge_refunded_payload(event: &Value) -> Result<StripeChargeRefundedPa
             .as_str()
             .ok_or_else(|| CoreError::BadRequest("Missing charge id".to_string()))?
             .to_string(),
-        amount_refunded: event["data"]["object"]["amount_refunded"]
+        amount: event["data"]["object"]["amount"]
             .as_i64()
             .ok_or_else(|| CoreError::BadRequest("Missing or invalid amount".to_string()))?,
+        amount_refunded: event["data"]["object"]["amount_refunded"]
+            .as_i64()
+            .ok_or_else(|| {
+                CoreError::BadRequest("Missing or invalid amount_refunded".to_string())
+            })?,
         user_id: parse_uuid_field(
             metadata_value(
                 &event["data"]["object"]["metadata"],
@@ -534,6 +540,7 @@ async fn sync_stripe_subscription(
     current_period_end: Option<DateTime<Utc>>,
     cancel_at_period_end: bool,
     cancel_at: Option<DateTime<Utc>>,
+    existing_subscription: Option<Subscription>,
 ) -> Result<(Subscription, Option<Subscription>), CoreError> {
     sync_subscription(
         app_state,
@@ -552,6 +559,7 @@ async fn sync_stripe_subscription(
             current_period_end,
             cancel_at_period_end,
             cancel_at,
+            existing_subscription,
         },
     )
     .await?
@@ -587,6 +595,25 @@ async fn handle_checkout_session_completed(
     if let Some(attempt_id) =
         parse_attempt_id(&event["data"]["object"]["metadata"][metadata_keys::ATTEMPT_ID])
     {
+        let payment_status = event["data"]["object"]["payment_status"]
+            .as_str()
+            .unwrap_or("unpaid");
+        if payment_status != "paid" && payment_status != "no_payment_required" {
+            info!(
+                realm_id = %realm_id,
+                attempt_id = %attempt_id,
+                payment_status = %payment_status,
+                mode = ?mode,
+                "Checkout session completed before payment settled - waiting for async result"
+            );
+
+            return Ok(create_placeholder_transaction(
+                attempt_id,
+                realm_id,
+                TransactionType::Recharge,
+            ));
+        }
+
         let provider_transaction_id = event["data"]["object"]["subscription"]
             .as_str()
             .or_else(|| event["data"]["object"]["payment_intent"].as_str())
@@ -802,6 +829,128 @@ async fn handle_payment_intent_succeeded(
     ))
 }
 
+async fn handle_checkout_session_async_succeeded(
+    app_state: AppState,
+    event: Value,
+    realm_id: &str,
+    _idempotency_key: &str,
+) -> Result<PointsTransaction, CoreError> {
+    let object = &event["data"]["object"];
+    let Some(attempt_id) = parse_attempt_id(&object["metadata"][metadata_keys::ATTEMPT_ID]) else {
+        warn!(
+            realm_id = %realm_id,
+            event_id = %parse_event_id(&event)?,
+            "Stripe async checkout success has no attemptId metadata - ignoring"
+        );
+        return Ok(create_placeholder_transaction(
+            Uuid::now_v7(),
+            realm_id,
+            TransactionType::Recharge,
+        ));
+    };
+    let provider_transaction_id = object["subscription"]
+        .as_str()
+        .or_else(|| object["payment_intent"].as_str())
+        .or_else(|| object["id"].as_str())
+        .ok_or_else(|| CoreError::BadRequest("Missing provider transaction id".to_string()))?
+        .to_string();
+    let completed_at = parse_optional_stripe_datetime(&object["created"])?.unwrap_or_else(Utc::now);
+    let billing_type_override = object["mode"].as_str().and_then(|mode| match mode {
+        "payment" => Some(BillingType::OneTime),
+        _ => None,
+    });
+
+    fulfill_payment_attempt(
+        &app_state,
+        attempt_id,
+        "succeeded",
+        provider_transaction_id,
+        completed_at,
+        billing_type_override,
+    )
+    .await?;
+
+    Ok(create_placeholder_transaction(
+        attempt_id,
+        realm_id,
+        TransactionType::Recharge,
+    ))
+}
+
+async fn handle_checkout_session_async_failed(
+    app_state: AppState,
+    event: Value,
+    realm_id: &str,
+    _idempotency_key: &str,
+) -> Result<PointsTransaction, CoreError> {
+    let object = &event["data"]["object"];
+    let Some(attempt_id) = parse_attempt_id(&object["metadata"][metadata_keys::ATTEMPT_ID]) else {
+        warn!(
+            realm_id = %realm_id,
+            event_id = %parse_event_id(&event)?,
+            "Stripe async checkout failure has no attemptId metadata - ignoring"
+        );
+        return Ok(create_placeholder_transaction(
+            Uuid::now_v7(),
+            realm_id,
+            TransactionType::Recharge,
+        ));
+    };
+    let payload = StripePaymentFailedPayload {
+        attempt_id,
+        provider_reference: object["id"].as_str().unwrap_or("").to_string(),
+        provider_status: object["payment_status"]
+            .as_str()
+            .unwrap_or("failed")
+            .to_string(),
+        completed_at: parse_optional_stripe_datetime(&object["created"])?.unwrap_or_else(Utc::now),
+    };
+
+    fail_payment_attempt(&app_state, realm_id, payload).await?;
+
+    Ok(create_placeholder_transaction(
+        attempt_id,
+        realm_id,
+        TransactionType::Recharge,
+    ))
+}
+
+async fn handle_checkout_session_expired(
+    app_state: AppState,
+    event: Value,
+    realm_id: &str,
+    _idempotency_key: &str,
+) -> Result<PointsTransaction, CoreError> {
+    let object = &event["data"]["object"];
+    let Some(attempt_id) = parse_attempt_id(&object["metadata"][metadata_keys::ATTEMPT_ID]) else {
+        warn!(
+            realm_id = %realm_id,
+            event_id = %parse_event_id(&event)?,
+            "Stripe checkout expired has no attemptId metadata - ignoring"
+        );
+        return Ok(create_placeholder_transaction(
+            Uuid::now_v7(),
+            realm_id,
+            TransactionType::Recharge,
+        ));
+    };
+    let payload = StripePaymentFailedPayload {
+        attempt_id,
+        provider_reference: object["id"].as_str().unwrap_or("").to_string(),
+        provider_status: "expired".to_string(),
+        completed_at: parse_optional_stripe_datetime(&object["expires_at"])?
+            .unwrap_or_else(Utc::now),
+    };
+
+    fail_payment_attempt(&app_state, realm_id, payload).await?;
+
+    Ok(create_placeholder_transaction(
+        attempt_id,
+        realm_id,
+        TransactionType::Recharge,
+    ))
+}
+
 async fn handle_payment_failed(
     app_state: AppState,
     event: Value,
@@ -881,6 +1030,7 @@ async fn handle_subscription_created(
         Some(payload.current_period_end),
         payload.cancel_at_period_end,
         None,
+        None,
     )
     .await?;
 
@@ -952,12 +1102,20 @@ async fn handle_subscription_updated(
         payload.current_entitlement_key.clone()
     };
 
-    let previous_entitlement_key = if payload.previous_entitlement_key.is_empty() {
-        // Try to get from existing subscription
-        let from_db = app_state
+    // Fetch existing subscription once — reuse for both entitlement resolution and sync
+    let existing_subscription_for_update = if payload.previous_entitlement_key.is_empty() {
+        app_state
             .billing_repository
             .find_by_external_subscription_id(&payload.stripe_subscription_id, "stripe")
             .await?
+    } else {
+        None
+    };
+
+    let previous_entitlement_key = if payload.previous_entitlement_key.is_empty() {
+        // Try to get from existing subscription
+        let from_db = existing_subscription_for_update
+            .as_ref()
             .map(|s| s.entitlement_key.clone())
             .unwrap_or_default();
 
@@ -976,6 +1134,51 @@ async fn handle_subscription_updated(
     } else {
         payload.previous_entitlement_key.clone()
     };
+
+    if previous_entitlement_key == current_entitlement_key {
+        let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
+            .as_str()
+            .map(str::to_string);
+        let (subscription, previous_subscription) = sync_stripe_subscription(
+            &app_state,
+            realm_id,
+            payload.user_id,
+            &payload.stripe_subscription_id,
+            None,
+            current_entitlement_key.clone(),
+            payload.external_product_id.clone(),
+            external_price_id,
+            payload.status.clone(),
+            payload.current_period_start,
+            Some(payload.current_period_end),
+            payload.cancel_at_period_end,
+            if payload.cancel_at_period_end {
+                Some(payload.current_period_end)
+            } else {
+                None
+            },
+            existing_subscription_for_update.clone(),
+        )
+        .await?;
+
+        let history_event = match previous_subscription {
+            Some(ref prev) => detect_change_type(prev, &subscription),
+            None => HistoryEventType::Created,
+        };
+        save_subscription_history(
+            &app_state,
+            previous_subscription.as_ref(),
+            &subscription,
+            history_event,
+        )
+        .await?;
+
+        return Ok(create_placeholder_transaction(
+            payload.user_id,
+            realm_id,
+            TransactionType::SubscriptionGrant,
+        ));
+    }
 
     // Get plan configs to determine if upgrade or downgrade
     let old_mapping = app_state
@@ -1017,6 +1220,7 @@ async fn handle_subscription_updated(
         } else {
             None
         },
+        existing_subscription_for_update.clone(),
     )
     .await?;
 
@@ -1111,6 +1315,108 @@ async fn handle_subscription_updated(
     }
 }
 
+/// Handle customer.subscription.paused / customer.subscription.resumed events
+///
+/// Lightweight handler that syncs status without upgrade/downgrade logic.
+/// Paused/resumed events typically lack `previous_attributes.items`, so using
+/// `handle_subscription_updated` would produce an empty `previous_entitlement_key`
+/// and trigger incorrect upgrade/downgrade logic.
+async fn handle_subscription_status_change(
+    app_state: AppState,
+    event: Value,
+    realm_id: &str,
+    _idempotency_key: &str,
+) -> Result<PointsTransaction, CoreError> {
+    let event_id = parse_event_id(&event)?;
+    let object = &event["data"]["object"];
+    let stripe_subscription_id = object["id"]
+        .as_str()
+        .ok_or_else(|| CoreError::BadRequest("Missing subscription id".to_string()))?
+        .to_string();
+    let metadata = &object["metadata"];
+    let user_id = parse_uuid_field(
+        metadata_value(metadata, "herald_user_id", "userId"),
+        "userId",
+    )?;
+    let cancel_at_period_end = object["cancel_at_period_end"].as_bool().unwrap_or(false);
+    let status = parse_stripe_subscription_status(object["status"].as_str(), cancel_at_period_end)?;
+    let external_product_id = object["items"]["data"][0]["price"]["product"]
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_default();
+    let entitlement_key = metadata["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| metadata["entitlementKey"].as_str())
+        .unwrap_or("")
+        .to_string();
+    let external_price_id = object["items"]["data"][0]["price"]["id"]
+        .as_str()
+        .map(str::to_string);
+    let current_period_start = parse_optional_stripe_datetime(&object["current_period_start"])?;
+    let current_period_end =
+        parse_stripe_datetime(&object["current_period_end"], "current_period_end")?;
+
+    info!(
+        realm_id = %realm_id,
+        event_id = %event_id,
+        stripe_subscription_id = %stripe_subscription_id,
+        status = ?status,
+        "Processing customer.subscription paused/resumed event"
+    );
+
+    // Resolve entitlement_key via fallback chain
+    let entitlement_key = if entitlement_key.is_empty() {
+        resolve_stripe_entitlement_key(&app_state, realm_id, metadata, &external_product_id).await?
+    } else {
+        entitlement_key
+    };
+
+    let existing_sub = app_state
+        .billing_repository
+        .find_by_external_subscription_id(&stripe_subscription_id, "stripe")
+        .await?;
+
+    let (subscription, previous_subscription) = sync_stripe_subscription(
+        &app_state,
+        realm_id,
+        user_id,
+        &stripe_subscription_id,
+        None,
+        entitlement_key.clone(),
+        external_product_id,
+        external_price_id,
+        status.clone(),
+        current_period_start,
+        Some(current_period_end),
+        cancel_at_period_end,
+        if cancel_at_period_end {
+            Some(current_period_end)
+        } else {
+            None
+        },
+        existing_sub,
+    )
+    .await?;
+
+    let history_event = match previous_subscription {
+        Some(ref prev) => detect_change_type(prev, &subscription),
+        None => HistoryEventType::Created,
+    };
+    save_subscription_history(
+        &app_state,
+        previous_subscription.as_ref(),
+        &subscription,
+        history_event,
+    )
+    .await?;
+
+    Ok(create_placeholder_transaction(
+        user_id,
+        realm_id,
+        TransactionType::SubscriptionGrant,
+    ))
+}
+
 /// Handle customer.subscription.deleted events
 ///
 /// Handles subscription cancellation (immediate or end-of-period).
@@ -1191,6 +1497,7 @@ async fn handle_subscription_deleted(
         } else {
             Utc::now()
         }),
+        existing_subscription.clone(),
     )
     .await?;
 
@@ -1256,7 +1563,7 @@ async fn handle_charge_refunded(
                     realm_id,
                     payload.user_id,
                     payload.amount_refunded,
-                    payload.amount_refunded,
+                    payload.amount,
                     &payload.charge_id,
                 )
                 .await?;
@@ -1378,6 +1685,7 @@ async fn handle_invoice_payment_succeeded(
         Some(payload.current_period_end),
         false,
         None,
+        existing_subscription.clone(),
     )
     .await?;
 
@@ -1513,6 +1821,241 @@ async fn handle_stripe_invoice_event(
         event_id = %event_id,
         stripe_invoice_id = %stripe_invoice_id,
         "Stripe invoice event processed - external invoice upserted"
+    );
+
+    Ok(create_placeholder_transaction(
+        Uuid::now_v7(),
+        realm_id,
+        TransactionType::SubscriptionGrant,
+    ))
+}
+
+async fn find_stripe_subscription_from_metadata(
+    app_state: &AppState,
+    realm_id: &str,
+    object: &Value,
+) -> Result<Option<Subscription>, CoreError> {
+    // Primary path: look for herald-specific keys in object metadata.
+    if let Some(subscription_id) = parse_optional_uuid_field(metadata_value(
+        &object["metadata"],
+        "herald_subscription_id",
+        "subscriptionId",
+    )) {
+        return app_state
+            .billing_repository
+            .find_subscription_by_id(subscription_id)
+            .await;
+    }
+
+    if let Some(external_subscription_id) = object["metadata"]["herald_external_subscription_id"]
+        .as_str()
+        .or_else(|| object["metadata"]["externalSubscriptionId"].as_str())
+    {
+        return app_state
+            .billing_repository
+            .find_by_external_subscription_id(external_subscription_id, "stripe")
+            .await;
+    }
+
+    // Fallback for dispute objects: their metadata is dispute-level, not the original
+    // charge/subscription metadata. Use payment_intent to trace back to the subscription
+    // via previously stored payment events (e.g. checkout.session.completed).
+    if let Some(payment_intent) = object["payment_intent"].as_str() {
+        let stripe_subscription_id = app_state
+            .billing_repository
+            .find_external_subscription_id_by_payment_intent(payment_intent, "stripe", realm_id)
+            .await?;
+
+        if let Some(stripe_sub_id) = stripe_subscription_id
+            && let Some(sub) = app_state
+                .billing_repository
+                .find_by_external_subscription_id(&stripe_sub_id, "stripe")
+                .await?
+        {
+            return Ok(Some(sub));
+        }
+    }
+
+    Ok(None)
+}
+
+async fn handle_charge_dispute_created(
+    app_state: AppState,
+    event: Value,
+    realm_id: &str,
+    _idempotency_key: &str,
+) -> Result<PointsTransaction, CoreError> {
+    let event_id = parse_event_id(&event)?;
+    let object = &event["data"]["object"];
+    let Some(existing) =
+        find_stripe_subscription_from_metadata(&app_state, realm_id, object).await?
+    else {
+        warn!(
+            realm_id = %realm_id,
+            event_id = %event_id,
+            "Stripe dispute created could not be mapped to a local subscription - ignoring"
+        );
+        return Ok(create_placeholder_transaction(
+            Uuid::now_v7(),
+            realm_id,
+            TransactionType::SubscriptionGrant,
+        ));
+    };
+    let user_id = existing
+        .user_id
+        .ok_or_else(|| CoreError::BadRequest("Disputed subscription has no userId".to_string()))?;
+    let mut provider_metadata = existing
+        .provider_metadata
+        .clone()
+        .unwrap_or(serde_json::json!({}));
+    if let Some(obj) = provider_metadata.as_object_mut() {
+        obj.insert("disputeId".to_string(), object["id"].clone());
+        obj.insert("charge".to_string(), object["charge"].clone());
+        obj.insert(
+            "paymentIntent".to_string(),
+            object["payment_intent"].clone(),
+        );
+        obj.insert("dispute_amount".to_string(), object["amount"].clone());
+        obj.insert("dispute_reason".to_string(), object["reason"].clone());
+    }
+
+    if let Some((subscription, previous)) = sync_subscription(
+        &app_state,
+        SyncSubscriptionInput {
+            provider: "stripe",
+            realm_id: realm_id.to_string(),
+            user_id: Some(user_id),
+            external_subscription_id: existing.external_subscription_id.clone(),
+            external_product_id: existing.external_product_id.clone(),
+            client_app_id: existing.client_app_id,
+            entitlement_key: existing.entitlement_key.clone(),
+            external_price_id: existing.external_price_id.clone(),
+            provider_metadata: Some(provider_metadata),
+            status: SubscriptionStatus::Dispute,
+            current_period_start: existing.current_period_start,
+            current_period_end: existing.current_period_end,
+            cancel_at_period_end: existing.cancel_at_period_end,
+            cancel_at: existing.cancel_at,
+            existing_subscription: Some(existing),
+        },
+    )
+    .await?
+    {
+        save_subscription_history(
+            &app_state,
+            previous.as_ref(),
+            &subscription,
+            HistoryEventType::Disputed,
+        )
+        .await?;
+    }
+
+    Ok(create_placeholder_transaction(
+        user_id,
+        realm_id,
+        TransactionType::SubscriptionGrant,
+    ))
+}
+
+async fn handle_charge_dispute_closed(
+    app_state: AppState,
+    event: Value,
+    realm_id: &str,
+    _idempotency_key: &str,
+) -> Result<PointsTransaction, CoreError> {
+    let event_id = parse_event_id(&event)?;
+    let object = &event["data"]["object"];
+    let Some(existing) =
+        find_stripe_subscription_from_metadata(&app_state, realm_id, object).await?
+    else {
+        warn!(
+            realm_id = %realm_id,
+            event_id = %event_id,
+            "Stripe dispute closed could not be mapped to a local subscription - ignoring"
+        );
+        return Ok(create_placeholder_transaction(
+            Uuid::now_v7(),
+            realm_id,
+            TransactionType::SubscriptionGrant,
+        ));
+    };
+    let user_id = existing
+        .user_id
+        .ok_or_else(|| CoreError::BadRequest("Disputed subscription has no userId".to_string()))?;
+    let dispute_status = object["status"].as_str().unwrap_or("");
+    let needs_cancel = dispute_status == "lost";
+    let target_status = match dispute_status {
+        "lost" => SubscriptionStatus::Canceled,
+        "won" => SubscriptionStatus::Active,
+        // warning_closed, charge_refunded, etc. — log and stay in current state
+        _ => {
+            warn!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                dispute_status = %dispute_status,
+                "Stripe dispute closed with non-terminal status — not reactivating"
+            );
+            existing.status.clone()
+        }
+    };
+
+    if let Some((subscription, previous)) = sync_subscription(
+        &app_state,
+        SyncSubscriptionInput {
+            provider: "stripe",
+            realm_id: realm_id.to_string(),
+            user_id: Some(user_id),
+            external_subscription_id: existing.external_subscription_id.clone(),
+            external_product_id: existing.external_product_id.clone(),
+            client_app_id: existing.client_app_id,
+            entitlement_key: existing.entitlement_key.clone(),
+            external_price_id: existing.external_price_id.clone(),
+            provider_metadata: existing.provider_metadata.clone(),
+            status: target_status.clone(),
+            current_period_start: existing.current_period_start,
+            current_period_end: existing.current_period_end,
+            cancel_at_period_end: existing.cancel_at_period_end,
+            cancel_at: if target_status == SubscriptionStatus::Canceled {
+                Some(Utc::now())
+            } else {
+                existing.cancel_at
+            },
+            existing_subscription: Some(existing),
+        },
+    )
+    .await?
+    {
+        // Only revoke credits after sync succeeds, so retries don't double-revoke.
+        if needs_cancel {
+            app_state
+                .subscription_service
+                .handle_subscription_cancel(user_id, realm_id, CancelMode::ImmediateCancel, None)
+                .await?;
+        }
+        let history_event = match previous {
+            Some(ref prev) => detect_change_type(prev, &subscription),
+            None => HistoryEventType::Created,
+        };
+        save_subscription_history(&app_state, previous.as_ref(), &subscription, history_event)
+            .await?;
+    }
+
+    Ok(create_placeholder_transaction(
+        user_id,
+        realm_id,
+        TransactionType::SubscriptionGrant,
+    ))
+}
+
+async fn handle_invoice_payment_action_required(
+    event: Value,
+    realm_id: &str,
+) -> Result<PointsTransaction, CoreError> {
+    warn!(
+        realm_id = %realm_id,
+        event_id = %parse_event_id(&event)?,
+        invoice_id = ?event["data"]["object"]["id"].as_str(),
+        "Stripe invoice payment requires customer action"
     );
 
     Ok(create_placeholder_transaction(
@@ -1794,6 +2337,33 @@ async fn process_stripe_event_once(
             )
             .await
         }
+        "checkout.session.expired" => {
+            handle_checkout_session_expired(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                idempotency_key,
+            )
+            .await
+        }
+        "checkout.session.async_payment_succeeded" => {
+            handle_checkout_session_async_succeeded(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                idempotency_key,
+            )
+            .await
+        }
+        "checkout.session.async_payment_failed" => {
+            handle_checkout_session_async_failed(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                idempotency_key,
+            )
+            .await
+        }
         "customer.subscription.created" => {
             handle_subscription_created(app_state.clone(), event.clone(), realm_id, idempotency_key)
                 .await
@@ -1801,6 +2371,15 @@ async fn process_stripe_event_once(
         "customer.subscription.updated" => {
             handle_subscription_updated(app_state.clone(), event.clone(), realm_id, idempotency_key)
                 .await
+        }
+        "customer.subscription.paused" | "customer.subscription.resumed" => {
+            handle_subscription_status_change(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                idempotency_key,
+            )
+            .await
         }
         "customer.subscription.deleted" => {
             handle_subscription_deleted(app_state.clone(), event.clone(), realm_id, idempotency_key)
@@ -1810,6 +2389,24 @@ async fn process_stripe_event_once(
             handle_charge_refunded(app_state.clone(), event.clone(), realm_id, idempotency_key)
                 .await
         }
+        "charge.dispute.created" => {
+            handle_charge_dispute_created(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                idempotency_key,
+            )
+            .await
+        }
+        "charge.dispute.closed" => {
+            handle_charge_dispute_closed(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                idempotency_key,
+            )
+            .await
+        }
         "invoice.payment_succeeded" => {
             handle_invoice_payment_succeeded(
                 app_state.clone(),
@@ -1818,6 +2415,9 @@ async fn process_stripe_event_once(
                 idempotency_key,
             )
             .await
+        }
+        "invoice.payment_action_required" => {
+            handle_invoice_payment_action_required(event.clone(), realm_id).await
         }
         "payment_intent.succeeded" => {
             handle_payment_intent_succeeded(

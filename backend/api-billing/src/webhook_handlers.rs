@@ -22,10 +22,13 @@ use herald_api_base::application::http::state::AppState;
 use herald_core::domain::billing::{
     BillingRepository, BillingType, ExternalInvoiceData, HistoryEventType, InvoiceProvider,
     InvoiceRepository, InvoiceStatus, PaymentEvent, Subscription, SubscriptionStatus,
+    detect_change_type,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
-use herald_core::domain::points::entities::{PointsTransaction, TransactionType};
+use herald_core::domain::points::entities::{
+    CreditType, PointsTransaction, RevocationType, TransactionType,
+};
 use herald_core::domain::points::ports::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
 use herald_core::domain::purchase::metadata_keys;
@@ -91,12 +94,71 @@ struct CreemRefundCreatedPayload {
     refund_type: String,
 }
 
+struct CreemSubscriptionLifecyclePayload {
+    event_id: String,
+    user_id: Option<Uuid>,
+    entitlement_key: Option<String>,
+    client_app_id: Option<Uuid>,
+    external_subscription_id: String,
+    external_product_id: String,
+    current_period_start: Option<DateTime<Utc>>,
+    current_period_end: Option<DateTime<Utc>>,
+}
+
+struct CreemDisputeCreatedPayload {
+    event_id: String,
+    external_subscription_id: String,
+    external_product_id: String,
+    amount: i64,
+    currency: String,
+    dispute_id: String,
+}
+
 fn creem_event_object(event: &Value) -> &Value {
     if !event["data"]["object"].is_null() {
         &event["data"]["object"]
     } else {
         &event["object"]
     }
+}
+
+fn creem_metadata(object: &Value) -> &Value {
+    &object["metadata"]
+}
+
+fn parse_creem_user_id(object: &Value) -> Option<Uuid> {
+    object
+        .get("herald_user_id")
+        .or_else(|| object.get("metadata").and_then(|m| m.get("herald_user_id")))
+        .or_else(|| object.get("userId"))
+        .or_else(|| object.get("metadata").and_then(|m| m.get("userId")))
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+}
+
+fn parse_creem_client_app_id(object: &Value) -> Option<Uuid> {
+    parse_optional_uuid_field(metadata_value(
+        object,
+        "herald_client_app_id",
+        "clientAppId",
+    ))
+    .or_else(|| {
+        parse_optional_uuid_field(metadata_value(
+            creem_metadata(object),
+            "herald_client_app_id",
+            "clientAppId",
+        ))
+    })
+}
+
+fn parse_creem_entitlement_key(object: &Value) -> Option<String> {
+    object["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| object["metadata"]["herald_entitlement_key"].as_str())
+        .or_else(|| object["entitlementKey"].as_str())
+        .or_else(|| object["metadata"]["entitlementKey"].as_str())
+        .filter(|key| !key.is_empty())
+        .map(str::to_string)
 }
 
 fn creem_event_data<'a>(event: &'a Value, field: &str) -> &'a Value {
@@ -476,6 +538,61 @@ fn parse_refund_created_payload(event: &Value) -> Result<CreemRefundCreatedPaylo
     })
 }
 
+fn parse_subscription_lifecycle_payload(
+    event: &Value,
+) -> Result<CreemSubscriptionLifecyclePayload, CoreError> {
+    let object = creem_event_object(event);
+
+    Ok(CreemSubscriptionLifecyclePayload {
+        event_id: parse_event_id(event)?,
+        user_id: parse_creem_user_id(object),
+        entitlement_key: parse_creem_entitlement_key(object),
+        client_app_id: parse_creem_client_app_id(object),
+        external_subscription_id: object["subscriptionId"]
+            .as_str()
+            .or_else(|| object["id"].as_str())
+            .map(str::to_string)
+            .ok_or_else(|| CoreError::BadRequest("Missing subscription id".to_string()))?,
+        external_product_id: object["productId"]
+            .as_str()
+            .or_else(|| object["product"]["id"].as_str())
+            .or_else(|| object["product"].as_str())
+            .map(str::to_string)
+            .ok_or_else(|| CoreError::BadRequest("Missing product id".to_string()))?,
+        current_period_start: parse_optional_creem_datetime(&object["currentPeriodStart"])
+            .or_else(|_| parse_optional_creem_datetime(&object["current_period_start"]))
+            .or_else(|_| parse_optional_creem_datetime(&object["current_period_start_date"]))?,
+        current_period_end: parse_optional_creem_datetime(&object["currentPeriodEnd"])
+            .or_else(|_| parse_optional_creem_datetime(&object["current_period_end"]))
+            .or_else(|_| parse_optional_creem_datetime(&object["current_period_end_date"]))?,
+    })
+}
+
+fn parse_dispute_created_payload(event: &Value) -> Result<CreemDisputeCreatedPayload, CoreError> {
+    let object = creem_event_object(event);
+    let subscription = &object["subscription"];
+
+    Ok(CreemDisputeCreatedPayload {
+        event_id: parse_event_id(event)?,
+        external_subscription_id: subscription["id"]
+            .as_str()
+            .or_else(|| object["transaction"]["subscription"].as_str())
+            .map(str::to_string)
+            .ok_or_else(|| CoreError::BadRequest("Missing dispute subscription id".to_string()))?,
+        external_product_id: subscription["product"]
+            .as_str()
+            .or_else(|| subscription["product"]["id"].as_str())
+            .map(str::to_string)
+            .unwrap_or_default(),
+        amount: object["amount"].as_i64().unwrap_or(0),
+        currency: object["currency"].as_str().unwrap_or("").to_string(),
+        dispute_id: object["id"]
+            .as_str()
+            .ok_or_else(|| CoreError::BadRequest("Missing dispute id".to_string()))?
+            .to_string(),
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn sync_creem_subscription(
     app_state: &AppState,
@@ -490,6 +607,7 @@ async fn sync_creem_subscription(
     current_period_end: Option<DateTime<Utc>>,
     cancel_at_period_end: bool,
     cancel_at: Option<DateTime<Utc>>,
+    existing_subscription: Option<Subscription>,
 ) -> Result<Option<(Subscription, Option<Subscription>)>, CoreError> {
     sync_subscription(
         app_state,
@@ -508,6 +626,7 @@ async fn sync_creem_subscription(
             current_period_end,
             cancel_at_period_end,
             cancel_at,
+            existing_subscription,
         },
     )
     .await
@@ -870,6 +989,7 @@ async fn handle_subscription_paid(
         payload.current_period_end,
         payload.cancel_at_period_end,
         None,
+        None,
     )
     .await?
     {
@@ -994,12 +1114,20 @@ async fn handle_subscription_updated(
         payload.current_entitlement_key.clone()
     };
 
-    let previous_entitlement_key = if payload.previous_entitlement_key.is_empty() {
-        // Try to get from existing subscription
-        let from_db = app_state
+    // Fetch existing subscription once — reuse for both entitlement resolution and sync
+    let existing_subscription_for_update = if payload.previous_entitlement_key.is_empty() {
+        app_state
             .billing_repository
             .find_by_external_subscription_id(&payload.external_subscription_id, "creem")
             .await?
+    } else {
+        None
+    };
+
+    let previous_entitlement_key = if payload.previous_entitlement_key.is_empty() {
+        // Try to get from existing subscription
+        let from_db = existing_subscription_for_update
+            .as_ref()
             .map(|s| s.entitlement_key.clone())
             .unwrap_or_default();
 
@@ -1063,6 +1191,7 @@ async fn handle_subscription_updated(
             payload.current_period_end,
             payload.cancel_at_period_end,
             None,
+            existing_subscription_for_update.clone(),
         )
         .await?
         {
@@ -1124,6 +1253,7 @@ async fn handle_subscription_updated(
         payload.current_period_end,
         payload.cancel_at_period_end,
         None,
+        existing_subscription_for_update.clone(),
     )
     .await?
     {
@@ -1159,9 +1289,11 @@ async fn handle_subscription_canceled(
     let payload = parse_subscription_canceled_payload(&event)?;
     let event_id = payload.event_id.as_str();
 
-    // Resolve user_id: prefer payload, fall back to existing subscription
-    let user_id = match payload.user_id {
-        Some(uid) => uid,
+    // Resolve user_id: prefer payload, fall back to existing subscription.
+    // When falling back, keep the fetched subscription to avoid a redundant DB query
+    // in sync_creem_subscription below.
+    let (user_id, existing_subscription) = match payload.user_id {
+        Some(uid) => (uid, None),
         None => {
             let existing = app_state
                 .billing_repository
@@ -1173,12 +1305,13 @@ async fn handle_subscription_canceled(
                         payload.external_subscription_id
                     ))
                 })?;
-            existing.user_id.ok_or_else(|| {
+            let uid = existing.user_id.ok_or_else(|| {
                 CoreError::BadRequest(format!(
                     "Existing subscription {} has no userId",
                     payload.external_subscription_id
                 ))
-            })?
+            })?;
+            (uid, Some(existing))
         }
     };
 
@@ -1260,6 +1393,7 @@ async fn handle_subscription_canceled(
         payload.current_period_end,
         payload.cancel_at_period_end,
         cancel_at,
+        existing_subscription,
     )
     .await?
     {
@@ -1350,6 +1484,206 @@ async fn handle_refund_created(
         payload.user_id,
         realm_id,
         TransactionType::RefundRevoke,
+    ))
+}
+
+async fn resolve_existing_creem_subscription(
+    app_state: &AppState,
+    external_subscription_id: &str,
+) -> Result<Option<Subscription>, CoreError> {
+    app_state
+        .billing_repository
+        .find_by_external_subscription_id(external_subscription_id, "creem")
+        .await
+}
+
+async fn handle_subscription_lifecycle_status(
+    app_state: AppState,
+    event: Value,
+    realm_id: &str,
+    status: SubscriptionStatus,
+) -> Result<PointsTransaction, CoreError> {
+    let payload = parse_subscription_lifecycle_payload(&event)?;
+    let event_id = payload.event_id.as_str();
+    let existing =
+        resolve_existing_creem_subscription(&app_state, &payload.external_subscription_id).await?;
+    let user_id = payload
+        .user_id
+        .or_else(|| {
+            existing
+                .as_ref()
+                .and_then(|subscription| subscription.user_id)
+        })
+        .ok_or_else(|| {
+            CoreError::BadRequest(format!(
+                "Cannot resolve userId for subscription {}",
+                payload.external_subscription_id
+            ))
+        })?;
+    let entitlement_key = if let Some(key) = payload.entitlement_key {
+        key
+    } else if let Some(subscription) = &existing {
+        subscription.entitlement_key.clone()
+    } else {
+        resolve_entitlement_key(
+            &app_state,
+            realm_id,
+            "creem",
+            &payload.external_product_id,
+            None,
+        )
+        .await?
+    };
+    let external_product_id = if payload.external_product_id.is_empty() {
+        existing
+            .as_ref()
+            .map(|subscription| subscription.external_product_id.clone())
+            .unwrap_or_default()
+    } else {
+        payload.external_product_id
+    };
+    let cancel_at_period_end = status == SubscriptionStatus::ScheduledCancel;
+    let cancel_at = if cancel_at_period_end {
+        payload.current_period_end
+    } else {
+        None
+    };
+
+    info!(
+        realm_id = %realm_id,
+        event_id = %event_id,
+        external_subscription_id = %payload.external_subscription_id,
+        status = %status.as_str(),
+        "Processing Creem subscription lifecycle event"
+    );
+
+    if let Some((subscription, previous)) = sync_creem_subscription(
+        &app_state,
+        realm_id,
+        user_id,
+        &payload.external_subscription_id,
+        payload.client_app_id,
+        entitlement_key,
+        external_product_id,
+        status.clone(),
+        payload.current_period_start,
+        payload.current_period_end,
+        cancel_at_period_end,
+        cancel_at,
+        existing,
+    )
+    .await?
+    {
+        let history_event = match previous {
+            Some(ref prev) => detect_change_type(prev, &subscription),
+            None => HistoryEventType::Created,
+        };
+
+        save_subscription_history(&app_state, previous.as_ref(), &subscription, history_event)
+            .await?;
+    }
+
+    // Revoke credits AFTER subscription status is synced to Expired.
+    // If sync fails, no credits are revoked and the webhook retries naturally.
+    if status == SubscriptionStatus::Expired {
+        let output = app_state
+            .points_service
+            .revoke_points_by_credit_type(
+                realm_id,
+                user_id,
+                CreditType::SubscriptionCredit,
+                RevocationType::ExpireRevoke,
+                "Subscription expired".to_string(),
+            )
+            .await?;
+
+        info!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            total_revoked = output.total_revoked,
+            ledger_count = output.ledger_ids.len(),
+            "Subscription expired - revoked all unused subscription credits"
+        );
+    }
+
+    Ok(create_placeholder_transaction(
+        user_id,
+        realm_id,
+        TransactionType::SubscriptionGrant,
+    ))
+}
+
+async fn handle_dispute_created(
+    app_state: AppState,
+    event: Value,
+    realm_id: &str,
+) -> Result<PointsTransaction, CoreError> {
+    let payload = parse_dispute_created_payload(&event)?;
+    let event_id = payload.event_id.as_str();
+    let existing =
+        resolve_existing_creem_subscription(&app_state, &payload.external_subscription_id).await?;
+    let existing = existing.ok_or_else(|| {
+        CoreError::BadRequest(format!(
+            "Cannot resolve disputed subscription {}",
+            payload.external_subscription_id
+        ))
+    })?;
+    let user_id = existing
+        .user_id
+        .ok_or_else(|| CoreError::BadRequest("Disputed subscription has no userId".to_string()))?;
+    let provider_metadata = serde_json::json!({
+        "disputeId": payload.dispute_id,
+        "amount": payload.amount,
+        "currency": payload.currency,
+    });
+
+    info!(
+        realm_id = %realm_id,
+        event_id = %event_id,
+        external_subscription_id = %payload.external_subscription_id,
+        dispute_id = %payload.dispute_id,
+        "Processing Creem dispute.created event"
+    );
+
+    if let Some((subscription, previous)) = sync_subscription(
+        &app_state,
+        SyncSubscriptionInput {
+            provider: "creem",
+            realm_id: realm_id.to_string(),
+            user_id: Some(user_id),
+            external_subscription_id: payload.external_subscription_id,
+            external_product_id: if payload.external_product_id.is_empty() {
+                existing.external_product_id.clone()
+            } else {
+                payload.external_product_id
+            },
+            client_app_id: existing.client_app_id,
+            entitlement_key: existing.entitlement_key.clone(),
+            external_price_id: existing.external_price_id.clone(),
+            provider_metadata: Some(provider_metadata),
+            status: SubscriptionStatus::Dispute,
+            current_period_start: existing.current_period_start,
+            current_period_end: existing.current_period_end,
+            cancel_at_period_end: existing.cancel_at_period_end,
+            cancel_at: existing.cancel_at,
+            existing_subscription: Some(existing),
+        },
+    )
+    .await?
+    {
+        save_subscription_history(
+            &app_state,
+            previous.as_ref(),
+            &subscription,
+            HistoryEventType::Disputed,
+        )
+        .await?;
+    }
+
+    Ok(create_placeholder_transaction(
+        user_id,
+        realm_id,
+        TransactionType::SubscriptionGrant,
     ))
 }
 
@@ -1525,6 +1859,60 @@ pub async fn handle_creem_webhook(
             )
             .await
         }
+        "subscription.active" => {
+            handle_subscription_lifecycle_status(
+                app_state.clone(),
+                event.clone(),
+                &realm_id,
+                SubscriptionStatus::Active,
+            )
+            .await
+        }
+        "subscription.trialing" => {
+            handle_subscription_lifecycle_status(
+                app_state.clone(),
+                event.clone(),
+                &realm_id,
+                SubscriptionStatus::Trialing,
+            )
+            .await
+        }
+        "subscription.paused" => {
+            handle_subscription_lifecycle_status(
+                app_state.clone(),
+                event.clone(),
+                &realm_id,
+                SubscriptionStatus::Paused,
+            )
+            .await
+        }
+        "subscription.past_due" => {
+            handle_subscription_lifecycle_status(
+                app_state.clone(),
+                event.clone(),
+                &realm_id,
+                SubscriptionStatus::PastDue,
+            )
+            .await
+        }
+        "subscription.scheduled_cancel" => {
+            handle_subscription_lifecycle_status(
+                app_state.clone(),
+                event.clone(),
+                &realm_id,
+                SubscriptionStatus::ScheduledCancel,
+            )
+            .await
+        }
+        "subscription.expired" => {
+            handle_subscription_lifecycle_status(
+                app_state.clone(),
+                event.clone(),
+                &realm_id,
+                SubscriptionStatus::Expired,
+            )
+            .await
+        }
         "refund.created" => {
             handle_refund_created(
                 app_state.clone(),
@@ -1533,6 +1921,9 @@ pub async fn handle_creem_webhook(
                 &idempotency_key,
             )
             .await
+        }
+        "dispute.created" => {
+            handle_dispute_created(app_state.clone(), event.clone(), &realm_id).await
         }
         _ => {
             warn!(

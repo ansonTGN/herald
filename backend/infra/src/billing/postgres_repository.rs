@@ -730,4 +730,35 @@ impl BillingRepository for PostgresBillingRepository {
             .map(Self::model_to_entitlement_mapping)
             .collect())
     }
+
+    async fn find_external_subscription_id_by_payment_intent(
+        &self,
+        payment_intent: &str,
+        provider: &str,
+        realm_id: &str,
+    ) -> Result<Option<String>, CoreError> {
+        let stripe_subscription_id: Option<String> = sqlx::query_scalar(
+            "SELECT payload->'data'->'object'->>'subscription' \
+             FROM payment_event \
+             WHERE payment_provider = $1 \
+               AND realm_id = $3 \
+               AND event_type IN ('checkout.session.completed', 'invoice.payment_succeeded') \
+               AND payload->'data'->'object'->>'payment_intent' = $2 \
+             LIMIT 1",
+        )
+        .bind(provider)
+        .bind(payment_intent)
+        .bind(realm_id)
+        .fetch_optional(self.db.get_postgres_connection_pool())
+        .await
+        .map_err(|e| {
+            CoreError::InternalServerError(format!(
+                "Failed to lookup subscription by payment_intent: {}",
+                e
+            ))
+        })?
+        .flatten();
+
+        Ok(stripe_subscription_id)
+    }
 }
