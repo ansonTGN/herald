@@ -186,6 +186,38 @@ impl<R: PaymentAttemptRepository> PaymentAttemptService<R> {
         self.repository.update_payment_attempt(attempt).await
     }
 
+    /// Mark a succeeded payment attempt as failed for async payment recovery.
+    /// This is used when eager strategy issued points on checkout.session.completed
+    /// but async_payment_failed arrives — the attempt must transition Succeeded -> Failed
+    /// to enable points revocation downstream.
+    pub async fn mark_failed_for_async_recovery(
+        &self,
+        realm_id: &str,
+        attempt_id: uuid::Uuid,
+        provider_status: String,
+        completed_at: chrono::DateTime<chrono::Utc>,
+    ) -> PaymentAttemptResult<PaymentAttempt> {
+        let mut attempt = self
+            .repository
+            .find_payment_attempt_by_id(realm_id, attempt_id)
+            .await?
+            .ok_or_else(|| CoreError::attempt_not_found(&attempt_id.to_string()))?;
+
+        if !attempt.status.can_transition_to_failed_for_async_recovery() {
+            return Err(CoreError::invalid_status_transition(
+                &attempt.status.to_string(),
+                &PaymentAttemptStatus::Failed.to_string(),
+            ));
+        }
+
+        attempt.status = PaymentAttemptStatus::Failed;
+        attempt.provider_status = Some(provider_status);
+        attempt.completed_at = Some(completed_at);
+        attempt.updated_at = chrono::Utc::now();
+
+        self.repository.update_payment_attempt(attempt).await
+    }
+
     /// Update provider reference after the upstream payment object has been created.
     pub async fn update_provider_reference(
         &self,

@@ -21,6 +21,7 @@
 // =============================================================================
 
 pub mod assertions;
+pub mod async_payment_helpers;
 pub mod auth_helpers;
 pub mod billing_helpers;
 pub mod client_helpers;

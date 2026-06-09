@@ -94,3 +94,13 @@ pub mod creem_webhook_patch_scenarios;
 // User Story: US-WC-001, US-WC-002
 // Covers: Design section 5.1 (Stripe/Creem missed event compensation)
 pub mod webhook_compensation_scenarios;
+
+// Async payment points strategy scenario tests (authored by BE-T01)
+// User Story: US-AP-001, US-AP-002
+// Covers: Design sections 4.1, 5.1 (strategy config + eager fulfillment)
+pub mod async_payment_points_strategy_scenarios;
+
+// Async payment revocation scenario tests (authored by BE-T02)
+// User Story: US-AP-002 (idempotency), US-AP-003 (revocation), US-AP-004 (debt)
+// Covers: Design sections 4.1, 4.3, 5.1
+pub mod async_payment_revocation_scenarios;

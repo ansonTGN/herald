@@ -78,9 +78,12 @@ impl std::str::FromStr for PurchasableTarget {
 /// - ❌ `Failed → Succeeded` - Failed payments cannot succeed
 /// - ❌ `Succeeded → Pending` - Completed payments cannot revert to pending
 /// - ❌ `Cancelled → Succeeded` - Cancelled payments cannot succeed
-/// - ❌ `Succeeded → Failed` - Success cannot become failure
+/// - ❌ `Succeeded → Failed` - Success cannot become failure (general `can_transition_to` blocks this)
 /// - ❌ `Succeeded → Cancelled` - Success cannot be cancelled
 /// - ❌ `Succeeded → Expired` - Success cannot expire
+///
+/// Note: `Succeeded -> Failed` is allowed ONLY via `mark_failed_for_async_recovery` for async payment
+/// recovery (eager strategy). The general `can_transition_to` method does NOT allow this transition.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum PaymentAttemptStatus {
@@ -142,6 +145,12 @@ impl PaymentAttemptStatus {
             | (PaymentAttemptStatus::RequiresAction, PaymentAttemptStatus::Cancelled)
             | (PaymentAttemptStatus::RequiresAction, PaymentAttemptStatus::Expired)
         )
+    }
+
+    /// Check if this status can be transitioned to Failed for async payment recovery.
+    /// Only `Succeeded` allows this special transition (for eager strategy revocation).
+    pub fn can_transition_to_failed_for_async_recovery(&self) -> bool {
+        matches!(self, PaymentAttemptStatus::Succeeded)
     }
 
     /// Check if this is a terminal state (cannot transition out)

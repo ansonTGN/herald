@@ -26,8 +26,11 @@ use herald_core::domain::billing::{
     SubscriptionStatus, detect_change_type,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
+use herald_core::domain::payment_attempt::PaymentAttemptStatus;
 use herald_core::domain::points::IdempotencyResult;
-use herald_core::domain::points::entities::{PointsTransaction, TransactionType};
+use herald_core::domain::points::entities::{
+    CreditType, PointsTransaction, RevocationType, TransactionType,
+};
 use herald_core::domain::points::ports::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
 use herald_core::domain::purchase::metadata_keys;
@@ -599,19 +602,29 @@ async fn handle_checkout_session_completed(
             .as_str()
             .unwrap_or("unpaid");
         if payment_status != "paid" && payment_status != "no_payment_required" {
+            let strategy = read_async_points_strategy(&app_state.pool, realm_id).await;
+            if strategy != AsyncPointsStrategy::Eager {
+                info!(
+                    realm_id = %realm_id,
+                    attempt_id = %attempt_id,
+                    payment_status = %payment_status,
+                    mode = ?mode,
+                    "Checkout session completed before payment settled - waiting for async result"
+                );
+
+                return Ok(create_placeholder_transaction(
+                    attempt_id,
+                    realm_id,
+                    TransactionType::Recharge,
+                ));
+            }
+            // Eager strategy: fall through to fulfillment despite unpaid status
             info!(
                 realm_id = %realm_id,
                 attempt_id = %attempt_id,
                 payment_status = %payment_status,
-                mode = ?mode,
-                "Checkout session completed before payment settled - waiting for async result"
+                "Eager strategy: fulfilling despite unpaid async payment"
             );
-
-            return Ok(create_placeholder_transaction(
-                attempt_id,
-                realm_id,
-                TransactionType::Recharge,
-            ));
         }
 
         let provider_transaction_id = event["data"]["object"]["subscription"]
@@ -860,6 +873,32 @@ async fn handle_checkout_session_async_succeeded(
         _ => None,
     });
 
+    // Idempotency check: if eager strategy already fulfilled during checkout.session.completed,
+    // the attempt is already Succeeded — skip fulfillment
+    let existing_attempt = match app_state
+        .payment_attempt_service
+        .get_payment_attempt_by_id_only(attempt_id)
+        .await
+    {
+        Ok(attempt) => Some(attempt),
+        Err(CoreError::NotFound) => None, // attempt not found — conservative path, proceed with fulfillment
+        Err(e) => return Err(e),          // DB error — propagate
+    };
+    if let Some(attempt) = existing_attempt
+        && attempt.status == PaymentAttemptStatus::Succeeded
+    {
+        info!(
+            realm_id = %realm_id,
+            attempt_id = %attempt_id,
+            "Async payment succeeded but attempt already fulfilled (eager strategy) - skipping"
+        );
+        return Ok(create_placeholder_transaction(
+            attempt_id,
+            realm_id,
+            TransactionType::Recharge,
+        ));
+    }
+
     fulfill_payment_attempt(
         &app_state,
         attempt_id,
@@ -896,17 +935,187 @@ async fn handle_checkout_session_async_failed(
             TransactionType::Recharge,
         ));
     };
-    let payload = StripePaymentFailedPayload {
-        attempt_id,
-        provider_reference: object["id"].as_str().unwrap_or("").to_string(),
-        provider_status: object["payment_status"]
-            .as_str()
-            .unwrap_or("failed")
-            .to_string(),
-        completed_at: parse_optional_stripe_datetime(&object["created"])?.unwrap_or_else(Utc::now),
+
+    // Fetch payment attempt to determine strategy path
+    // Distinguish "not found" from DB errors: NotFound is safe (conservative path),
+    // but DB errors must propagate so the webhook retry loop can recover.
+    let attempt = match app_state
+        .payment_attempt_service
+        .get_payment_attempt_by_id_only(attempt_id)
+        .await
+    {
+        Ok(attempt) => Some(attempt),
+        Err(CoreError::NotFound) => None, // attempt not found — conservative path
+        Err(e) => return Err(e),          // DB error — propagate
     };
 
-    fail_payment_attempt(&app_state, realm_id, payload).await?;
+    let needs_revocation = attempt
+        .as_ref()
+        .is_some_and(|a| a.status == PaymentAttemptStatus::Succeeded);
+
+    if !needs_revocation {
+        // Conservative strategy path: attempt is Pending/Failed/not-found
+        let payload = StripePaymentFailedPayload {
+            attempt_id,
+            provider_reference: object["id"].as_str().unwrap_or("").to_string(),
+            provider_status: object["payment_status"]
+                .as_str()
+                .unwrap_or("failed")
+                .to_string(),
+            completed_at: parse_optional_stripe_datetime(&object["created"])?
+                .unwrap_or_else(Utc::now),
+        };
+        fail_payment_attempt(&app_state, realm_id, payload).await?;
+        return Ok(create_placeholder_transaction(
+            attempt_id,
+            realm_id,
+            TransactionType::Recharge,
+        ));
+    }
+
+    // Eager strategy path: attempt was already Succeeded — must revoke points
+    let attempt = attempt.unwrap();
+    let mode_str = object["mode"].as_str();
+    let billing_type_override = mode_str.and_then(|mode| match mode {
+        "payment" => Some(BillingType::OneTime),
+        _ => None,
+    });
+
+    if mode_str.is_none() {
+        warn!(
+            realm_id = %realm_id,
+            attempt_id = %attempt_id,
+            "mode field missing in async_payment_failed event — defaulting to subscription revocation path"
+        );
+    }
+
+    info!(
+        realm_id = %realm_id,
+        attempt_id = %attempt_id,
+        user_id = %attempt.user_id,
+        billing_type = ?billing_type_override,
+        "Async payment failed after eager fulfillment — revoking points"
+    );
+
+    let revocation_result = if billing_type_override == Some(BillingType::OneTime) {
+        // One-time purchase: revoke TopupCredit
+        app_state
+            .points_service
+            .revoke_points_by_credit_type(
+                realm_id,
+                attempt.user_id,
+                CreditType::TopupCredit,
+                RevocationType::RefundRevoke,
+                format!("Async payment failed revocation for attempt {}", attempt_id),
+            )
+            .await?
+    } else {
+        // Subscription: cancel subscription + revoke SubscriptionCredit (done internally by handle_subscription_cancel)
+        let result = app_state
+            .subscription_service
+            .handle_subscription_cancel(
+                attempt.user_id,
+                realm_id,
+                CancelMode::ImmediateCancel,
+                None,
+            )
+            .await?;
+
+        // Update subscription record status to "canceled"
+        sqlx::query(
+            "UPDATE subscription
+             SET status = 'canceled', cancel_at = NOW(), updated_at = NOW()
+             WHERE realm_id = $1 AND user_id = $2
+               AND status IN ('active', 'trialing', 'past_due', 'scheduled_cancel', 'pending')",
+        )
+        .bind(realm_id)
+        .bind(attempt.user_id)
+        .execute(&app_state.pool)
+        .await?;
+
+        info!(
+            realm_id = %realm_id,
+            user_id = %attempt.user_id,
+            "Subscription status set to canceled after async payment failure"
+        );
+
+        result
+    };
+
+    // Debt recording: check if total_revoked < original granted points
+    // Uses a simple SELECT instead of SUM aggregate to avoid PgDog query routing issues
+    // in test environments. Each attempt creates exactly one ledger entry, so LIMIT 1 is sufficient.
+    let source_id_str = attempt_id.to_string();
+    let original_points: i64 = sqlx::query_scalar(
+        "SELECT granted_amount FROM points_credit_ledger WHERE realm_id = $1 AND user_id = $2 AND source_id = $3 LIMIT 1"
+    )
+        .bind(realm_id)
+        .bind(attempt.user_id)
+        .bind(&source_id_str)
+        .fetch_optional(&app_state.pool)
+        .await?
+        .flatten()
+        .unwrap_or(0);
+
+    if revocation_result.total_revoked < original_points {
+        let debt_amount = original_points - revocation_result.total_revoked;
+        // Resolve ledger_id: prefer the revocation result, fall back to querying the original ledger.
+        // This handles the case where all credits were already consumed (no ledger entries to revoke).
+        let ledger_id = if let Some(id) = revocation_result.ledger_ids.first().copied() {
+            id
+        } else {
+            sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM points_credit_ledger WHERE realm_id = $1 AND user_id = $2 AND source_id = $3 LIMIT 1"
+            )
+            .bind(realm_id)
+            .bind(attempt.user_id)
+            .bind(&source_id_str)
+            .fetch_optional(&app_state.pool)
+            .await?
+            .unwrap_or_else(Uuid::nil) // truly no ledger exists at all — nil is last resort
+        };
+        let reason = format!(
+            "debt:original={},recovered={},shortfall={},reason=async_payment_failed_insufficient_balance",
+            original_points, revocation_result.total_revoked, debt_amount
+        );
+        sqlx::query(
+            "INSERT INTO points_revocation_records (id, ledger_id, user_id, realm_id, revocation_type, revoked_amount, reason, reference_id, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())"
+        )
+            .bind(Uuid::now_v7())
+            .bind(ledger_id)
+            .bind(attempt.user_id)
+            .bind(realm_id)
+            .bind(RevocationType::RefundRevoke.as_str())
+            .bind(debt_amount)
+            .bind(&reason)
+            .bind(attempt_id.to_string())
+            .execute(&app_state.pool)
+            .await?;
+
+        info!(
+            realm_id = %realm_id,
+            attempt_id = %attempt_id,
+            user_id = %attempt.user_id,
+            original_points = original_points,
+            total_revoked = revocation_result.total_revoked,
+            debt_amount = debt_amount,
+            "Recorded debt for insufficient balance during async failure revocation"
+        );
+    }
+
+    // Mark payment attempt as Failed via dedicated async recovery method
+    app_state
+        .payment_attempt_service
+        .mark_failed_for_async_recovery(
+            realm_id,
+            attempt_id,
+            object["payment_status"]
+                .as_str()
+                .unwrap_or("failed")
+                .to_string(),
+            parse_optional_stripe_datetime(&object["created"])?.unwrap_or_else(Utc::now),
+        )
+        .await?;
 
     Ok(create_placeholder_transaction(
         attempt_id,
@@ -2575,5 +2784,48 @@ pub(crate) async fn reprocess_stripe_event(
             );
             Err(e)
         }
+    }
+}
+
+/// Strategy for handling points issuance when an async payment method is used
+/// (SEPA, ACH, BECS, Bacs) and `payment_status` is `unpaid` at checkout completion.
+///
+/// - `Conservative` (default): wait for `async_payment_succeeded` before issuing points.
+/// - `Eager`: issue points immediately on `checkout.session.completed`; reclaim on failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AsyncPointsStrategy {
+    Conservative,
+    Eager,
+}
+
+impl From<&str> for AsyncPointsStrategy {
+    fn from(value: &str) -> Self {
+        match value {
+            "eager" => AsyncPointsStrategy::Eager,
+            _ => AsyncPointsStrategy::Conservative,
+        }
+    }
+}
+
+/// Read the `async_points_strategy` config value for a given realm.
+///
+/// Returns `Conservative` when no config row exists or the value is not `"eager"`.
+pub async fn read_async_points_strategy(
+    pool: &sqlx::PgPool,
+    realm_id: &str,
+) -> AsyncPointsStrategy {
+    let value = sqlx::query_scalar::<_, String>(
+        "SELECT config_value
+         FROM realm_config
+         WHERE realm_id = $1 AND config_type = 'stripe' AND config_key = 'async_points_strategy' AND enabled = true
+         LIMIT 1",
+    )
+    .bind(realm_id)
+    .fetch_optional(pool)
+    .await;
+
+    match value {
+        Ok(Some(v)) => AsyncPointsStrategy::from(v.as_str()),
+        _ => AsyncPointsStrategy::Conservative,
     }
 }

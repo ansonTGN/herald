@@ -1,0 +1,190 @@
+// =============================================================================
+// Async Payment Test Helpers
+// =============================================================================
+//
+// Shared helpers for async payment points strategy and revocation scenario tests.
+// Provides functions for creating test users, wallets, payment attempts, and
+// querying balances and attempt status.
+//
+// =============================================================================
+
+#![allow(dead_code)]
+
+use crate::tests::helpers::billing_helpers::setup_test_entitlement_mapping_full;
+use crate::tests::schema_test_context::SchemaTestContext;
+use uuid::Uuid;
+
+/// Create a test user in the test realm and return their UUID.
+pub async fn create_test_user(ctx: &SchemaTestContext, realm_id: &str, email: &str) -> Uuid {
+    let user_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO account (id, realm_id, email, password, status)
+         VALUES ($1, $2, $3, $4, 1)
+         ON CONFLICT (realm_id, email) DO NOTHING",
+    )
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(email)
+    .bind("$2a$12$dummy_password_hash")
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create test user");
+    user_id
+}
+
+/// Create a points wallet for a user with zero balances.
+pub async fn create_points_wallet(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) {
+    sqlx::query(
+        "INSERT INTO points_wallets (id, user_id, realm_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+         VALUES ($1, $2, $3, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())
+         ON CONFLICT (user_id) DO NOTHING",
+    )
+    .bind(Uuid::now_v7())
+    .bind(user_id)
+    .bind(realm_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create points wallet");
+}
+
+/// Set the async_points_strategy for a realm.
+/// Uses ON CONFLICT ... DO UPDATE for idempotency across test runs.
+pub async fn set_async_points_strategy(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    strategy_value: &str,
+) {
+    sqlx::query(
+        "INSERT INTO realm_config (id, realm_id, config_type, config_key, config_value, is_secret, enabled, created_at, updated_at)
+         VALUES (uuidv7(), $1, 'stripe', 'async_points_strategy', $2, false, true, NOW(), NOW())
+         ON CONFLICT (realm_id, config_type, config_key)
+         DO UPDATE SET config_value = $2, enabled = true, updated_at = NOW()",
+    )
+    .bind(realm_id)
+    .bind(strategy_value)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to set async_points_strategy");
+}
+
+/// Create a one-time entitlement mapping with points_per_period.
+/// Returns the mapping ID.
+pub async fn create_one_time_mapping(
+    ctx: &mut SchemaTestContext,
+    realm_id: &str,
+    entitlement_key: &str,
+    points_per_period: i64,
+) -> Uuid {
+    setup_test_entitlement_mapping_full(
+        ctx,
+        realm_id,
+        "stripe",
+        &format!("prod_stripe_{}", entitlement_key),
+        None,
+        entitlement_key,
+        Some("one_time"),
+        None,
+        Some(points_per_period),
+        None,
+        None,
+        false,
+        None,
+        true,
+        None,
+    )
+    .await
+}
+
+/// Create a recurring entitlement mapping with points_per_period.
+/// Returns the mapping ID.
+pub async fn create_recurring_mapping(
+    ctx: &mut SchemaTestContext,
+    realm_id: &str,
+    entitlement_key: &str,
+    points_per_period: i64,
+) -> Uuid {
+    setup_test_entitlement_mapping_full(
+        ctx,
+        realm_id,
+        "stripe",
+        &format!("prod_stripe_{}", entitlement_key),
+        None,
+        entitlement_key,
+        Some("recurring"),
+        Some("monthly"),
+        Some(points_per_period),
+        None,
+        None,
+        true,
+        None,
+        true,
+        None,
+    )
+    .await
+}
+
+/// Create a pending payment attempt targeting the given mapping.
+/// Returns the attempt ID.
+pub async fn create_pending_payment_attempt(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    mapping_id: Uuid,
+) -> Uuid {
+    let attempt_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO payment_attempts
+            (id, realm_id, user_id, payment_provider, target_type, target_id,
+             amount, currency, status, expires_at, created_at, updated_at)
+         VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4,
+             1000, 'usd', 'Pending', NOW() + INTERVAL '1 hour', NOW(), NOW())",
+    )
+    .bind(attempt_id)
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(mapping_id)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create pending payment attempt");
+    attempt_id
+}
+
+/// Get payment attempt status by ID.
+pub async fn get_payment_attempt_status(
+    ctx: &SchemaTestContext,
+    attempt_id: Uuid,
+) -> Option<String> {
+    sqlx::query_scalar::<_, String>("SELECT status FROM payment_attempts WHERE id = $1")
+        .bind(attempt_id)
+        .fetch_optional(&ctx.app_state.pool)
+        .await
+        .unwrap_or(None)
+}
+
+/// Get topup_balance for a user's wallet.
+pub async fn get_topup_balance(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) -> i64 {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COALESCE(topup_balance, 0) FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
+    )
+    .bind(user_id)
+    .bind(realm_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .unwrap_or(0)
+}
+
+/// Get subscription_balance for a user's wallet.
+pub async fn get_subscription_balance(
+    ctx: &SchemaTestContext,
+    user_id: Uuid,
+    realm_id: &str,
+) -> i64 {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COALESCE(subscription_balance, 0) FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
+    )
+    .bind(user_id)
+    .bind(realm_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .unwrap_or(0)
+}
