@@ -1,5 +1,6 @@
 use crate::models::{
-    CheckoutSession, CreateCheckoutRequest, CreatePaymentIntentRequest, PaymentIntent,
+    CheckoutSession, CreateCheckoutRequest, CreatePaymentIntentRequest, ListEventsParams,
+    PaymentIntent, StripeEventList,
 };
 use herald_domain::common::entities::app_errors::CoreError;
 use hmac::{Hmac, Mac};
@@ -68,6 +69,19 @@ impl StripeClient {
             api_key,
             base_url,
         })
+    }
+
+    /// Create a Stripe API client reusing an existing `reqwest::Client`.
+    ///
+    /// Avoids per-realm `reqwest::Client` reconstruction in batch jobs that
+    /// iterate over many realms with different API keys but can share the
+    /// underlying connection pool.
+    pub fn with_http_client(http: reqwest::Client, api_key: String, base_url: String) -> Self {
+        Self {
+            http,
+            api_key,
+            base_url,
+        }
     }
 
     /// Create a checkout session for a product
@@ -420,6 +434,78 @@ impl StripeClient {
             status: stripe_response["status"].as_str().map(str::to_string),
             metadata: stripe_response["metadata"].clone(),
         })
+    }
+
+    /// List Stripe events via GET /v1/events
+    ///
+    /// Used for webhook compensation — polling Stripe for events that may have been
+    /// missed by webhook delivery.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - Query parameters (time range, event types, pagination)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or returns a non-success status.
+    pub async fn list_events(
+        &self,
+        params: &ListEventsParams,
+    ) -> Result<StripeEventList, CoreError> {
+        if self.base_url == "mock://stripe" {
+            return Ok(StripeEventList {
+                data: vec![],
+                has_more: false,
+            });
+        }
+
+        let url = format!("{}/v1/events", self.base_url);
+
+        let mut query: Vec<(&str, String)> = vec![
+            ("created[gte]", params.created_gte.to_string()),
+            ("created[lte]", params.created_lte.to_string()),
+            ("limit", params.limit.to_string()),
+        ];
+        for et in &params.event_types {
+            query.push(("type[]", et.clone()));
+        }
+        if let Some(sa) = &params.starting_after {
+            query.push(("starting_after", sa.clone()));
+        }
+
+        tracing::info!(
+            "Listing Stripe events: {} types, limit {}, range {}-{}",
+            params.event_types.len(),
+            params.limit,
+            params.created_gte,
+            params.created_lte
+        );
+
+        let response = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.api_key)
+            .query(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            tracing::error!("Stripe list events API error: {} - {}", status, text);
+            return Err(CoreError::InternalServerError(format!(
+                "Stripe list events API error: {} - {}",
+                status.as_u16(),
+                text
+            )));
+        }
+
+        let event_list: StripeEventList = response.json().await.map_err(|e| {
+            tracing::error!("Failed to parse Stripe events response: {}", e);
+            CoreError::InternalServerError(format!("Invalid Stripe events response: {}", e))
+        })?;
+
+        Ok(event_list)
     }
 
     /// Verify a Stripe webhook signature
@@ -1055,6 +1141,257 @@ mod tests {
             form.keys().all(|k| !k.starts_with("payment_intent_data[")),
             "subscription mode should not include payment_intent_data fields"
         );
+    }
+
+    // --- list_events wiremock tests ---
+    // User Story: As a billing operator I need StripeClient to faithfully query
+    // the Stripe Events API so that webhook compensation can recover missed events.
+    // Covers: query parameter encoding, Bearer auth, single-page parsing,
+    // has_more passthrough, and empty-response handling.
+
+    /// Verifies that `list_events` sends the correct GET request with query
+    /// parameters (`created[gte]`, `created[lte]`, `type[]`, `limit`) and
+    /// `Bearer` auth to `/v1/events`.
+    #[tokio::test]
+    async fn test_list_events_sends_correct_query_params() {
+        let mock_server = MockServer::start().await;
+        let client =
+            StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [],
+                "has_more": false
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let result = client
+            .list_events(&ListEventsParams {
+                created_gte: 1_700_000_000,
+                created_lte: 1_700_001_000,
+                event_types: vec![
+                    "checkout.session.completed".to_string(),
+                    "customer.subscription.*".to_string(),
+                ],
+                limit: 100,
+                starting_after: None,
+            })
+            .await
+            .expect("list_events should succeed");
+
+        assert!(result.data.is_empty());
+        assert!(!result.has_more);
+
+        let requests = mock_server
+            .received_requests()
+            .await
+            .expect("request recording should be enabled");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method.as_str(), "GET");
+        assert_eq!(requests[0].url.path(), "/v1/events");
+
+        // Verify Bearer auth
+        assert_eq!(
+            requests[0]
+                .headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer sk_test_123")
+        );
+
+        // Parse query string from the URL
+        let query_pairs: std::collections::HashMap<String, String> = requests[0]
+            .url
+            .query_pairs()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+
+        assert_eq!(
+            query_pairs.get("created[gte]"),
+            Some(&"1700000000".to_string()),
+            "created[gte] query param"
+        );
+        assert_eq!(
+            query_pairs.get("created[lte]"),
+            Some(&"1700001000".to_string()),
+            "created[lte] query param"
+        );
+        assert_eq!(
+            query_pairs.get("limit"),
+            Some(&"100".to_string()),
+            "limit query param"
+        );
+
+        // type[] is repeated — collect all values
+        let type_values: Vec<String> = requests[0]
+            .url
+            .query_pairs()
+            .filter(|(k, _)| k == "type[]")
+            .map(|(_, v)| v.to_string())
+            .collect();
+        assert_eq!(type_values.len(), 2, "should have two type[] query params");
+        assert!(
+            type_values.contains(&"checkout.session.completed".to_string()),
+            "type[] should contain checkout.session.completed"
+        );
+        assert!(
+            type_values.contains(&"customer.subscription.*".to_string()),
+            "type[] should contain customer.subscription.*"
+        );
+
+        // No starting-After since starting_after was None
+        assert!(
+            !query_pairs.contains_key("starting_after"),
+            "starting_after should not be present when None"
+        );
+    }
+
+    /// Verifies that `list_events` parses a single-page response into
+    /// `StripeEventList` with correct event fields and `has_more = false`.
+    #[tokio::test]
+    async fn test_list_events_parses_single_page_response() {
+        let mock_server = MockServer::start().await;
+        let client =
+            StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [
+                    {
+                        "id": "evt_001",
+                        "type": "checkout.session.completed",
+                        "created": 1700000050,
+                        "data": { "object": { "id": "cs_test_abc" } }
+                    },
+                    {
+                        "id": "evt_002",
+                        "type": "customer.subscription.created",
+                        "created": 1700000080,
+                        "data": { "object": { "id": "sub_test_xyz" } }
+                    }
+                ],
+                "has_more": false
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let result = client
+            .list_events(&ListEventsParams {
+                created_gte: 1_700_000_000,
+                created_lte: 1_700_001_000,
+                event_types: vec!["checkout.session.completed".to_string()],
+                limit: 100,
+                starting_after: None,
+            })
+            .await
+            .expect("list_events should succeed");
+
+        assert_eq!(result.data.len(), 2);
+        assert!(!result.has_more);
+
+        // First event
+        assert_eq!(result.data[0].id, "evt_001");
+        assert_eq!(result.data[0].event_type, "checkout.session.completed");
+        assert_eq!(result.data[0].created, 1_700_000_050);
+        assert_eq!(result.data[0].data["object"]["id"], "cs_test_abc");
+
+        // Second event
+        assert_eq!(result.data[1].id, "evt_002");
+        assert_eq!(result.data[1].event_type, "customer.subscription.created");
+        assert_eq!(result.data[1].created, 1_700_000_080);
+        assert_eq!(result.data[1].data["object"]["id"], "sub_test_xyz");
+    }
+
+    /// Verifies that `list_events` makes exactly one HTTP request (single-page
+    /// method) and passes `has_more: true` through to the caller, who is
+    /// responsible for external pagination.
+    #[tokio::test]
+    async fn test_list_events_follows_pagination() {
+        let mock_server = MockServer::start().await;
+        let client =
+            StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [
+                    {
+                        "id": "evt_100",
+                        "type": "checkout.session.completed",
+                        "created": 1700000050,
+                        "data": {}
+                    },
+                    {
+                        "id": "evt_101",
+                        "type": "checkout.session.completed",
+                        "created": 1700000060,
+                        "data": {}
+                    }
+                ],
+                "has_more": true
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let result = client
+            .list_events(&ListEventsParams {
+                created_gte: 1_700_000_000,
+                created_lte: 1_700_001_000,
+                event_types: vec!["checkout.session.completed".to_string()],
+                limit: 2,
+                starting_after: None,
+            })
+            .await
+            .expect("list_events should succeed");
+
+        // Single-page method: exactly one HTTP request
+        let requests = mock_server
+            .received_requests()
+            .await
+            .expect("request recording should be enabled");
+        assert_eq!(
+            requests.len(),
+            1,
+            "list_events should make exactly one request"
+        );
+
+        // Returns the page as-is; caller handles pagination
+        assert_eq!(result.data.len(), 2);
+        assert!(
+            result.has_more,
+            "has_more must be true so the caller can paginate externally"
+        );
+    }
+
+    /// Verifies that `list_events` returns an empty list when the API
+    /// responds with `data: []` and `has_more: false`.
+    #[tokio::test]
+    async fn test_list_events_empty_response() {
+        let mock_server = MockServer::start().await;
+        let client =
+            StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [],
+                "has_more": false
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let result = client
+            .list_events(&ListEventsParams {
+                created_gte: 1_700_000_000,
+                created_lte: 1_700_001_000,
+                event_types: vec!["checkout.session.completed".to_string()],
+                limit: 100,
+                starting_after: None,
+            })
+            .await
+            .expect("list_events should succeed");
+
+        assert!(result.data.is_empty(), "data should be empty");
+        assert!(!result.has_more, "has_more should be false");
     }
 
     /// Verify mock handler returns payment_intent for payment mode and

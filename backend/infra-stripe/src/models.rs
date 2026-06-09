@@ -114,3 +114,41 @@ pub struct StripeWebhookEvent {
     /// Request ID (for idempotency)
     pub request: Option<serde_json::Value>,
 }
+
+/// Parameters for listing Stripe events via GET /v1/events
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ListEventsParams {
+    /// Unix timestamp — only return events created at or after this time
+    pub created_gte: i64,
+    /// Unix timestamp — only return events created at or before this time
+    pub created_lte: i64,
+    /// Filter to specific event types (e.g., "checkout.session.completed")
+    pub event_types: Vec<String>,
+    /// Maximum number of events to return per page (max 100)
+    pub limit: i64,
+    /// Pagination cursor — event ID to start after
+    pub starting_after: Option<String>,
+}
+
+/// A single Stripe event returned by the Events API
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StripeEvent {
+    /// Event ID (e.g., "evt_1P...")
+    pub id: String,
+    /// Event type (e.g., "checkout.session.completed")
+    #[serde(rename = "type")]
+    pub event_type: String,
+    /// Created timestamp (Unix)
+    pub created: i64,
+    /// Event payload (the actual object data)
+    pub data: serde_json::Value,
+}
+
+/// Paginated list of Stripe events
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StripeEventList {
+    /// List of events in this page
+    pub data: Vec<StripeEvent>,
+    /// Whether more events are available beyond this page
+    pub has_more: bool,
+}

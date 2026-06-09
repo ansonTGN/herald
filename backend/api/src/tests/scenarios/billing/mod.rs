@@ -89,3 +89,8 @@ pub mod stripe_webhook_patch_scenarios;
 // Creem webhook patch scenario tests (new webhook event handlers)
 // Covers: subscription lifecycle events, dispute.created
 pub mod creem_webhook_patch_scenarios;
+
+// Webhook compensation job scenario tests (authored by BE-T03)
+// User Story: US-WC-001, US-WC-002
+// Covers: Design section 5.1 (Stripe/Creem missed event compensation)
+pub mod webhook_compensation_scenarios;

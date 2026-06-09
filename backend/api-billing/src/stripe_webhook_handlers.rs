@@ -2450,3 +2450,130 @@ async fn process_stripe_event_once(
         }
     }
 }
+
+/// Reprocess a single Stripe event that Herald missed (compensation path).
+///
+/// Unlike the normal webhook flow, this:
+/// - Skips Redis idempotency checks entirely
+/// - Skips signature verification (event comes from Stripe Events API, not webhook)
+/// - Uses DB `payment_event` for idempotency only
+/// - Reuses the same match routing from `process_stripe_event_once`
+pub(crate) async fn reprocess_stripe_event(
+    app_state: AppState,
+    realm_id: &str,
+    event: &Value,
+    event_type: &str,
+) -> Result<(), CoreError> {
+    let event_id = event["id"]
+        .as_str()
+        .ok_or_else(|| CoreError::BadRequest("Missing event id".to_string()))?;
+
+    // Check existing payment event by external_event_id
+    if let Some(existing) = app_state
+        .billing_repository
+        .find_payment_event_by_external_id(event_id, "stripe")
+        .await?
+    {
+        if existing.processed {
+            info!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                event_type = %event_type,
+                "Stripe compensation: event already processed, skipping"
+            );
+            return Ok(());
+        }
+        // Exists but not processed -- inconsistent state, do not reprocess
+        error!(
+            realm_id = %realm_id,
+            event_id = %event_id,
+            event_type = %event_type,
+            "Stripe compensation: event exists but processed=false, skipping inconsistent event"
+        );
+        return Ok(());
+    }
+
+    // Create payment event record
+    let new_payment_event = PaymentEvent {
+        id: Uuid::now_v7(),
+        realm_id: realm_id.to_string(),
+        external_event_id: event_id.to_string(),
+        payment_provider: "stripe".to_string(),
+        event_type: event_type.to_string(),
+        subscription_id: None,
+        payload: event.clone(),
+        processed: false,
+        processing_started_at: None,
+        created_at: chrono::Utc::now(),
+    };
+
+    let saved_event = match app_state
+        .billing_repository
+        .create_payment_event(new_payment_event)
+        .await
+    {
+        Ok(event) => event,
+        Err(CoreError::DatabaseError(ref msg))
+            if msg.contains("unique constraint") || msg.contains("duplicate key") =>
+        {
+            info!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                event_type = %event_type,
+                "Stripe compensation: concurrent insert detected, event already handled"
+            );
+            return Ok(());
+        }
+        Err(e) => return Err(e),
+    };
+
+    // Synthetic idempotency key (not used for Redis, only passed to handlers)
+    let idempotency_key = format!("compensation_stripe_{}", event_id);
+
+    // Route to the same handler match branches
+    let result = process_stripe_event_once(
+        app_state.clone(),
+        event,
+        realm_id,
+        &idempotency_key,
+        event_id,
+        event_type,
+    )
+    .await;
+
+    match result {
+        Ok(_transaction) => {
+            if let Err(e) = app_state
+                .billing_repository
+                .mark_payment_event_processed(saved_event.id)
+                .await
+            {
+                tracing::error!(
+                    realm_id = %realm_id,
+                    event_id = %event_id,
+                    event_type = %event_type,
+                    error = %e,
+                    "Stripe compensation: handler succeeded but failed to mark payment_event as processed — event may be reprocessed on next run"
+                );
+            } else {
+                tracing::info!(
+                    realm_id = %realm_id,
+                    event_id = %event_id,
+                    event_type = %event_type,
+                    "Stripe compensation: event reprocessed successfully"
+                );
+            }
+            Ok(())
+        }
+        Err(e) => {
+            error!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                event_type = %event_type,
+                error = %e,
+                "Stripe compensation: failed to reprocess event"
+            );
+            Err(e)
+        }
+    }
+}

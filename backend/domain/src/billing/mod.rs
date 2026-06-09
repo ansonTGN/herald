@@ -1,3 +1,4 @@
+pub mod compensation;
 pub mod entities;
 pub mod entitlement_mapping_service;
 pub mod invoice;

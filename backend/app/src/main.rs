@@ -7,11 +7,11 @@ use tokio::signal;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use herald_api::WebhookEventProcessorImpl;
 use herald_api::config::ApiConfig;
-use herald_core::PostgresInvoiceRepository;
+use herald_core::domain::billing::compensation::WebhookEventProcessor;
 use herald_core::domain::points::ExpirationService;
 use herald_core::infrastructure::points::PostgresPointsRepository;
-use herald_core::infrastructure::redis::{ManagerConfig, RedisConnectionManager};
 use herald_worker::WorkerConfig;
 
 /// Herald Application
@@ -58,73 +58,34 @@ async fn main() -> Result<()> {
     info!("Bind address: {}", config.server.bind_address);
     info!("Frontend URL: {}", config.frontend.url);
 
-    // Connect to database with connection pool configuration
-    let mut db_opts = sea_orm::ConnectOptions::new(&config.database.url);
-    db_opts
-        .max_connections(config.database.max_connections)
-        .acquire_timeout(std::time::Duration::from_secs(
-            config.database.acquire_timeout_secs,
-        ))
-        .idle_timeout(std::time::Duration::from_secs(
-            config.database.idle_timeout_secs,
-        ))
-        .max_lifetime(std::time::Duration::from_secs(
-            config.database.max_lifetime_secs,
-        ))
-        .connect_timeout(std::time::Duration::from_secs(
-            config.database.connect_timeout_secs,
-        ));
-    let db = sea_orm::Database::connect(db_opts).await?;
-    info!(
-        "Connected to database (pool size: {})",
-        config.database.max_connections
-    );
+    // Build shared application state (database, Redis, all services)
+    let state = herald_api::build_app_state(&config).await?;
 
-    // Run migrations
-    let pg_pool = db.get_postgres_connection_pool();
-    {
-        use sqlx::PgPool;
-        let pool: PgPool = pg_pool.clone();
-        sqlx::migrate!("./migrations").run(&pool).await?;
-    }
-    info!("Database migrations completed");
-
-    // Connect to Redis
-    let redis_config = ManagerConfig {
-        url: config.redis.url.clone(),
-        default_db: 0,
-        test_mode: config.server.app_env == "test",
-        test_db: 1,
-    };
-    let redis_manager = RedisConnectionManager::new(redis_config)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to create Redis manager: {}", e))?;
-
-    // Health check
-    redis_manager
-        .health_check()
-        .await
-        .map_err(|e| anyhow::anyhow!("Redis health check failed: {}", e))?;
-
-    info!("Connected to Redis");
-
-    // Initialize services
-    // Create points repository and expiration service
+    // Initialize services for worker
     let points_repo = Arc::new(PostgresPointsRepository::new(
-        Arc::new(db.clone()),
-        pg_pool.clone(),
+        state.db.clone(),
+        state.pool.clone(),
     ));
     let expiration_service = Arc::new(ExpirationService::new(points_repo));
+    let invoice_repo = Arc::new(
+        herald_core::infrastructure::billing::PostgresInvoiceRepository::new((*state.db).clone()),
+    );
+
+    // Construct webhook compensation processor
+    let event_processor: Arc<dyn WebhookEventProcessor> =
+        Arc::new(WebhookEventProcessorImpl::new(state.as_ref().clone()));
 
     // Start API server
     info!("Starting API server on {}", config.server.bind_address);
     let api_config = config.clone();
-    let api_handle = tokio::spawn(async move { herald_api::run_with_config(api_config).await });
+    let api_state = state.clone();
+    let api_handle =
+        tokio::spawn(async move { herald_api::start_server(api_state, api_config).await });
 
     // Start Worker
     info!("Starting Worker service");
-    let invoice_repo = Arc::new(PostgresInvoiceRepository::new(db.clone()));
-    let worker_config = WorkerConfig::new(expiration_service, invoice_repo, pg_pool.clone());
+    let worker_config = WorkerConfig::new(expiration_service, invoice_repo, state.pool.clone())
+        .with_event_processor(event_processor);
     let worker_handle = herald_worker::start(worker_config)?;
 
     // Wait for either service to complete or shutdown signal

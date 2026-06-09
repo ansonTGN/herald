@@ -1,4 +1,7 @@
-use crate::models::{CheckoutSession, CreateCheckoutRequest};
+use crate::models::{
+    CheckoutSession, CreateCheckoutRequest, CreemPagination, CreemSubscriptionList,
+    CreemTransactionList, SearchSubscriptionsParams, SearchTransactionsParams,
+};
 use herald_domain::common::entities::app_errors::CoreError;
 use std::time::Duration;
 
@@ -70,6 +73,19 @@ impl CreemClient {
         })
     }
 
+    /// Create a Creem API client reusing an existing `reqwest::Client`.
+    ///
+    /// Avoids per-realm `reqwest::Client` reconstruction in batch jobs that
+    /// iterate over many realms with different API keys but can share the
+    /// underlying connection pool.
+    pub fn with_http_client(http: reqwest::Client, api_key: String, base_url: String) -> Self {
+        Self {
+            http,
+            api_key,
+            base_url,
+        }
+    }
+
     /// Create a checkout session for a product
     ///
     /// # Arguments
@@ -120,6 +136,108 @@ impl CreemClient {
 
         response.json::<CheckoutSession>().await.map_err(|e| {
             tracing::error!("Failed to parse Creem response: {}", e);
+            CoreError::InternalServerError(format!("Invalid Creem response: {}", e))
+        })
+    }
+
+    /// Search Creem transactions (paginated)
+    pub async fn search_transactions(
+        &self,
+        params: &SearchTransactionsParams,
+    ) -> Result<CreemTransactionList, CoreError> {
+        if self.base_url == "mock://creem" {
+            return Ok(CreemTransactionList {
+                data: vec![],
+                pagination: CreemPagination {
+                    total_records: 0,
+                    total_pages: 0,
+                    current_page: params.page_number,
+                    next_page: None,
+                    prev_page: None,
+                },
+            });
+        }
+
+        let url = format!(
+            "{}/v1/transactions/search?page_number={}&page_size={}",
+            self.base_url, params.page_number, params.page_size
+        );
+        let url = match params.created_after {
+            Some(ts) => format!("{url}&created_after={ts}"),
+            None => url,
+        };
+
+        let response = self
+            .http
+            .get(&url)
+            .header("x-api-key", &self.api_key)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            tracing::error!("Creem API error: {} - {}", status, text);
+            return Err(CoreError::InternalServerError(format!(
+                "{} - {}",
+                status.as_u16(),
+                text
+            )));
+        }
+
+        response.json::<CreemTransactionList>().await.map_err(|e| {
+            tracing::error!("Failed to parse Creem transaction list: {}", e);
+            CoreError::InternalServerError(format!("Invalid Creem response: {}", e))
+        })
+    }
+
+    /// Search Creem subscriptions (paginated)
+    pub async fn search_subscriptions(
+        &self,
+        params: &SearchSubscriptionsParams,
+    ) -> Result<CreemSubscriptionList, CoreError> {
+        if self.base_url == "mock://creem" {
+            return Ok(CreemSubscriptionList {
+                data: vec![],
+                pagination: CreemPagination {
+                    total_records: 0,
+                    total_pages: 0,
+                    current_page: params.page_number,
+                    next_page: None,
+                    prev_page: None,
+                },
+            });
+        }
+
+        let url = format!(
+            "{}/v1/subscriptions/search?page_number={}&page_size={}",
+            self.base_url, params.page_number, params.page_size
+        );
+        let url = match params.created_after {
+            Some(ts) => format!("{url}&created_after={ts}"),
+            None => url,
+        };
+
+        let response = self
+            .http
+            .get(&url)
+            .header("x-api-key", &self.api_key)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            tracing::error!("Creem API error: {} - {}", status, text);
+            return Err(CoreError::InternalServerError(format!(
+                "{} - {}",
+                status.as_u16(),
+                text
+            )));
+        }
+
+        response.json::<CreemSubscriptionList>().await.map_err(|e| {
+            tracing::error!("Failed to parse Creem subscription list: {}", e);
             CoreError::InternalServerError(format!("Invalid Creem response: {}", e))
         })
     }

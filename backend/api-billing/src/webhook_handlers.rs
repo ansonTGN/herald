@@ -1687,6 +1687,116 @@ async fn handle_dispute_created(
     ))
 }
 
+/// Canonical Creem event-type routing function.
+///
+/// Called from both the normal webhook handler and `reprocess_creem_event`
+/// so that adding a new event type only requires updating one place.
+async fn process_creem_event_once(
+    app_state: AppState,
+    event: &Value,
+    realm_id: &str,
+    idempotency_key: &str,
+    event_id: &str,
+    event_type: &str,
+) -> Result<PointsTransaction, CoreError> {
+    match event_type {
+        "checkout.completed" => {
+            handle_checkout_completed(app_state.clone(), event.clone(), realm_id, idempotency_key)
+                .await
+        }
+        "subscription.paid" => {
+            handle_subscription_paid(app_state.clone(), event.clone(), realm_id, idempotency_key)
+                .await
+        }
+        "subscription.update" => {
+            handle_subscription_updated(app_state.clone(), event.clone(), realm_id, idempotency_key)
+                .await
+        }
+        "subscription.canceled" => {
+            handle_subscription_canceled(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                idempotency_key,
+            )
+            .await
+        }
+        "subscription.active" => {
+            handle_subscription_lifecycle_status(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                SubscriptionStatus::Active,
+            )
+            .await
+        }
+        "subscription.trialing" => {
+            handle_subscription_lifecycle_status(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                SubscriptionStatus::Trialing,
+            )
+            .await
+        }
+        "subscription.paused" => {
+            handle_subscription_lifecycle_status(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                SubscriptionStatus::Paused,
+            )
+            .await
+        }
+        "subscription.past_due" => {
+            handle_subscription_lifecycle_status(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                SubscriptionStatus::PastDue,
+            )
+            .await
+        }
+        "subscription.scheduled_cancel" => {
+            handle_subscription_lifecycle_status(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                SubscriptionStatus::ScheduledCancel,
+            )
+            .await
+        }
+        "subscription.expired" => {
+            handle_subscription_lifecycle_status(
+                app_state.clone(),
+                event.clone(),
+                realm_id,
+                SubscriptionStatus::Expired,
+            )
+            .await
+        }
+        "refund.created" => {
+            handle_refund_created(app_state.clone(), event.clone(), realm_id, idempotency_key).await
+        }
+        "dispute.created" => {
+            handle_dispute_created(app_state.clone(), event.clone(), realm_id).await
+        }
+        _ => {
+            warn!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                event_type = %event_type,
+                "Unknown Creem event type - ignoring"
+            );
+            Ok(create_placeholder_transaction(
+                Uuid::now_v7(),
+                realm_id,
+                TransactionType::SubscriptionGrant,
+            ))
+        }
+    }
+}
+
 // ============================================================================
 // Main Webhook Handler
 // ============================================================================
@@ -1822,123 +1932,15 @@ pub async fn handle_creem_webhook(
         return Ok(StatusCode::OK);
     }
 
-    let result = match event_type.as_str() {
-        "checkout.completed" => {
-            handle_checkout_completed(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                &idempotency_key,
-            )
-            .await
-        }
-        "subscription.paid" => {
-            handle_subscription_paid(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                &idempotency_key,
-            )
-            .await
-        }
-        "subscription.update" => {
-            handle_subscription_updated(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                &idempotency_key,
-            )
-            .await
-        }
-        "subscription.canceled" => {
-            handle_subscription_canceled(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                &idempotency_key,
-            )
-            .await
-        }
-        "subscription.active" => {
-            handle_subscription_lifecycle_status(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                SubscriptionStatus::Active,
-            )
-            .await
-        }
-        "subscription.trialing" => {
-            handle_subscription_lifecycle_status(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                SubscriptionStatus::Trialing,
-            )
-            .await
-        }
-        "subscription.paused" => {
-            handle_subscription_lifecycle_status(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                SubscriptionStatus::Paused,
-            )
-            .await
-        }
-        "subscription.past_due" => {
-            handle_subscription_lifecycle_status(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                SubscriptionStatus::PastDue,
-            )
-            .await
-        }
-        "subscription.scheduled_cancel" => {
-            handle_subscription_lifecycle_status(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                SubscriptionStatus::ScheduledCancel,
-            )
-            .await
-        }
-        "subscription.expired" => {
-            handle_subscription_lifecycle_status(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                SubscriptionStatus::Expired,
-            )
-            .await
-        }
-        "refund.created" => {
-            handle_refund_created(
-                app_state.clone(),
-                event.clone(),
-                &realm_id,
-                &idempotency_key,
-            )
-            .await
-        }
-        "dispute.created" => {
-            handle_dispute_created(app_state.clone(), event.clone(), &realm_id).await
-        }
-        _ => {
-            warn!(
-                realm_id = %realm_id,
-                event_id = %event_id,
-                event_type = %event_type,
-                "Unknown webhook event type - logging and returning OK"
-            );
-            Ok(create_placeholder_transaction(
-                uuid::Uuid::now_v7(),
-                &realm_id,
-                TransactionType::SubscriptionGrant,
-            ))
-        }
-    };
+    let result = process_creem_event_once(
+        app_state.clone(),
+        &event,
+        &realm_id,
+        &idempotency_key,
+        &event_id,
+        &event_type,
+    )
+    .await;
 
     match result {
         Ok(transaction) => {
@@ -1984,6 +1986,154 @@ pub async fn handle_creem_webhook(
     );
 
     Ok(StatusCode::OK)
+}
+
+/// Reprocess a single Creem event that Herald missed (compensation path).
+///
+/// Unlike the normal webhook flow, this:
+/// - Skips Redis idempotency checks entirely
+/// - Skips signature verification (event comes from Creem API, not webhook)
+/// - Uses DB `payment_event` for idempotency only
+/// - Reuses the same match routing via `process_creem_event_once`
+pub(crate) async fn reprocess_creem_event(
+    app_state: AppState,
+    realm_id: &str,
+    event: &Value,
+    event_type: &str,
+) -> Result<(), CoreError> {
+    let event_id = parse_event_id(event)?;
+
+    // Check existing payment event by external_event_id
+    if let Some(existing) = app_state
+        .billing_repository
+        .find_payment_event_by_external_id(&event_id, "creem")
+        .await?
+    {
+        if existing.processed {
+            info!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                event_type = %event_type,
+                "Creem compensation: event already processed, skipping"
+            );
+            return Ok(());
+        }
+        // Exists but not processed -- inconsistent state, do not reprocess
+        error!(
+            realm_id = %realm_id,
+            event_id = %event_id,
+            event_type = %event_type,
+            "Creem compensation: event exists but processed=false, skipping inconsistent event"
+        );
+        return Ok(());
+    }
+
+    // Create payment event record
+    let new_payment_event = PaymentEvent {
+        id: Uuid::now_v7(),
+        realm_id: realm_id.to_string(),
+        external_event_id: event_id.clone(),
+        payment_provider: "creem".to_string(),
+        event_type: event_type.to_string(),
+        subscription_id: None,
+        payload: event.clone(),
+        processed: false,
+        processing_started_at: None,
+        created_at: Utc::now(),
+    };
+
+    let saved_event = match app_state
+        .billing_repository
+        .create_payment_event(new_payment_event)
+        .await
+    {
+        Ok(event) => event,
+        Err(CoreError::DatabaseError(ref msg))
+            if msg.contains("unique constraint") || msg.contains("duplicate key") =>
+        {
+            info!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                event_type = %event_type,
+                "Creem compensation: concurrent insert detected, event already handled"
+            );
+            return Ok(());
+        }
+        Err(e) => return Err(e),
+    };
+
+    // Synthetic idempotency key (not used for Redis, only passed to handlers)
+    let idempotency_key = format!("compensation_creem_{}", event_id);
+
+    // Route to the same handler match branches via shared routing function
+    let result = process_creem_event_once(
+        app_state.clone(),
+        event,
+        realm_id,
+        &idempotency_key,
+        &event_id,
+        event_type,
+    )
+    .await;
+
+    // Compensation payloads built from REST API lack webhook metadata.
+    // When the handler fails with a BadRequest indicating a missing field (e.g.
+    // clientAppId, entitlementKey), treat it as a best-effort skip rather than
+    // a hard failure that would inflate the failed-event counter.
+    let result = match result {
+        Err(CoreError::BadRequest(ref msg)) if msg.contains("Missing or invalid") => {
+            warn!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                event_type = %event_type,
+                error = %msg,
+                "Creem compensation: skipping event due to missing metadata (expected for REST API compensation)"
+            );
+            // Mark the saved event as processed so we don't retry it indefinitely.
+            let _ = app_state
+                .billing_repository
+                .mark_payment_event_processed(saved_event.id)
+                .await;
+            return Ok(());
+        }
+        other => other,
+    };
+
+    match result {
+        Ok(_transaction) => {
+            if let Err(e) = app_state
+                .billing_repository
+                .mark_payment_event_processed(saved_event.id)
+                .await
+            {
+                tracing::error!(
+                    realm_id = %realm_id,
+                    event_id = %event_id,
+                    event_type = %event_type,
+                    error = %e,
+                    "Creem compensation: handler succeeded but failed to mark payment_event as processed — event may be reprocessed on next run"
+                );
+            } else {
+                tracing::info!(
+                    realm_id = %realm_id,
+                    event_id = %event_id,
+                    event_type = %event_type,
+                    "Creem compensation: event reprocessed successfully"
+                );
+            }
+            Ok(())
+        }
+        Err(e) => {
+            error!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                event_type = %event_type,
+                error = %e,
+                "Creem compensation: failed to reprocess event"
+            );
+            Err(e)
+        }
+    }
 }
 
 #[cfg(test)]

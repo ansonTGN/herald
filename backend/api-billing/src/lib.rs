@@ -1,6 +1,7 @@
 // Herald API Billing Module
 // Handles billing, subscriptions, payments, webhooks
 
+pub mod compensation;
 pub(crate) mod webhook_common;
 pub(crate) mod webhook_subscription_helpers;
 mod webhooks;
@@ -175,3 +176,6 @@ pub struct ApiDoc;
 pub use routes::{billing_public_routes, billing_routes};
 
 pub use routes::billing_test_routes;
+
+// Re-export compensation processor for assembly in main.rs
+pub use compensation::WebhookEventProcessorImpl;

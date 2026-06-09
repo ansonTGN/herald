@@ -90,3 +90,107 @@ pub struct CreemRefund {
     pub reason: Option<String>,
     pub created_at: i64,
 }
+
+// ---------------------------------------------------------------------------
+// Pagination
+// ---------------------------------------------------------------------------
+
+/// Pagination metadata returned by Creem list/search endpoints
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreemPagination {
+    pub total_records: i64,
+    pub total_pages: i64,
+    pub current_page: i32,
+    pub next_page: Option<i32>,
+    pub prev_page: Option<i32>,
+}
+
+// ---------------------------------------------------------------------------
+// Transaction search
+// ---------------------------------------------------------------------------
+
+/// Parameters for `GET /v1/transactions/search`
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchTransactionsParams {
+    pub page_number: i32,
+    pub page_size: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_after: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreemTransactionOrder {
+    pub order_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreemTransactionSub {
+    pub subscription_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreemTransactionCustomer {
+    pub customer_id: String,
+}
+
+/// A single Creem transaction returned by the search endpoint
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreemTransaction {
+    pub id: String,
+    pub mode: String,
+    pub object: String,
+    pub amount: i64,
+    pub currency: String,
+    #[serde(rename = "type")]
+    pub r#type: String,
+    pub status: String,
+    pub created_at: i64,
+    pub amount_paid: i64,
+    pub refunded_amount: Option<i64>,
+    pub order: Option<CreemTransactionOrder>,
+    pub subscription: Option<CreemTransactionSub>,
+    pub customer: Option<CreemTransactionCustomer>,
+}
+
+/// Paginated list of Creem transactions
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreemTransactionList {
+    pub data: Vec<CreemTransaction>,
+    pub pagination: CreemPagination,
+}
+
+// ---------------------------------------------------------------------------
+// Subscription search
+// ---------------------------------------------------------------------------
+
+/// Parameters for `GET /v1/subscriptions/search`
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchSubscriptionsParams {
+    pub page_number: i32,
+    pub page_size: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_after: Option<i64>,
+}
+
+/// A single Creem subscription returned by the search endpoint
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreemSubscriptionSearchResult {
+    pub id: String,
+    pub status: String,
+    pub customer: Option<CreemCustomer>,
+    pub product: Option<CreemProduct>,
+    pub canceled_at: Option<String>,
+    pub current_period_start_date: Option<String>,
+    pub current_period_end_date: Option<String>,
+    pub next_transaction_date: Option<String>,
+    pub last_transaction_date: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Paginated list of Creem subscriptions
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreemSubscriptionList {
+    pub data: Vec<CreemSubscriptionSearchResult>,
+    pub pagination: CreemPagination,
+}

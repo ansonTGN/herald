@@ -28,10 +28,13 @@ pub use application::http::server::create_api_routes;
 // Re-export auth util for test support
 pub use application::http::auth::util::{SessionData, load_session, store_session};
 
+// Re-export AppState and WebhookEventProcessorImpl for assembly in main.rs
+pub use application::http::state::AppState;
+pub use herald_api_billing::WebhookEventProcessorImpl;
+
 use application::http::oauth::device_token::init_device_token_function;
 use application::http::rate_limit::init_rate_limit_function;
 use application::http::server;
-use application::http::state::AppState;
 use config::ApiConfig;
 use herald_core::admin::rbac::init_admin_realm_rbac;
 use herald_core::admin::user::init_admin_user;
@@ -53,7 +56,7 @@ use herald_core::infrastructure::billing::{
 };
 use herald_core::infrastructure::client_api_keys::{ApiKeyCache, ClientApiKeyRepository};
 use herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository;
-use herald_core::infrastructure::points::{PostgresPointsRepository, RedisIdempotencyStore};
+use herald_core::infrastructure::points::PostgresPointsRepository;
 use herald_core::infrastructure::purchase::{
     PostgresFulfillmentService, PostgresPurchaseRepository, PurchaseService,
 };
@@ -115,13 +118,54 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         tracing::info!("Static files directory: {}", dir);
     }
 
-    // Connect to database
-    let db: sea_orm::DatabaseConnection = sea_orm::Database::connect(&config.database.url).await?;
-    tracing::info!("Connected to database");
+    let state = build_app_state(&config).await?;
+
+    start_server(state, config).await
+}
+
+/// Build the application state from the given configuration.
+///
+/// Connects to database and Redis, initializes all services, runs migrations,
+/// and returns an `Arc<AppState>` ready for use by both the API server and
+/// background workers.
+pub async fn build_app_state(config: &ApiConfig) -> Result<Arc<AppState>> {
+    build_app_state_with_migrations(config, sqlx::migrate!("../app/migrations")).await
+}
+
+/// Build the application state with a specific migration source.
+///
+/// Used by `build_app_state` with the default migrations and by the app crate
+/// which may use a different migration path.
+pub async fn build_app_state_with_migrations(
+    config: &ApiConfig,
+    migrations: sqlx::migrate::Migrator,
+) -> Result<Arc<AppState>> {
+    // Connect to database with pool tuning from config
+    let mut connect_options = sea_orm::ConnectOptions::new(&config.database.url);
+    connect_options
+        .max_connections(config.database.max_connections)
+        .acquire_timeout(std::time::Duration::from_secs(
+            config.database.acquire_timeout_secs,
+        ))
+        .idle_timeout(std::time::Duration::from_secs(
+            config.database.idle_timeout_secs,
+        ))
+        .max_lifetime(std::time::Duration::from_secs(
+            config.database.max_lifetime_secs,
+        ))
+        .connect_timeout(std::time::Duration::from_secs(
+            config.database.connect_timeout_secs,
+        ));
+    let db: sea_orm::DatabaseConnection = sea_orm::Database::connect(connect_options).await?;
+    tracing::info!(
+        "Connected to database (max_connections: {}, acquire_timeout: {}s)",
+        config.database.max_connections,
+        config.database.acquire_timeout_secs
+    );
 
     // Run database migrations
     let pg_pool = db.get_postgres_connection_pool();
-    sqlx::migrate!("../app/migrations").run(pg_pool).await?;
+    migrations.run(pg_pool).await?;
     info!("Database migrations completed");
 
     // Clone pg_pool for use in repository
@@ -132,7 +176,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
     let redis_config = ManagerConfig {
         url: config.redis.url.clone(),
         default_db: 0,
-        test_mode: false, // Redis DB is configured via config file
+        test_mode: config.server.app_env == "test",
         test_db: 1,
     };
 
@@ -288,7 +332,6 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
 
     // Creem client is now loaded per-request from database (realm_config)
     // No global client needed
-    let temp_startup_time = std::time::Instant::now();
 
     // Extract JWT secret from config
     let jwt_secret = config
@@ -300,66 +343,7 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         tracing::warn!("JWT secret not configured - device code and OAuth flows will fail");
     }
 
-    // Create API key cache and repository
-    let temp_api_key_cache = ApiKeyCache::new(redis_manager.clone().into());
-    let temp_api_key_repo = Arc::new(ClientApiKeyRepository::new(db.clone().into()));
-
-    let temp_state = AppState {
-        service: herald_core::application::ApplicationServiceBuilder::new()
-            .with_database(Arc::new(db.clone()))
-            .with_redis(redis_manager.clone())
-            .with_permission_checker(permission_checker.clone())
-            .build()
-            .map_err(|e| anyhow::anyhow!("Failed to build temporary application service: {}", e))?,
-        pool: pg_pool.clone(),
-        db: Arc::new(db.clone()),
-        redis_manager: redis_manager.clone(),
-        billing_repository: billing_repository.clone(),
-        invoice_repository: invoice_repository.clone(),
-        audit_event_repository: audit_event_repository.clone(),
-        entitlement_mapping_service: entitlement_mapping_service.clone(),
-        provider_product_sync_service: provider_product_sync_service.clone(),
-        public_base_url: config.frontend.url.clone(),
-        permission_checker: permission_checker.clone(),
-        app_env: config.server.app_env.clone(),
-        user_repository: user_repository.clone(),
-        api_key_cache: temp_api_key_cache,
-        api_key_repo: temp_api_key_repo,
-        idempotency_service: Arc::new(points::IdempotencyService::new(Arc::new(
-            RedisIdempotencyStore::new(redis_manager.clone().into()),
-        ))),
-        webhook_service: Arc::new(WebhookService::new(Arc::new(WebhookEventRepository::new(
-            pg_pool.clone(),
-        )))),
-        startup_time: temp_startup_time,
-        points_repository: points_repository.clone(),
-        points_service: points_service.clone(),
-        subscription_service: subscription_service.clone(),
-        realm_config_service: realm_config_service.clone(),
-        registration_service: registration_service.clone(),
-        admin_user_service: admin_user_service.clone(),
-        role_assignment_service: role_assignment_service.clone(),
-        user_permission_service: user_permission_service.clone(),
-        permission_management_service: permission_management_service.clone(),
-        payment_attempt_service: payment_attempt_service.clone(),
-        fulfillment_service: fulfillment_service.clone(),
-        purchase_repository: purchase_repository.clone(),
-        purchase_service: purchase_service.clone(),
-        jwt_secret: jwt_secret.clone(),
-        user_role_repository: user_role_repository.clone(),
-    };
-
-    init_rate_limit_function(&temp_state)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to initialize Redis Functions: {:?}", e))?;
-    info!("Redis Functions initialized");
-
-    init_device_token_function(&temp_state).await.map_err(|e| {
-        anyhow::anyhow!("Failed to initialize device token Redis Function: {:?}", e)
-    })?;
-    info!("Device token Redis Function initialized");
-
-    // Build application service
+    // Build application service once (no temp_state double-construction)
     let application_service = herald_core::application::ApplicationServiceBuilder::new()
         .with_database(Arc::new(db.clone()))
         .with_redis(redis_manager.clone())
@@ -384,30 +368,23 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
     // Initialize admin user if database is empty
     init_admin_user(pg_pool, &config.server.app_env).await?;
 
-    // Create state for API handlers
-    let user_repository = Arc::new(PostgresUserRepository::new(db.clone().into()));
+    // Build final state once, then call init functions
     let startup_time = std::time::Instant::now();
-
-    // Create API key cache and repository
     let api_key_cache = ApiKeyCache::new(redis_manager.clone().into());
     let api_key_repo = Arc::new(ClientApiKeyRepository::new(db.clone().into()));
-
-    // Initialize idempotency service
     let idempotency_service = Arc::new(points::IdempotencyService::new(Arc::new(
         herald_core::infrastructure::points::RedisIdempotencyStore::new(
             redis_manager.clone().into(),
         ),
     )));
-
-    // Initialize webhook service
     let webhook_event_repository = Arc::new(WebhookEventRepository::new(pg_pool.clone()));
     let webhook_service = Arc::new(WebhookService::new(webhook_event_repository));
 
     let state = Arc::new(AppState {
         service: application_service,
         pool: pg_pool.clone(),
-        db: Arc::new(db.clone()),
-        redis_manager,
+        db: Arc::new(db),
+        redis_manager: redis_manager.clone(),
         billing_repository,
         invoice_repository,
         audit_event_repository,
@@ -439,6 +416,25 @@ pub async fn run_with_config(config: ApiConfig) -> Result<()> {
         user_role_repository,
     });
 
+    // Initialize Redis Functions using the final state's redis_manager
+    init_rate_limit_function(&state)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to initialize Redis Functions: {:?}", e))?;
+    info!("Redis Functions initialized");
+
+    init_device_token_function(&state).await.map_err(|e| {
+        anyhow::anyhow!("Failed to initialize device token Redis Function: {:?}", e)
+    })?;
+    info!("Device token Redis Function initialized");
+
+    Ok(state)
+}
+
+/// Start the API HTTP server with a pre-built state.
+///
+/// This is the lower-level entry point used by `run_with_config` and by
+/// the app crate when it needs to share `AppState` with background workers.
+pub async fn start_server(state: Arc<AppState>, config: ApiConfig) -> Result<()> {
     // Validate frontend URL before creating router
     let _frontend_url_valid = config
         .frontend

@@ -3,6 +3,6 @@ mod models;
 
 pub use client::StripeClient;
 pub use models::{
-    CheckoutSession, CreateCheckoutRequest, CreatePaymentIntentRequest, PaymentIntent,
-    StripeWebhookEvent,
+    CheckoutSession, CreateCheckoutRequest, CreatePaymentIntentRequest, ListEventsParams,
+    PaymentIntent, StripeEvent, StripeEventList, StripeWebhookEvent,
 };
