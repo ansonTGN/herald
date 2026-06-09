@@ -556,6 +556,20 @@ pub trait PointsRepository: Send + Sync {
         idempotency_key: Option<String>,
     ) -> impl Future<Output = Result<RevokePointsOutput, CoreError>> + Send;
 
+    /// Revoke all remaining points from a specific ledger identified by source_id.
+    /// Unlike `revoke_points_by_credit_type_atomic`, this only targets the single
+    /// ledger whose `source_id` matches, avoiding over-broad revocation.
+    fn revoke_points_by_source_id_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        source_id: &str,
+        revocation_type: RevocationType,
+        reason: String,
+        reference_id: Option<String>,
+        idempotency_key: Option<String>,
+    ) -> impl Future<Output = Result<RevokePointsOutput, CoreError>> + Send;
+
     fn revoke_topup_proportional_atomic(
         &self,
         realm_id: &str,

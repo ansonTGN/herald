@@ -482,6 +482,42 @@ where
         Ok(result)
     }
 
+    /// Revoke remaining points from a specific ledger identified by source_id.
+    /// Unlike `revoke_points_by_credit_type`, this targets only the single ledger
+    /// whose `source_id` matches, preventing over-broad revocation of unrelated credits.
+    pub async fn revoke_points_by_source_id(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        source_id: &str,
+        revocation_type: RevocationType,
+        reason: String,
+    ) -> Result<RevokePointsOutput, CoreError> {
+        let result = self
+            .repository
+            .revoke_points_by_source_id_atomic(
+                realm_id,
+                user_id,
+                source_id,
+                revocation_type,
+                reason,
+                None,
+                None,
+            )
+            .await?;
+
+        tracing::info!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            source_id = %source_id,
+            total_revoked = result.total_revoked,
+            revocation_type = %revocation_type.as_str(),
+            "Points revoked by source_id successfully"
+        );
+
+        Ok(result)
+    }
+
     /// Revoke all daily free credits for a user (used when free user upgrades to paid)
     ///
     /// **Idempotency Guarantee**:

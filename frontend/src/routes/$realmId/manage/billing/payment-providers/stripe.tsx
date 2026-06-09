@@ -45,6 +45,7 @@ function StripeConfigRoute() {
         publishableKey: configData.publishableKey,
         secretKey: '',
         webhookSecret: '',
+        asyncPointsStrategy: configData.asyncPointsStrategy,
       }
     : undefined
 

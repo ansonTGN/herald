@@ -22,6 +22,11 @@ const STRIPE_KEY_MAPPINGS = [
     isSecret: true,
     transform: () => '',
   },
+  {
+    configKey: STRIPE_CONFIG_KEYS.ASYNC_POINTS_STRATEGY,
+    fieldName: 'asyncPointsStrategy',
+    transform: (v?: string) => (v === 'eager' ? 'eager' : 'conservative'),
+  },
 ] as const
 
 export function parseStripeConfig(configs: RealmConfigResponse[]): StripeConfigForm {
@@ -34,6 +39,7 @@ export function parseStripeConfig(configs: RealmConfigResponse[]): StripeConfigF
       publishableKey: '',
       secretKey: '',
       webhookSecret: '',
+      asyncPointsStrategy: 'conservative',
     }
   )
 }

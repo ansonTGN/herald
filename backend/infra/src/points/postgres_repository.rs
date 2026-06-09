@@ -3434,6 +3434,144 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
+    fn revoke_points_by_source_id_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        source_id: &str,
+        revocation_type: RevocationType,
+        reason: String,
+        reference_id: Option<String>,
+        idempotency_key: Option<String>,
+    ) -> impl std::future::Future<Output = Result<RevokePointsOutput, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        let source_id = source_id.to_string();
+        async move {
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            if let Some(ref key) = idempotency_key
+                && Self::check_completed_idempotency_in_tx(&mut tx, &realm_id, key)
+                    .await?
+                    .is_some()
+            {
+                tx.commit()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                return Ok(RevokePointsOutput {
+                    revocation_id: Uuid::now_v7(),
+                    ledger_ids: vec![],
+                    total_revoked: 0,
+                    revoked_at: chrono::Utc::now(),
+                });
+            }
+
+            let account =
+                match Self::find_account_by_user_for_update(&mut tx, &realm_id, user_id).await? {
+                    Some(acc) => acc,
+                    None => {
+                        tx.commit()
+                            .await
+                            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                        return Ok(RevokePointsOutput {
+                            revocation_id: Uuid::now_v7(),
+                            ledger_ids: vec![],
+                            total_revoked: 0,
+                            revoked_at: chrono::Utc::now(),
+                        });
+                    }
+                };
+
+            // Find the specific ledger by source_id
+            let ledger = sqlx::query_as::<_, (Uuid, i64, String)>(
+                "SELECT id, remaining_amount, credit_type FROM points_credit_ledger WHERE realm_id = $1 AND user_id = $2 AND source_id = $3 AND remaining_amount > 0 FOR UPDATE"
+            )
+            .bind(&realm_id)
+            .bind(user_id)
+            .bind(&source_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            let Some((ledger_id, remaining_amount, credit_type_str)) = ledger else {
+                // No active ledger for this source_id — nothing to revoke
+                tx.commit()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                return Ok(RevokePointsOutput {
+                    revocation_id: Uuid::now_v7(),
+                    ledger_ids: vec![],
+                    total_revoked: 0,
+                    revoked_at: chrono::Utc::now(),
+                });
+            };
+
+            let credit_type: CreditType = credit_type_str.as_str().parse().map_err(|_| {
+                CoreError::DatabaseError(format!(
+                    "Invalid credit_type in ledger: {}",
+                    credit_type_str
+                ))
+            })?;
+
+            // Update ledger remaining_amount to 0
+            let updated_ledger = Self::update_ledger_in_tx(
+                &mut tx,
+                ledger_id,
+                LedgerUpdate::Revocation(remaining_amount),
+            )
+            .await?;
+
+            // Create revocation record
+            let record = PointsRevocationRecord {
+                id: Uuid::now_v7(),
+                ledger_id: updated_ledger.id,
+                user_id,
+                realm_id: realm_id.clone(),
+                revocation_type,
+                revoked_amount: remaining_amount,
+                reason,
+                reference_id,
+                created_at: chrono::Utc::now(),
+            };
+            Self::create_revocation_record_in_tx(&mut tx, &record).await?;
+
+            // Update wallet balance
+            let (topup, subscription, granted, registration, free_periodic) =
+                credit_type.wallet_balance_delta(remaining_amount);
+            let _ = Self::update_wallet_in_tx(
+                &mut tx,
+                account.id,
+                WalletUpdate::Revocation {
+                    topup,
+                    subscription,
+                    granted,
+                    registration,
+                    free_periodic,
+                },
+            )
+            .await?;
+
+            if let Some(ref key) = idempotency_key {
+                Self::record_completed_idempotency_in_tx(&mut tx, &realm_id, key, Uuid::now_v7())
+                    .await?;
+            }
+
+            tx.commit()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            Ok(RevokePointsOutput {
+                revocation_id: Uuid::now_v7(),
+                ledger_ids: vec![updated_ledger.id],
+                total_revoked: remaining_amount,
+                revoked_at: chrono::Utc::now(),
+            })
+        }
+    }
+
     fn revoke_topup_proportional_atomic(
         &self,
         realm_id: &str,

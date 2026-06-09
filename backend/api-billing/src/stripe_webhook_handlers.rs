@@ -28,9 +28,7 @@ use herald_core::domain::billing::{
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::payment_attempt::PaymentAttemptStatus;
 use herald_core::domain::points::IdempotencyResult;
-use herald_core::domain::points::entities::{
-    CreditType, PointsTransaction, RevocationType, TransactionType,
-};
+use herald_core::domain::points::entities::{PointsTransaction, RevocationType, TransactionType};
 use herald_core::domain::points::ports::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
 use herald_core::domain::purchase::metadata_keys;
@@ -874,29 +872,44 @@ async fn handle_checkout_session_async_succeeded(
     });
 
     // Idempotency check: if eager strategy already fulfilled during checkout.session.completed,
-    // the attempt is already Succeeded — skip fulfillment
+    // the attempt is already Succeeded — skip fulfillment.
+    // Also guards against the race where async_payment_failed arrives first (status = Failed/Cancelled).
     let existing_attempt = match app_state
         .payment_attempt_service
-        .get_payment_attempt_by_id_only(attempt_id)
+        .find_payment_attempt(realm_id, attempt_id)
         .await
     {
-        Ok(attempt) => Some(attempt),
-        Err(CoreError::NotFound) => None, // attempt not found — conservative path, proceed with fulfillment
-        Err(e) => return Err(e),          // DB error — propagate
+        Ok(Some(attempt)) => Some(attempt),
+        Ok(None) => None, // attempt not found in this realm — proceed with fulfillment
+        Err(e) => return Err(e), // DB error — propagate
     };
-    if let Some(attempt) = existing_attempt
-        && attempt.status == PaymentAttemptStatus::Succeeded
-    {
-        info!(
-            realm_id = %realm_id,
-            attempt_id = %attempt_id,
-            "Async payment succeeded but attempt already fulfilled (eager strategy) - skipping"
-        );
-        return Ok(create_placeholder_transaction(
-            attempt_id,
-            realm_id,
-            TransactionType::Recharge,
-        ));
+    if let Some(attempt) = existing_attempt {
+        if attempt.status == PaymentAttemptStatus::Succeeded {
+            info!(
+                realm_id = %realm_id,
+                attempt_id = %attempt_id,
+                "Async payment succeeded but attempt already fulfilled (eager strategy) - skipping"
+            );
+            return Ok(create_placeholder_transaction(
+                attempt_id,
+                realm_id,
+                TransactionType::Recharge,
+            ));
+        }
+        if attempt.status.is_terminal() {
+            warn!(
+                realm_id = %realm_id,
+                attempt_id = %attempt_id,
+                status = %attempt.status,
+                "Async payment succeeded but attempt already in terminal state — success event lost (race with failure)"
+            );
+            return Ok(create_placeholder_transaction(
+                attempt_id,
+                realm_id,
+                TransactionType::Recharge,
+            ));
+        }
+        // Pending/RequiresAction: proceed with normal fulfillment
     }
 
     fulfill_payment_attempt(
@@ -941,12 +954,12 @@ async fn handle_checkout_session_async_failed(
     // but DB errors must propagate so the webhook retry loop can recover.
     let attempt = match app_state
         .payment_attempt_service
-        .get_payment_attempt_by_id_only(attempt_id)
+        .find_payment_attempt(realm_id, attempt_id)
         .await
     {
-        Ok(attempt) => Some(attempt),
-        Err(CoreError::NotFound) => None, // attempt not found — conservative path
-        Err(e) => return Err(e),          // DB error — propagate
+        Ok(Some(attempt)) => Some(attempt),
+        Ok(None) => None, // attempt not found in this realm — conservative path
+        Err(e) => return Err(e), // DB error — propagate
     };
 
     let needs_revocation = attempt
@@ -998,13 +1011,14 @@ async fn handle_checkout_session_async_failed(
     );
 
     let revocation_result = if billing_type_override == Some(BillingType::OneTime) {
-        // One-time purchase: revoke TopupCredit
+        // One-time purchase: revoke only the TopupCredit ledger from this specific attempt
+        // (source_id = attempt_id), avoiding over-broad revocation of unrelated topup credits.
         app_state
             .points_service
-            .revoke_points_by_credit_type(
+            .revoke_points_by_source_id(
                 realm_id,
                 attempt.user_id,
-                CreditType::TopupCredit,
+                &attempt_id.to_string(),
                 RevocationType::RefundRevoke,
                 format!("Async payment failed revocation for attempt {}", attempt_id),
             )
@@ -1021,21 +1035,66 @@ async fn handle_checkout_session_async_failed(
             )
             .await?;
 
-        // Update subscription record status to "canceled"
-        sqlx::query(
-            "UPDATE subscription
-             SET status = 'canceled', cancel_at = NOW(), updated_at = NOW()
-             WHERE realm_id = $1 AND user_id = $2
-               AND status IN ('active', 'trialing', 'past_due', 'scheduled_cancel', 'pending')",
-        )
-        .bind(realm_id)
-        .bind(attempt.user_id)
-        .execute(&app_state.pool)
-        .await?;
+        // Update subscription record status to "canceled" — scope to the specific subscription
+        // to avoid canceling unrelated subscriptions for the same user.
+        // Try external_subscription_id from checkout session first, then fall back to
+        // the most recent subscription for this entitlement.
+        let stripe_subscription_id = object["subscription"].as_str();
+        let rows_updated = if let Some(ext_sub_id) = stripe_subscription_id {
+            sqlx::query(
+                "UPDATE subscription
+                 SET status = 'canceled', cancel_at = NOW(), updated_at = NOW()
+                 WHERE realm_id = $1 AND user_id = $2 AND external_subscription_id = $3
+                   AND status IN ('active', 'trialing', 'past_due', 'scheduled_cancel', 'pending')",
+            )
+            .bind(realm_id)
+            .bind(attempt.user_id)
+            .bind(ext_sub_id)
+            .execute(&app_state.pool)
+            .await?
+            .rows_affected()
+        } else {
+            warn!(
+                realm_id = %realm_id,
+                attempt_id = %attempt_id,
+                "No subscription field in async_payment_failed event — querying entitlement_key for scoped cancel"
+            );
+            let entitlement_key: Option<String> = sqlx::query_scalar(
+                "SELECT entitlement_key FROM entitlement_mapping WHERE id = $1 AND realm_id = $2",
+            )
+            .bind(attempt.target_id)
+            .bind(realm_id)
+            .fetch_optional(&app_state.pool)
+            .await?
+            .flatten();
+            if let Some(ekey) = entitlement_key {
+                sqlx::query(
+                    "UPDATE subscription
+                     SET status = 'canceled', cancel_at = NOW(), updated_at = NOW()
+                     WHERE realm_id = $1 AND user_id = $2 AND entitlement_key = $3
+                       AND status IN ('active', 'trialing', 'past_due', 'scheduled_cancel', 'pending')",
+                )
+                .bind(realm_id)
+                .bind(attempt.user_id)
+                .bind(&ekey)
+                .execute(&app_state.pool)
+                .await?
+                .rows_affected()
+            } else {
+                warn!(
+                    realm_id = %realm_id,
+                    attempt_id = %attempt_id,
+                    target_id = %attempt.target_id,
+                    "Cannot resolve entitlement_key for scoped subscription cancel — skipping raw SQL update"
+                );
+                0
+            }
+        };
 
         info!(
             realm_id = %realm_id,
             user_id = %attempt.user_id,
+            rows_updated,
             "Subscription status set to canceled after async payment failure"
         );
 
@@ -1043,37 +1102,42 @@ async fn handle_checkout_session_async_failed(
     };
 
     // Debt recording: check if total_revoked < original granted points
-    // Uses a simple SELECT instead of SUM aggregate to avoid PgDog query routing issues
-    // in test environments. Each attempt creates exactly one ledger entry, so LIMIT 1 is sufficient.
-    let source_id_str = attempt_id.to_string();
-    let original_points: i64 = sqlx::query_scalar(
-        "SELECT granted_amount FROM points_credit_ledger WHERE realm_id = $1 AND user_id = $2 AND source_id = $3 LIMIT 1"
+    // One-time purchases use source_id = attempt_id, subscriptions use source_id = entitlement_key.
+    // Combined query retrieves both id and granted_amount in a single trip (Finding 7).
+    let source_id_for_ledger = if billing_type_override == Some(BillingType::OneTime) {
+        attempt_id.to_string()
+    } else {
+        // Subscription credits are keyed by entitlement_key in grant_points_atomic
+        let entitlement_key: Option<String> = sqlx::query_scalar(
+            "SELECT entitlement_key FROM entitlement_mapping WHERE id = $1 AND realm_id = $2",
+        )
+        .bind(attempt.target_id)
+        .bind(realm_id)
+        .fetch_optional(&app_state.pool)
+        .await?
+        .flatten();
+        entitlement_key.unwrap_or_else(|| attempt_id.to_string())
+    };
+    let ledger_row: Option<(Uuid, i64)> = sqlx::query_as(
+        "SELECT id, granted_amount FROM points_credit_ledger WHERE realm_id = $1 AND user_id = $2 AND source_id = $3 LIMIT 1"
     )
         .bind(realm_id)
         .bind(attempt.user_id)
-        .bind(&source_id_str)
+        .bind(&source_id_for_ledger)
         .fetch_optional(&app_state.pool)
-        .await?
-        .flatten()
-        .unwrap_or(0);
+        .await?;
+    let original_points = ledger_row.as_ref().map(|r| r.1).unwrap_or(0);
 
     if revocation_result.total_revoked < original_points {
         let debt_amount = original_points - revocation_result.total_revoked;
-        // Resolve ledger_id: prefer the revocation result, fall back to querying the original ledger.
+        // Resolve ledger_id: prefer the revocation result, fall back to the combined query above.
         // This handles the case where all credits were already consumed (no ledger entries to revoke).
-        let ledger_id = if let Some(id) = revocation_result.ledger_ids.first().copied() {
-            id
-        } else {
-            sqlx::query_scalar::<_, Uuid>(
-                "SELECT id FROM points_credit_ledger WHERE realm_id = $1 AND user_id = $2 AND source_id = $3 LIMIT 1"
-            )
-            .bind(realm_id)
-            .bind(attempt.user_id)
-            .bind(&source_id_str)
-            .fetch_optional(&app_state.pool)
-            .await?
-            .unwrap_or_else(Uuid::nil) // truly no ledger exists at all — nil is last resort
-        };
+        let ledger_id = revocation_result
+            .ledger_ids
+            .first()
+            .copied()
+            .or_else(|| ledger_row.as_ref().map(|r| r.0))
+            .unwrap_or_else(Uuid::nil);
         let reason = format!(
             "debt:original={},recovered={},shortfall={},reason=async_payment_failed_insufficient_balance",
             original_points, revocation_result.total_revoked, debt_amount
@@ -2826,6 +2890,14 @@ pub async fn read_async_points_strategy(
 
     match value {
         Ok(Some(v)) => AsyncPointsStrategy::from(v.as_str()),
-        _ => AsyncPointsStrategy::Conservative,
+        Ok(None) => AsyncPointsStrategy::Conservative,
+        Err(e) => {
+            warn!(
+                realm_id = %realm_id,
+                error = %e,
+                "Failed to read async_points_strategy from DB, defaulting to Conservative"
+            );
+            AsyncPointsStrategy::Conservative
+        }
     }
 }

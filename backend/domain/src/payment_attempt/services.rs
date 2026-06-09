@@ -70,6 +70,18 @@ impl<R: PaymentAttemptRepository> PaymentAttemptService<R> {
         Ok(attempt)
     }
 
+    /// Find a payment attempt by ID within a specific realm (no ownership check).
+    /// Used for webhook handlers that have realm_id but cannot verify user ownership.
+    pub async fn find_payment_attempt(
+        &self,
+        realm_id: &str,
+        attempt_id: uuid::Uuid,
+    ) -> PaymentAttemptResult<Option<PaymentAttempt>> {
+        self.repository
+            .find_payment_attempt_by_id(realm_id, attempt_id)
+            .await
+    }
+
     /// Get payment attempt by ID only (without realm filter)
     /// Used for webhook handlers where realm is not known upfront
     pub async fn get_payment_attempt_by_id_only(

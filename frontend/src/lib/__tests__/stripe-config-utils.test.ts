@@ -41,6 +41,7 @@ describe('stripe-config-utils', () => {
         publishableKey: 'pk_test_123456789',
         secretKey: '',
         webhookSecret: '',
+        asyncPointsStrategy: 'conservative',
       })
     })
 
@@ -54,6 +55,7 @@ describe('stripe-config-utils', () => {
         publishableKey: '',
         secretKey: '',
         webhookSecret: '',
+        asyncPointsStrategy: 'conservative',
       })
     })
 
@@ -81,6 +83,7 @@ describe('stripe-config-utils', () => {
         publishableKey: 'pk_test_123',
         secretKey: '',
         webhookSecret: '',
+        asyncPointsStrategy: 'conservative',
       })
     })
 
@@ -124,6 +127,7 @@ describe('stripe-config-utils', () => {
         publishableKey: '',
         secretKey: '',
         webhookSecret: '',
+        asyncPointsStrategy: 'conservative',
       })
     })
 
@@ -156,6 +160,7 @@ describe('stripe-config-utils', () => {
         publishableKey: 'pk_test_123',
         secretKey: '',
         webhookSecret: '',
+        asyncPointsStrategy: 'conservative',
       })
     })
 
@@ -190,6 +195,7 @@ describe('stripe-config-utils', () => {
         publishableKey: '',
         secretKey: '',
         webhookSecret: '',
+        asyncPointsStrategy: 'conservative',
       })
     })
   })
@@ -201,6 +207,7 @@ describe('stripe-config-utils', () => {
         publishableKey: 'pk_test_123',
         secretKey: 'sk_test_456',
         webhookSecret: 'whsec_789',
+        asyncPointsStrategy: 'conservative',
       }
 
       const result = buildStripeConfigRequest(formData)
@@ -234,6 +241,13 @@ describe('stripe-config-utils', () => {
           isSecret: true,
           enabled: true,
         },
+        {
+          configType: PAYMENT_PROVIDERS.STRIPE,
+          configKey: STRIPE_CONFIG_KEYS.ASYNC_POINTS_STRATEGY,
+          configValue: 'conservative',
+          isSecret: false,
+          enabled: true,
+        },
       ])
     })
 
@@ -243,6 +257,7 @@ describe('stripe-config-utils', () => {
         publishableKey: 'pk_test_123',
         secretKey: 'sk_test_456',
         webhookSecret: '',
+        asyncPointsStrategy: 'conservative',
       }
 
       const result = buildStripeConfigRequest(formData)
@@ -258,6 +273,7 @@ describe('stripe-config-utils', () => {
         publishableKey: 'pk_test_123',
         secretKey: 'sk_test_456',
         webhookSecret: 'whsec_789',
+        asyncPointsStrategy: 'conservative',
       }
 
       const result = buildStripeConfigRequest(formData)
@@ -272,6 +288,7 @@ describe('stripe-config-utils', () => {
         publishableKey: 'pk_test_a',
         secretKey: 'sk_test_a',
         webhookSecret: '',
+        asyncPointsStrategy: 'conservative',
       }
 
       const result = buildStripeConfigRequest(formData)
@@ -290,6 +307,7 @@ describe('stripe-config-utils', () => {
         publishableKey: `pk_test_${longKey}`,
         secretKey: `sk_test_${longKey}`,
         webhookSecret: `whsec_${longKey}`,
+        asyncPointsStrategy: 'conservative',
       }
 
       const result = buildStripeConfigRequest(formData)
@@ -311,6 +329,7 @@ describe('stripe-config-utils', () => {
         publishableKey: 'pk_test_123',
         secretKey: 'sk_test_456',
         webhookSecret: 'whsec_789',
+        asyncPointsStrategy: 'conservative',
       }
 
       const result = buildStripeConfigRequest(formData)

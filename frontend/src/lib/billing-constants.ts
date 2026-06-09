@@ -17,6 +17,7 @@ export const STRIPE_CONFIG_KEYS = {
   PUBLISHABLE_KEY: 'publishable_key',
   WEBHOOK_SECRET: 'webhook_secret',
   TIMEOUT: 'timeout',
+  ASYNC_POINTS_STRATEGY: 'async_points_strategy',
 } as const
 
 export type PaymentProvider = (typeof PAYMENT_PROVIDERS)[keyof typeof PAYMENT_PROVIDERS]

@@ -130,6 +130,7 @@ describe('StripeConfigForm', () => {
         publishableKey: 'pk_test_123456789',
         secretKey: 'sk_test_123456789',
         webhookSecret: '',
+        asyncPointsStrategy: 'conservative',
       } as StripeConfigFormValues)
     })
   })
@@ -213,6 +214,7 @@ describe('StripeConfigForm', () => {
         publishableKey: 'pk_test_12345',
         secretKey: 'sk_test_67890',
         webhookSecret: 'whsec_abcdef',
+        asyncPointsStrategy: 'conservative',
       } as StripeConfigFormValues)
     })
   })
@@ -331,6 +333,7 @@ describe('StripeConfigForm', () => {
       publishableKey: 'pk_test_initial',
       secretKey: 'sk_test_initial',
       webhookSecret: 'whsec_initial',
+      asyncPointsStrategy: 'conservative',
     }
 
     render(<StripeConfigForm {...defaultProps} initialConfig={initialConfig} />)
@@ -358,6 +361,7 @@ describe('StripeConfigForm', () => {
       publishableKey: 'pk_test_old',
       secretKey: 'sk_test_old',
       webhookSecret: 'whsec_old',
+      asyncPointsStrategy: 'conservative',
     }
 
     render(<StripeConfigForm {...defaultProps} initialConfig={initialConfig} />)
@@ -385,6 +389,7 @@ describe('StripeConfigForm', () => {
         publishableKey: 'pk_test_new',
         secretKey: 'sk_test_new',
         webhookSecret: 'whsec_new',
+        asyncPointsStrategy: 'conservative',
       } as StripeConfigFormValues)
     })
   })

@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { m } from '@/paraglide/messages'
 
+export type AsyncPointsStrategy = 'conservative' | 'eager'
+
 export const stripeConfigSchema = z.object({
   enabled: z.boolean().default(false),
   publishableKey: z
@@ -16,6 +18,7 @@ export const stripeConfigSchema = z.object({
     .regex(/^whsec_/, { error: () => m['billing.stripe_webhook_start_whsec']() })
     .optional()
     .or(z.literal('')),
+  asyncPointsStrategy: z.enum(['conservative', 'eager']).default('conservative'),
 })
 
 export type StripeConfigForm = z.infer<typeof stripeConfigSchema>
@@ -28,6 +31,7 @@ export function getStripeConfigDefaults(
     publishableKey: '',
     secretKey: '',
     webhookSecret: '',
+    asyncPointsStrategy: 'conservative',
     ...initialValues,
   }
 }

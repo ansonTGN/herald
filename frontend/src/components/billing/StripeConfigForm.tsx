@@ -21,6 +21,7 @@ import {
 import { PageHeader } from '@/components/shared/page-header'
 import { FormActionBar } from '@/components/shared/form-action-bar'
 import { SwitchField, PasswordField } from '@/components/shared/form-fields'
+import { AsyncPaymentStrategySelector } from '@/components/stripe-config/AsyncPaymentStrategySelector'
 import { getFieldErrorMessage } from '@/lib/error-utils'
 import { batchUpsertRealmConfigs } from '@/lib/api-generated/sdk.gen'
 import { buildStripeConfigRequest } from '@/lib/stripe-config-utils'
@@ -355,6 +356,16 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
               dataTestId="page-stripe-webhook-secret-input"
               placeholder="whsec_..."
               helpText={m['billing.stripe_webhook_secret_help']()}
+            />
+            <form.Field
+              name="asyncPointsStrategy"
+              children={(field) => (
+                <AsyncPaymentStrategySelector
+                  value={field.state.value}
+                  onChange={(v) => field.handleChange(v)}
+                  disabled={isSubmitting}
+                />
+              )}
             />
           </div>
         </AppForm>
