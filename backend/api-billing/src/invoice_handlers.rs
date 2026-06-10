@@ -22,6 +22,7 @@ use herald_core::domain::billing::invoice_service::{
     validate_invoice_policy_allows_creation, validate_not_creem_mor, validate_status_transition,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
+use herald_core::domain::realm_config::RealmConfigRepository;
 use herald_core::infrastructure::billing::IronPressInvoicePdfGenerator;
 
 use crate::handlers::require_billing_permission;
@@ -133,7 +134,7 @@ async fn validate_resource_ownership(
 /// Queries the payment_provider from the payment_attempt (if present) to reject
 /// Creem-managed transactions, then checks the realm's invoice policy.
 async fn validate_invoice_creation_policy(
-    pool: &PgPool,
+    state: &AppState,
     realm_id: &str,
     payment_attempt_id: Option<Uuid>,
     subscription_id: Option<Uuid>,
@@ -141,7 +142,7 @@ async fn validate_invoice_creation_policy(
     let mut payment_provider: Option<String> = if let Some(pa_id) = payment_attempt_id {
         sqlx::query_scalar("SELECT payment_provider FROM payment_attempts WHERE id = $1")
             .bind(pa_id)
-            .fetch_optional(pool)
+            .fetch_optional(&state.pool)
             .await
             .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?
             .flatten()
@@ -157,7 +158,7 @@ async fn validate_invoice_creation_policy(
         )
         .bind(sub_id)
         .bind(realm_id)
-        .fetch_optional(pool)
+        .fetch_optional(&state.pool)
         .await
         .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?
         .flatten();
@@ -165,7 +166,7 @@ async fn validate_invoice_creation_policy(
 
     validate_not_creem_mor(payment_provider.as_deref())?;
 
-    let policy_config = get_invoice_policy(pool, realm_id).await?;
+    let policy_config = get_invoice_policy(state, realm_id).await?;
     validate_invoice_policy_allows_creation(&policy_config)?;
 
     Ok(())
@@ -173,23 +174,27 @@ async fn validate_invoice_creation_policy(
 
 /// Load the invoice policy config for a realm.
 ///
-/// Queries `realm_config` for the `invoice_policy` / `policy` row.
+/// Queries `realm_config` for the `invoice_policy` / `policy` row via RealmConfigRepository.
 /// Returns a default "provider_first" config when no row exists.
 async fn get_invoice_policy(
-    pool: &PgPool,
+    state: &AppState,
     realm_id: &str,
 ) -> Result<InvoicePolicyConfig, ApiError> {
-    let config_value: Option<String> = sqlx::query_scalar(
-        "SELECT config_value FROM realm_config WHERE realm_id = $1 AND config_type = 'invoice_policy' AND config_key = 'policy'",
-    )
-    .bind(realm_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
+    let config = state
+        .realm_config_repository
+        .get(
+            realm_id.to_string(),
+            "invoice_policy".to_string(),
+            "policy".to_string(),
+        )
+        .await
+        .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
 
-    match config_value {
-        Some(val) => parse_invoice_policy_config(&val).map_err(ApiError::from),
-        None => Ok(InvoicePolicyConfig {
+    match config {
+        Some(rc) if rc.enabled => {
+            parse_invoice_policy_config(&rc.config_value).map_err(ApiError::from)
+        }
+        _ => Ok(InvoicePolicyConfig {
             policy: "provider_first".to_string(),
             provider_capabilities: serde_json::Value::Object(serde_json::Map::new()),
         }),
@@ -360,7 +365,7 @@ pub async fn create_invoice(
     }
 
     validate_invoice_creation_policy(
-        &state.pool,
+        &state,
         &realm_id,
         request.payment_attempt_id,
         request.subscription_id,
@@ -877,7 +882,7 @@ pub async fn apply_invoice(
     }
 
     validate_invoice_creation_policy(
-        &state.pool,
+        &state,
         &realm_id,
         request.payment_attempt_id,
         request.subscription_id,

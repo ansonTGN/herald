@@ -6,7 +6,6 @@ use axum::{
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
 use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
@@ -16,6 +15,7 @@ use herald_api_base::application::http::common::error_helpers::core_error_to_api
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
+use herald_core::domain::payment_attempt::PaymentAttemptRepository;
 use herald_core::domain::purchase::{
     CompletePaymentAttemptInput, FulfillmentResult, PaymentCompletionSource,
     PreparePaymentAttemptInput,
@@ -441,96 +441,39 @@ pub async fn get_purchase_history(
 
     let page = filters.page.unwrap_or(1).max(1);
     let page_size = filters.page_size.unwrap_or(20).min(100);
-    let offset = (page - 1) * page_size;
 
-    // Build WHERE clause fragments with parameters
-    let provider_filter = filters.payment_provider.as_deref().unwrap_or("");
-    let start_filter = filters.start_date.as_deref().unwrap_or("");
-    let end_filter = filters.end_date.as_deref().unwrap_or("");
-
-    // Count query
-    let count_row = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM payment_attempts pa \
-         WHERE pa.realm_id = $1 AND pa.user_id = $2 \
-         AND pa.status = 'Succeeded' AND pa.target_type = 'entitlement_mapping' \
-         AND ($3 = '' OR pa.payment_provider = $3) \
-         AND ($4 = '' OR pa.created_at >= $4::timestamptz) \
-         AND ($5 = '' OR pa.created_at <= $5::timestamptz)",
-    )
-    .bind(&realm_id)
-    .bind(user_id)
-    .bind(provider_filter)
-    .bind(start_filter)
-    .bind(end_filter)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(realm_id = %realm_id, error = %e, "Failed to count purchase history");
-        ApiError::internal("Failed to count purchase history")
-    })?;
-
-    // Data query
-    let rows = sqlx::query(
-        "SELECT pa.id AS attempt_id, pa.target_id AS target_mapping_id, \
-         pem.provider_product_info, pem.points_per_period, \
-         pa.amount, pa.currency, pa.payment_provider, pa.status, \
-         pa.completed_at, pa.created_at \
-         FROM payment_attempts pa \
-         LEFT JOIN provider_entitlement_mappings pem ON pa.target_id = pem.id \
-         WHERE pa.realm_id = $1 AND pa.user_id = $2 \
-         AND pa.status = 'Succeeded' AND pa.target_type = 'entitlement_mapping' \
-         AND ($3 = '' OR pa.payment_provider = $3) \
-         AND ($4 = '' OR pa.created_at >= $4::timestamptz) \
-         AND ($5 = '' OR pa.created_at <= $5::timestamptz) \
-         ORDER BY pa.created_at DESC \
-         LIMIT $6 OFFSET $7",
-    )
-    .bind(&realm_id)
-    .bind(user_id)
-    .bind(provider_filter)
-    .bind(start_filter)
-    .bind(end_filter)
-    .bind(page_size as i64)
-    .bind(offset as i64)
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(realm_id = %realm_id, error = %e, "Failed to fetch purchase history");
-        ApiError::internal("Failed to fetch purchase history")
-    })?;
+    let (rows, total) = state
+        .payment_attempt_repository
+        .list_purchase_history(
+            &realm_id,
+            user_id,
+            filters.payment_provider.as_deref(),
+            filters.start_date.as_deref(),
+            filters.end_date.as_deref(),
+            page,
+            page_size,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(realm_id = %realm_id, error = %e, "Failed to fetch purchase history");
+            ApiError::internal("Failed to fetch purchase history")
+        })?;
 
     let items: Vec<PurchaseHistoryItemDto> = rows
         .into_iter()
-        .map(|row| {
-            let product_info: Option<serde_json::Value> = row.get("provider_product_info");
-            let product_name = product_info
-                .as_ref()
-                .and_then(|v| v.get("name"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            let points_per_period: Option<i32> = row.get("points_per_period");
-            let completed_at: Option<chrono::DateTime<chrono::Utc>> = row.get("completed_at");
-
-            PurchaseHistoryItemDto {
-                attempt_id: row.get("attempt_id"),
-                target_mapping_id: row.get("target_mapping_id"),
-                product_name,
-                points: points_per_period.map(|p| p as i64),
-                amount: row.get("amount"),
-                currency: row.get("currency"),
-                payment_provider: row.get("payment_provider"),
-                status: row.get("status"),
-                completed_at: completed_at.map(|dt| dt.to_rfc3339()),
-                created_at: {
-                    let created_at: chrono::DateTime<chrono::Utc> = row.get("created_at");
-                    created_at.to_rfc3339()
-                },
-            }
+        .map(|row| PurchaseHistoryItemDto {
+            attempt_id: row.attempt_id,
+            target_mapping_id: row.target_mapping_id,
+            product_name: row.product_name,
+            points: row.points,
+            amount: row.amount,
+            currency: row.currency,
+            payment_provider: row.payment_provider,
+            status: row.status,
+            completed_at: row.completed_at.map(|dt| dt.to_rfc3339()),
+            created_at: row.created_at.to_rfc3339(),
         })
         .collect();
 
-    Ok(Json(PurchaseHistoryResponse {
-        items,
-        total: count_row,
-    }))
+    Ok(Json(PurchaseHistoryResponse { items, total }))
 }

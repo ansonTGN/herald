@@ -23,6 +23,7 @@ use herald_core::infrastructure::purchase::PurchaseService;
 use herald_core::infrastructure::purchase::{
     PostgresFulfillmentService, PostgresPurchaseRepository,
 };
+use herald_core::infrastructure::realm_config::PostgresRealmConfigRepository;
 use herald_core::infrastructure::redis::RedisConnectionManager;
 use herald_core::infrastructure::user::{
     PostgresAdminUserRepository, PostgresRolePolicyRepository, PostgresUserRoleRepository,
@@ -195,6 +196,9 @@ pub struct AppState {
     /// Payment attempt service
     pub payment_attempt_service: Arc<PaymentAttemptService<PostgresPaymentAttemptRepository>>,
 
+    /// Payment attempt repository (for direct repository access)
+    pub payment_attempt_repository: Arc<PostgresPaymentAttemptRepository>,
+
     /// Fulfillment service (for unified purchase handling)
     pub fulfillment_service:
         Arc<PostgresFulfillmentService<PostgresPointsRepository, PostgresBillingRepository>>,
@@ -210,4 +214,7 @@ pub struct AppState {
 
     /// User role repository for batch role queries (e.g. API key role summaries)
     pub user_role_repository: Arc<PostgresUserRoleRepository>,
+
+    /// Realm config repository (for direct SQL access to realm_config table)
+    pub realm_config_repository: Arc<PostgresRealmConfigRepository>,
 }

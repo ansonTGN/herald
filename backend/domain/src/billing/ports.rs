@@ -3,7 +3,7 @@ use std::future::Future;
 use uuid::Uuid;
 
 use crate::billing::{
-    EntitlementMapping, PaymentEvent, Subscription, SubscriptionHistoryEvent,
+    EntitlementMapping, FeatureFacts, PaymentEvent, Subscription, SubscriptionHistoryEvent,
     SubscriptionHistoryQuery,
 };
 use crate::common::entities::app_errors::CoreError;
@@ -72,6 +72,24 @@ pub trait BillingRepository: Send + Sync {
         subscription_id: Uuid,
         cancel_at_period_end: bool,
     ) -> impl Future<Output = Result<Subscription, CoreError>> + Send;
+
+    /// Cancel all active subscriptions matching an external_subscription_id for a user in a realm.
+    /// Returns the number of rows updated.
+    fn cancel_subscriptions_by_external_id(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        external_subscription_id: &str,
+    ) -> impl Future<Output = Result<u64, CoreError>> + Send;
+
+    /// Cancel all active subscriptions matching an entitlement_key for a user in a realm.
+    /// Returns the number of rows updated.
+    fn cancel_subscriptions_by_entitlement_key(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        entitlement_key: &str,
+    ) -> impl Future<Output = Result<u64, CoreError>> + Send;
 
     // ===== Subscription History =====
     /// Save a subscription history event
@@ -160,4 +178,23 @@ pub trait BillingRepository: Send + Sync {
         provider: &str,
         realm_id: &str,
     ) -> impl Future<Output = Result<Option<String>, CoreError>> + Send;
+
+    /// List subscriptions for a realm with filters and pagination.
+    /// Returns (subscriptions, total_count).
+    fn list_subscriptions(
+        &self,
+        realm_id: &str,
+        entitlement_key: Option<&str>,
+        status: Option<&str>,
+        payment_provider: Option<&str>,
+        page: u64,
+        page_size: u64,
+    ) -> impl Future<Output = Result<(Vec<Subscription>, u64), CoreError>> + Send;
+
+    /// Check feature availability facts for a realm by querying multiple billing tables.
+    fn check_feature_facts(
+        &self,
+        realm_id: &str,
+        pool: &sqlx::PgPool,
+    ) -> impl Future<Output = Result<FeatureFacts, CoreError>> + Send;
 }

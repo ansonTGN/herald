@@ -29,11 +29,14 @@ use herald_core::domain::billing::{
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::payment_attempt::PaymentAttemptStatus;
 use herald_core::domain::points::IdempotencyResult;
-use herald_core::domain::points::entities::{PointsTransaction, RevocationType, TransactionType};
+use herald_core::domain::points::entities::{
+    PointsRevocationRecord, PointsTransaction, RevocationType, TransactionType,
+};
 use herald_core::domain::points::ports::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
 use herald_core::domain::purchase::metadata_keys;
 use herald_core::domain::purchase::{CompletePaymentAttemptInput, PaymentCompletionSource};
+use herald_core::domain::realm_config::RealmConfigRepository;
 
 struct StripeCheckoutCompletedPayload {
     event_id: String,
@@ -741,7 +744,7 @@ async fn handle_checkout_session_completed(
             .as_str()
             .unwrap_or("unpaid");
         if payment_status != "paid" && payment_status != "no_payment_required" {
-            let strategy = read_async_points_strategy(&app_state.pool, realm_id).await;
+            let strategy = read_async_points_strategy(&app_state, realm_id).await;
             if strategy != AsyncPointsStrategy::Eager {
                 info!(
                     realm_id = %realm_id,
@@ -1158,51 +1161,32 @@ async fn handle_checkout_session_async_failed(
         // the most recent subscription for this entitlement.
         let stripe_subscription_id = object["subscription"].as_str();
         let rows_updated = if let Some(ext_sub_id) = stripe_subscription_id {
-            sqlx::query(
-                "UPDATE subscription
-                 SET status = 'canceled', cancel_at = NOW(), updated_at = NOW()
-                 WHERE realm_id = $1 AND user_id = $2 AND external_subscription_id = $3
-                   AND status IN ('active', 'trialing', 'past_due', 'scheduled_cancel', 'pending')",
-            )
-            .bind(realm_id)
-            .bind(attempt.user_id)
-            .bind(ext_sub_id)
-            .execute(&app_state.pool)
-            .await?
-            .rows_affected()
+            app_state
+                .billing_repository
+                .cancel_subscriptions_by_external_id(realm_id, attempt.user_id, ext_sub_id)
+                .await?
         } else {
             warn!(
                 realm_id = %realm_id,
                 attempt_id = %attempt_id,
                 "No subscription field in async_payment_failed event — querying entitlement_key for scoped cancel"
             );
-            let entitlement_key: Option<String> = sqlx::query_scalar(
-                "SELECT entitlement_key FROM entitlement_mapping WHERE id = $1 AND realm_id = $2",
-            )
-            .bind(attempt.target_id)
-            .bind(realm_id)
-            .fetch_optional(&app_state.pool)
-            .await?
-            .flatten();
-            if let Some(ekey) = entitlement_key {
-                sqlx::query(
-                    "UPDATE subscription
-                     SET status = 'canceled', cancel_at = NOW(), updated_at = NOW()
-                     WHERE realm_id = $1 AND user_id = $2 AND entitlement_key = $3
-                       AND status IN ('active', 'trialing', 'past_due', 'scheduled_cancel', 'pending')",
-                )
-                .bind(realm_id)
-                .bind(attempt.user_id)
-                .bind(&ekey)
-                .execute(&app_state.pool)
+            let entitlement_key = app_state
+                .billing_repository
+                .find_entitlement_mapping_by_id(attempt.target_id)
                 .await?
-                .rows_affected()
+                .map(|m| m.entitlement_key);
+            if let Some(ekey) = entitlement_key {
+                app_state
+                    .billing_repository
+                    .cancel_subscriptions_by_entitlement_key(realm_id, attempt.user_id, &ekey)
+                    .await?
             } else {
                 warn!(
                     realm_id = %realm_id,
                     attempt_id = %attempt_id,
                     target_id = %attempt.target_id,
-                    "Cannot resolve entitlement_key for scoped subscription cancel — skipping raw SQL update"
+                    "Cannot resolve entitlement_key for scoped subscription cancel — skipping"
                 );
                 0
             }
@@ -1225,52 +1209,46 @@ async fn handle_checkout_session_async_failed(
         attempt_id.to_string()
     } else {
         // Subscription credits are keyed by entitlement_key in grant_points_atomic
-        let entitlement_key: Option<String> = sqlx::query_scalar(
-            "SELECT entitlement_key FROM entitlement_mapping WHERE id = $1 AND realm_id = $2",
-        )
-        .bind(attempt.target_id)
-        .bind(realm_id)
-        .fetch_optional(&app_state.pool)
-        .await?
-        .flatten();
+        let entitlement_key = app_state
+            .billing_repository
+            .find_entitlement_mapping_by_id(attempt.target_id)
+            .await?
+            .map(|m| m.entitlement_key);
         entitlement_key.unwrap_or_else(|| attempt_id.to_string())
     };
-    let ledger_row: Option<(Uuid, i64)> = sqlx::query_as(
-        "SELECT id, granted_amount FROM points_credit_ledger WHERE realm_id = $1 AND user_id = $2 AND source_id = $3 LIMIT 1"
-    )
-        .bind(realm_id)
-        .bind(attempt.user_id)
-        .bind(&source_id_for_ledger)
-        .fetch_optional(&app_state.pool)
+    let ledger = app_state
+        .points_repository
+        .find_ledger_by_source_id(realm_id, &source_id_for_ledger)
         .await?;
-    let original_points = ledger_row.as_ref().map(|r| r.1).unwrap_or(0);
+    let original_points = ledger.as_ref().map(|l| l.granted_amount).unwrap_or(0);
 
     if revocation_result.total_revoked < original_points {
         let debt_amount = original_points - revocation_result.total_revoked;
-        // Resolve ledger_id: prefer the revocation result, fall back to the combined query above.
+        // Resolve ledger_id: prefer the revocation result, fall back to the ledger query above.
         // This handles the case where all credits were already consumed (no ledger entries to revoke).
         let ledger_id = revocation_result
             .ledger_ids
             .first()
             .copied()
-            .or_else(|| ledger_row.as_ref().map(|r| r.0))
+            .or_else(|| ledger.as_ref().map(|l| l.id))
             .unwrap_or_else(Uuid::nil);
         let reason = format!(
             "debt:original={},recovered={},shortfall={},reason=async_payment_failed_insufficient_balance",
             original_points, revocation_result.total_revoked, debt_amount
         );
-        sqlx::query(
-            "INSERT INTO points_revocation_records (id, ledger_id, user_id, realm_id, revocation_type, revoked_amount, reason, reference_id, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())"
-        )
-            .bind(Uuid::now_v7())
-            .bind(ledger_id)
-            .bind(attempt.user_id)
-            .bind(realm_id)
-            .bind(RevocationType::RefundRevoke.as_str())
-            .bind(debt_amount)
-            .bind(&reason)
-            .bind(attempt_id.to_string())
-            .execute(&app_state.pool)
+        app_state
+            .points_repository
+            .create_revocation_record(PointsRevocationRecord {
+                id: Uuid::now_v7(),
+                ledger_id,
+                user_id: attempt.user_id,
+                realm_id: realm_id.to_string(),
+                revocation_type: RevocationType::RefundRevoke,
+                revoked_amount: debt_amount,
+                reason,
+                reference_id: Some(attempt_id.to_string()),
+                created_at: chrono::Utc::now(),
+            })
             .await?;
 
         info!(
@@ -2462,29 +2440,30 @@ pub async fn handle_stripe_webhook(
         })?;
 
     // Step 4: Get webhook secret from database for this realm
-    let webhook_secret = sqlx::query_scalar::<_, String>(
-        "SELECT config_value
-         FROM realm_config
-         WHERE realm_id = $1 AND config_type = 'stripe' AND config_key = 'webhook_secret' AND enabled = true
-         LIMIT 1"
-    )
-    .bind(&realm_id)
-    .fetch_optional(&app_state.pool)
-    .await
-    .map_err(|e| {
-        error!("Failed to load webhook secret from database: {}", e);
-        CoreError::InternalServerError(format!("Database error: {}", e))
-    })?
-    .ok_or_else(|| {
-        error!(
-            realm_id = %realm_id,
-            "Webhook secret not found in database"
-        );
-        CoreError::InternalServerError(format!(
-            "Webhook secret not configured for realm: {}",
-            realm_id
-        ))
-    })?;
+    let webhook_secret = app_state
+        .realm_config_repository
+        .get(
+            realm_id.to_string(),
+            "stripe".to_string(),
+            "webhook_secret".to_string(),
+        )
+        .await
+        .map_err(|e| {
+            error!("Failed to load webhook secret from database: {}", e);
+            CoreError::InternalServerError(format!("Database error: {}", e))
+        })?
+        .filter(|c| c.enabled)
+        .map(|c| c.config_value)
+        .ok_or_else(|| {
+            error!(
+                realm_id = %realm_id,
+                "Webhook secret not found in database"
+            );
+            CoreError::InternalServerError(format!(
+                "Webhook secret not configured for realm: {}",
+                realm_id
+            ))
+        })?;
 
     // Step 5: Verify webhook signature using StripeClient (static method)
     herald_core::infrastructure::stripe::StripeClient::verify_webhook_signature(
@@ -2966,29 +2945,28 @@ impl From<&str> for AsyncPointsStrategy {
 /// Read the `async_points_strategy` config value for a given realm.
 ///
 /// Returns `Conservative` when no config row exists or the value is not `"eager"`.
-pub async fn read_async_points_strategy(
-    pool: &sqlx::PgPool,
-    realm_id: &str,
-) -> AsyncPointsStrategy {
-    let value = sqlx::query_scalar::<_, String>(
-        "SELECT config_value
-         FROM realm_config
-         WHERE realm_id = $1 AND config_type = 'stripe' AND config_key = 'async_points_strategy' AND enabled = true
-         LIMIT 1",
-    )
-    .bind(realm_id)
-    .fetch_optional(pool)
-    .await;
+pub async fn read_async_points_strategy(state: &AppState, realm_id: &str) -> AsyncPointsStrategy {
+    let result = state
+        .realm_config_repository
+        .get(
+            realm_id.to_string(),
+            "stripe".to_string(),
+            "async_points_strategy".to_string(),
+        )
+        .await;
 
-    match value {
-        Ok(Some(v)) => AsyncPointsStrategy::from(v.as_str()),
-        Ok(None) => AsyncPointsStrategy::Conservative,
-        Err(e) => {
-            warn!(
-                realm_id = %realm_id,
-                error = %e,
-                "Failed to read async_points_strategy from DB, defaulting to Conservative"
-            );
+    match result {
+        Ok(Some(config)) if config.enabled => {
+            AsyncPointsStrategy::from(config.config_value.as_str())
+        }
+        _ => {
+            if let Err(e) = &result {
+                warn!(
+                    realm_id = %realm_id,
+                    error = %e,
+                    "Failed to read async_points_strategy from DB, defaulting to Conservative"
+                );
+            }
             AsyncPointsStrategy::Conservative
         }
     }

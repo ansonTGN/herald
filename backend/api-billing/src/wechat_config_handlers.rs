@@ -9,14 +9,15 @@ use crate::wechat_config_types::{
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
+use herald_core::domain::realm_config::{
+    ConfigType, RealmConfigRepository, UpsertRealmConfigRequest,
+};
 
 use axum::Json;
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use sqlx::PgPool;
-use sqlx::Row;
 use tracing::info;
-use uuid::Uuid;
 
 #[utoipa::path(
     post,
@@ -76,21 +77,21 @@ pub async fn create_wechat_config(
         }));
     }
 
-    if let Ok(Some(_)) = get_wechat_config_internal(&state.pool, &realm_id, false).await {
+    if let Ok(Some(_)) = get_wechat_config_internal(&state, &realm_id, false).await {
         return Err(ApiError::conflict_json(GenericErrorResponse {
             error: "configuration_already_exists".to_string(),
             message: "A WeChat configuration already exists for this realm. Please edit the existing configuration.".to_string(),
         }));
     }
 
-    save_wechat_config(&state.pool, &realm_id, &request).await?;
+    save_wechat_config(&state, &realm_id, &request).await?;
 
     info!(
         realm_id = %realm_id,
         "WeChat payment provider configuration created"
     );
 
-    let config = get_wechat_config_internal(&state.pool, &realm_id, false)
+    let config = get_wechat_config_internal(&state, &realm_id, false)
         .await?
         .ok_or_else(|| ApiError::internal("Failed to retrieve saved configuration"))?;
 
@@ -120,7 +121,7 @@ pub async fn get_wechat_config(
 ) -> Result<Json<WechatConfigResponse>, ApiError> {
     require_billing_permission(&state, &identity, &realm_id, "view").await?;
 
-    let config = get_wechat_config_internal(&state.pool, &realm_id, query.reveal_secrets)
+    let config = get_wechat_config_internal(&state, &realm_id, query.reveal_secrets)
         .await?
         .ok_or_else(|| ApiError::not_found("WeChat configuration not found"))?;
 
@@ -189,13 +190,13 @@ pub async fn update_wechat_config(
         }));
     }
 
-    let _existing = get_wechat_config_internal(&state.pool, &realm_id, false)
+    let _existing = get_wechat_config_internal(&state, &realm_id, false)
         .await?
         .ok_or_else(|| ApiError::not_found("WeChat configuration not found"))?;
 
-    update_wechat_config_internal(&state.pool, &realm_id, &request).await?;
+    update_wechat_config_internal(&state, &realm_id, &request).await?;
 
-    let config = get_wechat_config_internal(&state.pool, &realm_id, false)
+    let config = get_wechat_config_internal(&state, &realm_id, false)
         .await?
         .ok_or_else(|| ApiError::internal("Failed to retrieve updated configuration"))?;
 
@@ -224,7 +225,7 @@ pub async fn delete_wechat_config(
 ) -> Result<StatusCode, ApiError> {
     require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
-    let _existing = get_wechat_config_internal(&state.pool, &realm_id, false)
+    let _existing = get_wechat_config_internal(&state, &realm_id, false)
         .await?
         .ok_or_else(|| ApiError::not_found("WeChat configuration not found"))?;
 
@@ -239,7 +240,7 @@ pub async fn delete_wechat_config(
         }));
     }
 
-    delete_wechat_config_internal(&state.pool, &realm_id).await?;
+    delete_wechat_config_internal(&state, &realm_id).await?;
 
     info!(
         realm_id = %realm_id,
@@ -250,33 +251,26 @@ pub async fn delete_wechat_config(
 }
 
 pub async fn get_wechat_config_for_providers(
-    db: &PgPool,
+    state: &AppState,
     realm_id: &str,
 ) -> Result<Option<PaymentProviderInfo>, ApiError> {
-    let rows = sqlx::query(
-        r#"
-        SELECT config_key, config_value, created_at, updated_at, enabled
-        FROM realm_config
-        WHERE realm_id = $1 AND config_type = 'wechat'
-        "#,
-    )
-    .bind(realm_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
+    let configs = state
+        .realm_config_repository
+        .get_by_type(realm_id.to_string(), "wechat".to_string())
+        .await
+        .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
 
-    if rows.is_empty() {
+    if configs.is_empty() {
         return Ok(None);
     }
 
     let mut last_updated: Option<chrono::DateTime<chrono::Utc>> = None;
     let mut enabled = true;
 
-    for row in &rows {
-        let row_updated: chrono::DateTime<chrono::Utc> = row.get("updated_at");
-        let row_enabled: bool = row.get("enabled");
-        last_updated = Some(last_updated.map_or(row_updated, |current| current.max(row_updated)));
-        enabled &= row_enabled;
+    for rc in &configs {
+        last_updated =
+            Some(last_updated.map_or(rc.updated_at, |current| current.max(rc.updated_at)));
+        enabled &= rc.enabled;
     }
 
     Ok(Some(PaymentProviderInfo {
@@ -290,23 +284,17 @@ pub async fn get_wechat_config_for_providers(
 }
 
 async fn get_wechat_config_internal(
-    db: &PgPool,
+    state: &AppState,
     realm_id: &str,
     reveal_secrets: bool,
 ) -> Result<Option<WechatConfigResponse>, ApiError> {
-    let rows = sqlx::query(
-        r#"
-        SELECT config_key, config_value, created_at, updated_at
-        FROM realm_config
-        WHERE realm_id = $1 AND config_type = 'wechat'
-        "#,
-    )
-    .bind(realm_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
+    let configs = state
+        .realm_config_repository
+        .get_by_type(realm_id.to_string(), "wechat".to_string())
+        .await
+        .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
 
-    if rows.is_empty() {
+    if configs.is_empty() {
         return Ok(None);
     }
 
@@ -326,41 +314,36 @@ async fn get_wechat_config_internal(
     let mut created_at: Option<chrono::DateTime<chrono::Utc>> = None;
     let mut updated_at: Option<chrono::DateTime<chrono::Utc>> = None;
 
-    for row in rows {
-        let key: String = row.get("config_key");
-        let value: String = row.get("config_value");
-        let row_created_at: chrono::DateTime<chrono::Utc> = row.get("created_at");
-        let row_updated_at: chrono::DateTime<chrono::Utc> = row.get("updated_at");
+    for rc in configs {
+        created_at = Some(created_at.map_or(rc.created_at, |current| current.min(rc.created_at)));
+        updated_at = Some(updated_at.map_or(rc.updated_at, |current| current.max(rc.updated_at)));
 
-        created_at = Some(created_at.map_or(row_created_at, |current| current.min(row_created_at)));
-        updated_at = Some(updated_at.map_or(row_updated_at, |current| current.max(row_updated_at)));
-
-        match key.as_str() {
-            "app_id" => config.app_id = value,
-            "mch_id" => config.mch_id = value,
-            "serial_no" => config.serial_no = value,
+        match rc.config_key.as_str() {
+            "app_id" => config.app_id = rc.config_value,
+            "mch_id" => config.mch_id = rc.config_value,
+            "serial_no" => config.serial_no = rc.config_value,
             "private_key" => {
                 if reveal_secrets {
-                    config.private_key = value;
+                    config.private_key = rc.config_value;
                 } else {
-                    config.private_key = mask_secret(&value);
+                    config.private_key = mask_secret(&rc.config_value);
                 }
             }
             "v3_key" => {
                 if reveal_secrets {
-                    config.v3_key = value;
+                    config.v3_key = rc.config_value;
                 } else {
-                    config.v3_key = mask_v3_key(&value);
+                    config.v3_key = mask_v3_key(&rc.config_value);
                 }
             }
             "platform_public_key" => {
                 if reveal_secrets {
-                    config.platform_public_key = value;
+                    config.platform_public_key = rc.config_value;
                 } else {
-                    config.platform_public_key = mask_secret(&value);
+                    config.platform_public_key = mask_secret(&rc.config_value);
                 }
             }
-            "notify_url" => config.notify_url = value,
+            "notify_url" => config.notify_url = rc.config_value,
             _ => {}
         }
     }
@@ -372,7 +355,7 @@ async fn get_wechat_config_internal(
 }
 
 async fn save_wechat_config(
-    db: &PgPool,
+    state: &AppState,
     realm_id: &str,
     request: &WechatConfigRequest,
 ) -> Result<(), ApiError> {
@@ -386,44 +369,32 @@ async fn save_wechat_config(
         ("notify_url", &request.notify_url, false),
     ];
 
-    let mut tx = db
-        .begin()
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {}", e)))?;
+    let requests: Vec<UpsertRealmConfigRequest> = config_items
+        .into_iter()
+        .map(|(key, value, is_secret)| UpsertRealmConfigRequest {
+            config_type: ConfigType::Wechat,
+            config_key: key.to_string(),
+            config_value: value.to_string(),
+            is_secret: Some(is_secret),
+            enabled: Some(true),
+            metadata: None,
+        })
+        .collect();
 
-    for (key, value, is_secret) in config_items {
-        let result = sqlx::query(
-            r#"
-            INSERT INTO realm_config (id, realm_id, config_type, config_key, config_value, is_secret, created_at, updated_at)
-            VALUES ($1, $2, 'wechat', $3, $4, $5, NOW(), NOW())
-            ON CONFLICT (realm_id, config_type, config_key) DO NOTHING
-            "#,
-        )
-        .bind(Uuid::now_v7())
-        .bind(realm_id)
-        .bind(key)
-        .bind(value)
-        .bind(is_secret)
-        .execute(&mut *tx)
+    state
+        .realm_config_repository
+        .batch_upsert(realm_id, requests)
         .await
         .map_err(|e| {
-            tracing::error!(realm_id = %realm_id, key = %key, error = %e, "Failed to save wechat config item");
+            tracing::error!(realm_id = %realm_id, error = %e, "Failed to save wechat config");
             ApiError::internal(format!("Database error: {}", e))
         })?;
 
-        if result.rows_affected() == 0 {
-            tracing::warn!(realm_id = %realm_id, key = %key, "Config key already exists, skipping");
-        }
-    }
-
-    tx.commit()
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to commit transaction: {}", e)))?;
     Ok(())
 }
 
 async fn update_wechat_config_internal(
-    db: &PgPool,
+    state: &AppState,
     realm_id: &str,
     request: &WechatConfigUpdateRequest,
 ) -> Result<(), ApiError> {
@@ -451,53 +422,41 @@ async fn update_wechat_config_internal(
         updates.push(("notify_url", notify_url.clone()));
     }
 
-    let mut tx = db
-        .begin()
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {}", e)))?;
+    let requests: Vec<UpsertRealmConfigRequest> = updates
+        .into_iter()
+        .map(|(key, value)| UpsertRealmConfigRequest {
+            config_type: ConfigType::Wechat,
+            config_key: key.to_string(),
+            config_value: value,
+            is_secret: None,
+            enabled: None,
+            metadata: None,
+        })
+        .collect();
 
-    for (key, value) in updates {
-        sqlx::query(
-            r#"
-            UPDATE realm_config
-            SET config_value = $1, updated_at = NOW()
-            WHERE realm_id = $2
-              AND config_type = 'wechat'
-              AND config_key = $3
-            "#,
-        )
-        .bind(&value)
-        .bind(realm_id)
-        .bind(key)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(realm_id = %realm_id, key = %key, error = %e, "Failed to update wechat config item");
-            ApiError::internal(format!("Database error: {}", e))
-        })?;
+    if !requests.is_empty() {
+        state
+            .realm_config_repository
+            .batch_upsert(realm_id, requests)
+            .await
+            .map_err(|e| {
+                tracing::error!(realm_id = %realm_id, error = %e, "Failed to update wechat config");
+                ApiError::internal(format!("Database error: {}", e))
+            })?;
     }
 
-    tx.commit()
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to commit transaction: {}", e)))?;
     Ok(())
 }
 
-async fn delete_wechat_config_internal(db: &PgPool, realm_id: &str) -> Result<(), ApiError> {
-    sqlx::query(
-        r#"
-        DELETE FROM realm_config
-        WHERE realm_id = $1
-          AND config_type = 'wechat'
-        "#,
-    )
-    .bind(realm_id)
-    .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(realm_id = %realm_id, error = %e, "Failed to delete wechat config");
-        ApiError::internal(format!("Database error: {}", e))
-    })?;
+async fn delete_wechat_config_internal(state: &AppState, realm_id: &str) -> Result<(), ApiError> {
+    state
+        .realm_config_repository
+        .delete_by_type(realm_id.to_string(), "wechat".to_string())
+        .await
+        .map_err(|e| {
+            tracing::error!(realm_id = %realm_id, error = %e, "Failed to delete wechat config");
+            ApiError::internal(format!("Database error: {}", e))
+        })?;
 
     Ok(())
 }

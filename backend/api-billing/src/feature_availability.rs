@@ -7,8 +7,8 @@ use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::PermissionService;
+use herald_core::domain::billing::BillingRepository;
 use serde::Serialize;
-use sqlx::Row;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -147,64 +147,26 @@ async fn has_permission(
 }
 
 async fn load_feature_facts(state: &AppState, realm_id: &str) -> Result<FeatureFacts, ApiError> {
-    let row = sqlx::query(
-        r#"
-        WITH configured_providers AS (
-            SELECT 'wechat' AS provider
-            WHERE EXISTS (
-                SELECT 1 FROM realm_config
-                WHERE realm_id = $1 AND config_type = 'wechat' AND enabled = true
-            )
-            UNION ALL
-            SELECT 'shopify'
-            WHERE EXISTS (
-                SELECT 1 FROM realm_config
-                WHERE realm_id = $1 AND config_type = 'shopify' AND enabled = true
-            )
-            UNION ALL
-            SELECT 'stripe'
-            WHERE EXISTS (
-                SELECT 1 FROM realm_config
-                WHERE realm_id = $1 AND config_type = 'stripe'
-                  AND config_key = 'api_key' AND enabled = true
-            )
-            UNION ALL
-            SELECT 'creem'
-            WHERE EXISTS (
-                SELECT 1 FROM realm_config
-                WHERE realm_id = $1 AND config_type = 'creem'
-                  AND config_key = 'api_key' AND enabled = true
-            )
-        )
-        SELECT
-            EXISTS (SELECT 1 FROM configured_providers) AS has_payment_providers,
-            EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1) AS has_entitlement_mappings,
-            EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1 AND enabled = true) AS has_enabled_mappings,
-            EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1 AND billing_type = 'one_time' AND enabled = true) AS has_one_time_mappings,
-            EXISTS (SELECT 1 FROM invoice_seller_config WHERE realm_id = $1) AS has_invoice_seller_config,
-            EXISTS (SELECT 1 FROM invoice WHERE realm_id = $1) AS has_invoices,
-            EXISTS (SELECT 1 FROM subscription_history WHERE realm_id = $1) AS has_subscription_history
-        "#,
-    )
-    .bind(realm_id)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(
-            realm_id = %realm_id,
-            error = %e,
-            "Failed to load feature availability facts"
-        );
-        ApiError::internal("Failed to load feature availability")
-    })?;
+    let facts = state
+        .billing_repository
+        .check_feature_facts(realm_id, &state.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                realm_id = %realm_id,
+                error = %e,
+                "Failed to load feature availability facts"
+            );
+            ApiError::internal("Failed to load feature availability")
+        })?;
 
     Ok(FeatureFacts {
-        has_payment_providers: row.get("has_payment_providers"),
-        has_entitlement_mappings: row.get("has_entitlement_mappings"),
-        has_enabled_mappings: row.get("has_enabled_mappings"),
-        has_one_time_mappings: row.get("has_one_time_mappings"),
-        has_invoice_seller_config: row.get("has_invoice_seller_config"),
-        has_invoices: row.get("has_invoices"),
-        has_subscription_history: row.get("has_subscription_history"),
+        has_payment_providers: facts.has_payment_providers,
+        has_entitlement_mappings: facts.has_entitlement_mappings,
+        has_enabled_mappings: facts.has_enabled_mappings,
+        has_one_time_mappings: facts.has_one_time_mappings,
+        has_invoice_seller_config: facts.has_invoice_seller_config,
+        has_invoices: facts.has_invoices,
+        has_subscription_history: facts.has_subscription_history,
     })
 }

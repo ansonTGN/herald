@@ -385,6 +385,22 @@ mod tests {
         ) -> PaymentAttemptResult<Option<PaymentAttempt>> {
             Ok(None)
         }
+
+        async fn list_purchase_history(
+            &self,
+            _realm_id: &str,
+            _user_id: uuid::Uuid,
+            _payment_provider: Option<&str>,
+            _start_date: Option<&str>,
+            _end_date: Option<&str>,
+            _page: u64,
+            _page_size: u64,
+        ) -> PaymentAttemptResult<(
+            Vec<crate::payment_attempt::entities::PurchaseHistoryRow>,
+            i64,
+        )> {
+            Ok((Vec::new(), 0))
+        }
     }
 
     fn create_test_attempt(status: PaymentAttemptStatus) -> PaymentAttempt {

@@ -7,6 +7,7 @@ use utoipa::ToSchema;
 
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::billing::BillingRepository;
 use herald_core::domain::purchase::{CompletePaymentAttemptInput, PaymentCompletionSource};
 use herald_core::infrastructure::wechat::{
     WechatOrderStatus, repository::WechatOrderRepository,
@@ -126,17 +127,14 @@ pub async fn wechat_webhook_handler(
         .transaction_id
         .clone()
         .unwrap_or_else(|| out_trade_no.clone());
-    let existing_event = sqlx::query(
-        "SELECT id FROM payment_event
-         WHERE external_event_id = $1 AND payment_provider = 'wechat'",
-    )
-    .bind(&event_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        error!(error = %e, "Failed to check for existing payment event");
-        ApiError::internal("Database error")
-    })?;
+    let existing_event = state
+        .billing_repository
+        .find_payment_event_by_external_id(&event_id, "wechat")
+        .await
+        .map_err(|e| {
+            error!(error = %e, "Failed to check for existing payment event");
+            ApiError::internal("Database error")
+        })?;
 
     if existing_event.is_some() {
         info!(

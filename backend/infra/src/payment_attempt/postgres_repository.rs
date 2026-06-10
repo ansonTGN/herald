@@ -4,22 +4,24 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
     QuerySelect, Set,
 };
+use sqlx::{PgPool, Row};
 use std::sync::Arc;
 
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::payment_attempt::{
-    CreatePaymentAttemptInput, PaymentAttempt, PaymentAttemptRepository,
+    CreatePaymentAttemptInput, PaymentAttempt, PaymentAttemptRepository, PurchaseHistoryRow,
 };
 use herald_entity::payment_attempt as payment_attempt_entity;
 
 /// PostgreSQL implementation of PaymentAttempt repository
 pub struct PostgresPaymentAttemptRepository {
     db: Arc<DatabaseConnection>,
+    pool: PgPool,
 }
 
 impl PostgresPaymentAttemptRepository {
-    pub fn new(db: Arc<DatabaseConnection>) -> Self {
-        Self { db }
+    pub fn new(db: Arc<DatabaseConnection>, pool: PgPool) -> Self {
+        Self { db, pool }
     }
 
     fn model_to_payment_attempt(
@@ -209,5 +211,94 @@ impl PaymentAttemptRepository for PostgresPaymentAttemptRepository {
             .into_iter()
             .map(Self::model_to_payment_attempt)
             .collect()
+    }
+
+    async fn list_purchase_history(
+        &self,
+        realm_id: &str,
+        user_id: uuid::Uuid,
+        payment_provider: Option<&str>,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        page: u64,
+        page_size: u64,
+    ) -> Result<(Vec<PurchaseHistoryRow>, i64), CoreError> {
+        let offset = (page - 1) * page_size;
+        let provider_filter = payment_provider.unwrap_or("");
+        let start_filter = start_date.unwrap_or("");
+        let end_filter = end_date.unwrap_or("");
+
+        // Count query
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM payment_attempts pa \
+             WHERE pa.realm_id = $1 AND pa.user_id = $2 \
+             AND pa.status = 'Succeeded' AND pa.target_type = 'entitlement_mapping' \
+             AND ($3 = '' OR pa.payment_provider = $3) \
+             AND ($4 = '' OR pa.created_at >= $4::timestamptz) \
+             AND ($5 = '' OR pa.created_at <= $5::timestamptz)",
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(provider_filter)
+        .bind(start_filter)
+        .bind(end_filter)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to count purchase history: {e}")))?;
+
+        // Data query
+        let rows = sqlx::query(
+            "SELECT pa.id AS attempt_id, pa.target_id AS target_mapping_id, \
+             pem.provider_product_info, pem.points_per_period, \
+             pa.amount, pa.currency, pa.payment_provider, pa.status, \
+             pa.completed_at, pa.created_at \
+             FROM payment_attempts pa \
+             LEFT JOIN provider_entitlement_mappings pem ON pa.target_id = pem.id \
+             WHERE pa.realm_id = $1 AND pa.user_id = $2 \
+             AND pa.status = 'Succeeded' AND pa.target_type = 'entitlement_mapping' \
+             AND ($3 = '' OR pa.payment_provider = $3) \
+             AND ($4 = '' OR pa.created_at >= $4::timestamptz) \
+             AND ($5 = '' OR pa.created_at <= $5::timestamptz) \
+             ORDER BY pa.created_at DESC \
+             LIMIT $6 OFFSET $7",
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(provider_filter)
+        .bind(start_filter)
+        .bind(end_filter)
+        .bind(page_size as i64)
+        .bind(offset as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to fetch purchase history: {e}")))?;
+
+        let items: Vec<PurchaseHistoryRow> = rows
+            .into_iter()
+            .map(|row| {
+                let product_info: Option<serde_json::Value> = row.get("provider_product_info");
+                let product_name = product_info
+                    .as_ref()
+                    .and_then(|v| v.get("name"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let points_per_period: Option<i32> = row.get("points_per_period");
+
+                PurchaseHistoryRow {
+                    attempt_id: row.get("attempt_id"),
+                    target_mapping_id: row.get("target_mapping_id"),
+                    product_name,
+                    points: points_per_period.map(|p| p as i64),
+                    amount: row.get("amount"),
+                    currency: row.get("currency"),
+                    payment_provider: row.get("payment_provider"),
+                    status: row.get("status"),
+                    completed_at: row.get("completed_at"),
+                    created_at: row.get("created_at"),
+                }
+            })
+            .collect();
+
+        Ok((items, count))
     }
 }

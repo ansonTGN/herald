@@ -5,6 +5,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::entities::PaymentAttempt;
+use super::entities::PurchaseHistoryRow;
 use crate::common::entities::app_errors::CoreError;
 
 /// Input for creating a payment attempt
@@ -70,4 +71,16 @@ pub trait PaymentAttemptRepository: Send + Sync {
         &self,
         before: DateTime<Utc>,
     ) -> Result<Vec<PaymentAttempt>, CoreError>;
+
+    /// List purchase history for a user with filters and pagination
+    async fn list_purchase_history(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        payment_provider: Option<&str>,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        page: u64,
+        page_size: u64,
+    ) -> Result<(Vec<PurchaseHistoryRow>, i64), CoreError>;
 }

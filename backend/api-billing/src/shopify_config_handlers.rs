@@ -5,8 +5,7 @@ use axum::{
     extract::{Extension, Path, State},
     http::StatusCode,
 };
-use sqlx::{PgPool, Row};
-use uuid::Uuid;
+use sqlx::PgPool;
 
 use crate::shopify_config_types::{
     GenericErrorResponse, PaymentProviderInfo, PaymentProvidersResponse, ShopifyConfigRequest,
@@ -20,6 +19,9 @@ use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::PermissionService;
+use herald_core::domain::realm_config::{
+    ConfigType, RealmConfigRepository, UpsertRealmConfigRequest,
+};
 use herald_core::infrastructure::shopify::{ShopifyAdminClient, ShopifyStorefrontClient};
 
 // ============================================================================
@@ -61,8 +63,7 @@ pub async fn list_payment_providers(
 
     let mut providers = Vec::new();
 
-    if let Some(config) =
-        get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url).await?
+    if let Some(config) = get_shopify_config_internal(&state, &realm_id).await?
         && (can_manage || config.enabled)
     {
         providers.push(PaymentProviderInfo {
@@ -75,19 +76,19 @@ pub async fn list_payment_providers(
         });
     }
 
-    if let Some(wechat_config) = get_wechat_config_for_providers(&state.pool, &realm_id).await?
+    if let Some(wechat_config) = get_wechat_config_for_providers(&state, &realm_id).await?
         && (can_manage || wechat_config.enabled)
     {
         providers.push(wechat_config);
     }
 
-    if let Some(stripe_config) = get_stripe_config_for_providers(&state.pool, &realm_id).await?
+    if let Some(stripe_config) = get_stripe_config_for_providers(&state, &realm_id).await?
         && (can_manage || stripe_config.enabled)
     {
         providers.push(stripe_config);
     }
 
-    if let Some(creem_config) = get_creem_config_for_providers(&state.pool, &realm_id).await?
+    if let Some(creem_config) = get_creem_config_for_providers(&state, &realm_id).await?
         && (can_manage || creem_config.enabled)
     {
         providers.push(creem_config);
@@ -166,7 +167,7 @@ pub async fn create_shopify_config(
         }
     }
 
-    save_shopify_config(&state.pool, &realm_id, &request).await?;
+    save_shopify_config(&state, &realm_id, &request).await?;
 
     let webhook_endpoint = generate_webhook_endpoint(&state, &realm_id);
 
@@ -210,7 +211,7 @@ pub async fn get_shopify_config(
 ) -> Result<Json<ShopifyConfigResponse>, ApiError> {
     crate::handlers::require_billing_permission(&state, &identity, &realm_id, "view").await?;
 
-    let config = get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url)
+    let config = get_shopify_config_internal(&state, &realm_id)
         .await?
         .ok_or_else(|| ApiError::not_found("Configuration not found"))?;
 
@@ -245,13 +246,13 @@ pub async fn update_shopify_config(
 
     validate_request(&request).map_err(ApiError::bad_request_json)?;
 
-    let _existing = get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url)
+    let _existing = get_shopify_config_internal(&state, &realm_id)
         .await?
         .ok_or_else(|| ApiError::not_found("Configuration not found"))?;
 
-    update_shopify_config_internal(&state.pool, &realm_id, &request).await?;
+    update_shopify_config_internal(&state, &realm_id, &request).await?;
 
-    let config = get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url)
+    let config = get_shopify_config_internal(&state, &realm_id)
         .await?
         .ok_or_else(|| ApiError::internal("Shopify configuration not found after update"))?;
 
@@ -281,7 +282,7 @@ pub async fn delete_shopify_config(
 ) -> Result<StatusCode, ApiError> {
     crate::handlers::require_billing_permission(&state, &identity, &realm_id, "manage").await?;
 
-    let _existing = get_shopify_config_internal(&state.pool, &realm_id, &state.public_base_url)
+    let _existing = get_shopify_config_internal(&state, &realm_id)
         .await?
         .ok_or_else(|| ApiError::not_found("Configuration not found"))?;
 
@@ -296,7 +297,7 @@ pub async fn delete_shopify_config(
         }));
     }
 
-    delete_shopify_config_internal(&state.pool, &realm_id).await?;
+    delete_shopify_config_internal(&state, &realm_id).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -349,28 +350,16 @@ pub async fn test_shopify_connection_endpoint(
 // ============================================================================
 
 async fn get_shopify_config_internal(
-    db: &PgPool,
+    state: &AppState,
     realm_id: &str,
-    public_base_url: &str,
 ) -> Result<Option<ShopifyConfigResponse>, ApiError> {
-    let rows = sqlx::query(
-        r#"
-        SELECT
-            rc.config_value,
-            rc.config_key,
-            rc.created_at,
-            rc.updated_at,
-            rc.enabled
-        FROM realm_config rc
-        WHERE rc.realm_id = $1 AND rc.config_type = 'shopify'
-        "#,
-    )
-    .bind(realm_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
+    let configs = state
+        .realm_config_repository
+        .get_by_type(realm_id.to_string(), "shopify".to_string())
+        .await
+        .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
 
-    if rows.is_empty() {
+    if configs.is_empty() {
         return Ok(None);
     }
 
@@ -392,32 +381,26 @@ async fn get_shopify_config_internal(
     let mut created_at: Option<chrono::DateTime<chrono::Utc>> = None;
     let mut updated_at: Option<chrono::DateTime<chrono::Utc>> = None;
 
-    for row in rows {
-        let key: String = row.get("config_key");
-        let value: String = row.get("config_value");
-        let row_created_at: chrono::DateTime<chrono::Utc> = row.get("created_at");
-        let row_updated_at: chrono::DateTime<chrono::Utc> = row.get("updated_at");
-        let row_enabled: bool = row.get("enabled");
+    for rc in configs {
+        created_at = Some(created_at.map_or(rc.created_at, |current| current.min(rc.created_at)));
+        updated_at = Some(updated_at.map_or(rc.updated_at, |current| current.max(rc.updated_at)));
+        config.enabled &= rc.enabled;
 
-        created_at = Some(created_at.map_or(row_created_at, |current| current.min(row_created_at)));
-        updated_at = Some(updated_at.map_or(row_updated_at, |current| current.max(row_updated_at)));
-        config.enabled &= row_enabled;
-
-        match key.as_str() {
-            "shop_domain" => config.shop_domain = value,
+        match rc.config_key.as_str() {
+            "shop_domain" => config.shop_domain = rc.config_value,
             "admin_access_token" => {
-                config.admin_access_token = mask_token(&value);
+                config.admin_access_token = mask_token(&rc.config_value);
             }
             "storefront_access_token" => {
-                config.storefront_access_token = mask_token(&value);
+                config.storefront_access_token = mask_token(&rc.config_value);
             }
             "app_client_secret" => {
-                config.app_client_secret = mask_token(&value);
+                config.app_client_secret = mask_token(&rc.config_value);
             }
-            "api_version" => config.api_version = value,
-            "webhook_subscription_mode" => config.webhook_subscription_mode = value,
+            "api_version" => config.api_version = rc.config_value,
+            "webhook_subscription_mode" => config.webhook_subscription_mode = rc.config_value,
             "timeout" => {
-                config.timeout = value.parse().unwrap_or(30);
+                config.timeout = rc.config_value.parse().unwrap_or(30);
             }
             _ => {}
         }
@@ -425,7 +408,7 @@ async fn get_shopify_config_internal(
 
     config.webhook_endpoint = format!(
         "{}/api/third/pay/{}/shopify/webhooks",
-        public_base_url.trim_end_matches('/'),
+        state.public_base_url.trim_end_matches('/'),
         realm_id
     );
     config.created_at = created_at.unwrap_or_else(chrono::Utc::now).to_rfc3339();
@@ -435,13 +418,13 @@ async fn get_shopify_config_internal(
 }
 
 async fn save_shopify_config(
-    db: &PgPool,
+    state: &AppState,
     realm_id: &str,
     request: &ShopifyConfigRequest,
 ) -> Result<(), ApiError> {
     let timeout_str = request.timeout.to_string();
 
-    let config_items = vec![
+    let config_items: Vec<(&str, &str, bool)> = vec![
         ("shop_domain", &request.shop_domain, false),
         ("admin_access_token", &request.admin_access_token, true),
         (
@@ -459,41 +442,29 @@ async fn save_shopify_config(
         ("timeout", &timeout_str, false),
     ];
 
-    let mut tx = db
-        .begin()
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {}", e)))?;
+    let requests: Vec<UpsertRealmConfigRequest> = config_items
+        .into_iter()
+        .map(|(key, value, is_secret)| UpsertRealmConfigRequest {
+            config_type: ConfigType::Shopify,
+            config_key: key.to_string(),
+            config_value: value.to_string(),
+            is_secret: Some(is_secret),
+            enabled: Some(true),
+            metadata: None,
+        })
+        .collect();
 
-    for (key, value, is_secret) in config_items {
-        let result = sqlx::query(
-            r#"
-            INSERT INTO realm_config (id, realm_id, config_type, config_key, config_value, is_secret, created_at, updated_at)
-            VALUES ($1, $2, 'shopify', $3, $4, $5, NOW(), NOW())
-            ON CONFLICT (realm_id, config_type, config_key) DO NOTHING
-            "#,
-        )
-        .bind(Uuid::now_v7())
-        .bind(realm_id)
-        .bind(key)
-        .bind(value)
-        .bind(is_secret)
-        .execute(&mut *tx)
+    state
+        .realm_config_repository
+        .batch_upsert(realm_id, requests)
         .await
         .map_err(|e| ApiError::internal(format!("Failed to save config: {}", e)))?;
 
-        if result.rows_affected() == 0 {
-            tracing::warn!(realm_id = %realm_id, key = %key, "Config key already exists, skipping");
-        }
-    }
-
-    tx.commit()
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to commit transaction: {}", e)))?;
     Ok(())
 }
 
 async fn update_shopify_config_internal(
-    db: &PgPool,
+    state: &AppState,
     realm_id: &str,
     request: &ShopifyConfigUpdateRequest,
 ) -> Result<(), ApiError> {
@@ -524,47 +495,35 @@ async fn update_shopify_config_internal(
         updates.push(("timeout", timeout.to_string()));
     }
 
-    let mut tx = db
-        .begin()
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {}", e)))?;
+    let requests: Vec<UpsertRealmConfigRequest> = updates
+        .into_iter()
+        .map(|(key, value)| UpsertRealmConfigRequest {
+            config_type: ConfigType::Shopify,
+            config_key: key.to_string(),
+            config_value: value,
+            is_secret: None,
+            enabled: None,
+            metadata: None,
+        })
+        .collect();
 
-    for (key, value) in updates {
-        sqlx::query(
-            r#"
-            UPDATE realm_config
-            SET config_value = $1, updated_at = NOW()
-            WHERE realm_id = $2
-              AND config_type = 'shopify'
-              AND config_key = $3
-            "#,
-        )
-        .bind(&value)
-        .bind(realm_id)
-        .bind(key)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to update config: {}", e)))?;
+    if !requests.is_empty() {
+        state
+            .realm_config_repository
+            .batch_upsert(realm_id, requests)
+            .await
+            .map_err(|e| ApiError::internal(format!("Failed to update config: {}", e)))?;
     }
 
-    tx.commit()
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to commit transaction: {}", e)))?;
     Ok(())
 }
 
-async fn delete_shopify_config_internal(db: &PgPool, realm_id: &str) -> Result<(), ApiError> {
-    sqlx::query(
-        r#"
-        DELETE FROM realm_config
-        WHERE realm_id = $1
-          AND config_type = 'shopify'
-        "#,
-    )
-    .bind(realm_id)
-    .execute(db)
-    .await
-    .map_err(|e| ApiError::internal(format!("Failed to delete config: {}", e)))?;
+async fn delete_shopify_config_internal(state: &AppState, realm_id: &str) -> Result<(), ApiError> {
+    state
+        .realm_config_repository
+        .delete_by_type(realm_id.to_string(), "shopify".to_string())
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to delete config: {}", e)))?;
 
     Ok(())
 }
@@ -669,25 +628,19 @@ fn mask_token(token: &str) -> String {
 }
 
 pub async fn get_stripe_config_for_providers(
-    db: &PgPool,
+    state: &AppState,
     realm_id: &str,
 ) -> Result<Option<PaymentProviderInfo>, ApiError> {
-    let rows = sqlx::query(
-        r#"
-        SELECT config_key, config_value, created_at, updated_at, enabled
-        FROM realm_config
-        WHERE realm_id = $1 AND config_type = 'stripe'
-        "#,
-    )
-    .bind(realm_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to load Stripe configuration: {}", e);
-        ApiError::internal(format!("Database error: {}", e))
-    })?;
+    let configs = state
+        .realm_config_repository
+        .get_by_type(realm_id.to_string(), "stripe".to_string())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load Stripe configuration: {}", e);
+            ApiError::internal(format!("Database error: {}", e))
+        })?;
 
-    if rows.is_empty() {
+    if configs.is_empty() {
         return Ok(None);
     }
 
@@ -695,14 +648,12 @@ pub async fn get_stripe_config_for_providers(
     let mut enabled = true;
     let mut has_config = false;
 
-    for row in &rows {
-        let config_key: String = row.get("config_key");
-        let row_updated: chrono::DateTime<chrono::Utc> = row.get("updated_at");
-        let row_enabled: bool = row.get("enabled");
-        last_updated = Some(last_updated.map_or(row_updated, |current| current.max(row_updated)));
-        enabled &= row_enabled;
+    for rc in &configs {
+        last_updated =
+            Some(last_updated.map_or(rc.updated_at, |current| current.max(rc.updated_at)));
+        enabled &= rc.enabled;
 
-        if config_key == "publishable_key" {
+        if rc.config_key == "publishable_key" {
             has_config = true;
         }
     }
@@ -722,25 +673,19 @@ pub async fn get_stripe_config_for_providers(
 }
 
 pub async fn get_creem_config_for_providers(
-    db: &PgPool,
+    state: &AppState,
     realm_id: &str,
 ) -> Result<Option<PaymentProviderInfo>, ApiError> {
-    let rows = sqlx::query(
-        r#"
-        SELECT config_key, config_value, created_at, updated_at, enabled
-        FROM realm_config
-        WHERE realm_id = $1 AND config_type = 'creem'
-        "#,
-    )
-    .bind(realm_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to load Creem configuration: {}", e);
-        ApiError::internal(format!("Database error: {}", e))
-    })?;
+    let configs = state
+        .realm_config_repository
+        .get_by_type(realm_id.to_string(), "creem".to_string())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load Creem configuration: {}", e);
+            ApiError::internal(format!("Database error: {}", e))
+        })?;
 
-    if rows.is_empty() {
+    if configs.is_empty() {
         return Ok(None);
     }
 
@@ -748,14 +693,12 @@ pub async fn get_creem_config_for_providers(
     let mut enabled = true;
     let mut has_config = false;
 
-    for row in &rows {
-        let config_key: String = row.get("config_key");
-        let row_updated: chrono::DateTime<chrono::Utc> = row.get("updated_at");
-        let row_enabled: bool = row.get("enabled");
-        last_updated = Some(last_updated.map_or(row_updated, |current| current.max(row_updated)));
-        enabled &= row_enabled;
+    for rc in &configs {
+        last_updated =
+            Some(last_updated.map_or(rc.updated_at, |current| current.max(rc.updated_at)));
+        enabled &= rc.enabled;
 
-        if config_key == "api_key" {
+        if rc.config_key == "api_key" {
             has_config = true;
         }
     }

@@ -55,4 +55,11 @@ pub trait RealmConfigRepository: Send + Sync {
         config_type: String,
         config_key: String,
     ) -> impl Future<Output = Result<bool, CoreError>> + Send;
+
+    /// 删除指定 realm 和 config_type 下的所有配置
+    fn delete_by_type(
+        &self,
+        realm_id: String,
+        config_type: String,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }

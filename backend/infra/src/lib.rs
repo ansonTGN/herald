@@ -27,6 +27,7 @@ pub mod webhook;
 // Re-export commonly used types
 pub use audit::PostgresAuditEventRepository;
 pub use dashboard::PostgresDashboardRepository;
+pub use realm_config::PostgresRealmConfigRepository;
 pub use user::{
     PostgresAdminUserRepository, PostgresRolePolicyRepository, PostgresUserRepository,
     PostgresUserRoleRepository, PostgresVerificationRepository,

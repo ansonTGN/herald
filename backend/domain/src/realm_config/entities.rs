@@ -328,6 +328,9 @@ pub enum ConfigType {
     /// ```
     Email,
 
+    /// WeChat 支付提供商配置
+    Wechat,
+
     /// Invoice policy configuration
     ///
     /// Valid config_key values:
@@ -362,6 +365,7 @@ impl ConfigType {
             "creem" => ConfigType::Creem,
             "stripe" => ConfigType::Stripe,
             "shopify" => ConfigType::Shopify,
+            "wechat" => ConfigType::Wechat,
             "email" => ConfigType::Email,
             "invoice_policy" => ConfigType::InvoicePolicy,
             _ => return Err(format!("Invalid config type: {}", s)),
@@ -380,6 +384,7 @@ impl From<ConfigType> for String {
             ConfigType::Creem => "creem".to_string(),
             ConfigType::Stripe => "stripe".to_string(),
             ConfigType::Shopify => "shopify".to_string(),
+            ConfigType::Wechat => "wechat".to_string(),
             ConfigType::Email => "email".to_string(),
             ConfigType::InvoicePolicy => "invoice_policy".to_string(),
         }
@@ -396,6 +401,7 @@ impl AsRef<str> for ConfigType {
             ConfigType::Creem => "creem",
             ConfigType::Stripe => "stripe",
             ConfigType::Shopify => "shopify",
+            ConfigType::Wechat => "wechat",
             ConfigType::Email => "email",
             ConfigType::InvoicePolicy => "invoice_policy",
         }

@@ -217,3 +217,18 @@ pub struct PaymentContext {
     pub creem_checkout_url: Option<String>,  // Checkout URL for Creem
     pub client_secret: Option<String>,       // For Stripe elements
 }
+
+/// Purchase history row returned by the repository's list_purchase_history query.
+#[derive(Debug, Clone)]
+pub struct PurchaseHistoryRow {
+    pub attempt_id: Uuid,
+    pub target_mapping_id: Uuid,
+    pub product_name: Option<String>,
+    pub points: Option<i64>,
+    pub amount: i64,
+    pub currency: String,
+    pub payment_provider: String,
+    pub status: String,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}

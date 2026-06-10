@@ -6,7 +6,9 @@ pub mod ports;
 pub mod services;
 
 // Re-export commonly used types
-pub use entities::{PaymentAttempt, PaymentAttemptStatus, PaymentContext, PurchasableTarget};
+pub use entities::{
+    PaymentAttempt, PaymentAttemptStatus, PaymentContext, PurchasableTarget, PurchaseHistoryRow,
+};
 pub use errors::{PaymentAttemptErrorExt, PaymentAttemptResult};
 pub use ports::{CreatePaymentAttemptInput, PaymentAttemptRepository};
 pub use services::PaymentAttemptService;

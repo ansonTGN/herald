@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use herald_domain::billing::entities::EntitlementMapping;
 use herald_domain::billing::{
-    BillingRepository, HistoryEventType, PaymentEvent, SortOrder, Subscription,
+    BillingRepository, FeatureFacts, HistoryEventType, PaymentEvent, SortOrder, Subscription,
     SubscriptionHistoryEvent, SubscriptionHistoryQuery,
 };
 use herald_domain::common::entities::app_errors::CoreError;
@@ -441,6 +441,48 @@ impl BillingRepository for PostgresBillingRepository {
         Self::model_to_subscription(updated)
     }
 
+    async fn cancel_subscriptions_by_external_id(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        external_subscription_id: &str,
+    ) -> Result<u64, CoreError> {
+        sqlx::query(
+            "UPDATE subscription
+             SET status = 'canceled', cancel_at = NOW(), updated_at = NOW()
+             WHERE realm_id = $1 AND user_id = $2 AND external_subscription_id = $3
+               AND status IN ('active', 'trialing', 'past_due', 'scheduled_cancel', 'pending')",
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(external_subscription_id)
+        .execute(self.db.get_postgres_connection_pool())
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))
+        .map(|r| r.rows_affected())
+    }
+
+    async fn cancel_subscriptions_by_entitlement_key(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        entitlement_key: &str,
+    ) -> Result<u64, CoreError> {
+        sqlx::query(
+            "UPDATE subscription
+             SET status = 'canceled', cancel_at = NOW(), updated_at = NOW()
+             WHERE realm_id = $1 AND user_id = $2 AND entitlement_key = $3
+               AND status IN ('active', 'trialing', 'past_due', 'scheduled_cancel', 'pending')",
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(entitlement_key)
+        .execute(self.db.get_postgres_connection_pool())
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))
+        .map(|r| r.rows_affected())
+    }
+
     // ===== Subscription History =====
 
     async fn save_history_event(
@@ -809,5 +851,190 @@ impl BillingRepository for PostgresBillingRepository {
         .flatten();
 
         Ok(stripe_subscription_id)
+    }
+
+    async fn list_subscriptions(
+        &self,
+        realm_id: &str,
+        entitlement_key: Option<&str>,
+        status: Option<&str>,
+        payment_provider: Option<&str>,
+        page: u64,
+        page_size: u64,
+    ) -> Result<(Vec<Subscription>, u64), CoreError> {
+        let page = page.max(1);
+        let offset = (page - 1) * page_size;
+
+        // Build dynamic WHERE clause
+        let mut conditions = vec!["realm_id = $1".to_string()];
+        let mut param_idx = 2u32;
+
+        let entitlement_key_param;
+        let status_param;
+        let payment_provider_param;
+
+        if let Some(ek) = entitlement_key {
+            conditions.push(format!("entitlement_key = ${}", param_idx));
+            entitlement_key_param = Some(ek.to_string());
+            param_idx += 1;
+        } else {
+            entitlement_key_param = None;
+        }
+
+        if let Some(s) = status {
+            conditions.push(format!("status = ${}", param_idx));
+            status_param = Some(s.to_string());
+            param_idx += 1;
+        } else {
+            status_param = None;
+        }
+
+        if let Some(pp) = payment_provider {
+            conditions.push(format!("payment_provider = ${}", param_idx));
+            payment_provider_param = Some(pp.to_string());
+            param_idx += 1;
+        } else {
+            payment_provider_param = None;
+        }
+
+        let where_clause = conditions.join(" AND ");
+        let pool = self.db.get_postgres_connection_pool();
+
+        // Count query
+        let count_sql = format!("SELECT COUNT(*) FROM subscription WHERE {}", where_clause);
+        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql).bind(realm_id);
+        if let Some(ref ek) = entitlement_key_param {
+            count_query = count_query.bind(ek);
+        }
+        if let Some(ref s) = status_param {
+            count_query = count_query.bind(s);
+        }
+        if let Some(ref pp) = payment_provider_param {
+            count_query = count_query.bind(pp);
+        }
+        let total = count_query.fetch_one(pool).await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to count subscriptions: {}", e))
+        })?;
+
+        // Data query
+        let data_sql = format!(
+            "SELECT id, realm_id, user_id, external_subscription_id, external_product_id, \
+             payment_provider, status, entitlement_key, external_price_id, provider_metadata, \
+             synced_at, current_period_start, current_period_end, cancel_at_period_end, \
+             client_app_id, cancel_at, created_at, updated_at \
+             FROM subscription WHERE {} ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
+            where_clause,
+            param_idx,
+            param_idx + 1
+        );
+        let mut data_query = sqlx::query(&data_sql).bind(realm_id);
+        if let Some(ref ek) = entitlement_key_param {
+            data_query = data_query.bind(ek);
+        }
+        if let Some(ref s) = status_param {
+            data_query = data_query.bind(s);
+        }
+        if let Some(ref pp) = payment_provider_param {
+            data_query = data_query.bind(pp);
+        }
+        data_query = data_query.bind(page_size as i64).bind(offset as i64);
+
+        let rows = data_query.fetch_all(pool).await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to list subscriptions: {}", e))
+        })?;
+
+        let subs: Vec<Subscription> = rows
+            .iter()
+            .map(|row| {
+                use sqlx::Row;
+                let status_str: String = row.get("status");
+                Ok(Subscription {
+                    id: row.get("id"),
+                    realm_id: row.get("realm_id"),
+                    user_id: row.get("user_id"),
+                    external_subscription_id: row.get("external_subscription_id"),
+                    external_product_id: row.get("external_product_id"),
+                    payment_provider: row.get("payment_provider"),
+                    status: status_str.parse()?,
+                    entitlement_key: row.get("entitlement_key"),
+                    external_price_id: row.get("external_price_id"),
+                    provider_metadata: row.get("provider_metadata"),
+                    synced_at: row.get("synced_at"),
+                    current_period_start: row.get("current_period_start"),
+                    current_period_end: row.get("current_period_end"),
+                    cancel_at_period_end: row.get("cancel_at_period_end"),
+                    client_app_id: row.get("client_app_id"),
+                    cancel_at: row.get("cancel_at"),
+                    created_at: row.get("created_at"),
+                    updated_at: row.get("updated_at"),
+                })
+            })
+            .collect::<Result<Vec<_>, CoreError>>()?;
+
+        Ok((subs, total as u64))
+    }
+
+    async fn check_feature_facts(
+        &self,
+        realm_id: &str,
+        pool: &sqlx::PgPool,
+    ) -> Result<FeatureFacts, CoreError> {
+        use sqlx::Row;
+
+        let row = sqlx::query(
+            r#"
+            WITH configured_providers AS (
+                SELECT 'wechat' AS provider
+                WHERE EXISTS (
+                    SELECT 1 FROM realm_config
+                    WHERE realm_id = $1 AND config_type = 'wechat' AND enabled = true
+                )
+                UNION ALL
+                SELECT 'shopify'
+                WHERE EXISTS (
+                    SELECT 1 FROM realm_config
+                    WHERE realm_id = $1 AND config_type = 'shopify' AND enabled = true
+                )
+                UNION ALL
+                SELECT 'stripe'
+                WHERE EXISTS (
+                    SELECT 1 FROM realm_config
+                    WHERE realm_id = $1 AND config_type = 'stripe'
+                      AND config_key = 'api_key' AND enabled = true
+                )
+                UNION ALL
+                SELECT 'creem'
+                WHERE EXISTS (
+                    SELECT 1 FROM realm_config
+                    WHERE realm_id = $1 AND config_type = 'creem'
+                      AND config_key = 'api_key' AND enabled = true
+                )
+            )
+            SELECT
+                EXISTS (SELECT 1 FROM configured_providers) AS has_payment_providers,
+                EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1) AS has_entitlement_mappings,
+                EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1 AND enabled = true) AS has_enabled_mappings,
+                EXISTS (SELECT 1 FROM provider_entitlement_mappings WHERE realm_id = $1 AND billing_type = 'one_time' AND enabled = true) AS has_one_time_mappings,
+                EXISTS (SELECT 1 FROM invoice_seller_config WHERE realm_id = $1) AS has_invoice_seller_config,
+                EXISTS (SELECT 1 FROM invoice WHERE realm_id = $1) AS has_invoices,
+                EXISTS (SELECT 1 FROM subscription_history WHERE realm_id = $1) AS has_subscription_history
+            "#,
+        )
+        .bind(realm_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to load feature availability facts: {}", e))
+        })?;
+
+        Ok(FeatureFacts {
+            has_payment_providers: row.get("has_payment_providers"),
+            has_entitlement_mappings: row.get("has_entitlement_mappings"),
+            has_enabled_mappings: row.get("has_enabled_mappings"),
+            has_one_time_mappings: row.get("has_one_time_mappings"),
+            has_invoice_seller_config: row.get("has_invoice_seller_config"),
+            has_invoices: row.get("has_invoices"),
+            has_subscription_history: row.get("has_subscription_history"),
+        })
     }
 }

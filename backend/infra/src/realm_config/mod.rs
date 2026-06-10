@@ -358,6 +358,28 @@ impl RealmConfigRepository for PostgresRealmConfigRepository {
             Ok(exists)
         }
     }
+
+    fn delete_by_type(
+        &self,
+        realm_id: String,
+        config_type: String,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send {
+        let db = self.db.clone();
+
+        async move {
+            sqlx::query("DELETE FROM realm_config WHERE realm_id = $1 AND config_type = $2")
+                .bind(&realm_id)
+                .bind(&config_type)
+                .execute(db.get_postgres_connection_pool())
+                .await
+                .map_err(|e| {
+                    tracing::error!("Failed to delete realm configs by type: {e}");
+                    CoreError::InternalServerError(e.to_string())
+                })?;
+
+            Ok(())
+        }
+    }
 }
 
 impl std::fmt::Debug for PostgresRealmConfigRepository {

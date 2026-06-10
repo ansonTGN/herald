@@ -60,6 +60,7 @@ use herald_core::infrastructure::points::PostgresPointsRepository;
 use herald_core::infrastructure::purchase::{
     PostgresFulfillmentService, PostgresPurchaseRepository, PurchaseService,
 };
+use herald_core::infrastructure::realm_config::PostgresRealmConfigRepository;
 use herald_core::infrastructure::redis::{ManagerConfig, RedisConnectionManager};
 use herald_core::infrastructure::user::repositories::PostgresUserRepository;
 use herald_core::infrastructure::user::{
@@ -219,6 +220,8 @@ pub async fn build_app_state_with_migrations(
     let billing_repository = Arc::new(PostgresBillingRepository::new(db.clone()));
     let invoice_repository = Arc::new(PostgresInvoiceRepository::new(db.clone()));
     let audit_event_repository = Arc::new(PostgresAuditEventRepository::new(db.clone()));
+    let realm_config_repository =
+        Arc::new(PostgresRealmConfigRepository::new(Arc::new(db.clone())));
 
     // Create entitlement mapping service with permission-based policy
     let billing_policy = PermissionBasedBillingPolicy::new(permission_checker.clone());
@@ -303,8 +306,10 @@ pub async fn build_app_state_with_migrations(
     info!("Admin user services initialized");
 
     // Create payment attempt service
-    let payment_attempt_repository =
-        Arc::new(PostgresPaymentAttemptRepository::new(Arc::new(db.clone())));
+    let payment_attempt_repository = Arc::new(PostgresPaymentAttemptRepository::new(
+        Arc::new(db.clone()),
+        pg_pool.clone(),
+    ));
     let payment_attempt_service = Arc::new(payment_attempt::PaymentAttemptService::new(
         payment_attempt_repository.clone(),
     ));
@@ -409,11 +414,13 @@ pub async fn build_app_state_with_migrations(
         user_permission_service,
         permission_management_service,
         payment_attempt_service,
+        payment_attempt_repository,
         fulfillment_service,
         purchase_repository,
         purchase_service,
         jwt_secret,
         user_role_repository,
+        realm_config_repository,
     });
 
     // Initialize Redis Functions using the final state's redis_manager

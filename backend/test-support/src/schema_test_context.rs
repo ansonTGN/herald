@@ -16,6 +16,7 @@ use herald_core::domain::points::services::RealmConfigService;
 use herald_core::infrastructure::authorization::policies::PermissionBasedPointsPolicy;
 use herald_core::infrastructure::authorization::{RedisCache, RedisPermissionChecker};
 use herald_core::infrastructure::points::{PostgresPointsRepository, RedisIdempotencyStore};
+use herald_core::infrastructure::realm_config::PostgresRealmConfigRepository;
 use herald_core::infrastructure::redis::{ManagerConfig, RedisConnectionManager};
 use herald_core::infrastructure::user::repositories::PostgresUserRepository;
 use herald_core::infrastructure::user::{
@@ -280,6 +281,7 @@ impl AsyncTestContext for SchemaTestContext {
         let payment_attempt_repository = Arc::new(
             herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository::new(
                 Arc::new(sea_conn.clone()),
+                pool_with_schema.clone(),
             ),
         );
         let payment_attempt_service = Arc::new(
@@ -354,11 +356,15 @@ impl AsyncTestContext for SchemaTestContext {
             user_permission_service,
             permission_management_service,
             payment_attempt_service,
+            payment_attempt_repository,
             purchase_repository,
             fulfillment_service,
             purchase_service,
             jwt_secret: crate::TEST_JWT_SECRET.to_string(),
             user_role_repository,
+            realm_config_repository: Arc::new(PostgresRealmConfigRepository::new(Arc::new(
+                sea_conn.clone(),
+            ))),
         });
 
         // 13. 初始化 Redis Functions（只运行一次）

@@ -245,3 +245,16 @@ impl std::str::FromStr for BillingType {
         }
     }
 }
+
+/// Aggregated feature availability facts for a realm.
+/// Used to determine which billing UI features should be shown.
+#[derive(Debug, Clone)]
+pub struct FeatureFacts {
+    pub has_payment_providers: bool,
+    pub has_entitlement_mappings: bool,
+    pub has_enabled_mappings: bool,
+    pub has_one_time_mappings: bool,
+    pub has_invoice_seller_config: bool,
+    pub has_invoices: bool,
+    pub has_subscription_history: bool,
+}

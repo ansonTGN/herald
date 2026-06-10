@@ -3,7 +3,6 @@ use axum::{
     extract::{Extension, Path, Query, State},
 };
 use chrono::Utc;
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::payment_email::formal_payment_email;
@@ -26,6 +25,7 @@ use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::PermissionService;
 use herald_core::domain::billing::{BillingRepository, Subscription};
 use herald_core::domain::common::entities::app_errors::CoreError;
+use herald_core::domain::realm_config::RealmConfigRepository;
 use herald_core::infrastructure::creem::{
     CreateCheckoutRequest as CreemCreateCheckoutRequest, CreemClient,
 };
@@ -61,55 +61,57 @@ async fn get_creem_client_for_realm(
     realm_id: &str,
     state: &AppState,
 ) -> Result<CreemClient, ApiError> {
-    let api_key = sqlx::query_scalar::<_, String>(
-        "SELECT config_value
-         FROM realm_config
-         WHERE realm_id = $1 AND config_type = 'creem' AND config_key = 'api_key' AND enabled = true
-         LIMIT 1",
-    )
-    .bind(realm_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to load Creem API key from database: {}", e);
-        ApiError::internal(format!("Database error: {}", e))
-    })?
-    .ok_or_else(|| {
-        tracing::error!("No Creem API key found for realm: {}", realm_id);
-        ApiError::internal(format!("Creem not configured for realm: {}", realm_id))
-    })?;
+    let api_key = state
+        .realm_config_repository
+        .get(
+            realm_id.to_string(),
+            "creem".to_string(),
+            "api_key".to_string(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load Creem API key from database: {}", e);
+            ApiError::internal(format!("Database error: {}", e))
+        })?
+        .filter(|c| c.enabled)
+        .map(|c| c.config_value)
+        .ok_or_else(|| {
+            tracing::error!("No Creem API key found for realm: {}", realm_id);
+            ApiError::internal(format!("Creem not configured for realm: {}", realm_id))
+        })?;
 
-    let timeout = sqlx::query_scalar::<_, String>(
-        "SELECT config_value
-         FROM realm_config
-         WHERE realm_id = $1 AND config_type = 'creem' AND config_key = 'timeout' AND enabled = true
-         LIMIT 1",
-    )
-    .bind(realm_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to load Creem timeout from database: {}", e);
-        ApiError::internal(format!("Database error: {}", e))
-    })?
-    .and_then(|s| s.parse::<u64>().ok())
-    .unwrap_or(30);
+    let timeout = state
+        .realm_config_repository
+        .get(
+            realm_id.to_string(),
+            "creem".to_string(),
+            "timeout".to_string(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load Creem timeout from database: {}", e);
+            ApiError::internal(format!("Database error: {}", e))
+        })?
+        .filter(|c| c.enabled)
+        .and_then(|c| c.config_value.parse::<u64>().ok())
+        .unwrap_or(30);
 
     tracing::info!("Loaded Creem config from database for realm: {}", realm_id);
 
-    let mock_base_url = sqlx::query_scalar::<_, String>(
-        "SELECT config_value
-         FROM realm_config
-         WHERE realm_id = $1 AND config_type = 'creem' AND config_key = 'mock_base_url' AND enabled = true
-         LIMIT 1",
-    )
-    .bind(realm_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to load Creem mock base URL from database: {}", e);
-        ApiError::internal(format!("Database error: {}", e))
-    })?;
+    let mock_base_url = state
+        .realm_config_repository
+        .get(
+            realm_id.to_string(),
+            "creem".to_string(),
+            "mock_base_url".to_string(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load Creem mock base URL from database: {}", e);
+            ApiError::internal(format!("Database error: {}", e))
+        })?
+        .filter(|c| c.enabled)
+        .map(|c| c.config_value);
 
     match mock_base_url {
         Some(base_url) => {
@@ -124,55 +126,57 @@ async fn get_stripe_client_for_realm(
     realm_id: &str,
     state: &AppState,
 ) -> Result<StripeClient, ApiError> {
-    let api_key = sqlx::query_scalar::<_, String>(
-        "SELECT config_value
-         FROM realm_config
-         WHERE realm_id = $1 AND config_type = 'stripe' AND config_key = 'api_key' AND enabled = true
-         LIMIT 1",
-    )
-    .bind(realm_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to load Stripe API key from database: {}", e);
-        ApiError::internal(format!("Database error: {}", e))
-    })?
-    .ok_or_else(|| {
-        tracing::error!("No Stripe API key found for realm: {}", realm_id);
-        ApiError::internal(format!("Stripe not configured for realm: {}", realm_id))
-    })?;
+    let api_key = state
+        .realm_config_repository
+        .get(
+            realm_id.to_string(),
+            "stripe".to_string(),
+            "api_key".to_string(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load Stripe API key from database: {}", e);
+            ApiError::internal(format!("Database error: {}", e))
+        })?
+        .filter(|c| c.enabled)
+        .map(|c| c.config_value)
+        .ok_or_else(|| {
+            tracing::error!("No Stripe API key found for realm: {}", realm_id);
+            ApiError::internal(format!("Stripe not configured for realm: {}", realm_id))
+        })?;
 
-    let timeout = sqlx::query_scalar::<_, String>(
-        "SELECT config_value
-         FROM realm_config
-         WHERE realm_id = $1 AND config_type = 'stripe' AND config_key = 'timeout' AND enabled = true
-         LIMIT 1",
-    )
-    .bind(realm_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to load Stripe timeout from database: {}", e);
-        ApiError::internal(format!("Database error: {}", e))
-    })?
-    .and_then(|s| s.parse::<u64>().ok())
-    .unwrap_or(30);
+    let timeout = state
+        .realm_config_repository
+        .get(
+            realm_id.to_string(),
+            "stripe".to_string(),
+            "timeout".to_string(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load Stripe timeout from database: {}", e);
+            ApiError::internal(format!("Database error: {}", e))
+        })?
+        .filter(|c| c.enabled)
+        .and_then(|c| c.config_value.parse::<u64>().ok())
+        .unwrap_or(30);
 
     tracing::info!("Loaded Stripe config from database for realm: {}", realm_id);
 
-    let mock_base_url = sqlx::query_scalar::<_, String>(
-        "SELECT config_value
-         FROM realm_config
-         WHERE realm_id = $1 AND config_type = 'stripe' AND config_key = 'mock_base_url' AND enabled = true
-         LIMIT 1",
-    )
-    .bind(realm_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to load Stripe mock base URL from database: {}", e);
-        ApiError::internal(format!("Database error: {}", e))
-    })?;
+    let mock_base_url = state
+        .realm_config_repository
+        .get(
+            realm_id.to_string(),
+            "stripe".to_string(),
+            "mock_base_url".to_string(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load Stripe mock base URL from database: {}", e);
+            ApiError::internal(format!("Database error: {}", e))
+        })?
+        .filter(|c| c.enabled)
+        .map(|c| c.config_value);
 
     match mock_base_url {
         Some(base_url) => Ok(StripeClient::with_base_url(api_key, base_url, timeout)?),
@@ -237,7 +241,6 @@ pub async fn require_billing_permission(
 // ============================================================================
 
 /// List subscriptions for a realm
-/// TODO: Migrate raw SQL to BillingRepository trait method for schema-safety.
 #[utoipa::path(
     get,
     path = "/api/bill/{realmId}/subscriptions",
@@ -263,119 +266,46 @@ pub async fn list_subscriptions(
 
     require_billing_permission(&state, &identity, &realm_id, "view").await?;
 
-    // Build query conditions
-    let mut conditions = vec!["realm_id = $1".to_string()];
-    let mut param_idx = 2u32;
-
-    let entitlement_key_param;
-    let status_param;
-    let payment_provider_param;
-
-    if let Some(ref ek) = query.entitlement_key {
-        conditions.push(format!("entitlement_key = ${}", param_idx));
-        entitlement_key_param = Some(ek.clone());
-        param_idx += 1;
-    } else {
-        entitlement_key_param = None;
-    }
-
-    if let Some(ref s) = query.status {
-        conditions.push(format!("status = ${}", param_idx));
-        status_param = Some(s.clone());
-        param_idx += 1;
-    } else {
-        status_param = None;
-    }
-
-    if let Some(ref pp) = query.payment_provider {
-        conditions.push(format!("payment_provider = ${}", param_idx));
-        payment_provider_param = Some(pp.clone());
-        param_idx += 1;
-    } else {
-        payment_provider_param = None;
-    }
-
-    let where_clause = conditions.join(" AND ");
-
     let page = query.page.unwrap_or(1).max(1);
     let page_size = query.page_size.unwrap_or(20);
-    let offset = (page - 1) * page_size;
 
-    // Count query
-    let count_sql = format!(
-        "SELECT COUNT(*) as count FROM subscription WHERE {}",
-        where_clause
-    );
-    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql).bind(&realm_id);
-    if let Some(ref ek) = entitlement_key_param {
-        count_query = count_query.bind(ek);
-    }
-    if let Some(ref s) = status_param {
-        count_query = count_query.bind(s);
-    }
-    if let Some(ref pp) = payment_provider_param {
-        count_query = count_query.bind(pp);
-    }
-    let total = count_query.fetch_one(&state.pool).await.map_err(|e| {
-        tracing::error!(realm_id = %realm_id, error = %e, "Failed to count subscriptions");
-        ApiError::internal("Failed to count subscriptions".to_string())
-    })?;
+    let (subs, total) = state
+        .billing_repository
+        .list_subscriptions(
+            &realm_id,
+            query.entitlement_key.as_deref(),
+            query.status.as_deref(),
+            query.payment_provider.as_deref(),
+            page,
+            page_size,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(realm_id = %realm_id, error = %e, "Failed to list subscriptions");
+            ApiError::internal("Failed to list subscriptions".to_string())
+        })?;
 
-    // Data query
-    let data_sql = format!(
-        "SELECT id, client_app_id, entitlement_key, external_price_id, payment_provider, status, \
-         current_period_start, current_period_end, synced_at, created_at, updated_at \
-         FROM subscription WHERE {} ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
-        where_clause,
-        param_idx,
-        param_idx + 1
-    );
-    let mut data_query = sqlx::query(&data_sql).bind(&realm_id);
-    if let Some(ref ek) = entitlement_key_param {
-        data_query = data_query.bind(ek);
-    }
-    if let Some(ref s) = status_param {
-        data_query = data_query.bind(s);
-    }
-    if let Some(ref pp) = payment_provider_param {
-        data_query = data_query.bind(pp);
-    }
-    // Bind LIMIT and OFFSET
-    data_query = data_query.bind(page_size as i64).bind(offset as i64);
-
-    let rows = data_query.fetch_all(&state.pool).await.map_err(|e| {
-        tracing::error!(realm_id = %realm_id, error = %e, "Failed to list subscriptions");
-        ApiError::internal("Failed to list subscriptions".to_string())
-    })?;
-
-    let items: Vec<SubscriptionListItemResponse> = rows
+    let items: Vec<SubscriptionListItemResponse> = subs
         .iter()
-        .map(|row| SubscriptionListItemResponse {
-            id: row.get("id"),
-            client_app_id: row.get("client_app_id"),
-            entitlement_key: row.get("entitlement_key"),
-            external_price_id: row.get("external_price_id"),
-            payment_provider: row.get("payment_provider"),
-            status: row.get::<String, _>("status"),
-            current_period_start: row
-                .get::<Option<chrono::DateTime<chrono::Utc>>, _>("current_period_start")
-                .map(|dt| dt.to_rfc3339()),
-            current_period_end: row
-                .get::<Option<chrono::DateTime<chrono::Utc>>, _>("current_period_end")
-                .map(|dt| dt.to_rfc3339()),
-            synced_at: row
-                .get::<Option<chrono::DateTime<chrono::Utc>>, _>("synced_at")
-                .map(|dt| dt.to_rfc3339()),
-            created_at: row
-                .get::<chrono::DateTime<chrono::Utc>, _>("created_at")
-                .to_rfc3339(),
-            updated_at: row
-                .get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
-                .to_rfc3339(),
+        .map(|sub| SubscriptionListItemResponse {
+            id: sub.id,
+            client_app_id: sub.client_app_id,
+            entitlement_key: sub.entitlement_key.clone(),
+            external_price_id: sub.external_price_id.clone(),
+            payment_provider: sub.payment_provider.clone(),
+            status: sub.status.as_str().to_string(),
+            current_period_start: sub.current_period_start.map(|dt| dt.to_rfc3339()),
+            current_period_end: sub.current_period_end.map(|dt| dt.to_rfc3339()),
+            synced_at: sub.synced_at.map(|dt| dt.to_rfc3339()),
+            created_at: sub.created_at.to_rfc3339(),
+            updated_at: sub.updated_at.to_rfc3339(),
         })
         .collect();
 
-    Ok(Json(SubscriptionListResponse { items, total }))
+    Ok(Json(SubscriptionListResponse {
+        items,
+        total: total as i64,
+    }))
 }
 
 /// Get a specific subscription

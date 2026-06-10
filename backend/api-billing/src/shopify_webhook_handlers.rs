@@ -14,6 +14,7 @@ use herald_core::domain::billing::{ACTOR_WEBHOOK, BillingRepository, Subscriptio
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
+use herald_core::domain::realm_config::RealmConfigRepository;
 use herald_core::infrastructure::shopify::ShopifyRepository;
 
 #[utoipa::path(
@@ -240,15 +241,16 @@ async fn handle_app_uninstalled(state: AppState, realm_id: String) -> Result<(),
             CoreError::DatabaseError(format!("Failed to delete Shopify user bindings: {}", e))
         })?;
 
-    sqlx::query("DELETE FROM realm_config WHERE realm_id = $1 AND config_type = 'shopify'")
-        .bind(&realm_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| CoreError::DatabaseError(format!("Failed to delete Shopify config: {}", e)))?;
-
     tx.commit().await.map_err(|e| {
         CoreError::DatabaseError(format!("Failed to commit Shopify uninstall cleanup: {}", e))
     })?;
+
+    // Delete realm config outside the subscription/binding transaction
+    state
+        .realm_config_repository
+        .delete_by_type(realm_id.clone(), "shopify".to_string())
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to delete Shopify config: {}", e)))?;
 
     info!(realm_id = %realm_id, "Processed Shopify app/uninstalled cleanup");
 

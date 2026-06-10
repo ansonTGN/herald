@@ -33,6 +33,7 @@ use herald_core::domain::points::ports::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
 use herald_core::domain::purchase::metadata_keys;
 use herald_core::domain::purchase::{CompletePaymentAttemptInput, PaymentCompletionSource};
+use herald_core::domain::realm_config::RealmConfigRepository;
 
 struct CreemCheckoutCompletedPayload {
     event_id: String,
@@ -1824,29 +1825,30 @@ pub async fn handle_creem_webhook(
             CoreError::BadRequest("Missing signature".to_string())
         })?;
 
-    let webhook_secret = sqlx::query_scalar::<_, String>(
-        "SELECT config_value
-         FROM realm_config
-         WHERE realm_id = $1 AND config_type = 'creem' AND config_key = 'webhook_secret' AND enabled = true
-         LIMIT 1",
-    )
-    .bind(&realm_id)
-    .fetch_optional(&app_state.pool)
-    .await
-    .map_err(|e| {
-        error!("Failed to load webhook secret from database: {}", e);
-        CoreError::InternalServerError(format!("Database error: {}", e))
-    })?
-    .ok_or_else(|| {
-        error!(
-            realm_id = %realm_id,
-            "Webhook secret not found in database"
-        );
-        CoreError::InternalServerError(format!(
-            "Webhook secret not configured for realm: {}",
-            realm_id
-        ))
-    })?;
+    let webhook_secret = app_state
+        .realm_config_repository
+        .get(
+            realm_id.to_string(),
+            "creem".to_string(),
+            "webhook_secret".to_string(),
+        )
+        .await
+        .map_err(|e| {
+            error!("Failed to load webhook secret from database: {}", e);
+            CoreError::InternalServerError(format!("Database error: {}", e))
+        })?
+        .filter(|c| c.enabled)
+        .map(|c| c.config_value)
+        .ok_or_else(|| {
+            error!(
+                realm_id = %realm_id,
+                "Webhook secret not found in database"
+            );
+            CoreError::InternalServerError(format!(
+                "Webhook secret not configured for realm: {}",
+                realm_id
+            ))
+        })?;
 
     verify_webhook_signature(body.as_bytes(), signature, &webhook_secret)?;
 
