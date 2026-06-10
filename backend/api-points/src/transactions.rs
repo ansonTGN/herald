@@ -60,22 +60,31 @@ pub async fn list_transactions(
 
     let subscription_id = query.subscription_id.and_then(|s| s.parse::<Uuid>().ok());
 
-    let transaction_type = query.transaction_type.and_then(|s| {
-        s.parse::<herald_core::domain::points::TransactionType>()
-            .ok()
-    });
+    let transaction_type = match query.transaction_type {
+        Some(s) => Some(
+            s.parse::<herald_core::domain::points::TransactionType>()
+                .map_err(|_| ApiError::bad_request(format!("Invalid transaction_type: {}", s)))?,
+        ),
+        None => None,
+    };
 
-    let start_time = query.start_time.and_then(|s| {
-        chrono::DateTime::parse_from_rfc3339(&s)
-            .ok()
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-    });
+    let start_time = match query.start_time {
+        Some(s) => Some(
+            chrono::DateTime::parse_from_rfc3339(&s)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .map_err(|_| ApiError::bad_request(format!("Invalid start_time: {}", s)))?,
+        ),
+        None => None,
+    };
 
-    let end_time = query.end_time.and_then(|s| {
-        chrono::DateTime::parse_from_rfc3339(&s)
-            .ok()
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-    });
+    let end_time = match query.end_time {
+        Some(s) => Some(
+            chrono::DateTime::parse_from_rfc3339(&s)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .map_err(|_| ApiError::bad_request(format!("Invalid end_time: {}", s)))?,
+        ),
+        None => None,
+    };
 
     let filters = TransactionFilters {
         user_id,

@@ -540,9 +540,6 @@ impl PostgresPointsRepository {
         }
     }
 
-    // TODO: 此查询未过滤 expires_at，在过期定时任务间隙中已过期但未标记的积分
-    // 仍会被消费（且因 ASC 排序会被优先消费）。若业务要求过期积分不可用，
-    // 需加 AND (expires_at IS NULL OR expires_at > NOW())。
     async fn find_active_ledgers_by_expiration_for_update(
         tx: &mut Transaction<'_, Postgres>,
         realm_id: &str,
@@ -555,6 +552,7 @@ impl PostgresPointsRepository {
               AND user_id = $2
               AND status = 'active'
               AND remaining_amount > 0
+              AND (expires_at IS NULL OR expires_at > NOW())
             ORDER BY expires_at ASC NULLS LAST, created_at ASC
             FOR UPDATE
             "#,
@@ -1046,7 +1044,7 @@ impl PostgresPointsRepository {
         realm_id: &str,
         idempotency_key: &str,
     ) -> Result<Option<Uuid>, CoreError> {
-        let row = sqlx::query("SELECT transaction_id FROM idempotency_keys WHERE realm_id = $1 AND idempotency_key = $2 AND status = 'completed' LIMIT 1")
+        let row = sqlx::query("SELECT transaction_id FROM idempotency_keys WHERE realm_id = $1 AND idempotency_key = $2 AND status = 'completed' AND expires_at > NOW() LIMIT 1")
             .bind(realm_id)
             .bind(idempotency_key)
             .fetch_optional(&mut **tx)
@@ -1073,6 +1071,7 @@ impl PostgresPointsRepository {
             ON CONFLICT (realm_id, idempotency_key)
             DO UPDATE SET transaction_id = EXCLUDED.transaction_id,
                           status = 'completed',
+                          expires_at = NOW() + INTERVAL '24 hours',
                           updated_at = NOW()
             "#,
         )
@@ -3193,6 +3192,7 @@ impl PointsRepository for PostgresPointsRepository {
         client_app_id: Uuid,
         amount: i64,
         description: Option<String>,
+        idempotency_key: Option<String>,
     ) -> impl std::future::Future<Output = Result<PointsTransaction, CoreError>> + Send {
         let pool = self.pool.clone();
         let realm_id = realm_id.to_string();
@@ -3201,6 +3201,20 @@ impl PointsRepository for PostgresPointsRepository {
                 .begin()
                 .await
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            if let Some(ref key) = idempotency_key
+                && Self::check_completed_idempotency_in_tx(&mut tx, &realm_id, key)
+                    .await?
+                    .is_some()
+            {
+                tx.commit()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                return Err(CoreError::Conflict(
+                    "Duplicate consumption request".to_string(),
+                ));
+            }
+
             let account = Self::ensure_account_in_tx(&mut tx, &realm_id, user_id).await?;
 
             if account.total_balance < amount {
@@ -3302,6 +3316,11 @@ impl PointsRepository for PostgresPointsRepository {
 
             for allocation in &allocations {
                 Self::create_consumption_allocation_in_tx(&mut tx, allocation).await?;
+            }
+
+            if let Some(ref key) = idempotency_key {
+                Self::record_completed_idempotency_in_tx(&mut tx, &realm_id, key, transaction_id)
+                    .await?;
             }
 
             tx.commit()
@@ -3576,7 +3595,8 @@ impl PointsRepository for PostgresPointsRepository {
         &self,
         realm_id: &str,
         user_id: Uuid,
-        refund_ratio: f64,
+        refund_amount: i64,
+        original_payment_amount: i64,
         refund_id: &str,
     ) -> impl std::future::Future<Output = Result<RevokePointsOutput, CoreError>> + Send {
         let pool = self.pool.clone();
@@ -3642,8 +3662,10 @@ impl PointsRepository for PostgresPointsRepository {
                     continue;
                 }
 
-                let amount_to_revoke =
-                    ((ledger.remaining_amount as f64) * refund_ratio).round() as i64;
+                // Integer arithmetic with rounding: (a * b + b/2) / b ≈ round(a * b/b)
+                let amount_to_revoke = (ledger.remaining_amount * refund_amount
+                    + original_payment_amount / 2)
+                    / original_payment_amount;
                 if amount_to_revoke <= 0 {
                     continue;
                 }
@@ -3662,7 +3684,10 @@ impl PointsRepository for PostgresPointsRepository {
                     realm_id: realm_id.clone(),
                     revocation_type: RevocationType::RefundRevoke,
                     revoked_amount: amount_to_revoke,
-                    reason: format!("Proportional refund (ratio: {:.2})", refund_ratio),
+                    reason: format!(
+                        "Proportional refund ({}/{})",
+                        refund_amount, original_payment_amount
+                    ),
                     reference_id: Some(refund_id.clone()),
                     created_at: chrono::Utc::now(),
                 };
@@ -3802,6 +3827,7 @@ impl PointsRepository for PostgresPointsRepository {
         expires_at: Option<chrono::DateTime<chrono::Utc>>,
         source_id: Option<String>,
         description: Option<String>,
+        idempotency_key: Option<String>,
     ) -> impl std::future::Future<Output = Result<PointsCreditLedger, CoreError>> + Send {
         let pool = self.pool.clone();
         let realm_id = realm_id.to_string();
@@ -3824,7 +3850,42 @@ impl PointsRepository for PostgresPointsRepository {
                 .begin()
                 .await
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            // Idempotency guard: if a completed record exists, return a zero-amount placeholder
+            if let Some(ref key) = idempotency_key
+                && Self::check_completed_idempotency_in_tx(&mut tx, &realm_id, key)
+                    .await?
+                    .is_some()
+            {
+                tx.commit()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                let now = chrono::Utc::now();
+                return Ok(PointsCreditLedger {
+                    id: Uuid::now_v7(),
+                    user_id,
+                    realm_id,
+                    credit_type,
+                    source_type,
+                    source_id: "idempotency".to_string(),
+                    granted_amount: 0,
+                    used_amount: 0,
+                    revoked_amount: 0,
+                    remaining_amount: 0,
+                    expires_at: None,
+                    status: CreditLedgerStatus::Active,
+                    created_at: now,
+                    updated_at: now,
+                });
+            }
+
             let account = Self::ensure_account_in_tx(&mut tx, &realm_id, user_id).await?;
+            if account.status != WalletStatus::Active {
+                return Err(CoreError::BadRequest(format!(
+                    "Cannot grant points to {} wallet",
+                    account.status.as_str()
+                )));
+            }
             let source_id = source_id.unwrap_or_else(|| "system".to_string());
             let now = chrono::Utc::now();
             let ledger = PointsCreditLedger {
@@ -3887,6 +3948,13 @@ impl PointsRepository for PostgresPointsRepository {
                 },
             )
             .await?;
+
+            // Record idempotency key after successful grant
+            if let Some(ref key) = idempotency_key {
+                Self::record_completed_idempotency_in_tx(&mut tx, &realm_id, key, transaction_id)
+                    .await?;
+            }
+
             tx.commit()
                 .await
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?;

@@ -90,6 +90,7 @@ where
                     None, // expires_at = None (permanent)
                     None, // source_id
                     None, // description
+                    Some(format!("grant:registration:{}", user_id)),
                 )
                 .await?;
 
@@ -217,6 +218,7 @@ where
                 expires_at,
                 Some(schedule.id.to_string()),
                 None, // description
+                Some(format!("grant:periodic:{}", schedule.id)),
             )
             .await?;
 

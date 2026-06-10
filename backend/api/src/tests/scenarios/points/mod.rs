@@ -78,4 +78,7 @@ mod test_74_admin_grant_points;
 // Ext/SDK grant points tests
 mod test_75_ext_grant_points;
 
+// Regression tests for code-review fixes
+mod test_76_regression_code_review_fixes;
+
 pub mod fixtures;

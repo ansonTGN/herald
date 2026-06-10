@@ -543,6 +543,7 @@ pub trait PointsRepository: Send + Sync {
         client_app_id: Uuid,
         amount: i64,
         description: Option<String>,
+        idempotency_key: Option<String>,
     ) -> impl Future<Output = Result<PointsTransaction, CoreError>> + Send;
 
     fn revoke_points_by_credit_type_atomic(
@@ -574,7 +575,8 @@ pub trait PointsRepository: Send + Sync {
         &self,
         realm_id: &str,
         user_id: Uuid,
-        refund_ratio: f64,
+        refund_amount: i64,
+        original_payment_amount: i64,
         refund_id: &str,
     ) -> impl Future<Output = Result<RevokePointsOutput, CoreError>> + Send;
 
@@ -597,6 +599,7 @@ pub trait PointsRepository: Send + Sync {
         expires_at: Option<chrono::DateTime<chrono::Utc>>,
         source_id: Option<String>,
         description: Option<String>,
+        idempotency_key: Option<String>,
     ) -> impl Future<Output = Result<PointsCreditLedger, CoreError>> + Send;
 
     fn recharge_points_atomic(

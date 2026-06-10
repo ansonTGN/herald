@@ -15,6 +15,7 @@ use herald_core::admin::user::init_admin_user;
 use herald_core::application::{ApplicationServiceBuilder, WebhookService};
 use herald_core::infrastructure::authorization::{RedisCache, RedisPermissionChecker};
 use herald_core::infrastructure::points::RedisIdempotencyStore;
+use herald_core::infrastructure::points::init_idempotency_function;
 use herald_core::infrastructure::realm_config::PostgresRealmConfigRepository;
 use herald_core::infrastructure::redis::{ManagerConfig, RedisConnectionManager};
 use herald_core::infrastructure::user::repositories::PostgresUserRepository;
@@ -30,6 +31,7 @@ const TEST_JWT_SECRET: &str = "test-jwt-secret-key-for-integration-tests-32b";
 /// 确保 Redis Functions 只初始化一次
 static RATE_LIMIT_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
 static DEVICE_TOKEN_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
+static IDEMPOTENCY_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
 
 /// Schema 隔离的测试上下文
 ///
@@ -429,6 +431,14 @@ impl AsyncTestContext for SchemaTestContext {
                 init_device_token_function(&app_state)
                     .await
                     .expect("Failed to initialize device token Redis Function");
+            })
+            .await;
+
+        IDEMPOTENCY_INIT
+            .get_or_init(|| async {
+                init_idempotency_function(&app_state.redis_manager)
+                    .await
+                    .expect("Failed to initialize idempotency Redis Function");
             })
             .await;
 

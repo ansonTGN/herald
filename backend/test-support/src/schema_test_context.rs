@@ -15,6 +15,7 @@ use herald_core::domain::points::PointsService;
 use herald_core::domain::points::services::RealmConfigService;
 use herald_core::infrastructure::authorization::policies::PermissionBasedPointsPolicy;
 use herald_core::infrastructure::authorization::{RedisCache, RedisPermissionChecker};
+use herald_core::infrastructure::points::init_idempotency_function;
 use herald_core::infrastructure::points::{PostgresPointsRepository, RedisIdempotencyStore};
 use herald_core::infrastructure::realm_config::PostgresRealmConfigRepository;
 use herald_core::infrastructure::redis::{ManagerConfig, RedisConnectionManager};
@@ -32,6 +33,7 @@ const SCHEMA_POOL_MAX_CONNECTIONS: u32 = 3;
 
 /// 确保 Redis Functions 只初始化一次
 static RATE_LIMIT_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
+static IDEMPOTENCY_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
 
 /// Schema 隔离的测试上下文
 ///
@@ -375,6 +377,14 @@ impl AsyncTestContext for SchemaTestContext {
                     .await
                     .expect("Failed to initialize Redis rate limiting functions");
                 tracing::info!("✅ Redis rate limiting functions 初始化完成");
+            })
+            .await;
+
+        IDEMPOTENCY_INIT
+            .get_or_init(|| async {
+                init_idempotency_function(&app_state.redis_manager)
+                    .await
+                    .expect("Failed to initialize idempotency Redis Function");
             })
             .await;
 

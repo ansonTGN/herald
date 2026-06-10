@@ -90,6 +90,7 @@ pub struct ConsumePointsRequest {
     pub client_app_id: String,
     pub amount: i64,
     pub description: Option<String>,
+    pub idempotency_key: Option<String>,
 }
 
 /// Consume points response

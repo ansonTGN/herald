@@ -182,6 +182,7 @@ where
                 expires_at,
                 Some(schedule.id.to_string()),
                 None, // description
+                Some(format!("grant:schedule:{}", schedule.id)),
             )
             .await?;
 

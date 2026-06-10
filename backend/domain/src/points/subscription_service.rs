@@ -115,6 +115,7 @@ where
                 Some(period_end),
                 Some(new_entitlement_key.to_string()),
                 None,
+                Some(format!("grant:upgrade:{}", new_entitlement_key)),
             )
             .await?;
 

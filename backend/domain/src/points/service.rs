@@ -165,7 +165,7 @@ where
 
         let saved_transaction = self
             .repository
-            .consume_points_atomic(realm_id, user_id, client_app_id, amount, description)
+            .consume_points_atomic(realm_id, user_id, client_app_id, amount, description, None)
             .await?;
 
         tracing::info!(
@@ -309,6 +309,13 @@ where
             input.reason
         ));
 
+        // Generate idempotency key from source_type + source_id for natural dedup on retry
+        let idempotency_key = Some(format!(
+            "grant:{}:{}",
+            input.source_type.as_str(),
+            input.source_id
+        ));
+
         // Grant points via internal method
         let ledger_id = self
             .grant_points_internal(
@@ -320,6 +327,7 @@ where
                 expires_at,
                 Some(input.source_id),
                 description,
+                idempotency_key,
             )
             .await?;
 
@@ -593,12 +601,15 @@ where
             ));
         }
 
-        // Calculate refund ratio
-        let refund_ratio = (refund_amount as f64) / (original_payment_amount as f64);
-
         let result = self
             .repository
-            .revoke_topup_proportional_atomic(realm_id, user_id, refund_ratio, refund_id)
+            .revoke_topup_proportional_atomic(
+                realm_id,
+                user_id,
+                refund_amount,
+                original_payment_amount,
+                refund_id,
+            )
             .await?;
 
         if result.total_revoked == 0 {
@@ -613,7 +624,8 @@ where
                 realm_id = %realm_id,
                 user_id = %user_id,
                 refund_id = %refund_id,
-                refund_ratio = refund_ratio,
+                refund_amount = refund_amount,
+                original_payment_amount = original_payment_amount,
                 total_revoked = result.total_revoked,
                 ledger_count = result.ledger_ids.len(),
                 "Proportionally revoked topup points"
@@ -748,6 +760,7 @@ where
         expires_at: Option<chrono::DateTime<chrono::Utc>>,
         source_id: Option<String>,
         description: Option<String>,
+        idempotency_key: Option<String>,
     ) -> Result<Uuid, CoreError> {
         if amount <= 0 {
             return Err(CoreError::BadRequest(
@@ -777,6 +790,7 @@ where
                 expires_at,
                 source_id,
                 description,
+                idempotency_key,
             )
             .await?;
 

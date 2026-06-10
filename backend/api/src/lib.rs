@@ -57,6 +57,7 @@ use herald_core::infrastructure::billing::{
 use herald_core::infrastructure::client_api_keys::{ApiKeyCache, ClientApiKeyRepository};
 use herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository;
 use herald_core::infrastructure::points::PostgresPointsRepository;
+use herald_core::infrastructure::points::init_idempotency_function;
 use herald_core::infrastructure::purchase::{
     PostgresFulfillmentService, PostgresPurchaseRepository, PurchaseService,
 };
@@ -433,6 +434,11 @@ pub async fn build_app_state_with_migrations(
         anyhow::anyhow!("Failed to initialize device token Redis Function: {:?}", e)
     })?;
     info!("Device token Redis Function initialized");
+
+    init_idempotency_function(&state.redis_manager)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to initialize idempotency Redis Function: {:?}", e))?;
+    info!("Idempotency Redis Function initialized");
 
     Ok(state)
 }

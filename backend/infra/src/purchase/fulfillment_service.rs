@@ -158,6 +158,7 @@ where
                             Some(period_end),
                             Some(entitlement_key.clone()),
                             None,
+                            None,
                         )
                         .await?;
 
@@ -285,6 +286,7 @@ where
                     "One-time purchase: {} ({} points) via {}",
                     mapping.entitlement_key, points, provider_transaction_id
                 )),
+                None,
             )
             .await?;
 

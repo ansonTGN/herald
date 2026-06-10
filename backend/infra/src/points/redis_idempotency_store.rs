@@ -14,6 +14,70 @@ use herald_domain::points::idempotency_service::IdempotencyStore;
 const IDEMPOTENCY_TTL: Duration = Duration::from_secs(24 * 60 * 60); // 24 hours
 const LOCK_TTL: Duration = Duration::from_secs(60); // 1 minute lock timeout
 
+// ---------------------------------------------------------------------------
+// Redis Function
+// ---------------------------------------------------------------------------
+
+/// Redis Function library name
+const IDEMPOTENCY_FUNCTION_LIBRARY: &str = "herald_idempotency";
+
+/// Redis Function for atomic lock acquisition.
+///
+/// Atomically sets the main key (NX + TTL) and the status key in a single
+/// FCALL invocation, preventing race conditions where only one of the two
+/// keys is written if the process crashes mid-operation.
+///
+/// KEYS[1] = main cache key
+/// KEYS[2] = status key (main_key + ":status")
+/// ARGV[1] = request data (value for main key)
+/// ARGV[2] = idempotency TTL (seconds, for main key EX)
+/// ARGV[3] = lock TTL (seconds, for status key SETEX)
+/// ARGV[4] = status value (e.g. "processing")
+const IDEMPOTENCY_FUNCTION_CODE: &str = "#!lua name=herald_idempotency\n\
+\n\
+local function idempotency_acquire_lock(keys, args)\n\
+    if redis.call('SET', keys[1], args[1], 'NX', 'EX', args[2]) then\n\
+        redis.call('SETEX', keys[2], args[3], args[4])\n\
+        return 1\n\
+    else\n\
+        return 0\n\
+    end\n\
+end\n\
+\n\
+redis.register_function('idempotency_acquire_lock', idempotency_acquire_lock)\n\
+";
+
+/// Load the idempotency Redis Function library.
+///
+/// Idempotent -- safe to call multiple times (REPLACE semantics).
+pub async fn init_idempotency_function(redis: &RedisConnectionManager) -> Result<(), CoreError> {
+    let mut conn = redis
+        .get()
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to get Redis connection: {}", e)))?;
+
+    redis::cmd("FUNCTION")
+        .arg("LOAD")
+        .arg("REPLACE")
+        .arg(IDEMPOTENCY_FUNCTION_CODE)
+        .query_async::<String>(&mut conn)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load idempotency function library: {e}");
+            CoreError::DatabaseError(format!(
+                "Failed to load idempotency function library: {}",
+                e
+            ))
+        })?;
+
+    tracing::info!(
+        "Redis Function library '{}' loaded successfully",
+        IDEMPOTENCY_FUNCTION_LIBRARY
+    );
+
+    Ok(())
+}
+
 /// Redis implementation of IdempotencyStore
 pub struct RedisIdempotencyStore {
     redis: Arc<RedisConnectionManager>,
@@ -80,30 +144,25 @@ impl IdempotencyStore for RedisIdempotencyStore {
                 CoreError::DatabaseError(format!("Failed to get Redis connection: {}", e))
             })?;
 
-            // Use SET NX EX for atomic lock acquisition
-            let result: bool = redis::cmd("SET")
+            // Atomically SET main key (NX+EX) and status key via Redis Function.
+            // If the process crashes between the two keys, no inconsistent state
+            // is left -- either both keys are written or neither.
+            let status_key = format!("{}:status", &cache_key);
+            let status = IdempotencyStatus::Processing.as_str();
+            let result: i32 = redis::cmd("FCALL")
+                .arg("idempotency_acquire_lock")
+                .arg(2) // number of keys
                 .arg(&cache_key)
+                .arg(&status_key)
                 .arg(&request_data)
-                .arg("NX")
-                .arg("EX")
                 .arg(IDEMPOTENCY_TTL.as_secs())
+                .arg(LOCK_TTL.as_secs())
+                .arg(status)
                 .query_async(&mut conn)
                 .await
                 .map_err(|e| CoreError::DatabaseError(format!("Failed to create lock: {}", e)))?;
 
-            if result {
-                // Also set status to processing
-                let status = IdempotencyStatus::Processing.as_str();
-                redis::cmd("SETEX")
-                    .arg(format!("{}:status", &cache_key))
-                    .arg(LOCK_TTL.as_secs())
-                    .arg(status)
-                    .query_async::<()>(&mut conn)
-                    .await
-                    .map_err(|e| {
-                        CoreError::DatabaseError(format!("Failed to set status: {}", e))
-                    })?;
-            }
+            let result = result == 1;
 
             Ok(result)
         }
@@ -162,9 +221,11 @@ impl IdempotencyStore for RedisIdempotencyStore {
             let status = IdempotencyStatus::Failed.as_str();
             let key = format!("{}:status", &cache_key);
 
+            // Use same TTL as main key so failure state persists and retries
+            // within the 24h window are properly rejected
             redis::cmd("SETEX")
                 .arg(key)
-                .arg(LOCK_TTL.as_secs())
+                .arg(IDEMPOTENCY_TTL.as_secs())
                 .arg(status)
                 .query_async::<()>(&mut conn)
                 .await
