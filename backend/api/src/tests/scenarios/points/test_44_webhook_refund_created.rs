@@ -297,3 +297,111 @@ async fn test_refund_created_idempotency(ctx: &mut SchemaTestContext) {
     );
     assert_eq!(ledger.remaining_amount, 3500);
 }
+
+// Covers retry after outer webhook bookkeeping fails: a different webhook event id
+// carrying the same refund id must not revoke topup credits again.
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_refund_topup_same_refund_id_different_event_id_is_idempotent(
+    ctx: &mut SchemaTestContext,
+) {
+    let realm_id = ctx._realm_id.clone();
+    let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user4@example.com").await;
+    let refund_id = format!("refund_{}", Uuid::now_v7());
+    let payment_id = format!("payment_{}", Uuid::now_v7());
+
+    create_points_wallet(ctx, user_id, &realm_id).await;
+    ctx.with_creem_config(&realm_id, None, None, None).await;
+
+    let ledger_id = create_credit_ledger_entry_v2(
+        ctx,
+        user_id,
+        &realm_id,
+        CreditType::TopupCredit,
+        CreditSourceType::Topup,
+        payment_id.clone(),
+        10000,
+        None,
+    )
+    .await;
+    consume_points_from_ledger(ctx, ledger_id, 3000).await;
+
+    let app = ctx.create_unified_test_router();
+    for _ in 0..2 {
+        let event = build_refund_created_event_with_user(
+            generate_test_event_id(),
+            refund_id.clone(),
+            payment_id.clone(),
+            5000,
+            10000,
+            &realm_id,
+            user_id,
+        );
+        let response =
+            send_webhook_with_signature(&app, &realm_id, event, "test_webhook_secret").await;
+        assert_webhook_success(&response);
+    }
+
+    let revocations = get_revocation_records(ctx, user_id).await;
+    assert_eq!(revocations.len(), 1, "same refund id must not revoke twice");
+    assert_eq!(revocations[0].revoked_amount, 3500);
+
+    let ledger = get_ledger_by_id(ctx, ledger_id).await;
+    assert_eq!(ledger.revoked_amount, 3500);
+    assert_eq!(ledger.remaining_amount, 3500);
+}
+
+// Covers retry after outer webhook bookkeeping fails: subscription refund revoke
+// must use the refund id as business idempotency, not only the webhook event id.
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_refund_subscription_same_refund_id_different_event_id_is_idempotent(
+    ctx: &mut SchemaTestContext,
+) {
+    let realm_id = ctx._realm_id.clone();
+    let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "user5@example.com").await;
+    let refund_id = format!("refund_{}", Uuid::now_v7());
+    let payment_id = format!("payment_{}", Uuid::now_v7());
+
+    create_points_wallet(ctx, user_id, &realm_id).await;
+    ctx.with_creem_config(&realm_id, None, None, None).await;
+
+    let ledger_id = create_credit_ledger_entry_v2(
+        ctx,
+        user_id,
+        &realm_id,
+        CreditType::SubscriptionCredit,
+        CreditSourceType::SubscriptionInitial,
+        payment_id.clone(),
+        5000,
+        None,
+    )
+    .await;
+    consume_points_from_ledger(ctx, ledger_id, 2000).await;
+
+    let app = ctx.create_unified_test_router();
+    for _ in 0..2 {
+        let event = build_refund_created_event_with_user_and_type(
+            generate_test_event_id(),
+            refund_id.clone(),
+            payment_id.clone(),
+            5000,
+            5000,
+            &realm_id,
+            user_id,
+            "subscription",
+        );
+        let response =
+            send_webhook_with_signature(&app, &realm_id, event, "test_webhook_secret").await;
+        assert_webhook_success(&response);
+    }
+
+    let revocations = get_revocation_records(ctx, user_id).await;
+    assert_eq!(revocations.len(), 1, "same refund id must not revoke twice");
+    assert_eq!(revocations[0].revoked_amount, 3000);
+    assert_eq!(revocations[0].reference_id, Some(refund_id));
+
+    let ledger = get_ledger_by_id(ctx, ledger_id).await;
+    assert_eq!(ledger.revoked_amount, 3000);
+    assert_eq!(ledger.remaining_amount, 0);
+}

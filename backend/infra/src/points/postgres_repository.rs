@@ -3583,15 +3583,38 @@ impl PointsRepository for PostgresPointsRepository {
         let realm_id = realm_id.to_string();
         let refund_id = refund_id.to_string();
         async move {
+            let idempotency_key = format!("refund:topup:{}", refund_id);
             let mut tx = pool
                 .begin()
                 .await
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
+            if Self::check_completed_idempotency_in_tx(&mut tx, &realm_id, &idempotency_key)
+                .await?
+                .is_some()
+            {
+                tx.commit()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                return Ok(RevokePointsOutput {
+                    revocation_id: Uuid::now_v7(),
+                    ledger_ids: vec![],
+                    total_revoked: 0,
+                    revoked_at: chrono::Utc::now(),
+                });
+            }
+
             let account =
                 match Self::find_account_by_user_for_update(&mut tx, &realm_id, user_id).await? {
                     Some(acc) => acc,
                     None => {
+                        Self::record_completed_idempotency_in_tx(
+                            &mut tx,
+                            &realm_id,
+                            &idempotency_key,
+                            Uuid::now_v7(),
+                        )
+                        .await?;
                         tx.commit()
                             .await
                             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
@@ -3651,6 +3674,14 @@ impl PointsRepository for PostgresPointsRepository {
 
             let _ = Self::refresh_account_balances_from_ledgers_in_tx(
                 &mut tx, account.id, &realm_id, user_id,
+            )
+            .await?;
+
+            Self::record_completed_idempotency_in_tx(
+                &mut tx,
+                &realm_id,
+                &idempotency_key,
+                Uuid::now_v7(),
             )
             .await?;
 

@@ -1,6 +1,7 @@
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, JoinType,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
+    EntityTrait, IntoActiveModel, JoinType, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    RelationTrait, Set, TransactionTrait,
 };
 use std::str::FromStr;
 use uuid::Uuid;
@@ -23,6 +24,13 @@ pub struct PostgresBillingRepository {
 impl PostgresBillingRepository {
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
+    }
+
+    pub async fn begin_transaction(&self) -> Result<DatabaseTransaction, CoreError> {
+        self.db
+            .begin()
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))
     }
 
     /// Converts database model to domain Subscription
@@ -171,11 +179,9 @@ impl PostgresBillingRepository {
             )),
         }
     }
-}
 
-impl BillingRepository for PostgresBillingRepository {
-    async fn create_subscription(&self, sub: Subscription) -> Result<Subscription, CoreError> {
-        let model = subscription::ActiveModel {
+    fn subscription_to_active_model(sub: Subscription) -> subscription::ActiveModel {
+        subscription::ActiveModel {
             id: Set(sub.id),
             realm_id: Set(sub.realm_id.clone()),
             user_id: Set(sub.user_id),
@@ -202,53 +208,10 @@ impl BillingRepository for PostgresBillingRepository {
                 .map(sea_orm::prelude::DateTimeWithTimeZone::from)),
             created_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(sub.created_at)),
             updated_at: Set(sea_orm::prelude::DateTimeWithTimeZone::from(sub.updated_at)),
-        };
-
-        let result = model.insert(&self.db).await?;
-        Self::model_to_subscription(result)
+        }
     }
 
-    async fn find_by_realm_id(&self, realm_id: &str) -> Result<Option<Subscription>, CoreError> {
-        let result = subscription::Entity::find()
-            .filter(subscription::Column::RealmId.eq(realm_id))
-            .one(&self.db)
-            .await?;
-
-        result.map(Self::model_to_subscription).transpose()
-    }
-
-    async fn find_by_external_subscription_id(
-        &self,
-        external_sub_id: &str,
-        provider: &str,
-    ) -> Result<Option<Subscription>, CoreError> {
-        let result = subscription::Entity::find()
-            .filter(subscription::Column::ExternalSubscriptionId.eq(external_sub_id))
-            .filter(subscription::Column::PaymentProvider.eq(provider))
-            .one(&self.db)
-            .await?;
-
-        result.map(Self::model_to_subscription).transpose()
-    }
-
-    async fn find_subscription_by_id(
-        &self,
-        subscription_id: Uuid,
-    ) -> Result<Option<Subscription>, CoreError> {
-        let result = subscription::Entity::find_by_id(subscription_id)
-            .one(&self.db)
-            .await?;
-
-        result.map(Self::model_to_subscription).transpose()
-    }
-
-    async fn update_subscription(&self, sub: Subscription) -> Result<Subscription, CoreError> {
-        let existing = subscription::Entity::find_by_id(sub.id)
-            .one(&self.db)
-            .await?
-            .ok_or_else(|| CoreError::SubscriptionNotFound(sub.id.to_string()))?;
-
-        let mut active_model: subscription::ActiveModel = existing.into_active_model();
+    fn apply_subscription_update(active_model: &mut subscription::ActiveModel, sub: Subscription) {
         active_model.realm_id = Set(sub.realm_id.clone());
         active_model.user_id = Set(sub.user_id);
         active_model.external_subscription_id = Set(sub.external_subscription_id.clone());
@@ -273,9 +236,115 @@ impl BillingRepository for PostgresBillingRepository {
             .cancel_at
             .map(sea_orm::prelude::DateTimeWithTimeZone::from));
         active_model.updated_at = Set(sea_orm::prelude::DateTimeWithTimeZone::from(sub.updated_at));
+    }
 
-        let result = active_model.update(&self.db).await?;
+    pub async fn create_subscription_conn<C: ConnectionTrait>(
+        db: &C,
+        sub: Subscription,
+    ) -> Result<Subscription, CoreError> {
+        let result = Self::subscription_to_active_model(sub).insert(db).await?;
         Self::model_to_subscription(result)
+    }
+
+    pub async fn find_by_external_subscription_id_conn<C: ConnectionTrait>(
+        db: &C,
+        external_sub_id: &str,
+        provider: &str,
+    ) -> Result<Option<Subscription>, CoreError> {
+        let result = subscription::Entity::find()
+            .filter(subscription::Column::ExternalSubscriptionId.eq(external_sub_id))
+            .filter(subscription::Column::PaymentProvider.eq(provider))
+            .one(db)
+            .await?;
+
+        result.map(Self::model_to_subscription).transpose()
+    }
+
+    pub async fn find_subscription_by_client_app_id_conn<C: ConnectionTrait>(
+        db: &C,
+        client_app_id: Uuid,
+    ) -> Result<Option<Subscription>, CoreError> {
+        let result = subscription::Entity::find()
+            .filter(subscription::Column::ClientAppId.eq(client_app_id))
+            .one(db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        result.map(Self::model_to_subscription).transpose()
+    }
+
+    pub async fn update_subscription_conn<C: ConnectionTrait>(
+        db: &C,
+        sub: Subscription,
+    ) -> Result<Subscription, CoreError> {
+        let existing = subscription::Entity::find_by_id(sub.id)
+            .one(db)
+            .await?
+            .ok_or_else(|| CoreError::SubscriptionNotFound(sub.id.to_string()))?;
+
+        let mut active_model: subscription::ActiveModel = existing.into_active_model();
+        Self::apply_subscription_update(&mut active_model, sub);
+
+        let result = active_model.update(db).await?;
+        Self::model_to_subscription(result)
+    }
+
+    pub async fn save_history_event_conn<C: ConnectionTrait>(
+        db: &C,
+        event: SubscriptionHistoryEvent,
+    ) -> Result<SubscriptionHistoryEvent, CoreError> {
+        let active_model = Self::history_event_to_active_model(event);
+
+        let result = subscription_history::Entity::insert(active_model)
+            .exec(db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        let saved_event = subscription_history::Entity::find_by_id(result.last_insert_id)
+            .one(db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+            .ok_or(CoreError::NotFound)?;
+
+        Self::model_to_subscription_history_event(saved_event)
+    }
+}
+
+impl BillingRepository for PostgresBillingRepository {
+    async fn create_subscription(&self, sub: Subscription) -> Result<Subscription, CoreError> {
+        Self::create_subscription_conn(&self.db, sub).await
+    }
+
+    async fn find_by_realm_id(&self, realm_id: &str) -> Result<Option<Subscription>, CoreError> {
+        let result = subscription::Entity::find()
+            .filter(subscription::Column::RealmId.eq(realm_id))
+            .one(&self.db)
+            .await?;
+
+        result.map(Self::model_to_subscription).transpose()
+    }
+
+    async fn find_by_external_subscription_id(
+        &self,
+        external_sub_id: &str,
+        provider: &str,
+    ) -> Result<Option<Subscription>, CoreError> {
+        Self::find_by_external_subscription_id_conn(&self.db, external_sub_id, provider).await
+    }
+
+    async fn find_subscription_by_id(
+        &self,
+        subscription_id: Uuid,
+    ) -> Result<Option<Subscription>, CoreError> {
+        let result = subscription::Entity::find_by_id(subscription_id)
+            .one(&self.db)
+            .await?;
+
+        result.map(Self::model_to_subscription).transpose()
+    }
+
+    async fn update_subscription(&self, sub: Subscription) -> Result<Subscription, CoreError> {
+        Self::update_subscription_conn(&self.db, sub).await
     }
 
     async fn create_payment_event(&self, event: PaymentEvent) -> Result<PaymentEvent, CoreError> {
@@ -330,13 +399,7 @@ impl BillingRepository for PostgresBillingRepository {
         &self,
         client_app_id: Uuid,
     ) -> Result<Option<Subscription>, CoreError> {
-        let result = subscription::Entity::find()
-            .filter(subscription::Column::ClientAppId.eq(client_app_id))
-            .one(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        result.map(Self::model_to_subscription).transpose()
+        Self::find_subscription_by_client_app_id_conn(&self.db, client_app_id).await
     }
 
     async fn cancel_subscription(
@@ -384,21 +447,7 @@ impl BillingRepository for PostgresBillingRepository {
         &self,
         event: SubscriptionHistoryEvent,
     ) -> Result<SubscriptionHistoryEvent, CoreError> {
-        let active_model = Self::history_event_to_active_model(event.clone());
-
-        let result = subscription_history::Entity::insert(active_model)
-            .exec(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        // Return the saved event with the ID from the database
-        let saved_event = subscription_history::Entity::find_by_id(result.last_insert_id)
-            .one(&self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-            .ok_or(CoreError::NotFound)?;
-
-        Self::model_to_subscription_history_event(saved_event)
+        Self::save_history_event_conn(&self.db, event).await
     }
 
     async fn get_subscription_history(

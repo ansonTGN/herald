@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use sea_orm::DatabaseTransaction;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -8,6 +9,7 @@ use herald_core::domain::billing::{
     calculate_changes, serialize_subscription_state,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
+use herald_core::infrastructure::billing::PostgresBillingRepository;
 
 pub(crate) struct SyncSubscriptionInput {
     pub provider: &'static str,
@@ -52,6 +54,32 @@ pub(crate) async fn save_subscription_history(
         .billing_repository
         .save_history_event(history_event)
         .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn save_subscription_history_in_txn(
+    billing_repo: &PostgresBillingRepository,
+    txn: &DatabaseTransaction,
+    previous: Option<&Subscription>,
+    current: &Subscription,
+    event_type: HistoryEventType,
+) -> Result<(), CoreError> {
+    let history_event = SubscriptionHistoryEvent {
+        id: Uuid::now_v7().to_string(),
+        subscription_id: current.id,
+        event_type,
+        timestamp: Utc::now(),
+        actor: Some(ACTOR_WEBHOOK.to_string()),
+        changes: previous.map(|previous| calculate_changes(previous, current)),
+        previous_state: previous.map(serialize_subscription_state),
+        new_state: Some(serialize_subscription_state(current)),
+        realm_id: current.realm_id.clone(),
+        created_at: Utc::now(),
+    };
+
+    let _ = billing_repo;
+    PostgresBillingRepository::save_history_event_conn(txn, history_event).await?;
 
     Ok(())
 }
@@ -225,6 +253,123 @@ pub(crate) async fn sync_subscription(
             .billing_repository
             .create_subscription(subscription)
             .await?;
+        Ok(Some((created, None)))
+    }
+}
+
+pub(crate) async fn sync_subscription_in_txn(
+    txn: &DatabaseTransaction,
+    input: SyncSubscriptionInput,
+) -> Result<Option<(Subscription, Option<Subscription>)>, CoreError> {
+    let SyncSubscriptionInput {
+        provider,
+        realm_id,
+        user_id,
+        external_subscription_id,
+        external_product_id,
+        client_app_id,
+        entitlement_key,
+        external_price_id,
+        provider_metadata,
+        status,
+        current_period_start,
+        current_period_end,
+        cancel_at_period_end,
+        cancel_at,
+        existing_subscription,
+    } = input;
+
+    let existing = {
+        if let Some(prefetched) = existing_subscription {
+            Some(prefetched)
+        } else {
+            let existing = PostgresBillingRepository::find_by_external_subscription_id_conn(
+                txn,
+                &external_subscription_id,
+                provider,
+            )
+            .await?;
+
+            if existing.is_some() {
+                existing
+            } else if let Some(client_app_id) = client_app_id {
+                PostgresBillingRepository::find_subscription_by_client_app_id_conn(
+                    txn,
+                    client_app_id,
+                )
+                .await?
+            } else {
+                None
+            }
+        }
+    };
+
+    if existing.is_none() && client_app_id.is_none() && external_subscription_id.is_empty() {
+        return Ok(None);
+    }
+
+    if external_subscription_id.is_empty() {
+        return Err(CoreError::BadRequest(
+            "Missing external_subscription_id".to_string(),
+        ));
+    }
+
+    let now = Utc::now();
+
+    if let Some(mut subscription) = existing {
+        let previous = subscription.clone();
+
+        subscription.external_subscription_id = external_subscription_id.clone();
+        subscription.external_product_id = external_product_id.clone();
+        subscription.payment_provider = provider.to_string();
+        subscription.status = status;
+        subscription.entitlement_key = if entitlement_key.is_empty() {
+            subscription.entitlement_key.clone()
+        } else {
+            entitlement_key
+        };
+        subscription.external_price_id = external_price_id.or(subscription.external_price_id);
+        subscription.provider_metadata = provider_metadata.or(subscription.provider_metadata);
+        subscription.synced_at = Some(now);
+        if let Some(user_id) = user_id {
+            subscription.user_id = Some(user_id);
+        }
+        subscription.current_period_start = current_period_start.or(previous.current_period_start);
+        subscription.current_period_end = current_period_end.or(previous.current_period_end);
+        subscription.cancel_at_period_end = cancel_at_period_end;
+        subscription.cancel_at = cancel_at;
+        if client_app_id.is_some() {
+            subscription.client_app_id = client_app_id;
+        }
+        subscription.updated_at = now;
+
+        let updated =
+            PostgresBillingRepository::update_subscription_conn(txn, subscription).await?;
+        Ok(Some((updated, Some(previous))))
+    } else {
+        let subscription = Subscription {
+            id: Uuid::now_v7(),
+            realm_id,
+            user_id,
+            external_subscription_id,
+            external_product_id,
+            payment_provider: provider.to_string(),
+            status,
+            entitlement_key,
+            external_price_id,
+            provider_metadata,
+            synced_at: Some(now),
+            current_period_start,
+            current_period_end,
+            cancel_at_period_end,
+            client_app_id,
+            cancel_at,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let created =
+            PostgresBillingRepository::create_subscription_conn(txn, subscription).await?;
         Ok(Some((created, None)))
     }
 }

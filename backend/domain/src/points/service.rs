@@ -642,14 +642,17 @@ where
         user_id: Uuid,
         refund_id: &str,
     ) -> Result<RevokePointsOutput, CoreError> {
-        self.revoke_points_by_credit_type(
-            realm_id,
-            user_id,
-            CreditType::SubscriptionCredit,
-            crate::points::entities::RevocationType::RefundRevoke,
-            format!("Refund {}", refund_id),
-        )
-        .await
+        self.repository
+            .revoke_points_by_credit_type_atomic(
+                realm_id,
+                user_id,
+                CreditType::SubscriptionCredit,
+                crate::points::entities::RevocationType::RefundRevoke,
+                format!("Refund {}", refund_id),
+                Some(refund_id.to_string()),
+                Some(format!("refund:subscription:{}", refund_id)),
+            )
+            .await
     }
 
     /// Refund points from a user's account

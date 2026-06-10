@@ -16,7 +16,8 @@ use crate::webhook_common::{
     parse_optional_uuid_field, parse_uuid_field,
 };
 use crate::webhook_subscription_helpers::{
-    SyncSubscriptionInput, resolve_entitlement_key, save_subscription_history, sync_subscription,
+    SyncSubscriptionInput, resolve_entitlement_key, save_subscription_history_in_txn,
+    sync_subscription_in_txn,
 };
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::billing::invoice_service::map_stripe_invoice_status;
@@ -527,7 +528,70 @@ async fn fail_payment_attempt(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn sync_stripe_subscription(
+async fn sync_stripe_subscription_with_history_in_txn(
+    app_state: &AppState,
+    realm_id: &str,
+    user_id: Uuid,
+    external_subscription_id: &str,
+    client_app_id: Option<Uuid>,
+    entitlement_key: String,
+    external_product_id: String,
+    external_price_id: Option<String>,
+    status: SubscriptionStatus,
+    current_period_start: Option<DateTime<Utc>>,
+    current_period_end: Option<DateTime<Utc>>,
+    cancel_at_period_end: bool,
+    cancel_at: Option<DateTime<Utc>>,
+    existing_subscription: Option<Subscription>,
+    history_event_type: HistoryEventType,
+) -> Result<(Subscription, Option<Subscription>), CoreError> {
+    let txn = app_state.billing_repository.begin_transaction().await?;
+
+    let (subscription, previous_subscription) = sync_subscription_in_txn(
+        &txn,
+        SyncSubscriptionInput {
+            provider: "stripe",
+            realm_id: realm_id.to_string(),
+            user_id: Some(user_id),
+            external_subscription_id: external_subscription_id.to_string(),
+            external_product_id,
+            client_app_id,
+            entitlement_key,
+            external_price_id,
+            provider_metadata: None,
+            status: status.clone(),
+            current_period_start,
+            current_period_end,
+            cancel_at_period_end,
+            cancel_at,
+            existing_subscription,
+        },
+    )
+    .await?
+    .ok_or_else(|| {
+        CoreError::InternalServerError(
+            "stripe subscription sync failed to create or update subscription".to_string(),
+        )
+    })?;
+
+    save_subscription_history_in_txn(
+        &app_state.billing_repository,
+        &txn,
+        previous_subscription.as_ref(),
+        &subscription,
+        history_event_type,
+    )
+    .await?;
+
+    txn.commit()
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+    Ok((subscription, previous_subscription))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn sync_stripe_subscription_with_detected_history_in_txn(
     app_state: &AppState,
     realm_id: &str,
     user_id: Uuid,
@@ -543,8 +607,10 @@ async fn sync_stripe_subscription(
     cancel_at: Option<DateTime<Utc>>,
     existing_subscription: Option<Subscription>,
 ) -> Result<(Subscription, Option<Subscription>), CoreError> {
-    sync_subscription(
-        app_state,
+    let txn = app_state.billing_repository.begin_transaction().await?;
+
+    let (subscription, previous_subscription) = sync_subscription_in_txn(
+        &txn,
         SyncSubscriptionInput {
             provider: "stripe",
             realm_id: realm_id.to_string(),
@@ -568,7 +634,82 @@ async fn sync_stripe_subscription(
         CoreError::InternalServerError(
             "stripe subscription sync failed to create or update subscription".to_string(),
         )
-    })
+    })?;
+
+    let history_event_type = match previous_subscription {
+        Some(ref previous) => detect_change_type(previous, &subscription),
+        None => HistoryEventType::Created,
+    };
+
+    save_subscription_history_in_txn(
+        &app_state.billing_repository,
+        &txn,
+        previous_subscription.as_ref(),
+        &subscription,
+        history_event_type,
+    )
+    .await?;
+
+    txn.commit()
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+    Ok((subscription, previous_subscription))
+}
+
+async fn sync_subscription_input_with_history_in_txn(
+    app_state: &AppState,
+    input: SyncSubscriptionInput,
+    history_event_type: HistoryEventType,
+) -> Result<Option<(Subscription, Option<Subscription>)>, CoreError> {
+    let txn = app_state.billing_repository.begin_transaction().await?;
+    let synced = sync_subscription_in_txn(&txn, input).await?;
+
+    if let Some((subscription, previous_subscription)) = synced.as_ref() {
+        save_subscription_history_in_txn(
+            &app_state.billing_repository,
+            &txn,
+            previous_subscription.as_ref(),
+            subscription,
+            history_event_type,
+        )
+        .await?;
+    }
+
+    txn.commit()
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+    Ok(synced)
+}
+
+async fn sync_subscription_input_with_detected_history_in_txn(
+    app_state: &AppState,
+    input: SyncSubscriptionInput,
+) -> Result<Option<(Subscription, Option<Subscription>)>, CoreError> {
+    let txn = app_state.billing_repository.begin_transaction().await?;
+    let synced = sync_subscription_in_txn(&txn, input).await?;
+
+    if let Some((subscription, previous_subscription)) = synced.as_ref() {
+        let history_event_type = match previous_subscription {
+            Some(previous) => detect_change_type(previous, subscription),
+            None => HistoryEventType::Created,
+        };
+        save_subscription_history_in_txn(
+            &app_state.billing_repository,
+            &txn,
+            previous_subscription.as_ref(),
+            subscription,
+            history_event_type,
+        )
+        .await?;
+    }
+
+    txn.commit()
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+    Ok(synced)
 }
 
 // ============================================================================
@@ -721,7 +862,8 @@ async fn handle_checkout_session_completed(
         .find_by_external_subscription_id(stripe_subscription_id, "stripe")
         .await?;
 
-    let _created_subscription = if let Some(mut existing) = existing_subscription {
+    let now = chrono::Utc::now();
+    let (_created_subscription, _) = if let Some(existing) = existing_subscription {
         info!(
             realm_id = %realm_id,
             subscription_id = %existing.id,
@@ -730,68 +872,43 @@ async fn handle_checkout_session_completed(
             "Checkout completed - subscription already exists from subscription.created webhook, updating"
         );
 
-        let previous = existing.clone();
-        existing.status = status;
-        existing.entitlement_key = entitlement_key.clone();
-        existing.synced_at = Some(chrono::Utc::now());
-        if existing.user_id.is_none() {
-            existing.user_id = Some(payload.user_id);
-        }
-        if existing.client_app_id.is_none() {
-            existing.client_app_id = Some(payload.client_app_id);
-        }
-        existing.updated_at = chrono::Utc::now();
-
-        let updated = app_state
-            .billing_repository
-            .update_subscription(existing)
-            .await?;
-
-        save_subscription_history(
+        sync_stripe_subscription_with_history_in_txn(
             &app_state,
-            Some(&previous),
-            &updated,
+            realm_id,
+            payload.user_id,
+            stripe_subscription_id,
+            Some(payload.client_app_id),
+            entitlement_key.clone(),
+            payload.stripe_product_id.clone(),
+            existing.external_price_id.clone(),
+            status,
+            existing.current_period_start.or(Some(now)),
+            existing.current_period_end,
+            existing.cancel_at_period_end,
+            existing.cancel_at,
+            Some(existing),
+            HistoryEventType::Created,
+        )
+        .await?
+    } else {
+        let (created, previous) = sync_stripe_subscription_with_history_in_txn(
+            &app_state,
+            realm_id,
+            payload.user_id,
+            stripe_subscription_id,
+            Some(payload.client_app_id),
+            entitlement_key.clone(),
+            payload.stripe_product_id.clone(),
+            None,
+            status,
+            Some(now),
+            None,
+            false,
+            None,
+            None,
             HistoryEventType::Created,
         )
         .await?;
-
-        updated
-    } else {
-        let now = chrono::Utc::now();
-        let subscription = Subscription {
-            id: Uuid::now_v7(),
-            realm_id: realm_id.to_string(),
-            external_subscription_id: stripe_subscription_id.to_string(),
-            external_product_id: payload.stripe_product_id.clone(),
-            payment_provider: "stripe".to_string(),
-            status,
-            entitlement_key: entitlement_key.clone(),
-            external_price_id: None,
-            provider_metadata: None,
-            synced_at: Some(now),
-            user_id: Some(payload.user_id),
-            current_period_start: Some(now),
-            current_period_end: None,
-            cancel_at_period_end: false,
-            client_app_id: Some(payload.client_app_id),
-            cancel_at: None,
-            created_at: now,
-            updated_at: now,
-        };
-
-        let created = app_state
-            .billing_repository
-            .create_subscription(subscription)
-            .await?;
-
-        let history_event = SubscriptionHistoryService::create_subscription_created_event(
-            &created,
-            Some(ACTOR_WEBHOOK.to_string()),
-        );
-        app_state
-            .billing_repository
-            .save_history_event(history_event)
-            .await?;
 
         info!(
             realm_id = %realm_id,
@@ -803,7 +920,7 @@ async fn handle_checkout_session_completed(
             "Checkout completed - subscription created"
         );
 
-        created
+        (created, previous)
     };
 
     // Return a placeholder transaction for compatibility
@@ -1289,7 +1406,7 @@ async fn handle_subscription_created(
         .as_str()
         .map(str::to_string);
 
-    let (subscription, previous_subscription) = sync_stripe_subscription(
+    let (_subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
         &app_state,
         realm_id,
         payload.user_id,
@@ -1304,6 +1421,7 @@ async fn handle_subscription_created(
         payload.cancel_at_period_end,
         None,
         None,
+        HistoryEventType::Created,
     )
     .await?;
 
@@ -1318,14 +1436,6 @@ async fn handle_subscription_created(
             payload.event_id.clone(),
         )
         .await?;
-
-    save_subscription_history(
-        &app_state,
-        previous_subscription.as_ref(),
-        &subscription,
-        HistoryEventType::Created,
-    )
-    .await?;
 
     info!(
         realm_id = %realm_id,
@@ -1412,39 +1522,28 @@ async fn handle_subscription_updated(
         let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
             .as_str()
             .map(str::to_string);
-        let (subscription, previous_subscription) = sync_stripe_subscription(
-            &app_state,
-            realm_id,
-            payload.user_id,
-            &payload.stripe_subscription_id,
-            None,
-            current_entitlement_key.clone(),
-            payload.external_product_id.clone(),
-            external_price_id,
-            payload.status.clone(),
-            payload.current_period_start,
-            Some(payload.current_period_end),
-            payload.cancel_at_period_end,
-            if payload.cancel_at_period_end {
-                Some(payload.current_period_end)
-            } else {
-                None
-            },
-            existing_subscription_for_update.clone(),
-        )
-        .await?;
-
-        let history_event = match previous_subscription {
-            Some(ref prev) => detect_change_type(prev, &subscription),
-            None => HistoryEventType::Created,
-        };
-        save_subscription_history(
-            &app_state,
-            previous_subscription.as_ref(),
-            &subscription,
-            history_event,
-        )
-        .await?;
+        let (_subscription, _previous_subscription) =
+            sync_stripe_subscription_with_detected_history_in_txn(
+                &app_state,
+                realm_id,
+                payload.user_id,
+                &payload.stripe_subscription_id,
+                None,
+                current_entitlement_key.clone(),
+                payload.external_product_id.clone(),
+                external_price_id,
+                payload.status.clone(),
+                payload.current_period_start,
+                Some(payload.current_period_end),
+                payload.cancel_at_period_end,
+                if payload.cancel_at_period_end {
+                    Some(payload.current_period_end)
+                } else {
+                    None
+                },
+                existing_subscription_for_update.clone(),
+            )
+            .await?;
 
         return Ok(create_placeholder_transaction(
             payload.user_id,
@@ -1471,36 +1570,35 @@ async fn handle_subscription_updated(
         .await?
         .ok_or(CoreError::EntitlementMappingNotFound)?;
 
-    let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
-        .as_str()
-        .map(str::to_string);
-
-    let (subscription, previous_subscription) = sync_stripe_subscription(
-        &app_state,
-        realm_id,
-        payload.user_id,
-        &payload.stripe_subscription_id,
-        None,
-        current_entitlement_key.clone(),
-        payload.external_product_id.clone(),
-        external_price_id,
-        payload.status.clone(),
-        payload.current_period_start,
-        Some(payload.current_period_end),
-        payload.cancel_at_period_end,
-        if payload.cancel_at_period_end {
-            Some(payload.current_period_end)
-        } else {
-            None
-        },
-        existing_subscription_for_update.clone(),
-    )
-    .await?;
-
     let is_upgrade = {
         let old_points = old_mapping.points_per_period.unwrap_or(0);
         let new_points = new_mapping.points_per_period.unwrap_or(0);
         if old_points == 0 && new_points == 0 {
+            let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
+                .as_str()
+                .map(str::to_string);
+            let (_subscription, _previous_subscription) =
+                sync_stripe_subscription_with_detected_history_in_txn(
+                    &app_state,
+                    realm_id,
+                    payload.user_id,
+                    &payload.stripe_subscription_id,
+                    None,
+                    current_entitlement_key.clone(),
+                    payload.external_product_id.clone(),
+                    external_price_id,
+                    payload.status.clone(),
+                    payload.current_period_start,
+                    Some(payload.current_period_end),
+                    payload.cancel_at_period_end,
+                    if payload.cancel_at_period_end {
+                        Some(payload.current_period_end)
+                    } else {
+                        None
+                    },
+                    existing_subscription_for_update.clone(),
+                )
+                .await?;
             tracing::info!(
                 realm_id = %realm_id,
                 "Both mappings have no points configured; skipping upgrade/downgrade classification"
@@ -1515,6 +1613,32 @@ async fn handle_subscription_updated(
     };
 
     if is_upgrade {
+        let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
+            .as_str()
+            .map(str::to_string);
+        let (_subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
+            &app_state,
+            realm_id,
+            payload.user_id,
+            &payload.stripe_subscription_id,
+            None,
+            current_entitlement_key.clone(),
+            payload.external_product_id.clone(),
+            external_price_id,
+            payload.status.clone(),
+            payload.current_period_start,
+            Some(payload.current_period_end),
+            payload.cancel_at_period_end,
+            if payload.cancel_at_period_end {
+                Some(payload.current_period_end)
+            } else {
+                None
+            },
+            existing_subscription_for_update.clone(),
+            HistoryEventType::Upgraded,
+        )
+        .await?;
+
         app_state
             .subscription_service
             .handle_subscription_upgrade(
@@ -1525,14 +1649,6 @@ async fn handle_subscription_updated(
                 payload.current_period_end,
             )
             .await?;
-
-        save_subscription_history(
-            &app_state,
-            previous_subscription.as_ref(),
-            &subscription,
-            HistoryEventType::Upgraded,
-        )
-        .await?;
 
         info!(
             realm_id = %realm_id,
@@ -1550,6 +1666,32 @@ async fn handle_subscription_updated(
             TransactionType::SubscriptionUpgrade,
         ))
     } else {
+        let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
+            .as_str()
+            .map(str::to_string);
+        let (_subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
+            &app_state,
+            realm_id,
+            payload.user_id,
+            &payload.stripe_subscription_id,
+            None,
+            current_entitlement_key.clone(),
+            payload.external_product_id.clone(),
+            external_price_id,
+            payload.status.clone(),
+            payload.current_period_start,
+            Some(payload.current_period_end),
+            payload.cancel_at_period_end,
+            if payload.cancel_at_period_end {
+                Some(payload.current_period_end)
+            } else {
+                None
+            },
+            existing_subscription_for_update.clone(),
+            HistoryEventType::Downgraded,
+        )
+        .await?;
+
         app_state
             .subscription_service
             .handle_subscription_downgrade(
@@ -1559,14 +1701,6 @@ async fn handle_subscription_updated(
                 &current_entitlement_key,
             )
             .await?;
-
-        save_subscription_history(
-            &app_state,
-            previous_subscription.as_ref(),
-            &subscription,
-            HistoryEventType::Downgraded,
-        )
-        .await?;
 
         info!(
             realm_id = %realm_id,
@@ -1649,7 +1783,7 @@ async fn handle_subscription_status_change(
         .find_by_external_subscription_id(&stripe_subscription_id, "stripe")
         .await?;
 
-    let (subscription, previous_subscription) = sync_stripe_subscription(
+    let _synced = sync_stripe_subscription_with_detected_history_in_txn(
         &app_state,
         realm_id,
         user_id,
@@ -1668,18 +1802,6 @@ async fn handle_subscription_status_change(
             None
         },
         existing_sub,
-    )
-    .await?;
-
-    let history_event = match previous_subscription {
-        Some(ref prev) => detect_change_type(prev, &subscription),
-        None => HistoryEventType::Created,
-    };
-    save_subscription_history(
-        &app_state,
-        previous_subscription.as_ref(),
-        &subscription,
-        history_event,
     )
     .await?;
 
@@ -1730,27 +1852,13 @@ async fn handle_subscription_deleted(
         CancelMode::ImmediateCancel
     };
 
-    app_state
-        .subscription_service
-        .handle_subscription_cancel(
-            payload.user_id,
-            realm_id,
-            cancel_mode,
-            if payload.cancel_at_period_end {
-                Some(payload.current_period_end)
-            } else {
-                None
-            },
-        )
-        .await?;
-
     let status = if payload.cancel_at_period_end {
         SubscriptionStatus::ScheduledCancel
     } else {
         SubscriptionStatus::Canceled
     };
 
-    let (subscription, previous_subscription) = sync_stripe_subscription(
+    let (_subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
         &app_state,
         realm_id,
         payload.user_id,
@@ -1771,16 +1879,23 @@ async fn handle_subscription_deleted(
             Utc::now()
         }),
         existing_subscription.clone(),
-    )
-    .await?;
-
-    save_subscription_history(
-        &app_state,
-        previous_subscription.as_ref(),
-        &subscription,
         HistoryEventType::Canceled,
     )
     .await?;
+
+    app_state
+        .subscription_service
+        .handle_subscription_cancel(
+            payload.user_id,
+            realm_id,
+            cancel_mode,
+            if payload.cancel_at_period_end {
+                Some(payload.current_period_end)
+            } else {
+                None
+            },
+        )
+        .await?;
 
     info!(
         realm_id = %realm_id,
@@ -1942,7 +2057,7 @@ async fn handle_invoice_payment_succeeded(
         .as_ref()
         .and_then(|s| s.external_price_id.clone());
 
-    let (subscription, previous_subscription) = sync_stripe_subscription(
+    let (_subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
         &app_state,
         realm_id,
         payload.user_id,
@@ -1959,6 +2074,7 @@ async fn handle_invoice_payment_succeeded(
         false,
         None,
         existing_subscription.clone(),
+        HistoryEventType::Renewed,
     )
     .await?;
 
@@ -1973,14 +2089,6 @@ async fn handle_invoice_payment_succeeded(
             payload.event_id.clone(),
         )
         .await?;
-
-    save_subscription_history(
-        &app_state,
-        previous_subscription.as_ref(),
-        &subscription,
-        HistoryEventType::Renewed,
-    )
-    .await?;
 
     info!(
         realm_id = %realm_id,
@@ -2192,7 +2300,7 @@ async fn handle_charge_dispute_created(
         obj.insert("dispute_reason".to_string(), object["reason"].clone());
     }
 
-    if let Some((subscription, previous)) = sync_subscription(
+    let _synced = sync_subscription_input_with_history_in_txn(
         &app_state,
         SyncSubscriptionInput {
             provider: "stripe",
@@ -2211,17 +2319,9 @@ async fn handle_charge_dispute_created(
             cancel_at: existing.cancel_at,
             existing_subscription: Some(existing),
         },
+        HistoryEventType::Disputed,
     )
-    .await?
-    {
-        save_subscription_history(
-            &app_state,
-            previous.as_ref(),
-            &subscription,
-            HistoryEventType::Disputed,
-        )
-        .await?;
-    }
+    .await?;
 
     Ok(create_placeholder_transaction(
         user_id,
@@ -2272,7 +2372,7 @@ async fn handle_charge_dispute_closed(
         }
     };
 
-    if let Some((subscription, previous)) = sync_subscription(
+    let synced = sync_subscription_input_with_detected_history_in_txn(
         &app_state,
         SyncSubscriptionInput {
             provider: "stripe",
@@ -2296,20 +2396,12 @@ async fn handle_charge_dispute_closed(
             existing_subscription: Some(existing),
         },
     )
-    .await?
-    {
-        // Only revoke credits after sync succeeds, so retries don't double-revoke.
-        if needs_cancel {
-            app_state
-                .subscription_service
-                .handle_subscription_cancel(user_id, realm_id, CancelMode::ImmediateCancel, None)
-                .await?;
-        }
-        let history_event = match previous {
-            Some(ref prev) => detect_change_type(prev, &subscription),
-            None => HistoryEventType::Created,
-        };
-        save_subscription_history(&app_state, previous.as_ref(), &subscription, history_event)
+    .await?;
+
+    if synced.is_some() && needs_cancel {
+        app_state
+            .subscription_service
+            .handle_subscription_cancel(user_id, realm_id, CancelMode::ImmediateCancel, None)
             .await?;
     }
 

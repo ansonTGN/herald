@@ -1860,6 +1860,7 @@ dependencies = [
  "rand 0.8.5",
  "reqwest",
  "rsa",
+ "sea-orm",
  "serde",
  "serde_json",
  "sha2",
