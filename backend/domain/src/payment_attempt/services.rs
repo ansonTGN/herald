@@ -125,11 +125,15 @@ impl<R: PaymentAttemptRepository> PaymentAttemptService<R> {
             ));
         }
 
+        let original_status = attempt.status.clone();
+
         // Update status to Cancelled
         attempt.status = target_status;
         attempt.updated_at = chrono::Utc::now();
 
-        self.repository.update_payment_attempt(attempt).await
+        self.repository
+            .update_payment_attempt_with_status_guard(attempt, original_status)
+            .await
     }
 
     /// Mark payment as succeeded (for webhook processing)
@@ -156,6 +160,8 @@ impl<R: PaymentAttemptRepository> PaymentAttemptService<R> {
             ));
         }
 
+        let original_status = attempt.status.clone();
+
         // Update status to Succeeded
         attempt.status = target_status;
         attempt.provider_status = Some(provider_status);
@@ -163,7 +169,9 @@ impl<R: PaymentAttemptRepository> PaymentAttemptService<R> {
         attempt.completed_at = Some(completed_at);
         attempt.updated_at = chrono::Utc::now();
 
-        self.repository.update_payment_attempt(attempt).await
+        self.repository
+            .update_payment_attempt_with_status_guard(attempt, original_status)
+            .await
     }
 
     /// Mark payment as failed (for webhook processing)
@@ -189,13 +197,17 @@ impl<R: PaymentAttemptRepository> PaymentAttemptService<R> {
             ));
         }
 
+        let original_status = attempt.status.clone();
+
         // Update status to Failed
         attempt.status = target_status;
         attempt.provider_status = Some(provider_status);
         attempt.completed_at = Some(completed_at);
         attempt.updated_at = chrono::Utc::now();
 
-        self.repository.update_payment_attempt(attempt).await
+        self.repository
+            .update_payment_attempt_with_status_guard(attempt, original_status)
+            .await
     }
 
     /// Mark a succeeded payment attempt as failed for async payment recovery.
@@ -222,12 +234,16 @@ impl<R: PaymentAttemptRepository> PaymentAttemptService<R> {
             ));
         }
 
+        let original_status = attempt.status.clone();
+
         attempt.status = PaymentAttemptStatus::Failed;
         attempt.provider_status = Some(provider_status);
         attempt.completed_at = Some(completed_at);
         attempt.updated_at = chrono::Utc::now();
 
-        self.repository.update_payment_attempt(attempt).await
+        self.repository
+            .update_payment_attempt_with_status_guard(attempt, original_status)
+            .await
     }
 
     /// Update provider reference after the upstream payment object has been created.
@@ -258,11 +274,36 @@ impl<R: PaymentAttemptRepository> PaymentAttemptService<R> {
 
         let mut updated = Vec::new();
         for mut attempt in expired_attempts {
-            attempt.status = PaymentAttemptStatus::Expired;
+            let target_status = PaymentAttemptStatus::Expired;
+            if !attempt.status.can_transition_to(&target_status) {
+                tracing::warn!(
+                    attempt_id = %attempt.id,
+                    current_status = %attempt.status,
+                    "Skipping expired attempt: concurrent status change detected"
+                );
+                continue;
+            }
+
+            let original_status = attempt.status.clone();
+            let attempt_id = attempt.id;
+            attempt.status = target_status;
             attempt.updated_at = chrono::Utc::now();
 
-            let updated_attempt = self.repository.update_payment_attempt(attempt).await?;
-            updated.push(updated_attempt);
+            match self
+                .repository
+                .update_payment_attempt_with_status_guard(attempt, original_status)
+                .await
+            {
+                Ok(updated_attempt) => updated.push(updated_attempt),
+                Err(e) => {
+                    tracing::warn!(
+                        attempt_id = %attempt_id,
+                        error = %e,
+                        "Skipping expired attempt: status guard conflict"
+                    );
+                    continue;
+                }
+            }
         }
 
         Ok(updated)
@@ -294,6 +335,15 @@ mod tests {
 
         fn add_attempt(&self, attempt: PaymentAttempt) {
             self.attempts.lock().unwrap().push(attempt);
+        }
+
+        fn set_status(&self, attempt_id: Uuid, status: PaymentAttemptStatus) {
+            let mut attempts = self.attempts.lock().unwrap();
+            let attempt = attempts
+                .iter_mut()
+                .find(|a| a.id == attempt_id)
+                .expect("test attempt should exist");
+            attempt.status = status;
         }
     }
 
@@ -360,6 +410,37 @@ mod tests {
                 *existing = attempt.clone();
             }
             Ok(attempt)
+        }
+
+        async fn update_payment_attempt_with_status_guard(
+            &self,
+            attempt: PaymentAttempt,
+            expected_status: PaymentAttemptStatus,
+        ) -> PaymentAttemptResult<PaymentAttempt> {
+            let mut attempts = self.attempts.lock().unwrap();
+            let existing = attempts
+                .iter_mut()
+                .find(|a| a.id == attempt.id)
+                .ok_or_else(|| CoreError::attempt_not_found(&attempt.id.to_string()))?;
+
+            if existing.status != expected_status {
+                if existing.status == attempt.status {
+                    return Ok(existing.clone());
+                }
+
+                return Err(CoreError::invalid_status_transition(
+                    &expected_status.to_string(),
+                    &existing.status.to_string(),
+                ));
+            }
+
+            // Mirror production SQL: only update status + provider fields
+            existing.status = attempt.status.clone();
+            existing.provider_reference = attempt.provider_reference.clone();
+            existing.provider_status = attempt.provider_status.clone();
+            existing.completed_at = attempt.completed_at;
+            existing.updated_at = attempt.updated_at;
+            Ok(existing.clone())
         }
 
         async fn list_expired_attempts(
@@ -578,5 +659,72 @@ mod tests {
             }
             _ => panic!("Expected BadRequest error for invalid transition"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_mark_succeeded_updates_with_status_guard() {
+        let repo = Arc::new(MockPaymentAttemptRepository::new());
+        let service = PaymentAttemptService::new(repo.clone());
+
+        let attempt = create_test_attempt(PaymentAttemptStatus::Pending);
+        repo.add_attempt(attempt.clone());
+
+        let completed_at = Utc::now();
+        let result = service
+            .mark_payment_succeeded(
+                &attempt.realm_id,
+                attempt.id,
+                "paid".to_string(),
+                "txn_guarded".to_string(),
+                completed_at,
+            )
+            .await
+            .expect("pending attempt should transition to succeeded");
+
+        assert_eq!(result.status, PaymentAttemptStatus::Succeeded);
+        assert_eq!(result.provider_status.as_deref(), Some("paid"));
+        assert_eq!(result.provider_reference.as_deref(), Some("txn_guarded"));
+        assert_eq!(result.completed_at, Some(completed_at));
+    }
+
+    #[tokio::test]
+    async fn test_status_guard_rejects_concurrent_different_status() {
+        let repo = MockPaymentAttemptRepository::new();
+        let mut attempt = create_test_attempt(PaymentAttemptStatus::Pending);
+        repo.add_attempt(attempt.clone());
+
+        repo.set_status(attempt.id, PaymentAttemptStatus::Failed);
+
+        attempt.status = PaymentAttemptStatus::Succeeded;
+        let result = repo
+            .update_payment_attempt_with_status_guard(attempt, PaymentAttemptStatus::Pending)
+            .await;
+
+        assert!(result.is_err());
+        match result {
+            Err(CoreError::BadRequest(msg)) => {
+                assert!(msg.contains("Invalid status transition"));
+                assert!(msg.contains("Pending"));
+                assert!(msg.contains("Failed"));
+            }
+            _ => panic!("Expected BadRequest error for guarded update conflict"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_status_guard_treats_same_target_status_as_idempotent() {
+        let repo = MockPaymentAttemptRepository::new();
+        let mut attempt = create_test_attempt(PaymentAttemptStatus::Pending);
+        repo.add_attempt(attempt.clone());
+
+        repo.set_status(attempt.id, PaymentAttemptStatus::Succeeded);
+
+        attempt.status = PaymentAttemptStatus::Succeeded;
+        let result = repo
+            .update_payment_attempt_with_status_guard(attempt, PaymentAttemptStatus::Pending)
+            .await
+            .expect("same target status should be idempotent");
+
+        assert_eq!(result.status, PaymentAttemptStatus::Succeeded);
     }
 }

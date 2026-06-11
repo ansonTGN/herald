@@ -1144,6 +1144,13 @@ async fn handle_checkout_session_async_failed(
             )
             .await?
     } else {
+        // Resolve entitlement_key for targeted subscription credit revocation
+        let entitlement_key = app_state
+            .billing_repository
+            .find_entitlement_mapping_by_id(attempt.target_id)
+            .await?
+            .map(|m| m.entitlement_key);
+
         // Subscription: cancel subscription + revoke SubscriptionCredit (done internally by handle_subscription_cancel)
         let result = app_state
             .subscription_service
@@ -1152,6 +1159,7 @@ async fn handle_checkout_session_async_failed(
                 realm_id,
                 CancelMode::ImmediateCancel,
                 None,
+                entitlement_key.as_deref(),
             )
             .await?;
 
@@ -1836,6 +1844,7 @@ async fn handle_subscription_deleted(
         SubscriptionStatus::Canceled
     };
 
+    let cancel_entitlement_key = entitlement_key.clone();
     let (_subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
         &app_state,
         realm_id,
@@ -1872,6 +1881,7 @@ async fn handle_subscription_deleted(
             } else {
                 None
             },
+            Some(&cancel_entitlement_key),
         )
         .await?;
 
@@ -2350,6 +2360,8 @@ async fn handle_charge_dispute_closed(
         }
     };
 
+    let dispute_entitlement_key = existing.entitlement_key.clone();
+
     let synced = sync_subscription_input_with_detected_history_in_txn(
         &app_state,
         SyncSubscriptionInput {
@@ -2379,7 +2391,13 @@ async fn handle_charge_dispute_closed(
     if synced.is_some() && needs_cancel {
         app_state
             .subscription_service
-            .handle_subscription_cancel(user_id, realm_id, CancelMode::ImmediateCancel, None)
+            .handle_subscription_cancel(
+                user_id,
+                realm_id,
+                CancelMode::ImmediateCancel,
+                None,
+                Some(dispute_entitlement_key.as_str()),
+            )
             .await?;
     }
 

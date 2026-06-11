@@ -26,9 +26,7 @@ use herald_core::domain::billing::{
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
-use herald_core::domain::points::entities::{
-    CreditType, PointsTransaction, RevocationType, TransactionType,
-};
+use herald_core::domain::points::entities::{PointsTransaction, RevocationType, TransactionType};
 use herald_core::domain::points::ports::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
 use herald_core::domain::purchase::metadata_keys;
@@ -1351,12 +1349,7 @@ async fn handle_subscription_canceled(
         (CancelMode::ImmediateCancel, None, Some(Utc::now()))
     };
 
-    let _output = app_state
-        .subscription_service
-        .handle_subscription_cancel(user_id, realm_id, cancel_mode, period_end)
-        .await?;
-
-    // Resolve entitlement_key via fallback chain
+    // Resolve entitlement_key early for targeted revocation
     let entitlement_key = if let Some(key) = &payload.entitlement_key {
         if !key.is_empty() {
             key.clone()
@@ -1380,6 +1373,17 @@ async fn handle_subscription_canceled(
         )
         .await?
     };
+
+    let _output = app_state
+        .subscription_service
+        .handle_subscription_cancel(
+            user_id,
+            realm_id,
+            cancel_mode,
+            period_end,
+            Some(&entitlement_key),
+        )
+        .await?;
 
     if let Some((subscription, previous)) = sync_creem_subscription(
         &app_state,
@@ -1564,7 +1568,7 @@ async fn handle_subscription_lifecycle_status(
         user_id,
         &payload.external_subscription_id,
         payload.client_app_id,
-        entitlement_key,
+        entitlement_key.clone(),
         external_product_id,
         status.clone(),
         payload.current_period_start,
@@ -1589,21 +1593,24 @@ async fn handle_subscription_lifecycle_status(
     if status == SubscriptionStatus::Expired {
         let output = app_state
             .points_service
-            .revoke_points_by_credit_type(
+            .revoke_subscription_credits_by_entitlement(
                 realm_id,
                 user_id,
-                CreditType::SubscriptionCredit,
+                &entitlement_key,
                 RevocationType::ExpireRevoke,
-                "Subscription expired".to_string(),
+                format!("Subscription expired: {}", payload.external_subscription_id),
+                Some(payload.external_subscription_id.clone()),
+                Some(format!("creem:subscription_expired:{event_id}")),
             )
             .await?;
 
         info!(
             realm_id = %realm_id,
             user_id = %user_id,
+            entitlement_key = %entitlement_key,
             total_revoked = output.total_revoked,
             ledger_count = output.ledger_ids.len(),
-            "Subscription expired - revoked all unused subscription credits"
+            "Subscription expired - revoked entitlement subscription credits"
         );
     }
 

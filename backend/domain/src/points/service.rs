@@ -526,6 +526,43 @@ where
         Ok(result)
     }
 
+    /// Revoke active subscription credits for a specific entitlement key.
+    pub async fn revoke_subscription_credits_by_entitlement(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        entitlement_key: &str,
+        revocation_type: RevocationType,
+        reason: String,
+        reference_id: Option<String>,
+        idempotency_key: Option<String>,
+    ) -> Result<RevokePointsOutput, CoreError> {
+        let result = self
+            .repository
+            .revoke_subscription_credits_by_entitlement_atomic(
+                realm_id,
+                user_id,
+                entitlement_key,
+                revocation_type,
+                reason,
+                reference_id,
+                idempotency_key,
+            )
+            .await?;
+
+        tracing::info!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            entitlement_key = %entitlement_key,
+            total_revoked = result.total_revoked,
+            ledger_count = result.ledger_ids.len(),
+            revocation_type = %revocation_type.as_str(),
+            "Subscription credits revoked by entitlement successfully"
+        );
+
+        Ok(result)
+    }
+
     /// Revoke all daily free credits for a user (used when free user upgrades to paid)
     ///
     /// **Idempotency Guarantee**:

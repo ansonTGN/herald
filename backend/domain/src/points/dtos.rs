@@ -123,6 +123,19 @@ pub struct RevokePointsOutput {
     pub revoked_at: chrono::DateTime<chrono::Utc>,
 }
 
+impl RevokePointsOutput {
+    /// Create an empty revocation result (no ledgers revoked).
+    /// Used for idempotency guards and account-not-found early returns.
+    pub fn empty() -> Self {
+        Self {
+            revocation_id: Uuid::now_v7(),
+            ledger_ids: vec![],
+            total_revoked: 0,
+            revoked_at: chrono::Utc::now(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

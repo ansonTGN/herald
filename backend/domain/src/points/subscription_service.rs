@@ -64,7 +64,7 @@ where
 
     /// Handle subscription upgrade
     ///
-    /// Revokes all old subscription credits, then grants the new entitlement's full points.
+    /// Revokes subscription credits for the old entitlement, then grants the new entitlement's full points.
     /// The new points expire at the end of the recalculated billing period.
     pub async fn handle_subscription_upgrade(
         &self,
@@ -94,13 +94,15 @@ where
         }
 
         let revoked = self
-            .points_service
-            .revoke_points_by_credit_type(
+            .repo
+            .revoke_subscription_credits_by_entitlement_atomic(
                 realm_id,
                 user_id,
-                CreditType::SubscriptionCredit,
+                old_entitlement_key,
                 RevocationType::UpgradeRevoke,
                 "Subscription upgrade replaced old subscription credits".to_string(),
+                None,
+                None,
             )
             .await?;
 
@@ -321,13 +323,17 @@ where
     ///
     /// Two modes:
     /// - DefaultCancel: Set expiration on existing subscription credits to period_end
-    /// - ImmediateCancel: Revoke all unused subscription credits immediately
+    /// - ImmediateCancel: Revoke unused subscription credits for the specific entitlement
+    ///
+    /// When `entitlement_key` is provided with ImmediateCancel, only credits from that
+    /// entitlement are revoked. Otherwise falls back to revoking all subscription credits.
     pub async fn handle_subscription_cancel(
         &self,
         user_id: Uuid,
         realm_id: &str,
         cancel_mode: CancelMode,
         period_end: Option<DateTime<Utc>>,
+        entitlement_key: Option<&str>,
     ) -> Result<RevokePointsOutput, CoreError> {
         match cancel_mode {
             CancelMode::DefaultCancel => {
@@ -356,23 +362,37 @@ where
                 })
             }
             CancelMode::ImmediateCancel => {
-                let output = self
-                    .points_service
-                    .revoke_points_by_credit_type(
-                        realm_id,
-                        user_id,
-                        CreditType::SubscriptionCredit,
-                        RevocationType::CancelRevoke,
-                        "Immediate subscription cancellation".to_string(),
-                    )
-                    .await?;
+                let output = if let Some(ekey) = entitlement_key {
+                    self.repo
+                        .revoke_subscription_credits_by_entitlement_atomic(
+                            realm_id,
+                            user_id,
+                            ekey,
+                            RevocationType::CancelRevoke,
+                            "Immediate subscription cancellation".to_string(),
+                            None,
+                            None,
+                        )
+                        .await?
+                } else {
+                    self.points_service
+                        .revoke_points_by_credit_type(
+                            realm_id,
+                            user_id,
+                            CreditType::SubscriptionCredit,
+                            RevocationType::CancelRevoke,
+                            "Immediate subscription cancellation".to_string(),
+                        )
+                        .await?
+                };
 
                 tracing::info!(
                     realm_id = %realm_id,
                     user_id = %user_id,
+                    entitlement_key = ?entitlement_key,
                     total_revoked = output.total_revoked,
                     ledger_count = output.ledger_ids.len(),
-                    "Subscription cancelled immediately - revoked all unused subscription credits"
+                    "Subscription cancelled immediately - revoked unused subscription credits"
                 );
 
                 Ok(output)

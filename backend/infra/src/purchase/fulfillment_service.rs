@@ -158,7 +158,7 @@ where
                             Some(period_end),
                             Some(entitlement_key.clone()),
                             None,
-                            None,
+                            Some(format!("subscription_initial_grant:{}", attempt.id)),
                         )
                         .await?;
 
@@ -271,7 +271,7 @@ where
             .map(|days| chrono::Utc::now() + chrono::Duration::days(days));
 
         // Grant TopupCredit via points_repository
-        // Use attempt.id as source_id for idempotency lookup
+        // Use attempt.id as source_id AND idempotency_key to prevent double-grant on concurrent webhooks
         let credit_ledger = self
             .points_repository
             .grant_points_atomic(
@@ -286,7 +286,7 @@ where
                     "One-time purchase: {} ({} points) via {}",
                     mapping.entitlement_key, points, provider_transaction_id
                 )),
-                None,
+                Some(format!("one_time_purchase:{}", attempt.id)),
             )
             .await?;
 

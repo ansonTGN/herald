@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::payment_attempt::{
-    CreatePaymentAttemptInput, PaymentAttempt, PaymentAttemptRepository, PurchaseHistoryRow,
+    CreatePaymentAttemptInput, PaymentAttempt, PaymentAttemptErrorExt, PaymentAttemptRepository,
+    PaymentAttemptStatus, PurchaseHistoryRow,
 };
 use herald_entity::payment_attempt as payment_attempt_entity;
 
@@ -192,6 +193,58 @@ impl PaymentAttemptRepository for PostgresPaymentAttemptRepository {
         })?;
 
         Self::model_to_payment_attempt(result)
+    }
+
+    async fn update_payment_attempt_with_status_guard(
+        &self,
+        attempt: PaymentAttempt,
+        expected_status: PaymentAttemptStatus,
+    ) -> Result<PaymentAttempt, CoreError> {
+        let target_status = attempt.status.clone();
+        let result = sqlx::query(
+            "UPDATE payment_attempts
+             SET status = $1,
+                 provider_reference = $2,
+                 provider_status = $3,
+                 completed_at = $4,
+                 updated_at = NOW()
+             WHERE id = $5
+               AND realm_id = $6
+               AND status = $7",
+        )
+        .bind(target_status.to_string())
+        .bind(attempt.provider_reference.as_deref())
+        .bind(attempt.provider_status.as_deref())
+        .bind(attempt.completed_at)
+        .bind(attempt.id)
+        .bind(&attempt.realm_id)
+        .bind(expected_status.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to guarded-update payment attempt: {e}"))
+        })?;
+
+        if result.rows_affected() > 0 {
+            return self
+                .find_payment_attempt_by_id(&attempt.realm_id, attempt.id)
+                .await?
+                .ok_or_else(|| CoreError::attempt_not_found(&attempt.id.to_string()));
+        }
+
+        let current = self
+            .find_payment_attempt_by_id(&attempt.realm_id, attempt.id)
+            .await?
+            .ok_or_else(|| CoreError::attempt_not_found(&attempt.id.to_string()))?;
+
+        if current.status == target_status {
+            return Ok(current);
+        }
+
+        Err(CoreError::invalid_status_transition(
+            &expected_status.to_string(),
+            &current.status.to_string(),
+        ))
     }
 
     async fn list_expired_attempts(

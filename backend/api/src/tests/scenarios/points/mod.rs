@@ -81,4 +81,10 @@ mod test_75_ext_grant_points;
 // Regression tests for code-review fixes
 mod test_76_regression_code_review_fixes;
 
+// Idempotency guard tests
+mod test_77_idempotency_guards;
+
+// Refund precision tests
+mod test_78_refund_precision;
+
 pub mod fixtures;

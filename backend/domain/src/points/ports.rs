@@ -571,6 +571,20 @@ pub trait PointsRepository: Send + Sync {
         idempotency_key: Option<String>,
     ) -> impl Future<Output = Result<RevokePointsOutput, CoreError>> + Send;
 
+    /// Revoke all active subscription credit ledgers for one entitlement.
+    /// This is intentionally separate from source_id revocation because it is a
+    /// subscription-domain operation and may revoke multiple ledgers.
+    fn revoke_subscription_credits_by_entitlement_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        entitlement_key: &str,
+        revocation_type: RevocationType,
+        reason: String,
+        reference_id: Option<String>,
+        idempotency_key: Option<String>,
+    ) -> impl Future<Output = Result<RevokePointsOutput, CoreError>> + Send;
+
     fn revoke_topup_proportional_atomic(
         &self,
         realm_id: &str,

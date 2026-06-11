@@ -532,7 +532,13 @@ async fn handle_subscription_contracts_update(
 
         state
             .subscription_service
-            .handle_subscription_cancel(user_id, &realm_id, cancel_mode, cancel_period_end)
+            .handle_subscription_cancel(
+                user_id,
+                &realm_id,
+                cancel_mode,
+                cancel_period_end,
+                Some(&new_entitlement_key),
+            )
             .await?;
 
         info!(

@@ -1121,6 +1121,42 @@ impl PostgresPointsRepository {
 
         Ok(())
     }
+
+    async fn revoke_ledger_list_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        user_id: Uuid,
+        ledgers: Vec<(Uuid, i64)>,
+        revocation_type: RevocationType,
+        reason: &str,
+        reference_id: Option<&str>,
+    ) -> Result<(i64, Vec<Uuid>), CoreError> {
+        let mut total_revoked = 0i64;
+        let mut ledger_ids = Vec::new();
+        for (ledger_id, amount_to_revoke) in ledgers {
+            let updated_ledger = Self::update_ledger_in_tx(
+                tx,
+                ledger_id,
+                LedgerUpdate::Revocation(amount_to_revoke),
+            )
+            .await?;
+            let record = PointsRevocationRecord {
+                id: Uuid::now_v7(),
+                ledger_id: updated_ledger.id,
+                user_id,
+                realm_id: realm_id.to_string(),
+                revocation_type,
+                revoked_amount: amount_to_revoke,
+                reason: reason.to_string(),
+                reference_id: reference_id.map(|s| s.to_string()),
+                created_at: chrono::Utc::now(),
+            };
+            Self::create_revocation_record_in_tx(tx, &record).await?;
+            total_revoked += amount_to_revoke;
+            ledger_ids.push(updated_ledger.id);
+        }
+        Ok((total_revoked, ledger_ids))
+    }
 }
 
 impl PointsRepository for PostgresPointsRepository {
@@ -1841,126 +1877,8 @@ impl PointsRepository for PostgresPointsRepository {
         let realm_id = realm_id.to_string();
 
         async move {
-            // Use raw SQL query to respect the schema search_path
-            // SeaORM doesn't support dynamic schema names, so we use sqlx directly
             let credit_type_str = credit_type.to_string();
             let status_str = CreditLedgerStatus::Active.to_string();
-
-            tracing::info!(
-                realm_id = %realm_id,
-                user_id = %user_id,
-                credit_type = %credit_type_str,
-                status = %status_str,
-                "Finding active ledgers by credit type (SQL query)"
-            );
-
-            // Check what schema we're using
-            let (current_schema, backend_pid, search_path): (
-                Option<String>,
-                Option<i32>,
-                Option<String>,
-            ) = sqlx::query_as(
-                "SELECT current_schema(), pg_backend_pid(), current_setting('search_path')",
-            )
-            .fetch_one(&pool)
-            .await
-            .ok()
-            .unwrap_or((None, None, None));
-            tracing::info!(
-                current_schema = ?current_schema,
-                backend_pid = ?backend_pid,
-                search_path = ?search_path,
-                pool_addr = &format!("{:p}", &pool),
-                "Current database schema and connection"
-            );
-
-            // Check if points_credit_ledger table exists in current schema
-            let table_exists: Option<bool> = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'points_credit_ledger')"
-            )
-            .fetch_one(&pool)
-            .await
-            .ok();
-            tracing::info!(
-                table_exists = ?table_exists,
-                "Table exists in current schema"
-            );
-
-            // Check ALL ledgers for this user (no filters)
-            let all_ledgers_check: Vec<(String, String, i64)> = sqlx::query_as(
-                "SELECT credit_type, status, remaining_amount FROM points_credit_ledger
-                 WHERE realm_id = $1 AND user_id = $2",
-            )
-            .bind(&realm_id)
-            .bind(user_id)
-            .fetch_all(&pool)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-            tracing::info!(
-                all_ledgers_count = all_ledgers_check.len(),
-                all_ledgers = ?all_ledgers_check,
-                "All ledgers for user (no filter)"
-            );
-
-            // Check if table exists and has ANY rows
-            let table_row_count: i64 =
-                sqlx::query_scalar("SELECT COUNT(*) FROM points_credit_ledger")
-                    .fetch_one(&pool)
-                    .await
-                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-            tracing::info!(
-                table_row_count = table_row_count,
-                "Total rows in points_credit_ledger table"
-            );
-
-            // Check what realm_id and user_id are in the table
-            let table_data: Vec<(String, Uuid)> =
-                sqlx::query_as("SELECT realm_id, user_id FROM points_credit_ledger")
-                    .fetch_all(&pool)
-                    .await
-                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-            tracing::info!(
-                table_data = ?table_data,
-                "All realm_id and user_id in table"
-            );
-
-            tracing::info!(
-                query_realm_id = %realm_id,
-                query_user_id = %user_id,
-                "Query parameters"
-            );
-
-            // First, let's count how many ledgers match our criteria
-            let count_query = sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM points_credit_ledger
-                 WHERE realm_id = $1
-                   AND user_id = $2
-                   AND credit_type = $3
-                   AND status = $4
-                   AND remaining_amount > 0",
-            )
-            .bind(&realm_id)
-            .bind(user_id)
-            .bind(&credit_type_str)
-            .bind(&status_str)
-            .fetch_one(&pool)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            tracing::info!(count = count_query, "COUNT query result");
-
-            // Also check if there are ANY ledgers for this user
-            let any_count = sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM points_credit_ledger
-                 WHERE realm_id = $1 AND user_id = $2",
-            )
-            .bind(&realm_id)
-            .bind(user_id)
-            .fetch_one(&pool)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            tracing::info!(any_count = any_count, "Total ledgers for user (no filter)");
 
             let rows = sqlx::query_as::<
                 _,
@@ -1999,8 +1917,6 @@ impl PointsRepository for PostgresPointsRepository {
             .fetch_all(&pool)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            tracing::info!(ledgers_found = rows.len(), "SQL query returned ledgers");
 
             // Convert rows to domain entities
             let ledgers: Result<Vec<_>, _> = rows
@@ -3356,12 +3272,7 @@ impl PointsRepository for PostgresPointsRepository {
                 tx.commit()
                     .await
                     .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-                return Ok(RevokePointsOutput {
-                    revocation_id: Uuid::now_v7(),
-                    ledger_ids: vec![],
-                    total_revoked: 0,
-                    revoked_at: chrono::Utc::now(),
-                });
+                return Ok(RevokePointsOutput::empty());
             }
 
             // 如果账户不存在，返回"撤销 0 点"的结果（webhook 幂等处理）
@@ -3373,12 +3284,7 @@ impl PointsRepository for PostgresPointsRepository {
                         tx.commit()
                             .await
                             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-                        return Ok(RevokePointsOutput {
-                            revocation_id: Uuid::now_v7(),
-                            ledger_ids: vec![],
-                            total_revoked: 0,
-                            revoked_at: chrono::Utc::now(),
-                        });
+                        return Ok(RevokePointsOutput::empty());
                     }
                 };
 
@@ -3390,34 +3296,22 @@ impl PointsRepository for PostgresPointsRepository {
             )
             .await?;
 
-            let mut total_revoked = 0i64;
-            let mut ledger_ids = Vec::new();
-            for ledger in ledgers {
-                if ledger.remaining_amount <= 0 {
-                    continue;
-                }
-                let amount_to_revoke = ledger.remaining_amount;
-                let updated_ledger = Self::update_ledger_in_tx(
-                    &mut tx,
-                    ledger.id,
-                    LedgerUpdate::Revocation(amount_to_revoke),
-                )
-                .await?;
-                let record = PointsRevocationRecord {
-                    id: Uuid::now_v7(),
-                    ledger_id: updated_ledger.id,
-                    user_id,
-                    realm_id: realm_id.clone(),
-                    revocation_type,
-                    revoked_amount: amount_to_revoke,
-                    reason: reason.clone(),
-                    reference_id: reference_id.clone(),
-                    created_at: chrono::Utc::now(),
-                };
-                Self::create_revocation_record_in_tx(&mut tx, &record).await?;
-                total_revoked += amount_to_revoke;
-                ledger_ids.push(updated_ledger.id);
-            }
+            let ledger_tuples: Vec<(Uuid, i64)> = ledgers
+                .into_iter()
+                .filter(|l| l.remaining_amount > 0)
+                .map(|l| (l.id, l.remaining_amount))
+                .collect();
+
+            let (total_revoked, ledger_ids) = Self::revoke_ledger_list_in_tx(
+                &mut tx,
+                &realm_id,
+                user_id,
+                ledger_tuples,
+                revocation_type,
+                &reason,
+                reference_id.as_deref(),
+            )
+            .await?;
 
             if total_revoked > 0 {
                 let (topup, subscription, granted, registration, free_periodic) =
@@ -3480,12 +3374,7 @@ impl PointsRepository for PostgresPointsRepository {
                 tx.commit()
                     .await
                     .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-                return Ok(RevokePointsOutput {
-                    revocation_id: Uuid::now_v7(),
-                    ledger_ids: vec![],
-                    total_revoked: 0,
-                    revoked_at: chrono::Utc::now(),
-                });
+                return Ok(RevokePointsOutput::empty());
             }
 
             let account =
@@ -3495,12 +3384,7 @@ impl PointsRepository for PostgresPointsRepository {
                         tx.commit()
                             .await
                             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-                        return Ok(RevokePointsOutput {
-                            revocation_id: Uuid::now_v7(),
-                            ledger_ids: vec![],
-                            total_revoked: 0,
-                            revoked_at: chrono::Utc::now(),
-                        });
+                        return Ok(RevokePointsOutput::empty());
                     }
                 };
 
@@ -3520,12 +3404,7 @@ impl PointsRepository for PostgresPointsRepository {
                 tx.commit()
                     .await
                     .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-                return Ok(RevokePointsOutput {
-                    revocation_id: Uuid::now_v7(),
-                    ledger_ids: vec![],
-                    total_revoked: 0,
-                    revoked_at: chrono::Utc::now(),
-                });
+                return Ok(RevokePointsOutput::empty());
             };
 
             let credit_type: CreditType = credit_type_str.as_str().parse().map_err(|_| {
@@ -3591,6 +3470,114 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
+    fn revoke_subscription_credits_by_entitlement_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        entitlement_key: &str,
+        revocation_type: RevocationType,
+        reason: String,
+        reference_id: Option<String>,
+        idempotency_key: Option<String>,
+    ) -> impl std::future::Future<Output = Result<RevokePointsOutput, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        let entitlement_key = entitlement_key.to_string();
+        async move {
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            if let Some(ref key) = idempotency_key
+                && Self::check_completed_idempotency_in_tx(&mut tx, &realm_id, key)
+                    .await?
+                    .is_some()
+            {
+                tx.commit()
+                    .await
+                    .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                return Ok(RevokePointsOutput::empty());
+            }
+
+            let account =
+                match Self::find_account_by_user_for_update(&mut tx, &realm_id, user_id).await? {
+                    Some(acc) => acc,
+                    None => {
+                        tx.commit()
+                            .await
+                            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                        return Ok(RevokePointsOutput::empty());
+                    }
+                };
+
+            // Use prefix match so both initial grants (source_id = entitlement_key)
+            // and renewal grants (source_id = entitlement_key:idempotency_key) are revoked.
+            let like_pattern = format!("{}%", entitlement_key);
+            let ledgers = sqlx::query_as::<_, (Uuid, i64)>(
+                "SELECT id, remaining_amount
+                 FROM points_credit_ledger
+                 WHERE realm_id = $1
+                   AND user_id = $2
+                   AND credit_type = 'subscription_credit'
+                   AND source_id LIKE $3
+                   AND status = 'active'
+                   AND remaining_amount > 0
+                 ORDER BY created_at ASC
+                 FOR UPDATE",
+            )
+            .bind(&realm_id)
+            .bind(user_id)
+            .bind(&like_pattern)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            let (total_revoked, ledger_ids) = Self::revoke_ledger_list_in_tx(
+                &mut tx,
+                &realm_id,
+                user_id,
+                ledgers,
+                revocation_type,
+                &reason,
+                reference_id.as_deref(),
+            )
+            .await?;
+
+            if total_revoked > 0 {
+                let (topup, subscription, granted, registration, free_periodic) =
+                    CreditType::SubscriptionCredit.wallet_balance_delta(total_revoked);
+                let _ = Self::update_wallet_in_tx(
+                    &mut tx,
+                    account.id,
+                    WalletUpdate::Revocation {
+                        topup,
+                        subscription,
+                        granted,
+                        registration,
+                        free_periodic,
+                    },
+                )
+                .await?;
+            }
+
+            if let Some(ref key) = idempotency_key {
+                Self::record_completed_idempotency_in_tx(&mut tx, &realm_id, key, Uuid::now_v7())
+                    .await?;
+            }
+
+            tx.commit()
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            Ok(RevokePointsOutput {
+                revocation_id: Uuid::now_v7(),
+                ledger_ids,
+                total_revoked,
+                revoked_at: chrono::Utc::now(),
+            })
+        }
+    }
+
     fn revoke_topup_proportional_atomic(
         &self,
         realm_id: &str,
@@ -3616,12 +3603,7 @@ impl PointsRepository for PostgresPointsRepository {
                 tx.commit()
                     .await
                     .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-                return Ok(RevokePointsOutput {
-                    revocation_id: Uuid::now_v7(),
-                    ledger_ids: vec![],
-                    total_revoked: 0,
-                    revoked_at: chrono::Utc::now(),
-                });
+                return Ok(RevokePointsOutput::empty());
             }
 
             let account =
@@ -3638,12 +3620,7 @@ impl PointsRepository for PostgresPointsRepository {
                         tx.commit()
                             .await
                             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-                        return Ok(RevokePointsOutput {
-                            revocation_id: Uuid::now_v7(),
-                            ledger_ids: vec![],
-                            total_revoked: 0,
-                            revoked_at: chrono::Utc::now(),
-                        });
+                        return Ok(RevokePointsOutput::empty());
                     }
                 };
 

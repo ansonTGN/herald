@@ -104,3 +104,10 @@ pub mod async_payment_points_strategy_scenarios;
 // User Story: US-AP-002 (idempotency), US-AP-003 (revocation), US-AP-004 (debt)
 // Covers: Design sections 4.1, 4.3, 5.1
 pub mod async_payment_revocation_scenarios;
+
+// Payment attempt status guard scenario tests
+pub mod payment_attempt_status_guard_scenarios;
+
+// Webhook grant idempotency scenario tests
+// Covers: Duplicate webhook delivery must not cause double point grants
+pub mod webhook_grant_idempotency_scenarios;

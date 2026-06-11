@@ -4,8 +4,8 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::entities::PaymentAttempt;
 use super::entities::PurchaseHistoryRow;
+use super::entities::{PaymentAttempt, PaymentAttemptStatus};
 use crate::common::entities::app_errors::CoreError;
 
 /// Input for creating a payment attempt
@@ -64,6 +64,14 @@ pub trait PaymentAttemptRepository: Send + Sync {
     async fn update_payment_attempt(
         &self,
         attempt: PaymentAttempt,
+    ) -> Result<PaymentAttempt, CoreError>;
+
+    /// Update a payment attempt only if its current status still matches the
+    /// status observed by the caller.
+    async fn update_payment_attempt_with_status_guard(
+        &self,
+        attempt: PaymentAttempt,
+        expected_status: PaymentAttemptStatus,
     ) -> Result<PaymentAttempt, CoreError>;
 
     /// List expired attempts (for cleanup)
