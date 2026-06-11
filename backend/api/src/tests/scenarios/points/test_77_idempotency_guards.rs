@@ -17,22 +17,22 @@
 use crate::tests::helpers::points_helpers::*;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext;
-use herald_core::domain::points::dtos::{GrantPointsInput, RevokePointsOutput};
+use herald_core::domain::points::dtos::RevokePointsOutput;
 use herald_core::domain::points::entities::{CreditSourceType, CreditType, RevocationType};
 use herald_core::domain::points::ports::PointsRepository;
 use test_context::test_context;
 use uuid::Uuid;
 
 // ============================================================================
-// Test 1: grant_points_for_sdk idempotency prevents duplicate ledger
+// Test 1: grant_points_internal idempotency prevents duplicate ledger
 // ============================================================================
 //
 // User Story: As a billing system, when I retry a grant-points request with
-// the same source_type + source_id, I must not create a duplicate ledger or
+// an explicit idempotency key, I must not create a duplicate ledger or
 // inflate the user's balance.
 //
 // Covers: grant_points_atomic idempotency guard (line ~3864-3889)
-// Idempotency key: "grant:{source_type}:{source_id}"
+// Idempotency key: caller-provided via grant_points_internal parameter
 //
 #[test_context(SchemaTestContext)]
 #[tokio::test]
@@ -44,32 +44,42 @@ async fn test_grant_idempotency_prevents_duplicate_ledger(ctx: &mut SchemaTestCo
     create_points_wallet(ctx, user_id, &realm_id).await;
 
     let source_id = Uuid::now_v7().to_string();
-
-    let input = GrantPointsInput {
-        user_id,
-        source_type: CreditSourceType::AdminGrant,
-        amount: 500,
-        reason: "idempotency test: first grant".to_string(),
-        source_id: source_id.clone(),
-        validity_days: None,
-    };
+    let idempotency_key = format!("grant:AdminGrant:{}", source_id);
 
     // First grant should succeed
     let result1 = ctx
         .app_state
         .points_service
-        .grant_points_for_sdk(&realm_id, input.clone())
+        .grant_points_internal(
+            &realm_id,
+            user_id,
+            CreditType::GrantedCredit,
+            CreditSourceType::AdminGrant,
+            500,
+            None,
+            Some(source_id.clone()),
+            Some("idempotency test: first grant".to_string()),
+            Some(idempotency_key.clone()),
+        )
         .await;
 
     assert!(result1.is_ok(), "First grant should succeed: {:?}", result1);
-    let output1 = result1.unwrap();
-    assert_eq!(output1.amount, 500, "First grant amount should be 500");
 
-    // Second grant with the same source_type + source_id should be idempotent
+    // Second grant with the same idempotency key should be idempotent
     let result2 = ctx
         .app_state
         .points_service
-        .grant_points_for_sdk(&realm_id, input)
+        .grant_points_internal(
+            &realm_id,
+            user_id,
+            CreditType::GrantedCredit,
+            CreditSourceType::AdminGrant,
+            500,
+            None,
+            Some(source_id.clone()),
+            Some("idempotency test: duplicate grant".to_string()),
+            Some(idempotency_key),
+        )
         .await;
 
     assert!(

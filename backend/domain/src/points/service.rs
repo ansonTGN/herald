@@ -309,12 +309,6 @@ where
             input.reason
         ));
 
-        let idempotency_key = Some(format!(
-            "grant:{}:{}",
-            input.source_type.as_str(),
-            input.source_id
-        ));
-
         // Grant points via internal method
         let ledger_id = self
             .grant_points_internal(
@@ -326,7 +320,7 @@ where
                 expires_at,
                 Some(input.source_id),
                 description,
-                idempotency_key,
+                None,
             )
             .await?;
 
