@@ -309,10 +309,11 @@ where
             input.reason
         ));
 
-        // No idempotency key: each admin/SDK grant is an independent operation.
-        // Callers that need dedup (webhooks, subscription) pass their own key
-        // through grant_points_internal.
-        let idempotency_key: Option<String> = None;
+        let idempotency_key = Some(format!(
+            "grant:{}:{}",
+            input.source_type.as_str(),
+            input.source_id
+        ));
 
         // Grant points via internal method
         let ledger_id = self
