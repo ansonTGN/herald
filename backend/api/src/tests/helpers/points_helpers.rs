@@ -212,7 +212,7 @@ pub async fn get_total_credit_by_type(
     credit_type: CreditType,
 ) -> i64 {
     sqlx::query_scalar::<_, i64>(
-        "SELECT COALESCE(SUM(granted_amount), 0) FROM points_credit_ledger
+        "SELECT COALESCE(SUM(granted_amount), 0)::BIGINT FROM points_credit_ledger
          WHERE user_id = $1 AND credit_type = $2",
     )
     .bind(user_id)
@@ -229,7 +229,7 @@ pub async fn get_remaining_credit_by_type(
     credit_type: CreditType,
 ) -> i64 {
     sqlx::query_scalar::<_, i64>(
-        "SELECT COALESCE(SUM(remaining_amount), 0) FROM points_credit_ledger
+        "SELECT COALESCE(SUM(remaining_amount), 0)::BIGINT FROM points_credit_ledger
          WHERE user_id = $1 AND credit_type = $2",
     )
     .bind(user_id)

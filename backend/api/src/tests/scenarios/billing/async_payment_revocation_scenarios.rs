@@ -667,7 +667,7 @@ mod tests {
             user_id,
             &realm_id,
             500,
-            &attempt_id.to_string(),
+            &format!("{}:{}", entitlement_key, attempt_id),
         )
         .await;
 

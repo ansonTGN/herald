@@ -49,7 +49,8 @@ mod tests {
     }
 
     /// Execute the status-guarded update via SQL directly, mirroring the production
-    /// `update_payment_attempt_with_status_guard` logic. Returns (rows_affected, new_status).
+    /// `update_payment_attempt_with_status_guard` logic including valid transition
+    /// checking. Returns (rows_affected, new_status).
     async fn guarded_update_status(
         ctx: &StatusGuardTestContext,
         attempt_id: Uuid,
@@ -62,7 +63,15 @@ mod tests {
              SET status = $1, updated_at = NOW()
              WHERE id = $2
                AND realm_id = $3
-               AND status = $4",
+               AND status = $4
+               AND (
+                 -- Valid transitions from Pending
+                 ($4 = 'Pending' AND $1 IN ('Succeeded', 'Failed', 'Cancelled', 'Expired', 'RequiresAction'))
+                 -- Valid transitions from RequiresAction
+                 OR ($4 = 'RequiresAction' AND $1 IN ('Succeeded', 'Failed', 'Cancelled', 'Expired'))
+                 -- Terminal states cannot transition out (idempotent same-state only)
+                 OR ($4 = $1)
+               )",
         )
         .bind(target_status)
         .bind(attempt_id)

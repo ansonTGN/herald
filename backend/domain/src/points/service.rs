@@ -309,12 +309,10 @@ where
             input.reason
         ));
 
-        // Generate idempotency key from source_type + source_id for natural dedup on retry
-        let idempotency_key = Some(format!(
-            "grant:{}:{}",
-            input.source_type.as_str(),
-            input.source_id
-        ));
+        // No idempotency key: each admin/SDK grant is an independent operation.
+        // Callers that need dedup (webhooks, subscription) pass their own key
+        // through grant_points_internal.
+        let idempotency_key: Option<String> = None;
 
         // Grant points via internal method
         let ledger_id = self

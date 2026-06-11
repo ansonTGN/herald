@@ -149,7 +149,7 @@ async fn test_creem_checkout_completed_duplicate_event_no_double_grant(
 
     // Create entitlement mapping for checkout.completed one-time grant
     let external_product_id = format!("prod_creem_{}", entitlement_key);
-    setup_test_entitlement_mapping_for_webhook(
+    let mapping_id = setup_test_entitlement_mapping_for_webhook(
         ctx,
         &realm_id,
         "creem",
@@ -161,10 +161,35 @@ async fn test_creem_checkout_completed_duplicate_event_no_double_grant(
     )
     .await;
 
+    // Set billing_type=one_time so the handler dispatches to the one-time fulfillment path
+    sqlx::query("UPDATE provider_entitlement_mappings SET billing_type = 'one_time' WHERE id = $1")
+        .bind(mapping_id)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("Failed to set billing_type=one_time");
+
+    // Create a pending payment attempt so the one-time fulfillment can complete it
+    let attempt_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO payment_attempts
+            (id, realm_id, user_id, payment_provider, target_type, target_id,
+             amount, currency, status, expires_at, created_at, updated_at)
+         VALUES ($1, $2, $3, 'creem', 'entitlement_mapping', $4,
+                 $5, 'USD', 'Pending', NOW() + INTERVAL '2 hours', NOW(), NOW())",
+    )
+    .bind(attempt_id)
+    .bind(&realm_id)
+    .bind(user_id)
+    .bind(mapping_id)
+    .bind(2000i64)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create pending payment attempt");
+
     // Create points wallet
     create_points_wallet(ctx, user_id, &realm_id).await;
 
-    // Build Creem checkout.completed event with herald_* metadata
+    // Build Creem checkout.completed event with herald_* metadata and attempt_id
     let event = build_creem_checkout_completed_with_herald_metadata(
         &event_id,
         entitlement_key,
@@ -172,6 +197,9 @@ async fn test_creem_checkout_completed_duplicate_event_no_double_grant(
         user_id,
         client_app_id,
     );
+    // Inject attempt_id into metadata so the handler can find and complete the payment attempt
+    let mut event = event;
+    event["object"]["metadata"]["attemptId"] = serde_json::json!(attempt_id.to_string());
 
     let app = ctx.create_unified_test_router();
 

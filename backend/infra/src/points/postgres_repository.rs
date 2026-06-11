@@ -3511,16 +3511,17 @@ impl PointsRepository for PostgresPointsRepository {
                     }
                 };
 
-            // Use prefix match so both initial grants (source_id = entitlement_key)
-            // and renewal grants (source_id = entitlement_key:idempotency_key) are revoked.
-            let like_pattern = format!("{}%", entitlement_key);
+            // Match exact entitlement_key (initial grants) and entitlement_key:* (renewals).
+            // Use colon separator to prevent "tier" matching "tier_premium".
+            let exact = entitlement_key.clone();
+            let prefix = format!("{}:%", entitlement_key);
             let ledgers = sqlx::query_as::<_, (Uuid, i64)>(
                 "SELECT id, remaining_amount
                  FROM points_credit_ledger
                  WHERE realm_id = $1
                    AND user_id = $2
                    AND credit_type = 'subscription_credit'
-                   AND source_id LIKE $3
+                   AND (source_id = $3 OR source_id LIKE $4)
                    AND status = 'active'
                    AND remaining_amount > 0
                  ORDER BY created_at ASC
@@ -3528,7 +3529,8 @@ impl PointsRepository for PostgresPointsRepository {
             )
             .bind(&realm_id)
             .bind(user_id)
-            .bind(&like_pattern)
+            .bind(&exact)
+            .bind(&prefix)
             .fetch_all(&mut *tx)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;

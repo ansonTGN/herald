@@ -79,7 +79,7 @@ POSTGRES_SPEC = ContainerSpec(
 
 REDIS_SPEC = ContainerSpec(
     name="cas-test-redis",
-    port=6380,
+    port=6382,
     run_args=[
         "--name",
         "cas-test-redis",
@@ -90,7 +90,7 @@ REDIS_SPEC = ContainerSpec(
         "--log-opt",
         "max-file=3",
         "-p",
-        "6380:6379",
+        "6382:6379",
         "redis:8.4-alpine",
     ],
     ready_waiter=docker.wait_redis_ready,
@@ -436,7 +436,7 @@ def main() -> int:
     test_env = os.environ.copy()
     test_env.setdefault("TEST_POSTGRES_HOST", "127.0.0.1")
     test_env.setdefault("TEST_POSTGRES_PORT", "16432")
-    test_env.setdefault("TEST_REDIS_URL", "redis://127.0.0.1:6380/0")
+    test_env.setdefault("TEST_REDIS_URL", "redis://127.0.0.1:6382/0")
 
     start_code, container_states = start_test_environment()
     if start_code != 0:

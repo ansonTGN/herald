@@ -363,17 +363,29 @@ where
             }
             CancelMode::ImmediateCancel => {
                 let output = if let Some(ekey) = entitlement_key {
-                    self.repo
-                        .revoke_subscription_credits_by_entitlement_atomic(
-                            realm_id,
-                            user_id,
-                            ekey,
-                            RevocationType::CancelRevoke,
-                            "Immediate subscription cancellation".to_string(),
-                            None,
-                            None,
-                        )
-                        .await?
+                    if ekey.is_empty() {
+                        self.points_service
+                            .revoke_points_by_credit_type(
+                                realm_id,
+                                user_id,
+                                CreditType::SubscriptionCredit,
+                                RevocationType::CancelRevoke,
+                                "Immediate subscription cancellation".to_string(),
+                            )
+                            .await?
+                    } else {
+                        self.repo
+                            .revoke_subscription_credits_by_entitlement_atomic(
+                                realm_id,
+                                user_id,
+                                ekey,
+                                RevocationType::CancelRevoke,
+                                "Immediate subscription cancellation".to_string(),
+                                None,
+                                None,
+                            )
+                            .await?
+                    }
                 } else {
                     self.points_service
                         .revoke_points_by_credit_type(

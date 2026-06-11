@@ -886,8 +886,14 @@ mod tests {
         )
         .await;
 
-        create_subscription_credit_with_ledger(ctx, user_id, &realm_id, 500, &sub_id.to_string())
-            .await;
+        create_subscription_credit_with_ledger(
+            ctx,
+            user_id,
+            &realm_id,
+            500,
+            &format!("{}:{}", entitlement_key, sub_id),
+        )
+        .await;
 
         let event_id = generate_test_event_id();
         let payload = build_creem_subscription_lifecycle(
@@ -1111,8 +1117,14 @@ mod tests {
         )
         .await;
 
-        create_subscription_credit_with_ledger(ctx, user_id, &realm_id, 500, &sub_id.to_string())
-            .await;
+        create_subscription_credit_with_ledger(
+            ctx,
+            user_id,
+            &realm_id,
+            500,
+            &format!("{}:{}", entitlement_key, sub_id),
+        )
+        .await;
 
         let event_id = generate_test_event_id();
         let payload = build_creem_subscription_canceled(
@@ -1274,8 +1286,14 @@ mod tests {
         )
         .await;
 
-        create_subscription_credit_with_ledger(ctx, user_id, &realm_id, 500, &sub_id.to_string())
-            .await;
+        create_subscription_credit_with_ledger(
+            ctx,
+            user_id,
+            &realm_id,
+            500,
+            &format!("{}:{}", entitlement_key, sub_id),
+        )
+        .await;
 
         // Step 1: Pause the subscription
         let event_id_1 = generate_test_event_id();

@@ -1034,8 +1034,14 @@ mod tests {
         )
         .await;
 
-        create_subscription_credit_with_ledger(ctx, user_id, &realm_id, 500, &sub_id.to_string())
-            .await;
+        create_subscription_credit_with_ledger(
+            ctx,
+            user_id,
+            &realm_id,
+            500,
+            &format!("{}:{}", entitlement_key, sub_id),
+        )
+        .await;
 
         let event_id = generate_test_event_id();
         let payload = build_stripe_dispute_closed(&event_id, sub_id, "lost");
@@ -1227,8 +1233,14 @@ mod tests {
         )
         .await;
 
-        create_subscription_credit_with_ledger(ctx, user_id, &realm_id, 500, &sub_id.to_string())
-            .await;
+        create_subscription_credit_with_ledger(
+            ctx,
+            user_id,
+            &realm_id,
+            500,
+            &format!("{}:{}", entitlement_key, sub_id),
+        )
+        .await;
 
         let event_id = generate_test_event_id();
         let payload = build_stripe_subscription_updated(
@@ -1380,8 +1392,14 @@ mod tests {
         )
         .await;
 
-        create_subscription_credit_with_ledger(ctx, user_id, &realm_id, 500, &sub_id.to_string())
-            .await;
+        create_subscription_credit_with_ledger(
+            ctx,
+            user_id,
+            &realm_id,
+            500,
+            &format!("{}:{}", entitlement_key, sub_id),
+        )
+        .await;
 
         let event_id = generate_test_event_id();
         let payload = build_stripe_subscription_deleted(
@@ -1696,8 +1714,14 @@ mod tests {
         )
         .await;
 
-        create_subscription_credit_with_ledger(ctx, user_id, &realm_id, 500, &sub_id.to_string())
-            .await;
+        create_subscription_credit_with_ledger(
+            ctx,
+            user_id,
+            &realm_id,
+            500,
+            &format!("{}:{}", entitlement_key, sub_id),
+        )
+        .await;
 
         // Step 1: charge.dispute.created -> status becomes "dispute"
         let event_id_1 = generate_test_event_id();

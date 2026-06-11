@@ -10,7 +10,7 @@ from lib.paths import REPO_ROOT
 
 
 def _ports_free() -> bool:
-    ports = [15433, 6380, 16432]
+    ports = [15433, 6382, 16432]
     occupied = [port for port in ports if is_port_open("127.0.0.1", port)]
     if not occupied:
         return True
@@ -268,7 +268,7 @@ END $$;"""
             "--log-opt",
             "max-file=3",
             "-p",
-            "6380:6379",
+            "6382:6379",
             "redis:8.4-alpine",
         ]
     ):
@@ -301,7 +301,7 @@ END $$;"""
         print("ERROR: PgDog verification failed")
         return 1
 
-    print("Test environment is ready. PgDog=localhost:16432 Redis=localhost:6380")
+    print("Test environment is ready. PgDog=localhost:16432 Redis=localhost:6382")
     return 0
 
 
