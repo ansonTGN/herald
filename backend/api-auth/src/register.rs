@@ -183,7 +183,7 @@ pub async fn register(
 
         // Send email (best effort only when configured)
         let link = format!(
-            "{}/api/{}/auth/verify_email/confirm/{}",
+            "{}/api/auth/{}/verify_email/confirm/{}",
             state.public_base_url.trim_end_matches('/'),
             realm_id,
             code

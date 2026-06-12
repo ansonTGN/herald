@@ -197,18 +197,27 @@ async fn confirm_email_change_internal(
     code: &str,
 ) -> Result<(), ApiError> {
     // Parse verification code format: realmId_userId_uuid_ts
-    let mut parts = code.split('_');
-    let realm_id: String = parts
+    // Use rsplitn to split from the right so realm_id (which may contain underscores) is preserved
+    let mut parts = code.rsplitn(3, '_');
+    let _ts = parts
         .next()
-        .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?
-        .to_string();
-    let user_id_str: String = parts
+        .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?;
+    let _uuid = parts
         .next()
-        .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?
-        .to_string();
+        .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?;
+    let remainder = parts
+        .next()
+        .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?;
+
+    // remainder is "realmId_userId" — split from the right once more to get user_id cleanly
+    let mut rp = remainder.rsplitn(2, '_');
+    let user_id_str = rp
+        .next()
+        .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?;
+    let realm_id = rp.next().unwrap_or("");
 
     // Parse user_id as UUID for database query
-    let user_id = uuid::Uuid::parse_str(&user_id_str)
+    let user_id = uuid::Uuid::parse_str(user_id_str)
         .map_err(|_| ApiError::bad_request("invalid user_id in change code".to_string()))?;
 
     if realm_id != current_realm_id || user_id_str != current_user_id {
@@ -217,12 +226,18 @@ async fn confirm_email_change_internal(
         ));
     }
 
-    // Retrieve the new email from verification code
+    // Begin transaction for atomic code lookup + email update
+    let mut tx = state.pool.begin().await.map_err(|e| {
+        tracing::error!("Failed to begin transaction: {}", e);
+        ApiError::internal("Failed to begin transaction")
+    })?;
+
+    // Retrieve the new email from verification code (inside tx for atomicity)
     let new_email: Option<String> = sqlx::query_scalar(
-        "SELECT email FROM email_verification_code WHERE verification_code = $1 AND type = 'change_email' ORDER BY id DESC LIMIT 1",
+        "SELECT email FROM email_verification_code WHERE verification_code = $1 AND type = 'change_email' ORDER BY id DESC LIMIT 1 FOR UPDATE",
     )
     .bind(code)
-    .fetch_optional(&state.pool)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!("Failed to retrieve email verification code: {}", e);
@@ -232,19 +247,13 @@ async fn confirm_email_change_internal(
     let new_email =
         new_email.ok_or_else(|| ApiError::bad_request("change code not found".to_string()))?;
 
-    // Begin transaction for atomic email update
-    let mut tx = state.pool.begin().await.map_err(|e| {
-        tracing::error!("Failed to begin transaction: {}", e);
-        ApiError::internal("Failed to begin transaction")
-    })?;
-
     // Update user email
     let update_result = sqlx::query(
         "UPDATE account SET email = $1, updated_at = NOW() WHERE realm_id = $2 AND id = $3",
     )
     .bind(&new_email)
-    .bind(&realm_id)
-    .bind(user_id) // Now binding as UUID instead of &String
+    .bind(current_realm_id)
+    .bind(user_id)
     .execute(&mut *tx)
     .await;
 

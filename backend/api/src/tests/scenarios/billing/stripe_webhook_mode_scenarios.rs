@@ -778,17 +778,17 @@ mod tests {
         );
 
         // Verify: invoice record exists with correct fields
-        let invoice: Option<(String, String, i64, Option<String>, Option<String>)> =
-            sqlx::query_as(
-                "SELECT provider, status, total, external_hosted_url, external_pdf_url
+        type InvoiceRow = (String, String, i64, Option<String>, Option<String>);
+        let invoice: Option<InvoiceRow> = sqlx::query_as(
+            "SELECT provider, status, total, external_hosted_url, external_pdf_url
              FROM invoice
              WHERE realm_id = $1 AND external_invoice_id = $2",
-            )
-            .bind(&realm_id)
-            .bind(&stripe_invoice_id)
-            .fetch_optional(&ctx.app_state.pool)
-            .await
-            .expect("Failed to query invoice");
+        )
+        .bind(&realm_id)
+        .bind(&stripe_invoice_id)
+        .fetch_optional(&ctx.app_state.pool)
+        .await
+        .expect("Failed to query invoice");
 
         let invoice = invoice.expect("Expected invoice record to exist for one-time payment");
         assert_eq!(invoice.0, "stripe", "provider should be stripe");

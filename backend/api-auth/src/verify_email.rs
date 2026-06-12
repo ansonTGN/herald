@@ -13,6 +13,7 @@ use herald_api_base::application::http::auth::util::{
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::security_constants::RESET_PASSWORD_CONFIRM_IP_RATE_LIMIT;
 use herald_core::domain::user::ports::UserService;
 use herald_core::third::email::EmailService;
 
@@ -83,12 +84,13 @@ pub async fn trigger(
         })?;
 
     let link = format!(
-        "{}/api/{}/auth/verify_email/confirm/{}",
+        "{}/api/auth/{}/verify_email/confirm/{}",
         state.public_base_url.trim_end_matches('/'),
         realm_id,
         code
     );
-    let html = format!("<p>请点击以下链接验证邮箱：</p><p><a href=\"{link}\">{link}</a></p>");
+    let html =
+        format!("<p>Please click to verify your email:</p><p><a href=\"{link}\">{link}</a></p>");
     EmailService::send_html_email(&state.pool, &realm_id, &email, "Verify your email", &html)
         .await
         .map_err(|e| {
@@ -127,8 +129,17 @@ pub struct VerifyEmailConfirmResponse {
 )]
 pub async fn confirm(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     Path((realm_id, code)): Path<(String, String)>,
 ) -> Result<ApiResult<VerifyEmailConfirmResponse>, ApiError> {
+    rate_limit_hit(
+        &state,
+        format!("rl:verify_email_confirm:ip:{ip}"),
+        RESET_PASSWORD_CONFIRM_IP_RATE_LIMIT.0,
+        RESET_PASSWORD_CONFIRM_IP_RATE_LIMIT.1,
+    )
+    .await?;
+
     // Use UserService to verify email
     state
         .service

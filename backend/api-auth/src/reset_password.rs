@@ -99,13 +99,13 @@ pub async fn request(
 
     // Send email (best effort: don't expose email failure to caller)
     let link = format!(
-        "{}/api/{}/auth/reset_password/confirm/{}",
+        "{}/api/auth/{}/reset_password/confirm/{}",
         state.public_base_url.trim_end_matches('/'),
         realm_id,
         code
     );
     let html =
-        format!("<p>please click to reset passowrd：</p><p><a href=\"{link}\">{link}</a></p>");
+        format!("<p>Please click to reset your password:</p><p><a href=\"{link}\">{link}</a></p>");
     if let Err(e) =
         EmailService::send_html_email(&state.pool, &realm_id, &email, "Reset your password", &html)
             .await
