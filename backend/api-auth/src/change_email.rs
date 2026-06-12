@@ -9,11 +9,15 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 use herald_api_base::application::http::auth::util::{
-    ClientIp, epoch_seconds, normalize_email, rate_limit_hit, require_session,
+    ClientIp, normalize_email, rate_limit_hit, require_session,
 };
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::security_constants::{
+    CHANGE_EMAIL_CONFIRM_IP_RATE_LIMIT, CHANGE_EMAIL_REQUEST_EMAIL_RATE_LIMIT,
+    CHANGE_EMAIL_REQUEST_IP_RATE_LIMIT,
+};
 use herald_core::third::email::EmailService;
 
 #[derive(Serialize, Deserialize, ToSchema, Validate)]
@@ -61,12 +65,18 @@ pub async fn request(
     let new_email = normalize_email(&payload.new_email);
 
     // Apply rate limiting: 1 request per minute per IP and email
-    rate_limit_hit(&state, format!("rl:change_email:req:ip:{ip}"), 1, 120).await?;
+    rate_limit_hit(
+        &state,
+        format!("rl:change_email:req:ip:{ip}"),
+        CHANGE_EMAIL_REQUEST_IP_RATE_LIMIT.0,
+        CHANGE_EMAIL_REQUEST_IP_RATE_LIMIT.1,
+    )
+    .await?;
     rate_limit_hit(
         &state,
         format!("rl:change_email:req:email:{new_email}"),
-        1,
-        120,
+        CHANGE_EMAIL_REQUEST_EMAIL_RATE_LIMIT.0,
+        CHANGE_EMAIL_REQUEST_EMAIL_RATE_LIMIT.1,
     )
     .await?;
 
@@ -90,13 +100,7 @@ async fn request_email_change_internal(
     user_id: &str,
     new_email: &str,
 ) -> Result<String, ApiError> {
-    let code = format!(
-        "{}_{}_{}_{}",
-        realm_id,
-        user_id,
-        uuid::Uuid::now_v7(),
-        epoch_seconds()
-    );
+    let code = ChangeEmailCode::generate(realm_id, user_id);
 
     // Store verification code in database
     sqlx::query(
@@ -168,10 +172,19 @@ async fn send_confirmation_email(
 )]
 pub async fn confirm(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     headers: HeaderMap,
     Path((realm_id, code)): Path<(String, String)>,
 ) -> Result<ApiResult<ChangeEmailResponse>, ApiError> {
     let (_token, sess) = require_session(&state, &headers).await?;
+
+    rate_limit_hit(
+        &state,
+        format!("rl:change_email:confirm:ip:{ip}"),
+        CHANGE_EMAIL_CONFIRM_IP_RATE_LIMIT.0,
+        CHANGE_EMAIL_CONFIRM_IP_RATE_LIMIT.1,
+    )
+    .await?;
 
     if sess.realm_id != realm_id {
         return Err(ApiError::forbidden(
@@ -196,31 +209,12 @@ async fn confirm_email_change_internal(
     current_user_id: &str,
     code: &str,
 ) -> Result<(), ApiError> {
-    // Parse verification code format: realmId_userId_uuid_ts
-    // Use rsplitn to split from the right so realm_id (which may contain underscores) is preserved
-    let mut parts = code.rsplitn(3, '_');
-    let _ts = parts
-        .next()
-        .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?;
-    let _uuid = parts
-        .next()
-        .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?;
-    let remainder = parts
-        .next()
-        .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?;
+    let parsed = ChangeEmailCode::parse(code)?;
 
-    // remainder is "realmId_userId" — split from the right once more to get user_id cleanly
-    let mut rp = remainder.rsplitn(2, '_');
-    let user_id_str = rp
-        .next()
-        .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?;
-    let realm_id = rp.next().unwrap_or("");
-
-    // Parse user_id as UUID for database query
-    let user_id = uuid::Uuid::parse_str(user_id_str)
+    let user_id = uuid::Uuid::parse_str(parsed.user_id)
         .map_err(|_| ApiError::bad_request("invalid user_id in change code".to_string()))?;
 
-    if realm_id != current_realm_id || user_id_str != current_user_id {
+    if parsed.realm_id != current_realm_id || parsed.user_id != current_user_id {
         return Err(ApiError::forbidden(
             "cannot confirm email change for a different user",
         ));
@@ -286,5 +280,54 @@ async fn confirm_email_change_internal(
             tracing::error!("Failed to change email: {}", e);
             Err(ApiError::internal("Failed to change email".to_string()))
         }
+    }
+}
+
+/// Verification code for email change: `realmId_userId_uuid_ts`
+///
+/// realm_id may contain underscores; user_id is a UUID (hyphens, no underscores);
+/// uuid and timestamp are always underscore-free.
+struct ChangeEmailCode<'a> {
+    realm_id: &'a str,
+    user_id: &'a str,
+    _uuid: &'a str,
+    _ts: &'a str,
+}
+
+impl<'a> ChangeEmailCode<'a> {
+    fn generate(realm_id: &str, user_id: &str) -> String {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        format!("{}_{}_{}_{}", realm_id, user_id, uuid::Uuid::now_v7(), ts)
+    }
+
+    fn parse(code: &'a str) -> Result<Self, ApiError> {
+        let mut parts = code.rsplitn(3, '_');
+        let _ts = parts
+            .next()
+            .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?;
+        let _uuid = parts
+            .next()
+            .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?;
+        let remainder = parts
+            .next()
+            .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?;
+
+        let mut rp = remainder.rsplitn(2, '_');
+        let user_id = rp
+            .next()
+            .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?;
+        let realm_id = rp
+            .next()
+            .ok_or_else(|| ApiError::bad_request("invalid change code".to_string()))?;
+
+        Ok(Self {
+            realm_id,
+            user_id,
+            _uuid,
+            _ts,
+        })
     }
 }
