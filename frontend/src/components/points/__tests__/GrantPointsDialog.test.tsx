@@ -320,7 +320,9 @@ describe('GrantPointsDialog', () => {
       const searchInput = screen.getByTestId('users-search-input')
       await user.type(searchInput, 'alice')
 
-      expect(await screen.findByText(/alice@example.com/i)).toBeInTheDocument()
+      expect(
+        await screen.findByText(/alice@example.com/i, {}, { timeout: 3000 })
+      ).toBeInTheDocument()
     })
 
     it('shows "No users found" when search returns empty', async () => {

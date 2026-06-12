@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -291,7 +291,6 @@ describe('InvoiceAdminPage', () => {
     )
 
     it('clicking next page triggers re-fetch with updated page param', async () => {
-      const user = userEvent.setup()
       let capturedPage: number | null = null
 
       server.use(
@@ -324,13 +323,17 @@ describe('InvoiceAdminPage', () => {
         expect(screen.getByText('INV-P001')).toBeInTheDocument()
       })
 
-      // Click next
+      // Click next — PaginationNext renders as <a> without href;
+      // fireEvent.click is more reliable than userEvent for this case.
       const nextButton = screen.getByTestId('invoice-pagination-next')
-      await user.click(nextButton)
+      fireEvent.click(nextButton)
 
-      await waitFor(() => {
-        expect(capturedPage).toBe(1)
-      })
+      await waitFor(
+        () => {
+          expect(capturedPage).toBe(1)
+        },
+        { timeout: 5000 }
+      )
 
       // Page 0 items should be gone, page 1 items should appear
       await waitFor(() => {

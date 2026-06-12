@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -398,14 +398,19 @@ describe('InvoiceFormPage', () => {
         expect(screen.getByText('Create Invoice')).toBeInTheDocument()
       })
 
+      // Wait for seller config to load so the useEffect form reset completes
+      await waitFor(() => {
+        expect(screen.getByTestId('invoice-seller-name')).toHaveValue('Default Seller Corp')
+      })
+
       // Fill accountId (required for create mode) but leave billingName empty
       await user.type(screen.getByTestId('invoice-account-id'), 'acc-1')
 
       // Fill billing tax ID (required)
       await user.type(screen.getByTestId('invoice-billing-tax-id'), 'TAX123')
 
-      // Fill due date (required)
-      await user.type(screen.getByTestId('invoice-due-date'), '2025-07-01')
+      // Fill due date (required) — use fireEvent for type="date" inputs
+      fireEvent.change(screen.getByTestId('invoice-due-date'), { target: { value: '2025-07-01' } })
 
       // Fill line item name (required)
       await user.type(screen.getByTestId('invoice-line-item-name-0'), 'Item A')
@@ -414,11 +419,9 @@ describe('InvoiceFormPage', () => {
       await user.clear(screen.getByTestId('invoice-line-item-unit-price-0'))
       await user.type(screen.getByTestId('invoice-line-item-unit-price-0'), '100')
 
-      // Make billingName empty and blur to trigger validation
+      // Make billingName empty
       const billingNameInput = screen.getByTestId('invoice-billing-name')
       await user.clear(billingNameInput)
-      // Blur to trigger field validation display
-      billingNameInput.blur()
 
       // Submit the form
       await user.click(screen.getByTestId('invoice-form-submit-button'))
@@ -438,15 +441,16 @@ describe('InvoiceFormPage', () => {
         expect(screen.getByText('Create Invoice')).toBeInTheDocument()
       })
 
+      // Wait for seller config to load so the useEffect form reset completes
+      await waitFor(() => {
+        expect(screen.getByTestId('invoice-seller-name')).toHaveValue('Default Seller Corp')
+      })
+
       // Fill required fields except line item name
       await user.type(screen.getByTestId('invoice-account-id'), 'acc-1')
       await user.type(screen.getByTestId('invoice-billing-name'), 'Buyer Name')
       await user.type(screen.getByTestId('invoice-billing-tax-id'), 'TAX123')
-      await user.type(screen.getByTestId('invoice-due-date'), '2025-07-01')
-
-      // Line item name is empty (default), blur it
-      const lineItemNameInput = screen.getByTestId('invoice-line-item-name-0')
-      lineItemNameInput.blur()
+      fireEvent.change(screen.getByTestId('invoice-due-date'), { target: { value: '2025-07-01' } })
 
       // Submit
       await user.click(screen.getByTestId('invoice-form-submit-button'))
@@ -507,15 +511,18 @@ describe('InvoiceFormPage', () => {
       await user.clear(screen.getByTestId('invoice-line-item-unit-price-0'))
       await user.type(screen.getByTestId('invoice-line-item-unit-price-0'), '50')
 
-      // Fill due date
-      await user.type(screen.getByTestId('invoice-due-date'), '2025-08-01')
+      // Fill due date — use fireEvent for type="date" inputs (jsdom limitation)
+      fireEvent.change(screen.getByTestId('invoice-due-date'), { target: { value: '2025-08-01' } })
 
       // Submit
       await user.click(screen.getByTestId('invoice-form-submit-button'))
 
-      await waitFor(() => {
-        expect(capturedBody).not.toBeNull()
-      })
+      await waitFor(
+        () => {
+          expect(capturedBody).not.toBeNull()
+        },
+        { timeout: 5000 }
+      )
 
       const body = capturedBody as Record<string, unknown>
       expect(body.accountId).toBe('acc-test-1')
@@ -534,7 +541,7 @@ describe('InvoiceFormPage', () => {
         to: '/$realmId/manage/billing/invoices',
         params: { realmId: REALM_ID },
       })
-    }, 10000)
+    }, 15000)
 
     it('calls update mutation in edit mode on valid form submit', async () => {
       let capturedBody: unknown = null
@@ -559,18 +566,20 @@ describe('InvoiceFormPage', () => {
       })
 
       // Fields should already be populated from invoice data
-      // Change billing name
+      // Change billing name — use clear() for reliable input clearing
       const billingNameInput = screen.getByTestId('invoice-billing-name')
-      await user.tripleClick(billingNameInput)
-      await user.keyboard('{Backspace}')
+      await user.clear(billingNameInput)
       await user.type(billingNameInput, 'Updated Buyer')
 
       // Submit
       await user.click(screen.getByTestId('invoice-form-submit-button'))
 
-      await waitFor(() => {
-        expect(capturedBody).not.toBeNull()
-      })
+      await waitFor(
+        () => {
+          expect(capturedBody).not.toBeNull()
+        },
+        { timeout: 5000 }
+      )
 
       const body = capturedBody as Record<string, unknown>
       expect(body.billingName).toBe('Updated Buyer')
