@@ -687,6 +687,123 @@ mod tests {
         );
     }
 
+    /// Build an invoice.payment_succeeded payload for a one-time payment invoice
+    /// (no subscription field).
+    fn build_stripe_one_time_invoice_payment_succeeded(
+        event_id: &str,
+        stripe_invoice_id: &str,
+        realm_id: &str,
+        user_id: Uuid,
+        amount: i64,
+    ) -> serde_json::Value {
+        json!({
+            "id": event_id,
+            "object": "event",
+            "type": "invoice.payment_succeeded",
+            "api_version": "2020-08-27",
+            "created": chrono::Utc::now().timestamp(),
+            "data": {
+                "object": {
+                    "id": stripe_invoice_id,
+                    "object": "invoice",
+                    "status": "paid",
+                    "total": amount,
+                    "currency": "usd",
+                    // No "subscription" field — this is a one-time payment invoice
+                    "hosted_invoice_url": format!("https://invoice.stripe.com/hosted/{}", stripe_invoice_id),
+                    "invoice_pdf": format!("https://invoice.stripe.com/pdf/{}", stripe_invoice_id),
+                    "metadata": {
+                        "herald_realm_id": realm_id,
+                        "herald_client_app_id": "test-client-app-id",
+                        "herald_mapping_id": "00000000-0000-0000-0000-000000000000",
+                        "herald_user_id": user_id.to_string(),
+                        "userId": user_id.to_string(),
+                    }
+                }
+            }
+        })
+    }
+
+    // =========================================================================
+    // Test 6: one-time invoice.payment_succeeded creates invoice record
+    // =========================================================================
+
+    /// User Story: US-PA-003, US-PU-006
+    /// Covers: one-time Stripe payment produces an invoice record
+    ///
+    /// Why this test matters: Stripe one-time checkout sessions (mode=payment)
+    /// with invoice_creation[enabled]=true produce `invoice.*` webhook events.
+    /// The handler must not crash when `subscription` is absent, and must
+    /// persist an invoice row that downstream queries can find.
+    ///
+    /// Given: Stripe webhook secret configured
+    /// When: Receiving invoice.payment_succeeded for a one-time payment (no subscription)
+    /// Then: Response is OK (200)
+    /// And: An invoice record exists with provider=stripe, external_invoice_id
+    ///      matching ^in_, status=paid, total > 0
+    /// And: external_hosted_url and external_pdf_url are truthy
+    #[test_context(StripeWebhookModeTestContext)]
+    #[tokio::test]
+    async fn test_stripe_webhook_one_time_invoice_payment_succeeded_creates_invoice(
+        ctx: &mut StripeWebhookModeTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+        let webhook_secret = "whsec_test_one_time_invoice";
+        let realm_id = ctx._realm_id.clone();
+
+        // Setup: Stripe config
+        setup_stripe_config(ctx, &realm_id, "sk_test_inv", webhook_secret).await;
+
+        // Setup: user (needed for metadata.userId in the invoice event)
+        let user_id = create_test_user_and_wallet(ctx, &realm_id, "one-time-inv@test.com").await;
+
+        // Exercise: send invoice.payment_succeeded for a one-time payment invoice
+        let event_id = generate_test_event_id();
+        let stripe_invoice_id = format!("in_onetime_{}", Uuid::now_v7());
+        let payload = build_stripe_one_time_invoice_payment_succeeded(
+            &event_id,
+            &stripe_invoice_id,
+            &realm_id,
+            user_id,
+            1000, // $10.00 in cents
+        );
+
+        let response =
+            send_stripe_webhook_with_signature(&app, &realm_id, payload, webhook_secret).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "Expected 200 OK for one-time invoice.payment_succeeded, got {}",
+            response.status()
+        );
+
+        // Verify: invoice record exists with correct fields
+        let invoice: Option<(String, String, i64, Option<String>, Option<String>)> =
+            sqlx::query_as(
+                "SELECT provider, status, total, external_hosted_url, external_pdf_url
+             FROM invoice
+             WHERE realm_id = $1 AND external_invoice_id = $2",
+            )
+            .bind(&realm_id)
+            .bind(&stripe_invoice_id)
+            .fetch_optional(&ctx.app_state.pool)
+            .await
+            .expect("Failed to query invoice");
+
+        let invoice = invoice.expect("Expected invoice record to exist for one-time payment");
+        assert_eq!(invoice.0, "stripe", "provider should be stripe");
+        assert_eq!(invoice.1, "paid", "status should be paid");
+        assert_eq!(invoice.2, 1000, "total should be 1000 cents");
+        assert!(
+            invoice.3.is_some() && !invoice.3.as_ref().unwrap().is_empty(),
+            "external_hosted_url should be truthy"
+        );
+        assert!(
+            invoice.4.is_some() && !invoice.4.as_ref().unwrap().is_empty(),
+            "external_pdf_url should be truthy"
+        );
+    }
+
     // =========================================================================
     // Test 5: payment_intent.succeeded after checkout -> no double grant
     // =========================================================================

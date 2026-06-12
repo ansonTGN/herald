@@ -14,6 +14,8 @@ in the role or domain directories under `demo/e2e/`.
 | `billing/payment-attempt/us-pa-001-creem-checkout-live.e2e.ts` | US-PA-001, US-PA-002, US-PA-003 | Partial: Creem checkout smoke only | Creem | Maybe |
 | `billing/payment-attempt/us-pa-001-stripe-checkout-live.e2e.ts` | US-PA-001, US-PA-002, US-PA-003, US-PV-001 | Partial: Stripe checkout smoke only | Stripe | No |
 | `billing/one-time-mapping-purchase/us-pu-006-one-time-purchase-live.e2e.ts` | US-PU-006 S1, S2 | Partial: WeChat QR / Stripe redirect initiation only | Stripe / WeChat Pay / Creem | No |
+| `billing/one-time-mapping-purchase/us-pu-006-stripe-one-time-invoice-live.e2e.ts` | US-PU-006 | Partial: one-time Stripe invoice verification only | Stripe | No |
+| `billing/one-time-mapping-purchase/us-pu-006-creem-one-time-invoice-live.e2e.ts` | US-PU-006 | Partial: one-time Creem invoice verification only | Creem | No |
 
 ## Rules
 

@@ -116,7 +116,8 @@
 - 发票可关联 Subscription 和 Payment Attempt（上下文入口自动传递关联 ID；独立表单仍可手动填写）
 - PDF 发票生成和下载
 - 发票策略配置：Realm Admin 配置 `invoice_policy`（provider_first / manual_only / none）和每个支付平台的外部发票能力开关
-- Stripe 发票同步：通过 webhook 自动同步 Stripe Invoicing 产生的发票数据到 Herald（只读镜像）
+- Stripe 订阅发票同步：通过 webhook 自动同步 Stripe Invoicing 产生的发票数据到 Herald（只读镜像）
+- Stripe 一次性购买发票同步：checkout.session.completed 事件中为 mode=payment 的一次性购买创建外部发票记录（与 Creem inline 同步模式一致）
 - Creem 交易税务数据同步：Creem MoR 交易支付成功后同步税务数据到 Herald
 - 只读展示外部 Provider 发票：provider-owned 发票在 Herald 中只读展示，禁止创建、编辑、开具、作废、标记已付
 - 自研发票 Fallback：provider 不支持或未启用外部发票时，走 Herald 自研发票系统
@@ -157,7 +158,7 @@
 
 **自研发票主流程**：Realm Admin 配置销售方信息 → Regular User 申请发票 → Realm Admin 审核开具。同时保留 Admin 手动创建发票的辅助路径。
 
-**外部 Provider 发票**：当支付平台（如 Stripe、Creem）提供发票/税务能力时，Herald 通过 webhook 被动同步外部发票数据并只读展示。发票来源由实际收款 payment_provider 的发票能力决定，而非按产品或 Realm 全局决定。
+**外部 Provider 发票**：当支付平台（如 Stripe、Creem）提供发票/税务能力时，Herald 通过 webhook 被动同步外部发票数据并只读展示。对于 Stripe，订阅发票通过 `invoice.*` 事件同步，一次性购买发票通过 `checkout.session.completed`（mode=payment）事件 inline 创建。发票来源由实际收款 payment_provider 的发票能力决定，而非按产品或 Realm 全局决定。
 
 发票与现有 billing 模块集成，可关联 Subscription 和 Payment Attempt，但不自动生成。
 
@@ -212,6 +213,8 @@
 
 - **Creem MoR 约束**：Creem 交易的发票必须由 Creem 管理；无论 invoice_policy 设置如何，Herald 不得为 Creem 交易创建 manual 发票
 - **Stripe 发票同步触发**：通过 Stripe webhook 被动同步（invoice.created / invoice.finalized / invoice.voided / invoice.paid），Herald 不主动调用 Stripe Invoice API 创建发票
+- **Stripe 一次性购买发票同步触发**：通过 Stripe `checkout.session.completed`（mode=payment）事件 inline 创建外部发票记录；使用 checkout session ID 作为 external_invoice_id，payment_intent 作为 external_order_id；status 直接为 paid
+- **Stripe 一次性购买发票数据来源**：从 checkout session 对象提取 amount_total、currency、customer_email、payment_intent 等字段；account_id 从 metadata.userId 解析
 - **Stripe 发票状态映射**：Stripe `draft` → Herald `draft`，Stripe `open` → Herald `issued`，Stripe `paid` → Herald `paid`，Stripe `void` → Herald `void`
 - **Creem 税务数据同步**：Creem 交易支付成功后同步交易金额、税额、税区等税务信息作为发票记录
 - **Provider 切换兼容**：Realm 从 manual_only 切到 provider_first 时，已有 manual 发票保持 provider='manual' 不变，策略切换只影响新发票的路由决策
@@ -249,6 +252,7 @@
 - **PDF 生成和下载**：支持发票 PDF 生成和下载
 - **发票策略配置**：Realm Admin 在 Billing 设置中配置 invoice_policy 和每个支付平台的外部发票能力开关
 - **Stripe 发票 webhook 同步**：Herald 自动接收 Stripe 的 invoice.* 事件，同步发票数据到本地，状态按映射规则转换
+- **Stripe 一次性购买发票同步**：Herald 在处理 checkout.session.completed（mode=payment）事件时，自动创建 provider=stripe 的外部发票记录，状态为 paid
 - **Creem 交易税务同步**：Creem 支付成功后，系统创建 provider='creem' 的发票记录，同步交易税务数据
 - **外部发票只读展示**：发票列表和详情页显示 provider 来源标识；provider != manual 的发票隐藏所有编辑操作按钮，显示 "View in Provider" 链接
 - **自研发票 Fallback**：invoice_policy=provider_first 时，不支持外部发票的 provider 交易仍可使用 Herald 自研发票
@@ -267,6 +271,8 @@
 - Regular User 只能查看和申请自己的发票，无法访问他人发票
 - Realm Admin 能配置 invoice_policy，启用/禁用各 provider 的外部发票能力
 - Stripe Invoicing 产生的发票能通过 webhook 自动同步到 Herald 并正确映射状态
+- Stripe 一次性购买（Checkout mode=payment）支付成功后，Herald 自动创建外部发票记录
+- 一次性购买的外部发票为只读，无法通过 Herald API 修改
 - Creem MoR 交易的税务数据能同步到 Herald 并只读展示
 - 外部 provider 发票在管理端和用户端均为只读，无法通过 Herald API 修改
 - 自研发票功能在 manual_only 和 fallback 场景下完全保持不变
@@ -328,6 +334,7 @@
 - 发票来源跟随实际收款 payment_provider，而非跟随产品或 Realm 全局选择
 - 三种发票策略：provider_first / manual_only / none
 - Stripe 发票同步通过 webhook 被动驱动，Herald 不主动调用 Stripe Invoice API 创建发票
+- Stripe 一次性购买发票通过 checkout.session.completed（mode=payment）事件 inline 同步，与 Creem 模式一致
 - Creem MoR 交易的发票不可被 Herald manual 覆盖，无论 invoice_policy 设置
 - 已有 manual 发票在策略切换后保持 provider='manual' 不变
 - 外部发票 PDF 有 URL 时直接重定向，无 URL 时提示由 provider 管理

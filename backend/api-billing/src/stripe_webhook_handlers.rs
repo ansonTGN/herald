@@ -1999,13 +1999,30 @@ async fn handle_charge_refunded(
 
 /// Handle invoice.payment_succeeded events
 ///
-/// Grants points on subscription renewal.
+/// For subscription invoices: grants points on renewal.
+/// For one-time payment invoices (no subscription): delegates to
+/// `handle_stripe_invoice_event` for external invoice sync only, since there
+/// is no subscription to renew and points were already granted by
+/// `checkout.session.completed`.
 async fn handle_invoice_payment_succeeded(
     app_state: AppState,
     event: Value,
     realm_id: &str,
-    _idempotency_key: &str,
+    idempotency_key: &str,
 ) -> Result<PointsTransaction, CoreError> {
+    // One-time payment invoices have no subscription field.
+    // Delegate to the generic invoice sync handler instead of attempting
+    // subscription renewal logic which requires a subscription.
+    let has_subscription = event["data"]["object"]["subscription"].as_str().is_some();
+    if !has_subscription {
+        info!(
+            realm_id = %realm_id,
+            event_id = %parse_event_id(&event).unwrap_or_default(),
+            "invoice.payment_succeeded without subscription — one-time payment invoice, delegating to sync handler"
+        );
+        return handle_stripe_invoice_event(app_state, event, realm_id, idempotency_key).await;
+    }
+
     let payload = parse_invoice_paid_payload(&event)?;
     let event_id = payload.event_id.as_str();
 
@@ -2168,7 +2185,7 @@ async fn handle_stripe_invoice_event(
         provider: InvoiceProvider::Stripe,
         payment_provider: Some("stripe".to_string()),
         external_invoice_id: Some(stripe_invoice_id.clone()),
-        external_order_id: None,
+        external_order_id: object["payment_intent"].as_str().map(str::to_string),
         external_status: Some(stripe_status.to_string()),
         external_hosted_url: hosted_invoice_url,
         external_pdf_url: invoice_pdf,
@@ -2192,6 +2209,9 @@ async fn handle_stripe_invoice_event(
         "Stripe invoice event processed - external invoice upserted"
     );
 
+    // SubscriptionGrant used as placeholder type for non-subscription invoices too;
+    // the returned transaction has a random account_id and zero amount, so the type
+    // is semantically irrelevant — no SubscriptionGrant-specific side effects occur.
     Ok(create_placeholder_transaction(
         Uuid::now_v7(),
         realm_id,

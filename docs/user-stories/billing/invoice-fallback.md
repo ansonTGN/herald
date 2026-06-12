@@ -114,6 +114,35 @@ When Herald 再次收到同一 Stripe 发票的事件
 Then Herald 更新已有记录而非创建重复发票
 ```
 
+**场景 6：Stripe 一次性购买发票同步**
+```gherkin
+Given Realm 配置了 Stripe 支付平台且启用了外部发票能力
+And 一笔通过 Stripe Checkout mode=payment 的一次性购买支付成功
+When Herald 收到 Stripe 的 "checkout.session.completed" webhook 事件
+And 事件 mode 为 "payment"
+Then Herald 在本地创建一条来源为 Stripe 的外部发票记录
+And 发票状态为已支付
+And 记录 Stripe checkout session ID 和 payment intent ID
+And 记录金额和币种
+```
+
+**场景 7：Stripe 一次性购买发票不可被 Herald 修改**
+```gherkin
+Given Herald 存在一条来源为 Stripe 的一次性购买发票
+When 任何用户尝试通过 Herald 编辑、开具、作废或标记该发票已付
+Then 系统拒绝操作
+And 提示 "This invoice is managed by the payment provider"
+```
+
+**场景 8：Stripe 一次性购买已有外部发票时不可再申请 Herald 手动发票**
+```gherkin
+Given 存在一笔通过 Stripe 一次性购买完成的支付
+And 该交易已有 Stripe 同步的外部发票
+When 用户尝试为该交易申请 Herald 手动发票
+Then 系统拒绝操作
+And 提示该交易已有外部发票
+```
+
 ---
 
 ### 故事 3：系统同步 Creem 交易税务数据 [US-IF-003]

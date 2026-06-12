@@ -14,12 +14,14 @@ export const secrets = {
     apiKey: process.env.CREEM_API_KEY,
     webhookSecret: process.env.CREEM_WEBHOOK_SECRET,
     productId: process.env.CREEM_PRODUCT_ID,
+    onetimeProductId: process.env.CREEM_ONETIME_PRODUCT_ID,
   },
   stripe: {
     publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
     secretKey: process.env.STRIPE_SECRET_KEY,
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     productId: process.env.STRIPE_PRODUCT_ID,
+    onetimeProductId: process.env.STRIPE_ONETIME_PRODUCT_ID,
   },
   wechat: {
     appId: process.env.WECHAT_APP_ID,
@@ -110,4 +112,43 @@ export function getNgrokPublicUrl(): string | undefined {
   return secrets.ngrok.domain
     ? `https://${secrets.ngrok.domain}`
     : undefined
+}
+
+// --- One-time payment predicate helpers ---
+
+export function hasStripeOneTimePayment(): boolean {
+  return !!(
+    secrets.stripe.publishableKey &&
+    secrets.stripe.secretKey &&
+    secrets.stripe.webhookSecret &&
+    secrets.stripe.onetimeProductId
+  )
+}
+
+export function hasCreemOneTimePayment(): boolean {
+  return !!(
+    secrets.creem.apiKey &&
+    secrets.creem.webhookSecret &&
+    secrets.creem.onetimeProductId
+  )
+}
+
+// --- One-time payment require helpers ---
+
+export function requireStripeOneTimePayment(): void {
+  if (!hasStripeOneTimePayment()) {
+    throw new Error(
+      'Stripe one-time payment credentials not configured. ' +
+        'Set STRIPE_PUBLISHABLE_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and STRIPE_ONETIME_PRODUCT_ID in demo/.env.demo.',
+    )
+  }
+}
+
+export function requireCreemOneTimePayment(): void {
+  if (!hasCreemOneTimePayment()) {
+    throw new Error(
+      'Creem one-time payment credentials not configured. ' +
+        'Set CREEM_API_KEY, CREEM_WEBHOOK_SECRET, and CREEM_ONETIME_PRODUCT_ID in demo/.env.demo.',
+    )
+  }
 }

@@ -238,6 +238,48 @@ impl StripeClient {
                     ));
                 }
             }
+
+            // Enable Stripe invoice creation for payment-mode checkout so that
+            // one-time payments produce an `in_*` invoice (and `invoice.*` webhook
+            // events) instead of just a Charge. Without this, the invoices table
+            // never records provider=stripe one-time payments.
+            //
+            // Reference: https://docs.stripe.com/api/checkout/sessions/create
+            // (invoice_creation.enabled + invoice_creation.invoice_data.metadata)
+            form_fields.push(("invoice_creation[enabled]".to_string(), "true".to_string()));
+            form_fields.push((
+                "invoice_creation[invoice_data][metadata][herald_realm_id]".to_string(),
+                request.realm_id.clone(),
+            ));
+            form_fields.push((
+                "invoice_creation[invoice_data][metadata][herald_client_app_id]".to_string(),
+                request.client_app_id.to_string(),
+            ));
+            form_fields.push((
+                "invoice_creation[invoice_data][metadata][herald_mapping_id]".to_string(),
+                request.mapping_id.to_string(),
+            ));
+            // Stripe webhook handler (`handle_stripe_invoice_event`) reads
+            // `metadata.userId` to resolve account_id; include it so the
+            // resulting invoice can be linked to the purchasing user.
+            if let Some(user_id) = request.user_id {
+                form_fields.push((
+                    "invoice_creation[invoice_data][metadata][herald_user_id]".to_string(),
+                    user_id.to_string(),
+                ));
+                form_fields.push((
+                    "invoice_creation[invoice_data][metadata][userId]".to_string(),
+                    user_id.to_string(),
+                ));
+            }
+            if let Some(extra_metadata) = &request.metadata {
+                for (key, value) in extra_metadata {
+                    form_fields.push((
+                        format!("invoice_creation[invoice_data][metadata][{key}]"),
+                        value.clone(),
+                    ));
+                }
+            }
         } else {
             // Propagate all metadata keys to subscription_data[metadata] so that
             // when Stripe creates the subscription from the checkout session, the
@@ -1055,6 +1097,38 @@ mod tests {
             form.get("line_items[0][price_data][unit_amount]"),
             Some(&"500".to_string())
         );
+
+        // Should enable invoice creation for one-time payments
+        assert_eq!(
+            form.get("invoice_creation[enabled]"),
+            Some(&"true".to_string()),
+            "payment mode should enable invoice_creation"
+        );
+        assert_eq!(
+            form.get("invoice_creation[invoice_data][metadata][herald_realm_id]"),
+            Some(&"realm-2".to_string()),
+            "invoice_creation metadata should include herald_realm_id"
+        );
+        assert_eq!(
+            form.get("invoice_creation[invoice_data][metadata][herald_mapping_id]"),
+            Some(&mapping_id.to_string()),
+            "invoice_creation metadata should include herald_mapping_id"
+        );
+        assert_eq!(
+            form.get("invoice_creation[invoice_data][metadata][herald_user_id]"),
+            Some(&user_id.to_string()),
+            "invoice_creation metadata should include herald_user_id"
+        );
+        assert_eq!(
+            form.get("invoice_creation[invoice_data][metadata][userId]"),
+            Some(&user_id.to_string()),
+            "invoice_creation metadata should include userId for webhook handler"
+        );
+        assert_eq!(
+            form.get("invoice_creation[invoice_data][metadata][source]"),
+            Some(&"one-time".to_string()),
+            "invoice_creation metadata should include extra metadata"
+        );
     }
 
     /// Verify that subscription mode (default/None) still includes
@@ -1140,6 +1214,12 @@ mod tests {
         assert!(
             form.keys().all(|k| !k.starts_with("payment_intent_data[")),
             "subscription mode should not include payment_intent_data fields"
+        );
+
+        // Should NOT have invoice_creation (only for payment mode)
+        assert!(
+            !form.contains_key("invoice_creation[enabled]"),
+            "subscription mode should not include invoice_creation fields"
         );
     }
 
