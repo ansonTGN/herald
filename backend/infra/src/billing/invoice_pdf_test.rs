@@ -54,6 +54,8 @@ fn sample_invoice() -> Invoice {
         tax_amount: 950,
         shipping_amount: 200,
         total: 10650,
+        amount_refunded: 0,
+        amount_remaining: 0,
         discount_mode: Some(AdjustmentMode::Fixed),
         discount_value: Some("5.00".to_string()),
         tax_mode: Some(AdjustmentMode::Percent),

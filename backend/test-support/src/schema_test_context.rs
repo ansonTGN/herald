@@ -328,6 +328,11 @@ impl AsyncTestContext for SchemaTestContext {
                     sea_conn.clone(),
                 ),
             ),
+            credit_note_repository: Arc::new(
+                herald_core::infrastructure::billing::PostgresCreditNoteRepository::new(
+                    sea_conn.clone(),
+                ),
+            ),
             audit_event_repository: Arc::new(
                 herald_core::infrastructure::audit::PostgresAuditEventRepository::new(
                     sea_conn.clone(),

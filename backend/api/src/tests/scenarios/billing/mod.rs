@@ -111,3 +111,18 @@ pub mod payment_attempt_status_guard_scenarios;
 // Webhook grant idempotency scenario tests
 // Covers: Duplicate webhook delivery must not cause double point grants
 pub mod webhook_grant_idempotency_scenarios;
+
+// Manual Credit Note scenario tests (authored by BE-T01)
+// User Story: US-IF-010 (admin records offline refund), US-IF-008 (refund visibility)
+// Covers: Design section 4.2.2 (Manual Credit Note API)
+pub mod credit_note_manual_scenarios;
+
+// Stripe credit_note.created Webhook scenario tests (authored by BE-T02)
+// User Story: US-IF-007 (Stripe credit note sync), US-IF-008 (refund visibility)
+// Covers: Design section 4.1 (Stripe Credit Note path)
+pub mod credit_note_stripe_webhook_scenarios;
+
+// Invoice refund field query scenario tests (authored by BE-T03)
+// User Story: US-IF-008 (admin refund visibility), US-IF-009 (user refund annotation)
+// Covers: Design sections 1.3 (Creem exclusion), 4.2.2 (refund field extensions)
+pub mod invoice_refund_query_scenarios;

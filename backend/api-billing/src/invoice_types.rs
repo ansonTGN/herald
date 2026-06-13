@@ -4,6 +4,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
 
+use herald_core::domain::billing::credit_note::CreditNote;
 use herald_core::domain::billing::invoice::{
     AdjustmentMode, InvoiceDetail, InvoiceHistory, InvoiceLineItem, InvoiceListFilters,
     InvoiceProvider, InvoiceSellerConfig, InvoiceSource, InvoiceStatus,
@@ -384,6 +385,7 @@ pub struct InvoiceResponse {
     pub payment_provider: Option<String>,
     pub external_hosted_url: Option<String>,
     pub external_pdf_url: Option<String>,
+    pub amount_refunded: i64,
     pub created_at: String,
 }
 
@@ -423,6 +425,8 @@ pub struct InvoiceDetailResponse {
     pub tax_amount: i64,
     pub shipping_amount: i64,
     pub total: i64,
+    pub amount_refunded: i64,
+    pub amount_remaining: i64,
 
     pub discount_mode: Option<String>,
     pub discount_value: Option<String>,
@@ -449,6 +453,7 @@ pub struct InvoiceDetailResponse {
 
     pub line_items: Vec<InvoiceLineItemResponse>,
     pub history: Vec<InvoiceHistoryResponse>,
+    pub credit_notes: Vec<CreditNoteResponse>,
 
     pub created_at: String,
     pub updated_at: String,
@@ -494,7 +499,56 @@ pub fn summary_to_response(
         payment_provider: s.payment_provider,
         external_hosted_url: s.external_hosted_url,
         external_pdf_url: s.external_pdf_url,
+        amount_refunded: s.amount_refunded,
         created_at: s.created_at.to_rfc3339(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Credit Note (Manual refund recording)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, ToSchema, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateCreditNoteRequest {
+    /// Refund amount in the smallest currency unit (must be a positive integer).
+    #[validate(range(min = 1))]
+    pub amount: i64,
+    /// Admin-provided refund reason (free text, 1-500 chars).
+    #[validate(length(min = 1, max = 500))]
+    pub memo: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CreditNoteResponse {
+    pub id: Uuid,
+    pub amount: i64,
+    pub currency: String,
+    pub source: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_credit_note_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_by_user_id: Option<Uuid>,
+    pub created_at: String,
+}
+
+impl From<CreditNote> for CreditNoteResponse {
+    fn from(cn: CreditNote) -> Self {
+        Self {
+            id: cn.id,
+            amount: cn.amount,
+            currency: cn.currency,
+            source: cn.source.as_str().to_string(),
+            status: cn.status.as_str().to_string(),
+            external_credit_note_id: cn.external_credit_note_id,
+            memo: cn.memo,
+            created_by_user_id: cn.created_by_user_id,
+            created_at: cn.created_at.to_rfc3339(),
+        }
     }
 }
 
@@ -530,6 +584,8 @@ pub fn invoice_to_detail_response(detail: InvoiceDetail) -> InvoiceDetailRespons
         tax_amount: detail.invoice.tax_amount,
         shipping_amount: detail.invoice.shipping_amount,
         total: detail.invoice.total,
+        amount_refunded: detail.invoice.amount_refunded,
+        amount_remaining: detail.invoice.amount_remaining,
 
         discount_mode: detail.invoice.discount_mode.map(|m| m.as_str().to_string()),
         discount_value: detail.invoice.discount_value,
@@ -564,8 +620,28 @@ pub fn invoice_to_detail_response(detail: InvoiceDetail) -> InvoiceDetailRespons
             .into_iter()
             .map(InvoiceHistoryResponse::from)
             .collect(),
+        // No credit notes loaded in the base converter; populated by
+        // `invoice_to_detail_response_with_credits` for handlers that need them.
+        credit_notes: Vec::new(),
 
         created_at: detail.invoice.created_at.to_rfc3339(),
         updated_at: detail.invoice.updated_at.to_rfc3339(),
     }
+}
+
+/// Convert domain InvoiceDetail to API InvoiceDetailResponse, attaching the
+/// provided `credit_notes` (already filtered/transformed for the audience).
+/// Refund amounts come from the base converter (which reads them off the
+/// invoice struct). Use this variant only when the response should also list
+/// the credit notes themselves.
+pub fn invoice_to_detail_response_with_credits(
+    detail: InvoiceDetail,
+    credit_notes: Vec<CreditNote>,
+) -> InvoiceDetailResponse {
+    let mut response = invoice_to_detail_response(detail);
+    response.credit_notes = credit_notes
+        .into_iter()
+        .map(CreditNoteResponse::from)
+        .collect();
+    response
 }

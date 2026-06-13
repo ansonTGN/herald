@@ -20,6 +20,8 @@ const STRIPE_EVENT_TYPES: &[&str] = &[
     "charge.refunded",
     "charge.dispute.created",
     "charge.dispute.closed",
+    "credit_note.created",
+    "credit_note.voided",
     "invoice.payment_succeeded",
     "invoice.payment_action_required",
     "invoice.payment_failed",

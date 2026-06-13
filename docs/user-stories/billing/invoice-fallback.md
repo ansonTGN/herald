@@ -314,12 +314,274 @@ Then 系统使用 Herald 内置 PDF 生成器生成并下载
 
 ---
 
+### 故事 7：系统同步 Stripe Credit Note [US-IF-007]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Herald 系统（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：通过 Stripe webhook 自动同步 Credit Note 数据到关联的发票
+**从而**：在退款发生后正确反映发票的退款金额与剩余应付，保留税务合规所需的 Credit Note 记录
+
+**【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：Stripe credit_note.created 事件触发同步**
+```gherkin
+Given Realm 配置了 Stripe 支付平台且启用了外部发票能力
+And Herald 已同步一条 Stripe 发票（状态为已支付）
+And Stripe Dashboard 中针对该发票开具了一张 Credit Note
+When Herald 收到 Stripe 的 "credit_note.created" webhook 事件
+Then Herald 在本地记录这张 Credit Note（包含金额、币种、关联发票）
+And 关联发票的退款金额增加对应数额
+And 关联发票的剩余应付减少对应数额
+And 发票主状态保持不变（仍为已支付）
+```
+
+**场景 2：部分退款支持（同一发票多张 Credit Note）**
+```gherkin
+Given Herald 已同步一条 Stripe 发票，总额为 100 元
+And 该发票已有一张 30 元的 Credit Note
+When Stripe Dashboard 又针对该发票开具一张 20 元的 Credit Note
+And Herald 收到对应的 "credit_note.created" 事件
+Then Herald 记录这张新的 Credit Note
+And 发票的累计退款金额更新为 50 元
+And 发票的剩余应付更新为 50 元
+And 发票主状态保持已支付
+```
+
+**场景 3：Credit Note 不作废原发票**
+```gherkin
+Given Herald 已同步一条状态为已支付的 Stripe 发票
+When 该发票收到一张 Credit Note
+Then 发票状态保持已支付，不变为已作废
+And 发票在列表中仍可见
+And 详情页显示退款金额与剩余应付
+```
+
+**场景 4：charge.refunded 与 credit_note.created 各自独立处理**
+```gherkin
+Given Stripe 对一笔 Charge 执行了退款
+And 同时对该 Charge 关联的 Invoice 开具了 Credit Note
+When Herald 收到 "charge.refunded" 事件
+Then Herald 按现有积分回收规则回收积分（与 Credit Note 处理相互独立）
+When Herald 收到 "credit_note.created" 事件
+Then Herald 处理发票退款金额更新，不重复执行积分回收
+```
+
+**场景 5：重复 credit_note.created 事件幂等**
+```gherkin
+Given Herald 已处理过某张 Stripe Credit Note 的 created 事件
+When Herald 再次收到同一张 Credit Note 的 created 事件
+Then Herald 不创建重复记录
+And 发票的退款金额不被重复累加
+```
+
+**场景 6：未关联发票的退款**
+```gherkin
+Given Stripe 收到一笔退款请求
+And 该退款对应的 Charge 没有关联任何 Stripe Invoice（例如一次性 Checkout 购买但未生成 Invoice）
+When Herald 收到 "charge.refunded" 事件
+Then Herald 仅执行积分回收
+And 不需要等待 credit_note.created 事件
+And 不影响任何发票记录
+```
+
+---
+
+### 故事 8：管理员查看发票退款信息与 Credit Note 列表 [US-IF-008]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：在发票详情中查看累计退款金额、剩余应付与 Credit Note 列表
+**从而**：掌握发票的真实状态，避免按已退款的发票金额向税务机关申报
+
+**【验收标准】**
+
+**场景 1：详情页展示退款金额与剩余应付**
+```gherkin
+Given 我是 realm-1 的管理员
+And 存在一条来自 Stripe 的发票，总额为 100 元
+And 该发票已有一张 30 元的 Credit Note
+When 我查看该发票详情
+Then 详情页同时展示：
+  | 总额     | 100 元     |
+  | 已退款   | 30 元      |
+  | 剩余应付 | 70 元      |
+And 发票主状态显示为 "已支付"
+```
+
+**场景 2：查看 Credit Note 列表**
+```gherkin
+Given 我在查看一条已有 Credit Note 的 Stripe 发票详情
+Then 详情页展示 Credit Note 列表
+And 每条 Credit Note 显示：编号、开具时间、金额、币种
+And Credit Note 列表为只读，不可在 Herald 中创建或修改
+```
+
+**场景 3：发票列表展示退款标注**
+```gherkin
+Given 我是 realm-1 的管理员
+And 发票列表中存在一张已部分退款的 Stripe 发票
+When 我查看发票列表
+Then 该发票行的金额列旁展示退款标注（如 "Refunded 30/100"）
+And 主状态仍为已支付
+```
+
+**场景 4：无 Credit Note 的发票正常展示**
+```gherkin
+Given 我在查看一条无 Credit Note 的发票详情
+Then 详情页显示"已退款"为 0、"剩余应付"等于总额
+And 不展示 Credit Note 列表区域
+```
+
+**场景 5：自研发票同样展示退款维度**
+```gherkin
+Given 我是 realm-1 的管理员
+And 存在一张 Herald 自研发票（provider=manual）
+And 该发票已被管理员记录过线下退款
+When 我查看该发票详情
+Then 详情页展示"总额 / 已退款 / 剩余应付"区域
+And 展示 Credit Note 列表（来源标识为 Manual）
+And 自研发票的其他功能（编辑/开具/作废/标记已付）按现有状态机逻辑保持不变
+```
+
+**场景 6：Creem 发票不展示退款维度**
+```gherkin
+Given 我在查看一张来自 Creem 的发票（provider=creem）
+Then 详情页按现有逻辑展示，不显示 Credit Note 区域
+And 不展示"已退款 / 剩余应付"维度
+```
+
+---
+
+### 故事 9：普通用户查看退款标注 [US-IF-009]
+
+**优先级**: P1
+
+**【用户故事】**
+**作为**：Regular User（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：在"我的发票"中看到自己已退款发票的退款标注与剩余应付
+**从而**：了解发票的真实金额，避免按已退款金额重复报销或申报
+
+**【验收标准】**
+
+**场景 1：我的发票列表展示退款标注**
+```gherkin
+Given 我是普通用户 user@example.com
+And 我有一张来自 Stripe 的发票，总额 100 元，已退款 30 元
+When 我查看"我的发票"页面
+Then 该发票行展示退款标注（如 "Refunded 30/100"）
+And 状态仍为已支付
+```
+
+**场景 2：详情页展示剩余应付**
+```gherkin
+Given 我在查看一张已部分退款的发票详情
+Then 详情页同时展示总额、已退款、剩余应付
+And 我无法看到 Credit Note 的内部编号（只看到对账所需的退款摘要）
+```
+
+**场景 3：自研发票同样展示退款标注**
+```gherkin
+Given 我是普通用户 user@example.com
+And 我有一张 Herald 自研发票，已被管理员记录过线下退款
+When 我查看"我的发票"页面
+Then 该发票行展示退款标注（如 "Refunded 30/100"）
+And 状态仍为已支付
+```
+
+**场景 4：Creem 发票不展示退款标注**
+```gherkin
+Given 我在查看一张来自 Creem 的发票
+Then 详情页按现有逻辑展示
+And 不显示"已退款 / 剩余应付"维度
+```
+
+---
+
+### 故事 10：管理员记录自研发票的线下退款 [US-IF-010]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：为已付款的 Herald 自研发票记录线下退款（生成 Manual Credit Note）
+**从而**：在 Herald 中保留完整的退款凭证，使发票金额与实际收款一致，满足税务合规
+
+**【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：为已付款自研发票记录退款**
+```gherkin
+Given 我是 realm-1 的管理员
+And 存在一张状态为 "paid" 的 Herald 自研发票（provider=manual）
+And 我已通过线下渠道向客户退款
+When 我在该发票详情页点击 "Record Refund" 按钮
+And 我在弹窗中填写退款金额、币种与原因（memo）
+And 我提交表单
+Then 系统创建一条 Manual Credit Note 记录，关联该发票
+And 记录包含：金额、币种、原因、操作者、操作时间
+And 发票主状态保持 "paid" 不变
+And 发票的"已退款"金额增加对应数额，"剩余应付"减少对应数额
+```
+
+**场景 2：部分退款支持（同一发票多次记录）**
+```gherkin
+Given 存在一张总额为 100 元的已付款自研发票
+And 该发票已记录过一次 30 元的退款
+When 我再次点击 "Record Refund" 并填写 20 元
+Then 系统创建第二条 Manual Credit Note
+And 发票累计退款金额更新为 50 元，剩余应付为 50 元
+And 发票主状态保持 "paid"
+```
+
+**场景 3：退款金额不得超过剩余应付**
+```gherkin
+Given 存在一张总额为 100 元、已退款 80 元的自研发票
+When 我尝试再记录一笔 30 元的退款
+Then 系统拒绝操作
+And 提示 "Refund amount exceeds remaining payable"
+```
+
+**场景 4：Stripe / Creem 发票不可手工记录退款**
+```gherkin
+Given 存在一张来自 Stripe 或 Creem 的外部发票
+When 我查看该发票详情
+Then 我看不到 "Record Refund" 按钮
+And 即使我尝试通过任何方式创建 Manual Credit Note，系统都拒绝
+And 提示 "Refunds for this provider are managed externally"
+```
+
+**场景 5：Manual Credit Note 创建后不可删除**
+```gherkin
+Given 我已为某发票创建过一条 Manual Credit Note
+When 我尝试删除或撤销该 Credit Note
+Then 系统拒绝操作
+And 提示 Manual Credit Note 创建后不可撤销
+And 如有错误，需通过其他渠道处理（如线下补偿或客服介入）
+```
+
+**场景 6：草稿/已作废发票不可记录退款**
+```gherkin
+Given 存在一张状态为 "draft" 或 "void" 的自研发票
+When 我尝试为其记录退款
+Then 系统拒绝操作
+And 提示 "Only paid invoices support refund recording"
+```
+
+---
+
 ## 用户故事优先级汇总
 
 | 优先级 | 用户故事数量 | 关键故事 |
 |--------|-------------|---------|
-| P0 | 4 | 配置发票策略、同步 Stripe 发票、同步 Creem 税务、管理员查看外部发票 |
-| P1 | 2 | 用户查看外部发票、下载外部 PDF |
+| P0 | 7 | 配置发票策略、同步 Stripe 发票、同步 Creem 税务、管理员查看外部发票、同步 Stripe Credit Note、管理员查看发票退款信息、管理员记录自研发票线下退款 |
+| P1 | 3 | 用户查看外部发票、下载外部 PDF、用户查看退款标注 |
 | P2 | 0 | - |
 
 ---

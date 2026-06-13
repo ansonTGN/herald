@@ -84,6 +84,7 @@ pub mod shopify_test_types;
         crate::invoice_handlers::issue_invoice,
         crate::invoice_handlers::void_invoice,
         crate::invoice_handlers::mark_paid,
+        crate::invoice_handlers::create_credit_note,
         // User invoice handlers
         crate::invoice_handlers::apply_invoice,
         crate::invoice_handlers::list_my_invoices,
@@ -168,6 +169,8 @@ pub mod shopify_test_types;
         crate::invoice_types::InvoiceResponse,
         crate::invoice_types::InvoiceDetailResponse,
         crate::invoice_types::InvoiceListResponse,
+        crate::invoice_types::CreateCreditNoteRequest,
+        crate::invoice_types::CreditNoteResponse,
     ))
 )]
 pub struct ApiDoc;

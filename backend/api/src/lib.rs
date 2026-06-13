@@ -52,7 +52,8 @@ use herald_core::infrastructure::authorization::{
     policies::{PermissionBasedBillingPolicy, PermissionBasedPointsPolicy},
 };
 use herald_core::infrastructure::billing::{
-    ConfiguredProviderProductApi, PostgresBillingRepository, PostgresInvoiceRepository,
+    ConfiguredProviderProductApi, PostgresBillingRepository, PostgresCreditNoteRepository,
+    PostgresInvoiceRepository,
 };
 use herald_core::infrastructure::client_api_keys::{ApiKeyCache, ClientApiKeyRepository};
 use herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository;
@@ -220,6 +221,7 @@ pub async fn build_app_state_with_migrations(
     let user_repository = Arc::new(PostgresUserRepository::new(db.clone().into()));
     let billing_repository = Arc::new(PostgresBillingRepository::new(db.clone()));
     let invoice_repository = Arc::new(PostgresInvoiceRepository::new(db.clone()));
+    let credit_note_repository = Arc::new(PostgresCreditNoteRepository::new(db.clone()));
     let audit_event_repository = Arc::new(PostgresAuditEventRepository::new(db.clone()));
     let realm_config_repository =
         Arc::new(PostgresRealmConfigRepository::new(Arc::new(db.clone())));
@@ -393,6 +395,7 @@ pub async fn build_app_state_with_migrations(
         redis_manager: redis_manager.clone(),
         billing_repository,
         invoice_repository,
+        credit_note_repository,
         audit_event_repository,
         entitlement_mapping_service,
         provider_product_sync_service,

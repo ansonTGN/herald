@@ -14,7 +14,8 @@ use herald_core::infrastructure::authorization::policies::{
     PermissionBasedBillingPolicy, PermissionBasedPointsPolicy,
 };
 use herald_core::infrastructure::billing::{
-    ConfiguredProviderProductApi, PostgresBillingRepository, PostgresInvoiceRepository,
+    ConfiguredProviderProductApi, PostgresBillingRepository, PostgresCreditNoteRepository,
+    PostgresInvoiceRepository,
 };
 use herald_core::infrastructure::client_api_keys::{ApiKeyCache, ClientApiKeyRepository};
 use herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository;
@@ -67,6 +68,9 @@ pub struct AppState {
 
     /// Invoice repository
     pub invoice_repository: Arc<PostgresInvoiceRepository>,
+
+    /// Credit note repository
+    pub credit_note_repository: Arc<PostgresCreditNoteRepository>,
 
     /// Audit event repository
     pub audit_event_repository: Arc<PostgresAuditEventRepository>,

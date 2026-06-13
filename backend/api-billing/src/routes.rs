@@ -21,9 +21,9 @@ use crate::handlers_history::{
     list_subscription_history,
 };
 use crate::invoice_handlers::{
-    apply_invoice, create_invoice, download_invoice_pdf, download_my_invoice_pdf, get_invoice,
-    get_my_invoice, get_seller_config, issue_invoice, list_invoices, list_my_invoices, mark_paid,
-    update_invoice, upsert_seller_config, void_invoice,
+    apply_invoice, create_credit_note, create_invoice, download_invoice_pdf,
+    download_my_invoice_pdf, get_invoice, get_my_invoice, get_seller_config, issue_invoice,
+    list_invoices, list_my_invoices, mark_paid, update_invoice, upsert_seller_config, void_invoice,
 };
 use crate::purchase_handlers::{
     cancel_payment_attempt, create_payment_attempt, fulfill_payment, get_payment_attempt_status,
@@ -241,6 +241,10 @@ pub fn billing_routes() -> Router<AppState> {
         .route(
             "/api/bill/{realmId}/invoices/{invoiceId}/pdf",
             get(download_invoice_pdf),
+        )
+        .route(
+            "/api/bill/{realmId}/invoices/{invoiceId}/credit-notes",
+            post(create_credit_note),
         )
         // ===== User Invoice (My Invoices) =====
         .route(

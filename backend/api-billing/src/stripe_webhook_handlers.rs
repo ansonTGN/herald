@@ -20,6 +20,9 @@ use crate::webhook_subscription_helpers::{
     sync_subscription_in_txn,
 };
 use herald_api_base::application::http::state::AppState;
+use herald_core::domain::billing::credit_note::{
+    CreditNoteRepository, CreditNoteSource, CreditNoteStatus, NewCreditNote,
+};
 use herald_core::domain::billing::invoice_service::map_stripe_invoice_status;
 use herald_core::domain::billing::{
     ACTOR_WEBHOOK, BillingRepository, BillingType, ExternalInvoiceData, HistoryEventType,
@@ -478,6 +481,66 @@ fn parse_payment_failed_payload(
         provider_status: object["status"].as_str().unwrap_or("failed").to_string(),
         completed_at: parse_optional_stripe_datetime(&object["created"])?.unwrap_or_else(Utc::now),
     }))
+}
+
+struct StripeCreditNoteCreatedPayload {
+    event_id: String,
+    stripe_credit_note_id: String,
+    stripe_invoice_id: String,
+    /// Credit note total in the smallest currency unit (Stripe Credit Note `total`).
+    amount: i64,
+    currency: String,
+}
+
+fn parse_credit_note_created_payload(
+    event: &Value,
+) -> Result<StripeCreditNoteCreatedPayload, CoreError> {
+    let object = &event["data"]["object"];
+    Ok(StripeCreditNoteCreatedPayload {
+        event_id: parse_event_id(event)?,
+        stripe_credit_note_id: object["id"]
+            .as_str()
+            .ok_or_else(|| CoreError::BadRequest("Missing credit note id".to_string()))?
+            .to_string(),
+        stripe_invoice_id: object["invoice"]
+            .as_str()
+            .ok_or_else(|| CoreError::BadRequest("Missing invoice id on credit note".to_string()))?
+            .to_string(),
+        amount: object["total"].as_i64().ok_or_else(|| {
+            CoreError::BadRequest("Missing or invalid credit note total".to_string())
+        })?,
+        currency: object["currency"]
+            .as_str()
+            .ok_or_else(|| CoreError::BadRequest("Missing credit note currency".to_string()))?
+            .to_string(),
+    })
+}
+
+struct StripeCreditNoteVoidedPayload {
+    event_id: String,
+    stripe_credit_note_id: String,
+    stripe_invoice_id: String,
+    amount: i64,
+}
+
+fn parse_credit_note_voided_payload(
+    event: &Value,
+) -> Result<StripeCreditNoteVoidedPayload, CoreError> {
+    let object = &event["data"]["object"];
+    Ok(StripeCreditNoteVoidedPayload {
+        event_id: parse_event_id(event)?,
+        stripe_credit_note_id: object["id"]
+            .as_str()
+            .ok_or_else(|| CoreError::BadRequest("Missing credit note id".to_string()))?
+            .to_string(),
+        stripe_invoice_id: object["invoice"]
+            .as_str()
+            .ok_or_else(|| CoreError::BadRequest("Missing invoice id on credit note".to_string()))?
+            .to_string(),
+        amount: object["total"].as_i64().ok_or_else(|| {
+            CoreError::BadRequest("Missing or invalid credit note total".to_string())
+        })?,
+    })
 }
 
 async fn fulfill_payment_attempt(
@@ -2446,6 +2509,221 @@ async fn handle_invoice_payment_action_required(
     ))
 }
 
+/// Handle `credit_note.created` events.
+///
+/// When Stripe issues a credit note on an invoice, Herald mirrors it as a local
+/// Credit Note record and updates the parent invoice's `amount_refunded` /
+/// `amount_remaining`. Non-Stripe invoices are skipped (warn + placeholder).
+/// Missing local invoices are retried by returning an internal-server error so
+/// Stripe redelivers the event (the credit note must apply to the invoice once
+/// it syncs, otherwise it would be silently lost).
+async fn handle_credit_note_created(
+    app_state: AppState,
+    event: Value,
+    realm_id: &str,
+    _idempotency_key: &str,
+) -> Result<PointsTransaction, CoreError> {
+    let payload = parse_credit_note_created_payload(&event)?;
+    let event_id = payload.event_id.as_str();
+
+    // Case 1: invoice not found for this Stripe invoice id — return a transient
+    // error so the webhook layer surfaces 5xx and Stripe redelivers. If we
+    // returned a placeholder OK here, the credit note would never be applied
+    // even after invoice.payment_succeeded syncs the parent invoice.
+    let Some(invoice) = app_state
+        .invoice_repository
+        .find_by_external_invoice_id(realm_id, &payload.stripe_invoice_id)
+        .await?
+    else {
+        warn!(
+            realm_id = %realm_id,
+            event_id = %event_id,
+            stripe_invoice_id = %payload.stripe_invoice_id,
+            stripe_credit_note_id = %payload.stripe_credit_note_id,
+            "Stripe credit_note.created: no matching local invoice — returning error to trigger Stripe retry"
+        );
+        return Err(CoreError::InternalServerError(format!(
+            "Invoice {} not yet synced for credit note {} — request Stripe redelivery",
+            payload.stripe_invoice_id, payload.stripe_credit_note_id
+        )));
+    };
+
+    // Case 2: invoice belongs to a non-stripe provider — skip (warn + placeholder).
+    if invoice.provider != InvoiceProvider::Stripe {
+        warn!(
+            realm_id = %realm_id,
+            event_id = %event_id,
+            invoice_id = %invoice.id,
+            provider = %invoice.provider.as_str(),
+            stripe_invoice_id = %payload.stripe_invoice_id,
+            "Stripe credit_note.created: invoice provider is not stripe — skipping"
+        );
+        return Ok(create_placeholder_transaction(
+            Uuid::now_v7(),
+            realm_id,
+            TransactionType::RefundRevoke,
+        ));
+    }
+
+    // Case 3: idempotency — this Stripe credit note id was already processed.
+    if let Some(existing) = app_state
+        .credit_note_repository
+        .find_by_external_id(&payload.stripe_credit_note_id)
+        .await?
+    {
+        info!(
+            realm_id = %realm_id,
+            event_id = %event_id,
+            invoice_id = %invoice.id,
+            stripe_credit_note_id = %payload.stripe_credit_note_id,
+            status = ?existing.status,
+            "Stripe credit_note.created: already processed — skipping"
+        );
+        return Ok(create_placeholder_transaction(
+            Uuid::now_v7(),
+            realm_id,
+            TransactionType::RefundRevoke,
+        ));
+    }
+
+    // Case 4: normal create — verify currency matches the invoice before recording.
+    // A mismatch indicates a Stripe config issue; failing loud is safer than
+    // silently persisting a wrong-currency refund.
+    if payload.currency.to_uppercase() != invoice.currency.to_uppercase() {
+        warn!(
+            realm_id = %realm_id,
+            event_id = %event_id,
+            invoice_id = %invoice.id,
+            invoice_currency = %invoice.currency,
+            payload_currency = %payload.currency,
+            stripe_credit_note_id = %payload.stripe_credit_note_id,
+            "Stripe credit_note.created: currency mismatch — rejecting"
+        );
+        return Err(CoreError::BadRequest(format!(
+            "Credit note currency {} does not match invoice currency {}",
+            payload.currency, invoice.currency
+        )));
+    }
+
+    let input = NewCreditNote {
+        invoice_id: invoice.id,
+        realm_id: realm_id.to_string(),
+        amount: payload.amount,
+        currency: payload.currency.clone(),
+        source: CreditNoteSource::Stripe,
+        external_credit_note_id: Some(payload.stripe_credit_note_id.clone()),
+        memo: None,
+        created_by_user_id: None,
+    };
+
+    let created = app_state
+        .credit_note_repository
+        .create_credit_note_and_update_invoice(input)
+        .await?;
+
+    info!(
+        realm_id = %realm_id,
+        event_id = %event_id,
+        invoice_id = %invoice.id,
+        credit_note_id = %created.id,
+        stripe_credit_note_id = %payload.stripe_credit_note_id,
+        amount = payload.amount,
+        currency = %payload.currency,
+        "Stripe credit_note.created: credit note created and invoice refund totals updated"
+    );
+
+    Ok(create_placeholder_transaction(
+        Uuid::now_v7(),
+        realm_id,
+        TransactionType::RefundRevoke,
+    ))
+}
+
+/// Handle `credit_note.voided` events.
+///
+/// When Stripe voids a credit note, Herald marks the corresponding local credit
+/// note as `voided` and reverses its amount on the parent invoice
+/// (`amount_refunded -= amount`, `amount_remaining += amount`).
+async fn handle_credit_note_voided(
+    app_state: AppState,
+    event: Value,
+    realm_id: &str,
+    _idempotency_key: &str,
+) -> Result<PointsTransaction, CoreError> {
+    let payload = parse_credit_note_voided_payload(&event)?;
+    let event_id = payload.event_id.as_str();
+
+    // Resolve the invoice so we have a realm check + can return a transient error
+    // when the invoice (and therefore the local credit note) has not synced yet.
+    let invoice = app_state
+        .invoice_repository
+        .find_by_external_invoice_id(realm_id, &payload.stripe_invoice_id)
+        .await?;
+
+    // Idempotency + out-of-order handling via the local credit note state.
+    match app_state
+        .credit_note_repository
+        .find_by_external_id(&payload.stripe_credit_note_id)
+        .await?
+    {
+        Some(existing) if existing.status == CreditNoteStatus::Voided => {
+            info!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                invoice_id = %existing.invoice_id,
+                stripe_credit_note_id = %payload.stripe_credit_note_id,
+                "Stripe credit_note.voided: already voided — skipping"
+            );
+            return Ok(create_placeholder_transaction(
+                Uuid::now_v7(),
+                realm_id,
+                TransactionType::RefundRevoke,
+            ));
+        }
+        Some(_) => {
+            // Credit note exists and is active — void it now.
+        }
+        None => {
+            // The credit_note.created event has not arrived yet. Return a
+            // transient error so Stripe redelivers and the create-then-void
+            // sequence applies in order.
+            warn!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                stripe_invoice_id = %payload.stripe_invoice_id,
+                stripe_credit_note_id = %payload.stripe_credit_note_id,
+                invoice_present = invoice.is_some(),
+                "Stripe credit_note.voided: local credit note not found — returning error to trigger Stripe retry"
+            );
+            return Err(CoreError::InternalServerError(format!(
+                "Credit note {} not yet created — request Stripe redelivery",
+                payload.stripe_credit_note_id
+            )));
+        }
+    }
+
+    let voided = app_state
+        .credit_note_repository
+        .void_credit_note_by_external_id(realm_id, &payload.stripe_credit_note_id)
+        .await?;
+
+    info!(
+        realm_id = %realm_id,
+        event_id = %event_id,
+        invoice_id = %voided.invoice_id,
+        credit_note_id = %voided.id,
+        stripe_credit_note_id = %payload.stripe_credit_note_id,
+        amount = payload.amount,
+        "Stripe credit_note.voided: credit note voided and invoice refund totals reversed"
+    );
+
+    Ok(create_placeholder_transaction(
+        Uuid::now_v7(),
+        realm_id,
+        TransactionType::RefundRevoke,
+    ))
+}
+
 // ============================================================================
 // Main Webhook Handler
 // ============================================================================
@@ -2815,6 +3093,14 @@ async fn process_stripe_event_once(
         }
         "invoice.created" | "invoice.finalized" | "invoice.paid" | "invoice.voided" => {
             handle_stripe_invoice_event(app_state.clone(), event.clone(), realm_id, idempotency_key)
+                .await
+        }
+        "credit_note.created" => {
+            handle_credit_note_created(app_state.clone(), event.clone(), realm_id, idempotency_key)
+                .await
+        }
+        "credit_note.voided" => {
+            handle_credit_note_voided(app_state.clone(), event.clone(), realm_id, idempotency_key)
                 .await
         }
         _ => {

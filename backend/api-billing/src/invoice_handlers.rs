@@ -12,6 +12,7 @@ use herald_api_base::application::http::common::auth_utils::require_authenticate
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
+use herald_core::domain::billing::credit_note::{CreditNoteRepository, NewCreditNote};
 use herald_core::domain::billing::invoice::{
     ActorType, InvoiceDetail, InvoicePdfGenerator, InvoiceProvider, InvoiceRepository,
     InvoiceSource, InvoiceStatus, InvoiceStatusTransition, NewInvoice, NewLineItem,
@@ -490,8 +491,15 @@ pub async fn get_invoice(
     require_billing_permission(&state, &identity, &realm_id, "view").await?;
 
     let detail = load_detail(&state, &realm_id, invoice_id).await?;
+    let credit_notes = state
+        .credit_note_repository
+        .find_by_invoice_id(&realm_id, invoice_id)
+        .await?;
 
-    Ok(Json(invoice_to_detail_response(detail)))
+    Ok(Json(invoice_to_detail_response_with_credits(
+        detail,
+        credit_notes,
+    )))
 }
 
 #[utoipa::path(
@@ -819,6 +827,90 @@ pub async fn mark_paid(
 
 #[utoipa::path(
     post,
+    path = "/api/bill/{realmId}/invoices/{invoiceId}/credit-notes",
+    tag = "billing-invoice",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("invoiceId" = Uuid, Path, description = "Invoice ID")
+    ),
+    request_body = CreateCreditNoteRequest,
+    responses(
+        (status = 201, description = "Manual credit note created", body = CreditNoteResponse),
+        (status = 400, description = "Bad request - amount invalid, status not paid, or exceeds remaining", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden - refunds for this provider are managed externally", body = ErrorResponse),
+        (status = 404, description = "Invoice not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn create_credit_note(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path((realm_id, invoice_id)): Path<(String, Uuid)>,
+    Json(request): Json<CreateCreditNoteRequest>,
+) -> Result<(StatusCode, Json<CreditNoteResponse>), ApiError> {
+    tracing::info!(
+        "Creating manual credit note for invoice {} in realm: {}",
+        invoice_id,
+        realm_id
+    );
+    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
+    request
+        .validate()
+        .map_err(|e: validator::ValidationErrors| {
+            CoreError::BadRequest(format!("Validation failed: {}", e))
+        })?;
+
+    let detail = load_detail(&state, &realm_id, invoice_id).await?;
+
+    // Provider guard: refunds for non-manual providers are managed externally.
+    if detail.invoice.provider != InvoiceProvider::Manual {
+        return Err(ApiError::forbidden(
+            "Refunds for this provider are managed externally",
+        ));
+    }
+
+    // Status guard: only paid invoices support manual refund recording.
+    if detail.invoice.status != InvoiceStatus::Paid {
+        return Err(ApiError::bad_request(
+            "Only paid invoices support refund recording",
+        ));
+    }
+
+    // Amount guard: refund must not exceed remaining payable.
+    if request.amount > detail.invoice.amount_remaining {
+        return Err(ApiError::bad_request(
+            "Refund amount exceeds remaining payable",
+        ));
+    }
+
+    let actor_user_id = Uuid::parse_str(&identity.user_id()).ok();
+
+    let new_credit_note = NewCreditNote {
+        invoice_id,
+        realm_id: realm_id.clone(),
+        amount: request.amount,
+        currency: detail.invoice.currency.clone(),
+        source: herald_core::domain::billing::credit_note::CreditNoteSource::Manual,
+        external_credit_note_id: None,
+        memo: Some(request.memo),
+        created_by_user_id: actor_user_id,
+    };
+
+    let credit_note = state
+        .credit_note_repository
+        .create_credit_note_and_update_invoice(new_credit_note)
+        .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(CreditNoteResponse::from(credit_note)),
+    ))
+}
+
+#[utoipa::path(
+    post,
     path = "/api/bill/{realmId}/my/invoices",
     tag = "billing-invoice",
     params(
@@ -1014,7 +1106,27 @@ pub async fn get_my_invoice(
         "You can only view your own invoices",
     )?;
 
-    Ok(Json(invoice_to_detail_response(detail)))
+    let credit_notes = state
+        .credit_note_repository
+        .find_by_invoice_id(&realm_id, invoice_id)
+        .await?;
+
+    // User-side filtering (design 4.2.2): strip Stripe-internal identifiers and
+    // admin user IDs so regular users see only refund amount/currency/source,
+    // not external IDs or internal operator UUIDs.
+    let credit_notes = credit_notes
+        .into_iter()
+        .map(|mut cn| {
+            cn.external_credit_note_id = None;
+            cn.created_by_user_id = None;
+            cn
+        })
+        .collect();
+
+    Ok(Json(invoice_to_detail_response_with_credits(
+        detail,
+        credit_notes,
+    )))
 }
 
 // ============================================================================
@@ -1244,6 +1356,8 @@ mod tests {
                 tax_amount: 0,
                 shipping_amount: 0,
                 total: 0,
+                amount_refunded: 0,
+                amount_remaining: 0,
                 discount_mode: None,
                 discount_value: None,
                 tax_mode: None,

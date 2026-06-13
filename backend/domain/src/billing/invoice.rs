@@ -189,6 +189,10 @@ pub enum InvoiceEventType {
     Paid,
     Voided,
     Overdue,
+    /// Credit note created against this invoice (refund applied).
+    CreditNoteCreated,
+    /// Credit note on this invoice was voided (refund reversed).
+    CreditNoteVoided,
 }
 
 impl InvoiceEventType {
@@ -200,6 +204,8 @@ impl InvoiceEventType {
             Self::Paid => "paid",
             Self::Voided => "voided",
             Self::Overdue => "overdue",
+            Self::CreditNoteCreated => "credit_note_created",
+            Self::CreditNoteVoided => "credit_note_voided",
         }
     }
 }
@@ -260,6 +266,10 @@ pub struct Invoice {
     pub tax_amount: i64,
     pub shipping_amount: i64,
     pub total: i64,
+
+    // Cached refund aggregates (smallest currency unit).
+    pub amount_refunded: i64,
+    pub amount_remaining: i64,
 
     // Adjustment mode + raw input value
     pub discount_mode: Option<AdjustmentMode>,
@@ -349,6 +359,7 @@ pub struct InvoiceSummary {
     pub status: InvoiceStatus,
     pub currency: String,
     pub total: i64,
+    pub amount_refunded: i64,
     pub billing_name: Option<String>,
     pub due_date: Option<chrono::NaiveDate>,
     pub created_at: DateTime<Utc>,
@@ -580,6 +591,14 @@ pub trait InvoiceRepository: Send + Sync {
         &self,
         data: ExternalInvoiceData,
     ) -> impl Future<Output = Result<Invoice, CoreError>> + Send;
+
+    /// Look up an invoice by its external (provider) ID within a realm. Used by webhook
+    /// handlers (e.g. Stripe `credit_note.created`) to resolve the local invoice.
+    fn find_by_external_invoice_id(
+        &self,
+        realm_id: &str,
+        external_invoice_id: &str,
+    ) -> impl Future<Output = Result<Option<Invoice>, CoreError>> + Send;
 }
 
 impl<T: InvoiceRepository> InvoiceRepository for Arc<T> {
@@ -665,6 +684,14 @@ impl<T: InvoiceRepository> InvoiceRepository for Arc<T> {
     ) -> impl Future<Output = Result<Invoice, CoreError>> + Send {
         (**self).upsert_external_invoice(data)
     }
+
+    fn find_by_external_invoice_id(
+        &self,
+        realm_id: &str,
+        external_invoice_id: &str,
+    ) -> impl Future<Output = Result<Option<Invoice>, CoreError>> + Send {
+        (**self).find_by_external_invoice_id(realm_id, external_invoice_id)
+    }
 }
 
 /// PDF generator for invoice documents.
@@ -711,6 +738,14 @@ mod tests {
         assert_eq!(InvoiceEventType::Voided.as_str(), "voided");
         assert_eq!(InvoiceEventType::Overdue.as_str(), "overdue");
         assert_eq!(InvoiceEventType::Updated.as_str(), "updated");
+        assert_eq!(
+            InvoiceEventType::CreditNoteCreated.as_str(),
+            "credit_note_created"
+        );
+        assert_eq!(
+            InvoiceEventType::CreditNoteVoided.as_str(),
+            "credit_note_voided"
+        );
     }
 
     #[test]

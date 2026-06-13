@@ -1,4 +1,5 @@
 pub mod compensation;
+pub mod credit_note;
 pub mod entities;
 pub mod entitlement_mapping_service;
 pub mod invoice;
@@ -10,6 +11,7 @@ pub mod shopify_binding;
 pub mod subscription_history;
 pub mod subscription_history_service;
 
+pub use credit_note::*;
 pub use entities::*;
 pub use entitlement_mapping_service::*;
 pub use invoice::*;

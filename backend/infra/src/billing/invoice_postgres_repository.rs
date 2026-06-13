@@ -66,6 +66,8 @@ struct InvoiceRow {
     tax_amount: i64,
     shipping_amount: i64,
     total: i64,
+    amount_refunded: i64,
+    amount_remaining: i64,
     discount_mode: Option<String>,
     discount_value: Option<String>,
     tax_mode: Option<String>,
@@ -125,6 +127,8 @@ fn row_to_invoice(row: InvoiceRow) -> Result<Invoice, CoreError> {
         tax_amount: row.tax_amount,
         shipping_amount: row.shipping_amount,
         total: row.total,
+        amount_refunded: row.amount_refunded,
+        amount_remaining: row.amount_remaining,
         discount_mode: row
             .discount_mode
             .as_deref()
@@ -177,6 +181,8 @@ fn parse_event_type(s: &str) -> Result<InvoiceEventType, CoreError> {
         "paid" => Ok(InvoiceEventType::Paid),
         "voided" => Ok(InvoiceEventType::Voided),
         "overdue" => Ok(InvoiceEventType::Overdue),
+        "credit_note_created" => Ok(InvoiceEventType::CreditNoteCreated),
+        "credit_note_voided" => Ok(InvoiceEventType::CreditNoteVoided),
         _ => Err(CoreError::DatabaseError(format!(
             "Invalid event_type: {}",
             s
@@ -269,6 +275,7 @@ struct InvoiceSummaryRow {
     status: String,
     currency: String,
     total: i64,
+    amount_refunded: i64,
     billing_name: Option<String>,
     due_date: Option<chrono::NaiveDate>,
     created_at: DateTime<Utc>,
@@ -288,6 +295,7 @@ fn row_to_summary(row: InvoiceSummaryRow) -> Result<InvoiceSummary, CoreError> {
         status: row.status.parse()?,
         currency: row.currency,
         total: row.total,
+        amount_refunded: row.amount_refunded,
         billing_name: row.billing_name,
         due_date: row.due_date,
         created_at: row.created_at,
@@ -315,6 +323,7 @@ const INVOICE_COLUMNS: &str = r#"
     external_payload, tax_details,
     issue_date, due_date, issued_at, paid_at, voided_at,
     subtotal, discount_amount, tax_amount, shipping_amount, total,
+    amount_refunded, amount_remaining,
     discount_mode, discount_value, tax_mode, tax_value, shipping_mode, shipping_value,
     billing_name, billing_address, billing_email, billing_phone, billing_tax_id,
     seller_name, seller_address, seller_email, seller_phone, seller_tax_id,
@@ -330,6 +339,7 @@ const INVOICE_COLUMNS_READ: &str = r#"
     external_payload, tax_details,
     issue_date, due_date, issued_at, paid_at, voided_at,
     subtotal, discount_amount, tax_amount, shipping_amount, total,
+    amount_refunded, amount_remaining,
     discount_mode, discount_value::text, tax_mode, tax_value::text, shipping_mode, shipping_value::text,
     billing_name, billing_address, billing_email, billing_phone, billing_tax_id,
     seller_name, seller_address, seller_email, seller_phone, seller_tax_id,
@@ -338,7 +348,7 @@ const INVOICE_COLUMNS_READ: &str = r#"
 
 const SUMMARY_COLUMNS: &str = r#"
     id, realm_id, invoice_number, source, account_id, status, currency,
-    total, billing_name, due_date, created_at,
+    total, amount_refunded, billing_name, due_date, created_at,
     provider, payment_provider, external_hosted_url, external_pdf_url
 "#;
 
@@ -368,7 +378,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             Self::reserve_invoice_number_tx(&mut tx, &input.realm_id, year).await?;
 
         let invoice_row = sqlx::query_as::<_, InvoiceRow>(&format!(
-            "INSERT INTO invoice ({insert_cols}) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31::numeric,$32,$33::numeric,$34,$35::numeric,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50) RETURNING {read_cols}",
+            "INSERT INTO invoice ({insert_cols}) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33::numeric,$34,$35::numeric,$36,$37::numeric,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52) RETURNING {read_cols}",
             insert_cols = INVOICE_COLUMNS,
             read_cols = INVOICE_COLUMNS_READ
         ))
@@ -403,6 +413,9 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             .bind(amounts.tax_amount)
             .bind(amounts.shipping_amount)
             .bind(amounts.total)
+            // Refund aggregates — new manual invoices start with no refunds.
+            .bind(0i64) // amount_refunded
+            .bind(amounts.total) // amount_remaining
             .bind(input.discount_mode.map(|m| m.as_str()))
             .bind(&input.discount_value)
             .bind(input.tax_mode.map(|m| m.as_str()))
@@ -613,6 +626,10 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             )
         };
 
+        // Recompute amount_remaining so the cached column tracks the new total.
+        // (Invariant: amount_remaining = total - amount_refunded.)
+        let amount_remaining = total - existing.amount_refunded;
+
         // Update invoice row
         let updated = sqlx::query_as::<_, InvoiceRow>(&format!(
             "UPDATE invoice SET
@@ -625,8 +642,8 @@ impl InvoiceRepository for PostgresInvoiceRepository {
                 tax_mode = $16, tax_value = $17::numeric,
                 shipping_mode = $18, shipping_value = $19::numeric,
                 subtotal = $20, discount_amount = $21, tax_amount = $22, shipping_amount = $23,
-                total = $24, updated_at = $25
-             WHERE id = $26
+                total = $24, amount_remaining = $25, updated_at = $26
+             WHERE id = $27
              RETURNING {cols}",
             cols = INVOICE_COLUMNS_READ
         ))
@@ -654,6 +671,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         .bind(tax_amount)
         .bind(shipping_amount)
         .bind(total)
+        .bind(amount_remaining)
         .bind(now)
         .bind(input.invoice_id)
         .fetch_one(&mut *tx)
@@ -1040,6 +1058,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
                 external_status, external_hosted_url, external_pdf_url,
                 external_payload, tax_details,
                 subtotal, discount_amount, tax_amount, shipping_amount, total,
+                amount_refunded, amount_remaining,
                 created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7,
@@ -1047,6 +1066,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
                 $12, $13, $14,
                 $15, $16,
                 0, 0, 0, 0, $17,
+                0, $17,
                 $18, $19
             )
             {on_conflict}
@@ -1081,6 +1101,26 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             })?;
 
         row_to_invoice(row)
+    }
+
+    async fn find_by_external_invoice_id(
+        &self,
+        realm_id: &str,
+        external_invoice_id: &str,
+    ) -> Result<Option<Invoice>, CoreError> {
+        let row = sqlx::query_as::<_, InvoiceRow>(&format!(
+            "SELECT {cols} FROM invoice WHERE realm_id = $1 AND external_invoice_id = $2",
+            cols = INVOICE_COLUMNS_READ
+        ))
+        .bind(realm_id)
+        .bind(external_invoice_id)
+        .fetch_optional(self.db.get_postgres_connection_pool())
+        .await
+        .map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to find invoice by external id: {}", e))
+        })?;
+
+        row.map(row_to_invoice).transpose()
     }
 }
 
