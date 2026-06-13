@@ -11,7 +11,7 @@ use uuid::Uuid;
 use herald_domain::billing::credit_note::{
     CreditNote, CreditNoteRepository, CreditNoteSource, CreditNoteStatus, NewCreditNote,
 };
-use herald_domain::billing::invoice::{ActorType, InvoiceEventType};
+use herald_domain::billing::invoice::InvoiceEventType;
 use herald_domain::common::entities::app_errors::CoreError;
 
 pub struct PostgresCreditNoteRepository {
@@ -51,6 +51,35 @@ fn parse_source(s: &str) -> Result<CreditNoteSource, CoreError> {
 fn parse_status(s: &str) -> Result<CreditNoteStatus, CoreError> {
     CreditNoteStatus::from_str_opt(s)
         .ok_or_else(|| CoreError::DatabaseError(format!("Invalid credit note status: {}", s)))
+}
+
+/// Insert a single invoice_history row within an existing transaction.
+/// Generates the history id and created_at timestamp internally.
+async fn insert_invoice_history(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    invoice_id: Uuid,
+    event_type: &str,
+    actor_user_id: Option<Uuid>,
+    actor_type: &str,
+    changes: &serde_json::Value,
+) -> Result<(), CoreError> {
+    let history_id = Uuid::now_v7();
+    let now = chrono::Utc::now();
+    sqlx::query(
+        "INSERT INTO invoice_history (id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(history_id)
+    .bind(invoice_id)
+    .bind(event_type)
+    .bind(actor_user_id)
+    .bind(actor_type)
+    .bind(changes)
+    .bind(now)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| CoreError::DatabaseError(format!("Failed to insert history: {}", e)))?;
+    Ok(())
 }
 
 fn row_to_credit_note(row: CreditNoteRow) -> Result<CreditNote, CoreError> {
@@ -119,34 +148,6 @@ impl CreditNoteRepository for PostgresCreditNoteRepository {
         row.map(row_to_credit_note).transpose()
     }
 
-    async fn create_credit_note(&self, input: NewCreditNote) -> Result<CreditNote, CoreError> {
-        let id = Uuid::now_v7();
-
-        let row = sqlx::query_as::<_, CreditNoteRow>(&format!(
-            "INSERT INTO credit_note (id, invoice_id, realm_id, amount, currency, source, status, external_credit_note_id, memo, created_by_user_id) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
-             RETURNING {cols}",
-            cols = CREDIT_NOTE_COLUMNS
-        ))
-            .bind(id)
-            .bind(input.invoice_id)
-            .bind(&input.realm_id)
-            .bind(input.amount)
-            .bind(&input.currency)
-            .bind(input.source.as_str())
-            .bind(CreditNoteStatus::Active.as_str())
-            .bind(&input.external_credit_note_id)
-            .bind(&input.memo)
-            .bind(input.created_by_user_id)
-            .fetch_one(self.db.get_postgres_connection_pool())
-            .await
-            .map_err(|e| {
-                CoreError::DatabaseError(format!("Failed to insert credit note: {}", e))
-            })?;
-
-        row_to_credit_note(row)
-    }
-
     async fn create_credit_note_and_update_invoice(
         &self,
         input: NewCreditNote,
@@ -169,8 +170,8 @@ impl CreditNoteRepository for PostgresCreditNoteRepository {
         // same invoice, so by the time Tx2 acquires the lock, Tx1 has committed and the
         // idempotency SELECT below will observe the new row. (Previously the idempotency
         // SELECT ran before the lock, racing on INSERT.)
-        let invoice_lock: Option<(i64, i64)> = sqlx::query_as(
-            "SELECT amount_refunded, amount_remaining FROM invoice \
+        let invoice_lock: Option<(i64, i64, String)> = sqlx::query_as(
+            "SELECT amount_refunded, amount_remaining, currency FROM invoice \
              WHERE id = $1 AND realm_id = $2 FOR UPDATE",
         )
         .bind(input.invoice_id)
@@ -181,7 +182,18 @@ impl CreditNoteRepository for PostgresCreditNoteRepository {
             CoreError::DatabaseError(format!("Failed to lock invoice for credit note: {}", e))
         })?;
 
-        let (_current_refunded, amount_remaining) = invoice_lock.ok_or(CoreError::NotFound)?;
+        let (_current_refunded, amount_remaining, invoice_currency) =
+            invoice_lock.ok_or(CoreError::NotFound)?;
+
+        // Currency must match the invoice's currency. Defense-in-depth: the manual
+        // handler copies invoice.currency today, but a future caller must not be
+        // able to violate this invariant silently.
+        if input.currency.to_uppercase() != invoice_currency.to_uppercase() {
+            return Err(CoreError::BadRequest(format!(
+                "Credit note currency {} does not match invoice currency {}",
+                input.currency, invoice_currency
+            )));
+        }
 
         // For Stripe source, use external_credit_note_id as idempotency guard:
         // if a row with the same external id already exists, return it without
@@ -263,32 +275,25 @@ impl CreditNoteRepository for PostgresCreditNoteRepository {
         // Record an invoice_history row so the audit trail reflects the refund.
         // Manual credit notes attribute the action to the admin user; Stripe credit
         // notes attribute it to the system (originated from a webhook).
-        let (actor_type, actor_user_id) = match input.source {
-            CreditNoteSource::Manual => (ActorType::User, input.created_by_user_id),
-            CreditNoteSource::Stripe => (ActorType::System, None),
+        let actor_type = input.source.default_actor_type();
+        let actor_user_id = match input.source {
+            CreditNoteSource::Manual => input.created_by_user_id,
+            CreditNoteSource::Stripe => None,
         };
         let changes = serde_json::json!({
             "action": "credit_note_created",
             "amount": input.amount,
             "source": input.source.as_str(),
         });
-        let history_id = Uuid::now_v7();
-        sqlx::query(
-            "INSERT INTO invoice_history (id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        insert_invoice_history(
+            &mut tx,
+            input.invoice_id,
+            InvoiceEventType::CreditNoteCreated.as_str(),
+            actor_user_id,
+            actor_type.as_str(),
+            &changes,
         )
-        .bind(history_id)
-        .bind(input.invoice_id)
-        .bind(InvoiceEventType::CreditNoteCreated.as_str())
-        .bind(actor_user_id)
-        .bind(actor_type.as_str())
-        .bind(&changes)
-        .bind(now)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            CoreError::DatabaseError(format!("Failed to insert credit_note_created history: {}", e))
-        })?;
+        .await?;
 
         tx.commit().await.map_err(|e| {
             CoreError::DatabaseError(format!(
@@ -343,8 +348,6 @@ impl CreditNoteRepository for PostgresCreditNoteRepository {
             return row_to_credit_note(existing);
         }
 
-        let now = chrono::Utc::now();
-
         // Reverse the credit note's amount on the parent invoice. Locks the invoice
         // via the credit_note row above (same transaction).
         sqlx::query(
@@ -375,34 +378,23 @@ impl CreditNoteRepository for PostgresCreditNoteRepository {
 
         // Record an invoice_history row for the reversal. Stripe voids come from webhooks,
         // so the actor is the system.
-        let actor_type = parse_source(&existing.source)?; // validated above
-        let actor_type = match actor_type {
-            CreditNoteSource::Manual => ActorType::User,
-            CreditNoteSource::Stripe => ActorType::System,
-        };
+        let source = parse_source(&existing.source)?; // validated above
+        let actor_type = source.default_actor_type();
         let changes = serde_json::json!({
             "action": "credit_note_voided",
             "amount": existing.amount,
             "source": existing.source,
             "external_credit_note_id": external_credit_note_id,
         });
-        let history_id = Uuid::now_v7();
-        sqlx::query(
-            "INSERT INTO invoice_history (id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        insert_invoice_history(
+            &mut tx,
+            existing.invoice_id,
+            InvoiceEventType::CreditNoteVoided.as_str(),
+            existing.created_by_user_id,
+            actor_type.as_str(),
+            &changes,
         )
-        .bind(history_id)
-        .bind(existing.invoice_id)
-        .bind(InvoiceEventType::CreditNoteVoided.as_str())
-        .bind(existing.created_by_user_id)
-        .bind(actor_type.as_str())
-        .bind(&changes)
-        .bind(now)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            CoreError::DatabaseError(format!("Failed to insert credit_note_voided history: {}", e))
-        })?;
+        .await?;
 
         tx.commit().await.map_err(|e| {
             CoreError::DatabaseError(format!("Failed to commit void credit note: {}", e))

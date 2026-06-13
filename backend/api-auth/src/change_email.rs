@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 use herald_api_base::application::http::auth::util::{
-    ClientIp, normalize_email, rate_limit_hit, require_session,
+    ClientIp, epoch_seconds, normalize_email, rate_limit_hit, require_session,
 };
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
@@ -296,10 +296,7 @@ struct ChangeEmailCode<'a> {
 
 impl<'a> ChangeEmailCode<'a> {
     fn generate(realm_id: &str, user_id: &str) -> String {
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let ts = epoch_seconds();
         format!("{}_{}_{}_{}", realm_id, user_id, uuid::Uuid::now_v7(), ts)
     }
 

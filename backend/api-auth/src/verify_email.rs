@@ -13,7 +13,10 @@ use herald_api_base::application::http::auth::util::{
 pub use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
-use herald_core::domain::security_constants::VERIFY_EMAIL_CONFIRM_IP_RATE_LIMIT;
+use herald_core::domain::security_constants::{
+    VERIFY_EMAIL_CONFIRM_IP_RATE_LIMIT, VERIFY_EMAIL_TRIGGER_EMAIL_RATE_LIMIT,
+    VERIFY_EMAIL_TRIGGER_IP_RATE_LIMIT,
+};
 use herald_core::domain::user::ports::UserService;
 use herald_core::third::email::EmailService;
 
@@ -69,8 +72,20 @@ pub async fn trigger(
     .await?;
 
     // ip + email 限流：每分钟最多 5 次
-    rate_limit_hit(&state, format!("rl:verify_email:ip:{ip}"), 5, 60).await?;
-    rate_limit_hit(&state, format!("rl:verify_email:email:{email}"), 5, 60).await?;
+    rate_limit_hit(
+        &state,
+        format!("rl:verify_email:ip:{ip}"),
+        VERIFY_EMAIL_TRIGGER_IP_RATE_LIMIT.0,
+        VERIFY_EMAIL_TRIGGER_IP_RATE_LIMIT.1,
+    )
+    .await?;
+    rate_limit_hit(
+        &state,
+        format!("rl:verify_email:email:{email}"),
+        VERIFY_EMAIL_TRIGGER_EMAIL_RATE_LIMIT.0,
+        VERIFY_EMAIL_TRIGGER_EMAIL_RATE_LIMIT.1,
+    )
+    .await?;
 
     // Use UserService to trigger email verification
     let code = state

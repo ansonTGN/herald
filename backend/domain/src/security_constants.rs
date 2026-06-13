@@ -22,6 +22,8 @@ pub const RESET_PASSWORD_REQUEST_EMAIL_RATE_LIMIT: (i64, usize) = (5, 60);
 pub const RESET_PASSWORD_CONFIRM_IP_RATE_LIMIT: (i64, usize) = (5, 60);
 
 pub const VERIFY_EMAIL_CONFIRM_IP_RATE_LIMIT: (i64, usize) = (5, 60);
+pub const VERIFY_EMAIL_TRIGGER_IP_RATE_LIMIT: (i64, usize) = (5, 60);
+pub const VERIFY_EMAIL_TRIGGER_EMAIL_RATE_LIMIT: (i64, usize) = (5, 60);
 pub const CHANGE_EMAIL_REQUEST_IP_RATE_LIMIT: (i64, usize) = (1, 120);
 pub const CHANGE_EMAIL_REQUEST_EMAIL_RATE_LIMIT: (i64, usize) = (1, 120);
 pub const CHANGE_EMAIL_CONFIRM_IP_RATE_LIMIT: (i64, usize) = (5, 60);

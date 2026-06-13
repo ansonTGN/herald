@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::billing::invoice::ActorType;
 use crate::common::entities::app_errors::CoreError;
 
 // ---------------------------------------------------------------------------
@@ -24,6 +25,15 @@ impl CreditNoteSource {
         match self {
             Self::Stripe => "stripe",
             Self::Manual => "manual",
+        }
+    }
+
+    /// Actor to attribute invoice_history rows to: Manual refunds are operator-driven,
+    /// Stripe refunds originate from webhooks (system).
+    pub fn default_actor_type(self) -> ActorType {
+        match self {
+            Self::Stripe => ActorType::System,
+            Self::Manual => ActorType::User,
         }
     }
 
@@ -148,12 +158,6 @@ pub trait CreditNoteRepository: Send + Sync {
         external_credit_note_id: &str,
     ) -> impl Future<Output = Result<Option<CreditNote>, CoreError>> + Send;
 
-    /// Insert a new credit note row.
-    fn create_credit_note(
-        &self,
-        input: NewCreditNote,
-    ) -> impl Future<Output = Result<CreditNote, CoreError>> + Send;
-
     /// Transactional: create the credit note AND atomically update the parent invoice's
     /// `amount_refunded` / `amount_remaining`. Must reject if `amount` would push
     /// `amount_refunded` beyond `total`.
@@ -187,13 +191,6 @@ impl<T: CreditNoteRepository> CreditNoteRepository for Arc<T> {
         external_credit_note_id: &str,
     ) -> impl Future<Output = Result<Option<CreditNote>, CoreError>> + Send {
         (**self).find_by_external_id(external_credit_note_id)
-    }
-
-    fn create_credit_note(
-        &self,
-        input: NewCreditNote,
-    ) -> impl Future<Output = Result<CreditNote, CoreError>> + Send {
-        (**self).create_credit_note(input)
     }
 
     fn create_credit_note_and_update_invoice(

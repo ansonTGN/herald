@@ -885,7 +885,9 @@ pub async fn create_credit_note(
         ));
     }
 
-    let actor_user_id = Uuid::parse_str(&identity.user_id()).ok();
+    let actor_user_id = Uuid::parse_str(&identity.user_id()).map_err(|_| {
+        ApiError::internal("Authenticated identity has invalid user_id format".to_string())
+    })?;
 
     let new_credit_note = NewCreditNote {
         invoice_id,
@@ -895,7 +897,7 @@ pub async fn create_credit_note(
         source: herald_core::domain::billing::credit_note::CreditNoteSource::Manual,
         external_credit_note_id: None,
         memo: Some(request.memo),
-        created_by_user_id: actor_user_id,
+        created_by_user_id: Some(actor_user_id),
     };
 
     let credit_note = state

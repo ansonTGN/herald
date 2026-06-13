@@ -126,12 +126,6 @@ fn parse_stripe_datetime(value: &Value, field_name: &str) -> Result<DateTime<Utc
         });
     }
 
-    if let Some(timestamp) = value.as_u64() {
-        return DateTime::<Utc>::from_timestamp(timestamp as i64, 0).ok_or_else(|| {
-            CoreError::BadRequest(format!("Invalid unix timestamp for {}", field_name))
-        });
-    }
-
     if let Some(value) = value.as_str() {
         return DateTime::parse_from_rfc3339(value)
             .map(|dt| dt.with_timezone(&Utc))
@@ -2653,13 +2647,6 @@ async fn handle_credit_note_voided(
     let payload = parse_credit_note_voided_payload(&event)?;
     let event_id = payload.event_id.as_str();
 
-    // Resolve the invoice so we have a realm check + can return a transient error
-    // when the invoice (and therefore the local credit note) has not synced yet.
-    let invoice = app_state
-        .invoice_repository
-        .find_by_external_invoice_id(realm_id, &payload.stripe_invoice_id)
-        .await?;
-
     // Idempotency + out-of-order handling via the local credit note state.
     match app_state
         .credit_note_repository
@@ -2686,13 +2673,20 @@ async fn handle_credit_note_voided(
         None => {
             // The credit_note.created event has not arrived yet. Return a
             // transient error so Stripe redelivers and the create-then-void
-            // sequence applies in order.
+            // sequence applies in order. The invoice lookup is only needed in
+            // this branch (for the diagnostic log) — avoid the SELECT on the
+            // hot path where the credit note already exists.
+            let invoice_present = app_state
+                .invoice_repository
+                .find_by_external_invoice_id(realm_id, &payload.stripe_invoice_id)
+                .await?
+                .is_some();
             warn!(
                 realm_id = %realm_id,
                 event_id = %event_id,
                 stripe_invoice_id = %payload.stripe_invoice_id,
                 stripe_credit_note_id = %payload.stripe_credit_note_id,
-                invoice_present = invoice.is_some(),
+                invoice_present,
                 "Stripe credit_note.voided: local credit note not found — returning error to trigger Stripe retry"
             );
             return Err(CoreError::InternalServerError(format!(
@@ -2819,36 +2813,50 @@ pub async fn handle_stripe_webhook(
         .find_payment_event_by_external_id(&event_id, "stripe")
         .await?;
 
-    if existing_event.is_some() {
-        info!(
-            realm_id = %realm_id,
-            event_id = %event_id,
-            event_type = %event_type,
-            "Duplicate webhook event - returning OK"
-        );
-        return Ok(StatusCode::OK);
-    }
-
-    // Save new payment event (handle race condition from concurrent webhooks)
-    let saved_event = match app_state
-        .billing_repository
-        .create_payment_event(new_payment_event)
-        .await
-    {
-        Ok(saved_event) => saved_event,
-        Err(CoreError::DatabaseError(msg))
-            if msg.contains("unique constraint") || msg.contains("duplicate key") =>
-        {
-            // Concurrent webhook with same event_id already inserted - treat as success
+    let saved_event = match existing_event {
+        Some(existing) if existing.processed => {
+            // True idempotent duplicate: previous attempt succeeded
             info!(
                 realm_id = %realm_id,
                 event_id = %event_id,
                 event_type = %event_type,
-                "Concurrent webhook event already inserted - returning OK"
+                "Duplicate webhook event - returning OK"
             );
             return Ok(StatusCode::OK);
         }
-        Err(e) => return Err(e),
+        Some(existing) => {
+            // Previous attempt failed (processed=false): retry by reusing this row
+            info!(
+                realm_id = %realm_id,
+                event_id = %event_id,
+                event_type = %event_type,
+                "Retrying unprocessed webhook event"
+            );
+            existing
+        }
+        None => {
+            // Save new payment event (handle race condition from concurrent webhooks)
+            match app_state
+                .billing_repository
+                .create_payment_event(new_payment_event)
+                .await
+            {
+                Ok(saved_event) => saved_event,
+                Err(CoreError::DatabaseError(msg))
+                    if msg.contains("unique constraint") || msg.contains("duplicate key") =>
+                {
+                    // Concurrent webhook with same event_id already inserted - other worker is handling it
+                    info!(
+                        realm_id = %realm_id,
+                        event_id = %event_id,
+                        event_type = %event_type,
+                        "Concurrent webhook event already inserted - returning OK"
+                    );
+                    return Ok(StatusCode::OK);
+                }
+                Err(e) => return Err(e),
+            }
+        }
     };
 
     // Step 8: Build idempotency key
@@ -3137,7 +3145,7 @@ pub(crate) async fn reprocess_stripe_event(
         .ok_or_else(|| CoreError::BadRequest("Missing event id".to_string()))?;
 
     // Check existing payment event by external_event_id
-    if let Some(existing) = app_state
+    let saved_event = if let Some(existing) = app_state
         .billing_repository
         .find_payment_event_by_external_id(event_id, "stripe")
         .await?
@@ -3151,48 +3159,48 @@ pub(crate) async fn reprocess_stripe_event(
             );
             return Ok(());
         }
-        // Exists but not processed -- inconsistent state, do not reprocess
-        error!(
+        // Exists but not processed: previous attempt failed — retry by reusing this row
+        info!(
             realm_id = %realm_id,
             event_id = %event_id,
             event_type = %event_type,
-            "Stripe compensation: event exists but processed=false, skipping inconsistent event"
+            "Stripe compensation: retrying unprocessed event"
         );
-        return Ok(());
-    }
+        existing
+    } else {
+        // Create payment event record
+        let new_payment_event = PaymentEvent {
+            id: Uuid::now_v7(),
+            realm_id: realm_id.to_string(),
+            external_event_id: event_id.to_string(),
+            payment_provider: "stripe".to_string(),
+            event_type: event_type.to_string(),
+            subscription_id: None,
+            payload: event.clone(),
+            processed: false,
+            processing_started_at: None,
+            created_at: chrono::Utc::now(),
+        };
 
-    // Create payment event record
-    let new_payment_event = PaymentEvent {
-        id: Uuid::now_v7(),
-        realm_id: realm_id.to_string(),
-        external_event_id: event_id.to_string(),
-        payment_provider: "stripe".to_string(),
-        event_type: event_type.to_string(),
-        subscription_id: None,
-        payload: event.clone(),
-        processed: false,
-        processing_started_at: None,
-        created_at: chrono::Utc::now(),
-    };
-
-    let saved_event = match app_state
-        .billing_repository
-        .create_payment_event(new_payment_event)
-        .await
-    {
-        Ok(event) => event,
-        Err(CoreError::DatabaseError(ref msg))
-            if msg.contains("unique constraint") || msg.contains("duplicate key") =>
+        match app_state
+            .billing_repository
+            .create_payment_event(new_payment_event)
+            .await
         {
-            info!(
-                realm_id = %realm_id,
-                event_id = %event_id,
-                event_type = %event_type,
-                "Stripe compensation: concurrent insert detected, event already handled"
-            );
-            return Ok(());
+            Ok(event) => event,
+            Err(CoreError::DatabaseError(ref msg))
+                if msg.contains("unique constraint") || msg.contains("duplicate key") =>
+            {
+                info!(
+                    realm_id = %realm_id,
+                    event_id = %event_id,
+                    event_type = %event_type,
+                    "Stripe compensation: concurrent insert detected, event already handled"
+                );
+                return Ok(());
+            }
+            Err(e) => return Err(e),
         }
-        Err(e) => return Err(e),
     };
 
     // Synthetic idempotency key (not used for Redis, only passed to handlers)

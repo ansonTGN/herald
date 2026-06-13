@@ -173,6 +173,35 @@ fn parse_actor_type(s: &str) -> Result<ActorType, CoreError> {
     }
 }
 
+/// Insert a single invoice_history row within an existing transaction.
+/// Generates the history id and created_at timestamp internally.
+async fn insert_invoice_history(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    invoice_id: Uuid,
+    event_type: &str,
+    actor_user_id: Option<Uuid>,
+    actor_type: &str,
+    changes: &serde_json::Value,
+) -> Result<(), CoreError> {
+    let history_id = Uuid::now_v7();
+    let now = chrono::Utc::now();
+    sqlx::query(
+        "INSERT INTO invoice_history (id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(history_id)
+    .bind(invoice_id)
+    .bind(event_type)
+    .bind(actor_user_id)
+    .bind(actor_type)
+    .bind(changes)
+    .bind(now)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| CoreError::DatabaseError(format!("Failed to insert history: {}", e)))?;
+    Ok(())
+}
+
 fn parse_event_type(s: &str) -> Result<InvoiceEventType, CoreError> {
     match s {
         "created" => Ok(InvoiceEventType::Created),
@@ -461,21 +490,16 @@ impl InvoiceRepository for PostgresInvoiceRepository {
                 .map_err(|e| CoreError::DatabaseError(format!("Failed to insert line item: {}", e)))?;
         }
 
-        let history_id = Uuid::now_v7();
         let changes = serde_json::json!({"status": "draft"});
-        sqlx::query(
-            "INSERT INTO invoice_history (id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)"
+        insert_invoice_history(
+            &mut tx,
+            id,
+            InvoiceEventType::Created.as_str(),
+            input.actor_user_id,
+            ActorType::User.as_str(),
+            &changes,
         )
-            .bind(history_id)
-            .bind(id)
-            .bind(InvoiceEventType::Created.as_str())
-            .bind(input.actor_user_id)
-            .bind(ActorType::User.as_str())
-            .bind(&changes)
-            .bind(now)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| CoreError::DatabaseError(format!("Failed to insert history: {}", e)))?;
+        .await?;
 
         tx.commit().await.map_err(|e| {
             CoreError::DatabaseError(format!("Failed to commit create_invoice: {}", e))
@@ -679,21 +703,16 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         .map_err(|e| CoreError::DatabaseError(format!("Failed to update invoice: {}", e)))?;
 
         // Record history
-        let history_id = Uuid::now_v7();
         let changes = serde_json::json!({"action": "updated"});
-        sqlx::query(
-            "INSERT INTO invoice_history (id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)"
+        insert_invoice_history(
+            &mut tx,
+            input.invoice_id,
+            InvoiceEventType::Updated.as_str(),
+            input.actor_user_id,
+            ActorType::User.as_str(),
+            &changes,
         )
-            .bind(history_id)
-            .bind(input.invoice_id)
-            .bind(InvoiceEventType::Updated.as_str())
-            .bind(input.actor_user_id)
-            .bind(ActorType::User.as_str())
-            .bind(&changes)
-            .bind(now)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| CoreError::DatabaseError(format!("Failed to insert history: {}", e)))?;
+        .await?;
 
         tx.commit().await.map_err(|e| {
             CoreError::DatabaseError(format!("Failed to commit update_draft: {}", e))
@@ -893,20 +912,15 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             "to": input.target_status.as_str()
         });
 
-        let history_id = Uuid::now_v7();
-        sqlx::query(
-            "INSERT INTO invoice_history (id, invoice_id, event_type, actor_user_id, actor_type, changes, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)"
+        insert_invoice_history(
+            &mut tx,
+            input.invoice_id,
+            event_type.as_str(),
+            input.actor_user_id,
+            input.actor_type.as_str(),
+            &changes,
         )
-            .bind(history_id)
-            .bind(input.invoice_id)
-            .bind(event_type.as_str())
-            .bind(input.actor_user_id)
-            .bind(input.actor_type.as_str())
-            .bind(&changes)
-            .bind(now)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| CoreError::DatabaseError(format!("Failed to insert history: {}", e)))?;
+        .await?;
 
         tx.commit().await.map_err(|e| {
             CoreError::DatabaseError(format!("Failed to commit transition_status: {}", e))
