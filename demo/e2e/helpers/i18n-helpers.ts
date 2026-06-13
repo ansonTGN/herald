@@ -11,8 +11,8 @@ import { Page, expect } from '@playwright/test'
 import { SELECTORS } from '../selectors'
 
 /**
- * Switch the UI to the target locale by clicking the corresponding
- * language-switcher button.
+ * Switch the UI to the target locale via the language-switcher dropdown
+ * (open the trigger, then click the matching option).
  *
  * Primary verification: wait until localStorage key `herald-locale` reflects
  * the target locale value.
@@ -24,12 +24,12 @@ export async function switchToLocale(
   page: Page,
   locale: 'en' | 'zh-CN',
 ): Promise<void> {
-  const buttonSelector =
+  await page.locator(SELECTORS.languageSwitcher.trigger).click()
+  const itemSelector =
     locale === 'en'
-      ? SELECTORS.languageSwitcher.enButton
-      : SELECTORS.languageSwitcher.zhButton
-
-  await page.locator(buttonSelector).click()
+      ? SELECTORS.languageSwitcher.enItem
+      : SELECTORS.languageSwitcher.zhItem
+  await page.locator(itemSelector).click()
 
   // Wait until the locale is persisted in localStorage
   await page.waitForFunction(

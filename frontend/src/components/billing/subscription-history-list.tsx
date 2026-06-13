@@ -40,8 +40,7 @@ const HistoryTableRow = memo(({ event, index, onEventClick }: HistoryTableRowPro
       <TableCell>
         <div className="space-y-1">
           <div className="text-sm font-medium">
-            {event.subscription.entitlement?.entitlementKey ||
-              m['billing.subscription_history_unknown_plan']()}
+            {event.subscription.entitlementKey || m['billing.subscription_history_unknown_plan']()}
           </div>
           <div className="text-xs text-muted-foreground">{event.subscription.status}</div>
         </div>

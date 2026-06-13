@@ -1,6 +1,7 @@
 import { toast } from 'sonner'
 import { useRouter } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
+import { formatDateTimeShort } from '@/lib/date-utils'
 
 const AUTH_QUERY_KEY = (realmId: string) => ['auth', realmId, 'status'] as const
 const REQUEST_TIMEOUT_MS = 30000
@@ -48,5 +49,5 @@ export function handleTotpLoginSuccess(
  */
 export function formatDate(dateString: string | null | undefined): string {
   if (!dateString) return 'Unknown'
-  return new Date(dateString).toLocaleString()
+  return formatDateTimeShort(dateString)
 }

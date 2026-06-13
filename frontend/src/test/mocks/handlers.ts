@@ -160,10 +160,7 @@ export const handlers = [
         subscription: {
           id: 'sub-1',
           status: 'active',
-          entitlement: {
-            entitlementKey: 'basic',
-            paymentProvider: 'stripe',
-          },
+          entitlementKey: 'basic',
         },
       },
       {
@@ -179,10 +176,7 @@ export const handlers = [
         subscription: {
           id: 'sub-2',
           status: 'active',
-          entitlement: {
-            entitlementKey: 'pro',
-            paymentProvider: 'stripe',
-          },
+          entitlementKey: 'pro',
         },
       },
     ]
@@ -197,7 +191,7 @@ export const handlers = [
     }
     if (entitlementKey) {
       filteredEvents = filteredEvents.filter(
-        (e) => e.subscription.entitlement?.entitlementKey === entitlementKey
+        (e) => e.subscription.entitlementKey === entitlementKey
       )
     }
     if (subscriptionStatus) {

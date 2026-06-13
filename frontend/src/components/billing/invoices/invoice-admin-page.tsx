@@ -38,6 +38,7 @@ import { PageHeader } from '@/components/shared'
 import { InvoiceStatusBadge } from '@/components/billing/invoices/invoice-status-badge'
 import { ListPagination } from '@/components/shared'
 import type { InvoiceResponse } from '@/lib/api-generated'
+import { formatDate } from '@/lib/date-utils'
 import { invoiceListQueryOptions } from '@/data/invoice-query-options'
 import {
   INVOICE_PAGE_SIZE,
@@ -122,7 +123,7 @@ function createInvoiceColumns(
           return <Badge variant="outline">{label}</Badge>
         }
         return (
-          <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200">
+          <Badge variant="secondary" className="bg-teal-50 text-teal-700 border-teal-200">
             {label}
           </Badge>
         )
@@ -147,7 +148,7 @@ function createInvoiceColumns(
       header: m['billing.invoice_due_date'](),
       cell: ({ row }) => {
         const dueDate = row.getValue('dueDate') as string
-        return <span className="text-sm">{new Date(dueDate).toLocaleDateString()}</span>
+        return <span className="text-sm">{formatDate(dueDate)}</span>
       },
     },
     {
@@ -155,7 +156,7 @@ function createInvoiceColumns(
       header: m['billing.invoice_created_at'](),
       cell: ({ row }) => {
         const createdAt = row.getValue('createdAt') as string
-        return <span className="text-sm">{new Date(createdAt).toLocaleDateString()}</span>
+        return <span className="text-sm">{formatDate(createdAt)}</span>
       },
     },
     {

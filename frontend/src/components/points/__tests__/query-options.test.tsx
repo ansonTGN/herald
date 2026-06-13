@@ -1,9 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  pointsWalletsQueryOptions,
-  pointsTransactionsQueryOptions,
-  pointsPlanConfigsQueryOptions,
-} from '@/data/query-options'
+import { pointsWalletsQueryOptions, pointsTransactionsQueryOptions } from '@/data/query-options'
 import { listWallets } from '@/lib/api-generated'
 
 vi.mock('@/lib/api-generated', async () => {
@@ -75,13 +71,6 @@ describe('pointsWalletsQueryOptions', () => {
       const options2 = pointsWalletsQueryOptions('realm-2', {})
 
       expect(options1.queryKey).not.toEqual(options2.queryKey)
-    })
-
-    it('should create same cache key for same realm', () => {
-      const options1 = pointsPlanConfigsQueryOptions('realm-1')
-      const options2 = pointsPlanConfigsQueryOptions('realm-1')
-
-      expect(options1.queryKey).toEqual(options2.queryKey)
     })
 
     it('should create unique cache keys for different transaction types', () => {

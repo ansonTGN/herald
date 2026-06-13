@@ -191,8 +191,8 @@ export const queryKeys = {
     [QUERY_KEYS.POINTS_WALLET, realmId, userId] as const,
   pointsTransactions: (realmId: string, filters: Record<string, unknown>) =>
     [QUERY_KEYS.POINTS_TRANSACTIONS, realmId, filters] as const,
-  pointsPlanConfigs: (realmId: string) => [QUERY_KEYS.POINTS_PLAN_CONFIGS, realmId] as const,
-  realmConfig: (realmId: string) => [QUERY_KEYS.REALM_CONFIG, realmId] as const,
+  pointsDefaultConfig: (realmId: string) => [QUERY_KEYS.POINTS_DEFAULT_CONFIG, realmId] as const,
+  realmConfigs: (realmId: string) => [QUERY_KEYS.REALM_CONFIGS, realmId] as const,
   emailStatus: (realmId: string) => [QUERY_KEYS.EMAIL_STATUS, realmId] as const,
   freeUserStats: (realmId: string, dateRange?: { startDate?: string; endDate?: string }) =>
     [QUERY_KEYS.FREE_USER_STATS, realmId, dateRange] as const,
@@ -732,34 +732,11 @@ export const pointsTransactionsQueryOptions = (
     staleTime: STALE_TIME_2_MIN,
   })
 
-// TODO: Points plan configs API was removed by product_reduce.
-// Return empty array until points are migrated to entitlement-based config.
-export const pointsPlanConfigsQueryOptions = (realmId: string) =>
-  queryOptions({
-    queryKey: queryKeys.pointsPlanConfigs(realmId),
-    queryFn: async () =>
-      [] as Array<{
-        configId: string
-        realmId: string
-        planId: string
-        pointsPerPeriod: number
-        grantOnSubscribe: boolean
-        grantPeriodType: string
-        maxPeriods: number | null
-        validityDays: number
-        active: boolean
-        createdAt: string
-        updatedAt: string
-      }>,
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_2_MIN,
-  })
+// ==================== Points Default Config ====================
 
-// ==================== Realm Default Config ====================
-
-export const realmConfigQueryOptions = (realmId: string) =>
+export const pointsDefaultConfigQueryOptions = (realmId: string) =>
   queryOptions({
-    queryKey: queryKeys.realmConfig(realmId),
+    queryKey: queryKeys.pointsDefaultConfig(realmId),
     queryFn: async () => {
       try {
         const response = await getRealmDefaultConfig({ path: { realmId } })
@@ -774,7 +751,7 @@ export const realmConfigQueryOptions = (realmId: string) =>
   })
 
 // Wrapper function for mutation use
-export const updateRealmDefaultConfigMutation = async (
+export const updatePointsDefaultConfigMutation = async (
   realmId: string,
   data: {
     registrationBonusPoints: number

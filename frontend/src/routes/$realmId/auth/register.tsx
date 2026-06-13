@@ -88,7 +88,7 @@ function RegisterPage() {
             <Link
               to="/$realmId/auth/login"
               params={{ realmId }}
-              className="text-blue-600 hover:text-blue-700"
+              className="text-primary hover:text-primary/80"
             >
               {m['auth.register.return_to_login']()}
             </Link>
@@ -113,7 +113,7 @@ function RegisterPage() {
             <Link
               to="/$realmId/auth/login"
               params={{ realmId }}
-              className="text-sm font-medium text-blue-600 hover:text-blue-500"
+              className="text-sm font-medium text-primary hover:text-primary/80"
               data-testid="login-link"
             >
               {m['auth.register.login_link']()}

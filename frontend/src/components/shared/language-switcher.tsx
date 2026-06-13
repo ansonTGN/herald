@@ -1,32 +1,46 @@
+import { Globe } from 'lucide-react'
 import { useLocale } from '@/components/shared/locale-provider'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import type { Locale } from '@/paraglide/runtime'
+
+const LOCALE_OPTIONS: ReadonlyArray<{ value: Locale; label: string }> = [
+  { value: 'en', label: 'English' },
+  { value: 'zh-CN', label: '中文' },
+]
 
 export function LanguageSwitcher() {
   const { locale, switchLocale } = useLocale()
 
   return (
-    <div data-testid="language-switcher" className="flex gap-1">
-      <button
-        data-testid="language-switcher-en"
-        onClick={() => switchLocale('en')}
-        className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
-          locale === 'en'
-            ? 'bg-sidebar-accent text-sidebar-foreground'
-            : 'text-sidebar-foreground/50 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/70'
-        }`}
+    <Select value={locale} onValueChange={(value) => switchLocale(value as Locale)}>
+      <SelectTrigger
+        data-testid="language-switcher"
+        className="h-8 border-sidebar-border bg-transparent px-2.5 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground"
       >
-        EN
-      </button>
-      <button
-        data-testid="language-switcher-zh"
-        onClick={() => switchLocale('zh-CN')}
-        className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
-          locale === 'zh-CN'
-            ? 'bg-sidebar-accent text-sidebar-foreground'
-            : 'text-sidebar-foreground/50 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/70'
-        }`}
-      >
-        中文
-      </button>
-    </div>
+        {/* `flex!` overrides the trigger's `[&>span]:line-clamp-1` rule, which
+            otherwise forces `display:-webkit-box` and stacks the icon/text. */}
+        <span className="flex! items-center gap-1.5">
+          <Globe className="size-3.5 opacity-60" />
+          <SelectValue />
+        </span>
+      </SelectTrigger>
+      <SelectContent>
+        {LOCALE_OPTIONS.map((option) => (
+          <SelectItem
+            key={option.value}
+            value={option.value}
+            data-testid={`language-switcher-item-${option.value}`}
+          >
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }

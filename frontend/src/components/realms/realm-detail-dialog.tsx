@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { updateRealmSchema, type UpdateRealmFormData } from '@/lib/schemas/realm'
 import { updateRealm } from '@/lib/api-generated'
+import { formatDateTimeShort } from '@/lib/date-utils'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import {
   Dialog,
@@ -90,7 +91,7 @@ export function RealmDetailDialog({ open, onOpenChange, realmId }: RealmDetailDi
             <div className="space-y-2">
               <Label>{m['realms.created_at_label']()}</Label>
               <Input
-                value={new Date(realm.createdAt).toLocaleString()}
+                value={formatDateTimeShort(realm.createdAt)}
                 disabled
                 data-testid="realm-detail-created-at"
               />
@@ -99,7 +100,7 @@ export function RealmDetailDialog({ open, onOpenChange, realmId }: RealmDetailDi
             <div className="space-y-2">
               <Label>{m['realms.updated_at_label']()}</Label>
               <Input
-                value={new Date(realm.updatedAt).toLocaleString()}
+                value={formatDateTimeShort(realm.updatedAt)}
                 disabled
                 data-testid="realm-detail-updated-at"
               />

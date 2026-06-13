@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/shared/page-header'
 import { ClaimSubscriptionDialog } from './ClaimSubscriptionDialog'
 import { UnclaimedSubscriptionBanner } from './UnclaimedSubscriptionBanner'
 import { claimShopifySubscriptions } from '@/lib/api-generated'
+import { formatDate } from '@/lib/date-utils'
 import { clientAppsQueryOptions, userSubscriptionsQueryOptions } from '@/data/query-options'
 import {
   getSubscriptionForClientApp,
@@ -244,7 +245,7 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
                   </div>
                   <div className="text-sm font-medium">
                     {subscription.currentPeriodStart && subscription.currentPeriodEnd
-                      ? `${new Date(subscription.currentPeriodStart).toLocaleDateString()} - ${new Date(subscription.currentPeriodEnd).toLocaleDateString()}`
+                      ? `${formatDate(subscription.currentPeriodStart)} - ${formatDate(subscription.currentPeriodEnd)}`
                       : m['billing.my_subscriptions_not_available']()}
                   </div>
                 </div>

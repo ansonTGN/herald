@@ -2,9 +2,15 @@
 
 [中文](README-zh.md) | English
 
-Multi-tenant authentication and authorization system. Rust backend + React frontend, single-process deployment, Docker in production.
+An out-of-the-box SaaS foundation: multi-tenant account system, Stripe/Creem payment integration, and a built-in credits system. Rust backend + React frontend, single-process deployment, Docker in production.
 
 This project practices AI-assisted programming using Claude Code + GLM model and Codex hybrid development.
+
+## Features
+
+- **SaaS account system** — multi-tenant (realm) architecture with authentication, authorization, and an admin console out of the box
+- **Payments** — Stripe and Creem integration for subscriptions, invoices, and webhook-driven entitlement provisioning
+- **Credits system** — built-in wallet with transactions, scheduled grants, expiration, and idempotency
 
 ## Tech Stack
 
@@ -29,12 +35,17 @@ Once running: frontend at http://localhost:3000, backend API at http://localhost
 
 ## Documentation
 
-Full tutorials at [docs/tutorials/](docs/tutorials/), covering local development, architecture, configuration, and deployment.
+Full tutorials at [docs/tutorials/](docs/tutorials/), covering local development, architecture, configuration, deployment, and billing.
 
-- [Getting Started](docs/tutorials/getting-started-en.md)
-- [Architecture](docs/tutorials/architecture-en.md)
-- [Configuration](docs/tutorials/configuration-en.md)
-- [Deployment](docs/tutorials/deployment-en.md)
+- [Getting Started](docs/tutorials/getting-started-en.md) — local development setup
+- [Architecture](docs/tutorials/architecture-en.md) — project structure and tech choices
+- [Configuration](docs/tutorials/configuration-en.md) — configuration reference
+- [Deployment](docs/tutorials/deployment-en.md) — Docker production deployment
+- [Billing Architecture](docs/tutorials/billing-overview.md) — entitlement mapping, subscription projection, credits policy
+- [Stripe Integration](docs/tutorials/billing-stripe-payment.md) — provider setup and webhook handling
+- [Creem Integration](docs/tutorials/billing-creem-payment.md) — provider setup and webhook handling
+- [Invoice Management](docs/tutorials/billing-invoice.md) — invoice creation, issuance, and PDF
+- [Third-Party Integration](docs/tutorials/third-party-integration-en.md) — integrate via the SDK
 
 ## License
 

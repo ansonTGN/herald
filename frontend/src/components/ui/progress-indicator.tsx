@@ -59,8 +59,8 @@ function StepItem({ step, index, status }: StepItemProps) {
       <div
         className={cn(
           'flex size-9 items-center justify-center rounded-full border-2 transition-colors duration-200',
-          status === 'completed' && 'border-blue-500 bg-blue-500 text-white',
-          status === 'current' && 'border-blue-500 bg-blue-500 text-white',
+          status === 'completed' && 'border-primary bg-primary text-primary-foreground',
+          status === 'current' && 'border-primary bg-primary text-primary-foreground',
           status === 'pending' && 'border-muted-foreground/30 text-muted-foreground/50'
         )}
         aria-current={status === 'current' ? 'step' : undefined}
@@ -77,8 +77,8 @@ function StepItem({ step, index, status }: StepItemProps) {
         <span
           className={cn(
             'text-xs transition-colors duration-200',
-            status === 'completed' && 'text-blue-600 font-medium',
-            status === 'current' && 'text-blue-600 font-semibold',
+            status === 'completed' && 'text-primary font-medium',
+            status === 'current' && 'text-primary font-semibold',
             status === 'pending' && 'text-muted-foreground'
           )}
         >
@@ -99,8 +99,8 @@ function StepConnector({ status }: StepConnectorProps) {
       data-slot="progress-connector"
       className={cn(
         'mx-2 h-0.5 flex-1 transition-colors duration-200',
-        status === 'completed' && 'bg-blue-500',
-        status === 'current' && 'bg-blue-500',
+        status === 'completed' && 'bg-primary',
+        status === 'current' && 'bg-primary',
         status === 'pending' && 'bg-muted-foreground/30'
       )}
       aria-hidden="true"

@@ -10,6 +10,7 @@ import type { HistoryFilters, SubscriptionHistoryEventWithUser } from '@/types/b
 import { toast } from 'sonner'
 import { PageHeader, ListPagination } from '@/components/shared'
 import { m } from '@/paraglide/messages'
+import { formatDateTimeShort } from '@/lib/date-utils'
 
 export const Route = createFileRoute('/$realmId/manage/subscription-history')({
   beforeLoad: ({ context, params }) =>
@@ -72,7 +73,7 @@ function SubscriptionHistoryRoute() {
   // Handle event click
   function handleEventClick(event: SubscriptionHistoryEventWithUser) {
     toast.info(`Event details: ${event.eventType}`, {
-      description: `Timestamp: ${new Date(event.timestamp).toLocaleString()}`,
+      description: `Timestamp: ${formatDateTimeShort(event.timestamp)}`,
     })
   }
 

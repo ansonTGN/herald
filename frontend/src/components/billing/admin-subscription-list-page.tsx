@@ -62,7 +62,7 @@ function getStatusBadgeClass(status: string): string {
     case 'expired':
       return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
     default:
-      return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+      return 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400'
   }
 }
 

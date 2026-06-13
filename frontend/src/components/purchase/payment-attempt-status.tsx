@@ -242,7 +242,7 @@ export function PaymentAttemptStatus({
         return (
           <div data-testid="payment-status-requires-action" className="space-y-4">
             <div className="flex items-center gap-3">
-              <AlertCircle className="h-8 w-8 text-blue-600" />
+              <AlertCircle className="h-8 w-8 text-primary" />
               <div>
                 <h3 className="font-semibold text-lg">{m['points.payment_action_required']()}</h3>
                 <p className="text-sm text-muted-foreground">

@@ -20,7 +20,7 @@ export function InvoiceStatusBadge({ status, provider }: InvoiceStatusBadgeProps
     return (
       <div className="flex items-center gap-2">
         {statusBadgeEl}
-        <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+        <Badge variant="secondary" className="bg-teal-50 text-teal-700 border-teal-200 text-xs">
           {getProviderLabel(provider)}
         </Badge>
       </div>

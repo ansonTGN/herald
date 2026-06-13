@@ -148,7 +148,7 @@ function SettingsPage() {
     isLoading,
     error,
   } = useQuery({
-    queryKey: queryKeys.realmConfig(realmId),
+    queryKey: queryKeys.realmConfigs(realmId),
     queryFn: async () => {
       const response = await listRealmConfigs({ path: { realmId } })
       if (response.error) {
@@ -173,7 +173,7 @@ function SettingsPage() {
         body: { configs },
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.realmConfig(realmId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.realmConfigs(realmId) })
       toast.success(m['settings.config_saved_success']())
     },
     onError: (error: unknown) => {

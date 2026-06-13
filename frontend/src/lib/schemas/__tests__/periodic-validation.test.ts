@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { realmConfigSchema } from '../points-forms'
+import { pointsDefaultConfigSchema } from '../points-forms'
 
 describe('Periodic Validation Tests (P0)', () => {
   describe('Test 2.1: Grant Period Type Enum Validation', () => {
     it('GIVEN periodType is "yearly" WHEN validating THEN should fail', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: 50,
         freePeriodicGrantPeriodType: 'yearly' as any,
@@ -20,7 +20,7 @@ describe('Periodic Validation Tests (P0)', () => {
     })
 
     it('GIVEN periodType is "hourly" WHEN validating THEN should fail', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: 50,
         freePeriodicGrantPeriodType: 'hourly' as any,
@@ -31,7 +31,7 @@ describe('Periodic Validation Tests (P0)', () => {
     })
 
     it('GIVEN periodType is empty string WHEN validating THEN should fail', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: 50,
         freePeriodicGrantPeriodType: '' as any,
@@ -42,7 +42,7 @@ describe('Periodic Validation Tests (P0)', () => {
     })
 
     it('GIVEN periodType is null WHEN validating THEN should fail', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: 50,
         freePeriodicGrantPeriodType: null as any,
@@ -53,7 +53,7 @@ describe('Periodic Validation Tests (P0)', () => {
     })
 
     it('GIVEN periodType is undefined WHEN validating THEN should fail', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: 50,
         freePeriodicGrantPeriodType: undefined as any,
@@ -66,7 +66,7 @@ describe('Periodic Validation Tests (P0)', () => {
 
   describe('Test 2.2: Period Type and Validity Days Validation Logic', () => {
     it('GIVEN periodType is "once" and validityDays is 0 WHEN validating THEN should pass', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: 50,
         freePeriodicGrantPeriodType: 'once',
@@ -80,7 +80,7 @@ describe('Periodic Validation Tests (P0)', () => {
     })
 
     it('GIVEN periodType is "daily" and validityDays is 0 WHEN validating THEN should fail', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: 50,
         freePeriodicGrantPeriodType: 'daily',
@@ -98,7 +98,7 @@ describe('Periodic Validation Tests (P0)', () => {
     })
 
     it('GIVEN periodType is "weekly" and validityDays is 0 WHEN validating THEN should fail', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: 50,
         freePeriodicGrantPeriodType: 'weekly',
@@ -109,7 +109,7 @@ describe('Periodic Validation Tests (P0)', () => {
     })
 
     it('GIVEN periodType is "monthly" and validityDays is 0 WHEN validating THEN should fail', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: 50,
         freePeriodicGrantPeriodType: 'monthly',
@@ -122,7 +122,7 @@ describe('Periodic Validation Tests (P0)', () => {
 
   describe('Additional Periodic Field Validation', () => {
     it('GIVEN negative periodic points amount WHEN validating THEN should fail', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: -50,
         freePeriodicGrantPeriodType: 'daily',
@@ -138,7 +138,7 @@ describe('Periodic Validation Tests (P0)', () => {
     })
 
     it('GIVEN decimal periodic points amount WHEN validating THEN should fail', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: 50.5,
         freePeriodicGrantPeriodType: 'daily',

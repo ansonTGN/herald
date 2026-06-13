@@ -157,8 +157,8 @@ function FreeUserStatsPage() {
       value: stats.totalFreeUsers.toLocaleString(),
       icon: Users,
       description: m['points.free_stats_total_free_users_desc'](),
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50 dark:bg-blue-950',
+      color: 'text-primary',
+      bgColor: 'bg-primary/10',
     },
     {
       title: m['points.free_stats_active_free_users'](),
@@ -173,8 +173,8 @@ function FreeUserStatsPage() {
       value: stats.totalRegistrationBonusGranted.toLocaleString(),
       icon: Gift,
       description: m['points.free_stats_total_registration_bonus_desc'](),
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50 dark:bg-purple-950',
+      color: 'text-pink-600',
+      bgColor: 'bg-pink-50 dark:bg-pink-950',
     },
     {
       title: m['points.free_stats_total_periodic_granted'](),
@@ -343,8 +343,8 @@ function FreeUserStatsPage() {
                   {m['points.free_stats_avg_periodic_per_user_desc']()}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-cyan-50 dark:bg-cyan-950" aria-hidden="true">
-                <TrendingUp className="h-6 w-6 text-cyan-600" />
+              <div className="p-3 rounded-lg bg-teal-50 dark:bg-teal-950" aria-hidden="true">
+                <TrendingUp className="h-6 w-6 text-teal-600" />
               </div>
             </div>
           </CardContent>

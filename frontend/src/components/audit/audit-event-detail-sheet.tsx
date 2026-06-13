@@ -10,7 +10,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { auditDetailQueryOptions } from '@/data/query-options'
-import { formatDateTime } from '@/lib/date-utils'
+import { formatDateTimeShort } from '@/lib/date-utils'
 import { m } from '@/paraglide/messages'
 
 interface AuditEventDetailSheetProps {
@@ -75,7 +75,7 @@ export function AuditEventDetailSheet({ eventId, realmId, onClose }: AuditEventD
           {data && !isLoading && (
             <dl className="divide-y">
               <DetailField label={m['audit.detail_time_label']()}>
-                {formatDateTime(data.createdAt)}
+                {formatDateTimeShort(data.createdAt)}
               </DetailField>
               <DetailField label={m['audit.detail_actor_label']()}>
                 <div>

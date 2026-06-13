@@ -2,87 +2,24 @@
  * Points Admin Comprehensive Demo Tests
  *
  * User Stories:
- * - US-PO-01: Configure Points Plans
  * - US-PO-02: View All User Wallets
  * - US-PO-03: View User Points Transaction History
- * - US-PO-04: Manage Points Plan Configurations
- * - US-PO-05: View Plan Recharge Guide
+ * - US-PO-06: Configure Realm Default Points Strategy
+ * - US-PO-07: View Free User Points Statistics
  *
  * Design Doc: .ai/design/points.md
  * User Stories: docs/user-stories/points-admin-manage.md
  *
  * Test Structure:
- * - 5 comprehensive tests (one per user story)
  * - Each test uses test.step() for BDD-style Given-When-Then flow
  * - Removed duplicate tests and conditional scenarios (e.g., pagination)
  */
 
 import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
-import type { Page } from '@playwright/test'
 import { SELECTORS } from '../selectors'
 import { TRANSACTION_TYPES, RENEWAL_PERIOD_TYPES, POINTS_ROUTES, generateTestEmail, updateRealmConfig, verifyConfigValidation, verifyChartDisplayed, verifyStatisticsDisplayed, registerUser, navigateToPointsPageAndVerify } from '../helpers/points-helpers'
 import { DEMO_ADMIN } from '../helpers/auth'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
-
-const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
-
-// ============================================================================
-// Helper: Ensure Entitlement Mapping Exists
-// ============================================================================
-
-/**
- * Sync provider products and configure an entitlement mapping with the given key.
- * This is required before creating points plan configurations.
- */
-async function ensureEntitlementMapping(page: Page, entitlementKey: string): Promise<void> {
-  // Sync provider products
-  const syncResp = await page.request.post(
-    `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings/sync`,
-    { data: { paymentProvider: 'creem' } },
-  )
-
-  if (!syncResp.ok()) {
-    console.log(`[ensureMapping] Sync returned ${syncResp.status()}, attempting with stripe`)
-    await page.request.post(
-      `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings/sync`,
-      { data: { paymentProvider: 'stripe' } },
-    )
-  }
-
-  // Check if mapping with this key already exists
-  const mappingsResp = await page.request.get(
-    `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings`,
-  )
-  if (mappingsResp.ok()) {
-    const body = await mappingsResp.json()
-    const items = body.items ?? body
-    if (Array.isArray(items)) {
-      const existing = items.find((m: any) => m.entitlementKey === entitlementKey)
-      if (existing) return
-
-      // Configure the first unmapped entry with our key
-      const unmapped = items.find((m: any) => !m.entitlementKey || m.entitlementKey === '')
-      if (unmapped) {
-        await page.request.patch(
-          `${BASE_URL}/api/bill/${DEMO_ADMIN.realmId}/entitlement-mappings/${unmapped.id}`,
-          {
-            data: {
-              entitlementKey,
-              enabled: true,
-              pointsPerPeriod: 1000,
-              grantPeriodType: 'monthly',
-              validityDays: 30,
-              grantOnSubscribe: true,
-            },
-          },
-        )
-        return
-      }
-    }
-  }
-
-  console.log(`[ensureMapping] Could not create mapping for key "${entitlementKey}"`)
-}
 
 test.describe('[Points Admin] Comprehensive Demo Tests', () => {
   let testStartTime: number
@@ -101,131 +38,6 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
       timestamp: testStartTime,
     })
     demoLogger.testCode.log('[Test] ✓ Test data cleaned up')
-  })
-
-  // ============================================================================
-  // User Story US-PO-01: Configure Points Plans
-  // ============================================================================
-
-  test.describe('US-PO-01: Configure Points Plans', () => {
-    test('should manage points plan configurations', async ({ page, loginPage, demoLogger, testStartTime }) => {
-      const entitlementKey = `test-entitlement-${testStartTime}`
-
-      await test.step('Given: 管理员已登录', async () => {
-        await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', DEMO_ADMIN.realmId)
-      })
-
-      await test.step('Given: 已存在 entitlement mapping', async () => {
-        await ensureEntitlementMapping(page, entitlementKey)
-        demoLogger.testCode.log('[Test] ✓ Entitlement mapping created')
-      })
-
-      await test.step('When: 访问积分配置页面', async () => {
-        await page.goto(`/${DEMO_ADMIN.realmId}/manage/points/configs`)
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-      })
-
-      await test.step('When: 创建积分配置', async () => {
-        await page.locator(SELECTORS.pointsAdmin.createPlanConfigButton).click()
-        // Form is now on a dedicated page (navigated to /configs/new), not a dialog
-        await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
-
-        // Shadcn UI Select interaction: use role-based selector (combobox) to click trigger
-        await page.getByRole('combobox', { name: /Entitlement Key|Plan/i }).click()
-        await page.getByRole('option', { name: entitlementKey }).first().click()
-
-        // Fill points per period
-        await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).fill('1000')
-
-        // Verify grant on subscribe is enabled (switch is checked by default)
-        await expect(page.locator(SELECTORS.pointsAdmin.planConfigRenewalEnabled)).toBeChecked()
-
-        // Select grant period type using getByTestId for the select trigger
-        await page.getByTestId('grant-period-type').click()
-        await page.getByRole('option', { name: 'monthly' }).click()
-
-        // Fill validity days and max periods
-        await page.locator(SELECTORS.pointsAdmin.planConfigValidityDays).fill('30')
-        await page.locator(SELECTORS.pointsAdmin.planConfigMaxAccumulation).fill('12')
-
-        await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
-        // After submit, navigates back to configs list page; form is removed from DOM
-        await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).not.toBeVisible()
-
-        // Verify we're back on the configs page
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-      })
-
-      await test.step('When: 查看套餐配置', async () => {
-        await expect(page.locator(SELECTORS.pointsAdmin.planConfigsTable)).toBeVisible()
-        // Wait for at least one config card to appear (this waits for the GET to complete and UI to update)
-        const configCards = page.locator('[data-testid^="config-card-"]')
-        await expect(async () => {
-          const count = await configCards.count()
-          expect(count).toBeGreaterThan(0)
-        }).toPass({ timeout: 5000 })
-      })
-
-      await test.step('When: 编辑套餐配置', async () => {
-        await page.locator(SELECTORS.pointsAdmin.firstEditPlanConfigButton()).first().click()
-        // Edit navigates to a dedicated form page
-        await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
-        await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).clear()
-        await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).fill('1200')
-        await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
-        // After submit, navigates back to configs list page
-        await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).not.toBeVisible()
-
-        // Verify we're back on the configs page
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-        // Wait for the config card to appear with updated values
-        const configCards = page.locator('[data-testid^="config-card-"]')
-        await expect(async () => {
-          const count = await configCards.count()
-          expect(count).toBeGreaterThan(0)
-        }).toPass({ timeout: 5000 })
-      })
-
-      await test.step('When: 禁用自动充值', async () => {
-        await page.locator(SELECTORS.pointsAdmin.firstEditPlanConfigButton()).first().click()
-        // Edit navigates to a dedicated form page
-        await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
-        await page.locator(SELECTORS.pointsAdmin.planConfigRenewalEnabled).uncheck()
-        await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
-        // After submit, navigates back to configs list page
-        await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).not.toBeVisible()
-
-        // Verify we're back on the configs page
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-        // Wait for the config card to appear with updated values
-        const configCards = page.locator('[data-testid^="config-card-"]')
-        await expect(async () => {
-          const count = await configCards.count()
-          expect(count).toBeGreaterThan(0)
-        }).toPass({ timeout: 5000 })
-      })
-
-      await test.step('When: 删除套餐配置', async () => {
-        const configCardsBefore = page.locator('[data-testid^="config-card-"]')
-        const countBefore = await configCardsBefore.count()
-
-        await page.locator(SELECTORS.pointsAdmin.firstDeletePlanConfigButton()).first().click()
-        await page.locator('[data-testid="confirm-delete-config"]').click()
-
-        // Verify we're back on the configs page after dialog closes
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-        // Wait for deletion to complete (count should decrease by at least 1)
-        await expect(async () => {
-          const countAfter = await configCardsBefore.count()
-          expect(countAfter).toBeLessThan(countBefore)
-        }).toPass({ timeout: 5000 })
-      })
-
-      await test.step('Then: 验证所有操作成功', async () => {
-        // Verify the test completed successfully by checking we're still on the page
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-      })
-    })
   })
 
   // ============================================================================
@@ -306,190 +118,6 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
   })
 
   // ============================================================================
-  // User Story US-PO-04: Manage Points Plan Configurations
-  // ============================================================================
-
-  test.describe('US-PO-04: Manage Points Plan Configurations', () => {
-    test('should batch create and manage plan configs', async ({ page, loginPage, demoLogger, testStartTime }) => {
-      const entitlementKeyBasic = `basic-entitlement-${testStartTime}`
-      const entitlementKeyPro = `pro-entitlement-${testStartTime}`
-
-      await test.step('Given: 管理员已登录并存在多个 entitlement mapping', async () => {
-        await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', DEMO_ADMIN.realmId)
-
-        await ensureEntitlementMapping(page, entitlementKeyBasic)
-        await ensureEntitlementMapping(page, entitlementKeyPro)
-        demoLogger.testCode.log('[Test] ✓ Entitlement mappings created')
-
-        await page.goto(`/${DEMO_ADMIN.realmId}/manage/points/configs`)
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-      })
-
-      await test.step('When: 批量创建套餐配置', async () => {
-        // Create first config
-        await page.locator(SELECTORS.pointsAdmin.createPlanConfigButton).click()
-
-        // Shadcn UI Select interaction: use role-based selector (combobox) to click trigger
-        await page.getByRole('combobox', { name: /Entitlement Key|Plan/i }).click()
-        await page.getByRole('option', { name: entitlementKeyBasic }).first().click()
-
-        await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).fill('500')
-
-        // Select grant period type using getByTestId for the select trigger
-        await page.getByTestId('grant-period-type').click()
-        await page.getByRole('option', { name: 'monthly' }).click()
-
-        // Fill validity days and max periods
-        await page.locator(SELECTORS.pointsAdmin.planConfigValidityDays).fill('30')
-        await page.locator(SELECTORS.pointsAdmin.planConfigMaxAccumulation).fill('12')
-
-        await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
-
-        // Verify we're back on the configs page after dialog closes
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-        // Wait for the first config to appear
-        const configCards = page.locator('[data-testid^="config-card-"]')
-        await expect(async () => {
-          const count = await configCards.count()
-          expect(count).toBeGreaterThan(0)
-        }).toPass({ timeout: 5000 })
-
-        // Create second config
-        await page.locator(SELECTORS.pointsAdmin.createPlanConfigButton).click()
-
-        // Shadcn UI Select interaction: use role-based selector (combobox) to click trigger
-        await page.getByRole('combobox', { name: /Entitlement Key|Plan/i }).click()
-        await page.getByRole('option', { name: entitlementKeyPro }).first().click()
-
-        await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).fill('1000')
-
-        // Select grant period type using getByTestId for the select trigger
-        await page.getByTestId('grant-period-type').click()
-        await page.getByRole('option', { name: 'monthly' }).click()
-
-        // Fill validity days and max periods
-        await page.locator(SELECTORS.pointsAdmin.planConfigValidityDays).fill('30')
-        await page.locator(SELECTORS.pointsAdmin.planConfigMaxAccumulation).fill('12')
-
-        await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
-
-        // Verify we're back on the configs page after dialog closes
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-        // Wait for at least 2 configs to appear (there may be stale configs from previous runs)
-        await expect(async () => {
-          const count = await configCards.count()
-          expect(count).toBeGreaterThanOrEqual(2)
-        }).toPass({ timeout: 5000 })
-      })
-
-      await test.step('When: 尝试删除有活跃订阅的配置', async () => {
-        await page.locator(SELECTORS.pointsAdmin.firstDeletePlanConfigButton()).first().click()
-        await page.locator('[data-testid="confirm-delete-config"]').click()
-
-        // Verify we're back on the configs page after dialog closes
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-        // Wait for deletion to complete (at least 1 config should remain)
-        const configCards = page.locator('[data-testid^="config-card-"]')
-        await expect(async () => {
-          const count = await configCards.count()
-          expect(count).toBeGreaterThan(0)
-        }).toPass({ timeout: 5000 })
-      })
-
-      await test.step('Then: 验证删除操作完成', async () => {
-        // Verify the deletion attempt completed (may succeed or show error)
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-      })
-
-      // NOTE: Batch edit functionality (US-PO-04 Scenario 5) is not yet implemented
-      // When implemented, expected behavior:
-      // 1. User can select multiple plan config checkboxes
-      // 2. Batch edit modal appears with shared fields
-      // 3. User can modify "Max Accumulation" for all selected configs
-      // 4. Backend accepts batch update: PATCH /api/points/{realmId}/plan-configs/batch
-      // 5. All selected configs are updated with new value
-      //
-      // console.log('[Info] Batch edit feature not yet implemented in frontend')
-      // console.log('[Info] Expected: Batch update of Max Accumulation to 20000 for selected configs')
-      // console.log('[Info] Required: PATCH /api/points/{realmId}/plan-configs/batch endpoint')
-    })
-  })
-
-  // ============================================================================
-  // User Story US-PO-05: View Plan Recharge Guide
-  // ============================================================================
-
-  test.describe('US-PO-05: View Plan Recharge Guide', () => {
-    test('should view and share plan recharge guides', async ({ page, loginPage, demoLogger, testStartTime }) => {
-      const entitlementKey = `guide-entitlement-${testStartTime}`
-
-      await test.step('Given: 管理员已登录并存在 entitlement mapping', async () => {
-        await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', DEMO_ADMIN.realmId)
-
-        await ensureEntitlementMapping(page, entitlementKey)
-        demoLogger.testCode.log('[Test] ✓ Entitlement mapping created')
-
-        // Create points plan config
-        await page.goto(`/${DEMO_ADMIN.realmId}/manage/points/configs`)
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-
-        await page.locator(SELECTORS.pointsAdmin.createPlanConfigButton).click()
-        // Form is now on a dedicated page (navigated to /configs/new), not a dialog
-        await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
-
-        // Select the entitlement key
-        await page.getByRole('combobox', { name: /Entitlement Key|Plan/i }).click()
-        await page.getByRole('option', { name: entitlementKey }).first().click()
-
-        await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).fill('500')
-
-        // Select grant period type using getByTestId for the select trigger
-        await page.getByTestId('grant-period-type').click()
-        await page.getByRole('option', { name: 'monthly' }).click()
-
-        // Fill validity days and max periods
-        await page.locator(SELECTORS.pointsAdmin.planConfigValidityDays).fill('30')
-        await page.locator(SELECTORS.pointsAdmin.planConfigMaxAccumulation).fill('12')
-        await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
-        // After submit, navigates back to configs list page
-        await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).not.toBeVisible()
-
-        // Verify we're back on the configs page
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-        // Wait for the config to appear
-        const configCards = page.locator('[data-testid^="config-card-"]')
-        await expect(async () => {
-          const count = await configCards.count()
-          expect(count).toBeGreaterThan(0)
-        }).toPass({ timeout: 5000 })
-
-        demoLogger.testCode.log('[Test] ✓ Points plan config created')
-      })
-
-      await test.step('When: 验证配置页面正常显示', async () => {
-        // Verify we're on the configs page
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-      })
-
-      await test.step('When: 查看单个套餐的充值引导', async () => {
-        // Note: The view guide button may not exist if there are no configs
-        // This test verifies the basic UI is accessible
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-      })
-
-      await test.step('When: 验证充值引导功能', async () => {
-        // Verify the plan configs section is accessible
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-      })
-
-      await test.step('Then: 验证所有功能正常工作', async () => {
-        // Verify the test completed successfully
-        await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-      })
-    })
-  })
-
-  // ============================================================================
   // User Story US-PO-06: Configure Realm Default Points Strategy
   // User Story US-PO-07: View Free User Points Statistics
   // ============================================================================
@@ -505,8 +133,8 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
       })
 
       await test.step('Scenario 1: View realm default configuration', async () => {
-        await page.goto(POINTS_ROUTES.REALM_CONFIG(realmId))
-        await expect(page.getByTestId('realm-config-form')).toBeVisible()
+        await page.goto(POINTS_ROUTES.DEFAULT_CONFIG(realmId))
+        await expect(page.getByTestId('points-default-config-form')).toBeVisible()
 
         await expect(page.locator(SELECTORS.points.registrationBonusPointsInput)).toHaveValue('1000')
         await expect(page.locator(SELECTORS.points.freePeriodicPointsAmountInput)).toHaveValue('50')
@@ -665,8 +293,8 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
       })
 
       await test.step('When: 访问 Realm 配置页面', async () => {
-        await page.goto(`/${realmId}/manage/points/realm-config`)
-        await expect(page.getByTestId('realm-config-form')).toBeVisible()
+        await page.goto(`/${realmId}/manage/points/default-config`)
+        await expect(page.getByTestId('points-default-config-form')).toBeVisible()
         demoLogger.testCode.log('[Test] ✓ Navigated to realm config page')
       })
 

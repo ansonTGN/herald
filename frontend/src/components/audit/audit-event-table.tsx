@@ -2,7 +2,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { DataTable } from '@/components/shared'
 import { Badge } from '@/components/ui/badge'
 import type { AuditEventResponse } from '@/lib/api-generated'
-import { formatDateTime } from '@/lib/date-utils'
+import { formatDateTimeShort } from '@/lib/date-utils'
 import { m } from '@/paraglide/messages'
 
 interface AuditEventTableProps {
@@ -16,7 +16,9 @@ const columns: ColumnDef<AuditEventResponse>[] = [
     accessorKey: 'createdAt',
     header: () => m['audit.table_time'](),
     cell: ({ getValue }) => (
-      <span className="whitespace-nowrap text-sm">{formatDateTime(getValue() as string)}</span>
+      <span className="whitespace-nowrap text-sm font-mono">
+        {formatDateTimeShort(getValue() as string)}
+      </span>
     ),
   },
   {

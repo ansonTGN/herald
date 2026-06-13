@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react'
+import { useMemo } from 'react'
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import {
   Table,
@@ -14,6 +14,7 @@ import type { PointsTransactionResponse } from '@/lib/api-generated'
 import type { TransactionFilters } from '@/lib/schemas/points-forms'
 import { useActiveFilters } from '@/hooks/use-active-filters'
 import { m } from '@/paraglide/messages'
+import { formatDateTimeShort } from '@/lib/date-utils'
 
 interface TransactionHistoryTableProps {
   transactions: PointsTransactionResponse[]
@@ -30,12 +31,6 @@ export function TransactionHistoryTable({
   admin = false,
   clientApps,
 }: TransactionHistoryTableProps) {
-  // Memoized date formatter to avoid re-creating date objects on every render
-  const formatDate = useCallback((dateStr: string) => {
-    const date = new Date(dateStr)
-    return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`
-  }, [])
-
   const hasActiveFilters = useActiveFilters(filters)
 
   // Memoized client app map for O(1) lookup
@@ -55,7 +50,7 @@ export function TransactionHistoryTable({
           return (
             <div className="flex items-center gap-2" data-testid={`transaction-time-${row.index}`}>
               <Clock className="h-3 w-3 text-muted-foreground" />
-              <span className="text-sm">{formatDate(dateStr)}</span>
+              <span className="text-sm font-mono">{formatDateTimeShort(dateStr)}</span>
             </div>
           )
         },
@@ -170,7 +165,7 @@ export function TransactionHistoryTable({
         },
       },
     ],
-    [admin, clientAppsMap, formatDate]
+    [admin, clientAppsMap]
   )
 
   const table = useReactTable({

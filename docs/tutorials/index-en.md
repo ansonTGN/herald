@@ -1,6 +1,6 @@
 # Herald
 
-Multi-tenant authentication and authorization system. Rust backend + React frontend, single-process deployment, Docker in production.
+An out-of-the-box SaaS foundation: multi-tenant account system, Stripe/Creem payment integration, and a built-in credits system. Rust backend + React frontend, single-process deployment, Docker in production.
 
 ## Who this is for
 

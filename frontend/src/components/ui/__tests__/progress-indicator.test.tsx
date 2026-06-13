@@ -81,9 +81,9 @@ describe('ProgressIndicator component', () => {
 
       const connectors = container.querySelectorAll('[data-slot="progress-connector"]')
 
-      expect(connectors[0]).toHaveClass('bg-blue-500')
-      expect(connectors[1]).toHaveClass('bg-blue-500')
-      expect(connectors[2]).toHaveClass('bg-blue-500')
+      expect(connectors[0]).toHaveClass('bg-primary')
+      expect(connectors[1]).toHaveClass('bg-primary')
+      expect(connectors[2]).toHaveClass('bg-primary')
     })
   })
 

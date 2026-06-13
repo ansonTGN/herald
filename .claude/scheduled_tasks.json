@@ -1,3 +1,12 @@
 {
-  "tasks": []
+  "tasks": [
+    {
+      "id": "c44d386f",
+      "cron": "32 6 14 6 *",
+      "prompt": "按以下步骤修复 `.ai/future/invoice_ux.md` 中描述的问题：\n1. 先完整阅读 `.ai/future/invoice_ux.md`，理解其中列出的问题与背景。\n2. 根据问题类型，调用合适的 subagent 修复——例如前端/React 问题用 frontend-dev，后端/Rust API 问题用 backend-dev，测试问题用对应的 test agent。\n3. 重要：严禁并行调用多个 subagent。必须串行执行——一次只调用一个 subagent，等它彻底完成并汇报后，再决定并调用下一个。\n4. 修复后做必要的验证（编译/相关测试），最后简要总结每项修复内容与验证结果。",
+      "createdAt": 1781364757982,
+      "createdBySessionId": "d43a300c-57d9-47a6-9150-d95b5e5a7e7c",
+      "createdByPid": 11320
+    }
+  ]
 }

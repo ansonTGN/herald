@@ -3,7 +3,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '@/test/mocks/server'
 import { QueryClient } from '@tanstack/react-query'
 import { QUERY_KEYS } from '@/lib/constants'
-import { realmConfigSchema } from '@/lib/schemas/points-forms'
+import { pointsDefaultConfigSchema } from '@/lib/schemas/points-forms'
 
 describe('Realm Configuration - High-Value Logic Tests', () => {
   afterEach(() => {
@@ -20,7 +20,7 @@ describe('Realm Configuration - High-Value Logic Tests', () => {
 
   describe('schema validation edge cases', () => {
     it('GIVEN negative registration bonus WHEN validating THEN should fail', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: -100,
         freePeriodicPointsAmount: 50,
         freePeriodicGrantPeriodType: 'daily',
@@ -36,7 +36,7 @@ describe('Realm Configuration - High-Value Logic Tests', () => {
     })
 
     it('GIVEN zero validity days with daily period WHEN validating THEN should fail', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: 50,
         freePeriodicGrantPeriodType: 'daily',
@@ -51,7 +51,7 @@ describe('Realm Configuration - High-Value Logic Tests', () => {
     })
 
     it('GIVEN zero validity days with once period WHEN validating THEN should succeed', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: 50,
         freePeriodicGrantPeriodType: 'once',
@@ -62,7 +62,7 @@ describe('Realm Configuration - High-Value Logic Tests', () => {
     })
 
     it('GIVEN negative periodic points WHEN validating THEN should fail', () => {
-      const result = realmConfigSchema.safeParse({
+      const result = pointsDefaultConfigSchema.safeParse({
         registrationBonusPoints: 1000,
         freePeriodicPointsAmount: -50,
         freePeriodicGrantPeriodType: 'daily',
@@ -214,7 +214,7 @@ describe('Realm Configuration - High-Value Logic Tests', () => {
         updatedAt: '2026-03-23T00:00:00Z',
       }
 
-      const result = realmConfigSchema.safeParse(apiResponse)
+      const result = pointsDefaultConfigSchema.safeParse(apiResponse)
 
       expect(result.success).toBe(true)
       if (result.success) {
@@ -233,7 +233,7 @@ describe('Realm Configuration - High-Value Logic Tests', () => {
         freePeriodicValidityDays: '1',
       }
 
-      const result = realmConfigSchema.safeParse(apiResponse)
+      const result = pointsDefaultConfigSchema.safeParse(apiResponse)
 
       // Zod schema expects numbers, not strings
       expect(result.success).toBe(false)

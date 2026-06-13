@@ -52,8 +52,8 @@ function getEventTypeLabels(): Record<string, string> {
 
 const EVENT_TYPE_COLORS: Record<string, string> = {
   created: 'bg-green-100 text-green-800 border-green-200',
-  updated: 'bg-blue-100 text-blue-800 border-blue-200',
-  issued: 'bg-blue-100 text-blue-800 border-blue-200',
+  updated: 'bg-teal-100 text-teal-800 border-teal-200',
+  issued: 'bg-teal-100 text-teal-800 border-teal-200',
   paid: 'bg-green-100 text-green-800 border-green-200',
   void: 'bg-red-100 text-red-800 border-red-200',
   overdue: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -160,10 +160,10 @@ function InvoiceContent({ invoice }: { invoice: InvoiceDetailResponse }) {
     <div className="space-y-6">
       {isExt && (
         <div
-          className="rounded-md border border-blue-200 bg-blue-50 p-3 flex items-center justify-between"
+          className="rounded-md border border-teal-200 bg-teal-50 p-3 flex items-center justify-between"
           data-testid="invoice-external-provider-banner"
         >
-          <p className="text-sm text-blue-800">
+          <p className="text-sm text-teal-800">
             {m['billing.invoice_external_managed']({ provider: getProviderLabel(provider) })}
           </p>
           {externalUrl && (

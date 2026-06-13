@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/shared'
 import { InvoiceStatusBadge } from '@/components/billing/invoices/invoice-status-badge'
 import { ListPagination } from '@/components/shared'
 import type { InvoiceResponse } from '@/lib/api-generated'
+import { formatDate } from '@/lib/date-utils'
 import { myInvoiceListQueryOptions } from '@/data/invoice-query-options'
 import {
   formatInvoiceAmount,
@@ -48,7 +49,7 @@ function createInvoiceColumns(
         const provider = row.original.provider
         if (provider === 'manual') return null
         return (
-          <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+          <Badge variant="secondary" className="bg-teal-50 text-teal-700 border-teal-200 text-xs">
             {getProviderLabel(provider)}
           </Badge>
         )
@@ -78,7 +79,7 @@ function createInvoiceColumns(
       header: m['billing.invoice_due_date'](),
       cell: ({ row }) => {
         const dueDate = row.getValue('dueDate') as string
-        return <span className="text-sm">{new Date(dueDate).toLocaleDateString()}</span>
+        return <span className="text-sm">{formatDate(dueDate)}</span>
       },
     },
     {
@@ -129,7 +130,7 @@ function createInvoiceColumns(
               className="text-xs text-muted-foreground"
               data-testid={`invoice-managed-external-${invoice.id}`}
             >
-              {m['billing.invoice_external_managed_short']({
+              {m['billing.invoice_external_link_pending']({
                 provider: getProviderLabel(provider),
               })}
             </span>

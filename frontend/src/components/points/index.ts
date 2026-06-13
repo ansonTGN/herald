@@ -1,8 +1,6 @@
 export { PointsBalanceCard } from './PointsBalanceCard'
 export { TransactionFilters } from './TransactionFilters'
 export { TransactionHistoryTable } from './TransactionHistoryTable'
-export { PointsPlanConfigForm } from './PointsPlanConfigForm'
 export { GrantPointsDialog } from './grant-points-dialog'
 export { PointsWalletsPage } from './wallets/PointsWalletsPage'
-export { PointsConfigsPage } from './configs/PointsConfigsPage'
 export { UserPointsPage } from './UserPointsPage'

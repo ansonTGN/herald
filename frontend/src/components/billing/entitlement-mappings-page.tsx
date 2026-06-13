@@ -138,7 +138,7 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
                     <TableHead>External Product ID</TableHead>
                     <TableHead>External Price ID</TableHead>
                     <TableHead>Entitlement Key</TableHead>
-                    <TableHead>Points Policy</TableHead>
+                    <TableHead>Subscription Points</TableHead>
                     <TableHead>Synced At</TableHead>
                     <TableHead>Enabled</TableHead>
                   </TableRow>
@@ -202,7 +202,7 @@ function MappingRow({
     })
   }
 
-  const pointsPolicyLabel = mapping.pointsPerPeriod != null ? 'Synced' : 'Not Configured'
+  const pointsPolicyLabel = mapping.pointsPerPeriod != null ? 'Grant Configured' : 'No Grant'
 
   return (
     <TableRow

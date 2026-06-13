@@ -375,7 +375,7 @@ describe('InvoiceUserPage', () => {
       })
     })
 
-    it('shows Managed by text for external invoice without any URL', async () => {
+    it('shows provider-managed pending text for external invoice without any URL', async () => {
       const invoice = makeInvoice({
         id: 'inv-ext-nourl',
         provider: 'stripe',
@@ -394,7 +394,7 @@ describe('InvoiceUserPage', () => {
       await waitFor(() => {
         expect(screen.getByTestId('invoice-managed-external-inv-ext-nourl')).toBeInTheDocument()
         expect(screen.getByTestId('invoice-managed-external-inv-ext-nourl')).toHaveTextContent(
-          'Managed by Stripe'
+          'Stripe is managing this invoice. The invoice link will appear here when available.'
         )
       })
     })

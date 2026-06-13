@@ -287,7 +287,7 @@ function LoginPage() {
               <Link
                 to="/$realmId/auth/register"
                 params={{ realmId }}
-                className="text-sm font-medium text-blue-600 hover:text-blue-500"
+                className="text-sm font-medium text-primary hover:text-primary/80"
                 data-testid="register-link"
               >
                 {m['auth.login.register_link']()}

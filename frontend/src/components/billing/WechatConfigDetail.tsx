@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { formatDateTimeShort } from '@/lib/date-utils'
 
 export interface WechatConfigFieldsProps {
   config: {
@@ -121,9 +122,7 @@ export function WechatConfigDetail({
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>WeChat Pay Configuration</CardTitle>
-            <CardDescription>
-              Last updated: {new Date(config.updatedAt).toLocaleString()}
-            </CardDescription>
+            <CardDescription>Last updated: {formatDateTimeShort(config.updatedAt)}</CardDescription>
           </div>
           <Badge variant="default">Active</Badge>
         </div>

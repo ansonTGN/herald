@@ -49,7 +49,10 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     (newLocale: Locale) => {
       if (!locales.includes(newLocale)) return
       if (newLocale === locale) return
-      setLocale(newLocale, { reload: false })
+      // Reload the page so every component re-evaluates its `m.*` messages in the
+      // new locale. Without the reload, only consumers of this context re-render;
+      // the ~140 components that call `m.*` directly would keep the old language.
+      setLocale(newLocale)
       setLocalState(newLocale)
     },
     [locale]

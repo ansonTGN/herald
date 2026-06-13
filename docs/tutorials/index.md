@@ -1,6 +1,6 @@
 # Herald
 
-多租户认证与授权系统。Rust 后端 + React 前端，单体部署，Docker 上线。
+开箱即用的 SaaS 底座：多租户账户体系、对接 Stripe / Creem 支付、自带积分系统。Rust 后端 + React 前端，单体部署，Docker 上线。
 
 ## 给谁看
 

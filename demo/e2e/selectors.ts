@@ -72,9 +72,9 @@ export const SELECTORS = {
    * Language Switcher Selectors
    */
   languageSwitcher: {
-    container: '[data-testid="language-switcher"]',
-    enButton: '[data-testid="language-switcher-en"]',
-    zhButton: '[data-testid="language-switcher-zh"]',
+    trigger: '[data-testid="language-switcher"]',
+    enItem: '[data-testid="language-switcher-item-en"]',
+    zhItem: '[data-testid="language-switcher-item-zh-CN"]',
   },
 
   /**
@@ -585,7 +585,6 @@ export const SELECTORS = {
   pointsAdmin: {
     // Page containers
     accountsPage: '[data-testid="points-wallets-page"]',
-    configsPage: '[data-testid="points-configs-page"]',
     heading: 'h1:has-text("Points Management")',
     // User Wallets Section
     accountsSection: '[data-testid="points-wallets-page"]',
@@ -617,31 +616,6 @@ export const SELECTORS = {
     filterClientApp: '[data-testid="filter-client-app"]',
     resetFiltersButton: '[data-testid="clear-filters-button"]',
     applyFiltersButton: '[data-testid="apply-filters-button"]',
-    // Plan Configs Section
-    planConfigsSection: '[data-testid="points-configs-page"]',
-    planConfigsTable: '[data-testid="points-configs-page"]',
-    planConfigRow: (configId: string) =>
-      `[data-testid="config-card-${configId}"]`,
-    createPlanConfigButton: '[data-testid="create-config-button"]',
-    editPlanConfigButton: (configId: string) =>
-      `[data-testid="edit-config-${configId}"]`,
-    deletePlanConfigButton: (configId: string) =>
-      `[data-testid="delete-config-${configId}"]`,
-    // Plan Config Dialog
-    planConfigDialog: '[data-testid="points-plan-config-form"]',
-    planConfigPlanId: '[data-testid="plan-select"]',
-    planConfigPointsOnSubscribe: '[data-testid="points-per-period"]',
-    planConfigRenewalEnabled: '[data-testid="grant-on-subscribe"]',
-    planConfigRenewalPeriodType: '[data-testid="grant-period-type"]',
-    planConfigValidityDays: '[data-testid="validity-days"]',
-    planConfigMaxAccumulation: '[data-testid="max-periods"]',
-    planConfigSubmitButton: '[data-testid="submit-button"]',
-    planConfigCancelButton: '[data-testid="cancel-button"]',
-    // Helper methods for dynamic selectors
-    firstEditPlanConfigButton: () => '[data-testid^="edit-config-"]',
-    firstDeletePlanConfigButton: () => '[data-testid^="delete-config-"]',
-    firstViewGuideButton: () => '[data-testid^="points-view-guide-"]',
-    firstShareGuideButton: () => '[data-testid^="points-share-guide-"]',
   },
   /**
    * Points User Page Selectors
@@ -708,7 +682,7 @@ export const SELECTORS = {
 
   /**
    * Points Configuration Selectors (Admin)
-   * Route: /{realmId}/admin/points/realm-config
+   * Route: /{realmId}/admin/points/default-config
    */
   points: {
     // Realm Configuration

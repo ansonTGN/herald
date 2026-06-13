@@ -198,11 +198,11 @@ export function EntitlementMappingDetailDialog({
                     )}
                   </form.Field>
 
-                  {/* Points Per Period */}
+                  {/* Subscription Points Per Period */}
                   <form.Field name="pointsPerPeriod">
                     {(field) => (
                       <div className="space-y-2">
-                        <Label htmlFor={field.name}>Points Per Period</Label>
+                        <Label htmlFor={field.name}>Subscription Points Per Period</Label>
                         <Input
                           id={field.name}
                           type="number"

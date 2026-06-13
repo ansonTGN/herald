@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { HistoryEventBadge } from './history-event-badge'
 import type { SubscriptionHistoryEvent } from '@/types/billing'
 import { m } from '@/paraglide/messages'
+import { formatDate } from '@/lib/date-utils'
 
 interface UserSubscriptionTimelineProps {
   events: SubscriptionHistoryEvent[]
@@ -112,8 +113,8 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
                           <span className="text-muted-foreground">
                             {m['billing.subscription_state_detail_period']()}:{' '}
                           </span>
-                          {new Date(event.previousState.currentPeriodStart).toLocaleDateString()} -{' '}
-                          {new Date(event.previousState.currentPeriodEnd).toLocaleDateString()}
+                          {formatDate(event.previousState.currentPeriodStart)} -{' '}
+                          {formatDate(event.previousState.currentPeriodEnd)}
                         </div>
                       )}
                   </div>
@@ -143,8 +144,8 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
                         <span className="text-muted-foreground">
                           {m['billing.subscription_state_detail_period']()}:{' '}
                         </span>
-                        {new Date(event.newState.currentPeriodStart).toLocaleDateString()} -{' '}
-                        {new Date(event.newState.currentPeriodEnd).toLocaleDateString()}
+                        {formatDate(event.newState.currentPeriodStart)} -{' '}
+                        {formatDate(event.newState.currentPeriodEnd)}
                       </div>
                     )}
                   </div>
@@ -157,14 +158,14 @@ function EventCard({ event, isExpanded, onToggle }: EventCardProps) {
                   <div className="flex items-center gap-2 text-sm pt-2 border-t border-border/50">
                     {event.changes.previousEntitlementKey && event.changes.newEntitlementKey ? (
                       <>
-                        <ArrowUp className="h-4 w-4 text-blue-500" />
+                        <ArrowUp className="h-4 w-4 text-primary" />
                         <span className="text-muted-foreground">
                           {m['billing.subscription_plan_changed']()}
                         </span>
                       </>
                     ) : event.changes.newEntitlementKey ? (
                       <>
-                        <ArrowUp className="h-4 w-4 text-blue-500" />
+                        <ArrowUp className="h-4 w-4 text-primary" />
                         <span className="text-muted-foreground">
                           {m['billing.subscription_plan_assigned']()}
                         </span>

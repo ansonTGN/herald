@@ -2,31 +2,6 @@ import { z } from 'zod'
 import { m } from '@/paraglide/messages'
 
 /**
- * Schema for creating/updating points plan configuration
- */
-export const pointsPlanConfigSchema = z.object({
-  planId: z.string().min(1, { error: () => m['points.validation_plan_required']() }),
-  pointsPerPeriod: z
-    .number()
-    .int({ error: () => m['points.validation_points_integer']() })
-    .min(0, { error: () => m['points.validation_points_non_negative']() }),
-  grantOnSubscribe: z.boolean(),
-  grantPeriodType: z.enum(['once', 'daily', 'weekly', 'monthly']),
-  maxPeriods: z
-    .number()
-    .int({ error: () => m['points.validation_max_periods_integer']() })
-    .min(0, { error: () => m['points.validation_max_periods_non_negative']() })
-    .nullable()
-    .optional(),
-  validityDays: z
-    .number()
-    .int({ error: () => m['points.validation_validity_days_integer']() })
-    .min(1, { error: () => m['points.validation_validity_days_min']() }),
-})
-
-export type PointsPlanConfigFormData = z.infer<typeof pointsPlanConfigSchema>
-
-/**
  * Schema for transaction filters
  */
 export const transactionFiltersSchema = z.object({
@@ -69,13 +44,13 @@ export const grantPointsSchema = z.object({
 export type GrantPointsFormData = z.infer<typeof grantPointsSchema>
 
 /**
- * Schema for realm default configuration
+ * Schema for points default configuration
  *
  * Note: This schema matches the backend API response.
  * The backend uses freePeriodic* fields instead of dailyPoints* fields.
  * Use generated types from src/lib/api-generated/ as the source of truth.
  */
-export const realmConfigSchema = z
+export const pointsDefaultConfigSchema = z
   .object({
     registrationBonusPoints: z
       .number()
@@ -103,4 +78,4 @@ export const realmConfigSchema = z
     }
   })
 
-export type RealmConfigFormData = z.infer<typeof realmConfigSchema>
+export type PointsDefaultConfigFormData = z.infer<typeof pointsDefaultConfigSchema>

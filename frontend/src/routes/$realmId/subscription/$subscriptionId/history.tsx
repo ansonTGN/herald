@@ -7,6 +7,7 @@ import { SubscriptionTimeline } from '@/components/billing/subscription-timeline
 import { queryKeys, subscriptionHistoryQueryOptions } from '@/data/query-options'
 import { toast } from 'sonner'
 import { m } from '@/paraglide/messages'
+import { formatDateTimeShort } from '@/lib/date-utils'
 
 export const Route = createFileRoute('/$realmId/subscription/$subscriptionId/history')({
   component: SubscriptionDetailHistoryRoute,
@@ -119,7 +120,7 @@ function SubscriptionDetailHistoryRoute() {
             loading={historyLoading}
             onEventClick={(event) => {
               toast.info(`Event: ${event.eventType}`, {
-                description: `Timestamp: ${new Date(event.timestamp).toLocaleString()}`,
+                description: `Timestamp: ${formatDateTimeShort(event.timestamp)}`,
               })
             }}
           />

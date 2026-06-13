@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Edit, Trash2 } from 'lucide-react'
+import { formatDateTimeShort } from '@/lib/date-utils'
 
 export interface ShopifyConfigFieldsProps {
   config: {
@@ -171,7 +172,7 @@ export function ShopifyConfigDetail({ config, onEdit, onDelete }: ShopifyConfigD
           <div>
             <CardTitle>Shopify Configuration</CardTitle>
             <CardDescription>
-              Last updated: {new Date(config.lastUpdated).toLocaleString()}
+              Last updated: {formatDateTimeShort(config.lastUpdated)}
             </CardDescription>
           </div>
           <Badge variant={config.enabled ? 'default' : 'secondary'}>

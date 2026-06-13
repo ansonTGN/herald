@@ -16,13 +16,13 @@ const sizeClasses = {
 
 const colorClasses: Record<SubscriptionHistoryEventType, string> = {
   created: 'bg-green-100 text-green-800 border-green-200',
-  upgraded: 'bg-blue-100 text-blue-800 border-blue-200',
+  upgraded: 'bg-teal-100 text-teal-800 border-teal-200',
   downgraded: 'bg-orange-100 text-orange-800 border-orange-200',
   canceled: 'bg-red-100 text-red-800 border-red-200',
   renewed: 'bg-green-100 text-green-800 border-green-200',
   reactivated: 'bg-purple-100 text-purple-800 border-purple-200',
   expired: 'bg-gray-100 text-gray-800 border-gray-200',
-  billing_period_changed: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+  billing_period_changed: 'bg-teal-100 text-teal-800 border-teal-200',
   past_due: 'bg-yellow-100 text-yellow-800 border-yellow-200',
   disputed: 'bg-red-100 text-red-800 border-red-200',
   payment_succeeded: 'bg-green-100 text-green-800 border-green-200',

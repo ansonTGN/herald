@@ -35,13 +35,21 @@ export function formatDate(dateString: string | null | undefined): string {
   })
 }
 
-export function formatDateTime(dateString: string): string {
-  return new Date(dateString).toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
+/**
+ * Compact fixed-width date-time with explicit local UTC offset: YYYY-MM-DD HH:mm UTC+H[:MM].
+ * Local wall-clock time + offset so the same instant is unambiguous across viewers and
+ * reconcilable with the backend's UTC (DateTime<Utc>) storage. No seconds.
+ * Deterministic across locales — built from date parts, not toLocaleString.
+ */
+export function formatDateTimeShort(dateString: string): string {
+  const d = new Date(dateString)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  // getTimezoneOffset is in minutes, positive when local is BEHIND UTC (sign inverted).
+  const off = d.getTimezoneOffset()
+  const sign = off <= 0 ? '+' : '-'
+  const abs = Math.abs(off)
+  const h = Math.floor(abs / 60)
+  const mm = abs % 60
+  const offset = mm === 0 ? `UTC${sign}${h}` : `UTC${sign}${h}:${pad(mm)}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} ${offset}`
 }

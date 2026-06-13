@@ -4,7 +4,7 @@ import { server } from '@/test/mocks/server'
 import {
   mockFreeUserStatisticsWithZeroUsers,
   mockFreeUserStatisticsWithPartialData,
-} from '@/fixtures/realm-config.fixture'
+} from '@/fixtures/default-config.fixture'
 
 describe('Free User Statistics - High-Value Logic Tests', () => {
   afterEach(() => {

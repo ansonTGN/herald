@@ -75,17 +75,11 @@ export interface UserInfo {
   email: string
 }
 
-// Entitlement summary in subscription history
-export interface EntitlementSummary {
-  entitlementKey: string
-  paymentProvider: string
-}
-
 // Subscription summary in history
 export interface SubscriptionSummary {
   id: string
   status: SubscriptionStatus
-  entitlement?: EntitlementSummary
+  entitlementKey?: string
 }
 
 // Subscription history event with user and subscription details

@@ -7,6 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { formatDateTimeShort } from '@/lib/date-utils'
 import { UserTableSkeleton } from './user-table-skeleton'
 import { UserTableError } from './user-table-error'
 import { UserTableEmpty } from './user-table-empty'
@@ -77,7 +78,7 @@ function createUserColumns(
       header: m['users.table_created_at'](),
       cell: ({ row }) => {
         const date = row.getValue('createdAt') as string
-        return date ? new Date(date).toLocaleString() : '-'
+        return date ? formatDateTimeShort(date) : '-'
       },
     },
     {
@@ -115,7 +116,7 @@ function createUserColumns(
           {onManageRoles && (
             <button
               onClick={() => onManageRoles(row.original)}
-              className="text-sm text-purple-600 hover:text-purple-800"
+              className="text-sm text-primary hover:text-primary/80"
               data-testid={`user-table-${row.index}-manage-roles-button`}
             >
               {m['users.table_roles']()}
@@ -133,7 +134,7 @@ function createUserColumns(
           {onEdit && (
             <button
               onClick={() => onEdit(row.original)}
-              className="text-sm text-blue-600 hover:text-blue-800"
+              className="text-sm text-primary hover:text-primary/80"
               data-testid={`user-table-${row.index}-edit-button`}
             >
               {m['common.edit']()}

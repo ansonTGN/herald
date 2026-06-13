@@ -125,16 +125,6 @@ export async function waitForStableElement(
 // Types
 // ============================================================================
 
-export interface PointsPlanConfig {
-  planId: string
-  planTitle?: string
-  pointsOnSubscribe: number
-  pointsOnRenewal: number
-  renewalEnabled: boolean
-  renewalPeriodType: RenewalPeriodType
-  maxAccumulation: number
-}
-
 export interface PointsWalletInfo {
   userId: string
   email: string
@@ -154,126 +144,6 @@ export interface TransactionInfo {
 // ============================================================================
 // Admin Points Page Helpers
 // ============================================================================
-
-/**
- * Navigate to Points Admin page
- */
-export async function navigateToPointsAdmin(page: Page, realmId: string): Promise<void> {
-  await page.goto(`/${realmId}/manage/points`)
-  await expect(page.locator(SELECTORS.pointsAdmin.configsPage)).toBeVisible()
-}
-
-/**
- * Create a Points Plan Configuration
- */
-export async function createPointsPlanConfig(
-  page: Page,
-  config: PointsPlanConfig
-): Promise<void> {
-  // Click create button (navigates to dedicated form page)
-  await page.locator(SELECTORS.pointsAdmin.createPlanConfigButton).click()
-
-  // Wait for form page to load
-  await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
-
-  // Shadcn UI Select interaction: use role-based selector (combobox) to click trigger
-  // Note: The dropdown displays plan.title (not plan.id/name), so we must select by title
-  const planSelectValue = config.planTitle || config.planId
-  await page.getByRole('combobox', { name: 'Plan *' }).click()
-  await page.getByRole('option', { name: planSelectValue }).click()
-
-  // Fill form fields
-  await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).fill(
-    config.pointsOnSubscribe.toString()
-  )
-
-  // Set grant on subscribe (switch/toggle)
-  if (config.renewalEnabled) {
-    await page.locator(SELECTORS.pointsAdmin.planConfigRenewalEnabled).check()
-  } else {
-    await page.locator(SELECTORS.pointsAdmin.planConfigRenewalEnabled).uncheck()
-  }
-
-  // Shadcn UI Select interaction: use getByTestId for the trigger
-  await page.getByTestId('grant-period-type').click()
-  await page.getByRole('option', { name: config.renewalPeriodType }).click()
-
-  // Set validity days and max periods
-  await page.locator(SELECTORS.pointsAdmin.planConfigValidityDays).fill('30')
-  await page.locator(SELECTORS.pointsAdmin.planConfigMaxAccumulation).fill(
-    config.maxAccumulation.toString()
-  )
-
-  // Submit form
-  await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
-
-  // Wait for navigation back to configs list (form removed from DOM)
-  await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).not.toBeVisible()
-}
-
-/**
- * Edit a Points Plan Configuration
- */
-export async function editPointsPlanConfig(
-  page: Page,
-  configId: string,
-  updates: Partial<PointsPlanConfig>
-): Promise<void> {
-  // Click edit button (navigates to dedicated form page)
-  await page.locator(SELECTORS.pointsAdmin.editPlanConfigButton(configId)).click()
-
-  // Wait for form page to load
-  await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).toBeVisible()
-
-  // Update fields that are provided
-  if (updates.pointsOnSubscribe !== undefined) {
-    await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).clear()
-    await page.locator(SELECTORS.pointsAdmin.planConfigPointsOnSubscribe).fill(
-      updates.pointsOnSubscribe.toString()
-    )
-  }
-
-  if (updates.renewalEnabled !== undefined) {
-    if (updates.renewalEnabled) {
-      await page.locator(SELECTORS.pointsAdmin.planConfigRenewalEnabled).check()
-    } else {
-      await page.locator(SELECTORS.pointsAdmin.planConfigRenewalEnabled).uncheck()
-    }
-  }
-
-  if (updates.renewalPeriodType !== undefined) {
-    // Shadcn UI Select interaction: use getByTestId for the trigger
-    await page.getByTestId('grant-period-type').click()
-    await page.getByRole('option', { name: updates.renewalPeriodType }).click()
-  }
-
-  if (updates.maxAccumulation !== undefined) {
-    await page.locator(SELECTORS.pointsAdmin.planConfigMaxAccumulation).clear()
-    await page.locator(SELECTORS.pointsAdmin.planConfigMaxAccumulation).fill(
-      updates.maxAccumulation.toString()
-    )
-  }
-
-  // Submit form
-  await page.locator(SELECTORS.pointsAdmin.planConfigSubmitButton).click()
-
-  // Wait for navigation back to configs list (form removed from DOM)
-  await expect(page.locator(SELECTORS.pointsAdmin.planConfigDialog)).not.toBeVisible()
-}
-
-/**
- * Delete a Points Plan Configuration
- */
-export async function deletePointsPlanConfig(page: Page, configId: string): Promise<void> {
-  // Click delete button
-  await page.locator(SELECTORS.pointsAdmin.deletePlanConfigButton(configId)).click()
-
-  // Confirm deletion
-  await page.locator(SELECTORS.common.dialogSubmitButton).click()
-
-  // Wait for success message
-  await expect(page.locator(SELECTORS.common.successMessage)).toBeVisible()
-}
 
 /**
  * Search user accounts by email
@@ -501,7 +371,7 @@ export async function exportTransactionHistory(page: Page): Promise<void> {
  * Points-related route constants
  */
 export const POINTS_ROUTES = {
-  REALM_CONFIG: (realmId: string) => `/${realmId}/manage/points/realm-config`,
+  DEFAULT_CONFIG: (realmId: string) => `/${realmId}/manage/points/default-config`,
   FREE_STATS: (realmId: string) => `/${realmId}/manage/points/free-stats`,
   FREE_USERS: (realmId: string) => `/${realmId}/manage/points/free-users`,
   USER_POINTS: (realmId: string) => `/${realmId}/user/points`,
