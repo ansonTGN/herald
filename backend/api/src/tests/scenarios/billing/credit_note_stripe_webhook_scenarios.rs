@@ -5,7 +5,7 @@
 // Tests for the Stripe `credit_note.created` webhook handler covering:
 //   - Normal sync (US-IF-007 scenario 1)
 //   - Idempotency (US-IF-007 scenario 5)
-//   - Missing invoice warn+skip (US-IF-007 scenario 6, edge case)
+//   - Unsynced invoice -> 5xx to trigger Stripe redelivery (avoid losing the credit note)
 //   - Provider mismatch warn+skip (US-IF-007 edge case)
 //   - Partial refund accumulation (US-IF-007 scenario 2)
 //   - Invoice status unchanged (US-IF-007 scenario 3)
@@ -389,19 +389,22 @@ mod tests {
     }
 
     // =========================================================================
-    // Test: Missing Invoice Warn + Skip (US-IF-007 scenario 6, edge case)
+    // Test: Unsynced Invoice -> 5xx for Stripe Redelivery
     // =========================================================================
-    // User Story: docs/user-stories/billing/invoice-fallback.md
-    // Covers: US-IF-007 scenario 6 (edge case)
+    // A `credit_note.created` event can arrive before the `invoice.paid` event
+    // that syncs the parent invoice (a transient ordering race). Returning 5xx
+    // makes Stripe redeliver so the credit note is applied once the invoice
+    // syncs. Acking with 200 (warn + skip) would mark the event delivered and
+    // the credit note would be permanently lost. See commit aa06d53d.
     //
-    // Given: No matching invoice for the stripe_invoice_id in the webhook
+    // Given: No matching local invoice for the stripe_invoice_id in the webhook
     // When: Send credit_note.created webhook
-    // Then: Webhook returns 200 (does not fail)
-    // And: No credit note record created
+    // Then: Webhook returns 5xx so Stripe retries the delivery
+    // And: No credit note record created (applied on a later redelivery)
 
     #[test_context(CreditNoteWebhookTestContext)]
     #[tokio::test]
-    async fn test_stripe_credit_note_missing_invoice_warns_and_skips(
+    async fn test_stripe_credit_note_missing_invoice_triggers_retry(
         ctx: &mut CreditNoteWebhookTestContext,
     ) {
         let app = ctx.create_unified_test_router();
@@ -429,17 +432,20 @@ mod tests {
         )
         .await;
 
-        assert_eq!(
-            response.status(),
-            StatusCode::OK,
-            "Missing invoice must not fail the webhook (warn + skip)"
+        // Then: webhook returns 5xx so Stripe redelivers the event. The local
+        // invoice is only transiently absent (it syncs via invoice.paid), so an
+        // ack here would silently drop the credit note.
+        assert!(
+            response.status().is_server_error(),
+            "Unsynced invoice must return 5xx to trigger Stripe redelivery, got {}",
+            response.status()
         );
 
-        // And: no credit note record was created
+        // And: no credit note record was created (applied on a later redelivery)
         assert_eq!(
             count_credit_notes_by_external_id(ctx, &stripe_credit_note_id).await,
             0,
-            "No credit note should be created when the invoice is missing"
+            "No credit note should be created while the invoice is not yet synced"
         );
     }
 
