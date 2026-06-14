@@ -16,7 +16,6 @@ function makeKey(overrides: Partial<ApiKeyListItem> & { id: string }): ApiKeyLis
     lastUsedAt: null,
     name: 'Test Key',
     realmId: 'realm-1',
-    usageCount: 0,
     ...overrides,
   }
 }

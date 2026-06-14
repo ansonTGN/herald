@@ -2,7 +2,7 @@
 """Start an ngrok tunnel via Docker for third-party callbacks.
 
 Reads NGROK_AUTHTOKEN and NGROK_DOMAIN from demo/.env.demo,
-then runs the official ngrok Docker image tunneling to localhost:3000 (frontend).
+then runs the official ngrok Docker image (detached) tunneling to localhost:3000 (frontend).
 
 Usage:
   uv run scripts/ngrok-tunnel.py
@@ -14,6 +14,12 @@ import argparse
 import subprocess
 import sys
 from pathlib import Path
+
+# Force UTF-8 on stdout/stderr so non-ASCII chars (e.g. "→") render correctly
+# on Windows terminals whose default code page is GBK.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8")
 
 CONTAINER_NAME = "herald-ngrok"
 INSPECTOR_PORT = 4040
@@ -65,27 +71,34 @@ def start(port: int):
         cmd += ["--url", domain]
     cmd.append(f"http://host.docker.internal:{port}")
 
-    print(f"Starting ngrok tunnel → host.docker.internal:{port}")
-    if domain:
-        print(f"  Fixed domain: {domain}")
-    print(f"  Inspector UI: http://localhost:{INSPECTOR_PORT}")
+    result = subprocess.run(
+        [
+            "docker", "run",
+            "-d",
+            "--name", CONTAINER_NAME,
+            "-p", f"{INSPECTOR_PORT}:{INSPECTOR_PORT}",
+            "-e", f"NGROK_AUTHTOKEN={authtoken}",
+            "--add-host=host.docker.internal:host-gateway",
+            "ngrok/ngrok:latest",
+            *cmd,
+        ],
+        capture_output=True,
+        text=True,
+    )
 
-    try:
-        subprocess.run(
-            [
-                "docker", "run",
-                "--name", CONTAINER_NAME,
-                "--rm",
-                "-p", f"{INSPECTOR_PORT}:{INSPECTOR_PORT}",
-                "-e", f"NGROK_AUTHTOKEN={authtoken}",
-                "--add-host=host.docker.internal:host-gateway",
-                "ngrok/ngrok:latest",
-                *cmd,
-            ],
+    if result.returncode != 0:
+        print(
+            f"Error: failed to start ngrok container.\n{result.stderr.strip()}",
+            file=sys.stderr,
         )
-    except KeyboardInterrupt:
-        print("\nStopping ngrok tunnel...")
-        stop()
+        sys.exit(1)
+
+    print(f"Started ngrok tunnel → host.docker.internal:{port} (detached)")
+    if domain:
+        print(f"  Fixed domain:  {domain}")
+    print(f"  Inspector UI:  http://localhost:{INSPECTOR_PORT}")
+    print(f"  View logs:     docker logs -f {CONTAINER_NAME}")
+    print(f"  Stop:          uv run scripts/ngrok-tunnel.py --stop")
 
 
 def main():

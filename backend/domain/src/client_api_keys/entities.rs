@@ -18,7 +18,7 @@ use std::fmt;
 /// 1. Created via `ClientApiKeyService::generate_api_key()` (UUID v7)
 /// 2. Hashed with SHA-256 before storage
 /// 3. Validated on each API request via O(1) hash-based lookup
-/// 4. Usage statistics updated asynchronously
+/// 4. Last-used timestamp updated asynchronously (throttled)
 ///
 /// # Example
 /// ```rust,no_run
@@ -35,7 +35,6 @@ use std::fmt;
 ///     expires_at: None,
 ///     created_at: Utc::now(),
 ///     last_used_at: None,
-///     usage_count: 0,
 /// };
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,11 +64,9 @@ pub struct ClientApiKey {
     /// Timestamp when the API key was created
     pub created_at: DateTime<Utc>,
 
-    /// Timestamp of the last successful authentication (None = never used)
+    /// Timestamp of the last successful authentication (None = never used).
+    /// Updated throttled to at most once per minute.
     pub last_used_at: Option<DateTime<Utc>>,
-
-    /// Number of times this API key has been successfully used
-    pub usage_count: i32,
 }
 
 impl ClientApiKey {
@@ -103,8 +100,8 @@ impl fmt::Display for ClientApiKey {
 
         write!(
             f,
-            "ClientApiKey(id={}, name={}, realm_id={}, enabled={}, usage_count={}{})",
-            self.id, self.name, self.realm_id, self.enabled, self.usage_count, app_info
+            "ClientApiKey(id={}, name={}, realm_id={}, enabled={}{})",
+            self.id, self.name, self.realm_id, self.enabled, app_info
         )
     }
 }
@@ -125,7 +122,6 @@ mod tests {
             expires_at: None,
             created_at: Utc::now(),
             last_used_at: None,
-            usage_count: 0,
         };
 
         assert!(api_key.is_valid());
@@ -143,7 +139,6 @@ mod tests {
             expires_at: None,
             created_at: Utc::now(),
             last_used_at: None,
-            usage_count: 0,
         };
 
         assert!(!api_key.is_valid());
@@ -161,7 +156,6 @@ mod tests {
             expires_at: Some(Utc::now() - chrono::Duration::days(1)),
             created_at: Utc::now(),
             last_used_at: None,
-            usage_count: 0,
         };
 
         assert!(!api_key.is_valid());

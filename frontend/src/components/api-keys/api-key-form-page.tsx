@@ -22,12 +22,12 @@ import {
   rolesQueryOptions,
   updateApiKeyRolesMutation,
 } from '@/data/query-options'
-import { toast } from 'sonner'
 import { ArrowLeft } from 'lucide-react'
 import { TextField, SwitchField } from '@/components/shared/form-fields'
 import { RoleSelector } from '@/components/shared/role-selector'
 import { ClientAppSelector } from '@/components/shared/client-app-selector'
 import { m } from '@/paraglide/messages'
+import { getErrorMessage } from '@/lib/error-utils'
 
 type MutationResult = CreateApiKeyResponse | ApiKeyListItem
 
@@ -83,17 +83,24 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
       isCreate ? m['api_keys.created_success']() : m['api_keys.updated_success'](),
     onSuccess: async (data) => {
       if (isCreate) {
+        // Roles are bound in a separate call after creation. Don't swallow its
+        // failure: carry the real reason to the reveal page so it stays visible
+        // (the plaintext key must still be revealed exactly once).
+        let roleBindingError: string | undefined
         if (selectedRoleIds.length > 0 && canManageRoles) {
           try {
             await updateApiKeyRolesMutation(realmId, data.id, selectedRoleIds)
-          } catch {
-            toast.error(m['api_keys.role_binding_failed']())
+          } catch (error) {
+            roleBindingError = getErrorMessage(error)
           }
         }
         void navigate({
           to: '/$realmId/manage/api-keys/reveal',
           params: { realmId },
-          state: { keyData: data } as unknown as Parameters<typeof navigate>[0]['state'],
+          state: {
+            keyData: data,
+            roleBindingError,
+          } as unknown as Parameters<typeof navigate>[0]['state'],
         })
       } else {
         void goToList()
@@ -233,7 +240,9 @@ export function ApiKeyFormPage({ mode, realmId, apiKey }: ApiKeyFormPageProps) {
             <div className="space-y-2">
               <Label>{m['api_keys.form_roles_label']()}</Label>
               <RoleSelector
-                roles={(rolesData ?? []).map((r) => ({ id: r.id, name: r.name }))}
+                roles={(rolesData ?? [])
+                  .filter((r) => !r.isBuiltin)
+                  .map((r) => ({ id: r.id, name: r.name }))}
                 selectedRoleIds={selectedRoleIds}
                 onChange={setSelectedRoleIds}
                 disabled={isSubmitting}

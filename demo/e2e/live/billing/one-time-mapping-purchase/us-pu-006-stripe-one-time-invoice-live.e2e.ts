@@ -1,8 +1,9 @@
 /**
  * Live Stripe One-Time Payment Invoice Verification Test
  *
- * Related User Stories: US-PU-006
- * Coverage: partial; one-time Stripe checkout creates external invoice with correct fields.
+ * Related User Stories: US-PU-006, US-IF-004
+ * Coverage: partial; one-time Stripe checkout creates external invoice with correct fields,
+ *   external invoice field coverage + provider filter (US-IF-004).
  * Not Covered: points fulfillment, webhook compensation, refund, idempotency, failure/expiry, or audit outcomes.
  * Live Dependency: real Stripe test credentials + one-time product
  * Manual Step: no
@@ -359,6 +360,12 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoi
       expect(invoice.total, 'Expected total > 0').toBeGreaterThan(0)
       expect(invoice.external_hosted_url, 'Expected external_hosted_url to be present').toBeTruthy()
       expect(invoice.external_pdf_url, 'Expected external_pdf_url to be present').toBeTruthy()
+      // Expanded invoice field coverage (US-IF-004): provider linkage, source, currency, refund totals.
+      expect(invoice.payment_provider, 'Expected payment_provider to be stripe').toBe('stripe')
+      expect(invoice.source, 'Expected source to be external_sync').toBe('external_sync')
+      expect(invoice.currency, 'Expected currency to be a 3-letter code').toMatch(/^[a-z]{3}$/)
+      expect(invoice.invoice_number, 'Expected invoice_number to be present').toBeTruthy()
+      expect(invoice.amount_refunded, 'Expected amount_refunded to be 0 on a fresh paid invoice').toBe(0)
     })
 
     await test.step('And invoice detail endpoint returns full response', async () => {
@@ -376,6 +383,48 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoi
       expect(detail.external_invoice_id).toMatch(/^in_/)
       expect(detail.external_hosted_url).toBeTruthy()
       expect(detail.external_pdf_url).toBeTruthy()
+      // Expanded detail coverage (US-IF-004/008): provider linkage, currency, refund totals.
+      expect(detail.payment_provider).toBe('stripe')
+      expect(detail.source).toBe('external_sync')
+      expect(detail.currency).toMatch(/^[a-z]{3}$/)
+      expect(detail.invoice_number).toBeTruthy()
+      expect(detail.amount_refunded, 'Expected amount_refunded to be 0 initially').toBe(0)
+      expect(detail.amount_remaining, 'Expected amount_remaining to equal total initially').toBe(detail.total)
+      expect(detail.external_order_id, 'Expected external_order_id (payment_intent) to be present').toBeTruthy()
+    })
+
+    await test.step('And provider filter returns only stripe invoices (US-IF-004)', async () => {
+      const invoice = await waitForStripeInvoice(page, 10000)
+
+      const stripeOnly = await page.request.get(
+        `${BASE_URL}/api/bill/${REALM_ID}/invoices?provider=stripe`,
+      )
+      expect(stripeOnly.ok(), `provider=stripe filter failed: ${await stripeOnly.text().catch(() => '')}`).toBeTruthy()
+      const stripeBody = await stripeOnly.json()
+      const stripeItems = stripeBody.data ?? stripeBody.items ?? stripeBody
+      expect(Array.isArray(stripeItems), 'Expected an array of stripe invoices').toBeTruthy()
+      for (const inv of stripeItems as any[]) {
+        expect(inv.provider, `provider=stripe filter must not leak '${inv.provider}' invoices`).toBe('stripe')
+      }
+      expect(
+        (stripeItems as any[]).some((inv) => inv.id === invoice.id),
+        'The one-time stripe invoice should appear in provider=stripe filter',
+      ).toBeTruthy()
+
+      // Negative isolation: provider=manual must NOT include the stripe invoice.
+      const manualOnly = await page.request.get(
+        `${BASE_URL}/api/bill/${REALM_ID}/invoices?provider=manual`,
+      )
+      if (manualOnly.ok()) {
+        const manualBody = await manualOnly.json()
+        const manualItems = manualBody.data ?? manualBody.items ?? manualBody
+        if (Array.isArray(manualItems)) {
+          expect(
+            (manualItems as any[]).find((inv) => inv.id === invoice.id),
+            'stripe invoice must not leak into provider=manual filter',
+          ).toBeUndefined()
+        }
+      }
     })
   })
 })

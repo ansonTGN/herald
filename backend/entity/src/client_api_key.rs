@@ -37,9 +37,6 @@ pub struct Model {
 
     /// Last usage timestamp
     pub last_used_at: Option<DateTimeWithTimeZone>,
-
-    /// Usage count
-    pub usage_count: i32,
 }
 
 /// Relations for client_api_keys entity

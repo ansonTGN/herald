@@ -84,7 +84,6 @@ pub async fn create_api_key(
         expires_at,
         created_at: now,
         last_used_at: None,
-        usage_count: 0,
     };
 
     let saved = state.api_key_repo.create(&api_key).await.map_err(|e| {

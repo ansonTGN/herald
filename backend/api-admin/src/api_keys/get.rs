@@ -81,7 +81,6 @@ pub async fn get_api_key(
         enabled: api_key.enabled,
         expires_at: api_key.expires_at.map(|dt| dt.to_rfc3339()),
         last_used_at: api_key.last_used_at.map(|dt| dt.to_rfc3339()),
-        usage_count: api_key.usage_count,
         created_at: api_key.created_at.to_rfc3339(),
         roles,
     };

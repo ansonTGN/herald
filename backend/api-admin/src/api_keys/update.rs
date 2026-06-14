@@ -93,7 +93,6 @@ pub async fn update_api_key(
         enabled: saved.enabled,
         expires_at: saved.expires_at.map(|dt| dt.to_rfc3339()),
         last_used_at: saved.last_used_at.map(|dt| dt.to_rfc3339()),
-        usage_count: saved.usage_count,
         created_at: saved.created_at.to_rfc3339(),
         roles: Vec::new(),
     };

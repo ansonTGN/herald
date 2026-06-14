@@ -61,13 +61,12 @@ pub async fn create_test_api_key(
         expires_at,
         created_at: Utc::now(),
         last_used_at: None,
-        usage_count: 0,
     };
 
     sqlx::query(
         r#"
-        INSERT INTO client_api_keys (id, name, api_key_hash, realm_id, client_app_id, enabled, expires_at, created_at, last_used_at, usage_count)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO client_api_keys (id, name, api_key_hash, realm_id, client_app_id, enabled, expires_at, created_at, last_used_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         "#,
     )
     .bind(Uuid::parse_str(&api_key_entity.id).expect("Failed to parse API key ID as UUID"))
@@ -79,7 +78,6 @@ pub async fn create_test_api_key(
     .bind(api_key_entity.expires_at)
     .bind(api_key_entity.created_at)
     .bind(api_key_entity.last_used_at)
-    .bind(api_key_entity.usage_count)
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to create API key");
@@ -379,25 +377,26 @@ pub async fn delete_api_key_with_plaintext(
 /// * `api_key_id` - API Key ID
 ///
 /// # Returns
-/// 返回 (usage_count, last_used_at) 元组
+/// 返回 last_used_at（None = 从未使用）
 ///
 /// # Example
 /// ```rust,no_run
-/// let (usage_count, last_used_at) = get_api_key_stats(ctx, &api_key_id).await;
-/// assert_eq!(usage_count, 1);
+/// let last_used_at = get_api_key_stats(ctx, &api_key_id).await;
+/// assert!(last_used_at.is_some());
 /// ```
 pub async fn get_api_key_stats(
     ctx: &TestContext,
     api_key_id: &str,
-) -> (i32, Option<chrono::DateTime<Utc>>) {
-    let row: (i32, Option<chrono::DateTime<Utc>>) =
-        sqlx::query_as("SELECT usage_count, last_used_at FROM client_api_keys WHERE id::text = $1")
+) -> Option<chrono::DateTime<Utc>> {
+    // usage_count column removed; this helper now returns only last_used_at.
+    let row: (Option<chrono::DateTime<Utc>>,) =
+        sqlx::query_as("SELECT last_used_at FROM client_api_keys WHERE id::text = $1")
             .bind(api_key_id)
             .fetch_one(&ctx._app_state.pool)
             .await
-            .expect("Failed to query API key stats");
+            .expect("Failed to query API key last_used_at");
 
-    row
+    row.0
 }
 
 /// Grant permissions to an API key by creating a role and linking it via user_roles.

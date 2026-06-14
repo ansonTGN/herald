@@ -185,9 +185,9 @@ describe('ApiKeyRolesDialog', () => {
       expect(mockUpdateApiKeyRoles).toHaveBeenCalled()
     })
 
-    // Toast error should have been called
+    // Toast surfaces the real backend reason (via getErrorMessage), not a generic message
     await waitFor(() => {
-      expect(mockToastError).toHaveBeenCalledWith('Failed to update API key roles')
+      expect(mockToastError).toHaveBeenCalledWith('Server error')
     })
 
     // After error, close and reopen the popover to verify state
@@ -196,37 +196,6 @@ describe('ApiKeyRolesDialog', () => {
     // we verify by checking the mutation was called with [r1, r2, r3] (the attempted change)
     // but the component should still show only r1 and r2 as selected
     expect(mockUpdateApiKeyRoles).toHaveBeenCalledWith('realm-1', 'key-1', ['r1', 'r2', 'r3'])
-  })
-
-  // Scenario 4: Builtin role rejection -- domain-specific error path
-  it('GIVEN builtin role rejection WHEN save fails THEN shows toast.error and reverts local state', async () => {
-    mockUpdateApiKeyRoles.mockRejectedValue(new Error('Cannot assign builtin role'))
-
-    // Start with only one role assigned
-    mockUseQuery.mockImplementation(
-      defaultQueryImplementation({
-        apiKeyRoles: { roles: [{ id: 'r3', name: 'Custom' }] },
-      })
-    )
-
-    renderDialog()
-
-    await screen.findByTestId('api-key-roles-dialog-content')
-
-    // Open selector and try to add r1
-    const trigger = screen.getByTestId('role-selector-trigger')
-    await userEvent.click(trigger)
-
-    const roleItem = await screen.findByTestId('role-selector-item-r1')
-    await userEvent.click(roleItem)
-
-    await waitFor(() => {
-      expect(mockUpdateApiKeyRoles).toHaveBeenCalled()
-    })
-
-    await waitFor(() => {
-      expect(mockToastError).toHaveBeenCalledWith('Failed to update API key roles')
-    })
   })
 
   // Scenario 5: Query invalidation after successful save

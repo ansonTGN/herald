@@ -5,7 +5,7 @@
 
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde_json::Value;
 use std::time::Duration;
 use tracing::{error, info, warn};
@@ -60,7 +60,12 @@ struct StripeSubscriptionCreatedPayload {
     external_product_id: String,
     cancel_at_period_end: bool,
     current_period_start: Option<DateTime<Utc>>,
-    current_period_end: DateTime<Utc>,
+    // Optional: Stripe omits current_period_end on the first
+    // customer.subscription.created event for checkout-initiated subscriptions
+    // while the subscription is still `incomplete` (Stripe sets it only after the
+    // first invoice is paid). Treating it as required aborts the handler before
+    // credits are granted.
+    current_period_end: Option<DateTime<Utc>>,
     status: SubscriptionStatus,
 }
 
@@ -73,7 +78,7 @@ struct StripeSubscriptionUpdatedPayload {
     external_product_id: String,
     cancel_at_period_end: bool,
     current_period_start: Option<DateTime<Utc>>,
-    current_period_end: DateTime<Utc>,
+    current_period_end: Option<DateTime<Utc>>,
     status: SubscriptionStatus,
 }
 
@@ -84,7 +89,7 @@ struct StripeSubscriptionDeletedPayload {
     entitlement_key: Option<String>,
     cancel_at_period_end: bool,
     current_period_start: Option<DateTime<Utc>>,
-    current_period_end: DateTime<Utc>,
+    current_period_end: Option<DateTime<Utc>>,
 }
 
 struct StripeChargeRefundedPayload {
@@ -103,7 +108,7 @@ struct StripeInvoicePaidPayload {
     user_id: Uuid,
     entitlement_key: String,
     current_period_start: Option<DateTime<Utc>>,
-    current_period_end: DateTime<Utc>,
+    current_period_end: Option<DateTime<Utc>>,
 }
 
 struct StripePaymentIntentSucceededPayload {
@@ -282,9 +287,8 @@ fn parse_subscription_created_payload(
         current_period_start: parse_optional_stripe_datetime(
             &event["data"]["object"]["current_period_start"],
         )?,
-        current_period_end: parse_stripe_datetime(
+        current_period_end: parse_optional_stripe_datetime(
             &event["data"]["object"]["current_period_end"],
-            "current_period_end",
         )?,
         status,
     })
@@ -336,9 +340,8 @@ fn parse_subscription_updated_payload(
         current_period_start: parse_optional_stripe_datetime(
             &event["data"]["object"]["current_period_start"],
         )?,
-        current_period_end: parse_stripe_datetime(
+        current_period_end: parse_optional_stripe_datetime(
             &event["data"]["object"]["current_period_end"],
-            "current_period_end",
         )?,
         status,
     })
@@ -368,9 +371,8 @@ fn parse_subscription_deleted_payload(
         current_period_start: parse_optional_stripe_datetime(
             &event["data"]["object"]["current_period_start"],
         )?,
-        current_period_end: parse_stripe_datetime(
+        current_period_end: parse_optional_stripe_datetime(
             &event["data"]["object"]["current_period_end"],
-            "current_period_end",
         )?,
     })
 }
@@ -432,9 +434,8 @@ fn parse_invoice_paid_payload(event: &Value) -> Result<StripeInvoicePaidPayload,
         current_period_start: parse_optional_stripe_datetime(
             &event["data"]["object"]["current_period_start"],
         )?,
-        current_period_end: parse_stripe_datetime(
+        current_period_end: parse_optional_stripe_datetime(
             &event["data"]["object"]["current_period_end"],
-            "current_period_end",
         )?,
     })
 }
@@ -1460,13 +1461,22 @@ async fn handle_subscription_created(
         external_price_id,
         payload.status.clone(),
         payload.current_period_start,
-        Some(payload.current_period_end),
+        payload.current_period_end,
         payload.cancel_at_period_end,
         None,
         None,
         HistoryEventType::Created,
     )
     .await?;
+
+    // Stripe omits current_period_end on the first subscription.created event for
+    // checkout-initiated subscriptions (set only after the first invoice is paid).
+    // Credits still need an expiry, so fall back to a 30-day window from now —
+    // it will be corrected when the subsequent subscription.updated /
+    // invoice.payment_succeeded event arrives with the real period end.
+    let period_end = payload
+        .current_period_end
+        .unwrap_or_else(|| Utc::now() + ChronoDuration::days(30));
 
     app_state
         .subscription_service
@@ -1475,7 +1485,7 @@ async fn handle_subscription_created(
             realm_id,
             &entitlement_key,
             false,
-            payload.current_period_end,
+            period_end,
             payload.event_id.clone(),
         )
         .await?;
@@ -1486,7 +1496,7 @@ async fn handle_subscription_created(
         entitlement_key = %entitlement_key,
         stripe_subscription_id = %payload.stripe_subscription_id,
         event_id = %event_id,
-        current_period_end = %payload.current_period_end,
+        current_period_end = ?payload.current_period_end,
         "Subscription created - ledger and aggregate synced"
     );
 
@@ -1577,10 +1587,10 @@ async fn handle_subscription_updated(
                 external_price_id,
                 payload.status.clone(),
                 payload.current_period_start,
-                Some(payload.current_period_end),
+                payload.current_period_end,
                 payload.cancel_at_period_end,
                 if payload.cancel_at_period_end {
-                    Some(payload.current_period_end)
+                    payload.current_period_end
                 } else {
                     None
                 },
@@ -1632,10 +1642,10 @@ async fn handle_subscription_updated(
                     external_price_id,
                     payload.status.clone(),
                     payload.current_period_start,
-                    Some(payload.current_period_end),
+                    payload.current_period_end,
                     payload.cancel_at_period_end,
                     if payload.cancel_at_period_end {
-                        Some(payload.current_period_end)
+                        payload.current_period_end
                     } else {
                         None
                     },
@@ -1670,10 +1680,10 @@ async fn handle_subscription_updated(
             external_price_id,
             payload.status.clone(),
             payload.current_period_start,
-            Some(payload.current_period_end),
+            payload.current_period_end,
             payload.cancel_at_period_end,
             if payload.cancel_at_period_end {
-                Some(payload.current_period_end)
+                payload.current_period_end
             } else {
                 None
             },
@@ -1682,6 +1692,12 @@ async fn handle_subscription_updated(
         )
         .await?;
 
+        // See handle_subscription_created: Stripe may omit current_period_end on
+        // events fired while the subscription is incomplete; fall back to +30 days.
+        let period_end = payload
+            .current_period_end
+            .unwrap_or_else(|| Utc::now() + ChronoDuration::days(30));
+
         app_state
             .subscription_service
             .handle_subscription_upgrade(
@@ -1689,7 +1705,7 @@ async fn handle_subscription_updated(
                 realm_id,
                 &previous_entitlement_key,
                 &current_entitlement_key,
-                payload.current_period_end,
+                period_end,
             )
             .await?;
 
@@ -1723,10 +1739,10 @@ async fn handle_subscription_updated(
             external_price_id,
             payload.status.clone(),
             payload.current_period_start,
-            Some(payload.current_period_end),
+            payload.current_period_end,
             payload.cancel_at_period_end,
             if payload.cancel_at_period_end {
-                Some(payload.current_period_end)
+                payload.current_period_end
             } else {
                 None
             },
@@ -1803,8 +1819,7 @@ async fn handle_subscription_status_change(
         .as_str()
         .map(str::to_string);
     let current_period_start = parse_optional_stripe_datetime(&object["current_period_start"])?;
-    let current_period_end =
-        parse_stripe_datetime(&object["current_period_end"], "current_period_end")?;
+    let current_period_end = parse_optional_stripe_datetime(&object["current_period_end"])?;
 
     info!(
         realm_id = %realm_id,
@@ -1837,10 +1852,10 @@ async fn handle_subscription_status_change(
         external_price_id,
         status.clone(),
         current_period_start,
-        Some(current_period_end),
+        current_period_end,
         cancel_at_period_end,
         if cancel_at_period_end {
-            Some(current_period_end)
+            current_period_end
         } else {
             None
         },
@@ -1915,10 +1930,12 @@ async fn handle_subscription_deleted(
         external_price_id,
         status,
         payload.current_period_start,
-        Some(payload.current_period_end),
+        payload.current_period_end,
         payload.cancel_at_period_end,
         Some(if payload.cancel_at_period_end {
-            payload.current_period_end
+            payload
+                .current_period_end
+                .unwrap_or_else(|| Utc::now() + ChronoDuration::days(30))
         } else {
             Utc::now()
         }),
@@ -1934,7 +1951,7 @@ async fn handle_subscription_deleted(
             realm_id,
             cancel_mode,
             if payload.cancel_at_period_end {
-                Some(payload.current_period_end)
+                payload.current_period_end
             } else {
                 None
             },
@@ -2132,13 +2149,20 @@ async fn handle_invoice_payment_succeeded(
         external_price_id,
         SubscriptionStatus::Active,
         payload.current_period_start,
-        Some(payload.current_period_end),
+        payload.current_period_end,
         false,
         None,
         existing_subscription.clone(),
         HistoryEventType::Renewed,
     )
     .await?;
+
+    // invoice.payment_succeeded should normally include current_period_end
+    // (subscription is active), but apply the +30 day fallback defensively so a
+    // missing field can never silently block renewal credit grants.
+    let period_end = payload
+        .current_period_end
+        .unwrap_or_else(|| Utc::now() + ChronoDuration::days(30));
 
     app_state
         .subscription_service
@@ -2147,7 +2171,7 @@ async fn handle_invoice_payment_succeeded(
             realm_id,
             &entitlement_key,
             true,
-            payload.current_period_end,
+            period_end,
             payload.event_id.clone(),
         )
         .await?;
@@ -2158,7 +2182,7 @@ async fn handle_invoice_payment_succeeded(
         entitlement_key = %entitlement_key,
         stripe_subscription_id = %payload.stripe_subscription_id,
         event_id = %event_id,
-        current_period_end = %payload.current_period_end,
+        current_period_end = ?payload.current_period_end,
         "Invoice payment succeeded - renewal ledger granted"
     );
 
@@ -3301,5 +3325,96 @@ pub async fn read_async_points_strategy(state: &AppState, realm_id: &str) -> Asy
             }
             AsyncPointsStrategy::Conservative
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Stripe fires `customer.subscription.created` for checkout-initiated
+    /// subscriptions while the subscription is still `incomplete`, and in that
+    /// state `current_period_end` is not set (Stripe populates it only after the
+    /// first invoice is paid). If the parser treats it as required, the handler
+    /// returns BadRequest (non-transient) BEFORE `handle_subscription_paid` runs,
+    /// so `grantOnSubscribe` / `pointsPerPeriod` credits are never granted.
+    /// This test guards the regression: a payload without current_period_end
+    /// must parse successfully with `current_period_end == None`.
+    #[test]
+    fn parse_subscription_created_accepts_missing_current_period_end() {
+        let event: Value = serde_json::json!({
+            "id": "evt_test",
+            "type": "customer.subscription.created",
+            "data": {
+                "object": {
+                    "id": "sub_test",
+                    "object": "subscription",
+                    "status": "incomplete",
+                    "cancel_at_period_end": false,
+                    "metadata": {
+                        "herald_user_id": "00000000-0000-0000-0000-000000000001",
+                        "herald_entitlement_key": "ent-key",
+                        "herald_client_app_id": "00000000-0000-0000-0000-000000000002"
+                    },
+                    "items": {
+                        "data": [
+                            {
+                                "price": {
+                                    "id": "price_test",
+                                    "product": "prod_test"
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        });
+
+        let payload = parse_subscription_created_payload(&event).expect(
+            "checkout-initiated subscription.created must parse without current_period_end",
+        );
+        assert_eq!(payload.stripe_subscription_id, "sub_test");
+        assert!(payload.current_period_end.is_none());
+        assert_eq!(payload.status, SubscriptionStatus::Incomplete);
+    }
+
+    /// Sanity check: when Stripe DOES include current_period_end, it must still
+    /// be parsed (so renewal/cancel flows keep their real period end).
+    #[test]
+    fn parse_subscription_created_uses_current_period_end_when_present() {
+        let event: Value = serde_json::json!({
+            "id": "evt_test",
+            "type": "customer.subscription.created",
+            "data": {
+                "object": {
+                    "id": "sub_test",
+                    "object": "subscription",
+                    "status": "active",
+                    "cancel_at_period_end": false,
+                    "current_period_end": 1_800_000_000_i64,
+                    "current_period_start": 1_700_000_000_i64,
+                    "metadata": {
+                        "herald_user_id": "00000000-0000-0000-0000-000000000001",
+                        "herald_entitlement_key": "ent-key"
+                    },
+                    "items": {
+                        "data": [
+                            {
+                                "price": {
+                                    "id": "price_test",
+                                    "product": "prod_test"
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        });
+
+        let payload = parse_subscription_created_payload(&event).expect("payload must parse");
+        let end = payload
+            .current_period_end
+            .expect("current_period_end should be present");
+        assert_eq!(end.timestamp(), 1_800_000_000);
     }
 }

@@ -386,3 +386,39 @@
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
+
+/* Thin scrollbar tuned for the dark sidebar. Replaces the heavy, light-gray OS
+   default that looked out of place against --sidebar. Uses the sidebar tokens
+   so it stays legible in both light and dark themes (sidebar is dark in both). */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--sidebar-foreground) 20%, transparent) transparent;
+}
+.sidebar-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklch, var(--sidebar-foreground) 20%, transparent);
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-clip: content-box;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklch, var(--sidebar-foreground) 35%, transparent);
+}
+
+/* Vaul injects `[data-vaul-drawer]{user-select:none}` on desktop
+   (hover + fine pointer) so dragging doesn't highlight text. That also blocks
+   selecting/copying drawer content such as the Audit Event Detail. Re-enable
+   selection on drawer descendants — a directly-matched declaration always beats
+   the ancestor's inherited value, so this wins without !important. Dragging the
+   drawer still works (driven by pointer events, not user-select). */
+@media (hover: hover) and (pointer: fine) {
+  [data-vaul-drawer] * {
+    user-select: text;
+  }
+}

@@ -19,7 +19,6 @@ fn create_test_api_key_entity(id: &str, realm_id: &str, enabled: bool) -> Client
         expires_at: None,
         created_at: Utc::now(),
         last_used_at: None,
-        usage_count: 0,
     }
 }
 
@@ -79,7 +78,6 @@ mod unit_tests {
             expires_at: Some(Utc::now() - Duration::days(1)),
             created_at: Utc::now() - Duration::days(2),
             last_used_at: None,
-            usage_count: 0,
         };
         assert!(!expired_key.is_valid());
     }

@@ -119,7 +119,6 @@ pub async fn list_api_keys(
                     enabled: k.enabled,
                     expires_at: k.expires_at.map(|dt| dt.to_rfc3339()),
                     last_used_at: k.last_used_at.map(|dt| dt.to_rfc3339()),
-                    usage_count: k.usage_count,
                     created_at: k.created_at.to_rfc3339(),
                     roles: roles
                         .into_iter()

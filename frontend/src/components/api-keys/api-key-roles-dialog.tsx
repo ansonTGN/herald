@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { m } from '@/paraglide/messages'
+import { getErrorMessage } from '@/lib/error-utils'
 
 interface ApiKeyRolesDialogProps {
   open: boolean
@@ -75,8 +76,9 @@ export function ApiKeyRolesDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.apiKeysList(realmId) })
 
       setSelectedRoleIds(newRoleIds)
-    } catch {
-      toast.error(m['api_keys.roles_update_failed']())
+    } catch (error) {
+      // Show the real backend reason (e.g. builtin role rejected) instead of a generic message
+      toast.error(getErrorMessage(error))
       // selectedRoleIds is NOT updated on failure -- stays matching server state
     } finally {
       setIsSaving(false)
@@ -111,7 +113,7 @@ export function ApiKeyRolesDialog({
                 {m['api_keys.roles_dialog_assign_label']()}
               </label>
               <RoleSelector
-                roles={rolesData ?? []}
+                roles={(rolesData ?? []).filter((r) => !r.isBuiltin)}
                 selectedRoleIds={selectedRoleIds}
                 onChange={handleRoleChange}
                 disabled={isSaving}

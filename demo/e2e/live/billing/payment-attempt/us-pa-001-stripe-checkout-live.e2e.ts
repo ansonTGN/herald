@@ -1,10 +1,11 @@
 /**
  * Live Stripe Payment Smoke Test
  *
- * Related User Stories: US-PA-001, US-PA-002, US-PA-003, US-PV-001
- * Coverage: partial live smoke; Stripe checkout branch of US-PA-001.
+ * Related User Stories: US-PA-001, US-PA-002, US-PA-003, US-PV-001, US-IF-004, US-IF-007, US-IF-008
+ * Coverage: partial live smoke; Stripe checkout branch of US-PA-001; external invoice field
+ *   coverage + provider filter (US-IF-004); Stripe credit note refund sync (US-IF-007/008).
  * Not Covered: complete payment-attempt matrix, frontend polling states, failure/expiry,
- *   webhook compensation, refund, idempotency, or audit outcomes.
+ *   webhook compensation, idempotency, or audit outcomes.
  * Live Dependency: real Stripe test credentials
  * Manual Step: no
  * Run Command:
@@ -35,7 +36,8 @@
  *      - Copy the Product ID (prod_*) → set as STRIPE_PRODUCT_ID in .env.demo
  *   3. Developers → Webhooks → Add endpoint:
  *      - URL: http://localhost:8080/api/third/pay/{realmId}/stripe/webhooks
- *      - Events: checkout.session.completed, customer.subscription.*, invoice.*
+ *      - Events: checkout.session.completed, customer.subscription.*, invoice.*,
+ *        credit_note.created  (credit_note.created is required by Scenario 8)
  *      - Copy the Signing secret → set as STRIPE_WEBHOOK_SECRET in .env.demo
  *
  * Fixed test identifiers:
@@ -188,7 +190,7 @@ async function ensureClientApp(request: import('@playwright/test').APIRequestCon
 async function waitForStripeInvoice(
   page: Page,
   timeout = 30000,
-): Promise<{ id: string; provider: string; external_invoice_id: string; external_hosted_url: string | null; external_pdf_url: string | null; status: string; total: number; [key: string]: unknown }> {
+): Promise<{ id: string; provider: string; externalInvoiceId: string; externalHostedUrl: string | null; externalPdfUrl: string | null; status: string; total: number; [key: string]: unknown }> {
   const startTime = Date.now()
   let delay = 1000
   const maxDelay = 3000
@@ -204,7 +206,7 @@ async function waitForStripeInvoice(
         const stripeInvoice = items.find(
           (inv: any) =>
             inv.provider === 'stripe' &&
-            inv.external_invoice_id?.startsWith('in_'),
+            inv.externalInvoiceId?.startsWith('in_'),
         )
         if (stripeInvoice) {
           return stripeInvoice
@@ -216,6 +218,66 @@ async function waitForStripeInvoice(
   }
 
   throw new Error(`Timed out waiting for Stripe external invoice after ${timeout}ms`)
+}
+
+/**
+ * Snapshot existing Stripe invoice external_invoice_id values. Used to detect a
+ * newly-created invoice in a fresh checkout — sibling scenarios share one realm,
+ * so older Stripe invoices linger in the list and waitForStripeInvoice would
+ * return them instead of the current run's invoice.
+ */
+async function getExistingStripeInvoiceExternalIds(page: Page): Promise<Set<string>> {
+  const ids = new Set<string>()
+  const resp = await page.request.get(`${BASE_URL}/api/bill/${REALM_ID}/invoices?provider=stripe`)
+  if (resp.ok()) {
+    const body = await resp.json()
+    const items = body.data ?? body.items ?? body
+    if (Array.isArray(items)) {
+      for (const inv of items as Array<{ externalInvoiceId?: string }>) {
+        if (inv.externalInvoiceId) {
+          ids.add(inv.externalInvoiceId)
+        }
+      }
+    }
+  }
+  return ids
+}
+
+/**
+ * Poll until a Stripe invoice appears whose external_invoice_id is NOT in the
+ * `known` snapshot — i.e. the invoice created by the current checkout.
+ */
+async function waitForNewStripeInvoice(
+  page: Page,
+  known: Set<string>,
+  timeout = 30000,
+): Promise<{ id: string; provider: string; externalInvoiceId: string; total: number; [key: string]: unknown }> {
+  const startTime = Date.now()
+  let delay = 1000
+  const maxDelay = 3000
+
+  while (Date.now() - startTime < timeout) {
+    const resp = await page.request.get(`${BASE_URL}/api/bill/${REALM_ID}/invoices?provider=stripe`)
+    if (resp.ok()) {
+      const body = await resp.json()
+      const items = body.data ?? body.items ?? body
+      if (Array.isArray(items)) {
+        const fresh = items.find(
+          (inv: any) =>
+            inv.provider === 'stripe' &&
+            inv.externalInvoiceId?.startsWith('in_') &&
+            !known.has(inv.externalInvoiceId),
+        )
+        if (fresh) {
+          return fresh
+        }
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, delay))
+    delay = Math.min(delay * 1.5, maxDelay)
+  }
+
+  throw new Error(`Timed out waiting for a new Stripe invoice after ${timeout}ms`)
 }
 
 test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout payment attempt', () => {
@@ -888,11 +950,17 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
       console.log(`[live-s7] Stripe external invoice: ${JSON.stringify(invoice)}`)
 
       expect(invoice.provider).toBe('stripe')
-      expect(invoice.external_invoice_id, 'Expected external_invoice_id to start with in_').toMatch(/^in_/)
+      expect(invoice.externalInvoiceId, 'Expected externalInvoiceId to start with in_').toMatch(/^in_/)
       expect(invoice.status, `Expected status 'paid', got '${invoice.status}'`).toBe('paid')
       expect(invoice.total, 'Expected total > 0').toBeGreaterThan(0)
-      expect(invoice.external_hosted_url, 'Expected external_hosted_url to be present').toBeTruthy()
-      expect(invoice.external_pdf_url, 'Expected external_pdf_url to be present').toBeTruthy()
+      expect(invoice.externalHostedUrl, 'Expected externalHostedUrl to be present').toBeTruthy()
+      expect(invoice.externalPdfUrl, 'Expected externalPdfUrl to be present').toBeTruthy()
+      // Expanded invoice field coverage (US-IF-004): provider linkage, source, currency, refund totals.
+      expect(invoice.paymentProvider, 'Expected paymentProvider to be stripe').toBe('stripe')
+      expect(invoice.source, 'Expected source to be external_sync').toBe('external_sync')
+      expect(invoice.currency, 'Expected currency to be a 3-letter code').toMatch(/^[a-z]{3}$/)
+      expect(invoice.invoiceNumber, 'Expected invoiceNumber to be present').toBeTruthy()
+      expect(invoice.amountRefunded, 'Expected amountRefunded to be 0 on a fresh paid invoice').toBe(0)
     })
 
     await test.step('And invoice detail endpoint returns full response', async () => {
@@ -907,9 +975,50 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
 
       expect(detail.id).toBe(invoice.id)
       expect(detail.provider).toBe('stripe')
-      expect(detail.external_invoice_id).toMatch(/^in_/)
-      expect(detail.external_hosted_url).toBeTruthy()
-      expect(detail.external_pdf_url).toBeTruthy()
+      expect(detail.externalInvoiceId).toMatch(/^in_/)
+      expect(detail.externalHostedUrl).toBeTruthy()
+      expect(detail.externalPdfUrl).toBeTruthy()
+      // Expanded detail coverage (US-IF-004/008): provider linkage, currency, refund totals.
+      expect(detail.paymentProvider).toBe('stripe')
+      expect(detail.source).toBe('external_sync')
+      expect(detail.currency).toMatch(/^[a-z]{3}$/)
+      expect(detail.invoiceNumber).toBeTruthy()
+      expect(detail.amountRefunded, 'Expected amountRefunded to be 0 initially').toBe(0)
+      expect(detail.amountRemaining, 'Expected amountRemaining to equal total initially').toBe(detail.total)
+    })
+
+    await test.step('And provider filter returns only stripe invoices (US-IF-004)', async () => {
+      const invoice = await waitForStripeInvoice(page, 10000)
+
+      const stripeOnly = await page.request.get(
+        `${BASE_URL}/api/bill/${REALM_ID}/invoices?provider=stripe`,
+      )
+      expect(stripeOnly.ok(), `provider=stripe filter failed: ${await stripeOnly.text().catch(() => '')}`).toBeTruthy()
+      const stripeBody = await stripeOnly.json()
+      const stripeItems = stripeBody.data ?? stripeBody.items ?? stripeBody
+      expect(Array.isArray(stripeItems), 'Expected an array of stripe invoices').toBeTruthy()
+      for (const inv of stripeItems as any[]) {
+        expect(inv.provider, `provider=stripe filter must not leak '${inv.provider}' invoices`).toBe('stripe')
+      }
+      expect(
+        (stripeItems as any[]).some((inv) => inv.id === invoice.id),
+        'The paid stripe invoice should appear in provider=stripe filter',
+      ).toBeTruthy()
+
+      // Negative isolation: provider=manual must NOT include the stripe invoice.
+      const manualOnly = await page.request.get(
+        `${BASE_URL}/api/bill/${REALM_ID}/invoices?provider=manual`,
+      )
+      if (manualOnly.ok()) {
+        const manualBody = await manualOnly.json()
+        const manualItems = manualBody.data ?? manualBody.items ?? manualBody
+        if (Array.isArray(manualItems)) {
+          expect(
+            (manualItems as any[]).find((inv) => inv.id === invoice.id),
+            'stripe invoice must not leak into provider=manual filter',
+          ).toBeUndefined()
+        }
+      }
     })
 
     // Cleanup: cancel any subscription created in this test
@@ -922,6 +1031,200 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
         console.log(`[live-s7] Cleanup cancel: ${cancelResp.status()}`)
       } catch (error) {
         console.log('[live-s7] Cleanup cancel failed (non-fatal):', error)
+      }
+    })
+  })
+
+  test('US-PA-001 Scenario 8: Stripe credit note syncs refund amount to invoice (US-IF-007)', async ({ page }) => {
+    // NOTE: This scenario depends on the Stripe `credit_note.created` webhook reaching Herald.
+    // It requires an ngrok tunnel (or equivalent public endpoint) so Stripe can deliver the
+    // callback; without it the refund totals never update and the test will time out.
+    let clientAppId: string
+    let attemptId: string
+    let creditNoteAmount = 0
+
+    // Snapshot existing Stripe invoices so we can identify THIS run's invoice among
+    // lingering invoices from sibling scenarios (all share the admin realm).
+    const knownInvoiceIds = await getExistingStripeInvoiceExternalIds(page)
+
+    await test.step('Given a paid Stripe subscription invoice exists', async () => {
+      const syncResp = await page.request.post(
+        `${BASE_URL}/api/bill/${REALM_ID}/entitlement-mappings/sync`,
+        { data: { paymentProvider: 'stripe' } },
+      )
+      expect(syncResp.ok()).toBeTruthy()
+
+      const mappingsResp = await page.request.get(
+        `${BASE_URL}/api/bill/${REALM_ID}/entitlement-mappings?paymentProvider=stripe`,
+      )
+      expect(mappingsResp.ok()).toBeTruthy()
+      const body = await mappingsResp.json()
+      const items = body.items ?? body
+      const targetMapping = items.find((m: any) => m.externalProductId === secrets.stripe.productId)
+      expect(targetMapping).toBeTruthy()
+
+      if (targetMapping.entitlementKey !== ENTITLEMENT_KEY || !targetMapping.enabled) {
+        const patchResp = await page.request.patch(
+          `${BASE_URL}/api/bill/${REALM_ID}/entitlement-mappings/${targetMapping.id}`,
+          {
+            data: {
+              entitlementKey: ENTITLEMENT_KEY,
+              enabled: true,
+              pointsPerPeriod: 1000,
+              grantPeriodType: 'monthly',
+              validityDays: 30,
+              grantOnSubscribe: true,
+            },
+          },
+        )
+        expect(patchResp.ok()).toBeTruthy()
+      }
+
+      clientAppId = await ensureClientApp(page.request)
+      console.log(`[live-s8] Client App ID: ${clientAppId}`)
+    })
+
+    await test.step('When completing Stripe checkout and fulfillment', async () => {
+      const checkoutResp = await page.request.post(
+        `${BASE_URL}/api/bill/${REALM_ID}/client/${clientAppId}/checkout`,
+        {
+          data: {
+            entitlementKey: ENTITLEMENT_KEY,
+            paymentProvider: 'stripe',
+          },
+        },
+      )
+      expect(checkoutResp.ok(), `Checkout failed: ${await checkoutResp.text().catch(() => '')}`).toBeTruthy()
+      const checkoutBody = await checkoutResp.json()
+      expect(checkoutBody.checkoutUrl).toBeTruthy()
+
+      await page.goto(checkoutBody.checkoutUrl, { waitUntil: 'domcontentloaded', timeout: 60000 })
+      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
+
+      const cardInput = await findVisibleCheckoutControl(page, 'card number', [
+        (root) => root.locator('input[name="cardNumber"]'),
+        (root) => root.locator('input[autocomplete*="cc-number"]'),
+        (root) => root.getByLabel(/card number/i),
+        (root) => root.getByPlaceholder(/4242|card|number/i),
+      ])
+      await cardInput.fill('4242424242424242')
+
+      const expiryInput = await findVisibleCheckoutControl(page, 'expiry', [
+        (root) => root.locator('input[name="cardExpiry"]'),
+        (root) => root.locator('input[autocomplete*="cc-exp"]'),
+        (root) => root.getByLabel(/expiry|expiration/i),
+        (root) => root.getByPlaceholder(/MM|YY|expiry/i),
+      ])
+      await expiryInput.fill('1234')
+
+      const cvcInput = await findVisibleCheckoutControl(page, 'CVC', [
+        (root) => root.locator('input[name="cardCvc"]'),
+        (root) => root.locator('input[autocomplete*="cc-csc"]'),
+        (root) => root.getByLabel(/cvc|cvv|security/i),
+        (root) => root.getByPlaceholder(/CVC|CVV|security/i),
+      ])
+      await cvcInput.fill('123')
+
+      const nameInput = await findVisibleCheckoutControl(page, 'cardholder name', [
+        (root) => root.getByLabel(/cardholder name/i),
+        (root) => root.getByPlaceholder(/full name on card/i),
+      ])
+      await nameInput.fill('Test User')
+      await nameInput.blur()
+      await page.waitForTimeout(1000)
+
+      const submitButton = page.getByRole('button', { name: /pay|subscribe/i }).last()
+      await expect(submitButton).toBeVisible({ timeout: 5000 })
+      await submitButton.scrollIntoViewIfNeeded()
+      await submitButton.click()
+      await page.waitForTimeout(5000)
+
+      await page.waitForURL(/\/billing\/success/, { timeout: 30000 }).catch(() => {})
+
+      const attemptsResp = await page.request.get(
+        `${BASE_URL}/api/bill/${REALM_ID}/purchase/payment-attempts`,
+      )
+      if (attemptsResp.ok()) {
+        const attemptsBody = await attemptsResp.json()
+        const attempts = attemptsBody.items ?? attemptsBody.attempts ?? attemptsBody
+        if (Array.isArray(attempts) && attempts.length > 0) {
+          attemptId = attempts[0].id ?? attempts[0].attemptId
+        }
+      }
+
+      if (attemptId) {
+        const fulfillResult = await fulfillPayment(page.request, REALM_ID, attemptId)
+        expect(fulfillResult.success, `Fulfillment failed: ${fulfillResult.error}`).toBeTruthy()
+        const finalStatus = await waitForPaymentStatus(page.request, REALM_ID, attemptId, 'Succeeded', 15000)
+        expect(finalStatus).not.toBe('Pending')
+      }
+    })
+
+    await test.step('When a Stripe credit note is created for the invoice', async () => {
+      const invoice = await waitForNewStripeInvoice(page, knownInvoiceIds, 30000)
+      creditNoteAmount = Math.max(1, Math.floor(Number(invoice.total) / 2))
+      console.log(`[live-s8] Invoice ${invoice.externalInvoiceId} total=${invoice.total}; creating credit note amount=${creditNoteAmount}`)
+      expect(invoice.amountRefunded, 'amountRefunded should be 0 before the credit note').toBe(0)
+
+      // Create the credit note via the Stripe API. Stripe fires `credit_note.created`,
+      // which Herald syncs to update the invoice's refund totals (requires webhook delivery).
+      const cnResp = await page.request.post('https://api.stripe.com/v1/credit_notes', {
+        headers: { Authorization: `Bearer ${secrets.stripe.secretKey}` },
+        form: {
+          invoice: String(invoice.externalInvoiceId),
+          amount: String(creditNoteAmount),
+          // Paid invoice: full credit note amount is post_payment_amount, so allocate it to refund_amount.
+          refund_amount: String(creditNoteAmount),
+          reason: 'product_unsatisfactory',
+        },
+        timeout: 30000,
+      })
+      expect(cnResp.ok(), `Stripe credit note creation failed: ${await cnResp.text().catch(() => '')}`).toBeTruthy()
+      const cn = await cnResp.json()
+      console.log(`[live-s8] Stripe credit note created: ${cn.id} (status=${cn.status})`)
+    })
+
+    await test.step('Then the invoice reflects the refund via credit note sync (US-IF-007)', async () => {
+      const invoice = await waitForNewStripeInvoice(page, knownInvoiceIds, 10000)
+
+      // Poll the detail endpoint until the credit_note.created webhook lands and updates refund totals.
+      const startTime = Date.now()
+      let detail: any
+      while (Date.now() - startTime < 60000) {
+        const r = await page.request.get(`${BASE_URL}/api/bill/${REALM_ID}/invoices/${invoice.id}`)
+        if (r.ok()) {
+          detail = await r.json()
+          if (detail && detail.amountRefunded > 0) break
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+      }
+
+      expect(detail, 'Failed to fetch invoice detail after credit note').toBeTruthy()
+      console.log(`[live-s8] Invoice detail after credit note sync: ${JSON.stringify(detail)}`)
+
+      // US-IF-007 scenario 1/3: refund totals update; main status stays paid.
+      expect(detail.status, 'Main invoice status must remain paid after credit note').toBe('paid')
+      expect(detail.amountRefunded, 'Expected amountRefunded to equal the credit note amount').toBe(creditNoteAmount)
+      expect(detail.amountRemaining, 'Expected amountRemaining = total - amountRefunded').toBe(detail.total - creditNoteAmount)
+
+      // US-IF-008: read-only credit note list with a stripe-sourced entry.
+      expect(Array.isArray(detail.creditNotes) && detail.creditNotes.length > 0, 'Expected creditNotes list non-empty').toBeTruthy()
+      const matched = (detail.creditNotes as any[]).find((cn) => cn.source === 'stripe')
+      expect(matched, 'Expected a stripe-sourced credit note in the list').toBeTruthy()
+      expect(matched.status, 'Expected credit note status to be active').toBe('active')
+      expect(matched.amount, 'Expected credit note amount to match').toBe(creditNoteAmount)
+      expect(matched.externalCreditNoteId, 'Expected externalCreditNoteId to start with cn_').toMatch(/^cn_/)
+    })
+
+    await test.step('Cleanup: cancel subscription if created', async () => {
+      try {
+        const cancelResp = await page.request.post(
+          `${BASE_URL}/api/bill/${REALM_ID}/client/${clientAppId}/subscription/cancel`,
+          { data: { cancelAtPeriodEnd: false } },
+        )
+        console.log(`[live-s8] Cleanup cancel: ${cancelResp.status()}`)
+      } catch (error) {
+        console.log('[live-s8] Cleanup cancel failed (non-fatal):', error)
       }
     })
   })

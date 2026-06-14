@@ -71,8 +71,8 @@ async fn setup_api_key_with_permissions(
     let api_key_hash = ClientApiKeyService::hash_api_key(&api_key_plaintext);
 
     query(
-        "INSERT INTO client_api_keys (id, name, api_key_hash, realm_id, client_app_id, enabled, expires_at, created_at, last_used_at, usage_count)
-         VALUES ($1, $2, $3, $4, NULL, true, NULL, NOW(), NULL, 0)",
+        "INSERT INTO client_api_keys (id, name, api_key_hash, realm_id, client_app_id, enabled, expires_at, created_at, last_used_at)
+         VALUES ($1, $2, $3, $4, NULL, true, NULL, NOW(), NULL)",
     )
     .bind(api_key_id)
     .bind(format!("test-key-{}", Uuid::now_v7()))

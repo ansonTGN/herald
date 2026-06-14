@@ -83,9 +83,6 @@ pub struct ApiKeyListItem {
     /// Last usage time (ISO 8601)
     pub last_used_at: Option<String>,
 
-    /// Total usage count
-    pub usage_count: i32,
-
     /// Creation time (ISO 8601)
     pub created_at: String,
 

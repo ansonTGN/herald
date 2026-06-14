@@ -43,7 +43,7 @@
  * Fails loud when credentials are absent.
  */
 
-import { test, expect, type Frame, type Locator, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 import { secrets, requireCreemPayment } from '../../../secrets/env'
 import { seedCreemConfig } from '../../../secrets/realm-seed'
 import { loginAsAdmin } from '../../../helpers/auth'
@@ -54,7 +54,17 @@ const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 const REALM_ID = 'admin'
 const ENTITLEMENT_KEY = 'herald-live-creem-entitlement'
 
-type SearchRoot = Page | Frame
+/**
+ * Minimum gap between consecutive real Creem checkouts within a single run.
+ * Creem test-mode rate-limits rapid back-to-back checkout completions: when
+ * this file runs whole, Scenarios 5/6/7 fire three real checkouts in quick
+ * succession and the third gets throttled (no checkout.completed webhook, so
+ * the redirect times out). Spacing the completions apart lets Creem's
+ * rate-limit window reset. Isolated --grep runs only perform one checkout, so
+ * this is a no-op for them. Tunable: raise if Creem still throttles.
+ */
+const MIN_CREEM_CHECKOUT_GAP_MS = 120_000
+let lastCreemCheckoutStartAt = 0
 
 /** Navigate to a URL with retry on timeout. Retries up to maxRetries times. */
 async function navigateWithRetry(page: Page, url: string, maxRetries = 2): Promise<void> {
@@ -69,83 +79,130 @@ async function navigateWithRetry(page: Page, url: string, maxRetries = 2): Promi
   }
 }
 
-async function findVisibleCheckoutControl(
-  page: Page,
-  label: string,
-  selectors: Array<(root: SearchRoot) => Locator>,
-): Promise<Locator> {
-  const roots: SearchRoot[] = [page, ...page.frames()]
-  const visibilityTimeout = 3000
+/**
+ * Creem renders its card form inside a Stripe Elements iframe hosted at
+ * `js.stripe.com/v3/elements-inner-accessory-target-*.html`. The iframe name
+ * carries a per-session suffix (`__privateStripeFrame0445` etc.) so it cannot
+ * be targeted by name; scoping by the stable URL fragment is the reliable
+ * selector. The iframe exposes three fillable inputs:
+ *   - input#payment-numberInput (autocomplete="cc-number")
+ *   - input#payment-expiryInput (autocomplete="cc-exp")
+ *   - input#payment-cvcInput    (autocomplete="cc-csc")
+ * Stripe Elements inputs reject bulk `.fill()`; they require real key events,
+ * so callers must use {@link fillCreemCardField} (pressSequentially + verify).
+ */
+function creemCardFrame(page: Page) {
+  return page.frameLocator('iframe[src*="elements-inner-accessory-target"]')
+}
 
-  for (const root of roots) {
-    for (const selector of selectors) {
-      const locator = selector(root).first()
-      if (await locator.isVisible({ timeout: visibilityTimeout }).catch(() => false)) {
-        return locator
-      }
+/**
+ * Fill a Creem Stripe-Elements card field by typing digit-by-digit and
+ * verifying the value actually landed. Stripe Elements inputs ignore bulk
+ * `.fill()` (their JS listens for keyboard events), so we always use
+ * pressSequentially and then assert the rendered value contains the expected
+ * digits. Throws (fail-loud) if the field stays empty so the test never
+ * silently submits an incomplete form.
+ */
+async function fillCreemCardField(
+  field: Locator,
+  value: string,
+  expectedDigits: string,
+  label: string,
+): Promise<void> {
+  await field.waitFor({ state: 'visible', timeout: 10000 })
+  await field.click()
+  await field.pressSequentially(value, { delay: 30 })
+  // Give Stripe's masking/formatting a moment to render, then fail loud if the
+  // value did not actually land — never silently submit an incomplete card.
+  // Compare on digits only: Stripe formats expiry as "12 / 30" and card as
+  // "4242 4242 4242 4242", so strip all non-digit characters before matching.
+  await field.page().waitForTimeout(300)
+  const filled = await field.inputValue().catch(() => '')
+  const filledDigits = filled.replace(/\D/g, '')
+  if (!filledDigits.includes(expectedDigits)) {
+    throw new Error(
+      `Creem checkout ${label} field did not accept input. ` +
+        `Expected digits to contain "${expectedDigits}", got "${filled}" (digits: "${filledDigits}"). ` +
+        `Stripe Elements iframe may have rejected the keystrokes.`,
+    )
+  }
+}
+
+/**
+ * Navigate through Creem's hosted checkout:
+ *   1. Fill the Stripe Elements card iframe (number / expiry / cvc).
+ *   2. Fill the top-level Full name input (Creem renders this outside the iframe).
+ *   3. Click the single "Pay $X.YY" submit button.
+ *   4. Wait for Creem to redirect back to the configured success URL.
+ *
+ * Verified against the real Creem test-mode checkout: there is exactly one
+ * Pay button; after click it shows "Processing..." and redirects directly
+ * to /billing/success (no second confirmation step).
+ */
+/**
+ * Ensure consecutive Creem checkouts are spaced by at least
+ * {@link MIN_CREEM_CHECKOUT_GAP_MS}. No-op for the first checkout in a run.
+ * Module-level state persists across tests because this file runs in a single
+ * Playwright worker, so Scenarios 5 → 6 → 7 share one timeline.
+ */
+async function spaceOutCreemCheckouts(): Promise<void> {
+  if (lastCreemCheckoutStartAt > 0) {
+    const remaining = MIN_CREEM_CHECKOUT_GAP_MS - (Date.now() - lastCreemCheckoutStartAt)
+    if (remaining > 0) {
+      console.log(
+        `[creem] Waiting ${Math.round(remaining / 1000)}s before next checkout to avoid Creem rate-limiting`,
+      )
+      await new Promise((resolve) => setTimeout(resolve, remaining))
+    }
+  }
+  lastCreemCheckoutStartAt = Date.now()
+}
+
+async function completeCreemCheckout(page: Page, options: { fullName?: string } = {}): Promise<void> {
+  // Space consecutive real checkouts apart so Creem's test-mode rate-limit
+  // window can reset (see MIN_CREEM_CHECKOUT_GAP_MS).
+  await spaceOutCreemCheckouts()
+
+  const cardFrame = creemCardFrame(page)
+
+  await fillCreemCardField(
+    cardFrame.locator('input#payment-numberInput'),
+    '4242424242424242',
+    '4242',
+    'card number',
+  )
+  await fillCreemCardField(
+    cardFrame.locator('input#payment-expiryInput'),
+    '1230',
+    '1230',
+    'expiry',
+  )
+  await fillCreemCardField(
+    cardFrame.locator('input#payment-cvcInput'),
+    '123',
+    '123',
+    'cvc',
+  )
+
+  // Full name is rendered at the top level by Creem (input#name, placeholder "John Doe").
+  if (options.fullName) {
+    const nameInput = page.locator('input#name')
+    if (await nameInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await nameInput.fill(options.fullName)
     }
   }
 
-  const frames = page.frames()
-    .map((frame) => `- name="${frame.name()}" url="${frame.url()}"`)
-    .join('\n')
-  const title = await page.title().catch(() => '<unavailable>')
+  // Creem exposes exactly one Pay button ("Pay $X.YY" + product type, e.g. "Pay $10.00Subscribe").
+  const submitButton = page.getByRole('button', { name: /^pay\s+\$/i }).last()
+  await expect(submitButton).toBeVisible({ timeout: 10000 })
+  await expect(submitButton).toBeEnabled({ timeout: 10000 })
+  await submitButton.scrollIntoViewIfNeeded()
+  await submitButton.click()
 
-  throw new Error(
-    `Creem checkout ${label} control not found.\n` +
-      `Current URL: ${page.url()}\n` +
-      `Page title: ${title}\n` +
-      `Frames:\n${frames || '- <none>'}`,
-  )
-}
-
-/** Card number selectors: role-based first (matches Creem Stripe Elements iframe), then fallbacks. */
-const CARD_NUMBER_SELECTORS: Array<(root: SearchRoot) => Locator> = [
-  (root) => root.getByRole('textbox', { name: /card number/i }),
-  (root) => root.locator('input[autocomplete*="cc-number"]'),
-  (root) => root.getByLabel(/card number/i),
-  (root) => root.locator('input[name*="card" i], input[name*="number" i]'),
-  (root) => root.getByPlaceholder(/4242|card|number/i),
-  (root) => root.locator('input[inputmode="numeric"]').first(),
-  (root) => root.locator('form input[type="text"]').first(),
-]
-
-/** Expiry selectors: role-based first (matches Creem Stripe Elements iframe), then fallbacks. */
-const EXPIRY_SELECTORS: Array<(root: SearchRoot) => Locator> = [
-  (root) => root.getByRole('textbox', { name: /expiration/i }),
-  (root) => root.locator('input[autocomplete*="cc-exp"]'),
-  (root) => root.getByLabel(/expiry|expiration|expires/i),
-  (root) => root.locator('input[name*="expir" i], input[name*="expiry" i], input[name*="exp" i]'),
-  (root) => root.getByPlaceholder(/MM|YY|expiry|expiration/i),
-  (root) => root.locator('input[inputmode="numeric"]').nth(1),
-]
-
-/** CVC selectors: role-based first (matches Creem Stripe Elements iframe), then fallbacks. */
-const CVC_SELECTORS: Array<(root: SearchRoot) => Locator> = [
-  (root) => root.getByRole('textbox', { name: /security code/i }),
-  (root) => root.locator('input[autocomplete*="cc-csc"]'),
-  (root) => root.getByLabel(/cvc|cvv|security code/i),
-  (root) => root.locator('input[name*="cvc" i], input[name*="cvv" i]'),
-  (root) => root.getByPlaceholder(/CVC|CVV|security/i),
-  (root) => root.locator('input[inputmode="numeric"]').nth(2),
-]
-
-/**
- * Fill a payment input and verify the value actually persisted.
- * Stripe Elements-style iframes often reject programmatic `.fill()` because
- * their internal JS listens for keyboard events, not just value changes.
- * Falls back to `.pressSequentially()` when `.fill()` did not stick.
- */
-async function fillWithVerification(locator: Locator, value: string, minLength = 1): Promise<void> {
-  await locator.fill(value)
-
-  // Check whether the value actually landed in the input
-  const filledValue = await locator.inputValue().catch(() => '')
-  if (!filledValue || filledValue.replace(/\s/g, '').length < minLength) {
-    // .fill() was silently rejected by the iframe's internal JS — use key-by-key input
-    await locator.clear().catch(() => {})
-    await locator.pressSequentially(value, { delay: 50 })
-  }
+  // Creem redirects to the configured success URL after processing the card.
+  // The redirect is the authoritative signal that checkout completed server-side
+  // (the real checkout.completed webhook fires off the back of this).
+  await page.waitForURL(/\/billing\/success/, { timeout: 60000 })
 }
 
 /** Find or create a client app and return its UUID. */
@@ -240,12 +297,38 @@ async function pollForBalanceStable(page: Page, timeout = 15000): Promise<number
 }
 
 /**
- * Poll the invoice API until a Creem external invoice appears.
- * Returns the first invoice with provider='creem' and a truthy external_invoice_id.
- * Throws on timeout.
+ * Snapshot the current list of Creem external invoice IDs. Used as a baseline
+ * so {@link waitForNewCreemInvoice} can wait for an invoice that did NOT exist
+ * before this run's checkout — preventing a stale invoice from a previous run
+ * from satisfying the assertion.
  */
-async function waitForCreemInvoice(
+async function snapshotCreemInvoiceIds(page: Page): Promise<Set<string>> {
+  const resp = await page.request.get(
+    `${BASE_URL}/api/bill/${REALM_ID}/invoices?provider=creem`,
+  )
+  if (!resp.ok()) return new Set()
+  const body = await resp.json()
+  const items = body.data ?? body.items ?? body
+  if (!Array.isArray(items)) return new Set()
+  // The API serializes fields in camelCase (externalInvoiceId, provider, ...).
+  return new Set(
+    items
+      .map((inv: any) => inv.externalInvoiceId ?? inv.external_invoice_id)
+      .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0),
+  )
+}
+
+/**
+ * Poll the invoice API until a NEW Creem external invoice appears that was not
+ * present in the baseline snapshot. Returns the first matching invoice.
+ *
+ * The backend responds with camelCase keys (externalInvoiceId, provider, ...);
+ * the lookup tolerates both camelCase and snake_case to stay robust to shape
+ * drift. Throws on timeout.
+ */
+async function waitForNewCreemInvoice(
   page: Page,
+  baselineIds: Set<string>,
   timeout = 30000,
 ): Promise<{ id: string; provider: string; external_invoice_id: string; external_hosted_url: string | null; external_pdf_url: string | null; status: string; total: number; [key: string]: unknown }> {
   const startTime = Date.now()
@@ -260,13 +343,25 @@ async function waitForCreemInvoice(
       const body = await resp.json()
       const items = body.data ?? body.items ?? body
       if (Array.isArray(items)) {
-        const creemInvoice = items.find(
-          (inv: any) =>
-            inv.provider === 'creem' &&
-            inv.external_invoice_id,
-        )
-        if (creemInvoice) {
-          return creemInvoice
+        // API returns newest-first (ORDER BY created_at DESC).
+        const newInvoice = items.find((inv: any) => {
+          const provider = inv.provider ?? inv.paymentProvider
+          const externalId = inv.externalInvoiceId ?? inv.external_invoice_id
+          return (
+            provider === 'creem' &&
+            typeof externalId === 'string' &&
+            externalId.length > 0 &&
+            !baselineIds.has(externalId)
+          )
+        })
+        if (newInvoice) {
+          // Normalize to the snake_case shape this test historically asserted on.
+          return {
+            ...newInvoice,
+            external_invoice_id: newInvoice.externalInvoiceId ?? newInvoice.external_invoice_id,
+            external_hosted_url: newInvoice.externalHostedUrl ?? newInvoice.external_hosted_url ?? null,
+            external_pdf_url: newInvoice.externalPdfUrl ?? newInvoice.external_pdf_url ?? null,
+          }
         }
       }
     }
@@ -274,7 +369,7 @@ async function waitForCreemInvoice(
     delay = Math.min(delay * 1.5, maxDelay)
   }
 
-  throw new Error(`Timed out waiting for Creem external invoice after ${timeout}ms`)
+  throw new Error(`Timed out waiting for a new Creem external invoice after ${timeout}ms`)
 }
 
 test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment attempt', () => {
@@ -475,30 +570,10 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
 
     await test.step('Then fill test card and submit payment', async () => {
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
+      await page.screenshot({ path: 'test-results/creem-checkout-page.png' })
 
-      const cardInput = await findVisibleCheckoutControl(page, 'card number', CARD_NUMBER_SELECTORS)
-      await fillWithVerification(cardInput, '4242424242424242', 16)
-
-      const expiryInput = await findVisibleCheckoutControl(page, 'expiry', EXPIRY_SELECTORS)
-      await fillWithVerification(expiryInput, '1230', 4)
-
-      const cvcInput = await findVisibleCheckoutControl(page, 'CVC', CVC_SELECTORS)
-      await fillWithVerification(cvcInput, '123', 3)
-
-      const fullNameInput = page.getByRole('textbox', { name: /full name/i })
-      if (await fullNameInput.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await fullNameInput.fill('Herald Demo User')
-      }
-
-      await page.screenshot({ path: 'test-results/creem-checkout-filled.png' })
-
-      const submitButton = page.getByRole('button', { name: /pay/i }).last()
-      await expect(submitButton).toBeVisible({ timeout: 5000 })
-      await submitButton.scrollIntoViewIfNeeded()
-      await submitButton.click()
-      await page.waitForTimeout(5000)
-
-      console.log('[live] Payment submitted, waiting for result...')
+      await completeCreemCheckout(page, { fullName: 'Herald Demo User' })
+      console.log('[live] Payment submitted, redirected to success page')
     })
 
     await test.step('And wait for redirect and fulfill payment', async () => {
@@ -628,30 +703,10 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
 
     await test.step('And filling test card and submitting payment', async () => {
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
+      await page.screenshot({ path: 'test-results/creem-s6-checkout-page.png' })
 
-      const cardInput = await findVisibleCheckoutControl(page, 'card number', CARD_NUMBER_SELECTORS)
-      await fillWithVerification(cardInput, '4242424242424242', 16)
-
-      const expiryInput = await findVisibleCheckoutControl(page, 'expiry', EXPIRY_SELECTORS)
-      await fillWithVerification(expiryInput, '1230', 4)
-
-      const cvcInput = await findVisibleCheckoutControl(page, 'CVC', CVC_SELECTORS)
-      await fillWithVerification(cvcInput, '123', 3)
-
-      const fullNameInput = page.getByRole('textbox', { name: /full name/i })
-      if (await fullNameInput.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await fullNameInput.fill('Herald Demo User')
-      }
-
-      await page.screenshot({ path: 'test-results/creem-s6-checkout-filled.png' })
-
-      const submitButton = page.getByRole('button', { name: /pay/i }).last()
-      await expect(submitButton).toBeVisible({ timeout: 5000 })
-      await submitButton.scrollIntoViewIfNeeded()
-      await submitButton.click()
-      await page.waitForTimeout(5000)
-
-      console.log('[live-s6] Payment submitted, waiting for result...')
+      await completeCreemCheckout(page, { fullName: 'Herald Demo User' })
+      console.log('[live-s6] Payment submitted, redirected to success page')
     })
 
     await test.step('And waiting for redirect and fulfilling payment', async () => {
@@ -788,6 +843,10 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
     let clientAppId: string
     let attemptId: string
     let checkoutUrl: string
+    // Snapshot of existing Creem invoice IDs before this run's checkout, so the
+    // final assertion can only be satisfied by a NEW invoice created via the
+    // real checkout.completed webhook for this run.
+    let invoiceBaseline: Set<string>
 
     await test.step('Given an entitlement mapping is configured', async () => {
       const syncResp = await page.request.post(
@@ -829,6 +888,11 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
     })
 
     await test.step('When creating a checkout session and completing payment', async () => {
+      // Snapshot existing Creem invoices BEFORE checkout so the post-checkout
+      // assertion can only pass on an invoice created by this run's webhook.
+      invoiceBaseline = await snapshotCreemInvoiceIds(page)
+      console.log(`[live-s7] Invoice baseline: ${invoiceBaseline.size} existing Creem invoice(s)`)
+
       const checkoutResp = await page.request.post(
         `${BASE_URL}/api/bill/${REALM_ID}/client/${clientAppId}/checkout`,
         {
@@ -847,30 +911,16 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
 
       await navigateWithRetry(page, checkoutUrl)
       await page.waitForSelector('body', { timeout: 15000 }).catch(() => {})
-
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
+      await page.screenshot({ path: 'test-results/creem-s7-checkout-page.png' })
 
-      const cardInput = await findVisibleCheckoutControl(page, 'card number', CARD_NUMBER_SELECTORS)
-      await fillWithVerification(cardInput, '4242424242424242', 16)
-
-      const expiryInput = await findVisibleCheckoutControl(page, 'expiry', EXPIRY_SELECTORS)
-      await fillWithVerification(expiryInput, '1230', 4)
-
-      const cvcInput = await findVisibleCheckoutControl(page, 'CVC', CVC_SELECTORS)
-      await fillWithVerification(cvcInput, '123', 3)
-
-      const fullNameInput = page.getByRole('textbox', { name: /full name/i })
-      if (await fullNameInput.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await fullNameInput.fill('Herald Demo User')
-      }
-
-      const submitButton = page.getByRole('button', { name: /pay/i }).last()
-      await expect(submitButton).toBeVisible({ timeout: 5000 })
-      await submitButton.scrollIntoViewIfNeeded()
-      await submitButton.click()
-      await page.waitForTimeout(5000)
-
-      console.log('[live-s7] Payment submitted')
+      // Drive the real hosted checkout end-to-end: fill the Stripe Elements card
+      // iframe, fill the top-level Full name, click Pay, and wait for the real
+      // redirect to /billing/success. The redirect only happens when Creem
+      // confirms the payment server-side, which is also when the real
+      // checkout.completed webhook fires and creates the invoice.
+      await completeCreemCheckout(page, { fullName: 'Herald Demo User' })
+      console.log('[live-s7] Checkout completed, redirected to success page')
     })
 
     await test.step('And fulfill payment and verify success', async () => {
@@ -906,7 +956,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
     })
 
     await test.step('Then a Creem external invoice exists with correct fields', async () => {
-      const invoice = await waitForCreemInvoice(page, 30000)
+      const invoice = await waitForNewCreemInvoice(page, invoiceBaseline, 30000)
       console.log(`[live-s7] Creem external invoice: ${JSON.stringify(invoice)}`)
 
       expect(invoice.provider).toBe('creem')
@@ -927,7 +977,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
     })
 
     await test.step('And invoice detail endpoint returns full response', async () => {
-      const invoice = await waitForCreemInvoice(page, 10000)
+      const invoice = await waitForNewCreemInvoice(page, invoiceBaseline, 10000)
       const detailResp = await page.request.get(
         `${BASE_URL}/api/bill/${REALM_ID}/invoices/${invoice.id}`,
       )
@@ -935,16 +985,20 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
 
       const detail = await detailResp.json()
       console.log(`[live-s7] Invoice detail: ${JSON.stringify(detail)}`)
+      // Detail response is also camelCase (serde rename_all = "camelCase").
+      const externalInvoiceId = detail.externalInvoiceId ?? detail.external_invoice_id
+      const externalHostedUrl = detail.externalHostedUrl ?? detail.external_hosted_url
+      const externalPdfUrl = detail.externalPdfUrl ?? detail.external_pdf_url
 
       expect(detail.id).toBe(invoice.id)
       expect(detail.provider).toBe('creem')
-      expect(detail.external_invoice_id).toBeTruthy()
+      expect(externalInvoiceId, 'Expected detail external_invoice_id to be non-empty').toBeTruthy()
       // Creem may or may not provide hosted/pdf URLs
-      if (detail.external_hosted_url) {
-        expect(detail.external_hosted_url).toBeTruthy()
+      if (externalHostedUrl) {
+        expect(externalHostedUrl).toBeTruthy()
       }
-      if (detail.external_pdf_url) {
-        expect(detail.external_pdf_url).toBeTruthy()
+      if (externalPdfUrl) {
+        expect(externalPdfUrl).toBeTruthy()
       }
     })
 

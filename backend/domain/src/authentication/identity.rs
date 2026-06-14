@@ -255,7 +255,6 @@ mod tests {
             expires_at: None,
             created_at: Utc::now(),
             last_used_at: None,
-            usage_count: 0,
         };
 
         let identity = Identity::ThirdParty(api_key);

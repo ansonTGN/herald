@@ -349,7 +349,10 @@ export function Sidebar() {
 
       <div className="mx-4 mb-3 h-px bg-sidebar-border" />
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4" data-testid="sidebar-nav">
+      <nav
+        className="sidebar-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-4"
+        data-testid="sidebar-nav"
+      >
         <div className="space-y-0.5">{filteredMenuItems.map((item) => renderMenuItem(item))}</div>
       </nav>
 

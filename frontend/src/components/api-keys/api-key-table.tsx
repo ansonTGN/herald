@@ -126,14 +126,6 @@ function createApiKeyColumns(config: ApiKeyColumnConfig): ColumnDef<ApiKeyListIt
       ),
     },
     {
-      id: 'usageCount',
-      accessorKey: 'usageCount',
-      header: m['api_keys.table_usage_count'](),
-      cell: ({ row }) => (
-        <span data-testid="api-key-usage-count">{row.getValue('usageCount')}</span>
-      ),
-    },
-    {
       id: 'actions',
       header: m['api_keys.table_actions'](),
       cell: ({ row }) => (

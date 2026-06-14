@@ -415,6 +415,7 @@ pub struct InvoiceResponse {
     pub due_date: Option<NaiveDate>,
     pub provider: String,
     pub payment_provider: Option<String>,
+    pub external_invoice_id: Option<String>,
     pub external_hosted_url: Option<String>,
     pub external_pdf_url: Option<String>,
     pub amount_refunded: i64,
@@ -529,6 +530,7 @@ pub fn summary_to_response(
         due_date: s.due_date,
         provider: s.provider.as_str().to_string(),
         payment_provider: s.payment_provider,
+        external_invoice_id: s.external_invoice_id,
         external_hosted_url: s.external_hosted_url,
         external_pdf_url: s.external_pdf_url,
         amount_refunded: s.amount_refunded,
@@ -676,4 +678,62 @@ pub fn invoice_to_detail_response_with_credits(
         .map(CreditNoteResponse::from)
         .collect();
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use herald_core::domain::billing::invoice::{InvoiceSource, InvoiceStatus, InvoiceSummary};
+
+    fn make_summary(external_invoice_id: Option<&str>) -> InvoiceSummary {
+        InvoiceSummary {
+            id: Uuid::new_v4(),
+            realm_id: "admin".to_string(),
+            invoice_number: "INV-1".to_string(),
+            source: InvoiceSource::ExternalSync,
+            account_id: None,
+            status: InvoiceStatus::Paid,
+            currency: "usd".to_string(),
+            total: 1000,
+            amount_refunded: 0,
+            billing_name: None,
+            due_date: None,
+            created_at: Utc::now(),
+            provider: InvoiceProvider::Stripe,
+            payment_provider: Some("stripe".to_string()),
+            external_invoice_id: external_invoice_id.map(str::to_string),
+            external_hosted_url: None,
+            external_pdf_url: None,
+        }
+    }
+
+    /// The list/summary DTO MUST surface external_invoice_id so callers can
+    /// discover Stripe invoices by their `in_...` id. This is the field the
+    /// live E2E `waitForStripeInvoice` filter depends on, so a regression here
+    /// would silently break invoice discovery.
+    #[test]
+    fn summary_to_response_propagates_external_invoice_id() {
+        let summary = make_summary(Some("in_abc123"));
+        let response = summary_to_response(summary);
+        assert_eq!(response.external_invoice_id.as_deref(), Some("in_abc123"));
+    }
+
+    #[test]
+    fn summary_to_response_serializes_external_invoice_id_camel_case() {
+        let summary = make_summary(Some("in_xyz"));
+        let response = summary_to_response(summary);
+        // InvoiceResponse uses #[serde(rename_all = "camelCase")] — the wire
+        // field must be `externalInvoiceId`, not `external_invoice_id`.
+        let json = serde_json::to_value(&response).expect("serialize response");
+        assert_eq!(json["externalInvoiceId"].as_str(), Some("in_xyz"));
+        assert!(json.get("external_invoice_id").is_none());
+    }
+
+    #[test]
+    fn summary_to_response_external_invoice_id_none_when_absent() {
+        let summary = make_summary(None);
+        let response = summary_to_response(summary);
+        assert!(response.external_invoice_id.is_none());
+    }
 }

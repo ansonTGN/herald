@@ -290,7 +290,6 @@ CREATE TABLE client_api_keys (
     expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_used_at TIMESTAMPTZ,
-    usage_count INTEGER DEFAULT 0,
     CONSTRAINT fk_client_api_keys_realm FOREIGN KEY (realm_id)
         REFERENCES realm(id) ON DELETE CASCADE
 );
@@ -302,7 +301,6 @@ CREATE INDEX idx_client_api_keys_app_realm ON client_api_keys(client_app_id, rea
 COMMENT ON TABLE client_api_keys IS 'API keys for client app programmatic access';
 COMMENT ON COLUMN client_api_keys.api_key_hash IS 'Hashed API key for secure storage';
 COMMENT ON COLUMN client_api_keys.client_app_id IS 'Client App this API key belongs to (1:1 relationship)';
-COMMENT ON COLUMN client_api_keys.usage_count IS 'Number of times this key has been used';
 
 -- ====================================
 -- OAuth Configuration Tables

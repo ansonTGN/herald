@@ -110,19 +110,15 @@ async fn scenario_valid_api_key_with_cache_hit(ctx: &mut SchemaTestContext) {
     // 在 CI/CD 环境中可能需要调整阈值
     tracing::info!("Cache hit request duration: {:?}", duration);
 
-    // Step 5: 等待异步统计更新完成（两次 tokio::spawn 任务）
-    // 使用较长的等待时间以应对并行测试时的资源竞争
+    // Step 5: 等待异步 last_used_at 更新完成
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-    // Step 6: 验证 usage_count 更新（两次请求）
-    // 注意：由于异步任务可能在测试清理时被中断，使用 >= 而非 ==
-    let (usage_count, last_used_at) = get_api_key_stats(ctx, &entity.id).await;
+    // Step 6: 验证 last_used_at 已更新（首次使用，last_used_at 为 NULL → 节流放行写入）
+    let last_used_at = get_api_key_stats(ctx, &entity.id).await;
     assert!(
-        usage_count >= 1,
-        "Expected at least 1 usage, got {}",
-        usage_count
+        last_used_at.is_some(),
+        "Expected last_used_at to be set after first use"
     );
-    assert!(last_used_at.is_some());
 }
 
 /// ============================================================================
@@ -422,57 +418,86 @@ async fn scenario_cross_realm_access(ctx: &mut SchemaTestContext) {
 }
 
 /// ============================================================================
-// 场景 8: API Key 使用统计更新（异步）
+// 场景 8: last_used_at 节流更新（异步）
+// 验证三态：首次使用(NULL→写入) / 1 分钟内重复(→节流跳过) / 超过 1 分钟(→刷新)
 // ============================================================================
 
 #[test_context(SchemaTestContext)]
 #[tokio::test]
-async fn scenario_async_stats_update(ctx: &mut SchemaTestContext) {
+async fn scenario_throttled_last_used_update(ctx: &mut SchemaTestContext) {
     let app = ctx.create_unified_test_router();
 
-    // Step 1: 创建 API Key（usage_count = 100）
+    // Step 1: 创建 API Key（last_used_at = NULL）
     let (api_key, entity) = create_test_api_key(ctx, "Test Key", true, None).await;
 
-    // 手动设置 usage_count = 100
-    sqlx::query("UPDATE client_api_keys SET usage_count = 100 WHERE id = $1")
-        .bind(&entity.id)
-        .execute(&ctx._app_state.pool)
-        .await
-        .expect("Failed to update usage_count");
-
-    // Step 2: 调用权限检查 API
+    // Step 2: 准备权限并首次调用（last_used_at 为 NULL → 节流放行，写入）
     let (_user_id, session_token) =
         create_test_user_with_permissions(ctx, "user8@example.com", &[("article", "read")]).await;
 
-    let request = create_request_with_api_key(
-        Method::POST,
-        "/api/ext/permission/check",
-        &api_key,
-        Some(json!({
-            "sessionToken": session_token,
-            "rules": [{"resource": "article", "action": "read"}]
-        })),
-    );
+    let build_request = |token: String| {
+        create_request_with_api_key(
+            Method::POST,
+            "/api/ext/permission/check",
+            &api_key,
+            Some(json!({
+                "sessionToken": token,
+                "rules": [{"resource": "article", "action": "read"}]
+            })),
+        )
+    };
 
-    let response = app.clone().oneshot(request).await.unwrap();
+    let response = app
+        .clone()
+        .oneshot(build_request(session_token.clone()))
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Step 3: 立即查询 API Key（可能还是旧值，因为是异步更新）
-    let (usage_count_immediate, _) = get_api_key_stats(ctx, &entity.id).await;
-    // usage_count_immediate 可能是 100 或 101，取决于异步任务是否完成
-
-    // Step 4: 等待一小段时间后再次查询（确保异步更新完成）
+    // Step 3: 等待异步更新完成，验证 last_used_at 被设置
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    let (usage_count_final, last_used_at) = get_api_key_stats(ctx, &entity.id).await;
+    let first_ts = get_api_key_stats(ctx, &entity.id).await;
+    assert!(
+        first_ts.is_some(),
+        "last_used_at should be set after first use (NULL → throttled passthrough)"
+    );
+    let first_ts = first_ts.unwrap();
 
-    // 验证最终统计已更新
-    assert!(usage_count_final >= 101);
-    assert!(last_used_at.is_some());
+    // Step 4: 立即再次调用（last_used_at 在 1 分钟内 → 节流跳过，不刷新）
+    let response2 = app
+        .clone()
+        .oneshot(build_request(session_token.clone()))
+        .await
+        .unwrap();
+    assert_eq!(response2.status(), StatusCode::OK);
 
-    tracing::info!(
-        "Usage count: immediate={}, final={}",
-        usage_count_immediate,
-        usage_count_final
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    let last_used_after_second = get_api_key_stats(ctx, &entity.id).await.unwrap();
+    assert_eq!(
+        last_used_after_second, first_ts,
+        "last_used_at must NOT be refreshed within 1 minute (throttled)"
+    );
+
+    // Step 5: 手动将 last_used_at 置为 2 分钟前（模拟 stale），再调用 → 节流放行，刷新
+    sqlx::query(
+        "UPDATE client_api_keys SET last_used_at = NOW() - INTERVAL '2 minutes' WHERE id = $1",
+    )
+    .bind(&entity.id)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to backdate last_used_at");
+
+    let response3 = app
+        .clone()
+        .oneshot(build_request(session_token.clone()))
+        .await
+        .unwrap();
+    assert_eq!(response3.status(), StatusCode::OK);
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    let last_used_after_third = get_api_key_stats(ctx, &entity.id).await.unwrap();
+    assert!(
+        last_used_after_third > first_ts,
+        "last_used_at should be refreshed when older than 1 minute (stale → passthrough)"
     );
 }
 

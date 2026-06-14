@@ -447,7 +447,6 @@
     "table_status": "状态",
     "table_expires": "过期时间",
     "table_last_used": "最后使用",
-    "table_usage_count": "使用次数",
     "table_actions": "操作",
     "loading": "加载 API 密钥中...",
     "empty": "未找到 API 密钥。创建您的第一个 API 密钥以开始使用。",

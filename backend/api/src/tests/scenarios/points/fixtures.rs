@@ -348,8 +348,8 @@ pub async fn create_test_api_key(pool: &PgPool, realm_id: &str, client_app_id: U
     // 4. Store API key with all required fields including client_app_id
     let api_key_id = Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO client_api_keys (id, realm_id, api_key_hash, client_app_id, name, enabled, created_at, last_used_at, usage_count)
-         VALUES ($1, $2, $3, $4, $5, true, NOW(), NULL, 0)",
+        "INSERT INTO client_api_keys (id, realm_id, api_key_hash, client_app_id, name, enabled, created_at, last_used_at)
+         VALUES ($1, $2, $3, $4, $5, true, NOW(), NULL)",
     )
     .bind(api_key_id)
     .bind(realm_id)

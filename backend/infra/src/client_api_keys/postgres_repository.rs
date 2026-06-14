@@ -79,7 +79,6 @@ impl ClientApiKeyRepository {
             expires_at: Set(api_key.expires_at.map(|dt| dt.into())),
             created_at: Set(api_key.created_at.into()),
             last_used_at: Set(api_key.last_used_at.map(|dt| dt.into())),
-            usage_count: Set(api_key.usage_count),
         };
 
         let inserted = active_model.insert(self.db.as_ref()).await?;
@@ -160,50 +159,44 @@ impl ClientApiKeyRepository {
         Ok(results.into_iter().map(Self::model_to_entity).collect())
     }
 
-    /// Update usage statistics (called asynchronously after successful auth)
+    /// Update last-used timestamp (called asynchronously after successful auth).
+    ///
+    /// Throttled: the row is written only when `last_used_at` is null or older than
+    /// one minute, so a key authenticating at high frequency causes at most one DB
+    /// write per minute instead of one write per request.
     ///
     /// # Arguments
     /// * `id` - The API key ID
     /// * `last_used_at` - Timestamp of the current usage
     ///
     /// # Returns
-    /// * `Ok(())` if successful
-    /// * `Err(ClientApiKeyRepositoryError)` if update fails
-    ///
-    /// # Note
-    /// This is typically called using `tokio::spawn` to avoid blocking the request:
-    /// ```rust,no_run
-    /// tokio::spawn(async move {
-    ///     let _ = repo.update_usage_stats(&api_key_id, Utc::now()).await;
-    /// });
-    /// ```
+    /// * `Ok(())` always — `rows_affected == 0` means throttled (last_used_at fresh
+    ///   within the last minute) or key absent; the fire-and-forget caller does not
+    ///   distinguish these.
     pub async fn update_usage_stats(
         &self,
         id: &str,
         last_used_at: DateTime<Utc>,
     ) -> Result<(), ClientApiKeyRepositoryError> {
-        use sea_orm::EntityTrait;
         use sea_orm::sea_query::Expr;
 
-        // Perform atomic UPDATE with increment (avoids SELECT-UPDATE anti-pattern)
-        // SQL: UPDATE "client_api_key" SET "last_used_at" = $1, "usage_count" = "usage_count" + 1 WHERE "id" = $2
-        let result = client_api_key::Entity::update_many()
+        // Throttled conditional UPDATE.
+        // SQL: UPDATE client_api_key SET last_used_at = $1
+        //      WHERE id = $2 AND (last_used_at IS NULL OR last_used_at < $3)
+        let threshold = last_used_at - chrono::Duration::minutes(1);
+        let _ = client_api_key::Entity::update_many()
             .col_expr(
                 client_api_key::Column::LastUsedAt,
                 Expr::val(last_used_at).into(),
             )
-            .col_expr(
-                client_api_key::Column::UsageCount,
-                Expr::col(client_api_key::Column::UsageCount).add(1),
-            )
             .filter(client_api_key::Column::Id.eq(id))
+            .filter(
+                sea_orm::Condition::any()
+                    .add(client_api_key::Column::LastUsedAt.is_null())
+                    .add(client_api_key::Column::LastUsedAt.lt(threshold)),
+            )
             .exec(self.db.as_ref())
             .await?;
-
-        // Check if the API key exists by verifying rows affected
-        if result.rows_affected == 0 {
-            return Err(ClientApiKeyRepositoryError::NotFound(id.to_string()));
-        }
 
         Ok(())
     }
@@ -340,7 +333,6 @@ impl ClientApiKeyRepository {
             expires_at: model.expires_at.map(|dt| dt.into()),
             created_at: model.created_at.into(),
             last_used_at: model.last_used_at.map(|dt| dt.into()),
-            usage_count: model.usage_count,
         }
     }
 
@@ -356,7 +348,6 @@ impl ClientApiKeyRepository {
             expires_at: Set(api_key.expires_at.map(|dt| dt.into())),
             created_at: Set(api_key.created_at.into()),
             last_used_at: Set(api_key.last_used_at.map(|dt| dt.into())),
-            usage_count: Set(api_key.usage_count),
         }
     }
 }

@@ -182,7 +182,7 @@
 - 未绑定 Client App 的 API Key 也不受 Client App Scope 限制
 - API Key 支持轮换（Rotate），调用 `POST /api/api-keys/{realmId}/{apiKeyId}/rotate` 生成新密钥，旧密钥立即失效（旧缓存条目通过 TTL 自然过期）
 - API Key 有启用/禁用和过期时间控制
-- 记录 API Key 使用统计（使用次数和最后使用时间）
+- 记录 API Key 最后使用时间（节流更新：每分钟最多一次写库）
 - 无效或缺失 API Key 返回 401；过期或禁用 API Key 返回 401
 - 无效 session token 在权限检查时返回 `allowed: false`，而非报错
 

@@ -91,7 +91,6 @@ impl TryFrom<ApiKeyCacheValue> for ClientApiKey {
             expires_at,
             created_at,
             last_used_at: None,
-            usage_count: 0,
         })
     }
 }

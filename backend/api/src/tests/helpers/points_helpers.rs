@@ -691,7 +691,6 @@ pub fn create_test_third_party_identity(realm_id: &str) -> Identity {
         expires_at: None,
         created_at: chrono::Utc::now(),
         last_used_at: None,
-        usage_count: 0,
     })
 }
 

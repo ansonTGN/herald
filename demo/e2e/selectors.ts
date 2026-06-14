@@ -359,7 +359,6 @@ export const SELECTORS = {
     statusBadge: '[data-testid="api-key-status-badge"]',
     expires: '[data-testid="api-key-expires"]',
     lastUsed: '[data-testid="api-key-last-used"]',
-    usageCount: '[data-testid="api-key-usage-count"]',
     clientApp: '[data-testid="api-key-client-app"]',
     editButton: '[data-testid="edit-api-key-button"]',
     deleteButton: '[data-testid="delete-api-key-button"]',

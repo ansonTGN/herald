@@ -367,6 +367,7 @@ pub struct InvoiceSummary {
     // Provider fields
     pub provider: InvoiceProvider,
     pub payment_provider: Option<String>,
+    pub external_invoice_id: Option<String>,
     pub external_hosted_url: Option<String>,
     pub external_pdf_url: Option<String>,
 }

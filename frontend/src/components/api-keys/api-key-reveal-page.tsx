@@ -23,6 +23,15 @@ export function ApiKeyRevealPage({ realmId }: ApiKeyRevealPageProps) {
         | undefined,
   })
 
+  // Carried over from the create flow when the post-creation role binding failed.
+  // Shown persistently here instead of a fleeting toast so the failure isn't swallowed.
+  const roleBindingError = useRouterState({
+    select: (s) =>
+      (s.location.state as unknown as Record<string, unknown> | undefined)?.roleBindingError as
+        | string
+        | undefined,
+  })
+
   useEffect(() => {
     if (!keyData) {
       void navigate({ to: '/$realmId/manage/api-keys', params: { realmId } })
@@ -61,6 +70,16 @@ export function ApiKeyRevealPage({ realmId }: ApiKeyRevealPageProps) {
           <p className="text-muted-foreground text-sm">{m['api_keys.reveal_subtitle']()}</p>
         </div>
       </div>
+
+      {roleBindingError && (
+        <Alert variant="destructive">
+          <TriangleAlert className="h-4 w-4" />
+          <AlertDescription>
+            <p className="font-medium">{m['api_keys.role_binding_failed']()}</p>
+            <p className="mt-1 break-words">{roleBindingError}</p>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Alert className="border-yellow-500/50 bg-yellow-50 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
         <TriangleAlert className="h-4 w-4 !text-yellow-600 dark:!text-yellow-400" />
