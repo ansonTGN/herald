@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   LayoutDashboard,
@@ -34,6 +34,54 @@ interface MenuItem {
   children?: MenuItem[]
 }
 
+/**
+ * Menu label that reveals the full text in a floating tooltip — but only when
+ * the label is actually clipped by the sidebar width. Mouse-only on purpose:
+ * keyboard users already get the full text from the link/div content, so we
+ * avoid adding redundant focusable tooltip triggers (no extra tab stops).
+ *
+ * The tooltip is `position: fixed` so it escapes the nav's overflow clipping.
+ */
+function SidebarMenuLabel({ label, className }: { label: string; className?: string }) {
+  const textRef = useRef<HTMLSpanElement>(null)
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null)
+
+  const show = () => {
+    const el = textRef.current
+    // Only show when the text is genuinely truncated (scrollWidth > clientWidth).
+    if (!el || el.scrollWidth <= el.clientWidth) return
+    const rect = el.getBoundingClientRect()
+    setCoords({ top: rect.top + rect.height / 2, left: rect.right + 8 })
+  }
+
+  return (
+    <>
+      <span
+        ref={textRef}
+        className={className}
+        onMouseEnter={show}
+        onMouseLeave={() => setCoords(null)}
+      >
+        {label}
+      </span>
+      {coords && (
+        <div
+          role="tooltip"
+          style={{
+            position: 'fixed',
+            top: coords.top,
+            left: coords.left,
+            transform: 'translateY(-50%)',
+          }}
+          className="pointer-events-none z-50 max-w-[240px] rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+        >
+          {label}
+        </div>
+      )}
+    </>
+  )
+}
+
 export function Sidebar() {
   const realmId = useRealmId()
   const { permissions } = useAuth()
@@ -57,7 +105,6 @@ export function Sidebar() {
       'payment-providers': m['nav.payment_providers'],
       'subscription-plans': m['nav.subscription_plans'],
       'entitlement-mappings': m['nav.entitlement_mappings'],
-      'points-free-stats': m['nav.free_stats'],
       'points-default-config': m['nav.points_default_config'],
       transactions: m['nav.transactions'],
       invoices: m['nav.invoices'],
@@ -163,14 +210,6 @@ export function Sidebar() {
             visible: adminFeatures?.entitlementMappingsVisible ?? true,
           },
           {
-            id: 'points-free-stats',
-            name: 'Free Stats',
-            path: `/${realmId}/manage/points/free-stats`,
-            icon: History,
-            permission: PERMISSION.POINTS_VIEW,
-            visible: adminFeatures?.pointsVisible ?? true,
-          },
-          {
             id: 'points-default-config',
             name: 'Realm Config',
             path: `/${realmId}/manage/points/default-config`,
@@ -269,7 +308,7 @@ export function Sidebar() {
             data-testid={`sidebar-menu-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
           >
             <Icon className="size-[18px] shrink-0 opacity-60 group-hover:opacity-100 group-[.font-semibold]:opacity-100 transition-opacity" />
-            <span className="truncate">{label}</span>
+            <SidebarMenuLabel label={label} className="truncate" />
           </Link>
         ) : (
           <div
@@ -278,7 +317,7 @@ export function Sidebar() {
             data-testid={`sidebar-menu-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
           >
             <Icon className="size-[18px] shrink-0 opacity-60 group-hover:opacity-100 transition-opacity" />
-            <span className="flex-1 truncate">{label}</span>
+            <SidebarMenuLabel label={label} className="flex-1 truncate" />
             {hasChildren && (
               <ChevronDown
                 className={`size-4 shrink-0 text-sidebar-foreground/40 transition-transform duration-200 ${isOpen ? 'rotate-0' : '-rotate-90'}`}

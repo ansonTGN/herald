@@ -1,7 +1,6 @@
 // Points API Types
 
 use serde::{Deserialize, Serialize};
-use utoipa::IntoParams;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -151,14 +150,6 @@ pub struct ListWalletsQuery {
     pub page_size: Option<u64>,
 }
 
-/// Query parameters for free user statistics
-#[derive(Debug, Clone, Default, Deserialize, Serialize, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct FreeUserStatisticsQuery {
-    pub start_date: Option<String>,
-    pub end_date: Option<String>,
-}
-
 /// Realm default config response
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -215,19 +206,6 @@ pub struct UserPointsConfigResponse {
     pub grant_schedule_id: Option<Uuid>,
     pub created_at: String,
     pub updated_at: String,
-}
-
-/// Free user statistics response
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct FreeUserStatisticsResponse {
-    pub total_free_users: i64,
-    pub active_free_users: i64,
-    pub total_registration_bonus_granted: i64,
-    pub total_periodic_points_granted: i64,
-    pub average_periodic_points_per_user: f64,
-    pub upgrade_rate: f64,
-    pub last_updated_at: String,
 }
 
 /// Grant points request (admin)

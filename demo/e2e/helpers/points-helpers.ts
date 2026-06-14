@@ -372,7 +372,6 @@ export async function exportTransactionHistory(page: Page): Promise<void> {
  */
 export const POINTS_ROUTES = {
   DEFAULT_CONFIG: (realmId: string) => `/${realmId}/manage/points/default-config`,
-  FREE_STATS: (realmId: string) => `/${realmId}/manage/points/free-stats`,
   FREE_USERS: (realmId: string) => `/${realmId}/manage/points/free-users`,
   USER_POINTS: (realmId: string) => `/${realmId}/user/points`,
   REGISTER: (realmId: string) => `/${realmId}/auth/register`,
@@ -431,18 +430,6 @@ export async function verifyChartDisplayed(
     for (const legend of verifyLegend) {
       await expect(page.getByText(new RegExp(legend, 'i'))).toBeVisible()
     }
-  }
-}
-
-/**
- * Verify statistics are displayed
- */
-export async function verifyStatisticsDisplayed(
-  page: Page,
-  statistics: Array<{ pattern: RegExp; description: string }>
-): Promise<void> {
-  for (const stat of statistics) {
-    await expect(page.getByText(stat.pattern)).toBeVisible()
   }
 }
 

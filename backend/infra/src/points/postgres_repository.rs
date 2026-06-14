@@ -2463,60 +2463,6 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    fn get_free_user_statistics(
-        &self,
-        realm_id: &str,
-        _start_date: Option<chrono::DateTime<chrono::Utc>>,
-        _end_date: Option<chrono::DateTime<chrono::Utc>>,
-    ) -> impl std::future::Future<
-        Output = Result<
-            herald_domain::points::services::realm_config_service::FreeUserStatistics,
-            CoreError,
-        >,
-    > + Send {
-        let db = self.db.clone();
-        let realm_id = realm_id.to_string();
-        async move {
-            use herald_domain::points::services::realm_config_service::FreeUserStatistics;
-            use sea_orm::EntityTrait;
-
-            // For now, return a simple implementation
-            // TODO: Implement actual statistics queries with date filtering
-            let total_free_users = user_points_config::Entity::find()
-                .filter(user_points_config::Column::RealmId.eq(&realm_id))
-                .count(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-                as i64;
-
-            // TODO: Calculate actual active users (last 7 days)
-            let active_free_users = total_free_users; // Placeholder
-
-            // TODO: Calculate actual totals from points_grant_records
-            let total_registration_bonus_granted = total_free_users * 1000; // Placeholder
-            let total_periodic_points_granted = total_free_users * 50; // Placeholder
-
-            let average_periodic_points_per_user = if total_free_users > 0 {
-                total_periodic_points_granted as f64 / total_free_users as f64
-            } else {
-                0.0
-            };
-
-            // TODO: Calculate actual upgrade rate
-            let upgrade_rate = 0.15; // Placeholder
-
-            Ok(FreeUserStatistics {
-                total_free_users,
-                active_free_users,
-                total_registration_bonus_granted,
-                total_periodic_points_granted,
-                average_periodic_points_per_user,
-                upgrade_rate,
-                last_updated_at: chrono::Utc::now(),
-            })
-        }
-    }
-
     // ========== Grant Schedule Repository Methods (Iteration-2) ==========
 
     fn find_grant_schedule(

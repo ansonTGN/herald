@@ -59,7 +59,6 @@ export const QUERY_KEYS = {
   PAYMENT_PROVIDERS: 'payment-providers',
   POINTS_DEFAULT_CONFIG: 'points-default-config',
   REALM_CONFIGS: 'realm-configs',
-  FREE_USER_STATS: 'free-user-stats',
   EMAIL_STATUS: 'email-status',
   AUDIT_EVENTS: 'audit-events',
   AUDIT_EVENT: 'audit-event',

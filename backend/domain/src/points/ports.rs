@@ -11,7 +11,6 @@ use crate::points::entities::{
     CreditLedgerStatus, CreditType, Paginated, PointsConsumptionAllocation, PointsCreditLedger,
     PointsRevocationRecord, PointsTransaction, PointsWallet, RevocationType, TransactionType,
 };
-use crate::points::services::realm_config_service::FreeUserStatistics;
 use crate::points::{
     CreateRealmConfigInput, PointsGrantRecord, PointsGrantSchedule, RealmDefaultConfig,
     UpdateRealmConfigInput, UserPointsConfig,
@@ -403,14 +402,6 @@ pub trait PointsRepository: Send + Sync {
         realm_id: &str,
         user_id: Uuid,
     ) -> impl Future<Output = Result<Option<UserPointsConfig>, CoreError>> + Send;
-
-    /// Get free user statistics
-    fn get_free_user_statistics(
-        &self,
-        realm_id: &str,
-        start_date: Option<chrono::DateTime<chrono::Utc>>,
-        end_date: Option<chrono::DateTime<chrono::Utc>>,
-    ) -> impl Future<Output = Result<FreeUserStatistics, CoreError>> + Send;
 
     // ========== Grant Schedule Repository Methods ==========
 

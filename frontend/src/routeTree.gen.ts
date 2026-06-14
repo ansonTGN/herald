@@ -49,7 +49,6 @@ import { Route as RealmIdUserSecurityTotpSetupRouteImport } from './routes/$real
 import { Route as RealmIdUserInvoicesNewRouteImport } from './routes/$realmId/user/invoices/new'
 import { Route as RealmIdSubscriptionSubscriptionIdHistoryRouteImport } from './routes/$realmId/subscription/$subscriptionId/history'
 import { Route as RealmIdManagePointsWalletsRouteImport } from './routes/$realmId/manage/points/wallets'
-import { Route as RealmIdManagePointsFreeStatsRouteImport } from './routes/$realmId/manage/points/free-stats'
 import { Route as RealmIdManagePointsDefaultConfigRouteImport } from './routes/$realmId/manage/points/default-config'
 import { Route as RealmIdManageClientAppsNewRouteImport } from './routes/$realmId/manage/client-apps/new'
 import { Route as RealmIdManageBillingSubscriptionsRouteImport } from './routes/$realmId/manage/billing/subscriptions'
@@ -283,12 +282,6 @@ const RealmIdManagePointsWalletsRoute =
     path: '/wallets',
     getParentRoute: () => RealmIdManagePointsRoute,
   } as any)
-const RealmIdManagePointsFreeStatsRoute =
-  RealmIdManagePointsFreeStatsRouteImport.update({
-    id: '/free-stats',
-    path: '/free-stats',
-    getParentRoute: () => RealmIdManagePointsRoute,
-  } as any)
 const RealmIdManagePointsDefaultConfigRoute =
   RealmIdManagePointsDefaultConfigRouteImport.update({
     id: '/default-config',
@@ -436,7 +429,6 @@ export interface FileRoutesByFullPath {
   '/$realmId/manage/billing/subscriptions': typeof RealmIdManageBillingSubscriptionsRoute
   '/$realmId/manage/client-apps/new': typeof RealmIdManageClientAppsNewRoute
   '/$realmId/manage/points/default-config': typeof RealmIdManagePointsDefaultConfigRoute
-  '/$realmId/manage/points/free-stats': typeof RealmIdManagePointsFreeStatsRoute
   '/$realmId/manage/points/wallets': typeof RealmIdManagePointsWalletsRoute
   '/$realmId/subscription/$subscriptionId/history': typeof RealmIdSubscriptionSubscriptionIdHistoryRoute
   '/$realmId/user/invoices/new': typeof RealmIdUserInvoicesNewRoute
@@ -488,7 +480,6 @@ export interface FileRoutesByTo {
   '/$realmId/manage/billing/subscriptions': typeof RealmIdManageBillingSubscriptionsRoute
   '/$realmId/manage/client-apps/new': typeof RealmIdManageClientAppsNewRoute
   '/$realmId/manage/points/default-config': typeof RealmIdManagePointsDefaultConfigRoute
-  '/$realmId/manage/points/free-stats': typeof RealmIdManagePointsFreeStatsRoute
   '/$realmId/manage/points/wallets': typeof RealmIdManagePointsWalletsRoute
   '/$realmId/subscription/$subscriptionId/history': typeof RealmIdSubscriptionSubscriptionIdHistoryRoute
   '/$realmId/user/invoices/new': typeof RealmIdUserInvoicesNewRoute
@@ -550,7 +541,6 @@ export interface FileRoutesById {
   '/$realmId/manage/billing/subscriptions': typeof RealmIdManageBillingSubscriptionsRoute
   '/$realmId/manage/client-apps/new': typeof RealmIdManageClientAppsNewRoute
   '/$realmId/manage/points/default-config': typeof RealmIdManagePointsDefaultConfigRoute
-  '/$realmId/manage/points/free-stats': typeof RealmIdManagePointsFreeStatsRoute
   '/$realmId/manage/points/wallets': typeof RealmIdManagePointsWalletsRoute
   '/$realmId/subscription/$subscriptionId/history': typeof RealmIdSubscriptionSubscriptionIdHistoryRoute
   '/$realmId/user/invoices/new': typeof RealmIdUserInvoicesNewRoute
@@ -613,7 +603,6 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/subscriptions'
     | '/$realmId/manage/client-apps/new'
     | '/$realmId/manage/points/default-config'
-    | '/$realmId/manage/points/free-stats'
     | '/$realmId/manage/points/wallets'
     | '/$realmId/subscription/$subscriptionId/history'
     | '/$realmId/user/invoices/new'
@@ -665,7 +654,6 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/subscriptions'
     | '/$realmId/manage/client-apps/new'
     | '/$realmId/manage/points/default-config'
-    | '/$realmId/manage/points/free-stats'
     | '/$realmId/manage/points/wallets'
     | '/$realmId/subscription/$subscriptionId/history'
     | '/$realmId/user/invoices/new'
@@ -726,7 +714,6 @@ export interface FileRouteTypes {
     | '/$realmId/manage/billing/subscriptions'
     | '/$realmId/manage/client-apps/new'
     | '/$realmId/manage/points/default-config'
-    | '/$realmId/manage/points/free-stats'
     | '/$realmId/manage/points/wallets'
     | '/$realmId/subscription/$subscriptionId/history'
     | '/$realmId/user/invoices/new'
@@ -1036,13 +1023,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RealmIdManagePointsWalletsRouteImport
       parentRoute: typeof RealmIdManagePointsRoute
     }
-    '/$realmId/manage/points/free-stats': {
-      id: '/$realmId/manage/points/free-stats'
-      path: '/free-stats'
-      fullPath: '/$realmId/manage/points/free-stats'
-      preLoaderRoute: typeof RealmIdManagePointsFreeStatsRouteImport
-      parentRoute: typeof RealmIdManagePointsRoute
-    }
     '/$realmId/manage/points/default-config': {
       id: '/$realmId/manage/points/default-config'
       path: '/default-config'
@@ -1295,13 +1275,11 @@ const RealmIdManageClientAppsRouteWithChildren =
 
 interface RealmIdManagePointsRouteChildren {
   RealmIdManagePointsDefaultConfigRoute: typeof RealmIdManagePointsDefaultConfigRoute
-  RealmIdManagePointsFreeStatsRoute: typeof RealmIdManagePointsFreeStatsRoute
   RealmIdManagePointsWalletsRoute: typeof RealmIdManagePointsWalletsRoute
 }
 
 const RealmIdManagePointsRouteChildren: RealmIdManagePointsRouteChildren = {
   RealmIdManagePointsDefaultConfigRoute: RealmIdManagePointsDefaultConfigRoute,
-  RealmIdManagePointsFreeStatsRoute: RealmIdManagePointsFreeStatsRoute,
   RealmIdManagePointsWalletsRoute: RealmIdManagePointsWalletsRoute,
 }
 

@@ -1,4 +1,5 @@
-use chrono::{DateTime, Utc};
+#[cfg(test)]
+use chrono::Utc;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -142,42 +143,6 @@ where
             .await?
             .ok_or(CoreError::NotFound)
     }
-
-    /// Get free user statistics
-    pub async fn get_free_user_statistics(
-        &self,
-        identity: Identity,
-        realm_id: &str,
-        start_date: Option<DateTime<Utc>>,
-        end_date: Option<DateTime<Utc>>,
-    ) -> Result<FreeUserStatistics, CoreError> {
-        // Check manage permissions
-        ensure_policy(
-            self.policy
-                .can_manage_points_configs(identity.clone())
-                .await,
-            "Insufficient permissions to view free user statistics",
-        )?;
-
-        // Check realm boundary
-        ensure_realm_access(&identity, realm_id, "access statistics")?;
-
-        self.repository
-            .get_free_user_statistics(realm_id, start_date, end_date)
-            .await
-    }
-}
-
-/// Free user statistics
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct FreeUserStatistics {
-    pub total_free_users: i64,
-    pub active_free_users: i64,
-    pub total_registration_bonus_granted: i64,
-    pub total_periodic_points_granted: i64,
-    pub average_periodic_points_per_user: f64,
-    pub upgrade_rate: f64,
-    pub last_updated_at: DateTime<Utc>,
 }
 
 #[cfg(test)]

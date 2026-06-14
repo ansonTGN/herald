@@ -21,7 +21,6 @@ pub mod wallets;
         crate::realm_configs::get_realm_default_config,
         crate::realm_configs::create_realm_default_config,
         crate::realm_configs::update_realm_default_config,
-        crate::realm_configs::get_free_user_statistics,
         crate::user_configs::get_user_points_config,
         crate::grant::grant_points,
     ),
@@ -37,7 +36,6 @@ pub mod wallets;
         crate::types::CreateRealmConfigRequest,
         crate::types::UpdateRealmConfigRequest,
         crate::types::UserPointsConfigResponse,
-        crate::types::FreeUserStatisticsResponse,
         crate::types::GrantPointsRequest,
         crate::types::GrantPointsResponse,
     ))

@@ -5,7 +5,6 @@
  * - US-PO-02: View All User Wallets
  * - US-PO-03: View User Points Transaction History
  * - US-PO-06: Configure Realm Default Points Strategy
- * - US-PO-07: View Free User Points Statistics
  *
  * Design Doc: .ai/design/points.md
  * User Stories: docs/user-stories/points-admin-manage.md
@@ -17,7 +16,7 @@
 
 import { test, cleanupTestData, expect } from '../fixtures/demo-page.fixtures'
 import { SELECTORS } from '../selectors'
-import { TRANSACTION_TYPES, RENEWAL_PERIOD_TYPES, POINTS_ROUTES, generateTestEmail, updateRealmConfig, verifyConfigValidation, verifyChartDisplayed, verifyStatisticsDisplayed, registerUser, navigateToPointsPageAndVerify } from '../helpers/points-helpers'
+import { TRANSACTION_TYPES, RENEWAL_PERIOD_TYPES, POINTS_ROUTES, generateTestEmail, updateRealmConfig, verifyConfigValidation, verifyChartDisplayed, registerUser, navigateToPointsPageAndVerify } from '../helpers/points-helpers'
 import { DEMO_ADMIN } from '../helpers/auth'
 import { verifyTestEnvironment } from '../helpers/environment-setup'
 
@@ -119,11 +118,10 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
 
   // ============================================================================
   // User Story US-PO-06: Configure Realm Default Points Strategy
-  // User Story US-PO-07: View Free User Points Statistics
   // ============================================================================
 
-  test.describe('[Admin] Realm Points Configuration and Statistics', () => {
-    test('should complete realm configuration and statistics flow', async ({ page, loginPage, demoLogger, testStartTime }) => {
+  test.describe('[Admin] Realm Points Configuration', () => {
+    test('should complete realm configuration flow', async ({ page, loginPage, demoLogger, testStartTime }) => {
       const realmId = DEMO_ADMIN.realmId
       const email = generateTestEmail(testStartTime)
 
@@ -179,102 +177,6 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
           /validity.*must.*be.*>=.*1|validity days must be >= 1|非一次性/i
         )
         demoLogger.testCode.log('[Test] ✓ Configuration validation (validity > 0) verified')
-      })
-
-      await test.step('Scenario 7: View free user statistics', async () => {
-        await page.goto(POINTS_ROUTES.FREE_STATS(realmId))
-
-        // Check if stats page loaded or error shown
-        const errorVisible = await page.getByText(/加载统计数据失败|failed.*to.*load/i).isVisible({ timeout: 10000 }).catch(() => false)
-        if (errorVisible) {
-          demoLogger.testCode.info('[Test] ℹ Stats API returned error - skipping stats scenarios')
-          return
-        }
-
-        await expect(page.getByTestId('free-stats-page')).toBeVisible()
-
-        // Verify stat cards are displayed
-        await expect(page.getByText(/Total Free Users/)).toBeVisible()
-        await expect(page.getByText(/Active Free Users/)).toBeVisible()
-        await expect(page.getByText(/Total Registration Bonus/)).toBeVisible()
-        await expect(page.getByText(/Total Periodic Points Granted/)).toBeVisible()
-        demoLogger.testCode.log('[Test] ✓ Free user statistics viewed')
-      })
-
-      await test.step('Scenario 8: Filter statistics by date range', async () => {
-        const statsPage = page.getByTestId('free-stats-page')
-        if (!await statsPage.isVisible().catch(() => false)) {
-          demoLogger.testCode.info('[Test] ℹ Skipping - stats page not loaded')
-          return
-        }
-
-        const startDateInput = page.getByTestId('start-date-input')
-        const endDateInput = page.getByTestId('end-date-input')
-
-        if (!await startDateInput.isVisible().catch(() => false) || !await endDateInput.isVisible().catch(() => false)) {
-          demoLogger.testCode.info('[Test] ℹ Skipping - date inputs not available')
-          return
-        }
-
-        await startDateInput.fill('2026-03-01')
-        // Wait for page to re-render after start date change
-        // Wait for end date input to appear after React re-render
-        await page.getByTestId('end-date-input').waitFor({ state: 'visible', timeout: 5000 }).catch(() => {})
-        // End date input may need to re-appear after navigation
-        await page.getByTestId('end-date-input').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {})
-        const endDateVisible = await page.getByTestId('end-date-input').isVisible().catch(() => false)
-        if (endDateVisible) {
-          await page.getByTestId('end-date-input').fill('2026-03-27')
-          // Technical delay: Wait for debounced filter application
-          await expect(page.getByText(/最后更新|last.*updated/i)).toBeVisible({ timeout: 5000 })
-          demoLogger.testCode.log('[Test] ✓ Date range filter applied')
-        } else {
-          demoLogger.testCode.info('[Test] ℹ Date range filter skipped - end date input not available after navigation')
-        }
-      })
-
-      await test.step('Scenario 9: Refresh statistics', async () => {
-        const statsPage = page.getByTestId('free-stats-page')
-        if (!await statsPage.isVisible().catch(() => false)) {
-          demoLogger.testCode.info('[Test] ℹ Skipping - stats page not loaded')
-          return
-        }
-
-        const refreshBtn = page.getByTestId('refresh-button')
-        if (await refreshBtn.isVisible().catch(() => false)) {
-          await refreshBtn.click()
-          // Wait for refresh to complete - check for updated timestamp
-          await expect(page.getByText(/最后更新|last.*updated/i)).toBeVisible({ timeout: 5000 })
-          demoLogger.testCode.log('[Test] ✓ Statistics refreshed')
-        }
-      })
-
-      await test.step('Scenario 10: Export statistics data', async () => {
-        const statsPage = page.getByTestId('free-stats-page')
-        if (!await statsPage.isVisible().catch(() => false)) {
-          demoLogger.testCode.info('[Test] ℹ Skipping - stats page not loaded')
-          return
-        }
-
-        const exportBtn = page.getByTestId('export-button')
-        if (await exportBtn.isVisible().catch(() => false)) {
-          const downloadPromise = page.waitForEvent('download')
-          await exportBtn.click()
-          const download = await downloadPromise
-          expect(download.suggestedFilename()).toMatch(/free-user-stats.*\.csv/i)
-          demoLogger.testCode.log('[Test] ✓ Statistics data exported')
-        }
-      })
-
-      await test.step('Scenario 11: View last updated time', async () => {
-        const statsPage = page.getByTestId('free-stats-page')
-        if (!await statsPage.isVisible().catch(() => false)) {
-          demoLogger.testCode.info('[Test] ℹ Skipping - stats page not loaded')
-          return
-        }
-
-        await expect(page.getByText(/最后更新|last.*updated/i)).toBeVisible()
-        demoLogger.testCode.log('[Test] ✓ Last updated time displayed')
       })
     })
   })
@@ -403,90 +305,6 @@ test.describe('[Points Admin] Comprehensive Demo Tests', () => {
         await page.getByTestId('save-config-button').click()
         await expect(page.getByText(/配置已更新|config.*updated|success/i).first()).toBeVisible()
         demoLogger.testCode.log('[Test] ✓ Config restored to defaults (1000/50/daily/1)')
-      })
-    })
-  })
-
-  // ============================================================================
-  // User Story US-PO-07: View Free User Points Statistics
-  // ============================================================================
-
-  test.describe('US-PO-07: View Free User Points Statistics', () => {
-    test('should view free user points statistics', async ({ page, loginPage, demoLogger }) => {
-      const realmId = DEMO_ADMIN.realmId
-
-      await test.step('Given: 管理员已登录', async () => {
-        await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', realmId)
-        demoLogger.testCode.log('[Test] ✓ Admin logged in')
-      })
-
-      await test.step('When: 访问免费用户统计页面', async () => {
-        await page.goto(`/${realmId}/manage/points/free-stats`)
-
-        // Wait for page to finish loading (either heading or error)
-        const headingVisible = await page.getByRole('heading', { name: /免费用户统计|free.*user.*stats/i }).isVisible({ timeout: 10000 }).catch(() => false)
-        const errorVisible = await page.getByText(/加载统计数据失败|failed.*to.*load/i).isVisible({ timeout: 3000 }).catch(() => false)
-
-        if (errorVisible && !headingVisible) {
-          demoLogger.testCode.info('[Test] ℹ Stats API returned error - skipping detailed assertions')
-          return
-        }
-
-        if (headingVisible) {
-          demoLogger.testCode.log('[Test] ✓ Navigated to free user stats page')
-        }
-      })
-
-      // Check if stats actually loaded (error may show inside the page)
-      const statsLoaded = await page.getByTestId('average-periodic-points-card').isVisible({ timeout: 5000 }).catch(() => false)
-
-      if (!statsLoaded) {
-        demoLogger.testCode.info('[Test] ℹ Statistics cards not visible - API may have returned error')
-        return
-      }
-
-      await test.step('Then: 验证概览统计卡片', async () => {
-        // Verify stat cards are displayed
-        await expect(page.getByText(/Total Free Users/)).toBeVisible()
-        await expect(page.getByText(/Active Free Users/)).toBeVisible()
-        await expect(page.getByText(/Total Registration Bonus/)).toBeVisible()
-        await expect(page.getByText(/Total Periodic Points Granted/)).toBeVisible()
-
-        demoLogger.testCode.log('[Test] ✓ Overview statistics cards displayed')
-      })
-
-      await test.step('Then: 验证详细指标', async () => {
-        await expect(page.getByTestId('average-periodic-points-card')).toBeVisible()
-        await expect(page.getByTestId('upgrade-rate-card')).toBeVisible()
-        demoLogger.testCode.log('[Test] ✓ Detailed metrics displayed')
-      })
-
-      await test.step('When: 按日期范围筛选统计', async () => {
-        await page.getByTestId('start-date-input').fill('2026-03-01')
-        await page.getByTestId('end-date-input').fill('2026-03-27')
-        // Wait for debounced filter application
-        await expect(page.getByText(/最后更新|last.*updated/i)).toBeVisible({ timeout: 5000 })
-        demoLogger.testCode.log('[Test] ✓ Date range filter applied')
-      })
-
-      await test.step('When: 刷新统计数据', async () => {
-        await page.getByTestId('refresh-button').click()
-        // Wait for refresh to complete - check for updated timestamp
-        await expect(page.getByText(/最后更新|last.*updated/i)).toBeVisible({ timeout: 5000 })
-        demoLogger.testCode.log('[Test] ✓ Statistics refreshed')
-      })
-
-      await test.step('When: 导出统计数据', async () => {
-        const downloadPromise = page.waitForEvent('download')
-        await page.getByTestId('export-button').click()
-        const download = await downloadPromise
-        expect(download.suggestedFilename()).toMatch(/free-user-stats.*\.csv/i)
-        demoLogger.testCode.log('[Test] ✓ Statistics data exported')
-      })
-
-      await test.step('Then: 验证最后更新时间', async () => {
-        await expect(page.getByText(/最后更新|last.*updated/i)).toBeVisible()
-        demoLogger.testCode.log('[Test] ✓ Last updated time displayed')
       })
     })
   })

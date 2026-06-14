@@ -26,7 +26,6 @@ import {
   listTransactions,
   getRealmDefaultConfig,
   updateRealmDefaultConfig,
-  getFreeUserStatistics,
   getPaymentAttemptStatus,
   listPaymentProviders,
   listOneTimeMappings,
@@ -195,8 +194,6 @@ export const queryKeys = {
   pointsDefaultConfig: (realmId: string) => [QUERY_KEYS.POINTS_DEFAULT_CONFIG, realmId] as const,
   realmConfigs: (realmId: string) => [QUERY_KEYS.REALM_CONFIGS, realmId] as const,
   emailStatus: (realmId: string) => [QUERY_KEYS.EMAIL_STATUS, realmId] as const,
-  freeUserStats: (realmId: string, dateRange?: { startDate?: string; endDate?: string }) =>
-    [QUERY_KEYS.FREE_USER_STATS, realmId, dateRange] as const,
   userRoles: () => [QUERY_KEYS.USER_ROLES] as const,
   oneTimeMappings: (realmId: string) => [QUERY_KEYS.ONE_TIME_MAPPINGS_EXT, realmId] as const,
   purchaseHistory: (realmId: string, filters: Record<string, unknown>) =>
@@ -777,31 +774,6 @@ export const updatePointsDefaultConfigMutation = async (
     handleApiErrorWithStatus(error)
   }
 }
-
-// ==================== Free User Statistics ====================
-
-export const freeUserStatsQueryOptions = (
-  realmId: string,
-  dateRange?: { startDate?: string; endDate?: string }
-) =>
-  queryOptions({
-    queryKey: queryKeys.freeUserStats(realmId, dateRange),
-    queryFn: async () => {
-      try {
-        const response = await getFreeUserStatistics({
-          path: { realmId },
-          query: dateRange,
-        })
-        if (response.error) handleApiErrorWithStatus(response.error)
-        return response.data
-      } catch (error) {
-        handleApiErrorWithStatus(error)
-      }
-    },
-    retry: clientErrorRetry,
-    staleTime: STALE_TIME_2_MIN,
-    refetchInterval: TIME_CONSTANTS.FIVE_MINUTES,
-  })
 
 // ==================== One-Time Mappings ====================
 
