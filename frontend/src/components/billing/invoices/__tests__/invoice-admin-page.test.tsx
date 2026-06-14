@@ -11,6 +11,32 @@ import { InvoiceAdminPage } from '../invoice-admin-page'
 import type { InvoiceResponse, InvoiceListResponse } from '@/lib/api-generated'
 import { server } from '@/test/mocks/server'
 
+// TanStack Router's <Link> requires a router context; in component tests we
+// only care about its rendered href/children, so render a plain <a>. This
+// mirrors the pattern used in profile-sidebar.test.tsx.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({
+    to,
+    search,
+    children,
+    ...props
+  }: {
+    to: string
+    search?: Record<string, unknown>
+    children?: React.ReactNode
+  }) => {
+    const query =
+      search && Object.keys(search).length
+        ? '?' + new URLSearchParams(search as Record<string, string>).toString()
+        : ''
+    return (
+      <a href={`${to}${query}`} {...props}>
+        {children}
+      </a>
+    )
+  },
+}))
+
 // ==================== Test Helpers ====================
 
 const REALM_ID = 'test-realm'
@@ -60,6 +86,45 @@ function makeListResponse(
 }
 
 // ==================== Tests ====================
+
+/**
+ * Default feature-availability payload: an eligible realm (policy set, seller
+ * configured) so the Create Invoice button stays enabled in happy-path tests.
+ */
+function makeFeatureAvailabilityEligible() {
+  return {
+    admin: {
+      billingVisible: true,
+      billingConfigVisible: true,
+      entitlementMappingsVisible: true,
+      invoicesVisible: true,
+      subscriptionHistoryVisible: true,
+      pointsVisible: true,
+    },
+    user: {
+      pointsVisible: true,
+      pointsPurchaseVisible: true,
+      subscriptionVisible: true,
+      invoicesVisible: true,
+    },
+    facts: {
+      hasPaymentProviders: true,
+      hasEntitlementMappings: true,
+      hasEnabledMappings: true,
+      hasOneTimeMappings: true,
+      hasInvoiceSellerConfig: true,
+      hasInvoices: true,
+      hasSubscriptionHistory: true,
+    },
+    invoiceEligibility: {
+      hasSellerConfig: true,
+      policy: 'provider_first',
+      canCreateManualInvoice: true,
+      canApplyInvoice: true,
+      reason: null,
+    },
+  }
+}
 
 describe('InvoiceAdminPage', () => {
   const defaultHandlers = [
@@ -126,6 +191,9 @@ describe('InvoiceAdminPage', () => {
       }
 
       return HttpResponse.json(makeListResponse(invoices, { page, total: invoices.length }))
+    }),
+    http.get(`${BASE_URL}/api/realms/${REALM_ID}/feature-availability`, () => {
+      return HttpResponse.json(makeFeatureAvailabilityEligible())
     }),
   ]
 
@@ -372,6 +440,72 @@ describe('InvoiceAdminPage', () => {
       expect(onIssueInvoice).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'inv-cb', status: 'draft' })
       )
+    })
+  })
+
+  // ==================== Create Invoice Eligibility Gating ====================
+
+  describe('Create Invoice eligibility gating', () => {
+    function overrideFeatureAvailability(overrides: Record<string, unknown>) {
+      server.use(
+        http.get(`${BASE_URL}/api/realms/${REALM_ID}/feature-availability`, () => {
+          return HttpResponse.json({
+            ...makeFeatureAvailabilityEligible(),
+            invoiceEligibility: {
+              ...makeFeatureAvailabilityEligible().invoiceEligibility,
+              ...overrides,
+            },
+          })
+        })
+      )
+    }
+
+    it('keeps Create Invoice enabled when realm is eligible', async () => {
+      const onCreateInvoice = vi.fn()
+      renderWithProviders(<InvoiceAdminPage realmId={REALM_ID} onCreateInvoice={onCreateInvoice} />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('create-invoice-button')).toBeEnabled()
+      })
+
+      expect(screen.queryByTestId('create-invoice-disabled-reason')).not.toBeInTheDocument()
+    })
+
+    it('disables Create Invoice and shows no-policy reason when policy === none', async () => {
+      overrideFeatureAvailability({
+        policy: 'none',
+        canCreateManualInvoice: false,
+        canApplyInvoice: false,
+      })
+
+      const onCreateInvoice = vi.fn()
+      renderWithProviders(<InvoiceAdminPage realmId={REALM_ID} onCreateInvoice={onCreateInvoice} />)
+
+      // The reason span only renders once eligibility resolves and disables the button;
+      // waiting on it avoids racing the feature-availability query.
+      const reason = await screen.findByTestId('create-invoice-disabled-reason')
+      expect(reason).toHaveTextContent('This realm does not issue Herald invoices.')
+
+      expect(screen.getByTestId('create-invoice-button')).toBeDisabled()
+      // No configure link in the no-policy branch
+      expect(screen.queryByTestId('create-invoice-configure-link')).not.toBeInTheDocument()
+    })
+
+    it('disables Create Invoice and shows seller-config reason + Configure link when seller missing', async () => {
+      overrideFeatureAvailability({ hasSellerConfig: false })
+
+      const onCreateInvoice = vi.fn()
+      renderWithProviders(<InvoiceAdminPage realmId={REALM_ID} onCreateInvoice={onCreateInvoice} />)
+
+      const reason = await screen.findByTestId('create-invoice-disabled-reason')
+      expect(reason).toHaveTextContent('Configure seller information first.')
+
+      expect(screen.getByTestId('create-invoice-button')).toBeDisabled()
+
+      const link = screen.getByTestId('create-invoice-configure-link')
+      expect(link).toHaveTextContent('Configure')
+      // Deep-link to the invoices route with the seller-config open param.
+      expect(link).toHaveAttribute('href', '/test-realm/manage/billing/invoices?open=seller')
     })
   })
 })

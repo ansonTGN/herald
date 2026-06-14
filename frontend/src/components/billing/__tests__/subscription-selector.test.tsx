@@ -1,8 +1,15 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { SubscriptionSelector } from '../subscription-selector'
 import type { ClientAppItem, SubscriptionDetailResponse } from '@/lib/api-generated'
+import { server } from '@/test/mocks/server'
+import { renderWithProviders } from '@/test/utils/render'
+
+const REALM_ID = 'realm-1'
+const BASE_URL = 'http://localhost:3000'
+const SUB_ID = 'sub1'
 
 describe('SubscriptionSelector - Rendering', () => {
   it('should display empty state when no subscriptions', () => {
@@ -97,22 +104,42 @@ describe('SubscriptionSelector - Selection Logic', () => {
   })
 
   it('should call onApplyInvoice with subscription ID without selecting card', async () => {
+    // P1-4: the Invoice button is now eligibility-gated. Provide realmId +
+    // a manual_fallback eligibility verdict so the button is enabled.
+    server.use(
+      http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices/apply-eligibility`, () => {
+        return HttpResponse.json({
+          referenceType: 'subscription',
+          referenceId: SUB_ID,
+          canApply: true,
+          route: 'manual_fallback',
+          provider: null,
+          reason: null,
+        })
+      })
+    )
     const mockOnSelect = vi.fn()
     const mockOnApplyInvoice = vi.fn()
     const user = userEvent.setup()
 
-    render(
+    renderWithProviders(
       <SubscriptionSelector
         subscriptions={mockSubscriptions}
         onSelect={mockOnSelect}
+        realmId={REALM_ID}
         onApplyInvoice={mockOnApplyInvoice}
       />
     )
 
-    await user.click(screen.getByTestId('subscription-invoice-button-sub1'))
+    const button = await screen.findByTestId(`subscription-invoice-button-${SUB_ID}`)
+    await waitFor(() => {
+      expect(button).toBeEnabled()
+    })
+    await user.click(button)
 
     expect(mockOnApplyInvoice).toHaveBeenCalledTimes(1)
-    expect(mockOnApplyInvoice).toHaveBeenCalledWith('sub1')
+    expect(mockOnApplyInvoice).toHaveBeenCalledWith(SUB_ID)
+    // Clicking the eligibility button must not bubble to card selection.
     expect(mockOnSelect).not.toHaveBeenCalled()
   })
 

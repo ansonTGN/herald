@@ -1,7 +1,7 @@
 import { m } from '@/paraglide/messages'
 import { memo, useMemo } from 'react'
 import { format } from 'date-fns'
-import { ChevronRight, Calendar, Coins, CreditCard, AlertCircle, FileText } from 'lucide-react'
+import { ChevronRight, Calendar, Coins, CreditCard, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -15,23 +15,32 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { PurchaseHistoryItemDto } from '@/lib/api-generated'
 import { formatInvoiceAmount, getPaymentStatusBadgeVariant } from '@/lib/invoice-utils'
+import { InvoiceApplyRowButton } from '@/components/billing/invoices/invoice-apply-row-button'
 
 interface PurchaseHistoryListProps {
   purchases: PurchaseHistoryItemDto[]
   isLoading: boolean
   error?: Error
   onDetailsClick: (attemptId: string) => void
+  /**
+   * Render a per-row Invoice button gated by the apply-eligibility API.
+   * Only rendered when the outer realm-level `invoicesVisible` gate is open
+   * (caller passes this through); the button itself reflects per-resource
+   * eligibility (P1-3/P1-4).
+   */
+  realmId?: string
   onApplyInvoice?: (attemptId: string) => void
 }
 
 interface HistoryTableRowProps {
+  realmId?: string
   purchase: PurchaseHistoryItemDto
   onDetailsClick: (attemptId: string) => void
   onApplyInvoice?: (attemptId: string) => void
 }
 
 const HistoryTableRow = memo(
-  ({ purchase, onDetailsClick, onApplyInvoice }: HistoryTableRowProps) => {
+  ({ realmId, purchase, onDetailsClick, onApplyInvoice }: HistoryTableRowProps) => {
     const timestamp = useMemo(() => {
       try {
         return format(new Date(purchase.createdAt), 'PPp')
@@ -76,16 +85,16 @@ const HistoryTableRow = memo(
         </TableCell>
         <TableCell className="text-right">
           <div className="flex justify-end gap-1">
-            {onApplyInvoice && (
-              <Button
+            {onApplyInvoice && realmId && (
+              <InvoiceApplyRowButton
+                realmId={realmId}
+                referenceType="payment_attempt"
+                referenceId={purchase.attemptId}
+                onApply={() => onApplyInvoice(purchase.attemptId)}
+                srLabel={m['points.purchase_history_invoice_sr']()}
                 variant="ghost"
-                size="sm"
-                onClick={() => onApplyInvoice(purchase.attemptId)}
-                data-testid={`purchase-history-invoice-button-${purchase.attemptId}`}
-              >
-                <FileText className="h-4 w-4" />
-                <span className="sr-only">{m['points.purchase_history_invoice_sr']()}</span>
-              </Button>
+                testIdPrefix={`purchase-history-invoice-button-${purchase.attemptId}`}
+              />
             )}
             <Button
               variant="ghost"
@@ -110,6 +119,7 @@ export function PurchaseHistoryList({
   isLoading,
   error,
   onDetailsClick,
+  realmId,
   onApplyInvoice,
 }: PurchaseHistoryListProps) {
   if (isLoading) {
@@ -170,6 +180,7 @@ export function PurchaseHistoryList({
           {purchases.map((purchase) => (
             <HistoryTableRow
               key={purchase.attemptId}
+              realmId={realmId}
               purchase={purchase}
               onDetailsClick={onDetailsClick}
               onApplyInvoice={onApplyInvoice}

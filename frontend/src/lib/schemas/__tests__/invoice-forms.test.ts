@@ -497,7 +497,13 @@ describe('applyInvoiceSchema', () => {
     expect(result.success).toBe(true)
   })
 
-  it('rejects when both paymentAttemptId and subscriptionId are missing', () => {
+  // P1-3 removed the manual-ID-entry path. The apply schema no longer has the
+  // refine that required at least one of paymentAttemptId/subscriptionId,
+  // because the resource id is now always supplied by the route's search params
+  // (prefilled-reference). The schema only carries the ids through to the
+  // mutation; the route enforces exactly-one-required. So a form with neither
+  // id now parses successfully at the schema level.
+  it('accepts form with neither paymentAttemptId nor subscriptionId (route enforces required)', () => {
     const result = applyInvoiceSchema.safeParse({
       currency: 'CNY',
       paymentAttemptId: null,
@@ -507,21 +513,7 @@ describe('applyInvoiceSchema', () => {
       billingTaxId: 'TAX123456',
       dueDate: '2025-08-01',
     })
-    expect(result.success).toBe(false)
-  })
-
-  it('rejects when both paymentAttemptId and subscriptionId are empty strings', () => {
-    const result = applyInvoiceSchema.safeParse({
-      currency: 'CNY',
-      paymentAttemptId: '',
-      subscriptionId: '',
-      billingName: 'Acme Corp',
-      billingAddress: '123 Main St',
-      billingTaxId: 'TAX123456',
-      dueDate: '2025-08-01',
-    })
-    // Empty strings are falsy, so the refine will fail
-    expect(result.success).toBe(false)
+    expect(result.success).toBe(true)
   })
 
   it('rejects missing billingName', () => {

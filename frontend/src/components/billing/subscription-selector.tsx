@@ -1,6 +1,5 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import type { ClientAppItem, SubscriptionDetailResponse } from '@/lib/api-generated'
 import {
   getStatusBadgeVariant,
@@ -8,8 +7,8 @@ import {
   type SubscriptionStatus,
 } from '@/types/billing'
 import { formatDate } from '@/lib/date-utils'
-import { FileText } from 'lucide-react'
 import { m } from '@/paraglide/messages'
+import { InvoiceApplyRowButton } from '@/components/billing/invoices/invoice-apply-row-button'
 
 interface SubscriptionSelectorProps {
   subscriptions: Array<{
@@ -18,6 +17,7 @@ interface SubscriptionSelectorProps {
   }>
   selectedId?: string
   onSelect: (subscriptionId: string) => void
+  realmId?: string
   onApplyInvoice?: (subscriptionId: string) => void
 }
 
@@ -25,6 +25,7 @@ export function SubscriptionSelector({
   subscriptions,
   selectedId,
   onSelect,
+  realmId,
   onApplyInvoice,
 }: SubscriptionSelectorProps) {
   if (subscriptions.length === 0) {
@@ -89,20 +90,18 @@ export function SubscriptionSelector({
                         </>
                       )}
                     </div>
-                    {onApplyInvoice && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onApplyInvoice(subscription.id)
-                        }}
-                        data-testid={`subscription-invoice-button-${subscription.id}`}
-                      >
-                        <FileText className="mr-2 h-4 w-4" />
-                        {m['billing.subscription_invoice_button']()}
-                      </Button>
+                    {onApplyInvoice && realmId && (
+                      <div onClick={(event) => event.stopPropagation()}>
+                        <InvoiceApplyRowButton
+                          realmId={realmId}
+                          referenceType="subscription"
+                          referenceId={subscription.id}
+                          onApply={() => onApplyInvoice(subscription.id)}
+                          label={m['billing.subscription_invoice_button']()}
+                          variant="outline"
+                          testIdPrefix={`subscription-invoice-button-${subscription.id}`}
+                        />
+                      </div>
                     )}
                   </div>
                 ) : (

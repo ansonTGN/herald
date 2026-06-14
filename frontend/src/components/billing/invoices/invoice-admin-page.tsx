@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
+import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/react-table'
 import {
@@ -40,6 +41,7 @@ import { ListPagination } from '@/components/shared'
 import type { InvoiceResponse } from '@/lib/api-generated'
 import { formatDate } from '@/lib/date-utils'
 import { invoiceListQueryOptions } from '@/data/invoice-query-options'
+import { featureAvailabilityQueryOptions } from '@/data/query-options'
 import {
   INVOICE_PAGE_SIZE,
   getInvoiceSourceLabel,
@@ -411,9 +413,19 @@ export function InvoiceAdminPage({
   }
 
   const { data, isLoading, error } = useQuery(invoiceListQueryOptions(realmId, queryFilters))
+  const { data: features } = useQuery(featureAvailabilityQueryOptions(realmId))
+  const eligibility = features?.invoiceEligibility
 
   const invoices = data?.data ?? []
   const total = data?.total ?? 0
+
+  // Pre-gate Create Invoice on realm-level eligibility returned by
+  // feature-availability (policy + seller config), so users do not fill the
+  // form only to be rejected by the backend on submit.
+  const noPolicy = eligibility?.policy === 'none' || eligibility?.canCreateManualInvoice === false
+  const noSeller = eligibility?.hasSellerConfig === false
+  const createDisabled = !!onCreateInvoice && !!eligibility && (noPolicy || noSeller)
+  const sellerConfigRoute: string = `/${realmId}/manage/billing/invoices`
 
   const handleFiltersChange = useCallback((newFilters: InvoiceFilters) => {
     setFilters(newFilters)
@@ -462,13 +474,40 @@ export function InvoiceAdminPage({
             </Button>
           )}
           {onCreateInvoice && (
-            <Button onClick={onCreateInvoice} data-testid="create-invoice-button">
+            <Button
+              onClick={onCreateInvoice}
+              data-testid="create-invoice-button"
+              disabled={createDisabled}
+            >
               <Plus className="mr-2 h-4 w-4" />
               {m['billing.invoice_create_button']()}
             </Button>
           )}
         </div>
       </div>
+
+      {onCreateInvoice && createDisabled && (
+        <div
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground"
+          data-testid="create-invoice-disabled-reason"
+        >
+          {noPolicy ? (
+            <span>{m['billing.invoice_no_policy_disabled']()}</span>
+          ) : (
+            <>
+              <span>{m['billing.invoice_create_disabled_no_seller']()}</span>
+              <Link
+                to={sellerConfigRoute}
+                search={{ open: 'seller' }}
+                className="text-primary underline-offset-4 hover:underline"
+                data-testid="create-invoice-configure-link"
+              >
+                {m['billing.invoice_create_configure_link']()}
+              </Link>
+            </>
+          )}
+        </div>
+      )}
 
       <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
 

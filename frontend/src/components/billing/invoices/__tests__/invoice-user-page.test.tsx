@@ -120,7 +120,7 @@ describe('InvoiceUserPage', () => {
         })
       )
 
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
 
       await waitFor(() => {
         expect(screen.getByTestId('invoice-download-pdf-inv-issued')).toBeInTheDocument()
@@ -135,7 +135,7 @@ describe('InvoiceUserPage', () => {
         })
       )
 
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
 
       await waitFor(() => {
         expect(screen.getByTestId('invoice-download-pdf-inv-paid')).toBeInTheDocument()
@@ -150,7 +150,7 @@ describe('InvoiceUserPage', () => {
         })
       )
 
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
 
       await waitFor(() => {
         expect(screen.getByTestId('invoice-download-pdf-inv-overdue')).toBeInTheDocument()
@@ -165,7 +165,7 @@ describe('InvoiceUserPage', () => {
         })
       )
 
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
 
       await waitFor(() => {
         expect(screen.getByTestId('invoice-user-table')).toBeInTheDocument()
@@ -182,7 +182,7 @@ describe('InvoiceUserPage', () => {
         })
       )
 
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
 
       await waitFor(() => {
         expect(screen.getByTestId('invoice-user-table')).toBeInTheDocument()
@@ -192,22 +192,9 @@ describe('InvoiceUserPage', () => {
     })
   })
 
-  // ==================== Apply Invoice Button ====================
-
-  it('clicking Apply for Invoice button calls onApplyInvoice callback', async () => {
-    const user = userEvent.setup()
-    const onApplyInvoice = vi.fn()
-    renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={onApplyInvoice} />)
-
-    await waitFor(() => {
-      expect(screen.getByTestId('invoice-user-table')).toBeInTheDocument()
-    })
-
-    const applyButton = screen.getByTestId('apply-invoice-button')
-    await user.click(applyButton)
-
-    expect(onApplyInvoice).toHaveBeenCalledOnce()
-  })
+  // The standalone Apply Invoice button (and its realm-level eligibility gating)
+  // was removed in P1-3. Apply is now only reachable from history rows with a
+  // pre-filled resource, gated by the per-resource apply-eligibility API.
 
   // ==================== Pagination ====================
 
@@ -242,7 +229,7 @@ describe('InvoiceUserPage', () => {
         })
       )
 
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
 
       // Wait for initial load (page 0)
       await waitFor(() => {
@@ -292,7 +279,7 @@ describe('InvoiceUserPage', () => {
         })
       )
 
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
 
       await waitFor(() => {
         // Provider badge appears in both the provider column and the status badge
@@ -313,7 +300,7 @@ describe('InvoiceUserPage', () => {
         })
       )
 
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
 
       await waitFor(() => {
         expect(screen.getByTestId('invoice-user-table')).toBeInTheDocument()
@@ -341,7 +328,7 @@ describe('InvoiceUserPage', () => {
         })
       )
 
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
 
       await waitFor(() => {
         const link = screen.getByTestId('invoice-download-pdf-inv-ext-pdf')
@@ -365,7 +352,7 @@ describe('InvoiceUserPage', () => {
         })
       )
 
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
 
       await waitFor(() => {
         const link = screen.getByTestId('invoice-view-provider-inv-ext-hosted')
@@ -389,7 +376,7 @@ describe('InvoiceUserPage', () => {
         })
       )
 
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
 
       await waitFor(() => {
         expect(screen.getByTestId('invoice-managed-external-inv-ext-nourl')).toBeInTheDocument()
@@ -411,7 +398,7 @@ describe('InvoiceUserPage', () => {
         })
       )
 
-      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} onApplyInvoice={vi.fn()} />)
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
 
       await waitFor(() => {
         const button = screen.getByTestId('invoice-download-pdf-inv-manual-pdf')

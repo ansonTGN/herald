@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/react-table'
-import { Download, ExternalLink, Plus } from 'lucide-react'
+import { Download, ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -160,13 +160,7 @@ function createInvoiceColumns(
   ]
 }
 
-export function InvoiceUserPage({
-  realmId,
-  onApplyInvoice,
-}: {
-  realmId: string
-  onApplyInvoice: () => void
-}) {
+export function InvoiceUserPage({ realmId }: { realmId: string }) {
   const [page, setPage] = useState(0)
 
   const { data, isLoading, error } = useQuery(
@@ -186,16 +180,7 @@ export function InvoiceUserPage({
 
   return (
     <div className="space-y-6" data-testid="invoice-user-page">
-      <PageHeader
-        title={m['billing.invoice_my_title']()}
-        headingTestId="invoice-user-heading"
-        action={{
-          label: m['billing.invoice_apply_button'](),
-          onClick: onApplyInvoice,
-          testId: 'apply-invoice-button',
-          icon: <Plus className="mr-2 h-4 w-4" />,
-        }}
-      />
+      <PageHeader title={m['billing.invoice_my_title']()} headingTestId="invoice-user-heading" />
 
       <Card>
         <CardHeader>

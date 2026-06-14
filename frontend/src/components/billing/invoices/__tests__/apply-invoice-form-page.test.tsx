@@ -23,6 +23,9 @@ vi.mock('@tanstack/react-router', () => ({
 const REALM_ID = 'test-realm'
 const BASE_URL = 'http://localhost:3000'
 
+const PAYMENT_ATTEMPT_ID = '11111111-1111-1111-1111-111111111111'
+const SUBSCRIPTION_ID = '22222222-2222-2222-2222-222222222222'
+
 function sellerConfigHandler() {
   return http.get(`${BASE_URL}/api/bill/${REALM_ID}/invoice-seller-config`, () => {
     return HttpResponse.json({
@@ -55,8 +58,13 @@ describe('ApplyInvoiceFormPage', () => {
   // ==================== Rendering ====================
 
   describe('rendering', () => {
-    it('renders the apply invoice form with all sections', async () => {
-      renderWithProviders(<ApplyInvoiceFormPage realmId={REALM_ID} />)
+    it('renders the apply invoice form with all sections and a prefilled reference', async () => {
+      renderWithProviders(
+        <ApplyInvoiceFormPage
+          realmId={REALM_ID}
+          prefilledReference={{ type: 'paymentAttempt', id: PAYMENT_ATTEMPT_ID }}
+        />
+      )
 
       await waitFor(() => {
         expect(screen.getByTestId('apply-form-page')).toBeInTheDocument()
@@ -67,9 +75,16 @@ describe('ApplyInvoiceFormPage', () => {
       expect(screen.getByTestId('apply-form-billing-section')).toBeInTheDocument()
       expect(screen.getByTestId('apply-form-details-section')).toBeInTheDocument()
 
+      // The manual ID-entry inputs MUST NOT exist anymore (P1-3 removed them).
+      // The form relies solely on the pre-filled reference banner.
+      expect(screen.queryByTestId('apply-payment-attempt-id-input')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('apply-subscription-id-input')).not.toBeInTheDocument()
+
+      // Verify the prefilled-reference banner is shown.
+      expect(screen.getByTestId('apply-prefilled-reference')).toBeInTheDocument()
+      expect(screen.getByText('Points package purchase')).toBeInTheDocument()
+
       // Verify key form fields are present
-      expect(screen.getByTestId('apply-payment-attempt-id-input')).toBeInTheDocument()
-      expect(screen.getByTestId('apply-subscription-id-input')).toBeInTheDocument()
       expect(screen.getByTestId('apply-billing-name-input')).toBeInTheDocument()
       expect(screen.getByTestId('apply-billing-email-input')).toBeInTheDocument()
       expect(screen.getByTestId('apply-billing-address-input')).toBeInTheDocument()
@@ -83,14 +98,11 @@ describe('ApplyInvoiceFormPage', () => {
       expect(screen.getByTestId('apply-invoice-back-button')).toBeInTheDocument()
     })
 
-    it('renders read-only reference when payment attempt is prefilled', async () => {
+    it('shows the subscription banner when subscription reference is prefilled', async () => {
       renderWithProviders(
         <ApplyInvoiceFormPage
           realmId={REALM_ID}
-          prefilledReference={{
-            type: 'paymentAttempt',
-            id: '11111111-1111-1111-1111-111111111111',
-          }}
+          prefilledReference={{ type: 'subscription', id: SUBSCRIPTION_ID }}
         />
       )
 
@@ -98,7 +110,7 @@ describe('ApplyInvoiceFormPage', () => {
         expect(screen.getByTestId('apply-prefilled-reference')).toBeInTheDocument()
       })
 
-      expect(screen.getByText('Points package purchase')).toBeInTheDocument()
+      expect(screen.getByText('Subscription')).toBeInTheDocument()
       expect(screen.queryByTestId('apply-payment-attempt-id-input')).not.toBeInTheDocument()
       expect(screen.queryByTestId('apply-subscription-id-input')).not.toBeInTheDocument()
     })
@@ -109,15 +121,16 @@ describe('ApplyInvoiceFormPage', () => {
   describe('validation', () => {
     it('submit without billingName shows validation error', async () => {
       const user = userEvent.setup()
-      renderWithProviders(<ApplyInvoiceFormPage realmId={REALM_ID} />)
+      renderWithProviders(
+        <ApplyInvoiceFormPage
+          realmId={REALM_ID}
+          prefilledReference={{ type: 'paymentAttempt', id: PAYMENT_ATTEMPT_ID }}
+        />
+      )
 
       await waitFor(() => {
         expect(screen.getByTestId('apply-form-page')).toBeInTheDocument()
       })
-
-      // Fill payment attempt ID so we pass the refine check
-      const paymentInput = screen.getByTestId('apply-payment-attempt-id-input')
-      await user.type(paymentInput, 'pay-123')
 
       // Submit with empty billingName (and empty billingAddress, dueDate)
       const submitButton = screen.getByTestId('apply-invoice-submit-button')
@@ -128,101 +141,11 @@ describe('ApplyInvoiceFormPage', () => {
         expect(screen.getByText('Billing name is required')).toBeInTheDocument()
       })
     })
-
-    it('submit without payment/subscription shows validation error', async () => {
-      const user = userEvent.setup()
-      renderWithProviders(<ApplyInvoiceFormPage realmId={REALM_ID} />)
-
-      await waitFor(() => {
-        expect(screen.getByTestId('apply-form-page')).toBeInTheDocument()
-      })
-
-      // Fill billingName only (no payment/subscription)
-      const billingNameInput = screen.getByTestId('apply-billing-name-input')
-      await user.type(billingNameInput, 'Test Buyer')
-
-      // Fill billingAddress (required)
-      await user.type(screen.getByTestId('apply-billing-address-input'), '123 Billing St')
-
-      // Fill dueDate (required)
-      await user.type(screen.getByTestId('apply-due-date-input'), '2025-08-01')
-
-      // Submit
-      const submitButton = screen.getByTestId('apply-invoice-submit-button')
-      await user.click(submitButton)
-
-      // Should show validation error about payment attempt or subscription
-      await waitFor(() => {
-        expect(
-          screen.getByText(/Either payment attempt or subscription is required/)
-        ).toBeInTheDocument()
-      })
-    })
   })
 
   // ==================== Submission ====================
 
   describe('submission', () => {
-    it('valid submission calls apply mutation with correct payload', async () => {
-      let capturedBody: unknown = null
-
-      server.use(
-        sellerConfigHandler(),
-        http.post(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, async ({ request }) => {
-          capturedBody = await request.json()
-          return HttpResponse.json({ id: 'inv-new' }, { status: 201 })
-        })
-      )
-
-      const user = userEvent.setup()
-      renderWithProviders(<ApplyInvoiceFormPage realmId={REALM_ID} />)
-
-      // Wait for seller config to load and form to initialize
-      await waitFor(() => {
-        expect(screen.getByTestId('apply-form-page')).toBeInTheDocument()
-      })
-
-      // Fill payment attempt ID
-      await user.type(screen.getByTestId('apply-payment-attempt-id-input'), 'pay-abc-123')
-
-      // Fill billing name
-      await user.type(screen.getByTestId('apply-billing-name-input'), 'John Doe')
-
-      // Fill billing email
-      await user.type(screen.getByTestId('apply-billing-email-input'), 'john@example.com')
-
-      // Fill billing address (required)
-      await user.type(screen.getByTestId('apply-billing-address-input'), '123 Billing St')
-
-      // Fill billing tax ID (required)
-      await user.type(screen.getByTestId('apply-billing-tax-id-input'), 'TAX123456')
-
-      // dueDate is auto-populated from sellerConfig (Net 30 terms), no need to fill
-
-      // Submit
-      await user.click(screen.getByTestId('apply-invoice-submit-button'))
-
-      // Wait for mutation to be called
-      await waitFor(() => {
-        expect(capturedBody).not.toBeNull()
-      })
-
-      expect(capturedBody).toMatchObject({
-        paymentAttemptId: 'pay-abc-123',
-        billingName: 'John Doe',
-        billingEmail: 'john@example.com',
-        billingAddress: '123 Billing St',
-        billingTaxId: 'TAX123456',
-        currency: 'CNY',
-      })
-
-      // Should navigate back after successful submit
-      expect(mockNavigate).toHaveBeenCalledWith({
-        to: '/$realmId/user/invoices',
-        params: { realmId: REALM_ID },
-      })
-    })
-
     it('submits prefilled payment attempt ID without editable reference inputs', async () => {
       let capturedBody: unknown = null
 
@@ -238,10 +161,7 @@ describe('ApplyInvoiceFormPage', () => {
       renderWithProviders(
         <ApplyInvoiceFormPage
           realmId={REALM_ID}
-          prefilledReference={{
-            type: 'paymentAttempt',
-            id: '11111111-1111-1111-1111-111111111111',
-          }}
+          prefilledReference={{ type: 'paymentAttempt', id: PAYMENT_ATTEMPT_ID }}
         />
       )
 
@@ -259,11 +179,17 @@ describe('ApplyInvoiceFormPage', () => {
       })
 
       expect(capturedBody).toMatchObject({
-        paymentAttemptId: '11111111-1111-1111-1111-111111111111',
+        paymentAttemptId: PAYMENT_ATTEMPT_ID,
         billingName: 'John Doe',
         billingTaxId: 'TAX123456',
       })
       expect(capturedBody).not.toHaveProperty('subscriptionId')
+
+      // Should navigate back after successful submit
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/$realmId/user/invoices',
+        params: { realmId: REALM_ID },
+      })
     })
   })
 
@@ -272,7 +198,12 @@ describe('ApplyInvoiceFormPage', () => {
   describe('cancel navigation', () => {
     it('cancel button navigates back', async () => {
       const user = userEvent.setup()
-      renderWithProviders(<ApplyInvoiceFormPage realmId={REALM_ID} />)
+      renderWithProviders(
+        <ApplyInvoiceFormPage
+          realmId={REALM_ID}
+          prefilledReference={{ type: 'paymentAttempt', id: PAYMENT_ATTEMPT_ID }}
+        />
+      )
 
       await waitFor(() => {
         expect(screen.getByTestId('apply-form-page')).toBeInTheDocument()
@@ -303,14 +234,18 @@ describe('ApplyInvoiceFormPage', () => {
       )
 
       const user = userEvent.setup()
-      renderWithProviders(<ApplyInvoiceFormPage realmId={REALM_ID} />)
+      renderWithProviders(
+        <ApplyInvoiceFormPage
+          realmId={REALM_ID}
+          prefilledReference={{ type: 'paymentAttempt', id: PAYMENT_ATTEMPT_ID }}
+        />
+      )
 
       await waitFor(() => {
         expect(screen.getByTestId('apply-form-page')).toBeInTheDocument()
       })
 
       // Fill required fields and submit
-      await user.type(screen.getByTestId('apply-payment-attempt-id-input'), 'pay-123')
       await user.type(screen.getByTestId('apply-billing-name-input'), 'John Doe')
       await user.type(screen.getByTestId('apply-billing-address-input'), '123 Billing St')
       await user.type(screen.getByTestId('apply-billing-tax-id-input'), 'TAX123456')
@@ -326,7 +261,12 @@ describe('ApplyInvoiceFormPage', () => {
     })
 
     it('does not show rejection alert when no error', async () => {
-      renderWithProviders(<ApplyInvoiceFormPage realmId={REALM_ID} />)
+      renderWithProviders(
+        <ApplyInvoiceFormPage
+          realmId={REALM_ID}
+          prefilledReference={{ type: 'paymentAttempt', id: PAYMENT_ATTEMPT_ID }}
+        />
+      )
 
       await waitFor(() => {
         expect(screen.getByTestId('apply-form-page')).toBeInTheDocument()

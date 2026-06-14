@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { z } from 'zod'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -20,18 +21,50 @@ import { useIssueInvoice, useVoidInvoice, useMarkPaid } from '@/data/invoice-mut
 import type { InvoiceResponse } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
 
+// Search param that lets Billing hub deep-link to seller config or policy config dialog.
+// Mirrors the zod-schema-on-validateSearch convention used by sibling billing routes
+// (subscriptions.tsx, entitlement-mappings.tsx).
+const invoiceAdminSearchSchema = z.object({
+  open: z.enum(['seller', 'policy']).optional(),
+})
+
 export const Route = createFileRoute('/$realmId/manage/billing/invoices/')({
   component: InvoiceAdminRoute,
+  validateSearch: invoiceAdminSearchSchema,
 })
 
 function InvoiceAdminRoute() {
   const { realmId } = Route.useParams()
   const navigate = useNavigate()
+  const search = Route.useSearch()
 
   const [detailInvoiceId, setDetailInvoiceId] = useState<string | null>(null)
 
   const [sellerConfigOpen, setSellerConfigOpen] = useState(false)
   const [policyConfigOpen, setPolicyConfigOpen] = useState(false)
+
+  // Deep-link support: the Billing hub navigates here with `?open=seller|policy`
+  // to surface the invoice settings dialog. Open the dialog once per inbound value,
+  // then strip the param (replace, no history entry) so a refresh doesn't re-open it.
+  // The handledRef guard prevents the clear-navigate from re-triggering this effect.
+  const handledOpen = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    const requested = search.open
+    if (!requested || handledOpen.current === requested) return
+    handledOpen.current = requested
+    if (requested === 'seller') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- open dialog once per inbound deep-link value
+      setSellerConfigOpen(true)
+    } else if (requested === 'policy') {
+      setPolicyConfigOpen(true)
+    }
+    navigate({
+      to: '/$realmId/manage/billing/invoices',
+      params: { realmId },
+      search: { open: undefined },
+      replace: true,
+    })
+  }, [search.open, navigate, realmId])
 
   const [issueTarget, setIssueTarget] = useState<InvoiceResponse | null>(null)
   const [issueDate, setIssueDate] = useState('')

@@ -126,3 +126,16 @@ pub mod credit_note_stripe_webhook_scenarios;
 // User Story: US-IF-008 (admin refund visibility), US-IF-009 (user refund annotation)
 // Covers: Design sections 1.3 (Creem exclusion), 4.2.2 (refund field extensions)
 pub mod invoice_refund_query_scenarios;
+
+// Feature-availability invoice eligibility scenario tests
+// User Story: docs/user-stories/billing/invoice-fallback.md
+// Covers: P0-2 Phase A -- realm-level invoice eligibility via feature-availability
+//         so frontend can gate Create/Apply invoice buttons before submit.
+pub mod feature_availability_invoice_eligibility_scenarios;
+
+// Invoice per-resource apply-eligibility scenario tests
+// User Story: docs/user-stories/billing/invoice-fallback.md
+// Covers: P0-2 Phase B -- read-only, context-level apply-eligibility verdict
+//         for a specific payment_attempt/subscription, so frontend can gate the
+//         Apply Invoice button on that resource before submit.
+pub mod invoice_apply_eligibility_scenarios;

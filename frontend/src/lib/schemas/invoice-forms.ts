@@ -153,35 +153,31 @@ export const invoiceSellerConfigSchema = z.object({
 
 export type InvoiceSellerConfigFormData = z.infer<typeof invoiceSellerConfigSchema>
 
-export const applyInvoiceSchema = z
-  .object({
-    currency: z.string().min(3).max(3).default('CNY'),
-    paymentAttemptId: z.string().optional().nullable(),
-    subscriptionId: z.string().optional().nullable(),
-    billingName: z
-      .string()
-      .min(1, { error: () => m['billing.invoice_validation_billing_name_required']() }),
-    billingEmail: z
-      .string()
-      .email({ error: () => m['billing.invoice_validation_billing_email_invalid']() })
-      .optional()
-      .nullable(),
-    billingAddress: z
-      .string()
-      .min(1, { error: () => m['billing.invoice_validation_billing_address_required']() }),
-    billingPhone: z.string().max(50).optional().nullable(),
-    billingTaxId: z
-      .string()
-      .min(1, { error: () => m['billing.invoice_validation_billing_tax_id_required']() }),
-    dueDate: z
-      .string()
-      .min(1, { error: () => m['billing.invoice_validation_due_date_required']() }),
-    notes: z.string().max(2000).optional().nullable(),
-  })
-  .refine((data) => data.paymentAttemptId || data.subscriptionId, {
-    error: () => m['billing.invoice_validation_payment_or_subscription_required'](),
-    path: ['paymentAttemptId'],
-  })
+// The apply form is only reachable with a pre-filled resource reference
+// (paymentAttemptId or subscriptionId) supplied by the route's search params;
+// there is no manual-ID-entry path. See P1-3 in `.ai/future/invoice_ux.md`.
+export const applyInvoiceSchema = z.object({
+  currency: z.string().min(3).max(3).default('CNY'),
+  paymentAttemptId: z.string().optional().nullable(),
+  subscriptionId: z.string().optional().nullable(),
+  billingName: z
+    .string()
+    .min(1, { error: () => m['billing.invoice_validation_billing_name_required']() }),
+  billingEmail: z
+    .string()
+    .email({ error: () => m['billing.invoice_validation_billing_email_invalid']() })
+    .optional()
+    .nullable(),
+  billingAddress: z
+    .string()
+    .min(1, { error: () => m['billing.invoice_validation_billing_address_required']() }),
+  billingPhone: z.string().max(50).optional().nullable(),
+  billingTaxId: z
+    .string()
+    .min(1, { error: () => m['billing.invoice_validation_billing_tax_id_required']() }),
+  dueDate: z.string().min(1, { error: () => m['billing.invoice_validation_due_date_required']() }),
+  notes: z.string().max(2000).optional().nullable(),
+})
 
 export type ApplyInvoiceFormData = z.infer<typeof applyInvoiceSchema>
 

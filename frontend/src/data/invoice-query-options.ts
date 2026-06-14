@@ -6,12 +6,14 @@ import {
   getMyInvoice,
   getSellerConfig,
   listRealmConfigsByType,
+  getInvoiceApplyEligibility,
 } from '@/lib/api-generated'
 import type {
   InvoiceListResponse,
   InvoiceDetailResponse,
   SellerConfigResponse,
   RealmConfigResponse,
+  InvoiceApplyEligibilityResponse,
 } from '@/lib/api-generated'
 import { TIME_CONSTANTS } from '@/lib/constants'
 
@@ -33,6 +35,11 @@ export const invoiceKeys = {
   myDetail: (realmId: string, invoiceId: string) =>
     ['invoices', realmId, 'my', 'detail', invoiceId] as const,
   policyConfig: (realmId: string) => ['invoices', realmId, 'policy-config'] as const,
+  applyEligibility: (
+    realmId: string,
+    referenceType: 'payment_attempt' | 'subscription',
+    referenceId: string
+  ) => ['invoices', realmId, 'apply-eligibility', referenceType, referenceId] as const,
 }
 
 export function invoiceListQueryOptions(
@@ -159,5 +166,34 @@ export function invoicePolicyConfigQueryOptions(realmId: string) {
     },
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_5_MIN,
+  })
+}
+
+/**
+ * Per-resource invoice apply-eligibility. Used to gate the per-row Invoice
+ * button on history lists BEFORE submit (P1-4). The query is enabled by the
+ * caller (typically when `invoicesVisible` is true and the row is rendered).
+ *
+ * `referenceType` is snake_case `payment_attempt` (API contract), even though
+ * the prefilled-reference form type uses camelCase `paymentAttempt`.
+ */
+export function invoiceApplyEligibilityQueryOptions(
+  realmId: string,
+  referenceType: 'payment_attempt' | 'subscription',
+  referenceId: string
+) {
+  return queryOptions({
+    queryKey: invoiceKeys.applyEligibility(realmId, referenceType, referenceId),
+    queryFn: async () => {
+      const response = await getInvoiceApplyEligibility({
+        path: { realmId },
+        query: { referenceType, referenceId },
+      })
+      if (response.error) throw response.error
+      return response.data as InvoiceApplyEligibilityResponse
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+    gcTime: GC_TIME_5_MIN,
   })
 }

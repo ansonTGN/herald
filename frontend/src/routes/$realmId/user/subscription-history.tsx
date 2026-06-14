@@ -10,14 +10,13 @@ import {
 } from '@/data/query-options'
 import { SubscriptionSelector } from '@/components/billing/subscription-selector'
 import { UserSubscriptionTimeline } from '@/components/billing/user-subscription-timeline'
+import { InvoiceApplyRowButton } from '@/components/billing/invoices/invoice-apply-row-button'
 import type { ClientAppItem, SubscriptionDetailResponse } from '@/lib/api-generated'
 import { getSubscriptionForClientApp } from '@/lib/api-generated'
 import { PageHeader } from '@/components/shared'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { getStatusBadgeVariant, type SubscriptionStatus } from '@/types/billing'
-import { FileText } from 'lucide-react'
 import { m } from '@/paraglide/messages'
 
 type SubscriptionWithClientApp = {
@@ -147,6 +146,7 @@ function SubscriptionHistoryRoute() {
                   subscriptions={subscriptionList ?? []}
                   selectedId={selectedSubscriptionId}
                   onSelect={setManualSelectionId}
+                  realmId={invoicesVisible ? realmId : undefined}
                   onApplyInvoice={handleApplyInvoice}
                 />
               </div>
@@ -183,16 +183,15 @@ function SubscriptionHistoryRoute() {
                   )}
                 </div>
                 {handleApplyInvoice && (
-                  <Button
-                    type="button"
+                  <InvoiceApplyRowButton
+                    realmId={realmId}
+                    referenceType="subscription"
+                    referenceId={singleSubscription.subscription.id}
+                    onApply={() => handleApplyInvoice(singleSubscription.subscription.id)}
+                    label={m['billing.subscription_invoice_button']()}
                     variant="outline"
-                    size="sm"
-                    onClick={() => handleApplyInvoice(singleSubscription.subscription.id)}
-                    data-testid={`subscription-invoice-button-${singleSubscription.subscription.id}`}
-                  >
-                    <FileText className="mr-2 h-4 w-4" />
-                    {m['billing.subscription_invoice_button']()}
-                  </Button>
+                    testIdPrefix={`subscription-invoice-button-${singleSubscription.subscription.id}`}
+                  />
                 )}
               </div>
               <UserSubscriptionTimeline

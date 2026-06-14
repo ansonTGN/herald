@@ -1,11 +1,22 @@
-import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+/**
+ * @vitest-environment jsdom
+ */
+
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { PurchaseHistoryList } from '../purchase-history-list'
 import type { PurchaseHistoryItemDto } from '@/lib/api-generated'
+import { server } from '@/test/mocks/server'
+import { renderWithProviders } from '@/test/utils/render'
+
+const REALM_ID = 'test-realm'
+const BASE_URL = 'http://localhost:3000'
+const ATTEMPT_ID = 'attempt-1'
 
 const purchase: PurchaseHistoryItemDto = {
-  attemptId: 'attempt-1',
+  attemptId: ATTEMPT_ID,
   targetMappingId: 'mapping-1',
   productName: 'Test Product',
   points: 100,
@@ -17,43 +28,128 @@ const purchase: PurchaseHistoryItemDto = {
   createdAt: '2025-01-01T00:00:00Z',
 }
 
+const BUTTON_TESTID = `purchase-history-invoice-button-${ATTEMPT_ID}`
+
+function eligibilityHandler(
+  route: 'manual_fallback' | 'disabled' | 'external_provider',
+  overrides: Record<string, unknown> = {}
+) {
+  return http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices/apply-eligibility`, () => {
+    return HttpResponse.json({
+      referenceType: 'payment_attempt',
+      referenceId: ATTEMPT_ID,
+      canApply: route === 'manual_fallback',
+      route,
+      provider: route === 'external_provider' ? 'stripe' : null,
+      reason: route === 'disabled' ? 'Not eligible' : null,
+      ...overrides,
+    })
+  })
+}
+
 describe('PurchaseHistoryList invoice action', () => {
-  it('renders invoice button when onApplyInvoice is provided', () => {
-    render(
+  beforeEach(() => {
+    server.use(eligibilityHandler('manual_fallback'))
+  })
+
+  it('renders invoice button when onApplyInvoice + realmId are provided', async () => {
+    renderWithProviders(
       <PurchaseHistoryList
         purchases={[purchase]}
         isLoading={false}
         onDetailsClick={vi.fn()}
+        realmId={REALM_ID}
         onApplyInvoice={vi.fn()}
       />
     )
 
-    expect(screen.getByTestId('purchase-history-invoice-button-attempt-1')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByTestId(BUTTON_TESTID)).toBeEnabled()
+    })
   })
 
-  it('calls onApplyInvoice with purchase.attemptId', async () => {
-    const user = userEvent.setup()
-    const onApplyInvoice = vi.fn()
+  // P1-4: the per-row button reflects the apply-eligibility route BEFORE submit.
+  describe('eligibility gating', () => {
+    it('manual_fallback: enabled, clicking invokes onApplyInvoice with attemptId', async () => {
+      const user = userEvent.setup()
+      const onApplyInvoice = vi.fn()
 
-    render(
-      <PurchaseHistoryList
-        purchases={[purchase]}
-        isLoading={false}
-        onDetailsClick={vi.fn()}
-        onApplyInvoice={onApplyInvoice}
-      />
-    )
+      renderWithProviders(
+        <PurchaseHistoryList
+          purchases={[purchase]}
+          isLoading={false}
+          onDetailsClick={vi.fn()}
+          realmId={REALM_ID}
+          onApplyInvoice={onApplyInvoice}
+        />
+      )
 
-    await user.click(screen.getByTestId('purchase-history-invoice-button-attempt-1'))
+      const button = await screen.findByTestId(BUTTON_TESTID)
+      await waitFor(() => {
+        expect(button).toBeEnabled()
+      })
+      await user.click(button)
 
-    expect(onApplyInvoice).toHaveBeenCalledTimes(1)
-    expect(onApplyInvoice).toHaveBeenCalledWith('attempt-1')
+      expect(onApplyInvoice).toHaveBeenCalledTimes(1)
+      expect(onApplyInvoice).toHaveBeenCalledWith(ATTEMPT_ID)
+    })
+
+    it('disabled: button disabled with reason surfaced inline', async () => {
+      server.use(eligibilityHandler('disabled', { reason: 'Not eligible for invoice' }))
+
+      renderWithProviders(
+        <PurchaseHistoryList
+          purchases={[purchase]}
+          isLoading={false}
+          onDetailsClick={vi.fn()}
+          realmId={REALM_ID}
+          onApplyInvoice={vi.fn()}
+        />
+      )
+
+      const reason = await screen.findByTestId(`${BUTTON_TESTID}-reason`)
+      expect(reason).toHaveTextContent('Not eligible for invoice')
+
+      await waitFor(() => {
+        expect(screen.getByTestId(BUTTON_TESTID)).toBeDisabled()
+      })
+    })
+
+    it('external_provider: button disabled with managed-by message', async () => {
+      server.use(eligibilityHandler('external_provider'))
+
+      renderWithProviders(
+        <PurchaseHistoryList
+          purchases={[purchase]}
+          isLoading={false}
+          onDetailsClick={vi.fn()}
+          realmId={REALM_ID}
+          onApplyInvoice={vi.fn()}
+        />
+      )
+
+      const reason = await screen.findByTestId(`${BUTTON_TESTID}-reason`)
+      // P2-6 messaging pattern: "Managed by {provider} — see My Invoices."
+      expect(reason).toHaveTextContent(/Managed by Stripe/)
+
+      await waitFor(() => {
+        expect(screen.getByTestId(BUTTON_TESTID)).toBeDisabled()
+      })
+    })
+
+    it('does not render invoice button when onApplyInvoice is omitted', () => {
+      renderWithProviders(
+        <PurchaseHistoryList purchases={[purchase]} isLoading={false} onDetailsClick={vi.fn()} />
+      )
+
+      expect(screen.queryByTestId(BUTTON_TESTID)).not.toBeInTheDocument()
+    })
   })
 })
 
 describe('PurchaseHistoryList status badge', () => {
   it('renders status badge with correct variant for Succeeded', () => {
-    render(
+    renderWithProviders(
       <PurchaseHistoryList purchases={[purchase]} isLoading={false} onDetailsClick={vi.fn()} />
     )
 
@@ -63,7 +159,7 @@ describe('PurchaseHistoryList status badge', () => {
 
   it('renders status badge for Failed', () => {
     const failedPurchase = { ...purchase, attemptId: 'attempt-2', status: 'Failed' }
-    render(
+    renderWithProviders(
       <PurchaseHistoryList
         purchases={[failedPurchase]}
         isLoading={false}
@@ -78,7 +174,7 @@ describe('PurchaseHistoryList status badge', () => {
 describe('PurchaseHistoryList null handling', () => {
   it('renders -- for null points', () => {
     const noPointsPurchase = { ...purchase, attemptId: 'attempt-3', points: null }
-    render(
+    renderWithProviders(
       <PurchaseHistoryList
         purchases={[noPointsPurchase]}
         isLoading={false}
@@ -91,7 +187,7 @@ describe('PurchaseHistoryList null handling', () => {
 
   it('renders i18n fallback text for null productName', () => {
     const noNamePurchase = { ...purchase, attemptId: 'attempt-4', productName: null }
-    render(
+    renderWithProviders(
       <PurchaseHistoryList
         purchases={[noNamePurchase]}
         isLoading={false}

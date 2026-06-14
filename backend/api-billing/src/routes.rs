@@ -22,8 +22,9 @@ use crate::handlers_history::{
 };
 use crate::invoice_handlers::{
     apply_invoice, create_credit_note, create_invoice, download_invoice_pdf,
-    download_my_invoice_pdf, get_invoice, get_my_invoice, get_seller_config, issue_invoice,
-    list_invoices, list_my_invoices, mark_paid, update_invoice, upsert_seller_config, void_invoice,
+    download_my_invoice_pdf, get_invoice, get_invoice_apply_eligibility, get_my_invoice,
+    get_seller_config, issue_invoice, list_invoices, list_my_invoices, mark_paid, update_invoice,
+    upsert_seller_config, void_invoice,
 };
 use crate::purchase_handlers::{
     cancel_payment_attempt, create_payment_attempt, fulfill_payment, get_payment_attempt_status,
@@ -247,6 +248,10 @@ pub fn billing_routes() -> Router<AppState> {
             post(create_credit_note),
         )
         // ===== User Invoice (My Invoices) =====
+        .route(
+            "/api/bill/{realmId}/my/invoices/apply-eligibility",
+            get(get_invoice_apply_eligibility),
+        )
         .route(
             "/api/bill/{realmId}/my/invoices",
             get(list_my_invoices).post(apply_invoice),

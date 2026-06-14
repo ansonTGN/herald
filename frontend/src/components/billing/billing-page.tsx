@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { CreditCard, FileText, History, Layers, ListChecks } from 'lucide-react'
+import { CreditCard, FileText, History, Layers, ListChecks, Settings } from 'lucide-react'
 import { featureAvailabilityQueryOptions } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
 import type { LucideIcon } from 'lucide-react'
@@ -16,6 +16,8 @@ interface NavCard {
   icon: LucideIcon
   visible: boolean
   testId: string
+  /** Optional TanStack Router search params to attach to the card's link. */
+  search?: Record<string, unknown>
 }
 
 export function BillingPage({ realmId }: BillingPageProps) {
@@ -46,6 +48,15 @@ export function BillingPage({ realmId }: BillingPageProps) {
       icon: CreditCard,
       visible: adminFeatures?.billingConfigVisible ?? true,
       testId: 'billing-nav-payment-providers',
+    },
+    {
+      title: m['billing.nav_invoice_settings'](),
+      description: m['billing.nav_invoice_settings_desc'](),
+      route: `/${realmId}/manage/billing/invoices`,
+      icon: Settings,
+      visible: adminFeatures?.invoicesVisible ?? true,
+      testId: 'billing-nav-invoice-settings',
+      search: { open: 'seller' },
     },
     {
       title: m['billing.nav_invoices'](),
@@ -81,6 +92,7 @@ export function BillingPage({ realmId }: BillingPageProps) {
             <Link
               key={card.testId}
               to={card.route}
+              search={card.search}
               className="group rounded-lg border bg-card p-6 transition-colors hover:bg-accent hover:text-accent-foreground"
               data-testid={card.testId}
             >

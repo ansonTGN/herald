@@ -27,6 +27,7 @@ use herald_core::domain::realm_config::RealmConfigRepository;
 use herald_core::infrastructure::billing::IronPressInvoicePdfGenerator;
 
 use crate::handlers::require_billing_permission;
+use crate::invoice_eligibility::determine_invoice_apply_route;
 use crate::invoice_types::*;
 
 // ============================================================================
@@ -177,7 +178,11 @@ async fn validate_invoice_creation_policy(
 ///
 /// Queries `realm_config` for the `invoice_policy` / `policy` row via RealmConfigRepository.
 /// Returns a default "provider_first" config when no row exists.
-async fn get_invoice_policy(
+///
+/// Shared at `pub(crate)` visibility so realm-level eligibility evaluation
+/// (`crate::invoice_eligibility`) reuses the same policy-reading logic instead
+/// of duplicating the SQL/realm_config read.
+pub(crate) async fn get_invoice_policy(
     state: &AppState,
     realm_id: &str,
 ) -> Result<InvoicePolicyConfig, ApiError> {
@@ -1032,6 +1037,170 @@ pub async fn apply_invoice(
         StatusCode::CREATED,
         Json(invoice_to_detail_response(detail)),
     ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/bill/{realmId}/my/invoices/apply-eligibility",
+    tag = "billing-invoice",
+    operation_id = "get_invoice_apply_eligibility",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        InvoiceApplyEligibilityQuery
+    ),
+    responses(
+        (status = 200, description = "Apply eligibility for the referenced resource", body = InvoiceApplyEligibilityResponse),
+        (status = 400, description = "Bad request - invalid referenceType", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden - resource owned by another user", body = ErrorResponse),
+        (status = 404, description = "Not Found - resource does not exist in this realm", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+/// Per-resource invoice apply-eligibility (read-only, context-level).
+///
+/// Phase B of P0-2 (`.ai/future/invoice_ux.md`): lets the frontend gate the
+/// Apply Invoice button on a specific payment_attempt/subscription BEFORE
+/// submit, instead of relying on post-submit backend rejection.
+///
+/// Decision order: ownership → provider → policy → seller config →
+/// external-invoice-exists, then delegates the verdict to the pure
+/// `determine_invoice_apply_route`. The endpoint resolves facts; the pure
+/// function owns the rules (single home — avoids divergence from the write
+/// path `validate_invoice_creation_policy` / `apply_invoice`).
+pub async fn get_invoice_apply_eligibility(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path(realm_id): Path<String>,
+    Query(query): Query<InvoiceApplyEligibilityQuery>,
+) -> Result<Json<InvoiceApplyEligibilityResponse>, ApiError> {
+    tracing::info!(
+        "User checking invoice apply-eligibility for realm: {} reference_type: {} reference_id: {}",
+        realm_id,
+        query.reference_type,
+        query.reference_id
+    );
+    let user_id =
+        require_authenticated_user_in_realm(&identity, &realm_id, "apply invoice eligibility")?;
+
+    let resource = match query.reference_type.as_str() {
+        "payment_attempt" => OwnedResource::PaymentAttempt,
+        "subscription" => OwnedResource::Subscription,
+        other => {
+            return Err(ApiError::bad_request(format!(
+                "referenceType must be 'payment_attempt' or 'subscription', got '{}'",
+                other
+            )));
+        }
+    };
+
+    // ---- Ownership: 404 if resource absent in realm, 403 if owned by another user.
+    // Note: we do NOT reuse `validate_resource_ownership` here because that
+    // helper returns 400 (bad_request) for not-found, but the spec requires 404
+    // for the eligibility endpoint. We mirror its SQL instead.
+    let owner_sql = format!(
+        "SELECT user_id FROM {} WHERE id = $1 AND realm_id = $2",
+        resource.table_name()
+    );
+    let owner: Option<Uuid> = sqlx::query_scalar(&owner_sql)
+        .bind(query.reference_id)
+        .bind(&realm_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
+    match owner {
+        None => {
+            return Err(ApiError::not_found(format!(
+                "{} {} not found",
+                resource.label(),
+                query.reference_id
+            )));
+        }
+        Some(uid) if uid != user_id => {
+            return Err(ApiError::forbidden(format!(
+                "You can only check invoice eligibility for your own {}s",
+                resource.label()
+            )));
+        }
+        _ => {}
+    }
+
+    // ---- Provider resolution: payment_attempts first, fall back to subscription.
+    // Mirrors the write-path SQL in `validate_invoice_creation_policy` exactly.
+    let provider: Option<String> = match resource {
+        OwnedResource::PaymentAttempt => {
+            sqlx::query_scalar("SELECT payment_provider FROM payment_attempts WHERE id = $1")
+                .bind(query.reference_id)
+                .fetch_optional(&state.pool)
+                .await
+                .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?
+                .flatten()
+        }
+        OwnedResource::Subscription => sqlx::query_scalar(
+            "SELECT payment_provider FROM subscription WHERE id = $1 AND realm_id = $2",
+        )
+        .bind(query.reference_id)
+        .bind(&realm_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?,
+    };
+
+    // ---- Policy: shared reader (same as write path & realm-level eligibility).
+    let policy_config = get_invoice_policy(&state, &realm_id).await?;
+    let policy = policy_config.policy.clone();
+
+    // ---- Seller config presence.
+    let has_seller_config = state
+        .invoice_repository
+        .find_seller_config(&realm_id)
+        .await?
+        .is_some();
+
+    // ---- External-sync invoice already exists for this resource.
+    // No repository method exists for this lookup; this is the minimal SQL.
+    // Columns confirmed against migration 20260508_invoice.sql:
+    //   invoice.realm_id, invoice.source, invoice.payment_attempt_id,
+    //   invoice.subscription_id (source is TEXT CHECK in
+    //   {'admin_manual','user_application','external_sync'}).
+    let external_invoice_exists: bool = match resource {
+        OwnedResource::PaymentAttempt => sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM invoice
+                 WHERE realm_id = $1 AND source = 'external_sync' AND payment_attempt_id = $2)",
+        )
+        .bind(&realm_id)
+        .bind(query.reference_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?,
+        OwnedResource::Subscription => sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM invoice
+                 WHERE realm_id = $1 AND source = 'external_sync' AND subscription_id = $2)",
+        )
+        .bind(&realm_id)
+        .bind(query.reference_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?,
+    };
+
+    // ---- Pure verdict — rules live in one place (single home).
+    let verdict = determine_invoice_apply_route(
+        provider.as_deref(),
+        &policy,
+        has_seller_config,
+        external_invoice_exists,
+    );
+
+    Ok(Json(InvoiceApplyEligibilityResponse {
+        reference_type: query.reference_type,
+        reference_id: query.reference_id,
+        can_apply: verdict.can_apply,
+        route: verdict.route,
+        provider,
+        reason: verdict.reason,
+    }))
 }
 
 #[utoipa::path(

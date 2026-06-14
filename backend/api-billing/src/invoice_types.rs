@@ -140,6 +140,38 @@ impl From<InvoiceHistory> for InvoiceHistoryResponse {
 // Apply Invoice (user-facing)
 // ---------------------------------------------------------------------------
 
+/// Per-resource invoice apply-eligibility (read-only, context-level).
+///
+/// Returned by `GET /api/bill/{realmId}/my/invoices/apply-eligibility` so the
+/// frontend can gate the Apply Invoice button BEFORE submit (Phase B of P0-2,
+/// see `.ai/future/invoice_ux.md`). Users consume this verdict; they do NOT
+/// read admin config/policy APIs directly.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct InvoiceApplyEligibilityResponse {
+    /// Echoes the queried reference type: "payment_attempt" | "subscription".
+    pub reference_type: String,
+    /// Echoes the queried reference id.
+    pub reference_id: Uuid,
+    /// Whether the user can apply for a manual Herald invoice on this resource.
+    pub can_apply: bool,
+    /// "external_provider" | "manual_fallback" | "disabled".
+    pub route: String,
+    /// Resolved payment_provider ("stripe"|"shopify"|"wechat"|"creem"|None).
+    pub provider: Option<String>,
+    /// Human-readable reason when apply is not available, else `None`.
+    pub reason: Option<String>,
+}
+
+// Query params for GET /my/invoices/apply-eligibility.
+#[derive(Debug, Deserialize, ToSchema, IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub struct InvoiceApplyEligibilityQuery {
+    /// "payment_attempt" | "subscription".
+    pub reference_type: String,
+    pub reference_id: Uuid,
+}
+
 #[derive(Debug, Deserialize, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplyInvoiceRequest {

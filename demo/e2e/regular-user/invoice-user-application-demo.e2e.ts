@@ -41,11 +41,34 @@ function futureDueDate(): string {
   return d.toISOString().slice(0, 10)
 }
 
-async function openApplyInvoiceForm(page: Page): Promise<void> {
-  await page.getByTestId('apply-invoice-button').click()
-  await expect(page.getByTestId('apply-form-page')).toBeVisible({
-    timeout: 5000,
-  })
+/**
+ * Open the apply-invoice form via the per-row Invoice button on the Points
+ * page > Purchase History tab.
+ *
+ * The standalone "Apply Invoice" page-level button on /user/invoices was
+ * removed; the apply form is now reached ONLY via per-row Invoice buttons,
+ * which pre-fill the reference (no manual payment-attempt-id input).
+ *
+ * Verifies the row button is enabled (route === manual_fallback) before
+ * clicking, and asserts the prefilled-reference banner rendered post-open.
+ */
+async function openApplyInvoiceForm(
+  page: Page,
+  realmId: string,
+  paymentAttemptId: string
+): Promise<void> {
+  await page.goto(`/${realmId}/user/points`)
+  await page.getByTestId('points-tab-purchase-history').click()
+
+  const rowButton = page.getByTestId(`purchase-history-invoice-button-${paymentAttemptId}`)
+  await expect(rowButton).toBeVisible({ timeout: 10000 })
+  // The eligibility query must resolve to manual_fallback (enabled) before click.
+  await expect(rowButton).toBeEnabled({ timeout: 10000 })
+  await rowButton.click()
+
+  await expect(page.getByTestId('apply-form-page')).toBeVisible({ timeout: 5000 })
+  // The reference is prefilled from the row context; no manual ID input exists.
+  await expect(page.getByTestId('apply-prefilled-reference')).toBeVisible()
 }
 
 async function submitApplyInvoiceForm(page: Page): Promise<void> {
@@ -306,6 +329,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
       const billingName = `Billing-${testStartTime}`
       const billingEmail = `billing-${testStartTime}@example.com`
       const billingAddress = '456 User Street'
+      let paymentAttemptIdForApply = ''
 
       await test.step('Given: admin configures seller info', async () => {
         await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', REALM_ID)
@@ -332,27 +356,35 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
       })
 
-      await test.step('And: navigate to user invoices page', async () => {
+      await test.step('And: seed a Stripe purchase-attempt row for the apply context', async () => {
+        // The apply form is now reached only via per-row Invoice buttons in
+        // purchase history (one_time entitlement_mapping, Succeeded). Seed one.
+        paymentAttemptIdForApply = seedPurchaseAttempt(
+          REALM_ID,
+          user.email,
+          `apply-${testStartTime}`
+        ).paymentAttemptId
+      })
+
+      await test.step('Then: user invoice page still lists invoices (view-only entry)', async () => {
+        // The My Invoices page itself still exists and lists invoices; only the
+        // standalone page-level "Apply" button was removed.
         await page.goto(`/${REALM_ID}/user/invoices`)
         await expect(page.getByTestId('invoice-user-page')).toBeVisible({
           timeout: 10000,
         })
-      })
-
-      await test.step('Then: user invoice page shows expected elements', async () => {
         await expect(page.getByTestId('invoice-user-heading')).toBeVisible()
         await expect(page.getByTestId('invoice-user-heading')).toHaveText('My Invoices')
-        await expect(page.getByTestId('apply-invoice-button')).toBeVisible()
         await expect(page.getByTestId('invoice-user-table')).toBeVisible()
+        // Standalone Apply button was removed — assert it is gone.
+        await expect(page.getByTestId('apply-invoice-button')).toHaveCount(0)
       })
 
-      await test.step('Scene 1 - When: click Apply for Invoice button', async () => {
-        await openApplyInvoiceForm(page)
+      await test.step('Scene 1 - When: open the apply form via the purchase-history row button', async () => {
+        await openApplyInvoiceForm(page, REALM_ID, paymentAttemptIdForApply)
       })
 
-      await test.step('And: fill apply form with billing info', async () => {
-        const paymentAttemptId = seedPaymentAttempt(REALM_ID, user.email)
-        await page.getByTestId('apply-payment-attempt-id-input').fill(paymentAttemptId)
+      await test.step('And: fill apply form with billing info (reference is prefilled)', async () => {
         await page.getByTestId('apply-billing-name-input').fill(billingName)
         await page.getByTestId('apply-billing-email-input').fill(billingEmail)
         await page.getByTestId('apply-billing-address-input').fill(billingAddress)
@@ -414,15 +446,15 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.context().clearCookies()
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
 
-        await page.goto(`/${REALM_ID}/user/invoices`)
-        await expect(page.getByTestId('invoice-user-page')).toBeVisible({
-          timeout: 10000,
-        })
+        // Seed a Succeeded entitlement_mapping attempt so it appears in purchase
+        // history (the new entry point for the apply form).
+        const paymentAttemptId = seedPurchaseAttempt(
+          REALM_ID,
+          user.email,
+          `review-${testStartTime}`
+        ).paymentAttemptId
 
-        const paymentAttemptId = seedPaymentAttempt(REALM_ID, user.email)
-
-        await openApplyInvoiceForm(page)
-        await page.getByTestId('apply-payment-attempt-id-input').fill(paymentAttemptId)
+        await openApplyInvoiceForm(page, REALM_ID, paymentAttemptId)
         await page.getByTestId('apply-billing-name-input').fill(billingName)
         await page
           .getByTestId('apply-billing-email-input')
@@ -519,15 +551,13 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.context().clearCookies()
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
 
-        await page.goto(`/${REALM_ID}/user/invoices`)
-        await expect(page.getByTestId('invoice-user-page')).toBeVisible({
-          timeout: 10000,
-        })
+        const paymentAttemptId = seedPurchaseAttempt(
+          REALM_ID,
+          user.email,
+          `edit-issue-${testStartTime}`
+        ).paymentAttemptId
 
-        const paymentAttemptId = seedPaymentAttempt(REALM_ID, user.email)
-
-        await openApplyInvoiceForm(page)
-        await page.getByTestId('apply-payment-attempt-id-input').fill(paymentAttemptId)
+        await openApplyInvoiceForm(page, REALM_ID, paymentAttemptId)
         await page.getByTestId('apply-billing-name-input').fill(billingName)
         await page
           .getByTestId('apply-billing-email-input')
@@ -611,15 +641,13 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.context().clearCookies()
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
 
-        await page.goto(`/${REALM_ID}/user/invoices`)
-        await expect(page.getByTestId('invoice-user-page')).toBeVisible({
-          timeout: 10000,
-        })
+        const paymentAttemptId = seedPurchaseAttempt(
+          REALM_ID,
+          user.email,
+          `void-${testStartTime}`
+        ).paymentAttemptId
 
-        const paymentAttemptId = seedPaymentAttempt(REALM_ID, user.email)
-
-        await openApplyInvoiceForm(page)
-        await page.getByTestId('apply-payment-attempt-id-input').fill(paymentAttemptId)
+        await openApplyInvoiceForm(page, REALM_ID, paymentAttemptId)
         await page.getByTestId('apply-billing-name-input').fill(billingName)
         await page.getByTestId('apply-billing-address-input').fill('456 User Street')
         await page.getByTestId('apply-billing-tax-id-input').fill('TAX123456')
@@ -692,15 +720,13 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.context().clearCookies()
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
 
-        await page.goto(`/${REALM_ID}/user/invoices`)
-        await expect(page.getByTestId('invoice-user-page')).toBeVisible({
-          timeout: 10000,
-        })
+        const paymentAttemptId = seedPurchaseAttempt(
+          REALM_ID,
+          user.email,
+          `view-${testStartTime}`
+        ).paymentAttemptId
 
-        const paymentAttemptId = seedPaymentAttempt(REALM_ID, user.email)
-
-        await openApplyInvoiceForm(page)
-        await page.getByTestId('apply-payment-attempt-id-input').fill(paymentAttemptId)
+        await openApplyInvoiceForm(page, REALM_ID, paymentAttemptId)
         await page.getByTestId('apply-billing-name-input').fill(billingName)
         await page.getByTestId('apply-billing-address-input').fill('456 User Street')
         await page.getByTestId('apply-billing-tax-id-input').fill('TAX123456')
@@ -710,10 +736,15 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
 
       // Scene 1 & 2: User views own invoice list
       await test.step('Scene 1 & 2 - Then: user invoice list displays expected columns', async () => {
+        // Navigate to the user invoice list (after submit we are already there,
+        // but assert the page-level structure explicitly).
+        await expect(page.getByTestId('invoice-user-page')).toBeVisible({ timeout: 10000 })
         // Verify page structure
         await expect(page.getByTestId('invoice-user-heading')).toBeVisible()
         await expect(page.getByTestId('invoice-user-heading')).toHaveText('My Invoices')
-        await expect(page.getByTestId('apply-invoice-button')).toBeVisible()
+        // The standalone "Apply Invoice" page-level button was removed; assert
+        // it no longer renders on /user/invoices.
+        await expect(page.getByTestId('apply-invoice-button')).toHaveCount(0)
 
         // Verify table headers: #, Invoice Number, Amount, Status, Due Date, Actions
         const tableHeaders = page.getByTestId('invoice-user-table').locator('th')
@@ -776,15 +807,13 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         await page.context().clearCookies()
         await loginPage.loginAsUser(user1.email, user1.password, REALM_ID)
 
-        await page.goto(`/${REALM_ID}/user/invoices`)
-        await expect(page.getByTestId('invoice-user-page')).toBeVisible({
-          timeout: 10000,
-        })
+        const paymentAttemptId = seedPurchaseAttempt(
+          REALM_ID,
+          user1.email,
+          `iso-${testStartTime}`
+        ).paymentAttemptId
 
-        const paymentAttemptId = seedPaymentAttempt(REALM_ID, user1.email)
-
-        await openApplyInvoiceForm(page)
-        await page.getByTestId('apply-payment-attempt-id-input').fill(paymentAttemptId)
+        await openApplyInvoiceForm(page, REALM_ID, paymentAttemptId)
         await page.getByTestId('apply-billing-name-input').fill(billingName1)
         await page.getByTestId('apply-billing-address-input').fill('456 User Street')
         await page.getByTestId('apply-billing-tax-id-input').fill('TAX123456')

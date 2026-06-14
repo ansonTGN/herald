@@ -10,6 +10,7 @@ pub mod entitlement_mapping_handlers;
 pub mod feature_availability;
 pub mod handlers;
 pub mod handlers_history;
+pub mod invoice_eligibility;
 pub mod invoice_handlers;
 pub mod invoice_types;
 mod payment_email;
@@ -89,6 +90,7 @@ pub mod shopify_test_types;
         crate::invoice_handlers::apply_invoice,
         crate::invoice_handlers::list_my_invoices,
         crate::invoice_handlers::get_my_invoice,
+        crate::invoice_handlers::get_invoice_apply_eligibility,
         // PDF download handlers
         crate::invoice_handlers::download_invoice_pdf,
         crate::invoice_handlers::download_my_invoice_pdf,
@@ -144,6 +146,7 @@ pub mod shopify_test_types;
         crate::feature_availability::AdminFeatureAvailability,
         crate::feature_availability::UserFeatureAvailability,
         crate::feature_availability::FeatureAvailabilityFacts,
+        crate::invoice_eligibility::InvoiceEligibilitySummary,
         crate::purchase_handlers::CreatePaymentAttemptRequest,
         crate::purchase_handlers::CreatePaymentAttemptResponse,
         crate::purchase_handlers::PaymentContextDto,
@@ -165,6 +168,8 @@ pub mod shopify_test_types;
         crate::invoice_types::VoidInvoiceRequest,
         crate::invoice_types::MarkPaidRequest,
         crate::invoice_types::ApplyInvoiceRequest,
+        crate::invoice_types::InvoiceApplyEligibilityResponse,
+        crate::invoice_types::InvoiceApplyEligibilityQuery,
         crate::invoice_types::InvoiceListQuery,
         crate::invoice_types::InvoiceResponse,
         crate::invoice_types::InvoiceDetailResponse,

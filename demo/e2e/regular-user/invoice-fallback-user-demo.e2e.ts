@@ -250,7 +250,7 @@ test.describe('[Regular User] Invoice Fallback User Demo Tests', () => {
       )
     })
 
-    test('should reject invoice application for Creem transaction', async ({
+    test('should block invoice application for Creem transaction before submit', async ({
       page,
       loginPage,
       demoLogger,
@@ -258,47 +258,56 @@ test.describe('[Regular User] Invoice Fallback User Demo Tests', () => {
       const user = DEMO_USERS.user1
       const attemptIdsToCleanup: string[] = []
 
-      // Step 1: Seed a Creem payment_attempt associated with the user
+      // Step 1: Seed a Creem payment_attempt associated with the user.
+      // IMPORTANT: purchase history only lists attempts with
+      // target_type='entitlement_mapping' AND status='Succeeded', so override
+      // both -- otherwise the row never renders and the Invoice button cannot
+      // be exercised.
       const creemAttempt = seedCreemPaymentAttempt(REALM_ID, {
         userEmail: user.email,
+        targetType: 'entitlement_mapping',
+        status: 'Succeeded',
       })
       attemptIdsToCleanup.push(creemAttempt.id)
 
-      await test.step('Given: user is logged in and navigates to apply invoice form', async () => {
+      await test.step('Given: user is logged in and on the Points page', async () => {
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
-        await page.goto(`/${REALM_ID}/user/invoices`)
-        await expect(page.getByTestId('invoice-user-page')).toBeVisible({ timeout: 10000 })
+        await page.goto(`/${REALM_ID}/user/points`)
+        await page.getByTestId('points-tab-purchase-history').click()
       })
 
-      await test.step('When: user opens the apply invoice form', async () => {
-        await page.getByTestId('apply-invoice-button').click()
-        await expect(page.getByTestId('apply-form-page')).toBeVisible({ timeout: 5000 })
+      await test.step('Then: the Creem row Invoice button is disabled with the MoR reason', async () => {
+        // The standalone "Apply Invoice" page-level button was removed; Creem
+        // is now blocked BEFORE submit via the per-row Invoice button on
+        // purchase history. The eligibility API returns route='disabled' with
+        // the Creem MoR reason; the button renders disabled and shows the
+        // inline reason span.
+        const creemRowButton = page.getByTestId(
+          `purchase-history-invoice-button-${creemAttempt.id}`
+        )
+        await expect(creemRowButton).toBeVisible({ timeout: 10000 })
+        await expect(creemRowButton).toBeDisabled({ timeout: 10000 })
+
+        const reasonSpan = page.getByTestId(
+          `purchase-history-invoice-button-${creemAttempt.id}-reason`
+        )
+        await expect(reasonSpan).toBeVisible({ timeout: 10000 })
+        // Backend reason text from `determine_invoice_apply_route` (Creem rule).
+        await expect(reasonSpan).toContainText('Creem')
+        await expect(reasonSpan).toContainText('Merchant of Record')
       })
 
-      await test.step('And: fills in billing details with the Creem payment attempt ID', async () => {
-        await page.getByTestId('apply-payment-attempt-id-input').fill(creemAttempt.id)
-        await page.getByTestId('apply-billing-name-input').fill('Creem Rejection Test')
-        await page.getByTestId('apply-billing-address-input').fill('123 Test Street')
-        await page.getByTestId('apply-billing-tax-id-input').fill('TAX123456')
-      })
-
-      await test.step('And: submits the application', async () => {
-        await page.getByTestId('apply-invoice-submit-button').click()
-      })
-
-      await test.step('Then: Creem rejection alert appears after mutation fails', async () => {
-        // The alert only renders after the apply mutation fails with the Creem error.
-        // Wait for the error state to render the rejection alert.
-        await expect(page.getByTestId('apply-invoice-creem-rejection')).toBeVisible({
-          timeout: 15000,
-        })
+      await test.step('And: the apply form is NOT reachable for the Creem row', async () => {
+        // Because the button is disabled, the prefilled apply form (and the
+        // legacy submit-and-reject flow) cannot be reached.
+        await expect(page.getByTestId('apply-form-page')).toHaveCount(0)
       })
 
       // Cleanup
       cleanupPaymentAttempts(attemptIdsToCleanup)
 
       await demoLogger.testCode.log(
-        'Verified Creem transaction invoice application rejection'
+        'Verified Creem transaction blocks invoice application pre-submit (MoR reason shown)'
       )
     })
   })

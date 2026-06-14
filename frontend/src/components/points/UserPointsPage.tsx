@@ -168,6 +168,7 @@ export function UserPointsPage({ realmId, userId }: UserPointsPageProps) {
                 purchases={purchaseHistoryData?.items || []}
                 isLoading={purchaseHistoryLoading}
                 onDetailsClick={handleDetailsClick}
+                realmId={invoicesVisible ? realmId : undefined}
                 onApplyInvoice={invoicesVisible ? handleApplyInvoice : undefined}
               />
             </CardContent>

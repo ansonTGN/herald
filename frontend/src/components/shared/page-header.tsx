@@ -12,6 +12,8 @@ export interface PageHeaderProps {
     testId: string
     show?: boolean
     icon?: ReactNode
+    disabled?: boolean
+    disabledReason?: ReactNode
   }
   className?: string
 }
@@ -35,10 +37,17 @@ export function PageHeader({
         {subtitle && <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>}
       </div>
       {action && action.show !== false && (
-        <Button onClick={action.onClick} data-testid={action.testId}>
-          {action.icon ?? <Plus className="mr-2 h-4 w-4" />}
-          {action.label}
-        </Button>
+        <div className="flex flex-col items-end gap-1">
+          <Button onClick={action.onClick} data-testid={action.testId} disabled={action.disabled}>
+            {action.icon ?? <Plus className="mr-2 h-4 w-4" />}
+            {action.label}
+          </Button>
+          {action.disabledReason && (
+            <span className="text-xs text-muted-foreground" data-testid={`${action.testId}-reason`}>
+              {action.disabledReason}
+            </span>
+          )}
+        </div>
       )}
     </div>
   )

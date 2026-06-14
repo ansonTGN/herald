@@ -118,7 +118,7 @@ export function ApplyInvoiceFormPage({
                 <CardTitle>{m['billing.invoice_apply_reference']()}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {prefilledReference ? (
+                {prefilledReference && (
                   <div
                     className="rounded-md border border-muted bg-muted/40 px-3 py-2"
                     data-testid="apply-prefilled-reference"
@@ -132,28 +132,6 @@ export function ApplyInvoiceFormPage({
                       {m['billing.invoice_apply_ref_hint']()}
                     </p>
                   </div>
-                ) : (
-                  <>
-                    <TextField
-                      form={form}
-                      name="paymentAttemptId"
-                      label={m['billing.invoice_apply_payment_attempt_id']()}
-                      dataTestId="apply-payment-attempt-id-input"
-                      placeholder={m['billing.invoice_apply_payment_attempt_placeholder']()}
-                    />
-                    <TextField
-                      form={form}
-                      name="subscriptionId"
-                      label={m['billing.invoice_apply_subscription_id']()}
-                      dataTestId="apply-subscription-id-input"
-                      placeholder={m['billing.invoice_apply_subscription_placeholder']()}
-                    />
-                    <div className="rounded-md border border-muted bg-muted/40 px-3 py-2">
-                      <p className="text-xs text-muted-foreground">
-                        {m['billing.invoice_apply_ref_either']()}
-                      </p>
-                    </div>
-                  </>
                 )}
               </CardContent>
             </Card>

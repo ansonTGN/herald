@@ -11,12 +11,18 @@ use herald_core::domain::billing::BillingRepository;
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::invoice_eligibility::{InvoiceEligibilitySummary, evaluate_realm_invoice_eligibility};
+
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FeatureAvailabilityResponse {
     pub admin: AdminFeatureAvailability,
     pub user: UserFeatureAvailability,
     pub facts: FeatureAvailabilityFacts,
+    /// Realm-level invoice eligibility. Consumed by regular users to gate
+    /// Create/Apply invoice buttons before submit; reuses the seller-config
+    /// fact already loaded above (no second seller-config query).
+    pub invoice_eligibility: InvoiceEligibilitySummary,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -95,6 +101,12 @@ pub async fn get_feature_availability(
     let user_points_visible = facts.has_one_time_mappings;
     let user_invoices_visible = facts.has_invoice_seller_config;
 
+    // Realm-level invoice eligibility: reuse the already-loaded seller-config
+    // fact so we do not issue a second seller-config query here.
+    let invoice_eligibility =
+        evaluate_realm_invoice_eligibility(&state, &realm_id, facts.has_invoice_seller_config)
+            .await?;
+
     Ok(Json(FeatureAvailabilityResponse {
         admin: AdminFeatureAvailability {
             billing_visible: admin_billing_visible,
@@ -119,6 +131,7 @@ pub async fn get_feature_availability(
             has_invoices: facts.has_invoices,
             has_subscription_history: facts.has_subscription_history,
         },
+        invoice_eligibility,
     }))
 }
 

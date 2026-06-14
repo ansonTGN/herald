@@ -61,6 +61,7 @@ import type {
 } from '@/types/billing'
 import { TIME_CONSTANTS, QUERY_KEYS } from '@/lib/constants'
 import { client } from '@/lib/api-generated/client.gen'
+import type { InvoiceEligibilitySummary } from '@/lib/api-generated'
 
 // ==================== Enhanced Error Handling ====================
 
@@ -278,6 +279,11 @@ export type FeatureAvailabilityResponse = {
     hasInvoices: boolean
     hasSubscriptionHistory: boolean
   }
+  /**
+   * Realm-level invoice eligibility. Surfaced for both admin and user
+   * consumers to gate Create/Apply invoice buttons before submit.
+   */
+  invoiceEligibility: InvoiceEligibilitySummary
 }
 
 export const featureAvailabilityQueryOptions = (realmId: string) =>

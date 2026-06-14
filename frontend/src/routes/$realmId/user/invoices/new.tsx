@@ -1,16 +1,20 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { lazy, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
 import { z } from 'zod'
 
+// Apply is now only reachable from a history row with a pre-filled resource
+// reference (P1-3). Exactly one of paymentAttemptId/subscriptionId is required;
+// if neither is present we redirect to the Points page (which hosts the
+// Purchase History tab) rather than render a form with nothing to invoice.
 const invoiceApplySearchSchema = z
   .object({
     paymentAttemptId: z.string().uuid().optional(),
     subscriptionId: z.string().uuid().optional(),
     returnTo: z.string().optional(),
   })
-  .refine((search) => !(search.paymentAttemptId && search.subscriptionId), {
-    message: 'Only one invoice reference is allowed',
+  .refine((search) => !search.paymentAttemptId !== !search.subscriptionId, {
+    message: 'Exactly one invoice reference is required',
   })
 
 const ApplyInvoiceFormPage = lazy(() =>
@@ -22,6 +26,15 @@ const ApplyInvoiceFormPage = lazy(() =>
 export const Route = createFileRoute('/$realmId/user/invoices/new')({
   component: ApplyInvoicePageRoute,
   validateSearch: (search) => invoiceApplySearchSchema.parse(search),
+  beforeLoad: ({ params, search }) => {
+    const parsed = invoiceApplySearchSchema.safeParse(search)
+    if (!parsed.success) {
+      throw redirect({
+        to: '/$realmId/user/points',
+        params: { realmId: params.realmId },
+      })
+    }
+  },
 })
 
 function ApplyInvoicePageRoute() {
