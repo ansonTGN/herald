@@ -126,7 +126,7 @@ export function StripeConfigFormDialog({
                       field.handleChange(e.target.value)
                       setHasChanges(true)
                     }}
-                    placeholder="pk_test_..."
+                    placeholder="pk_live_..."
                     data-testid="stripe-publishable-key-input"
                   />
                   {(field.state.meta.isTouched || form.state.isSubmitted) &&
@@ -155,7 +155,7 @@ export function StripeConfigFormDialog({
                       field.handleChange(e.target.value)
                       setHasChanges(true)
                     }}
-                    placeholder="sk_test_..."
+                    placeholder="sk_live_..."
                     data-testid="stripe-secret-key-input"
                   />
                   {(field.state.meta.isTouched || form.state.isSubmitted) &&
@@ -298,6 +298,12 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
   }
 
   const isSubmitting = saveMutation.isPending
+  const publishableKeyHelpText = isEditing
+    ? `${m['billing.leave_empty_keep']()}. ${m['billing.stripe_publishable_key_help']()}`
+    : m['billing.stripe_publishable_key_help']()
+  const secretKeyHelpText = isEditing
+    ? `${m['billing.leave_empty_keep']()}. ${m['billing.stripe_secret_key_help']()}`
+    : m['billing.stripe_secret_key_help']()
 
   return (
     <div className="container max-w-3xl mx-auto py-6 px-6" data-testid="stripe-config-form-page">
@@ -334,8 +340,8 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
               name="publishableKey"
               label={m['billing.stripe_publishable_key']()}
               dataTestId="page-stripe-publishable-key-input"
-              placeholder="pk_test_..."
-              helpText={isEditing ? m['billing.leave_empty_keep']() : undefined}
+              placeholder="pk_live_..."
+              helpText={publishableKeyHelpText}
               required={!isEditing}
             />
 
@@ -344,8 +350,8 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
               name="secretKey"
               label={m['billing.stripe_secret_key']()}
               dataTestId="page-stripe-secret-key-input"
-              placeholder="sk_test_..."
-              helpText={isEditing ? m['billing.leave_empty_keep']() : undefined}
+              placeholder="sk_live_..."
+              helpText={secretKeyHelpText}
               required={!isEditing}
             />
 

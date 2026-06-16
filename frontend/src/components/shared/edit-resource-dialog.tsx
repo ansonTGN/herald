@@ -22,7 +22,7 @@ import type { ResourceFormConfig } from './resource-form-config'
 
 interface BuiltinProtectionConfig {
   isBuiltin: boolean
-  alertMessage: string
+  alertMessage?: string
   disabledFieldHelpText: string
 }
 
@@ -79,7 +79,7 @@ export function EditResourceDialog<TData, TResponse = unknown>({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
-        {builtinProtection?.isBuiltin && (
+        {builtinProtection?.isBuiltin && builtinProtection.alertMessage && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>{builtinProtection.alertMessage}</AlertDescription>

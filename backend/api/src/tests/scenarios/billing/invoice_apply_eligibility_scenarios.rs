@@ -21,6 +21,7 @@
 //     (CRITICAL: preserves today's Stripe manual-apply behavior)
 //   - provider_first + stripe + WITH an external_sync invoice => external_provider (canApply=false)
 //   - resource owned by another user => 403
+//   - subscription with no user owner => 403 (not a database decode error)
 //   - nonexistent resource            => 404
 //
 // =============================================================================
@@ -522,6 +523,50 @@ mod tests {
             response.status(),
             StatusCode::FORBIDDEN,
             "Expected 403 when querying another user's payment_attempt"
+        );
+    }
+
+    // =========================================================================
+    // Test: subscription with NULL user_id => 403
+    // =========================================================================
+    // Covers: subscription.user_id is nullable in the schema. Eligibility must
+    // treat an unowned subscription as not belonging to the caller instead of
+    // decoding NULL into Uuid and returning a 500.
+    //
+    // Given: a subscription row in the realm with user_id NULL
+    // When:  a regular user GETs apply-eligibility for that subscription
+    // Then:  403 Forbidden, not 500 Internal Server Error
+
+    #[test_context(ApplyEligibilityTestContext)]
+    #[tokio::test]
+    async fn test_apply_eligibility_unowned_subscription_is_forbidden(
+        ctx: &mut ApplyEligibilityTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+        let realm_id = ctx._realm_id.clone();
+
+        let (user_token, _user_id) =
+            create_regular_user_session(ctx, "apply-elig-null-owner@test.com").await;
+
+        let sub_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO subscription (id, realm_id, external_subscription_id, external_product_id, payment_provider, status, entitlement_key, user_id, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 'stripe', 'active', 'pro', NULL, NOW(), NOW())",
+        )
+        .bind(sub_id)
+        .bind(&realm_id)
+        .bind(format!("sub_ext_{}", sub_id))
+        .bind(format!("prod_ext_{}", sub_id))
+        .execute(&ctx.app_state.pool)
+        .await
+        .unwrap();
+
+        let response =
+            fetch_apply_eligibility(&app, &user_token, &realm_id, "subscription", sub_id).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "Expected 403 for subscription with no user owner"
         );
     }
 

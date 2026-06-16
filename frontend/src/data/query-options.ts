@@ -3,6 +3,7 @@ import { redirect } from '@tanstack/react-router'
 import {
   listUsers2,
   getUser,
+  getUser2,
   listPermissions,
   getPermission,
   listRoles,
@@ -152,6 +153,8 @@ export const queryKeys = {
     [QUERY_KEYS.USERS, realmId, filters] as const,
   usersList: (realmId: string) => [QUERY_KEYS.USERS, realmId] as const,
   user: (realmId: string, userId: string) => [QUERY_KEYS.USER, realmId, userId] as const,
+  adminUser: (realmId: string, userId: string) =>
+    [QUERY_KEYS.USER, realmId, 'admin', userId] as const,
   permissions: (realmId: string) => [QUERY_KEYS.PERMISSIONS, realmId] as const,
   permission: (realmId: string, permissionId: string) =>
     [QUERY_KEYS.PERMISSION, realmId, permissionId] as const,
@@ -366,6 +369,14 @@ export const userQueryOptions = (realmId: string, userId: string) =>
   queryOptions({
     queryKey: queryKeys.user(realmId, userId),
     queryFn: async () => handleApiResponse(await getUser({ path: { realmId, userId } })),
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+
+export const adminUserQueryOptions = (realmId: string, userId: string) =>
+  queryOptions({
+    queryKey: queryKeys.adminUser(realmId, userId),
+    queryFn: async () => handleApiResponse(await getUser2({ path: { realmId, userId } })),
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_5_MIN,
   })

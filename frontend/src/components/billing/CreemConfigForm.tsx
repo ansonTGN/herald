@@ -67,6 +67,9 @@ export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfi
   }
 
   const isSubmitting = saveMutation.isPending
+  const apiKeyHelpText = isEditing
+    ? `${m['billing.creem_api_key_help']()}. ${m['billing.creem_api_key_format']()}`
+    : m['billing.creem_api_key_format']()
 
   return (
     <div className="container max-w-3xl mx-auto py-6 px-6" data-testid="creem-config-form-page">
@@ -103,8 +106,8 @@ export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfi
               name="apiKey"
               label={m['billing.creem_api_key']()}
               dataTestId="page-creem-api-key-input"
-              placeholder="ck_test_..."
-              helpText={isEditing ? m['billing.creem_api_key_help']() : undefined}
+              placeholder="ck_live_..."
+              helpText={apiKeyHelpText}
               required={!isEditing}
             />
 

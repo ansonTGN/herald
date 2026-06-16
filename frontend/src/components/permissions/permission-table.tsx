@@ -133,24 +133,25 @@ export function PermissionTable({ permissions, isLoading, error }: PermissionTab
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleEdit(permission)}
-                      disabled={permission.isBuiltin}
-                      data-testid={`permission-edit-button-${permission.id}`}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
                     {!permission.isBuiltin && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(permission)}
-                        data-testid={`permission-delete-button-${permission.id}`}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEdit(permission)}
+                          data-testid={`permission-edit-button-${permission.id}`}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(permission)}
+                          data-testid={`permission-delete-button-${permission.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </TableCell>

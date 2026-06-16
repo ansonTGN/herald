@@ -51,7 +51,6 @@ export function EditRoleDialog({
 
   const builtinProtection = {
     isBuiltin: role.isBuiltin,
-    alertMessage: m['roles.builtin_alert'](),
     disabledFieldHelpText: m['roles.builtin_name_disabled'](),
   }
 

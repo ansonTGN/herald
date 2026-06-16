@@ -106,13 +106,12 @@ describe('PermissionTable', () => {
     expect(deleteButton).toBeNull()
   })
 
-  it('GIVEN builtin permission WHEN rendering THEN should disable edit button', async () => {
+  it('GIVEN builtin permission WHEN rendering THEN should not show edit button', async () => {
     const screen = render(
       <PermissionTable permissions={mockPermissions} isLoading={false} error={null} />
     )
 
-    const editButton = screen.getByTestId('permission-edit-button-2')
-    expect(editButton).toBeDisabled()
+    expect(screen.queryByTestId('permission-edit-button-2')).toBeNull()
   })
 
   it('GIVEN custom permission WHEN rendering THEN should enable edit button', async () => {

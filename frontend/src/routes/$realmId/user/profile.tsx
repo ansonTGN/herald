@@ -2,12 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { SubscriptionInfoCard } from '@/components/billing/subscription-info-card'
-import {
-  clientAppsQueryOptions,
-  featureAvailabilityQueryOptions,
-  profileQueryOptions,
-} from '@/data/query-options'
+import { profileQueryOptions } from '@/data/query-options'
 import { PageHeader } from '@/components/shared'
 import { m } from '@/paraglide/messages'
 
@@ -16,22 +11,9 @@ export const Route = createFileRoute('/$realmId/user/profile')({
 })
 
 function ProfileIndex() {
-  const { realmId } = Route.useParams()
   const { data: profile, isLoading } = useQuery(profileQueryOptions)
-  const { data: features, isLoading: loadingFeatures } = useQuery(
-    featureAvailabilityQueryOptions(realmId)
-  )
 
-  // Query client apps for subscription info
-  const subscriptionVisible = features?.user.subscriptionVisible !== false
-  const { data: clientAppsResponse, isLoading: loadingApps } = useQuery({
-    ...clientAppsQueryOptions(realmId, { page: 0, pageSize: 20 }),
-    enabled: subscriptionVisible,
-  })
-
-  const clientApps = clientAppsResponse?.items ?? []
-
-  if (isLoading || loadingFeatures || (subscriptionVisible && loadingApps)) {
+  if (isLoading) {
     return <div>{m['profile.loading']()}</div>
   }
 
@@ -69,32 +51,6 @@ function ProfileIndex() {
           </div>
         </CardContent>
       </Card>
-
-      {subscriptionVisible && (
-        <Card>
-          <CardHeader>
-            <CardTitle>{m['profile.subscription_status_title']()}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {clientApps.length > 0 ? (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {clientApps.map((app) => (
-                  <SubscriptionInfoCard
-                    key={app.id}
-                    realmId={realmId}
-                    clientAppId={app.id}
-                    clientAppName={app.name}
-                  />
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground" data-testid="no-subscriptions-message">
-                {m['profile.no_subscriptions_message']()}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

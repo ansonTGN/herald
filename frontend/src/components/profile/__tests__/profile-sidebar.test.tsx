@@ -11,6 +11,7 @@ import { LocaleProvider } from '@/components/shared/locale-provider'
 let featureData = {
   user: {
     pointsVisible: false,
+    pointsPurchaseVisible: false,
     subscriptionVisible: false,
     invoicesVisible: false,
   },
@@ -42,11 +43,12 @@ vi.mock('@/data/query-options', () => ({
 }))
 
 describe('ProfileSidebar', () => {
-  it('shows profile sections only when backend feature availability marks them visible', () => {
+  it('shows purchase records when point purchases are available', () => {
     featureData = {
       user: {
         pointsVisible: false,
-        subscriptionVisible: true,
+        pointsPurchaseVisible: true,
+        subscriptionVisible: false,
         invoicesVisible: false,
       },
     }
@@ -60,7 +62,27 @@ describe('ProfileSidebar', () => {
     expect(screen.getByTestId('profile-menu-profile')).toBeInTheDocument()
     expect(screen.getByTestId('profile-menu-security')).toBeInTheDocument()
     expect(screen.queryByTestId('profile-menu-points')).not.toBeInTheDocument()
-    expect(screen.getByTestId('profile-menu-subscription')).toBeInTheDocument()
+    expect(screen.getByTestId('profile-menu-purchaserecords')).toBeInTheDocument()
+    expect(screen.queryByTestId('profile-menu-subscription')).not.toBeInTheDocument()
     expect(screen.queryByTestId('profile-menu-invoices')).not.toBeInTheDocument()
+  })
+
+  it('does not show purchase records for subscription-only realms', () => {
+    featureData = {
+      user: {
+        pointsVisible: false,
+        pointsPurchaseVisible: false,
+        subscriptionVisible: true,
+        invoicesVisible: false,
+      },
+    }
+
+    render(
+      <LocaleProvider>
+        <ProfileSidebar />
+      </LocaleProvider>
+    )
+
+    expect(screen.queryByTestId('profile-menu-purchaserecords')).not.toBeInTheDocument()
   })
 })

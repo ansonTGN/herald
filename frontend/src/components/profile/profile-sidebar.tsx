@@ -1,5 +1,5 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { User, Shield, Coins, CreditCard, LogOut, FileText, type LucideIcon } from 'lucide-react'
+import { User, Shield, Coins, CreditCard, LogOut, type LucideIcon } from 'lucide-react'
 import { useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useRealmId } from '@/stores/auth-store'
@@ -27,8 +27,7 @@ export function ProfileSidebar() {
       Profile: m['nav_profile.profile'],
       Security: m['nav_profile.security'],
       Points: m['nav_profile.points'],
-      Subscription: m['nav_profile.subscription'],
-      Invoices: m['nav_profile.invoices'],
+      PurchaseRecords: m['nav_profile.purchase_records'],
     }
     return map[name]?.() ?? name
   }, [])
@@ -45,16 +44,10 @@ export function ProfileSidebar() {
         visible: userFeatures?.pointsVisible === true,
       },
       {
-        name: 'Subscription',
+        name: 'PurchaseRecords',
         path: `/${realmId}/user/subscription-history`,
         icon: CreditCard,
-        visible: userFeatures?.subscriptionVisible === true,
-      },
-      {
-        name: 'Invoices',
-        path: `/${realmId}/user/invoices`,
-        icon: FileText,
-        visible: userFeatures?.invoicesVisible === true,
+        visible: userFeatures?.pointsPurchaseVisible === true,
       },
     ],
     [realmId, userFeatures]

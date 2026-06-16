@@ -110,7 +110,7 @@ async fn validate_resource_ownership(
         "SELECT user_id FROM {} WHERE id = $1 AND realm_id = $2",
         resource.table_name()
     );
-    let owner: Option<Uuid> = sqlx::query_scalar(&query)
+    let owner: Option<Option<Uuid>> = sqlx::query_scalar(&query)
         .bind(resource_id)
         .bind(realm_id)
         .fetch_optional(pool)
@@ -118,7 +118,7 @@ async fn validate_resource_ownership(
         .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
 
     match owner {
-        Some(uid) if uid == user_id => Ok(()),
+        Some(Some(uid)) if uid == user_id => Ok(()),
         Some(_) => Err(ApiError::forbidden(format!(
             "You can only apply for invoices for your own {}s",
             resource.label()
@@ -1103,7 +1103,7 @@ pub async fn get_invoice_apply_eligibility(
         "SELECT user_id FROM {} WHERE id = $1 AND realm_id = $2",
         resource.table_name()
     );
-    let owner: Option<Uuid> = sqlx::query_scalar(&owner_sql)
+    let owner: Option<Option<Uuid>> = sqlx::query_scalar(&owner_sql)
         .bind(query.reference_id)
         .bind(&realm_id)
         .fetch_optional(&state.pool)
@@ -1117,13 +1117,13 @@ pub async fn get_invoice_apply_eligibility(
                 query.reference_id
             )));
         }
-        Some(uid) if uid != user_id => {
+        Some(Some(uid)) if uid == user_id => {}
+        Some(_) => {
             return Err(ApiError::forbidden(format!(
                 "You can only check invoice eligibility for your own {}s",
                 resource.label()
             )));
         }
-        _ => {}
     }
 
     // ---- Provider resolution: payment_attempts first, fall back to subscription.

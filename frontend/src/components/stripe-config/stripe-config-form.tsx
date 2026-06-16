@@ -92,7 +92,7 @@ export function StripeConfigForm({
                     type="password"
                     value={field.state.value}
                     onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="pk_test_..."
+                    placeholder="pk_live_..."
                     disabled={disabled}
                     data-testid="stripe-publishable-key-input"
                   />
@@ -120,7 +120,7 @@ export function StripeConfigForm({
                     type="password"
                     value={field.state.value}
                     onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="sk_test_..."
+                    placeholder="sk_live_..."
                     disabled={disabled}
                     data-testid="stripe-secret-key-input"
                   />
