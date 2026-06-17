@@ -43,18 +43,7 @@ impl ConfiguredProviderProductApi {
             ))
         })?;
 
-        let base_url = sqlx::query_scalar::<_, String>(
-            "SELECT config_value
-             FROM realm_config
-             WHERE realm_id = $1 AND config_type = $2 AND config_key = 'mock_base_url' AND enabled = true
-             LIMIT 1",
-        )
-        .bind(realm_id)
-        .bind(payment_provider)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-        .unwrap_or_else(|| match payment_provider {
+        let base_url = match payment_provider {
             "stripe" => "https://api.stripe.com".to_string(),
             "creem" => {
                 if api_key.starts_with("ck_test_") || api_key.starts_with("creem_test_") {
@@ -64,7 +53,7 @@ impl ConfiguredProviderProductApi {
                 }
             }
             _ => String::new(),
-        });
+        };
 
         Ok((api_key, base_url))
     }
@@ -74,9 +63,6 @@ impl ConfiguredProviderProductApi {
         realm_id: &str,
     ) -> Result<Vec<ProviderProduct>, CoreError> {
         let (api_key, base_url) = self.load_provider_config(realm_id, "stripe").await?;
-        if base_url == "mock://stripe" {
-            return Ok(Vec::new());
-        }
 
         let products_url = format!("{}/v1/products?active=true&limit=100", base_url);
         let response = self
@@ -153,9 +139,6 @@ impl ConfiguredProviderProductApi {
         realm_id: &str,
     ) -> Result<Vec<ProviderProduct>, CoreError> {
         let (api_key, base_url) = self.load_provider_config(realm_id, "creem").await?;
-        if base_url == "mock://creem" {
-            return Ok(Vec::new());
-        }
 
         let response = self
             .http

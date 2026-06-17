@@ -33,14 +33,6 @@ pub mod one_time_fulfillment_scenarios;
 // Entitlement subscription scenarios (authored by BE-T03)
 pub mod entitlement_subscription_scenarios;
 
-// Subscription checkout session scenarios
-pub mod checkout_session_scenarios;
-
-// Stripe checkout mode branching scenarios (one-time vs recurring)
-// User Story: US-EM-001, US-PU-006, US-PA-001
-// Covers: Design section 5.1
-pub mod stripe_checkout_mode_scenarios;
-
 // Stripe webhook mode dispatch scenarios (payment vs subscription)
 // User Story: US-PA-003, US-PU-006
 // Covers: Design section 5.1

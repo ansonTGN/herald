@@ -232,7 +232,6 @@ impl WechatOrderRepository {
                 "v3_key" => config.v3_key = Some(value),
                 "platform_public_key" => config.platform_public_key = Some(value),
                 "notify_url" => config.notify_url = Some(value),
-                "mock_base_url" => config.mock_base_url = Some(value),
                 _ => {}
             }
 
@@ -434,7 +433,6 @@ pub struct WechatConfigRow {
     pub v3_key: Option<String>,
     pub platform_public_key: Option<String>,
     pub notify_url: Option<String>,
-    pub mock_base_url: Option<String>,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
 }

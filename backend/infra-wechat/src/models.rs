@@ -113,7 +113,6 @@ pub struct WechatConfig {
     pub serial_no: String,
     pub v3_key: String,
     pub notify_url: String,
-    pub mock_base_url: Option<String>,
 }
 
 /// Configuration for creating WeChat Pay client
@@ -125,7 +124,6 @@ pub struct WechatPayClientConfig {
     pub serial_no: String,
     pub v3_key: String,
     pub notify_url: String,
-    pub mock_base_url: Option<String>,
 }
 
 impl WechatPayClientConfig {
@@ -138,7 +136,6 @@ impl WechatPayClientConfig {
             serial_no: config.serial_no.clone(),
             v3_key: config.v3_key.clone(),
             notify_url: config.notify_url.clone(),
-            mock_base_url: config.mock_base_url.clone(),
         }
     }
 }

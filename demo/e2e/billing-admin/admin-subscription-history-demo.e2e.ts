@@ -22,7 +22,6 @@ import {
   setDateRangeFilter,
   applyFilters,
   resetFilters,
-  viewEventDetails,
 } from './helpers/subscription-history.helpers'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
@@ -289,45 +288,6 @@ test.describe('[Billing Admin] Subscription History Demo Tests', () => {
         await expect(page.getByTestId('filter-from-date')).toBeVisible()
         await expect(page.getByTestId('filter-to-date')).toBeVisible()
         await demoLogger.testCode.log('Date range filters displayed')
-      })
-    })
-
-    test('should view event details (Scene 6)', async ({
-      page,
-      loginPage,
-      demoLogger,
-    }) => {
-      await test.step('Given: 管理员已登录并访问订阅历史页面', async () => {
-        await loginPage.loginAsAdmin(DEMO_ADMIN.email, 'password', DEMO_ADMIN.realmId)
-        await navigateToSubscriptionHistory(page, DEMO_ADMIN.realmId)
-      })
-
-      await test.step('When: 点击查看详情按钮', async () => {
-        // 使用 expect + 短超时检查 view-details-0，避免 isVisible/click 竞态
-        const viewDetailsButton = page.getByTestId('view-details-0')
-        let hasViewableEvent = false
-        try {
-          await expect(viewDetailsButton).toBeVisible({ timeout: 5000 })
-          hasViewableEvent = true
-        } catch {
-          hasViewableEvent = false
-        }
-
-        if (hasViewableEvent) {
-          await viewDetailsButton.click()
-
-          // 验证 Toast 消息显示（当前实现使用 toast 显示事件类型和时间戳）
-          await expect(page.locator('[data-sonner-toast]')).toBeVisible({ timeout: 5000 })
-          await expect(page.getByText(/Event details:/)).toBeVisible()
-          await demoLogger.testCode.log('Event details toast displayed')
-        } else {
-          await demoLogger.testCode.log('No viewable events found - skipping details verification')
-        }
-      })
-
-      await test.step('Then: 验证详情对话框或 Toast 显示', async () => {
-        // Already verified in When step or skipped
-        await demoLogger.testCode.log('Details verification step completed')
       })
     })
 

@@ -103,29 +103,6 @@ impl StripeClient {
     ) -> Result<CheckoutSession, CoreError> {
         let is_payment_mode = request.mode.as_deref() == Some("payment");
 
-        if self.base_url == "mock://stripe" {
-            let mapping_id = &request.mapping_id.to_string();
-            let short_id = &mapping_id[mapping_id.len().saturating_sub(8)..];
-            let id = format!("cs_mock_{short_id}");
-            return Ok(CheckoutSession {
-                id: id.clone(),
-                url: format!("mock://stripe/checkout/{id}"),
-                customer: None,
-                status: Some("open".to_string()),
-                payment_intent: if is_payment_mode {
-                    Some(format!("pi_mock_{short_id}"))
-                } else {
-                    None
-                },
-                subscription: if is_payment_mode {
-                    None
-                } else {
-                    Some(format!("sub_mock_{short_id}"))
-                },
-                metadata: serde_json::to_value(&request.metadata).unwrap_or_default(),
-            });
-        }
-
         let url = format!("{}/v1/checkout/sessions", self.base_url);
 
         let mode_value = if is_payment_mode {
@@ -398,23 +375,6 @@ impl StripeClient {
             ));
         }
 
-        if self.base_url == "mock://stripe" {
-            let attempt_id = request
-                .metadata
-                .get("attemptId")
-                .cloned()
-                .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
-            let id = format!("pi_mock_{attempt_id}");
-            return Ok(PaymentIntent {
-                id: id.clone(),
-                client_secret: format!("{id}_secret_mock"),
-                amount: request.amount,
-                currency: request.currency.clone(),
-                status: Some("requires_payment_method".to_string()),
-                metadata: serde_json::to_value(&request.metadata).unwrap_or_default(),
-            });
-        }
-
         let url = format!("{}/v1/payment_intents", self.base_url);
 
         let mut form_fields = vec![
@@ -494,13 +454,6 @@ impl StripeClient {
         &self,
         params: &ListEventsParams,
     ) -> Result<StripeEventList, CoreError> {
-        if self.base_url == "mock://stripe" {
-            return Ok(StripeEventList {
-                data: vec![],
-                has_more: false,
-            });
-        }
-
         let url = format!("{}/v1/events", self.base_url);
 
         let mut query: Vec<(&str, String)> = vec![
@@ -774,85 +727,6 @@ mod tests {
             form.get("metadata[targetType]"),
             Some(&"points_package".to_string())
         );
-    }
-
-    #[tokio::test]
-    async fn test_create_payment_intent_supports_demo_mock_base_url() {
-        let client = StripeClient::with_base_url(
-            "sk_test_demo".to_string(),
-            "mock://stripe".to_string(),
-            30,
-        )
-        .unwrap();
-
-        let result = client
-            .create_payment_intent(&CreatePaymentIntentRequest {
-                amount: 500,
-                currency: "USD".to_string(),
-                receipt_email: Some("buyer@example.com".to_string()),
-                metadata: std::collections::HashMap::from([(
-                    "attemptId".to_string(),
-                    "attempt-123".to_string(),
-                )]),
-            })
-            .await
-            .expect("mock payment intent should be created");
-
-        assert_eq!(result.id, "pi_mock_attempt-123");
-        assert_eq!(result.client_secret, "pi_mock_attempt-123_secret_mock");
-        assert_eq!(result.amount, 500);
-        assert_eq!(result.currency, "USD");
-        assert_eq!(result.status.as_deref(), Some("requires_payment_method"));
-        assert_eq!(result.metadata["attemptId"], "attempt-123");
-    }
-
-    #[tokio::test]
-    async fn test_create_checkout_session_supports_demo_mock_base_url() {
-        let client = StripeClient::with_base_url(
-            "sk_test_demo".to_string(),
-            "mock://stripe".to_string(),
-            30,
-        )
-        .unwrap();
-
-        let mapping_id = uuid::Uuid::now_v7();
-        let mapping_id_str = mapping_id.to_string();
-        let short_id = &mapping_id_str[mapping_id_str.len() - 8..];
-
-        let result = client
-            .create_checkout_session(&CreateCheckoutRequest {
-                client_app_id: uuid::Uuid::now_v7(),
-                mapping_id,
-                user_id: Some(uuid::Uuid::now_v7()),
-                customer_email: Some("buyer@example.com".to_string()),
-                success_url: "https://example.com/success".to_string(),
-                cancel_url: "https://example.com/cancel".to_string(),
-                billing_period: "monthly".to_string(),
-                trial_days: None,
-                price_amount: 999,
-                currency: "usd".to_string(),
-                plan_name: "Pro Plan".to_string(),
-                realm_id: "realm-1".to_string(),
-                webhook_url: None,
-                metadata: Some(std::collections::HashMap::from([(
-                    "source".to_string(),
-                    "demo".to_string(),
-                )])),
-                mode: None, // defaults to subscription mode
-            })
-            .await
-            .expect("mock checkout session should be created");
-
-        assert_eq!(result.id, format!("cs_mock_{short_id}"));
-        assert_eq!(
-            result.url,
-            format!("mock://stripe/checkout/cs_mock_{short_id}")
-        );
-        assert!(result.customer.is_none());
-        assert_eq!(result.status.as_deref(), Some("open"));
-        assert!(result.payment_intent.is_none());
-        assert_eq!(result.subscription, Some(format!("sub_mock_{short_id}")));
-        assert_eq!(result.metadata["source"], "demo");
     }
 
     /// Verifies that create_checkout_session sends form-encoded data (not JSON),
@@ -1472,46 +1346,5 @@ mod tests {
 
         assert!(result.data.is_empty(), "data should be empty");
         assert!(!result.has_more, "has_more should be false");
-    }
-
-    /// Verify mock handler returns payment_intent for payment mode and
-    /// subscription for subscription mode.
-    #[tokio::test]
-    async fn test_mock_checkout_session_payment_mode_returns_payment_intent() {
-        let client = StripeClient::with_base_url(
-            "sk_test_demo".to_string(),
-            "mock://stripe".to_string(),
-            30,
-        )
-        .unwrap();
-
-        let mapping_id = uuid::Uuid::now_v7();
-        let mapping_id_str = mapping_id.to_string();
-        let short_id = &mapping_id_str[mapping_id_str.len() - 8..];
-
-        let result = client
-            .create_checkout_session(&CreateCheckoutRequest {
-                client_app_id: uuid::Uuid::now_v7(),
-                mapping_id,
-                user_id: Some(uuid::Uuid::now_v7()),
-                customer_email: Some("buyer@example.com".to_string()),
-                success_url: "https://example.com/success".to_string(),
-                cancel_url: "https://example.com/cancel".to_string(),
-                billing_period: "monthly".to_string(),
-                trial_days: None,
-                price_amount: 500,
-                currency: "usd".to_string(),
-                plan_name: "Points Pack".to_string(),
-                realm_id: "realm-1".to_string(),
-                webhook_url: None,
-                metadata: None,
-                mode: Some("payment".to_string()),
-            })
-            .await
-            .expect("mock checkout session should be created in payment mode");
-
-        assert_eq!(result.id, format!("cs_mock_{short_id}"));
-        assert_eq!(result.payment_intent, Some(format!("pi_mock_{short_id}")));
-        assert!(result.subscription.is_none());
     }
 }

@@ -101,6 +101,10 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         _seed_points_data(user_id, logger)
         _ensure_points_package_payment_demo_data(logger)
 
+        # Ensure purchase history demo data (payment_attempts for the purchase-records page)
+        _info(logger, "Ensuring purchase history demo data...")
+        _ensure_purchase_history_demo_data(logger)
+
         # Ensure subscription history demo data for admin realm
         _info(logger, "Ensuring subscription history demo data...")
         _ensure_subscription_history_demo_data(admin_opener, logger)
@@ -722,17 +726,18 @@ BEGIN
         ('{POINTS_REALM_ID}', 'stripe', 'publishable_key', 'pk_test_demo_points_package', false, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'stripe', 'webhook_secret', 'whsec_demo_points_package', true, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'stripe', 'timeout', '30', false, true, '{{}}'::jsonb),
-        ('{POINTS_REALM_ID}', 'stripe', 'mock_base_url', 'mock://stripe', false, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'wechat', 'app_id', 'wx_demo_points_package', false, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'wechat', 'mch_id', 'mch_demo_points_package', false, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'wechat', 'serial_no', 'serial_demo_points_package', false, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'wechat', 'v3_key', 'abcd1234567890abcdef1234567890ab', true, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'wechat', 'private_key', '{wechat_private_key}', true, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'wechat', 'notify_url', 'https://example.com/api/third/pay/{POINTS_REALM_ID}/wechat/webhooks', false, true, '{{}}'::jsonb),
-        ('{POINTS_REALM_ID}', 'wechat', 'mock_base_url', 'mock://wechat', false, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'creem', 'api_key', 'creem_test_demo_points_package', true, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'creem', 'webhook_secret', 'creem_whsec_demo_points_package', true, true, '{{}}'::jsonb),
-        ('{POINTS_REALM_ID}', 'creem', 'mock_base_url', 'mock://creem', false, true, '{{}}'::jsonb)
+        ('{ADMIN_REALM}', 'stripe', 'api_key', 'sk_test_demo_admin_points_package', true, true, '{{}}'::jsonb),
+        ('{ADMIN_REALM}', 'stripe', 'publishable_key', 'pk_test_demo_admin_points_package', false, true, '{{}}'::jsonb),
+        ('{ADMIN_REALM}', 'stripe', 'webhook_secret', 'whsec_demo_admin_points_package', true, true, '{{}}'::jsonb),
+        ('{ADMIN_REALM}', 'stripe', 'timeout', '30', false, true, '{{}}'::jsonb)
     ON CONFLICT (realm_id, config_type, config_key) DO UPDATE
         SET config_value = EXCLUDED.config_value,
             is_secret = EXCLUDED.is_secret,
@@ -758,7 +763,11 @@ BEGIN
         (uuidv7(), '{POINTS_REALM_ID}', 'wechat', 'prod_wechat_onetime_1000', 'credits-1000', 'one_time', 1000, 365, TRUE,
          '{{"name": "1000 Credits", "price": 900, "currency": "USD"}}'::jsonb),
         (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_2000', 'credits-2000', 'one_time', 2000, 365, TRUE,
-         '{{"name": "2000 Credits", "price": 1600, "currency": "USD"}}'::jsonb)
+         '{{"name": "2000 Credits", "price": 1600, "currency": "USD"}}'::jsonb),
+        (uuidv7(), '{ADMIN_REALM}', 'stripe', 'prod_admin_stripe_onetime_500', 'credits-500', 'one_time', 500, 365, TRUE,
+         '{{"name": "500 Credits", "price": 500, "currency": "USD"}}'::jsonb),
+        (uuidv7(), '{ADMIN_REALM}', 'stripe', 'prod_admin_stripe_onetime_1000', 'credits-1000', 'one_time', 1000, 365, TRUE,
+         '{{"name": "1000 Credits", "price": 900, "currency": "USD"}}'::jsonb)
     ON CONFLICT (realm_id, payment_provider, external_product_id) DO UPDATE
         SET entitlement_key = EXCLUDED.entitlement_key,
             billing_type = EXCLUDED.billing_type,
@@ -770,6 +779,81 @@ END $$;
 """
     _sql_exec(sql)
     _info(logger, "[OK] Payment provider config and one-time mappings demo data ready")
+
+
+def _ensure_purchase_history_demo_data(logger: "Logger | None") -> None:
+    """Seed purchase-history rows so the purchase-records page has data to show.
+
+    Matches the ``list_purchase_history`` filter exactly: ``status='Succeeded'``
+    and ``target_type='entitlement_mapping'``. Each ``target_id`` references a
+    one-time entitlement mapping seeded by ``_ensure_points_package_payment_demo_data``.
+    Rows use fixed UUIDs + ``ON CONFLICT (id)`` so re-seeding is idempotent.
+    Required users/mappings are resolved at seed time; any row whose dependency
+    is missing is skipped rather than failing the whole seed.
+    """
+    _info(logger, "Ensuring purchase history demo data...")
+
+    admin_user = _sql_scalar(
+        "SELECT id::text FROM account "
+        f"WHERE realm_id = '{ADMIN_REALM}' AND email = '{ADMIN_EMAIL}' LIMIT 1;"
+    )
+    points_user = _sql_scalar(
+        "SELECT id::text FROM account "
+        f"WHERE realm_id = '{POINTS_REALM_ID}' AND email = '{POINTS_USER_EMAIL}' LIMIT 1;"
+    )
+
+    def _mapping_id(realm: str, external_product_id: str) -> str | None:
+        return _sql_scalar(
+            "SELECT id::text FROM provider_entitlement_mappings "
+            f"WHERE realm_id = '{realm}' AND external_product_id = '{external_product_id}' LIMIT 1;"
+        )
+
+    # (fixed_uuid, realm_id, user_id, mapping external_product_id, amount)
+    desired = [
+        ("00000000-0000-7000-8000-0000000000a1", ADMIN_REALM, admin_user, "prod_admin_stripe_onetime_500", 500),
+        ("00000000-0000-7000-8000-0000000000a2", ADMIN_REALM, admin_user, "prod_admin_stripe_onetime_1000", 900),
+        ("00000000-0000-7000-8000-0000000000b1", POINTS_REALM_ID, points_user, "prod_stripe_onetime_500", 500),
+        ("00000000-0000-7000-8000-0000000000b2", POINTS_REALM_ID, points_user, "prod_stripe_onetime_1000", 900),
+    ]
+
+    rows = []
+    for fixed_id, realm, user_id, external_product_id, amount in desired:
+        if not user_id:
+            continue
+        mapping_id = _mapping_id(realm, external_product_id)
+        if not mapping_id:
+            continue
+        rows.append((fixed_id, realm, user_id, mapping_id, amount))
+
+    if not rows:
+        _info(logger, "Skipping purchase history seed: required users/mappings not found")
+        return
+
+    values_sql = ",\n        ".join(
+        f"('{fixed_id}', '{realm}', '{user_id}'::uuid, 'stripe', 'entitlement_mapping', "
+        f"'{mapping_id}'::uuid, {amount}, 'usd', 'Succeeded', 'cs_demo_{fixed_id[-3:]}', 'paid', "
+        f"NULL, now(), now() - interval '{idx + 1} days', now() - interval '{idx + 1} days', "
+        f"now() - interval '{idx + 1} days')"
+        for idx, (fixed_id, realm, user_id, mapping_id, amount) in enumerate(rows)
+    )
+
+    sql = f"""
+INSERT INTO payment_attempts (
+    id, realm_id, user_id, payment_provider, target_type, target_id,
+    amount, currency, status, provider_reference, provider_status,
+    metadata, expires_at, completed_at, created_at, updated_at
+) VALUES
+        {values_sql}
+ON CONFLICT (id) DO UPDATE SET
+    status = EXCLUDED.status,
+    target_id = EXCLUDED.target_id,
+    amount = EXCLUDED.amount,
+    currency = EXCLUDED.currency,
+    completed_at = EXCLUDED.completed_at,
+    updated_at = now();
+"""
+    _sql_exec(sql)
+    _info(logger, f"[OK] Purchase history demo data ready ({len(rows)} rows)")
 
 
 def _ensure_admin_realm_points_config(logger: "Logger | None") -> None:

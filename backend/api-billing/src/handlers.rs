@@ -98,27 +98,7 @@ async fn get_creem_client_for_realm(
 
     tracing::info!("Loaded Creem config from database for realm: {}", realm_id);
 
-    let mock_base_url = state
-        .realm_config_repository
-        .get(
-            realm_id.to_string(),
-            "creem".to_string(),
-            "mock_base_url".to_string(),
-        )
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to load Creem mock base URL from database: {}", e);
-            ApiError::internal(format!("Database error: {}", e))
-        })?
-        .filter(|c| c.enabled)
-        .map(|c| c.config_value);
-
-    match mock_base_url {
-        Some(base_url) => {
-            CreemClient::with_base_url(api_key, base_url, timeout).map_err(ApiError::from)
-        }
-        None => CreemClient::new(api_key, timeout).map_err(ApiError::from),
-    }
+    CreemClient::new(api_key, timeout).map_err(ApiError::from)
 }
 
 /// Get Stripe client for a realm
@@ -163,25 +143,7 @@ async fn get_stripe_client_for_realm(
 
     tracing::info!("Loaded Stripe config from database for realm: {}", realm_id);
 
-    let mock_base_url = state
-        .realm_config_repository
-        .get(
-            realm_id.to_string(),
-            "stripe".to_string(),
-            "mock_base_url".to_string(),
-        )
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to load Stripe mock base URL from database: {}", e);
-            ApiError::internal(format!("Database error: {}", e))
-        })?
-        .filter(|c| c.enabled)
-        .map(|c| c.config_value);
-
-    match mock_base_url {
-        Some(base_url) => Ok(StripeClient::with_base_url(api_key, base_url, timeout)?),
-        None => Ok(StripeClient::new(api_key, timeout)?),
-    }
+    Ok(StripeClient::new(api_key, timeout)?)
 }
 
 // ============================================================================

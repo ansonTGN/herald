@@ -124,13 +124,6 @@ export async function resetFilters(page: Page): Promise<void> {
 }
 
 /**
- * Helper function to view event details
- */
-export async function viewEventDetails(page: Page, eventIndex: number): Promise<void> {
-  await page.getByTestId(SELECTORS.subscriptionHistory.viewDetailsButton(eventIndex)).click()
-}
-
-/**
  * Helper function to click timeline event details
  */
 export async function viewTimelineEventDetails(page: Page, eventIndex: number): Promise<void> {

@@ -143,7 +143,6 @@ async fn create_wechat_client_from_config(
         serial_no,
         v3_key,
         notify_url,
-        config.mock_base_url,
     )
     .await
     .map_err(|e| anyhow::anyhow!(e.to_string()))

@@ -24,7 +24,7 @@ use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 pub async fn setup_wechat_config(ctx: &mut TestContext, realm_id: &str) {
     let test_v3_key = "test_v3_key_32_bytes_long_xxxxxx";
 
-    setup_wechat_config_with_keys(ctx, realm_id, test_v3_key, None).await;
+    setup_wechat_config_with_keys(ctx, realm_id, test_v3_key).await;
 }
 
 /// Read the test RSA key from fixtures
@@ -46,7 +46,6 @@ pub async fn setup_wechat_config_with_keys(
     ctx: &mut TestContext,
     realm_id: &str,
     v3_key: &str,
-    _mock_base_url: Option<&str>, // Parameter kept for compatibility but unused
 ) {
     let notify_url = format!(
         "https://example.com/api/third/pay/{}/wechat/webhooks",

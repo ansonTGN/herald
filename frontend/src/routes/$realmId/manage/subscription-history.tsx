@@ -6,11 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SubscriptionHistoryList } from '@/components/billing/subscription-history-list'
 import { SubscriptionHistoryFilter } from '@/components/billing/subscription-history-filter'
 import { globalSubscriptionHistoryQueryOptions, requireFeature } from '@/data/query-options'
-import type { HistoryFilters, SubscriptionHistoryEventWithUser } from '@/types/billing'
-import { toast } from 'sonner'
+import type { HistoryFilters } from '@/types/billing'
 import { PageHeader, ListPagination } from '@/components/shared'
 import { m } from '@/paraglide/messages'
-import { formatDateTimeShort } from '@/lib/date-utils'
 
 export const Route = createFileRoute('/$realmId/manage/subscription-history')({
   beforeLoad: ({ context, params }) =>
@@ -70,13 +68,6 @@ function SubscriptionHistoryRoute() {
     setPage(1)
   }
 
-  // Handle event click
-  function handleEventClick(event: SubscriptionHistoryEventWithUser) {
-    toast.info(`Event details: ${event.eventType}`, {
-      description: `Timestamp: ${formatDateTimeShort(event.timestamp)}`,
-    })
-  }
-
   if (error) {
     return (
       <div className="space-y-6" data-testid="subscription-history-page">
@@ -133,7 +124,6 @@ function SubscriptionHistoryRoute() {
             events={historyData?.events || []}
             loading={isLoading}
             onSortChange={handleSortChange}
-            onEventClick={handleEventClick}
           />
         </CardContent>
       </Card>

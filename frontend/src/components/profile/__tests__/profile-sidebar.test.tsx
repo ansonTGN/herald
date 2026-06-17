@@ -67,6 +67,25 @@ describe('ProfileSidebar', () => {
     expect(screen.queryByTestId('profile-menu-invoices')).not.toBeInTheDocument()
   })
 
+  it('shows invoices when invoice features are available', () => {
+    featureData = {
+      user: {
+        pointsVisible: false,
+        pointsPurchaseVisible: false,
+        subscriptionVisible: false,
+        invoicesVisible: true,
+      },
+    }
+
+    render(
+      <LocaleProvider>
+        <ProfileSidebar />
+      </LocaleProvider>
+    )
+
+    expect(screen.getByTestId('profile-menu-invoices')).toBeInTheDocument()
+  })
+
   it('does not show purchase records for subscription-only realms', () => {
     featureData = {
       user: {

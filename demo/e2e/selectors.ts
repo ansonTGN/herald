@@ -480,8 +480,6 @@ export const SELECTORS = {
     applyFilterButton: '[data-testid="apply-filter-button"]',
     // History table
     historyRow: (index: number) => `[data-testid="history-row-${index}"]`,
-    viewDetailsButton: (index: number) =>
-      `[data-testid="view-details-${index}"]`,
     previousPageButton: '[data-testid="previous-page-button"]',
     nextPageButton: '[data-testid="next-page-button"]',
   },

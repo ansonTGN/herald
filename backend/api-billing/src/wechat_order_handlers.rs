@@ -81,8 +81,6 @@ pub async fn create_wechat_order(
         .notify_url
         .ok_or_else(|| ApiError::internal("WeChat config missing notify_url"))?;
 
-    let mock_base_url = config_row.mock_base_url;
-
     let client = herald_core::infrastructure::wechat::client::WechatPayClient::new_async(
         app_id,
         mch_id,
@@ -90,7 +88,6 @@ pub async fn create_wechat_order(
         serial_no,
         v3_key,
         notify_url.clone(),
-        mock_base_url,
     )
     .await
     .map_err(|e| ApiError::internal(format!("Failed to create WeChat Pay client: {}", e)))?;
@@ -408,7 +405,6 @@ async fn create_wechat_client_from_config(
         serial_no,
         v3_key,
         notify_url,
-        config_row.mock_base_url,
     )
     .await
     .map_err(|e| anyhow::anyhow!(e.to_string()))

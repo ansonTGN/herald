@@ -1,6 +1,6 @@
 use crate::models::{
-    CheckoutSession, CreateCheckoutRequest, CreemPagination, CreemSubscriptionList,
-    CreemTransactionList, SearchSubscriptionsParams, SearchTransactionsParams,
+    CheckoutSession, CreateCheckoutRequest, CreemSubscriptionList, CreemTransactionList,
+    SearchSubscriptionsParams, SearchTransactionsParams,
 };
 use herald_domain::common::entities::app_errors::CoreError;
 use std::time::Duration;
@@ -45,34 +45,6 @@ impl CreemClient {
         })
     }
 
-    /// Create a new Creem API client with a custom base URL
-    ///
-    /// This is primarily useful for testing with mock servers.
-    ///
-    /// # Arguments
-    ///
-    /// * `api_key` - Creem API key
-    /// * `base_url` - Custom base URL for the API
-    /// * `timeout_seconds` - HTTP request timeout in seconds
-    pub fn with_base_url(
-        api_key: String,
-        base_url: String,
-        timeout_seconds: u64,
-    ) -> Result<Self, CoreError> {
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(timeout_seconds))
-            .build()
-            .map_err(|e| {
-                CoreError::InternalServerError(format!("Failed to create HTTP client: {e}"))
-            })?;
-
-        Ok(Self {
-            http,
-            api_key,
-            base_url,
-        })
-    }
-
     /// Create a Creem API client reusing an existing `reqwest::Client`.
     ///
     /// Avoids per-realm `reqwest::Client` reconstruction in batch jobs that
@@ -102,16 +74,6 @@ impl CreemClient {
         &self,
         request: &CreateCheckoutRequest,
     ) -> Result<CheckoutSession, CoreError> {
-        if self.base_url == "mock://creem" {
-            let short_id = &request.product_id[request.product_id.len().saturating_sub(8)..];
-            let id = format!("co_mock_{short_id}");
-            return Ok(CheckoutSession {
-                id: id.clone(),
-                checkout_url: format!("mock://creem/checkout/{id}"),
-                status: "pending".to_string(),
-            });
-        }
-
         let url = format!("{}/v1/checkouts", self.base_url);
 
         let response = self
@@ -145,19 +107,6 @@ impl CreemClient {
         &self,
         params: &SearchTransactionsParams,
     ) -> Result<CreemTransactionList, CoreError> {
-        if self.base_url == "mock://creem" {
-            return Ok(CreemTransactionList {
-                data: vec![],
-                pagination: CreemPagination {
-                    total_records: 0,
-                    total_pages: 0,
-                    current_page: params.page_number,
-                    next_page: None,
-                    prev_page: None,
-                },
-            });
-        }
-
         let url = format!(
             "{}/v1/transactions/search?page_number={}&page_size={}",
             self.base_url, params.page_number, params.page_size
@@ -196,19 +145,6 @@ impl CreemClient {
         &self,
         params: &SearchSubscriptionsParams,
     ) -> Result<CreemSubscriptionList, CoreError> {
-        if self.base_url == "mock://creem" {
-            return Ok(CreemSubscriptionList {
-                data: vec![],
-                pagination: CreemPagination {
-                    total_records: 0,
-                    total_pages: 0,
-                    current_page: params.page_number,
-                    next_page: None,
-                    prev_page: None,
-                },
-            });
-        }
-
         let url = format!(
             "{}/v1/subscriptions/search?page_number={}&page_size={}",
             self.base_url, params.page_number, params.page_size

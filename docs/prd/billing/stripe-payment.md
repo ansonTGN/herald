@@ -45,7 +45,6 @@
 - Webhook 事件处理（支付状态同步）
 - 争议处理——`charge.dispute.created`/`charge.dispute.closed` 事件处理，标记订阅 Disputed 状态，争议解决后根据结果恢复或取消订阅（证据提交由 Stripe Dashboard 完成）
 - 退款处理——`charge.refunded` 事件处理，支持 topup（按比例回收积分）和 subscription（回收未使用积分）两种退款类型的积分回收
-- Demo/Mock 模式——支持 `mock://stripe` 作为 base URL，用于测试环境模拟 Stripe 响应
 - 支付历史记录查询
 
 ### 2.2 不包含功能
@@ -157,7 +156,6 @@ Stripe 支付集成是 Herald 系统支付平台选项之一，与 Creem（模�
 - Stripe 与 Creem 作为支付平台选项并列存在
 - 复用通用支付平台配置系统
 - Webhook 处理失败不自动重试，依赖 Stripe 自身重试发送策略
-- Demo/Mock 模式使用 `mock://stripe` 作为 base URL，客户端检测到后跳过真实 HTTP 调用并返回模拟响应
 
 ### 8.2 与实现已知差异
 

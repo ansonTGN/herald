@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react'
 import { format } from 'date-fns'
-import { Clock, User, ChevronRight, ArrowUpDown } from 'lucide-react'
+import { Clock, User, ArrowUpDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -18,17 +18,15 @@ interface SubscriptionHistoryListProps {
   events: SubscriptionHistoryEventWithUser[]
   loading?: boolean
   onSortChange?: (sortBy: string) => void
-  onEventClick?: (event: SubscriptionHistoryEventWithUser) => void
   className?: string
 }
 
 interface HistoryTableRowProps {
   event: SubscriptionHistoryEventWithUser
   index: number
-  onEventClick?: (event: SubscriptionHistoryEventWithUser) => void
 }
 
-const HistoryTableRow = memo(({ event, index, onEventClick }: HistoryTableRowProps) => {
+const HistoryTableRow = memo(({ event, index }: HistoryTableRowProps) => {
   const timestamp = useMemo(() => format(new Date(event.timestamp), 'PPp'), [event.timestamp])
 
   return (
@@ -58,17 +56,6 @@ const HistoryTableRow = memo(({ event, index, onEventClick }: HistoryTableRowPro
       <TableCell>
         <span className="text-sm">{event.actor || '-'}</span>
       </TableCell>
-      <TableCell className="text-right">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onEventClick?.(event)}
-          data-testid={`view-details-${index}`}
-        >
-          <ChevronRight className="h-4 w-4" />
-          <span className="sr-only">{m['billing.subscription_view_details']()}</span>
-        </Button>
-      </TableCell>
     </TableRow>
   )
 })
@@ -79,7 +66,6 @@ export function SubscriptionHistoryList({
   events,
   loading,
   onSortChange,
-  onEventClick,
   className,
 }: SubscriptionHistoryListProps) {
   function handleSort(sortBy: string) {
@@ -111,32 +97,24 @@ export function SubscriptionHistoryList({
                 {m['billing.subscription_history_list_user']()}
               </TableHead>
               <TableHead>{m['billing.subscription_history_list_actor']()}</TableHead>
-              <TableHead className="text-right">
-                {m['billing.subscription_history_list_actions']()}
-              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">
+                <TableCell colSpan={5} className="h-24 text-center">
                   {m['billing.subscription_history_loading']()}
                 </TableCell>
               </TableRow>
             ) : events.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                   {m['billing.subscription_history_no_events']()}
                 </TableCell>
               </TableRow>
             ) : (
               events.map((event, index) => (
-                <HistoryTableRow
-                  key={event.id}
-                  event={event}
-                  index={index}
-                  onEventClick={onEventClick}
-                />
+                <HistoryTableRow key={event.id} event={event} index={index} />
               ))
             )}
           </TableBody>

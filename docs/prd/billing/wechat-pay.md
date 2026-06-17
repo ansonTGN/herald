@@ -249,11 +249,9 @@
 
 > 以下记录代码中已实现但 PRD 原文未提及的功能点，作为信息补充。
 
-### SUP-001：mock_base_url 测试模式
+### SUP-001：mock_base_url 测试模式（已移除）
 
-- **说明**：微信支付配置支持 `mock_base_url` 字段，当配置了自定义 base URL 时进入测试模式。测试模式下：跳过 WechatPay SDK，使用直接 HTTP 调用（`reqwest`）访问 mock 服务器；当 base URL 为 `mock://wechat` 时完全不发起 HTTP 请求，直接生成虚拟 code_url
-- **用途**：开发/测试环境模拟微信支付流程，无需真实商户号
-- **代码位置**：`infra-wechat/src/client.rs` → `WechatPayClient::new()` / `create_native_order()`
+- **状态**：已移除——`mock://wechat` 假 code_url 短路、test-mode 直接 HTTP 调用 mock 服务器、以及 `WechatConfig.mock_base_url` 配置字段均已删除。微信支付全链路由 `demo/e2e/live` 真实凭证测试 + internal fulfill API 覆盖，生产 client 不再内嵌测试分支。
 
 ### SUP-002：client_app_id 字段
 

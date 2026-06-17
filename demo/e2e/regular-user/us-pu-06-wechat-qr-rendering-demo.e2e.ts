@@ -11,6 +11,13 @@
  * section with correct UI elements. Does NOT verify payment completion
  * (requires webhook simulation).
  *
+ * NOTE: The backend `mock://wechat` demo short-circuit (which returned a
+ * synthetic `weixin://` code_url without calling WeChat Pay) has been removed.
+ * This test now requires the realm to be configured with real or sandbox
+ * WeChat Pay credentials to obtain a code_url; without them, order creation
+ * fails. Run against a realm with live WeChat config, or relocate this test to
+ * the `demo/e2e/live` suite.
+ *
  * - All tests use UnifiedLogger through 'demoLogger' fixture
  */
 
