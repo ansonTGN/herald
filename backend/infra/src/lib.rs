@@ -15,7 +15,6 @@ pub mod purchase;
 pub mod realm;
 pub mod realm_config;
 pub mod redis;
-pub mod shopify;
 pub mod stripe;
 pub mod totp_key_management;
 pub mod user;

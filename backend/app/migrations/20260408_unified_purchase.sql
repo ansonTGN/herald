@@ -96,6 +96,7 @@ CREATE TABLE payment_attempts (
     payment_provider text NOT NULL,
     target_type text NOT NULL,
     target_id uuid NOT NULL,
+    bucket_id uuid REFERENCES credit_buckets(id) ON DELETE RESTRICT,
     amount bigint NOT NULL CHECK(amount > 0),
     currency text NOT NULL,
     status text NOT NULL,
@@ -119,11 +120,13 @@ CREATE INDEX idx_payment_attempts_status_expires ON payment_attempts(status, exp
 
 -- Index for looking up attempts by provider reference (for webhooks)
 CREATE INDEX idx_payment_attempts_provider_reference ON payment_attempts(payment_provider, provider_reference);
+CREATE INDEX idx_payment_attempts_bucket_id ON payment_attempts(bucket_id);
 
 -- Comments for documentation
 COMMENT ON TABLE payment_attempts IS 'Unified payment attempt tracking for initiator-based payment platforms';
 COMMENT ON COLUMN payment_attempts.target_type IS 'Type of purchasable target: subscription_entitlement or points_package';
 COMMENT ON COLUMN payment_attempts.target_id IS 'ID of the subscription plan or points package being purchased';
+COMMENT ON COLUMN payment_attempts.bucket_id IS 'Credit bucket snapshot for purchase fulfillment routing';
 COMMENT ON COLUMN payment_attempts.provider_reference IS 'Platform-specific order reference (out_trade_no for WeChat, session ID for Stripe)';
 COMMENT ON COLUMN payment_attempts.provider_status IS 'Raw status from payment platform';
 COMMENT ON COLUMN payment_attempts.expires_at IS 'Payment attempt expiration time (2 hours after creation)';

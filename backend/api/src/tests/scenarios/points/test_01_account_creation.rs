@@ -71,12 +71,36 @@ async fn test_scenario_account_creation_on_subscribe(ctx: &mut TestContext) {
     // ============================================================================
     println!("[Step 2] Trigger recharge via service");
 
+    // Credit-bucket: recharge now requires an explicit bucket_id target.
+    // Create a real bucket so the operation has a valid target.
+    use crate::tests::helpers::credit_bucket_helpers::{
+        CreditBucketOpts, attach_bucket_client_app, create_test_credit_bucket,
+    };
+    let bucket_id = create_test_credit_bucket(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+        CreditBucketOpts::default(),
+    )
+    .await;
+    let _client_app_uuid: Uuid = ctx
+        ._client_app_id
+        .parse()
+        .expect("_client_app_id should be a valid UUID");
+    attach_bucket_client_app(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+        bucket_id,
+        _client_app_uuid,
+    )
+    .await;
+
     let transaction = ctx
         ._app_state
         .points_service
         .recharge_points_internal(
             &ctx._realm_id,
             user_id,
+            bucket_id,
             points_on_subscribe,
             RechargeType::Subscribe,
             Some(subscription_id.to_string()),

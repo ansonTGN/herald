@@ -2,7 +2,7 @@
  * WeChat Pay Test Helpers
  *
  * Provides reusable functions for WeChat Pay configuration and testing.
- * Follows the same pattern as shopify-test.helpers.ts and billing-page.helpers.ts
+ * Follows the same pattern as billing-page.helpers.ts
  */
 
 import { Page, expect } from '@playwright/test'

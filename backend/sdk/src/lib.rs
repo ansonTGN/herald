@@ -90,39 +90,104 @@ pub struct ConsumePointsRequest {
     pub idempotency_key: Option<String>,
 }
 
-/// Points consume response
+/// Per-bucket transaction inside a multi-bucket consume response (design §4.2.2).
+///
+/// Single-pool consume → `transactions` has length 1 (structure unified with
+/// the multi-bucket case). `amount` is the deduction magnitude (positive).
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ConsumePointsResponse {
+pub struct BucketTransaction {
     pub transaction_id: String,
+    pub bucket_id: String,
     pub wallet_id: String,
     pub user_id: String,
     pub amount: i64,
     pub balance_after: i64,
 }
 
-/// Points grant request
+/// Ledger-level allocation detail for a consume (design §4.2.2/A6).
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AllocationDetail {
+    pub bucket_id: String,
+    pub wallet_id: String,
+    pub ledger_id: String,
+    pub credit_type: String,
+    pub allocated_amount: i64,
+}
+
+/// Points consume response (per-bucket multi-transaction shape, design §4.2.2 /
+/// §4.2.4 — breaking change from the old single-transaction response).
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumePointsResponse {
+    pub user_id: String,
+    pub amount: i64,
+    pub correlation_id: String,
+    pub transactions: Vec<BucketTransaction>,
+    pub allocations: Vec<AllocationDetail>,
+}
+
+/// Points grant request (admin/SDK)
+///
+/// `bucket_id` is REQUIRED (design §4.2.4 / A5): every grant must target an
+/// explicit Credit Bucket.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct GrantPointsRequest {
     pub user_id: String,
+    pub bucket_id: String,
     pub amount: i64,
     pub reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validity_days: Option<i64>,
 }
 
-/// Points grant response
+/// Points grant response (admin/SDK)
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct GrantPointsResponse {
     pub transaction_id: String,
     pub user_id: String,
+    pub bucket_id: String,
     pub amount: i64,
     pub granted_balance: i64,
     pub balance: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
+}
+
+/// Per-credit-type balances (design §4.2.3 `balancesByType`).
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BalancesByType {
+    #[serde(default)]
+    pub topup: i64,
+    #[serde(default)]
+    pub subscription: i64,
+    #[serde(default)]
+    pub registration: i64,
+    #[serde(default)]
+    pub free_periodic: i64,
+    #[serde(default)]
+    pub granted: i64,
+}
+
+/// Wallet balances grouped by Credit Bucket (design §4.2.3 `WalletByBucket`).
+///
+/// Mirrors the api-points `WalletByBucketResponse` shape. For the admin
+/// (`billing/points/wallets`) view, `user_id` is populated and rows group per
+/// `(user, bucket)`; for the `users/me/points/wallets` view, `user_id` is the
+/// calling user.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletByBucket {
+    pub bucket_id: Option<String>,
+    pub name: Option<String>,
+    pub enabled: Option<bool>,
+    pub user_id: String,
+    pub balances_by_type: BalancesByType,
+    pub bucket_total: i64,
 }
 
 // ============================================================================
@@ -529,6 +594,7 @@ impl Client {
     ///
     /// * `realm_id` - The realm ID
     /// * `user_id` - The user ID to grant points to
+    /// * `bucket_id` - The target Credit Bucket (REQUIRED, design §4.2.4 / A5)
     /// * `amount` - The amount of points to grant (must be > 0)
     /// * `reason` - The reason for granting points (must be non-empty)
     /// * `validity_days` - Optional validity period in days (None = permanent)
@@ -542,10 +608,12 @@ impl Client {
     /// Returns `Err(Error::Unauthorized)` if the API key is invalid
     /// Returns `Err(Error::Forbidden)` if cross-realm access or insufficient permissions
     /// Returns `Err(Error::NotFound)` if the user is not found
+    /// Returns `Err(Error::ApiError)` for other API errors (e.g., missing/invalid bucketId)
     pub async fn grant_points(
         &self,
         realm_id: &str,
         user_id: &str,
+        bucket_id: &str,
         amount: i64,
         reason: &str,
         validity_days: Option<i64>,
@@ -554,6 +622,7 @@ impl Client {
 
         let request = GrantPointsRequest {
             user_id: user_id.to_string(),
+            bucket_id: bucket_id.to_string(),
             amount,
             reason: reason.to_string(),
             validity_days,
@@ -1451,10 +1520,12 @@ mod tests {
         let client = Client::new(server.uri(), "test-api-key".to_string(), None);
 
         let user_id = uuid::Uuid::now_v7().to_string();
+        let bucket_id = uuid::Uuid::now_v7().to_string();
         let transaction_id = uuid::Uuid::now_v7().to_string();
         let grant_response = json!({
             "transactionId": transaction_id,
             "userId": user_id,
+            "bucketId": bucket_id,
             "amount": 100,
             "grantedBalance": 100,
             "balance": 150,
@@ -1469,7 +1540,7 @@ mod tests {
             .await;
 
         let result = client
-            .grant_points("realm1", &user_id, 100, "test reason", None)
+            .grant_points("realm1", &user_id, &bucket_id, 100, "test reason", None)
             .await;
         assert!(
             result.is_ok(),
@@ -1480,6 +1551,7 @@ mod tests {
         assert_eq!(resp.amount, 100);
         assert_eq!(resp.balance, 150);
         assert_eq!(resp.granted_balance, 100);
+        assert_eq!(resp.bucket_id, bucket_id);
         assert!(resp.expires_at.is_none());
 
         server.verify().await;
@@ -1491,10 +1563,12 @@ mod tests {
         let client = Client::new(server.uri(), "test-api-key".to_string(), None);
 
         let user_id = uuid::Uuid::now_v7().to_string();
+        let bucket_id = uuid::Uuid::now_v7().to_string();
         let transaction_id = uuid::Uuid::now_v7().to_string();
         let grant_response = json!({
             "transactionId": transaction_id,
             "userId": user_id,
+            "bucketId": bucket_id,
             "amount": 200,
             "grantedBalance": 200,
             "balance": 200,
@@ -1509,7 +1583,14 @@ mod tests {
             .await;
 
         let result = client
-            .grant_points("realm1", &user_id, 200, "campaign reward", Some(30))
+            .grant_points(
+                "realm1",
+                &user_id,
+                &bucket_id,
+                200,
+                "campaign reward",
+                Some(30),
+            )
             .await;
         assert!(
             result.is_ok(),
@@ -1537,7 +1618,14 @@ mod tests {
             .await;
 
         let result = client
-            .grant_points("realm1", "nonexistent-user", 100, "test", None)
+            .grant_points(
+                "realm1",
+                "nonexistent-user",
+                "00000000-0000-0000-0000-000000000000",
+                100,
+                "test",
+                None,
+            )
             .await;
         assert!(result.is_err());
         match result.unwrap_err() {

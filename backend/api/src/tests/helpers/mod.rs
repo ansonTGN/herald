@@ -26,6 +26,8 @@ pub mod auth_helpers;
 pub mod billing_helpers;
 pub mod client_helpers;
 #[cfg(test)]
+pub mod credit_bucket_helpers;
+#[cfg(test)]
 pub mod creem_mocks;
 pub mod device_code_helpers;
 pub mod email_config_helpers;
@@ -36,8 +38,6 @@ pub mod payment_assertions;
 pub mod points_grant_helpers;
 pub mod points_helpers;
 pub mod rbac_helpers;
-#[cfg(test)]
-pub mod shopify_helpers;
 pub mod subscription_test_helpers;
 pub mod test_commons;
 #[cfg(test)]
@@ -55,6 +55,5 @@ pub use billing_helpers::*;
 pub use client_helpers::*;
 pub use rbac_helpers::*;
 pub use user_helpers::*;
-pub use webhook_helpers::*;
 
 // 测试设置辅助函数导出（用于测试场景）

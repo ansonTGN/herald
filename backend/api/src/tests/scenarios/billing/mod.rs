@@ -8,7 +8,7 @@
 // 3. Entitlement mapping CRUD + sync
 // 4. Invoice tests
 // 5. Points package tests
-// 6. Shopify/WeChat config tests
+// 6. WeChat config tests
 //
 // User Story: docs/user-stories/06-billing-user-stories.md
 //
@@ -40,12 +40,6 @@ pub mod stripe_webhook_mode_scenarios;
 
 // Subscription points entitlement scenarios (authored by BE-T03)
 pub mod subscription_points_entitlement_scenarios;
-
-// Shopify Config AuthZ scenario tests (does not reference deleted types)
-pub mod shopify_config_authz_scenarios;
-
-// Shopify Config Encryption scenario tests
-pub mod shopify_config_encryption_scenarios;
 
 // WeChat Pay config scenario tests
 pub mod wechat_config_authz_scenarios;

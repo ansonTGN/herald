@@ -1,5 +1,5 @@
 use crate::handlers::require_billing_permission;
-use crate::shopify_config_types::{
+use crate::provider_common_types::{
     GenericErrorResponse, PaymentProviderInfo, ValidationErrorDetail, ValidationErrorResponse,
     validate_request,
 };

@@ -6,12 +6,17 @@ use sea_orm::{
 use std::str::FromStr;
 use uuid::Uuid;
 
+use herald_domain::billing::credit_bucket::{
+    CreateCreditBucketInput, CreditBucket, CreditBucketDetail, CreditBucketError,
+    CreditBucketListItem, CreditBucketOverview, CreditBucketOverviewRow, UpdateCreditBucketInput,
+};
 use herald_domain::billing::entities::EntitlementMapping;
 use herald_domain::billing::{
     BillingRepository, FeatureFacts, HistoryEventType, PaymentEvent, SortOrder, Subscription,
     SubscriptionHistoryEvent, SubscriptionHistoryQuery,
 };
 use herald_domain::common::entities::app_errors::CoreError;
+use herald_domain::points::services::registration_pool_resolver::RegistrationPoolResolver;
 use herald_entity::{
     payment_event, provider_entitlement_mapping, subscription, subscription_history,
 };
@@ -45,6 +50,7 @@ impl PostgresBillingRepository {
             status: model.status.parse()?,
             entitlement_key: model.entitlement_key,
             external_price_id: model.external_price_id,
+            bucket_id: model.bucket_id,
             provider_metadata: model.provider_metadata,
             synced_at: model.synced_at.map(chrono::DateTime::from),
             current_period_start: model.current_period_start.map(chrono::DateTime::from),
@@ -83,6 +89,7 @@ impl PostgresBillingRepository {
             payment_provider: model.payment_provider,
             external_product_id: model.external_product_id,
             external_price_id: model.external_price_id,
+            bucket_id: model.bucket_id,
             entitlement_key: model.entitlement_key,
             billing_type: model.billing_type.and_then(|s| s.parse().ok()),
             billing_period: model.billing_period,
@@ -109,6 +116,7 @@ impl PostgresBillingRepository {
             payment_provider: Set(mapping.payment_provider),
             external_product_id: Set(mapping.external_product_id),
             external_price_id: Set(mapping.external_price_id),
+            bucket_id: Set(mapping.bucket_id),
             entitlement_key: Set(mapping.entitlement_key),
             billing_type: Set(mapping.billing_type.map(|t| t.as_str().to_string())),
             billing_period: Set(mapping.billing_period),
@@ -191,6 +199,7 @@ impl PostgresBillingRepository {
             status: Set(sub.status.as_str().to_string()),
             entitlement_key: Set(sub.entitlement_key.clone()),
             external_price_id: Set(sub.external_price_id.clone()),
+            bucket_id: Set(sub.bucket_id),
             provider_metadata: Set(sub.provider_metadata.clone()),
             synced_at: Set(sub
                 .synced_at
@@ -307,6 +316,663 @@ impl PostgresBillingRepository {
             .ok_or(CoreError::NotFound)?;
 
         Self::model_to_subscription_history_event(saved_event)
+    }
+
+    // ===== Credit Bucket directory (BE-D07) =====
+    //
+    // All multi-table writes run in a single sqlx transaction (matches the
+    // invoice_postgres_repository pattern: `self.db.get_postgres_connection_pool().begin()`).
+    // Coverage-set changes only affect future routing (design A7); attached-mapping
+    // replacement only sets `bucket_id` on the listed mappings (does not touch
+    // balances). Registration-pool uniqueness is guarded by pre-check + the partial
+    // unique index `uq_credit_buckets_registration_pool` (caught → 409 conflict).
+
+    /// Create a Credit Bucket with its coverage set and optional attached mappings.
+    ///
+    /// Transaction:
+    /// 1. INSERT `credit_buckets` (raises unique violation on registration-pool
+    ///    collision → `RegistrationPoolConflict`).
+    /// 2. INSERT `credit_bucket_client_apps` rows for the coverage set.
+    /// 3. UPDATE `provider_entitlement_mappings SET bucket_id=$1` for the listed
+    ///    mapping ids (scoped to realm).
+    pub async fn create_credit_bucket(
+        &self,
+        input: CreateCreditBucketInput,
+    ) -> Result<CreditBucketDetail, CreditBucketError> {
+        let id = Uuid::now_v7();
+        let mut tx = self
+            .db
+            .get_postgres_connection_pool()
+            .begin()
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        // 1. Insert bucket. The partial unique index uq_credit_buckets_registration_pool
+        //    fires on conflict when receives_registration_credits=true.
+        let row = sqlx::query(
+            "INSERT INTO credit_buckets \
+             (id, realm_id, bucket_key, name, description, display_order, \
+              receives_registration_credits, enabled, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) \
+             RETURNING id, realm_id, bucket_key, name, description, display_order, \
+                       receives_registration_credits, enabled",
+        )
+        .bind(id)
+        .bind(&input.realm_id)
+        .bind(&input.bucket_key)
+        .bind(&input.name)
+        .bind(input.description.as_deref())
+        .bind(input.display_order)
+        .bind(input.receives_registration_credits)
+        .bind(input.enabled)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| Self::classify_bucket_insert_error(&e, &input.realm_id))?;
+
+        let bucket = Self::row_to_credit_bucket(&row);
+
+        // 2. Insert coverage set.
+        for client_app_id in &input.client_app_ids {
+            sqlx::query(
+                "INSERT INTO credit_bucket_client_apps \
+                 (bucket_id, client_app_id, realm_id, created_at) \
+                 VALUES ($1, $2, $3, NOW()) \
+                 ON CONFLICT (bucket_id, client_app_id) DO NOTHING",
+            )
+            .bind(id)
+            .bind(client_app_id)
+            .bind(&input.realm_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to insert coverage row: {}", e))
+            })?;
+        }
+
+        // 3. Attach mappings (set their bucket_id). Scoped to realm to prevent
+        //    cross-realm attachment.
+        if !input.entitlement_mapping_ids.is_empty() {
+            Self::reattach_mappings_tx(
+                &mut tx,
+                id,
+                &input.realm_id,
+                &input.entitlement_mapping_ids,
+            )
+            .await?;
+        }
+
+        tx.commit().await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to commit create_credit_bucket: {}", e))
+        })?;
+
+        Ok(CreditBucketDetail {
+            bucket,
+            client_app_ids: input.client_app_ids,
+            entitlement_mapping_ids: input.entitlement_mapping_ids,
+        })
+    }
+
+    /// Get a single Credit Bucket with its coverage set and attached mappings.
+    pub async fn get_credit_bucket(
+        &self,
+        realm_id: &str,
+        bucket_id: Uuid,
+    ) -> Result<Option<CreditBucketDetail>, CoreError> {
+        let row = sqlx::query(
+            "SELECT id, realm_id, bucket_key, name, description, display_order, \
+                    receives_registration_credits, enabled \
+             FROM credit_buckets WHERE realm_id = $1 AND id = $2",
+        )
+        .bind(realm_id)
+        .bind(bucket_id)
+        .fetch_optional(self.db.get_postgres_connection_pool())
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to fetch credit bucket: {}", e)))?;
+
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let bucket = Self::row_to_credit_bucket(&row);
+
+        let client_app_ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT client_app_id FROM credit_bucket_client_apps \
+             WHERE realm_id = $1 AND bucket_id = $2 ORDER BY client_app_id",
+        )
+        .bind(realm_id)
+        .bind(bucket_id)
+        .fetch_all(self.db.get_postgres_connection_pool())
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to fetch coverage set: {}", e)))?;
+
+        let entitlement_mapping_ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM provider_entitlement_mappings \
+             WHERE realm_id = $1 AND bucket_id = $2 ORDER BY id",
+        )
+        .bind(realm_id)
+        .bind(bucket_id)
+        .fetch_all(self.db.get_postgres_connection_pool())
+        .await
+        .map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to fetch attached mappings: {}", e))
+        })?;
+
+        Ok(Some(CreditBucketDetail {
+            bucket,
+            client_app_ids,
+            entitlement_mapping_ids,
+        }))
+    }
+
+    /// List Credit Buckets for a realm with aggregate counts.
+    pub async fn list_credit_buckets(
+        &self,
+        realm_id: &str,
+    ) -> Result<Vec<CreditBucketListItem>, CoreError> {
+        use sqlx::Row;
+
+        let rows = sqlx::query(
+            "SELECT b.id, b.realm_id, b.bucket_key, b.name, b.description, b.display_order, \
+                    b.receives_registration_credits, b.enabled, \
+                    COALESCE(ca.covered_count, 0) AS covered_client_app_count, \
+                    COALESCE(m.mapping_count, 0) AS entitlement_mapping_count \
+             FROM credit_buckets b \
+             LEFT JOIN ( \
+                 SELECT bucket_id, COUNT(*) AS covered_count \
+                 FROM credit_bucket_client_apps GROUP BY bucket_id \
+             ) ca ON ca.bucket_id = b.id \
+             LEFT JOIN ( \
+                 SELECT bucket_id, COUNT(*) AS mapping_count \
+                 FROM provider_entitlement_mappings WHERE bucket_id IS NOT NULL \
+                 GROUP BY bucket_id \
+             ) m ON m.bucket_id = b.id \
+             WHERE b.realm_id = $1 \
+             ORDER BY b.display_order ASC, b.created_at ASC",
+        )
+        .bind(realm_id)
+        .fetch_all(self.db.get_postgres_connection_pool())
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to list credit buckets: {}", e)))?;
+
+        let items = rows
+            .iter()
+            .map(|row| {
+                let bucket = Self::row_to_credit_bucket(row);
+                CreditBucketListItem {
+                    bucket,
+                    covered_client_app_count: row.get("covered_client_app_count"),
+                    entitlement_mapping_count: row.get("entitlement_mapping_count"),
+                }
+            })
+            .collect();
+
+        Ok(items)
+    }
+
+    /// Update a Credit Bucket: base fields + coverage-set replace + attached-mapping
+    /// replace + registration-pool flag toggle (same uniqueness guard as create).
+    pub async fn update_credit_bucket(
+        &self,
+        input: UpdateCreditBucketInput,
+    ) -> Result<CreditBucketDetail, CreditBucketError> {
+        let mut tx = self
+            .db
+            .get_postgres_connection_pool()
+            .begin()
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        // Lock the bucket row and verify ownership.
+        let exists: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM credit_buckets WHERE realm_id = $1 AND id = $2 FOR UPDATE",
+        )
+        .bind(&input.realm_id)
+        .bind(input.bucket_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to lock credit bucket: {}", e)))?;
+        if exists.is_none() {
+            return Err(CoreError::NotFound.into());
+        }
+
+        // Update base fields. Registration-pool flag toggle may trip the partial
+        // unique index → RegistrationPoolConflict.
+        let row = sqlx::query(
+            "UPDATE credit_buckets \
+             SET name = $3, description = $4, display_order = $5, \
+                 receives_registration_credits = $6, enabled = $7, updated_at = NOW() \
+             WHERE realm_id = $1 AND id = $2 \
+             RETURNING id, realm_id, bucket_key, name, description, display_order, \
+                       receives_registration_credits, enabled",
+        )
+        .bind(&input.realm_id)
+        .bind(input.bucket_id)
+        .bind(&input.name)
+        .bind(input.description.as_deref())
+        .bind(input.display_order)
+        .bind(input.receives_registration_credits)
+        .bind(input.enabled)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| Self::classify_bucket_insert_error(&e, &input.realm_id))?;
+
+        let bucket = Self::row_to_credit_bucket(&row);
+
+        // Replace coverage set (delete + insert). CASCADE-safe since we hold the
+        // bucket lock; existing wallets/ledgers are untouched (design A7).
+        sqlx::query("DELETE FROM credit_bucket_client_apps WHERE bucket_id = $1")
+            .bind(input.bucket_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to clear coverage set: {}", e))
+            })?;
+
+        for client_app_id in &input.client_app_ids {
+            sqlx::query(
+                "INSERT INTO credit_bucket_client_apps \
+                 (bucket_id, client_app_id, realm_id, created_at) \
+                 VALUES ($1, $2, $3, NOW()) \
+                 ON CONFLICT (bucket_id, client_app_id) DO NOTHING",
+            )
+            .bind(input.bucket_id)
+            .bind(client_app_id)
+            .bind(&input.realm_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to insert coverage row: {}", e))
+            })?;
+        }
+
+        // Replace attached mappings: detach all previously-attached mappings, then
+        // re-attach the requested set (realm-scoped).
+        sqlx::query(
+            "UPDATE provider_entitlement_mappings SET bucket_id = NULL, updated_at = NOW() \
+             WHERE realm_id = $1 AND bucket_id = $2",
+        )
+        .bind(&input.realm_id)
+        .bind(input.bucket_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to detach mappings: {}", e)))?;
+
+        if !input.entitlement_mapping_ids.is_empty() {
+            Self::reattach_mappings_tx(
+                &mut tx,
+                input.bucket_id,
+                &input.realm_id,
+                &input.entitlement_mapping_ids,
+            )
+            .await?;
+        }
+
+        tx.commit().await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to commit update_credit_bucket: {}", e))
+        })?;
+
+        Ok(CreditBucketDetail {
+            bucket,
+            client_app_ids: input.client_app_ids,
+            entitlement_mapping_ids: input.entitlement_mapping_ids,
+        })
+    }
+
+    /// Delete a Credit Bucket. Refused with `BucketInUse` when in-flight
+    /// subscriptions exist for this bucket OR any wallet still holds a balance.
+    pub async fn delete_credit_bucket(
+        &self,
+        realm_id: &str,
+        bucket_id: Uuid,
+    ) -> Result<(), CreditBucketError> {
+        let mut tx = self
+            .db
+            .get_postgres_connection_pool()
+            .begin()
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        // Verify ownership under lock.
+        let exists: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM credit_buckets WHERE realm_id = $1 AND id = $2 FOR UPDATE",
+        )
+        .bind(realm_id)
+        .bind(bucket_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to lock credit bucket: {}", e)))?;
+        if exists.is_none() {
+            return Err(CoreError::NotFound.into());
+        }
+
+        // In-flight subscriptions (active/trialing/past_due/scheduled_cancel/dispute
+        // — match `SubscriptionStatus::has_access` semantics).
+        let active_subscriptions: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM subscription \
+             WHERE bucket_id = $1 AND status IN \
+                   ('active', 'trialing', 'past_due', 'scheduled_cancel', 'dispute')",
+        )
+        .bind(bucket_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to count subscriptions: {}", e)))?;
+
+        // Holders with remaining balance.
+        let holders_with_balance: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM points_wallets WHERE bucket_id = $1 AND total_balance > 0",
+        )
+        .bind(bucket_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to count holders: {}", e)))?;
+
+        if active_subscriptions > 0 || holders_with_balance > 0 {
+            // Roll back before surfacing the structured error.
+            let _ = tx.rollback().await;
+            return Err(CreditBucketError::BucketInUse {
+                bucket_id,
+                active_subscriptions,
+                holders_with_balance,
+            });
+        }
+
+        Self::clear_deletable_bucket_references_tx(&mut tx, bucket_id).await?;
+
+        // Safe to delete after clearing zero-balance points residue and nullable
+        // non-active references. Coverage rows cascade from the bucket.
+        sqlx::query("DELETE FROM credit_buckets WHERE realm_id = $1 AND id = $2")
+            .bind(realm_id)
+            .bind(bucket_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to delete credit bucket: {}", e))
+            })?;
+
+        tx.commit().await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to commit delete_credit_bucket: {}", e))
+        })?;
+
+        Ok(())
+    }
+
+    async fn clear_deletable_bucket_references_tx(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        bucket_id: Uuid,
+    ) -> Result<(), CoreError> {
+        sqlx::query("DELETE FROM points_consumption_allocations WHERE bucket_id = $1")
+            .bind(bucket_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!(
+                    "Failed to delete bucket consumption allocations: {}",
+                    e
+                ))
+            })?;
+
+        sqlx::query("DELETE FROM points_transactions WHERE bucket_id = $1")
+            .bind(bucket_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to delete bucket transactions: {}", e))
+            })?;
+
+        sqlx::query("DELETE FROM points_credit_ledger WHERE bucket_id = $1")
+            .bind(bucket_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to delete bucket credit ledger: {}", e))
+            })?;
+
+        sqlx::query("DELETE FROM points_grant_schedules WHERE bucket_id = $1")
+            .bind(bucket_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to delete bucket grant schedules: {}", e))
+            })?;
+
+        sqlx::query("DELETE FROM points_wallets WHERE bucket_id = $1 AND total_balance = 0")
+            .bind(bucket_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!(
+                    "Failed to delete zero-balance bucket wallets: {}",
+                    e
+                ))
+            })?;
+
+        sqlx::query(
+            "UPDATE subscription SET bucket_id = NULL, updated_at = NOW() \
+             WHERE bucket_id = $1 AND status NOT IN \
+                   ('active', 'trialing', 'past_due', 'scheduled_cancel', 'dispute')",
+        )
+        .bind(bucket_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| {
+            CoreError::DatabaseError(format!(
+                "Failed to clear inactive subscription buckets: {}",
+                e
+            ))
+        })?;
+
+        sqlx::query("UPDATE payment_attempts SET bucket_id = NULL WHERE bucket_id = $1")
+            .bind(bucket_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to clear payment attempt buckets: {}", e))
+            })?;
+
+        sqlx::query(
+            "UPDATE provider_entitlement_mappings SET bucket_id = NULL, updated_at = NOW() \
+             WHERE bucket_id = $1",
+        )
+        .bind(bucket_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| {
+            CoreError::DatabaseError(format!(
+                "Failed to clear provider entitlement mapping buckets: {}",
+                e
+            ))
+        })?;
+
+        Ok(())
+    }
+
+    /// Overview matrix: per-bucket × credit-type aggregates (residual rows kept for
+    /// disabled buckets) plus a SEPARATE grand total across all buckets.
+    ///
+    /// Aggregation joins `points_wallets` balances by bucket. Wallets are the
+    /// authoritative remaining-balance source; ledger remaining_amount would
+    /// double-count revoked amounts.
+    pub async fn list_bucket_overview(
+        &self,
+        realm_id: &str,
+    ) -> Result<CreditBucketOverview, CoreError> {
+        use sqlx::Row;
+
+        let rows = sqlx::query(
+            "SELECT b.id AS bucket_id, b.name, b.enabled, \
+                    COALESCE(SUM(w.topup_balance), 0)::bigint AS topup, \
+                    COALESCE(SUM(w.subscription_balance), 0)::bigint AS subscription, \
+                    COALESCE(SUM(w.registration_balance), 0)::bigint AS registration, \
+                    COALESCE(SUM(w.free_periodic_balance), 0)::bigint AS free_periodic, \
+                    COALESCE(SUM(w.granted_balance), 0)::bigint AS granted \
+             FROM credit_buckets b \
+             LEFT JOIN points_wallets w ON w.bucket_id = b.id \
+             WHERE b.realm_id = $1 \
+             GROUP BY b.id, b.name, b.enabled \
+             ORDER BY b.display_order ASC, b.created_at ASC",
+        )
+        .bind(realm_id)
+        .fetch_all(self.db.get_postgres_connection_pool())
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to load bucket overview: {}", e)))?;
+
+        let mut out_rows = Vec::with_capacity(rows.len());
+        let mut grand_total_topup = 0i64;
+        let mut grand_total_subscription = 0i64;
+        let mut grand_total_registration = 0i64;
+        let mut grand_total_free_periodic = 0i64;
+        let mut grand_total_granted = 0i64;
+
+        for row in &rows {
+            let topup: i64 = row.get("topup");
+            let subscription: i64 = row.get("subscription");
+            let registration: i64 = row.get("registration");
+            let free_periodic: i64 = row.get("free_periodic");
+            let granted: i64 = row.get("granted");
+
+            grand_total_topup = grand_total_topup.saturating_add(topup);
+            grand_total_subscription = grand_total_subscription.saturating_add(subscription);
+            grand_total_registration = grand_total_registration.saturating_add(registration);
+            grand_total_free_periodic = grand_total_free_periodic.saturating_add(free_periodic);
+            grand_total_granted = grand_total_granted.saturating_add(granted);
+
+            let by_credit_type = herald_domain::billing::credit_bucket::BucketByCreditType {
+                topup,
+                subscription,
+                registration,
+                free_periodic,
+                granted,
+            };
+            out_rows.push(CreditBucketOverviewRow {
+                bucket_id: row.get("bucket_id"),
+                name: row.get("name"),
+                enabled: row.get("enabled"),
+                bucket_total: by_credit_type.total(),
+                by_credit_type,
+            });
+        }
+
+        let grand_total = herald_domain::billing::credit_bucket::BucketByCreditType {
+            topup: grand_total_topup,
+            subscription: grand_total_subscription,
+            registration: grand_total_registration,
+            free_periodic: grand_total_free_periodic,
+            granted: grand_total_granted,
+        };
+
+        Ok(CreditBucketOverview {
+            rows: out_rows,
+            grand_total,
+        })
+    }
+
+    // ---- helpers ----
+
+    fn row_to_credit_bucket(row: &sqlx::postgres::PgRow) -> CreditBucket {
+        use sqlx::Row;
+        CreditBucket {
+            id: row.get("id"),
+            realm_id: row.get("realm_id"),
+            bucket_key: row.get("bucket_key"),
+            name: row.get("name"),
+            description: row.get("description"),
+            display_order: row.get("display_order"),
+            receives_registration_credits: row.get("receives_registration_credits"),
+            enabled: row.get("enabled"),
+        }
+    }
+
+    /// Map an INSERT/UPDATE error to a structured bucket error.
+    ///
+    /// Distinguishes the two `credit_buckets` uniqueness violations by their
+    /// constraint name (design §4.2.2 / §4.2.3):
+    /// - partial unique index on `(realm_id) WHERE receives_registration_credits`
+    ///   → `RegistrationPoolConflict` (409 `registration_pool_conflict`).
+    /// - `UNIQUE(realm_id, bucket_key)` → `BucketKeyDuplicate`
+    ///   (400 `bucket_key_duplicate`).
+    ///
+    /// Matching is intentionally robust to constraint-name drift: in production
+    /// the migration assigns the explicit names `uq_credit_buckets_realm_key`
+    /// and `uq_credit_buckets_registration_pool`, but a schema cloned via
+    /// `CREATE TABLE ... (LIKE ... INCLUDING ALL)` (used by the test harness and
+    /// by some pg_dump/restore flows) re-derives PostgreSQL's auto-generated
+    /// names (`credit_buckets_realm_id_bucket_key_key`,
+    /// `credit_buckets_realm_id_idx`). Both name sets are accepted, and the
+    /// rendered message is inspected as a final fallback so the classification
+    /// cannot silently degrade to a 500 if the driver omits `constraint()` or a
+    /// future rename occurs.
+    fn classify_bucket_insert_error(e: &sqlx::Error, realm_id: &str) -> CreditBucketError {
+        let constraint = e.as_database_error().and_then(|db| db.constraint());
+        let msg = e.to_string();
+
+        match constraint
+            .and_then(classify_bucket_constraint)
+            .or_else(|| classify_from_message(&msg))
+        {
+            Some(BucketConstraintKind::RegistrationPool) => {
+                CreditBucketError::RegistrationPoolConflict {
+                    realm_id: realm_id.to_string(),
+                }
+            }
+            Some(BucketConstraintKind::RealmKey) => CreditBucketError::BucketKeyDuplicate {
+                realm_id: realm_id.to_string(),
+            },
+            None => CoreError::DatabaseError(msg).into(),
+        }
+    }
+
+    /// Re-attach the listed mappings to `bucket_id` (realm-scoped). Mappings that do
+    /// not exist or belong to a different realm are silently ignored — the handler
+    /// is responsible for validating the requested set if strict semantics are
+    /// required (currently we accept the best-effort attach per design §4.2.2).
+    async fn reattach_mappings_tx(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        bucket_id: Uuid,
+        realm_id: &str,
+        mapping_ids: &[Uuid],
+    ) -> Result<(), CoreError> {
+        for mapping_id in mapping_ids {
+            sqlx::query(
+                "UPDATE provider_entitlement_mappings \
+                 SET bucket_id = $3, updated_at = NOW() \
+                 WHERE realm_id = $1 AND id = $2",
+            )
+            .bind(realm_id)
+            .bind(mapping_id)
+            .bind(bucket_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to attach mapping to bucket: {}", e))
+            })?;
+        }
+        Ok(())
+    }
+}
+
+impl RegistrationPoolResolver for PostgresBillingRepository {
+    /// Resolve the Realm's single registration-pool bucket.
+    ///
+    /// Relies on the partial unique index `uq_credit_buckets_registration_pool`
+    /// (at most one row per realm with `receives_registration_credits=true`).
+    /// Returns `Ok(None)` when no such bucket exists — callers must fail-safe
+    /// (do not grant; do not fall back to an implicit pool — design A4/A5).
+    async fn resolve_registration_pool_bucket(
+        &self,
+        realm_id: &str,
+    ) -> Result<Option<Uuid>, CoreError> {
+        let bucket_id: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM credit_buckets \
+             WHERE realm_id = $1 AND receives_registration_credits = true \
+             LIMIT 1",
+        )
+        .bind(realm_id)
+        .fetch_optional(self.db.get_postgres_connection_pool())
+        .await
+        .map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to resolve registration pool bucket: {}", e))
+        })?;
+
+        Ok(bucket_id)
     }
 }
 
@@ -712,6 +1378,7 @@ impl BillingRepository for PostgresBillingRepository {
         let mut active_model: provider_entitlement_mapping::ActiveModel =
             existing.into_active_model();
         let update = Self::entitlement_mapping_to_active_model(mapping);
+        active_model.bucket_id = update.bucket_id;
         active_model.entitlement_key = update.entitlement_key;
         active_model.billing_type = update.billing_type;
         active_model.billing_period = update.billing_period;
@@ -958,6 +1625,7 @@ impl BillingRepository for PostgresBillingRepository {
                     status: status_str.parse()?,
                     entitlement_key: row.get("entitlement_key"),
                     external_price_id: row.get("external_price_id"),
+                    bucket_id: row.get("bucket_id"),
                     provider_metadata: row.get("provider_metadata"),
                     synced_at: row.get("synced_at"),
                     current_period_start: row.get("current_period_start"),
@@ -1036,5 +1704,153 @@ impl BillingRepository for PostgresBillingRepository {
             has_invoices: row.get("has_invoices"),
             has_subscription_history: row.get("has_subscription_history"),
         })
+    }
+}
+
+/// Which `credit_buckets` uniqueness violation a Postgres error refers to.
+///
+/// See `classify_bucket_insert_error` for the full rationale; this enum is the
+/// pure (constraint-name → kind) projection so it can be unit-tested without a
+/// live database.
+enum BucketConstraintKind {
+    /// `UNIQUE(realm_id, bucket_key)` collision → 400 `bucket_key_duplicate`.
+    RealmKey,
+    /// Partial unique index on `(realm_id) WHERE receives_registration_credits`
+    /// collision → 409 `registration_pool_conflict`.
+    RegistrationPool,
+}
+
+/// Map a Postgres constraint/index name to its bucket-error kind.
+///
+/// Accepts both the migration-assigned explicit names (`uq_credit_buckets_*`)
+/// and PostgreSQL's auto-generated names (`credit_buckets_*`) produced when the
+/// schema is cloned via `CREATE TABLE ... (LIKE ... INCLUDING ALL)` or restored
+/// by pg_dump without preserving constraint names. This keeps
+/// `classify_bucket_insert_error` stable across schema-name drift.
+fn classify_bucket_constraint(constraint: &str) -> Option<BucketConstraintKind> {
+    // Migration-assigned explicit names.
+    match constraint {
+        "uq_credit_buckets_realm_key" => return Some(BucketConstraintKind::RealmKey),
+        "uq_credit_buckets_registration_pool" => {
+            return Some(BucketConstraintKind::RegistrationPool);
+        }
+        _ => {}
+    }
+    // PostgreSQL auto-generated names. `<table>_<cols>_key` is the default for
+    // an unnamed UNIQUE constraint; `<table>_<col>_idx` is the default for an
+    // unnamed index. `credit_buckets_realm_id_idx` is the partial-unique index
+    // in the cloned test schema (a plain non-unique index never raises a
+    // unique-violation, so matching it here is safe).
+    match constraint {
+        "credit_buckets_realm_id_bucket_key_key" => Some(BucketConstraintKind::RealmKey),
+        "credit_buckets_realm_id_idx" => Some(BucketConstraintKind::RegistrationPool),
+        _ => None,
+    }
+}
+
+/// Last-resort classification from the rendered Postgres error message.
+///
+/// Used when the driver omits `constraint()` (older sqlx/PG combos) or when an
+/// unforeseen constraint name appears. Matches both name families quoted inside
+/// the standard `duplicate key value violates unique constraint "<name>"` text.
+fn classify_from_message(msg: &str) -> Option<BucketConstraintKind> {
+    let is_dup = msg.contains("duplicate key value violates unique constraint")
+        || msg.contains("duplicate key value");
+    if !is_dup {
+        return None;
+    }
+    if msg.contains("uq_credit_buckets_registration_pool")
+        || msg.contains("credit_buckets_realm_id_idx")
+        || msg.contains("receives_registration_credits")
+    {
+        return Some(BucketConstraintKind::RegistrationPool);
+    }
+    if msg.contains("uq_credit_buckets_realm_key")
+        || msg.contains("credit_buckets_realm_id_bucket_key")
+    {
+        return Some(BucketConstraintKind::RealmKey);
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression guard for BE-A03 P0-1: `credit_buckets` uniqueness violations
+    /// must classify into `BucketKeyDuplicate` (→ 400) or `RegistrationPoolConflict`
+    /// (→ 409) regardless of whether the runtime schema carries the
+    /// migration-assigned explicit constraint names or PostgreSQL's
+    /// auto-generated names (the latter appear when the schema is cloned via
+    /// `CREATE TABLE ... (LIKE ... INCLUDING ALL)`, e.g. the test harness, and
+    /// historically caused a silent 500 regression).
+    #[test]
+    fn classifies_bucket_constraint_names_for_both_name_families() {
+        // Migration-assigned explicit names (production schema).
+        let explicit = classify_bucket_constraint("uq_credit_buckets_realm_key");
+        assert!(
+            matches!(explicit, Some(BucketConstraintKind::RealmKey)),
+            "explicit realm_key name must classify as RealmKey"
+        );
+        let explicit_reg = classify_bucket_constraint("uq_credit_buckets_registration_pool");
+        assert!(
+            matches!(explicit_reg, Some(BucketConstraintKind::RegistrationPool)),
+            "explicit registration_pool name must classify as RegistrationPool"
+        );
+
+        // PostgreSQL auto-generated names (cloned/restored schema — the actual
+        // runtime names observed in the failing BE-T04/BE-T03 scenarios).
+        let auto = classify_bucket_constraint("credit_buckets_realm_id_bucket_key_key");
+        assert!(
+            matches!(auto, Some(BucketConstraintKind::RealmKey)),
+            "auto-named realm+bucket_key unique must classify as RealmKey"
+        );
+        let auto_reg = classify_bucket_constraint("credit_buckets_realm_id_idx");
+        assert!(
+            matches!(auto_reg, Some(BucketConstraintKind::RegistrationPool)),
+            "auto-named partial unique index must classify as RegistrationPool"
+        );
+
+        // Unrelated names must NOT be force-classified (they fall through to a
+        // generic DB error → 500), so this guard also catches over-eager
+        // matchers that would mask unrelated failures.
+        assert!(
+            classify_bucket_constraint("credit_buckets_pkey").is_none(),
+            "primary-key violations must not be misclassified"
+        );
+    }
+
+    /// The message-based fallback must catch the same two collisions when the
+    /// driver omits `constraint()` (older sqlx/PG combos) — using the real
+    /// runtime error text observed in BE-A03.
+    #[test]
+    fn classifies_from_runtime_duplicate_key_messages() {
+        let realm_key_msg = "error returned from database: duplicate key value \
+             violates unique constraint \"credit_buckets_realm_id_bucket_key_key\"";
+        assert!(matches!(
+            classify_from_message(realm_key_msg),
+            Some(BucketConstraintKind::RealmKey)
+        ));
+
+        let reg_pool_msg = "error returned from database: duplicate key value \
+             violates unique constraint \"credit_buckets_realm_id_idx\"";
+        assert!(matches!(
+            classify_from_message(reg_pool_msg),
+            Some(BucketConstraintKind::RegistrationPool)
+        ));
+
+        // Explicit names in the message are also covered.
+        let explicit_msg = "duplicate key value violates unique constraint \
+             \"uq_credit_buckets_registration_pool\"";
+        assert!(matches!(
+            classify_from_message(explicit_msg),
+            Some(BucketConstraintKind::RegistrationPool)
+        ));
+
+        // A non-duplicate error must not be classified.
+        assert!(
+            classify_from_message("relation does not exist").is_none(),
+            "non-duplicate errors must not be force-classified"
+        );
     }
 }

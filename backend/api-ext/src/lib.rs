@@ -52,6 +52,8 @@ use herald_api_base::application::http::state::AppState;
         crate::points::ExtPointsBalanceResponse,
         crate::points::ExtConsumePointsRequest,
         crate::points::ExtConsumePointsResponse,
+        crate::points::BucketTransaction,
+        crate::points::AllocationDetail,
         crate::points::ExtGrantPointsRequest,
         crate::points::ExtGrantPointsResponse,
         crate::points::ExtTransactionResponse,

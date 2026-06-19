@@ -1,13 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Link } from '@tanstack/react-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/shared/page-header'
-import { ClaimSubscriptionDialog } from './ClaimSubscriptionDialog'
-import { UnclaimedSubscriptionBanner } from './UnclaimedSubscriptionBanner'
-import { claimShopifySubscriptions } from '@/lib/api-generated'
 import { formatDate } from '@/lib/date-utils'
 import { clientAppsQueryOptions, userSubscriptionsQueryOptions } from '@/data/query-options'
 import {
@@ -15,7 +12,6 @@ import {
   type ClientAppItem,
   type SubscriptionDetailResponse,
 } from '@/lib/api-generated'
-import type { ClaimSubscriptionForm } from '@/lib/schemas/billing-forms'
 import { formatProviderName } from '@/components/billing/format-provider-name'
 import { m } from '@/paraglide/messages'
 
@@ -29,10 +25,6 @@ type SubscriptionWithClientApp = {
 }
 
 export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
-  const queryClient = useQueryClient()
-  const [isClaimDialogOpen, setIsClaimDialogOpen] = useState(false)
-  const [showBanner, setShowBanner] = useState(true)
-
   const { data: clientAppsResponse, isLoading: isLoadingApps } = useQuery(
     clientAppsQueryOptions(realmId, { page: 0, pageSize: 100 })
   )
@@ -85,74 +77,6 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
     enabled: clientApps.length > 0,
   })
 
-  // Mutation for claiming subscriptions
-  const claimMutation = useMutation({
-    mutationFn: async (data: ClaimSubscriptionForm) => {
-      const response = await claimShopifySubscriptions({
-        path: { realmId },
-        body: {
-          shopifyCustomerId: data.shopifyCustomerId || null,
-          contractId: data.contractId || null,
-          orderId: null,
-        },
-      })
-
-      if (response.error) {
-        throw response.error
-      }
-
-      return response.data
-    },
-    onSuccess: (data) => {
-      // Close dialog
-      setIsClaimDialogOpen(false)
-
-      // Invalidate and refetch subscriptions
-      queryClient.invalidateQueries({
-        queryKey: ['user-subscriptions', realmId, clientAppIds],
-      })
-
-      // Show success message
-      const grantedCount = data.grantedSubscriptionIds?.length || 0
-      const claimedCount = data.claimedSubscriptionIds?.length || 0
-
-      if (grantedCount > 0) {
-        alert(
-          claimedCount > 1
-            ? m['billing.my_subscriptions_claimed_success_with_points_plural']({
-                claimedCount,
-                grantedCount,
-              })
-            : m['billing.my_subscriptions_claimed_success_with_points']({
-                claimedCount,
-                grantedCount,
-              })
-        )
-      } else {
-        alert(m['billing.my_subscriptions_claimed_success']({ count: claimedCount }))
-      }
-
-      // Hide banner after successful claim
-      setShowBanner(false)
-    },
-    onError: (error: { status?: number; message?: string }) => {
-      // Handle error responses
-      if (error?.status === 404) {
-        alert(m['billing.my_subscriptions_no_subscription_found']())
-      } else if (error?.status === 409) {
-        alert(m['billing.my_subscriptions_already_claimed']())
-      } else {
-        alert(
-          m['billing.my_subscriptions_claim_failed']({ message: error?.message || 'Unknown error' })
-        )
-      }
-    },
-  })
-
-  const handleClaimSubmit = (data: ClaimSubscriptionForm) => {
-    claimMutation.mutate(data)
-  }
-
   const isLoading = isLoadingApps || isLoadingSubscriptions
 
   const getStatusBadge = (status: string) => {
@@ -193,23 +117,6 @@ export function MySubscriptionsPage({ realmId }: MySubscriptionsPageProps) {
   return (
     <div className="space-y-6" data-testid="my-subscriptions-page">
       <PageHeader title={m['billing.my_subscriptions_title']()} />
-
-      {/* Unclaimed Subscription Banner */}
-      {showBanner && (
-        <UnclaimedSubscriptionBanner
-          count={1}
-          onClaimClick={() => setIsClaimDialogOpen(true)}
-          onClose={() => setShowBanner(false)}
-        />
-      )}
-
-      {/* Claim Subscription Dialog */}
-      <ClaimSubscriptionDialog
-        open={isClaimDialogOpen}
-        onOpenChange={setIsClaimDialogOpen}
-        onSubmit={handleClaimSubmit}
-        isSubmitting={claimMutation.isPending}
-      />
 
       {subscriptions.length === 0 ? (
         <Card className="border-dashed">

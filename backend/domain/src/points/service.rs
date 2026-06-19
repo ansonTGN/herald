@@ -9,8 +9,8 @@ use crate::common::policies::ensure_policy;
 use crate::points::{
     dtos::{ConsumePointsInput, GrantPointsInput, GrantPointsOutput, RevokePointsOutput},
     entities::{
-        CreditSourceType, CreditType, Paginated, PointsBalance, PointsTransaction, PointsWallet,
-        RechargeType, RevocationType, WalletStatus,
+        ConsumptionAllocationView, CreditSourceType, CreditType, Paginated, PointsBalance,
+        PointsTransaction, PointsWallet, RechargeType, RevocationType, WalletStatus,
     },
     errors::PointsErrorExt,
     policies::PointsPolicy,
@@ -121,7 +121,7 @@ where
         identity: Identity,
         realm_id: &str,
         input: ConsumePointsInput,
-    ) -> Result<PointsTransaction, CoreError> {
+    ) -> Result<Vec<PointsTransaction>, CoreError> {
         // Check consume permissions
         ensure_policy(
             self.policy.can_consume_points(identity.clone()).await,
@@ -138,32 +138,19 @@ where
             ));
         }
 
-        // Get or create account
-        let account = match self.repository.find_by_user_id(realm_id, user_id).await? {
-            Some(account) => account,
-            None => {
-                // Auto-create account
-                self.create_wallet_internal(realm_id, user_id).await?
-            }
-        };
+        // NOTE: The legacy single-wallet precheck (find_by_user_id → status +
+        // balance check) is intentionally removed. With the multi-bucket model
+        // (design §3.1 / §5.1) a user holds one wallet row per Bucket, so
+        // `find_by_user_id` (`.one()`) returns an arbitrary row and its
+        // `total_balance` reflects a single pool — not the covered set. The
+        // authoritative precheck is the infra layer's `consume_points_atomic`,
+        // which sums `remaining_amount` across ALL covered-set ledgers
+        // (`find_active_ledgers_by_expiration_for_update`) and reports the real
+        // coverage-set availability via `insufficient_points`. Per-bucket
+        // wallets are also created lazily inside the consume transaction via
+        // `ensure_wallet_in_tx`, so no pre-created single wallet is needed.
 
-        // Check wallet status
-        if account.status != WalletStatus::Active {
-            return Err(CoreError::BadRequest(format!(
-                "Cannot consume points from {} wallet",
-                account.status.as_str()
-            )));
-        }
-
-        // Check total balance
-        if account.total_balance < amount {
-            return Err(CoreError::insufficient_points(
-                amount,
-                account.total_balance,
-            ));
-        }
-
-        let saved_transaction = self
+        let saved_transactions = self
             .repository
             .consume_points_atomic(realm_id, user_id, client_app_id, amount, description, None)
             .await?;
@@ -172,11 +159,47 @@ where
             realm_id = %realm_id,
             user_id = %user_id,
             amount,
-            balance_after = %saved_transaction.balance_after,
-            "Points consumed successfully (expiration-based priority)"
+            txn_count = saved_transactions.len(),
+            "Points consumed successfully (expiration-based priority, per-bucket transactions)"
         );
 
-        Ok(saved_transaction)
+        Ok(saved_transactions)
+    }
+
+    /// Idempotency replay (design §5.1). Reassemble the original consume result
+    /// set from its primary transaction id WITHOUT re-deducting. Used by the
+    /// HTTP-layer Redis-cache replay path when `check_or_create` returns a
+    /// cached primary transaction: the primary → correlation_id → all N sibling
+    /// per-bucket transactions. Legacy single-pool rows replay as 1 transaction.
+    ///
+    /// No permission check is performed here — the caller (HTTP layer) has
+    /// already authorized the request, and the primary transaction id comes from
+    /// our own idempotency cache, not from untrusted input.
+    pub async fn replay_consume(
+        &self,
+        realm_id: &str,
+        primary_txn_id: Uuid,
+    ) -> Result<Vec<PointsTransaction>, CoreError> {
+        self.repository
+            .replay_consume_by_primary(realm_id, primary_txn_id)
+            .await
+    }
+
+    /// Surface the ledger-level allocations of a consume by its `correlation_id`
+    /// (design §4.3.2 / §5.1). Used by the SDK consume response to populate the
+    /// `allocations` slice without re-deducting. Legacy single-pool rows (NULL
+    /// correlation_id) return an empty vec.
+    ///
+    /// No permission check: the caller (HTTP layer) has already authorized the
+    /// request and the correlation_id comes from our own consume result.
+    pub async fn find_consumption_allocations_by_correlation_id(
+        &self,
+        realm_id: &str,
+        correlation_id: &str,
+    ) -> Result<Vec<ConsumptionAllocationView>, CoreError> {
+        self.repository
+            .find_consumption_allocations_by_correlation_id(realm_id, correlation_id)
+            .await
     }
 
     // ===== Transaction Management =====
@@ -314,6 +337,7 @@ where
             .grant_points_internal(
                 realm_id,
                 input.user_id,
+                input.bucket_id,
                 CreditType::GrantedCredit,
                 input.source_type,
                 input.amount,
@@ -353,6 +377,7 @@ where
             id: Uuid::now_v7(),
             user_id,
             realm_id: realm_id.to_string(),
+            bucket_id: None,
             total_balance: 0,
             topup_balance: 0,
             subscription_balance: 0,
@@ -376,6 +401,7 @@ where
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         amount: i64,
         recharge_type: RechargeType,
         external_ref_id: Option<String>,
@@ -414,6 +440,7 @@ where
             .recharge_points_atomic(
                 realm_id,
                 user_id,
+                bucket_id,
                 credit_type,
                 source_type,
                 amount,
@@ -453,6 +480,7 @@ where
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         credit_type: CreditType,
         revocation_type: RevocationType,
         reason: String,
@@ -462,6 +490,7 @@ where
             .revoke_points_by_credit_type_atomic(
                 realm_id,
                 user_id,
+                bucket_id,
                 credit_type,
                 revocation_type,
                 reason,
@@ -490,6 +519,7 @@ where
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         source_id: &str,
         revocation_type: RevocationType,
         reason: String,
@@ -499,6 +529,7 @@ where
             .revoke_points_by_source_id_atomic(
                 realm_id,
                 user_id,
+                bucket_id,
                 source_id,
                 revocation_type,
                 reason,
@@ -524,6 +555,7 @@ where
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         entitlement_key: &str,
         revocation_type: RevocationType,
         reason: String,
@@ -535,6 +567,7 @@ where
             .revoke_subscription_credits_by_entitlement_atomic(
                 realm_id,
                 user_id,
+                bucket_id,
                 entitlement_key,
                 revocation_type,
                 reason,
@@ -575,6 +608,7 @@ where
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         reason: String,
         idempotency_key: Option<String>,
     ) -> Result<RevokePointsOutput, CoreError> {
@@ -582,6 +616,7 @@ where
             .revoke_points_by_credit_type_atomic(
                 realm_id,
                 user_id,
+                bucket_id,
                 CreditType::FreePeriodicCredit,
                 RevocationType::UpgradeRevoke,
                 reason,
@@ -609,6 +644,7 @@ where
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         refund_amount: i64,
         original_payment_amount: i64,
         refund_id: &str,
@@ -636,6 +672,7 @@ where
             .revoke_topup_proportional_atomic(
                 realm_id,
                 user_id,
+                bucket_id,
                 refund_amount,
                 original_payment_amount,
                 refund_id,
@@ -682,12 +719,14 @@ where
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         refund_id: &str,
     ) -> Result<RevokePointsOutput, CoreError> {
         self.repository
             .revoke_points_by_credit_type_atomic(
                 realm_id,
                 user_id,
+                bucket_id,
                 CreditType::SubscriptionCredit,
                 crate::points::entities::RevocationType::RefundRevoke,
                 format!("Refund {}", refund_id),
@@ -720,6 +759,7 @@ where
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         subscription_id: String,
         refund_amount: i64,
         reason: String,
@@ -735,6 +775,7 @@ where
             .refund_points_atomic(
                 realm_id,
                 user_id,
+                bucket_id,
                 subscription_id.clone(),
                 refund_amount,
                 reason,
@@ -784,6 +825,7 @@ where
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         credit_type: CreditType,
         source_type: crate::points::entities::CreditSourceType,
         amount: i64,
@@ -814,6 +856,7 @@ where
             .grant_points_atomic(
                 realm_id,
                 user_id,
+                bucket_id,
                 credit_type,
                 source_type,
                 amount,

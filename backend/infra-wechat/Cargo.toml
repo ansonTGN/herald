@@ -10,11 +10,8 @@ herald-domain = { path = "../domain" }
 reqwest = { workspace = true, features = ["json"] }
 wechat-pay-rust-sdk = "0.2"
 serde = { workspace = true }
-serde_json = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }
 sqlx = { workspace = true }
-anyhow = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt"] }

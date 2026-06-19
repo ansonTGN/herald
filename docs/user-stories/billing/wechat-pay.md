@@ -406,4 +406,3 @@ And 如果未支付，执行关单操作
 - **用户故事**: `docs/user-stories/billing/payment-provider.md` - 通用支付平台配置
 - **PRD**: `docs/prd/billing/subscription.md` - Billing 订阅计费产品需求文档
 - **PRD**: `docs/prd/billing/stripe-payment.md` - Stripe 支付集成产品需求文档
-- **PRD**: `docs/prd/billing/shopify-pay.md` - Shopify Pay 支付集成产品需求文档

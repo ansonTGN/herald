@@ -6,7 +6,7 @@ use herald_core::domain::authentication::Identity;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::shopify_config_types::GenericErrorResponse;
+use crate::provider_common_types::GenericErrorResponse;
 use crate::wechat_config_types::{
     WechatOrderCreateRequest, WechatOrderCreateResponse, WechatOrderStatusResponse,
 };

@@ -27,6 +27,7 @@ fn build_herald_metadata(
     target_type: &str,
     target_id: Uuid,
     attempt_id: Uuid,
+    bucket_id: Option<Uuid>,
 ) -> HashMap<String, String> {
     let mut metadata = HashMap::new();
     metadata.insert(
@@ -46,6 +47,11 @@ fn build_herald_metadata(
         metadata_keys::ATTEMPT_ID.to_string(),
         attempt_id.to_string(),
     );
+    // §5.3: diagnostic/webhook fallback. Source of truth remains the
+    // payment_attempt / subscription snapshot columns.
+    if let Some(bid) = bucket_id {
+        metadata.insert(metadata_keys::HERALD_BUCKET_ID.to_string(), bid.to_string());
+    }
     metadata
 }
 
@@ -119,6 +125,7 @@ where
                     payment_provider: input.payment_provider,
                     target_type: target.target_type.to_string(),
                     target_id: target.target_id,
+                    bucket_id: target.bucket_id,
                     amount: target.amount,
                     currency: target.currency.clone(),
                     provider_reference: None,
@@ -276,6 +283,16 @@ where
             )));
         }
 
+        // A8: purchase creation is the source-of-truth snapshot site for
+        // `payment_attempt.bucket_id`. Reject mappings that are not attached to a
+        // Bucket (US-CB-003 scenario 2) instead of snapshotting NULL.
+        let bucket_id =
+            mapping
+                .bucket_id
+                .ok_or(CoreError::EntitlementMappingNotAttachedToBucket {
+                    mapping_id: mapping.id,
+                })?;
+
         // Extract price info from provider_product_info if available
         let (amount, currency, title) = mapping
             .provider_product_info
@@ -301,6 +318,7 @@ where
         Ok(PurchaseTargetSnapshot {
             target_type: parsed_target_type,
             target_id,
+            bucket_id: Some(bucket_id),
             amount,
             currency,
             title,
@@ -474,7 +492,14 @@ where
             CoreError::Conflict("Creem product mapping missing external_product_id".into())
         })?;
         let client = self.get_creem_client_for_realm(realm_id).await?;
-        let metadata = build_herald_metadata(realm_id, user_id, target_type, target_id, attempt_id);
+        let metadata = build_herald_metadata(
+            realm_id,
+            user_id,
+            target_type,
+            target_id,
+            attempt_id,
+            target.bucket_id,
+        );
 
         let session = client
             .create_checkout_session(&CreemCreateCheckoutRequest {
@@ -519,7 +544,14 @@ where
     ) -> PurchaseResult<(Option<String>, PaymentContext)> {
         let client = self.get_stripe_client_for_realm(realm_id).await?;
 
-        let metadata = build_herald_metadata(realm_id, user_id, target_type, target_id, attempt_id);
+        let metadata = build_herald_metadata(
+            realm_id,
+            user_id,
+            target_type,
+            target_id,
+            attempt_id,
+            target.bucket_id,
+        );
 
         let mode = match target.billing_type {
             Some(BillingType::OneTime) => Some("payment".to_string()),

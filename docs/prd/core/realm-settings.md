@@ -41,7 +41,7 @@
 
 ### 2.1 包含功能
 
-- Realm Config 管理（Turnstile、Registration、Email、TOTP、TotpKey、Creem、Stripe、Shopify）
+- Realm Config 管理（Turnstile、Registration、Email、TOTP、TotpKey、Creem、Stripe）
 - OAuth Provider 配置管理（独立系统，不在 Realm Config 中管理）
 - Email 邮件服务配置（Per-Realm，支持 Resend / SMTP）
 - 邮件依赖功能开关前置验证
@@ -118,7 +118,7 @@
 - **OAuth 配置**：通过独立系统管理 OAuth Provider（不在本页面详细定义）
 - **TOTP 配置**：管理 TOTP 二次认证开关设置
 - **TOTP 密钥配置**（TotpKey）：存储 Realm 级别的 TOTP 加密密钥
-- **支付提供商配置**：Creem、Stripe、Shopify 的 API Key / Webhook Secret 等配置（已迁移到独立 Payment Providers 页面，此处仅保留遗留兼容）
+- **支付提供商配置**：Creem、Stripe 的 API Key / Webhook Secret 等配置（已迁移到独立 Payment Providers 页面，此处仅保留遗留兼容）
 - **Settings 页面**：多 Tab 布局，每个配置类型对应一个 Tab，包含启用/禁用开关、配置表单、保存/重置按钮
 
 ### 5.2 验收目标
@@ -137,7 +137,7 @@
 
 **适用性**: 适用
 
-- 接口能力范围：Realm Config 的查询、单个 Upsert、批量 Upsert（batch_upsert）、删除（delete），涵盖 turnstile、registration、email、totp、totp_key、creem、stripe、shopify 配置类型，以及 OAuth Provider 的独立配置管理
+- 接口能力范围：Realm Config 的查询、单个 Upsert、批量 Upsert（batch_upsert）、删除（delete），涵盖 turnstile、registration、email、totp、totp_key、creem、stripe 配置类型，以及 OAuth Provider 的独立配置管理
 - 访问控制原则：所有接口要求 Realm Admin 权限，操作需通过 Realm 归属校验
 - 数据边界原则：配置数据按 Realm 隔离，不同 Realm 之间不可交叉访问
 - 敏感信息处理：密码、密钥等敏感字段在读取时脱敏返回（is_secret=true 时 config_value 返回 null），仅在写入时接受明文
@@ -169,7 +169,7 @@
 - OAuth 配置使用独立系统管理，不纳入 Realm Config 存储结构
 - 邮件服务配置纳入 Realm Config 管理，使用 `email` 配置类型
 - Settings 页面使用多 Tab 布局而非分组卡片布局
-- 支付提供商配置（Creem/Stripe/Shopify）已迁移到独立的 Payment Providers 页面管理，不再通过 Realm Config 管理。Realm Config 中的 creem/stripe/shopify 配置类型仅用于遗留兼容，新功能应在 Payment Providers 页面操作
+- 支付提供商配置（Creem/Stripe）已迁移到独立的 Payment Providers 页面管理，不再通过 Realm Config 管理。Realm Config 中的 creem/stripe 配置类型仅用于遗留兼容，新功能应在 Payment Providers 页面操作
 
 ### 8.2 已知限制
 

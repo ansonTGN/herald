@@ -125,9 +125,8 @@ flowchart LR
 | Stripe | Product / Price API | Checkout Session + Subscription | Payment Intent | Product/Price/Checkout/Subscription 均支持 |
 | Creem | Product API | Checkout | Checkout | Checkout metadata，webhook 返回 |
 | WeChat Pay | 无商品概念 | Native Pay 二维码 | Native Pay 二维码 | 自定义参数 |
-| Shopify | Shopify Admin | Webhook 同步 | 不支持 | Metafields |
 
-Shopify 是合同同步型平台，不进入 PaymentAttempt 流程。Stripe、Creem、WeChat 是发起式平台，通过 PaymentAttempt 统一管理支付过程。
+Stripe、Creem、WeChat 是发起式平台，通过 PaymentAttempt 统一管理支付过程。
 
 ## 已移除的功能
 

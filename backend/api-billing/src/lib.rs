@@ -6,6 +6,7 @@ pub(crate) mod webhook_common;
 pub(crate) mod webhook_subscription_helpers;
 mod webhooks;
 
+pub mod credit_bucket_handlers;
 pub mod entitlement_mapping_handlers;
 pub mod feature_availability;
 pub mod handlers;
@@ -14,14 +15,10 @@ pub mod invoice_eligibility;
 pub mod invoice_handlers;
 pub mod invoice_types;
 mod payment_email;
+pub mod provider_common_types;
+pub mod provider_handlers;
 pub mod purchase_handlers;
 pub mod routes;
-pub mod shopify_claim_handlers;
-pub mod shopify_claim_types;
-pub mod shopify_config_handlers;
-pub mod shopify_config_types;
-pub mod shopify_webhook_handlers;
-pub mod shopify_webhook_utils;
 pub mod stripe_webhook_handlers;
 pub mod types;
 pub mod types_history;
@@ -31,14 +28,17 @@ pub mod wechat_config_types;
 pub mod wechat_order_handlers;
 pub mod wechat_webhook_handlers;
 
-pub mod shopify_test_handlers;
-
-pub mod shopify_test_types;
-
 /// OpenAPI specification for billing module
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(
+        // Credit Bucket directory handlers
+        crate::credit_bucket_handlers::list_credit_buckets_handler,
+        crate::credit_bucket_handlers::get_credit_bucket_handler,
+        crate::credit_bucket_handlers::create_credit_bucket_handler,
+        crate::credit_bucket_handlers::update_credit_bucket_handler,
+        crate::credit_bucket_handlers::delete_credit_bucket_handler,
+        crate::credit_bucket_handlers::get_bucket_overview_handler,
         // Entitlement Mapping handlers
         crate::entitlement_mapping_handlers::list_entitlement_mappings,
         crate::entitlement_mapping_handlers::get_entitlement_mapping,
@@ -56,13 +56,7 @@ pub mod shopify_test_types;
         crate::handlers_history::get_my_subscription_history,
         crate::handlers_history::list_my_subscription_history,
         crate::feature_availability::get_feature_availability,
-        crate::shopify_claim_handlers::claim_shopify_subscriptions,
-        crate::shopify_config_handlers::list_payment_providers,
-        crate::shopify_config_handlers::create_shopify_config,
-        crate::shopify_config_handlers::get_shopify_config,
-        crate::shopify_config_handlers::update_shopify_config,
-        crate::shopify_config_handlers::delete_shopify_config,
-        crate::shopify_config_handlers::test_shopify_connection_endpoint,
+        crate::provider_handlers::list_payment_providers,
         crate::wechat_config_handlers::create_wechat_config,
         crate::wechat_config_handlers::get_wechat_config,
         crate::wechat_config_handlers::update_wechat_config,
@@ -96,6 +90,19 @@ pub mod shopify_test_types;
         crate::invoice_handlers::download_my_invoice_pdf,
     ),
     components(schemas(
+        // Credit Bucket directory types
+        crate::credit_bucket_handlers::BucketResponse,
+        crate::credit_bucket_handlers::BucketDetailResponse,
+        crate::credit_bucket_handlers::ClientAppRef,
+        crate::credit_bucket_handlers::EntitlementMappingRef,
+        crate::credit_bucket_handlers::CreateCreditBucketRequest,
+        crate::credit_bucket_handlers::UpdateCreditBucketRequest,
+        crate::credit_bucket_handlers::BucketOverviewResponse,
+        crate::credit_bucket_handlers::OverviewRowResponse,
+        crate::credit_bucket_handlers::ByCreditTypeResponse,
+        crate::credit_bucket_handlers::RegistrationPoolConflictErrorBody,
+        crate::credit_bucket_handlers::BucketKeyDuplicateErrorBody,
+        crate::credit_bucket_handlers::BucketInUseErrorBody,
         // Entitlement Mapping types
         crate::types::EntitlementMappingResponse,
         crate::types::EntitlementMappingListResponse,
@@ -121,20 +128,12 @@ pub mod shopify_test_types;
         crate::types_history::SubscriptionHistoryEventWithUser,
         crate::types_history::SubscriptionSummary,
         crate::types_history::UserInfo,
-        // Shopify types
-        crate::shopify_claim_types::ShopifyClaimRequest,
-        crate::shopify_claim_types::ShopifyClaimResponse,
-        crate::shopify_config_types::ShopifyConfigRequest,
-        crate::shopify_config_types::ShopifyConfigUpdateRequest,
-        crate::shopify_config_types::ShopifyConfigResponse,
-        crate::shopify_config_types::PaymentProvidersResponse,
-        crate::shopify_config_types::PaymentProviderInfo,
-        crate::shopify_config_types::TestConnectionRequest,
-        crate::shopify_config_types::TestConnectionResponse,
-        crate::shopify_config_types::TestConnectionResults,
-        crate::shopify_config_types::ValidationErrorResponse,
-        crate::shopify_config_types::ValidationErrorDetail,
-        crate::shopify_config_types::GenericErrorResponse,
+        // Provider common types (shared across Stripe/WeChat/Creem)
+        crate::provider_common_types::PaymentProvidersResponse,
+        crate::provider_common_types::PaymentProviderInfo,
+        crate::provider_common_types::ValidationErrorResponse,
+        crate::provider_common_types::ValidationErrorDetail,
+        crate::provider_common_types::GenericErrorResponse,
         crate::wechat_config_types::WechatConfigRequest,
         crate::wechat_config_types::WechatConfigUpdateRequest,
         crate::wechat_config_types::WechatConfigResponse,

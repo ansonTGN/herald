@@ -22,6 +22,7 @@ pub fn points_credit_ledger_from_model(model: points_credit_ledger::Model) -> Po
         id: model.id,
         user_id: model.user_id,
         realm_id: model.realm_id,
+        bucket_id: Some(model.bucket_id),
         credit_type: parse_enum_with_default(
             &model.credit_type,
             "credit_type",
@@ -52,8 +53,10 @@ pub fn points_consumption_allocation_from_model(
         id: model.id,
         transaction_id: model.transaction_id,
         ledger_id: model.ledger_id,
+        wallet_id: Some(model.wallet_id),
         user_id: model.user_id,
         realm_id: model.realm_id,
+        bucket_id: Some(model.bucket_id),
         allocated_amount: model.allocated_amount,
         ledger_remaining_after: model.ledger_remaining_after,
         created_at: chrono::DateTime::from(model.created_at),
@@ -91,6 +94,9 @@ pub fn points_credit_ledger_to_active_model(
         id: Set(domain.id),
         user_id: Set(domain.user_id),
         realm_id: Set(domain.realm_id.clone()),
+        bucket_id: Set(domain
+            .bucket_id
+            .expect("bucket_id is required for credit ledger persistence")),
         credit_type: Set(domain.credit_type.to_string()),
         source_type: Set(domain.source_type.to_string()),
         source_id: Set(domain.source_id.clone()),
@@ -113,8 +119,14 @@ pub fn points_consumption_allocation_to_active_model(
         id: Set(domain.id),
         transaction_id: Set(domain.transaction_id),
         ledger_id: Set(domain.ledger_id),
+        wallet_id: Set(domain
+            .wallet_id
+            .expect("wallet_id is required for allocation persistence")),
         user_id: Set(domain.user_id),
         realm_id: Set(domain.realm_id.clone()),
+        bucket_id: Set(domain
+            .bucket_id
+            .expect("bucket_id is required for allocation persistence")),
         allocated_amount: Set(domain.allocated_amount),
         ledger_remaining_after: Set(domain.ledger_remaining_after),
         created_at: Set(domain.created_at.into()),

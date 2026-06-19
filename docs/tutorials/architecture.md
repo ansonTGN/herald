@@ -12,7 +12,6 @@ backend/
 ├── infra-creem/         # Creem 支付集成
 ├── infra-stripe/        # Stripe 支付集成
 ├── infra-wechat/        # 微信支付集成
-├── infra-shopify/       # Shopify 集成
 ├── core/                # 组装层 — 依赖注入、ApplicationService Builder
 ├── api/                 # 主 API crate（Axum 路由注册、中间件、AppState）
 ├── api-base/            # 共享 API 工具（AppState 定义、通用 HTTP 工具）
@@ -113,7 +112,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 - `authorization/` — `RedisPermissionChecker`，权限缓存
 - `billing/` — 发票 PDF 生成（IronPress）、加密密钥管理
 
-支付渠道客户端是独立的 crate（`infra-creem`、`infra-stripe`、`infra-wechat`、`infra-shopify`），不放在主 `infra` 里。原因是避免引入不需要的支付 SDK 依赖——如果你只用 Stripe，不会把微信支付的 SDK 也编译进去。
+支付渠道客户端是独立的 crate（`infra-creem`、`infra-stripe`、`infra-wechat`），不放在主 `infra` 里。原因是避免引入不需要的支付 SDK 依赖——如果你只用 Stripe，不会把微信支付的 SDK 也编译进去。
 
 ### core — 组装层
 
@@ -132,7 +131,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 | `api-base` | `AppState` 定义（共享给所有 api 子 crate） | — |
 | `api-auth` | 注册、登录、密码重置、邮箱验证 | session |
 | `api-admin` | 用户 CRUD、角色管理、权限定义管理 | session + inject_identity |
-| `api-billing` | Entitlement 映射、订阅投影、支付 webhook（Stripe/Creem/微信/Shopify）、发票、一次性购买 | 混合 |
+| `api-billing` | Entitlement 映射、订阅投影、支付 webhook（Stripe/Creem/微信）、发票、一次性购买 | 混合 |
 | `api-oauth` | OAuth 登录（GitHub/Google/微信）、Device Code Grant（RFC 8628）、OAuth 配置管理 | 混合 |
 | `api-ext` | 第三方 API：权限检查、订阅查询、积分余额和消费，按 API Key 绑定的 Client App 隔离 | API Key |
 | `api-points` | 积分余额、交易历史、消费、充值 | session 或 API Key |

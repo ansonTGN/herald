@@ -2,6 +2,7 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use thiserror::Error;
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum CoreError {
@@ -49,6 +50,18 @@ pub enum CoreError {
     SerializationError(String),
     #[error("Entitlement mapping not found")]
     EntitlementMappingNotFound,
+    #[error(
+        "Entitlement mapping {mapping_id} is not attached to a credit bucket; purchase/fulfillment is not allowed"
+    )]
+    EntitlementMappingNotAttachedToBucket { mapping_id: Uuid },
+    #[error(
+        "Subscription {subscription_id} is not bound to a credit bucket; credit grant is rejected (fail loud)"
+    )]
+    SubscriptionBucketNotResolved { subscription_id: Uuid },
+    #[error("Client app {client_app_id} does not cover any available credit bucket")]
+    NoCoveredPointsPool { client_app_id: Uuid },
+    #[error("Points grant requires an explicit target bucket")]
+    GrantBucketRequired,
 }
 
 // From impls for external error types
@@ -184,6 +197,31 @@ impl IntoResponse for CoreError {
             CoreError::EntitlementMappingNotFound => (
                 StatusCode::NOT_FOUND,
                 "Entitlement mapping not found".to_string(),
+            ),
+            CoreError::EntitlementMappingNotAttachedToBucket { mapping_id } => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!(
+                    "Entitlement mapping {} is not attached to a credit bucket",
+                    mapping_id
+                ),
+            ),
+            CoreError::SubscriptionBucketNotResolved { subscription_id } => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!(
+                    "Subscription {} is not bound to a credit bucket",
+                    subscription_id
+                ),
+            ),
+            CoreError::NoCoveredPointsPool { client_app_id } => (
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "Client app {} does not cover any available credit bucket",
+                    client_app_id
+                ),
+            ),
+            CoreError::GrantBucketRequired => (
+                StatusCode::BAD_REQUEST,
+                "Points grant requires an explicit target bucket".to_string(),
             ),
         };
 

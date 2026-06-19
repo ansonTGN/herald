@@ -13,17 +13,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { PageHeader } from '@/components/shared/page-header'
-import { ShopifyConfigFields } from './ShopifyConfigDetail'
 import { WechatConfigFields } from './WechatConfigDetail'
 import { DeleteConfirmDialog } from './DeleteConfirmDialog'
 import { Edit, Trash2, Plug2, Plus, ChevronDown, ChevronUp } from 'lucide-react'
 import {
-  deleteShopifyConfig,
-  getShopifyConfig,
   listPaymentProviders,
   deleteWechatConfig,
   getWechatConfig,
-  type ShopifyConfigResponse,
   type WechatConfigResponse,
 } from '@/lib/api-generated'
 import { deleteRealmConfig } from '@/lib/api-generated/sdk.gen'
@@ -40,29 +36,12 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
-  const [deleteProviderType, setDeleteProviderType] = useState<
-    'shopify' | 'wechat' | 'stripe' | 'creem'
-  >('shopify')
-  const [shopifyConfigDetails, setShopifyConfigDetails] = useState<ShopifyConfigResponse | null>(
-    null
+  const [deleteProviderType, setDeleteProviderType] = useState<'wechat' | 'stripe' | 'creem'>(
+    'wechat'
   )
   const [wechatConfigDetails, setWechatConfigDetails] = useState<WechatConfigResponse | null>(null)
-  const [showShopifySecrets, setShowShopifySecrets] = useState(false)
   const [showWechatSecrets, setShowWechatSecrets] = useState(false)
-  const [expandedProvider, setExpandedProvider] = useState<'shopify' | 'wechat' | null>(null)
-
-  // Auto-hide Shopify secrets after 5 seconds
-  useEffect(() => {
-    let timeoutId: ReturnType<typeof setTimeout>
-    if (showShopifySecrets) {
-      timeoutId = setTimeout(() => {
-        setShowShopifySecrets(false)
-      }, 5000)
-    }
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId)
-    }
-  }, [showShopifySecrets])
+  const [expandedProvider, setExpandedProvider] = useState<'wechat' | null>(null)
 
   // Auto-hide WeChat secrets after 5 seconds
   useEffect(() => {
@@ -88,15 +67,6 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
   })
 
   useEffect(() => {
-    const shopifyProvider = providers?.find((p) => p.platform === 'shopify')
-    if (shopifyProvider) {
-      getShopifyConfig({ path: { realmId } })
-        .then((result) => setShopifyConfigDetails(result.data as ShopifyConfigResponse))
-        .catch(() => setShopifyConfigDetails(null))
-    }
-  }, [providers, realmId])
-
-  useEffect(() => {
     const wechatProvider = providers?.find((p) => p.platform === 'wechat')
     if (wechatProvider) {
       getWechatConfig({ path: { realmId } })
@@ -107,9 +77,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      if (deleteProviderType === 'shopify') {
-        return await deleteShopifyConfig({ path: { realmId } })
-      } else if (deleteProviderType === 'wechat') {
+      if (deleteProviderType === 'wechat') {
         return await deleteWechatConfig({ path: { realmId } })
       } else {
         const configKeys =
@@ -149,7 +117,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
     },
   })
 
-  const handleNavigate = (type: 'shopify' | 'wechat' | 'stripe' | 'creem') => {
+  const handleNavigate = (type: 'wechat' | 'stripe' | 'creem') => {
     void navigate({ to: `./${type}` })
   }
 
@@ -157,7 +125,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
     deleteMutation.mutate()
   }
 
-  const toggleExpand = (provider: 'shopify' | 'wechat') => {
+  const toggleExpand = (provider: 'wechat') => {
     setExpandedProvider((prev) => (prev === provider ? null : provider))
   }
 
@@ -169,17 +137,15 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
     )
   }
 
-  const shopifyProvider = providers?.find((p) => p.platform === 'shopify')
   const wechatProvider = providers?.find((p) => p.platform === 'wechat')
   const stripeProvider = providers?.find((p) => p.platform === 'stripe')
   const creemProvider = providers?.find((p) => p.platform === 'creem')
 
-  const hasAnyProvider = shopifyProvider || wechatProvider || stripeProvider || creemProvider
+  const hasAnyProvider = wechatProvider || stripeProvider || creemProvider
   const unconfiguredProviders: {
-    type: 'shopify' | 'wechat' | 'stripe' | 'creem'
+    type: 'wechat' | 'stripe' | 'creem'
     label: string
   }[] = []
-  if (!shopifyProvider) unconfiguredProviders.push({ type: 'shopify', label: 'Shopify' })
   if (!wechatProvider) unconfiguredProviders.push({ type: 'wechat', label: 'WeChat Pay' })
   if (!stripeProvider) unconfiguredProviders.push({ type: 'stripe', label: 'Stripe' })
   if (!creemProvider) unconfiguredProviders.push({ type: 'creem', label: 'Creem' })
@@ -213,74 +179,6 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {shopifyProvider && shopifyConfigDetails && (
-              <>
-                <TableRow data-testid="shopify-provider-row">
-                  <TableCell className="font-medium">Shopify</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleExpand('shopify')}
-                        data-testid="toggle-shopify-details-button"
-                      >
-                        {expandedProvider === 'shopify' ? (
-                          <ChevronUp className="h-4 w-4" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleNavigate('shopify')}
-                        data-testid="edit-shopify-button"
-                      >
-                        <Edit className="mr-1 h-3 w-3" />
-                        {m['common.edit']()}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setDeleteProviderType('shopify')
-                          setIsDeleteDialogOpen(true)
-                        }}
-                        data-testid="delete-shopify-button"
-                      >
-                        <Trash2 className="mr-1 h-3 w-3" />
-                        {m['common.delete']()}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-                {expandedProvider === 'shopify' && (
-                  <TableRow data-testid="shopify-details-row">
-                    <TableCell colSpan={2} className="p-0">
-                      <ShopifyConfigFields
-                        config={{
-                          shopDomain:
-                            shopifyConfigDetails.shopDomain || shopifyProvider.shopDomain || '',
-                          apiVersion:
-                            shopifyConfigDetails.apiVersion || shopifyProvider.apiVersion || '',
-                          webhookEndpoint: shopifyConfigDetails.webhookEndpoint,
-                          adminAccessToken: shopifyConfigDetails.adminAccessToken || '',
-                          storefrontAccessToken: shopifyConfigDetails.storefrontAccessToken || '',
-                          appClientSecret: shopifyConfigDetails.appClientSecret || '',
-                          lastUpdated: shopifyConfigDetails.lastUpdated || new Date().toISOString(),
-                          enabled: shopifyProvider.enabled,
-                        }}
-                        showSecrets={showShopifySecrets}
-                        onShowSecrets={() => setShowShopifySecrets(true)}
-                        onHideSecrets={() => setShowShopifySecrets(false)}
-                      />
-                    </TableCell>
-                  </TableRow>
-                )}
-              </>
-            )}
-
             {wechatProvider && wechatConfigDetails && (
               <>
                 <TableRow data-testid="wechat-provider-row">
@@ -427,9 +325,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
         onOpenChange={setIsDeleteDialogOpen}
         onConfirm={handleDelete}
         configType={
-          ({ shopify: 'Shopify', wechat: 'WeChat Pay', creem: 'Creem', stripe: 'Stripe' } as const)[
-            deleteProviderType
-          ]
+          ({ wechat: 'WeChat Pay', creem: 'Creem', stripe: 'Stripe' } as const)[deleteProviderType]
         }
         activeSubscriptions={0}
         isDeleting={deleteMutation.isPending}

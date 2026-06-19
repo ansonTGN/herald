@@ -1,15 +1,22 @@
 //! Shopify webhook security utilities
 //!
 //! Provides HMAC-SHA256 signature verification for Shopify webhooks.
+//! This is a pure SDK-level helper: given the raw webhook body, the
+//! `X-Shopify-Hmac-SHA256` header value, and the Shopify App Client
+//! Secret, it verifies the request was actually sent by Shopify.
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use herald_core::domain::common::entities::app_errors::CoreError;
+use herald_domain::common::entities::app_errors::CoreError;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Verify Shopify webhook HMAC signature
+/// Verify Shopify webhook HMAC signature.
+///
+/// Returns `Ok(())` when the computed HMAC-SHA256 of `body` (base64-encoded)
+/// matches `header_hmac` in constant time; otherwise returns
+/// `CoreError::Unauthorized`.
 pub fn verify_webhook_hmac(
     body: &[u8],
     header_hmac: &str,
@@ -32,8 +39,13 @@ pub fn verify_webhook_hmac(
     }
 }
 
-/// Constant-time string comparison
-pub(crate) fn constant_time_compare(a: &str, b: &str) -> bool {
+/// Constant-time string comparison.
+///
+/// Compares two ASCII strings byte-by-byte without short-circuiting, so
+/// timing does not leak the position of the first mismatched byte. Returns
+/// early (non-constant time) only when the lengths differ, which does not
+/// reveal secret material.
+pub fn constant_time_compare(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;
     }

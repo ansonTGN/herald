@@ -101,7 +101,7 @@ describe('getInvoicePolicyDefaults', () => {
     expect(defaults.providerCapabilities.stripe.externalInvoiceEnabled).toBe(true)
     expect(defaults.providerCapabilities.creem.externalInvoiceEnabled).toBe(true)
     expect(defaults.providerCapabilities.wechat.externalInvoiceEnabled).toBe(false)
-    expect(defaults.providerCapabilities.shopify.externalInvoiceEnabled).toBe(false)
+    expect(defaults.providerCapabilities.shopify).toBeUndefined()
   })
 
   it('returned object passes schema validation', () => {

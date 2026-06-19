@@ -11,6 +11,8 @@ pub struct PointsWalletResponse {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
+    /// Credit Bucket this wallet belongs to (design §4.2.1).
+    pub bucket_id: Option<Uuid>,
     pub balance: i64,
     /// Total points granted through paid topups and subscription entitlements.
     pub total_paid_granted: i64,
@@ -22,6 +24,63 @@ pub struct PointsWalletResponse {
     pub updated_at: String,
     pub unit: String,
     pub currency: String,
+}
+
+/// Per-credit-type balances (design §4.2.3 `balancesByType` / `byCreditType`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BalancesByType {
+    pub topup: i64,
+    pub subscription: i64,
+    pub registration: i64,
+    pub free_periodic: i64,
+    pub granted: i64,
+}
+
+impl BalancesByType {
+    /// Sum of all credit-type balances (the bucket total).
+    pub fn total(&self) -> i64 {
+        self.topup
+            .saturating_add(self.subscription)
+            .saturating_add(self.registration)
+            .saturating_add(self.free_periodic)
+            .saturating_add(self.granted)
+    }
+}
+
+/// Wallet balances grouped by Credit Bucket (design §4.2.3 `WalletByBucket`).
+///
+/// For the admin (`billing/points/wallets`) view, `user_id` is populated and
+/// the response groups per `(user, bucket)`. For the `users/me/points/wallets`
+/// view, `user_id` is the calling user and rows group their own wallets by
+/// bucket.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletByBucketResponse {
+    pub bucket_id: Option<Uuid>,
+    /// Display name (currently unset; filled when bucket directory is wired).
+    pub name: Option<String>,
+    /// Whether the bucket is enabled (currently unset; filled when bucket
+    /// directory is wired).
+    pub enabled: Option<bool>,
+    /// User who owns these wallet rows (always present; the admin view spans
+    /// users, the user view repeats the calling user).
+    pub user_id: Uuid,
+    pub balances_by_type: BalancesByType,
+    /// Sum of `balances_by_type` for this bucket.
+    pub bucket_total: i64,
+}
+
+/// Aggregated wallets-by-bucket list response (design §4.2.3).
+///
+/// `cross_bucket_total` is the sum of every bucket's `bucketTotal`. The field
+/// is always present; for a single-bucket realm it equals `bucketTotal` of the
+/// sole row.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListWalletsByBucketResponse {
+    pub items: Vec<WalletByBucketResponse>,
+    pub cross_bucket_total: i64,
 }
 
 /// Points balance response
@@ -48,6 +107,8 @@ pub struct PointsTransactionResponse {
     pub wallet_id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
+    /// Credit Bucket the transaction landed in (design §4.2.3).
+    pub bucket_id: Option<Uuid>,
     pub transaction_type: String,
     pub amount: i64,
     pub balance_after: i64,
@@ -134,6 +195,9 @@ pub struct ListTransactionsQuery {
     pub client_app_id: Option<String>,
     pub subscription_id: Option<String>,
     pub external_ref_id: Option<String>,
+    /// Filter by Credit Bucket (design §4.2.3). Applied at the handler because
+    /// `TransactionFilters` does not yet carry `bucket_id`.
+    pub bucket_id: Option<String>,
     pub start_time: Option<String>,
     pub end_time: Option<String>,
     pub page: Option<u64>,
@@ -146,6 +210,9 @@ pub struct ListTransactionsQuery {
 pub struct ListWalletsQuery {
     pub status: Option<String>,
     pub search: Option<String>,
+    /// Filter by Credit Bucket (design §4.2.1). Applied at the handler because
+    /// `WalletFilters` does not yet carry `bucket_id`.
+    pub bucket_id: Option<String>,
     pub page: Option<u64>,
     pub page_size: Option<u64>,
 }
@@ -213,6 +280,9 @@ pub struct UserPointsConfigResponse {
 #[serde(rename_all = "camelCase")]
 pub struct GrantPointsRequest {
     pub user_id: String,
+    /// Target Credit Bucket (design §4.2.4 / A5). REQUIRED — every grant must
+    /// name an explicit bucket; missing → 400 `grant_bucket_required`.
+    pub bucket_id: Option<String>,
     pub amount: i64,
     pub reason: String,
     pub validity_days: Option<i64>,
@@ -224,6 +294,10 @@ pub struct GrantPointsRequest {
 pub struct GrantPointsResponse {
     pub transaction_id: Uuid,
     pub user_id: Uuid,
+    /// Credit Bucket the grant landed in (design §4.2.3 / §4.2.4). Mirrors the
+    /// api-ext `ExtGrantPointsResponse.bucketId` and SDK `GrantPointsResponse`
+    /// contract so consumers see one shape.
+    pub bucket_id: Uuid,
     pub amount: i64,
     pub granted_balance: i64,
     pub total_balance: i64,
@@ -241,6 +315,7 @@ mod tests {
             id: uuid::Uuid::now_v7(),
             user_id: uuid::Uuid::now_v7(),
             realm_id: "test-realm".to_string(),
+            bucket_id: Some(uuid::Uuid::now_v7()),
             balance: 100,
             total_paid_granted: 100,
             total_recharged: 100,
@@ -388,6 +463,7 @@ mod tests {
             wallet_id: uuid::Uuid::now_v7(),
             user_id: uuid::Uuid::now_v7(),
             realm_id: "test-realm".to_string(),
+            bucket_id: Some(uuid::Uuid::now_v7()),
             transaction_type: "recharge".to_string(),
             amount: 100,
             balance_after: 100,

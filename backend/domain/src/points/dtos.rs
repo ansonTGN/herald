@@ -47,6 +47,7 @@ impl TryFrom<ConsumePointsInput> for (Uuid, Uuid, i64, Option<String>) {
 #[derive(Debug, Clone)]
 pub struct GrantPointsInput {
     pub user_id: Uuid,
+    pub bucket_id: Uuid,
     pub amount: i64,
     pub reason: String,
     pub validity_days: Option<i64>,
@@ -155,6 +156,7 @@ mod tests {
     fn valid_grant_input() -> GrantPointsInput {
         GrantPointsInput {
             user_id: Uuid::now_v7(),
+            bucket_id: Uuid::now_v7(),
             amount: 100,
             reason: "Admin grant".to_string(),
             validity_days: Some(30),

@@ -109,7 +109,7 @@ Issued、Paid、Overdue 状态的发票支持下载 PDF。PDF 由 Herald 服务�
 
 ## 外部发票
 
-支付方（Stripe、Creem、Shopify、WeChat）产生的发票属于外部发票。Herald 只保存基本信息和一个跳转链接（`externalHostedUrl`），不在本地生成 PDF。
+支付方（Stripe、Creem、WeChat）产生的发票属于外部发票。Herald 只保存基本信息和一个跳转链接（`externalHostedUrl`），不在本地生成 PDF。
 
 外部发票在列表中会显示支付方标签（如 "Stripe"），点击查看时跳转到支付方自己的发票页面。
 

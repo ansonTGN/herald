@@ -69,9 +69,29 @@ async fn test_scenario_concurrent_consume_recharge_final_balance(ctx: &mut Schem
         .unwrap();
 
     // Prepare recharge: 4000 via service call
+    // Credit-bucket: recharge now requires an explicit bucket_id target.
+    use crate::tests::helpers::credit_bucket_helpers::{
+        CreditBucketOpts, attach_bucket_client_app, create_test_credit_bucket,
+    };
+    let recharge_bucket_id =
+        create_test_credit_bucket(&ctx.app_state.pool, &realm_id, CreditBucketOpts::default())
+            .await;
+    let recharge_client_app_uuid: Uuid = ctx
+        ._client_app_id
+        .parse()
+        .expect("_client_app_id should be a valid UUID");
+    attach_bucket_client_app(
+        &ctx.app_state.pool,
+        &realm_id,
+        recharge_bucket_id,
+        recharge_client_app_uuid,
+    )
+    .await;
+
     let recharge_fut = ctx.app_state.points_service.recharge_points_internal(
         &realm_id,
         user_id,
+        recharge_bucket_id,
         4000,
         RechargeType::Subscribe,
         Some(format!("recharge_ref_{}", Uuid::now_v7())),

@@ -16,6 +16,7 @@ pub struct CreatePaymentAttemptInput {
     pub payment_provider: String,
     pub target_type: String, // "entitlement_mapping" (legacy values "subscription_entitlement" and "points_package" are accepted)
     pub target_id: Uuid,
+    pub bucket_id: Option<Uuid>,
     pub amount: i64,
     pub currency: String,
     pub provider_reference: Option<String>,

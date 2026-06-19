@@ -10,6 +10,7 @@ pub struct Model {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
+    pub bucket_id: Uuid,
     pub subscription_id: Option<Uuid>,
     #[sea_orm(default_value = "")]
     pub entitlement_key: String,

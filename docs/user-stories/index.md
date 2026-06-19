@@ -30,12 +30,12 @@ docs/user-stories/
 │   ├── points-free-user.md # 免费用户积分
 │   ├── points-package-purchase.md # 积分包购买
 │   ├── payment-provider.md # 支付平台配置
-│   ├── shopify-pay.md    # Shopify 支付
 │   ├── wechat-pay.md     # 微信支付
 │   ├── payment-attempt.md # 支付尝试
 │   ├── invoice.md        # 发票
 │   ├── invoice-fallback.md # 发票 Fallback
-│   └── entitlement-mapping.md # Entitlement 映射
+│   ├── entitlement-mapping.md # Entitlement 映射
+│   └── credit-bucket.md # Credit Bucket 积分桶
 └── integration/          # 集成扩展
     └── sdk.md            # SDK 资源管理
 ```
@@ -126,20 +126,11 @@ docs/user-stories/
 | US-FU-001 | 注册时获得初始积分 | Free User | P0 | [billing/points-free-user](billing/points-free-user.md#故事-1注册时获得初始积分-us-fu-001) |
 | US-FU-002 | 定期自动获得免费积分 | Free User | P0 | [billing/points-free-user](billing/points-free-user.md#故事-2定期自动获得免费积分-us-fu-002) |
 | US-FU-003 | 升级到付费套餐时保留注册初始积分 | Free User | P1 | [billing/points-free-user](billing/points-free-user.md#故事-3升级到付费套餐时保留注册初始积分-us-fu-003) |
-| US-PP-007 | 配置 Shopify Payment Provider | Realm Admin | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-1配置-shopify-支付平台-us-pp-007) |
 | US-PV-001 | 配置支付平台（Creem/Stripe） | Realm Admin | P0 | [billing/payment-provider](billing/payment-provider.md#故事-1配置支付平台-us-pv-001) |
 | US-PV-002 | 查看支付平台配置 | Realm Admin | P0 | [billing/payment-provider](billing/payment-provider.md#故事-2查看支付平台配置-us-pv-002) |
 | US-PV-003 | 编辑支付平台配置 | Realm Admin | P1 | [billing/payment-provider](billing/payment-provider.md#故事-3编辑支付平台配置-us-pv-003) |
 | US-PV-004 | 删除支付平台配置 | Realm Admin | P1 | [billing/payment-provider](billing/payment-provider.md#故事-4删除支付平台配置-us-pv-004) |
 | US-PV-005 | 查看支付平台使用统计 | Realm Admin | P2 | [billing/payment-provider](billing/payment-provider.md#故事-5查看支付平台使用统计-us-pv-005) |
-| US-PP-008 | 查看 Shopify Payment Provider 配置 | Realm Admin | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-2查看-shopify-支付平台配置-us-pp-008) |
-| US-PP-009 | 编辑 Shopify Payment Provider 配置 | Realm Admin | P1 | [billing/shopify-pay](billing/shopify-pay.md#故事-3编辑-shopify-支付平台配置-us-pp-009) |
-| US-PP-010 | 删除 Shopify Payment Provider 配置 | Realm Admin | P1 | [billing/shopify-pay](billing/shopify-pay.md#故事-4删除-shopify-支付平台配置-us-pp-010) |
-| US-PP-011 | Shopify Subscription Contract 创建和同步 | System | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-5shopify-订阅合同创建与同步-us-pp-011) |
-| US-PP-012 | Shopify Subscription 续费和状态同步 | System | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-6shopify-订阅续费与状态同步-us-pp-012) |
-| US-PP-013 | 用户认领 Shopify 订阅 | Herald User | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-7用户认领-shopify-订阅-us-pp-013) |
-| US-PP-014 | Webhook 处理未归属订阅 | System | P0 | [billing/shopify-pay](billing/shopify-pay.md#故事-8webhook-处理未归属订阅-us-pp-014) |
-| US-PP-015 | 通过 Customer Binding 自动归属 | System | P1 | [billing/shopify-pay](billing/shopify-pay.md#故事-9通过用户绑定自动归属-us-pp-015) |
 | US-WP-001 | 配置微信支付平台 | Realm Admin | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-1配置微信支付平台-us-wp-001) |
 | US-WP-002 | 查看微信支付平台配置 | Realm Admin | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-2查看微信支付平台配置-us-wp-002) |
 | US-WP-003 | 编辑微信支付平台配置 | Realm Admin | P1 | [billing/wechat-pay](billing/wechat-pay.md#故事-3编辑微信支付平台配置-us-wp-003) |
@@ -179,6 +170,14 @@ docs/user-stories/
 | US-EM-004 | 基于 Entitlement 应用积分策略 | System | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-4基于-entitlement-应用积分策略-us-em-004) |
 | US-EM-005 | SDK 通过 Entitlement 查询订阅状态 | Third-Party App | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-5sdk-通过-entitlement-查询订阅状态-us-em-005) |
 | US-EM-006 | 查看订阅投影列表 | Realm Admin | P0 | [billing/entitlement-mapping](billing/entitlement-mapping.md#故事-6查看订阅投影列表-us-em-006) |
+| US-CB-001 | 管理 Credit Bucket 目录 | Realm Admin | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-1管理-credit-bucket-目录-us-cb-001) |
+| US-CB-002 | 为 Bucket 绑定 Client App 覆盖集 | Realm Admin | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-2为-bucket-绑定-client-app-覆盖集-us-cb-002) |
+| US-CB-003 | 将套餐/积分包归属到 Bucket | Realm Admin | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-3将套餐积分包归属到-bucket-us-cb-003) |
+| US-CB-004 | 购买 Bucket 套餐/积分包 | Regular User | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-4购买-bucket-套餐积分包-us-cb-004) |
+| US-CB-005 | 查看按 Bucket 分组的积分余额 | Regular User | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-5查看按-bucket-分组的积分余额-us-cb-005) |
+| US-CB-006 | 查看 Bucket 维度的交易历史 | Regular User | P1 | [billing/credit-bucket](billing/credit-bucket.md#故事-6查看-bucket-维度的交易历史-us-cb-006) |
+| US-CB-007 | SDK 按 Client App 跨 Bucket 消费 | Third-Party App | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-7sdk-按-client-app-跨-bucket-消费-us-cb-007) |
+| US-CB-008 | 订阅生命周期按 Bucket 池发放与回收 | System | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-8订阅生命周期按-bucket-池发放与回收-us-cb-008) |
 | US-AU-001 | 查看 Realm 审计日志 | Realm Admin | P0 | [core/audit](core/audit.md#故事-1查看-realm-审计日志-us-au-001) |
 | US-AU-002 | 按条件筛选审计日志 | Realm Admin | P0 | [core/audit](core/audit.md#故事-2按条件筛选审计日志-us-au-002) |
 | US-AU-003 | 查看审计日志详情 | Realm Admin | P1 | [core/audit](core/audit.md#故事-3查看审计日志详情-us-au-003) |
@@ -232,12 +231,12 @@ docs/user-stories/
 | Points User | [billing/points-user.md](billing/points-user.md), [billing/points-free-user.md](billing/points-free-user.md) | [Points PRD](/docs/prd/billing/points.md), [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Points Package Purchase | [billing/points-package-purchase.md](billing/points-package-purchase.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Payment Provider | [billing/payment-provider.md](billing/payment-provider.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
-| Shopify Pay | [billing/shopify-pay.md](billing/shopify-pay.md) | [Shopify Pay PRD](/docs/prd/billing/shopify-pay.md) |
 | WeChat Pay | [billing/wechat-pay.md](billing/wechat-pay.md) | [WeChat Pay PRD](/docs/prd/billing/wechat-pay.md) |
 | Payment Attempt | [billing/payment-attempt.md](billing/payment-attempt.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Invoice | [billing/invoice.md](billing/invoice.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
 | Invoice Fallback | [billing/invoice-fallback.md](billing/invoice-fallback.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
 | Entitlement Mapping | [billing/entitlement-mapping.md](billing/entitlement-mapping.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
+| Credit Bucket | [billing/credit-bucket.md](billing/credit-bucket.md) | [Points PRD](/docs/prd/billing/points.md) |
 
 ### Integration 集成
 

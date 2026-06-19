@@ -23,9 +23,6 @@ pub mod user_register_test;
 pub mod user_roles_scenarios;
 
 // Billing scenarios
-pub mod shopify_webhook_scenarios;
-
-// Billing security tests (permission checks + webhook verification)
 pub mod billing;
 
 // Realm creation permission scenarios
@@ -77,6 +74,9 @@ pub mod points;
 
 // Email config scenarios
 pub mod email_config_scenarios;
+
+// Credit Bucket scenarios (authored by backend-test slot, BE-T01..BE-T05)
+pub mod credit_bucket;
 
 // Realm management scenarios
 // (realm_config_update_scenarios and realm_delete_scenarios removed - see .ai/future/backend_test_delete.md)

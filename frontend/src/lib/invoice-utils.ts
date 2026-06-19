@@ -146,8 +146,6 @@ export function getProviderLabel(provider: string): string {
       return 'Stripe'
     case 'creem':
       return 'Creem'
-    case 'shopify':
-      return 'Shopify'
     default:
       return provider
   }

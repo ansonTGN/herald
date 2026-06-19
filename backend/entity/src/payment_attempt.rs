@@ -11,6 +11,8 @@ pub struct Model {
     pub payment_provider: String,
     pub target_type: String,
     pub target_id: Uuid,
+    #[sea_orm(nullable)]
+    pub bucket_id: Option<Uuid>,
     pub amount: i64,
     pub currency: String,
     pub status: String,

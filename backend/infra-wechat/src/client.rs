@@ -87,7 +87,14 @@ impl WechatPayClient {
         use tokio::task::spawn_blocking;
 
         let client = spawn_blocking(move || {
-            Self::new(&app_id, &mch_id, &private_key, &serial_no, &v3_key, &notify_url)
+            Self::new(
+                &app_id,
+                &mch_id,
+                &private_key,
+                &serial_no,
+                &v3_key,
+                &notify_url,
+            )
         })
         .await
         .map_err(|e| {
@@ -351,5 +358,4 @@ mod tests {
         );
         assert!(result.is_ok());
     }
-
 }

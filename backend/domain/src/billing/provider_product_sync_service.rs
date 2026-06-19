@@ -155,6 +155,7 @@ where
                 payment_provider: payment_provider.to_string(),
                 external_product_id: product.external_product_id.clone(),
                 external_price_id: product.external_price_id.clone(),
+                bucket_id: existing.as_ref().and_then(|mapping| mapping.bucket_id),
                 entitlement_key: entitlement_key.clone(),
                 billing_type: product
                     .billing_type

@@ -110,7 +110,6 @@ pub enum TransactionType {
     RefundRevoke,
     ExpireRevoke,
     CancelRevoke,
-    IdempotencyRecord,
     Expiration,
     Refund,
     Grant,
@@ -130,7 +129,6 @@ impl TransactionType {
             TransactionType::RefundRevoke => "refund_revoke",
             TransactionType::ExpireRevoke => "expire_revoke",
             TransactionType::CancelRevoke => "cancel_revoke",
-            TransactionType::IdempotencyRecord => "idempotency_record",
             TransactionType::Expiration => "expiration",
             TransactionType::Refund => "refund",
             TransactionType::Grant => "grant",
@@ -157,7 +155,6 @@ impl std::str::FromStr for TransactionType {
                 "refund_revoke" => Some(TransactionType::RefundRevoke),
                 "expire_revoke" => Some(TransactionType::ExpireRevoke),
                 "cancel_revoke" => Some(TransactionType::CancelRevoke),
-                "idempotency_record" => Some(TransactionType::IdempotencyRecord),
                 "expiration" => Some(TransactionType::Expiration),
                 "refund" => Some(TransactionType::Refund),
                 "grant" => Some(TransactionType::Grant),
@@ -486,6 +483,7 @@ pub struct PointsCreditLedger {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
+    pub bucket_id: Option<Uuid>,
     pub credit_type: CreditType,
     pub source_type: CreditSourceType,
     pub source_id: String,
@@ -505,11 +503,24 @@ pub struct PointsConsumptionAllocation {
     pub id: Uuid,
     pub transaction_id: Uuid,
     pub ledger_id: Uuid,
+    pub wallet_id: Option<Uuid>,
     pub user_id: Uuid,
     pub realm_id: String,
+    pub bucket_id: Option<Uuid>,
     pub allocated_amount: i64,
     pub ledger_remaining_after: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Consumption allocation joined with its ledger's credit type — the shape
+/// needed to surface the SDK consume response `allocations` slice (design
+/// §4.2.2 `AllocationDetail`). `PointsConsumptionAllocation` alone does not
+/// carry `credit_type` (it lives on the ledger), so the consume-surface query
+/// returns this view instead.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConsumptionAllocationView {
+    pub allocation: PointsConsumptionAllocation,
+    pub credit_type: CreditType,
 }
 
 /// Points Revocation Record entity (积分回收记录实体)
@@ -532,6 +543,7 @@ pub struct PointsWallet {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
+    pub bucket_id: Option<Uuid>,
     pub total_balance: i64, // Computed: topup_balance + subscription_balance + granted_balance + registration_balance + free_periodic_balance
     pub topup_balance: i64,
     pub subscription_balance: i64,
@@ -556,6 +568,7 @@ pub struct PointsTransaction {
     pub wallet_id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
+    pub bucket_id: Uuid,
     pub transaction_type: TransactionType,
     pub amount: i64,
     pub balance_after: i64,
@@ -566,6 +579,11 @@ pub struct PointsTransaction {
     pub client_app_id: Option<Uuid>,
     pub subscription_id: Option<Uuid>,
     pub external_ref_id: Option<String>,
+    /// Cross-bucket consumption grouping key (design §4.3.2). Non-unique; shared
+    /// by the N transactions of a single multi-bucket consume so idempotency
+    /// replay can reassemble the full result set. NULL for non-consume / legacy
+    /// single-pool consume rows.
+    pub correlation_id: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 

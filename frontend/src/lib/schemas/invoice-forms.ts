@@ -213,7 +213,6 @@ export function getInvoicePolicyDefaults(): InvoicePolicyConfigFormData {
       stripe: { externalInvoiceEnabled: true },
       creem: { externalInvoiceEnabled: true },
       wechat: { externalInvoiceEnabled: false },
-      shopify: { externalInvoiceEnabled: false },
     },
   }
 }

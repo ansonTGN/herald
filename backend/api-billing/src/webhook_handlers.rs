@@ -28,7 +28,7 @@ use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
 use herald_core::domain::points::entities::{PointsTransaction, RevocationType, TransactionType};
 use herald_core::domain::points::ports::PointsRepository;
-use herald_core::domain::points::subscription_service::CancelMode;
+use herald_core::domain::points::subscription_service::{CancelMode, resolve_subscription_bucket};
 use herald_core::domain::purchase::metadata_keys;
 use herald_core::domain::purchase::{CompletePaymentAttemptInput, PaymentCompletionSource};
 use herald_core::domain::realm_config::RealmConfigRepository;
@@ -975,7 +975,9 @@ async fn handle_subscription_paid(
         payload.entitlement_key.clone()
     };
 
-    if let Some((subscription, previous)) = sync_creem_subscription(
+    // Resolve the synced subscription up-front so we can route the grant to
+    // subscription.bucket_id (design §5.5 / A8) and reuse it for history.
+    let synced = sync_creem_subscription(
         &app_state,
         realm_id,
         user_id,
@@ -990,8 +992,9 @@ async fn handle_subscription_paid(
         None,
         None,
     )
-    .await?
-    {
+    .await?;
+
+    if let Some((subscription, previous)) = synced.as_ref() {
         let history_event_type = if payload.is_renewal {
             HistoryEventType::Renewed
         } else {
@@ -1001,7 +1004,7 @@ async fn handle_subscription_paid(
         save_subscription_history(
             &app_state,
             previous.as_ref(),
-            &subscription,
+            subscription,
             history_event_type,
         )
         .await?;
@@ -1011,10 +1014,26 @@ async fn handle_subscription_paid(
         .current_period_end
         .unwrap_or_else(|| Utc::now() + chrono::Duration::days(30));
 
+    // Route to subscription.bucket_id (design §5.5 / A8). The domain resolves
+    // the Option<Uuid> internally and fails loud with
+    // SubscriptionBucketNotResolved when the subscription has no bound Bucket.
+    let (subscription_id, bucket_id) = synced
+        .as_ref()
+        .map(|(subscription, _)| (subscription.id, subscription.bucket_id))
+        .unwrap_or_else(|| {
+            // Fallback when sync returned None (no external_subscription_id
+            // and no client_app_id): we still attempt the grant against a
+            // nil subscription id with no bucket — the domain will fail loud
+            // if a bucket is required, which surfaces the data gap.
+            (Uuid::nil(), None)
+        });
+
     let grant_result = app_state
         .subscription_service
         .handle_subscription_paid(
             user_id,
+            subscription_id,
+            bucket_id,
             realm_id,
             &entitlement_key,
             payload.is_renewal,
@@ -1214,11 +1233,31 @@ async fn handle_subscription_updated(
         .current_period_end
         .unwrap_or_else(|| Utc::now() + chrono::Duration::days(30));
 
+    // Route upgrade/downgrade to subscription.bucket_id (design §5.5 / A8).
+    // Prefer the existing-subscription snapshot; fall back to fetching the
+    // subscription by external id when the update webhook has no prior cached
+    // snapshot. Either way the domain fails loud when the bucket is missing.
+    let routing_subscription = match existing_subscription_for_update.clone() {
+        Some(sub) => Some(sub),
+        None => {
+            app_state
+                .billing_repository
+                .find_by_external_subscription_id(&payload.external_subscription_id, "creem")
+                .await?
+        }
+    };
+    let (subscription_id, subscription_bucket_id) = routing_subscription
+        .as_ref()
+        .map(|sub| (sub.id, sub.bucket_id))
+        .unwrap_or((Uuid::nil(), None));
+
     let history_event_type = if is_upgrade {
+        let bucket_id = resolve_subscription_bucket(subscription_id, subscription_bucket_id)?;
         app_state
             .subscription_service
             .handle_subscription_upgrade(
                 user_id,
+                bucket_id,
                 realm_id,
                 &previous_entitlement_key,
                 &current_entitlement_key,
@@ -1231,6 +1270,8 @@ async fn handle_subscription_updated(
             .subscription_service
             .handle_subscription_downgrade(
                 user_id,
+                subscription_id,
+                subscription_bucket_id,
                 realm_id,
                 &previous_entitlement_key,
                 &current_entitlement_key,
@@ -1374,10 +1415,30 @@ async fn handle_subscription_canceled(
         .await?
     };
 
+    // Route revocation to subscription.bucket_id (design §5.5 / A8). Prefer
+    // the already-fetched existing subscription; fall back to a DB lookup when
+    // the user_id came from the payload (no prior fetch). Either way the
+    // resolver fails loud when the subscription has no bound Bucket.
+    let routing_subscription = match existing_subscription.clone() {
+        Some(sub) => Some(sub),
+        None => {
+            app_state
+                .billing_repository
+                .find_by_external_subscription_id(&payload.external_subscription_id, "creem")
+                .await?
+        }
+    };
+    let (subscription_id, subscription_bucket_id) = routing_subscription
+        .as_ref()
+        .map(|sub| (sub.id, sub.bucket_id))
+        .unwrap_or((Uuid::nil(), None));
+    let bucket_id = resolve_subscription_bucket(subscription_id, subscription_bucket_id)?;
+
     let _output = app_state
         .subscription_service
         .handle_subscription_cancel(
             user_id,
+            bucket_id,
             realm_id,
             cancel_mode,
             period_end,
@@ -1448,6 +1509,40 @@ async fn handle_refund_created(
         "Processing refund - revoking points"
     );
 
+    // Resolve the routing Bucket from the originating payment_attempt snapshot
+    // (design A8 / BE-D06: revocation targets the same Bucket the original grant
+    // targeted). Look up by provider reference (Creem payment_id). When no
+    // attempt snapshot exists, fail loud rather than revoke from an arbitrary
+    // implicit pool — over-revoking unrelated credits would be a silent bug.
+    let attempt = app_state
+        .payment_attempt_service
+        .get_payment_attempt_by_provider_reference("creem", &payload.payment_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                realm_id = %realm_id,
+                payment_id = %payload.payment_id,
+                error = %e,
+                "Failed to look up payment_attempt for refund bucket resolution"
+            );
+            CoreError::InternalServerError(format!(
+                "Failed to resolve bucket for refund {}: {e}",
+                payload.refund_id
+            ))
+        })?
+        .ok_or_else(|| {
+            CoreError::BadRequest(format!(
+                "Cannot resolve bucket for refund {}: no payment_attempt for payment_id {}",
+                payload.refund_id, payload.payment_id
+            ))
+        })?;
+    let bucket_id = attempt.bucket_id.ok_or_else(|| {
+        CoreError::BadRequest(format!(
+            "Cannot resolve bucket for refund {}: payment_attempt {} has no bucket_id snapshot",
+            payload.refund_id, attempt.id
+        ))
+    })?;
+
     match payload.refund_type.as_str() {
         "topup" => {
             let _output = app_state
@@ -1455,6 +1550,7 @@ async fn handle_refund_created(
                 .revoke_topup_proportional(
                     realm_id,
                     payload.user_id,
+                    bucket_id,
                     payload.amount,
                     payload.original_amount,
                     &payload.refund_id,
@@ -1473,7 +1569,12 @@ async fn handle_refund_created(
         _ => {
             let _output = app_state
                 .points_service
-                .revoke_subscription_unused(realm_id, payload.user_id, &payload.refund_id)
+                .revoke_subscription_unused(
+                    realm_id,
+                    payload.user_id,
+                    bucket_id,
+                    &payload.refund_id,
+                )
                 .await?;
 
             info!(
@@ -1562,7 +1663,7 @@ async fn handle_subscription_lifecycle_status(
         "Processing Creem subscription lifecycle event"
     );
 
-    if let Some((subscription, previous)) = sync_creem_subscription(
+    let synced = sync_creem_subscription(
         &app_state,
         realm_id,
         user_id,
@@ -1577,25 +1678,36 @@ async fn handle_subscription_lifecycle_status(
         cancel_at,
         existing,
     )
-    .await?
-    {
+    .await?;
+
+    if let Some((subscription, previous)) = synced.as_ref() {
         let history_event = match previous {
-            Some(ref prev) => detect_change_type(prev, &subscription),
+            Some(prev) => detect_change_type(prev, subscription),
             None => HistoryEventType::Created,
         };
 
-        save_subscription_history(&app_state, previous.as_ref(), &subscription, history_event)
+        save_subscription_history(&app_state, previous.as_ref(), subscription, history_event)
             .await?;
     }
 
     // Revoke credits AFTER subscription status is synced to Expired.
     // If sync fails, no credits are revoked and the webhook retries naturally.
     if status == SubscriptionStatus::Expired {
+        // Route revocation to subscription.bucket_id (design §5.5 / A8).
+        // The synced subscription is the post-update snapshot and carries the
+        // persisted bucket_id. Fail loud when unresolved.
+        let (subscription_id, subscription_bucket_id) = synced
+            .as_ref()
+            .map(|(subscription, _)| (subscription.id, subscription.bucket_id))
+            .unwrap_or((Uuid::nil(), None));
+        let bucket_id = resolve_subscription_bucket(subscription_id, subscription_bucket_id)?;
+
         let output = app_state
             .points_service
             .revoke_subscription_credits_by_entitlement(
                 realm_id,
                 user_id,
+                bucket_id,
                 &entitlement_key,
                 RevocationType::ExpireRevoke,
                 format!("Subscription expired: {}", payload.external_subscription_id),

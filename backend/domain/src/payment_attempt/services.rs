@@ -33,6 +33,7 @@ impl<R: PaymentAttemptRepository> PaymentAttemptService<R> {
             payment_provider: input.payment_provider.clone(),
             target_type: input.target_type.clone(),
             target_id: input.target_id,
+            bucket_id: input.bucket_id,
             amount: input.amount,
             currency: input.currency.clone(),
             provider_reference: input.provider_reference,
@@ -356,6 +357,7 @@ mod tests {
                 id: Uuid::now_v7(),
                 realm_id: input.realm_id,
                 user_id: input.user_id,
+                bucket_id: None,
                 payment_provider: input.payment_provider,
                 target_type: input.target_type.parse()?, // Parse String to PurchasableTarget
                 target_id: input.target_id,
@@ -490,6 +492,7 @@ mod tests {
             id: Uuid::now_v7(),
             realm_id: "test-realm".to_string(),
             user_id: Uuid::now_v7(),
+            bucket_id: None,
             payment_provider: "stripe".to_string(),
             target_type: PurchasableTarget::EntitlementMapping,
             target_id: Uuid::now_v7(),

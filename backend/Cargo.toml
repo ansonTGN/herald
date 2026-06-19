@@ -98,8 +98,6 @@ jsonwebtoken = "9.3"
 ipnetwork = "0.21"
 
 # Testing
-testcontainers-modules = { version = "0.14", features = ["postgres", "redis"] }
-testcontainers = "0.26"
 test-context = "0.5.4"
 tempfile = "3"
 mockito = "1.2"

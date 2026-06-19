@@ -35,6 +35,107 @@ async fn ensure_test_user_exists(ctx: &SchemaTestContext, user_id: Uuid, realm_i
     .expect("Failed to ensure user exists");
 }
 
+/// Ensure a single legacy `credit_buckets` row exists for `realm_id` and return
+/// its id.
+///
+/// The credit-bucket migration made `points_wallets.bucket_id`,
+/// `points_transactions.bucket_id` and `points_credit_ledger.bucket_id` NOT
+/// NULL. Legacy scenario tests predate the Bucket model and never create a
+/// bucket; without one every legacy INSERT into these tables violates the NOT
+/// NULL constraint. This helper materializes a deterministic, realm-scoped
+/// legacy bucket (`bucket_key = "legacy"`, `enabled = true`,
+/// `receives_registration_credits = false`) once per realm and reuses it on
+/// subsequent calls. The bucket is shared by all legacy wallets / ledgers /
+/// transactions in that realm, mirroring the pre-bucket single-pool semantics
+/// these tests were written against.
+pub async fn ensure_test_bucket_for_realm(pool: &sqlx::PgPool, realm_id: &str) -> Uuid {
+    use sqlx::Row;
+
+    // Deterministic legacy bucket key. realm_id is not guaranteed to match the
+    // `^[a-z0-9-]{1,64}$` bucket_key constraint, so derive a short stable slug
+    // from a hex hash of the realm_id.
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    use std::hash::Hasher;
+    hasher.write(realm_id.as_bytes());
+    let slug = format!("legacy-{:016x}", hasher.finish());
+
+    sqlx::query(
+        r#"INSERT INTO credit_buckets
+             (id, realm_id, bucket_key, name, display_order, enabled,
+              receives_registration_credits, created_at, updated_at)
+           VALUES ($1, $2, $3, 'Legacy Test Bucket', 0, true, false, NOW(), NOW())
+           ON CONFLICT (realm_id, bucket_key) DO NOTHING"#,
+    )
+    .bind(Uuid::now_v7())
+    .bind(realm_id)
+    .bind(&slug)
+    .execute(pool)
+    .await
+    .expect("Failed to ensure legacy credit bucket");
+
+    let row = sqlx::query("SELECT id FROM credit_buckets WHERE realm_id = $1 AND bucket_key = $2")
+        .bind(realm_id)
+        .bind(&slug)
+        .fetch_one(pool)
+        .await
+        .expect("Failed to fetch legacy credit bucket");
+    let bucket_id: Uuid = row.get("id");
+
+    // Legacy consume paths resolve coverage from `credit_bucket_client_apps`
+    // (production design A4: no default-bucket merging). Legacy scenario tests
+    // were written against a single shared pool per realm, so attach every
+    // existing client app in this realm to the legacy bucket. Idempotent:
+    // client apps created later are attached at their own creation site (see
+    // `attach_client_app_to_legacy_bucket`).
+    sqlx::query(
+        r#"INSERT INTO credit_bucket_client_apps
+             (bucket_id, client_app_id, realm_id, created_at)
+           SELECT $1, id, $2, NOW()
+           FROM client_app
+           WHERE realm_id = $2
+           ON CONFLICT (bucket_id, client_app_id) DO NOTHING"#,
+    )
+    .bind(bucket_id)
+    .bind(realm_id)
+    .execute(pool)
+    .await
+    .expect("Failed to attach existing client apps to legacy credit bucket");
+
+    bucket_id
+}
+
+/// Attach a client app to this realm's legacy credit bucket (no-op if the
+/// legacy bucket has not been materialized yet).
+///
+/// Legacy scenario tests create client apps ad-hoc via several helpers; each
+/// such helper should call this so the consume-path coverage resolution
+/// includes the new client app.
+pub async fn attach_client_app_to_legacy_bucket(
+    pool: &sqlx::PgPool,
+    realm_id: &str,
+    client_app_id: Uuid,
+) {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    use std::hash::Hasher;
+    hasher.write(realm_id.as_bytes());
+    let slug = format!("legacy-{:016x}", hasher.finish());
+
+    sqlx::query(
+        r#"INSERT INTO credit_bucket_client_apps
+             (bucket_id, client_app_id, realm_id, created_at)
+           SELECT b.id, $1, b.realm_id, NOW()
+           FROM credit_buckets b
+           WHERE b.realm_id = $2 AND b.bucket_key = $3
+           ON CONFLICT (bucket_id, client_app_id) DO NOTHING"#,
+    )
+    .bind(client_app_id)
+    .bind(realm_id)
+    .bind(&slug)
+    .execute(pool)
+    .await
+    .expect("Failed to attach client app to legacy credit bucket");
+}
+
 /// Create a points wallet for a user
 ///
 /// Also ensures the user exists in the account table (needed by grant_points_atomic).
@@ -46,20 +147,35 @@ pub async fn create_points_wallet(
 ) -> Uuid {
     ensure_test_user_exists(ctx, user_id, realm_id).await;
 
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
     let wallet_id = Uuid::now_v7();
 
     sqlx::query(
-        "INSERT INTO points_wallets (id, user_id, realm_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
-         VALUES ($1, $2, $3, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())"
+        "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())
+         ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING",
     )
     .bind(wallet_id)
     .bind(user_id)
     .bind(realm_id)
+    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create points wallet");
 
-    wallet_id
+    // Re-read in case a wallet already existed for this (realm, user, bucket)
+    // pool and our minted id collided with the unique row.
+    let row = sqlx::query(
+        "SELECT id FROM points_wallets WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3",
+    )
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(bucket_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("Failed to fetch points wallet after ensure");
+    let existing: Uuid = row.get("id");
+    existing
 }
 
 /// Create a points wallet with initial balance
@@ -73,22 +189,35 @@ pub async fn create_points_wallet_with_balance(
 ) -> Uuid {
     ensure_test_user_exists(ctx, user_id, realm_id).await;
 
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
     let wallet_id = Uuid::now_v7();
 
     sqlx::query(
-        "INSERT INTO points_wallets (id, user_id, realm_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $4, $5, 0, 0, 'active', NOW(), NOW())"
+        "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $5, $6, 0, 0, 'active', NOW(), NOW())
+         ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING",
     )
     .bind(wallet_id)
     .bind(user_id)
     .bind(realm_id)
+    .bind(bucket_id)
     .bind(topup_balance)
     .bind(subscription_balance)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create points wallet with balance");
 
-    wallet_id
+    let row = sqlx::query(
+        "SELECT id FROM points_wallets WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3",
+    )
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(bucket_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("Failed to fetch points wallet with balance after ensure");
+    let existing: Uuid = row.get("id");
+    existing
 }
 
 /// ============================================================================
@@ -108,17 +237,27 @@ pub async fn create_points_transaction(
     credit_type: Option<CreditType>,
     description: Option<&str>,
 ) -> Uuid {
+    // Resolve the bucket_id bound to this wallet so the NOT NULL
+    // points_transactions.bucket_id constraint holds.
+    let bucket_id: Uuid =
+        sqlx::query_scalar::<_, Uuid>("SELECT bucket_id FROM points_wallets WHERE id = $1")
+            .bind(wallet_id)
+            .fetch_one(&ctx.app_state.pool)
+            .await
+            .expect("Failed to resolve bucket_id from points_wallets");
+
     let transaction_id = Uuid::now_v7();
 
     sqlx::query(
-        "INSERT INTO points_transactions (id, wallet_id, user_id, realm_id, type, amount, balance_after,
+        "INSERT INTO points_transactions (id, wallet_id, user_id, realm_id, bucket_id, type, amount, balance_after,
          topup_balance_after, subscription_balance_after, credit_type, description, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())"
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())"
     )
     .bind(transaction_id)
     .bind(wallet_id)
     .bind(user_id)
     .bind(realm_id)
+    .bind(bucket_id)
     .bind(transaction_type.to_string())
     .bind(amount)
     .bind(balance_after)
@@ -136,7 +275,14 @@ pub async fn create_points_transaction(
 /// ============================================================================
 /// Points Ledger Helpers
 /// ============================================================================
-/// Create a credit ledger entry (for tracking credit grants)
+/// Create a credit ledger entry (for tracking credit grants).
+///
+/// Legacy helper kept for completeness; new tests should prefer
+/// `create_credit_ledger_entry_v2`. The credit-bucket migration reshaped
+/// `points_credit_ledger` (no more `wallet_id` / `transaction_id` / `amount` /
+/// `remaining_amount` columns; `bucket_id` is NOT NULL, `remaining_amount` is a
+/// generated column). This helper resolves the user/realm/bucket from the
+/// wallet row and writes the new-schema columns.
 pub async fn create_credit_ledger_entry(
     ctx: &mut SchemaTestContext,
     wallet_id: Uuid,
@@ -145,16 +291,29 @@ pub async fn create_credit_ledger_entry(
     amount: i64,
     expires_at: Option<chrono::DateTime<chrono::Utc>>,
 ) {
+    let row = sqlx::query("SELECT user_id, realm_id, bucket_id FROM points_wallets WHERE id = $1")
+        .bind(wallet_id)
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .expect("Failed to resolve wallet for credit ledger entry");
+    let user_id: Uuid = row.get("user_id");
+    let realm_id: String = row.get("realm_id");
+    let bucket_id: Uuid = row.get("bucket_id");
+
     sqlx::query(
-        "INSERT INTO points_credit_ledger (id, wallet_id, transaction_id, credit_type, amount, remaining_amount, expires_at, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())"
+        "INSERT INTO points_credit_ledger
+            (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
+             granted_amount, used_amount, revoked_amount, expires_at, status,
+             created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 'system_grant', $6, $7, 0, 0, $8, 'active', NOW(), NOW())",
     )
     .bind(Uuid::now_v7())
-    .bind(wallet_id)
-    .bind(transaction_id)
+    .bind(user_id)
+    .bind(&realm_id)
+    .bind(bucket_id)
     .bind(credit_type.to_string())
+    .bind(transaction_id.to_string())
     .bind(amount)
-    .bind(amount) // remaining_amount starts equal to amount
     .bind(expires_at)
     .execute(&ctx.app_state.pool)
     .await
@@ -418,13 +577,16 @@ pub async fn create_credit_ledger_entry_v2(
 ) -> Uuid {
     let ledger_id = Uuid::now_v7();
 
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+
     sqlx::query(
-        "INSERT INTO points_credit_ledger (id, user_id, realm_id, credit_type, source_type, source_id, granted_amount, used_amount, revoked_amount, expires_at, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 0, $8, 'active', NOW(), NOW())"
+        "INSERT INTO points_credit_ledger (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id, granted_amount, used_amount, revoked_amount, expires_at, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, $9, 'active', NOW(), NOW())"
     )
     .bind(ledger_id)
     .bind(user_id)
     .bind(realm_id)
+    .bind(bucket_id)
     .bind(credit_type.to_string())
     .bind(source_type.to_string())
     .bind(source_id)
@@ -481,6 +643,7 @@ fn row_to_credit_ledger(
         id: row.get("id"),
         user_id: row.get("user_id"),
         realm_id: row.get("realm_id"),
+        bucket_id: row.get("bucket_id"),
         credit_type: row.get::<String, _>("credit_type").parse().unwrap(),
         source_type: row.get::<String, _>("source_type").parse().unwrap(),
         source_id: row.get("source_id"),
@@ -611,8 +774,10 @@ pub async fn get_consumption_allocations(
                 id: row.get("id"),
                 transaction_id: row.get("transaction_id"),
                 ledger_id: row.get("ledger_id"),
+                wallet_id: row.get("wallet_id"),
                 user_id: row.get("user_id"),
                 realm_id: row.get("realm_id"),
+                bucket_id: row.get("bucket_id"),
                 allocated_amount: row.get("allocated_amount"),
                 ledger_remaining_after: row.get("ledger_remaining_after"),
                 created_at: row.get("created_at"),
@@ -694,14 +859,21 @@ pub fn create_test_third_party_identity(realm_id: &str) -> Identity {
     })
 }
 
-/// Assert all account balances are non-negative
+/// Assert all account balances are non-negative.
+///
+/// Aggregates across every wallet row the user owns in the realm (one row per
+/// `(user, bucket)` pool under the multi-bucket model). Returns the summed
+/// `(total_balance, topup_balance, subscription_balance)`.
 pub async fn assert_balances_non_negative(
     ctx: &SchemaTestContext,
     user_id: Uuid,
     realm_id: &str,
 ) -> (i64, i64, i64) {
     let account = sqlx::query(
-        "SELECT total_balance, topup_balance, subscription_balance FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
+        "SELECT COALESCE(SUM(total_balance), 0)::BIGINT AS total_balance,
+                COALESCE(SUM(topup_balance), 0)::BIGINT AS topup_balance,
+                COALESCE(SUM(subscription_balance), 0)::BIGINT AS subscription_balance
+         FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
     )
     .bind(user_id)
     .bind(realm_id)

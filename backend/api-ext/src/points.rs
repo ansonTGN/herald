@@ -17,11 +17,15 @@ use crate::client_app_scope::ensure_client_app_scope;
 use herald_api_base::application::http::common::error_codes::ErrorCode;
 use herald_api_base::application::http::common::error_helpers::json_error;
 use herald_api_base::application::http::rate_limit::{RateLimitConfig, rate_limit};
+use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::server::api_entities::ErrorResponse;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
+use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::dtos::{ConsumePointsInput, GrantPointsInput};
-use herald_core::domain::points::entities::CreditSourceType;
+use herald_core::domain::points::entities::{
+    ConsumptionAllocationView, CreditSourceType, PointsTransaction,
+};
 use herald_core::domain::points::ports::TransactionFilters;
 
 const REALM_RATE_LIMIT_PREFIX: &str = "points:realm:";
@@ -69,22 +73,74 @@ pub struct ExtConsumePointsRequest {
     pub idempotency_key: Option<String>,
 }
 
-/// Consume points response (SDK-compatible)
+/// Per-bucket transaction inside a multi-bucket consume response (design §4.2.2).
+///
+/// Single-pool consume → `transactions` has length 1 (structure unified with the
+/// multi-bucket case). `amount` is the points deducted from this pool (negative
+/// sign stripped — always a positive deduction magnitude).
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ExtConsumePointsResponse {
+pub struct BucketTransaction {
     pub transaction_id: String,
+    pub bucket_id: String,
     pub wallet_id: String,
     pub user_id: String,
     pub amount: i64,
     pub balance_after: i64,
 }
 
-/// Grant points request (SDK-compatible)
+/// Ledger-level truth source for a consume (design §4.2.2/A6).
+///
+/// Populated from `points_consumption_allocations` joined with its ledger's
+/// credit_type via the consume `correlation_id`. Empty for legacy single-pool
+/// rows (NULL correlation_id) and when the allocation lookup fails (the
+/// deduction has already succeeded; we surface a partial result rather than
+/// failing an already-completed consume).
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AllocationDetail {
+    pub bucket_id: String,
+    pub wallet_id: String,
+    pub ledger_id: String,
+    pub credit_type: String,
+    pub allocated_amount: i64,
+}
+
+/// Consume points response (SDK-compatible, design §4.2.2).
+///
+/// Breaking change: the previous single-transaction shape is replaced by a
+/// per-bucket multi-transaction shape. `correlation_id` groups the N
+/// transactions of one consume (DB `points_transactions.correlation_id`);
+/// single-pool hits still produce exactly one transaction.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtConsumePointsResponse {
+    pub user_id: String,
+    /// Total points consumed in this request (sum across all affected buckets).
+    pub amount: i64,
+    /// Grouping key shared by the N transactions of this consume. Falls back to
+    /// the primary transaction id when the underlying row has no correlation_id
+    /// (legacy single-pool replay).
+    pub correlation_id: String,
+    /// One entry per affected bucket, sorted by `bucket_id` ASC. Length 1 for a
+    /// single-pool hit.
+    pub transactions: Vec<BucketTransaction>,
+    /// Ledger-level allocations (design §4.2.2). See [`AllocationDetail`].
+    pub allocations: Vec<AllocationDetail>,
+}
+
+/// Grant points request (SDK-compatible).
+///
+/// `bucket_id` is REQUIRED (design §4.2.4 / A5): every grant must target an
+/// explicit Credit Bucket. Missing → 400 `grant_bucket_required`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtGrantPointsRequest {
     pub user_id: String,
+    /// Required target Credit Bucket. Deserialized as `Option` so a missing
+    /// field yields a structured 400 `grant_bucket_required` body instead of
+    /// Axum's generic JSON parse error.
+    pub bucket_id: Option<String>,
     pub amount: i64,
     pub reason: String,
     pub validity_days: Option<i64>,
@@ -96,6 +152,7 @@ pub struct ExtGrantPointsRequest {
 pub struct ExtGrantPointsResponse {
     pub transaction_id: String,
     pub user_id: String,
+    pub bucket_id: String,
     pub amount: i64,
     pub granted_balance: i64,
     pub balance: i64,
@@ -267,10 +324,11 @@ pub async fn get_balance_ext(
     request_body = ExtConsumePointsRequest,
     responses(
         (status = 200, description = "Points consumed successfully", body = ExtConsumePointsResponse),
-        (status = 400, description = "Bad request (insufficient points, invalid amount, frozen/closed account)", body = ErrorResponse),
+        (status = 400, description = "Bad request (invalid amount, frozen/closed account)", body = ErrorResponse),
         (status = 401, description = "Unauthorized - Invalid or missing API Key", body = ErrorResponse),
         (status = 403, description = "Forbidden - Cross-realm access attempt", body = ErrorResponse),
         (status = 404, description = "Not found - User or account not found", body = ErrorResponse),
+        (status = 409, description = "Conflict - no covered credit pool for client_app (code=no_covered_pool) or insufficient points (code=insufficient_points, includes have/need)", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     security(("api_key" = []))
@@ -356,18 +414,91 @@ pub async fn consume_points_ext(
             .await
         {
             Ok(herald_core::domain::points::IdempotencyResult::Cached { transaction }) => {
-                // Return cached response
-                let response = ExtConsumePointsResponse {
-                    transaction_id: transaction.id.to_string(),
-                    wallet_id: transaction.wallet_id.to_string(),
-                    user_id: transaction.user_id.to_string(),
-                    amount: transaction.amount,
-                    balance_after: transaction.balance_after,
+                // Idempotent replay (design §5.1). The cached `transaction` is
+                // the primary transaction (first by bucket_id ASC). To return the
+                // FULL original result set across the correlation_id group
+                // (multi-pool consume shares one correlation_id across N
+                // per-bucket transactions), reassemble the siblings from the
+                // primary WITHOUT re-deducting. Legacy single-pool rows
+                // (correlation_id = NULL) replay as the single primary.
+                let response = match state
+                    .points_service
+                    .replay_consume(&realm_id, transaction.id)
+                    .await
+                {
+                    Ok(siblings) => {
+                        let mut sorted = siblings;
+                        sorted.sort_by_key(|t| t.bucket_id);
+                        let primary = sorted.first().unwrap_or(&transaction);
+
+                        // Surface the original consume's ledger-level
+                        // allocations (design §4.2.2 / A6). Multi-pool replays
+                        // share a correlation_id; legacy single-pool rows have
+                        // none and surface an empty slice.
+                        let allocations = match primary.correlation_id.as_deref() {
+                            Some(cid) => {
+                                match state
+                                    .points_service
+                                    .find_consumption_allocations_by_correlation_id(&realm_id, cid)
+                                    .await
+                                {
+                                    Ok(views) => {
+                                        views.into_iter().map(allocation_view_to_detail).collect()
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            correlation_id = %cid,
+                                            error = %e,
+                                            "Failed to load replay allocations; \
+                                             returning empty slice"
+                                        );
+                                        Vec::new()
+                                    }
+                                }
+                            }
+                            None => Vec::new(),
+                        };
+
+                        ExtConsumePointsResponse {
+                            user_id: primary.user_id.to_string(),
+                            amount: request.amount,
+                            correlation_id: primary
+                                .correlation_id
+                                .clone()
+                                .unwrap_or_else(|| primary.id.to_string()),
+                            transactions: sorted
+                                .iter()
+                                .map(|t| BucketTransaction {
+                                    transaction_id: t.id.to_string(),
+                                    bucket_id: t.bucket_id.to_string(),
+                                    wallet_id: t.wallet_id.to_string(),
+                                    user_id: t.user_id.to_string(),
+                                    amount: t.amount.abs(),
+                                    balance_after: t.balance_after,
+                                })
+                                .collect(),
+                            allocations,
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            idempotency_key = %idempotency_key,
+                            primary_transaction_id = %transaction.id,
+                            error = %e,
+                            "Failed to reassemble consume replay from primary transaction"
+                        );
+                        // Fall back to the cached primary-only response rather
+                        // than failing the replay outright — the deduction has
+                        // already happened; surfacing a partial result is safer
+                        // than erroring on an already-completed operation.
+                        build_consume_response_from_primary(&transaction, Vec::new())
+                    }
                 };
 
                 tracing::info!(
                     idempotency_key = %idempotency_key,
-                    transaction_id = %transaction.id,
+                    primary_transaction_id = %transaction.id,
+                    bucket_count = response.transactions.len(),
                     "Returning cached idempotent response"
                 );
 
@@ -427,69 +558,100 @@ pub async fn consume_points_ext(
         description: request.description.clone(),
     };
 
-    // 6. Consume points
-    let transaction = match state
+    // 6. Consume points — returns one transaction per affected bucket (design
+    // §5.1 / BE-D04). All share one correlation_id; each carries its own
+    // wallet_id/bucket_id/balance_after.
+    let transactions = match state
         .points_service
         .consume_points(identity, &realm_id, input)
         .await
     {
-        Ok(transaction) => transaction,
+        Ok(transactions) => transactions,
         Err(e) => {
             tracing::error!("Failed to consume points: {}", e);
-            return match e {
-                herald_core::domain::common::entities::app_errors::CoreError::Unauthorized => {
-                    json_error(StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized)
-                }
-                herald_core::domain::common::entities::app_errors::CoreError::Forbidden(_) => {
-                    json_error(StatusCode::FORBIDDEN, ErrorCode::Forbidden)
-                }
-                herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
-                    json_error(StatusCode::NOT_FOUND, ErrorCode::WalletNotFound)
-                }
-                herald_core::domain::common::entities::app_errors::CoreError::BadRequest(msg) => {
-                    if msg.contains("Insufficient points") {
-                        json_error(StatusCode::BAD_REQUEST, ErrorCode::InsufficientPoints)
-                    } else if msg.contains("Cannot consume points from") {
-                        json_error(StatusCode::BAD_REQUEST, ErrorCode::WalletFrozenOrClosed)
-                    } else {
-                        json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidAmount)
-                    }
-                }
-                herald_core::domain::common::entities::app_errors::CoreError::Conflict(_) => {
-                    json_error(StatusCode::CONFLICT, ErrorCode::ConcurrentModification)
-                }
-                _ => json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError),
-            };
+            return map_consume_error(e);
         }
     };
 
-    // 7. Build response
+    // 7. Sort transactions by bucket_id ASC (deterministic output, mirrors the
+    // infra write order; transaction.amount is stored negative — deduction
+    // magnitude is its absolute value).
+    let mut sorted = transactions.clone();
+    sorted.sort_by_key(|t| t.bucket_id);
+
+    let primary = match sorted.first() {
+        Some(t) => t,
+        None => {
+            tracing::error!("Consume returned no transactions");
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError);
+        }
+    };
+
+    // Surface the ledger-level allocations of this consume (design §4.2.2 / A6).
+    // Multi-bucket consumes share one correlation_id across their N transactions;
+    // legacy single-pool rows (NULL correlation_id) have no grouping key and
+    // surface an empty slice.
+    let allocations = match primary.correlation_id.as_deref() {
+        Some(cid) => match state
+            .points_service
+            .find_consumption_allocations_by_correlation_id(&realm_id, cid)
+            .await
+        {
+            Ok(views) => views.into_iter().map(allocation_view_to_detail).collect(),
+            Err(e) => {
+                tracing::warn!(
+                    correlation_id = %cid,
+                    error = %e,
+                    "Failed to load consume allocations; returning empty slice"
+                );
+                Vec::new()
+            }
+        },
+        None => Vec::new(),
+    };
+
     let response = ExtConsumePointsResponse {
-        transaction_id: transaction.id.to_string(),
-        wallet_id: transaction.wallet_id.to_string(),
-        user_id: transaction.user_id.to_string(),
-        amount: transaction.amount,
-        balance_after: transaction.balance_after,
+        user_id: primary.user_id.to_string(),
+        amount: request.amount,
+        correlation_id: primary
+            .correlation_id
+            .clone()
+            .unwrap_or_else(|| primary.id.to_string()),
+        transactions: sorted
+            .iter()
+            .map(|t| BucketTransaction {
+                transaction_id: t.id.to_string(),
+                bucket_id: t.bucket_id.to_string(),
+                wallet_id: t.wallet_id.to_string(),
+                user_id: t.user_id.to_string(),
+                amount: t.amount.abs(),
+                balance_after: t.balance_after,
+            })
+            .collect(),
+        allocations,
     };
 
     tracing::info!(
-        transaction_id = %transaction.id,
-        user_id = %transaction.user_id,
-        amount = transaction.amount,
-        balance_after = %transaction.balance_after,
-        "Points consumed successfully"
+        primary_transaction_id = %primary.id,
+        correlation_id = %response.correlation_id,
+        user_id = %primary.user_id,
+        amount = request.amount,
+        bucket_count = response.transactions.len(),
+        "Points consumed successfully (per-bucket transactions)"
     );
 
-    // 8. Save idempotency result if key was provided
+    // 8. Save idempotency result if key was provided — cache the primary
+    // transaction (first by bucket_id ASC), matching the infra primary_txn_id
+    // semantics.
     if let Some(ref idempotency_key) = request.idempotency_key {
         let idempotency_service = &state.idempotency_service;
         if let Err(e) = idempotency_service
-            .save_result(&realm_id, idempotency_key, &transaction)
+            .save_result(&realm_id, idempotency_key, primary)
             .await
         {
             tracing::error!(
                 idempotency_key = %idempotency_key,
-                transaction_id = %transaction.id,
+                transaction_id = %primary.id,
                 error = %e,
                 "Failed to save idempotency result"
             );
@@ -534,7 +696,7 @@ pub async fn consume_points_ext(
     request_body = ExtGrantPointsRequest,
     responses(
         (status = 200, description = "Points granted successfully", body = ExtGrantPointsResponse),
-        (status = 400, description = "Bad request (invalid amount, invalid user ID, empty reason)", body = ErrorResponse),
+        (status = 400, description = "Bad request (invalid amount, invalid user ID, empty reason, missing/invalid bucketId → code=grant_bucket_required)", body = ErrorResponse),
         (status = 401, description = "Unauthorized - Invalid or missing API Key", body = ErrorResponse),
         (status = 403, description = "Forbidden - Cross-realm access attempt", body = ErrorResponse),
         (status = 404, description = "Not found - User or account not found", body = ErrorResponse),
@@ -621,19 +783,37 @@ pub async fn grant_points_ext(
         }
     };
 
-    // 4. Validate reason non-empty
+    // 4. bucketId is REQUIRED (design §4.2.4 / A5): every grant must target an
+    // explicit Credit Bucket. Missing → 400 `grant_bucket_required`; present
+    // but malformed → 400 grant_bucket_required as well (consumers should fix
+    // the request either way).
+    let bucket_id = match request.bucket_id.as_deref().map(str::trim) {
+        None | Some("") => {
+            tracing::warn!("Missing required bucketId for points grant");
+            return grant_bucket_required_error();
+        }
+        Some(raw) => match raw.parse::<Uuid>() {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                tracing::warn!("Invalid bucketId format: {}", raw);
+                return grant_bucket_required_error();
+            }
+        },
+    };
+
+    // 5. Validate reason non-empty
     if request.reason.trim().is_empty() {
         return json_error(StatusCode::BAD_REQUEST, ErrorCode::ValidationError);
     }
 
-    // 5. Validate validity_days is None or > 0
+    // 6. Validate validity_days is None or > 0
     if let Some(days) = request.validity_days
         && days <= 0
     {
         return json_error(StatusCode::BAD_REQUEST, ErrorCode::ValidationError);
     }
 
-    // 6. Determine source_id from API key identity
+    // 7. Determine source_id from API key identity
     let source_id = identity
         .as_third_party()
         .map(|api_key| {
@@ -644,9 +824,10 @@ pub async fn grant_points_ext(
         })
         .unwrap_or_default();
 
-    // 7. Build input and call service
+    // 8. Build input and call service
     let input = GrantPointsInput {
         user_id,
+        bucket_id,
         amount: request.amount,
         reason: request.reason,
         validity_days: request.validity_days,
@@ -672,6 +853,9 @@ pub async fn grant_points_ext(
                 herald_core::domain::common::entities::app_errors::CoreError::NotFound => {
                     json_error(StatusCode::NOT_FOUND, ErrorCode::UserNotFound)
                 }
+                herald_core::domain::common::entities::app_errors::CoreError::GrantBucketRequired => {
+                    grant_bucket_required_error()
+                }
                 herald_core::domain::common::entities::app_errors::CoreError::BadRequest(_) => {
                     json_error(StatusCode::BAD_REQUEST, ErrorCode::ValidationError)
                 }
@@ -680,10 +864,12 @@ pub async fn grant_points_ext(
         }
     };
 
-    // 8. Build response (ext convention: balance instead of totalBalance)
+    // 9. Build response (ext convention: balance instead of totalBalance).
+    // bucketId echoes the request target (service output doesn't carry it).
     let response = ExtGrantPointsResponse {
         transaction_id: output.transaction_id.to_string(),
         user_id: output.user_id.to_string(),
+        bucket_id: bucket_id.to_string(),
         amount: output.amount,
         granted_balance: output.granted_balance,
         balance: output.total_balance,
@@ -693,12 +879,160 @@ pub async fn grant_points_ext(
     tracing::info!(
         transaction_id = %output.transaction_id,
         user_id = %output.user_id,
+        bucket_id = %bucket_id,
         amount = output.amount,
         balance = output.total_balance,
         "Points granted successfully"
     );
 
     Json(response).into_response()
+}
+
+// =============================================================================
+// Consume / grant helpers
+// =============================================================================
+
+/// Map a repository consumption-allocation view (allocation + ledger credit
+/// type) to the SDK response `AllocationDetail` (design §4.2.2). `bucket_id`
+/// and `wallet_id` are written NOT NULL by the consume write path, so the
+/// `Option` unwrap is safe for rows produced by `consume_points_atomic`.
+fn allocation_view_to_detail(view: ConsumptionAllocationView) -> AllocationDetail {
+    AllocationDetail {
+        bucket_id: view
+            .allocation
+            .bucket_id
+            .map(|b| b.to_string())
+            .unwrap_or_default(),
+        wallet_id: view
+            .allocation
+            .wallet_id
+            .map(|w| w.to_string())
+            .unwrap_or_default(),
+        ledger_id: view.allocation.ledger_id.to_string(),
+        credit_type: view.credit_type.to_string(),
+        allocated_amount: view.allocation.allocated_amount,
+    }
+}
+
+/// Build a consume response from a single primary transaction (used by the
+/// idempotency replay path, which only surfaces the cached primary transaction
+/// — the infra `primary_txn_id`).
+///
+/// `amount` is the deduction magnitude (transaction rows store it negative).
+fn build_consume_response_from_primary(
+    transaction: &PointsTransaction,
+    allocations: Vec<AllocationDetail>,
+) -> ExtConsumePointsResponse {
+    ExtConsumePointsResponse {
+        user_id: transaction.user_id.to_string(),
+        amount: transaction.amount.abs(),
+        correlation_id: transaction
+            .correlation_id
+            .clone()
+            .unwrap_or_else(|| transaction.id.to_string()),
+        transactions: vec![BucketTransaction {
+            transaction_id: transaction.id.to_string(),
+            bucket_id: transaction.bucket_id.to_string(),
+            wallet_id: transaction.wallet_id.to_string(),
+            user_id: transaction.user_id.to_string(),
+            amount: transaction.amount.abs(),
+            balance_after: transaction.balance_after,
+        }],
+        allocations,
+    }
+}
+
+/// Structured error body used by the consume error contract (design §4.2.3).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConsumeErrorBody {
+    code: &'static str,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    have: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    need: Option<i64>,
+}
+
+/// Map a consume `CoreError` to the design §4.2.3 contract:
+/// - `NoCoveredPointsPool` → 409 `no_covered_pool`
+/// - `insufficient_points` (materialized as `BadRequest("Insufficient points
+///   balance. Required: {need}, Available: {have}")`) → 409 `insufficient_points`
+///   with `have`/`need`
+/// - frozen/closed wallet → 400 `wallet_frozen_or_closed`
+/// - other `BadRequest` → 400 `invalid_amount`
+fn map_consume_error(e: CoreError) -> Response {
+    use herald_core::domain::common::entities::app_errors::CoreError;
+    match e {
+        CoreError::Unauthorized => json_error(StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized),
+        CoreError::Forbidden(_) => json_error(StatusCode::FORBIDDEN, ErrorCode::Forbidden),
+        CoreError::NotFound => json_error(StatusCode::NOT_FOUND, ErrorCode::WalletNotFound),
+        CoreError::NoCoveredPointsPool { client_app_id } => {
+            tracing::warn!(
+                client_app_id = %client_app_id,
+                "Consume rejected: no covered credit pool"
+            );
+            ApiError::conflict_json(ConsumeErrorBody {
+                code: "no_covered_pool",
+                message: format!(
+                    "Client app {client_app_id} does not cover any available credit bucket"
+                ),
+                have: None,
+                need: None,
+            })
+            .into_response()
+        }
+        CoreError::BadRequest(ref msg) if msg.starts_with("Insufficient points balance") => {
+            let (have, need) = parse_have_need(msg).unwrap_or((None, None));
+            ApiError::conflict_json(ConsumeErrorBody {
+                code: "insufficient_points",
+                message: "Insufficient points balance for the covered credit pools".to_string(),
+                have,
+                need,
+            })
+            .into_response()
+        }
+        CoreError::BadRequest(ref msg) if msg.contains("Cannot consume points from") => {
+            json_error(StatusCode::BAD_REQUEST, ErrorCode::WalletFrozenOrClosed)
+        }
+        CoreError::BadRequest(_) => json_error(StatusCode::BAD_REQUEST, ErrorCode::InvalidAmount),
+        CoreError::Conflict(_) => {
+            json_error(StatusCode::CONFLICT, ErrorCode::ConcurrentModification)
+        }
+        _ => json_error(StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::InternalError),
+    }
+}
+
+/// Parse `have`/`need` out of the `insufficient_points` message produced by
+/// `PointsErrorExt::insufficient_points`:
+/// `"Insufficient points balance. Required: {need}, Available: {have}"`.
+fn parse_have_need(msg: &str) -> Option<(Option<i64>, Option<i64>)> {
+    let need = msg
+        .split("Required:")
+        .nth(1)
+        .and_then(|s| s.split(',').next())
+        .and_then(|s| s.trim().parse::<i64>().ok());
+    let have = msg
+        .split("Available:")
+        .nth(1)
+        .and_then(|s| s.trim().parse::<i64>().ok());
+    Some((have, need))
+}
+
+/// Structured 400 `grant_bucket_required` body (design §4.2.3 / §4.2.4).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GrantBucketRequiredBody {
+    code: &'static str,
+    message: &'static str,
+}
+
+fn grant_bucket_required_error() -> Response {
+    ApiError::bad_request_json(GrantBucketRequiredBody {
+        code: "grant_bucket_required",
+        message: "Points grant requires an explicit target bucket",
+    })
+    .into_response()
 }
 
 /// Transaction response (SDK-compatible)

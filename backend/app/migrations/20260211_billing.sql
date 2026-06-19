@@ -46,12 +46,58 @@ COMMENT ON COLUMN subscription_history.realm_id IS 'Realm ID for permission isol
 COMMENT ON COLUMN subscription_history.created_at IS 'When this history record was created';
 
 -- ====================================
+-- Credit Buckets
+-- ====================================
+CREATE TABLE credit_buckets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    realm_id TEXT NOT NULL,
+    bucket_key TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    receives_registration_credits BOOLEAN NOT NULL DEFAULT false,
+    enabled BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_credit_buckets_realm_key UNIQUE (realm_id, bucket_key),
+    CONSTRAINT chk_credit_buckets_key CHECK (bucket_key ~ '^[a-z0-9-]{1,64}$')
+);
+
+CREATE UNIQUE INDEX uq_credit_buckets_registration_pool
+    ON credit_buckets(realm_id)
+    WHERE receives_registration_credits = true;
+CREATE INDEX idx_credit_buckets_realm_id ON credit_buckets(realm_id);
+CREATE INDEX idx_credit_buckets_enabled ON credit_buckets(realm_id, enabled);
+
+CREATE TABLE credit_bucket_client_apps (
+    bucket_id UUID NOT NULL REFERENCES credit_buckets(id) ON DELETE CASCADE,
+    client_app_id UUID NOT NULL REFERENCES client_app(id) ON DELETE CASCADE,
+    realm_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (bucket_id, client_app_id)
+);
+
+CREATE INDEX idx_credit_bucket_client_apps_client_app
+    ON credit_bucket_client_apps(client_app_id);
+CREATE INDEX idx_credit_bucket_client_apps_realm
+    ON credit_bucket_client_apps(realm_id);
+
+COMMENT ON TABLE credit_buckets IS 'Realm-level credit bucket catalog for points pool isolation';
+COMMENT ON TABLE credit_bucket_client_apps IS 'Many-to-many coverage set from credit buckets to client apps';
+
+ALTER TABLE subscription
+    ADD COLUMN bucket_id UUID REFERENCES credit_buckets(id) ON DELETE RESTRICT;
+CREATE INDEX idx_subscription_bucket_id ON subscription(bucket_id);
+COMMENT ON COLUMN subscription.bucket_id IS 'Credit bucket bound to this subscription for points fulfillment and revocation';
+
+-- ====================================
 -- Points Accounts
 -- ====================================
 CREATE TABLE points_wallets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,
     realm_id TEXT NOT NULL,
+    bucket_id UUID NOT NULL REFERENCES credit_buckets(id) ON DELETE RESTRICT,
     topup_balance BIGINT NOT NULL DEFAULT 0 CHECK (topup_balance >= 0),
     subscription_balance BIGINT NOT NULL DEFAULT 0 CHECK (subscription_balance >= 0),
     granted_balance BIGINT NOT NULL DEFAULT 0 CHECK (granted_balance >= 0),
@@ -67,17 +113,19 @@ CREATE TABLE points_wallets (
     status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'frozen', 'closed')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uk_points_wallets_user_id UNIQUE (user_id)
+    CONSTRAINT uk_points_wallets_user_bucket UNIQUE (realm_id, user_id, bucket_id)
 );
 
 CREATE INDEX idx_points_wallets_user_id ON points_wallets(user_id);
 CREATE INDEX idx_points_wallets_realm_id ON points_wallets(realm_id);
+CREATE INDEX idx_points_wallets_bucket_id ON points_wallets(bucket_id);
 CREATE INDEX idx_points_wallets_status ON points_wallets(status);
 
 COMMENT ON TABLE points_wallets IS 'User-level points wallets tracking balance, recharges, and consumption';
 COMMENT ON COLUMN points_wallets.id IS 'Unique wallet identifier';
 COMMENT ON COLUMN points_wallets.user_id IS 'Reference to user who owns this wallet';
 COMMENT ON COLUMN points_wallets.realm_id IS 'Realm ID for permission isolation';
+COMMENT ON COLUMN points_wallets.bucket_id IS 'Credit bucket this wallet belongs to';
 COMMENT ON COLUMN points_wallets.topup_balance IS 'Current balance of topup credits (purchased points)';
 COMMENT ON COLUMN points_wallets.subscription_balance IS 'Current balance of subscription credits (from subscriptions)';
 COMMENT ON COLUMN points_wallets.total_balance IS 'Computed total balance: topup_balance + subscription_balance';
@@ -95,6 +143,7 @@ CREATE TABLE points_transactions (
     wallet_id UUID NOT NULL REFERENCES points_wallets(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,
     realm_id TEXT NOT NULL,
+    bucket_id UUID NOT NULL REFERENCES credit_buckets(id) ON DELETE RESTRICT,
     type text NOT NULL CHECK (type IN (
         'recharge',
         'consume',
@@ -127,6 +176,7 @@ CREATE TABLE points_transactions (
     client_app_id UUID REFERENCES client_app(id) ON DELETE SET NULL,
     subscription_id UUID REFERENCES subscription(id) ON DELETE SET NULL,
     external_ref_id TEXT,
+    correlation_id TEXT,
     expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -135,6 +185,7 @@ CREATE TABLE points_transactions (
 CREATE INDEX idx_points_transactions_wallet_id ON points_transactions(wallet_id);
 CREATE INDEX idx_points_transactions_user_id ON points_transactions(user_id);
 CREATE INDEX idx_points_transactions_realm_id ON points_transactions(realm_id);
+CREATE INDEX idx_points_transactions_bucket_id ON points_transactions(bucket_id);
 CREATE INDEX idx_points_transactions_type ON points_transactions(type);
 CREATE INDEX idx_points_transactions_created_at ON points_transactions(created_at DESC);
 CREATE INDEX idx_points_transactions_client_app_id ON points_transactions(client_app_id);
@@ -147,12 +198,17 @@ CREATE INDEX idx_points_transactions_expires_at
 CREATE UNIQUE INDEX idx_transactions_external_ref
     ON points_transactions(user_id, external_ref_id)
     WHERE external_ref_id IS NOT NULL;
+CREATE INDEX idx_transactions_correlation_id
+    ON points_transactions(correlation_id)
+    WHERE correlation_id IS NOT NULL;
 
 COMMENT ON TABLE points_transactions IS 'Transaction history for all points movements';
+COMMENT ON COLUMN points_transactions.bucket_id IS 'Credit bucket this transaction belongs to; cross-bucket consumption writes one row per bucket (always NOT NULL, see A6)';
 COMMENT ON COLUMN points_transactions.credit_type IS 'Type of credit affected: topup_credit, subscription_credit, registration_credit, or free_periodic_credit';
 COMMENT ON COLUMN points_transactions.type IS 'Transaction type for recharge, consumption, grant, revocation, expiration, refund, and idempotency records';
 COMMENT ON COLUMN points_transactions.topup_balance_after IS 'Topup credit balance after this transaction';
 COMMENT ON COLUMN points_transactions.subscription_balance_after IS 'Subscription credit balance after this transaction';
+COMMENT ON COLUMN points_transactions.correlation_id IS 'Cross-bucket consumption grouping key (nullable, non-unique); shared by the N transactions of a single multi-bucket consume. external_ref_id remains unique and is not used for grouping';
 COMMENT ON COLUMN points_transactions.expires_at IS 'Expiration time for time-limited points (NULL = permanent points)';
 COMMENT ON COLUMN points_transactions.updated_at IS 'When transaction was last updated';
 COMMENT ON INDEX idx_transactions_external_ref IS 'Idempotency constraint for webhook event processing based on user_id + external_ref_id';
@@ -186,6 +242,7 @@ CREATE TABLE points_credit_ledger (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL,
     realm_id TEXT NOT NULL,
+    bucket_id UUID NOT NULL REFERENCES credit_buckets(id) ON DELETE RESTRICT,
     credit_type text NOT NULL CHECK (credit_type IN (
         'topup_credit',
         'subscription_credit',
@@ -220,14 +277,18 @@ CREATE TABLE points_credit_ledger (
 
 CREATE INDEX idx_points_credit_ledger_user_id ON points_credit_ledger(user_id);
 CREATE INDEX idx_points_credit_ledger_realm_id ON points_credit_ledger(realm_id);
+CREATE INDEX idx_points_credit_ledger_bucket_id ON points_credit_ledger(bucket_id);
 CREATE INDEX idx_points_credit_ledger_credit_type ON points_credit_ledger(credit_type);
 CREATE INDEX idx_points_credit_ledger_status ON points_credit_ledger(status);
 CREATE INDEX idx_points_credit_ledger_expires_at ON points_credit_ledger(expires_at);
 CREATE INDEX idx_points_credit_ledger_user_credit_status
     ON points_credit_ledger(user_id, credit_type, status);
+CREATE INDEX idx_points_credit_ledger_bucket_expiration
+    ON points_credit_ledger(realm_id, user_id, bucket_id, expires_at);
 CREATE INDEX idx_points_credit_ledger_created_at ON points_credit_ledger(created_at ASC);
 
 COMMENT ON TABLE points_credit_ledger IS 'Source of truth for all points credits, tracking grants, usage, and revocation by type';
+COMMENT ON COLUMN points_credit_ledger.bucket_id IS 'Credit bucket that owns this credit grant';
 COMMENT ON COLUMN points_credit_ledger.credit_type IS 'Type of credit: topup_credit, subscription_credit, registration_credit, or free_periodic_credit';
 COMMENT ON COLUMN points_credit_ledger.source_type IS 'Source of credit: subscription_initial/renewal/upgrade, topup, system_grant, registration, or free_periodic_grant';
 COMMENT ON COLUMN points_credit_ledger.remaining_amount IS 'Computed field: granted_amount - used_amount - revoked_amount';
@@ -239,8 +300,10 @@ CREATE TABLE points_consumption_allocations (
     id UUID PRIMARY KEY,
     transaction_id UUID NOT NULL,
     ledger_id UUID NOT NULL,
+    wallet_id UUID NOT NULL REFERENCES points_wallets(id) ON DELETE CASCADE,
     user_id UUID NOT NULL,
     realm_id TEXT NOT NULL,
+    bucket_id UUID NOT NULL REFERENCES credit_buckets(id) ON DELETE RESTRICT,
     allocated_amount BIGINT NOT NULL CHECK (allocated_amount > 0),
     ledger_remaining_after BIGINT NOT NULL CHECK (ledger_remaining_after >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -250,10 +313,14 @@ CREATE INDEX idx_points_consumption_allocations_transaction_id
     ON points_consumption_allocations(transaction_id);
 CREATE INDEX idx_points_consumption_allocations_ledger_id
     ON points_consumption_allocations(ledger_id);
+CREATE INDEX idx_points_consumption_allocations_wallet_id
+    ON points_consumption_allocations(wallet_id);
 CREATE INDEX idx_points_consumption_allocations_user_id
     ON points_consumption_allocations(user_id);
 CREATE INDEX idx_points_consumption_allocations_realm_id
     ON points_consumption_allocations(realm_id);
+CREATE INDEX idx_points_consumption_allocations_bucket_id
+    ON points_consumption_allocations(bucket_id);
 
 COMMENT ON TABLE points_consumption_allocations IS 'Allocation records showing how each consumption transaction splits across ledger entries';
 
@@ -338,6 +405,7 @@ CREATE TABLE points_grant_schedules (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL,
     realm_id TEXT NOT NULL,
+    bucket_id UUID NOT NULL REFERENCES credit_buckets(id) ON DELETE RESTRICT,
     subscription_id UUID,
     entitlement_key TEXT NOT NULL DEFAULT '',
     grant_period_type text NOT NULL CHECK (grant_period_type IN ('once', 'daily', 'weekly', 'monthly')),
@@ -357,6 +425,8 @@ CREATE INDEX idx_points_grant_schedules_next_grant_time
     WHERE active = TRUE;
 CREATE INDEX idx_points_grant_schedules_user_id
     ON points_grant_schedules(user_id);
+CREATE INDEX idx_points_grant_schedules_bucket_id
+    ON points_grant_schedules(bucket_id);
 CREATE INDEX idx_points_grant_schedules_subscription_id
     ON points_grant_schedules(subscription_id);
 

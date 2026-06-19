@@ -14,6 +14,7 @@ pub fn create_placeholder_transaction(
         wallet_id: uuid::Uuid::now_v7(),
         user_id,
         realm_id: realm_id.to_string(),
+        bucket_id: Uuid::nil(),
         transaction_type,
         amount: 0,
         balance_after: 0,
@@ -24,6 +25,7 @@ pub fn create_placeholder_transaction(
         client_app_id: None,
         subscription_id: None,
         external_ref_id: None,
+        correlation_id: None,
         created_at: chrono::Utc::now(),
     }
 }

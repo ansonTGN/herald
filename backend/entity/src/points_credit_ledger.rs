@@ -12,6 +12,7 @@ pub struct Model {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
+    pub bucket_id: Uuid,
 
     // 积分类型与来源
     pub credit_type: String, // "topup_credit" | "subscription_credit"
@@ -34,11 +35,24 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::credit_bucket::Entity",
+        from = "Column::BucketId",
+        to = "super::credit_bucket::Column::Id"
+    )]
+    CreditBucket,
+
     #[sea_orm(has_many = "super::points_consumption_allocation::Entity")]
     ConsumptionAllocations,
 
     #[sea_orm(has_many = "super::points_revocation_record::Entity")]
     RevocationRecords,
+}
+
+impl Related<super::credit_bucket::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::CreditBucket.def()
+    }
 }
 
 impl Related<super::points_consumption_allocation::Entity> for Entity {

@@ -169,7 +169,7 @@ async fn test_scenario_sdk_consume_points_success(ctx: &mut SchemaTestContext) {
     );
     let response = result.unwrap();
     assert_eq!(response.amount, -100); // Negative for consumption
-    assert_eq!(response.balance_after, 400);
+    assert_eq!(response.transactions[0].balance_after, 400);
 
     // 7. Cleanup
     handle.abort();

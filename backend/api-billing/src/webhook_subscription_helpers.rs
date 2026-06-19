@@ -238,6 +238,10 @@ pub(crate) async fn sync_subscription(
             status,
             entitlement_key,
             external_price_id,
+            // New subscriptions do not bind a Bucket at creation time — the
+            // bucket is resolved later (design §5.5) when the subscription's
+            // first paid/grant event arrives with a known entitlement mapping.
+            bucket_id: None,
             provider_metadata,
             synced_at: Some(now),
             current_period_start,
@@ -357,6 +361,10 @@ pub(crate) async fn sync_subscription_in_txn(
             status,
             entitlement_key,
             external_price_id,
+            // New subscriptions do not bind a Bucket at creation time — the
+            // bucket is resolved later (design §5.5) when the subscription's
+            // first paid/grant event arrives with a known entitlement mapping.
+            bucket_id: None,
             provider_metadata,
             synced_at: Some(now),
             current_period_start,

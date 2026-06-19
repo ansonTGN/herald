@@ -7,6 +7,10 @@ use axum::{
     routing::{get, post},
 };
 
+use crate::credit_bucket_handlers::{
+    create_credit_bucket_handler, delete_credit_bucket_handler, get_bucket_overview_handler,
+    get_credit_bucket_handler, list_credit_buckets_handler, update_credit_bucket_handler,
+};
 use crate::entitlement_mapping_handlers::{
     get_entitlement_mapping, list_entitlement_mappings, list_one_time_mappings,
     sync_provider_products, update_entitlement_mapping,
@@ -26,17 +30,11 @@ use crate::invoice_handlers::{
     get_seller_config, issue_invoice, list_invoices, list_my_invoices, mark_paid, update_invoice,
     upsert_seller_config, void_invoice,
 };
+use crate::provider_handlers::list_payment_providers;
 use crate::purchase_handlers::{
     cancel_payment_attempt, create_payment_attempt, fulfill_payment, get_payment_attempt_status,
     get_purchase_history,
 };
-use crate::shopify_claim_handlers::claim_shopify_subscriptions;
-use crate::shopify_config_handlers::{
-    create_shopify_config, delete_shopify_config, get_shopify_config, list_payment_providers,
-    test_shopify_connection_endpoint, update_shopify_config,
-};
-use crate::shopify_webhook_handlers::shopify_webhook_handler;
-use crate::shopify_webhook_utils::constant_time_compare;
 use crate::stripe_webhook_handlers::handle_stripe_webhook;
 use crate::webhook_handlers::handle_creem_webhook;
 use crate::wechat_config_handlers::{
@@ -47,8 +45,7 @@ use crate::wechat_order_handlers::{
 };
 use crate::wechat_webhook_handlers::wechat_webhook_handler;
 use herald_api_base::application::http::state::AppState;
-
-use crate::shopify_test_handlers::create_unclaimed_subscription;
+use herald_infra_shopify::constant_time_compare;
 
 async fn internal_api_key_middleware(req: Request, next: Next) -> Response {
     let provided_key = req
@@ -81,10 +78,6 @@ pub fn billing_public_routes() -> Router<AppState> {
             post(handle_stripe_webhook),
         )
         .route(
-            "/api/third/pay/{realmId}/shopify/webhooks",
-            post(shopify_webhook_handler),
-        )
-        .route(
             "/api/third/pay/{realmId}/wechat/webhooks",
             post(wechat_webhook_handler),
         )
@@ -101,6 +94,24 @@ pub fn billing_routes() -> Router<AppState> {
         .route(
             "/api/realms/{realmId}/feature-availability",
             get(get_feature_availability),
+        )
+        // ===== Credit Bucket Directory =====
+        // NOTE: `/overview` is registered BEFORE `/{bucketId}` so the static
+        // segment is matched unambiguously (Axum matchit prefers static over
+        // dynamic, but explicit ordering keeps the intent legible).
+        .route(
+            "/api/realms/{realmId}/billing/credit-buckets",
+            get(list_credit_buckets_handler).post(create_credit_bucket_handler),
+        )
+        .route(
+            "/api/realms/{realmId}/billing/credit-buckets/overview",
+            get(get_bucket_overview_handler),
+        )
+        .route(
+            "/api/realms/{realmId}/billing/credit-buckets/{bucketId}",
+            get(get_credit_bucket_handler)
+                .put(update_credit_bucket_handler)
+                .delete(delete_credit_bucket_handler),
         )
         // ===== Entitlement Mapping =====
         .route(
@@ -137,10 +148,6 @@ pub fn billing_routes() -> Router<AppState> {
         .route(
             "/api/bill/{realmId}/client/{clientAppId}/checkout",
             post(create_checkout_session),
-        )
-        .route(
-            "/api/bill/{realmId}/shopify/claim",
-            post(claim_shopify_subscriptions),
         )
         // ===== Subscription History =====
         .route(
@@ -181,17 +188,6 @@ pub fn billing_routes() -> Router<AppState> {
         .route(
             "/api/third/pay/{realmId}/providers",
             get(list_payment_providers),
-        )
-        .route(
-            "/api/third/pay/{realmId}/providers/shopify",
-            post(create_shopify_config)
-                .get(get_shopify_config)
-                .put(update_shopify_config)
-                .delete(delete_shopify_config),
-        )
-        .route(
-            "/api/third/pay/{realmId}/providers/shopify/test",
-            post(test_shopify_connection_endpoint),
         )
         // ===== WeChat Pay Configuration =====
         .route(
@@ -270,9 +266,4 @@ pub fn billing_routes() -> Router<AppState> {
 /// Always compiled but only used in test builds
 pub fn billing_test_routes() -> Router<AppState> {
     Router::new()
-        // ===== Test Data Creation =====
-        .route(
-            "/api/test/{realmId}/shopify/unclaimed-subscriptions",
-            post(create_unclaimed_subscription),
-        )
 }

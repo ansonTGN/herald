@@ -36,7 +36,7 @@ use herald_core::domain::points::entities::{
     PointsRevocationRecord, PointsTransaction, RevocationType, TransactionType,
 };
 use herald_core::domain::points::ports::PointsRepository;
-use herald_core::domain::points::subscription_service::CancelMode;
+use herald_core::domain::points::subscription_service::{CancelMode, resolve_subscription_bucket};
 use herald_core::domain::purchase::metadata_keys;
 use herald_core::domain::purchase::{CompletePaymentAttemptInput, PaymentCompletionSource};
 use herald_core::domain::realm_config::RealmConfigRepository;
@@ -1191,11 +1191,21 @@ async fn handle_checkout_session_async_failed(
     let revocation_result = if billing_type_override == Some(BillingType::OneTime) {
         // One-time purchase: revoke only the TopupCredit ledger from this specific attempt
         // (source_id = attempt_id), avoiding over-broad revocation of unrelated topup credits.
+        // Bucket source: the originating payment_attempt snapshot (design A8 / BE-D06).
+        // Fail loud when the snapshot has no bucket — revoking from an implicit
+        // pool would silently drain unrelated credits.
+        let bucket_id = attempt.bucket_id.ok_or_else(|| {
+            CoreError::BadRequest(format!(
+                "Cannot resolve bucket for async failure revocation: payment_attempt {} has no bucket_id snapshot",
+                attempt_id
+            ))
+        })?;
         app_state
             .points_service
             .revoke_points_by_source_id(
                 realm_id,
                 attempt.user_id,
+                bucket_id,
                 &attempt_id.to_string(),
                 RevocationType::RefundRevoke,
                 format!("Async payment failed revocation for attempt {}", attempt_id),
@@ -1209,11 +1219,24 @@ async fn handle_checkout_session_async_failed(
             .await?
             .map(|m| m.entitlement_key);
 
+        // Subscription cancel: route to subscription.bucket_id (design §5.5 / A8).
+        // The originating payment_attempt snapshot carries the target bucket for
+        // the subscription created via this checkout (BE-D06). Fail loud when
+        // missing — handle_subscription_cancel would otherwise revoke unrelated
+        // subscription credits.
+        let bucket_id = attempt.bucket_id.ok_or_else(|| {
+            CoreError::BadRequest(format!(
+                "Cannot resolve bucket for async failure subscription cancel: payment_attempt {} has no bucket_id snapshot",
+                attempt_id
+            ))
+        })?;
+
         // Subscription: cancel subscription + revoke SubscriptionCredit (done internally by handle_subscription_cancel)
         let result = app_state
             .subscription_service
             .handle_subscription_cancel(
                 attempt.user_id,
+                bucket_id,
                 realm_id,
                 CancelMode::ImmediateCancel,
                 None,
@@ -1450,7 +1473,7 @@ async fn handle_subscription_created(
         .as_str()
         .map(str::to_string);
 
-    let (_subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
+    let (subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
         &app_state,
         realm_id,
         payload.user_id,
@@ -1478,10 +1501,15 @@ async fn handle_subscription_created(
         .current_period_end
         .unwrap_or_else(|| Utc::now() + ChronoDuration::days(30));
 
+    // Route grant to subscription.bucket_id (design §5.5 / A8). Domain fails
+    // loud (SubscriptionBucketNotResolved) when the subscription has no bound
+    // Bucket — passing None is the fail-loud path, never an implicit pool.
     app_state
         .subscription_service
         .handle_subscription_paid(
             payload.user_id,
+            subscription.id,
+            subscription.bucket_id,
             realm_id,
             &entitlement_key,
             false,
@@ -1669,7 +1697,7 @@ async fn handle_subscription_updated(
         let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
             .as_str()
             .map(str::to_string);
-        let (_subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
+        let (subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
             &app_state,
             realm_id,
             payload.user_id,
@@ -1698,10 +1726,14 @@ async fn handle_subscription_updated(
             .current_period_end
             .unwrap_or_else(|| Utc::now() + ChronoDuration::days(30));
 
+        // Route to subscription.bucket_id (design §5.5 / A8); fail loud.
+        let bucket_id = resolve_subscription_bucket(subscription.id, subscription.bucket_id)?;
+
         app_state
             .subscription_service
             .handle_subscription_upgrade(
                 payload.user_id,
+                bucket_id,
                 realm_id,
                 &previous_entitlement_key,
                 &current_entitlement_key,
@@ -1728,7 +1760,7 @@ async fn handle_subscription_updated(
         let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
             .as_str()
             .map(str::to_string);
-        let (_subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
+        let (subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
             &app_state,
             realm_id,
             payload.user_id,
@@ -1751,10 +1783,13 @@ async fn handle_subscription_updated(
         )
         .await?;
 
+        // Downgrade takes Option<Uuid> and resolves internally (fail loud).
         app_state
             .subscription_service
             .handle_subscription_downgrade(
                 payload.user_id,
+                subscription.id,
+                subscription.bucket_id,
                 realm_id,
                 &previous_entitlement_key,
                 &current_entitlement_key,
@@ -1944,10 +1979,18 @@ async fn handle_subscription_deleted(
     )
     .await?;
 
+    // Route revocation to subscription.bucket_id (design §5.5 / A8); fail loud.
+    let (subscription_id, subscription_bucket_id) = existing_subscription
+        .as_ref()
+        .map(|sub| (sub.id, sub.bucket_id))
+        .unwrap_or((Uuid::nil(), None));
+    let bucket_id = resolve_subscription_bucket(subscription_id, subscription_bucket_id)?;
+
     app_state
         .subscription_service
         .handle_subscription_cancel(
             payload.user_id,
+            bucket_id,
             realm_id,
             cancel_mode,
             if payload.cancel_at_period_end {
@@ -2003,15 +2046,62 @@ async fn handle_charge_refunded(
         "Processing refund - revoking points"
     );
 
+    // Resolve the subscription record up-front for both routing and the
+    // history event below. The bucket source-of-truth for a refund revocation
+    // is the bucket the original grant targeted (design §5.5 / A8):
+    //   - topup (one-time): payment_attempt.bucket_id snapshot (BE-D06)
+    //   - subscription: subscription.bucket_id
+    let subscription = if let Some(subscription_id) = payload.subscription_id {
+        app_state
+            .billing_repository
+            .find_subscription_by_id(subscription_id)
+            .await?
+    } else {
+        None
+    };
+
     // Revoke points based on refund type
     match payload.refund_type.as_str() {
         "topup" => {
+            // Look up the originating payment_attempt snapshot for the routing
+            // Bucket (Stripe charge_id is stored as the provider reference).
+            // Fail loud when the snapshot is missing or has no bucket.
+            let attempt = app_state
+                .payment_attempt_service
+                .get_payment_attempt_by_provider_reference("stripe", &payload.charge_id)
+                .await
+                .map_err(|e| {
+                    tracing::error!(
+                        realm_id = %realm_id,
+                        charge_id = %payload.charge_id,
+                        error = %e,
+                        "Failed to look up payment_attempt for refund bucket resolution"
+                    );
+                    CoreError::InternalServerError(format!(
+                        "Failed to resolve bucket for refund {}: {e}",
+                        payload.charge_id
+                    ))
+                })?
+                .ok_or_else(|| {
+                    CoreError::BadRequest(format!(
+                        "Cannot resolve bucket for refund: no payment_attempt for charge_id {}",
+                        payload.charge_id
+                    ))
+                })?;
+            let bucket_id = attempt.bucket_id.ok_or_else(|| {
+                CoreError::BadRequest(format!(
+                    "Cannot resolve bucket for refund: payment_attempt {} has no bucket_id snapshot",
+                    attempt.id
+                ))
+            })?;
+
             // Proportionally revoke topup credits based on refund ratio
             let _output = app_state
                 .points_service
                 .revoke_topup_proportional(
                     realm_id,
                     payload.user_id,
+                    bucket_id,
                     payload.amount_refunded,
                     payload.amount,
                     &payload.charge_id,
@@ -2027,10 +2117,22 @@ async fn handle_charge_refunded(
             );
         }
         _ => {
-            // Revoke all unused subscription credits (default)
+            // Revoke all unused subscription credits (default). Route to
+            // subscription.bucket_id; fail loud when unresolved.
+            let (subscription_id, subscription_bucket_id) = subscription
+                .as_ref()
+                .map(|sub| (sub.id, sub.bucket_id))
+                .unwrap_or((Uuid::nil(), None));
+            let bucket_id = resolve_subscription_bucket(subscription_id, subscription_bucket_id)?;
+
             let _output = app_state
                 .points_service
-                .revoke_subscription_unused(realm_id, payload.user_id, &payload.charge_id)
+                .revoke_subscription_unused(
+                    realm_id,
+                    payload.user_id,
+                    bucket_id,
+                    &payload.charge_id,
+                )
                 .await?;
 
             info!(
@@ -2042,12 +2144,7 @@ async fn handle_charge_refunded(
         }
     }
 
-    if let Some(subscription_id) = payload.subscription_id
-        && let Some(subscription) = app_state
-            .billing_repository
-            .find_subscription_by_id(subscription_id)
-            .await?
-    {
+    if let Some(subscription) = subscription {
         let history_event = SubscriptionHistoryService::create_subscription_refunded_event(
             &subscription,
             serde_json::json!({
@@ -2136,7 +2233,7 @@ async fn handle_invoice_payment_succeeded(
         .as_ref()
         .and_then(|s| s.external_price_id.clone());
 
-    let (_subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
+    let (subscription, _previous_subscription) = sync_stripe_subscription_with_history_in_txn(
         &app_state,
         realm_id,
         payload.user_id,
@@ -2164,10 +2261,13 @@ async fn handle_invoice_payment_succeeded(
         .current_period_end
         .unwrap_or_else(|| Utc::now() + ChronoDuration::days(30));
 
+    // Route grant to subscription.bucket_id (design §5.5 / A8); fail loud.
     app_state
         .subscription_service
         .handle_subscription_paid(
             payload.user_id,
+            subscription.id,
+            subscription.bucket_id,
             realm_id,
             &entitlement_key,
             true,
@@ -2490,10 +2590,20 @@ async fn handle_charge_dispute_closed(
     .await?;
 
     if synced.is_some() && needs_cancel {
+        // Route revocation to subscription.bucket_id (design §5.5 / A8); the
+        // synced Subscription is the post-update snapshot carrying the
+        // persisted bucket_id. Fail loud when unresolved.
+        let (subscription_id, subscription_bucket_id) = synced
+            .as_ref()
+            .map(|(subscription, _)| (subscription.id, subscription.bucket_id))
+            .unwrap_or((Uuid::nil(), None));
+        let bucket_id = resolve_subscription_bucket(subscription_id, subscription_bucket_id)?;
+
         app_state
             .subscription_service
             .handle_subscription_cancel(
                 user_id,
+                bucket_id,
                 realm_id,
                 CancelMode::ImmediateCancel,
                 None,

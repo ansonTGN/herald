@@ -42,11 +42,7 @@ fn load_test_rsa_pubkey() -> String {
 }
 
 /// Setup WeChat config with specific keys
-pub async fn setup_wechat_config_with_keys(
-    ctx: &mut TestContext,
-    realm_id: &str,
-    v3_key: &str,
-) {
+pub async fn setup_wechat_config_with_keys(ctx: &mut TestContext, realm_id: &str, v3_key: &str) {
     let notify_url = format!(
         "https://example.com/api/third/pay/{}/wechat/webhooks",
         realm_id

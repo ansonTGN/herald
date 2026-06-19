@@ -12,7 +12,6 @@ backend/
 ├── infra-creem/         # Creem payment integration
 ├── infra-stripe/        # Stripe payment integration
 ├── infra-wechat/        # WeChat Pay integration
-├── infra-shopify/       # Shopify integration
 ├── core/                # Assembly layer — dependency injection, ApplicationService Builder
 ├── api/                 # Main API crate (Axum route registration, middleware, AppState)
 ├── api-base/            # Shared API utilities (AppState definition, common HTTP helpers)
@@ -113,7 +112,7 @@ Beyond database repositories:
 - `authorization/` — `RedisPermissionChecker`, permission caching
 - `billing/` — invoice PDF generation (IronPress), encryption key management
 
-Payment channel clients live in separate crates (`infra-creem`, `infra-stripe`, `infra-wechat`, `infra-shopify`) rather than inside the main `infra` crate. The reason is to avoid pulling in payment SDKs you don't need — if you only use Stripe, the WeChat Pay SDK won't get compiled.
+Payment channel clients live in separate crates (`infra-creem`, `infra-stripe`, `infra-wechat`) rather than inside the main `infra` crate. The reason is to avoid pulling in payment SDKs you don't need — if you only use Stripe, the WeChat Pay SDK won't get compiled.
 
 ### core — Assembly Layer
 
@@ -132,7 +131,7 @@ Eight crates form the API layer:
 | `api-base` | `AppState` definition (shared across all api sub-crates) | — |
 | `api-auth` | Registration, login, password reset, email verification | session |
 | `api-admin` | User CRUD, role management, permission definition management | session + inject_identity |
-| `api-billing` | Entitlement mappings, subscription projection, payment webhooks (Stripe/Creem/WeChat/Shopify), invoices, one-time purchases | mixed |
+| `api-billing` | Entitlement mappings, subscription projection, payment webhooks (Stripe/Creem/WeChat), invoices, one-time purchases | mixed |
 | `api-oauth` | OAuth login (GitHub/Google/WeChat), OAuth configuration management | mixed |
 | `api-ext` | Third-party API: permission checks, subscription queries, points balance and consumption, isolated by the API key's bound client app | API Key |
 | `api-points` | Points balance, transaction history, consumption, top-up | session or API Key |

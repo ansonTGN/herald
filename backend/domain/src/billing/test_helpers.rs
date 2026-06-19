@@ -175,6 +175,7 @@ impl SubscriptionBuilder {
             status: self.status,
             entitlement_key: self.entitlement_key,
             external_price_id: self.external_price_id,
+            bucket_id: None,
             provider_metadata: self.provider_metadata,
             synced_at: self.synced_at,
             current_period_start: self.current_period_start,

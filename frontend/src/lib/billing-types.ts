@@ -4,7 +4,6 @@
  */
 export enum PaymentProvider {
   STRIPE = 'stripe',
-  SHOPIFY = 'shopify',
   WECHAT = 'wechat',
   CREEM = 'creem',
 }
@@ -22,7 +21,6 @@ export function isPaymentProvider(value: string): value is PaymentProvider {
 export function getProviderDisplayName(provider: PaymentProvider | string): string {
   const displayNames: Record<PaymentProvider, string> = {
     [PaymentProvider.STRIPE]: 'Stripe',
-    [PaymentProvider.SHOPIFY]: 'Shopify',
     [PaymentProvider.WECHAT]: 'WeChat Pay',
     [PaymentProvider.CREEM]: 'Creem',
   }

@@ -54,15 +54,12 @@ tracing-subscriber = { workspace = true }
 base32 = { workspace = true }
 base64 = { workspace = true }
 totp-lite = { workspace = true }
-mockito = { workspace = true }
 wiremock = { workspace = true }
 rsa = "0.9"
 aes-gcm = { workspace = true }
-regex = "1"
 hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
-md5 = "0.7"
 urlencoding = { workspace = true }
 url = { workspace = true }
 rand = { workspace = true }

@@ -118,6 +118,7 @@ pub struct AppState {
         herald_core::domain::points::services::RegistrationService<
             PostgresPointsRepository,
             PermissionBasedPointsPolicy,
+            PostgresBillingRepository,
         >,
     >,
 

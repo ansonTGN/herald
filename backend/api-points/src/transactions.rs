@@ -23,6 +23,7 @@ use herald_core::domain::points::ports::TransactionFilters;
         ("transactionType" = Option<String>, Query, description = "Filter by transaction type"),
         ("clientAppId" = Option<String>, Query, description = "Filter by client app ID"),
         ("subscriptionId" = Option<String>, Query, description = "Filter by subscription ID"),
+        ("bucketId" = Option<String>, Query, description = "Filter by Credit Bucket ID (design §4.2.3)"),
         ("startTime" = Option<String>, Query, description = "Filter by start time (ISO 8601)"),
         ("endTime" = Option<String>, Query, description = "Filter by end time (ISO 8601)"),
         ("page" = Option<u64>, Query, description = "Page number (0-based, default: 0)"),
@@ -60,6 +61,14 @@ pub async fn list_transactions(
 
     let subscription_id = query.subscription_id.and_then(|s| s.parse::<Uuid>().ok());
 
+    let bucket_id = match query.bucket_id.as_deref().map(str::trim) {
+        Some(s) if !s.is_empty() => Some(
+            s.parse::<Uuid>()
+                .map_err(|_| ApiError::bad_request("Invalid bucketId format"))?,
+        ),
+        _ => None,
+    };
+
     let transaction_type = match query.transaction_type {
         Some(s) => Some(
             s.parse::<herald_core::domain::points::TransactionType>()
@@ -88,6 +97,7 @@ pub async fn list_transactions(
 
     let filters = TransactionFilters {
         user_id,
+        bucket_id,
         transaction_type,
         client_app_id,
         subscription_id,
@@ -112,6 +122,7 @@ pub async fn list_transactions(
                     wallet_id: transaction.wallet_id,
                     user_id: transaction.user_id,
                     realm_id: transaction.realm_id,
+                    bucket_id: Some(transaction.bucket_id),
                     transaction_type: transaction.transaction_type.as_str().to_string(),
                     amount: transaction.amount,
                     balance_after: transaction.balance_after,

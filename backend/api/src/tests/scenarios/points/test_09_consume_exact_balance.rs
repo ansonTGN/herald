@@ -77,11 +77,23 @@ async fn test_scenario_consume_exact_single_ledger(ctx: &mut TestContext) {
     let body: serde_json::Value =
         serde_json::from_slice(&body_bytes).expect("Failed to parse JSON");
 
+    // Credit-bucket contract (design §4.2.2): the consume response no longer
+    // carries a top-level `balanceAfter`. The per-bucket balance lives on each
+    // entry of `transactions[].balanceAfter` (single-pool hits return exactly
+    // one entry, per `consume_single_pool_hits_returns_one_transaction`).
+    let transactions = body["transactions"]
+        .as_array()
+        .expect("consume response should contain a transactions array");
     assert_eq!(
-        body["balanceAfter"].as_i64(),
+        transactions.len(),
+        1usize,
+        "single-pool consume should return exactly one per-bucket transaction"
+    );
+    assert_eq!(
+        transactions[0]["balanceAfter"].as_i64(),
         Some(0),
-        "Balance after should be exactly 0, got {:?}",
-        body["balanceAfter"]
+        "Per-bucket balanceAfter should be exactly 0, got {:?}",
+        transactions[0]["balanceAfter"]
     );
 
     // Verify account balance in database is 0
@@ -186,7 +198,7 @@ async fn test_scenario_consume_exact_mixed_ledgers(ctx: &mut TestContext) {
         result.is_ok(),
         "Exact mixed-balance consumption should succeed"
     );
-    let transaction = result.unwrap();
+    let transaction = &result.unwrap()[0];
     assert_eq!(transaction.amount, -5000);
     assert_eq!(transaction.balance_after, 0);
 
@@ -284,11 +296,14 @@ async fn test_scenario_consume_after_balance_zero_rejected(ctx: &mut TestContext
 
     let retry_response = app.clone().oneshot(retry_request).await.unwrap();
 
-    // Then: rejected with error
+    // Then: rejected with error.
+    // Credit-bucket contract (design §4.2.2 / §4.2.3): insufficient balance is
+    // surfaced as HTTP 409 `insufficient_points`, not 400. Mirrors
+    // `consume_insufficient_points_returns_insufficient_points`.
     assert_eq!(
         retry_response.status(),
-        StatusCode::BAD_REQUEST,
-        "Consumption on zero-balance account should be rejected"
+        StatusCode::CONFLICT,
+        "Consumption on zero-balance account should be rejected with 409"
     );
 
     let body_bytes = axum::body::to_bytes(retry_response.into_body(), usize::MAX)
@@ -361,7 +376,7 @@ async fn test_scenario_recharge_after_balance_exhausted(ctx: &mut TestContext) {
         .await;
 
     assert!(drain_result.is_ok(), "Drain should succeed");
-    assert_eq!(drain_result.unwrap().balance_after, 0);
+    assert_eq!(drain_result.unwrap()[0].balance_after, 0);
 
     // Verify balance is 0
     let account = get_points_wallet_by_user(ctx, user_id)
@@ -401,7 +416,7 @@ async fn test_scenario_recharge_after_balance_exhausted(ctx: &mut TestContext) {
         "Consumption after recharge should succeed, got error: {:?}",
         consume_result.err()
     );
-    let transaction = consume_result.unwrap();
+    let transaction = &consume_result.unwrap()[0];
     assert_eq!(transaction.amount, -1000);
     assert_eq!(transaction.balance_after, 2000);
 

@@ -15,6 +15,7 @@ pub struct PaymentAttempt {
     pub payment_provider: String, // "wechat", "stripe", "creem"
     pub target_type: PurchasableTarget,
     pub target_id: Uuid,
+    pub bucket_id: Option<Uuid>,
     pub amount: i64,
     pub currency: String,
     pub status: PaymentAttemptStatus,

@@ -171,11 +171,18 @@ where
             CreditSourceType::FreePeriodicGrant
         };
 
-        // Grant points using PointsService
+        // Grant points using PointsService.
+        // Per design §5.4, periodic grants target the Bucket recorded on the
+        // schedule (`points_grant_schedules.bucket_id`). Schedules without a
+        // bucket are misconfigured and must fail loud rather than fall back to
+        // any implicit pool (A4/A5).
+        let bucket_id = schedule.bucket_id.ok_or(CoreError::GrantBucketRequired)?;
+
         self.points_service
             .grant_points_internal(
                 &schedule.realm_id,
                 schedule.user_id,
+                bucket_id,
                 credit_type,
                 source_type,
                 schedule.points_per_period,

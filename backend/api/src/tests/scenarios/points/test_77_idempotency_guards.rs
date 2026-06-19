@@ -46,6 +46,16 @@ async fn test_grant_idempotency_prevents_duplicate_ledger(ctx: &mut SchemaTestCo
     let source_id = Uuid::now_v7().to_string();
     let idempotency_key = format!("grant:AdminGrant:{}", source_id);
 
+    // Credit-bucket: grant/revoke now require an explicit bucket_id target.
+    // The wallet above was created on the realm's legacy bucket (see
+    // `points_helpers::ensure_test_bucket_for_realm`), so the grant, the
+    // idempotent replay and the balance read below must all target that SAME
+    // bucket — otherwise the grant would silently land on a second pool while
+    // the unscoped `WHERE user_id` read stayed on the empty legacy wallet.
+    // This test is about grant idempotency, not bucket routing.
+    use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+
     // First grant should succeed
     let result1 = ctx
         .app_state
@@ -53,6 +63,7 @@ async fn test_grant_idempotency_prevents_duplicate_ledger(ctx: &mut SchemaTestCo
         .grant_points_internal(
             &realm_id,
             user_id,
+            bucket_id,
             CreditType::GrantedCredit,
             CreditSourceType::AdminGrant,
             500,
@@ -72,6 +83,7 @@ async fn test_grant_idempotency_prevents_duplicate_ledger(ctx: &mut SchemaTestCo
         .grant_points_internal(
             &realm_id,
             user_id,
+            bucket_id,
             CreditType::GrantedCredit,
             CreditSourceType::AdminGrant,
             500,
@@ -157,6 +169,18 @@ async fn test_revoke_subscription_by_entitlement_idempotency(ctx: &mut SchemaTes
 
     let idempotency_key = format!("revoke:sub:{}", entitlement_key);
 
+    // Credit-bucket: revoke now requires an explicit bucket_id target.
+    // The wallet and the subscription ledger above were both created on the
+    // realm's legacy bucket (`create_points_wallet` +
+    // `create_credit_ledger_entry_v2` route through
+    // `ensure_test_bucket_for_realm`), and `revoke_subscription_credits_by_
+    // entitlement_atomic` scopes its ledger lookup by `bucket_id`. Revoke on
+    // any other bucket would find no ledger to revoke. Target the SAME bucket
+    // the ledger actually lives in so the test exercises revoke idempotency
+    // rather than bucket routing.
+    use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
+    let revoke_bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+
     // First revocation should succeed
     let result1 = ctx
         .app_state
@@ -164,6 +188,7 @@ async fn test_revoke_subscription_by_entitlement_idempotency(ctx: &mut SchemaTes
         .revoke_subscription_credits_by_entitlement_atomic(
             &realm_id,
             user_id,
+            revoke_bucket_id,
             &entitlement_key,
             RevocationType::CancelRevoke,
             "idempotency test: first revoke".to_string(),
@@ -204,6 +229,7 @@ async fn test_revoke_subscription_by_entitlement_idempotency(ctx: &mut SchemaTes
         .revoke_subscription_credits_by_entitlement_atomic(
             &realm_id,
             user_id,
+            revoke_bucket_id,
             &entitlement_key,
             RevocationType::CancelRevoke,
             "idempotency test: duplicate revoke".to_string(),
@@ -270,12 +296,26 @@ async fn test_revoke_topup_proportional_idempotency(ctx: &mut SchemaTestContext)
 
     let refund_id = Uuid::now_v7().to_string();
 
+    // Credit-bucket: revoke now requires an explicit bucket_id target.
+    // The wallet and the topup ledger above were both created on the realm's
+    // legacy bucket (`create_points_wallet` + `create_credit_ledger_entry_v2`
+    // route through `ensure_test_bucket_for_realm`), and
+    // `revoke_topup_proportional_atomic` scopes its ledger lookup by
+    // `bucket_id`. Revoke on any other bucket would find no ledger to revoke.
+    // Target the SAME bucket the ledger actually lives in so the test
+    // exercises revoke idempotency rather than bucket routing.
+    use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
+    let topup_bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
+
     // First revocation: revoke half (1000 out of 2000)
     let result1: Result<RevokePointsOutput, _> = ctx
         .app_state
         .points_repository
         .revoke_topup_proportional_atomic(
-            &realm_id, user_id, 1000, // refund_amount
+            &realm_id,
+            user_id,
+            topup_bucket_id,
+            1000, // refund_amount
             2000, // original_payment_amount
             &refund_id,
         )
@@ -308,7 +348,10 @@ async fn test_revoke_topup_proportional_idempotency(ctx: &mut SchemaTestContext)
         .app_state
         .points_repository
         .revoke_topup_proportional_atomic(
-            &realm_id, user_id, 1000, // refund_amount
+            &realm_id,
+            user_id,
+            topup_bucket_id,
+            1000, // refund_amount
             2000, // original_payment_amount
             &refund_id,
         )

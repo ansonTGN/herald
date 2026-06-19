@@ -39,7 +39,7 @@
 
 ### 2.1 包含功能
 
-- 微信支付作为支付平台选项之一（与 Creem、Stripe、Shopify 并列）
+- 微信支付作为支付平台选项之一（与 Creem、Stripe 并列）
 - 微信支付配置管理（App ID、Merchant ID、私钥、序列号、API v3 Key、Notify URL）
 - Native 支付下单（后端调用统一下单 API，前端生成二维码）
 - Webhook 回调处理（签名验证 + 回调数据解密）
@@ -75,7 +75,7 @@
 
 ### 3.1 功能描述
 
-微信支付集成是 Herald 系统支付平台选项之一，与 Creem（模拟平台）、Stripe 和 Shopify 并列。Realm Admin 可以选择使用微信支付作为订阅支付的处理平台，面向中国市场的用户提供 Native 扫码支付体验。
+微信支付集成是 Herald 系统支付平台选项之一，与 Creem（模拟平台）、Stripe 并列。Realm Admin 可以选择使用微信支付作为订阅支付的处理平台，面向中国市场的用户提供 Native 扫码支付体验。
 
 ### 3.2 关键特性
 
@@ -181,7 +181,7 @@
 ## 9. 参考资料
 
 - 用户故事：`docs/user-stories/billing/wechat-pay.md`、`docs/user-stories/billing/payment-provider.md`
-- 相关 PRD：`docs/prd/billing/subscription.md`、`docs/prd/billing/points.md`、`docs/prd/billing/stripe-payment.md`、`docs/prd/billing/shopify-pay.md`
+- 相关 PRD：`docs/prd/billing/subscription.md`、`docs/prd/billing/points.md`、`docs/prd/billing/stripe-payment.md`
 - 微信支付官方文档：[API v3](https://pay.weixin.qq.com/wiki/doc/apiv3/wxpay/pages/index.shtml)、[Native 支付](https://pay.weixin.qq.com/wiki/doc/apiv3/open/pay/chapter2_7_2.shtml)、[签名验证](https://pay.weixin.qq.com/wiki/doc/apiv3/wechatpay/wechatpay4_1.shtml)、[回调通知](https://pay.weixin.qq.com/wiki/doc/apiv3/wechatpay/wechatpay4_5.shtml)
 
 ---

@@ -9,13 +9,16 @@ linker = "rust-lld.exe"
 rustc-wrapper = "sccache"
 
 # Use all available CPU cores for parallel compilation
-jobs = 8
+# 16 核机器，留 4 核给系统/IO/测试库，用 12 路并行编译
+jobs = 12
 
 [profile.dev]
 # Development profile - prioritize compilation speed
 split-debuginfo = "unpacked"
-# 关闭 incremental，让 sccache 可以缓存
-incremental = false
+# 开启 incremental：日常小改动只重编受影响的 codegen units，迭代最快。
+# 取舍：sccache 不缓存 incremental 构建，故本地 dev 命中率趋零；
+# CI 不用 sccache（走 rust-cache），不受影响。
+incremental = true
 codegen-units = 64
 
 [profile.release]
@@ -28,7 +31,7 @@ lto = "thin"
 # Test profile - prioritize compilation speed
 opt-level = 0
 debug = "line-tables-only"
-incremental = false
+incremental = true
 codegen-units = 64
 strip = "debuginfo"
 

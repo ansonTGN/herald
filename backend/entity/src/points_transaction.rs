@@ -11,6 +11,7 @@ pub struct Model {
     pub wallet_id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
+    pub bucket_id: Uuid,
     pub r#type: String,
     pub amount: i64,
     pub balance_after: i64,
@@ -23,17 +24,31 @@ pub struct Model {
     pub client_app_id: Option<Uuid>,
     pub subscription_id: Option<Uuid>,
     pub external_ref_id: Option<String>,
+    #[sea_orm(nullable)]
+    pub correlation_id: Option<String>,
     pub created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
+        belongs_to = "super::credit_bucket::Entity",
+        from = "Column::BucketId",
+        to = "super::credit_bucket::Column::Id"
+    )]
+    CreditBucket,
+    #[sea_orm(
         belongs_to = "super::points_wallet::Entity",
         from = "Column::WalletId",
         to = "super::points_wallet::Column::Id"
     )]
     PointsWallet,
+}
+
+impl Related<super::credit_bucket::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::CreditBucket.def()
+    }
 }
 
 impl Related<super::points_wallet::Entity> for Entity {

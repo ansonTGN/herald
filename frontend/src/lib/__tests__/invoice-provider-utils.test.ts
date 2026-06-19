@@ -27,7 +27,7 @@ describe('isExternalInvoice', () => {
     expect(isExternalInvoice('manual')).toBe(false)
   })
 
-  it.each(['stripe', 'creem', 'wechat', 'shopify'] as const)(
+  it.each(['stripe', 'creem', 'wechat'] as const)(
     'returns true for known external provider %s',
     (provider) => {
       expect(isExternalInvoice(provider)).toBe(true)
@@ -51,7 +51,6 @@ describe('getProviderLabel', () => {
   it.each([
     { provider: 'stripe' as const, expected: 'Stripe' },
     { provider: 'creem' as const, expected: 'Creem' },
-    { provider: 'shopify' as const, expected: 'Shopify' },
   ])('returns brand name $expected for provider $provider', ({ provider, expected }) => {
     expect(getProviderLabel(provider)).toBe(expected)
   })

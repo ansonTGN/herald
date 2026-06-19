@@ -17,6 +17,7 @@ pub struct UpdateEntitlementMappingInput {
     pub validity_days: Option<Option<i64>>,
     pub grant_on_subscribe: Option<bool>,
     pub max_periods: Option<Option<i64>>,
+    pub bucket_id: Option<Option<uuid::Uuid>>,
 }
 
 /// EntitlementMappingService - Business logic for entitlement mapping management
@@ -135,6 +136,7 @@ where
             payment_provider: existing.payment_provider,
             external_product_id: existing.external_product_id,
             external_price_id: existing.external_price_id,
+            bucket_id: input.bucket_id.unwrap_or(existing.bucket_id),
             entitlement_key: input.entitlement_key.unwrap_or(existing.entitlement_key),
             billing_type: existing.billing_type,
             billing_period: existing.billing_period,

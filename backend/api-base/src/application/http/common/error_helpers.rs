@@ -52,12 +52,38 @@ macro_rules! option_to_not_found {
 }
 
 /// Converts CoreError to ApiError with appropriate mapping
+///
+/// Status codes mirror `CoreError::into_response` in
+/// `domain/.../app_errors.rs` so the API surface and the domain-layer
+/// (webhook handlers) agree on client-vs-server semantics.
 pub fn core_error_to_api_error(e: CoreError, operation: &str) -> ApiError {
     match e {
         CoreError::NotFound => ApiError::not_found(format!("{operation} not found")),
         CoreError::Conflict(msg) => ApiError::conflict(msg),
         CoreError::BadRequest(msg) => ApiError::bad_request(msg),
         CoreError::Forbidden(msg) => ApiError::forbidden(msg),
+        // Credit-bucket routing errors (design credit-bucket §4.2.3 / §5.5).
+        // Must surface as client errors (4xx) instead of being swallowed by
+        // the 500 fallback; status codes align with `app_errors.rs`.
+        CoreError::EntitlementMappingNotFound => {
+            ApiError::not_found("Entitlement mapping not found".to_string())
+        }
+        CoreError::EntitlementMappingNotAttachedToBucket { mapping_id } => {
+            ApiError::unprocessable_entity(format!(
+                "Entitlement mapping {mapping_id} is not attached to a credit bucket"
+            ))
+        }
+        CoreError::SubscriptionBucketNotResolved { subscription_id } => {
+            ApiError::unprocessable_entity(format!(
+                "Subscription {subscription_id} is not bound to a credit bucket"
+            ))
+        }
+        CoreError::NoCoveredPointsPool { client_app_id } => ApiError::bad_request(format!(
+            "Client app {client_app_id} does not cover any available credit bucket"
+        )),
+        CoreError::GrantBucketRequired => {
+            ApiError::bad_request("Points grant requires an explicit target bucket".to_string())
+        }
         _ => ApiError::internal(format!("Failed to {operation}: {e}")),
     }
 }

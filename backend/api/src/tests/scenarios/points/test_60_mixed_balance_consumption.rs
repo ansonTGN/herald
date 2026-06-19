@@ -77,7 +77,7 @@ async fn test_mixed_balance_fifo_consumption(ctx: &mut SchemaTestContext) {
 
     // Then: Should succeed
     assert!(result.is_ok(), "Should successfully consume 6000 points");
-    let transaction = result.unwrap();
+    let transaction = &result.unwrap()[0];
     assert_eq!(transaction.amount, -6000);
 
     // Verify subscription credits fully consumed (FIFO priority)

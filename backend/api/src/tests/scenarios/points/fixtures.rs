@@ -15,7 +15,7 @@
 // =============================================================================
 
 use herald_core::domain::client_api_keys::services::ClientApiKeyService;
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 /// Create a test user with authentication
@@ -139,32 +139,52 @@ pub async fn create_test_points_wallet(pool: &PgPool, user_id: Uuid, balance: i6
         .await
         .expect("Failed to get user realm_id");
 
+    // Ensure a legacy credit bucket exists for this realm so the NOT NULL
+    // points_wallets.bucket_id / points_credit_ledger.bucket_id constraints hold.
+    let bucket_id =
+        crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(pool, &realm_id).await;
+
     let wallet_id = Uuid::now_v7();
 
     // Create the points_wallets entry with subscription_balance
     // (total_balance is computed as topup_balance + subscription_balance)
     sqlx::query(
-        "INSERT INTO points_wallets (id, user_id, realm_id, subscription_balance, total_subscription_granted, topup_balance, total_topup_granted, total_recharged, total_consumed, status)
-         VALUES ($1, $2, $3, $4, $4, 0, 0, 0, 0, 'active')",
+        "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, subscription_balance, total_subscription_granted, topup_balance, total_topup_granted, total_recharged, total_consumed, status)
+         VALUES ($1, $2, $3, $4, $5, $5, 0, 0, 0, 0, 'active')
+         ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING",
     )
     .bind(wallet_id)
     .bind(user_id)
     .bind(&realm_id)
+    .bind(bucket_id)
     .bind(balance)
     .execute(pool)
     .await
     .expect("Failed to create points account");
 
+    // Re-read in case a wallet already existed for this (realm, user, bucket) pool
+    // and our minted id collided with the unique row.
+    let wallet_id: Uuid = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM points_wallets WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3",
+    )
+    .bind(&realm_id)
+    .bind(user_id)
+    .bind(bucket_id)
+    .fetch_one(pool)
+    .await
+    .expect("Failed to fetch points wallet after ensure");
+
     // Create corresponding credit ledger entry for subscription credits
     // This is required for the new ledger-based points system
     let ledger_id = Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO points_credit_ledger (id, user_id, realm_id, credit_type, source_type, source_id, granted_amount, used_amount, revoked_amount, status)
-         VALUES ($1, $2, $3, 'subscription_credit', 'system_grant', $4, $5, 0, 0, 'active')",
+        "INSERT INTO points_credit_ledger (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id, granted_amount, used_amount, revoked_amount, status)
+         VALUES ($1, $2, $3, $4, 'subscription_credit', 'system_grant', $5, $6, 0, 0, 'active')",
     )
     .bind(ledger_id)
     .bind(user_id)
     .bind(&realm_id)
+    .bind(bucket_id)
     .bind(format!("test-grant-{}", wallet_id))
     .bind(balance)
     .execute(pool)
@@ -188,22 +208,25 @@ pub async fn create_test_transaction(
     description: Option<&str>,
     client_app_id: Option<Uuid>,
 ) -> Uuid {
-    let realm_id: String = sqlx::query_scalar("SELECT realm_id FROM points_wallets WHERE id = $1")
+    let row = sqlx::query("SELECT realm_id, bucket_id FROM points_wallets WHERE id = $1")
         .bind(wallet_id)
         .fetch_one(pool)
         .await
-        .expect("Failed to get account realm_id");
+        .expect("Failed to get account realm_id / bucket_id");
+    let realm_id: String = row.get("realm_id");
+    let bucket_id: Uuid = row.get("bucket_id");
 
     let transaction_id = Uuid::now_v7();
 
     sqlx::query(
-        "INSERT INTO points_transactions (id, wallet_id, user_id, realm_id, type, amount, balance_after, description, client_app_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        "INSERT INTO points_transactions (id, wallet_id, user_id, realm_id, bucket_id, type, amount, balance_after, description, client_app_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(transaction_id)
     .bind(wallet_id)
     .bind(user_id)
     .bind(&realm_id)
+    .bind(bucket_id)
     .bind(transaction_type)
     .bind(amount)
     .bind(balance_after)
@@ -342,6 +365,15 @@ pub async fn create_test_api_key(pool: &PgPool, realm_id: &str, client_app_id: U
     .await
     .expect("Failed to create client app");
 
+    // 2b. Attach this client app to the realm's legacy credit bucket so the
+    // consume-path coverage resolution (design A4) includes it.
+    crate::tests::helpers::points_helpers::attach_client_app_to_legacy_bucket(
+        pool,
+        realm_id,
+        client_app_id,
+    )
+    .await;
+
     // 3. Hash API Key using Argon2 (same as production)
     let api_key_hash = ClientApiKeyService::hash_api_key(&api_key_plaintext);
 
@@ -437,6 +469,15 @@ pub async fn create_test_client_app(pool: &PgPool, realm_id: &str) -> Uuid {
     .execute(pool)
     .await
     .expect("Failed to create client app");
+
+    // Attach this client app to the realm's legacy credit bucket so the
+    // consume-path coverage resolution (design A4) includes it.
+    crate::tests::helpers::points_helpers::attach_client_app_to_legacy_bucket(
+        pool,
+        realm_id,
+        client_app_id,
+    )
+    .await;
 
     client_app_id
 }

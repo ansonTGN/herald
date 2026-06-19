@@ -8,8 +8,9 @@ use crate::common::entities::app_errors::CoreError;
 use crate::points::dtos::RevokePointsOutput;
 use crate::points::entities::CreditSourceType;
 use crate::points::entities::{
-    CreditLedgerStatus, CreditType, Paginated, PointsConsumptionAllocation, PointsCreditLedger,
-    PointsRevocationRecord, PointsTransaction, PointsWallet, RevocationType, TransactionType,
+    ConsumptionAllocationView, CreditLedgerStatus, CreditType, Paginated,
+    PointsConsumptionAllocation, PointsCreditLedger, PointsRevocationRecord, PointsTransaction,
+    PointsWallet, RevocationType, TransactionType,
 };
 use crate::points::{
     CreateRealmConfigInput, PointsGrantRecord, PointsGrantSchedule, RealmDefaultConfig,
@@ -20,6 +21,7 @@ use crate::points::{
 #[derive(Debug, Clone, Default)]
 pub struct TransactionFilters {
     pub user_id: Option<Uuid>,
+    pub bucket_id: Option<Uuid>,
     pub transaction_type: Option<TransactionType>,
     pub client_app_id: Option<Uuid>,
     pub subscription_id: Option<Uuid>,
@@ -33,6 +35,7 @@ pub struct TransactionFilters {
 /// Account filters
 #[derive(Debug, Clone, Default)]
 pub struct WalletFilters {
+    pub bucket_id: Option<Uuid>,
     pub status: Option<String>,
     pub search: Option<String>,
     pub page: Option<u64>,
@@ -307,6 +310,18 @@ pub trait PointsRepository: Send + Sync {
         transaction_id: Uuid,
     ) -> impl Future<Output = Result<Vec<PointsConsumptionAllocation>, CoreError>> + Send;
 
+    /// Find consumption allocations for ALL transactions sharing a consume
+    /// `correlation_id` (design §4.3.2 / §5.1). Used by the SDK consume response
+    /// to surface the ledger-level truth source of a multi-bucket consume without
+    /// re-deducting. Legacy single-pool rows (NULL correlation_id) are excluded.
+    /// Returns each allocation joined with its ledger's `credit_type` so the
+    /// response can populate `AllocationDetail.credit_type`.
+    fn find_consumption_allocations_by_correlation_id(
+        &self,
+        realm_id: &str,
+        correlation_id: &str,
+    ) -> impl Future<Output = Result<Vec<ConsumptionAllocationView>, CoreError>> + Send;
+
     // ========== Revocation Records ==========
 
     /// Create a revocation record
@@ -535,12 +550,24 @@ pub trait PointsRepository: Send + Sync {
         amount: i64,
         description: Option<String>,
         idempotency_key: Option<String>,
-    ) -> impl Future<Output = Result<PointsTransaction, CoreError>> + Send;
+    ) -> impl Future<Output = Result<Vec<PointsTransaction>, CoreError>> + Send;
+
+    /// Reassemble a consume result set from its primary transaction id, WITHOUT
+    /// re-deducting (design §5.1 idempotency replay). Multi-pool rows share a
+    /// `correlation_id` → return all N sibling transactions ordered by
+    /// bucket_id. Legacy single-pool rows (NULL `correlation_id`) return just
+    /// the primary transaction.
+    fn replay_consume_by_primary(
+        &self,
+        realm_id: &str,
+        primary_txn_id: Uuid,
+    ) -> impl Future<Output = Result<Vec<PointsTransaction>, CoreError>> + Send;
 
     fn revoke_points_by_credit_type_atomic(
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         credit_type: CreditType,
         revocation_type: RevocationType,
         reason: String,
@@ -555,6 +582,7 @@ pub trait PointsRepository: Send + Sync {
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         source_id: &str,
         revocation_type: RevocationType,
         reason: String,
@@ -569,6 +597,7 @@ pub trait PointsRepository: Send + Sync {
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         entitlement_key: &str,
         revocation_type: RevocationType,
         reason: String,
@@ -580,6 +609,7 @@ pub trait PointsRepository: Send + Sync {
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         refund_amount: i64,
         original_payment_amount: i64,
         refund_id: &str,
@@ -589,6 +619,7 @@ pub trait PointsRepository: Send + Sync {
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         refund_reference: String,
         refund_amount: i64,
         reason: String,
@@ -598,6 +629,7 @@ pub trait PointsRepository: Send + Sync {
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         credit_type: CreditType,
         source_type: CreditSourceType,
         amount: i64,
@@ -611,6 +643,7 @@ pub trait PointsRepository: Send + Sync {
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         credit_type: CreditType,
         source_type: CreditSourceType,
         amount: i64,
@@ -630,6 +663,7 @@ pub trait PointsRepository: Send + Sync {
         &self,
         realm_id: &str,
         user_id: Uuid,
+        bucket_id: Uuid,
         entitlement_key: String,
         points_amount: i64,
         source_type: CreditSourceType,

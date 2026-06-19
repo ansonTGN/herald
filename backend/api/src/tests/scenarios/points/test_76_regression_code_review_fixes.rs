@@ -189,9 +189,20 @@ async fn test_grant_points_rejected_for_frozen_wallet(ctx: &mut SchemaTestContex
         .await
         .expect("Failed to freeze wallet");
 
+    // Credit-bucket: GrantPointsInput now requires a bucket_id. Create a real
+    // bucket as the grant target — the wallet-status rejection happens before
+    // the ledger is written, so the bucket is never used at runtime here.
+    use crate::tests::helpers::credit_bucket_helpers::{
+        CreditBucketOpts, create_test_credit_bucket,
+    };
+    let bucket_id =
+        create_test_credit_bucket(&ctx.app_state.pool, &realm_id, CreditBucketOpts::default())
+            .await;
+
     // Attempt to grant points — service layer reads status='frozen' and should reject
     let input = GrantPointsInput {
         user_id,
+        bucket_id,
         source_type: CreditSourceType::AdminGrant,
         amount: 100,
         reason: "regression test: grant to frozen wallet".to_string(),
@@ -242,8 +253,17 @@ async fn test_grant_points_rejected_for_closed_wallet(ctx: &mut SchemaTestContex
         .await
         .expect("Failed to close wallet");
 
+    // Credit-bucket: GrantPointsInput now requires a bucket_id.
+    use crate::tests::helpers::credit_bucket_helpers::{
+        CreditBucketOpts, create_test_credit_bucket,
+    };
+    let bucket_id =
+        create_test_credit_bucket(&ctx.app_state.pool, &realm_id, CreditBucketOpts::default())
+            .await;
+
     let input = GrantPointsInput {
         user_id,
+        bucket_id,
         source_type: CreditSourceType::AdminGrant,
         amount: 100,
         reason: "regression test: grant to closed wallet".to_string(),

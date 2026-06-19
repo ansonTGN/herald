@@ -183,6 +183,20 @@ impl From<herald_core::domain::common::entities::app_errors::CoreError> for ApiE
             CoreError::EntitlementMappingNotFound => {
                 Self::not_found("Entitlement mapping not found".to_string())
             }
+            // Credit-bucket routing errors (design credit-bucket §4.2.3 / §5.5).
+            // These surface from consume / grant / fulfillment write paths.
+            CoreError::EntitlementMappingNotAttachedToBucket { mapping_id } => Self::bad_request(
+                format!("Entitlement mapping {mapping_id} is not attached to a credit bucket"),
+            ),
+            CoreError::SubscriptionBucketNotResolved { subscription_id } => Self::internal(
+                format!("Subscription {subscription_id} is not bound to a credit bucket"),
+            ),
+            CoreError::NoCoveredPointsPool { client_app_id } => Self::conflict(format!(
+                "Client app {client_app_id} does not cover any available credit bucket"
+            )),
+            CoreError::GrantBucketRequired => {
+                Self::bad_request("Points grant requires an explicit target bucket".to_string())
+            }
         }
     }
 }

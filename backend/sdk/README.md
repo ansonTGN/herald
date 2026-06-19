@@ -52,7 +52,10 @@ async fn main() {
         Some("Purchase item X".to_string()),
         Some("idempotency-key-123".to_string()),
     ).await.unwrap();
-    println!("remaining balance: {}", result.balance_after);
+    // One transaction per affected Credit Bucket; length 1 for single-pool.
+    let primary = &result.transactions[0];
+    println!("correlationId: {}", result.correlation_id);
+    println!("remaining balance: {}", primary.balance_after);
 }
 ```
 

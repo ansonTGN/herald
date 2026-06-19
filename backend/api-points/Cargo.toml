@@ -9,7 +9,6 @@ license.workspace = true
 herald-api-base = { path = "../api-base" }
 herald-core = { path = "../core" }
 axum = { workspace = true }
-axum-valid = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 utoipa = { workspace = true }
@@ -17,5 +16,4 @@ validator = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-sqlx = { workspace = true }
 tokio = { workspace = true }

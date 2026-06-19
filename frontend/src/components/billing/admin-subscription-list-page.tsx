@@ -46,7 +46,6 @@ function formatProviderName(provider: string): string {
     stripe: 'Stripe',
     creem: 'Creem',
     wechat: 'WeChat Pay',
-    shopify: 'Shopify',
   }
   return names[provider] ?? provider
 }

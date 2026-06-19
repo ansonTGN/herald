@@ -373,63 +373,8 @@ export async function cleanupDemoTestData(
 ): Promise<void> {
   const { verbose = true } = options
 
-  // 清理 Shopify 支付配置（通过 API）
-  await cleanupShopifyConfiguration(page, realmId, verbose)
-
   // 清理测试创建的订阅套餐（通过 API）
   await cleanupSubscriptionPlans(page, realmId, options)
-}
-
-/**
- * 清理 Shopify 支付配置
- *
- * 通过 API 删除 realm 的 Shopify 配置
- *
- * @param page Playwright Page 对象
- * @param realmId Realm ID
- * @param verbose 是否输出详细日志
- */
-async function cleanupShopifyConfiguration(
-  page: Page,
-  realmId: string,
-  verbose: boolean = true
-): Promise<void> {
-  const apiUrl = `${BASE_URL}/api/third/pay/${realmId}/providers/shopify`
-
-  try {
-    const response = await page.request.delete(apiUrl, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-
-    if (response.status() === 204 || response.status() === 200) {
-      if (verbose) {
-        console.log(`[EnvironmentSetup] Shopify 配置已删除 (realm: ${realmId})`)
-      }
-    } else if (response.status() === 404) {
-      // 配置不存在，这是正常情况
-      if (verbose) {
-        console.log(`[EnvironmentSetup] Shopify 配置不存在 (realm: ${realmId})`)
-      }
-    } else if (response.status() === 409) {
-      // 存在活跃订阅，无法删除
-      const error = await response.text().catch(() => 'Unknown error')
-      console.warn(
-        `[EnvironmentSetup] 无法删除 Shopify 配置 - 存在活跃订阅 (realm: ${realmId}): ${error}`
-      )
-    } else {
-      // 其他错误
-      const errorText = await response.text().catch(() => 'Unknown error')
-      console.error(
-        `[EnvironmentSetup] 删除 Shopify 配置失败 (realm: ${realmId}):` +
-          ` HTTP ${response.status()} - ${errorText}`
-      )
-    }
-  } catch (error) {
-    // 网络错误或其他异常
-    console.error(`[EnvironmentSetup] 删除 Shopify 配置时发生错误 (realm: ${realmId}):`, error)
-  }
 }
 
 /**

@@ -234,6 +234,7 @@ impl AsyncTestContext for SchemaTestContext {
                 points_repository.clone(),
                 points_service.clone(),
                 points_policy,
+                billing_repository.clone(),
             ),
         );
 

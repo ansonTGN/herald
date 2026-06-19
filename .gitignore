@@ -12,6 +12,7 @@ tmpclaude-*
 backend/frontend/api.json
 frontend/api.json
 frontend/.jscpd-report/
+backend/report/
 scripts/log
 test-results/
 __pycache__/

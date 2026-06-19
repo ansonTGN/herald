@@ -14,7 +14,7 @@ const subscriptionsSearchSchema = z.object({
 export const Route = createFileRoute('/$realmId/manage/billing/subscriptions')({
   beforeLoad: ({ context, params }) =>
     requireFeature(context.queryClient, params.realmId, (f) => f.admin.entitlementMappingsVisible, {
-      to: '/$realmId/manage/billing',
+      to: '/$realmId/manage',
       params: { realmId: params.realmId },
     }),
   validateSearch: subscriptionsSearchSchema,

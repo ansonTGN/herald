@@ -90,7 +90,7 @@ async fn test_expired_points_cannot_consume(ctx: &mut SchemaTestContext) {
     // Then: Should succeed using only the non-expired topup credits
     assert!(result.is_ok(), "Should consume available topup credits");
 
-    let transaction = result.unwrap();
+    let transaction = &result.unwrap()[0];
     assert_eq!(
         transaction.amount, -5000,
         "Should record a 5000-point consumption from topup credits"

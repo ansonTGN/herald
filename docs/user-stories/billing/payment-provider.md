@@ -161,22 +161,6 @@ And 页面显示：
   | Updated At        | 2026-03-20 10:00:00 UTC  |
 ```
 
-**场景 4：测试 Webhook 连接（仅 Shopify 支持）**
-```gherkin
-Given 我是 realm-1 的管理员
-And 已配置 Shopify 平台
-When 我在配置详情页面点击 "Test Webhook" 按钮
-Then 系统向 Shopify 发送测试 Webhook 事件
-And 系统显示测试结果：
-  | 测试项           | 状态   |
-  | Signature 验证   | 成功    |
-  | 事件处理         | 成功    |
-When Webhook 测试失败
-Then 系统显示错误详情和修复建议
-```
-
-> **注意**：当前仅 Shopify 支持测试连接功能，Stripe 和 Creem 的测试连接功能待实现。
-
 ---
 
 ### 故事 3：编辑支付平台配置 [US-PV-003]

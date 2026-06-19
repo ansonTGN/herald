@@ -274,6 +274,7 @@ pub async fn build_app_state_with_migrations(
         points_repository.clone(),
         points_service.clone(),
         Arc::new(points_policy.clone()),
+        billing_repository.clone(),
     ));
     info!("Registration service initialized");
 

@@ -13,9 +13,8 @@ import { m } from '@/paraglide/messages'
 export const Route = createFileRoute('/$realmId/manage/subscription-history')({
   beforeLoad: ({ context, params }) =>
     requireFeature(context.queryClient, params.realmId, (f) => f.admin.subscriptionHistoryVisible, {
-      to: '/$realmId/manage/billing',
+      to: '/$realmId/manage',
       params: { realmId: params.realmId },
-      search: { status: 'all' },
     }),
   component: SubscriptionHistoryRoute,
 })

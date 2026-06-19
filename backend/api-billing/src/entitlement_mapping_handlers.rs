@@ -4,6 +4,7 @@ use axum::{
 };
 use uuid::Uuid;
 
+use crate::credit_bucket_handlers::require_points_manage_permission;
 use crate::handlers::require_billing_permission;
 use crate::types::{
     EntitlementMappingListResponse, EntitlementMappingQuery, EntitlementMappingResponse,
@@ -177,7 +178,7 @@ pub async fn update_entitlement_mapping(
         realm_id
     );
 
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
+    require_points_manage_permission(&state, &identity, &realm_id).await?;
 
     // Validate entitlement_key format if provided
     if let Some(ref key) = request.entitlement_key {
@@ -228,6 +229,9 @@ pub async fn update_entitlement_mapping(
         payment_provider: existing.payment_provider,
         external_product_id: existing.external_product_id,
         external_price_id: existing.external_price_id,
+        // Preserve the bound Bucket; this handler does not expose a way to
+        // reassign it via PATCH (BE-D08/BE-D09 own bucket assignment).
+        bucket_id: existing.bucket_id,
         entitlement_key: request.entitlement_key.unwrap_or(existing.entitlement_key),
         billing_type: existing.billing_type,
         billing_period: existing.billing_period,
@@ -344,7 +348,7 @@ pub async fn sync_provider_products(
         realm_id
     );
 
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
+    require_points_manage_permission(&state, &identity, &realm_id).await?;
 
     let result = state
         .provider_product_sync_service

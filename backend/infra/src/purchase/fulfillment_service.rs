@@ -97,6 +97,17 @@ where
 
         let entitlement_key = mapping.entitlement_key.clone();
 
+        // A8: fulfillment routes by the `payment_attempt.bucket_id` snapshot taken
+        // at purchase creation (§5.3). Live `mapping.bucket_id` is intentionally
+        // NOT consulted here — mapping re-bucketing must not affect in-flight
+        // attempts (A7). Missing snapshot → fail loud.
+        let bucket_id =
+            attempt
+                .bucket_id
+                .ok_or(CoreError::EntitlementMappingNotAttachedToBucket {
+                    mapping_id: mapping.id,
+                })?;
+
         let now = chrono::Utc::now();
         let period_days = billing_period_to_days(mapping.billing_period.as_deref());
         let period_end = now + chrono::Duration::days(period_days);
@@ -112,6 +123,7 @@ where
             status: SubscriptionStatus::Active,
             entitlement_key: entitlement_key.clone(),
             external_price_id: mapping.external_price_id.clone(),
+            bucket_id: Some(bucket_id),
             provider_metadata: None,
             synced_at: Some(now),
             current_period_start: Some(now),
@@ -147,11 +159,13 @@ where
         let points_granted = if mapping.grant_on_subscribe {
             match mapping.points_per_period {
                 Some(points) if points > 0 => {
+                    // bucket_id snapshot already resolved above (A8); pass through.
                     let credit_ledger = self
                         .points_repository
                         .grant_points_atomic(
                             &attempt.realm_id,
                             attempt.user_id,
+                            bucket_id,
                             CreditType::SubscriptionCredit,
                             CreditSourceType::SubscriptionInitial,
                             points,
@@ -272,11 +286,20 @@ where
 
         // Grant TopupCredit via points_repository
         // Use attempt.id as source_id AND idempotency_key to prevent double-grant on concurrent webhooks
+        // A8: route grant to `attempt.bucket_id` snapshot (source of truth). Live
+        // mapping.bucket_id is not consulted. Missing snapshot → fail loud.
+        let bucket_id =
+            attempt
+                .bucket_id
+                .ok_or(CoreError::EntitlementMappingNotAttachedToBucket {
+                    mapping_id: mapping.id,
+                })?;
         let credit_ledger = self
             .points_repository
             .grant_points_atomic(
                 &attempt.realm_id,
                 attempt.user_id,
+                bucket_id,
                 CreditType::TopupCredit,
                 CreditSourceType::Topup,
                 points,
