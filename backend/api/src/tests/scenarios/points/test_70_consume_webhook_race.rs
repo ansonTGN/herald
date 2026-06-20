@@ -54,7 +54,7 @@ async fn assert_account_balance_matches_ledger_remaining(
             columns.push(col);
         }
     }
-    let projection_expr = columns.iter().copied().collect::<Vec<_>>().join(" + ");
+    let projection_expr = columns.to_vec().join(" + ");
 
     let account_balance: i64 = sqlx::query_scalar(&format!(
         "SELECT COALESCE(SUM({}), 0)::BIGINT FROM points_wallets WHERE user_id = $1 AND realm_id = $2",

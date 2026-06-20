@@ -563,14 +563,20 @@ mod tests {
 
         // Create a payment_attempt to link (needed by apply_invoice endpoint)
         let pa_id = Uuid::now_v7();
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            &realm_id,
+        )
+        .await;
         sqlx::query(
-            "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at, created_at)
-             VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4, 5000, 'USD', 'completed', NOW() + INTERVAL '1 hour', NOW())",
+            "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, bucket_id, amount, currency, status, expires_at, created_at)
+             VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4, $5, 5000, 'USD', 'completed', NOW() + INTERVAL '1 hour', NOW())",
         )
         .bind(pa_id)
         .bind(realm_id.as_str())
         .bind(user_uuid)
         .bind(Uuid::now_v7())
+        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();
@@ -629,14 +635,20 @@ mod tests {
 
         // Create a payment_attempt with payment_provider = 'creem'
         let pa_id = Uuid::now_v7();
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            &realm_id,
+        )
+        .await;
         sqlx::query(
-            "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at, created_at)
-             VALUES ($1, $2, $3, 'creem', 'entitlement_mapping', $4, 10000, 'USD', 'completed', NOW() + INTERVAL '1 hour', NOW())",
+            "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, bucket_id, amount, currency, status, expires_at, created_at)
+             VALUES ($1, $2, $3, 'creem', 'entitlement_mapping', $4, $5, 10000, 'USD', 'completed', NOW() + INTERVAL '1 hour', NOW())",
         )
         .bind(pa_id)
         .bind(realm_id.as_str())
         .bind(account_id)
         .bind(Uuid::now_v7())
+        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();
@@ -717,14 +729,20 @@ mod tests {
 
         // Create a payment_attempt with payment_provider = 'creem'
         let pa_id = Uuid::now_v7();
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            &realm_id,
+        )
+        .await;
         sqlx::query(
-            "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at, created_at)
-             VALUES ($1, $2, $3, 'creem', 'entitlement_mapping', $4, 5000, 'USD', 'completed', NOW() + INTERVAL '1 hour', NOW())",
+            "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, bucket_id, amount, currency, status, expires_at, created_at)
+             VALUES ($1, $2, $3, 'creem', 'entitlement_mapping', $4, $5, 5000, 'USD', 'completed', NOW() + INTERVAL '1 hour', NOW())",
         )
         .bind(pa_id)
         .bind(realm_id.as_str())
         .bind(user_uuid)
         .bind(Uuid::now_v7())
+        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();

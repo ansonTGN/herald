@@ -22,7 +22,7 @@ Entitlement Mapping 是一张映射表，把支付方的外部商品 ID 映射�
 
 | 字段 | 说明 |
 |------|------|
-| `payment_provider` | 支付方名称（stripe、creem、wechat） |
+| `payment_provider` | 支付方名称（stripe、creem） |
 | `external_product_id` | 支付方侧的商品 ID（如 `prod_xxxx`） |
 | `external_price_id` | 支付方侧的价格 ID（Stripe 有，Creem 不适用） |
 | `entitlement_key` | Herald 内部的权益标识（如 `pro-plan`） |
@@ -124,9 +124,8 @@ flowchart LR
 |--------|---------|------|---------------------|--------------|
 | Stripe | Product / Price API | Checkout Session + Subscription | Payment Intent | Product/Price/Checkout/Subscription 均支持 |
 | Creem | Product API | Checkout | Checkout | Checkout metadata，webhook 返回 |
-| WeChat Pay | 无商品概念 | Native Pay 二维码 | Native Pay 二维码 | 自定义参数 |
 
-Stripe、Creem、WeChat 是发起式平台，通过 PaymentAttempt 统一管理支付过程。
+Stripe、Creem 是发起式平台，通过 PaymentAttempt 统一管理支付过程。
 
 ## 已移除的功能
 

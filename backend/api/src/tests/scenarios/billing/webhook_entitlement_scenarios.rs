@@ -76,14 +76,20 @@ mod tests {
 
     // Helper: create a points wallet for a user
     async fn create_points_wallet_for_user(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) {
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         sqlx::query(
-            "INSERT INTO points_wallets (id, user_id, realm_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
-             VALUES ($1, $2, $3, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())
-             ON CONFLICT (user_id) DO NOTHING",
+            "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())
+             ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING",
         )
         .bind(Uuid::now_v7())
         .bind(user_id)
         .bind(realm_id)
+        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create points wallet");

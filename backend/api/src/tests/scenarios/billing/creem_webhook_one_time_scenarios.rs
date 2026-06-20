@@ -62,14 +62,20 @@ mod tests {
 
     /// Create a points wallet for a user.
     async fn create_points_wallet(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) {
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         sqlx::query(
-            "INSERT INTO points_wallets (id, user_id, realm_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
-             VALUES ($1, $2, $3, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())
-             ON CONFLICT (user_id) DO NOTHING",
+            "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())
+             ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING",
         )
         .bind(Uuid::now_v7())
         .bind(user_id)
         .bind(realm_id)
+        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create points wallet");
@@ -86,11 +92,16 @@ mod tests {
         enabled: bool,
     ) -> Uuid {
         let mapping_id = Uuid::now_v7();
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                 billing_type, points_per_period, grant_on_subscribe, enabled, created_at, updated_at)
-             VALUES ($1, $2, 'creem', $3, $4, 'one_time', $5, true, $6, NOW(), NOW())",
+                 billing_type, points_per_period, grant_on_subscribe, enabled, bucket_id, created_at, updated_at)
+             VALUES ($1, $2, 'creem', $3, $4, 'one_time', $5, true, $6, $7, NOW(), NOW())",
         )
         .bind(mapping_id)
         .bind(realm_id)
@@ -98,6 +109,7 @@ mod tests {
         .bind(entitlement_key)
         .bind(points_per_period)
         .bind(enabled)
+        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create one-time entitlement mapping");
@@ -115,11 +127,16 @@ mod tests {
         enabled: bool,
     ) -> Uuid {
         let mapping_id = Uuid::now_v7();
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
-                 billing_type, billing_period, points_per_period, grant_on_subscribe, enabled, created_at, updated_at)
-             VALUES ($1, $2, 'creem', $3, $4, 'recurring', 'monthly', $5, true, $6, NOW(), NOW())",
+                 billing_type, billing_period, points_per_period, grant_on_subscribe, enabled, bucket_id, created_at, updated_at)
+             VALUES ($1, $2, 'creem', $3, $4, 'recurring', 'monthly', $5, true, $6, $7, NOW(), NOW())",
         )
         .bind(mapping_id)
         .bind(realm_id)
@@ -127,6 +144,7 @@ mod tests {
         .bind(entitlement_key)
         .bind(points_per_period)
         .bind(enabled)
+        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create recurring entitlement mapping");
@@ -143,17 +161,23 @@ mod tests {
         amount: i64,
     ) -> Uuid {
         let attempt_id = Uuid::now_v7();
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         sqlx::query(
             "INSERT INTO payment_attempts
                 (id, realm_id, user_id, payment_provider, target_type, target_id,
-                 amount, currency, status, expires_at, created_at, updated_at)
+                 bucket_id, amount, currency, status, expires_at, created_at, updated_at)
              VALUES ($1, $2, $3, 'creem', 'entitlement_mapping', $4,
-                     $5, 'USD', 'Pending', NOW() + INTERVAL '2 hours', NOW(), NOW())",
+                     $5, $6, 'USD', 'Pending', NOW() + INTERVAL '2 hours', NOW(), NOW())",
         )
         .bind(attempt_id)
         .bind(realm_id)
         .bind(user_id)
         .bind(mapping_id)
+        .bind(bucket_id)
         .bind(amount)
         .execute(&ctx.app_state.pool)
         .await

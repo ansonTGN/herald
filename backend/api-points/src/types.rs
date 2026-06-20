@@ -4,14 +4,23 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-/// Points account response
+/// Points account response.
+///
+/// The GET /wallets/{user} endpoint is a read-only user-total balance view:
+/// for users with multiple Credit Buckets, `find_by_user_id` synthesizes a
+/// single aggregated `PointsWallet` with `bucket_id = None`. In that case
+/// `id` is `None` too — there is no single concrete wallet to point at, and a
+/// fabricated id would be a misleading handle a client could mistake for "the
+/// wallet". `id` is `Some` only for a single-bucket user, where it is the
+/// wallet row id of that one bucket (still not a writable handle here).
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PointsWalletResponse {
-    pub id: Uuid,
+    pub id: Option<Uuid>,
     pub user_id: Uuid,
     pub realm_id: String,
-    /// Credit Bucket this wallet belongs to (design §4.2.1).
+    /// Credit Bucket this wallet belongs to (design §4.2.1). `None` for the
+    /// aggregate user-total view (multi-bucket user).
     pub bucket_id: Option<Uuid>,
     pub balance: i64,
     /// Total points granted through paid topups and subscription entitlements.
@@ -312,7 +321,7 @@ mod tests {
     #[test]
     fn test_points_wallet_response_camelcase() {
         let account = PointsWalletResponse {
-            id: uuid::Uuid::now_v7(),
+            id: Some(uuid::Uuid::now_v7()),
             user_id: uuid::Uuid::now_v7(),
             realm_id: "test-realm".to_string(),
             bucket_id: Some(uuid::Uuid::now_v7()),

@@ -7,26 +7,6 @@ use crate::billing::ports::BillingRepository;
 use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::ensure_policy;
 
-fn default_entitlement_key(payment_provider: &str, external_product_id: &str) -> String {
-    let normalized: String = external_product_id
-        .chars()
-        .filter_map(|c| {
-            if c.is_ascii_alphanumeric() {
-                Some(c.to_ascii_lowercase())
-            } else if c == '-' || c == '_' {
-                Some('-')
-            } else {
-                None
-            }
-        })
-        .take(32)
-        .collect();
-
-    format!("{}-{}", payment_provider, normalized)
-        .trim_end_matches('-')
-        .to_string()
-}
-
 /// External provider product info returned by ProviderApiPort
 #[derive(Debug, Clone)]
 pub struct ProviderProduct {
@@ -140,40 +120,36 @@ where
                     &product.external_product_id,
                 )
                 .await?;
+            let Some(existing_mapping) = existing.as_ref() else {
+                partial_errors.push(PartialSyncError {
+                    external_id: product.external_product_id.clone(),
+                    reason: "Skipping new provider product because no credit bucket is assigned"
+                        .to_string(),
+                });
+                continue;
+            };
 
-            let entitlement_key = existing.as_ref().map_or_else(
-                || default_entitlement_key(payment_provider, &product.external_product_id),
-                |mapping| mapping.entitlement_key.clone(),
-            );
+            let entitlement_key = existing_mapping.entitlement_key.clone();
 
             let mapping = EntitlementMapping {
-                id: existing
-                    .as_ref()
-                    .map(|mapping| mapping.id)
-                    .unwrap_or_else(uuid::Uuid::now_v7),
+                id: existing_mapping.id,
                 realm_id: realm_id.to_string(),
                 payment_provider: payment_provider.to_string(),
                 external_product_id: product.external_product_id.clone(),
                 external_price_id: product.external_price_id.clone(),
-                bucket_id: existing.as_ref().and_then(|mapping| mapping.bucket_id),
+                bucket_id: existing_mapping.bucket_id,
                 entitlement_key: entitlement_key.clone(),
                 billing_type: product
                     .billing_type
                     .as_deref()
                     .and_then(|s: &str| s.parse().ok()),
                 billing_period: product.billing_period.clone(),
-                points_per_period: existing
-                    .as_ref()
-                    .and_then(|mapping| mapping.points_per_period),
-                grant_period_type: existing
-                    .as_ref()
-                    .and_then(|mapping| mapping.grant_period_type.clone()),
-                validity_days: existing.as_ref().and_then(|mapping| mapping.validity_days),
-                grant_on_subscribe: existing
-                    .as_ref()
-                    .is_some_and(|mapping| mapping.grant_on_subscribe),
-                max_periods: existing.as_ref().and_then(|mapping| mapping.max_periods),
-                enabled: existing.as_ref().is_some_and(|mapping| mapping.enabled),
+                points_per_period: existing_mapping.points_per_period,
+                grant_period_type: existing_mapping.grant_period_type.clone(),
+                validity_days: existing_mapping.validity_days,
+                grant_on_subscribe: existing_mapping.grant_on_subscribe,
+                max_periods: existing_mapping.max_periods,
+                enabled: existing_mapping.enabled,
                 provider_product_info: Some(serde_json::json!({
                     "name": product.name,
                     "description": product.description,
@@ -183,10 +159,7 @@ where
                     "billing_period": product.billing_period,
                 })),
                 synced_at: Some(chrono::Utc::now()),
-                created_at: existing
-                    .as_ref()
-                    .map(|mapping| mapping.created_at)
-                    .unwrap_or_else(chrono::Utc::now),
+                created_at: existing_mapping.created_at,
                 updated_at: chrono::Utc::now(),
             };
 

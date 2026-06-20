@@ -20,45 +20,45 @@
 **场景 1：创建订阅购买的支付尝试**
 ```gherkin
 Given 用户选择了订阅套餐 "pro-monthly"
-And 用户选择了支付平台 "WeChat Pay"
-And 套餐 "pro-monthly" 已配置微信支付映射
+And 用户选择了支付平台 "Stripe"
+And 套餐 "pro-monthly" 已配置 Stripe 支付映射
 When 系统创建支付尝试
 Then 支付尝试创建成功，包含以下信息：
-  | 支付平台     | 微信支付              |
+  | 支付平台     | Stripe                |
   | 购买类型     | 订阅套餐              |
   | 购买对象     | pro-monthly           |
   | 金额         | ¥50.00                |
   | 状态         | 待支付                |
   | 过期时间     | 2 小时后              |
-And 系统向微信支付发起订单创建
-And 系统返回支付二维码给用户
+And 系统向 Stripe 发起支付会话创建
+And 系统返回 Stripe 支付页面地址给用户
 ```
 
 **场景 2：创建积分包购买的支付尝试**
 ```gherkin
 Given 用户选择了积分包 "credits-500"
-And 用户选择了支付平台 "WeChat Pay"
-And 积分包 "credits-500" 已配置微信支付映射
+And 用户选择了支付平台 "Stripe"
+And 积分包 "credits-500" 已配置 Stripe 支付映射
 When 系统创建支付尝试
 Then 支付尝试创建成功，包含以下信息：
-  | 支付平台     | 微信支付              |
+  | 支付平台     | Stripe                |
   | 购买类型     | 积分包                |
   | 购买对象     | credits-500           |
   | 金额         | ¥50.00                |
   | 状态         | 待支付                |
   | 过期时间     | 2 小时后              |
-And 系统向微信支付发起订单创建
-And 系统返回支付二维码给用户
-```
-
-**场景 3：Stripe 支付的支付尝试**
-```gherkin
-Given 用户选择了订阅套餐 "pro-yearly"
-And 用户选择了支付平台 "Stripe"
-When 系统创建支付尝试
-Then 支付尝试创建成功
 And 系统向 Stripe 发起支付会话创建
 And 系统返回 Stripe 支付页面地址给用户
+```
+
+**场景 3：Creem 支付的支付尝试**
+```gherkin
+Given 用户选择了订阅套餐
+And 用户选择了支付平台 "Creem"
+When 系统创建支付尝试
+Then 支付尝试创建成功
+And 系统向 Creem 发起支付订单创建
+And 系统返回 Creem 支付页面地址给用户
 ```
 
 **场景 4：支付尝试唯一性**
@@ -69,16 +69,6 @@ When 用户尝试为同一目标创建另一个支付尝试
 Then 系统允许创建（不阻止）
 And 两个支付尝试互不干扰
 And 每个支付尝试有独立的过期时间
-```
-
-**场景 5：Creem 支付的支付尝试**
-```gherkin
-Given 用户选择了订阅套餐
-And 用户选择了支付平台 "Creem"
-When 系统创建支付尝试
-Then 支付尝试创建成功
-And 系统向 Creem 发起支付订单创建
-And 系统返回 Creem 支付页面地址给用户
 ```
 
 ---
@@ -290,5 +280,4 @@ And 前端提供"重新支付"按钮
 ## 相关文档
 
 - **PRD**: `docs/prd/billing/subscription.md` - 订阅计费 PRD（含 One-time 购买规则）
-- **用户故事**: `billing/wechat-pay.md` - 微信支付用户故事
 - **用户故事**: `billing/points-package-purchase.md` - 积分包购买用户故事

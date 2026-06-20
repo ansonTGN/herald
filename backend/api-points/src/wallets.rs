@@ -23,12 +23,22 @@ use herald_core::domain::authentication::Identity;
 use herald_core::domain::points::entities::PointsWallet;
 use herald_core::domain::points::ports::WalletFilters;
 
+/// Map a domain `PointsWallet` to the HTTP response shape.
+///
+/// The aggregate user-total view (`find_by_user_id` for a multi-bucket user)
+/// has `bucket_id = None` and no single concrete wallet to expose — return
+/// `id: None` so a client can never mistake a synthesized id for "the wallet"
+/// (review #6 chimera fix). For a single-bucket user `bucket_id` is `Some`
+/// and `id` is that wallet row's id.
 fn wallet_to_response(account: PointsWallet) -> PointsWalletResponse {
+    let bucket_id = account.bucket_id;
     PointsWalletResponse {
-        id: account.id,
+        // Only expose a concrete wallet id when the row is tied to a single
+        // bucket. The aggregate view (bucket_id = None) has no canonical id.
+        id: bucket_id.map(|_| account.id),
         user_id: account.user_id,
         realm_id: account.realm_id,
-        bucket_id: account.bucket_id,
+        bucket_id,
         balance: account.total_balance,
         total_paid_granted: account.total_recharged,
         total_recharged: account.total_recharged,

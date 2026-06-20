@@ -1004,11 +1004,19 @@ pub async fn setup_test_entitlement_mapping_for_webhook(
 ) -> Uuid {
     let mapping_id = Uuid::now_v7();
 
+    // Credit Buckets model: bucket_id is NOT NULL — bind the realm's legacy
+    // test bucket (matches the bucket-bound mappings created elsewhere).
+    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx.app_state.pool,
+        realm_id,
+    )
+    .await;
+
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             points_per_period, grant_on_subscribe, enabled, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())",
+             points_per_period, grant_on_subscribe, enabled, bucket_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())",
     )
     .bind(mapping_id)
     .bind(realm_id)
@@ -1018,6 +1026,7 @@ pub async fn setup_test_entitlement_mapping_for_webhook(
     .bind(points_per_period)
     .bind(grant_on_subscribe)
     .bind(enabled)
+    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create test entitlement mapping for webhook");

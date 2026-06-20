@@ -171,7 +171,7 @@ where
                     id: Uuid::now_v7(),
                     user_id,
                     realm_id: realm_id.to_string(),
-                    bucket_id: Some(bucket_id),
+                    bucket_id,
                     subscription_id: None, // Free user has no subscription
                     entitlement_key: None,
                     grant_period_type,
@@ -259,15 +259,11 @@ where
             .grant_period_type
             .calculate_expiration(Utc::now(), user_config.free_periodic_validity_days);
 
-        // Grant points. Periodic grants target the schedule's Bucket (design §5.4);
-        // missing bucket = misconfiguration, fail loud (A4/A5).
-        let bucket_id = schedule.bucket_id.ok_or(CoreError::GrantBucketRequired)?;
-
         self.points_service
             .grant_points_internal(
                 realm_id,
                 user_id,
-                bucket_id,
+                schedule.bucket_id,
                 CreditType::FreePeriodicCredit,
                 CreditSourceType::FreePeriodicGrant,
                 amount,
@@ -401,7 +397,7 @@ mod tests {
             id: Uuid::now_v7(),
             user_id: Uuid::now_v7(),
             realm_id: "realm-a".to_string(),
-            bucket_id: Some(Uuid::now_v7()),
+            bucket_id: Uuid::now_v7(),
             subscription_id: None,
             entitlement_key: Some("test-entitlement".to_string()),
             grant_period_type: GrantPeriodType::Daily,
@@ -433,7 +429,7 @@ mod tests {
             id: Uuid::now_v7(),
             user_id: Uuid::now_v7(),
             realm_id: "realm-a".to_string(),
-            bucket_id: Some(Uuid::now_v7()),
+            bucket_id: Uuid::now_v7(),
             subscription_id: None,
             entitlement_key: Some("test-entitlement".to_string()),
             grant_period_type: GrantPeriodType::Once,
@@ -505,37 +501,5 @@ mod tests {
             resolved.is_none(),
             "unmarked Realm must resolve to None (fail-safe skip)"
         );
-    }
-
-    /// A periodic grant schedule without a target Bucket must fail loud
-    /// (`GrantBucketRequired`) rather than grant into an implicit pool. This pins
-    /// the fail-loud half of §5.4 at the schedule-processing boundary.
-    #[test]
-    fn schedule_without_bucket_yields_no_grant_target() {
-        let now = Utc::now();
-        let schedule = PointsGrantSchedule {
-            id: Uuid::now_v7(),
-            user_id: Uuid::now_v7(),
-            realm_id: "realm-a".to_string(),
-            bucket_id: None, // misconfigured schedule: no target pool
-            subscription_id: None,
-            entitlement_key: None,
-            grant_period_type: GrantPeriodType::Daily,
-            base_time: now,
-            next_grant_time: now,
-            points_per_period: 10,
-            validity_days: 1,
-            granted_periods: 0,
-            max_periods: None,
-            active: true,
-            created_at: now,
-            updated_at: now,
-        };
-
-        // Mirrors the check in grant_periodic_points / grant_scheduler:
-        //   let bucket_id = schedule.bucket_id.ok_or(GrantBucketRequired)?;
-        let result: Result<Uuid, CoreError> =
-            schedule.bucket_id.ok_or(CoreError::GrantBucketRequired);
-        assert!(matches!(result, Err(CoreError::GrantBucketRequired)));
     }
 }

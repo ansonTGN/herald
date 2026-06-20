@@ -112,7 +112,7 @@ pub struct PointsGrantSchedule {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
-    pub bucket_id: Option<Uuid>,
+    pub bucket_id: Uuid,
     pub subscription_id: Option<Uuid>,
     pub entitlement_key: Option<String>,
     pub grant_period_type: GrantPeriodType,

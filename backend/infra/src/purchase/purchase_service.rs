@@ -27,7 +27,7 @@ fn build_herald_metadata(
     target_type: &str,
     target_id: Uuid,
     attempt_id: Uuid,
-    bucket_id: Option<Uuid>,
+    bucket_id: Uuid,
 ) -> HashMap<String, String> {
     let mut metadata = HashMap::new();
     metadata.insert(
@@ -49,9 +49,10 @@ fn build_herald_metadata(
     );
     // §5.3: diagnostic/webhook fallback. Source of truth remains the
     // payment_attempt / subscription snapshot columns.
-    if let Some(bid) = bucket_id {
-        metadata.insert(metadata_keys::HERALD_BUCKET_ID.to_string(), bid.to_string());
-    }
+    metadata.insert(
+        metadata_keys::HERALD_BUCKET_ID.to_string(),
+        bucket_id.to_string(),
+    );
     metadata
 }
 
@@ -280,14 +281,8 @@ where
         }
 
         // A8: purchase creation is the source-of-truth snapshot site for
-        // `payment_attempt.bucket_id`. Reject mappings that are not attached to a
-        // Bucket (US-CB-003 scenario 2) instead of snapshotting NULL.
-        let bucket_id =
-            mapping
-                .bucket_id
-                .ok_or(CoreError::EntitlementMappingNotAttachedToBucket {
-                    mapping_id: mapping.id,
-                })?;
+        // `payment_attempt.bucket_id`.
+        let bucket_id = mapping.bucket_id;
 
         // Extract price info from provider_product_info if available
         let (amount, currency, title) = mapping
@@ -314,7 +309,7 @@ where
         Ok(PurchaseTargetSnapshot {
             target_type: parsed_target_type,
             target_id,
-            bucket_id: Some(bucket_id),
+            bucket_id,
             amount,
             currency,
             title,

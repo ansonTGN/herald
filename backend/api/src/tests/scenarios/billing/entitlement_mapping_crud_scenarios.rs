@@ -749,16 +749,20 @@ mod tests {
     ) {
         let realm_id = ctx._realm_id.clone();
         let pool = &ctx.app_state.pool;
+        let bucket_id =
+            crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(pool, &realm_id)
+                .await;
 
         // Test uppercase letters
         let result = sqlx::query(
             "INSERT INTO provider_entitlement_mappings
-                (id, realm_id, payment_provider, external_product_id, entitlement_key,
+                (id, realm_id, bucket_id, payment_provider, external_product_id, entitlement_key,
                  grant_on_subscribe, enabled, created_at, updated_at)
-             VALUES ($1, $2, 'stripe', 'prod_upper', 'INVALID-Key', false, false, NOW(), NOW())",
+             VALUES ($1, $2, $3, 'stripe', 'prod_upper', 'INVALID-Key', false, false, NOW(), NOW())",
         )
         .bind(Uuid::now_v7())
         .bind(&realm_id)
+        .bind(bucket_id)
         .execute(pool)
         .await;
         assert!(result.is_err(), "Should reject uppercase entitlement_key");
@@ -766,12 +770,13 @@ mod tests {
         // Test special characters
         let result = sqlx::query(
             "INSERT INTO provider_entitlement_mappings
-                (id, realm_id, payment_provider, external_product_id, entitlement_key,
+                (id, realm_id, bucket_id, payment_provider, external_product_id, entitlement_key,
                  grant_on_subscribe, enabled, created_at, updated_at)
-             VALUES ($1, $2, 'stripe', 'prod_special', 'invalid_key!', false, false, NOW(), NOW())",
+             VALUES ($1, $2, $3, 'stripe', 'prod_special', 'invalid_key!', false, false, NOW(), NOW())",
         )
         .bind(Uuid::now_v7())
         .bind(&realm_id)
+        .bind(bucket_id)
         .execute(pool)
         .await;
         assert!(
@@ -782,12 +787,13 @@ mod tests {
         // Test empty string
         let result = sqlx::query(
             "INSERT INTO provider_entitlement_mappings
-                (id, realm_id, payment_provider, external_product_id, entitlement_key,
+                (id, realm_id, bucket_id, payment_provider, external_product_id, entitlement_key,
                  grant_on_subscribe, enabled, created_at, updated_at)
-             VALUES ($1, $2, 'stripe', 'prod_empty', '', false, false, NOW(), NOW())",
+             VALUES ($1, $2, $3, 'stripe', 'prod_empty', '', false, false, NOW(), NOW())",
         )
         .bind(Uuid::now_v7())
         .bind(&realm_id)
+        .bind(bucket_id)
         .execute(pool)
         .await;
         assert!(result.is_err(), "Should reject empty entitlement_key");
@@ -796,12 +802,13 @@ mod tests {
         let long_key = "a".repeat(65);
         let result = sqlx::query(
             "INSERT INTO provider_entitlement_mappings
-                (id, realm_id, payment_provider, external_product_id, entitlement_key,
+                (id, realm_id, bucket_id, payment_provider, external_product_id, entitlement_key,
                  grant_on_subscribe, enabled, created_at, updated_at)
-             VALUES ($1, $2, 'stripe', 'prod_long', $3, false, false, NOW(), NOW())",
+             VALUES ($1, $2, $3, 'stripe', 'prod_long', $4, false, false, NOW(), NOW())",
         )
         .bind(Uuid::now_v7())
         .bind(&realm_id)
+        .bind(bucket_id)
         .bind(&long_key)
         .execute(pool)
         .await;
@@ -810,12 +817,13 @@ mod tests {
         // Test valid key succeeds
         let result = sqlx::query(
             "INSERT INTO provider_entitlement_mappings
-                (id, realm_id, payment_provider, external_product_id, entitlement_key,
+                (id, realm_id, bucket_id, payment_provider, external_product_id, entitlement_key,
                  grant_on_subscribe, enabled, created_at, updated_at)
-             VALUES ($1, $2, 'stripe', 'prod_valid', 'valid-plan-key-123', false, false, NOW(), NOW())",
+             VALUES ($1, $2, $3, 'stripe', 'prod_valid', 'valid-plan-key-123', false, false, NOW(), NOW())",
         )
         .bind(Uuid::now_v7())
         .bind(&realm_id)
+        .bind(bucket_id)
         .execute(pool)
         .await;
         assert!(result.is_ok(), "Should accept valid entitlement_key");

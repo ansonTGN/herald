@@ -32,7 +32,6 @@ export const TEST_DATA = {
     ELEMENT_VISIBLE: 10000,
   },
   PAYMENT_PROVIDERS: {
-    WECHAT: 'wechat',
     STRIPE: 'stripe',
     CREEM: 'creem',
   } as const,

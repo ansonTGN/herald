@@ -2,11 +2,11 @@
  * Live One-Time Mapping Purchase Flow Test
  *
  * Related User Stories: US-PU-006, US-PU-06 S2, US-PA-001, US-PA-002
- * Coverage: partial live smoke; WeChat QR initiation, Stripe/Creem redirect initiation,
+ * Coverage: partial live smoke; Stripe/Creem redirect initiation,
  *   payment state recovery after page refresh.
  * Not Covered: payment completion via webhook callback, points fulfillment, expired/failed
  *   payment, cancel flow, idempotency, or audit outcomes.
- * Live Dependency: real Stripe / WeChat Pay / Creem credentials and webhook endpoints
+ * Live Dependency: real Stripe / Creem credentials and webhook endpoints
  * Manual Step: none for flow initiation; payment completion requires external webhook callback
  * Run Command:
  *   cd demo
@@ -22,7 +22,7 @@
  * internal API calls. Tests verify payment INITIATION and UI states only.
  *
  * Prerequisites:
- *   - Stripe / WeChat / Creem credentials configured in realm_config for realm-001
+ *   - Stripe / Creem credentials configured in realm_config for realm-001
  *     (seeded by demo_seed.py)
  *   - Demo seed data loaded (realm-001, user@realm-001.com, one-time entitlement mappings)
  *   - Backend and frontend running
@@ -64,58 +64,6 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: One-Time Mapping Purc
     await cleanupTestData(page, REALM_ID, {
       keepUsers: [USER_EMAIL],
       timestamp: testStartTime,
-    })
-  })
-
-  test('should initiate WeChat QR payment when selecting mapping and WeChat provider (US-PU-006 S1)', async ({
-    page,
-    demoLogger,
-  }) => {
-    await test.step('Clear previous purchase state', async () => {
-      await page.evaluate(() => localStorage.removeItem('cas-purchase-flow'))
-    })
-
-    await test.step('Navigate to purchase page', async () => {
-      await page.goto(`/${REALM_ID}/user/purchase-points`)
-      await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
-    })
-
-    await test.step('Select first mapping card and proceed to payment', async () => {
-      await selectFirstMappingAndProceed(page)
-      await expect(page.locator(SELECTORS.purchasePoints.stepPayment)).toBeVisible()
-    })
-
-    await test.step('Select WeChat payment method', async () => {
-      await selectPaymentMethodAndProceed(page, TEST_DATA.PAYMENT_PROVIDERS.WECHAT)
-    })
-
-    await test.step('Verify processing step is visible', async () => {
-      await expect(page.locator(SELECTORS.purchasePoints.stepProcessing)).toBeVisible({
-        timeout: TEST_DATA.TIMEOUTS.ELEMENT_VISIBLE,
-      })
-    })
-
-    await test.step('Verify WeChat QR section rendered', async () => {
-      await expect(page.locator(SELECTORS.paymentProviderUI.wechatQrSection)).toBeVisible()
-      await expect(page.locator(SELECTORS.paymentProviderUI.wechatQrCode)).toBeVisible()
-    })
-
-    await test.step('Verify countdown timer is visible', async () => {
-      const countdownTimer = page.locator(SELECTORS.paymentProviderUI.countdownTimer)
-      await expect(countdownTimer).toBeVisible()
-
-      const timerText = await countdownTimer.textContent()
-      expect(timerText).toMatch(/^\d+:\d{2}$/)
-    })
-
-    await test.step('Verify payment attempt ID persisted in localStorage', async () => {
-      const attemptId = await extractPaymentAttemptId(page)
-      expect(attemptId).toBeTruthy()
-    })
-
-    await test.step('Verify cancel button is available', async () => {
-      const cancelButton = page.locator(SELECTORS.paymentProviderUI.cancelButton)
-      await expect(cancelButton).toBeVisible()
     })
   })
 
@@ -202,10 +150,10 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: One-Time Mapping Purc
   }) => {
     let attemptIdBeforeRefresh: string
 
-    await test.step('Initiate WeChat purchase flow via helper', async () => {
+    await test.step('Initiate Stripe purchase flow via helper', async () => {
       attemptIdBeforeRefresh = await initiatePurchaseFlow(
         page,
-        TEST_DATA.PAYMENT_PROVIDERS.WECHAT,
+        TEST_DATA.PAYMENT_PROVIDERS.STRIPE,
         REALM_ID
       )
       expect(attemptIdBeforeRefresh).toBeTruthy()

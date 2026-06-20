@@ -135,7 +135,6 @@
 - 在线支付集成（发票仅手动标记已付）
 - 发票模板自定义
 - 多币种自动转换
-- 微信电子发票 API 接入（后续独立迭代）
 - Herald 主动调用 Stripe Invoice API 创建发票（仅 webhook 被动同步）
 - Herald 主动调用 Creem API 查询交易税务（仅通过支付回调同步）
 

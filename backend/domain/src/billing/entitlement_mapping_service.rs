@@ -17,7 +17,7 @@ pub struct UpdateEntitlementMappingInput {
     pub validity_days: Option<Option<i64>>,
     pub grant_on_subscribe: Option<bool>,
     pub max_periods: Option<Option<i64>>,
-    pub bucket_id: Option<Option<uuid::Uuid>>,
+    pub bucket_id: Option<uuid::Uuid>,
 }
 
 /// EntitlementMappingService - Business logic for entitlement mapping management

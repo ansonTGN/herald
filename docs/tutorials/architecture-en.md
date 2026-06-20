@@ -131,7 +131,7 @@ Eight crates form the API layer:
 | `api-base` | `AppState` definition (shared across all api sub-crates) | — |
 | `api-auth` | Registration, login, password reset, email verification | session |
 | `api-admin` | User CRUD, role management, permission definition management | session + inject_identity |
-| `api-billing` | Entitlement mappings, subscription projection, payment webhooks (Stripe/Creem/WeChat), invoices, one-time purchases | mixed |
+| `api-billing` | Entitlement mappings, subscription projection, payment webhooks (Stripe/Creem), invoices, one-time purchases | mixed |
 | `api-oauth` | OAuth login (GitHub/Google/WeChat), OAuth configuration management | mixed |
 | `api-ext` | Third-party API: permission checks, subscription queries, points balance and consumption, isolated by the API key's bound client app | API Key |
 | `api-points` | Points balance, transaction history, consumption, top-up | session or API Key |

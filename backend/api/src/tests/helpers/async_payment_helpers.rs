@@ -137,18 +137,24 @@ pub async fn create_pending_payment_attempt(
     user_id: Uuid,
     mapping_id: Uuid,
 ) -> Uuid {
+    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx.app_state.pool,
+        realm_id,
+    )
+    .await;
     let attempt_id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO payment_attempts
             (id, realm_id, user_id, payment_provider, target_type, target_id,
-             amount, currency, status, expires_at, created_at, updated_at)
+             bucket_id, amount, currency, status, expires_at, created_at, updated_at)
          VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4,
-             1000, 'usd', 'Pending', NOW() + INTERVAL '1 hour', NOW(), NOW())",
+             $5, 1000, 'usd', 'Pending', NOW() + INTERVAL '1 hour', NOW(), NOW())",
     )
     .bind(attempt_id)
     .bind(realm_id)
     .bind(user_id)
     .bind(mapping_id)
+    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create pending payment attempt");

@@ -417,16 +417,13 @@ where
             ));
         }
 
-        // Check wallet status before recharging
-        let account = self.repository.find_by_user_id(realm_id, user_id).await?;
-        if let Some(account) = &account
-            && account.status != WalletStatus::Active
-        {
-            return Err(CoreError::BadRequest(format!(
-                "Cannot recharge points to {} wallet",
-                account.status.as_str()
-            )));
-        }
+        // NOTE: No aggregate wallet-status precheck here. `find_by_user_id` returns
+        // the cross-bucket aggregate wallet (most-restrictive status wins), but
+        // recharge targets a SPECIFIC bucket — so a frozen sibling bucket would
+        // wrongly block a healthy one. The authoritative per-bucket status check
+        // is the infra layer's `recharge_points_atomic`, which resolves the
+        // bucket wallet via `ensure_wallet_in_tx` and rejects non-active status
+        // (same convention as consume — see NOTE above `consume_points`).
 
         let (credit_type, source_type) = match recharge_type {
             RechargeType::Subscribe => (
@@ -844,16 +841,13 @@ where
             ));
         }
 
-        // Check wallet status before granting
-        let account = self.repository.find_by_user_id(realm_id, user_id).await?;
-        if let Some(account) = &account
-            && account.status != WalletStatus::Active
-        {
-            return Err(CoreError::BadRequest(format!(
-                "Cannot grant points to {} wallet",
-                account.status.as_str()
-            )));
-        }
+        // NOTE: No aggregate wallet-status precheck here. `find_by_user_id` returns
+        // the cross-bucket aggregate wallet (most-restrictive status wins), but
+        // grant targets a SPECIFIC bucket — so a frozen sibling bucket would
+        // wrongly block a healthy one. The authoritative per-bucket status check
+        // is the infra layer's `grant_points_atomic`, which resolves the
+        // bucket wallet via `ensure_wallet_in_tx` and rejects non-active status
+        // (same convention as consume — see NOTE above `consume_points`).
 
         let saved_ledger = self
             .repository

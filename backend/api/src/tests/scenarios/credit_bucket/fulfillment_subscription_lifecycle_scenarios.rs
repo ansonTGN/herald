@@ -355,7 +355,7 @@ async fn fulfillment_grants_to_attempt_snapshot_bucket(ctx: &mut TestContext) {
         insert_attempt_with_bucket_snapshot(pool, &realm_id, user_id, mapping_id, Some(bucket_a))
             .await;
     let attempt = load_attempt(ctx, attempt_id).await;
-    assert_eq!(attempt.bucket_id, Some(bucket_a), "snapshot bucket = A");
+    assert_eq!(attempt.bucket_id, bucket_a, "snapshot bucket = A");
 
     // --- When: fulfilling the attempt via the real fulfillment service. ----
     let provider_tx_id = format!("sub_snap_{}", attempt_id);
@@ -461,7 +461,8 @@ async fn fulfillment_freezes_subscription_bucket_on_first_renewal(ctx: &mut Test
         "subscription.bucket_id frozen to the attempt snapshot bucket"
     );
     assert_eq!(
-        attempt.bucket_id, frozen,
+        Some(attempt.bucket_id),
+        frozen,
         "snapshot == frozen subscription bucket"
     );
 }
@@ -523,7 +524,7 @@ async fn mapping_bucket_change_after_purchase_does_not_reroute_inflight_attempt(
         insert_attempt_with_bucket_snapshot(pool, &realm_id, user_id, mapping_id, Some(bucket_a))
             .await;
     let attempt_snapshot = load_attempt(ctx, attempt_id).await;
-    assert_eq!(attempt_snapshot.bucket_id, Some(bucket_a));
+    assert_eq!(attempt_snapshot.bucket_id, bucket_a);
 
     // --- When: the mapping is re-pointed to Bucket B AFTER the snapshot. ---
     sqlx::query(
@@ -551,8 +552,7 @@ async fn mapping_bucket_change_after_purchase_does_not_reroute_inflight_attempt(
     // Reload the attempt so we read what fulfillment will see.
     let attempt = load_attempt(ctx, attempt_id).await;
     assert_eq!(
-        attempt.bucket_id,
-        Some(bucket_a),
+        attempt.bucket_id, bucket_a,
         "attempt snapshot is unchanged after mapping re-point"
     );
 

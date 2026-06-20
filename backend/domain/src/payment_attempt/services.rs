@@ -357,7 +357,7 @@ mod tests {
                 id: Uuid::now_v7(),
                 realm_id: input.realm_id,
                 user_id: input.user_id,
-                bucket_id: None,
+                bucket_id: input.bucket_id,
                 payment_provider: input.payment_provider,
                 target_type: input.target_type.parse()?, // Parse String to PurchasableTarget
                 target_id: input.target_id,
@@ -492,7 +492,7 @@ mod tests {
             id: Uuid::now_v7(),
             realm_id: "test-realm".to_string(),
             user_id: Uuid::now_v7(),
-            bucket_id: None,
+            bucket_id: Uuid::now_v7(),
             payment_provider: "stripe".to_string(),
             target_type: PurchasableTarget::EntitlementMapping,
             target_id: Uuid::now_v7(),

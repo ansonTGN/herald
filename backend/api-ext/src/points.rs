@@ -893,16 +893,10 @@ pub async fn grant_points_ext(
 // =============================================================================
 
 /// Map a repository consumption-allocation view (allocation + ledger credit
-/// type) to the SDK response `AllocationDetail` (design §4.2.2). `bucket_id`
-/// and `wallet_id` are written NOT NULL by the consume write path, so the
-/// `Option` unwrap is safe for rows produced by `consume_points_atomic`.
+/// type) to the SDK response `AllocationDetail` (design §4.2.2).
 fn allocation_view_to_detail(view: ConsumptionAllocationView) -> AllocationDetail {
     AllocationDetail {
-        bucket_id: view
-            .allocation
-            .bucket_id
-            .map(|b| b.to_string())
-            .unwrap_or_default(),
+        bucket_id: view.allocation.bucket_id.to_string(),
         wallet_id: view
             .allocation
             .wallet_id

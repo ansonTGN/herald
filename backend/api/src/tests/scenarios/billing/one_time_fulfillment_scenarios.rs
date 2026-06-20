@@ -46,12 +46,20 @@ mod tests {
             "currency": "usd"
         });
 
+        // Credit Buckets model: bucket_id is NOT NULL — bind the realm's legacy
+        // test bucket (matches the bucket-bound mappings created elsewhere).
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
+
         sqlx::query(
             "INSERT INTO provider_entitlement_mappings
                 (id, realm_id, payment_provider, external_product_id, entitlement_key,
                  billing_type, points_per_period, validity_days, grant_on_subscribe, enabled,
-                 provider_product_info, created_at, updated_at)
-             VALUES ($1, $2, 'stripe', $3, $4, 'one_time', $5, $6, true, $7, $8, NOW(), NOW())",
+                 provider_product_info, bucket_id, created_at, updated_at)
+             VALUES ($1, $2, 'stripe', $3, $4, 'one_time', $5, $6, true, $7, $8, $9, NOW(), NOW())",
         )
         .bind(mapping_id)
         .bind(realm_id)
@@ -61,6 +69,7 @@ mod tests {
         .bind(validity_days)
         .bind(enabled)
         .bind(provider_product_info)
+        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create one-time mapping");
@@ -78,17 +87,25 @@ mod tests {
         currency: &str,
     ) -> Uuid {
         let attempt_id = Uuid::now_v7();
+        // Credit Buckets model: bucket_id is NOT NULL — scope the attempt to the
+        // realm's legacy test bucket so the fulfillment handler routes to it.
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         sqlx::query(
             "INSERT INTO payment_attempts
                 (id, realm_id, user_id, payment_provider, target_type, target_id,
-                 amount, currency, status, expires_at, created_at, updated_at)
+                 bucket_id, amount, currency, status, expires_at, created_at, updated_at)
              VALUES ($1, $2, $3, 'stripe', 'entitlement_mapping', $4,
-                     $5, $6, 'Pending', NOW() + INTERVAL '2 hours', NOW(), NOW())",
+                     $5, $6, $7, 'Pending', NOW() + INTERVAL '2 hours', NOW(), NOW())",
         )
         .bind(attempt_id)
         .bind(realm_id)
         .bind(user_id)
         .bind(mapping_id)
+        .bind(bucket_id)
         .bind(amount)
         .bind(currency)
         .execute(&ctx.app_state.pool)

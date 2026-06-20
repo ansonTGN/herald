@@ -48,14 +48,20 @@ mod tests {
 
     /// Create a points wallet for a user with zero balances.
     async fn create_points_wallet(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) {
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         sqlx::query(
-            "INSERT INTO points_wallets (id, user_id, realm_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
-             VALUES ($1, $2, $3, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())
-             ON CONFLICT (user_id) DO NOTHING",
+            "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())
+             ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING",
         )
         .bind(Uuid::now_v7())
         .bind(user_id)
         .bind(realm_id)
+        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create points wallet");
@@ -69,14 +75,20 @@ mod tests {
         realm_id: &str,
         subscription_balance: i64,
     ) {
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         sqlx::query(
-            "INSERT INTO points_wallets (id, user_id, realm_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
-             VALUES ($1, $2, $3, 0, $4, 0, $4, 0, 0, 'active', NOW(), NOW())
-             ON CONFLICT (user_id) DO NOTHING",
+            "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 0, $5, 0, $5, 0, 0, 'active', NOW(), NOW())
+             ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING",
         )
         .bind(Uuid::now_v7())
         .bind(user_id)
         .bind(realm_id)
+        .bind(bucket_id)
         .bind(subscription_balance)
         .execute(&ctx.app_state.pool)
         .await
@@ -93,16 +105,22 @@ mod tests {
         source_id: &str,
     ) {
         let ledger_id = Uuid::now_v7();
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         sqlx::query(
             "INSERT INTO points_credit_ledger
-                (id, user_id, realm_id, credit_type, source_type, source_id,
+                (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
                  granted_amount, used_amount, revoked_amount, status, created_at, updated_at)
-             VALUES ($1, $2, $3, 'subscription_credit', 'system_grant', $4,
-                     $5, 0, 0, 'active', NOW(), NOW())",
+             VALUES ($1, $2, $3, $4, 'subscription_credit', 'system_grant', $5,
+                     $6, 0, 0, 'active', NOW(), NOW())",
         )
         .bind(ledger_id)
         .bind(user_id)
         .bind(realm_id)
+        .bind(bucket_id)
         .bind(source_id)
         .bind(amount)
         .execute(&ctx.app_state.pool)
@@ -196,17 +214,22 @@ mod tests {
         status: &str,
         entitlement_key: &str,
     ) -> Uuid {
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         let subscription_id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO subscription
                 (id, realm_id, user_id, external_subscription_id, external_product_id,
                  payment_provider, status, entitlement_key, external_price_id,
                  provider_metadata, synced_at, current_period_start, current_period_end,
-                 cancel_at_period_end, client_app_id, cancel_at, created_at, updated_at)
+                 cancel_at_period_end, client_app_id, cancel_at, bucket_id, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5,
                      $6, $7, $8, NULL,
                      NULL, NOW(), NOW(), NOW() + INTERVAL '30 days',
-                     false, $9, NULL, NOW(), NOW())",
+                     false, $9, NULL, $10, NOW(), NOW())",
         )
         .bind(subscription_id)
         .bind(realm_id)
@@ -217,6 +240,7 @@ mod tests {
         .bind(status)
         .bind(entitlement_key)
         .bind(client_app_id)
+        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to pre-create subscription");
@@ -282,19 +306,25 @@ mod tests {
         mapping_id: Uuid,
         payment_provider: &str,
     ) -> Uuid {
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         let attempt_id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO payment_attempts
                 (id, realm_id, user_id, payment_provider, target_type, target_id,
-                 amount, currency, status, expires_at, created_at, updated_at)
+                 bucket_id, amount, currency, status, expires_at, created_at, updated_at)
              VALUES ($1, $2, $3, $4, 'entitlement_mapping', $5,
-                 1000, 'usd', 'Pending', NOW() + INTERVAL '1 hour', NOW(), NOW())",
+                 $6, 1000, 'usd', 'Pending', NOW() + INTERVAL '1 hour', NOW(), NOW())",
         )
         .bind(attempt_id)
         .bind(realm_id)
         .bind(user_id)
         .bind(payment_provider)
         .bind(mapping_id)
+        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create pending payment attempt");

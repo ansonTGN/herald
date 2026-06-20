@@ -888,13 +888,11 @@ async fn handle_checkout_completed(
 /// event).
 ///
 /// Contract (DB errors propagate via `?`; never silently swallowed):
-/// - mapping absent → `EntitlementMappingNotFound` (graceful "no mapping → no
-///   grant" case the caller swallows)
+/// - mapping absent/disabled → `EntitlementMappingNotFound` (graceful "no
+///   mapping → no grant" case the caller swallows)
 /// - mapping present + bucket → bind `subscription.bucket_id`, persist the row,
 ///   return `Some(bucket_id)`
-/// - mapping present + no bucket → `SubscriptionBucketNotResolved`
-///   (data-integrity breach; fail loud)
-async fn resolve_and_bind_subscription_bucket(
+pub(crate) async fn resolve_and_bind_subscription_bucket(
     app_state: &AppState,
     realm_id: &str,
     subscription_id: Uuid,
@@ -907,10 +905,11 @@ async fn resolve_and_bind_subscription_bucket(
         .find_entitlement_mapping_by_key(realm_id, entitlement_key)
         .await?
         .ok_or(CoreError::EntitlementMappingNotFound)?;
+    if !mapping.enabled {
+        return Err(CoreError::EntitlementMappingNotFound);
+    }
 
-    let bucket_id = mapping
-        .bucket_id
-        .ok_or(CoreError::SubscriptionBucketNotResolved { subscription_id })?;
+    let bucket_id = mapping.bucket_id;
 
     // Persist the binding so subsequent events reuse it. Fetch the current
     // row, set bucket_id, and update (preserves all other fields).
@@ -1078,13 +1077,18 @@ async fn handle_subscription_paid(
             if let Some(existing_bucket) = subscription.bucket_id {
                 (subscription_id, Some(existing_bucket))
             } else {
-                let resolved = resolve_and_bind_subscription_bucket(
+                let resolved = match resolve_and_bind_subscription_bucket(
                     &app_state,
                     realm_id,
                     subscription_id,
                     &entitlement_key,
                 )
-                .await?;
+                .await
+                {
+                    Ok(bucket_id) => bucket_id,
+                    Err(CoreError::EntitlementMappingNotFound) => None,
+                    Err(error) => return Err(error),
+                };
                 (subscription_id, resolved)
             }
         }
@@ -1621,12 +1625,7 @@ async fn handle_refund_created(
                 payload.refund_id, payload.payment_id
             ))
         })?;
-    let bucket_id = attempt.bucket_id.ok_or_else(|| {
-        CoreError::BadRequest(format!(
-            "Cannot resolve bucket for refund {}: payment_attempt {} has no bucket_id snapshot",
-            payload.refund_id, attempt.id
-        ))
-    })?;
+    let bucket_id = attempt.bucket_id;
 
     match payload.refund_type.as_str() {
         "topup" => {

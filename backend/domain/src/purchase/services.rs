@@ -36,7 +36,7 @@ pub struct PreparePaymentAttemptInput {
 pub struct PurchaseTargetSnapshot {
     pub target_type: PurchasableTarget,
     pub target_id: Uuid,
-    pub bucket_id: Option<Uuid>,
+    pub bucket_id: Uuid,
     pub amount: i64,
     pub currency: String,
     pub title: String,

@@ -61,16 +61,22 @@ mod tests {
         .expect("Failed to set payment attempt to Succeeded");
 
         // Create TopupCredit ledger entry
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         sqlx::query(
             "INSERT INTO points_credit_ledger
-                (id, user_id, realm_id, credit_type, source_type, source_id,
+                (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
                  granted_amount, used_amount, revoked_amount, status, created_at, updated_at)
-             VALUES ($1, $2, $3, 'topup_credit', 'topup', $4,
-                     $5, 0, 0, 'active', NOW(), NOW())",
+             VALUES ($1, $2, $3, $4, 'topup_credit', 'topup', $5,
+                     $6, 0, 0, 'active', NOW(), NOW())",
         )
         .bind(Uuid::now_v7())
         .bind(user_id)
         .bind(realm_id)
+        .bind(bucket_id)
         .bind(attempt_id.to_string())
         .bind(points)
         .execute(&ctx.app_state.pool)
@@ -140,16 +146,22 @@ mod tests {
         source_id: &str,
     ) {
         let ledger_id = Uuid::now_v7();
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         sqlx::query(
             "INSERT INTO points_credit_ledger
-                (id, user_id, realm_id, credit_type, source_type, source_id,
+                (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
                  granted_amount, used_amount, revoked_amount, status, created_at, updated_at)
-             VALUES ($1, $2, $3, 'subscription_credit', 'system_grant', $4,
-                     $5, 0, 0, 'active', NOW(), NOW())",
+             VALUES ($1, $2, $3, $4, 'subscription_credit', 'system_grant', $5,
+                     $6, 0, 0, 'active', NOW(), NOW())",
         )
         .bind(ledger_id)
         .bind(user_id)
         .bind(realm_id)
+        .bind(bucket_id)
         .bind(source_id)
         .bind(amount)
         .execute(&ctx.app_state.pool)

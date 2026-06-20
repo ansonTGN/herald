@@ -11,7 +11,7 @@
  * NOTE: Payment Completion in Demo Tests
  * ======================================
  * This test covers the USER JOURNEY up to payment initiation.
- * Actual payment completion requires webhook callbacks from payment providers (WeChat/Stripe).
+ * Actual payment completion requires webhook callbacks from payment providers (Stripe/Creem).
  * In a demo environment, these webhooks should be simulated by the demo infrastructure.
  *
  * The test verifies:
@@ -25,7 +25,7 @@
  * This test uses Demo seed data (realm-001 with pre-configured one-time entitlement mappings).
  * Per spec/demo/e2e-testing.md Section 8:
  * - Demo Seed creates: realm-001, admin@realm-001.com, user@realm-001.com
- * - Demo Seed creates: One-time entitlement mappings with Stripe/WeChat payment providers
+ * - Demo Seed creates: One-time entitlement mappings with Stripe payment providers
  * - Test only validates USER-SIDE operations, no admin data creation
  *
  * Payment completion through UI is NOT tested here because:
@@ -60,59 +60,10 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
     // Note: Using Demo Seed data (realm-001 with pre-configured one-time entitlement mappings)
     // Per spec/demo/e2e-testing.md Section 8: No admin data creation in tests
 
-    let wechatAttemptId: string;
     let stripeAttemptId: string;
 
-    await test.step("[P0] User: Login and Purchase via WeChat Pay", async () => {
+    await test.step("[P0] User: Login and Purchase via Stripe", async () => {
       await loginPage.loginAsUser(USER_EMAIL, "password", REALM_ID);
-
-      await page.goto(`/${REALM_ID}/user/purchase-points`);
-      await selectFirstMappingAndProceed(page);
-
-      await page.getByTestId("payment-method-select-wechat").click();
-      // Wait for payment method selection state to update
-      await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
-      // Wait for Complete Purchase button to be ready and clickable
-      await expect(
-        page.getByRole("button", { name: "Complete Purchase" }),
-      ).toBeVisible();
-      await page.getByRole("button", { name: "Complete Purchase" }).click();
-
-      // Wait for payment status to be initialized (WeChat Pay provider heading)
-      await expect(
-        page.getByRole("heading", { name: "WeChat Pay" }),
-      ).toBeVisible();
-
-      wechatAttemptId = (await page.evaluate(() => {
-        const state = localStorage.getItem("cas-purchase-flow");
-        if (state) {
-          const parsed = JSON.parse(state);
-          return parsed?.state?.attemptId;
-        }
-        return null;
-      })) as string;
-
-      console.log("[P0] ✓ WeChat Pay purchase initiated");
-    });
-
-    await test.step("[P0] User: WeChat Pay Payment Status", async () => {
-      await expect(
-        page.getByRole("heading", { name: "WeChat Pay" }),
-      ).toBeVisible();
-      await expect(page.getByText("Time Remaining")).toBeVisible();
-
-      console.log(
-        "[P0] ✓ WeChat Pay purchase initiated (pending webhook completion)",
-      );
-      console.log(
-        "[P0] ℹ️  Note: Payment completion requires external webhook simulation by demo infrastructure",
-      );
-    });
-
-    await test.step("[P0] User: Purchase via Stripe", async () => {
-      await page.evaluate(() => {
-        localStorage.removeItem("cas-purchase-flow");
-      });
 
       await page.goto(`/${REALM_ID}/user/purchase-points`);
       await selectFirstMappingAndProceed(page);
@@ -120,6 +71,10 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
+      // Wait for Complete Purchase button to be ready and clickable
+      await expect(
+        page.getByRole("button", { name: "Complete Purchase" }),
+      ).toBeVisible();
       await page.getByRole("button", { name: "Complete Purchase" }).click();
 
       // Wait for payment status to be initialized (Stripe redirect heading)
@@ -162,7 +117,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
 
       await page.goto(`/${REALM_ID}/user/purchase-points`);
       await selectFirstMappingAndProceed(page);
-      await page.getByTestId("payment-method-select-wechat").click();
+      await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
       // Wait for Complete Purchase button to be ready and clickable
@@ -171,9 +126,9 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       ).toBeVisible();
       await page.getByRole("button", { name: "Complete Purchase" }).click();
 
-      // Wait for payment status to be initialized (WeChat Pay provider heading)
+      // Wait for payment status to be initialized (Stripe redirect heading)
       await expect(
-        page.getByRole("heading", { name: "WeChat Pay" }),
+        page.getByRole("heading", { name: "Redirecting..." }),
       ).toBeVisible();
 
       const attemptId = (await page.evaluate(() => {
@@ -188,7 +143,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       // Refresh page and verify state recovery
       await page.reload();
       await expect(
-        page.getByRole("heading", { name: "WeChat Pay" }),
+        page.getByRole("heading", { name: "Redirecting..." }),
       ).toBeVisible();
 
       // Verify payment attempt ID is preserved after refresh
@@ -216,7 +171,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
 
       await page.goto(`/${REALM_ID}/user/purchase-points`);
       await selectFirstMappingAndProceed(page);
-      await page.getByTestId("payment-method-select-wechat").click();
+      await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
 
@@ -226,9 +181,9 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       });
       await purchaseButton.click();
 
-      // Verify payment was initiated (navigates to Payment Pending page with WeChat Pay heading)
+      // Verify payment was initiated (navigates to Payment Pending page with Stripe redirect heading)
       await expect(
-        page.getByRole("heading", { name: "WeChat Pay" }),
+        page.getByRole("heading", { name: "Redirecting..." }),
       ).toBeVisible();
 
       // Get the attempt ID to verify exactly ONE payment was created
@@ -298,7 +253,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
 
       await page.goto(`/${REALM_ID}/user/purchase-points`);
       await selectFirstMappingAndProceed(page);
-      await page.getByTestId("payment-method-select-wechat").click();
+      await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
       // Wait for Complete Purchase button to be ready and clickable
@@ -364,7 +319,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
 
       await page.goto(`/${REALM_ID}/user/purchase-points`);
       await selectFirstMappingAndProceed(page);
-      await page.getByTestId("payment-method-select-wechat").click();
+      await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
       // Wait for Complete Purchase button to be ready and clickable

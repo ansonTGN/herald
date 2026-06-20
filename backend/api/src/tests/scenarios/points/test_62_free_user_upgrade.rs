@@ -376,18 +376,25 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     )
     .await;
 
-    // Create additional mapping for "prod_test_monthly" so cancel webhook can resolve entitlement_key
+    // Create additional mapping for "prod_test_monthly" so cancel webhook can resolve entitlement_key.
+    // Bind the realm's legacy test bucket so the cancel/resubscribe grant resolves a real bucket.
+    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+    )
+    .await;
     let generic_mapping_id = uuid::Uuid::now_v7();
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             points_per_period, grant_on_subscribe, validity_days, enabled, created_at, updated_at)
-         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 1000, true, 30, true, NOW(), NOW())
+             points_per_period, grant_on_subscribe, validity_days, enabled, bucket_id, created_at, updated_at)
+         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 1000, true, 30, true, $4, NOW(), NOW())
          ON CONFLICT DO NOTHING",
     )
     .bind(generic_mapping_id)
     .bind(&ctx._realm_id)
     .bind(mapping_id.to_string())
+    .bind(bucket_id)
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to create generic entitlement mapping for cancel webhook");

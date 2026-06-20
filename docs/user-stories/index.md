@@ -30,7 +30,6 @@ docs/user-stories/
 │   ├── points-free-user.md # 免费用户积分
 │   ├── points-package-purchase.md # 积分包购买
 │   ├── payment-provider.md # 支付平台配置
-│   ├── wechat-pay.md     # 微信支付
 │   ├── payment-attempt.md # 支付尝试
 │   ├── invoice.md        # 发票
 │   ├── invoice-fallback.md # 发票 Fallback
@@ -131,14 +130,6 @@ docs/user-stories/
 | US-PV-003 | 编辑支付平台配置 | Realm Admin | P1 | [billing/payment-provider](billing/payment-provider.md#故事-3编辑支付平台配置-us-pv-003) |
 | US-PV-004 | 删除支付平台配置 | Realm Admin | P1 | [billing/payment-provider](billing/payment-provider.md#故事-4删除支付平台配置-us-pv-004) |
 | US-PV-005 | 查看支付平台使用统计 | Realm Admin | P2 | [billing/payment-provider](billing/payment-provider.md#故事-5查看支付平台使用统计-us-pv-005) |
-| US-WP-001 | 配置微信支付平台 | Realm Admin | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-1配置微信支付平台-us-wp-001) |
-| US-WP-002 | 查看微信支付平台配置 | Realm Admin | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-2查看微信支付平台配置-us-wp-002) |
-| US-WP-003 | 编辑微信支付平台配置 | Realm Admin | P1 | [billing/wechat-pay](billing/wechat-pay.md#故事-3编辑微信支付平台配置-us-wp-003) |
-| US-WP-004 | 删除微信支付平台配置 | Realm Admin | P1 | [billing/wechat-pay](billing/wechat-pay.md#故事-4删除微信支付平台配置-us-wp-004) |
-| US-WP-005 | 用户通过微信扫码支付 | Regular User | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-5用户通过微信扫码支付-us-wp-005) |
-| US-WP-006 | 微信支付 Webhook 回调处理 | System | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-6微信支付回调处理-us-wp-006) |
-| US-WP-007 | 主动查询支付状态 | System | P0 | [billing/wechat-pay](billing/wechat-pay.md#故事-7主动查询支付状态-us-wp-007) |
-| US-WP-008 | 关闭过期支付订单 | System | P1 | [billing/wechat-pay](billing/wechat-pay.md#故事-8关闭过期支付订单-us-wp-008) |
 | US-PU-006 | 购买积分包 | Regular User | P0 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-1购买积分包-us-pu-006) |
 | US-PU-007 | 查看积分包购买记录 | Regular User | P1 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-2查看积分包购买记录-us-pu-007) |
 | US-PU-008 | 积分包与订阅购买的区别 | Regular User | P1 | [billing/points-package-purchase](billing/points-package-purchase.md#故事-3理解积分包与订阅购买的区别-us-pu-008) |
@@ -231,7 +222,6 @@ docs/user-stories/
 | Points User | [billing/points-user.md](billing/points-user.md), [billing/points-free-user.md](billing/points-free-user.md) | [Points PRD](/docs/prd/billing/points.md), [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Points Package Purchase | [billing/points-package-purchase.md](billing/points-package-purchase.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Payment Provider | [billing/payment-provider.md](billing/payment-provider.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
-| WeChat Pay | [billing/wechat-pay.md](billing/wechat-pay.md) | [WeChat Pay PRD](/docs/prd/billing/wechat-pay.md) |
 | Payment Attempt | [billing/payment-attempt.md](billing/payment-attempt.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Invoice | [billing/invoice.md](billing/invoice.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
 | Invoice Fallback | [billing/invoice-fallback.md](billing/invoice-fallback.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |

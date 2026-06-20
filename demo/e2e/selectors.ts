@@ -722,60 +722,6 @@ export const SELECTORS = {
   },
 
   /**
-   * WeChat Pay Configuration Selectors
-   *
-   * Providers list page: /{realmId}/manage/billing/payment-providers
-   * Config form page:    /{realmId}/manage/billing/payment-providers/wechat
-   *
-   * The config form was refactored from a dialog to a dedicated page route.
-   * Page-level selectors use "page-" prefixed data-testids.
-   */
-  wechatPay: {
-    // Provider row on the payment providers list page
-    configCard: '[data-testid="wechat-provider-row"]',
-    toggleDetailsButton: '[data-testid="toggle-wechat-details-button"]',
-    appIdDisplay: '[data-testid="app-id-display"]',
-    merchantIdDisplay: '[data-testid="merchant-id-display"]',
-    serialNoDisplay: '[data-testid="serial-no-display"]',
-    v3KeyDisplay: '[data-testid="v3-key-display"]',
-    privateKeyDisplay: '[data-testid="private-key-display"]',
-    notifyUrlDisplay: '[data-testid="notify-url-display"]',
-    showSecretsButton:
-      '[data-testid="wechat-config-detail"] [data-testid="show-secrets-button"]',
-    hideSecretsButton: '[data-testid="hide-secrets-button"]',
-    editConfigButton: '[data-testid="edit-wechat-button"]',
-    deleteConfigButton: '[data-testid="delete-wechat-button"]',
-
-    // Configuration form page (dedicated route, not a dialog)
-    configFormPage: '[data-testid="wechat-config-form-page"]',
-    configForm: '[data-testid="wechat-config-page-form"]',
-    appIdInput: '[data-testid="page-app-id-input"]',
-    merchantIdInput: '[data-testid="page-merchant-id-input"]',
-    serialNoInput: '[data-testid="page-serial-no-input"]',
-    v3KeyInput: '[data-testid="page-v3-key-input"]',
-    notifyUrlInput: '[data-testid="page-notify-url-input"]',
-    privateKeyInput: '[data-testid="page-private-key-input"]',
-    configSubmitButton: '[data-testid="wechat-config-page-submit-button"]',
-    configCancelButton: '[data-testid="wechat-config-page-cancel-button"]',
-
-    // Payment providers list page buttons
-    addWechatButton: '[data-testid="add-wechat-button"]',
-    editWechatButton: '[data-testid="edit-wechat-button"]',
-    deleteWechatButton: '[data-testid="delete-wechat-button"]',
-
-    // QR Code Payment
-    qrPaymentContainer: '[data-testid="wechat-qr-payment"]',
-    qrCodeContainer: '[data-testid="wechat-qr-code-container"]',
-    qrCode: '[data-testid="wechat-qr-code"]',
-    qrCountdownDisplay: '[data-testid="qr-countdown-display"]',
-    creatingOrderState: '[data-testid="creating-order-state"]',
-    expiredState: '[data-testid="expired-state"]',
-    errorState: '[data-testid="error-state"]',
-    cancelPaymentButton: '[data-testid="cancel-payment-button"]',
-    providerDisabledTooltip: '[data-testid="provider-disabled-tooltip"]',
-  },
-
-  /**
    * Unified Purchase - Purchase Points Page (User)
    * Route: /{realmId}/user/purchase-points
    */
@@ -838,9 +784,6 @@ export const SELECTORS = {
    * Rendered within PaymentAttemptStatus for Pending/RequiresAction states
    */
   paymentProviderUI: {
-    // WeChat QR code flow
-    wechatQrSection: '[data-testid="payment-wechat-qr-section"]',
-    wechatQrCode: '[data-testid="wechat-qr-code"]',
     // Stripe / Creem redirect flow
     redirectPrompt: '[data-testid="payment-redirect-prompt"]',
     redirectManualLink: '[data-testid="payment-redirect-manual-link"]',

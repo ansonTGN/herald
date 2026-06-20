@@ -168,19 +168,26 @@ async fn test_creem_checkout_completed_duplicate_event_no_double_grant(
         .await
         .expect("Failed to set billing_type=one_time");
 
-    // Create a pending payment attempt so the one-time fulfillment can complete it
+    // Create a pending payment attempt so the one-time fulfillment can complete it.
+    // payment_attempts.bucket_id is NOT NULL — bind the realm's legacy test bucket.
+    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx.app_state.pool,
+        &realm_id,
+    )
+    .await;
     let attempt_id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO payment_attempts
             (id, realm_id, user_id, payment_provider, target_type, target_id,
-             amount, currency, status, expires_at, created_at, updated_at)
+             bucket_id, amount, currency, status, expires_at, created_at, updated_at)
          VALUES ($1, $2, $3, 'creem', 'entitlement_mapping', $4,
-                 $5, 'USD', 'Pending', NOW() + INTERVAL '2 hours', NOW(), NOW())",
+                 $5, $6, 'USD', 'Pending', NOW() + INTERVAL '2 hours', NOW(), NOW())",
     )
     .bind(attempt_id)
     .bind(&realm_id)
     .bind(user_id)
     .bind(mapping_id)
+    .bind(bucket_id)
     .bind(2000i64)
     .execute(&ctx.app_state.pool)
     .await

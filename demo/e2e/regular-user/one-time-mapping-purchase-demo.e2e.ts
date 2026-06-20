@@ -4,7 +4,7 @@
  * User Stories: US-PU-006 S7
  * Coverage: mapping card display on purchase page
  *
- * Payment initiation tests (WeChat QR, Stripe redirect, state recovery) require
+ * Payment initiation tests (Stripe redirect, state recovery) require
  * real third-party provider integration and are located at:
  *   demo/e2e/live/billing/one-time-mapping-purchase/us-pu-006-one-time-purchase-live.e2e.ts
  *

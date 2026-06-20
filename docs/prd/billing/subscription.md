@@ -65,7 +65,7 @@
 
 ### 2.1 包含功能
 
-- 支持多种支付平台：Creem（模拟支付平台，已实现）、Stripe（已实现，详见 `docs/prd/billing/stripe-payment.md`）、微信支付（已实现，详见 `docs/prd/billing/wechat-pay.md`）；支付宝待实现
+- 支持多种支付平台：Creem（模拟支付平台，已实现）、Stripe（已实现，详见 `docs/prd/billing/stripe-payment.md`）；支付宝待实现
 - Provider Entitlement 映射管理（查看、配置积分策略、启用/禁用）
 - 支付方商品同步与 provider-sourced cache
 - 前端 Entitlement 映射管理页面
@@ -100,7 +100,7 @@
 - **Realm 系统** — Billing 功能属于 Realm 级别
 - **Client App 系统** — 套餐分配到 Client App
 - **权限管理系统** — Realm Admin 权限检查
-- **支付平台集成** — 当前已集成 Creem（模拟支付平台）、Stripe（`docs/prd/billing/stripe-payment.md`）、微信支付（`docs/prd/billing/wechat-pay.md`）；支付宝待实现
+- **支付平台集成** — 当前已集成 Creem（模拟支付平台）、Stripe（`docs/prd/billing/stripe-payment.md`）；支付宝待实现
 
 ---
 
@@ -116,7 +116,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 ### 3.2 关键特性
 
-- 支持多种支付平台（Creem、Stripe、微信支付；支付宝待实现）
+- 支持多种支付平台（Creem、Stripe；支付宝待实现）
 - Provider entitlement 映射管理
 - 通过 `entitlement_key` 统一表示订阅权益
 - 支付方商品同步与 provider-sourced cache
@@ -294,7 +294,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 **支付平台配置**：
 - 支持添加、编辑、启用/禁用、删除支付平台配置（API Key、Secret Key、Webhook Secret）
-- 当前支持 Creem（模拟支付平台）、Stripe、微信支付；支付宝待实现
+- 当前支持 Creem（模拟支付平台）、Stripe；支付宝待实现
 - 每个 realm 使用独立的 webhook URL，实现多租户隔离
 
 **Entitlement 映射管理**：
@@ -430,7 +430,6 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - 用户故事：`docs/user-stories/billing/subscription.md`
 - 相关 PRD：`docs/prd/billing/points.md`
 - 相关 PRD：`docs/prd/billing/stripe-payment.md`
-- 相关 PRD：`docs/prd/billing/wechat-pay.md`
 - 相关 PRD：`docs/prd/core/realm-settings.md`
 - 用户故事：`docs/user-stories/billing/entitlement-mapping.md`
 - Realm Admin 用户故事：`docs/user-stories/core/realm-admin.md`

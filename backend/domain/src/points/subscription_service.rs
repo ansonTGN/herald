@@ -367,7 +367,7 @@ where
             id: crate::common::entities::generate_uuid_v7(),
             user_id,
             realm_id: realm_id.to_string(),
-            bucket_id: None,
+            bucket_id: Uuid::nil(),
             credit_type: CreditType::SubscriptionCredit,
             source_type: CreditSourceType::SubscriptionInitial,
             source_id: "idempotency".to_string(),

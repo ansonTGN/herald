@@ -57,13 +57,22 @@ async fn test_scenario_expired_points_are_deducted(ctx: &mut TestContext) {
     let expired_amount = 500;
     let valid_amount = 1000;
 
+    // points_wallets / points_transactions are bucket-scoped (bucket_id NOT NULL)
+    // after c9f03824 — resolve the realm's legacy test bucket, reused below.
+    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+    )
+    .await;
+
     sqlx::query(
-        "INSERT INTO points_wallets (id, realm_id, user_id, topup_balance, subscription_balance, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 'active', NOW(), NOW())",
+        "INSERT INTO points_wallets (id, realm_id, user_id, bucket_id, topup_balance, subscription_balance, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW(), NOW())",
     )
     .bind(wallet_id)
     .bind(&ctx._realm_id)
     .bind(user_id)
+    .bind(bucket_id)
     .bind(valid_amount + expired_amount)
     .bind(0)
     .execute(&ctx._app_state.pool)
@@ -73,14 +82,15 @@ async fn test_scenario_expired_points_are_deducted(ctx: &mut TestContext) {
     // Create expired points transaction (expired yesterday)
     let expired_transaction_id = Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO points_transactions (id, realm_id, wallet_id, user_id, type, amount, balance_after,
+        "INSERT INTO points_transactions (id, realm_id, wallet_id, user_id, bucket_id, type, amount, balance_after,
                                           expires_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, 'recharge', $5, $6, $7, NOW(), NOW())",
+         VALUES ($1, $2, $3, $4, $5, 'recharge', $6, $7, $8, NOW(), NOW())",
     )
     .bind(expired_transaction_id)
     .bind(&ctx._realm_id)
     .bind(wallet_id)
     .bind(user_id)
+    .bind(bucket_id)
     .bind(expired_amount)
     .bind(valid_amount + expired_amount)
     .bind(Utc::now() - Duration::days(2))  // Expired 2 days ago
@@ -91,14 +101,15 @@ async fn test_scenario_expired_points_are_deducted(ctx: &mut TestContext) {
     // Create valid points transaction (expires in future)
     let valid_transaction_id = Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO points_transactions (id, realm_id, wallet_id, user_id, type, amount, balance_after,
+        "INSERT INTO points_transactions (id, realm_id, wallet_id, user_id, bucket_id, type, amount, balance_after,
                                           expires_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, 'recharge', $5, $6, $7, NOW(), NOW())",
+         VALUES ($1, $2, $3, $4, $5, 'recharge', $6, $7, $8, NOW(), NOW())",
     )
     .bind(valid_transaction_id)
     .bind(&ctx._realm_id)
     .bind(wallet_id)
     .bind(user_id)
+    .bind(bucket_id)
     .bind(valid_amount)
     .bind(valid_amount + expired_amount)
     .bind(Utc::now() + Duration::days(30))  // Expires in 30 days

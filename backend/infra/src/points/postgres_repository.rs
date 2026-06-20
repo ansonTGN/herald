@@ -364,7 +364,7 @@ impl PostgresPointsRepository {
             id: model.id,
             user_id: model.user_id,
             realm_id: model.realm_id,
-            bucket_id: Some(model.bucket_id),
+            bucket_id: model.bucket_id,
             subscription_id: model.subscription_id,
             entitlement_key: Some(model.entitlement_key),
             grant_period_type,
@@ -473,7 +473,7 @@ impl PostgresPointsRepository {
             id: row.id,
             user_id: row.user_id,
             realm_id: row.realm_id,
-            bucket_id: Some(row.bucket_id),
+            bucket_id: row.bucket_id,
             credit_type: row.credit_type.parse()?,
             source_type: row.source_type.parse()?,
             source_id: row.source_id,
@@ -781,6 +781,39 @@ impl PostgresPointsRepository {
             .collect()
     }
 
+    async fn find_active_ledgers_by_credit_type_and_bucket_for_update(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_id: Uuid,
+        credit_type: CreditType,
+    ) -> Result<Vec<PointsCreditLedger>, CoreError> {
+        let rows = sqlx::query_as::<_, PointsCreditLedgerRow>(
+            r#"
+            SELECT * FROM points_credit_ledger
+            WHERE realm_id = $1
+              AND user_id = $2
+              AND bucket_id = $3
+              AND credit_type = $4
+              AND status = 'active'
+              AND remaining_amount > 0
+            ORDER BY created_at ASC
+            FOR UPDATE
+            "#,
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(bucket_id)
+        .bind(credit_type.to_string())
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        rows.into_iter()
+            .map(Self::row_to_points_credit_ledger)
+            .collect()
+    }
+
     async fn find_expired_ledgers_for_update(
         tx: &mut Transaction<'_, Postgres>,
         expiration_time: chrono::DateTime<chrono::Utc>,
@@ -1039,18 +1072,11 @@ impl PostgresPointsRepository {
         tx: &mut Transaction<'_, Postgres>,
         allocation: &PointsConsumptionAllocation,
     ) -> Result<(), CoreError> {
-        // wallet_id and bucket_id are NOT NULL on points_consumption_allocations
-        // (migration 20260211_billing.sql:299). The consume write path always
-        // resolves both; fail loud rather than silently writing NULL.
+        // wallet_id is NOT NULL on points_consumption_allocations. The consume
+        // write path always resolves it; fail loud rather than silently writing NULL.
         let wallet_id = allocation.wallet_id.ok_or_else(|| {
             CoreError::InternalServerError(format!(
                 "consumption allocation requires wallet_id (ledger={}, transaction={})",
-                allocation.ledger_id, allocation.transaction_id
-            ))
-        })?;
-        let bucket_id = allocation.bucket_id.ok_or_else(|| {
-            CoreError::InternalServerError(format!(
-                "consumption allocation requires bucket_id (ledger={}, transaction={})",
                 allocation.ledger_id, allocation.transaction_id
             ))
         })?;
@@ -1068,7 +1094,7 @@ impl PostgresPointsRepository {
         .bind(wallet_id)
         .bind(allocation.user_id)
         .bind(&allocation.realm_id)
-        .bind(bucket_id)
+        .bind(allocation.bucket_id)
         .bind(allocation.allocated_amount)
         .bind(allocation.ledger_remaining_after)
         .bind(allocation.created_at)
@@ -1241,7 +1267,7 @@ impl PointsRepository for PostgresPointsRepository {
         user_id: Uuid,
     ) -> Result<Option<PointsWallet>, CoreError> {
         let rows: Vec<PointsWalletRow> = sqlx::query_as::<_, PointsWalletRow>(
-            "SELECT * FROM points_wallets WHERE realm_id = $1 AND user_id = $2",
+            "SELECT * FROM points_wallets WHERE realm_id = $1 AND user_id = $2 ORDER BY created_at ASC",
         )
         .bind(realm_id)
         .bind(user_id)
@@ -1375,7 +1401,7 @@ impl PointsRepository for PostgresPointsRepository {
         let query = r#"
             SELECT id, realm_id, wallet_id, user_id, type, amount, balance_after,
                    topup_balance_after, subscription_balance_after, credit_type,
-                   description, client_app_id, subscription_id, external_ref_id,
+                   description, client_app_id, subscription_id, external_ref_id, correlation_id,
                    created_at, updated_at, expires_at
             FROM points_transactions
             WHERE realm_id = $1
@@ -1958,7 +1984,7 @@ impl PointsRepository for PostgresPointsRepository {
                             id,
                             user_id,
                             realm_id,
-                            bucket_id: None,
+                            bucket_id: Uuid::nil(),
                             credit_type,
                             source_type,
                             source_id,
@@ -2632,9 +2658,7 @@ impl PointsRepository for PostgresPointsRepository {
                 id: Set(schedule.id),
                 user_id: Set(schedule.user_id),
                 realm_id: Set(schedule.realm_id.clone()),
-                bucket_id: Set(schedule
-                    .bucket_id
-                    .expect("bucket_id is required for grant schedule persistence")),
+                bucket_id: Set(schedule.bucket_id),
                 subscription_id: Set(schedule.subscription_id),
                 entitlement_key: Set(schedule.entitlement_key.unwrap_or_default()),
                 grant_period_type: Set(schedule.grant_period_type.to_string()),
@@ -3084,7 +3108,7 @@ impl PointsRepository for PostgresPointsRepository {
                 )
                 .await?;
 
-                let bucket_id = ledger.bucket_id.unwrap_or(Uuid::nil());
+                let bucket_id = ledger.bucket_id;
                 // Resolve (or create) the wallet for this (user, bucket) inside the
                 // same transaction; record it so all allocations in this bucket
                 // share the wallet_id and the bucket transaction does too.
@@ -3130,7 +3154,7 @@ impl PointsRepository for PostgresPointsRepository {
                     wallet_id: Some(wallet_id),
                     user_id,
                     realm_id: realm_id.clone(),
-                    bucket_id: Some(bucket_id),
+                    bucket_id,
                     allocated_amount: planned.amount,
                     ledger_remaining_after: updated_ledger.remaining_amount,
                     created_at: chrono::Utc::now(),
@@ -3294,10 +3318,11 @@ impl PointsRepository for PostgresPointsRepository {
                 }
             };
 
-            let ledgers = Self::find_active_ledgers_by_credit_type_for_update(
+            let ledgers = Self::find_active_ledgers_by_credit_type_and_bucket_for_update(
                 &mut tx,
                 &realm_id,
                 user_id,
+                bucket_id,
                 credit_type,
             )
             .await?;
@@ -3628,7 +3653,7 @@ impl PointsRepository for PostgresPointsRepository {
                     continue;
                 }
                 // Only revoke ledgers in the target bucket — never dip into other pools.
-                if ledger.bucket_id != Some(bucket_id) {
+                if ledger.bucket_id != bucket_id {
                     continue;
                 }
 
@@ -3717,7 +3742,7 @@ impl PointsRepository for PostgresPointsRepository {
                 r#"
                 SELECT id, realm_id, wallet_id, user_id, bucket_id, type, amount, balance_after,
                        topup_balance_after, subscription_balance_after, credit_type,
-                       description, client_app_id, subscription_id, external_ref_id,
+                       description, client_app_id, subscription_id, external_ref_id, correlation_id,
                        created_at, updated_at, expires_at
                 FROM points_transactions
                 WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3 AND external_ref_id = $4 AND type = 'refund'
@@ -3751,32 +3776,53 @@ impl PointsRepository for PostgresPointsRepository {
 
             // Refund = revoke the refunded points from the ledger so the
             // projection (wallet columns) and the source of truth (ledger
-            // remaining_amount) never diverge. Drain subscription credits
-            // first, then topup — same priority as the legacy split.
-            let subscription_to_revoke = refund_amount.min(wallet.subscription_balance);
-            let topup_to_revoke = refund_amount - subscription_to_revoke;
-
+            // remaining_amount) never diverge. Drain across all five credit
+            // types in a fixed priority so a refund against any balance
+            // composition actually revokes — same priority as consume (design
+            // §5.1). Bucket-scoped ledger locks prevent cross-bucket contention
+            // (review #8) since refunds target a single Bucket.
+            let refund_types = [
+                CreditType::SubscriptionCredit,
+                CreditType::TopupCredit,
+                CreditType::GrantedCredit,
+                CreditType::RegistrationCredit,
+                CreditType::FreePeriodicCredit,
+            ];
+            let mut total_revoked = 0i64;
             let mut subscription_revoked = 0i64;
-            if subscription_to_revoke > 0 {
-                let ledgers = Self::find_active_ledgers_by_credit_type_for_update(
+            let mut topup_revoked = 0i64;
+            let mut granted_revoked = 0i64;
+            let mut registration_revoked = 0i64;
+            let mut free_periodic_revoked = 0i64;
+            for credit_type in refund_types {
+                let still_to_revoke = refund_amount - total_revoked;
+                if still_to_revoke <= 0 {
+                    break;
+                }
+                // Bucket-scoped lock: refund targets the requested bucket only.
+                let ledgers = Self::find_active_ledgers_by_credit_type_and_bucket_for_update(
                     &mut tx,
                     &realm_id,
                     user_id,
-                    CreditType::SubscriptionCredit,
+                    bucket_id,
+                    credit_type,
                 )
                 .await?;
-                let mut remaining = subscription_to_revoke;
+                let mut remaining = still_to_revoke;
                 let mut plan: Vec<(Uuid, i64)> = Vec::new();
-                for ledger in ledgers
-                    .into_iter()
-                    .filter(|l| l.bucket_id == Some(bucket_id) && l.remaining_amount > 0)
-                {
+                for ledger in ledgers.into_iter() {
                     if remaining <= 0 {
                         break;
                     }
                     let take = ledger.remaining_amount.min(remaining);
+                    if take <= 0 {
+                        continue;
+                    }
                     plan.push((ledger.id, take));
                     remaining -= take;
+                }
+                if plan.is_empty() {
+                    continue;
                 }
                 let (revoked, _) = Self::revoke_ledger_list_in_tx(
                     &mut tx,
@@ -3788,54 +3834,36 @@ impl PointsRepository for PostgresPointsRepository {
                     Some(&refund_reference),
                 )
                 .await?;
-                subscription_revoked = revoked;
+                total_revoked += revoked;
+                match credit_type {
+                    CreditType::SubscriptionCredit => subscription_revoked += revoked,
+                    CreditType::TopupCredit => topup_revoked += revoked,
+                    CreditType::GrantedCredit => granted_revoked += revoked,
+                    CreditType::RegistrationCredit => registration_revoked += revoked,
+                    CreditType::FreePeriodicCredit => free_periodic_revoked += revoked,
+                }
             }
 
-            let mut topup_revoked = 0i64;
-            if topup_to_revoke > 0 {
-                let ledgers = Self::find_active_ledgers_by_credit_type_for_update(
-                    &mut tx,
-                    &realm_id,
-                    user_id,
-                    CreditType::TopupCredit,
-                )
-                .await?;
-                let mut remaining = topup_to_revoke;
-                let mut plan: Vec<(Uuid, i64)> = Vec::new();
-                for ledger in ledgers
-                    .into_iter()
-                    .filter(|l| l.bucket_id == Some(bucket_id) && l.remaining_amount > 0)
-                {
-                    if remaining <= 0 {
-                        break;
-                    }
-                    let take = ledger.remaining_amount.min(remaining);
-                    plan.push((ledger.id, take));
-                    remaining -= take;
-                }
-                let (revoked, _) = Self::revoke_ledger_list_in_tx(
-                    &mut tx,
-                    &realm_id,
-                    user_id,
-                    plan,
-                    RevocationType::RefundRevoke,
-                    &reason,
-                    Some(&refund_reference),
-                )
-                .await?;
-                topup_revoked = revoked;
+            // Fail loud (Rule 12): if the precheck passed but draining across all
+            // five types still did not cover the refund (e.g. the balance changed
+            // between read and lock, or remaining_amounts did not match the
+            // projection), never write a 0/partial transaction silently.
+            if total_revoked != refund_amount {
+                return Err(CoreError::InternalServerError(format!(
+                    "refund revoke drift: requested {} but revoked {}",
+                    refund_amount, total_revoked
+                )));
             }
 
             // Apply the net revocation to the wallet projection (single
             // writer). The delta mirrors what was actually revoked on the
             // ledger so the projection cannot drift.
-            let total_revoked = subscription_revoked + topup_revoked;
             let delta = WalletDelta {
                 topup: -topup_revoked,
                 subscription: -subscription_revoked,
-                granted: 0,
-                registration: 0,
-                free_periodic: 0,
+                granted: -granted_revoked,
+                registration: -registration_revoked,
+                free_periodic: -free_periodic_revoked,
                 total_recharged: 0,
                 total_consumed: 0,
                 total_topup_granted: 0,
@@ -3923,7 +3951,7 @@ impl PointsRepository for PostgresPointsRepository {
                     id: Uuid::now_v7(),
                     user_id,
                     realm_id,
-                    bucket_id: Some(bucket_id),
+                    bucket_id,
                     credit_type,
                     source_type,
                     source_id: "idempotency".to_string(),
@@ -3951,7 +3979,7 @@ impl PointsRepository for PostgresPointsRepository {
                 id: Uuid::now_v7(),
                 user_id,
                 realm_id: realm_id.clone(),
-                bucket_id: Some(bucket_id),
+                bucket_id,
                 credit_type,
                 source_type,
                 source_id: source_id.clone(),
@@ -4052,7 +4080,7 @@ impl PointsRepository for PostgresPointsRepository {
                 id: Uuid::now_v7(),
                 user_id,
                 realm_id: realm_id.clone(),
-                bucket_id: Some(bucket_id),
+                bucket_id,
                 credit_type,
                 source_type,
                 source_id: resolved_source_id.clone(),
@@ -4173,7 +4201,7 @@ impl PointsRepository for PostgresPointsRepository {
                     id: Uuid::now_v7(),
                     user_id,
                     realm_id,
-                    bucket_id: Some(bucket_id),
+                    bucket_id,
                     credit_type: CreditType::SubscriptionCredit,
                     source_type: CreditSourceType::SubscriptionInitial,
                     source_id: "idempotency".to_string(),
@@ -4192,6 +4220,12 @@ impl PointsRepository for PostgresPointsRepository {
             // lands in the subscription's bound Bucket.
             let wallet = Self::ensure_wallet_in_tx(&mut tx, &realm_id, user_id, bucket_id).await?;
             if disable_daily_grant {
+                // Free-periodic credits may sit in any of the user's Buckets, not
+                // just the subscription's bound Bucket (design §5.2/A4). Revoke
+                // them per distinct ledger.bucket_id so we never drive a pool's
+                // free_periodic_balance negative. The subscription `wallet` (bound
+                // to `bucket_id`) is still the destination for the grant below; we
+                // resolve additional pool wallets here as needed.
                 let daily_ledgers = Self::find_active_ledgers_by_credit_type_for_update(
                     &mut tx,
                     &realm_id,
@@ -4199,12 +4233,12 @@ impl PointsRepository for PostgresPointsRepository {
                     CreditType::FreePeriodicCredit,
                 )
                 .await?;
-                let total_revoked: i64 = daily_ledgers.iter().map(|l| l.remaining_amount).sum();
                 for ledger in daily_ledgers {
+                    let amount = ledger.remaining_amount;
                     let updated = Self::update_ledger_in_tx(
                         &mut tx,
                         ledger.id,
-                        LedgerUpdate::Revocation(ledger.remaining_amount),
+                        LedgerUpdate::Revocation(amount),
                     )
                     .await?;
                     let record = PointsRevocationRecord {
@@ -4213,16 +4247,27 @@ impl PointsRepository for PostgresPointsRepository {
                         user_id,
                         realm_id: realm_id.clone(),
                         revocation_type: RevocationType::UpgradeRevoke,
-                        revoked_amount: ledger.remaining_amount,
+                        revoked_amount: amount,
                         reason: "Free user upgraded to paid subscription".to_string(),
                         reference_id: Some(idempotency_key.clone()),
                         created_at: chrono::Utc::now(),
                     };
                     Self::create_revocation_record_in_tx(&mut tx, &record).await?;
-                }
-                if total_revoked > 0 {
-                    let delta = WalletDelta::revoke(CreditType::FreePeriodicCredit, total_revoked);
-                    let _ = Self::apply_wallet_delta_in_tx(&mut tx, wallet.id, delta).await?;
+                    // Apply the revocation to THIS ledger's bound Bucket's wallet,
+                    // not the subscription wallet, so a cross-bucket free-periodic
+                    // balance cannot go negative. (Mirrors scan_and_expire's
+                    // per-ledger wallet resolution, ~line 4370.)
+                    let fp_wallet = if ledger.bucket_id == bucket_id {
+                        wallet.clone()
+                    } else {
+                        Self::ensure_wallet_in_tx(&mut tx, &realm_id, user_id, ledger.bucket_id)
+                            .await?
+                    };
+                    if amount > 0 {
+                        let delta = WalletDelta::revoke(CreditType::FreePeriodicCredit, amount);
+                        let _ =
+                            Self::apply_wallet_delta_in_tx(&mut tx, fp_wallet.id, delta).await?;
+                    }
                 }
                 Self::disable_periodic_grant_in_tx(&mut tx, &realm_id, user_id).await?;
             }
@@ -4232,7 +4277,7 @@ impl PointsRepository for PostgresPointsRepository {
                 id: Uuid::now_v7(),
                 user_id,
                 realm_id: realm_id.clone(),
-                bucket_id: Some(bucket_id),
+                bucket_id,
                 credit_type: CreditType::SubscriptionCredit,
                 source_type,
                 source_id: format!("{}:{}", entitlement_key, idempotency_key),
@@ -4344,7 +4389,7 @@ impl PointsRepository for PostgresPointsRepository {
                 Self::create_revocation_record_in_tx(&mut tx, &record).await?;
                 // Resolve the wallet per-ledger by its bucket_id so we never
                 // adjust a different pool's balance (design §5.2, A4).
-                let bucket_id = ledger.bucket_id.unwrap_or_default();
+                let bucket_id = ledger.bucket_id;
                 let wallet = Self::find_wallet_by_user_bucket_for_update(
                     &mut tx,
                     &ledger.realm_id,
@@ -4429,11 +4474,11 @@ mod tests {
             user_id: Uuid::now_v7(),
             realm_id: "realm".to_string(),
             // Two distinct buckets: even index → bucket A, odd → bucket B.
-            bucket_id: Some(if index_bucket.is_multiple_of(2) {
+            bucket_id: if index_bucket.is_multiple_of(2) {
                 Uuid::from_u128(0xA)
             } else {
                 Uuid::from_u128(0xB)
-            }),
+            },
             credit_type,
             source_type: CreditSourceType::Topup,
             source_id: "src".to_string(),
@@ -4478,7 +4523,7 @@ mod tests {
         // Caller groups per bucket: A=30, B=20 — distinct transactions.
         let mut per_bucket = std::collections::BTreeMap::new();
         for p in &plan.allocations {
-            let bid = ledgers[p.ledger_index].bucket_id.unwrap();
+            let bid = ledgers[p.ledger_index].bucket_id;
             *per_bucket.entry(bid).or_insert(0i64) += p.amount;
         }
         let totals: Vec<_> = per_bucket.values().copied().collect();

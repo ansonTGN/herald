@@ -100,13 +100,8 @@ where
         // A8: fulfillment routes by the `payment_attempt.bucket_id` snapshot taken
         // at purchase creation (§5.3). Live `mapping.bucket_id` is intentionally
         // NOT consulted here — mapping re-bucketing must not affect in-flight
-        // attempts (A7). Missing snapshot → fail loud.
-        let bucket_id =
-            attempt
-                .bucket_id
-                .ok_or(CoreError::EntitlementMappingNotAttachedToBucket {
-                    mapping_id: mapping.id,
-                })?;
+        // attempts (A7).
+        let bucket_id = attempt.bucket_id;
 
         let now = chrono::Utc::now();
         let period_days = billing_period_to_days(mapping.billing_period.as_deref());
@@ -287,13 +282,8 @@ where
         // Grant TopupCredit via points_repository
         // Use attempt.id as source_id AND idempotency_key to prevent double-grant on concurrent webhooks
         // A8: route grant to `attempt.bucket_id` snapshot (source of truth). Live
-        // mapping.bucket_id is not consulted. Missing snapshot → fail loud.
-        let bucket_id =
-            attempt
-                .bucket_id
-                .ok_or(CoreError::EntitlementMappingNotAttachedToBucket {
-                    mapping_id: mapping.id,
-                })?;
+        // mapping.bucket_id is not consulted.
+        let bucket_id = attempt.bucket_id;
         let credit_ledger = self
             .points_repository
             .grant_points_atomic(

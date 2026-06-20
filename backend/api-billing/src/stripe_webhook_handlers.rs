@@ -1192,14 +1192,7 @@ async fn handle_checkout_session_async_failed(
         // One-time purchase: revoke only the TopupCredit ledger from this specific attempt
         // (source_id = attempt_id), avoiding over-broad revocation of unrelated topup credits.
         // Bucket source: the originating payment_attempt snapshot (design A8 / BE-D06).
-        // Fail loud when the snapshot has no bucket — revoking from an implicit
-        // pool would silently drain unrelated credits.
-        let bucket_id = attempt.bucket_id.ok_or_else(|| {
-            CoreError::BadRequest(format!(
-                "Cannot resolve bucket for async failure revocation: payment_attempt {} has no bucket_id snapshot",
-                attempt_id
-            ))
-        })?;
+        let bucket_id = attempt.bucket_id;
         app_state
             .points_service
             .revoke_points_by_source_id(
@@ -1221,15 +1214,8 @@ async fn handle_checkout_session_async_failed(
 
         // Subscription cancel: route to subscription.bucket_id (design §5.5 / A8).
         // The originating payment_attempt snapshot carries the target bucket for
-        // the subscription created via this checkout (BE-D06). Fail loud when
-        // missing — handle_subscription_cancel would otherwise revoke unrelated
-        // subscription credits.
-        let bucket_id = attempt.bucket_id.ok_or_else(|| {
-            CoreError::BadRequest(format!(
-                "Cannot resolve bucket for async failure subscription cancel: payment_attempt {} has no bucket_id snapshot",
-                attempt_id
-            ))
-        })?;
+        // the subscription created via this checkout (BE-D06).
+        let bucket_id = attempt.bucket_id;
 
         // Subscription: cancel subscription + revoke SubscriptionCredit (done internally by handle_subscription_cancel)
         let result = app_state
@@ -1501,15 +1487,27 @@ async fn handle_subscription_created(
         .current_period_end
         .unwrap_or_else(|| Utc::now() + ChronoDuration::days(30));
 
-    // Route grant to subscription.bucket_id (design §5.5 / A8). Domain fails
-    // loud (SubscriptionBucketNotResolved) when the subscription has no bound
-    // Bucket — passing None is the fail-loud path, never an implicit pool.
+    // Route grant to subscription.bucket_id (design §5.5 / A8). Lazily bind the
+    // routing Bucket from the entitlement mapping when the synced subscription
+    // is still unbound (mirrors the Creem path); otherwise fail loud
+    // (SubscriptionBucketNotResolved) — never an implicit pool.
+    let subscription_bucket_id = if let Some(existing) = subscription.bucket_id {
+        Some(existing)
+    } else {
+        crate::webhook_handlers::resolve_and_bind_subscription_bucket(
+            &app_state,
+            realm_id,
+            subscription.id,
+            &entitlement_key,
+        )
+        .await?
+    };
     app_state
         .subscription_service
         .handle_subscription_paid(
             payload.user_id,
             subscription.id,
-            subscription.bucket_id,
+            subscription_bucket_id,
             realm_id,
             &entitlement_key,
             false,
@@ -1726,8 +1724,21 @@ async fn handle_subscription_updated(
             .current_period_end
             .unwrap_or_else(|| Utc::now() + ChronoDuration::days(30));
 
-        // Route to subscription.bucket_id (design §5.5 / A8); fail loud.
-        let bucket_id = resolve_subscription_bucket(subscription.id, subscription.bucket_id)?;
+        // Route to subscription.bucket_id (design §5.5 / A8). Lazily bind from
+        // the entitlement mapping when the synced subscription is still unbound
+        // (mirrors the Creem path); otherwise fail loud.
+        let subscription_bucket_id = if let Some(existing) = subscription.bucket_id {
+            Some(existing)
+        } else {
+            crate::webhook_handlers::resolve_and_bind_subscription_bucket(
+                &app_state,
+                realm_id,
+                subscription.id,
+                &current_entitlement_key,
+            )
+            .await?
+        };
+        let bucket_id = resolve_subscription_bucket(subscription.id, subscription_bucket_id)?;
 
         app_state
             .subscription_service
@@ -2088,12 +2099,7 @@ async fn handle_charge_refunded(
                         payload.charge_id
                     ))
                 })?;
-            let bucket_id = attempt.bucket_id.ok_or_else(|| {
-                CoreError::BadRequest(format!(
-                    "Cannot resolve bucket for refund: payment_attempt {} has no bucket_id snapshot",
-                    attempt.id
-                ))
-            })?;
+            let bucket_id = attempt.bucket_id;
 
             // Proportionally revoke topup credits based on refund ratio
             let _output = app_state
@@ -2261,13 +2267,26 @@ async fn handle_invoice_payment_succeeded(
         .current_period_end
         .unwrap_or_else(|| Utc::now() + ChronoDuration::days(30));
 
-    // Route grant to subscription.bucket_id (design §5.5 / A8); fail loud.
+    // Route grant to subscription.bucket_id (design §5.5 / A8). Lazily bind the
+    // routing Bucket from the entitlement mapping when the synced subscription
+    // is still unbound (mirrors the Creem path); otherwise fail loud.
+    let subscription_bucket_id = if let Some(existing) = subscription.bucket_id {
+        Some(existing)
+    } else {
+        crate::webhook_handlers::resolve_and_bind_subscription_bucket(
+            &app_state,
+            realm_id,
+            subscription.id,
+            &entitlement_key,
+        )
+        .await?
+    };
     app_state
         .subscription_service
         .handle_subscription_paid(
             payload.user_id,
             subscription.id,
-            subscription.bucket_id,
+            subscription_bucket_id,
             realm_id,
             &entitlement_key,
             true,

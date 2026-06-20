@@ -229,6 +229,7 @@ impl PostgresBillingRepository {
         active_model.status = Set(sub.status.as_str().to_string());
         active_model.entitlement_key = Set(sub.entitlement_key.clone());
         active_model.external_price_id = Set(sub.external_price_id.clone());
+        active_model.bucket_id = Set(sub.bucket_id);
         active_model.provider_metadata = Set(sub.provider_metadata.clone());
         active_model.synced_at = Set(sub
             .synced_at
@@ -1586,7 +1587,7 @@ impl BillingRepository for PostgresBillingRepository {
         // Data query
         let data_sql = format!(
             "SELECT id, realm_id, user_id, external_subscription_id, external_product_id, \
-             payment_provider, status, entitlement_key, external_price_id, provider_metadata, \
+             payment_provider, status, entitlement_key, external_price_id, bucket_id, provider_metadata, \
              synced_at, current_period_start, current_period_end, cancel_at_period_end, \
              client_app_id, cancel_at, created_at, updated_at \
              FROM subscription WHERE {} ORDER BY created_at DESC LIMIT ${} OFFSET ${}",

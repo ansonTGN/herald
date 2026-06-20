@@ -127,15 +127,21 @@ mod tests {
         provider: &str,
     ) -> Uuid {
         let pa_id = Uuid::now_v7();
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
         sqlx::query(
-            "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at)
-             VALUES ($1, $2, $3, $4, 'entitlement_mapping', $5, 5000, 'USD', 'Succeeded', NOW() + interval '1 hour')"
+            "INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, bucket_id, amount, currency, status, expires_at)
+             VALUES ($1, $2, $3, $4, 'entitlement_mapping', $5, $6, 5000, 'USD', 'Succeeded', NOW() + interval '1 hour')"
         )
         .bind(pa_id)
         .bind(realm_id)
         .bind(user_id)
         .bind(provider)
         .bind(Uuid::now_v7())
+        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();
