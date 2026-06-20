@@ -20,7 +20,6 @@ use sqlx::PgPool;
 pub use jobs::InvoiceOverdueJob;
 pub use jobs::PointsExpirationJob;
 pub use jobs::WebhookCompensationJob;
-pub use jobs::WechatOrderExpiryJob;
 
 /// Configuration for the worker
 #[derive(Clone)]
@@ -144,7 +143,6 @@ where
         // Create jobs
         let expiration_job = PointsExpirationJob::new(expiration_service);
         let invoice_overdue_job = InvoiceOverdueJob::new(invoice_repo);
-        let wechat_order_expiry_job = WechatOrderExpiryJob::new(pg_pool.clone());
 
         // Create compensation job only if processor is provided
         let compensation_job = event_processor.map(|processor| {
@@ -189,21 +187,6 @@ where
                         }
                         Err(e) => {
                             tracing::error!(error = %e, "Invoice overdue marking failed");
-                        }
-                    }
-
-                    match wechat_order_expiry_job.run().await {
-                        Ok(result) => {
-                            info!(
-                                candidates = result.candidates,
-                                closed = result.closed,
-                                paid = result.paid,
-                                errors = result.errors,
-                                "WeChat order expiry processing completed"
-                            );
-                        }
-                        Err(e) => {
-                            tracing::error!(error = %e, "WeChat order expiry processing failed");
                         }
                     }
                 }

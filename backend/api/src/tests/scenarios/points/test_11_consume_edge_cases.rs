@@ -169,13 +169,21 @@ async fn test_scenario_consume_amount_one_succeeds(ctx: &mut TestContext) {
 
     let body = parse_response_body(response).await;
 
+    // Multi-bucket consume response (design §4.2.2): total consumed at the
+    // top level; per-bucket transaction carries the deduction magnitude and
+    // resulting balance.
+    let transactions = body["transactions"]
+        .as_array()
+        .expect("response should contain a transactions array");
+    assert_eq!(transactions.len(), 1, "single-pool consume → 1 transaction");
+    let txn = &transactions[0];
     assert_eq!(
         body["amount"].as_i64(),
-        Some(-1),
-        "Response amount should be -1"
+        Some(1),
+        "Response amount should be the total consumed (1)"
     );
     assert_eq!(
-        body["balanceAfter"].as_i64(),
+        txn["balanceAfter"].as_i64(),
         Some(4999),
         "balanceAfter should be 4999"
     );

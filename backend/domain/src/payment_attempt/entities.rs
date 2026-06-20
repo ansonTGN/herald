@@ -213,7 +213,6 @@ impl std::str::FromStr for PaymentAttemptStatus {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymentContext {
-    pub wechat_code_url: Option<String>,     // QR code URL for Wechat
     pub stripe_checkout_url: Option<String>, // Checkout URL for Stripe
     pub creem_checkout_url: Option<String>,  // Checkout URL for Creem
     pub client_secret: Option<String>,       // For Stripe elements

@@ -174,8 +174,14 @@ async fn test_scenario_user_view_own_balance(ctx: &mut TestContext) {
 }
 
 /// ============================================================================
-/// Scenario 1.3: GET wallet auto-creates an empty wallet
+/// Scenario 1.3: GET wallet returns a zero-balance user-total view (no row)
 /// ============================================================================
+///
+/// Credit Buckets model (design §3.1 / §5.1): a wallet is per-(user, bucket).
+/// A bare GET for a user with no wallet returns a synthesized zero-balance
+/// user-total view and does NOT persist a `bucket_id = NULL` row (the column is
+/// NOT NULL). Wallet rows are created lazily only when a grant/consume targets
+/// a specific bucket.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_scenario_get_wallet_auto_creates_empty_wallet(ctx: &mut TestContext) {
@@ -195,7 +201,7 @@ async fn test_scenario_get_wallet_auto_creates_empty_wallet(ctx: &mut TestContex
             .expect("Failed to count wallets before request");
     assert_eq!(
         wallet_count_before, 0,
-        "Precondition matters: this scenario verifies GET creates the missing wallet"
+        "Precondition matters: this scenario verifies GET returns a usable view when no wallet exists"
     );
 
     // When: The user logs in and requests their own wallet.
@@ -234,11 +240,11 @@ async fn test_scenario_get_wallet_auto_creates_empty_wallet(ctx: &mut TestContex
 
     let response = app.clone().oneshot(request).await.unwrap();
 
-    // Then: The response is an empty active wallet, and the wallet is persisted.
+    // Then: The response is a zero-balance active view (no row persisted).
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "Get wallet should auto-create and return 200 OK"
+        "Get wallet should return 200 OK with a zero-balance view"
     );
 
     let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -253,6 +259,8 @@ async fn test_scenario_get_wallet_auto_creates_empty_wallet(ctx: &mut TestContex
     assert_eq!(body["totalConsumed"].as_i64(), Some(0));
     assert_eq!(body["userId"].as_str(), Some(user_id.to_string().as_str()));
 
+    // No wallet row is persisted by a bare GET — the bucket-wallet is created
+    // lazily only when a grant/consume targets a specific bucket.
     let wallet_count_after: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM points_wallets WHERE user_id = $1")
             .bind(user_id)
@@ -260,7 +268,7 @@ async fn test_scenario_get_wallet_auto_creates_empty_wallet(ctx: &mut TestContex
             .await
             .expect("Failed to count wallets after request");
     assert_eq!(
-        wallet_count_after, 1,
-        "GET must persist the auto-created wallet so later points operations share the same account"
+        wallet_count_after, 0,
+        "GET must NOT persist a bucket-less wallet row; bucket-wallets are created lazily on grant/consume"
     );
 }

@@ -60,8 +60,6 @@ pub struct CreatePaymentAttemptResponse {
 #[serde(rename_all = "camelCase")]
 pub struct PaymentContextDto {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub wechat_code_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub stripe_checkout_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub creem_checkout_url: Option<String>,
@@ -175,7 +173,7 @@ fn validate_purchasable_target(target_type: &str) -> Result<(), validator::Valid
 }
 
 fn validate_payment_provider(payment_provider: &str) -> Result<(), validator::ValidationError> {
-    if matches!(payment_provider, "wechat" | "stripe" | "creem") {
+    if matches!(payment_provider, "stripe" | "creem") {
         Ok(())
     } else {
         Err(validator::ValidationError::new("invalid payment_provider"))
@@ -190,7 +188,6 @@ fn payment_context_to_dto(
     context: herald_core::domain::payment_attempt::PaymentContext,
 ) -> PaymentContextDto {
     PaymentContextDto {
-        wechat_code_url: context.wechat_code_url,
         stripe_checkout_url: context.stripe_checkout_url,
         creem_checkout_url: context.creem_checkout_url,
         client_secret: context.client_secret,

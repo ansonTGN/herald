@@ -13,7 +13,6 @@
 // Routes:
 //   GET  /api/bill/{realmId}/subscriptions/history     -> requires billing.view
 //   GET  /api/third/pay/{realmId}/providers            -> billing.view (only enabled) or billing.manage (all)
-//   POST /api/third/pay/{realmId}/providers/wechat     -> requires billing.manage
 //
 // =============================================================================
 
@@ -164,108 +163,5 @@ async fn test_scenario_billing_view_grants_provider_list(ctx: &mut TestContext) 
         resp.status(),
         StatusCode::OK,
         "User with billing.view should get 200 OK for payment provider list"
-    );
-}
-
-// =============================================================================
-// Scenario 3: billing.manage grants payment provider CRUD (US-RA-009)
-// =============================================================================
-
-// User Story: docs/user-stories/core/realm-admin.md - Story 9 (US-RA-009)
-// Covers: User with billing.manage can create payment providers
-//
-// Given a user with ONLY billing.manage permission,
-// When calling POST /api/third/pay/{realmId}/providers/wechat to create a config,
-// Then response is success (not 403).
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_billing_manage_grants_provider_crud(ctx: &mut TestContext) {
-    let app = ctx.create_unified_test_router();
-
-    // Given: user with billing.manage permission
-    let (user_token, user_id) =
-        create_admin_session_with_user(ctx, "billing-manage-crud@test.com", 1800).await;
-    grant_single_permission(ctx, &user_id, "billing", "manage").await;
-
-    // When: attempting to create a WeChat payment provider config.
-    // The WeChat create handler writes the config to the realm_config table
-    // without performing any real external connection, so a valid body
-    // reaches the handler and returns 201 Created on success.
-    let body = serde_json::json!({
-        "appId": "wx1234567890abcdef",
-        "mchId": "1234567890",
-        "privateKey": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQ\n-----END PRIVATE KEY-----",
-        "serialNo": "1A2B3C4D5E6F",
-        "v3Key": "0123456789abcdef0123456789abcdef",
-        "platformPublicKey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA\n-----END PUBLIC KEY-----",
-        "notifyUrl": "https://api.example.com/wechat/webhooks"
-    });
-    let req = Request::builder()
-        .method("POST")
-        .uri(format!("/api/third/pay/{}/providers/wechat", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(body.to_string()))
-        .unwrap();
-
-    let resp = app.clone().oneshot(req).await.unwrap();
-
-    // Then: not 403 -- billing.manage grants permission to create providers.
-    // With a valid body the WeChat create handler returns 201 Created, which
-    // verifies the permission check passes (NOT a 404/400 false positive).
-    assert_ne!(
-        resp.status(),
-        StatusCode::FORBIDDEN,
-        "User with billing.manage should NOT get 403 Forbidden for provider create"
-    );
-}
-
-// =============================================================================
-// Scenario 4: billing.view denies provider create (US-RA-009)
-// =============================================================================
-
-// User Story: docs/user-stories/core/realm-admin.md - Story 9 (US-RA-009)
-// Covers: User with billing.view only cannot create payment providers
-//
-// Given a user with ONLY billing.view permission (no billing.manage),
-// When calling POST /api/third/pay/{realmId}/providers/wechat,
-// Then response is 403 Forbidden.
-#[test_context(TestContext)]
-#[tokio::test]
-async fn test_scenario_billing_view_denies_provider_create(ctx: &mut TestContext) {
-    let app = ctx.create_unified_test_router();
-
-    // Given: user with billing.view permission only
-    let (user_token, user_id) =
-        create_admin_session_with_user(ctx, "billing-view-nocreate@test.com", 1800).await;
-    grant_single_permission(ctx, &user_id, "billing", "view").await;
-
-    // When: attempting to create a WeChat payment provider config.
-    // Body shape is irrelevant here: the 403 is returned by the permission
-    // check before the handler runs.
-    let body = serde_json::json!({
-        "appId": "wx1234567890abcdef",
-        "mchId": "1234567890",
-        "privateKey": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQ\n-----END PRIVATE KEY-----",
-        "serialNo": "1A2B3C4D5E6F",
-        "v3Key": "0123456789abcdef0123456789abcdef",
-        "platformPublicKey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA\n-----END PUBLIC KEY-----",
-        "notifyUrl": "https://api.example.com/wechat/webhooks"
-    });
-    let req = Request::builder()
-        .method("POST")
-        .uri(format!("/api/third/pay/{}/providers/wechat", ctx._realm_id))
-        .header(header::COOKIE, format!("X-Auth={}", user_token))
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(body.to_string()))
-        .unwrap();
-
-    let resp = app.clone().oneshot(req).await.unwrap();
-
-    // Then: 403 Forbidden
-    assert_eq!(
-        resp.status(),
-        StatusCode::FORBIDDEN,
-        "User with billing.view only should get 403 Forbidden for provider create"
     );
 }

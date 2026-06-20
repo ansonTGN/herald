@@ -75,6 +75,16 @@ async fn test_scenario_free_user_registration_grants_initial_bonus(ctx: &mut Tes
 
     println!("[Step 1] ✓ Realm default config created");
 
+    // Credit Buckets model (design §4.3.2): registration-bonus grants route to
+    // the realm's registration-pool bucket (`receives_registration_credits =
+    // true`). `ensure_test_bucket_for_realm` materializes that pool for the
+    // realm; without it the resolver returns None and the grant is skipped.
+    crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+    )
+    .await;
+
     // ============================================================================
     // When: A new user registers in realm-1 (2026-03-23 15:30:00 UTC)
     // ============================================================================
@@ -206,6 +216,14 @@ async fn test_scenario_free_user_registration_prevents_duplicate_bonuses(ctx: &m
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to enable registration");
+
+    // Materialize the realm's registration-pool bucket (design §4.3.2) so the
+    // registration-bonus grant lands in a credit ledger the assertions read.
+    crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+    )
+    .await;
 
     let email = "existinguser@example.com";
     let password = "SecurePassword123!";
@@ -354,6 +372,13 @@ async fn test_scenario_free_user_registration_periodic_points_disabled(ctx: &mut
     .expect("Failed to enable registration");
 
     println!("[Step 1] ✓ Realm config created with periodic points disabled");
+
+    // Materialize the realm's registration-pool bucket (design §4.3.2).
+    crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+    )
+    .await;
 
     // ============================================================================
     // When: A new user registers in realm-1

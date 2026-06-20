@@ -1,8 +1,8 @@
 // PostgreSQL implementation of Points Repository
 
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, NotSet,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, Set,
 };
 use sqlx::{FromRow, PgPool, Postgres, Row, Transaction};
 use std::str::FromStr;
@@ -20,8 +20,8 @@ use herald_domain::points::{
     errors::PointsErrorExt,
     expiration_service::ExpirationSummary,
     ports::{
-        LedgerFilters, LedgerUpdate, PointsRepository, TransactionFilters, WalletFilters,
-        WalletUpdate,
+        LedgerFilters, LedgerUpdate, PointsRepository, TransactionFilters, WalletDelta,
+        WalletFilters,
     },
 };
 // Import mapping functions for ORM conversions
@@ -138,12 +138,20 @@ impl PostgresPointsRepository {
 
     /// Convert database model to domain PointsWallet
     fn model_to_points_wallet(model: points_wallet::Model) -> Result<PointsWallet, CoreError> {
+        // total_balance is GENERATED ALWAYS AS (sum of the five) STORED; the
+        // SeaORM entity marks it `ignore` (so INSERT omits it), so recompute it
+        // from the parts — the expression matches the DB exactly.
+        let total_balance = model.topup_balance
+            + model.subscription_balance
+            + model.granted_balance
+            + model.registration_balance
+            + model.free_periodic_balance;
         Ok(PointsWallet {
             id: model.id,
             user_id: model.user_id,
             realm_id: model.realm_id,
             bucket_id: Some(model.bucket_id),
-            total_balance: model.total_balance,
+            total_balance,
             topup_balance: model.topup_balance,
             subscription_balance: model.subscription_balance,
             granted_balance: model.granted_balance,
@@ -196,8 +204,8 @@ impl PostgresPointsRepository {
             bucket_id: Set(account
                 .bucket_id
                 .expect("bucket_id is required for wallet persistence")),
-            // total_balance is a GENERATED ALWAYS column - use NotSet to exclude from INSERT
-            total_balance: NotSet,
+            // total_balance is GENERATED ALWAYS AS (...) STORED and marked
+            // #[sea_orm(ignore)] on the entity, so it has no ActiveModel field.
             topup_balance: Set(account.topup_balance),
             subscription_balance: Set(account.subscription_balance),
             granted_balance: Set(account.granted_balance),
@@ -800,194 +808,57 @@ impl PostgresPointsRepository {
             .collect()
     }
 
-    async fn update_wallet_in_tx(
+    /// SINGLE writer of the `points_wallets` balance projection columns.
+    ///
+    /// `points_credit_ledger` is the source of truth; this maintains the
+    /// per-bucket balance columns as a drift-free O(1) projection by applying
+    /// `delta` to the wallet row inside the same transaction as the ledger
+    /// mutation. Single-row atomic add via `UPDATE ... SET col = col + $d`,
+    /// then returns the post-delta row for `balance_after` on the surrounding
+    /// transaction record.
+    ///
+    /// MUST be the only writer of these columns — any future direct ledger
+    /// write that bypasses this fn re-introduces drift. The DB CHECK
+    /// (`*_balance >= 0`) is the backstop against an over-deduct.
+    ///
+    /// Negative deltas are valid (consume / revoke / refund). The caller
+    /// computes per-type deltas from the same `amount` it applied to the ledger.
+    async fn apply_wallet_delta_in_tx(
         tx: &mut Transaction<'_, Postgres>,
         wallet_id: Uuid,
-        updates: WalletUpdate,
+        delta: WalletDelta,
     ) -> Result<PointsWallet, CoreError> {
-        let account = sqlx::query_as::<_, PointsWalletRow>(
-            "SELECT * FROM points_wallets WHERE id = $1 FOR UPDATE",
+        let row = sqlx::query_as::<_, PointsWalletRow>(
+            r#"
+            UPDATE points_wallets
+               SET topup_balance              = topup_balance              + $2,
+                   subscription_balance       = subscription_balance       + $3,
+                   granted_balance            = granted_balance            + $4,
+                   registration_balance       = registration_balance       + $5,
+                   free_periodic_balance      = free_periodic_balance      + $6,
+                   total_recharged            = total_recharged            + $7,
+                   total_consumed             = total_consumed             + $8,
+                   total_topup_granted        = total_topup_granted        + $9,
+                   total_subscription_granted = total_subscription_granted + $10,
+                   updated_at                 = NOW()
+             WHERE id = $1
+             RETURNING *
+            "#,
         )
         .bind(wallet_id)
+        .bind(delta.topup)
+        .bind(delta.subscription)
+        .bind(delta.granted)
+        .bind(delta.registration)
+        .bind(delta.free_periodic)
+        .bind(delta.total_recharged)
+        .bind(delta.total_consumed)
+        .bind(delta.total_topup_granted)
+        .bind(delta.total_subscription_granted)
         .fetch_optional(&mut **tx)
         .await
         .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-        .map(Self::row_to_points_wallet)
-        .transpose()?
         .ok_or(CoreError::NotFound)?;
-
-        let (
-            topup_balance,
-            subscription_balance,
-            granted_balance,
-            registration_balance,
-            free_periodic_balance,
-            total_recharged,
-            total_consumed,
-            total_topup_granted,
-            total_subscription_granted,
-        ) = match updates {
-            WalletUpdate::Consumption {
-                total,
-                topup,
-                subscription,
-                granted,
-                registration,
-                free_periodic,
-            } => (
-                account.topup_balance - topup,
-                account.subscription_balance - subscription,
-                account.granted_balance - granted,
-                account.registration_balance - registration,
-                account.free_periodic_balance - free_periodic,
-                account.total_recharged,
-                account.total_consumed + total,
-                account.total_topup_granted,
-                account.total_subscription_granted,
-            ),
-            WalletUpdate::Grant {
-                topup,
-                subscription,
-                granted,
-                registration,
-                free_periodic,
-            } => (
-                account.topup_balance + topup,
-                account.subscription_balance + subscription,
-                account.granted_balance + granted,
-                account.registration_balance + registration,
-                account.free_periodic_balance + free_periodic,
-                account.total_recharged + topup + subscription,
-                account.total_consumed,
-                account.total_topup_granted + topup,
-                account.total_subscription_granted + subscription,
-            ),
-            WalletUpdate::Revocation {
-                topup,
-                subscription,
-                granted,
-                registration,
-                free_periodic,
-            } => (
-                account.topup_balance - topup,
-                account.subscription_balance - subscription,
-                account.granted_balance - granted,
-                account.registration_balance - registration,
-                account.free_periodic_balance - free_periodic,
-                account.total_recharged,
-                account.total_consumed,
-                account.total_topup_granted,
-                account.total_subscription_granted,
-            ),
-        };
-
-        if topup_balance < 0
-            || subscription_balance < 0
-            || granted_balance < 0
-            || registration_balance < 0
-            || free_periodic_balance < 0
-        {
-            return Err(CoreError::concurrent_modification());
-        }
-
-        let row = sqlx::query_as::<_, PointsWalletRow>(
-            r#"
-            UPDATE points_wallets
-            SET topup_balance = $2,
-                subscription_balance = $3,
-                granted_balance = $4,
-                registration_balance = $5,
-                free_periodic_balance = $6,
-                total_recharged = $7,
-                total_consumed = $8,
-                total_topup_granted = $9,
-                total_subscription_granted = $10,
-                updated_at = NOW()
-            WHERE id = $1
-            RETURNING *
-            "#,
-        )
-        .bind(wallet_id)
-        .bind(topup_balance)
-        .bind(subscription_balance)
-        .bind(granted_balance)
-        .bind(registration_balance)
-        .bind(free_periodic_balance)
-        .bind(total_recharged)
-        .bind(total_consumed)
-        .bind(total_topup_granted)
-        .bind(total_subscription_granted)
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Self::row_to_points_wallet(row)
-    }
-
-    async fn refresh_account_balances_from_ledgers_in_tx(
-        tx: &mut Transaction<'_, Postgres>,
-        wallet_id: Uuid,
-        realm_id: &str,
-        user_id: Uuid,
-    ) -> Result<PointsWallet, CoreError> {
-        let (
-            topup_balance,
-            subscription_balance,
-            granted_balance,
-            registration_balance,
-            free_periodic_balance,
-        ): (i64, i64, i64, i64, i64) = sqlx::query_as(
-            r#"
-            SELECT
-                COALESCE(SUM(remaining_amount) FILTER (
-                    WHERE credit_type = 'topup_credit'
-                ), 0)::BIGINT AS topup_balance,
-                COALESCE(SUM(remaining_amount) FILTER (
-                    WHERE credit_type = 'subscription_credit'
-                ), 0)::BIGINT AS subscription_balance,
-                COALESCE(SUM(remaining_amount) FILTER (
-                    WHERE credit_type = 'granted_credit'
-                ), 0)::BIGINT AS granted_balance,
-                COALESCE(SUM(remaining_amount) FILTER (
-                    WHERE credit_type = 'registration_credit'
-                ), 0)::BIGINT AS registration_balance,
-                COALESCE(SUM(remaining_amount) FILTER (
-                    WHERE credit_type = 'free_periodic_credit'
-                ), 0)::BIGINT AS free_periodic_balance
-            FROM points_credit_ledger
-            WHERE realm_id = $1
-              AND user_id = $2
-            "#,
-        )
-        .bind(realm_id)
-        .bind(user_id)
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        let row = sqlx::query_as::<_, PointsWalletRow>(
-            r#"
-            UPDATE points_wallets
-            SET topup_balance = $2,
-                subscription_balance = $3,
-                granted_balance = $4,
-                registration_balance = $5,
-                free_periodic_balance = $6,
-                updated_at = NOW()
-            WHERE id = $1
-            RETURNING *
-            "#,
-        )
-        .bind(wallet_id)
-        .bind(topup_balance)
-        .bind(subscription_balance)
-        .bind(granted_balance)
-        .bind(registration_balance)
-        .bind(free_periodic_balance)
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
         Self::row_to_points_wallet(row)
     }
 
@@ -1355,19 +1226,88 @@ impl PostgresPointsRepository {
 }
 
 impl PointsRepository for PostgresPointsRepository {
+    /// User-total wallet view (read path for `get_balance` / `get_wallet`).
+    ///
+    /// A user may hold one wallet row per Bucket; this returns a single
+    /// aggregated `PointsWallet` with `bucket_id = None` whose balance fields
+    /// are the SUM across the user's per-bucket wallet rows (review #5 chimera
+    /// fix). For a single-bucket user the result equals that bucket's row.
+    ///
+    /// O(1) per row: reads the maintained projection columns, never aggregates
+    /// the ledger. Returns `None` if the user has no wallet row.
     async fn find_by_user_id(
         &self,
         realm_id: &str,
         user_id: Uuid,
     ) -> Result<Option<PointsWallet>, CoreError> {
-        let result = points_wallet::Entity::find()
-            .filter(points_wallet::Column::RealmId.eq(realm_id))
-            .filter(points_wallet::Column::UserId.eq(user_id))
-            .one(&*self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+        let rows: Vec<PointsWalletRow> = sqlx::query_as::<_, PointsWalletRow>(
+            "SELECT * FROM points_wallets WHERE realm_id = $1 AND user_id = $2",
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        result.map(Self::model_to_points_wallet).transpose()
+        if rows.is_empty() {
+            return Ok(None);
+        }
+
+        // Aggregate into a single user-total view. bucket_id = None signals
+        // "not tied to a specific pool" (matches the synthesized zero-balance
+        // wallet used when no row exists). Status reflects the most restrictive
+        // pool (any non-active row dominates); created_at/updated_at from the
+        // oldest / newest row respectively so the view is monotonic.
+        let mut agg = PointsWallet {
+            id: rows[0].id,
+            user_id,
+            realm_id: realm_id.to_string(),
+            bucket_id: None,
+            total_balance: 0,
+            topup_balance: 0,
+            subscription_balance: 0,
+            granted_balance: 0,
+            registration_balance: 0,
+            free_periodic_balance: 0,
+            total_topup_granted: 0,
+            total_subscription_granted: 0,
+            total_recharged: 0,
+            total_consumed: 0,
+            status: WalletStatus::Active,
+            created_at: chrono::DateTime::from(rows[0].created_at),
+            updated_at: chrono::DateTime::from(rows[0].updated_at),
+        };
+        for row in rows {
+            agg.topup_balance += row.topup_balance;
+            agg.subscription_balance += row.subscription_balance;
+            agg.granted_balance += row.granted_balance;
+            agg.registration_balance += row.registration_balance;
+            agg.free_periodic_balance += row.free_periodic_balance;
+            agg.total_recharged += row.total_recharged;
+            agg.total_consumed += row.total_consumed;
+            agg.total_topup_granted += row.total_topup_granted;
+            agg.total_subscription_granted += row.total_subscription_granted;
+            let created = chrono::DateTime::from(row.created_at);
+            let updated = chrono::DateTime::from(row.updated_at);
+            if created < agg.created_at {
+                agg.created_at = created;
+            }
+            if updated > agg.updated_at {
+                agg.updated_at = updated;
+            }
+            let status = WalletStatus::from_str(&row.status).map_err(|_| {
+                CoreError::BadRequest(format!("Invalid wallet status: {}", row.status))
+            })?;
+            if !matches!(status, WalletStatus::Active) {
+                agg.status = status;
+            }
+        }
+        agg.total_balance = agg.topup_balance
+            + agg.subscription_balance
+            + agg.granted_balance
+            + agg.registration_balance
+            + agg.free_periodic_balance;
+        Ok(Some(agg))
     }
 
     async fn find_by_id(&self, id: Uuid) -> Result<Option<PointsWallet>, CoreError> {
@@ -1394,130 +1334,6 @@ impl PointsRepository for PostgresPointsRepository {
         })?;
 
         Self::model_to_points_wallet(result)
-    }
-
-    async fn update_balance(
-        &self,
-        wallet_id: Uuid,
-        new_balance: i64,
-        delta: i64,
-    ) -> Result<PointsWallet, CoreError> {
-        // NOTE: With the new ledger system, direct balance updates are not supported.
-        // This function is kept for backward compatibility but only updates tracking fields.
-        // The actual balance fields (topup_balance, subscription_balance) are managed by the ledger.
-        let txn = self
-            .db
-            .begin()
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        // Find and lock the account
-        let account_opt = points_wallet::Entity::find_by_id(wallet_id)
-            .one(&txn)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        let account =
-            account_opt.ok_or_else(|| CoreError::wallet_not_found(&wallet_id.to_string()))?;
-
-        // Optimistic locking: Check if balance changed
-        if account.total_balance != new_balance - delta {
-            txn.rollback()
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-            return Err(CoreError::concurrent_modification());
-        }
-
-        // Update tracking fields only - total_balance is a generated column
-        let mut active_model: points_wallet::ActiveModel = account.clone().into_active_model();
-        // total_balance is GENERATED ALWAYS - cannot be set directly
-        active_model.total_balance = NotSet;
-
-        if delta > 0 {
-            active_model.total_recharged = Set(account.total_recharged + delta);
-        } else {
-            active_model.total_consumed = Set(account.total_consumed + delta.abs());
-        }
-
-        active_model.updated_at = Set(sea_orm::prelude::DateTimeWithTimeZone::from(
-            chrono::Utc::now(),
-        ));
-
-        let updated = match active_model.update(&txn).await {
-            Ok(updated) => updated,
-            Err(e) => {
-                let _ = txn.rollback().await;
-                return Err(CoreError::DatabaseError(e.to_string()));
-            }
-        };
-
-        txn.commit()
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Self::model_to_points_wallet(updated)
-    }
-
-    async fn update_balance_atomic(
-        &self,
-        wallet_id: Uuid,
-        delta: i64,
-    ) -> Result<PointsWallet, CoreError> {
-        // NOTE: With the new ledger system, balance updates should happen through the ledger.
-        // This function is kept for backward compatibility but only updates tracking fields.
-        // The actual balance fields (topup_balance, subscription_balance) are managed by the ledger.
-        let query = r#"
-            UPDATE points_wallets
-            SET
-                total_recharged = total_recharged + CASE WHEN $1 > 0 THEN $1 ELSE 0 END,
-                total_consumed = total_consumed + CASE WHEN $1 < 0 THEN ABS($1) ELSE 0 END,
-                updated_at = NOW()
-            WHERE id = $2 AND total_balance + $1 >= 0
-            RETURNING *
-        "#;
-
-        let result = sqlx::query_as::<_, PointsWalletRow>(query)
-            .bind(delta)
-            .bind(wallet_id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        match result {
-            Some(row) => Self::row_to_points_wallet(row),
-            None => {
-                // Either account not found or balance would go negative
-                let account = self.find_by_id(wallet_id).await?;
-                match account {
-                    Some(acc) => {
-                        // Account exists but insufficient balance
-                        Err(CoreError::insufficient_points(
-                            delta.abs(),
-                            acc.total_balance,
-                        ))
-                    }
-                    None => Err(CoreError::wallet_not_found(&wallet_id.to_string())),
-                }
-            }
-        }
-    }
-
-    async fn get_wallet_for_update(&self, wallet_id: Uuid) -> Result<PointsWallet, CoreError> {
-        let query = r#"
-            SELECT * FROM points_wallets
-            WHERE id = $1
-            FOR UPDATE
-        "#;
-
-        let result = sqlx::query_as::<_, PointsWalletRow>(query)
-            .bind(wallet_id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        result
-            .map(Self::row_to_points_wallet)
-            .ok_or_else(|| CoreError::wallet_not_found(&wallet_id.to_string()))?
     }
 
     async fn create_transaction(
@@ -2294,128 +2110,6 @@ impl PointsRepository for PostgresPointsRepository {
     }
 
     // ========== Account Management ==========
-
-    fn update_wallet(
-        &self,
-        wallet_id: Uuid,
-        updates: WalletUpdate,
-    ) -> impl std::future::Future<Output = Result<PointsWallet, CoreError>> + Send {
-        let db = self.db.clone();
-        async move {
-            let account = points_wallet::Entity::find_by_id(wallet_id)
-                .one(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
-                .ok_or(CoreError::NotFound)?;
-
-            let mut active: points_wallet::ActiveModel = account.into();
-
-            match updates {
-                WalletUpdate::Consumption {
-                    total,
-                    topup,
-                    subscription,
-                    granted,
-                    registration,
-                    free_periodic,
-                } => {
-                    let new_topup = active.topup_balance.clone().take().map_or(0, |v| v) - topup;
-                    let new_subscription =
-                        active.subscription_balance.clone().take().map_or(0, |v| v) - subscription;
-                    let new_granted =
-                        active.granted_balance.clone().take().map_or(0, |v| v) - granted;
-                    let new_registration =
-                        active.registration_balance.clone().take().map_or(0, |v| v) - registration;
-                    let new_free_periodic =
-                        active.free_periodic_balance.clone().take().map_or(0, |v| v)
-                            - free_periodic;
-                    let new_consumed =
-                        active.total_consumed.clone().take().map_or(0, |v| v) + total;
-
-                    // total_balance is a GENERATED column, don't set it
-                    active.topup_balance = Set(new_topup);
-                    active.subscription_balance = Set(new_subscription);
-                    active.granted_balance = Set(new_granted);
-                    active.registration_balance = Set(new_registration);
-                    active.free_periodic_balance = Set(new_free_periodic);
-                    active.total_consumed = Set(new_consumed);
-                }
-                WalletUpdate::Grant {
-                    topup,
-                    subscription,
-                    granted,
-                    registration,
-                    free_periodic,
-                } => {
-                    let new_topup = active.topup_balance.clone().take().map_or(0, |v| v) + topup;
-                    let new_subscription =
-                        active.subscription_balance.clone().take().map_or(0, |v| v) + subscription;
-                    let new_granted =
-                        active.granted_balance.clone().take().map_or(0, |v| v) + granted;
-                    let new_registration =
-                        active.registration_balance.clone().take().map_or(0, |v| v) + registration;
-                    let new_free_periodic =
-                        active.free_periodic_balance.clone().take().map_or(0, |v| v)
-                            + free_periodic;
-                    let new_topup_granted =
-                        active.total_topup_granted.clone().take().map_or(0, |v| v) + topup;
-                    let new_subscription_granted = active
-                        .total_subscription_granted
-                        .clone()
-                        .take()
-                        .map_or(0, |v| v)
-                        + subscription;
-                    let new_recharged = active.total_recharged.clone().take().map_or(0, |v| v)
-                        + topup
-                        + subscription;
-
-                    // total_balance is a GENERATED column, don't set it
-                    active.topup_balance = Set(new_topup);
-                    active.subscription_balance = Set(new_subscription);
-                    active.granted_balance = Set(new_granted);
-                    active.registration_balance = Set(new_registration);
-                    active.free_periodic_balance = Set(new_free_periodic);
-                    active.total_topup_granted = Set(new_topup_granted);
-                    active.total_subscription_granted = Set(new_subscription_granted);
-                    active.total_recharged = Set(new_recharged);
-                }
-                WalletUpdate::Revocation {
-                    topup,
-                    subscription,
-                    granted,
-                    registration,
-                    free_periodic,
-                } => {
-                    let new_topup = active.topup_balance.clone().take().map_or(0, |v| v) - topup;
-                    let new_subscription =
-                        active.subscription_balance.clone().take().map_or(0, |v| v) - subscription;
-                    let new_granted =
-                        active.granted_balance.clone().take().map_or(0, |v| v) - granted;
-                    let new_registration =
-                        active.registration_balance.clone().take().map_or(0, |v| v) - registration;
-                    let new_free_periodic =
-                        active.free_periodic_balance.clone().take().map_or(0, |v| v)
-                            - free_periodic;
-
-                    // total_balance is a GENERATED column, don't set it
-                    active.topup_balance = Set(new_topup);
-                    active.subscription_balance = Set(new_subscription);
-                    active.granted_balance = Set(new_granted);
-                    active.registration_balance = Set(new_registration);
-                    active.free_periodic_balance = Set(new_free_periodic);
-                }
-            }
-
-            active.updated_at = Set(chrono::Utc::now().into());
-
-            let result = active
-                .update(&*db)
-                .await
-                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-            Self::model_to_points_wallet(result)
-        }
-    }
 
     fn find_expired_ledgers(
         &self,
@@ -3400,6 +3094,16 @@ impl PointsRepository for PostgresPointsRepository {
                         let wallet =
                             Self::ensure_wallet_in_tx(&mut tx, &realm_id, user_id, bucket_id)
                                 .await?;
+                        // Preserve the account-status business rule: a closed
+                        // or frozen wallet must not be drained. The bucket
+                        // model removed the single-wallet precheck, so the
+                        // check lives here at the per-bucket consume write.
+                        if wallet.status != WalletStatus::Active {
+                            return Err(CoreError::BadRequest(format!(
+                                "Cannot consume points from {} wallet",
+                                wallet.status.as_str()
+                            )));
+                        }
                         per_bucket.entry(bucket_id).or_default().wallet_id = Some(wallet.id);
                         wallet.id
                     }
@@ -3453,19 +3157,19 @@ impl PointsRepository for PostgresPointsRepository {
                         bucket_id
                     ))
                 })?;
-                let updated_wallet = Self::update_wallet_in_tx(
-                    &mut tx,
-                    wallet_id,
-                    WalletUpdate::Consumption {
-                        total: acc.total,
-                        topup: acc.topup,
-                        subscription: acc.subscription,
-                        granted: acc.granted,
-                        registration: acc.registration,
-                        free_periodic: acc.free_periodic,
-                    },
-                )
-                .await?;
+                let delta = WalletDelta {
+                    topup: -acc.topup,
+                    subscription: -acc.subscription,
+                    granted: -acc.granted,
+                    registration: -acc.registration,
+                    free_periodic: -acc.free_periodic,
+                    total_recharged: 0,
+                    total_consumed: acc.total,
+                    total_topup_granted: 0,
+                    total_subscription_granted: 0,
+                };
+                let updated_wallet =
+                    Self::apply_wallet_delta_in_tx(&mut tx, wallet_id, delta).await?;
 
                 let txn_id = *bucket_txn_id
                     .get(bucket_id)
@@ -3616,20 +3320,8 @@ impl PointsRepository for PostgresPointsRepository {
             .await?;
 
             if total_revoked > 0 {
-                let (topup, subscription, granted, registration, free_periodic) =
-                    credit_type.wallet_balance_delta(total_revoked);
-                let _ = Self::update_wallet_in_tx(
-                    &mut tx,
-                    wallet.id,
-                    WalletUpdate::Revocation {
-                        topup,
-                        subscription,
-                        granted,
-                        registration,
-                        free_periodic,
-                    },
-                )
-                .await?;
+                let delta = WalletDelta::revoke(credit_type, total_revoked);
+                let _ = Self::apply_wallet_delta_in_tx(&mut tx, wallet.id, delta).await?;
             }
 
             if let Some(ref key) = idempotency_key {
@@ -3744,21 +3436,9 @@ impl PointsRepository for PostgresPointsRepository {
             };
             Self::create_revocation_record_in_tx(&mut tx, &record).await?;
 
-            // Update wallet balance
-            let (topup, subscription, granted, registration, free_periodic) =
-                credit_type.wallet_balance_delta(remaining_amount);
-            let _ = Self::update_wallet_in_tx(
-                &mut tx,
-                wallet.id,
-                WalletUpdate::Revocation {
-                    topup,
-                    subscription,
-                    granted,
-                    registration,
-                    free_periodic,
-                },
-            )
-            .await?;
+            // Update wallet balance projection (single writer).
+            let delta = WalletDelta::revoke(credit_type, remaining_amount);
+            let _ = Self::apply_wallet_delta_in_tx(&mut tx, wallet.id, delta).await?;
 
             if let Some(ref key) = idempotency_key {
                 Self::record_completed_idempotency_in_tx(&mut tx, &realm_id, key, Uuid::now_v7())
@@ -3862,20 +3542,8 @@ impl PointsRepository for PostgresPointsRepository {
             .await?;
 
             if total_revoked > 0 {
-                let (topup, subscription, granted, registration, free_periodic) =
-                    CreditType::SubscriptionCredit.wallet_balance_delta(total_revoked);
-                let _ = Self::update_wallet_in_tx(
-                    &mut tx,
-                    wallet.id,
-                    WalletUpdate::Revocation {
-                        topup,
-                        subscription,
-                        granted,
-                        registration,
-                        free_periodic,
-                    },
-                )
-                .await?;
+                let delta = WalletDelta::revoke(CreditType::SubscriptionCredit, total_revoked);
+                let _ = Self::apply_wallet_delta_in_tx(&mut tx, wallet.id, delta).await?;
             }
 
             if let Some(ref key) = idempotency_key {
@@ -3999,10 +3667,13 @@ impl PointsRepository for PostgresPointsRepository {
                 ledger_ids.push(updated_ledger.id);
             }
 
-            let _ = Self::refresh_account_balances_from_ledgers_in_tx(
-                &mut tx, wallet.id, &realm_id, user_id,
-            )
-            .await?;
+            // Apply the bucket-scoped topup revocation delta to the wallet
+            // projection (single writer). `total_revoked` is the sum of
+            // amount_to_revoke across the bucket's topup ledgers.
+            if total_revoked > 0 {
+                let delta = WalletDelta::revoke(CreditType::TopupCredit, total_revoked);
+                let _ = Self::apply_wallet_delta_in_tx(&mut tx, wallet.id, delta).await?;
+            }
 
             Self::record_completed_idempotency_in_tx(
                 &mut tx,
@@ -4078,20 +3749,99 @@ impl PointsRepository for PostgresPointsRepository {
                 )));
             }
 
-            let subscription_delta = refund_amount.min(wallet.subscription_balance);
-            let topup_delta = refund_amount - subscription_delta;
-            let updated_wallet = Self::update_wallet_in_tx(
-                &mut tx,
-                wallet.id,
-                WalletUpdate::Revocation {
-                    topup: topup_delta,
-                    subscription: subscription_delta,
-                    granted: 0,
-                    registration: 0,
-                    free_periodic: 0,
-                },
-            )
-            .await?;
+            // Refund = revoke the refunded points from the ledger so the
+            // projection (wallet columns) and the source of truth (ledger
+            // remaining_amount) never diverge. Drain subscription credits
+            // first, then topup — same priority as the legacy split.
+            let subscription_to_revoke = refund_amount.min(wallet.subscription_balance);
+            let topup_to_revoke = refund_amount - subscription_to_revoke;
+
+            let mut subscription_revoked = 0i64;
+            if subscription_to_revoke > 0 {
+                let ledgers = Self::find_active_ledgers_by_credit_type_for_update(
+                    &mut tx,
+                    &realm_id,
+                    user_id,
+                    CreditType::SubscriptionCredit,
+                )
+                .await?;
+                let mut remaining = subscription_to_revoke;
+                let mut plan: Vec<(Uuid, i64)> = Vec::new();
+                for ledger in ledgers
+                    .into_iter()
+                    .filter(|l| l.bucket_id == Some(bucket_id) && l.remaining_amount > 0)
+                {
+                    if remaining <= 0 {
+                        break;
+                    }
+                    let take = ledger.remaining_amount.min(remaining);
+                    plan.push((ledger.id, take));
+                    remaining -= take;
+                }
+                let (revoked, _) = Self::revoke_ledger_list_in_tx(
+                    &mut tx,
+                    &realm_id,
+                    user_id,
+                    plan,
+                    RevocationType::RefundRevoke,
+                    &reason,
+                    Some(&refund_reference),
+                )
+                .await?;
+                subscription_revoked = revoked;
+            }
+
+            let mut topup_revoked = 0i64;
+            if topup_to_revoke > 0 {
+                let ledgers = Self::find_active_ledgers_by_credit_type_for_update(
+                    &mut tx,
+                    &realm_id,
+                    user_id,
+                    CreditType::TopupCredit,
+                )
+                .await?;
+                let mut remaining = topup_to_revoke;
+                let mut plan: Vec<(Uuid, i64)> = Vec::new();
+                for ledger in ledgers
+                    .into_iter()
+                    .filter(|l| l.bucket_id == Some(bucket_id) && l.remaining_amount > 0)
+                {
+                    if remaining <= 0 {
+                        break;
+                    }
+                    let take = ledger.remaining_amount.min(remaining);
+                    plan.push((ledger.id, take));
+                    remaining -= take;
+                }
+                let (revoked, _) = Self::revoke_ledger_list_in_tx(
+                    &mut tx,
+                    &realm_id,
+                    user_id,
+                    plan,
+                    RevocationType::RefundRevoke,
+                    &reason,
+                    Some(&refund_reference),
+                )
+                .await?;
+                topup_revoked = revoked;
+            }
+
+            // Apply the net revocation to the wallet projection (single
+            // writer). The delta mirrors what was actually revoked on the
+            // ledger so the projection cannot drift.
+            let total_revoked = subscription_revoked + topup_revoked;
+            let delta = WalletDelta {
+                topup: -topup_revoked,
+                subscription: -subscription_revoked,
+                granted: 0,
+                registration: 0,
+                free_periodic: 0,
+                total_recharged: 0,
+                total_consumed: 0,
+                total_topup_granted: 0,
+                total_subscription_granted: 0,
+            };
+            let updated_wallet = Self::apply_wallet_delta_in_tx(&mut tx, wallet.id, delta).await?;
 
             let transaction = Self::create_transaction_in_tx(
                 &mut tx,
@@ -4102,7 +3852,7 @@ impl PointsRepository for PostgresPointsRepository {
                     realm_id: realm_id.clone(),
                     bucket_id,
                     transaction_type: TransactionType::Refund,
-                    amount: -refund_amount,
+                    amount: -total_revoked,
                     balance_after: updated_wallet.total_balance,
                     topup_balance_after: Some(updated_wallet.topup_balance),
                     subscription_balance_after: Some(updated_wallet.subscription_balance),
@@ -4215,20 +3965,8 @@ impl PointsRepository for PostgresPointsRepository {
                 updated_at: now,
             };
             let created_ledger = Self::create_ledger_in_tx(&mut tx, &ledger).await?;
-            let (topup, subscription, granted, registration, free_periodic) =
-                credit_type.wallet_balance_delta(amount);
-            let updated_wallet = Self::update_wallet_in_tx(
-                &mut tx,
-                wallet.id,
-                WalletUpdate::Grant {
-                    topup,
-                    subscription,
-                    granted,
-                    registration,
-                    free_periodic,
-                },
-            )
-            .await?;
+            let delta = WalletDelta::grant(credit_type, amount);
+            let updated_wallet = Self::apply_wallet_delta_in_tx(&mut tx, wallet.id, delta).await?;
             let transaction_type = Self::determine_transaction_type(credit_type, source_type);
             let tx_description = description
                 .unwrap_or_else(|| format!("{}: {} points granted", source_type.as_str(), amount));
@@ -4330,20 +4068,8 @@ impl PointsRepository for PostgresPointsRepository {
 
             Self::create_ledger_in_tx(&mut tx, &ledger).await?;
 
-            let (topup, subscription, granted, registration, free_periodic) =
-                credit_type.wallet_balance_delta(amount);
-            let updated_wallet = Self::update_wallet_in_tx(
-                &mut tx,
-                wallet.id,
-                WalletUpdate::Grant {
-                    topup,
-                    subscription,
-                    granted,
-                    registration,
-                    free_periodic,
-                },
-            )
-            .await?;
+            let delta = WalletDelta::grant(credit_type, amount);
+            let updated_wallet = Self::apply_wallet_delta_in_tx(&mut tx, wallet.id, delta).await?;
 
             let transaction_type = Self::determine_transaction_type(credit_type, source_type);
 
@@ -4495,18 +4221,8 @@ impl PointsRepository for PostgresPointsRepository {
                     Self::create_revocation_record_in_tx(&mut tx, &record).await?;
                 }
                 if total_revoked > 0 {
-                    let _ = Self::update_wallet_in_tx(
-                        &mut tx,
-                        wallet.id,
-                        WalletUpdate::Revocation {
-                            topup: 0,
-                            subscription: 0,
-                            granted: 0,
-                            registration: 0,
-                            free_periodic: total_revoked,
-                        },
-                    )
-                    .await?;
+                    let delta = WalletDelta::revoke(CreditType::FreePeriodicCredit, total_revoked);
+                    let _ = Self::apply_wallet_delta_in_tx(&mut tx, wallet.id, delta).await?;
                 }
                 Self::disable_periodic_grant_in_tx(&mut tx, &realm_id, user_id).await?;
             }
@@ -4530,18 +4246,8 @@ impl PointsRepository for PostgresPointsRepository {
                 updated_at: now,
             };
             let created_ledger = Self::create_ledger_in_tx(&mut tx, &ledger).await?;
-            let updated_wallet = Self::update_wallet_in_tx(
-                &mut tx,
-                wallet.id,
-                WalletUpdate::Grant {
-                    topup: 0,
-                    subscription: points_amount,
-                    granted: 0,
-                    registration: 0,
-                    free_periodic: 0,
-                },
-            )
-            .await?;
+            let delta = WalletDelta::grant(CreditType::SubscriptionCredit, points_amount);
+            let updated_wallet = Self::apply_wallet_delta_in_tx(&mut tx, wallet.id, delta).await?;
             let transaction = Self::create_transaction_in_tx(
                 &mut tx,
                 PointsTransaction {
@@ -4647,20 +4353,8 @@ impl PointsRepository for PostgresPointsRepository {
                 )
                 .await?
                 .ok_or(CoreError::NotFound)?;
-                let (topup, subscription, granted, registration, free_periodic) =
-                    ledger.credit_type.wallet_balance_delta(amount);
-                let _ = Self::update_wallet_in_tx(
-                    &mut tx,
-                    wallet.id,
-                    WalletUpdate::Revocation {
-                        topup,
-                        subscription,
-                        granted,
-                        registration,
-                        free_periodic,
-                    },
-                )
-                .await?;
+                let delta = WalletDelta::revoke(ledger.credit_type, amount);
+                let _ = Self::apply_wallet_delta_in_tx(&mut tx, wallet.id, delta).await?;
             }
 
             tx.commit()

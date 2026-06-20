@@ -43,11 +43,13 @@ async fn ensure_test_user_exists(ctx: &SchemaTestContext, user_id: Uuid, realm_i
 /// NULL. Legacy scenario tests predate the Bucket model and never create a
 /// bucket; without one every legacy INSERT into these tables violates the NOT
 /// NULL constraint. This helper materializes a deterministic, realm-scoped
-/// legacy bucket (`bucket_key = "legacy"`, `enabled = true`,
-/// `receives_registration_credits = false`) once per realm and reuses it on
+/// legacy bucket (`bucket_key = "legacy-<hash>"`, `enabled = true`,
+/// `receives_registration_credits = true`) once per realm and reuses it on
 /// subsequent calls. The bucket is shared by all legacy wallets / ledgers /
 /// transactions in that realm, mirroring the pre-bucket single-pool semantics
-/// these tests were written against.
+/// these tests were written against. Marking it as the realm's registration
+/// pool means registration-bonus grants (which require a registration-pool
+/// bucket per design §4.3.2) land in the same legacy pool the tests assert on.
 pub async fn ensure_test_bucket_for_realm(pool: &sqlx::PgPool, realm_id: &str) -> Uuid {
     use sqlx::Row;
 
@@ -63,7 +65,7 @@ pub async fn ensure_test_bucket_for_realm(pool: &sqlx::PgPool, realm_id: &str) -
         r#"INSERT INTO credit_buckets
              (id, realm_id, bucket_key, name, display_order, enabled,
               receives_registration_credits, created_at, updated_at)
-           VALUES ($1, $2, $3, 'Legacy Test Bucket', 0, true, false, NOW(), NOW())
+           VALUES ($1, $2, $3, 'Legacy Test Bucket', 0, true, true, NOW(), NOW())
            ON CONFLICT (realm_id, bucket_key) DO NOTHING"#,
     )
     .bind(Uuid::now_v7())
@@ -635,6 +637,62 @@ pub async fn create_credit_ledger_entry_v2(
     ledger_id
 }
 
+/// Resolve the `bucket_id` of the wallet a realm/user's credits live in.
+/// Refund-via-webhook tests need this to seed a `payment_attempts` snapshot
+/// scoped to the same pool (see `create_payment_attempt_snapshot`).
+pub async fn get_wallet_bucket_id(ctx: &SchemaTestContext, realm_id: &str, user_id: Uuid) -> Uuid {
+    let row =
+        sqlx::query("SELECT bucket_id FROM points_wallets WHERE realm_id = $1 AND user_id = $2")
+            .bind(realm_id)
+            .bind(user_id)
+            .fetch_one(&ctx.app_state.pool)
+            .await
+            .expect("Failed to fetch wallet bucket_id");
+    let bucket_id: Uuid = row.get("bucket_id");
+    bucket_id
+}
+
+/// Create a `payment_attempts` snapshot row so the Creem refund webhook can
+/// resolve the routing `bucket_id` for `provider_reference` (the original
+/// payment id). The refund handler (`webhook_handlers.rs` refund path)
+/// requires a payment_attempt with a non-null `bucket_id` to scope revocation
+/// to the same pool the original grant targeted (design A8 fail-loud) — tests
+/// that grant a ledger directly via `create_credit_ledger_entry_v2` must also
+/// seed this snapshot before sending a refund webhook, otherwise the handler
+/// rejects with "no payment_attempt for payment_id".
+///
+/// `provider_reference` is the value the webhook will look up (the test's
+/// `payment_id`); `bucket_id` should match the wallet the credits live in.
+pub async fn create_payment_attempt_snapshot(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    provider_reference: &str,
+    bucket_id: Uuid,
+    original_amount: i64,
+) {
+    sqlx::query(
+        "INSERT INTO payment_attempts
+            (id, realm_id, user_id, payment_provider, target_type, target_id,
+             bucket_id, amount, currency, status, provider_reference,
+             provider_status, expires_at, created_at, updated_at)
+         VALUES ($1, $2, $3, 'creem', 'entitlement_mapping', $4,
+                 $5, $6, 'usd', 'Succeeded', $7,
+                 'succeeded', NOW() + INTERVAL '1 hour', NOW(), NOW())
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(Uuid::now_v7())
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(Uuid::now_v7())
+    .bind(bucket_id)
+    .bind(original_amount)
+    .bind(provider_reference)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create payment_attempt snapshot");
+}
+
 /// Helper function to convert a database row to PointsCreditLedger
 fn row_to_credit_ledger(
     row: &sqlx::postgres::PgRow,
@@ -710,8 +768,30 @@ pub async fn get_ledger_by_id(
     row_to_credit_ledger(&row)
 }
 
-/// Consume points from a specific ledger
+/// Consume points from a specific ledger.
+///
+/// Bumps the ledger's `used_amount` (which recomputes the GENERATED
+/// `remaining_amount`) AND decrements the matching wallet projection column so
+/// the wallet-vs-ledger invariant holds. The credit-type column is inferred
+/// from the ledger row so this works for any credit type.
 pub async fn consume_points_from_ledger(ctx: &SchemaTestContext, ledger_id: Uuid, amount: i64) {
+    // Determine the credit_type so we decrement the right wallet projection
+    // column (topup / subscription / granted / registration / free_periodic).
+    let credit_type: String =
+        sqlx::query_scalar("SELECT credit_type FROM points_credit_ledger WHERE id = $1")
+            .bind(ledger_id)
+            .fetch_one(&ctx.app_state.pool)
+            .await
+            .expect("Failed to read ledger credit_type");
+    let column = match credit_type.as_str() {
+        "subscription_credit" => "subscription_balance",
+        "topup_credit" => "topup_balance",
+        "granted_credit" => "granted_balance",
+        "registration_credit" => "registration_balance",
+        "free_periodic_credit" => "free_periodic_balance",
+        other => panic!("consume_points_from_ledger: unknown credit_type {other}"),
+    };
+
     sqlx::query(
         "UPDATE points_credit_ledger
          SET used_amount = used_amount + $1,
@@ -723,6 +803,25 @@ pub async fn consume_points_from_ledger(ctx: &SchemaTestContext, ledger_id: Uuid
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to consume points from ledger");
+
+    // Keep the wallet projection column in sync with the ledger deduction so
+    // the wallet-vs-ledger invariant holds. Match the wallet by the ledger's
+    // (realm_id, user_id, bucket_id).
+    let update_wallet = format!(
+        "UPDATE points_wallets w
+         SET {column} = w.{column} - $1,
+             total_consumed = w.total_consumed + $1,
+             updated_at = NOW()
+         FROM points_credit_ledger l
+         WHERE l.id = $2 AND w.realm_id = l.realm_id
+           AND w.user_id = l.user_id AND w.bucket_id = l.bucket_id"
+    );
+    sqlx::query(&update_wallet)
+        .bind(amount)
+        .bind(ledger_id)
+        .execute(&ctx.app_state.pool)
+        .await
+        .expect("Failed to sync wallet projection after manual ledger consume");
 }
 
 /// Get revocation records for a user

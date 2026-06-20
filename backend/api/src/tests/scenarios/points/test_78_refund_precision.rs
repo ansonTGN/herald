@@ -57,6 +57,11 @@ async fn test_refund_non_round_ratio(ctx: &mut SchemaTestContext) {
     // Consume 3000, remaining 7000
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
 
+    // Seed the payment_attempts snapshot the Creem refund webhook resolves the
+    // routing bucket from (design A8).
+    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
+    create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
+
     // When: Refund 3333 of original 10000
     // Integer formula: (7000 * 3333 + 10000/2) / 10000 = (23331000 + 5000) / 10000 = 2333
     let event = build_refund_created_event_with_user(
@@ -128,6 +133,11 @@ async fn test_refund_zero_amount_skipped(ctx: &mut SchemaTestContext) {
     )
     .await;
 
+    // Seed the payment_attempts snapshot the Creem refund webhook resolves the
+    // routing bucket from (design A8).
+    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
+    create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 100000).await;
+
     // When: Refund 1 of original 100000
     // Integer formula: (100 * 1 + 100000/2) / 100000 = (100 + 50000) / 100000 = 50100 / 100000 = 0
     // amount_to_revoke = 0, which is <= 0, so revocation is skipped
@@ -196,6 +206,11 @@ async fn test_refund_full_amount_revokes_all_remaining(ctx: &mut SchemaTestConte
 
     // Consume 3000, remaining 7000
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
+
+    // Seed the payment_attempts snapshot the Creem refund webhook resolves the
+    // routing bucket from (design A8).
+    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
+    create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
 
     // When: Full refund (refund_amount = original_amount = 10000)
     // Integer formula: (7000 * 10000 + 10000/2) / 10000 = (70000000 + 5000) / 10000 = 7000

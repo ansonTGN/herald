@@ -221,8 +221,6 @@ where
         period_end: DateTime<Utc>,
         event_id: String,
     ) -> Result<PointsCreditLedger, CoreError> {
-        let bucket_id = resolve_subscription_bucket(subscription_id, bucket_id)?;
-
         let idempotency_key = format!("{}:{}", IDEMPOTENCY_KEY_SUBSCRIPTION_PAID, event_id);
 
         if self
@@ -240,6 +238,16 @@ where
             return self.create_placeholder_ledger(user_id, realm_id).await;
         }
 
+        // Resolve the entitlement mapping FIRST. This preserves the domain
+        // contract that an absent (or disabled) mapping raises
+        // `EntitlementMappingNotFound` — which the Creem webhook handler
+        // swallows for a graceful skip (no grant, no retry). Resolving the
+        // bucket before the mapping would wrongly surface a missing-bucket
+        // data-integrity error (`SubscriptionBucketNotResolved`) for an
+        // entitlement that should simply be ignored. The fail-loud bucket
+        // check (`mapping exists but no bucket`) runs below, right before the
+        // grant, so `subscription_with_unresolved_bucket_fails_loud` still
+        // holds.
         let mapping = self
             .repo
             .find_points_policy_by_entitlement_key(realm_id, entitlement_key)
@@ -284,6 +292,14 @@ where
                     .await;
             }
         };
+        // Mapping exists and wants to grant points — now resolve the routing
+        // bucket fail-loud. A subscription without a bound Bucket is a
+        // data-integrity error (`SubscriptionBucketNotResolved`); it must NOT
+        // silently route to an implicit pool. This runs after the
+        // mapping/skip checks above so an absent mapping still surfaces as
+        // `EntitlementMappingNotFound` (graceful skip), not as a bucket error.
+        let bucket_id = resolve_subscription_bucket(subscription_id, bucket_id)?;
+
         let source_type = if is_renewal {
             CreditSourceType::SubscriptionRenewal
         } else {

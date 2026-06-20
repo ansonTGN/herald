@@ -23,10 +23,6 @@ pub mod stripe_webhook_handlers;
 pub mod types;
 pub mod types_history;
 pub mod webhook_handlers;
-pub mod wechat_config_handlers;
-pub mod wechat_config_types;
-pub mod wechat_order_handlers;
-pub mod wechat_webhook_handlers;
 
 /// OpenAPI specification for billing module
 #[derive(utoipa::OpenApi)]
@@ -57,13 +53,6 @@ pub mod wechat_webhook_handlers;
         crate::handlers_history::list_my_subscription_history,
         crate::feature_availability::get_feature_availability,
         crate::provider_handlers::list_payment_providers,
-        crate::wechat_config_handlers::create_wechat_config,
-        crate::wechat_config_handlers::get_wechat_config,
-        crate::wechat_config_handlers::update_wechat_config,
-        crate::wechat_config_handlers::delete_wechat_config,
-        crate::wechat_order_handlers::create_wechat_order,
-        crate::wechat_order_handlers::get_wechat_order_status,
-        crate::wechat_order_handlers::close_wechat_order,
         crate::purchase_handlers::create_payment_attempt,
         crate::purchase_handlers::get_payment_attempt_status,
         crate::purchase_handlers::cancel_payment_attempt,
@@ -134,12 +123,6 @@ pub mod wechat_webhook_handlers;
         crate::provider_common_types::ValidationErrorResponse,
         crate::provider_common_types::ValidationErrorDetail,
         crate::provider_common_types::GenericErrorResponse,
-        crate::wechat_config_types::WechatConfigRequest,
-        crate::wechat_config_types::WechatConfigUpdateRequest,
-        crate::wechat_config_types::WechatConfigResponse,
-        crate::wechat_config_types::WechatOrderCreateRequest,
-        crate::wechat_config_types::WechatOrderCreateResponse,
-        crate::wechat_config_types::WechatOrderStatusResponse,
         // Feature availability
         crate::feature_availability::FeatureAvailabilityResponse,
         crate::feature_availability::AdminFeatureAvailability,

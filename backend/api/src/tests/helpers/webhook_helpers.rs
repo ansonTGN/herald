@@ -931,13 +931,23 @@ pub async fn setup_test_plan_config_with_points(
     let external_product_id = format!("prod_test_{}", plan_id);
     let entitlement_key = plan_id.to_string();
 
+    // Credit Buckets model (design §5.5): a subscription grant routes to the
+    // bucket bound on the entitlement mapping. Bind both mappings below to the
+    // realm's legacy test bucket so the lazy subscription-bucket resolution in
+    // the Creem webhook handler succeeds (case "mapping present + bucket").
+    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx.app_state.pool,
+        realm_id,
+    )
+    .await;
+
     // Create mapping with plan-specific external_product_id (for events that include entitlementKey)
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
              billing_type, billing_period, points_per_period, grant_on_subscribe,
-             validity_days, enabled, created_at, updated_at)
-         VALUES ($1, $2, 'creem', $3, $4, 'recurring', 'monthly', $5, true, 30, true, NOW(), NOW())
+             validity_days, enabled, bucket_id, created_at, updated_at)
+         VALUES ($1, $2, 'creem', $3, $4, 'recurring', 'monthly', $5, true, 30, true, $6, NOW(), NOW())
          ON CONFLICT DO NOTHING",
     )
     .bind(plan_id)
@@ -945,6 +955,7 @@ pub async fn setup_test_plan_config_with_points(
     .bind(&external_product_id)
     .bind(&entitlement_key)
     .bind(points_per_period)
+    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create test entitlement mapping");
@@ -956,14 +967,15 @@ pub async fn setup_test_plan_config_with_points(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
              billing_type, billing_period, points_per_period, grant_on_subscribe,
-             validity_days, enabled, created_at, updated_at)
-         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 'recurring', 'monthly', $4, true, 30, true, NOW(), NOW())
+             validity_days, enabled, bucket_id, created_at, updated_at)
+         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 'recurring', 'monthly', $4, true, 30, true, $5, NOW(), NOW())
          ON CONFLICT DO NOTHING",
     )
     .bind(generic_mapping_id)
     .bind(realm_id)
     .bind(&entitlement_key)
     .bind(points_per_period)
+    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create generic test entitlement mapping");

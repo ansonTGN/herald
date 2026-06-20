@@ -62,15 +62,48 @@ where
             ));
         }
 
-        // Find or create account
+        // Credit Buckets model (design §3.1 / §5.1): a wallet is per-(user,
+        // bucket); a "get wallet for a user" is a user-total view (sum across
+        // the user's per-bucket wallet rows; 0 if none). We must NOT auto-
+        // create a `bucket_id = None` wallet row here — `points_wallets.
+        // bucket_id` is NOT NULL, and wallets are created lazily only when a
+        // grant/consume targets a specific bucket. So when no wallet row
+        // exists we return a synthesized zero-balance view.
         match self.repository.find_by_user_id(realm_id, user_id).await? {
             Some(account) => Ok(account),
             None => {
-                // Auto-create account if it doesn't exist
-                tracing::info!("Auto-creating points wallet for user {}", user_id);
-                let new_account = self.create_wallet_internal(realm_id, user_id).await?;
-                Ok(new_account)
+                tracing::info!(
+                    "No points wallet for user {}; returning zero-balance user-total view",
+                    user_id
+                );
+                Ok(Self::synthesized_empty_wallet(realm_id, user_id))
             }
+        }
+    }
+
+    /// Build a zero-balance user-total wallet view (`bucket_id = None`) for a
+    /// user who has no wallet row yet. Mirrors the aggregate shape returned by
+    /// `find_by_user_id` for an empty user.
+    fn synthesized_empty_wallet(realm_id: &str, user_id: Uuid) -> PointsWallet {
+        let now = chrono::Utc::now();
+        PointsWallet {
+            id: Uuid::nil(),
+            user_id,
+            realm_id: realm_id.to_string(),
+            bucket_id: None,
+            total_balance: 0,
+            topup_balance: 0,
+            subscription_balance: 0,
+            granted_balance: 0,
+            registration_balance: 0,
+            free_periodic_balance: 0,
+            total_topup_granted: 0,
+            total_subscription_granted: 0,
+            total_recharged: 0,
+            total_consumed: 0,
+            status: WalletStatus::Active,
+            created_at: now,
+            updated_at: now,
         }
     }
 
@@ -366,35 +399,6 @@ where
     }
 
     // ===== Internal Methods =====
-
-    /// Create a new points wallet (internal use)
-    async fn create_wallet_internal(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-    ) -> Result<PointsWallet, CoreError> {
-        let account = PointsWallet {
-            id: Uuid::now_v7(),
-            user_id,
-            realm_id: realm_id.to_string(),
-            bucket_id: None,
-            total_balance: 0,
-            topup_balance: 0,
-            subscription_balance: 0,
-            granted_balance: 0,
-            registration_balance: 0,
-            free_periodic_balance: 0,
-            total_topup_granted: 0,
-            total_subscription_granted: 0,
-            total_recharged: 0,
-            total_consumed: 0,
-            status: WalletStatus::Active,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        };
-
-        self.repository.create_wallet(account).await
-    }
 
     /// Recharge points for a user (internal method for billing webhooks)
     pub async fn recharge_points_internal(

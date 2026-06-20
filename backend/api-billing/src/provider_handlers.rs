@@ -1,8 +1,8 @@
 //! Payment provider directory handlers.
 //!
-//! Lists all configured payment providers for a realm (WeChat / Stripe /
-//! Creem). These handlers are provider-agnostic; per-provider CRUD lives in
-//! the dedicated `<provider>_config_handlers` modules.
+//! Lists all configured payment providers for a realm (Stripe / Creem).
+//! These handlers are provider-agnostic; per-provider CRUD lives in the
+//! dedicated `<provider>_config_handlers` modules.
 
 use axum::{
     Json,
@@ -10,7 +10,6 @@ use axum::{
 };
 
 use crate::provider_common_types::{PaymentProviderInfo, PaymentProvidersResponse};
-use crate::wechat_config_handlers::get_wechat_config_for_providers;
 use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
@@ -52,12 +51,6 @@ pub async fn list_payment_providers(
     };
 
     let mut providers = Vec::new();
-
-    if let Some(wechat_config) = get_wechat_config_for_providers(&state, &realm_id).await?
-        && (can_manage || wechat_config.enabled)
-    {
-        providers.push(wechat_config);
-    }
 
     if let Some(stripe_config) = get_stripe_config_for_providers(&state, &realm_id).await?
         && (can_manage || stripe_config.enabled)

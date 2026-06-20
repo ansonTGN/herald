@@ -109,24 +109,40 @@ async fn test_scenario_consume_points_success(ctx: &mut TestContext) {
         serde_json::from_slice(&body_bytes).expect("Failed to parse JSON");
 
     assert!(
-        body["transactionId"].is_string(),
-        "Response should contain transactionId"
+        body["transactions"].is_array(),
+        "Response should contain a transactions array (multi-bucket consume, design §4.2.2)"
+    );
+    let transactions = body["transactions"].as_array().unwrap();
+    assert_eq!(
+        transactions.len(),
+        1,
+        "Single-pool consume produces exactly one per-bucket transaction"
+    );
+    let txn = &transactions[0];
+    assert!(
+        txn["transactionId"].is_string(),
+        "Per-bucket transaction should contain transactionId"
     );
     assert_eq!(
         body["amount"].as_i64(),
-        Some(-consume_amount),
-        "Response amount should be -100"
+        Some(consume_amount),
+        "Response amount should be the total consumed (100)"
     );
     assert_eq!(
-        body["balanceAfter"].as_i64(),
+        txn["amount"].as_i64(),
+        Some(consume_amount),
+        "Per-bucket transaction amount should be 100 (deduction magnitude)"
+    );
+    assert_eq!(
+        txn["balanceAfter"].as_i64(),
         Some(initial_balance - consume_amount),
-        "Response balanceAfter should be 4900"
+        "Per-bucket transaction balanceAfter should be 4900"
     );
 
     let expected_balance_after = initial_balance - consume_amount;
     println!(
         "[Step 3] ✓ Response verified: transactionId={}, amount={}, balanceAfter={}",
-        body["transactionId"], body["amount"], body["balanceAfter"]
+        txn["transactionId"], txn["amount"], txn["balanceAfter"]
     );
 
     // Verify database state

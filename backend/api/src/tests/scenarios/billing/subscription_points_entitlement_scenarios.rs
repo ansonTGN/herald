@@ -438,6 +438,68 @@ mod tests {
         );
     }
 
+    /// User Story: US-EM-004 (absent-mapping graceful-skip contract).
+    ///
+    /// Encodes the B2 domain contract: when the entitlement mapping is
+    /// **absent** (no row, not merely disabled) AND the subscription has no
+    /// bound bucket, the renewal must surface `EntitlementMappingNotFound` —
+    /// which the Creem webhook handler swallows for a graceful skip (no grant,
+    /// no provider retry) — rather than `SubscriptionBucketNotResolved`
+    /// (which would propagate as a 5xx and trigger endless retries for an
+    /// entitlement that should simply be ignored). This guards against the
+    /// bucket-before-mapping ordering regression.
+    #[test_context(SpTestContext)]
+    #[tokio::test]
+    async fn test_absent_mapping_renewal_skips_gracefully(ctx: &mut SpTestContext) {
+        let app = ctx.create_unified_test_router();
+        let webhook_secret = "test_creem_wh_secret";
+        let realm_id = ctx._realm_id.clone();
+        let user_id = create_test_user_in_realm(ctx, "points-map-absent@test.com").await;
+        let client_app_id = Uuid::parse_str(&ctx._client_app_id).unwrap();
+        // Deliberately use an entitlement_key with NO mapping row at all.
+        let entitlement_key = "absent-mapping-plan";
+        let event_id = generate_test_event_id();
+        let external_product_id = format!("prod_absent_map_{}", entitlement_key);
+
+        set_webhook_secret_for_realm(ctx, webhook_secret).await;
+        // NOTE: no setup_test_entitlement_mapping_* call — mapping is absent.
+        // No wallet is created up-front either: for an absent mapping the
+        // grant is skipped, so no wallet write ever occurs. (This also keeps
+        // the test independent of the unrelated Credit-Buckets
+        // `create_points_wallet_for_user` ON-CONFLICT breakage.)
+
+        let external_sub_id = format!("sub_absent_map_{}", event_id);
+        let payload = build_creem_subscription_paid_with_herald_metadata(
+            &event_id,
+            entitlement_key,
+            &realm_id,
+            user_id,
+            Some(client_app_id),
+            &external_sub_id,
+            &external_product_id,
+            false,
+        );
+
+        let response = send_webhook_with_signature(&app, &realm_id, payload, webhook_secret).await;
+        // Graceful skip: the handler swallows EntitlementMappingNotFound and
+        // returns 200. It must NOT surface a loud SubscriptionBucketNotResolved
+        // (5xx) for an entitlement with no mapping.
+        assert!(
+            response.status() == StatusCode::OK
+                || response.status() == StatusCode::NOT_FOUND
+                || response.status() == StatusCode::BAD_REQUEST,
+            "Expected graceful skip (OK/NOT_FOUND/BAD_REQUEST) for absent mapping, got {}",
+            response.status()
+        );
+
+        let balance = get_points_balance_for_user(ctx, user_id).await;
+        assert_eq!(
+            balance, 0,
+            "Expected no points granted for an absent mapping, got {}",
+            balance
+        );
+    }
+
     // =========================================================================
     // Points Grant on Renewal (US-EM-004)
     // =========================================================================

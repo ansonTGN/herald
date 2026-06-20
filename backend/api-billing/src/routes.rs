@@ -37,13 +37,6 @@ use crate::purchase_handlers::{
 };
 use crate::stripe_webhook_handlers::handle_stripe_webhook;
 use crate::webhook_handlers::handle_creem_webhook;
-use crate::wechat_config_handlers::{
-    create_wechat_config, delete_wechat_config, get_wechat_config, update_wechat_config,
-};
-use crate::wechat_order_handlers::{
-    close_wechat_order, create_wechat_order, get_wechat_order_status,
-};
-use crate::wechat_webhook_handlers::wechat_webhook_handler;
 use herald_api_base::application::http::state::AppState;
 use herald_infra_shopify::constant_time_compare;
 
@@ -76,10 +69,6 @@ pub fn billing_public_routes() -> Router<AppState> {
         .route(
             "/api/third/pay/{realmId}/stripe/webhooks",
             post(handle_stripe_webhook),
-        )
-        .route(
-            "/api/third/pay/{realmId}/wechat/webhooks",
-            post(wechat_webhook_handler),
         )
         // ===== Internal Fulfillment Webhook =====
         .route(
@@ -188,27 +177,6 @@ pub fn billing_routes() -> Router<AppState> {
         .route(
             "/api/third/pay/{realmId}/providers",
             get(list_payment_providers),
-        )
-        // ===== WeChat Pay Configuration =====
-        .route(
-            "/api/third/pay/{realmId}/providers/wechat",
-            post(create_wechat_config)
-                .get(get_wechat_config)
-                .put(update_wechat_config)
-                .delete(delete_wechat_config),
-        )
-        // ===== WeChat Pay Orders =====
-        .route(
-            "/api/third/pay/{realmId}/wechat/create-order",
-            post(create_wechat_order),
-        )
-        .route(
-            "/api/third/pay/{realmId}/wechat/order-status/{orderId}",
-            get(get_wechat_order_status),
-        )
-        .route(
-            "/api/third/pay/{realmId}/wechat/close-order/{orderId}",
-            post(close_wechat_order),
         )
         // ===== Invoice Management =====
         .route(

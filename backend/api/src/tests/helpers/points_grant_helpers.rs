@@ -25,6 +25,7 @@ use uuid::Uuid;
 pub fn grant_points_admin_request(
     realm_id: &str,
     user_id: Uuid,
+    bucket_id: Uuid,
     amount: i64,
     reason: &str,
     validity_days: Option<i64>,
@@ -32,6 +33,7 @@ pub fn grant_points_admin_request(
 ) -> Request<Body> {
     let mut body = json!({
         "userId": user_id.to_string(),
+        "bucketId": bucket_id.to_string(),
         "amount": amount,
         "reason": reason,
     });
@@ -59,10 +61,18 @@ pub async fn grant_points_admin_via_api(
     validity_days: Option<i64>,
     session_token: &str,
 ) -> (StatusCode, Option<serde_json::Value>) {
+    // Credit Buckets model: every grant targets an explicit bucket (design
+    // §4.2.4 / A5). Bind the realm's legacy test bucket so the grant succeeds.
+    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx._app_state.pool,
+        realm_id,
+    )
+    .await;
     let app = ctx.create_unified_test_router();
     let request = grant_points_admin_request(
         realm_id,
         user_id,
+        bucket_id,
         amount,
         reason,
         validity_days,
@@ -131,6 +141,7 @@ pub async fn assert_total_balance(pool: &sqlx::PgPool, user_id: Uuid, expected: 
 pub fn grant_points_ext_request(
     realm_id: &str,
     user_id: Uuid,
+    bucket_id: Uuid,
     amount: i64,
     reason: &str,
     validity_days: Option<i64>,
@@ -138,6 +149,7 @@ pub fn grant_points_ext_request(
 ) -> Request<Body> {
     let mut body = json!({
         "userId": user_id.to_string(),
+        "bucketId": bucket_id.to_string(),
         "amount": amount,
         "reason": reason,
     });
@@ -165,9 +177,23 @@ pub async fn grant_points_ext_via_api(
     validity_days: Option<i64>,
     api_key: &str,
 ) -> (StatusCode, Option<serde_json::Value>) {
+    // Credit Buckets model: every grant targets an explicit bucket (design
+    // §4.2.4 / A5). Bind the realm's legacy test bucket so the grant succeeds.
+    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx._app_state.pool,
+        realm_id,
+    )
+    .await;
     let app = ctx.create_unified_test_router();
-    let request =
-        grant_points_ext_request(realm_id, user_id, amount, reason, validity_days, api_key);
+    let request = grant_points_ext_request(
+        realm_id,
+        user_id,
+        bucket_id,
+        amount,
+        reason,
+        validity_days,
+        api_key,
+    );
     let response = app.oneshot(request).await.unwrap();
 
     let status = response.status();

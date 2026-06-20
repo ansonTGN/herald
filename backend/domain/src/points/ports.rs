@@ -77,31 +77,92 @@ pub enum LedgerUpdate {
     SetStatus(CreditLedgerStatus),
 }
 
-/// Account update type
-#[derive(Debug, Clone)]
-pub enum WalletUpdate {
-    Consumption {
-        total: i64,
-        topup: i64,
-        subscription: i64,
-        granted: i64,
-        registration: i64,
-        free_periodic: i64,
-    },
-    Grant {
-        topup: i64,
-        subscription: i64,
-        granted: i64,
-        registration: i64,
-        free_periodic: i64,
-    },
-    Revocation {
-        topup: i64,
-        subscription: i64,
-        granted: i64,
-        registration: i64,
-        free_periodic: i64,
-    },
+/// Delta applied to a wallet row's maintained projection columns by the
+/// single writer `apply_wallet_delta_in_tx`. Negative deltas are valid
+/// (consume / revoke / refund). The DB CHECK (`*_balance >= 0`) is the
+/// backstop against an over-deduct.
+///
+/// `total_*_granted` and `total_consumed` are monotonic lifetime totals —
+/// grant/consume writers add positive deltas; revocation/refund writers leave
+/// them unchanged (revocation does not "un-consume" or "un-grant", it only
+/// moves `remaining_amount`).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WalletDelta {
+    pub topup: i64,
+    pub subscription: i64,
+    pub granted: i64,
+    pub registration: i64,
+    pub free_periodic: i64,
+    pub total_recharged: i64,
+    pub total_consumed: i64,
+    pub total_topup_granted: i64,
+    pub total_subscription_granted: i64,
+}
+
+impl WalletDelta {
+    pub fn zero() -> Self {
+        Self::default()
+    }
+
+    /// Delta for granting `amount` of `credit_type`. Adds to the matching
+    /// balance + the matching lifetime total. Paid grants (topup /
+    /// subscription) also accrue `total_recharged`.
+    pub fn grant(credit_type: CreditType, amount: i64) -> Self {
+        let (topup, subscription, granted, registration, free_periodic) =
+            credit_type.wallet_balance_delta(amount);
+        let (total_topup_granted, total_subscription_granted) = match credit_type {
+            CreditType::TopupCredit => (amount, 0),
+            CreditType::SubscriptionCredit => (0, amount),
+            _ => (0, 0),
+        };
+        Self {
+            topup,
+            subscription,
+            granted,
+            registration,
+            free_periodic,
+            total_recharged: total_topup_granted + total_subscription_granted,
+            total_consumed: 0,
+            total_topup_granted,
+            total_subscription_granted,
+        }
+    }
+
+    /// Delta for consuming `amount` of `credit_type`. Subtracts from the
+    /// matching balance; adds to `total_consumed`.
+    pub fn consume(credit_type: CreditType, amount: i64) -> Self {
+        let (topup, subscription, granted, registration, free_periodic) =
+            credit_type.wallet_balance_delta(-amount);
+        Self {
+            topup,
+            subscription,
+            granted,
+            registration,
+            free_periodic,
+            total_recharged: 0,
+            total_consumed: amount,
+            total_topup_granted: 0,
+            total_subscription_granted: 0,
+        }
+    }
+
+    /// Delta for revoking `amount` of `credit_type`. Subtracts from the
+    /// matching balance; lifetime totals unchanged.
+    pub fn revoke(credit_type: CreditType, amount: i64) -> Self {
+        let (topup, subscription, granted, registration, free_periodic) =
+            credit_type.wallet_balance_delta(-amount);
+        Self {
+            topup,
+            subscription,
+            granted,
+            registration,
+            free_periodic,
+            total_recharged: 0,
+            total_consumed: 0,
+            total_topup_granted: 0,
+            total_subscription_granted: 0,
+        }
+    }
 }
 
 /// User config update type
@@ -139,35 +200,6 @@ pub trait PointsRepository: Send + Sync {
     fn create_wallet(
         &self,
         account: PointsWallet,
-    ) -> impl Future<Output = Result<PointsWallet, CoreError>> + Send;
-
-    /// Update account balance with optimistic locking
-    ///
-    /// This method should use SELECT FOR UPDATE or version checking to prevent
-    /// concurrent modifications and overspending.
-    fn update_balance(
-        &self,
-        wallet_id: Uuid,
-        new_balance: i64,
-        delta: i64,
-    ) -> impl Future<Output = Result<PointsWallet, CoreError>> + Send;
-
-    /// Atomically update balance with balance check
-    ///
-    /// Uses UPDATE ... RETURNING with WHERE condition to ensure
-    /// balance never goes negative (prevents overspending)
-    fn update_balance_atomic(
-        &self,
-        wallet_id: Uuid,
-        delta: i64,
-    ) -> impl Future<Output = Result<PointsWallet, CoreError>> + Send;
-
-    /// Get account for update (SELECT FOR UPDATE)
-    ///
-    /// Locks the account row for update, preventing concurrent modifications
-    fn get_wallet_for_update(
-        &self,
-        wallet_id: Uuid,
     ) -> impl Future<Output = Result<PointsWallet, CoreError>> + Send;
 
     /// Create a points transaction
@@ -337,13 +369,6 @@ pub trait PointsRepository: Send + Sync {
     ) -> impl Future<Output = Result<Option<PointsRevocationRecord>, CoreError>> + Send;
 
     // ========== Account Management ==========
-
-    /// Update account balance (consumption or grant)
-    fn update_wallet(
-        &self,
-        wallet_id: Uuid,
-        updates: WalletUpdate,
-    ) -> impl Future<Output = Result<PointsWallet, CoreError>> + Send;
 
     /// Find expired ledgers for cleanup
     fn find_expired_ledgers(

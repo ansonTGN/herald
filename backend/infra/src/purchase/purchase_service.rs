@@ -57,9 +57,6 @@ fn build_herald_metadata(
 
 use herald_infra_creem::{CreateCheckoutRequest as CreemCreateCheckoutRequest, CreemClient};
 use herald_infra_stripe::{CreateCheckoutRequest as StripeCreateCheckoutRequest, StripeClient};
-use herald_infra_wechat::client::WechatPayClient;
-use herald_infra_wechat::models::{CreateOrderParams, WechatOrderStatus, WechatPaymentOrder};
-use herald_infra_wechat::repository::WechatOrderRepository;
 
 /// Purchase service for unified purchase orchestration and fulfillment
 pub struct PurchaseService<B, PA, F>
@@ -101,9 +98,9 @@ where
         &self,
         input: PreparePaymentAttemptInput,
     ) -> PurchaseResult<PreparedPaymentAttempt> {
-        if input.payment_provider != "wechat" && input.user_email.is_none() {
+        if input.user_email.is_none() {
             return Err(CoreError::BadRequest(
-                "A formal user email is required for non-WeChat payment providers".to_string(),
+                "A formal user email is required for payment providers".to_string(),
             ));
         }
 
@@ -132,7 +129,6 @@ where
                     metadata: input.metadata,
                 },
                 PaymentContext {
-                    wechat_code_url: None,
                     stripe_checkout_url: None,
                     creem_checkout_url: None,
                     client_secret: None,
@@ -340,10 +336,6 @@ where
         user_email: Option<&str>,
     ) -> PurchaseResult<(Option<String>, PaymentContext)> {
         match payment_provider {
-            "wechat" => {
-                self.build_wechat_payment_context(realm_id, user_id, target_type, target_id, target)
-                    .await
-            }
             "creem" => {
                 self.build_creem_payment_context(
                     realm_id,
@@ -372,110 +364,6 @@ where
                 "Unsupported payment provider".to_string(),
             )),
         }
-    }
-
-    async fn build_wechat_payment_context(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        target_type: &str,
-        target_id: Uuid,
-        target: &PurchaseTargetSnapshot,
-    ) -> PurchaseResult<(Option<String>, PaymentContext)> {
-        let repo = WechatOrderRepository::new(self.pool.clone());
-        let config_row = repo
-            .get_wechat_config(realm_id)
-            .await?
-            .ok_or(CoreError::NotFound)?;
-
-        let app_id = config_row
-            .app_id
-            .ok_or_else(|| CoreError::InternalServerError("WeChat config missing app_id".into()))?;
-        let mch_id = config_row
-            .mch_id
-            .ok_or_else(|| CoreError::InternalServerError("WeChat config missing mch_id".into()))?;
-        let private_key = config_row.private_key.ok_or_else(|| {
-            CoreError::InternalServerError("WeChat config missing private_key".into())
-        })?;
-        let serial_no = config_row.serial_no.ok_or_else(|| {
-            CoreError::InternalServerError("WeChat config missing serial_no".into())
-        })?;
-        let v3_key = config_row
-            .v3_key
-            .ok_or_else(|| CoreError::InternalServerError("WeChat config missing v3_key".into()))?;
-        let notify_url = config_row.notify_url.ok_or_else(|| {
-            CoreError::InternalServerError("WeChat config missing notify_url".into())
-        })?;
-
-        let client = WechatPayClient::new_async(
-            app_id,
-            mch_id,
-            private_key,
-            serial_no,
-            v3_key,
-            notify_url.clone(),
-        )
-        .await
-        .map_err(|e| {
-            CoreError::InternalServerError(format!("Failed to create WeChat client: {e}"))
-        })?;
-
-        let create_params = CreateOrderParams {
-            realm_id: realm_id.to_string(),
-            user_id,
-            plan_id: target_id,
-            client_app_id: None,
-            amount: i32::try_from(target.amount).map_err(|_| {
-                CoreError::BadRequest("Amount exceeds WeChat supported range".into())
-            })?,
-            currency: target.currency.clone(),
-            description: format!("{target_type}: {}", target.title),
-            notify_url,
-        };
-
-        let result =
-            tokio::task::spawn_blocking(move || client.create_native_order(&create_params))
-                .await
-                .map_err(|e| {
-                    CoreError::InternalServerError(format!("WeChat order task failed: {e}"))
-                })?
-                .map_err(|e| {
-                    CoreError::InternalServerError(format!("WeChat order creation failed: {e}"))
-                })?;
-
-        let order = WechatPaymentOrder {
-            id: result.order_id,
-            realm_id: realm_id.to_string(),
-            user_id,
-            plan_id: target_id,
-            client_app_id: None,
-            out_trade_no: result.out_trade_no.clone(),
-            transaction_id: None,
-            amount: i32::try_from(target.amount).map_err(|_| {
-                CoreError::BadRequest("Amount exceeds WeChat supported range".into())
-            })?,
-            currency: target.currency.clone(),
-            code_url: result.code_url.clone(),
-            status: WechatOrderStatus::Pending,
-            description: Some(format!("{target_type}: {}", target.title)),
-            paid_at: None,
-            closed_at: None,
-            expires_at: result.expires_at,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        };
-
-        repo.create_order(&order).await?;
-
-        Ok((
-            Some(result.out_trade_no),
-            PaymentContext {
-                wechat_code_url: Some(result.code_url),
-                stripe_checkout_url: None,
-                creem_checkout_url: None,
-                client_secret: None,
-            },
-        ))
     }
 
     async fn build_creem_payment_context(
@@ -524,7 +412,6 @@ where
         Ok((
             Some(session.id),
             PaymentContext {
-                wechat_code_url: None,
                 stripe_checkout_url: None,
                 creem_checkout_url: Some(session.checkout_url),
                 client_secret: None,
@@ -598,7 +485,6 @@ where
         Ok((
             Some(session.id),
             PaymentContext {
-                wechat_code_url: None,
                 stripe_checkout_url: Some(session.url),
                 creem_checkout_url: None,
                 client_secret,
@@ -668,7 +554,7 @@ where
         match source {
             PaymentCompletionSource::InternalApi => Ok(()),
             PaymentCompletionSource::ProviderWebhook { provider }
-                if matches!(provider.as_str(), "wechat" | "stripe" | "creem" | "shopify") =>
+                if matches!(provider.as_str(), "stripe" | "creem" | "shopify") =>
             {
                 Ok(())
             }

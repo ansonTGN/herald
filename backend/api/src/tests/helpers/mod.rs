@@ -45,10 +45,6 @@ pub mod test_setup_helpers;
 pub mod user_helpers;
 pub mod webhook_helpers;
 
-// WeChat Pay test helpers
-#[cfg(test)]
-pub mod wechat_helpers;
-
 // 重新导出常用函数
 pub use auth_helpers::*;
 pub use billing_helpers::*;

@@ -57,6 +57,12 @@ async fn test_refund_topup_proportional_recovery(ctx: &mut SchemaTestContext) {
     // Consume 3000, remaining 7000
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
 
+    // Seed the payment_attempts snapshot the Creem refund webhook resolves the
+    // routing bucket from (design A8). Without it the handler fails loud with
+    // "no payment_attempt for payment_id".
+    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
+    create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
+
     // DEBUG: Verify ledger was created
     let all_ledgers = get_all_ledgers_for_user(ctx, user_id, &realm_id)
         .await
@@ -141,6 +147,12 @@ async fn test_refund_subscription_only_unused(ctx: &mut SchemaTestContext) {
 
     // Consume 2000, remaining 3000
     consume_points_from_ledger(ctx, ledger_id, 2000).await;
+
+    // Seed the payment_attempts snapshot the Creem refund webhook resolves the
+    // routing bucket from (design A8). Without it the handler fails loud with
+    // "no payment_attempt for payment_id".
+    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
+    create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 5000).await;
 
     // When: Full refund (5000) - subscription type
     let event = build_refund_created_event_with_user_and_type(
@@ -253,6 +265,11 @@ async fn test_refund_created_idempotency(ctx: &mut SchemaTestContext) {
     // Consume 3000, remaining 7000
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
 
+    // Seed the payment_attempts snapshot the Creem refund webhook resolves the
+    // routing bucket from (design A8).
+    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
+    create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
+
     // Build refund event with a shared event_id
     let event = build_refund_created_event_with_user(
         event_id.clone(),
@@ -326,6 +343,9 @@ async fn test_refund_topup_same_refund_id_different_event_id_is_idempotent(
     .await;
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
 
+    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
+    create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
+
     let app = ctx.create_unified_test_router();
     for _ in 0..2 {
         let event = build_refund_created_event_with_user(
@@ -378,6 +398,9 @@ async fn test_refund_subscription_same_refund_id_different_event_id_is_idempoten
     )
     .await;
     consume_points_from_ledger(ctx, ledger_id, 2000).await;
+
+    let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
+    create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 5000).await;
 
     let app = ctx.create_unified_test_router();
     for _ in 0..2 {

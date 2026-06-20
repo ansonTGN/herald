@@ -27,7 +27,7 @@ pub use idempotency_service::{IdempotencyService, IdempotencyStore};
 pub use policies::PointsPolicy;
 pub use ports::{
     GrantScheduleUpdate, LedgerFilters, LedgerUpdate, Pagination, PointsRepository,
-    TransactionFilters, UserConfigUpdate, WalletFilters, WalletUpdate,
+    TransactionFilters, UserConfigUpdate, WalletDelta, WalletFilters,
 };
 pub use service::PointsService;
 pub use subscription_service::{CancelMode, SubscriptionService};

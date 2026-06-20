@@ -60,6 +60,16 @@ async fn parse_response_body(response: axum::response::Response) -> serde_json::
     serde_json::from_slice(&body_bytes).expect("Failed to parse JSON")
 }
 
+/// Return the single primary per-bucket transaction from a multi-bucket
+/// consume response (design §4.2.2). Single-pool consumes have exactly one.
+fn primary_transaction(body: &serde_json::Value) -> &serde_json::Value {
+    let txns = body["transactions"]
+        .as_array()
+        .expect("consume response should contain a transactions array");
+    assert_eq!(txns.len(), 1, "single-pool consume → 1 transaction");
+    &txns[0]
+}
+
 // ============================================================================
 // Scenario 1: Same idempotency_key returns cached result (no double deduction)
 // ============================================================================
@@ -104,16 +114,17 @@ async fn test_scenario_consume_idempotency_same_key_returns_cached(ctx: &mut Tes
     );
     let body1 = parse_response_body(response1).await;
 
-    let txn_id_1 = body1["transactionId"]
+    let txn1 = primary_transaction(&body1);
+    let txn_id_1 = txn1["transactionId"]
         .as_str()
         .expect("First response must have transactionId");
     assert_eq!(
         body1["amount"].as_i64(),
-        Some(-100),
-        "First response amount should be -100"
+        Some(100),
+        "First response amount should be the total consumed (100)"
     );
     assert_eq!(
-        body1["balanceAfter"].as_i64(),
+        txn1["balanceAfter"].as_i64(),
         Some(4900),
         "First response balanceAfter should be 4900"
     );
@@ -136,20 +147,21 @@ async fn test_scenario_consume_idempotency_same_key_returns_cached(ctx: &mut Tes
         "Second consume with same key should succeed"
     );
     let body2 = parse_response_body(response2).await;
+    let txn2 = primary_transaction(&body2);
 
     // Then: second response returns cached result (same transaction)
     assert_eq!(
-        body2["transactionId"].as_str(),
+        txn2["transactionId"].as_str(),
         Some(txn_id_1),
         "Second response must return the same transactionId"
     );
     assert_eq!(
         body2["amount"].as_i64(),
-        Some(-100),
-        "Second response amount should be -100"
+        Some(100),
+        "Second response amount should be the total consumed (100)"
     );
     assert_eq!(
-        body2["balanceAfter"].as_i64(),
+        txn2["balanceAfter"].as_i64(),
         Some(4900),
         "Second response balanceAfter should be 4900"
     );
@@ -224,7 +236,10 @@ async fn test_scenario_consume_idempotency_different_keys_independent(ctx: &mut 
         "First consume should succeed"
     );
     let body1 = parse_response_body(response1).await;
-    assert_eq!(body1["balanceAfter"].as_i64(), Some(4900));
+    assert_eq!(
+        primary_transaction(&body1)["balanceAfter"].as_i64(),
+        Some(4900)
+    );
 
     // When: consume 200 with a DIFFERENT idempotency_key
     let request2 = build_consume_request(
@@ -244,7 +259,10 @@ async fn test_scenario_consume_idempotency_different_keys_independent(ctx: &mut 
         "Second consume with different key should succeed"
     );
     let body2 = parse_response_body(response2).await;
-    assert_eq!(body2["balanceAfter"].as_i64(), Some(4700));
+    assert_eq!(
+        primary_transaction(&body2)["balanceAfter"].as_i64(),
+        Some(4700)
+    );
 
     // Then: balance is 4700 and two consume transactions exist
     let (final_balance,): (i64,) =
@@ -311,7 +329,10 @@ async fn test_scenario_consume_idempotency_no_key_normal_consumption(ctx: &mut T
         "First consume should succeed"
     );
     let body1 = parse_response_body(response1).await;
-    assert_eq!(body1["balanceAfter"].as_i64(), Some(4900));
+    assert_eq!(
+        primary_transaction(&body1)["balanceAfter"].as_i64(),
+        Some(4900)
+    );
 
     // When: consume 100 again without idempotency_key
     let request2 = build_consume_request(
@@ -331,7 +352,10 @@ async fn test_scenario_consume_idempotency_no_key_normal_consumption(ctx: &mut T
         "Second consume without key should also succeed"
     );
     let body2 = parse_response_body(response2).await;
-    assert_eq!(body2["balanceAfter"].as_i64(), Some(4800));
+    assert_eq!(
+        primary_transaction(&body2)["balanceAfter"].as_i64(),
+        Some(4800)
+    );
 
     // Then: balance is 4800 and two consume transactions exist
     let (final_balance,): (i64,) =
