@@ -295,7 +295,6 @@ function getProviderOptions() {
     { value: 'manual', label: getProviderLabel('manual') },
     { value: 'stripe', label: getProviderLabel('stripe') },
     { value: 'creem', label: getProviderLabel('creem') },
-    { value: 'wechat', label: getProviderLabel('wechat') },
   ]
 }
 

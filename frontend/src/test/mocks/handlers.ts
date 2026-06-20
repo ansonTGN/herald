@@ -7,7 +7,6 @@ import type {
 } from '@/types/billing'
 import { stripeHandlers } from './handlers/stripe'
 import { pointsHandlers } from './handlers/points'
-import { wechatPayHandlers } from './handlers/wechat'
 import { unifiedPurchaseHandlers } from './handlers/unified-purchase'
 import { auditHandlers } from './handlers/audit'
 import { deviceHandlers } from './handlers/device'
@@ -20,9 +19,6 @@ export const handlers = [
 
   // Points handlers
   ...pointsHandlers,
-
-  // WeChat Pay handlers
-  ...wechatPayHandlers,
 
   // Unified Purchase handlers
   ...unifiedPurchaseHandlers,

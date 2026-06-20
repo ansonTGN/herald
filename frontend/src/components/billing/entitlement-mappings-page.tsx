@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { Plug2 } from 'lucide-react'
@@ -25,6 +25,8 @@ import { ProviderSyncButton } from '@/components/billing/provider-sync-button'
 import { EntitlementMappingDetailDialog } from '@/components/billing/entitlement-mapping-detail-dialog'
 import { entitlementMappingsQueryOptions, queryKeys } from '@/data/query-options'
 import { useUpdateEntitlementMapping } from '@/data/entitlement-mapping-mutations'
+import { useBuckets } from '@/data/use-buckets'
+import { m } from '@/paraglide/messages'
 import type {
   EntitlementMappingResponse,
   EntitlementMappingListResponse,
@@ -42,7 +44,6 @@ function formatProviderName(provider: string): string {
   const names: Record<string, string> = {
     stripe: 'Stripe',
     creem: 'Creem',
-    wechat: 'WeChat Pay',
   }
   return names[provider] ?? provider
 }
@@ -58,6 +59,15 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
   const [page, setPage] = useState(search.page ?? 0)
   const [selectedMappingId, setSelectedMappingId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+
+  // Admin-facing bucket option source (incl. disabled) for the Bucket column
+  // name lookup and the detail-dialog Select (FE-D02 useBuckets).
+  const { buckets } = useBuckets(realmId)
+  const bucketNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const b of buckets) map.set(b.id, b.name)
+    return map
+  }, [buckets])
 
   const filters = {
     paymentProvider: providerFilter !== 'all' ? providerFilter : undefined,
@@ -138,6 +148,7 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
                     <TableHead>External Price ID</TableHead>
                     <TableHead>Entitlement Key</TableHead>
                     <TableHead>Subscription Points</TableHead>
+                    <TableHead>{m['billing.mapping_bucket_column']()}</TableHead>
                     <TableHead>Synced At</TableHead>
                     <TableHead>Enabled</TableHead>
                   </TableRow>
@@ -148,6 +159,7 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
                       key={mapping.id}
                       mapping={mapping}
                       realmId={realmId}
+                      bucketNameById={bucketNameById}
                       onClick={() => handleRowClick(mapping.id)}
                     />
                   ))}
@@ -181,10 +193,12 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
 function MappingRow({
   mapping,
   realmId,
+  bucketNameById,
   onClick,
 }: {
   mapping: EntitlementMappingResponse
   realmId: string
+  bucketNameById: Map<string, string>
   onClick: () => void
 }) {
   const updateMutation = useUpdateEntitlementMapping(realmId, mapping.id)
@@ -202,6 +216,12 @@ function MappingRow({
   }
 
   const pointsPolicyLabel = mapping.pointsPerPeriod != null ? 'Grant Configured' : 'No Grant'
+
+  // Bound bucket name, or muted "Unassigned" fallback when bucketId is null
+  // (design §4.2.1). Fall back to the raw id if the bucket was deleted but the
+  // FK still resolves to an id not in the option list.
+  const bucketName = mapping.bucketId ? bucketNameById.get(mapping.bucketId) : undefined
+  const hasBucket = mapping.bucketId != null
 
   return (
     <TableRow
@@ -223,6 +243,15 @@ function MappingRow({
         >
           {pointsPolicyLabel}
         </span>
+      </TableCell>
+      <TableCell data-testid={`mapping-bucket-cell-${mapping.id}`}>
+        {hasBucket ? (
+          <span className="text-sm">{bucketName ?? mapping.bucketId}</span>
+        ) : (
+          <span className="text-sm text-muted-foreground">
+            {m['billing.mapping_bucket_none']()}
+          </span>
+        )}
       </TableCell>
       <TableCell className="text-sm">
         {mapping.syncedAt ? format(new Date(mapping.syncedAt), 'PP') : '---'}

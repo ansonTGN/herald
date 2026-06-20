@@ -22,6 +22,12 @@ interface TransactionHistoryTableProps {
   filters: TransactionFilters
   admin?: boolean
   clientApps?: Array<{ id: string; name: string }>
+  /**
+   * Credit Bucket lookup source for the Bucket column (design §4.4.2). When
+   * provided the column renders; rows whose `bucketId` has no entry fall back
+   * to the first 8 chars of `bucketId` (mirrors the client-app fallback).
+   */
+  buckets?: Array<{ id: string; name: string }>
 }
 
 export function TransactionHistoryTable({
@@ -30,6 +36,7 @@ export function TransactionHistoryTable({
   filters,
   admin = false,
   clientApps,
+  buckets,
 }: TransactionHistoryTableProps) {
   const hasActiveFilters = useActiveFilters(filters)
 
@@ -37,6 +44,12 @@ export function TransactionHistoryTable({
   const clientAppsMap = useMemo(
     () => new Map(clientApps?.map((app) => [app.id, app])),
     [clientApps]
+  )
+
+  // Memoized bucket map for O(1) lookup by id.
+  const bucketsMap = useMemo(
+    () => new Map(buckets?.map((bucket) => [bucket.id, bucket])),
+    [buckets]
   )
 
   const columns = useMemo<ColumnDef<PointsTransactionResponse>[]>(
@@ -94,6 +107,32 @@ export function TransactionHistoryTable({
           )
         },
       },
+      // Bucket dimension (design §4.4.2). Column renders whenever the caller
+      // supplies a bucket lookup; rows without a resolvable bucket fall back
+      // to the first 8 chars of `bucketId`, matching the client-app fallback.
+      ...(buckets
+        ? [
+            {
+              id: 'bucket',
+              accessorKey: 'bucketId' as const,
+              header: m['points.transaction_bucket_column'](),
+              cell: ({ row }: { row: { getValue: (key: string) => unknown; index: number } }) => {
+                const bucketId = row.getValue('bucketId') as string | null | undefined
+                const bucket = bucketId ? bucketsMap.get(bucketId) : undefined
+                const label = bucket
+                  ? bucket.name
+                  : bucketId
+                    ? String(bucketId).slice(0, 8)
+                    : '-'
+                return (
+                  <div data-testid={`transaction-bucket-${row.index}`}>
+                    <Badge variant="outline">{label}</Badge>
+                  </div>
+                )
+              },
+            },
+          ]
+        : []),
       {
         accessorKey: 'balanceAfter',
         header: m['points.transaction_col_balance_after'](),
@@ -165,7 +204,7 @@ export function TransactionHistoryTable({
         },
       },
     ],
-    [admin, clientAppsMap]
+    [admin, clientAppsMap, buckets, bucketsMap]
   )
 
   const table = useReactTable({

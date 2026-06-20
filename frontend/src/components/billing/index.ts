@@ -1,6 +1,3 @@
-export { WechatConfigFormDialog } from './WechatConfigForm'
-export { WechatConfigDetail, WechatConfigFields } from './WechatConfigDetail'
 export { DeleteConfirmDialog } from './DeleteConfirmDialog'
 export { PaymentProvidersPage } from './payment-providers-page'
 export { MySubscriptionsPage } from './my-subscriptions-page'
-export { WechatQrCodePayment } from './WechatQrCodePayment'

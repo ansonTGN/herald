@@ -11,7 +11,8 @@ export function useActiveFilters(filters: TransactionFilters): boolean {
       !!filters.transactionType ||
       !!filters.startTime ||
       !!filters.endTime ||
-      !!filters.clientAppId,
+      !!filters.clientAppId ||
+      !!filters.bucketId,
     [filters]
   )
 }

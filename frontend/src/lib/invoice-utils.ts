@@ -140,8 +140,6 @@ export function getProviderLabel(provider: string): string {
   switch (provider) {
     case 'manual':
       return m['billing.invoice_provider_manual']()
-    case 'wechat':
-      return m['billing.invoice_provider_wechat']()
     case 'stripe':
       return 'Stripe'
     case 'creem':

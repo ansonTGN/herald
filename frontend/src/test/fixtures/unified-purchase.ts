@@ -122,7 +122,7 @@ export function getMockPaymentAttemptById(attemptId: string): PaymentAttemptStat
  */
 export function makePaymentContext(overrides?: Partial<PaymentContextDto>): PaymentContextDto {
   return {
-    wechatCodeUrl: 'weixin://wxpay/test',
+    wechatCodeUrl: null,
     stripeCheckoutUrl: null,
     creemCheckoutUrl: null,
     clientSecret: null,

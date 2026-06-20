@@ -41,6 +41,9 @@ import {
   adminUpdateApiKeyRoles,
   getEntitlementMapping,
   getSubscription,
+  listCreditBucketsHandler,
+  getCreditBucketHandler,
+  getBucketOverviewHandler,
 } from '@/lib/api-generated'
 import { handleApiResponse } from '@/lib/api-utils'
 import type {
@@ -53,6 +56,10 @@ import type {
   SubscriptionDetailResponse,
   OneTimeMappingExtResponse,
   PurchaseHistoryResponse,
+  BucketResponse,
+  BucketDetailResponse,
+  BucketOverviewResponse,
+  ListWalletsByBucketResponse,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -224,6 +231,12 @@ export const queryKeys = {
     [QUERY_KEYS.ADMIN_SUBSCRIPTIONS, realmId, filters] as const,
   adminSubscription: (realmId: string, subscriptionId: string) =>
     [QUERY_KEYS.ADMIN_SUBSCRIPTION, realmId, subscriptionId] as const,
+  creditBucketsList: (realmId: string) => [QUERY_KEYS.CREDIT_BUCKETS, realmId] as const,
+  creditBucket: (realmId: string, bucketId: string) =>
+    [QUERY_KEYS.CREDIT_BUCKETS, realmId, bucketId] as const,
+  creditBucketOverview: (realmId: string) =>
+    [QUERY_KEYS.CREDIT_BUCKET_OVERVIEW, realmId] as const,
+  walletsByBucket: (realmId: string) => [QUERY_KEYS.WALLETS_BY_BUCKET, realmId] as const,
 }
 
 // ==================== Public Config ====================
@@ -661,40 +674,6 @@ export const globalSubscriptionHistoryQueryOptions = (
 
 // ==================== Points ====================
 
-export const pointsWalletsQueryOptions = (
-  realmId: string,
-  filters: {
-    page?: number
-    pageSize?: number
-    search?: string
-    status?: string
-  }
-) =>
-  queryOptions({
-    queryKey: queryKeys.pointsWallets(realmId, filters),
-    queryFn: async () => {
-      const data = handleApiResponse(
-        await listWallets({
-          path: { realmId },
-          query: {
-            page: filters.page,
-            pageSize: filters.pageSize,
-            search: filters.search,
-            status: filters.status,
-          },
-        })
-      )
-      return {
-        total: data.total,
-        page: data.page,
-        pageSize: data.pageSize,
-        wallets: data.items,
-      }
-    },
-    retry: RETRY_COUNT,
-    staleTime: STALE_TIME_2_MIN,
-  })
-
 export const pointsWalletQueryOptions = (realmId: string, userId: string) =>
   queryOptions({
     queryKey: queryKeys.pointsWallet(realmId, userId),
@@ -711,6 +690,7 @@ export const pointsTransactionsQueryOptions = (
     clientAppId?: string
     subscriptionId?: string
     transactionType?: string
+    bucketId?: string
     startTime?: string
     endTime?: string
     page?: number
@@ -728,6 +708,7 @@ export const pointsTransactionsQueryOptions = (
             clientAppId: filters.clientAppId,
             subscriptionId: filters.subscriptionId,
             transactionType: filters.transactionType,
+            bucketId: filters.bucketId,
             startTime: filters.startTime,
             endTime: filters.endTime,
             page: filters.page,
@@ -1111,6 +1092,62 @@ export const subscriptionDetailQueryOptions = (realmId: string, subscriptionId: 
       if (response.error) throw response.error
       return response.data as SubscriptionDetailResponse
     },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+  })
+
+// ==================== Credit Buckets ====================
+
+export const creditBucketsListQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.creditBucketsList(realmId),
+    queryFn: async () =>
+      handleApiResponse(await listCreditBucketsHandler({ path: { realmId } })) as BucketResponse[],
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+  })
+
+export const creditBucketDetailQueryOptions = (realmId: string, bucketId: string) =>
+  queryOptions({
+    queryKey: queryKeys.creditBucket(realmId, bucketId),
+    queryFn: async () =>
+      handleApiResponse(
+        await getCreditBucketHandler({ path: { realmId, bucketId } })
+      ) as BucketDetailResponse,
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+  })
+
+export const creditBucketOverviewQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.creditBucketOverview(realmId),
+    queryFn: async () =>
+      handleApiResponse(await getBucketOverviewHandler({ path: { realmId } })) as BucketOverviewResponse,
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+  })
+
+/**
+ * Wallets grouped by (bucket_id, user_id) for a realm — `GET /api/points/{realmId}/wallets`
+ * via the generated `listWallets` SDK (returns `ListWalletsByBucketResponse`).
+ *
+ * LOUD DEVIATION (backend follow-up): the endpoint is realm-wide and gated only by
+ * `points.view`; there is no server-side `userId` filter for the calling user. As a
+ * result it over-returns: a normal end-user with `points.view` sees wallet rows for
+ * every user in the realm, not just their own.
+ *   - FE-D05 (user points page) MUST client-filter `items` by the current `userId`
+ *     and recompute that user's cross-bucket total (see `deriveUserPointsView`).
+ *   - FE-D10 (admin wallets) consumes the full `items` + `crossBucketTotal`.
+ *   - The cleaner self-scoped endpoint (`/users/me/points/wallets`) was not landed
+ *     by BE-D11/BE-T05; tracked as backend follow-up. Not blocking this phase.
+ *
+ * `crossBucketTotal` is the realm-wide cross-user total (NOT a per-user total).
+ */
+export const walletsByBucketQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.walletsByBucket(realmId),
+    queryFn: async () =>
+      handleApiResponse(await listWallets({ path: { realmId } })) as ListWalletsByBucketResponse,
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
   })

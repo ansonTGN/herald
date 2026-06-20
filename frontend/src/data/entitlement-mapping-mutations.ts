@@ -19,6 +19,10 @@ export function useUpdateEntitlementMapping(realmId: string, mappingId: string) 
         validityDays: values.validityDays ?? undefined,
         grantOnSubscribe: values.grantOnSubscribe,
         maxPeriods: values.maxPeriods ?? undefined,
+        // bucketId triple-state: omit when absent (preserve), null clears,
+        // string sets. The toggle-enabled path omits it; the detail dialog
+        // always supplies the intended value (idempotent re-assert on no-op).
+        ...(values.bucketId !== undefined ? { bucketId: values.bucketId } : {}),
       }
       const response = await updateEntitlementMapping({
         path: { realmId, mappingId },
@@ -34,6 +38,13 @@ export function useUpdateEntitlementMapping(realmId: string, mappingId: string) 
       })
       queryClient.invalidateQueries({
         queryKey: queryKeys.entitlementMapping(realmId, mappingId),
+      })
+      // Mapping <-> bucket attribution is two-sided: changing a mapping's
+      // bucketId moves it between bucket holders counts, so the bucket
+      // directory (FE-D03) and overview (FE-D04) must re-fetch. Both write
+      // the same FK consistently; no conflict.
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.creditBucketsList(realmId),
       })
     },
     onError: (error) => {

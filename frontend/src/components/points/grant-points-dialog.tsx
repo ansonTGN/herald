@@ -16,6 +16,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { UserSearch } from '@/components/users/user-search'
 import { NumberField } from '@/components/shared/form-fields/number-field'
@@ -25,6 +32,7 @@ import { grantPointsSchema } from '@/lib/schemas/points-forms'
 import type { GrantPointsFormData } from '@/lib/schemas/points-forms'
 import { usersQueryOptions } from '@/data/query-options'
 import { useGrantPoints } from '@/data/grant-points-mutations'
+import { useEnabledBuckets } from '@/data/use-buckets'
 import { usePermission } from '@/hooks/use-permission'
 import { PERMISSION } from '@/lib/constants/auth-constants'
 import { getErrorMessage } from '@/lib/error-utils'
@@ -50,6 +58,10 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
 
   const grantMutation = useGrantPoints(realmId)
 
+  // Enabled buckets for the mandatory Target Bucket Select (design §4.4 /
+  // FE-D02). Disabled buckets are filtered out so admins can't target them.
+  const { buckets } = useEnabledBuckets(realmId)
+
   // User search query -- enabled only when query is non-empty
   const { data: usersData, isLoading: isSearching } = useQuery({
     ...usersQueryOptions(realmId, { email: userSearchQuery }),
@@ -65,6 +77,8 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
       userId: '',
       amount: 1,
       reason: '',
+      // No default bucket — grant must explicitly target a bucket (design §4.2.4).
+      bucketId: '',
       validityDays: null as number | null,
     },
     onSubmit: async ({ value }) => {
@@ -107,6 +121,7 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
         amount: pendingGrant.amount,
         reason: pendingGrant.reason,
         validityDays: pendingGrant.validityDays ?? null,
+        bucketId: pendingGrant.bucketId,
       })
       toast.success(
         m['points.grant_dialog_granted_success']({
@@ -117,7 +132,20 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
       onOpenChange(false)
       resetDialogState()
     } catch (error) {
-      setServerError(getErrorMessage(error))
+      // Defense-in-depth: the schema should block an empty/missing bucket,
+      // but if the backend still rejects with 400 `grant_bucket_required`
+      // (e.g. bucket disabled server-side between select and submit), surface
+      // the specific message instead of a generic bad-request string.
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'grant_bucket_required'
+      ) {
+        setServerError(m['points.grant_dialog_bucket_required_error']())
+      } else {
+        setServerError(getErrorMessage(error))
+      }
       setConfirmOpen(false)
     }
   }
@@ -242,6 +270,46 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
                 })()}
               </div>
 
+              {/* Target Bucket (design §4.2.4 / §4.4) — REQUIRED, no default.
+                  Mirrors the TransactionFilters Select pattern (FE-D06).
+                  Options come from useEnabledBuckets so disabled buckets are
+                  not selectable. */}
+              <form.Field name="bucketId">
+                {(field) => (
+                  <div className="space-y-2">
+                    <Label htmlFor="grant-bucket">
+                      {m['points.grant_dialog_bucket_label']()}
+                    </Label>
+                    <Select
+                      value={field.state.value}
+                      onValueChange={(value) => field.handleChange(value)}
+                    >
+                      <SelectTrigger
+                        id="grant-bucket"
+                        data-testid="grant-points-bucket-select"
+                      >
+                        <SelectValue
+                          placeholder={m['points.grant_dialog_bucket_placeholder']()}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {buckets.map((bucket) => (
+                          <SelectItem key={bucket.id} value={bucket.id}>
+                            {bucket.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {(field.state.meta.isTouched || form.state.isSubmitted) &&
+                      field.state.meta.errors.length > 0 && (
+                        <p className="text-sm text-destructive" role="alert">
+                          {getFieldErrorMessage(field.state.meta)}
+                        </p>
+                      )}
+                  </div>
+                )}
+              </form.Field>
+
               {/* Amount */}
               <NumberField
                 form={form}
@@ -351,6 +419,15 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
                 {selectedUser?.nickname
                   ? `${selectedUser.nickname} (${selectedUser.email})`
                   : selectedUser?.email}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">
+                {m['points.grant_dialog_confirm_bucket']()}
+              </span>
+              <span className="font-medium">
+                {buckets.find((b) => b.id === pendingGrant?.bucketId)?.name ??
+                  pendingGrant?.bucketId}
               </span>
             </div>
             <div className="flex justify-between">

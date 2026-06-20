@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -13,15 +13,9 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { PageHeader } from '@/components/shared/page-header'
-import { WechatConfigFields } from './WechatConfigDetail'
 import { DeleteConfirmDialog } from './DeleteConfirmDialog'
-import { Edit, Trash2, Plug2, Plus, ChevronDown, ChevronUp } from 'lucide-react'
-import {
-  listPaymentProviders,
-  deleteWechatConfig,
-  getWechatConfig,
-  type WechatConfigResponse,
-} from '@/lib/api-generated'
+import { Edit, Trash2, Plug2, Plus } from 'lucide-react'
+import { listPaymentProviders } from '@/lib/api-generated'
 import { deleteRealmConfig } from '@/lib/api-generated/sdk.gen'
 import { STRIPE_CONFIG_KEYS } from '@/lib/billing-constants'
 import { CREEM_CONFIG_KEYS } from '@/lib/creem-config-utils'
@@ -36,25 +30,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
-  const [deleteProviderType, setDeleteProviderType] = useState<'wechat' | 'stripe' | 'creem'>(
-    'wechat'
-  )
-  const [wechatConfigDetails, setWechatConfigDetails] = useState<WechatConfigResponse | null>(null)
-  const [showWechatSecrets, setShowWechatSecrets] = useState(false)
-  const [expandedProvider, setExpandedProvider] = useState<'wechat' | null>(null)
-
-  // Auto-hide WeChat secrets after 5 seconds
-  useEffect(() => {
-    let timeoutId: ReturnType<typeof setTimeout>
-    if (showWechatSecrets) {
-      timeoutId = setTimeout(() => {
-        setShowWechatSecrets(false)
-      }, 5000)
-    }
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId)
-    }
-  }, [showWechatSecrets])
+  const [deleteProviderType, setDeleteProviderType] = useState<'stripe' | 'creem'>('stripe')
 
   const { data: providers, isLoading } = useQuery({
     queryKey: ['payment-providers', realmId],
@@ -66,40 +42,27 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
     },
   })
 
-  useEffect(() => {
-    const wechatProvider = providers?.find((p) => p.platform === 'wechat')
-    if (wechatProvider) {
-      getWechatConfig({ path: { realmId } })
-        .then((result) => setWechatConfigDetails(result.data as WechatConfigResponse))
-        .catch(() => setWechatConfigDetails(null))
-    }
-  }, [providers, realmId])
-
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      if (deleteProviderType === 'wechat') {
-        return await deleteWechatConfig({ path: { realmId } })
-      } else {
-        const configKeys =
-          deleteProviderType === 'stripe'
-            ? Object.values(STRIPE_CONFIG_KEYS).map((key) => ({
-                configType: 'stripe',
-                configKey: key,
-              }))
-            : Object.values(CREEM_CONFIG_KEYS).map((key) => ({
-                configType: 'creem',
-                configKey: key,
-              }))
-        // Delete all keys, ignoring 404s for keys that don't exist
-        await Promise.all(
-          configKeys.map((k) =>
-            deleteRealmConfig({ path: { realmId, ...k } }).catch((e) => {
-              if (e?.status !== 404) throw e
-            })
-          )
+      const configKeys =
+        deleteProviderType === 'stripe'
+          ? Object.values(STRIPE_CONFIG_KEYS).map((key) => ({
+              configType: 'stripe',
+              configKey: key,
+            }))
+          : Object.values(CREEM_CONFIG_KEYS).map((key) => ({
+              configType: 'creem',
+              configKey: key,
+            }))
+      // Delete all keys, ignoring 404s for keys that don't exist
+      await Promise.all(
+        configKeys.map((k) =>
+          deleteRealmConfig({ path: { realmId, ...k } }).catch((e) => {
+            if (e?.status !== 404) throw e
+          })
         )
-        return undefined
-      }
+      )
+      return undefined
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-providers', realmId] })
@@ -117,16 +80,12 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
     },
   })
 
-  const handleNavigate = (type: 'wechat' | 'stripe' | 'creem') => {
+  const handleNavigate = (type: 'stripe' | 'creem') => {
     void navigate({ to: `./${type}` })
   }
 
   const handleDelete = () => {
     deleteMutation.mutate()
-  }
-
-  const toggleExpand = (provider: 'wechat') => {
-    setExpandedProvider((prev) => (prev === provider ? null : provider))
   }
 
   if (isLoading) {
@@ -137,16 +96,14 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
     )
   }
 
-  const wechatProvider = providers?.find((p) => p.platform === 'wechat')
   const stripeProvider = providers?.find((p) => p.platform === 'stripe')
   const creemProvider = providers?.find((p) => p.platform === 'creem')
 
-  const hasAnyProvider = wechatProvider || stripeProvider || creemProvider
+  const hasAnyProvider = stripeProvider || creemProvider
   const unconfiguredProviders: {
-    type: 'wechat' | 'stripe' | 'creem'
+    type: 'stripe' | 'creem'
     label: string
   }[] = []
-  if (!wechatProvider) unconfiguredProviders.push({ type: 'wechat', label: 'WeChat Pay' })
   if (!stripeProvider) unconfiguredProviders.push({ type: 'stripe', label: 'Stripe' })
   if (!creemProvider) unconfiguredProviders.push({ type: 'creem', label: 'Creem' })
 
@@ -179,73 +136,6 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {wechatProvider && wechatConfigDetails && (
-              <>
-                <TableRow data-testid="wechat-provider-row">
-                  <TableCell className="font-medium">WeChat Pay</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleExpand('wechat')}
-                        data-testid="toggle-wechat-details-button"
-                      >
-                        {expandedProvider === 'wechat' ? (
-                          <ChevronUp className="h-4 w-4" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleNavigate('wechat')}
-                        data-testid="edit-wechat-button"
-                      >
-                        <Edit className="mr-1 h-3 w-3" />
-                        {m['common.edit']()}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setDeleteProviderType('wechat')
-                          setIsDeleteDialogOpen(true)
-                        }}
-                        data-testid="delete-wechat-button"
-                      >
-                        <Trash2 className="mr-1 h-3 w-3" />
-                        {m['common.delete']()}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-                {expandedProvider === 'wechat' && (
-                  <TableRow data-testid="wechat-details-row">
-                    <TableCell colSpan={2} className="p-0">
-                      <WechatConfigFields
-                        config={{
-                          platform: wechatConfigDetails.platform || 'wechat',
-                          appId: wechatConfigDetails.appId || '',
-                          mchId: wechatConfigDetails.mchId || '',
-                          serialNo: wechatConfigDetails.serialNo || '',
-                          v3Key: wechatConfigDetails.v3Key || '',
-                          privateKey: wechatConfigDetails.privateKey || '',
-                          notifyUrl: wechatConfigDetails.notifyUrl || '',
-                          createdAt: wechatConfigDetails.createdAt || new Date().toISOString(),
-                          updatedAt: wechatConfigDetails.updatedAt || new Date().toISOString(),
-                        }}
-                        showSecrets={showWechatSecrets}
-                        onShowSecrets={() => setShowWechatSecrets(true)}
-                        onHideSecrets={() => setShowWechatSecrets(false)}
-                      />
-                    </TableCell>
-                  </TableRow>
-                )}
-              </>
-            )}
-
             {stripeProvider && (
               <TableRow data-testid="stripe-provider-row">
                 <TableCell className="font-medium">Stripe</TableCell>
@@ -325,7 +215,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
         onOpenChange={setIsDeleteDialogOpen}
         onConfirm={handleDelete}
         configType={
-          ({ wechat: 'WeChat Pay', creem: 'Creem', stripe: 'Stripe' } as const)[deleteProviderType]
+          ({ creem: 'Creem', stripe: 'Stripe' } as const)[deleteProviderType]
         }
         activeSubscriptions={0}
         isDeleting={deleteMutation.isPending}

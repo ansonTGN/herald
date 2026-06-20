@@ -1,0 +1,66 @@
+import type { WalletByBucketResponse } from '@/lib/api-generated'
+
+/**
+ * Derived bucket card for the user points view.
+ *
+ * Mirrors `WalletByBucketResponse` fields that the UI consumes, typed against
+ * the generated contract so contract changes surface at compile time.
+ */
+export interface DerivedBucketCard {
+  bucketId: string
+  name: string | null
+  enabled: boolean | null
+  bucketTotal: number
+  balancesByType: WalletByBucketResponse['balancesByType']
+}
+
+export interface DerivedUserPointsView {
+  /**
+   * `true` only when the current user holds >= 2 buckets. The cross-bucket
+   * total bar renders conditionally on this flag.
+   */
+  showTotalBar: boolean
+  cards: DerivedBucketCard[]
+  /**
+   * Sum of the current user's `bucketTotal` across their filtered buckets.
+   * Recomputed client-side — NOT the realm-wide `crossBucketTotal` returned
+   * by `listWallets` (which spans all realm users).
+   */
+  crossBucketTotal: number
+}
+
+/**
+ * Pure derivation of the user-facing points view from the realm-wide
+ * `listWallets` response items.
+ *
+ * LOUD DEVIATION (FE-D01 / query-options.ts): the `listWallets` endpoint is
+ * realm-wide and `points.view`-gated with no `userId` filter, so `items`
+ * contains wallet rows for EVERY user in the realm. This function isolates
+ * the calling user's rows, recomputes their cross-bucket total, and decides
+ * whether the cross-bucket total bar should render.
+ *
+ * Framework-agnostic and side-effect-free so FE-T02 can unit-test the
+ * >=2 / =1 / =0 branches directly.
+ */
+export function deriveUserPointsView(
+  items: WalletByBucketResponse[],
+  currentUserId: string
+): DerivedUserPointsView {
+  const cards = items
+    .filter((item) => item.userId === currentUserId)
+    .map((item) => ({
+      bucketId: item.bucketId ?? '',
+      name: item.name ?? null,
+      enabled: item.enabled ?? null,
+      bucketTotal: item.bucketTotal,
+      balancesByType: item.balancesByType,
+    }))
+
+  const crossBucketTotal = cards.reduce((sum, card) => sum + card.bucketTotal, 0)
+
+  return {
+    showTotalBar: cards.length >= 2,
+    cards,
+    crossBucketTotal,
+  }
+}

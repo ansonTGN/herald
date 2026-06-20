@@ -71,6 +71,10 @@ export const QUERY_KEYS = {
   ENTITLEMENT_MAPPING: 'entitlement-mapping',
   ADMIN_SUBSCRIPTIONS: 'admin-subscriptions',
   ADMIN_SUBSCRIPTION: 'admin-subscription',
+  CREDIT_BUCKETS: 'credit-buckets',
+  CREDIT_BUCKET: 'credit-bucket',
+  CREDIT_BUCKET_OVERVIEW: 'credit-bucket-overview',
+  WALLETS_BY_BUCKET: 'wallets-by-bucket',
 } as const
 
 /**

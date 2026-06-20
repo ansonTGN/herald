@@ -1,14 +1,23 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Wallet } from 'lucide-react'
-import type { PointsWalletResponse } from '@/lib/api-generated'
+import type { DerivedBucketCard } from './user-points-view'
 import { m } from '@/paraglide/messages'
 
 interface PointsBalanceCardProps {
-  account: PointsWalletResponse | null
+  card: DerivedBucketCard
   loading?: boolean
 }
 
-export function PointsBalanceCard({ account, loading }: PointsBalanceCardProps) {
+const BALANCES_BY_TYPE_KEYS = [
+  'subscription',
+  'topup',
+  'registration',
+  'freePeriodic',
+  'granted',
+] as const
+
+export function PointsBalanceCard({ card, loading }: PointsBalanceCardProps) {
   if (loading) {
     return (
       <Card data-testid="points-balance-card">
@@ -24,30 +33,20 @@ export function PointsBalanceCard({ account, loading }: PointsBalanceCardProps) 
     )
   }
 
-  if (!account) {
-    return null
-  }
-
-  const statusConfig = {
-    active: { label: m['points.balance_status_active'](), color: 'text-green-600 bg-green-50' },
-    frozen: { label: m['points.balance_status_frozen'](), color: 'text-red-600 bg-red-50' },
-    closed: { label: m['points.balance_status_closed'](), color: 'text-gray-600 bg-gray-50' },
-    unknown: { label: m['points.balance_status_unknown'](), color: 'text-yellow-600 bg-yellow-50' },
-  } as const
-
-  const status = statusConfig[account.status as keyof typeof statusConfig] || statusConfig.unknown
+  const bucketTestId = card.bucketId
+    ? `points-balance-card-${card.bucketId}`
+    : 'points-balance-card'
 
   return (
-    <Card data-testid="points-balance-card">
+    <Card data-testid={bucketTestId}>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle>{m['points.balance_card_title']()}</CardTitle>
-          <span
-            className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}
-            data-testid="points-wallet-status"
-          >
-            {status.label}
-          </span>
+          <CardTitle>{card.name ?? m['points.bucket_card_unnamed']()}</CardTitle>
+          {card.enabled === false && (
+            <Badge variant="secondary" data-testid={`points-balance-card-disabled-${card.bucketId ?? ''}`}>
+              {m['points.bucket_card_disabled']()}
+            </Badge>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -56,10 +55,26 @@ export function PointsBalanceCard({ account, loading }: PointsBalanceCardProps) 
             <Wallet className="h-4 w-4" />
             <span>{m['points.balance_current']()}</span>
           </div>
-          <div className="text-5xl font-bold" data-testid="points-balance">
-            {account.balance.toLocaleString()}
+          <div className="text-5xl font-bold" data-testid={`points-balance-total-${card.bucketId ?? ''}`}>
+            {card.bucketTotal.toLocaleString()}
           </div>
-          <div className="text-sm text-muted-foreground mt-1">{account.unit}</div>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {BALANCES_BY_TYPE_KEYS.map((typeKey) => {
+              const value = card.balancesByType[typeKey]
+              if (!value) {
+                return null
+              }
+              return (
+                <Badge
+                  key={typeKey}
+                  variant="outline"
+                  data-testid={`points-balance-type-${card.bucketId ?? ''}-${typeKey}`}
+                >
+                  {m[`points.balance_type_${typeKey}`]({ count: value.toLocaleString() })}
+                </Badge>
+              )
+            })}
+          </div>
         </div>
       </CardContent>
     </Card>

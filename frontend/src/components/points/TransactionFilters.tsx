@@ -25,6 +25,13 @@ interface TransactionFiltersProps {
   onChange: (filters: TransactionFiltersType) => void
   onClear: () => void
   clientApps?: Array<{ id: string; name: string }>
+  /**
+   * Credit Bucket option source for the Bucket Select (design §4.4.2). When
+   * provided, the Select renders; user-facing callers pass `useEnabledBuckets`
+   * output, admin callers pass `useBuckets` output (incl. disabled). Each
+   * option only needs the fields `BucketOption` exposes.
+   */
+  buckets?: Array<{ id: string; name: string; enabled: boolean }>
   admin?: boolean
   loading?: boolean
   className?: string
@@ -35,6 +42,7 @@ export function TransactionFilters({
   onChange,
   onClear,
   clientApps,
+  buckets,
   admin = false,
   loading,
   className,
@@ -45,12 +53,14 @@ export function TransactionFilters({
       startTime: z.string().optional(),
       endTime: z.string().optional(),
       clientAppId: z.string().optional(),
+      bucketId: z.string().optional(),
     }),
     defaultValues: {
       transactionType: filters.transactionType,
       startTime: toDateInputValue(filters.startTime),
       endTime: toDateInputValue(filters.endTime),
       clientAppId: filters.clientAppId || '',
+      bucketId: filters.bucketId || '',
     },
     onSubmit: async ({ value }) => {
       const newFilters: TransactionFiltersType = {
@@ -58,6 +68,7 @@ export function TransactionFilters({
         startTime: value.startTime ? toUtcDateRangeBoundary(value.startTime, 'start') : undefined,
         endTime: value.endTime ? toUtcDateRangeBoundary(value.endTime, 'end') : undefined,
         clientAppId: value.clientAppId || undefined,
+        bucketId: value.bucketId || undefined,
       }
       onChange(newFilters)
     },
@@ -153,6 +164,40 @@ export function TransactionFilters({
                   )}
                 </form.Field>
               </div>
+
+              {/* Bucket (design §4.4.2) — shown for both user and admin faces
+                  whenever the caller supplies bucket options. */}
+              {buckets && buckets.length > 0 && (
+                <div className="min-w-[160px]">
+                  <form.Field name="bucketId">
+                    {(field) => (
+                      <>
+                        <Label htmlFor={field.name}>{m['points.filter_bucket_label']()}</Label>
+                        <Select
+                          value={field.state.value || FILTER_ALL_VALUE}
+                          onValueChange={(value) =>
+                            field.handleChange(value === FILTER_ALL_VALUE ? '' : value)
+                          }
+                        >
+                          <SelectTrigger id={field.name} data-testid="filter-bucket">
+                            <SelectValue placeholder={m['points.filter_bucket_all']()} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={FILTER_ALL_VALUE}>
+                              {m['points.filter_bucket_all']()}
+                            </SelectItem>
+                            {buckets.map((bucket) => (
+                              <SelectItem key={bucket.id} value={bucket.id}>
+                                {bucket.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </>
+                    )}
+                  </form.Field>
+                </div>
+              )}
 
               {/* Client App (admin only) */}
               {admin && (

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { formatInvoiceAmount, extractProviderPrice } from '@/lib/invoice-utils'
@@ -25,11 +25,18 @@ import { Switch } from '@/components/ui/switch'
 import { AppForm, useAppForm } from '@/components/ui/tanstack-form'
 import { entitlementMappingQueryOptions } from '@/data/query-options'
 import { useUpdateEntitlementMapping } from '@/data/entitlement-mapping-mutations'
+import { useBuckets } from '@/data/use-buckets'
 import {
   entitlementMappingUpdateSchema,
   getEntitlementMappingUpdateDefaults,
 } from '@/lib/schemas/billing-forms'
+import { m } from '@/paraglide/messages'
 import type { EntitlementMappingResponse } from '@/lib/api-generated'
+
+// Sentinel value for the "Unassigned" Select option (clear attribution).
+// Radix Select cannot use null/empty as an item value, so we round-trip
+// through this sentinel and translate back to null on change.
+const BUCKET_NONE_SENTINEL = '__none__'
 
 interface EntitlementMappingDetailDialogProps {
   realmId: string
@@ -42,7 +49,6 @@ function formatProviderName(provider: string): string {
   const names: Record<string, string> = {
     stripe: 'Stripe',
     creem: 'Creem',
-    wechat: 'WeChat Pay',
   }
   return names[provider] ?? provider
 }
@@ -67,6 +73,10 @@ export function EntitlementMappingDetailDialog({
 
   const updateMutation = useUpdateEntitlementMapping(realmId, mappingId ?? '')
 
+  // Admin-facing bucket options (incl. disabled) for the clearable Bucket
+  // Select (design §4.4.1). useBuckets per FE-D02.
+  const { buckets } = useBuckets(realmId)
+
   const formDefaults = useMemo(
     () =>
       mapping
@@ -83,6 +93,9 @@ export function EntitlementMappingDetailDialog({
             validityDays: mapping.validityDays ?? null,
             grantOnSubscribe: mapping.grantOnSubscribe,
             maxPeriods: mapping.maxPeriods ?? null,
+            // Seed the Select with the current attribution so an untouched
+            // submit re-asserts the same value (idempotent).
+            bucketId: mapping.bucketId ?? null,
           })
         : getEntitlementMappingUpdateDefaults(),
     [mapping]
@@ -95,6 +108,18 @@ export function EntitlementMappingDetailDialog({
       await updateMutation.mutateAsync(value)
     },
   })
+
+  // Repopulate the form when the loaded mapping changes (initial open + switch).
+  // TanStack Form consumes `defaultValues` only at init, and this dialog stays
+  // mounted across open/close (the parent renders it unconditionally; `if (!open)`
+  // returns null but keeps the hook alive). Without this reset the Bucket Select
+  // and other fields keep the previous mapping's values, so an idempotent submit
+  // would re-assert the wrong bucketId. Mirrors edit-resource-dialog.tsx.
+  useEffect(() => {
+    if (mapping) {
+      form.reset(formDefaults)
+    }
+  }, [form, formDefaults, mapping])
 
   if (!open) return null
 
@@ -193,6 +218,49 @@ export function EntitlementMappingDetailDialog({
                               {String(field.state.meta.errors[0])}
                             </p>
                           )}
+                      </div>
+                    )}
+                  </form.Field>
+
+                  {/* Credit Bucket (design §4.4.1) — clearable Select.
+                      Picking a bucket sets bucketId to its uuid; picking
+                      "Unassigned" sets bucketId to null (clear attribution).
+                      Mirrors the TransactionFilters Select pattern (FE-D06)
+                      but uses a sentinel for the null/clear option since Radix
+                      Select cannot use null/empty as an item value. */}
+                  <form.Field name="bucketId">
+                    {(field) => (
+                      <div className="space-y-2">
+                        <Label htmlFor="mapping-bucket">
+                          {m['billing.mapping_bucket_select_label']()}
+                        </Label>
+                        <Select
+                          value={field.state.value ?? BUCKET_NONE_SENTINEL}
+                          onValueChange={(value) =>
+                            field.handleChange(
+                              value === BUCKET_NONE_SENTINEL ? null : value
+                            )
+                          }
+                        >
+                          <SelectTrigger
+                            id="mapping-bucket"
+                            data-testid="mapping-detail-bucket-select"
+                          >
+                            <SelectValue
+                              placeholder={m['billing.mapping_bucket_select_placeholder']()}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={BUCKET_NONE_SENTINEL}>
+                              {m['billing.mapping_bucket_clear']()}
+                            </SelectItem>
+                            {buckets.map((bucket) => (
+                              <SelectItem key={bucket.id} value={bucket.id}>
+                                {bucket.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     )}
                   </form.Field>

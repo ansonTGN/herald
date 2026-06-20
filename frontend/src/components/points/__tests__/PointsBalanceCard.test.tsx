@@ -1,87 +1,89 @@
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { PointsBalanceCard } from '../PointsBalanceCard'
-import {
-  mockPointsWallet,
-  mockPointsWalletFrozen,
-  mockPointsWalletClosed,
-} from '@/fixtures/points-wallet.fixture'
+import type { DerivedBucketCard } from '../user-points-view'
+
+// ---------- Factory helpers ----------
+
+function makeCard(overrides: Partial<DerivedBucketCard> = {}): DerivedBucketCard {
+  return {
+    bucketId: 'bucket-1',
+    name: 'Default Bucket',
+    enabled: true,
+    bucketTotal: 5000,
+    balancesByType: {
+      subscription: 0,
+      topup: 0,
+      registration: 0,
+      freePeriodic: 0,
+      granted: 0,
+    },
+    ...overrides,
+  }
+}
+
+// ==================== rendering ====================
 
 describe('PointsBalanceCard', () => {
-  afterEach(() => {
-    vi.clearAllMocks()
-  })
-
   describe('rendering', () => {
-    it('GIVEN account with balance WHEN rendering THEN should display balance correctly', () => {
-      render(<PointsBalanceCard account={mockPointsWallet} />)
+    it('GIVEN a bucket with a balance WHEN rendering THEN should display the formatted total', () => {
+      render(<PointsBalanceCard card={makeCard({ bucketTotal: 5000 })} />)
 
-      const balance = screen.getByTestId('points-balance')
-      expect(balance).toBeInTheDocument()
-      expect(balance).toHaveTextContent('5,000')
+      const total = screen.getByTestId('points-balance-total-bucket-1')
+      expect(total).toBeInTheDocument()
+      expect(total).toHaveTextContent('5,000')
+    })
+
+    it('GIVEN a bucket without a bucketId WHEN rendering THEN should use the generic card testid', () => {
+      render(<PointsBalanceCard card={makeCard({ bucketId: '' })} />)
+
+      expect(screen.getByTestId('points-balance-card')).toBeInTheDocument()
     })
   })
 
-  describe('status display', () => {
-    it('GIVEN account with active status WHEN rendering THEN should show active status', () => {
-      render(<PointsBalanceCard account={mockPointsWallet} />)
+  describe('per-type balances', () => {
+    it('GIVEN non-zero balances WHEN rendering THEN should show a badge per non-zero type and hide zero types', () => {
+      render(
+        <PointsBalanceCard
+          card={makeCard({
+            balancesByType: {
+              subscription: 3000,
+              topup: 0,
+              registration: 0,
+              freePeriodic: 0,
+              granted: 50,
+            },
+          })}
+        />
+      )
 
-      const status = screen.getByTestId('points-wallet-status')
-      expect(status).toBeInTheDocument()
-      expect(status).toHaveTextContent('Active')
-      expect(status).toHaveClass(/text-green-600/)
-      expect(status).toHaveClass(/bg-green-50/)
+      expect(screen.getByTestId('points-balance-type-bucket-1-subscription')).toBeInTheDocument()
+      expect(screen.getByTestId('points-balance-type-bucket-1-granted')).toBeInTheDocument()
+      // A zero balance type is omitted — indistinguishable from "not present"
+      expect(screen.queryByTestId('points-balance-type-bucket-1-topup')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('disabled state', () => {
+    it('GIVEN an enabled bucket WHEN rendering THEN should not show the disabled badge', () => {
+      render(<PointsBalanceCard card={makeCard({ enabled: true })} />)
+
+      expect(screen.queryByTestId('points-balance-card-disabled-bucket-1')).not.toBeInTheDocument()
     })
 
-    it('GIVEN account with frozen status WHEN rendering THEN should show frozen status', () => {
-      render(<PointsBalanceCard account={mockPointsWalletFrozen} />)
+    it('GIVEN a disabled bucket WHEN rendering THEN should show the disabled badge', () => {
+      render(<PointsBalanceCard card={makeCard({ enabled: false })} />)
 
-      const status = screen.getByTestId('points-wallet-status')
-      expect(status).toBeInTheDocument()
-      expect(status).toHaveTextContent('Frozen')
-      expect(status).toHaveClass(/text-red-600/)
-      expect(status).toHaveClass(/bg-red-50/)
-    })
-
-    it('GIVEN account with closed status WHEN rendering THEN should show closed status', () => {
-      render(<PointsBalanceCard account={mockPointsWalletClosed} />)
-
-      const status = screen.getByTestId('points-wallet-status')
-      expect(status).toBeInTheDocument()
-      expect(status).toHaveTextContent('Closed')
-      expect(status).toHaveClass(/text-gray-600/)
-      expect(status).toHaveClass(/bg-gray-50/)
-    })
-
-    it('GIVEN account with unknown status WHEN rendering THEN should show unknown status', () => {
-      const accountWithUnknownStatus = {
-        ...mockPointsWallet,
-        status: 'unknown' as any,
-      }
-      render(<PointsBalanceCard account={accountWithUnknownStatus} />)
-
-      const status = screen.getByTestId('points-wallet-status')
-      expect(status).toBeInTheDocument()
-      expect(status).toHaveTextContent('Unknown')
-      expect(status).toHaveClass(/text-yellow-600/)
-      expect(status).toHaveClass(/bg-yellow-50/)
+      expect(screen.getByTestId('points-balance-card-disabled-bucket-1')).toBeInTheDocument()
     })
   })
 
   describe('loading state', () => {
-    it('GIVEN loading is true WHEN rendering THEN should show loading skeleton', () => {
-      render(<PointsBalanceCard account={mockPointsWallet} loading={true} />)
+    it('GIVEN loading is true WHEN rendering THEN should show the skeleton and no balance', () => {
+      render(<PointsBalanceCard card={makeCard()} loading />)
 
-      const balance = screen.queryByTestId('points-balance')
-      expect(balance).not.toBeInTheDocument()
-    })
-  })
-
-  describe('null account', () => {
-    it('GIVEN account is null WHEN rendering THEN should return null', () => {
-      const { container } = render(<PointsBalanceCard account={null} />)
-
-      expect(container.firstChild).toBeNull()
+      expect(screen.getByTestId('points-balance-card')).toBeInTheDocument()
+      expect(screen.queryByTestId('points-balance-total-bucket-1')).not.toBeInTheDocument()
     })
   })
 })

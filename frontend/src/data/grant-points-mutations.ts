@@ -18,13 +18,14 @@ export function useGrantPoints(realmId: string) {
           amount: values.amount,
           reason: values.reason,
           validityDays: values.validityDays ?? null,
+          bucketId: values.bucketId,
         },
       })
       if (response.error) throw response.error
       return response.data as GrantPointsResponse
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.POINTS_WALLETS, realmId] })
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.WALLETS_BY_BUCKET, realmId] })
       queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.POINTS_TRANSACTIONS, realmId] })
     },
   })

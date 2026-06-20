@@ -45,7 +45,6 @@ function formatProviderName(provider: string): string {
   const names: Record<string, string> = {
     stripe: 'Stripe',
     creem: 'Creem',
-    wechat: 'WeChat Pay',
   }
   return names[provider] ?? provider
 }

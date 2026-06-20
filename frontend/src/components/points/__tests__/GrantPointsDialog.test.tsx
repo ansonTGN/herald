@@ -102,6 +102,11 @@ async function fillValidForm() {
   const aliceButton = await screen.findByRole('button', { name: /alice@example.com/i })
   await user.click(aliceButton)
 
+  // Select the required target bucket (no default; options from useEnabledBuckets)
+  await user.click(screen.getByTestId('grant-points-bucket-select'))
+  const bucketOption = await screen.findByRole('option', { name: /default bucket/i })
+  await user.click(bucketOption)
+
   // Amount defaults to 1 which is valid -- no need to change it
 
   // Fill reason
@@ -120,6 +125,7 @@ describe('grantPointsSchema', () => {
       amount: 100,
       reason: 'Promotional grant',
       validityDays: 30,
+      bucketId: 'bucket-1',
     })
 
     expect(result.success).toBe(true)
@@ -129,6 +135,7 @@ describe('grantPointsSchema', () => {
         amount: 100,
         reason: 'Promotional grant',
         validityDays: 30,
+        bucketId: 'bucket-1',
       })
     }
   })
@@ -138,6 +145,7 @@ describe('grantPointsSchema', () => {
       userId: 'user-1',
       amount: 100,
       reason: 'Promotional grant',
+      bucketId: 'bucket-1',
       validityDays: null,
     })
 
@@ -149,6 +157,7 @@ describe('grantPointsSchema', () => {
       userId: 'user-1',
       amount: 100,
       reason: 'Promotional grant',
+      bucketId: 'bucket-1',
     })
 
     expect(result.success).toBe(true)
@@ -207,6 +216,25 @@ describe('GrantPointsDialog', () => {
   beforeEach(() => {
     mockPermissionGranted()
     server.use(userSearchHandler)
+    // Provide an enabled credit bucket so the mandatory Target bucket Select
+    // has a selectable option. The list endpoint returns a bare BucketResponse[]
+    // (creditBucketsListQueryOptions casts response.data as BucketResponse[]).
+    server.use(
+      http.get('http://localhost:3000/api/realms/:realmId/billing/credit-buckets', () =>
+        HttpResponse.json([
+          {
+            id: 'bucket-1',
+            name: 'Default Bucket',
+            bucketKey: 'default',
+            enabled: true,
+            coveredClientAppCount: 0,
+            displayOrder: 0,
+            entitlementMappingCount: 0,
+            receivesRegistrationCredits: false,
+          },
+        ])
+      )
+    )
   })
 
   describe('form validation', () => {
@@ -483,17 +511,19 @@ describe('GrantPointsDialog', () => {
 })
 
 describe('useGrantPoints cache invalidation', () => {
-  it('invalidates POINTS_WALLETS query key on success', async () => {
+  it('invalidates WALLETS_BY_BUCKET query key on success', async () => {
     const queryClient = createTestQueryClient()
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
-    // Simulate the invalidation that happens in onSuccess
+    // Simulate the invalidation that happens in onSuccess. Wallet balances are
+    // served by walletsByBucketQueryOptions (key WALLETS_BY_BUCKET), consumed by
+    // both the admin PointsWalletsPage and the user UserPointsPage.
     queryClient.invalidateQueries({
-      queryKey: [QUERY_KEYS.POINTS_WALLETS, 'test-realm'],
+      queryKey: [QUERY_KEYS.WALLETS_BY_BUCKET, 'test-realm'],
     })
 
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: [QUERY_KEYS.POINTS_WALLETS, 'test-realm'],
+      queryKey: [QUERY_KEYS.WALLETS_BY_BUCKET, 'test-realm'],
     })
   })
 })

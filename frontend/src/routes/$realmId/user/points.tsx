@@ -1,7 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { UserPointsPage } from '@/components/points/UserPointsPage'
 import { useUser } from '@/stores/auth-store'
 import { requireFeature } from '@/data/query-options'
+import { transactionBucketSearchSchema } from '@/lib/schemas/points-forms'
 
 export const Route = createFileRoute('/$realmId/user/points')({
   beforeLoad: ({ context, params }) =>
@@ -9,6 +10,10 @@ export const Route = createFileRoute('/$realmId/user/points')({
       to: '/$realmId/user/profile',
       params: { realmId: params.realmId },
     }),
+  // FE-D06: `bucketId` is the shareable transaction-bucket filter
+  // (design §4.2.3 `?bucketId=`). Parsing + URL ↔ filter sync covered by the
+  // frontend/test slot.
+  validateSearch: transactionBucketSearchSchema,
   component: UserPointsWrapper,
 })
 
@@ -17,5 +22,24 @@ function UserPointsWrapper() {
   const user = useUser()
   // Get userId from auth store since this is user's own points page
   const userId = user?.id || ''
-  return <UserPointsPage realmId={realmId} userId={userId} />
+  const search = Route.useSearch()
+  const navigate = useNavigate()
+
+  function handleBucketIdChange(bucketId: string | undefined) {
+    navigate({
+      to: '/$realmId/user/points',
+      params: { realmId },
+      search: () => ({ bucketId }),
+      replace: true,
+    })
+  }
+
+  return (
+    <UserPointsPage
+      realmId={realmId}
+      userId={userId}
+      bucketId={search.bucketId}
+      onBucketIdChange={handleBucketIdChange}
+    />
+  )
 }

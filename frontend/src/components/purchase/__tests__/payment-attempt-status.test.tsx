@@ -30,30 +30,6 @@ function expectAbsent(...testids: string[]) {
 }
 
 describe('PaymentAttemptStatus provider-specific conditional branches', () => {
-  describe('WeChat QR branch', () => {
-    it.each([{ status: 'Pending' }, { status: 'RequiresAction' }])(
-      'renders QR section when status=$status, provider=wechat, and wechatCodeUrl exists',
-      ({ status }) => {
-        render(
-          <PaymentAttemptStatus
-            status={makeStatusResponse({ status })}
-            paymentProvider="wechat"
-            paymentContext={makePaymentContext({ wechatCodeUrl: 'weixin://wxpay/test' })}
-          />
-        )
-
-        expectPresent('payment-wechat-qr-section')
-        expectAbsent(
-          'payment-redirect-prompt',
-          'payment-redirect-manual-link',
-          'payment-context-degraded',
-          'payment-status-pending',
-          'payment-status-requires-action'
-        )
-      }
-    )
-  })
-
   describe('Stripe redirect branch', () => {
     it('renders redirect prompt when provider=stripe and stripeCheckoutUrl exists', () => {
       render(
@@ -62,14 +38,12 @@ describe('PaymentAttemptStatus provider-specific conditional branches', () => {
           paymentProvider="stripe"
           paymentContext={makePaymentContext({
             stripeCheckoutUrl: 'https://checkout.stripe.com/test',
-            wechatCodeUrl: null,
           })}
         />
       )
 
       expectPresent('payment-redirect-prompt', 'payment-redirect-manual-link')
       expectAbsent(
-        'payment-wechat-qr-section',
         'payment-context-degraded',
         'payment-status-pending'
       )
@@ -84,14 +58,12 @@ describe('PaymentAttemptStatus provider-specific conditional branches', () => {
           paymentProvider="creem"
           paymentContext={makePaymentContext({
             creemCheckoutUrl: 'https://checkout.creem.io/test',
-            wechatCodeUrl: null,
           })}
         />
       )
 
       expectPresent('payment-redirect-prompt', 'payment-redirect-manual-link')
       expectAbsent(
-        'payment-wechat-qr-section',
         'payment-context-degraded',
         'payment-status-pending'
       )
@@ -105,11 +77,6 @@ describe('PaymentAttemptStatus provider-specific conditional branches', () => {
         provider: 'stripe',
         context: null,
       },
-      {
-        label: 'wechat with null context',
-        provider: 'wechat',
-        context: null,
-      },
     ] as const)('renders degraded UI when $label (context is null)', ({ provider, context }) => {
       render(
         <PaymentAttemptStatus
@@ -121,7 +88,6 @@ describe('PaymentAttemptStatus provider-specific conditional branches', () => {
 
       expectPresent('payment-context-degraded')
       expectAbsent(
-        'payment-wechat-qr-section',
         'payment-redirect-prompt',
         'payment-redirect-manual-link',
         'payment-status-pending'
@@ -133,15 +99,6 @@ describe('PaymentAttemptStatus provider-specific conditional branches', () => {
         label: 'stripe with missing URL',
         provider: 'stripe',
         context: makePaymentContext({
-          stripeCheckoutUrl: null,
-          wechatCodeUrl: null,
-        }),
-      },
-      {
-        label: 'wechat with missing URL',
-        provider: 'wechat',
-        context: makePaymentContext({
-          wechatCodeUrl: null,
           stripeCheckoutUrl: null,
         }),
       },
@@ -156,7 +113,6 @@ describe('PaymentAttemptStatus provider-specific conditional branches', () => {
 
       expectPresent('payment-context-degraded')
       expectAbsent(
-        'payment-wechat-qr-section',
         'payment-redirect-prompt',
         'payment-redirect-manual-link',
         'payment-status-pending'
@@ -165,20 +121,22 @@ describe('PaymentAttemptStatus provider-specific conditional branches', () => {
   })
 
   describe('Countdown expired', () => {
-    it('still renders WeChat QR section when expiresAt is in the past', () => {
+    it('still renders Stripe redirect prompt when expiresAt is in the past', () => {
       render(
         <PaymentAttemptStatus
           status={makeStatusResponse({
             status: 'Pending',
             expiresAt: PAST_EXPIRES,
           })}
-          paymentProvider="wechat"
-          paymentContext={makePaymentContext({ wechatCodeUrl: 'weixin://wxpay/test' })}
+          paymentProvider="stripe"
+          paymentContext={makePaymentContext({
+            stripeCheckoutUrl: 'https://checkout.stripe.com/test',
+          })}
         />
       )
 
-      expectPresent('payment-wechat-qr-section')
-      expectAbsent('payment-redirect-prompt', 'payment-context-degraded', 'payment-status-pending')
+      expectPresent('payment-redirect-prompt')
+      expectAbsent('payment-context-degraded', 'payment-status-pending')
     })
   })
 
@@ -188,7 +146,6 @@ describe('PaymentAttemptStatus provider-specific conditional branches', () => {
 
       expectPresent('payment-status-pending')
       expectAbsent(
-        'payment-wechat-qr-section',
         'payment-redirect-prompt',
         'payment-redirect-manual-link',
         'payment-context-degraded',

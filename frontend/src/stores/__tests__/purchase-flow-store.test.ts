@@ -394,7 +394,7 @@ describe('Purchase Flow Store', () => {
       clearPurchaseState()
 
       // Second attempt
-      setPaymentAttempt('attempt-2', 'Pending', { paymentProvider: 'wechat' }, futureExpiry)
+      setPaymentAttempt('attempt-2', 'Pending', { paymentProvider: 'creem' }, futureExpiry)
       expect(usePurchaseFlowStore.getState().attemptId).toBe('attempt-2')
     })
   })
@@ -450,7 +450,7 @@ describe('Purchase Flow Store', () => {
     it('should handle all payment provider types', () => {
       const { setPurchaseState } = usePurchaseFlowStore.getState()
 
-      const providers = ['wechat', 'stripe', 'creem'] as const
+      const providers = ['stripe', 'creem'] as const
 
       providers.forEach((provider) => {
         setPurchaseState({

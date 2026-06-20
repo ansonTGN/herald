@@ -1,6 +1,5 @@
 import { m } from '@/paraglide/messages'
 import { useEffect, useState, useMemo } from 'react'
-import { QRCodeCanvas } from 'qrcode.react'
 import { type PaymentAttemptStatusResponse, type PaymentContextDto } from '@/lib/api-generated'
 import { Button } from '@/components/ui/button'
 import { AlertCircle, CheckCircle2, Clock, XCircle, RefreshCw, X, ExternalLink } from 'lucide-react'
@@ -142,54 +141,6 @@ export function PaymentAttemptStatus({
   const renderProviderPendingContent = () => {
     if (!paymentContext) {
       return renderDegradedUI()
-    }
-
-    if (paymentProvider === 'wechat' && paymentContext.wechatCodeUrl) {
-      return (
-        <div data-testid="payment-wechat-qr-section" className="space-y-4">
-          <div className="flex items-center gap-3">
-            <Clock className="h-8 w-8 text-green-600" />
-            <div>
-              <h3 className="font-semibold text-lg">{m['points.payment_wechat_title']()}</h3>
-              <p className="text-sm text-muted-foreground">
-                {m['points.payment_wechat_scan_qr']()}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-col items-center space-y-4">
-            <div className="bg-white p-4 rounded-lg border">
-              <QRCodeCanvas
-                value={paymentContext.wechatCodeUrl}
-                size={200}
-                level="M"
-                includeMargin={false}
-                data-testid="wechat-qr-code"
-              />
-            </div>
-            <p className="text-sm font-medium">{m['points.payment_wechat_scan_to_pay']()}</p>
-          </div>
-          {timeRemaining > 0 && (
-            <div className="text-center">
-              <div className="text-sm text-muted-foreground">
-                {m['points.payment_wechat_time_remaining']()}
-              </div>
-              <div className="text-2xl font-mono font-bold">
-                <CountdownTimer formattedTime={formattedTime} variant="primary" />
-              </div>
-            </div>
-          )}
-          <div className="bg-muted rounded-lg p-4 space-y-2">
-            <h4 className="font-medium text-sm">{m['points.payment_wechat_how_to_pay']()}</h4>
-            <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-              <li>{m['points.payment_wechat_step_open']()}</li>
-              <li>{m['points.payment_wechat_step_scan']()}</li>
-              <li>{m['points.payment_wechat_step_scan_code']()}</li>
-              <li>{m['points.payment_wechat_step_confirm']()}</li>
-            </ol>
-          </div>
-          <CancelButton onCancel={onCancel} isCancelling={isCancelling} />
-        </div>
-      )
     }
 
     if (paymentProvider === 'stripe' && paymentContext.stripeCheckoutUrl) {

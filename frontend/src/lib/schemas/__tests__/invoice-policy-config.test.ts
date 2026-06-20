@@ -68,12 +68,11 @@ describe('invoicePolicyConfigSchema', () => {
       providerCapabilities: {
         stripe: { externalInvoiceEnabled: true },
         creem: { externalInvoiceEnabled: true },
-        wechat: { externalInvoiceEnabled: false },
       },
     })
     expect(result.success).toBe(true)
     if (result.success) {
-      expect(Object.keys(result.data.providerCapabilities)).toHaveLength(3)
+      expect(Object.keys(result.data.providerCapabilities)).toHaveLength(2)
     }
   })
 
@@ -100,7 +99,6 @@ describe('getInvoicePolicyDefaults', () => {
     const defaults = getInvoicePolicyDefaults()
     expect(defaults.providerCapabilities.stripe.externalInvoiceEnabled).toBe(true)
     expect(defaults.providerCapabilities.creem.externalInvoiceEnabled).toBe(true)
-    expect(defaults.providerCapabilities.wechat.externalInvoiceEnabled).toBe(false)
     expect(defaults.providerCapabilities.shopify).toBeUndefined()
   })
 
