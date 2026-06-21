@@ -33,11 +33,12 @@ Herald 不维护本地商品目录。你在 Creem Dashboard 创建 Product，拿
 1. 在左侧菜单找到 **Payment Providers**，点击进入
 2. 找到 **Creem**，点击 **Configure**
 3. 填写配置表单：
-   - **Enable Creem**：打开开关
    - **API Key**（必填）：填入在 Creem 后台拿到的 API Key，测试环境用 `ck_test_` 开头的 key
    - **Timeout**（可选）：请求超时时间（秒）
    - **Webhook Secret**（必填）：Webhook 签名验证密钥，创建 Webhook 后获取，见下方
 4. 点击 **Save**
+
+保存有效凭证后 Creem 即启用，没有单独的启用开关。
 
 ### 创建 Creem Webhook
 
@@ -101,7 +102,7 @@ Herald 不会自动知道你在 Creem 创建了什么商品。下一步需要同
 3. 选择支付方 **Creem**
 4. 等待同步完成
 
-同步完成后你会看到从 Creem 拉取的商品列表。每条记录包含 External Product ID 和自动生成的 Entitlement Key（格式为 `creem-{normalized_product_id}`）。
+同步完成后你会看到从 Creem 拉取的商品列表。每条记录包含 External Product ID、自动生成的 Entitlement Key（格式为 `creem-{normalized_product_id}`），以及它默认归属的 Credit Bucket（Realm 的注册接收池）。
 
 因为 Creem 没有 Product metadata，同步只能拉取商品 ID 和基本信息。entitlement_key 和积分策略需要手动配置。
 
@@ -118,6 +119,12 @@ Herald 不会自动知道你在 Creem 创建了什么商品。下一步需要同
    - **Validity Days**：积分有效期（天），0 或不填表示永不过期
    - **Enabled**：是否启用。禁用后 Webhook 仍更新订阅投影，但不触发积分发放
 3. 点击保存
+
+### 归属 Credit Bucket
+
+每条映射必须挂在某个 Credit Bucket 上。同步进来的映射默认挂在本 Realm 的注册接收池 Bucket。如果这个套餐属于某条独立业务线，去 **Credit Buckets** 页面把它挪到对应的 Bucket。
+
+Bucket 决定了两件事：用户购买后积分进哪个池、哪些 Client App 能消费这些积分。Bucket 的概念见[计费架构](billing-overview.md#credit-bucket)。
 
 ## Step 5: 用户支付流程
 

@@ -43,6 +43,7 @@ type ProviderProductSyncServiceImpl = herald_core::domain::billing::ProviderProd
     PostgresBillingRepository,
     PermissionBasedBillingPolicy,
     ConfiguredProviderProductApi,
+    PostgresBillingRepository,
 >;
 
 /// AppState for API handlers

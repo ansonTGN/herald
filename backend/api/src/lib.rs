@@ -239,6 +239,11 @@ pub async fn build_app_state_with_migrations(
         billing_repository.clone(),
         Arc::new(billing_policy),
         provider_product_api,
+        // `PostgresBillingRepository` implements `RegistrationPoolResolver`
+        // (infra/src/billing/postgres_repository.rs). Newly-synced draft
+        // mappings bind to the realm's registration-pool bucket since
+        // `bucket_id` is NOT NULL on `provider_entitlement_mappings`.
+        billing_repository.clone(),
     ));
     info!("Provider product sync service initialized");
 

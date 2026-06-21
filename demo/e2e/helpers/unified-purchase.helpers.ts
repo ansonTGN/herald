@@ -137,7 +137,7 @@ export async function initiatePurchaseFlow(
 /**
  * Verifies redirect prompt or degraded UI for a payment provider.
  * Handles two cases: checkout URL present (redirect prompt) or absent (degraded UI).
- * Clicks cancel button in redirect case to prevent auto-redirect.
+ * Verifies the redirect prompt (with checkout URL) or degraded UI is shown.
  */
 export async function verifyRedirectPromptOrDegraded(
   page: Page,
@@ -161,10 +161,9 @@ export async function verifyRedirectPromptOrDegraded(
 
     const promptText = await redirectPrompt.textContent()
     expect(promptText).toMatch(new RegExp(`${providerName}|Redirecting`, 'i'))
-
-    const cancelButton = page.locator(SELECTORS.paymentProviderUI.cancelButton)
-    await expect(cancelButton).toBeVisible()
-    await cancelButton.click()
+    // Do not cancel here: the redirect is user-initiated (no auto-redirect), and
+    // cancelling would clearPurchaseState() and wipe the persisted attemptId that
+    // the caller verifies afterwards. The pending attempt is cleaned up in afterEach.
   } else {
     const degraded = page.locator(SELECTORS.paymentProviderUI.contextDegraded)
     await expect(degraded).toBeVisible()

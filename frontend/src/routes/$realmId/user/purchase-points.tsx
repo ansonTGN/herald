@@ -6,7 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AlertCircle, ArrowLeft, ArrowRight, Loader2, Check } from 'lucide-react'
 import { createPaymentAttempt, cancelPaymentAttempt } from '@/lib/api-generated'
-import type { PaymentAttemptStatusResponse, OneTimeMappingItem } from '@/lib/api-generated'
+import type {
+  PaymentAttemptStatusResponse,
+  OneTimeMappingItem,
+  PaymentProviderInfo,
+} from '@/lib/api-generated'
 import {
   oneTimeMappingsQueryOptions,
   paymentProvidersQueryOptions,
@@ -33,6 +37,47 @@ export const Route = createFileRoute('/$realmId/user/purchase-points')({
 })
 
 type PurchaseStep = 'packages' | 'payment' | 'processing' | 'complete'
+
+/**
+ * Resolve the concrete mapping id for (entitlementKey, provider). An
+ * entitlement may have one mapping per configured provider; the purchase flow
+ * must submit the mapping whose provider matches the user's payment-method
+ * choice, NOT the originally-clicked card (design §4.2.2: backend rejects a
+ * targetMappingId whose provider does not match the requested paymentProvider).
+ * Returns undefined when no mapping exists for that combination (the product
+ * is not offered through that provider) — the submit button must stay disabled.
+ *
+ * Exported pure function so the intent can be unit-tested without mounting
+ * the Route component.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- exported for unit testing
+export function resolveMappingForProvider(
+  mappings: OneTimeMappingItem[] | undefined,
+  entitlementKey: string | null,
+  provider: string | null
+): string | undefined {
+  if (!mappings || !entitlementKey || !provider) return undefined
+  return mappings.find((m) => m.entitlementKey === entitlementKey && m.paymentProvider === provider)
+    ?.id
+}
+
+/**
+ * Providers that actually have a mapping for the selected entitlement, so the
+ * payment-method picker never offers a provider that cannot fulfill this
+ * product (latent UX bug: picker previously showed all realm providers).
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- exported for unit testing
+export function providersForEntitlement(
+  mappings: OneTimeMappingItem[] | undefined,
+  entitlementKey: string | null,
+  allProviders: PaymentProviderInfo[]
+): PaymentProviderInfo[] {
+  if (!mappings || !entitlementKey) return []
+  const offered = new Set(
+    mappings.filter((m) => m.entitlementKey === entitlementKey).map((m) => m.paymentProvider)
+  )
+  return allProviders.filter((p) => offered.has(p.platform))
+}
 
 function MappingCard({
   mapping,
@@ -106,7 +151,12 @@ function PurchasePointsPage() {
 
   // Purchase flow state
   const [currentStep, setCurrentStep] = useState<PurchaseStep>('packages')
-  const [selectedMappingId, setSelectedMappingId] = useState<string | null>(null)
+  // One entitlement may have multiple mappings (one per payment provider). The
+  // clicked card tracks the entitlement identity; the concrete mappingId is
+  // resolved at submit from (selectedEntitlementKey, selectedProvider) so the
+  // provider picker can never submit a cross-provider mismatch (design §4.2.2,
+  // §4.4.2). See resolveMappingForProvider below.
+  const [selectedEntitlementKey, setSelectedEntitlementKey] = useState<string | null>(null)
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null)
 
   // Store actions
@@ -210,22 +260,13 @@ function PurchasePointsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paymentStatus])
 
-  // Auto-redirect for Stripe/Creem checkout
-  const checkoutUrl =
-    paymentAttempt.paymentContext?.stripeCheckoutUrl ||
-    paymentAttempt.paymentContext?.creemCheckoutUrl ||
-    null
-
-  useEffect(() => {
-    if (currentStep !== 'processing' || !checkoutUrl) return
-
-    const timer = setTimeout(() => {
-      window.location.href = checkoutUrl
-    }, 3000)
-
-    return () => clearTimeout(timer)
-  }, [currentStep, checkoutUrl])
-
+  // Stripe/Creem redirect is user-initiated from the redirect prompt rendered
+  // by <PaymentAttemptStatus /> (design §4.4.2 "跳转提示"). We deliberately do
+  // NOT auto-navigate: an automatic window.location change would leave this
+  // origin before persisted purchase state (cas-purchase-flow in localStorage)
+  // can be verified, and contradicts the design's redirect-prompt UX. The
+  // prompt's manual link (`payment-redirect-manual-link`) opens the checkout
+  // URL in a new tab when the user chooses to proceed.
   // Create payment attempt mutation
   const createPaymentMutation = useMutation({
     mutationFn: async (data: { mappingId: string; provider: string }) => {
@@ -246,7 +287,7 @@ function PurchasePointsPage() {
           realmId,
           userId: user?.id || null,
           targetType: 'entitlement_mapping',
-          targetId: selectedMappingId,
+          targetId: resolvedMappingId ?? null,
           paymentProvider: selectedProvider,
         })
 
@@ -284,13 +325,35 @@ function PurchasePointsPage() {
     },
   })
 
-  const selectedMapping = mappings?.find((m) => m.id === selectedMappingId)
+  const selectedMapping = useMemo(
+    () =>
+      mappings?.find(
+        (m) => m.entitlementKey === selectedEntitlementKey && m.paymentProvider === selectedProvider
+      ),
+    [mappings, selectedEntitlementKey, selectedProvider]
+  )
+
+  // Resolve the concrete mapping id for (selectedEntitlementKey, selectedProvider).
+  const resolvedMappingId = resolveMappingForProvider(
+    mappings,
+    selectedEntitlementKey,
+    selectedProvider
+  )
+
+  // Providers that actually offer the selected entitlement (picker filtering).
+  const availableProvidersForEntitlement = useMemo(
+    () => providersForEntitlement(mappings, selectedEntitlementKey, providers || []),
+    [mappings, selectedEntitlementKey, providers]
+  )
 
   const handleNextStep = () => {
-    if (currentStep === 'packages' && selectedMappingId) {
+    if (currentStep === 'packages' && selectedEntitlementKey) {
       setCurrentStep('payment')
-    } else if (currentStep === 'payment' && selectedMappingId && selectedProvider) {
-      createPaymentMutation.mutate({ mappingId: selectedMappingId, provider: selectedProvider })
+    } else if (currentStep === 'payment' && resolvedMappingId && selectedProvider) {
+      createPaymentMutation.mutate({
+        mappingId: resolvedMappingId,
+        provider: selectedProvider,
+      })
     }
   }
 
@@ -313,8 +376,11 @@ function PurchasePointsPage() {
   }
 
   const isNextDisabled = () => {
-    if (currentStep === 'packages') return !selectedMappingId
-    if (currentStep === 'payment') return !selectedProvider || createPaymentMutation.isPending
+    if (currentStep === 'packages') return !selectedEntitlementKey
+    // Submit is only enabled when (entitlement, provider) resolves to a real
+    // mapping; a provider with no mapping for this entitlement stays disabled.
+    if (currentStep === 'payment')
+      return !resolvedMappingId || !selectedProvider || createPaymentMutation.isPending
     return true
   }
 
@@ -362,8 +428,13 @@ function PurchasePointsPage() {
                         <MappingCard
                           key={mapping.id}
                           mapping={mapping}
-                          isSelected={selectedMappingId === mapping.id}
-                          onSelect={() => setSelectedMappingId(mapping.id)}
+                          isSelected={selectedEntitlementKey === mapping.entitlementKey}
+                          onSelect={() => {
+                            setSelectedEntitlementKey(mapping.entitlementKey)
+                            // Reset any stale provider choice; the picker is
+                            // re-filtered to the new entitlement's providers.
+                            setSelectedProvider(null)
+                          }}
                         />
                       ))}
                     </div>
@@ -394,7 +465,7 @@ function PurchasePointsPage() {
               </p>
             </div>
             <PaymentMethodSelector
-              availableProviders={providers || []}
+              availableProviders={availableProvidersForEntitlement}
               selectedProvider={selectedProvider}
               onSelect={setSelectedProvider}
               disabled={providersLoading || createPaymentMutation.isPending}

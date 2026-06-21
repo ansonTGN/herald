@@ -18,7 +18,7 @@
 - [架构](architecture.md) — 项目结构和技术选型
 - [配置](configuration.md) — 配置项说明
 - [部署](deployment.md) — Docker 生产环境部署
-- [计费架构](billing-overview.md) — Entitlement Mapping、订阅投影、Metadata 契约、积分策略
+- [计费架构](billing-overview.md) — Credit Bucket、Entitlement Mapping、订阅投影、Metadata 契约、积分策略
 - [Stripe 支付对接](billing-stripe-payment.md) — Stripe 支付方配置和 Webhook 处理
 - [Creem 支付对接](billing-creem-payment.md) — Creem 支付方配置和 Webhook 处理
 - [发票管理](billing-invoice.md) — 发票创建、开票、PDF 生成

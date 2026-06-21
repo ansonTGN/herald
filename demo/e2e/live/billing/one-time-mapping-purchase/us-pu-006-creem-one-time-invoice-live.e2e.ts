@@ -111,13 +111,260 @@ const CVC_SELECTORS: Array<(root: SearchRoot) => Locator> = [
   (root) => root.locator('input[inputmode="numeric"]').nth(2),
 ]
 
+/**
+ * Fill a short, non-auto-advancing field (expiry, CVC) and verify the digits
+ * actually landed. For these fields the masked formatter renders the value as
+ * visible text inside the element, so we verify via `inputValue()` digits-length
+ * AND require the formatter to have produced at least `minLength` visible digits.
+ *
+ * NOTE: This is NOT safe for the card number. See `fillCardNumberWithBrandCheck`.
+ */
 async function fillWithVerification(locator: Locator, value: string, minLength = 1): Promise<void> {
+  const expectedDigits = value.replace(/\D/g, '')
+
+  await locator.scrollIntoViewIfNeeded()
+  await locator.click({ delay: 50 }).catch(() => {})
   await locator.fill(value)
-  const filledValue = await locator.inputValue().catch(() => '')
-  if (!filledValue || filledValue.replace(/\s/g, '').length < minLength) {
-    await locator.clear().catch(() => {})
-    await locator.pressSequentially(value, { delay: 50 })
+
+  const digitsLanded = async (): Promise<number> => {
+    const filled = await locator.inputValue().catch(() => '')
+    return filled.replace(/\D/g, '').length
   }
+
+  if ((await digitsLanded()) >= Math.min(expectedDigits.length, minLength)) return
+
+  // Retry with character-by-character typing in case fill() didn't trigger formatter.
+  await locator.clear().catch(() => {})
+  await locator.click({ delay: 50 }).catch(() => {})
+  await locator.pressSequentially(value, { delay: 60 })
+
+  const finalDigits = await digitsLanded()
+  if (finalDigits < Math.min(expectedDigits.length, minLength)) {
+    const raw = await locator.inputValue().catch(() => '<unavailable>')
+    throw new Error(
+      `Checkout input not filled reliably. Expected ${expectedDigits.length} digits, ` +
+        `got ${finalDigits} (raw value: "${raw}"). Payment cannot succeed without ` +
+        `a complete value (AGENTS.md Rule 9 / Rule 12).`,
+    )
+  }
+}
+
+/**
+ * True when the card-number input has been ACCEPTED by Creem's formatter.
+ *
+ * Creem's masked card-number input ships with a placeholder string
+ * "1234 1234 1234 1234" (16 digits) that `inputValue()` echoes even when the
+ * field is visually empty, so digit-length checks are unreliable and have
+ * previously fooled the test into clicking "Pay" with an empty card.
+ *
+ * The ONLY reliable signals are:
+ *   - POSITIVE: the brand indicator element's text has actually moved off
+ *     "Select card brand (optional)" (re-queried, NOT via getByRole('option')
+ *     which doesn't match Creem's custom widget).
+ *   - PREFERRED NEGATIVE: the "Your card number is incomplete." alert is no
+ *     longer visible anywhere on the page/frames. This is present iff the card
+ *     is incomplete, so its absence is the cleanest signal — used as primary.
+ *
+ * NOTE: A naive `getByText(/\bvisa\b/i)` check was removed because it matched
+ * the ALWAYS-PRESENT support paragraph "Supported cards include Visa,
+ * Mastercard, UnionPay, American Express, and Discover." — which produced a
+ * false positive and let the test click "Pay" on an empty card.
+ */
+async function isCardBrandDetected(page: Page): Promise<boolean> {
+  const roots: SearchRoot[] = [page, ...page.frames()]
+
+  // PRIMARY (preferred negative): the "card number is incomplete" alert must be
+  // gone. This text appears iff the card is incomplete, so absence == accepted.
+  for (const root of roots) {
+    const incompleteVisible = await root
+      .getByText(/card number is incomplete/i)
+      .first()
+      .isVisible({ timeout: 200 })
+      .catch(() => false)
+    if (incompleteVisible) {
+      return false
+    }
+  }
+
+  // SECONDARY (positive): the brand indicator element must no longer show the
+  // "Select card brand (optional)" placeholder text. We re-query the text node
+  // directly rather than getByRole('option'), which does not match Creem's
+  // custom (non-ARIA) brand widget and previously caused false positives.
+  for (const root of roots) {
+    const selectBrandText = await root
+      .getByText(/select card brand/i)
+      .first()
+      .isVisible({ timeout: 200 })
+      .catch(() => false)
+    if (!selectBrandText) {
+      // No "incomplete" alert AND no "Select card brand" placeholder → card
+      // was accepted and brand auto-detected.
+      return true
+    }
+  }
+
+  return false
+}
+
+/**
+ * Locate the Frame that actually hosts the Creem card-number input.
+ *
+ * Creem renders the payment fields inside a same-origin iframe (snapshot
+ * evidence: iframe `e38`). `page.keyboard.type()` dispatches at the top-frame
+ * level and never reaches the iframe, and `locator.fill()` on a top-frame
+ * locator likewise doesn't reach the iframe input. We must find the Frame that
+ * contains a "Card number" textbox and operate on a locator scoped to THAT frame.
+ *
+ * Probing strategy: ask each non-main frame for its "Card number" textbox via
+ * the frame's own locator API. (Frame exposes no `accessibility.snapshot()` —
+ * that is a Page-only API.) Creem exposes a labelled a11y node ("Card number")
+ * on the iframe, so getByRole('textbox', { name: /card number/i }) resolves it.
+ */
+async function findCardNumberFrame(page: Page): Promise<Frame | null> {
+  const frames = page.frames()
+  for (const frame of frames) {
+    if (frame === page.mainFrame()) continue
+    try {
+      const count = await frame.getByRole('textbox', { name: /card number/i }).count()
+      if (count > 0) return frame
+    } catch {
+      // Frame may be detached or cross-origin; skip.
+    }
+  }
+  return null
+}
+
+/**
+ * Fill the Creem card-number input and verify the card was ACCEPTED via the
+ * brand-detection signal, NOT via `inputValue()` (which echoes the field's
+ * 16-digit placeholder and would otherwise fool the test into proceeding with
+ * an empty card — see isCardBrandDetected).
+ *
+ * The card input lives inside an iframe; `locator.fill()` and top-frame
+ * `page.keyboard.type()` do NOT reach it (confirmed: at submit time the card
+ * field was empty with placeholder + "incomplete" alert). Strategy (in order,
+ * retrying until brand is detected):
+ *   1. Resolve the iframe hosting the "Card number" textbox via a11y probing,
+ *      then on THAT frame's locator: `click()` to focus, then
+ *      `pressSequentially(digits, { delay: 80 })` — per-keystroke events slow
+ *      enough for Creem's masked formatter.
+ *   2. Top-frame fallback: original `cardLocator.fill()` then
+ *      `page.keyboard.type()` (kept for paths where the card input is NOT
+ *      inside an iframe).
+ *
+ * After typing we click the Expiry field. This both (a) triggers Creem's
+ * card-number validation (which is what flips the "incomplete" alert off and
+ * updates the brand indicator) and (b) prepares to fill expiry next.
+ *
+ * Fails loud if the brand is still not detected after all attempts: clicking
+ * "Pay" with an empty card guarantees Creem rejects the payment, no webhook is
+ * delivered, and the invoice is never created — the test would then time out
+ * waiting for an invoice that can never arrive (AGENTS.md Rule 9 / Rule 12).
+ */
+async function fillCardNumberWithBrandCheck(
+  page: Page,
+  cardLocator: Locator,
+  cardNumber: string,
+  expiryLocator: Locator,
+): Promise<void> {
+  const tryFillIframe = async (): Promise<boolean> => {
+    const cardFrame = await findCardNumberFrame(page)
+    if (!cardFrame) {
+      console.log('[card-fill] no iframe hosting "Card number" textbox found; skipping iframe attempt')
+      return false
+    }
+    try {
+      const frameCard = cardFrame
+        .getByRole('textbox', { name: /card number/i })
+        .first()
+      await frameCard.scrollIntoViewIfNeeded()
+      await frameCard.click({ delay: 50 })
+      await frameCard.pressSequentially(cardNumber, { delay: 80 })
+    } catch (e) {
+      console.log(`[card-fill] iframe pressSequentially errored: ${(e as Error).message}`)
+      return false
+    }
+
+    // Click the Expiry field (in the same iframe OR top frame) to move focus
+    // out of the card field. Creem validates on blur, which is what clears
+    // the "incomplete" alert and updates the brand indicator.
+    try {
+      await expiryLocator.click({ delay: 50 }).catch(() => {})
+    } catch {
+      // ignore — focus shift is best-effort
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    return await isCardBrandDetected(page)
+  }
+
+  const tryFillTopFrame = async (): Promise<boolean> => {
+    try {
+      await cardLocator.scrollIntoViewIfNeeded()
+      await cardLocator.click({ delay: 50 }).catch(() => {})
+      await page.keyboard.type(cardNumber, { delay: 80 })
+    } catch (e) {
+      console.log(`[card-fill] top-frame keyboard.type errored: ${(e as Error).message}`)
+      return false
+    }
+
+    try {
+      await expiryLocator.click({ delay: 50 }).catch(() => {})
+    } catch {
+      // ignore
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    return await isCardBrandDetected(page)
+  }
+
+  // Attempt 1: iframe-resolved locator with per-keystroke typing.
+  if (await tryFillIframe()) {
+    console.log('[card-fill] iframe pressSequentially succeeded (brand detected)')
+    return
+  }
+
+  console.log('[card-fill] iframe attempt did not land; retrying via top-frame locator.fill + keyboard.type')
+  // Clear partial state before retry.
+  await cardLocator.clear().catch(() => {})
+  await cardLocator.click({ delay: 50 }).catch(() => {})
+  await page.keyboard.press('Control+A').catch(() => {})
+  await page.keyboard.press('Delete').catch(() => {})
+
+  // Attempt 2: top-frame fallback.
+  if (await tryFillTopFrame()) {
+    console.log('[card-fill] top-frame fallback succeeded (brand detected)')
+    return
+  }
+
+  // Diagnostic dump: card input value + frames present, plus screenshot for
+  // the next iteration to confirm visually.
+  const cardValue = await cardLocator.inputValue().catch(() => '<unavailable>')
+  console.log(`[card-fill] card input value after attempts: "${cardValue}"`)
+  try {
+    await page.screenshot({
+      path: 'test-results/creem-onetime-card-after-fill.png',
+      fullPage: true,
+    })
+  } catch {
+    // non-fatal
+  }
+
+  const framesDump = page
+    .frames()
+    .map((f) => `- name="${f.name()}" url="${f.url()}"`)
+    .join('\n')
+
+  // Final loud failure: do NOT proceed to "Pay".
+  throw new Error(
+    'Creem iframe card-number input could not be populated. ' +
+      `Final card inputValue="${cardValue}". ` +
+      'Brand indicator still reads "Select card brand (optional)" / ' +
+      '"Your card number is incomplete." alert still visible. ' +
+      'Frames present:\n' +
+      (framesDump || '- <none>') +
+      '\nAborting BEFORE clicking "Pay": an empty card guarantees the checkout ' +
+      'fails, no webhook is sent, and no invoice is ever created ' +
+      '(AGENTS.md Rule 9 / Rule 12).',
+  )
 }
 
 /** Find or create a client app and return its UUID. */
@@ -316,11 +563,18 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
       await page.waitForSelector('body', { timeout: 15000 }).catch(() => {})
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
 
-      // Fill test card
+      // Fill test card. The card number is verified via brand detection, NOT
+      // inputValue() — Creem's placeholder "1234 1234 1234 1234" fools digit
+      // checks and previously caused the test to click "Pay" on an empty card.
+      //
+      // The card input lives inside Creem's iframe. fillCardNumberWithBrandCheck
+      // needs the expiry locator up-front so it can click it after typing —
+      // moving focus out of the card field is what triggers Creem's validation
+      // (clearing the "incomplete" alert and updating the brand indicator).
       const cardInput = await findVisibleCheckoutControl(page, 'card number', CARD_NUMBER_SELECTORS)
-      await fillWithVerification(cardInput, '4242424242424242', 16)
-
       const expiryInput = await findVisibleCheckoutControl(page, 'expiry', EXPIRY_SELECTORS)
+      await fillCardNumberWithBrandCheck(page, cardInput, '4242424242424242', expiryInput)
+
       await fillWithVerification(expiryInput, '1230', 4)
 
       const cvcInput = await findVisibleCheckoutControl(page, 'CVC', CVC_SELECTORS)
@@ -331,7 +585,9 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
         await fullNameInput.fill('Herald Demo User')
       }
 
-      await page.screenshot({ path: 'test-results/creem-onetime-checkout-filled.png' })
+      // Pre-submit screenshot for visual confirmation that the card number
+      // actually landed (brand should read "Visa", not "Select card brand").
+      await page.screenshot({ path: 'test-results/creem-onetime-checkout-filled.png', fullPage: true })
 
       // Submit payment
       const submitButton = page.getByRole('button', { name: /pay/i }).last()

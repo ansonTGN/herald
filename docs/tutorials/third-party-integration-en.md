@@ -585,6 +585,8 @@ println!("Balance after: {}", result.balance_after);
 
 Always pass an `idempotency_key`. On network timeout retries, the same key prevents double-charging. When using an ordinary client app API key, `client_app_id` must be that key's bound client app.
 
+Which points pool gets debited is decided by Herald from the `client_app_id`: it finds every Credit Bucket pool that covers this client app and debits across them, nearest-expiry first. Your backend does not deal with buckets, but be aware that the same user may have different available balances under different client apps, depending on which buckets cover each app. See [billing architecture](billing-overview.md#credit-bucket) for the bucket model.
+
 ## 6. Subscription System
 
 Query a client app's subscription status:

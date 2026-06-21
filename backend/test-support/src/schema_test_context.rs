@@ -189,6 +189,10 @@ impl AsyncTestContext for SchemaTestContext {
                         pool_with_schema.clone(),
                     ),
                 ),
+                // PostgresBillingRepository implements RegistrationPoolResolver;
+                // newly-synced draft mappings bind to the realm's
+                // registration-pool bucket (bucket_id is NOT NULL).
+                billing_repository.clone(),
             ),
         );
 

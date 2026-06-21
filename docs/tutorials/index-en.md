@@ -18,7 +18,7 @@ Developers with Rust or React experience, in their first two weeks on the projec
 - [Architecture](architecture-en.md) — Project structure and technology choices
 - [Configuration](configuration-en.md) — Configuration reference
 - [Deployment](deployment-en.md) — Docker production deployment
-- [Billing Architecture](billing-overview.md) — Entitlement Mapping, subscription projection, metadata contract, points policy
+- [Billing Architecture](billing-overview.md) — Credit Bucket, Entitlement Mapping, subscription projection, metadata contract, points policy
 - [Stripe Integration](billing-stripe-payment.md) — Stripe payment provider setup and webhook handling
 - [Creem Integration](billing-creem-payment.md) — Creem payment provider setup and webhook handling
 - [Invoice Management](billing-invoice.md) — Invoice creation, issuance, and PDF generation

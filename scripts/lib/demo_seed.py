@@ -47,6 +47,7 @@ import json
 import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from . import docker
@@ -739,23 +740,60 @@ END $$;
     _info(logger, "[OK] Subscription data ready for realm-001")
 
 
+def _load_demo_env() -> dict[str, str]:
+    """Parse KEY=VALUE lines from demo/.env.demo (no interpolation).
+
+    Used to inject real provider credentials into the seeded realm_config so
+    live E2E tests can reach the real Stripe/Creem APIs. Returns an empty dict
+    when the file is absent; callers fall back to placeholder values.
+    """
+    env_path = Path(__file__).resolve().parent.parent.parent / "demo" / ".env.demo"
+    env: dict[str, str] = {}
+    if not env_path.exists():
+        return env
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        env[key.strip()] = value.strip()
+    return env
+
+
+def _sql_escape(value: str) -> str:
+    """Escape a string literal for safe use inside single-quoted SQL."""
+    return value.replace("'", "''")
+
+
 def _ensure_points_package_payment_demo_data(logger: "Logger | None") -> None:
     """Ensure payment provider config and one-time entitlement mappings for demo."""
     _info(logger, "Ensuring payment provider config and one-time mappings demo data...")
     points_bucket = _default_bucket_id(POINTS_REALM_ID)
     admin_bucket = _default_bucket_id(ADMIN_REALM)
+    # Live provider credentials: prefer real keys from demo/.env.demo so live
+    # E2E tests hit the real Stripe/Creem APIs; fall back to placeholder values
+    # when .env.demo is absent or a key is empty (default demo behaviour).
+    env = _load_demo_env()
+    stripe_api_key = _sql_escape(env.get("STRIPE_SECRET_KEY") or "sk_test_demo_points_package")
+    stripe_publishable_key = _sql_escape(env.get("STRIPE_PUBLISHABLE_KEY") or "pk_test_demo_points_package")
+    stripe_webhook_secret = _sql_escape(env.get("STRIPE_WEBHOOK_SECRET") or "whsec_demo_points_package")
+    creem_api_key = _sql_escape(env.get("CREEM_API_KEY") or "creem_test_demo_points_package")
+    creem_webhook_secret = _sql_escape(env.get("CREEM_WEBHOOK_SECRET") or "creem_whsec_demo_points_package")
+    # Creem checkouts require a real product_id (unlike Stripe, which uses inline price_data),
+    # so the Creem one-time mapping must reference the real Creem product from .env.demo.
+    creem_product_id = _sql_escape(env.get("CREEM_PRODUCT_ID") or "prod_creem_onetime_500")
     sql = f"""
 DO $$
 BEGIN
     INSERT INTO realm_config (
         realm_id, config_type, config_key, config_value, is_secret, enabled, metadata
     ) VALUES
-        ('{POINTS_REALM_ID}', 'stripe', 'api_key', 'sk_test_demo_points_package', true, true, '{{}}'::jsonb),
-        ('{POINTS_REALM_ID}', 'stripe', 'publishable_key', 'pk_test_demo_points_package', false, true, '{{}}'::jsonb),
-        ('{POINTS_REALM_ID}', 'stripe', 'webhook_secret', 'whsec_demo_points_package', true, true, '{{}}'::jsonb),
+        ('{POINTS_REALM_ID}', 'stripe', 'api_key', '{stripe_api_key}', true, true, '{{}}'::jsonb),
+        ('{POINTS_REALM_ID}', 'stripe', 'publishable_key', '{stripe_publishable_key}', false, true, '{{}}'::jsonb),
+        ('{POINTS_REALM_ID}', 'stripe', 'webhook_secret', '{stripe_webhook_secret}', true, true, '{{}}'::jsonb),
         ('{POINTS_REALM_ID}', 'stripe', 'timeout', '30', false, true, '{{}}'::jsonb),
-        ('{POINTS_REALM_ID}', 'creem', 'api_key', 'creem_test_demo_points_package', true, true, '{{}}'::jsonb),
-        ('{POINTS_REALM_ID}', 'creem', 'webhook_secret', 'creem_whsec_demo_points_package', true, true, '{{}}'::jsonb),
+        ('{POINTS_REALM_ID}', 'creem', 'api_key', '{creem_api_key}', true, true, '{{}}'::jsonb),
+        ('{POINTS_REALM_ID}', 'creem', 'webhook_secret', '{creem_webhook_secret}', true, true, '{{}}'::jsonb),
         ('{ADMIN_REALM}', 'stripe', 'api_key', 'sk_test_demo_admin_points_package', true, true, '{{}}'::jsonb),
         ('{ADMIN_REALM}', 'stripe', 'publishable_key', 'pk_test_demo_admin_points_package', false, true, '{{}}'::jsonb),
         ('{ADMIN_REALM}', 'stripe', 'webhook_secret', 'whsec_demo_admin_points_package', true, true, '{{}}'::jsonb),
@@ -776,7 +814,7 @@ BEGIN
     ) VALUES
         (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_500',  '{points_bucket}', 'credits-500',  'one_time', 500,  365, TRUE,
          '{{"name": "500 Credits", "price": 500, "currency": "USD"}}'::jsonb),
-        (uuidv7(), '{POINTS_REALM_ID}', 'creem',  'prod_creem_onetime_500',   '{points_bucket}', 'credits-500',  'one_time', 500,  365, TRUE,
+        (uuidv7(), '{POINTS_REALM_ID}', 'creem',  '{creem_product_id}',   '{points_bucket}', 'credits-500',  'one_time', 500,  365, TRUE,
          '{{"name": "500 Credits", "price": 500, "currency": "USD"}}'::jsonb),
         (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_1000', '{points_bucket}', 'credits-1000', 'one_time', 1000, 365, TRUE,
          '{{"name": "1000 Credits", "price": 900, "currency": "USD"}}'::jsonb),
