@@ -38,61 +38,13 @@ function MappingCard({
   mapping,
   isSelected,
   onSelect,
-  unassigned = false,
 }: {
   mapping: OneTimeMappingItem
   isSelected: boolean
   onSelect: () => void
-  /**
-   * `true` when the mapping has no attributed credit bucket. Such cards are
-   * rendered disabled and are NOT purchasable (design §4.4.2 / §4.2.3).
-   * The backend resolves `payment_attempt.bucket_id` from `mapping.bucket_id`,
-   * so an unassigned mapping cannot complete a purchase.
-   */
-  unassigned?: boolean
 }) {
   const priceInfo = extractProviderPrice(mapping.providerProductInfo)
   const hasProvider = !!mapping.paymentProvider
-
-  if (unassigned) {
-    return (
-      <Card
-        className="cursor-not-allowed opacity-60"
-        data-testid={`mapping-card-unassigned-${mapping.id}`}
-        aria-disabled="true"
-      >
-        <CardContent className="p-4">
-          <div className="flex w-full items-center justify-between">
-            <div className="flex-1 space-y-1">
-              <div className="font-medium">{mapping.entitlementKey}</div>
-              {mapping.pointsPerPeriod != null && (
-                <div className="text-sm text-muted-foreground">
-                  {m['points.purchase_mapping_points']({
-                    points: mapping.pointsPerPeriod.toLocaleString(),
-                  })}
-                </div>
-              )}
-              {priceInfo ? (
-                <div className="text-sm font-medium">
-                  {formatInvoiceAmount(priceInfo.amount, priceInfo.currency)}
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">
-                  {m['points.purchase_price_at_checkout']()}
-                </div>
-              )}
-              <div
-                className="text-xs text-muted-foreground"
-                data-testid={`mapping-card-unassigned-hint-${mapping.id}`}
-              >
-                {m['points.purchase_unassigned_hint']()}
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
 
   return (
     <Card
@@ -173,8 +125,8 @@ function PurchasePointsPage() {
   )
 
   // Credit-bucket display names for grouping one-time packs by attributed
-  // bucket (FE-D02 useBuckets; design §4.4.2). A mapping with `bucketId` ==
-  // null/undefined is "unassigned" → rendered disabled, not purchasable.
+  // bucket (FE-D02 useBuckets; design §4.4.2). Under the forbid-null contract
+  // every mapping carries a bucketId, so all packs group under their bucket.
   const { buckets } = useBuckets(realmId)
   const bucketNameById = useMemo(() => {
     const map = new Map<string, string>()
@@ -182,34 +134,24 @@ function PurchasePointsPage() {
     return map
   }, [buckets])
 
-  // Group mappings by attributed bucket, preserving first-seen order; packs
-  // without a bucketId are collected separately as the "unassigned" group.
-  const { assignedGroups, unassignedMappings } = useMemo(() => {
+  // Group mappings by attributed bucket, preserving first-seen order.
+  const assignedGroups = useMemo(() => {
     const orderedBucketIds: string[] = []
     const byBucket = new Map<string, OneTimeMappingItem[]>()
-    const unassigned: OneTimeMappingItem[] = []
     for (const mapping of mappings ?? []) {
-      if (mapping.bucketId) {
-        if (!byBucket.has(mapping.bucketId)) {
-          byBucket.set(mapping.bucketId, [])
-          orderedBucketIds.push(mapping.bucketId)
-        }
-        byBucket.get(mapping.bucketId)!.push(mapping)
-      } else {
-        unassigned.push(mapping)
+      const bucketId = mapping.bucketId
+      if (!byBucket.has(bucketId)) {
+        byBucket.set(bucketId, [])
+        orderedBucketIds.push(bucketId)
       }
+      byBucket.get(bucketId)!.push(mapping)
     }
-    return {
-      assignedGroups: orderedBucketIds.map((id) => ({
-        bucketId: id,
-        name: bucketNameById.get(id) ?? id,
-        mappings: byBucket.get(id)!,
-      })),
-      unassignedMappings: unassigned,
-    }
+    return orderedBucketIds.map((id) => ({
+      bucketId: id,
+      name: bucketNameById.get(id) ?? id,
+      mappings: byBucket.get(id)!,
+    }))
   }, [mappings, bucketNameById])
-
-  const hasPurchasableMappings = assignedGroups.some((g) => g.mappings.length > 0)
 
   // Poll payment status if attempt exists
   const paymentStatusQuery = useQuery({
@@ -427,40 +369,6 @@ function PurchasePointsPage() {
                     </div>
                   </div>
                 ))}
-
-                {unassignedMappings.length > 0 && (
-                  <div className="space-y-3" data-testid="mapping-group-unassigned">
-                    <h3
-                      className="text-lg font-semibold text-muted-foreground"
-                      data-testid="mapping-group-title-unassigned"
-                    >
-                      {m['points.purchase_unassigned_group']()}
-                    </h3>
-                    <div
-                      className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
-                      data-testid="mapping-group-cards-unassigned"
-                    >
-                      {unassignedMappings.map((mapping) => (
-                        <MappingCard
-                          key={mapping.id}
-                          mapping={mapping}
-                          isSelected={false}
-                          onSelect={() => undefined}
-                          unassigned
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {!hasPurchasableMappings && (
-                  <div
-                    className="rounded-lg border border-dashed p-8 text-center text-muted-foreground"
-                    data-testid="purchase-no-purchasable-state"
-                  >
-                    {m['points.purchase_no_purchasable_mappings']()}
-                  </div>
-                )}
               </div>
             )}
           </div>

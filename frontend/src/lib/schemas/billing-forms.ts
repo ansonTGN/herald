@@ -23,13 +23,9 @@ export const entitlementMappingUpdateSchema = z.object({
 
   maxPeriods: z.number().int().min(1).optional().nullable(),
 
-  // Bound Credit Bucket (design §4.2.1). Triple-state at the PATCH boundary:
-  //   undefined  -> leave unchanged (omit from body)
-  //   null       -> clear (unassign)
-  //   "<uuid>"   -> set/reassign
-  // The toggle-enabled path (MappingRow) omits this to preserve attribution;
-  // the detail dialog always supplies the full intended value.
-  bucketId: z.string().nullable().optional(),
+  // Bound Credit Bucket is NOT settable via this form: the PATCH handler
+  // preserves the existing bucket_id (assignment is owned by the Credit
+  // Bucket directory page). The detail dialog shows it read-only.
 })
 
 export type EntitlementMappingUpdateFormData = z.infer<typeof entitlementMappingUpdateSchema>
@@ -45,7 +41,6 @@ export function getEntitlementMappingUpdateDefaults(
     validityDays: null,
     grantOnSubscribe: false,
     maxPeriods: null,
-    bucketId: null,
     ...config,
   } as EntitlementMappingUpdateFormData
 }

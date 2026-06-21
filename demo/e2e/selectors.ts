@@ -784,15 +784,6 @@ export const SELECTORS = {
     firstCard: () => '[data-testid^="mapping-card-"]',
     noProviderHint: '[data-testid="no-provider-hint"]',
     emptyState: '[data-testid="purchase-empty-state"]',
-    // Credit-bucket (credit-bucket US-CB-003/004): mappings with no bucket
-    // assignment render as a disabled "unassigned" card with a hint.
-    unassignedCard: (mappingId: string) =>
-      `[data-testid="mapping-card-unassigned-${mappingId}"]`,
-    unassignedHint: (mappingId: string) =>
-      `[data-testid="mapping-card-unassigned-hint-${mappingId}"]`,
-    // When no mapping is purchasable (all unassigned / no provider), the page
-    // renders a distinct state distinct from the generic empty state.
-    noPurchasableState: '[data-testid="purchase-no-purchasable-state"]',
   },
 
   /**

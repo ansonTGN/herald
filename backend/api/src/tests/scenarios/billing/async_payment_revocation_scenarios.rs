@@ -197,16 +197,26 @@ mod tests {
         entitlement_key: &str,
     ) -> Uuid {
         let subscription_id = Uuid::now_v7();
+
+        // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
+        // legacy test bucket so the pre-created row satisfies the constraint.
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
+        )
+        .await;
+
         sqlx::query(
             "INSERT INTO subscription
                 (id, realm_id, user_id, external_subscription_id, external_product_id,
                  payment_provider, status, entitlement_key, external_price_id,
                  provider_metadata, synced_at, current_period_start, current_period_end,
-                 cancel_at_period_end, client_app_id, cancel_at, created_at, updated_at)
+                 cancel_at_period_end, client_app_id, cancel_at, created_at, updated_at,
+                 bucket_id)
              VALUES ($1, $2, $3, $4, $5,
                      $6, $7, $8, NULL,
                      NULL, NOW(), NOW(), NOW() + INTERVAL '30 days',
-                     false, $9, NULL, NOW(), NOW())",
+                     false, $9, NULL, NOW(), NOW(), $10)",
         )
         .bind(subscription_id)
         .bind(realm_id)
@@ -217,6 +227,7 @@ mod tests {
         .bind(status)
         .bind(entitlement_key)
         .bind(client_app_id)
+        .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to pre-create subscription");

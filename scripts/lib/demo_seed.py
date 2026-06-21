@@ -113,11 +113,6 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         for realm_id in (POINTS_REALM_ID, ADMIN_REALM):
             _ensure_realm_bucket_directory(realm_id, logger)
         _ensure_points_package_payment_demo_data(logger)
-        # Leave ≥1 one-time mapping intentionally unassigned (bucket_id = NULL)
-        # so DE-D02/DE-D04 can exercise the "unassigned -> not purchasable"
-        # path. Must run AFTER _ensure_points_package_payment_demo_data, which
-        # otherwise blanket-assigns every mapping to the primary pool.
-        _unassign_intentionally_null_mappings(logger)
 
         # Ensure purchase history demo data (payment_attempts for the purchase-records page)
         _info(logger, "Ensuring purchase history demo data...")
@@ -679,7 +674,7 @@ BEGIN
     INSERT INTO subscription (
         id, realm_id, user_id, external_subscription_id, external_product_id,
         payment_provider, status, entitlement_key,
-        current_period_start, current_period_end, client_app_id
+        current_period_start, current_period_end, client_app_id, bucket_id
     ) VALUES (
         uuidv7(),
         '{POINTS_REALM_ID}',
@@ -691,7 +686,8 @@ BEGIN
         'professional',
         v_test_timestamp - INTERVAL '30 days',
         v_test_timestamp + INTERVAL '30 days',
-        v_client_app_id
+        v_client_app_id,
+        '{bucket_id}'::uuid
     )
     RETURNING id INTO v_subscription_id;
 
@@ -802,97 +798,6 @@ END $$;
 """
     _sql_exec(sql)
     _info(logger, "[OK] Payment provider config and one-time mappings demo data ready")
-
-
-# One-time provider_entitlement_mappings external_product_id values that are
-# intentionally left with bucket_id = NULL so DE-D02/DE-D04 can exercise the
-# "unassigned mapping -> not purchasable" path (design §4.4.2, A8).
-#
-# Keep this list in sync with
-# `demo/e2e/helpers/bucket-seed-ids.ts::INTENTIONALLY_UNASSIGNED_MAPPING_PRODUCTS`.
-#
-# NOTE: `_ensure_points_package_payment_demo_data` blanket-assigns every
-# one-time mapping to the primary pool via ON CONFLICT DO UPDATE; this step
-# runs AFTER it and NULLs the listed mappings back out. Idempotent.
-_INTENTIONALLY_UNASSIGNED_MAPPING_PRODUCTS = (
-    "prod_stripe_onetime_2000",
-)
-
-
-def _unassign_intentionally_null_mappings(logger: "Logger | None") -> None:
-    """Leave select one-time mappings with bucket_id = NULL (US-CB-003 scenario 2).
-
-    The "unassigned mapping -> not purchasable" path (US-CB-003 scenario 2,
-    design §4.4.2) requires at least one enabled one-time mapping whose
-    `bucket_id` is NULL. `_ensure_points_package_payment_demo_data` assigns
-    every seeded mapping to the primary pool; this step re-NULLs the
-    documented subset so the demo state is deterministic across re-seeds.
-
-    Only the POINTS realm is affected — the admin realm's mappings remain
-    assigned (no demo exercises the unassigned path there).
-
-    CONTRACT CONFLICT — surfaced loudly (DE-D06 in-slot seed fix):
-    Backend migration `20260622_require_bucket_id_snapshots.sql` (commit
-    aa6cc2da "refactor(billing): require non-null bucket_id") hardened
-    `provider_entitlement_mappings.bucket_id` to NOT NULL. The DE-D01 seed
-    design pre-dates that commit and assumed the column was nullable (per
-    `.ai/design/credit-bucket.md` §4.3.1 / migration 20260607_product_reduce.sql).
-    The frontend `routes/$realmId/user/purchase-points.tsx` STILL renders an
-    "unassigned mapping" card when `mapping.bucketId` is null/undefined, and
-    DE-D04 asserts on it — so this is a real三方 conflict (backend schema vs
-    frontend UI vs demo seed/tests), NOT a test-code bug.
-
-    Resolution is OUT of the demo/dev slot (cannot modify backend schema or
-    drop the frontend UI path from here). To keep the rest of the demo seed
-    runnable, this step detects the NOT NULL constraint and SKIPS the NULL
-    update with a loud warning instead of failing the whole seed. Effect:
-    every seeded mapping is assigned to primary-pool; the
-    `mapping-card-unassigned-*` UI path is not exercised by the seed, and
-    DE-D04's `US-CB-004 未归属映射不可购买` test will fail at runtime (surfaced
-    in the DE-D06 report as a backend-contract-conflict handoff, not a
-    test-code regression).
-    """
-    nullable = _sql_scalar(
-        """
-        SELECT is_nullable
-        FROM information_schema.columns
-        WHERE table_name = 'provider_entitlement_mappings'
-          AND column_name = 'bucket_id'
-        LIMIT 1;
-        """
-    )
-    if nullable != "YES":
-        _info(
-            logger,
-            "[LOUD] provider_entitlement_mappings.bucket_id is NOT NULL "
-            "(migration 20260622_require_bucket_id_snapshots.sql). "
-            "Skipping _unassign_intentionally_null_mappings — "
-            "US-CB-003 scenario 2 (unassigned mapping -> not purchasable) "
-            "cannot be seeded under the current schema. "
-            "This is a backend-contract conflict handed off to the orchestrator "
-            "(backend schema vs frontend purchase-points.tsx unassigned UI vs "
-            "DE-D04 unassigned-card test). All seeded mappings remain assigned "
-            "to primary-pool.",
-        )
-        return
-
-    _info(logger, "Nulling intentionally-unassigned mapping bucket_id rows...")
-    products_sql = ", ".join(
-        f"'{p}'" for p in _INTENTIONALLY_UNASSIGNED_MAPPING_PRODUCTS
-    )
-    _sql_exec(
-        f"""
-        UPDATE provider_entitlement_mappings
-        SET bucket_id = NULL
-        WHERE realm_id = '{POINTS_REALM_ID}'
-          AND external_product_id IN ({products_sql});
-        """
-    )
-    _info(
-        logger,
-        f"[OK] Intentionally-unassigned mappings: "
-        f"{', '.join(_INTENTIONALLY_UNASSIGNED_MAPPING_PRODUCTS)}",
-    )
 
 
 def _ensure_purchase_history_demo_data(logger: "Logger | None") -> None:
@@ -1126,7 +1031,7 @@ BEGIN
     INSERT INTO subscription (
         id, realm_id, external_subscription_id, external_product_id,
         payment_provider, status, entitlement_key,
-        current_period_start, current_period_end, client_app_id
+        current_period_start, current_period_end, client_app_id, bucket_id
     ) VALUES (
         uuidv7(),
         '{ADMIN_REALM}',
@@ -1137,7 +1042,8 @@ BEGIN
         'professional',
         v_test_timestamp - INTERVAL '30 days',
         v_test_timestamp + INTERVAL '30 days',
-        v_client_app_id
+        v_client_app_id,
+        '{bucket_id}'::uuid
     )
     RETURNING id INTO v_subscription_id;
 
@@ -1332,11 +1238,9 @@ def _ensure_credit_buckets(logger: "Logger | None") -> None:
         have a covered-but-empty pool to exercise.
 
     Both buckets bind the existing POINTS_CLIENT_APP_ID client app via
-    `credit_bucket_client_apps` (`ON CONFLICT DO NOTHING`). Existing one-time
-    `provider_entitlement_mappings` rows are assigned to the primary pool,
-    except one intentionally-unassigned mapping (`prod_stripe_onetime_2000`)
-    left with `bucket_id = NULL` so DE-D02/DE-D04 can exercise the
-    "unassigned → not purchasable" path (design §4.4.2, A8).
+    `credit_bucket_client_apps` (`ON CONFLICT DO NOTHING`). All existing
+    one-time `provider_entitlement_mappings` rows are assigned to the primary
+    pool (`bucket_id` is NOT NULL; there is no unassigned path).
 
     Idempotent via `INSERT ... ON CONFLICT (realm_id, bucket_key) DO UPDATE`.
     Bucket ids are resolved at consumption time via `_bucket_id(realm_id, key)`,

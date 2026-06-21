@@ -549,7 +549,7 @@ where
         match source {
             PaymentCompletionSource::InternalApi => Ok(()),
             PaymentCompletionSource::ProviderWebhook { provider }
-                if matches!(provider.as_str(), "stripe" | "creem" | "shopify") =>
+                if matches!(provider.as_str(), "stripe" | "creem") =>
             {
                 Ok(())
             }

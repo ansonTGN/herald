@@ -33,11 +33,6 @@ import {
 import { m } from '@/paraglide/messages'
 import type { EntitlementMappingResponse } from '@/lib/api-generated'
 
-// Sentinel value for the "Unassigned" Select option (clear attribution).
-// Radix Select cannot use null/empty as an item value, so we round-trip
-// through this sentinel and translate back to null on change.
-const BUCKET_NONE_SENTINEL = '__none__'
-
 interface EntitlementMappingDetailDialogProps {
   realmId: string
   mappingId: string | null
@@ -73,9 +68,16 @@ export function EntitlementMappingDetailDialog({
 
   const updateMutation = useUpdateEntitlementMapping(realmId, mappingId ?? '')
 
-  // Admin-facing bucket options (incl. disabled) for the clearable Bucket
-  // Select (design §4.4.1). useBuckets per FE-D02.
+  // Bucket display names for the read-only attribution readout (FE-D02
+  // useBuckets). The PATCH handler ignores bucket_id and preserves the
+  // existing attribution (assignment is owned by the Credit Bucket directory
+  // page), so the bucket is shown read-only here.
   const { buckets } = useBuckets(realmId)
+  const bucketNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const b of buckets) map.set(b.id, b.name)
+    return map
+  }, [buckets])
 
   const formDefaults = useMemo(
     () =>
@@ -93,9 +95,6 @@ export function EntitlementMappingDetailDialog({
             validityDays: mapping.validityDays ?? null,
             grantOnSubscribe: mapping.grantOnSubscribe,
             maxPeriods: mapping.maxPeriods ?? null,
-            // Seed the Select with the current attribution so an untouched
-            // submit re-asserts the same value (idempotent).
-            bucketId: mapping.bucketId ?? null,
           })
         : getEntitlementMappingUpdateDefaults(),
     [mapping]
@@ -222,46 +221,18 @@ export function EntitlementMappingDetailDialog({
                     )}
                   </form.Field>
 
-                  {/* Credit Bucket (design §4.4.1) — clearable Select.
-                      Picking a bucket sets bucketId to its uuid; picking
-                      "Unassigned" sets bucketId to null (clear attribution).
-                      Mirrors the TransactionFilters Select pattern (FE-D06)
-                      but uses a sentinel for the null/clear option since Radix
-                      Select cannot use null/empty as an item value. */}
-                  <form.Field name="bucketId">
-                    {(field) => (
-                      <div className="space-y-2">
-                        <Label htmlFor="mapping-bucket">
-                          {m['billing.mapping_bucket_select_label']()}
-                        </Label>
-                        <Select
-                          value={field.state.value ?? BUCKET_NONE_SENTINEL}
-                          onValueChange={(value) =>
-                            field.handleChange(value === BUCKET_NONE_SENTINEL ? null : value)
-                          }
-                        >
-                          <SelectTrigger
-                            id="mapping-bucket"
-                            data-testid="mapping-detail-bucket-select"
-                          >
-                            <SelectValue
-                              placeholder={m['billing.mapping_bucket_select_placeholder']()}
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={BUCKET_NONE_SENTINEL}>
-                              {m['billing.mapping_bucket_clear']()}
-                            </SelectItem>
-                            {buckets.map((bucket) => (
-                              <SelectItem key={bucket.id} value={bucket.id}>
-                                {bucket.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                  </form.Field>
+                  {/* Credit Bucket — read-only. The PATCH handler preserves the
+                      existing bucket_id and does not expose reassignment
+                      (assignment is owned by the Credit Bucket directory page),
+                      so the attribution is displayed, not edited, here. */}
+                  <div className="space-y-2">
+                    <Label htmlFor="mapping-bucket">
+                      {m['billing.mapping_bucket_select_label']()}
+                    </Label>
+                    <p className="text-sm" data-testid="mapping-detail-bucket" id="mapping-bucket">
+                      {bucketNameById.get(mapping.bucketId) ?? mapping.bucketId}
+                    </p>
+                  </div>
 
                   {/* Subscription Points Per Period */}
                   <form.Field name="pointsPerPeriod">

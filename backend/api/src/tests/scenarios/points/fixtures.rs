@@ -331,13 +331,18 @@ pub async fn create_test_subscription(
     .await
     .expect("Failed to create client app for subscription");
 
+    // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
+    // legacy test bucket so the direct-SQL insert satisfies the constraint.
+    let bucket_id =
+        crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(pool, realm_id).await;
+
     sqlx::query(
         "INSERT INTO subscription
             (id, realm_id, external_subscription_id, external_product_id, payment_provider,
              status, entitlement_key, current_period_start, current_period_end,
-             cancel_at_period_end, client_app_id, created_at, updated_at)
+             cancel_at_period_end, client_app_id, created_at, updated_at, bucket_id)
          VALUES ($1, $2, $3, $4, 'creem', 'active', $5, NOW(), NOW() + INTERVAL '30 days',
-                 false, $6, NOW(), NOW())",
+                 false, $6, NOW(), NOW(), $7)",
     )
     .bind(subscription_id)
     .bind(realm_id)
@@ -345,6 +350,7 @@ pub async fn create_test_subscription(
     .bind("test_product_id")
     .bind(mapping_id.to_string())
     .bind(client_app_id)
+    .bind(bucket_id)
     .execute(pool)
     .await
     .expect("Failed to create subscription");

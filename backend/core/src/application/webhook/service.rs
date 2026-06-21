@@ -20,7 +20,7 @@ pub struct WebhookContext {
     pub realm_id: String,
     /// External event ID from payment provider
     pub external_event_id: String,
-    /// Payment provider (e.g., "shopify", "stripe", "creem")
+    /// Payment provider (e.g., "stripe", "creem")
     pub payment_provider: String,
     /// Event type (e.g., "subscription_contracts/create")
     pub event_type: String,
@@ -140,7 +140,7 @@ impl WebhookService {
     ///
     /// # Arguments
     /// * `external_event_id` - The external event ID from payment provider
-    /// * `payment_provider` - The payment provider (e.g., "shopify", "stripe", "creem")
+    /// * `payment_provider` - The payment provider (e.g., "stripe", "creem")
     ///
     /// # Returns
     /// * `true` if the event has been processed

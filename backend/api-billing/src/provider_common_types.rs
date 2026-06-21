@@ -1,6 +1,6 @@
 //! Shared types for payment-provider configuration handlers.
 //!
-//! These types are reused across the Stripe / WeChat / Creem provider
+//! These types are reused across the Stripe / Creem provider
 //! configuration endpoints (validation error envelopes, generic error
 //! responses, and the multi-provider directory listing). They were
 //! previously colocated with the (now-removed) Shopify config handlers.

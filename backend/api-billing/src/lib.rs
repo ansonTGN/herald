@@ -117,7 +117,7 @@ pub mod webhook_handlers;
         crate::types_history::SubscriptionHistoryEventWithUser,
         crate::types_history::SubscriptionSummary,
         crate::types_history::UserInfo,
-        // Provider common types (shared across Stripe/WeChat/Creem)
+        // Provider common types (shared across Stripe/Creem)
         crate::provider_common_types::PaymentProvidersResponse,
         crate::provider_common_types::PaymentProviderInfo,
         crate::provider_common_types::ValidationErrorResponse,

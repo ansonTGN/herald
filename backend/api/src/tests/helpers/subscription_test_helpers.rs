@@ -12,6 +12,7 @@
 
 #![allow(dead_code)]
 
+use crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm;
 use crate::tests::schema_test_context::SchemaTestContext;
 use sqlx::Row;
 use uuid::Uuid;
@@ -33,15 +34,19 @@ pub async fn create_test_subscription_with_entitlement_key(
     let external_subscription_id = format!("sub_test_{}", subscription_id);
     let external_product_id = format!("prod_{}", entitlement_key);
 
+    // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
+    // legacy test bucket so direct-SQL inserts satisfy the constraint.
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+
     sqlx::query(
         "INSERT INTO subscription
             (id, realm_id, client_app_id, status, entitlement_key, external_price_id,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end,
-             cancel_at_period_end, created_at, updated_at)
+             cancel_at_period_end, created_at, updated_at, bucket_id)
          VALUES ($1, $2, $3, $4, $5, $6,
                  $7, $8, $9, NOW(), NOW() + INTERVAL '30 days',
-                 false, NOW(), NOW())",
+                 false, NOW(), NOW(), $10)",
     )
     .bind(subscription_id)
     .bind(realm_id)
@@ -52,6 +57,7 @@ pub async fn create_test_subscription_with_entitlement_key(
     .bind(&external_subscription_id)
     .bind(&external_product_id)
     .bind(payment_provider)
+    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create test subscription with entitlement_key");
@@ -77,17 +83,21 @@ pub async fn create_test_subscription_full(
     let external_subscription_id = format!("sub_test_{}", subscription_id);
     let external_product_id = format!("prod_{}", entitlement_key);
 
+    // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
+    // legacy test bucket so direct-SQL inserts satisfy the constraint.
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+
     sqlx::query(
         "INSERT INTO subscription
             (id, realm_id, client_app_id, status, entitlement_key, external_price_id,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end,
              provider_metadata, synced_at,
-             cancel_at_period_end, created_at, updated_at)
+             cancel_at_period_end, created_at, updated_at, bucket_id)
          VALUES ($1, $2, $3, $4, $5, $6,
                  $7, $8, $9, NOW(), NOW() + INTERVAL '30 days',
                  $10, NOW(),
-                 false, NOW(), NOW())",
+                 false, NOW(), NOW(), $11)",
     )
     .bind(subscription_id)
     .bind(realm_id)
@@ -99,6 +109,7 @@ pub async fn create_test_subscription_full(
     .bind(&external_product_id)
     .bind(payment_provider)
     .bind(provider_metadata)
+    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create full test subscription");

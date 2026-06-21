@@ -173,9 +173,8 @@ async fn insert_subscription_in_bucket(
 // Scenario 1 (REMOVED): mapping with bucket_id=NULL rejects purchase creation
 // =============================================================================
 //
-// The `require non-null bucket_id` migration (20260622_require_bucket_id_snapshots.sql)
-// set `provider_entitlement_mappings.bucket_id` NOT NULL and deleted any
-// pre-existing NULL rows. A bucket-less mapping can therefore no longer exist,
+// `provider_entitlement_mappings.bucket_id` is NOT NULL in the base schema
+// (`20260607_product_reduce.sql`). A bucket-less mapping can therefore no longer exist,
 // so the purchase-time runtime check — CoreError::EntitlementMappingNotAttachedToBucket
 // (design A8, §5.3) — was removed from `resolve_target`. The invariant this
 // scenario guarded ("a mapping without a credit bucket cannot be purchased") is

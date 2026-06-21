@@ -237,51 +237,6 @@ pub enum ConfigType {
     /// ```
     Stripe,
 
-    /// Shopify 支付提供商配置
-    ///
-    /// Valid config_key values:
-    /// - `shop_domain`: Shop 域名（非敏感）
-    /// - `admin_access_token`: Admin API token（敏感）
-    /// - `storefront_access_token`: Storefront API token（敏感）
-    /// - `app_client_secret`: Webhook HMAC 验证密钥（敏感）
-    /// - `api_version`: API 版本（非敏感）
-    /// - `webhook_subscription_mode`: 订阅模式（非敏感）
-    /// - `timeout`: HTTP 超时秒数（非敏感）
-    ///
-    /// Example shop domain configuration:
-    /// ```json
-    /// {
-    ///   "config_type": "shopify",
-    ///   "config_key": "shop_domain",
-    ///   "config_value": "demo-store.myshopify.com",
-    ///   "is_secret": false,
-    ///   "enabled": true
-    /// }
-    /// ```
-    ///
-    /// Example admin access token configuration:
-    /// ```json
-    /// {
-    ///   "config_type": "shopify",
-    ///   "config_key": "admin_access_token",
-    ///   "config_value": "shpat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    ///   "is_secret": true,
-    ///   "enabled": true
-    /// }
-    /// ```
-    ///
-    /// Example app client secret configuration:
-    /// ```json
-    /// {
-    ///   "config_type": "shopify",
-    ///   "config_key": "app_client_secret",
-    ///   "config_value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    ///   "is_secret": true,
-    ///   "enabled": true
-    /// }
-    /// ```
-    Shopify,
-
     /// Email provider configuration
     ///
     /// Valid config_key values:
@@ -328,9 +283,6 @@ pub enum ConfigType {
     /// ```
     Email,
 
-    /// WeChat 支付提供商配置
-    Wechat,
-
     /// Invoice policy configuration
     ///
     /// Valid config_key values:
@@ -364,8 +316,6 @@ impl ConfigType {
             "totp_key" => ConfigType::TotpKey,
             "creem" => ConfigType::Creem,
             "stripe" => ConfigType::Stripe,
-            "shopify" => ConfigType::Shopify,
-            "wechat" => ConfigType::Wechat,
             "email" => ConfigType::Email,
             "invoice_policy" => ConfigType::InvoicePolicy,
             _ => return Err(format!("Invalid config type: {}", s)),
@@ -383,8 +333,6 @@ impl From<ConfigType> for String {
             ConfigType::TotpKey => "totp_key".to_string(),
             ConfigType::Creem => "creem".to_string(),
             ConfigType::Stripe => "stripe".to_string(),
-            ConfigType::Shopify => "shopify".to_string(),
-            ConfigType::Wechat => "wechat".to_string(),
             ConfigType::Email => "email".to_string(),
             ConfigType::InvoicePolicy => "invoice_policy".to_string(),
         }
@@ -400,8 +348,6 @@ impl AsRef<str> for ConfigType {
             ConfigType::TotpKey => "totp_key",
             ConfigType::Creem => "creem",
             ConfigType::Stripe => "stripe",
-            ConfigType::Shopify => "shopify",
-            ConfigType::Wechat => "wechat",
             ConfigType::Email => "email",
             ConfigType::InvoicePolicy => "invoice_policy",
         }

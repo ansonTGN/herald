@@ -223,14 +223,22 @@ pub async fn create_third_party_test_subscription(
 ) -> String {
     let subscription_id = Uuid::now_v7();
 
+    // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
+    // legacy test bucket so the direct-SQL insert satisfies the constraint.
+    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+    )
+    .await;
+
     // Note: external_product_id is required by the schema but not used for third-party API tests
     sqlx::query(
         r#"
         INSERT INTO subscription
             (id, realm_id, external_subscription_id, external_product_id, payment_provider,
              client_app_id, status, entitlement_key, current_period_start, current_period_end,
-             created_at, updated_at)
-        VALUES ($1, $2, $3, $4, 'creem', $5, $6, $7, $8, $9, $10, $10)
+             created_at, updated_at, bucket_id)
+        VALUES ($1, $2, $3, $4, 'creem', $5, $6, $7, $8, $9, $10, $10, $11)
         "#,
     )
     .bind(subscription_id)
@@ -243,6 +251,7 @@ pub async fn create_third_party_test_subscription(
     .bind(Utc::now())
     .bind(Utc::now() + Duration::days(30))
     .bind(Utc::now())
+    .bind(bucket_id)
     .execute(&ctx._app_state.pool)
     .await
     .expect("Failed to create subscription");

@@ -1679,12 +1679,6 @@ impl BillingRepository for PostgresBillingRepository {
         let row = sqlx::query(
             r#"
             WITH configured_providers AS (
-                SELECT 'shopify'
-                WHERE EXISTS (
-                    SELECT 1 FROM realm_config
-                    WHERE realm_id = $1 AND config_type = 'shopify' AND enabled = true
-                )
-                UNION ALL
                 SELECT 'stripe'
                 WHERE EXISTS (
                     SELECT 1 FROM realm_config

@@ -12,14 +12,14 @@ pub struct PaymentAttempt {
     pub id: Uuid,
     pub realm_id: String,
     pub user_id: Uuid,
-    pub payment_provider: String, // "wechat", "stripe", "creem"
+    pub payment_provider: String, // "stripe", "creem"
     pub target_type: PurchasableTarget,
     pub target_id: Uuid,
     pub bucket_id: Uuid,
     pub amount: i64,
     pub currency: String,
     pub status: PaymentAttemptStatus,
-    pub provider_reference: Option<String>, // out_trade_no for Wechat, checkout session ID for Stripe/Creem
+    pub provider_reference: Option<String>, // checkout session ID for Stripe/Creem
     pub provider_status: Option<String>,    // Raw status from provider
     pub metadata: Option<serde_json::Value>,
     pub expires_at: DateTime<Utc>,

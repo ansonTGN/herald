@@ -61,7 +61,7 @@ CREATE TABLE points_package_payment_providers (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT uq_package_provider UNIQUE (points_package_id, payment_provider),
-    CONSTRAINT chk_payment_provider CHECK (payment_provider IN ('wechat', 'stripe', 'creem')),
+    CONSTRAINT chk_payment_provider CHECK (payment_provider IN ('stripe', 'creem')),
     CONSTRAINT fk_package_providers_package
         FOREIGN KEY (points_package_id)
         REFERENCES points_packages(id)
@@ -79,7 +79,7 @@ CREATE INDEX idx_package_providers_provider ON points_package_payment_providers(
 -- Comments for documentation
 COMMENT ON TABLE points_package_payment_providers IS 'Payment provider availability mappings for points packages';
 COMMENT ON COLUMN points_package_payment_providers.points_package_id IS 'Reference to the points package';
-COMMENT ON COLUMN points_package_payment_providers.payment_provider IS 'Payment platform (wechat, stripe, creem)';
+COMMENT ON COLUMN points_package_payment_providers.payment_provider IS 'Payment platform (stripe, creem)';
 COMMENT ON COLUMN points_package_payment_providers.enabled IS 'Whether this package is purchasable via this provider';
 COMMENT ON COLUMN points_package_payment_providers.external_product_id IS 'Product ID on the payment platform (e.g., WeChat product ID)';
 
@@ -96,7 +96,7 @@ CREATE TABLE payment_attempts (
     payment_provider text NOT NULL,
     target_type text NOT NULL,
     target_id uuid NOT NULL,
-    bucket_id uuid REFERENCES credit_buckets(id) ON DELETE RESTRICT,
+    bucket_id uuid NOT NULL REFERENCES credit_buckets(id) ON DELETE RESTRICT,
     amount bigint NOT NULL CHECK(amount > 0),
     currency text NOT NULL,
     status text NOT NULL,
@@ -107,7 +107,7 @@ CREATE TABLE payment_attempts (
     completed_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT chk_payment_attempt_provider CHECK (payment_provider IN ('wechat', 'stripe', 'creem')),
+    CONSTRAINT chk_payment_attempt_provider CHECK (payment_provider IN ('stripe', 'creem')),
     CONSTRAINT chk_target_type CHECK (target_type IN ('subscription_entitlement', 'points_package')),
     CONSTRAINT chk_status CHECK (status IN ('Pending', 'RequiresAction', 'Succeeded', 'Failed', 'Cancelled', 'Expired', 'completed'))
 );
@@ -151,7 +151,7 @@ CREATE TABLE points_package_purchases (
     points_transaction_id uuid,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT chk_purchase_provider CHECK (payment_provider IN ('wechat', 'stripe', 'creem'))
+    CONSTRAINT chk_purchase_provider CHECK (payment_provider IN ('stripe', 'creem'))
 );
 
 -- Index for querying user's purchase history (most recent first)

@@ -483,6 +483,21 @@ mod tests {
 
         setup_stripe_config(ctx, &realm_id, "sk_test_key", webhook_secret).await;
 
+        // Checkout.completed eagerly resolves the routing bucket from the
+        // entitlement mapping (subscription.bucket_id is NOT NULL), so seed an
+        // enabled mapping bound to the realm's test bucket for this key.
+        setup_test_entitlement_mapping_for_webhook(
+            ctx,
+            &realm_id,
+            "stripe",
+            &format!("prod_stripe_{}", entitlement_key),
+            entitlement_key,
+            1000,
+            true,
+            true,
+        )
+        .await;
+
         // Send checkout.session.completed with all herald_* metadata
         let payload = build_stripe_checkout_completed_with_herald_metadata(
             &event_id,
@@ -602,6 +617,21 @@ mod tests {
         let event_id = generate_test_event_id();
 
         setup_stripe_config(ctx, &realm_id, "sk_test_key", webhook_secret).await;
+
+        // Checkout.completed eagerly resolves the routing bucket from the
+        // entitlement mapping (subscription.bucket_id is NOT NULL), so seed an
+        // enabled mapping bound to the realm's test bucket for this key.
+        setup_test_entitlement_mapping_for_webhook(
+            ctx,
+            &realm_id,
+            "stripe",
+            &format!("prod_stripe_{}", entitlement_key),
+            entitlement_key,
+            1000,
+            true,
+            true,
+        )
+        .await;
 
         // Send checkout without herald_realm_id
         let payload = build_stripe_checkout_missing_realm_id(

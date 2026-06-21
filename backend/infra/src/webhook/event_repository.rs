@@ -55,7 +55,7 @@ impl WebhookEventRepository {
     /// * `tx` - The database transaction to use
     /// * `realm_id` - The realm ID
     /// * `external_event_id` - The external event ID from payment provider
-    /// * `payment_provider` - The payment provider (e.g., "shopify", "stripe", "creem")
+    /// * `payment_provider` - The payment provider (e.g., "stripe", "creem")
     /// * `event_type` - The event type (e.g., "subscription_contracts/create")
     /// * `payload` - The event payload as JSON
     ///
@@ -175,7 +175,7 @@ impl WebhookEventRepository {
     ///
     /// # Arguments
     /// * `external_event_id` - The external event ID from payment provider
-    /// * `payment_provider` - The payment provider (e.g., "shopify", "stripe", "creem")
+    /// * `payment_provider` - The payment provider (e.g., "stripe", "creem")
     ///
     /// # Returns
     /// * `Some(PaymentEvent)` if the event exists
@@ -246,7 +246,7 @@ impl WebhookEventRepository {
     ///
     /// # Arguments
     /// * `external_event_id` - The external event ID from payment provider
-    /// * `payment_provider` - The payment provider (e.g., "shopify", "stripe", "creem")
+    /// * `payment_provider` - The payment provider (e.g., "stripe", "creem")
     ///
     /// # Returns
     /// * `true` if the event has been processed
