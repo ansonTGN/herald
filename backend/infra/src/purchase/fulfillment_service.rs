@@ -118,7 +118,7 @@ where
             status: SubscriptionStatus::Active,
             entitlement_key: entitlement_key.clone(),
             external_price_id: mapping.external_price_id.clone(),
-            bucket_id: Some(bucket_id),
+            bucket_id,
             provider_metadata: None,
             synced_at: Some(now),
             current_period_start: Some(now),

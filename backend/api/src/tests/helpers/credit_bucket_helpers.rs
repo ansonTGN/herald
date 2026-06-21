@@ -285,26 +285,30 @@ pub async fn detach_mapping_from_bucket(pool: &PgPool, mapping_id: Uuid) {
     .expect("Failed to detach mapping from bucket");
 }
 
-/// Read `subscription.bucket_id` for a subscription; returns None if the row
-/// does not exist or the column is NULL.
+/// Read `subscription.bucket_id` for a subscription. The column is NOT NULL
+/// since the eager-binding migration (design §5.5 / A8: `bucket_id` is frozen
+/// at subscription creation from the entitlement mapping), so this returns a
+/// flat `Uuid`. Panics if the row does not exist (a missing subscription row
+/// in these scenarios is always a test-setup bug, not a runtime state).
 ///
-/// Used to assert the first-fulfillment snapshot freeze (design A8) and the
-/// unresolved-bucket fail-loud precondition.
-pub async fn read_subscription_bucket(pool: &PgPool, subscription_id: Uuid) -> Option<Uuid> {
-    sqlx::query_scalar::<_, Option<Uuid>>("SELECT bucket_id FROM subscription WHERE id = $1")
+/// Used to assert the first-fulfillment snapshot freeze (design A8) and that
+/// lifecycle events stay bound to the original Bucket.
+pub async fn read_subscription_bucket(pool: &PgPool, subscription_id: Uuid) -> Uuid {
+    sqlx::query_scalar::<_, Uuid>("SELECT bucket_id FROM subscription WHERE id = $1")
         .bind(subscription_id)
         .fetch_optional(pool)
         .await
         .expect("Failed to read subscription.bucket_id")
-        .flatten()
+        .expect("subscription row disappeared — test-setup bug")
 }
 
-/// Force-set `subscription.bucket_id` to NULL (or to a specific Bucket) to
-/// simulate a data-integrity breach for the fail-loud scenarios. Passing
-/// `target = None` clears the column.
-pub async fn set_subscription_bucket(pool: &PgPool, subscription_id: Uuid, target: Option<Uuid>) {
+/// Force-set `subscription.bucket_id` to a specific Bucket. The column is NOT
+/// NULL (eager binding — design §5.5 / A8), so callers must pass a real
+/// `bucket_id`. Kept for scenarios that need to re-bind a subscription to a
+/// different Bucket after creation.
+pub async fn set_subscription_bucket(pool: &PgPool, subscription_id: Uuid, bucket_id: Uuid) {
     sqlx::query("UPDATE subscription SET bucket_id = $1, updated_at = NOW() WHERE id = $2")
-        .bind(target)
+        .bind(bucket_id)
         .bind(subscription_id)
         .execute(pool)
         .await

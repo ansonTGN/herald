@@ -48,6 +48,7 @@ use crate::tests::helpers::credit_bucket_helpers::{
     CreditBucketOpts, admin_grant_to_bucket, auth_user_get_via_api, create_test_credit_bucket,
     grant_points_to_bucket, seed_transaction_on_bucket,
 };
+use crate::tests::helpers::{create_admin_session_with_user, grant_points_view_role};
 use crate::tests::scenarios::points::fixtures::create_test_user;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::http::StatusCode;
@@ -661,5 +662,161 @@ async fn admin_wallets_cross_tenant_with_user_id(ctx: &mut TestContext) {
         Some(90),
         "user_b bucketTotal must equal her grant: {:?}",
         row_b
+    );
+}
+
+// =============================================================================
+// Scenario 5 (Gap #2 regression): points.view-only user sees ONLY own wallets
+// =============================================================================
+//
+// Existing user_wallets_* scenarios all authenticate via realm-admin (which
+// carries points.manage), so they never exercised the points.view-ONLY path —
+// which is exactly why the original Gap #2 (service gated on can_manage_points)
+// 403'd real end-users undetected. This scenario closes that blind spot:
+//   - A points.view-only (non-admin) caller MUST get 200 (view-gated, not
+//     manage-gated) and MUST see only its own wallet rows.
+//   - `?search=<other-user>` MUST NOT leak the other user's rows (the service
+//     strips `search` and hard-scopes `user_id` to the caller for non-managers).
+//   - `crossBucketTotal` is the caller's OWN sum, not the realm-wide total.
+// Contrast with `admin_wallets_cross_tenant_with_user_id` (points.manage sees
+// every user's rows).
+//
+/// User Story: US-CB-005 — a normal end-user viewing their own bucketed balance.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn points_view_only_user_sees_only_own_wallets(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let pool = ctx.app_state.pool.clone();
+
+    // A second user whose wallet MUST NOT leak to the viewer.
+    let other_user = create_test_user(&pool, &realm_id, "cb_t05_view_only_other@example.com").await;
+
+    // The viewer: clean user + session, granted ONLY points.view (no manage).
+    let (viewer_token, viewer_id_str) =
+        create_admin_session_with_user(ctx, "cb_t05_view_only@example.com", 1800).await;
+    let viewer_id = Uuid::parse_str(&viewer_id_str).expect("viewer user_id must parse as UUID");
+    grant_points_view_role(ctx, &viewer_id_str).await;
+
+    // One shared bucket; both users hold a wallet in it with distinct amounts.
+    let shared_bucket = create_test_credit_bucket(
+        &pool,
+        &realm_id,
+        CreditBucketOpts {
+            name: Some("Shared Bucket (view-only)".into()),
+            bucket_key: Some(format!("shared-vo-{}", Uuid::now_v7())),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let viewer_amount: i64 = 50;
+    let other_amount: i64 = 777; // sentinel: must NEVER appear in the viewer's response
+    admin_grant_to_bucket(
+        ctx,
+        &realm_id,
+        viewer_id,
+        shared_bucket,
+        viewer_amount,
+        None,
+    )
+    .await;
+    admin_grant_to_bucket(
+        ctx,
+        &realm_id,
+        other_user,
+        shared_bucket,
+        other_amount,
+        None,
+    )
+    .await;
+
+    // --- (1) Baseline: viewer lists wallets → 200 + own-only rows. ----------
+    let (status, body) = auth_user_get_via_api(
+        ctx,
+        &format!("/api/points/{}/wallets", realm_id),
+        "",
+        &viewer_token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "points.view-only user must list wallets (Gap #2): status={:?} body={:?}",
+        status,
+        body
+    );
+
+    let items = items_array(&body).expect("viewer wallets response must contain items[]");
+
+    // DATA ISOLATION (the core assertion): every row belongs to the viewer,
+    // never the other user.
+    for row in items {
+        let row_user = row
+            .get("userId")
+            .and_then(|v| v.as_str())
+            .expect("row must carry userId");
+        assert_eq!(
+            row_user,
+            viewer_id_str.as_str(),
+            "DATA ISOLATION (Gap #2): points.view-only user must never see another \
+             user's wallet row: row={:?}",
+            row
+        );
+    }
+
+    // The viewer's own bucket total is intact; crossBucketTotal is the viewer's
+    // OWN sum (self-scoped), NOT the realm-wide total (which would include other).
+    let viewer_row = find_row_by_bucket(items, &shared_bucket.to_string())
+        .expect("viewer must see its own shared-bucket row");
+    assert_eq!(
+        viewer_row.get("bucketTotal").and_then(|v| v.as_i64()),
+        Some(viewer_amount),
+        "viewer's own bucketTotal must equal its grant: row={:?}",
+        viewer_row
+    );
+    assert_eq!(
+        cross_bucket_total(&body),
+        Some(viewer_amount),
+        "self-scoped crossBucketTotal must be the viewer's own sum ({}), not the \
+         realm-wide sum ({}): body={:?}",
+        viewer_amount,
+        viewer_amount + other_amount,
+        body
+    );
+
+    // --- (2) Negative: ?search=<other-user-uuid> must NOT leak other_user. --
+    // search is stripped server-side for non-managers, so this call is identical
+    // to (1): own-only rows, viewer's own total.
+    let (status2, body2) = auth_user_get_via_api(
+        ctx,
+        &format!("/api/points/{}/wallets", realm_id),
+        &format!("search={}", other_user),
+        &viewer_token,
+    )
+    .await;
+    assert_eq!(
+        status2,
+        StatusCode::OK,
+        "search-of-other-user must still 200 (search stripped for non-managers): body={:?}",
+        body2
+    );
+    let items2 = items_array(&body2).expect("search response must contain items[]");
+    for row in items2 {
+        let row_user = row
+            .get("userId")
+            .and_then(|v| v.as_str())
+            .expect("row must carry userId");
+        assert_eq!(
+            row_user,
+            viewer_id_str.as_str(),
+            "DATA ISOLATION: search=<other-user> must not leak other user's row: row={:?}",
+            row
+        );
+    }
+    assert_eq!(
+        cross_bucket_total(&body2),
+        Some(viewer_amount),
+        "search=<other-user> must yield the same self-scoped total (search ignored): body={:?}",
+        body2
     );
 }

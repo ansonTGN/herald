@@ -303,7 +303,7 @@ mod tests {
             status: SubscriptionStatus::Active,
             entitlement_key: entitlement_key.to_string(),
             external_price_id: None,
-            bucket_id: None,
+            bucket_id: Uuid::now_v7(),
             provider_metadata: None,
             synced_at: None,
             current_period_start: None,

@@ -434,6 +434,10 @@ impl PostgresPointsRepository {
         realm_id: &str,
         filters: &WalletFilters,
     ) -> Result<Option<sea_orm::Select<points_wallet::Entity>>, CoreError> {
+        if let Some(user_id) = filters.user_id {
+            query = query.filter(points_wallet::Column::UserId.eq(user_id));
+        }
+
         if let Some(status) = &filters.status {
             query = query.filter(points_wallet::Column::Status.eq(status.clone()));
         }

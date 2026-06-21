@@ -118,16 +118,20 @@ where
         Ok(account.into())
     }
 
-    /// List all accounts in a realm (admin only)
+    /// List wallets in a realm. `points.manage` holders see all users' wallets;
+    /// `points.view`-only callers are hard-scoped to their own (mirrors
+    /// `list_transactions`).
     pub async fn list_wallets(
         &self,
         identity: Identity,
         realm_id: &str,
         filters: WalletFilters,
     ) -> Result<Paginated<PointsWallet>, CoreError> {
-        // Check manage permissions
+        // View gate (handler also checks points.view; this is the domain
+        // defense-in-depth). can_view_points(_, None) is true for a points.view-only
+        // user viewing their own data and for points.manage holders.
         ensure_policy(
-            self.policy.can_manage_points(identity.clone()).await,
+            self.policy.can_view_points(identity.clone(), None).await,
             "Insufficient permissions to list wallets",
         )?;
 
@@ -136,6 +140,22 @@ where
             return Err(CoreError::Forbidden(
                 "Access denied: cannot access points from a different realm".to_string(),
             ));
+        }
+
+        // Only points managers list across users; points.view alone is scoped to self.
+        // HARD-SCOPE non-managers to their own wallets:
+        //   - `user_id` is server-injected (NOT a query param in ListWalletsQuery),
+        //     so the client cannot set or override it.
+        //   - `search` is the only client field that can target another user; we drop
+        //     it so the ONLY user binding on the query is `user_id = caller`.
+        // Remaining filters (bucket_id/status/paging) only narrow within the caller's
+        // own rows. Mirrors list_transactions below, with explicit search stripping.
+        let can_view_all = self.policy.can_manage_points(identity.clone()).await;
+        if !can_view_all && let Ok(current_user_id) = identity.user_id().parse::<Uuid>() {
+            let mut restricted = filters;
+            restricted.user_id = Some(current_user_id);
+            restricted.search = None;
+            return self.repository.list_wallets(realm_id, restricted).await;
         }
 
         self.repository.list_wallets(realm_id, filters).await

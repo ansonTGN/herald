@@ -21,22 +21,6 @@ use crate::points::{
 const IDEMPOTENCY_KEY_SUBSCRIPTION_PAID: &str = "sub_paid";
 const ERROR_ENTITLEMENT_NO_GRANT: &str = "Entitlement does not grant points on subscribe";
 
-/// Resolve the routing Bucket for a subscription lifecycle event.
-///
-/// Per design §5.5 / A8: every subscription grant/revoke routes to
-/// `subscription.bucket_id`. A subscription without a bound Bucket is a
-/// data-integrity error and must fail loud (`SubscriptionBucketNotResolved`)
-/// rather than silently fall back to any implicit pool.
-///
-/// This is extracted as a pure helper so the fail-loud rule has a single,
-/// directly testable source of truth shared by all subscription handlers.
-pub fn resolve_subscription_bucket(
-    subscription_id: Uuid,
-    bucket_id: Option<Uuid>,
-) -> Result<Uuid, CoreError> {
-    bucket_id.ok_or(CoreError::SubscriptionBucketNotResolved { subscription_id })
-}
-
 /// Cancellation mode for subscriptions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CancelMode {
@@ -159,22 +143,16 @@ where
     /// Logs the downgrade event but does NOT revoke any points.
     /// Users keep their existing points for the current period; future renewals
     /// (next-period `grant_schedule`) will use the new entitlement and route to
-    /// the same `subscription.bucket_id`.
-    ///
-    /// Per design §5.5 / A8: `bucket_id` is the resolved `subscription.bucket_id`.
-    /// `None` means the subscription has no bound Bucket and must fail loud
-    /// (`SubscriptionBucketNotResolved`).
+    /// the same `subscription.bucket_id` (bound eagerly at creation, non-null).
     pub async fn handle_subscription_downgrade(
         &self,
         user_id: Uuid,
         subscription_id: Uuid,
-        bucket_id: Option<Uuid>,
+        bucket_id: Uuid,
         realm_id: &str,
         old_entitlement_key: &str,
         new_entitlement_key: &str,
     ) -> Result<(), CoreError> {
-        let bucket_id = resolve_subscription_bucket(subscription_id, bucket_id)?;
-
         // Validate that both entitlements exist
         let _old_mapping = self
             .repo
@@ -206,15 +184,13 @@ where
     /// Creates a credit ledger for subscription points grant based on entitlement_key.
     /// The ledger will expire at the end of the billing period.
     ///
-    /// Per design §5.5 / A8: the grant routes to `subscription.bucket_id`. The
-    /// caller supplies the resolved subscription's `bucket_id`; `None` means the
-    /// subscription has no bound Bucket and must fail loud
-    /// (`SubscriptionBucketNotResolved`) rather than fall back to an implicit pool.
+    /// The grant routes to `subscription.bucket_id`, bound eagerly at subscription
+    /// creation (non-null). The caller supplies the resolved subscription's `bucket_id`.
     pub async fn handle_subscription_paid(
         &self,
         user_id: Uuid,
         subscription_id: Uuid,
-        bucket_id: Option<Uuid>,
+        bucket_id: Uuid,
         realm_id: &str,
         entitlement_key: &str,
         is_renewal: bool,
@@ -292,14 +268,6 @@ where
                     .await;
             }
         };
-        // Mapping exists and wants to grant points — now resolve the routing
-        // bucket fail-loud. A subscription without a bound Bucket is a
-        // data-integrity error (`SubscriptionBucketNotResolved`); it must NOT
-        // silently route to an implicit pool. This runs after the
-        // mapping/skip checks above so an absent mapping still surfaces as
-        // `EntitlementMappingNotFound` (graceful skip), not as a bucket error.
-        let bucket_id = resolve_subscription_bucket(subscription_id, bucket_id)?;
-
         let source_type = if is_renewal {
             CreditSourceType::SubscriptionRenewal
         } else {
@@ -477,37 +445,5 @@ where
                 Ok(output)
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A subscription without a bound Bucket must fail loud rather than route the
-    /// grant/revoke to an implicit pool (design §5.5 / A8). This encodes WHY the
-    /// rule matters: a None bucket is a data-integrity breach that must surface
-    /// as `SubscriptionBucketNotResolved` (carrying the offending subscription_id),
-    /// not be silently swallowed into the wrong pool.
-    #[test]
-    fn resolve_subscription_bucket_fails_loud_when_none() {
-        let subscription_id = Uuid::now_v7();
-        let err = resolve_subscription_bucket(subscription_id, None).unwrap_err();
-        match err {
-            CoreError::SubscriptionBucketNotResolved {
-                subscription_id: sid,
-            } => {
-                assert_eq!(sid, subscription_id);
-            }
-            other => panic!("expected SubscriptionBucketNotResolved, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn resolve_subscription_bucket_passes_through_when_some() {
-        let subscription_id = Uuid::now_v7();
-        let bucket_id = Uuid::now_v7();
-        let resolved = resolve_subscription_bucket(subscription_id, Some(bucket_id)).unwrap();
-        assert_eq!(resolved, bucket_id);
     }
 }

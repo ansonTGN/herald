@@ -166,6 +166,20 @@ pub enum CreditBucketError {
         holders_with_balance: i64,
     },
 
+    /// Update refused: the PUT's `entitlement_mapping_ids` would remove one or
+    /// more mappings currently attached to this bucket. `provider_entitlement_mappings.
+    /// bucket_id` is NOT NULL (commit `aa6cc2da`) and there is no default bucket
+    /// (design A4), so a detached mapping has no legal home — removal is rejected.
+    /// To move a mapping out, assign it to another bucket via that bucket's PUT.
+    /// HTTP 400 `bucket_orphan_mapping`.
+    #[error(
+        "bucket_orphan_mapping: removing mappings {orphan_mapping_ids:?} from bucket {bucket_id} would leave them unassigned (bucket_id is NOT NULL)"
+    )]
+    BucketOrphanMapping {
+        bucket_id: Uuid,
+        orphan_mapping_ids: Vec<Uuid>,
+    },
+
     /// Transparent passthrough for non-structured errors (not-found, DB errors).
     /// Handlers map this back to the wrapped `CoreError` for status selection.
     #[error(transparent)]
@@ -181,6 +195,12 @@ impl From<CreditBucketError> for CoreError {
             CreditBucketError::BucketKeyDuplicate { realm_id: _ } => {
                 CoreError::BadRequest(err.to_string())
             }
+            // BucketOrphanMapping is a 400 (bad request), not a 409 conflict —
+            // must precede the `other` catch-all which maps to Conflict.
+            CreditBucketError::BucketOrphanMapping {
+                bucket_id: _,
+                orphan_mapping_ids: _,
+            } => CoreError::BadRequest(err.to_string()),
             // Preserve the structured message; handlers that need the structured
             // body should match on CreditBucketError directly before converting.
             other => CoreError::Conflict(other.to_string()),

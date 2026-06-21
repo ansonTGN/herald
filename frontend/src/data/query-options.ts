@@ -1132,17 +1132,19 @@ export const creditBucketOverviewQueryOptions = (realmId: string) =>
  * Wallets grouped by (bucket_id, user_id) for a realm — `GET /api/points/{realmId}/wallets`
  * via the generated `listWallets` SDK (returns `ListWalletsByBucketResponse`).
  *
- * LOUD DEVIATION (backend follow-up): the endpoint is realm-wide and gated only by
- * `points.view`; there is no server-side `userId` filter for the calling user. As a
- * result it over-returns: a normal end-user with `points.view` sees wallet rows for
- * every user in the realm, not just their own.
- *   - FE-D05 (user points page) MUST client-filter `items` by the current `userId`
- *     and recompute that user's cross-bucket total (see `deriveUserPointsView`).
+ * Backend scoping (Gap #2 fix): the endpoint is `points.view`-gated, and the service
+ * hard-scopes the result to the caller's identity.
+ *   - `points.view`-only callers receive ONLY their own wallet rows (server-injected
+ *     `user_id`; the client cannot target another user — `search` is stripped
+ *     server-side for non-managers).
+ *   - `points.manage` holders receive the full realm-wide (cross-user) set.
+ *   - FE-D05 (user points page) still client-filters `items` by the current `userId`
+ *     via `deriveUserPointsView` — now a defensive no-op for view-only callers, kept
+ *     because it is harmless and still correct.
  *   - FE-D10 (admin wallets) consumes the full `items` + `crossBucketTotal`.
- *   - The cleaner self-scoped endpoint (`/users/me/points/wallets`) was not landed
- *     by BE-D11/BE-T05; tracked as backend follow-up. Not blocking this phase.
  *
- * `crossBucketTotal` is the realm-wide cross-user total (NOT a per-user total).
+ * For a `points.view`-only caller `crossBucketTotal` is that user's own cross-bucket
+ * total; for a `points.manage` caller it is the realm-wide cross-user total.
  */
 export const walletsByBucketQueryOptions = (realmId: string) =>
   queryOptions({

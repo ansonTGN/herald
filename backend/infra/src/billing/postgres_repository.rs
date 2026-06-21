@@ -510,7 +510,9 @@ impl PostgresBillingRepository {
     }
 
     /// Update a Credit Bucket: base fields + coverage-set replace + attached-mapping
-    /// replace + registration-pool flag toggle (same uniqueness guard as create).
+    /// move-in (NOT NULL `bucket_id`: mappings may join this bucket but not leave it
+    /// via PUT — removal is rejected as `BucketOrphanMapping`) + registration-pool
+    /// flag toggle (same uniqueness guard as create).
     pub async fn update_credit_bucket(
         &self,
         input: UpdateCreditBucketInput,
@@ -585,18 +587,36 @@ impl PostgresBillingRepository {
             })?;
         }
 
-        // Replace attached mappings: detach all previously-attached mappings, then
-        // re-attach the requested set (realm-scoped).
-        sqlx::query(
-            "UPDATE provider_entitlement_mappings SET bucket_id = NULL, updated_at = NOW() \
+        // Attach mappings. `provider_entitlement_mappings.bucket_id` is NOT NULL
+        // (commit `aa6cc2da`) and there is no default bucket (design A4), so a
+        // mapping can only JOIN this bucket (move-in) — it cannot be removed via
+        // this PUT, since detaching would orphan it (no NULL home). Reject any
+        // shrink of the attached set with `bucket_orphan_mapping` (400). The
+        // caller moves a mapping out by assigning it to another bucket's PUT.
+        let current_attached: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM provider_entitlement_mappings \
              WHERE realm_id = $1 AND bucket_id = $2",
         )
         .bind(&input.realm_id)
         .bind(input.bucket_id)
-        .execute(&mut *tx)
+        .fetch_all(&mut *tx)
         .await
-        .map_err(|e| CoreError::DatabaseError(format!("Failed to detach mappings: {}", e)))?;
+        .map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to read attached mappings: {}", e))
+        })?;
+        let orphan_mapping_ids: Vec<Uuid> = current_attached
+            .into_iter()
+            .filter(|id| !input.entitlement_mapping_ids.contains(id))
+            .collect();
+        if !orphan_mapping_ids.is_empty() {
+            return Err(CreditBucketError::BucketOrphanMapping {
+                bucket_id: input.bucket_id,
+                orphan_mapping_ids,
+            });
+        }
 
+        // Re-attach (claim) the requested set for this bucket (realm-scoped).
+        // Success here implies the new attached set == the requested set.
         if !input.entitlement_mapping_ids.is_empty() {
             Self::reattach_mappings_tx(
                 &mut tx,
@@ -678,8 +698,9 @@ impl PostgresBillingRepository {
 
         Self::clear_deletable_bucket_references_tx(&mut tx, bucket_id).await?;
 
-        // Safe to delete after clearing zero-balance points residue and nullable
-        // non-active references. Coverage rows cascade from the bucket.
+        // Safe to delete after clearing zero-balance points residue and the
+        // non-active subscription / payment_attempt / mapping rows still bound
+        // to the bucket. Coverage rows cascade from the bucket.
         sqlx::query("DELETE FROM credit_buckets WHERE realm_id = $1 AND id = $2")
             .bind(realm_id)
             .bind(bucket_id)
@@ -746,8 +767,13 @@ impl PostgresBillingRepository {
                 ))
             })?;
 
+        // bucket_id is NOT NULL on subscription/payment_attempts/mappings, so
+        // clearing references means deleting the rows still bound to this
+        // bucket. Only non-active subscriptions reach here (active ones are
+        // refused above); payment_attempts and mappings are residue that cannot
+        // outlive their bucket under a NOT NULL constraint.
         sqlx::query(
-            "UPDATE subscription SET bucket_id = NULL, updated_at = NOW() \
+            "DELETE FROM subscription \
              WHERE bucket_id = $1 AND status NOT IN \
                    ('active', 'trialing', 'past_due', 'scheduled_cancel', 'dispute')",
         )
@@ -756,32 +782,32 @@ impl PostgresBillingRepository {
         .await
         .map_err(|e| {
             CoreError::DatabaseError(format!(
-                "Failed to clear inactive subscription buckets: {}",
+                "Failed to delete inactive subscriptions bound to bucket: {}",
                 e
             ))
         })?;
 
-        sqlx::query("UPDATE payment_attempts SET bucket_id = NULL WHERE bucket_id = $1")
+        sqlx::query("DELETE FROM payment_attempts WHERE bucket_id = $1")
             .bind(bucket_id)
             .execute(&mut **tx)
             .await
             .map_err(|e| {
-                CoreError::DatabaseError(format!("Failed to clear payment attempt buckets: {}", e))
+                CoreError::DatabaseError(format!(
+                    "Failed to delete payment attempts bound to bucket: {}",
+                    e
+                ))
             })?;
 
-        sqlx::query(
-            "UPDATE provider_entitlement_mappings SET bucket_id = NULL, updated_at = NOW() \
-             WHERE bucket_id = $1",
-        )
-        .bind(bucket_id)
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| {
-            CoreError::DatabaseError(format!(
-                "Failed to clear provider entitlement mapping buckets: {}",
-                e
-            ))
-        })?;
+        sqlx::query("DELETE FROM provider_entitlement_mappings WHERE bucket_id = $1")
+            .bind(bucket_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!(
+                    "Failed to delete provider entitlement mappings bound to bucket: {}",
+                    e
+                ))
+            })?;
 
         Ok(())
     }

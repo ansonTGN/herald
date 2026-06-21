@@ -263,16 +263,16 @@ billing_repo_test!(test_repository_update_subscription_bucket_id, |repo| {
     // otherwise SeaORM omits it (stays Unchanged) and the binding is lost.
     let subscription = test_subscription("test_update_bucket_id");
     let created = repo.create_subscription(subscription).await.unwrap();
-    assert!(created.bucket_id.is_none());
+    assert!(!created.bucket_id.is_nil());
 
     let bucket_id = Uuid::now_v7();
     let mut updated = created.clone();
-    updated.bucket_id = Some(bucket_id);
+    updated.bucket_id = bucket_id;
     updated.updated_at = Utc::now();
 
     let result = repo.update_subscription(updated).await;
     assert!(result.is_ok());
-    assert_eq!(result.unwrap().bucket_id, Some(bucket_id));
+    assert_eq!(result.unwrap().bucket_id, bucket_id);
 
     // Read back from DB to confirm the row was actually persisted.
     let reloaded = repo
@@ -280,7 +280,7 @@ billing_repo_test!(test_repository_update_subscription_bucket_id, |repo| {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(reloaded.bucket_id, Some(bucket_id));
+    assert_eq!(reloaded.bucket_id, bucket_id);
 });
 
 billing_repo_test!(

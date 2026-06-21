@@ -197,6 +197,9 @@ pub async fn list_wallets(
     };
 
     let filters = WalletFilters {
+        // user_id is left None here: the service hard-scopes non-managers to the
+        // caller; managers keep None for the realm-wide (cross-user) view.
+        user_id: None,
         bucket_id: bucket_filter,
         status: query.status,
         search: query.search,

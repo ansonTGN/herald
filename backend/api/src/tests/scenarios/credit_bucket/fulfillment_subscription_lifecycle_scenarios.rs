@@ -37,7 +37,7 @@
 use crate::tests::helpers::credit_bucket_helpers::{
     CreditBucketOpts, count_ledger_in_bucket, count_ledger_outside_bucket,
     create_test_credit_bucket, read_subscription_bucket, read_wallet_total_balance,
-    set_subscription_bucket, sum_ledger_granted_in_bucket,
+    sum_ledger_granted_in_bucket,
 };
 use crate::tests::scenarios::points::fixtures::{
     create_test_client_app, create_test_user, create_test_user_with_auth,
@@ -132,9 +132,9 @@ async fn load_attempt(ctx: &TestContext, attempt_id: Uuid) -> PaymentAttempt {
         .expect("payment attempt not found after insert")
 }
 
-/// Create a `subscription` row directly with `bucket_id = Some(bucket)`,
-/// bypassing fulfillment (used by lifecycle scenarios that start from an
-/// already-existing subscription).
+/// Create a `subscription` row directly with `bucket_id = bucket` (non-null,
+/// per the eager-binding contract), bypassing fulfillment (used by lifecycle
+/// scenarios that start from an already-existing subscription).
 async fn insert_subscription_in_bucket(
     pool: &PgPool,
     realm_id: &str,
@@ -261,8 +261,7 @@ async fn fulfillment_grants_to_attempt_snapshot_bucket(ctx: &mut TestContext) {
         .expect("fulfillment returned a subscription_id");
     let frozen_bucket = read_subscription_bucket(pool, subscription_id).await;
     assert_eq!(
-        frozen_bucket,
-        Some(bucket_a),
+        frozen_bucket, bucket_a,
         "subscription.bucket_id frozen to the attempt snapshot bucket"
     );
 }
@@ -316,20 +315,17 @@ async fn fulfillment_freezes_subscription_bucket_on_first_renewal(ctx: &mut Test
 
     let subscription_id = result.subscription_id.expect("subscription_id present");
 
-    // --- Then: subscription.bucket_id is non-NULL and equals the snapshot. --
+    // --- Then: subscription.bucket_id equals the snapshot. The column is NOT
+    // NULL by schema (eager binding), so the only meaningful assertion is the
+    // value identity; the previous `is_some()` check is now tautological and
+    // was removed.
     let frozen = read_subscription_bucket(pool, subscription_id).await;
-    assert!(
-        frozen.is_some(),
-        "subscription.bucket_id must be non-NULL after first fulfillment"
-    );
     assert_eq!(
-        frozen,
-        Some(bucket),
+        frozen, bucket,
         "subscription.bucket_id frozen to the attempt snapshot bucket"
     );
     assert_eq!(
-        Some(attempt.bucket_id),
-        frozen,
+        attempt.bucket_id, frozen,
         "snapshot == frozen subscription bucket"
     );
 }
@@ -492,7 +488,7 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
     .await;
     assert_eq!(
         read_subscription_bucket(pool, subscription_id).await,
-        Some(bucket)
+        bucket
     );
 
     // --- When: a renewal grant fires (is_renewal = true). ------------------
@@ -504,7 +500,7 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            Some(bucket),
+            bucket,
             &realm_id,
             &entitlement_key,
             true, // is_renewal
@@ -587,7 +583,7 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            Some(bucket),
+            bucket,
             &realm_id,
             &old_key,
             false,
@@ -690,7 +686,7 @@ async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut Tes
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            Some(bucket_sub),
+            bucket_sub,
             &realm_id,
             &entitlement_key,
             false,
@@ -817,7 +813,7 @@ async fn subscription_refund_revokes_only_subscription_bucket_pool(ctx: &mut Tes
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            Some(bucket_sub),
+            bucket_sub,
             &realm_id,
             &entitlement_key,
             false,
@@ -926,7 +922,7 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            Some(bucket),
+            bucket,
             &realm_id,
             &old_key,
             false,
@@ -947,7 +943,7 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
         .handle_subscription_downgrade(
             user_id,
             subscription_id,
-            Some(bucket),
+            bucket,
             &realm_id,
             &old_key,
             &new_key,
@@ -975,23 +971,42 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
     // grant_schedule will route to subscription.bucket_id per design §5.5). --
     assert_eq!(
         read_subscription_bucket(pool, subscription_id).await,
-        Some(bucket),
+        bucket,
         "subscription stays bound to the same bucket for next-cycle routing"
     );
 }
 
 // =============================================================================
-// Scenario 10: subscription with unresolved bucket fails loud (A8 / §5.5)
+// Scenario 10: entitlement-mapping missing fails loud (graceful skip)
 // =============================================================================
+//
+// History: this scenario originally forced `subscription.bucket_id = NULL` and
+// asserted `CoreError::SubscriptionBucketNotResolved`. After the eager-binding
+// migration `subscription.bucket_id` became NOT NULL (webhook path
+// `resolve_bucket_id_for_entitlement` resolves the bucket at subscription
+// creation), so the None-bucket fail-loud case can no longer be constructed.
+// The column-level NOT NULL constraint now enforces the invariant this test
+// used to guard at the service layer; the runtime fail-loud path
+// (`SubscriptionBucketNotResolved`) is dead code that the production signature
+// change has made unreachable.
+//
+// To preserve the test's underlying intent — "a renewal that cannot be resolved
+// is rejected loudly and credits nothing" — the scenario now exercises the
+// analogous graceful-skip precondition that the service STILL checks before
+// any grant: a missing entitlement-mapping points policy. The Creem webhook
+// handler relies on this `EntitlementMappingNotFound` result to skip the event
+// without retrying or crediting any implicit pool (see `handle_subscription_paid`
+// inline comment in `subscription_service.rs`).
 
-/// User Story: US-CB-008 — fail-loud contract for missing bucket binding.
+/// User Story: US-CB-008 — fail-loud contract for an unresolvable renewal.
 /// Covers (BE-T02 scope):
-///   - Force `subscription.bucket_id = NULL` (simulating a data-integrity
-///     breach) and then fire a renewal grant.
-///   - Domain returns `CoreError::SubscriptionBucketNotResolved` carrying the
-///     offending subscription_id; NO credit is granted to any implicit pool.
-///   - This is the A8 fail-loud guarantee: a None bucket is never silently
-///     routed to a default pool.
+///   - A subscription bound to a valid Bucket, but whose `entitlement_key` has
+///     NO `provider_entitlement_mappings` row (points policy missing).
+///   - `handle_subscription_paid` returns `CoreError::EntitlementMappingNotFound`
+///     BEFORE any grant is attempted; NO credit is written to any pool, and no
+///     wallet row is created.
+///   - This is the graceful-skip precondition the webhook handler relies on to
+///     drop unreadable events without implicit crediting.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn subscription_with_unresolved_bucket_fails_loud(ctx: &mut TestContext) {
@@ -1001,21 +1016,24 @@ async fn subscription_with_unresolved_bucket_fails_loud(ctx: &mut TestContext) {
     let user_id = create_test_user(pool, &realm_id, "cb_t02_unresolved@example.com").await;
     let client_app_id = create_test_client_app(pool, &realm_id).await;
 
+    // A real, enabled Bucket — the subscription IS bound (eager binding contract).
     let bucket = create_test_credit_bucket(
         pool,
         &realm_id,
         CreditBucketOpts {
-            name: Some("Pre-Breach Bucket".into()),
-            bucket_key: Some("pre-breach-bucket".into()),
+            name: Some("Bound Bucket".into()),
+            bucket_key: Some("bound-bucket".into()),
             ..Default::default()
         },
     )
     .await;
-    let entitlement_key = format!("cb-t02-unresolved-{}", Uuid::now_v7());
-    let _mapping =
-        create_subscription_mapping_in_bucket(pool, &realm_id, &entitlement_key, bucket, 500).await;
 
-    // --- Given: a subscription whose bucket_id is forced to NULL. ----------
+    // Deliberately NO `create_subscription_mapping_in_bucket` call: the
+    // entitlement_key below has no points policy, so the service cannot
+    // resolve the grant and must fail loud.
+    let entitlement_key = format!("cb-t02-unresolved-{}", Uuid::now_v7());
+
+    // --- Given: a subscription bound to the Bucket but with no mapping. ----
     let subscription_id = insert_subscription_in_bucket(
         pool,
         &realm_id,
@@ -1025,14 +1043,13 @@ async fn subscription_with_unresolved_bucket_fails_loud(ctx: &mut TestContext) {
         bucket,
     )
     .await;
-    set_subscription_bucket(pool, subscription_id, None).await;
     assert_eq!(
         read_subscription_bucket(pool, subscription_id).await,
-        None,
-        "precondition: subscription.bucket_id cleared"
+        bucket,
+        "precondition: subscription is bound to the bucket (eager binding)"
     );
 
-    // --- When: a renewal grant fires against the unresolved subscription. --
+    // --- When: a renewal grant fires against the unmapped entitlement. -----
     let period_end = chrono::Utc::now() + chrono::Duration::days(30);
     let event_id = format!("evt_unresolved_{}", Uuid::now_v7());
     let result = ctx
@@ -1041,7 +1058,7 @@ async fn subscription_with_unresolved_bucket_fails_loud(ctx: &mut TestContext) {
         .handle_subscription_paid(
             user_id,
             subscription_id,
-            None, // subscription.bucket_id
+            bucket,
             &realm_id,
             &entitlement_key,
             true,
@@ -1050,14 +1067,10 @@ async fn subscription_with_unresolved_bucket_fails_loud(ctx: &mut TestContext) {
         )
         .await;
 
-    // --- Then: domain fails loud with SubscriptionBucketNotResolved. -------
+    // --- Then: domain fails loud with EntitlementMappingNotFound. ----------
     assert!(
-        matches!(
-            result,
-            Err(CoreError::SubscriptionBucketNotResolved { subscription_id: sid })
-                if sid == subscription_id
-        ),
-        "expected SubscriptionBucketNotResolved carrying the subscription_id, got {:?}",
+        matches!(result, Err(CoreError::EntitlementMappingNotFound)),
+        "expected EntitlementMappingNotFound for missing points policy, got {:?}",
         result
     );
 

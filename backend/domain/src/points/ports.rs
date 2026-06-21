@@ -35,6 +35,7 @@ pub struct TransactionFilters {
 /// Account filters
 #[derive(Debug, Clone, Default)]
 pub struct WalletFilters {
+    pub user_id: Option<Uuid>,
     pub bucket_id: Option<Uuid>,
     pub status: Option<String>,
     pub search: Option<String>,

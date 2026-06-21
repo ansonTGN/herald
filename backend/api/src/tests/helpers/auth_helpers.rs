@@ -268,6 +268,86 @@ pub async fn grant_realm_admin_role(ctx: &TestContext, user_id: &str) {
     );
 }
 
+/// 授予 points-viewer 角色（仅 `points.view`，**不含** `points.manage`）。
+///
+/// 与 `grant_realm_admin_role` 同构，但角色只绑定单条策略 `(points, view)`，
+/// 用于构造"普通用户"（非 admin）测试身份：能查询自己的钱包/交易，但无跨用户
+/// 管理权限。角色创建幂等（不存在则建，存在则复用）；用户绑定走 `user_roles`
+/// 的 `ON CONFLICT DO NOTHING`。授予后失效该用户的角色缓存，确保当次会话立即生效。
+pub async fn grant_points_view_role(ctx: &TestContext, user_id: &str) {
+    // 复用或创建 points-viewer 角色
+    let role_id: String = match sqlx::query_scalar(
+        "SELECT id::text FROM roles WHERE realm_id = $1 AND name = 'points-viewer'",
+    )
+    .bind(&ctx._realm_id)
+    .fetch_optional(&ctx._app_state.pool)
+    .await
+    .unwrap()
+    {
+        Some(id) => id,
+        None => {
+            let role_uuid = uuid::Uuid::now_v7();
+            sqlx::query(
+                "INSERT INTO roles (id, name, description, realm_id, client_id, is_builtin)
+                 VALUES ($1, 'points-viewer', 'Points viewer (points.view only)', $2, $3, false)",
+            )
+            .bind(role_uuid)
+            .bind(&ctx._realm_id)
+            .bind(&ctx._client_id)
+            .execute(&ctx._app_state.pool)
+            .await
+            .expect("Failed to create points-viewer role");
+
+            // 关键：只授予 (points, view)，不含 (points, manage)
+            let policy_id = uuid::Uuid::now_v7();
+            sqlx::query(
+                "INSERT INTO role_policies (id, role_id, realm_id, resource, action)
+                 VALUES ($1, $2, $3, 'points', 'view')",
+            )
+            .bind(policy_id)
+            .bind(role_uuid)
+            .bind(&ctx._realm_id)
+            .execute(&ctx._app_state.pool)
+            .await
+            .expect("Failed to add points.view policy for points-viewer role");
+
+            role_uuid.to_string()
+        }
+    };
+
+    // 将用户加入 points-viewer 角色
+    let user_uuid = uuid::Uuid::parse_str(user_id).expect("Failed to parse user_id as UUID");
+    let role_uuid = uuid::Uuid::parse_str(&role_id).expect("Failed to parse role_id as UUID");
+    sqlx::query(
+        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $2::text)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(uuid::Uuid::now_v7())
+    .bind(user_uuid)
+    .bind(role_uuid)
+    .bind(&ctx._realm_id)
+    .bind(&ctx._client_id)
+    .bind(principal_types::USER)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to add user to points-viewer role");
+
+    // 失效权限缓存，确保本次会话立即生效
+    let _ = ctx
+        ._app_state
+        .permission_checker
+        .invalidate_user_role_cache(&ctx._realm_id, user_id)
+        .await;
+
+    tracing::debug!(
+        user_id = %user_id,
+        realm_id = %ctx._realm_id,
+        role_id = %role_id,
+        "Granted points-viewer role (points.view only) to user"
+    );
+}
+
 /// ============================================================================
 /// 权限检查辅助函数
 /// ============================================================================

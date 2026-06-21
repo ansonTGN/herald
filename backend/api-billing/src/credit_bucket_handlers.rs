@@ -58,6 +58,18 @@ pub struct BucketInUseErrorBody {
     pub holders_with_balance: i64,
 }
 
+/// 400 `bucket_orphan_mapping` body. `bucket_id` is NOT NULL (commit `aa6cc2da`)
+/// and there is no default bucket (design A4), so removing an attached mapping
+/// from a bucket would orphan it — rejected. Assign the mapping to another
+/// bucket first (via that bucket's PUT) to move it.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BucketOrphanMappingErrorBody {
+    pub code: &'static str,
+    pub message: &'static str,
+    pub orphan_mapping_ids: Vec<Uuid>,
+}
+
 fn validate_bucket_key(key: &str) -> Result<(), ApiError> {
     if key.is_empty() || key.len() > BUCKET_KEY_MAX_LEN {
         return Err(ApiError::bad_request(
@@ -103,6 +115,14 @@ fn map_bucket_error(err: CreditBucketError) -> ApiError {
             code: "bucket_in_use",
             active_subscriptions,
             holders_with_balance,
+        }),
+        CreditBucketError::BucketOrphanMapping {
+            bucket_id: _,
+            orphan_mapping_ids,
+        } => ApiError::bad_request_json(BucketOrphanMappingErrorBody {
+            code: "bucket_orphan_mapping",
+            message: "Removing these mappings would leave them unassigned (bucket_id is NOT NULL); assign them to another bucket first",
+            orphan_mapping_ids,
         }),
         CreditBucketError::Other(core) => ApiError::from(core),
     }
@@ -523,7 +543,7 @@ pub async fn create_credit_bucket_handler(
     request_body = UpdateCreditBucketRequest,
     responses(
         (status = 200, description = "Credit bucket updated", body = BucketDetailResponse),
-        (status = 400, description = "Bad request - empty coverage set", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 400, description = "Bad request - empty coverage set, or bucket_orphan_mapping (removing attached mappings is rejected: bucket_id is NOT NULL)", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
         (status = 401, description = "Unauthorized", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
         (status = 403, description = "Forbidden - points.manage required", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
         (status = 404, description = "Credit bucket not found", body = herald_api_base::application::http::server::api_entities::ErrorResponse),

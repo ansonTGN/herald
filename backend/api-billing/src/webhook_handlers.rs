@@ -15,7 +15,8 @@ use crate::webhook_common::{
     parse_optional_uuid_field, parse_uuid_field,
 };
 use crate::webhook_subscription_helpers::{
-    SyncSubscriptionInput, resolve_entitlement_key, save_subscription_history, sync_subscription,
+    SyncSubscriptionInput, resolve_bucket_id_for_entitlement, resolve_entitlement_key,
+    save_subscription_history, sync_subscription,
 };
 use crate::webhooks::verify_webhook_signature;
 use herald_api_base::application::http::state::AppState;
@@ -28,7 +29,7 @@ use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
 use herald_core::domain::points::entities::{PointsTransaction, RevocationType, TransactionType};
 use herald_core::domain::points::ports::PointsRepository;
-use herald_core::domain::points::subscription_service::{CancelMode, resolve_subscription_bucket};
+use herald_core::domain::points::subscription_service::CancelMode;
 use herald_core::domain::purchase::metadata_keys;
 use herald_core::domain::purchase::{CompletePaymentAttemptInput, PaymentCompletionSource};
 use herald_core::domain::realm_config::RealmConfigRepository;
@@ -606,6 +607,7 @@ async fn sync_creem_subscription(
     current_period_end: Option<DateTime<Utc>>,
     cancel_at_period_end: bool,
     cancel_at: Option<DateTime<Utc>>,
+    bucket_id: Uuid,
     existing_subscription: Option<Subscription>,
 ) -> Result<Option<(Subscription, Option<Subscription>)>, CoreError> {
     sync_subscription(
@@ -618,6 +620,7 @@ async fn sync_creem_subscription(
             external_product_id: creem_product_id,
             client_app_id,
             entitlement_key,
+            bucket_id,
             external_price_id: None,
             provider_metadata: None,
             status,
@@ -883,50 +886,6 @@ async fn handle_checkout_completed(
     }
 }
 
-/// Resolve and persist the routing Bucket for a subscription whose
-/// `bucket_id` is still `None` (design §5.5 — lazy binding on first paid/grant
-/// event).
-///
-/// Contract (DB errors propagate via `?`; never silently swallowed):
-/// - mapping absent/disabled → `EntitlementMappingNotFound` (graceful "no
-///   mapping → no grant" case the caller swallows)
-/// - mapping present + bucket → bind `subscription.bucket_id`, persist the row,
-///   return `Some(bucket_id)`
-pub(crate) async fn resolve_and_bind_subscription_bucket(
-    app_state: &AppState,
-    realm_id: &str,
-    subscription_id: Uuid,
-    entitlement_key: &str,
-) -> Result<Option<Uuid>, CoreError> {
-    // DB error MUST propagate — `.ok()`/`unwrap_or` are forbidden here
-    // (review finding #4: no silent error swallowing on the mapping lookup).
-    let mapping = app_state
-        .billing_repository
-        .find_entitlement_mapping_by_key(realm_id, entitlement_key)
-        .await?
-        .ok_or(CoreError::EntitlementMappingNotFound)?;
-    if !mapping.enabled {
-        return Err(CoreError::EntitlementMappingNotFound);
-    }
-
-    let bucket_id = mapping.bucket_id;
-
-    // Persist the binding so subsequent events reuse it. Fetch the current
-    // row, set bucket_id, and update (preserves all other fields).
-    let mut subscription = app_state
-        .billing_repository
-        .find_subscription_by_id(subscription_id)
-        .await?
-        .ok_or(CoreError::SubscriptionBucketNotResolved { subscription_id })?;
-    subscription.bucket_id = Some(bucket_id);
-    app_state
-        .billing_repository
-        .update_subscription(subscription)
-        .await?;
-
-    Ok(Some(bucket_id))
-}
-
 /// Handle subscription.paid events
 ///
 /// Grants subscription points to user on initial subscription or renewal.
@@ -1019,8 +978,13 @@ async fn handle_subscription_paid(
         payload.entitlement_key.clone()
     };
 
+    // Resolve the routing bucket eagerly from the entitlement mapping before
+    // sync, so the subscription is created with a non-null bucket_id.
+    let bucket_id =
+        resolve_bucket_id_for_entitlement(&app_state, realm_id, &entitlement_key).await?;
+
     // Resolve the synced subscription up-front so we can route the grant to
-    // subscription.bucket_id (design §5.5 / A8) and reuse it for history.
+    // subscription.bucket_id and reuse it for history.
     let synced = sync_creem_subscription(
         &app_state,
         realm_id,
@@ -1034,6 +998,7 @@ async fn handle_subscription_paid(
         payload.current_period_end,
         payload.cancel_at_period_end,
         None,
+        bucket_id,
         None,
     )
     .await?;
@@ -1058,48 +1023,13 @@ async fn handle_subscription_paid(
         .current_period_end
         .unwrap_or_else(|| Utc::now() + chrono::Duration::days(30));
 
-    // Resolve the routing Bucket for the grant (design §5.5). New Creem
-    // subscriptions are created with `bucket_id = None` and bound lazily on
-    // their first paid/grant event. If the synced subscription has no bound
-    // Bucket, resolve it from the entitlement mapping and persist it onto the
-    // subscription row in the same flow.
-    //
-    // Four cases (DB errors propagate via `?`; never swallowed):
-    //   1. mapping absent            → EntitlementMappingNotFound (graceful
-    //                                  skip — swallowed below by the caller)
-    //   2. mapping present + bucket  → bind + persist, grant to that bucket
-    //   3. mapping present + no bucket → SubscriptionBucketNotResolved (fail
-    //                                  loud — data-integrity breach)
-    //   4. subscription already bound → use the existing bucket_id
-    let (subscription_id, bucket_id) = match synced.as_ref() {
-        Some((subscription, _)) => {
-            let subscription_id = subscription.id;
-            if let Some(existing_bucket) = subscription.bucket_id {
-                (subscription_id, Some(existing_bucket))
-            } else {
-                let resolved = match resolve_and_bind_subscription_bucket(
-                    &app_state,
-                    realm_id,
-                    subscription_id,
-                    &entitlement_key,
-                )
-                .await
-                {
-                    Ok(bucket_id) => bucket_id,
-                    Err(CoreError::EntitlementMappingNotFound) => None,
-                    Err(error) => return Err(error),
-                };
-                (subscription_id, resolved)
-            }
-        }
-        None => {
-            // Fallback when sync returned None (no external_subscription_id
-            // and no client_app_id): we still attempt the grant against a
-            // nil subscription id with no bucket — the domain will fail loud
-            // if a bucket is required, which surfaces the data gap.
-            (Uuid::nil(), None)
-        }
-    };
+    // bucket_id was resolved eagerly above and bound at subscription creation.
+    // synced carries the persisted subscription_id (fallback to nil only when
+    // sync returned None — an edge case that should not occur for paid events).
+    let subscription_id = synced
+        .as_ref()
+        .map(|(subscription, _)| subscription.id)
+        .unwrap_or_else(Uuid::nil);
 
     let grant_result = app_state
         .subscription_service
@@ -1205,6 +1135,12 @@ async fn handle_subscription_updated(
         payload.current_entitlement_key.clone()
     };
 
+    // Resolve the routing bucket eagerly from the current entitlement mapping
+    // (the new plan), so the subscription is created/updated with a non-null
+    // bucket_id.
+    let bucket_id =
+        resolve_bucket_id_for_entitlement(&app_state, realm_id, &current_entitlement_key).await?;
+
     // Fetch existing subscription once — reuse for both entitlement resolution and sync
     let existing_subscription_for_update = if payload.previous_entitlement_key.is_empty() {
         app_state
@@ -1282,6 +1218,7 @@ async fn handle_subscription_updated(
             payload.current_period_end,
             payload.cancel_at_period_end,
             None,
+            bucket_id,
             existing_subscription_for_update.clone(),
         )
         .await?
@@ -1306,9 +1243,7 @@ async fn handle_subscription_updated(
         .current_period_end
         .unwrap_or_else(|| Utc::now() + chrono::Duration::days(30));
 
-    // Sync the subscription FIRST so it exists (created with `bucket_id =
-    // None`) and we can resolve its routing Bucket lazily on this event —
-    // consistent with `handle_subscription_paid` (design §5.5).
+    // Sync the subscription (created/updated with the eagerly-resolved bucket_id).
     let synced = sync_creem_subscription(
         &app_state,
         realm_id,
@@ -1322,40 +1257,24 @@ async fn handle_subscription_updated(
         payload.current_period_end,
         payload.cancel_at_period_end,
         None,
+        bucket_id,
         existing_subscription_for_update.clone(),
     )
     .await?;
 
-    // Resolve the routing Bucket from the synced subscription. If it is still
-    // unbound, bind it lazily from the new entitlement mapping (the plan the
-    // user is now on) and persist it. The domain fails loud
-    // (`SubscriptionBucketNotResolved`) when no bucket can be resolved.
-    let (subscription_id, subscription_bucket_id) = match synced.as_ref() {
-        Some((subscription, _)) => {
-            let subscription_id = subscription.id;
-            if let Some(existing_bucket) = subscription.bucket_id {
-                (subscription_id, Some(existing_bucket))
-            } else {
-                let resolved = resolve_and_bind_subscription_bucket(
-                    &app_state,
-                    realm_id,
-                    subscription_id,
-                    &current_entitlement_key,
-                )
-                .await?;
-                (subscription_id, resolved)
-            }
-        }
-        None => (Uuid::nil(), None),
-    };
+    // bucket_id was resolved eagerly above; synced carries the persisted
+    // subscription (create binds the resolved bucket, update keeps the existing).
+    let (subscription_id, subscription_bucket_id) = synced
+        .as_ref()
+        .map(|(subscription, _)| (subscription.id, subscription.bucket_id))
+        .unwrap_or((Uuid::nil(), bucket_id));
 
     let history_event_type = if is_upgrade {
-        let bucket_id = resolve_subscription_bucket(subscription_id, subscription_bucket_id)?;
         app_state
             .subscription_service
             .handle_subscription_upgrade(
                 user_id,
-                bucket_id,
+                subscription_bucket_id,
                 realm_id,
                 &previous_entitlement_key,
                 &current_entitlement_key,
@@ -1497,9 +1416,13 @@ async fn handle_subscription_canceled(
         .await?
     };
 
-    // Sync the subscription FIRST so it exists (created with `bucket_id =
-    // None`) and we can resolve its routing Bucket lazily on this event —
-    // consistent with `handle_subscription_paid` (design §5.5).
+    // Resolve the routing bucket eagerly: reuse the existing subscription's
+    // bound bucket when present, otherwise resolve from the entitlement mapping.
+    let bucket_id = match &existing_subscription {
+        Some(existing) => existing.bucket_id,
+        None => resolve_bucket_id_for_entitlement(&app_state, realm_id, &entitlement_key).await?,
+    };
+
     let synced = sync_creem_subscription(
         &app_state,
         realm_id,
@@ -1513,32 +1436,12 @@ async fn handle_subscription_canceled(
         payload.current_period_end,
         payload.cancel_at_period_end,
         cancel_at,
+        bucket_id,
         existing_subscription,
     )
     .await?;
 
-    // Resolve the routing Bucket from the synced subscription; bind it lazily
-    // from the entitlement mapping if still unbound. Fail loud otherwise.
-    let (subscription_id, subscription_bucket_id) = match synced.as_ref() {
-        Some((subscription, _)) => {
-            let subscription_id = subscription.id;
-            if let Some(existing_bucket) = subscription.bucket_id {
-                (subscription_id, Some(existing_bucket))
-            } else {
-                let resolved = resolve_and_bind_subscription_bucket(
-                    &app_state,
-                    realm_id,
-                    subscription_id,
-                    &entitlement_key,
-                )
-                .await?;
-                (subscription_id, resolved)
-            }
-        }
-        None => (Uuid::nil(), None),
-    };
-    let bucket_id = resolve_subscription_bucket(subscription_id, subscription_bucket_id)?;
-
+    // bucket_id resolved above; synced carries the persisted subscription.
     let _output = app_state
         .subscription_service
         .handle_subscription_cancel(
@@ -1747,6 +1650,13 @@ async fn handle_subscription_lifecycle_status(
         "Processing Creem subscription lifecycle event"
     );
 
+    // Resolve the routing bucket eagerly: reuse the existing subscription's
+    // bound bucket when present, otherwise resolve from the entitlement mapping.
+    let bucket_id = match &existing {
+        Some(existing) => existing.bucket_id,
+        None => resolve_bucket_id_for_entitlement(&app_state, realm_id, &entitlement_key).await?,
+    };
+
     let synced = sync_creem_subscription(
         &app_state,
         realm_id,
@@ -1760,6 +1670,7 @@ async fn handle_subscription_lifecycle_status(
         payload.current_period_end,
         cancel_at_period_end,
         cancel_at,
+        bucket_id,
         existing,
     )
     .await?;
@@ -1780,11 +1691,10 @@ async fn handle_subscription_lifecycle_status(
         // Route revocation to subscription.bucket_id (design §5.5 / A8).
         // The synced subscription is the post-update snapshot and carries the
         // persisted bucket_id. Fail loud when unresolved.
-        let (subscription_id, subscription_bucket_id) = synced
+        let (_, bucket_id) = synced
             .as_ref()
             .map(|(subscription, _)| (subscription.id, subscription.bucket_id))
-            .unwrap_or((Uuid::nil(), None));
-        let bucket_id = resolve_subscription_bucket(subscription_id, subscription_bucket_id)?;
+            .unwrap_or((Uuid::nil(), bucket_id));
 
         let output = app_state
             .points_service
@@ -1863,6 +1773,7 @@ async fn handle_dispute_created(
             },
             client_app_id: existing.client_app_id,
             entitlement_key: existing.entitlement_key.clone(),
+            bucket_id: existing.bucket_id,
             external_price_id: existing.external_price_id.clone(),
             provider_metadata: Some(provider_metadata),
             status: SubscriptionStatus::Dispute,

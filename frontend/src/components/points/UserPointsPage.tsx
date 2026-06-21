@@ -48,11 +48,11 @@ export function UserPointsPage({
   // URL changes (e.g. opening a shared `?bucketId=` link) reflect immediately.
   const [transactionFilters, setTransactionFilters] = useState<TransactionFiltersType>({})
 
-  // FE-D01 LOUD DEVIATION: `listWallets` is realm-wide and `points.view`-gated
-  // with NO userId filter, so `data.items` contains ALL realm users' rows and
-  // `data.crossBucketTotal` is the realm cross-user total (not the current
-  // user's). We client-filter by `userId` and recompute this user's total via
-  // `deriveUserPointsView`. Do NOT use the response `crossBucketTotal` here.
+  // Gap #2 fix: `listWallets` is server-side hard-scoped for `points.view`-only
+  // callers, so `data.items` already contains only the current user's rows and
+  // `data.crossBucketTotal` is that user's own cross-bucket total. We still
+  // client-filter by `userId` via `deriveUserPointsView` as a defensive no-op
+  // (harmless, still correct) and recompute the total ourselves.
   const { data: walletsData, isLoading: walletsLoading } = useQuery(
     walletsByBucketQueryOptions(realmId)
   )

@@ -7,9 +7,10 @@ import type { WalletByBucketResponse } from '@/lib/api-generated'
 import { deriveUserPointsView } from '@/components/points/user-points-view'
 
 /**
- * Factory for a single realm-wide wallet row. The `listWallets` endpoint
- * over-returns every realm user's rows; this factory lets tests construct
- * mixed-user inputs to assert the client-side `currentUserId` narrowing.
+ * Factory for a single wallet row. After the Gap #2 fix the `listWallets`
+ * endpoint is server-scoped to the caller, but `deriveUserPointsView` still
+ * narrows defensively by `currentUserId`; these tests feed mixed-user inputs
+ * directly to keep that narrowing covered.
  */
 function makeWalletByBucket(
   overrides: Partial<WalletByBucketResponse> & { userId: string }
@@ -100,8 +101,8 @@ describe('deriveUserPointsView', () => {
 
       const result = deriveUserPointsView(items, CURRENT_USER)
 
-      // Asserted loudly: the response carries no realm-wide cross-user total
-      // here; even if it did, the function recomputes from filtered rows.
+      // The function recomputes the total from the (userId-narrowed) rows, so it
+      // is unaffected by whatever total the response might carry.
       expect(result.crossBucketTotal).toBe(20)
       expect(result.showTotalBar).toBe(true)
     })

@@ -86,7 +86,7 @@ COMMENT ON TABLE credit_buckets IS 'Realm-level credit bucket catalog for points
 COMMENT ON TABLE credit_bucket_client_apps IS 'Many-to-many coverage set from credit buckets to client apps';
 
 ALTER TABLE subscription
-    ADD COLUMN bucket_id UUID REFERENCES credit_buckets(id) ON DELETE RESTRICT;
+    ADD COLUMN bucket_id UUID NOT NULL REFERENCES credit_buckets(id) ON DELETE RESTRICT;
 CREATE INDEX idx_subscription_bucket_id ON subscription(bucket_id);
 COMMENT ON COLUMN subscription.bucket_id IS 'Credit bucket bound to this subscription for points fulfillment and revocation';
 

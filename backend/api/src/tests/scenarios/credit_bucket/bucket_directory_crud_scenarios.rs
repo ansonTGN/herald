@@ -27,7 +27,9 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::tests::helpers::billing_helpers::setup_billing_admin_session;
+use crate::tests::helpers::billing_helpers::{
+    setup_billing_admin_session, setup_test_entitlement_mapping,
+};
 use crate::tests::helpers::credit_bucket_helpers::{
     CreditBucketOpts, attach_bucket_client_app, auth_admin_request_via_api,
     create_test_credit_bucket, seed_active_subscription_on_bucket,
@@ -613,6 +615,173 @@ async fn update_credit_bucket_changes_name_order_enabled_coverage(ctx: &mut Test
         "clearing coverage set must be 400, got {}: {:?}",
         status_bad,
         body_bad
+    );
+}
+
+// =============================================================================
+// Scenario 11: PUT attaching a mapping increases entitlementMappingCount;
+//              removing an attached mapping is rejected (bucket_orphan_mapping)
+// =============================================================================
+//
+// Regression for the count-stale gap (DE-D06 Gap #4 / US-CB-003 "count must
+// increase"). Root cause was NOT a stale read — `update_credit_bucket` detached
+// mappings via `SET bucket_id = NULL`, illegal under the NOT NULL `bucket_id`
+// constraint (commit aa6cc2da): any reassignment of a bucket that already held
+// mappings 500'd, so the count never grew. The list count query itself is
+// correct (a plain auto-commit LEFT JOIN/GROUP BY; read-after-write is
+// immediate under READ COMMITTED).
+//
+// Under the NOT NULL model (no default bucket — design A4) a mapping may JOIN a
+// bucket (move-in) but cannot be removed via PUT (detaching would orphan it).
+// This scenario asserts both halves:
+//   - PUT with `entitlementMappingIds=[M]` → 200 and the list count for this
+//     bucket becomes 1 (Gap #4 regression: count must increase, no staleness).
+//   - PUT with `entitlementMappingIds=[]` (drop M) → 400 `bucket_orphan_mapping`
+//     listing M (fail-loud; never a silent no-op).
+//
+/// User Story: US-CB-003 (assign ≥1 mapping to a Bucket; count must increase).
+#[test_context(TestContext)]
+#[tokio::test]
+async fn update_credit_bucket_attaching_mapping_increases_count_and_removal_rejected(
+    ctx: &mut TestContext,
+) {
+    let realm_id = ctx._realm_id.clone();
+    let token = setup_billing_admin_session(ctx, "cb_t04_mapping_count@example.com").await;
+    let pool = &ctx.app_state.pool;
+
+    let client_app = create_test_client_app(pool, &realm_id).await;
+    let bucket = create_test_credit_bucket(
+        pool,
+        &realm_id,
+        CreditBucketOpts {
+            name: Some("Mapping Bucket".into()),
+            bucket_key: Some(format!("mapping-bucket-{}", Uuid::now_v7())),
+            ..Default::default()
+        },
+    )
+    .await;
+    attach_bucket_client_app(pool, &realm_id, bucket, client_app).await;
+
+    // Mapping is created bound to the realm's legacy test bucket (NOT NULL
+    // bucket_id); the PUT below moves it onto `bucket`.
+    let mapping = setup_test_entitlement_mapping(
+        ctx,
+        &realm_id,
+        "creem",
+        &format!("prod-{}", Uuid::now_v7()),
+        &format!("ent-{}", Uuid::now_v7()),
+    )
+    .await;
+
+    // --- PUT: attach the mapping → 200. -------------------------------------
+    let put_body = json!({
+        "name": "Mapping Bucket",
+        "displayOrder": 0,
+        "enabled": true,
+        "receivesRegistrationCredits": false,
+        "clientAppIds": [client_app],
+        "entitlementMappingIds": [mapping],
+    });
+    let (status, body) = auth_admin_request_via_api(
+        ctx,
+        "PUT",
+        &format!("/api/realms/{}/billing/credit-buckets/{}", realm_id, bucket),
+        &token,
+        Some(&put_body),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "attach mapping should succeed, got {}: {:?}",
+        status,
+        body
+    );
+    let body = body.expect("attach response body");
+    assert!(
+        body.get("entitlementMappings")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .any(|m| m.get("id").and_then(|v| v.as_str()) == Some(&mapping.to_string()))
+            })
+            .unwrap_or(false),
+        "detail must echo the attached mapping: {:?}",
+        body
+    );
+
+    // Read-after-write: the list count MUST reflect the just-committed attach
+    // (Gap #4 regression assertion — count must increase; no staleness).
+    let (list_status, list_body) = auth_admin_request_via_api(
+        ctx,
+        "GET",
+        &format!("/api/realms/{}/billing/credit-buckets", realm_id),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(
+        list_status,
+        StatusCode::OK,
+        "list after attach: {:?}",
+        list_body
+    );
+    let row = list_body
+        .as_ref()
+        .and_then(|v| v.as_array())
+        .and_then(|arr| {
+            arr.iter()
+                .find(|r| r.get("id").and_then(|v| v.as_str()) == Some(&bucket.to_string()))
+        })
+        .expect("bucket must appear in list after attach");
+    assert_eq!(
+        row.get("entitlementMappingCount").and_then(|v| v.as_i64()),
+        Some(1),
+        "entitlementMappingCount must be 1 after attach (Gap #4 regression): {:?}",
+        row
+    );
+
+    // --- PUT: drop the mapping (empty set) → 400 bucket_orphan_mapping. ------
+    let drop_body = json!({
+        "name": "Mapping Bucket",
+        "displayOrder": 0,
+        "enabled": true,
+        "receivesRegistrationCredits": false,
+        "clientAppIds": [client_app],
+        "entitlementMappingIds": [],
+    });
+    let (drop_status, drop_body) = auth_admin_request_via_api(
+        ctx,
+        "PUT",
+        &format!("/api/realms/{}/billing/credit-buckets/{}", realm_id, bucket),
+        &token,
+        Some(&drop_body),
+    )
+    .await;
+    assert_eq!(
+        drop_status,
+        StatusCode::BAD_REQUEST,
+        "removing an attached mapping must be 400 bucket_orphan_mapping, got {}: {:?}",
+        drop_status,
+        drop_body
+    );
+    assert_eq!(
+        error_code(&drop_body),
+        Some("bucket_orphan_mapping"),
+        "removal must surface bucket_orphan_mapping code: {:?}",
+        drop_body
+    );
+    let orphan_ids = drop_body
+        .as_ref()
+        .and_then(|v| v.get("orphanMappingIds"))
+        .and_then(|v| v.as_array())
+        .expect("400 must list orphanMappingIds");
+    assert!(
+        orphan_ids
+            .iter()
+            .any(|id| id.as_str() == Some(&mapping.to_string())),
+        "orphan list must contain the mapping we tried to drop: {:?}",
+        drop_body
     );
 }
 

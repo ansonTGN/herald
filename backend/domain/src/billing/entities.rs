@@ -22,7 +22,9 @@ pub struct Subscription {
     pub entitlement_key: String,
     /// External price ID from the payment provider
     pub external_price_id: Option<String>,
-    pub bucket_id: Option<Uuid>,
+    /// Credit bucket bound to this subscription (NOT NULL — resolved eagerly
+    /// from the entitlement mapping at subscription creation time).
+    pub bucket_id: Uuid,
     /// Provider-specific metadata as JSON
     pub provider_metadata: Option<serde_json::Value>,
     /// Last sync timestamp from provider
