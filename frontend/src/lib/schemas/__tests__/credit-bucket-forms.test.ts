@@ -36,9 +36,7 @@ describe('createCreditBucketSchema', () => {
       ['mixed alphanumeric', 'abc123'],
       ['max length 64 chars', 'a'.repeat(64)],
     ])('accepts %s: %s', (_label, key) => {
-      const result = createCreditBucketSchema.safeParse(
-        validCreateBucketInput({ bucketKey: key })
-      )
+      const result = createCreditBucketSchema.safeParse(validCreateBucketInput({ bucketKey: key }))
       expect(result.success).toBe(true)
     })
   })
@@ -53,9 +51,7 @@ describe('createCreditBucketSchema', () => {
       ['contains space', 'a b'],
       ['chinese characters', '中文'],
     ])('rejects %s: %s', (_label, key) => {
-      const result = createCreditBucketSchema.safeParse(
-        validCreateBucketInput({ bucketKey: key })
-      )
+      const result = createCreditBucketSchema.safeParse(validCreateBucketInput({ bucketKey: key }))
       expect(result.success).toBe(false)
     })
   })

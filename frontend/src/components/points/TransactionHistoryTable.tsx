@@ -119,11 +119,7 @@ export function TransactionHistoryTable({
               cell: ({ row }: { row: { getValue: (key: string) => unknown; index: number } }) => {
                 const bucketId = row.getValue('bucketId') as string | null | undefined
                 const bucket = bucketId ? bucketsMap.get(bucketId) : undefined
-                const label = bucket
-                  ? bucket.name
-                  : bucketId
-                    ? String(bucketId).slice(0, 8)
-                    : '-'
+                const label = bucket ? bucket.name : bucketId ? String(bucketId).slice(0, 8) : '-'
                 return (
                   <div data-testid={`transaction-bucket-${row.index}`}>
                     <Badge variant="outline">{label}</Badge>

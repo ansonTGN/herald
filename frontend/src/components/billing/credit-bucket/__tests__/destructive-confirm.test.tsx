@@ -22,9 +22,7 @@ function makeQueryClient() {
 
 function withQueryClient(ui: React.ReactNode) {
   const client = makeQueryClient()
-  return render(
-    <QueryClientProvider client={client}>{ui}</QueryClientProvider>
-  )
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
 /**
@@ -91,13 +89,9 @@ describe('Credit Bucket destructive-confirm states', () => {
 
       // Destructive confirm Action is GONE in the blocked state — the admin
       // cannot proceed past the refusal.
-      expect(
-        screen.queryByTestId('delete-bucket-confirm-button')
-      ).not.toBeInTheDocument()
+      expect(screen.queryByTestId('delete-bucket-confirm-button')).not.toBeInTheDocument()
       // Cancel remains available as the exit.
-      expect(
-        screen.getByTestId('delete-bucket-cancel-button')
-      ).toBeInTheDocument()
+      expect(screen.getByTestId('delete-bucket-cancel-button')).toBeInTheDocument()
     })
 
     it('does not surface the bucket_in_use alert when no inUseError is present', () => {
@@ -111,12 +105,8 @@ describe('Credit Bucket destructive-confirm states', () => {
       )
 
       // Happy-path destructive confirm: confirm action present, no danger alert.
-      expect(
-        screen.queryByTestId('delete-bucket-error-message')
-      ).not.toBeInTheDocument()
-      expect(
-        screen.getByTestId('delete-bucket-confirm-button')
-      ).toBeInTheDocument()
+      expect(screen.queryByTestId('delete-bucket-error-message')).not.toBeInTheDocument()
+      expect(screen.getByTestId('delete-bucket-confirm-button')).toBeInTheDocument()
     })
   })
 
@@ -140,10 +130,7 @@ describe('Credit Bucket destructive-confirm states', () => {
           'http://localhost:3000/api/realms/:realmId/billing/credit-buckets/:bucketId',
           ({ params, request }) => {
             putSpy({ params, url: request.url })
-            return HttpResponse.json(
-              { code: 'registration_pool_conflict' },
-              { status: 409 }
-            )
+            return HttpResponse.json({ code: 'registration_pool_conflict' }, { status: 409 })
           }
         )
       )
@@ -178,9 +165,7 @@ describe('Credit Bucket destructive-confirm states', () => {
 
       // Submit and assert the destructive inline Alert appears.
       await user.click(screen.getByTestId('credit-bucket-editor-submit'))
-      const conflictAlert = await screen.findByTestId(
-        'credit-bucket-editor-registration-conflict'
-      )
+      const conflictAlert = await screen.findByTestId('credit-bucket-editor-registration-conflict')
       expect(conflictAlert).toHaveAttribute('role', 'alert')
       // The copy instructs the admin to unset the OTHER bucket first
       // (design §4.2.2 — no silent override).
@@ -200,9 +185,8 @@ describe('Credit Bucket destructive-confirm states', () => {
       server.use(
         ...creditBucketsHandlers,
         // Successful PUT: returns the updated bucket body.
-        http.put(
-          'http://localhost:3000/api/realms/:realmId/billing/credit-buckets/:bucketId',
-          () => HttpResponse.json(makeBucket({ receivesRegistrationCredits: true }))
+        http.put('http://localhost:3000/api/realms/:realmId/billing/credit-buckets/:bucketId', () =>
+          HttpResponse.json(makeBucket({ receivesRegistrationCredits: true }))
         )
       )
 

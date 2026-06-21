@@ -8,7 +8,7 @@ import {
 } from '@/lib/schemas/creem-config'
 import { PageHeader } from '@/components/shared/page-header'
 import { FormActionBar } from '@/components/shared/form-action-bar'
-import { SwitchField, PasswordField, NumberField } from '@/components/shared/form-fields'
+import { PasswordField, NumberField } from '@/components/shared/form-fields'
 import { batchUpsertRealmConfigs } from '@/lib/api-generated/sdk.gen'
 import { buildCreemConfigRequest } from '@/lib/creem-config-utils'
 import { requireFieldOnCreate } from '@/lib/form-utils'
@@ -93,14 +93,6 @@ export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfi
       >
         <AppForm>
           <div className="space-y-6">
-            <SwitchField
-              form={form}
-              name="enabled"
-              label={m['billing.creem_enable']()}
-              description={m['billing.creem_enable_description']()}
-              dataTestId="page-creem-enabled-switch"
-            />
-
             <PasswordField
               form={form}
               name="apiKey"

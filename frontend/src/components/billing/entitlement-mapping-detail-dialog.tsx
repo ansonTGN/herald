@@ -237,9 +237,7 @@ export function EntitlementMappingDetailDialog({
                         <Select
                           value={field.state.value ?? BUCKET_NONE_SENTINEL}
                           onValueChange={(value) =>
-                            field.handleChange(
-                              value === BUCKET_NONE_SENTINEL ? null : value
-                            )
+                            field.handleChange(value === BUCKET_NONE_SENTINEL ? null : value)
                           }
                         >
                           <SelectTrigger

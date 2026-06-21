@@ -14,7 +14,6 @@ use herald_api_base::application::http::common::auth_utils::require_authenticate
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::PermissionService;
 use herald_core::domain::realm_config::RealmConfigRepository;
 
 #[utoipa::path(
@@ -40,27 +39,13 @@ pub async fn list_payment_providers(
     let _user_id =
         require_authenticated_user_in_realm(&identity, &realm_id, "list payment providers")?;
 
-    let can_manage = if identity.is_user() {
-        state
-            .permission_checker
-            .check_permission(&realm_id, &identity.user_id(), "billing", "manage")
-            .await
-            .unwrap_or(false)
-    } else {
-        false
-    };
-
     let mut providers = Vec::new();
 
-    if let Some(stripe_config) = get_stripe_config_for_providers(&state, &realm_id).await?
-        && (can_manage || stripe_config.enabled)
-    {
+    if let Some(stripe_config) = get_stripe_config_for_providers(&state, &realm_id).await? {
         providers.push(stripe_config);
     }
 
-    if let Some(creem_config) = get_creem_config_for_providers(&state, &realm_id).await?
-        && (can_manage || creem_config.enabled)
-    {
+    if let Some(creem_config) = get_creem_config_for_providers(&state, &realm_id).await? {
         providers.push(creem_config);
     }
 
@@ -85,13 +70,11 @@ pub async fn get_stripe_config_for_providers(
     }
 
     let mut last_updated: Option<chrono::DateTime<chrono::Utc>> = None;
-    let mut enabled = true;
     let mut has_config = false;
 
     for rc in &configs {
         last_updated =
             Some(last_updated.map_or(rc.updated_at, |current| current.max(rc.updated_at)));
-        enabled &= rc.enabled;
 
         if rc.config_key == "publishable_key" {
             has_config = true;
@@ -108,7 +91,6 @@ pub async fn get_stripe_config_for_providers(
         api_version: None,
         webhook_endpoint: Some("Stripe webhooks configured".to_string()),
         last_updated: last_updated.map(|dt| dt.to_rfc3339()),
-        enabled,
     }))
 }
 
@@ -130,13 +112,11 @@ pub async fn get_creem_config_for_providers(
     }
 
     let mut last_updated: Option<chrono::DateTime<chrono::Utc>> = None;
-    let mut enabled = true;
     let mut has_config = false;
 
     for rc in &configs {
         last_updated =
             Some(last_updated.map_or(rc.updated_at, |current| current.max(rc.updated_at)));
-        enabled &= rc.enabled;
 
         if rc.config_key == "api_key" {
             has_config = true;
@@ -153,6 +133,5 @@ pub async fn get_creem_config_for_providers(
         api_version: None,
         webhook_endpoint: Some("Creem webhooks configured".to_string()),
         last_updated: last_updated.map(|dt| dt.to_rfc3339()),
-        enabled,
     }))
 }

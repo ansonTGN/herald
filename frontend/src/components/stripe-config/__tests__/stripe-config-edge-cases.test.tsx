@@ -25,8 +25,6 @@ describe('StripeConfigForm - Edge Cases and Boundary Scenarios', () => {
 
       render(<StripeConfigForm {...defaultProps} />)
 
-      await user.click(screen.getByTestId('stripe-enabled-switch'))
-
       await user.type(screen.getByTestId('stripe-publishable-key-input'), '  pk_test_123  ')
       await user.type(screen.getByTestId('stripe-secret-key-input'), '  sk_test_456  ')
 
@@ -40,8 +38,6 @@ describe('StripeConfigForm - Edge Cases and Boundary Scenarios', () => {
     test('handles internal whitespace in keys', async () => {
       const user = userEvent.setup()
       render(<StripeConfigForm {...defaultProps} />)
-
-      await user.click(screen.getByTestId('stripe-enabled-switch'))
 
       await user.type(screen.getByTestId('stripe-publishable-key-input'), 'pk_test 123')
       await user.type(screen.getByTestId('stripe-secret-key-input'), 'sk_test 456')
@@ -62,7 +58,6 @@ describe('StripeConfigForm - Edge Cases and Boundary Scenarios', () => {
 
       render(<StripeConfigForm {...defaultProps} />)
 
-      await user.click(screen.getByTestId('stripe-enabled-switch'))
       await user.type(screen.getByTestId('stripe-publishable-key-input'), 'pk_test_12345')
       await user.type(screen.getByTestId('stripe-secret-key-input'), 'sk_test_67890')
 
@@ -86,7 +81,6 @@ describe('StripeConfigForm - Edge Cases and Boundary Scenarios', () => {
 
       render(<StripeConfigForm {...defaultProps} />)
 
-      await user.click(screen.getByTestId('stripe-enabled-switch'))
       await user.type(screen.getByTestId('stripe-publishable-key-input'), 'pk_test_12345')
       await user.type(screen.getByTestId('stripe-secret-key-input'), 'sk_test_67890')
 

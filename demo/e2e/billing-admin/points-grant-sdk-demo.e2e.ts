@@ -26,6 +26,8 @@ import {
   type ApiKeyWithPermission,
 } from '../helpers/grant-points-helpers'
 import { makeExtApiRequest } from '../helpers/ext-api-helper'
+import { listBucketsViaApi } from '../helpers/bucket-helpers'
+import { CREDIT_BUCKET_KEYS } from '../helpers/bucket-seed-ids'
 
 // Non-existent but valid UUID for S5 (UserNotFound test).
 // Must be valid UUID format -- a non-UUID string triggers 400 InvalidUserIdFormat instead of 404.
@@ -39,6 +41,15 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
   let apiKeyWithPermission: ApiKeyWithPermission
   let apiKeyWithoutPermission: ApiKeyWithPermission
   let adminUserUuid: string
+  /**
+   * Target Credit Bucket UUID for happy-path grants (credit-bucket §4.2.4 / A5:
+   * bucketId is now REQUIRED on every ext-API grant). Resolved in `beforeAll`
+   * from the seeded admin-realm `primary-pool` directory via the admin HTTP
+   * API (same authenticated session used to create the API keys). Empty string
+   * sentinel mirrors `adminUserUuid` — error-path tests (S4-S6) tolerate a
+   * missing value because the realm/permission/user check fails first.
+   */
+  let targetBucketId: string
   let setupStartTime: number
 
   test.beforeAll(async ({ browser }) => {
@@ -95,6 +106,34 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
             'Ensure the demo environment has the admin user seeded.',
         )
         adminUserUuid = ''
+      }
+
+      // Resolve the target Credit Bucket UUID (credit-bucket §4.2.4 / A5: the
+      // ext-API grant now requires `bucketId`). The admin realm is seeded with
+      // a `primary-pool` (registration pool) bucket by
+      // `scripts/lib/demo_seed.py::_ensure_credit_buckets`; reuse that as the
+      // target for every happy-path grant. Failures fall back to '' and rely
+      // on the same warn-and-continue pattern as `adminUserUuid`.
+      try {
+        const buckets = await listBucketsViaApi(page, DEMO_ADMIN.realmId)
+        const primary = buckets.find(
+          (b) => b.bucketKey === CREDIT_BUCKET_KEYS.PRIMARY_POOL,
+        )
+        targetBucketId = primary?.id ?? ''
+      } catch (error) {
+        console.warn(
+          '[SDK Grant Points] Could not resolve admin-realm primary-pool bucket:',
+          error,
+        )
+        targetBucketId = ''
+      }
+
+      if (!targetBucketId) {
+        console.warn(
+          '[SDK Grant Points] primary-pool bucket not found in admin realm. ' +
+            'Happy-path tests (S1-S3) will fail with 400 grant_bucket_required. ' +
+            'Ensure scripts/lib/demo_seed.py::_ensure_credit_buckets has run.',
+        )
       }
     } finally {
       await context.close()
@@ -175,6 +214,8 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
           amount,
           reason,
           validityDays,
+          // credit-bucket §4.2.4 / A5: bucketId is required.
+          bucketId: targetBucketId,
         },
       )
     })
@@ -215,6 +256,8 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
           amount,
           reason,
           // No validityDays -- permanent grant
+          // credit-bucket §4.2.4 / A5: bucketId is required.
+          bucketId: targetBucketId,
         },
       )
     })
@@ -250,6 +293,9 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
           userId: adminUserUuid,
           amount: 0,
           reason: 'Invalid amount test',
+          // credit-bucket §4.2.4 / A5: bucketId is required by the contract.
+          // The amount=0 check fails first, so the value is incidental here.
+          bucketId: targetBucketId,
         },
       )
     })
@@ -290,6 +336,9 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
           userId: adminUserUuid || NONEXISTENT_USER_ID,
           amount: 100,
           reason: 'Should be rejected',
+          // credit-bucket §4.2.4 / A5: bucketId is required by the contract.
+          // The permission check fails before bucket validation.
+          bucketId: targetBucketId,
         },
       )
     })
@@ -322,6 +371,9 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
           userId: NONEXISTENT_USER_ID,
           amount: 100,
           reason: 'User not found test',
+          // credit-bucket §4.2.4 / A5: bucketId is required by the contract.
+          // The user-not-found check fails before bucket validation.
+          bucketId: targetBucketId,
         },
       )
     })
@@ -354,6 +406,9 @@ test.describe('[SDK Ext API] Grant Points Demo Tests (US-TP-017)', () => {
           userId: NONEXISTENT_USER_ID,
           amount: 100,
           reason: 'Cross-realm test',
+          // credit-bucket §4.2.4 / A5: bucketId is required by the contract.
+          // The cross-realm check fails before bucket validation.
+          bucketId: targetBucketId,
         },
       )
     })

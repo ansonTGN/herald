@@ -184,8 +184,7 @@ export function PointsWalletsPage({ realmId }: PointsWalletsPageProps) {
     const bucketId = row.bucketId ?? ''
     const enabled = resolveBucketEnabled(bucketId, row.enabled)
     const rowTestId = `admin-wallet-row-${row.userId}-${bucketId}`
-    const isSelected =
-      selectedRow?.userId === row.userId && selectedRow?.bucketId === bucketId
+    const isSelected = selectedRow?.userId === row.userId && selectedRow?.bucketId === bucketId
 
     return (
       <div
@@ -210,9 +209,7 @@ export function PointsWalletsPage({ realmId }: PointsWalletsPageProps) {
               <span className="truncate">
                 {m['points.transaction_bucket_column']()}: {resolveBucketName(bucketId, row.name)}
               </span>
-              {!enabled && (
-                <Badge variant="secondary">{m['points.bucket_card_disabled']()}</Badge>
-              )}
+              {!enabled && <Badge variant="secondary">{m['points.bucket_card_disabled']()}</Badge>}
             </div>
           </div>
           <div className="shrink-0 text-right">
@@ -315,7 +312,10 @@ export function PointsWalletsPage({ realmId }: PointsWalletsPageProps) {
             ) : filteredItems.length > 0 ? (
               <div className="space-y-2">{filteredItems.map((row) => renderWalletRow(row))}</div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground" data-testid="admin-wallets-empty">
+              <div
+                className="text-center py-8 text-muted-foreground"
+                data-testid="admin-wallets-empty"
+              >
                 {bucketFilter !== FILTER_ALL_VALUE || searchQuery
                   ? m['points.admin_wallets_empty_filtered']()
                   : m['points.admin_wallets_empty']()}
@@ -325,52 +325,53 @@ export function PointsWalletsPage({ realmId }: PointsWalletsPageProps) {
         </Card>
 
         {/* Drilldown: single user × single bucket ledger */}
-        {selectedRow && (() => {
-          const selectedUser = usersById.get(selectedRow.userId)
-          const selectedUserName =
-            selectedUser?.nickname || selectedUser?.email || selectedRow.userId
-          const selectedBucketName = resolveBucketName(selectedRow.bucketId)
-          return (
-            <div className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <History className="h-4 w-4" />
-                    {m['points.admin_wallets_drilldown_title']({
-                      user: selectedUserName,
-                      bucket: selectedBucketName,
-                    })}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <TransactionHistoryTable
-                    transactions={transactionsData?.transactions || []}
-                    loading={transactionsLoading}
-                    filters={{
-                      ...transactionFilters,
-                      bucketId: selectedRow.bucketId || undefined,
-                    }}
-                    buckets={
-                      selectedRow.bucketId
-                        ? [{ id: selectedRow.bucketId, name: selectedBucketName }]
-                        : []
-                    }
-                    admin={true}
+        {selectedRow &&
+          (() => {
+            const selectedUser = usersById.get(selectedRow.userId)
+            const selectedUserName =
+              selectedUser?.nickname || selectedUser?.email || selectedRow.userId
+            const selectedBucketName = resolveBucketName(selectedRow.bucketId)
+            return (
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <History className="h-4 w-4" />
+                      {m['points.admin_wallets_drilldown_title']({
+                        user: selectedUserName,
+                        bucket: selectedBucketName,
+                      })}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <TransactionHistoryTable
+                      transactions={transactionsData?.transactions || []}
+                      loading={transactionsLoading}
+                      filters={{
+                        ...transactionFilters,
+                        bucketId: selectedRow.bucketId || undefined,
+                      }}
+                      buckets={
+                        selectedRow.bucketId
+                          ? [{ id: selectedRow.bucketId, name: selectedBucketName }]
+                          : []
+                      }
+                      admin={true}
+                    />
+                  </CardContent>
+                </Card>
+                {transactionsData && transactionsData.total > 0 && (
+                  <ListPagination
+                    page={transactionsPage - 1}
+                    pageSize={DEFAULT_PAGE_SIZE}
+                    total={transactionsData.total}
+                    onPageChange={(page) => setTransactionsPage(page + 1)}
+                    testIdPrefix="transaction-pagination"
                   />
-                </CardContent>
-              </Card>
-              {transactionsData && transactionsData.total > 0 && (
-                <ListPagination
-                  page={transactionsPage - 1}
-                  pageSize={DEFAULT_PAGE_SIZE}
-                  total={transactionsData.total}
-                  onPageChange={(page) => setTransactionsPage(page + 1)}
-                  testIdPrefix="transaction-pagination"
-                />
-              )}
-            </div>
-          )
-        })()}
+                )}
+              </div>
+            )
+          })()}
       </div>
       {grantDialogOpen && (
         <GrantPointsDialog

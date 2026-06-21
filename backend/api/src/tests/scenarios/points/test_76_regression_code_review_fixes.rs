@@ -189,15 +189,14 @@ async fn test_grant_points_rejected_for_frozen_wallet(ctx: &mut SchemaTestContex
         .await
         .expect("Failed to freeze wallet");
 
-    // Credit-bucket: GrantPointsInput now requires a bucket_id. Create a real
-    // bucket as the grant target — the wallet-status rejection happens before
-    // the ledger is written, so the bucket is never used at runtime here.
-    use crate::tests::helpers::credit_bucket_helpers::{
-        CreditBucketOpts, create_test_credit_bucket,
-    };
-    let bucket_id =
-        create_test_credit_bucket(&ctx.app_state.pool, &realm_id, CreditBucketOpts::default())
-            .await;
+    // Grant must target the SAME bucket the frozen wallet lives in; otherwise
+    // grant_points_for_sdk resolves/creates a different (active) pool and never
+    // observes the frozen wallet. Read the wallet's bucket directly.
+    let bucket_id: Uuid = sqlx::query_scalar("SELECT bucket_id FROM points_wallets WHERE id = $1")
+        .bind(wallet_id)
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .expect("Failed to read frozen wallet bucket_id");
 
     // Attempt to grant points — service layer reads status='frozen' and should reject
     let input = GrantPointsInput {
@@ -253,13 +252,14 @@ async fn test_grant_points_rejected_for_closed_wallet(ctx: &mut SchemaTestContex
         .await
         .expect("Failed to close wallet");
 
-    // Credit-bucket: GrantPointsInput now requires a bucket_id.
-    use crate::tests::helpers::credit_bucket_helpers::{
-        CreditBucketOpts, create_test_credit_bucket,
-    };
-    let bucket_id =
-        create_test_credit_bucket(&ctx.app_state.pool, &realm_id, CreditBucketOpts::default())
-            .await;
+    // Grant must target the SAME bucket the closed wallet lives in; otherwise
+    // grant_points_for_sdk resolves/creates a different (active) pool and never
+    // observes the closed wallet. Read the wallet's bucket directly.
+    let bucket_id: Uuid = sqlx::query_scalar("SELECT bucket_id FROM points_wallets WHERE id = $1")
+        .bind(wallet_id)
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .expect("Failed to read closed wallet bucket_id");
 
     let input = GrantPointsInput {
         user_id,

@@ -43,10 +43,7 @@ describe('PaymentAttemptStatus provider-specific conditional branches', () => {
       )
 
       expectPresent('payment-redirect-prompt', 'payment-redirect-manual-link')
-      expectAbsent(
-        'payment-context-degraded',
-        'payment-status-pending'
-      )
+      expectAbsent('payment-context-degraded', 'payment-status-pending')
     })
   })
 
@@ -63,10 +60,7 @@ describe('PaymentAttemptStatus provider-specific conditional branches', () => {
       )
 
       expectPresent('payment-redirect-prompt', 'payment-redirect-manual-link')
-      expectAbsent(
-        'payment-context-degraded',
-        'payment-status-pending'
-      )
+      expectAbsent('payment-context-degraded', 'payment-status-pending')
     })
   })
 

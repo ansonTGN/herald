@@ -214,9 +214,7 @@ export function PaymentProvidersPage({ realmId }: PaymentProvidersPageProps) {
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
         onConfirm={handleDelete}
-        configType={
-          ({ creem: 'Creem', stripe: 'Stripe' } as const)[deleteProviderType]
-        }
+        configType={({ creem: 'Creem', stripe: 'Stripe' } as const)[deleteProviderType]}
         activeSubscriptions={0}
         isDeleting={deleteMutation.isPending}
       />

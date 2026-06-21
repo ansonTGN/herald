@@ -6,10 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared'
-import {
-  creditBucketsListQueryOptions,
-  creditBucketDetailQueryOptions,
-} from '@/data/query-options'
+import { creditBucketsListQueryOptions, creditBucketDetailQueryOptions } from '@/data/query-options'
 import { useDeleteCreditBucket } from '@/data/credit-bucket-mutations'
 import { m } from '@/paraglide/messages'
 import { CreditBucketListItem } from './credit-bucket-list-item'
@@ -53,7 +50,7 @@ export function CreditBucketsDirectoryPage({
     const q = search.trim().toLowerCase()
     if (!q) return buckets
     return buckets.filter(
-      (b) => b.name.toLowerCase().includes(q) || b.bucketKey.toLowerCase().includes(q),
+      (b) => b.name.toLowerCase().includes(q) || b.bucketKey.toLowerCase().includes(q)
     )
   }, [buckets, search])
 
@@ -199,21 +196,13 @@ function LoadingList() {
   )
 }
 
-function EmptyState({
-  isEmptyRealm,
-  onCreate,
-}: {
-  isEmptyRealm: boolean
-  onCreate: () => void
-}) {
+function EmptyState({ isEmptyRealm, onCreate }: { isEmptyRealm: boolean; onCreate: () => void }) {
   return (
     <Card className="border-dashed" data-testid="credit-buckets-empty-state">
       <CardContent className="flex flex-col items-center justify-center py-12 text-center">
         <Layers className="mb-4 h-12 w-12 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">
-          {isEmptyRealm
-            ? m['credit_buckets.empty_realm']()
-            : m['credit_buckets.empty_search']()}
+          {isEmptyRealm ? m['credit_buckets.empty_realm']() : m['credit_buckets.empty_search']()}
         </p>
         {isEmptyRealm && (
           <Button className="mt-4" onClick={onCreate} data-testid="credit-bucket-empty-new-button">
@@ -231,9 +220,7 @@ function NoSelection() {
     <Card className="border-dashed" data-testid="credit-buckets-no-selection">
       <CardContent className="flex flex-col items-center justify-center py-16 text-center">
         <Layers className="mb-4 h-12 w-12 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
-          {m['credit_buckets.no_selection']()}
-        </p>
+        <p className="text-sm text-muted-foreground">{m['credit_buckets.no_selection']()}</p>
       </CardContent>
     </Card>
   )

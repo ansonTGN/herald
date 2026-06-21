@@ -78,7 +78,12 @@ export function BucketMultiselect({
             className="w-full justify-between font-normal"
             data-testid={testIdPrefix}
           >
-            <span className={cn('flex items-center gap-1 truncate', value.length === 0 && 'text-muted-foreground')}>
+            <span
+              className={cn(
+                'flex items-center gap-1 truncate',
+                value.length === 0 && 'text-muted-foreground'
+              )}
+            >
               {value.length === 0 ? (
                 placeholder
               ) : (
@@ -93,7 +98,10 @@ export function BucketMultiselect({
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[var(--radix-popover-content-available-width)] min-w-[16rem] p-0" align="start">
+        <PopoverContent
+          className="w-[var(--radix-popover-content-available-width)] min-w-[16rem] p-0"
+          align="start"
+        >
           <Command>
             <CommandInput placeholder={searchPlaceholder} data-testid={`${testIdPrefix}-search`} />
             <CommandList>
@@ -108,7 +116,9 @@ export function BucketMultiselect({
                       onSelect={() => toggle(opt.id)}
                       data-testid={`${testIdPrefix}-item-${opt.id}`}
                     >
-                      <Check className={cn('mr-2 h-4 w-4', selected ? 'opacity-100' : 'opacity-0')} />
+                      <Check
+                        className={cn('mr-2 h-4 w-4', selected ? 'opacity-100' : 'opacity-0')}
+                      />
                       <span className="truncate">{opt.label}</span>
                       {opt.hint && (
                         <span className="ml-auto text-xs text-muted-foreground">{opt.hint}</span>
@@ -137,13 +147,15 @@ export function BucketMultiselect({
  * schema-derived error down via `error`.
  */
 export function CreditBucketCoverageMultiselect(
-  props: Omit<BucketMultiselectProps, 'testIdPrefix'> & { testIdPrefix?: string },
+  props: Omit<BucketMultiselectProps, 'testIdPrefix'> & { testIdPrefix?: string }
 ) {
   return (
     <BucketMultiselect
       {...props}
       placeholder={props.placeholder || m['credit_buckets.coverage_placeholder']()}
-      searchPlaceholder={props.searchPlaceholder || m['credit_buckets.coverage_search_placeholder']()}
+      searchPlaceholder={
+        props.searchPlaceholder || m['credit_buckets.coverage_search_placeholder']()
+      }
       emptyText={props.emptyText || m['credit_buckets.coverage_empty']()}
       testIdPrefix={props.testIdPrefix ?? 'bucket-coverage-multiselect'}
     />

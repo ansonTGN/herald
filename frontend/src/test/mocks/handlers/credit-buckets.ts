@@ -43,9 +43,7 @@ export const creditBucketsHandlers = [
 
 /** 409 `bucket_in_use` body — design §4.2.3. */
 export function deleteBucketInUseHandler(body: BucketInUseErrorBody) {
-  return http.delete(`${BASE}/:bucketId`, () =>
-    HttpResponse.json(body, { status: 409 })
-  )
+  return http.delete(`${BASE}/:bucketId`, () => HttpResponse.json(body, { status: 409 }))
 }
 
 /** 409 `registration_pool_conflict` on PUT — design §4.2.2. */

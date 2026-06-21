@@ -277,20 +277,13 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
               <form.Field name="bucketId">
                 {(field) => (
                   <div className="space-y-2">
-                    <Label htmlFor="grant-bucket">
-                      {m['points.grant_dialog_bucket_label']()}
-                    </Label>
+                    <Label htmlFor="grant-bucket">{m['points.grant_dialog_bucket_label']()}</Label>
                     <Select
                       value={field.state.value}
                       onValueChange={(value) => field.handleChange(value)}
                     >
-                      <SelectTrigger
-                        id="grant-bucket"
-                        data-testid="grant-points-bucket-select"
-                      >
-                        <SelectValue
-                          placeholder={m['points.grant_dialog_bucket_placeholder']()}
-                        />
+                      <SelectTrigger id="grant-bucket" data-testid="grant-points-bucket-select">
+                        <SelectValue placeholder={m['points.grant_dialog_bucket_placeholder']()} />
                       </SelectTrigger>
                       <SelectContent>
                         {buckets.map((bucket) => (

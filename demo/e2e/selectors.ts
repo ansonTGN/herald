@@ -613,6 +613,13 @@ export const SELECTORS = {
     filterClientApp: '[data-testid="filter-client-app"]',
     resetFiltersButton: '[data-testid="clear-filters-button"]',
     applyFiltersButton: '[data-testid="apply-filters-button"]',
+    // Credit-bucket admin wallets (US-CB cross-tenant bucket view):
+    // each row keyed by (userId, bucketId). Bucket filter Select + optional
+    // cross-bucket total card rendered above the list.
+    walletRowByBucket: (userId: string, bucketId: string) =>
+      `[data-testid="admin-wallet-row-${userId}-${bucketId}"]`,
+    bucketFilter: '[data-testid="admin-wallets-bucket-filter"]',
+    crossBucketTotal: '[data-testid="admin-wallets-cross-bucket-total"]',
   },
   /**
    * Points User Page Selectors
@@ -625,6 +632,31 @@ export const SELECTORS = {
     balanceCard: '[data-testid="points-balance-card"]',
     balanceAmount: '[data-testid="points-balance"]',
     accountStatus: '[data-testid="points-wallet-status"]',
+    // Credit-bucket (DE-D07): the bucket-aware UI renders one
+    // `points-balance-card-${bucketId}` per held bucket (PointsBalanceCard.tsx).
+    // The flat `points-balance-card` testid above only matches the loading
+    // skeleton or a null-bucket fallback card. Sibling demos that just need to
+    // assert "the user has at least one balance card rendered" (without
+    // resolving a specific bucket UUID) use this prefix locator. Demos that
+    // care about a SPECIFIC bucket use `balanceCardByBucket(bucketId)`.
+    firstBalanceCard: '[data-testid^="points-balance-card-"]',
+    // Bucket-grouped balances (credit-bucket US-CB-005). Per-bucket card +
+    // per-type chip + cross-bucket total (only rendered when ≥2 buckets held).
+    balanceCardByBucket: (bucketId: string) =>
+      `[data-testid="points-balance-card-${bucketId}"]`,
+    balanceCardDisabledBadge: (bucketId: string) =>
+      `[data-testid="points-balance-card-disabled-${bucketId}"]`,
+    balanceTotalByBucket: (bucketId: string) =>
+      `[data-testid="points-balance-total-${bucketId}"]`,
+    balanceType: (bucketId: string, typeKey: string) =>
+      `[data-testid="points-balance-type-${bucketId}-${typeKey}"]`,
+    crossBucketTotal: '[data-testid="user-points-cross-bucket-total"]',
+    balanceEmpty: '[data-testid="points-balance-empty"]',
+    // Transaction bucket dimension (credit-bucket US-CB-006).
+    // No header testid exists; only per-row bucket cells — assert on row cells.
+    transactionBucketCell: (rowIndex: number) =>
+      `[data-testid="transaction-bucket-${rowIndex}"]`,
+    filterBucket: '[data-testid="filter-bucket"]',
     // Transaction History
     transactionsSection:
       '[data-testid="transaction-history-table"], [data-testid="no-transactions"]',
@@ -675,6 +707,10 @@ export const SELECTORS = {
     confirmButton: '[data-testid="grant-points-confirm-button"]',
     // Error alert
     errorMessage: '[data-testid="grant-points-error-message"]',
+    // Target Bucket Select (credit-bucket US-CB / A5: bucketId is required).
+    // CONSUMED BY DE-D07 (grant-points-helpers.ts). DE-D01 only declares the
+    // selector; it does NOT modify pre-existing grant-points-helpers.ts.
+    bucketSelect: '[data-testid="grant-points-bucket-select"]',
   },
 
   /**
@@ -748,6 +784,15 @@ export const SELECTORS = {
     firstCard: () => '[data-testid^="mapping-card-"]',
     noProviderHint: '[data-testid="no-provider-hint"]',
     emptyState: '[data-testid="purchase-empty-state"]',
+    // Credit-bucket (credit-bucket US-CB-003/004): mappings with no bucket
+    // assignment render as a disabled "unassigned" card with a hint.
+    unassignedCard: (mappingId: string) =>
+      `[data-testid="mapping-card-unassigned-${mappingId}"]`,
+    unassignedHint: (mappingId: string) =>
+      `[data-testid="mapping-card-unassigned-hint-${mappingId}"]`,
+    // When no mapping is purchasable (all unassigned / no provider), the page
+    // renders a distinct state distinct from the generic empty state.
+    noPurchasableState: '[data-testid="purchase-no-purchasable-state"]',
   },
 
   /**
@@ -841,6 +886,95 @@ export const SELECTORS = {
     codeSubmit: '[data-testid="device-code-submit"]',
     authorizeButton: '[data-testid="device-authorize-button"]',
     denyButton: '[data-testid="device-deny-button"]',
+  },
+
+  /**
+   * Credit Bucket Directory (Admin)
+   *
+   * Route: /{realmId}/manage/billing/credit-buckets
+   *
+   * LOUD NOTE — i18n-dependent sidebar entry:
+   * The sidebar menu item testid `sidebar-menu-credit-buckets` is derived in
+   * `components/admin/sidebar.tsx` from the localized label
+   * `m['nav.credit_buckets']().toLowerCase().replace(/\s+/g,'-')`. The testid
+   * therefore differs per locale. Demo tests MUST navigate by route
+   * (`/{realmId}/manage/billing/credit-buckets`), NOT by clicking the
+   * locale-derived sidebar testid. See `.ai/design/credit-bucket.md` §4.4.2/§7
+   * and `demo/dev/dev.md` loud notes.
+   *
+   * User stories: US-CB-001 (admin CRUD), US-CB-002 (coverage set),
+   * US-CB-003 (mapping→bucket assignment).
+   *
+   * Verified testids: frontend/src/components/billing/credit-bucket/*.tsx +
+   * frontend/src/routes/$realmId/manage/billing/credit-buckets.tsx.
+   */
+  creditBucket: {
+    // Directory page container + toolbar
+    directoryPage: '[data-testid="credit-buckets-directory-page"]',
+    searchInput: '[data-testid="credit-bucket-search-input"]',
+    newButton: '[data-testid="credit-bucket-new-button"]',
+    emptyNewButton: '[data-testid="credit-bucket-empty-new-button"]',
+    // List item + per-bucket badges
+    listItem: (bucketId: string) =>
+      `[data-testid="credit-bucket-list-item-${bucketId}"]`,
+    listItemRegistrationBadge: (bucketId: string) =>
+      `[data-testid="credit-bucket-list-item-${bucketId}-registration-badge"]`,
+    listItemDisabledBadge: (bucketId: string) =>
+      `[data-testid="credit-bucket-list-item-${bucketId}-disabled-badge"]`,
+    // Empty / no-selection states
+    emptyState: '[data-testid="credit-buckets-empty-state"]',
+    noSelection: '[data-testid="credit-buckets-no-selection"]',
+    // Editor (used for both create and edit)
+    editor: '[data-testid="credit-bucket-editor"]',
+    editorName: '[data-testid="credit-bucket-editor-name"]',
+    editorBucketKey: '[data-testid="credit-bucket-editor-bucket-key"]',
+    editorDescription: '[data-testid="credit-bucket-editor-description"]',
+    editorEnabled: '[data-testid="credit-bucket-editor-enabled"]',
+    editorRegistration: '[data-testid="credit-bucket-editor-registration"]',
+    editorRegistrationConflict:
+      '[data-testid="credit-bucket-editor-registration-conflict"]',
+    editorSubmit: '[data-testid="credit-bucket-editor-submit"]',
+    // Delete dialog (destructive op)
+    deleteButton: '[data-testid="credit-bucket-delete-button"]',
+    deleteConfirmDialog: '[data-testid="delete-bucket-confirm-dialog"]',
+    deleteErrorMessage: '[data-testid="delete-bucket-error-message"]',
+    deleteConfirmButton: '[data-testid="delete-bucket-confirm-button"]',
+    deleteCancelButton: '[data-testid="delete-bucket-cancel-button"]',
+    // Overview (matrix audit) page — Route: /{realmId}/manage/billing/credit-buckets/overview
+    overviewPage: '[data-testid="credit-bucket-overview-page"]',
+    overviewToolbar: '[data-testid="credit-bucket-overview-toolbar"]',
+    overviewTable: '[data-testid="credit-bucket-overview-table"]',
+    overviewGrandTotal: '[data-testid="credit-bucket-overview-grandtotal"]',
+    overviewGrandTotalByKey: (key: string) =>
+      `[data-testid="credit-bucket-overview-grandtotal-${key}"]`,
+    overviewColTotalByKey: (key: string) =>
+      `[data-testid="credit-bucket-overview-col-total-${key}"]`,
+    overviewRow: (bucketId: string) =>
+      `[data-testid="credit-bucket-overview-row-${bucketId}"]`,
+    overviewCell: (bucketId: string, key: string) =>
+      `[data-testid="credit-bucket-overview-cell-${bucketId}-${key}"]`,
+    overviewDisabled: (bucketId: string) =>
+      `[data-testid="credit-bucket-overview-disabled-${bucketId}"]`,
+    overviewRegistration: (bucketId: string) =>
+      `[data-testid="credit-bucket-overview-registration-${bucketId}"]`,
+    overviewDetail: (bucketId: string) =>
+      `[data-testid="credit-bucket-overview-detail-${bucketId}"]`,
+    overviewEmptyState: '[data-testid="credit-bucket-overview-empty-state"]',
+    overviewEmptyCta: '[data-testid="credit-bucket-overview-empty-cta"]',
+    // Coverage set multiselect (binds client apps to a bucket).
+    // Prefix is `bucket-coverage-multiselect` (frontend credit-bucket-coverage-multiselect.tsx).
+    coverageMultiselect: '[data-testid="bucket-coverage-multiselect"]',
+    coverageMultiselectSearch: '[data-testid="bucket-coverage-multiselect-search"]',
+    coverageMultiselectError: '[data-testid="bucket-coverage-multiselect-error"]',
+    coverageMultiselectItem: (clientAppId: string) =>
+      `[data-testid="bucket-coverage-multiselect-item-${clientAppId}"]`,
+    // Mappings multiselect (assigns entitlement mappings to a bucket).
+    // Prefix is `bucket-mappings-multiselect` (frontend credit-bucket-mappings-multiselect.tsx).
+    mappingsMultiselect: '[data-testid="bucket-mappings-multiselect"]',
+    mappingsMultiselectSearch: '[data-testid="bucket-mappings-multiselect-search"]',
+    mappingsMultiselectError: '[data-testid="bucket-mappings-multiselect-error"]',
+    mappingsMultiselectItem: (mappingId: string) =>
+      `[data-testid="bucket-mappings-multiselect-item-${mappingId}"]`,
   },
 
   /**

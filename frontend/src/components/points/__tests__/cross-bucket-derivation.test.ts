@@ -74,14 +74,12 @@ describe('deriveUserPointsView', () => {
     ] as const)(
       'with %i buckets for the current user -> showTotalBar=%s, cards=%i',
       (bucketCount, expectedShowTotalBar, expectedCardCount) => {
-        const items: WalletByBucketResponse[] = Array.from(
-          { length: bucketCount },
-          (_, i) =>
-            makeWalletByBucket({
-              userId: CURRENT_USER,
-              bucketId: `bucket-${i}`,
-              bucketTotal: 5,
-            })
+        const items: WalletByBucketResponse[] = Array.from({ length: bucketCount }, (_, i) =>
+          makeWalletByBucket({
+            userId: CURRENT_USER,
+            bucketId: `bucket-${i}`,
+            bucketTotal: 5,
+          })
         )
 
         const result = deriveUserPointsView(items, CURRENT_USER)

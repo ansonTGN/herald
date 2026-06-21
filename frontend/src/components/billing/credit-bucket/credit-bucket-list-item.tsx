@@ -27,19 +27,25 @@ export function CreditBucketListItem({ bucket, selected, onSelect }: CreditBucke
         'w-full rounded-md border px-3 py-2.5 text-left transition-colors',
         'hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
         selected ? 'border-primary bg-accent' : 'bg-card',
-        !bucket.enabled && 'opacity-70',
+        !bucket.enabled && 'opacity-70'
       )}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="truncate font-medium">{bucket.name}</span>
         <div className="flex shrink-0 items-center gap-1">
           {bucket.receivesRegistrationCredits && (
-            <Badge variant="default" data-testid={`credit-bucket-list-item-${bucket.id}-registration-badge`}>
+            <Badge
+              variant="default"
+              data-testid={`credit-bucket-list-item-${bucket.id}-registration-badge`}
+            >
               {m['credit_buckets.registration_pool_badge']()}
             </Badge>
           )}
           {!bucket.enabled && (
-            <Badge variant="secondary" data-testid={`credit-bucket-list-item-${bucket.id}-disabled-badge`}>
+            <Badge
+              variant="secondary"
+              data-testid={`credit-bucket-list-item-${bucket.id}-disabled-badge`}
+            >
               {m['credit_buckets.disabled_badge']()}
             </Badge>
           )}
@@ -51,9 +57,7 @@ export function CreditBucketListItem({ bucket, selected, onSelect }: CreditBucke
         <span>
           {m['credit_buckets.covered_apps_count']({ count: bucket.coveredClientAppCount })}
         </span>
-        <span>
-          {m['credit_buckets.mappings_count']({ count: bucket.entitlementMappingCount })}
-        </span>
+        <span>{m['credit_buckets.mappings_count']({ count: bucket.entitlementMappingCount })}</span>
       </div>
     </button>
   )

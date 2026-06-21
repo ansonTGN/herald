@@ -12,7 +12,6 @@ export const PAYMENT_PROVIDERS = {
 } as const
 
 export const STRIPE_CONFIG_KEYS = {
-  ENABLED: 'enabled',
   API_KEY: 'api_key',
   PUBLISHABLE_KEY: 'publishable_key',
   WEBHOOK_SECRET: 'webhook_secret',

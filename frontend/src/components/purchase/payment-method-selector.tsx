@@ -29,7 +29,8 @@ export function PaymentMethodSelector({
     <div data-testid="payment-method-selector" className="grid grid-cols-1 gap-4 md:grid-cols-3">
       {availableProviders.map((provider) => {
         const isSelected = selectedProvider === provider.platform
-        const isAvailable = provider.enabled // Use 'enabled' field instead of 'available'
+        // All listed providers are configured; there is no per-provider enable flag.
+        const isAvailable = true
 
         return (
           <Card

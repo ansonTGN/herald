@@ -75,7 +75,9 @@ describe('pointsTransactionsQueryOptions query key', () => {
     // bucketId now drives history filtering (FE-D01); it must enter the query key
     // so per-bucket history does not collide with realm-wide history in the cache.
     const withoutBucket = pointsTransactionsQueryOptions(realmId, {}).queryKey
-    const withBucket = pointsTransactionsQueryOptions(realmId, { bucketId: makeBucketId() }).queryKey
+    const withBucket = pointsTransactionsQueryOptions(realmId, {
+      bucketId: makeBucketId(),
+    }).queryKey
 
     expect(withoutBucket).not.toEqual(withBucket)
   })

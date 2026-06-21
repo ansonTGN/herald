@@ -20,10 +20,7 @@ import type {
   CreateCreditBucketFormData,
   UpdateCreditBucketFormData,
 } from '@/lib/schemas/credit-bucket-forms'
-import {
-  clientAppsQueryOptions,
-  entitlementMappingsQueryOptions,
-} from '@/data/query-options'
+import { clientAppsQueryOptions, entitlementMappingsQueryOptions } from '@/data/query-options'
 import { useCreateCreditBucket, useUpdateCreditBucket } from '@/data/credit-bucket-mutations'
 import type { BucketDetailResponse, EntitlementMappingResponse } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
@@ -75,7 +72,7 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
         label: app.name,
         hint: app.clientId,
       })),
-    [clientAppsData],
+    [clientAppsData]
   )
   const mappingOptions = useMemo(
     () =>
@@ -84,9 +81,9 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
           id: mp.id,
           label: mp.entitlementKey,
           hint: mp.externalProductId,
-        }),
+        })
       ),
-    [mappingsData],
+    [mappingsData]
   )
 
   const createDefaults: CreateCreditBucketFormData = {
@@ -159,7 +156,7 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
         clientAppIds: bucket.clientApps.map((c) => c.id),
         entitlementMappingIds: bucket.entitlementMappings.map((mp) => mp.id),
       },
-      { keepDefaultValues: true },
+      { keepDefaultValues: true }
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on bucket/form identity change
   }, [formKey])
@@ -182,7 +179,10 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
 
   if (isCreate) {
     return (
-      <EditorShell title={m['credit_buckets.editor_new_title']()} data-testid="credit-bucket-editor">
+      <EditorShell
+        title={m['credit_buckets.editor_new_title']()}
+        data-testid="credit-bucket-editor"
+      >
         <AppForm>
           <form
             onSubmit={(e) => {
@@ -230,9 +230,7 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
         >
           {/* bucketKey is immutable on update — read-only display */}
           <div className="space-y-2">
-            <Label htmlFor="bucket-key-readonly">
-              {m['credit_buckets.field_bucket_key']()}
-            </Label>
+            <Label htmlFor="bucket-key-readonly">{m['credit_buckets.field_bucket_key']()}</Label>
             <Input
               id="bucket-key-readonly"
               value={bucket?.bucketKey ?? ''}
@@ -288,9 +286,7 @@ function BucketFieldsBody({
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         {(field: any) => (
           <div className="space-y-2">
-            <Label htmlFor="bucket-description">
-              {m['credit_buckets.field_description']()}
-            </Label>
+            <Label htmlFor="bucket-description">{m['credit_buckets.field_description']()}</Label>
             <Textarea
               id="bucket-description"
               data-testid="credit-bucket-editor-description"
@@ -401,7 +397,6 @@ function BucketFieldsBody({
           )}
         </form.Field>
       )}
-
     </>
   )
 }

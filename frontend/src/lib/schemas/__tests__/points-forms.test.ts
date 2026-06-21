@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  transactionFiltersSchema,
-  accountFiltersSchema,
-  grantPointsSchema,
-} from '../points-forms'
+import { transactionFiltersSchema, accountFiltersSchema, grantPointsSchema } from '../points-forms'
 
 describe('transactionFiltersSchema', () => {
   describe('transactionType field', () => {
@@ -115,25 +111,22 @@ describe('grantPointsSchema', () => {
     it.each([
       ['missing field', undefined],
       ['empty string', ''],
-    ])(
-      'rejects %s with the bucket-required business error (fail loud)',
-      (_label, bucketId) => {
-        const input = validGrantInput()
-        delete (input as { bucketId?: unknown }).bucketId
-        if (bucketId !== undefined) {
-          input.bucketId = bucketId
-        }
-        const result = grantPointsSchema.safeParse(input)
-        expect(result.success).toBe(false)
-        if (!result.success) {
-          // The observable error carries the "必选目标 Bucket" business
-          // semantics via points.validation_bucket_required, not a generic
-          // zod message.
-          const bucketIssue = result.error.issues.find((i) => i.path[0] === 'bucketId')
-          expect(bucketIssue).toBeDefined()
-        }
+    ])('rejects %s with the bucket-required business error (fail loud)', (_label, bucketId) => {
+      const input = validGrantInput()
+      delete (input as { bucketId?: unknown }).bucketId
+      if (bucketId !== undefined) {
+        input.bucketId = bucketId
       }
-    )
+      const result = grantPointsSchema.safeParse(input)
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        // The observable error carries the "必选目标 Bucket" business
+        // semantics via points.validation_bucket_required, not a generic
+        // zod message.
+        const bucketIssue = result.error.issues.find((i) => i.path[0] === 'bucketId')
+        expect(bucketIssue).toBeDefined()
+      }
+    })
 
     it('accepts a valid UUID', () => {
       const result = grantPointsSchema.safeParse(

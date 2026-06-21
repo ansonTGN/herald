@@ -2,10 +2,10 @@ import { type PaymentProviderInfo } from '@/lib/api-generated'
 import { formatProviderName } from '@/components/billing/format-provider-name'
 
 /**
- * Filters payment providers to only include enabled ones
+ * Returns all configured payment providers (every listed provider is enabled).
  */
 export function getEnabledProviders(providers?: PaymentProviderInfo[]): PaymentProviderInfo[] {
-  return (providers ?? []).filter((p) => p.enabled)
+  return providers ?? []
 }
 
 /**

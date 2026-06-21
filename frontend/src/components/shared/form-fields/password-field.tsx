@@ -39,6 +39,7 @@ export function PasswordField({
       children={(
         field: any // eslint-disable-line @typescript-eslint/no-explicit-any -- generic field component
       ) => {
+        const hasValue = Boolean(field.state.value)
         return (
           <div className="space-y-2">
             <Label htmlFor={inputId ?? field.name}>
@@ -57,7 +58,7 @@ export function PasswordField({
                 disabled={disabled}
                 className="flex-1"
               />
-              {showToggle && (
+              {showToggle && hasValue && (
                 <Button
                   type="button"
                   variant="outline"

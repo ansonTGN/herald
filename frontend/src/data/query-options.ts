@@ -234,8 +234,7 @@ export const queryKeys = {
   creditBucketsList: (realmId: string) => [QUERY_KEYS.CREDIT_BUCKETS, realmId] as const,
   creditBucket: (realmId: string, bucketId: string) =>
     [QUERY_KEYS.CREDIT_BUCKETS, realmId, bucketId] as const,
-  creditBucketOverview: (realmId: string) =>
-    [QUERY_KEYS.CREDIT_BUCKET_OVERVIEW, realmId] as const,
+  creditBucketOverview: (realmId: string) => [QUERY_KEYS.CREDIT_BUCKET_OVERVIEW, realmId] as const,
   walletsByBucket: (realmId: string) => [QUERY_KEYS.WALLETS_BY_BUCKET, realmId] as const,
 }
 
@@ -1122,7 +1121,9 @@ export const creditBucketOverviewQueryOptions = (realmId: string) =>
   queryOptions({
     queryKey: queryKeys.creditBucketOverview(realmId),
     queryFn: async () =>
-      handleApiResponse(await getBucketOverviewHandler({ path: { realmId } })) as BucketOverviewResponse,
+      handleApiResponse(
+        await getBucketOverviewHandler({ path: { realmId } })
+      ) as BucketOverviewResponse,
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
   })

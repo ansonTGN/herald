@@ -7,9 +7,62 @@
 
 use herald_sdk::Client;
 use herald_test_support::SchemaTestContext;
-use sqlx::query;
+use sqlx::{query, query_scalar};
 use test_context::test_context;
 use uuid::Uuid;
+
+/// Ensure a single legacy `credit_buckets` row exists for the realm and attach
+/// every client app in the realm to it.
+///
+/// The credit-bucket migration made `points_wallets.bucket_id` and
+/// `points_credit_ledger.bucket_id` NOT NULL, and the consume path resolves
+/// pool coverage from `credit_bucket_client_apps` (no default-bucket merging).
+/// This mirrors `api::tests::helpers::points_helpers::ensure_test_bucket_for_realm`
+/// so this crate's raw-SQL wallet fixtures satisfy the same constraints.
+async fn ensure_legacy_bucket_for_realm(pool: &sqlx::PgPool, realm_id: &str) -> Uuid {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    use std::hash::Hasher;
+    hasher.write(realm_id.as_bytes());
+    let slug = format!("legacy-{:016x}", hasher.finish());
+
+    query(
+        r#"INSERT INTO credit_buckets
+             (id, realm_id, bucket_key, name, display_order, enabled,
+              receives_registration_credits, created_at, updated_at)
+           VALUES ($1, $2, $3, 'Legacy Test Bucket', 0, true, true, NOW(), NOW())
+           ON CONFLICT (realm_id, bucket_key) DO NOTHING"#,
+    )
+    .bind(Uuid::now_v7())
+    .bind(realm_id)
+    .bind(&slug)
+    .execute(pool)
+    .await
+    .expect("Failed to ensure legacy credit bucket");
+
+    let bucket_id: Uuid =
+        query_scalar("SELECT id FROM credit_buckets WHERE realm_id = $1 AND bucket_key = $2")
+            .bind(realm_id)
+            .bind(&slug)
+            .fetch_one(pool)
+            .await
+            .expect("Failed to fetch legacy credit bucket");
+
+    query(
+        r#"INSERT INTO credit_bucket_client_apps
+             (bucket_id, client_app_id, realm_id, created_at)
+           SELECT $1, id, $2, NOW()
+           FROM client_app
+           WHERE realm_id = $2
+           ON CONFLICT (bucket_id, client_app_id) DO NOTHING"#,
+    )
+    .bind(bucket_id)
+    .bind(realm_id)
+    .execute(pool)
+    .await
+    .expect("Failed to attach client apps to legacy credit bucket");
+
+    bucket_id
+}
 
 /// Helper function to create a points account with initial balance
 async fn create_points_wallet_with_balance(
@@ -19,18 +72,21 @@ async fn create_points_wallet_with_balance(
 ) -> Uuid {
     let account_uuid = Uuid::now_v7();
     let user_uuid = Uuid::parse_str(user_id).expect("Invalid user_id UUID format");
+    let bucket_id = ensure_legacy_bucket_for_realm(&ctx.app_state.pool, &ctx._realm_id).await;
+
     query(
         "INSERT INTO points_wallets (
-            id, user_id, realm_id,
+            id, user_id, realm_id, bucket_id,
             topup_balance, subscription_balance,
             total_topup_granted, total_subscription_granted,
             total_recharged, total_consumed, status
          )
-         VALUES ($1, $2, $3, 0, $4, 0, $4, 0, 0, 'active')",
+         VALUES ($1, $2, $3, $4, 0, $5, 0, $5, 0, 0, 'active')",
     )
     .bind(account_uuid)
     .bind(user_uuid)
     .bind(&ctx._realm_id)
+    .bind(bucket_id)
     .bind(initial_balance)
     .execute(&ctx.app_state.pool)
     .await
@@ -38,14 +94,15 @@ async fn create_points_wallet_with_balance(
 
     query(
         "INSERT INTO points_credit_ledger (
-            id, user_id, realm_id, credit_type, source_type, source_id,
+            id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
             granted_amount, used_amount, revoked_amount, status
          )
-         VALUES ($1, $2, $3, 'subscription_credit', 'system_grant', $4, $5, 0, 0, 'active')",
+         VALUES ($1, $2, $3, $4, 'subscription_credit', 'system_grant', $5, $6, 0, 0, 'active')",
     )
     .bind(Uuid::now_v7())
     .bind(user_uuid)
     .bind(&ctx._realm_id)
+    .bind(bucket_id)
     .bind(format!("test-grant-{}", account_uuid))
     .bind(initial_balance)
     .execute(&ctx.app_state.pool)
@@ -168,7 +225,9 @@ async fn test_scenario_sdk_consume_points_success(ctx: &mut SchemaTestContext) {
         result.err()
     );
     let response = result.unwrap();
-    assert_eq!(response.amount, -100); // Negative for consumption
+    // Consume response `amount` is the deduction magnitude (positive) — see the
+    // SDK `ConsumePointsResponse` / `BucketTransaction.amount` docs.
+    assert_eq!(response.amount, 100);
     assert_eq!(response.transactions[0].balance_after, 400);
 
     // 7. Cleanup

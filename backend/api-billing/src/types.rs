@@ -21,6 +21,8 @@ pub struct EntitlementMappingResponse {
     pub external_product_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_price_id: Option<String>,
+    /// Bound credit bucket (non-null; matches domain entity).
+    pub bucket_id: Uuid,
     pub entitlement_key: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_type: Option<String>,
@@ -122,6 +124,8 @@ pub struct PartialSyncErrorDto {
 pub struct OneTimeMappingItem {
     pub id: String,
     pub entitlement_key: String,
+    /// Bound credit bucket (non-null; matches domain entity).
+    pub bucket_id: Uuid,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_product_info: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]

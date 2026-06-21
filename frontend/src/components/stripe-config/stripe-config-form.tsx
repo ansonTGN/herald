@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { getFieldErrorMessage } from '@/lib/error-utils'
 import { m } from '@/paraglide/messages'
 
@@ -57,28 +56,6 @@ export function StripeConfigForm({
             }}
             className="space-y-4"
           >
-            {/* Enable Stripe */}
-            <form.Field
-              name="enabled"
-              children={(field) => (
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="stripe-enabled">{m['billing.stripe_enable']()}</Label>
-                    <p className="text-sm text-muted-foreground">
-                      {m['billing.stripe_enable_description']()}
-                    </p>
-                  </div>
-                  <Switch
-                    id="stripe-enabled"
-                    checked={field.state.value}
-                    onCheckedChange={(checked) => field.handleChange(checked)}
-                    disabled={disabled}
-                    data-testid="stripe-enabled-switch"
-                  />
-                </div>
-              )}
-            />
-
             {/* Publishable Key */}
             <form.Field
               name="publishableKey"

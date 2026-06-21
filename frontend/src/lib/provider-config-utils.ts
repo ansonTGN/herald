@@ -48,12 +48,15 @@ export function parseProviderConfig<T extends Record<string, unknown>>(
 /**
  * Build realm config request items from a form config object.
  * Maps form fields back to config key/value pairs for the batch upsert API.
+ *
+ * Each emitted config row is marked enabled=true; the provider is considered
+ * active when its required credentials are configured and disabled by deleting
+ * the config rows (see payment-providers-page).
  */
 export function buildProviderConfigRequest<T extends Record<string, unknown>>(
   config: T,
   providerType: ConfigType,
-  keyMappings: ConfigKeyMapping[],
-  enabled: boolean
+  keyMappings: ConfigKeyMapping[]
 ): BuildItem[] {
   const items: BuildItem[] = keyMappings.map((mapping) => {
     const value = config[mapping.fieldName as keyof T]
@@ -62,7 +65,7 @@ export function buildProviderConfigRequest<T extends Record<string, unknown>>(
       configKey: mapping.configKey,
       configValue: String(value ?? ''),
       isSecret: mapping.isSecret ?? false,
-      enabled,
+      enabled: true,
     }
   })
 

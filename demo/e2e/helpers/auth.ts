@@ -25,11 +25,20 @@ export const DEMO_ADMIN = {
 
 /**
  * Realm 管理员账户映射
+ *
+ * `realm-001` entry added by DE-D06 (sanctioned fix per DE-D02 loud note): the
+ * credit-bucket admin/balance/purchase demos target realm-001, whose admin is
+ * `admin@realm-001.com` (seeded by `scripts/lib/demo_seed.py`::
+ * `POINTS_REALM_ADMIN_EMAIL`). Without this entry `REALM_ADMINS[realmId]`
+ * returned `undefined` and `loginAsAdmin` fell back to `DEMO_ADMIN`
+ * (`admin@cas.com`), which is not a member of realm-001 → login API returned
+ * 401 and every credit-bucket admin demo failed at the Given step.
  */
 export const REALM_ADMINS: Record<string, { email: string; password: string }> = {
   admin: { email: 'admin@cas.com', password: 'password' },
   realm1: { email: 'realm1-admin@test.com', password: 'password' },
   realm2: { email: 'realm2-admin@test.com', password: 'password' },
+  'realm-001': { email: 'admin@realm-001.com', password: 'password' },
 }
 
 /**

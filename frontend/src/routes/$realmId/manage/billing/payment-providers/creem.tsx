@@ -41,7 +41,6 @@ function CreemConfigRoute() {
 
   const initialValues: Partial<CreemConfigForm> | undefined = configData
     ? {
-        enabled: configData.enabled,
         apiKey: '',
         timeout: configData.timeout,
         webhookSecret: '',

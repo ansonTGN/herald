@@ -4,18 +4,12 @@ import { PAYMENT_PROVIDERS } from '@/lib/billing-constants'
 import { parseProviderConfig, buildProviderConfigRequest } from '@/lib/provider-config-utils'
 
 export const CREEM_CONFIG_KEYS = {
-  ENABLED: 'enabled',
   API_KEY: 'api_key',
   TIMEOUT: 'timeout',
   WEBHOOK_SECRET: 'webhook_secret',
 } as const
 
 const CREEM_KEY_MAPPINGS = [
-  {
-    configKey: CREEM_CONFIG_KEYS.ENABLED,
-    fieldName: 'enabled',
-    transform: (v?: string) => v === 'true',
-  },
   { configKey: CREEM_CONFIG_KEYS.API_KEY, fieldName: 'apiKey', isSecret: true },
   {
     configKey: CREEM_CONFIG_KEYS.TIMEOUT,
@@ -31,7 +25,6 @@ export function parseCreemConfig(configs: RealmConfigResponse[]): CreemConfigFor
     PAYMENT_PROVIDERS.CREEM,
     [...CREEM_KEY_MAPPINGS],
     {
-      enabled: false,
       apiKey: '',
       timeout: 30,
       webhookSecret: '',
@@ -40,10 +33,5 @@ export function parseCreemConfig(configs: RealmConfigResponse[]): CreemConfigFor
 }
 
 export function buildCreemConfigRequest(config: CreemConfigForm) {
-  return buildProviderConfigRequest(
-    config,
-    PAYMENT_PROVIDERS.CREEM,
-    [...CREEM_KEY_MAPPINGS],
-    config.enabled
-  )
+  return buildProviderConfigRequest(config, PAYMENT_PROVIDERS.CREEM, [...CREEM_KEY_MAPPINGS])
 }

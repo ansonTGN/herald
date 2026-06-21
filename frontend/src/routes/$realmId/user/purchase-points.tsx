@@ -429,10 +429,7 @@ function PurchasePointsPage() {
                 ))}
 
                 {unassignedMappings.length > 0 && (
-                  <div
-                    className="space-y-3"
-                    data-testid="mapping-group-unassigned"
-                  >
+                  <div className="space-y-3" data-testid="mapping-group-unassigned">
                     <h3
                       className="text-lg font-semibold text-muted-foreground"
                       data-testid="mapping-group-title-unassigned"

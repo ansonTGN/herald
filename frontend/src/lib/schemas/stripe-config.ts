@@ -4,7 +4,6 @@ import { m } from '@/paraglide/messages'
 export type AsyncPointsStrategy = 'conservative' | 'eager'
 
 export const stripeConfigSchema = z.object({
-  enabled: z.boolean().default(false),
   publishableKey: z
     .string()
     .regex(/^pk_/, { error: () => m['billing.stripe_key_start_pk']() })
@@ -27,7 +26,6 @@ export function getStripeConfigDefaults(
   initialValues?: Partial<StripeConfigForm>
 ): StripeConfigForm {
   return {
-    enabled: false,
     publishableKey: '',
     secretKey: '',
     webhookSecret: '',

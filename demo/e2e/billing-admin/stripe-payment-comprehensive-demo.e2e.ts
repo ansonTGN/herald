@@ -351,13 +351,6 @@ async function configureStripe(
 
   await page.waitForURL('**/payment-providers/stripe', { timeout: 10000 })
   await expect(page.getByTestId('stripe-config-form-page')).toBeVisible()
-  await expect(page.getByTestId('page-stripe-enabled-switch')).toBeVisible()
-
-  const enabledSwitch = page.getByTestId('page-stripe-enabled-switch')
-  const isEnabled = await enabledSwitch.isChecked()
-  if (!isEnabled) {
-    await enabledSwitch.click()
-  }
 
   await page.getByTestId('page-stripe-publishable-key-input').fill(`pk_test_51M${timestamp}`)
   await page.getByTestId('page-stripe-secret-key-input').fill(`sk_test_51M${timestamp}`)

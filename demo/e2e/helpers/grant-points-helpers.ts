@@ -15,23 +15,53 @@
 import { Page, expect } from '@playwright/test'
 import { SELECTORS } from '../selectors'
 import { makeExtApiRequest } from './ext-api-helper'
+import {
+  CREDIT_BUCKET_NAMES,
+  REGISTRATION_POOL_KEY,
+} from './bucket-seed-ids'
 
 // ============================================================================
 // Types
 // ============================================================================
 
+/**
+ * Form options for the admin UI Grant Points dialog.
+ *
+ * `bucketId` is REQUIRED since the credit-bucket backend breaking change
+ * (design credit-bucket.md §4.2.4 / A5): every grant must target an explicit
+ * Credit Bucket, and the frontend `grant-points-dialog.tsx` requires the
+ * `grant-points-bucket-select` to be populated before submit. Omitting it
+ * yields `400 grant_bucket_required` from the backend (or the frontend
+ * submit button stays disabled). Pass a bucket UUID from `bucket-seed-ids.ts`.
+ */
 export interface GrantFormOptions {
   email: string
   amount: number
   reason: string
+  /**
+   * REQUIRED target Credit Bucket UUID. The dialog renders a Radix Select whose
+   * options are keyed by bucket UUID; this id is matched against the option's
+   * visible name via the seeded bucket display names (`bucket-seed-ids.ts`).
+   * Use `REGISTRATION_POOL_KEY` lookup helpers or the resolved seeded UUID.
+   */
+  bucketId: string
   validityDays?: number
   permanent?: boolean
 }
 
+/**
+ * Request body for `POST /points/{realmId}/grant` (ext API).
+ *
+ * `bucketId` is REQUIRED — same breaking-change rationale as `GrantFormOptions`.
+ * The backend deserializes it as `Option<String>` so a missing field yields a
+ * structured `400 grant_bucket_required` body (see `backend/api-ext/src/points.rs`).
+ */
 export interface GrantPointsExtApiBody {
   userId: string
   amount: number
   reason: string
+  /** REQUIRED target Credit Bucket UUID (design §4.2.4 / A5). */
+  bucketId: string
   validityDays?: number
 }
 
@@ -74,6 +104,12 @@ export async function openGrantDialog(
  * 4. Handles validity: if `permanent` is true, enables the permanent toggle;
  *    otherwise fills `validityDays` (defaulting to 30 if not specified)
  * 5. Fills the reason textarea
+ * 6. Selects the target Credit Bucket via the required `grant-points-bucket-select`
+ *    (credit-bucket breaking change §4.2.4 / A5; declared by DE-D01).
+ *    The option is chosen by visible bucket name resolved from
+ *    `bucket-seed-ids.ts` (`CREDIT_BUCKET_NAMES`). The dialog's bucket Select
+ *    is required and has no default — selecting it here is a real step, not a
+ *    silent default, and enables the submit button.
  */
 export async function fillGrantForm(
   page: Page,
@@ -126,6 +162,41 @@ export async function fillGrantForm(
   const reasonInput = page.locator(gp.reasonInput)
   await reasonInput.clear()
   await reasonInput.fill(options.reason)
+
+  // 5. Select the target Credit Bucket (REQUIRED — credit-bucket §4.2.4 / A5).
+  //    The Select is a Radix Select; options render as `[role="option"]` whose
+  //    visible label is the bucket display name. Resolve the display name from
+  //    the seeded directory via `bucket-seed-ids.ts` so callers only need the
+  //    stable bucket KEY. Selecting by visible name matches the established
+  //    demo-suite Radix-Select pattern (see subscription-history helpers).
+  const bucketName = bucketDisplayName(options.bucketId)
+  await page.locator(gp.bucketSelect).click()
+  await page.getByRole('option', { name: bucketName }).click()
+}
+
+/**
+ * Resolve the human-readable display name for a bucket id (or seeded key).
+ *
+ * `fillGrantForm` callers pass either a seeded bucket KEY (from
+ * `bucket-seed-ids.ts`, e.g. `primary-pool`/`promo-pool`) or an arbitrary
+ * bucket UUID. The dialog's bucket Select renders options keyed by UUID with
+ * the bucket's display name as the visible label; selecting by name is the
+ * established Radix-Select pattern in this demo suite.
+ *
+ * For the two seeded keys we map directly to their seeded display names. For
+ * any other value (a UUID, or a key we don't recognize) we return the input
+ * as-is — the caller is expected to pass a value that matches an option's
+ * visible name in that case.
+ */
+function bucketDisplayName(bucketIdOrKey: string): string {
+  switch (bucketIdOrKey) {
+    case REGISTRATION_POOL_KEY:
+      return CREDIT_BUCKET_NAMES.PRIMARY_POOL
+    case 'promo-pool':
+      return CREDIT_BUCKET_NAMES.SECONDARY_POOL
+    default:
+      return bucketIdOrKey
+  }
 }
 
 /**
@@ -207,19 +278,34 @@ export async function grantPointsViaExtApi(
  * to API keys (backend rejects with 400), so a dedicated test role is necessary.
  * For any other permission value, no role is assigned (key has no permissions).
  *
- * @param page - Playwright Page (must be logged in as admin)
+ * Realm selection (DE-D04 sanctioned widening):
+ * The original helper hardcoded `realmId = 'admin'`, which blocked any demo
+ * whose SDK target user lives outside the admin realm (the credit-bucket
+ * demo user `user@realm-001.com` is in realm-001, where both seeded buckets
+ * `primary-pool` + `promo-pool` cover `points-demo-app`). The ext-API
+ * `consume_points_ext` enforces realm isolation (`identity.has_access_to_realm`
+ * → 403 `CrossRealmAccessForbidden`), so a key minted in `admin` CANNOT
+ * consume in realm-001. The optional `realmId` param (default `'admin'`)
+ * preserves every existing caller (DE-D07 sibling demos + the
+ * points-grant-sdk-demo) while letting DE-D04 pass `'realm-001'`. The caller
+ * must already be authenticated as an admin of `realmId` (the realm-001 admin
+ * is used by DE-D04's beforeAll).
+ *
+ * @param page - Playwright Page (must be logged in as admin of `realmId`)
  * @param permission - If "points.manage", creates and assigns a role with that permission
  * @param testStartTime - Unique suffix for resource names (use Date.now())
+ * @param realmId - Realm to mint the key in (default 'admin'; pass a realm id
+ *                  for SDK tests targeting a user in that realm)
  */
 export async function createTestApiKeyWithPermission(
   page: Page,
   permission: string,
   testStartTime: number,
+  realmId: string = 'admin',
 ): Promise<ApiKeyWithPermission> {
   const suffix = testStartTime
   const clientAppName = `grant-test-app-${suffix}`
   const apiKeyName = `grant-test-key-${suffix}`
-  const realmId = 'admin'
 
   // Determine backend URL (same logic as ext-api-helper)
   const backendUrl =

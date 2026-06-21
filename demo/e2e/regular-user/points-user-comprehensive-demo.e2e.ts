@@ -66,17 +66,40 @@ test.describe('[Points User] Comprehensive Demo Tests', () => {
       })
 
       await test.step('Verify: Balance card and basic information displayed', async () => {
-        await expect(page.locator(SELECTORS.pointsUser.balanceCard)).toBeVisible()
-        await expect(page.locator(SELECTORS.pointsUser.balanceAmount)).toBeVisible()
-        await expect(page.locator(SELECTORS.pointsUser.accountStatus)).toBeVisible()
-        demoLogger.testCode.log('[Test] ✓ Balance card and information displayed')
+        // LOUD NOTE (DE-D07 bucket adaptation): the bucket-aware UI
+        // (PointsBalanceCard.tsx) renders one `points-balance-card-${bucketId}`
+        // per held bucket; the flat `points-balance-card` testid only matches
+        // the loading skeleton / null-bucket fallback. The seed gives
+        // user@realm-001.com balance in `primary-pool`, so at least one
+        // bucket-grouped card renders. Asserted via the shared prefix locator
+        // (`firstBalanceCard`) to keep US-PU-01 intent ("my balance is
+        // visible") without resolving a specific bucket UUID in this suite.
+        await expect(page.locator(SELECTORS.pointsUser.firstBalanceCard)).toBeVisible({
+          timeout: 15000,
+        })
+        // LOUD NOTE: the legacy `points-balance` (balanceAmount) and
+        // `points-wallet-status` (accountStatus) testids were REMOVED by the
+        // credit-bucket UI refactor — the bucket-grouped card now shows the
+        // total inline (`points-balance-total-${bucketId}`) and has no
+        // separate "wallet status" element. The original US-PU-01 assertions
+        // on those testids are dropped here (bucket-aware replacement above).
+        // A per-bucket total assertion lives in DE-D03
+        // (credit-bucket-balance-history-demo) which resolves the bucket UUID.
+        demoLogger.testCode.log('[Test] ✓ Balance card displayed (bucket-grouped)')
       })
 
       await test.step('Verify: Account status details', async () => {
-        const statusElement = page.locator(SELECTORS.pointsUser.accountStatus)
-        await expect(statusElement).toBeVisible()
-        const statusText = await statusElement.textContent()
-        demoLogger.testCode.log(`[Test] ✓ Account status: ${statusText}`)
+        // LOUD NOTE (DE-D07): the `points-wallet-status` testid no longer
+        // exists in the bucket-aware UI. The original US-PU-01 "account
+        // status" intent is now expressed per-bucket via the disabled badge
+        // (`points-balance-card-disabled-${bucketId}`) on disabled buckets —
+        // covered by DE-D02 directory tests, not this comprehensive suite.
+        // Kept as a documentation step so the original US-PU-01 scenario
+        // mapping is preserved for accept audit.
+        demoLogger.testCode.info(
+          '[Test] ℹ Account-status testid removed by credit-bucket UI; ' +
+            'per-bucket disabled-badge coverage lives in DE-D02',
+        )
       })
 
 
@@ -542,7 +565,13 @@ test.describe('[Points User] Comprehensive Demo Tests', () => {
         // 验证升级前积分状态
         await expect(page.getByText(/注册初始积分|registration.*credit/i)).toBeVisible()
         await expect(page.getByText(/免费定期积分|free.*periodic.*credit/i)).toBeVisible()
-        const balanceBefore = await page.locator(SELECTORS.pointsUser.balanceAmount).textContent()
+        // LOUD NOTE (DE-D07): `points-balance` (balanceAmount) testid was
+        // removed by the credit-bucket UI; read the bucket-grouped card's
+        // total text instead (best-effort log only — not asserted, matching
+        // the original US-FU-03 doc-test intent).
+        const balanceBefore = await page
+          .locator(SELECTORS.pointsUser.firstBalanceCard)
+          .textContent()
         demoLogger.testCode.log(`[Test] ✓ Balance before upgrade: ${balanceBefore}`)
       })
 

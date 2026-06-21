@@ -25,6 +25,7 @@ import {
   confirmGrantDialog,
 } from '../helpers/grant-points-helpers'
 import { SELECTORS } from '../selectors'
+import { CREDIT_BUCKET_NAMES, REGISTRATION_POOL_KEY } from '../helpers/bucket-seed-ids'
 
 test.describe('[Points Admin] Grant Points Demo Tests (US-PO-08)', () => {
   let testStartTime: number
@@ -65,6 +66,10 @@ test.describe('[Points Admin] Grant Points Demo Tests (US-PO-08)', () => {
         amount: 100,
         validityDays: 30,
         reason: 'Event reward',
+        // credit-bucket §4.2.4 / A5: bucketId is required. The admin realm is
+        // seeded with `primary-pool` (the registration pool); targeting it keeps
+        // US-PO-08 S1 intent (grant-with-validity lands for the user) intact.
+        bucketId: REGISTRATION_POOL_KEY,
       })
       await confirmGrantDialog(page)
       demoLogger.testCode.log('[S1] Filled form and confirmed grant')
@@ -97,6 +102,8 @@ test.describe('[Points Admin] Grant Points Demo Tests (US-PO-08)', () => {
         amount: 50,
         permanent: true,
         reason: 'Loyalty bonus',
+        // credit-bucket §4.2.4 / A5: bucketId is required (admin realm primary-pool).
+        bucketId: REGISTRATION_POOL_KEY,
       })
       await confirmGrantDialog(page)
       demoLogger.testCode.log('[S2] Filled form with permanent toggle and confirmed grant')
@@ -158,6 +165,14 @@ test.describe('[Points Admin] Grant Points Demo Tests (US-PO-08)', () => {
       const reasonInput = page.locator(gp.reasonInput)
       await reasonInput.fill('Test reason')
 
+      // Select the target bucket so the amount field is the SOLE invalid field
+      // (credit-bucket §4.2.4 / A5: bucket is now required; without this the
+      // bucket-missing error would compete with the amount error).
+      await page.locator(gp.bucketSelect).click()
+      await page
+        .getByRole('option', { name: CREDIT_BUCKET_NAMES.PRIMARY_POOL })
+        .click()
+
       // Attempt to submit -- Zod min(1) should block submission
       await page.locator(gp.submitButton).click()
 
@@ -210,6 +225,14 @@ test.describe('[Points Admin] Grant Points Demo Tests (US-PO-08)', () => {
       // Leave reason empty
       const reasonInput = page.locator(gp.reasonInput)
       await reasonInput.clear()
+
+      // Select the target bucket so the reason field is the SOLE invalid field
+      // (credit-bucket §4.2.4 / A5: bucket is now required; without this the
+      // bucket-missing error would compete with the reason error).
+      await page.locator(gp.bucketSelect).click()
+      await page
+        .getByRole('option', { name: CREDIT_BUCKET_NAMES.PRIMARY_POOL })
+        .click()
 
       // Submit
       await page.locator(gp.submitButton).click()
@@ -282,6 +305,10 @@ test.describe('[Points Admin] Grant Points Demo Tests (US-PO-08)', () => {
         amount: 100,
         validityDays: 30,
         reason: 'Test non-existent user',
+        // credit-bucket §4.2.4 / A5: bucketId is required for the form to
+        // submit. The route interception below only swaps `userId`, so the
+        // bucketId is preserved in the request body.
+        bucketId: REGISTRATION_POOL_KEY,
       })
 
       // Click submit to open confirmation dialog
@@ -360,6 +387,9 @@ test.describe('[Points Admin] Grant Points Demo Tests (US-PO-08)', () => {
         amount: 50,
         validityDays: 7,
         reason: 'Test cross-realm user',
+        // credit-bucket §4.2.4 / A5: bucketId is required for the form to
+        // submit. The route interception below only swaps `userId`.
+        bucketId: REGISTRATION_POOL_KEY,
       })
 
       // Click submit to open confirmation dialog

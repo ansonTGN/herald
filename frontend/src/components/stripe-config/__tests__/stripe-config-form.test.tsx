@@ -39,7 +39,6 @@ describe('StripeConfigForm', () => {
   test('renders form fields correctly', () => {
     render(<StripeConfigForm {...defaultProps} />)
 
-    expect(screen.getByTestId('stripe-enabled-switch')).toBeInTheDocument()
     expect(screen.getByTestId('stripe-publishable-key-input')).toBeInTheDocument()
     expect(screen.getByTestId('stripe-secret-key-input')).toBeInTheDocument()
     expect(screen.getByTestId('stripe-webhook-secret-input')).toBeInTheDocument()
@@ -49,13 +48,11 @@ describe('StripeConfigForm', () => {
   test('disables all fields when disabled prop is true', () => {
     render(<StripeConfigForm {...defaultProps} disabled={true} />)
 
-    const enabledSwitch = screen.getByTestId('stripe-enabled-switch')
     const publishableKeyInput = screen.getByTestId('stripe-publishable-key-input')
     const secretKeyInput = screen.getByTestId('stripe-secret-key-input')
     const webhookSecretInput = screen.getByTestId('stripe-webhook-secret-input')
     const saveButton = screen.getByTestId('stripe-save-button')
 
-    expect(enabledSwitch).toBeDisabled()
     expect(publishableKeyInput).toBeDisabled()
     expect(secretKeyInput).toBeDisabled()
     expect(webhookSecretInput).toBeDisabled()
@@ -68,10 +65,6 @@ describe('StripeConfigForm', () => {
     // The actual functionality is validated by other tests that check form submission behavior.
     const user = userEvent.setup()
     render(<StripeConfigForm {...defaultProps} />)
-
-    // Enable Stripe (triggers validation requirement)
-    const enabledSwitch = screen.getByTestId('stripe-enabled-switch')
-    await user.click(enabledSwitch)
 
     // Touch and clear fields to trigger validation
     const publishableKeyInput = screen.getByTestId('stripe-publishable-key-input')
@@ -108,10 +101,6 @@ describe('StripeConfigForm', () => {
 
     render(<StripeConfigForm {...defaultProps} />)
 
-    // Enable Stripe
-    const enabledSwitch = screen.getByTestId('stripe-enabled-switch')
-    await user.click(enabledSwitch)
-
     // Fill required fields only
     const publishableKeyInput = screen.getByTestId('stripe-publishable-key-input')
     const secretKeyInput = screen.getByTestId('stripe-secret-key-input')
@@ -126,7 +115,6 @@ describe('StripeConfigForm', () => {
     // Should submit successfully
     await waitFor(() => {
       expect(mockOnSave).toHaveBeenCalledWith({
-        enabled: true,
         publishableKey: 'pk_test_123456789',
         secretKey: 'sk_test_123456789',
         webhookSecret: '',
@@ -138,10 +126,6 @@ describe('StripeConfigForm', () => {
   test('validates key formats', async () => {
     const user = userEvent.setup()
     render(<StripeConfigForm {...defaultProps} />)
-
-    // Enable Stripe
-    const enabledSwitch = screen.getByTestId('stripe-enabled-switch')
-    await user.click(enabledSwitch)
 
     // Enter invalid keys
     const publishableKeyInput = screen.getByTestId('stripe-publishable-key-input')
@@ -163,10 +147,6 @@ describe('StripeConfigForm', () => {
   test('validates webhook secret format when provided', async () => {
     const user = userEvent.setup()
     render(<StripeConfigForm {...defaultProps} />)
-
-    // Enable Stripe
-    const enabledSwitch = screen.getByTestId('stripe-enabled-switch')
-    await user.click(enabledSwitch)
 
     // Fill required fields
     await user.type(screen.getByTestId('stripe-publishable-key-input'), 'pk_test_123456789')
@@ -191,10 +171,6 @@ describe('StripeConfigForm', () => {
 
     render(<StripeConfigForm {...defaultProps} />)
 
-    // Enable Stripe
-    const enabledSwitch = screen.getByTestId('stripe-enabled-switch')
-    await user.click(enabledSwitch)
-
     // Fill in valid keys
     const publishableKeyInput = screen.getByTestId('stripe-publishable-key-input')
     const secretKeyInput = screen.getByTestId('stripe-secret-key-input')
@@ -210,7 +186,6 @@ describe('StripeConfigForm', () => {
 
     await waitFor(() => {
       expect(mockOnSave).toHaveBeenCalledWith({
-        enabled: true,
         publishableKey: 'pk_test_12345',
         secretKey: 'sk_test_67890',
         webhookSecret: 'whsec_abcdef',
@@ -245,7 +220,6 @@ describe('StripeConfigForm', () => {
     render(<StripeConfigForm {...defaultProps} />)
 
     // Enable and fill form
-    await user.click(screen.getByTestId('stripe-enabled-switch'))
     await user.type(screen.getByTestId('stripe-publishable-key-input'), 'pk_test_12345')
     await user.type(screen.getByTestId('stripe-secret-key-input'), 'sk_test_67890')
 
@@ -283,7 +257,6 @@ describe('StripeConfigForm', () => {
     render(<StripeConfigForm {...defaultProps} />)
 
     // Enable and fill form
-    await user.click(screen.getByTestId('stripe-enabled-switch'))
     await user.type(screen.getByTestId('stripe-publishable-key-input'), 'pk_test_12345')
     await user.type(screen.getByTestId('stripe-secret-key-input'), 'sk_test_67890')
 
@@ -305,7 +278,6 @@ describe('StripeConfigForm', () => {
     render(<StripeConfigForm {...defaultProps} />)
 
     // Enable and fill form
-    await user.click(screen.getByTestId('stripe-enabled-switch'))
     await user.type(screen.getByTestId('stripe-publishable-key-input'), 'pk_test_12345')
     await user.type(screen.getByTestId('stripe-secret-key-input'), 'sk_test_67890')
 
@@ -329,7 +301,6 @@ describe('StripeConfigForm', () => {
   test('displays initial config values when provided', async () => {
     const user = userEvent.setup()
     const initialConfig: StripeConfigFormValues = {
-      enabled: true,
       publishableKey: 'pk_test_initial',
       secretKey: 'sk_test_initial',
       webhookSecret: 'whsec_initial',
@@ -338,7 +309,6 @@ describe('StripeConfigForm', () => {
 
     render(<StripeConfigForm {...defaultProps} initialConfig={initialConfig} />)
 
-    const enabledSwitch = screen.getByTestId('stripe-enabled-switch')
     const publishableKeyInput = screen.getByTestId(
       'stripe-publishable-key-input'
     ) as HTMLInputElement
@@ -346,7 +316,6 @@ describe('StripeConfigForm', () => {
     const webhookSecretInput = screen.getByTestId('stripe-webhook-secret-input') as HTMLInputElement
 
     // Check initial values
-    expect(enabledSwitch).toBeChecked()
     expect(publishableKeyInput.value).toBe('pk_test_initial')
     expect(secretKeyInput.value).toBe('sk_test_initial')
     expect(webhookSecretInput.value).toBe('whsec_initial')
@@ -357,7 +326,6 @@ describe('StripeConfigForm', () => {
     mockOnSave.mockResolvedValue(undefined)
 
     const initialConfig: StripeConfigFormValues = {
-      enabled: true,
       publishableKey: 'pk_test_old',
       secretKey: 'sk_test_old',
       webhookSecret: 'whsec_old',
@@ -385,7 +353,6 @@ describe('StripeConfigForm', () => {
 
     await waitFor(() => {
       expect(mockOnSave).toHaveBeenCalledWith({
-        enabled: true,
         publishableKey: 'pk_test_new',
         secretKey: 'sk_test_new',
         webhookSecret: 'whsec_new',
@@ -397,9 +364,6 @@ describe('StripeConfigForm', () => {
   test('validates both test and live key prefixes', async () => {
     const user = userEvent.setup()
     render(<StripeConfigForm {...defaultProps} />)
-
-    // Enable Stripe
-    await user.click(screen.getByTestId('stripe-enabled-switch'))
 
     // Test keys (valid)
     await user.type(screen.getByTestId('stripe-publishable-key-input'), 'pk_test_123')

@@ -24,7 +24,6 @@ pub struct PaymentProviderInfo {
     pub api_version: Option<String>,
     pub webhook_endpoint: Option<String>,
     pub last_updated: Option<String>,
-    pub enabled: bool,
 }
 
 /// Error response for validation failures

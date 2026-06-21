@@ -172,6 +172,8 @@ pub async fn get_subscription(
 pub struct OneTimeMappingItem {
     pub id: String,
     pub entitlement_key: String,
+    /// Bound credit bucket (non-null; matches domain entity).
+    pub bucket_id: Uuid,
     pub provider_product_info: Option<serde_json::Value>,
     pub points_per_period: Option<i64>,
     pub payment_provider: String,
@@ -259,6 +261,7 @@ pub async fn get_one_time_mappings(
         .map(|m| OneTimeMappingItem {
             id: m.id.to_string(),
             entitlement_key: m.entitlement_key,
+            bucket_id: m.bucket_id,
             provider_product_info: m.provider_product_info,
             points_per_period: m.points_per_period,
             payment_provider: m.payment_provider,

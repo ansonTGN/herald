@@ -19,7 +19,10 @@ import { PageHeader } from '@/components/shared'
 import { creditBucketOverviewQueryOptions } from '@/data/query-options'
 import { m } from '@/paraglide/messages'
 import type { ByCreditTypeResponse, OverviewRowResponse } from '@/lib/api-generated'
-import type { CreditTypeKey, OverviewSearch } from '@/routes/$realmId/manage/billing/credit-buckets/overview'
+import type {
+  CreditTypeKey,
+  OverviewSearch,
+} from '@/routes/$realmId/manage/billing/credit-buckets/overview'
 
 const CREDIT_TYPE_KEYS: ReadonlyArray<CreditTypeKey> = [
   'topup',
@@ -60,7 +63,7 @@ export function CreditBucketOverviewPage({
 
   const selectedTypes = useMemo<CreditTypeKey[]>(
     () => (search.creditTypes?.length ? search.creditTypes : [...CREDIT_TYPE_KEYS]),
-    [search.creditTypes],
+    [search.creditTypes]
   )
 
   const enabledOnly = search.enabledOnly ?? false
@@ -182,27 +185,19 @@ function OverviewMatrix({
               </div>
             </TableHead>
           ))}
-          <TableHead className="text-right">
-            {m['credit_buckets.overview.col_total']()}
-          </TableHead>
+          <TableHead className="text-right">{m['credit_buckets.overview.col_total']()}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {rows.map((row) => (
-          <OverviewRow
-            key={row.bucketId}
-            row={row}
-            selectedTypes={selectedTypes}
-          />
+          <OverviewRow key={row.bucketId} row={row} selectedTypes={selectedTypes} />
         ))}
         {grandTotal && (
           <TableRow
             className="border-t-2 border-t-border font-semibold hover:bg-transparent"
             data-testid="credit-bucket-overview-grandtotal"
           >
-            <TableCell>
-              {m['credit_buckets.overview.grand_total_label']()}
-            </TableCell>
+            <TableCell>{m['credit_buckets.overview.grand_total_label']()}</TableCell>
             {selectedTypes.map((key) => (
               <TableCell
                 key={key}
@@ -248,12 +243,18 @@ function OverviewRow({
             />
             <span className="font-medium">{row.name}</span>
             {!row.enabled && (
-              <Badge variant="secondary" data-testid={`credit-bucket-overview-disabled-${row.bucketId}`}>
+              <Badge
+                variant="secondary"
+                data-testid={`credit-bucket-overview-disabled-${row.bucketId}`}
+              >
                 {m['credit_buckets.disabled_badge']()}
               </Badge>
             )}
             {row.byCreditType.registration > 0 && (
-              <Badge variant="outline" data-testid={`credit-bucket-overview-registration-${row.bucketId}`}>
+              <Badge
+                variant="outline"
+                data-testid={`credit-bucket-overview-registration-${row.bucketId}`}
+              >
                 {m['credit_buckets.registration_pool_badge']()}
               </Badge>
             )}
@@ -339,10 +340,6 @@ function formatAmount(value: number): string {
 
 function sumByCreditType(totals: ByCreditTypeResponse): number {
   return (
-    totals.topup +
-    totals.subscription +
-    totals.registration +
-    totals.freePeriodic +
-    totals.granted
+    totals.topup + totals.subscription + totals.registration + totals.freePeriodic + totals.granted
   )
 }

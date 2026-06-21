@@ -29,7 +29,12 @@ interface UserPointsPageProps {
 
 const MAX_VISIBLE_TRANSACTIONS = 1000
 
-export function UserPointsPage({ realmId, userId, bucketId, onBucketIdChange }: UserPointsPageProps) {
+export function UserPointsPage({
+  realmId,
+  userId,
+  bucketId,
+  onBucketIdChange,
+}: UserPointsPageProps) {
   // TODO: Migrate pagination/filter state to URL search params via parent route
   // (/$realmId/user/points) for link sharing and refresh restoration.
   // `bucketId` is already URL-synced (FE-D06); the remaining ephemeral filters
@@ -128,7 +133,22 @@ export function UserPointsPage({ realmId, userId, bucketId, onBucketIdChange }: 
       {/* Bucket card stack / empty state */}
       {walletsLoading ? (
         <div className="space-y-4">
-          <PointsBalanceCard card={{ bucketId: '', name: null, enabled: null, bucketTotal: 0, balancesByType: { subscription: 0, topup: 0, registration: 0, freePeriodic: 0, granted: 0 } }} loading />
+          <PointsBalanceCard
+            card={{
+              bucketId: '',
+              name: null,
+              enabled: null,
+              bucketTotal: 0,
+              balancesByType: {
+                subscription: 0,
+                topup: 0,
+                registration: 0,
+                freePeriodic: 0,
+                granted: 0,
+              },
+            }}
+            loading
+          />
         </div>
       ) : cards.length === 0 ? (
         <Card data-testid="points-balance-empty">

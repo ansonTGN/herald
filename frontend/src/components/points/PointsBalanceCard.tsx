@@ -43,7 +43,10 @@ export function PointsBalanceCard({ card, loading }: PointsBalanceCardProps) {
         <div className="flex items-center justify-between">
           <CardTitle>{card.name ?? m['points.bucket_card_unnamed']()}</CardTitle>
           {card.enabled === false && (
-            <Badge variant="secondary" data-testid={`points-balance-card-disabled-${card.bucketId ?? ''}`}>
+            <Badge
+              variant="secondary"
+              data-testid={`points-balance-card-disabled-${card.bucketId ?? ''}`}
+            >
               {m['points.bucket_card_disabled']()}
             </Badge>
           )}
@@ -55,7 +58,10 @@ export function PointsBalanceCard({ card, loading }: PointsBalanceCardProps) {
             <Wallet className="h-4 w-4" />
             <span>{m['points.balance_current']()}</span>
           </div>
-          <div className="text-5xl font-bold" data-testid={`points-balance-total-${card.bucketId ?? ''}`}>
+          <div
+            className="text-5xl font-bold"
+            data-testid={`points-balance-total-${card.bucketId ?? ''}`}
+          >
             {card.bucketTotal.toLocaleString()}
           </div>
           <div className="mt-4 flex flex-wrap justify-center gap-2">

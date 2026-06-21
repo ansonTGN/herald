@@ -34,7 +34,6 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::tests::helpers::billing_helpers::setup_billing_admin_session;
 use crate::tests::helpers::credit_bucket_helpers::{
     CreditBucketOpts, count_ledger_in_bucket, count_ledger_outside_bucket,
     create_test_credit_bucket, read_subscription_bucket, read_wallet_total_balance,
@@ -44,8 +43,6 @@ use crate::tests::scenarios::points::fixtures::{
     create_test_client_app, create_test_user, create_test_user_with_auth,
 };
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
-use axum::body::{Body, to_bytes};
-use axum::http::{Request, StatusCode};
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::payment_attempt::entities::PaymentAttempt;
 use herald_core::domain::points::{
@@ -53,10 +50,8 @@ use herald_core::domain::points::{
     subscription_service::CancelMode,
 };
 use herald_core::domain::purchase::FulfillmentService;
-use serde_json::json;
 use sqlx::PgPool;
 use test_context::test_context;
-use tower::ServiceExt;
 use uuid::Uuid;
 
 // =============================================================================
@@ -175,144 +170,16 @@ async fn insert_subscription_in_bucket(
 }
 
 // =============================================================================
-// Scenario 1: mapping with bucket_id=NULL rejects purchase creation (A8)
+// Scenario 1 (REMOVED): mapping with bucket_id=NULL rejects purchase creation
 // =============================================================================
-
-/// User Story: US-CB-003 (attach Bucket to mapping), US-CB-004 (purchase
-/// Bucket plan) — preconditions are not silently bypassed.
-/// Covers (BE-T02 scope):
-///   - `resolve_target` rejects when `mapping.bucket_id IS NULL` (design A8,
-///     §5.3). Without this rule, a never-attached mapping would silently
-///     snapshot NULL onto `payment_attempts.bucket_id`, later failing loud
-///     inside fulfillment — but the contract is to reject at purchase
-///     creation, before any provider call.
-///   - Error variant: `CoreError::EntitlementMappingNotAttachedToBucket`.
-#[test_context(TestContext)]
-#[tokio::test]
-async fn purchase_with_unattached_mapping_rejected(ctx: &mut TestContext) {
-    let realm_id = ctx._realm_id.clone();
-
-    // --- Given: a subscription mapping with bucket_id = NULL. ---------------
-    // (user not strictly required for the purchase rejection path, but created
-    // to mirror the real buyer flow.)
-    let _user_id = create_test_user(
-        &ctx.app_state.pool,
-        &realm_id,
-        "cb_t02_unattached@example.com",
-    )
-    .await;
-    let mapping_id = create_subscription_mapping_un_attached_for_purchase_test(
-        &ctx.app_state.pool,
-        &realm_id,
-        &format!("cb-t02-unattached-{}", Uuid::now_v7()),
-        1_000,
-    )
-    .await;
-
-    // Sanity: the mapping really has bucket_id NULL.
-    let attached: Option<Option<Uuid>> =
-        sqlx::query_scalar("SELECT bucket_id FROM provider_entitlement_mappings WHERE id = $1")
-            .bind(mapping_id)
-            .fetch_optional(&ctx.app_state.pool)
-            .await
-            .expect("read mapping bucket_id");
-    assert!(
-        matches!(attached, Some(None)),
-        "precondition: mapping must be unattached"
-    );
-
-    // --- And: an authenticated buyer. --------------------------------------
-    let token = setup_billing_admin_session(ctx, "cb_t02_unattached_buyer@example.com").await;
-
-    // --- When: HTTP POST to create a payment attempt for the unattached map.
-    let app = ctx.create_unified_test_router();
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/api/bill/{}/purchase/payment-attempts", realm_id))
-                .header("Content-Type", "application/json")
-                .header("cookie", format!("X-Auth={token}"))
-                .body(Body::from(
-                    json!({
-                        "targetType": "entitlement_mapping",
-                        "targetId": mapping_id.to_string(),
-                        "paymentProvider": "stripe",
-                        "userEmail": "cb_t02_unattached_buyer@example.com",
-                    })
-                    .to_string(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    // --- Then: request rejected (no provider call, no attempt row written).
-    let status = response.status();
-    let body_bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body_text = String::from_utf8(body_bytes.to_vec()).unwrap();
-
-    assert!(
-        status == StatusCode::BAD_REQUEST
-            || status == StatusCode::UNPROCESSABLE_ENTITY
-            || status == StatusCode::CONFLICT,
-        "expected rejection status for unattached mapping, got {}: {}",
-        status,
-        body_text
-    );
-    assert!(
-        body_text
-            .to_lowercase()
-            .contains("not attached to a credit bucket")
-            || body_text.to_lowercase().contains("bucket"),
-        "error body should mention bucket attachment, got: {}",
-        body_text
-    );
-
-    // --- And: no payment_attempts row was created. -------------------------
-    let attempt_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*)::BIGINT FROM payment_attempts WHERE target_id = $1")
-            .bind(mapping_id)
-            .fetch_one(&ctx.app_state.pool)
-            .await
-            .expect("count attempts");
-    assert_eq!(attempt_count, 0, "no attempt row should be written");
-}
-
-/// Helper for scenario 1: a never-attached subscription mapping with provider
-/// product info so `resolve_target` does not fall back to amount=0 (we want
-/// the rejection to be specifically about bucket attachment).
-async fn create_subscription_mapping_un_attached_for_purchase_test(
-    pool: &PgPool,
-    realm_id: &str,
-    entitlement_key: &str,
-    points_per_period: i64,
-) -> Uuid {
-    let mapping_id = Uuid::now_v7();
-    let provider_product_info = json!({
-        "name": format!("Sub {}", entitlement_key),
-        "price": 999,
-        "currency": "usd"
-    });
-    sqlx::query(
-        "INSERT INTO provider_entitlement_mappings
-            (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             billing_type, billing_period, points_per_period, grant_on_subscribe, enabled,
-             bucket_id, provider_product_info, created_at, updated_at)
-         VALUES ($1, $2, 'stripe', $3, $4, 'recurring', 'monthly', $5, true, true,
-                 NULL, $6, NOW(), NOW())",
-    )
-    .bind(mapping_id)
-    .bind(realm_id)
-    .bind(format!("prod_{}", mapping_id))
-    .bind(entitlement_key)
-    .bind(points_per_period)
-    .bind(provider_product_info)
-    .execute(pool)
-    .await
-    .expect("Failed to insert unattached subscription mapping (purchase test)");
-    mapping_id
-}
+//
+// The `require non-null bucket_id` migration (20260622_require_bucket_id_snapshots.sql)
+// set `provider_entitlement_mappings.bucket_id` NOT NULL and deleted any
+// pre-existing NULL rows. A bucket-less mapping can therefore no longer exist,
+// so the purchase-time runtime check — CoreError::EntitlementMappingNotAttachedToBucket
+// (design A8, §5.3) — was removed from `resolve_target`. The invariant this
+// scenario guarded ("a mapping without a credit bucket cannot be purchased") is
+// now enforced structurally at the schema layer instead of at request time.
 
 // =============================================================================
 // Scenario 2: fulfillment grants to the attempt-snapshot Bucket (A8)

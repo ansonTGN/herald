@@ -24,6 +24,7 @@ fn mapping_to_response(m: EntitlementMapping) -> EntitlementMappingResponse {
         payment_provider: m.payment_provider,
         external_product_id: m.external_product_id,
         external_price_id: m.external_price_id,
+        bucket_id: m.bucket_id,
         entitlement_key: m.entitlement_key,
         billing_type: m.billing_type.map(|bt| bt.as_str().to_string()),
         billing_period: m.billing_period,
@@ -308,6 +309,7 @@ pub async fn list_one_time_mappings(
         .map(|m| OneTimeMappingItem {
             id: m.id.to_string(),
             entitlement_key: m.entitlement_key,
+            bucket_id: m.bucket_id,
             provider_product_info: m.provider_product_info,
             points_per_period: m.points_per_period,
             payment_provider: m.payment_provider,

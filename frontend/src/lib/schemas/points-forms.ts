@@ -58,9 +58,7 @@ export const grantPointsSchema = z.object({
   // grant without a bucket fails loud at the schema layer (FE-D07). The
   // backend independently rejects a missing/invalid bucketId with 400
   // `grant_bucket_required` as defense-in-depth.
-  bucketId: z
-    .string()
-    .min(1, { error: () => m['points.validation_bucket_required']() }),
+  bucketId: z.string().min(1, { error: () => m['points.validation_bucket_required']() }),
   validityDays: z
     .number()
     .int({ error: () => m['points.validation_validity_days_integer']() })

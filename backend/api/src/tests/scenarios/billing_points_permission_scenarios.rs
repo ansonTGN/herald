@@ -12,7 +12,7 @@
 //
 // Routes:
 //   GET  /api/bill/{realmId}/subscriptions/history     -> requires billing.view
-//   GET  /api/third/pay/{realmId}/providers            -> billing.view (only enabled) or billing.manage (all)
+//   GET  /api/third/pay/{realmId}/providers            -> any authenticated realm member; returns all configured providers
 //
 // =============================================================================
 
@@ -129,21 +129,21 @@ async fn test_scenario_billing_view_grants_history_access(ctx: &mut TestContext)
 }
 
 // =============================================================================
-// Scenario 2: billing.view grants payment provider list (US-RA-009)
+// Scenario 2: payment provider list is accessible to realm members (US-RA-009)
 // =============================================================================
 
 // User Story: docs/user-stories/core/realm-admin.md - Story 9 (US-RA-009)
-// Covers: User with billing.view can list payment providers (only enabled ones)
+// Covers: Authenticated realm member can list configured payment providers
 //
-// Given a user with ONLY billing.view permission,
+// Given an authenticated realm member,
 // When calling GET /api/third/pay/{realmId}/providers,
-// Then response is 200 OK (returns only enabled providers).
+// Then response is 200 OK (returns all configured providers).
 #[test_context(TestContext)]
 #[tokio::test]
-async fn test_scenario_billing_view_grants_provider_list(ctx: &mut TestContext) {
+async fn test_scenario_can_list_payment_providers(ctx: &mut TestContext) {
     let app = ctx.create_unified_test_router();
 
-    // Given: user with billing.view permission
+    // Given: authenticated realm member
     let (user_token, user_id) =
         create_admin_session_with_user(ctx, "billing-view-providers@test.com", 1800).await;
     grant_single_permission(ctx, &user_id, "billing", "view").await;
@@ -162,6 +162,6 @@ async fn test_scenario_billing_view_grants_provider_list(ctx: &mut TestContext) 
     assert_eq!(
         resp.status(),
         StatusCode::OK,
-        "User with billing.view should get 200 OK for payment provider list"
+        "Authenticated realm member should get 200 OK for payment provider list"
     );
 }

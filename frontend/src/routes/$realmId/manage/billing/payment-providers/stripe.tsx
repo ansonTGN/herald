@@ -41,7 +41,6 @@ function StripeConfigRoute() {
 
   const initialValues: Partial<StripeConfigForm> | undefined = configData
     ? {
-        enabled: configData.enabled,
         publishableKey: configData.publishableKey,
         secretKey: '',
         webhookSecret: '',

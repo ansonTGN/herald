@@ -9,7 +9,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import {
   Dialog,
   DialogContent,
@@ -20,7 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { PageHeader } from '@/components/shared/page-header'
 import { FormActionBar } from '@/components/shared/form-action-bar'
-import { SwitchField, PasswordField } from '@/components/shared/form-fields'
+import { PasswordField } from '@/components/shared/form-fields'
 import { AsyncPaymentStrategySelector } from '@/components/stripe-config/AsyncPaymentStrategySelector'
 import { getFieldErrorMessage } from '@/lib/error-utils'
 import { batchUpsertRealmConfigs } from '@/lib/api-generated/sdk.gen'
@@ -88,29 +87,6 @@ export function StripeConfigFormDialog({
             }}
             className="space-y-4"
           >
-            <form.Field
-              name="enabled"
-              children={(field) => (
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="stripe-enabled">{m['billing.stripe_enable']()}</Label>
-                    <p className="text-sm text-muted-foreground">
-                      {m['billing.stripe_enable_description']()}
-                    </p>
-                  </div>
-                  <Switch
-                    id="stripe-enabled"
-                    checked={field.state.value}
-                    onCheckedChange={(checked) => {
-                      field.handleChange(checked)
-                      setHasChanges(true)
-                    }}
-                    data-testid="stripe-enabled-switch"
-                  />
-                </div>
-              )}
-            />
-
             <form.Field
               name="publishableKey"
               children={(field) => (
@@ -327,14 +303,6 @@ export function StripeConfigFormPage({ realmId, mode, initialValues }: StripeCon
       >
         <AppForm>
           <div className="space-y-6">
-            <SwitchField
-              form={form}
-              name="enabled"
-              label={m['billing.stripe_enable']()}
-              description={m['billing.stripe_enable_description']()}
-              dataTestId="page-stripe-enabled-switch"
-            />
-
             <PasswordField
               form={form}
               name="publishableKey"
