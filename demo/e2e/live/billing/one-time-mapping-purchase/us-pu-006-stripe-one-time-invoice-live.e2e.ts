@@ -97,7 +97,7 @@ async function ensureClientApp(request: import('@playwright/test').APIRequestCon
 
 /**
  * Poll the invoice API until a Stripe external invoice appears.
- * Returns the first invoice with provider='stripe' and an external_invoice_id starting with 'in_'.
+ * Returns the first invoice with provider='stripe' and an externalInvoiceId starting with 'in_'.
  * Throws on timeout.
  */
 async function waitForStripeInvoice(
@@ -106,9 +106,9 @@ async function waitForStripeInvoice(
 ): Promise<{
   id: string
   provider: string
-  external_invoice_id: string
-  external_hosted_url: string | null
-  external_pdf_url: string | null
+  externalInvoiceId: string
+  externalHostedUrl: string | null
+  externalPdfUrl: string | null
   status: string
   total: number
   [key: string]: unknown
@@ -128,7 +128,7 @@ async function waitForStripeInvoice(
         const stripeInvoice = items.find(
           (inv: any) =>
             inv.provider === 'stripe' &&
-            inv.external_invoice_id?.startsWith('in_'),
+            inv.externalInvoiceId?.startsWith('in_'),
         )
         if (stripeInvoice) {
           return stripeInvoice
@@ -355,17 +355,17 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoi
       console.log(`[live-s7] Stripe one-time external invoice: ${JSON.stringify(invoice)}`)
 
       expect(invoice.provider).toBe('stripe')
-      expect(invoice.external_invoice_id, 'Expected external_invoice_id to start with in_').toMatch(/^in_/)
+      expect(invoice.externalInvoiceId, 'Expected externalInvoiceId to start with in_').toMatch(/^in_/)
       expect(invoice.status, `Expected status 'paid', got '${invoice.status}'`).toBe('paid')
       expect(invoice.total, 'Expected total > 0').toBeGreaterThan(0)
-      expect(invoice.external_hosted_url, 'Expected external_hosted_url to be present').toBeTruthy()
-      expect(invoice.external_pdf_url, 'Expected external_pdf_url to be present').toBeTruthy()
+      expect(invoice.externalHostedUrl, 'Expected externalHostedUrl to be present').toBeTruthy()
+      expect(invoice.externalPdfUrl, 'Expected externalPdfUrl to be present').toBeTruthy()
       // Expanded invoice field coverage (US-IF-004): provider linkage, source, currency, refund totals.
-      expect(invoice.payment_provider, 'Expected payment_provider to be stripe').toBe('stripe')
+      expect(invoice.paymentProvider, 'Expected paymentProvider to be stripe').toBe('stripe')
       expect(invoice.source, 'Expected source to be external_sync').toBe('external_sync')
       expect(invoice.currency, 'Expected currency to be a 3-letter code').toMatch(/^[a-z]{3}$/)
-      expect(invoice.invoice_number, 'Expected invoice_number to be present').toBeTruthy()
-      expect(invoice.amount_refunded, 'Expected amount_refunded to be 0 on a fresh paid invoice').toBe(0)
+      expect(invoice.invoiceNumber, 'Expected invoiceNumber to be present').toBeTruthy()
+      expect(invoice.amountRefunded, 'Expected amountRefunded to be 0 on a fresh paid invoice').toBe(0)
     })
 
     await test.step('And invoice detail endpoint returns full response', async () => {
@@ -380,17 +380,17 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoi
 
       expect(detail.id).toBe(invoice.id)
       expect(detail.provider).toBe('stripe')
-      expect(detail.external_invoice_id).toMatch(/^in_/)
-      expect(detail.external_hosted_url).toBeTruthy()
-      expect(detail.external_pdf_url).toBeTruthy()
+      expect(detail.externalInvoiceId).toMatch(/^in_/)
+      expect(detail.externalHostedUrl).toBeTruthy()
+      expect(detail.externalPdfUrl).toBeTruthy()
       // Expanded detail coverage (US-IF-004/008): provider linkage, currency, refund totals.
-      expect(detail.payment_provider).toBe('stripe')
+      expect(detail.paymentProvider).toBe('stripe')
       expect(detail.source).toBe('external_sync')
       expect(detail.currency).toMatch(/^[a-z]{3}$/)
-      expect(detail.invoice_number).toBeTruthy()
-      expect(detail.amount_refunded, 'Expected amount_refunded to be 0 initially').toBe(0)
-      expect(detail.amount_remaining, 'Expected amount_remaining to equal total initially').toBe(detail.total)
-      expect(detail.external_order_id, 'Expected external_order_id (payment_intent) to be present').toBeTruthy()
+      expect(detail.invoiceNumber).toBeTruthy()
+      expect(detail.amountRefunded, 'Expected amountRefunded to be 0 initially').toBe(0)
+      expect(detail.amountRemaining, 'Expected amountRemaining to equal total initially').toBe(detail.total)
+      expect(detail.externalOrderId, 'Expected externalOrderId (payment_intent) to be present').toBeTruthy()
     })
 
     await test.step('And provider filter returns only stripe invoices (US-IF-004)', async () => {

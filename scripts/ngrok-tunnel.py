@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 """Start an ngrok tunnel via Docker for third-party callbacks.
 
-Reads NGROK_AUTHTOKEN and NGROK_DOMAIN from demo/.env.demo,
-then runs the official ngrok Docker image (detached) tunneling to localhost:3000 (frontend).
+Thin CLI over ``lib.ngrok``. Reads ``NGROK_AUTHTOKEN`` and ``NGROK_DOMAIN``
+from ``demo/.env.demo``, then runs the official ngrok Docker image (detached)
+tunneling to the frontend (default 3000); its ``/api`` proxy forwards webhook
+calls to the backend (8080).
 
 Usage:
   uv run scripts/ngrok-tunnel.py
@@ -11,9 +13,9 @@ Usage:
 """
 
 import argparse
-import subprocess
 import sys
-from pathlib import Path
+
+from lib import ngrok
 
 # Force UTF-8 on stdout/stderr so non-ASCII chars (e.g. "→") render correctly
 # on Windows terminals whose default code page is GBK.
@@ -21,43 +23,26 @@ for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8")
 
-CONTAINER_NAME = "herald-ngrok"
-INSPECTOR_PORT = 4040
 
-
-def load_env(env_path: Path) -> dict[str, str]:
-    """Parse KEY=VALUE lines from an env file (no interpolation)."""
-    env = {}
-    if not env_path.exists():
-        return env
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" in line:
-            key, _, value = line.partition("=")
-            env[key.strip()] = value.strip()
-    return env
-
-
-def load_ngrok_config() -> tuple[str, str]:
-    """Load only NGROK_AUTHTOKEN and NGROK_DOMAIN from demo/.env.demo."""
-    env_path = Path(__file__).resolve().parent.parent / "demo" / ".env.demo"
-    env = load_env(env_path)
-    return env.get("NGROK_AUTHTOKEN", ""), env.get("NGROK_DOMAIN", "")
-
-
-def stop():
-    subprocess.run(
-        ["docker", "rm", "-f", CONTAINER_NAME],
-        capture_output=True,
+def main():
+    parser = argparse.ArgumentParser(description="Start ngrok tunnel via Docker")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=ngrok.DEFAULT_PORT,
+        help=f"Local port to tunnel (default: {ngrok.DEFAULT_PORT})",
     )
-    print(f"Stopped {CONTAINER_NAME}")
+    parser.add_argument(
+        "--stop", action="store_true", help="Stop the running ngrok container"
+    )
+    args = parser.parse_args()
 
+    if args.stop:
+        ngrok.stop()
+        print(f"Stopped {ngrok.CONTAINER_NAME}")
+        return
 
-def start(port: int):
-    authtoken, domain = load_ngrok_config()
-
+    authtoken, domain = ngrok.config()
     if not authtoken:
         print(
             "Error: NGROK_AUTHTOKEN not set. "
@@ -66,51 +51,18 @@ def start(port: int):
         )
         sys.exit(1)
 
-    cmd = ["http", "--log=stdout"]
-    if domain:
-        cmd += ["--url", domain]
-    cmd.append(f"http://host.docker.internal:{port}")
-
-    result = subprocess.run(
-        [
-            "docker", "run",
-            "-d",
-            "--name", CONTAINER_NAME,
-            "-p", f"{INSPECTOR_PORT}:{INSPECTOR_PORT}",
-            "-e", f"NGROK_AUTHTOKEN={authtoken}",
-            "--add-host=host.docker.internal:host-gateway",
-            "ngrok/ngrok:latest",
-            *cmd,
-        ],
-        capture_output=True,
-        text=True,
-    )
-
-    if result.returncode != 0:
-        print(
-            f"Error: failed to start ngrok container.\n{result.stderr.strip()}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    print(f"Started ngrok tunnel → host.docker.internal:{port} (detached)")
-    if domain:
-        print(f"  Fixed domain:  {domain}")
-    print(f"  Inspector UI:  http://localhost:{INSPECTOR_PORT}")
-    print(f"  View logs:     docker logs -f {CONTAINER_NAME}")
-    print(f"  Stop:          uv run scripts/ngrok-tunnel.py --stop")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Start ngrok tunnel via Docker")
-    parser.add_argument("--port", type=int, default=3000, help="Local port to tunnel (default: 3000)")
-    parser.add_argument("--stop", action="store_true", help="Stop the running ngrok container")
-    args = parser.parse_args()
-
-    if args.stop:
-        stop()
+    if ngrok.is_running():
+        print(f"ngrok tunnel already running ({ngrok.CONTAINER_NAME})")
+    elif ngrok.start(port=args.port):
+        print(f"Started ngrok tunnel → host.docker.internal:{args.port} (detached)")
+        if domain:
+            print(f"  Fixed domain:  {domain}")
+        print(f"  Inspector UI:  http://localhost:{ngrok.INSPECTOR_PORT}")
+        print(f"  View logs:     docker logs -f {ngrok.CONTAINER_NAME}")
+        print(f"  Stop:          uv run scripts/ngrok-tunnel.py --stop")
     else:
-        start(args.port)
+        print("Error: failed to start ngrok container.", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

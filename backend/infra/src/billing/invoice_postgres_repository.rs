@@ -1052,6 +1052,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
                 external_status = EXCLUDED.external_status,
                 external_hosted_url = EXCLUDED.external_hosted_url,
                 external_pdf_url = EXCLUDED.external_pdf_url,
+                external_order_id = COALESCE(EXCLUDED.external_order_id, invoice.external_order_id),
                 external_payload = EXCLUDED.external_payload,
                 tax_details = EXCLUDED.tax_details,
                 status = EXCLUDED.status,

@@ -445,6 +445,7 @@ pub struct InvoiceDetailResponse {
     pub external_invoice_id: Option<String>,
     pub external_hosted_url: Option<String>,
     pub external_pdf_url: Option<String>,
+    pub external_order_id: Option<String>,
     pub tax_details: Option<serde_json::Value>,
 
     pub issue_date: Option<NaiveDate>,
@@ -605,6 +606,7 @@ pub fn invoice_to_detail_response(detail: InvoiceDetail) -> InvoiceDetailRespons
         external_invoice_id: detail.invoice.external_invoice_id,
         external_hosted_url: detail.invoice.external_hosted_url,
         external_pdf_url: detail.invoice.external_pdf_url,
+        external_order_id: detail.invoice.external_order_id,
         tax_details: detail.invoice.tax_details,
 
         issue_date: detail.invoice.issue_date,

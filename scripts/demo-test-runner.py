@@ -33,6 +33,63 @@ def escape_regex_pattern(pattern: str) -> str:
     return result
 
 
+# list reporter 单用例行：`  ✓  1 [demo-fast] › file:line:col › Suite › Title (dur)`
+TEST_RESULT_LINE_RE = re.compile(r'^\s*([✓✘×])\s+\d+\s+\[[^\]]+\]\s*›\s*(.+)$')
+# 行尾耗时，如 ` (1.2s)` / ` (250 ms)` / ` (1.3m)`；标题自带的括号（如 `(US-IF-007)`）不会被误删
+DURATION_TAIL_RE = re.compile(r'\s*\([\d.]+\s*(?:ms|sec|min|s|m|h)\)\s*$')
+SUMMARY_COUNT_RES = {
+    "passed": re.compile(r'(\d+)\s+passed', re.IGNORECASE),
+    "failed": re.compile(r'(\d+)\s+failed', re.IGNORECASE),
+    "skipped": re.compile(r'(\d+)\s+skipped', re.IGNORECASE),
+}
+
+
+def parse_per_test_results(log_path: Path) -> dict:
+    """解析 Playwright list reporter 输出，提取用例级通过/失败明细与计数。
+
+    用于整文件失败时快速定位是哪些用例失败，免去逐个 `--grep` 重跑。
+
+    返回:
+        {"passed": int|None, "failed": int|None, "skipped": int|None,
+         "passedTests": [str], "failedTests": [str]}
+    计数为 None 表示未在日志中找到汇总行；列表按日志出现顺序去重。
+    """
+    result = {
+        "passed": None,
+        "failed": None,
+        "skipped": None,
+        "passedTests": [],
+        "failedTests": [],
+    }
+    try:
+        content = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return result
+
+    for line in content.splitlines():
+        m = TEST_RESULT_LINE_RE.match(line)
+        if m:
+            status, rest = m.group(1), m.group(2)
+            segments = rest.split("›")
+            title = segments[-1].strip() if segments else rest.strip()
+            title = DURATION_TAIL_RE.sub("", title).strip()
+            if not title:
+                continue
+            if status == "✓":
+                if title not in result["passedTests"]:
+                    result["passedTests"].append(title)
+            else:
+                if title not in result["failedTests"]:
+                    result["failedTests"].append(title)
+            continue
+        # 计数行取最后一次匹配（末尾的 `N passed / M failed` 为权威汇总）
+        for key, pat in SUMMARY_COUNT_RES.items():
+            mm = pat.search(line)
+            if mm:
+                result[key] = int(mm.group(1))
+    return result
+
+
 def normalize_legacy_args(argv: list[str]) -> list[str]:
     """转换旧版参数格式。"""
     mapping = {
@@ -194,8 +251,8 @@ def run_tests(
     # 切换到 demo 目录
     os.chdir(demo_dir)
 
-    # 清理旧的测试结果
-    for old in ("test-results/artifacts", "test-results/runs", "playwright-report"):
+    # 清理旧的测试结果（保留各 run 日志目录以便失败回溯；仅清理可重建产物与当前 run 目录）
+    for old in ("test-results/artifacts", "playwright-report"):
         path = Path(old)
         if path.exists():
             shutil.rmtree(path, ignore_errors=True)
@@ -203,6 +260,8 @@ def run_tests(
     # 创建日志目录
     run_id = run_id or f"run-{time.strftime('%Y%m%d-%H%M%S')}"
     log_dir = Path("test-results/runs") / run_id
+    if log_dir.exists():
+        shutil.rmtree(log_dir, ignore_errors=True)
     log_dir.mkdir(parents=True, exist_ok=True)
     playwright_log = log_dir / "playwright-output.log"
 
@@ -236,6 +295,9 @@ def run_tests(
         cmd.append("--list")
         print(f"Listing tests in: {test_file}")
     else:
+        # 运行全部用例（覆盖 playwright.config.ts 的 maxFailures:1，与 CI 行为一致），
+        # 使整文件失败时能拿到完整的用例级通过/失败明细，而非停在首个失败。
+        cmd.append("--max-failures=0")
         cmd.append("--quiet")
 
     # Debug output for command construction
@@ -284,6 +346,9 @@ def run_tests(
     if all_skipped:
         exit_code = 2  # 使用特殊退出码区分 "全部跳过"
 
+    # 解析用例级结果（仅在实际运行时；--list 不解析）
+    test_breakdown = parse_per_test_results(playwright_log) if not list_tests else None
+
     # 生成摘要
     summary = {
         "success": "true" if exit_code == 0 else "false",
@@ -296,6 +361,12 @@ def run_tests(
         "runId": run_id,
         "grep": grep,
     }
+    if test_breakdown is not None:
+        summary["passed"] = test_breakdown["passed"]
+        summary["failed"] = test_breakdown["failed"]
+        summary["skipped"] = test_breakdown["skipped"]
+        summary["failedTests"] = test_breakdown["failedTests"]
+        summary["passedTests"] = test_breakdown["passedTests"]
     if all_skipped:
         summary["error"] = "All tests skipped"
 
@@ -313,6 +384,18 @@ def run_tests(
         print(f"  Unified: {unified_logs_dir}/{run_id}-*")
         print(f"  Backend: {service_log_dir}/backend-demo.log.*")
         print(f"  Frontend: {service_log_dir}/frontend-demo.log.*")
+        if test_breakdown and test_breakdown["failedTests"]:
+            try:
+                print("  Failed cases:")
+            except UnicodeEncodeError:
+                print("  Failed cases:")
+            for title in test_breakdown["failedTests"]:
+                try:
+                    print(f"    ✘ {title}")
+                except UnicodeEncodeError:
+                    print(f"    [X] {title}")
+        elif test_breakdown and not test_breakdown["failedTests"]:
+            print("  (No per-test failure parsed; inspect playwright-output.log)")
     print(f"Result: {json.dumps(summary, ensure_ascii=False, separators=(',', ':'))}")
 
     return exit_code

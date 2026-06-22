@@ -211,7 +211,7 @@
 
 - **Creem MoR 约束**：Creem 交易的发票必须由 Creem 管理；无论 invoice_policy 设置如何，Herald 不得为 Creem 交易创建 manual 发票
 - **Stripe 发票同步触发**：通过 Stripe webhook 被动同步（invoice.created / invoice.finalized / invoice.voided / invoice.paid），Herald 不主动调用 Stripe Invoice API 创建发票
-- **Stripe 一次性购买发票同步触发**：通过 Stripe `checkout.session.completed`（mode=payment）事件 inline 创建外部发票记录；使用 checkout session ID 作为 external_invoice_id，payment_intent 作为 external_order_id；status 直接为 paid
+- **Stripe 一次性购买发票同步触发**：通过 Stripe `checkout.session.completed`（mode=payment）事件 inline 创建外部发票记录；使用 checkout session 上的 Stripe invoice ID（`in_...`，由 Checkout 在启用 invoice_creation 时自动创建）作为 external_invoice_id，payment_intent（`pi_...`）作为 external_order_id；status 直接为 paid
 - **Stripe 一次性购买发票数据来源**：从 checkout session 对象提取 amount_total、currency、customer_email、payment_intent 等字段；account_id 从 metadata.userId 解析
 - **Stripe 发票状态映射**：Stripe `draft` → Herald `draft`，Stripe `open` → Herald `issued`，Stripe `paid` → Herald `paid`，Stripe `void` → Herald `void`
 - **Creem 税务数据同步**：Creem 交易支付成功后同步交易金额、税额、税区等税务信息作为发票记录

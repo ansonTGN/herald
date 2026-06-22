@@ -26,8 +26,8 @@ use herald_core::domain::billing::credit_note::{
 use herald_core::domain::billing::invoice_service::map_stripe_invoice_status;
 use herald_core::domain::billing::{
     ACTOR_WEBHOOK, BillingRepository, BillingType, ExternalInvoiceData, HistoryEventType,
-    InvoiceProvider, InvoiceRepository, PaymentEvent, Subscription, SubscriptionHistoryService,
-    SubscriptionStatus, detect_change_type,
+    InvoiceProvider, InvoiceRepository, InvoiceStatus, PaymentEvent, Subscription,
+    SubscriptionHistoryService, SubscriptionStatus, detect_change_type,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::payment_attempt::PaymentAttemptStatus;
@@ -781,6 +781,74 @@ async fn sync_subscription_input_with_detected_history_in_txn(
 // Webhook Event Handlers
 // ============================================================================
 
+/// For one-time Checkout Sessions (mode=payment), Stripe emits the PaymentIntent
+/// ID on the Checkout Session object — but NOT on the resulting `invoice.*` event
+/// payloads. Herald's external invoice sync (`handle_stripe_invoice_event`) reads
+/// `payment_intent` off the invoice object, so without this linkage
+/// `invoice.external_order_id` stays null forever for one-time purchases.
+///
+/// This helper is invoked from `handle_checkout_session_completed` whenever the
+/// session is in `payment` mode and carries both a `payment_intent` and an
+/// `invoice` ID. It performs a Branch-A upsert keyed on the Stripe invoice id,
+/// setting `external_order_id = payment_intent`. Subsequent `invoice.*` events
+/// reuse Branch A's `COALESCE(EXCLUDED.external_order_id, invoice.external_order_id)`
+/// so the PaymentIntent already stored here is preserved.
+///
+/// Failures are logged and swallowed: this linkage is best-effort enrichment and
+/// must never block fulfillment or the rest of the webhook handler.
+async fn link_one_time_payment_intent_to_invoice(
+    app_state: &AppState,
+    realm_id: &str,
+    payment_intent: &str,
+    stripe_invoice_id: &str,
+    account_id: Option<Uuid>,
+    total: i64,
+    currency: &str,
+) {
+    let external_data = ExternalInvoiceData {
+        realm_id: realm_id.to_string(),
+        provider: InvoiceProvider::Stripe,
+        payment_provider: Some("stripe".to_string()),
+        external_invoice_id: Some(stripe_invoice_id.to_string()),
+        external_order_id: Some(payment_intent.to_string()),
+        external_status: None,
+        // Leave URLs empty; the authoritative values arrive in invoice.finalized/paid
+        // events and Branch A upsert will overwrite them without touching external_order_id.
+        external_hosted_url: None,
+        external_pdf_url: None,
+        external_payload: None,
+        tax_details: None,
+        account_id,
+        currency: currency.to_string(),
+        total,
+        // Use Paid so a missing subsequent invoice.paid (rare race) still leaves the
+        // row in a terminal-ish state. invoice.paid will upsert back to paid if it
+        // arrives, and invoice.created will downgrade to draft as expected.
+        status: InvoiceStatus::Paid,
+    };
+
+    if let Err(e) = app_state
+        .invoice_repository
+        .upsert_external_invoice(external_data)
+        .await
+    {
+        warn!(
+            realm_id = %realm_id,
+            payment_intent = %payment_intent,
+            stripe_invoice_id = %stripe_invoice_id,
+            error = %e,
+            "Failed to link one-time payment_intent to invoice external_order_id - invoice.* events will retry"
+        );
+    } else {
+        info!(
+            realm_id = %realm_id,
+            payment_intent = %payment_intent,
+            stripe_invoice_id = %stripe_invoice_id,
+            "Linked one-time checkout PaymentIntent to invoice external_order_id"
+        );
+    }
+}
+
 /// Handle checkout.session.completed events
 ///
 /// Dispatches based on checkout mode:
@@ -795,6 +863,38 @@ async fn handle_checkout_session_completed(
 ) -> Result<PointsTransaction, CoreError> {
     // Extract mode from the checkout session for dispatch
     let mode = event["data"]["object"]["mode"].as_str().map(str::to_string);
+
+    // For one-time Checkout Sessions (mode=payment), the PaymentIntent is only
+    // available on the Checkout Session object, never on the resulting invoice.*
+    // event payloads. Capture it here so we can populate invoice.external_order_id.
+    // Done unconditionally (regardless of attemptId) so both the legacy checkout
+    // endpoint and the payment-attempt endpoint produce the linkage.
+    if mode.as_deref() == Some("payment") {
+        let session = &event["data"]["object"];
+        if let (Some(payment_intent), Some(stripe_invoice_id)) = (
+            session["payment_intent"].as_str(),
+            session["invoice"].as_str(),
+        ) {
+            // Best-effort: resolve account_id from metadata userId so the row is
+            // attributable; falls back to None like the invoice.* handler does.
+            let account_id = parse_optional_uuid_field(&session["metadata"]["userId"]);
+            // Carry the session's amount_total/currency so the placeholder row is
+            // correct even when checkout.session.completed arrives before the
+            // invoice.* events (Branch A UPDATE does not touch total/currency).
+            let total = session["amount_total"].as_i64().unwrap_or(0);
+            let currency = session["currency"].as_str().unwrap_or("usd").to_string();
+            link_one_time_payment_intent_to_invoice(
+                &app_state,
+                realm_id,
+                payment_intent,
+                stripe_invoice_id,
+                account_id,
+                total,
+                &currency,
+            )
+            .await;
+        }
+    }
 
     // If attemptId is present in metadata, fulfill via payment attempt flow.
     // This covers both one-time (mode=payment) and recurring (mode=subscription) purchases

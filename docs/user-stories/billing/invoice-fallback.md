@@ -122,7 +122,7 @@ When Herald 收到 Stripe 的 "checkout.session.completed" webhook 事件
 And 事件 mode 为 "payment"
 Then Herald 在本地创建一条来源为 Stripe 的外部发票记录
 And 发票状态为已支付
-And 记录 Stripe checkout session ID 和 payment intent ID
+And 记录 Stripe invoice ID（in_...）和 payment intent ID（pi_...）
 And 记录金额和币种
 ```
 

@@ -456,13 +456,36 @@ impl StripeClient {
     ) -> Result<StripeEventList, CoreError> {
         let url = format!("{}/v1/events", self.base_url);
 
+        // Stripe's /v1/events endpoint accepts an array of event-type filters
+        // under the `types` query parameter (repeated `types[]=...` keys),
+        // capped at 20 values per request. The previous code used `type[]`,
+        // which Stripe parses as the scalar `type` parameter; when multiple
+        // repeated `type[]` keys arrived, Stripe aggregated them into a single
+        // JSON-array value and rejected the request with
+        // `400 Invalid string: [...] param=type`, causing the webhook
+        // compensation job to fetch zero events.
+        //
+        // Use the documented `types[]` array parameter, and cap at 20 to stay
+        // within the API limit when callers (e.g. the worker) supply more.
+        const STRIPE_TYPES_MAX: usize = 20;
+        let types_to_send = &params.event_types[..params.event_types.len().min(STRIPE_TYPES_MAX)];
+        if params.event_types.len() > STRIPE_TYPES_MAX {
+            tracing::warn!(
+                requested = params.event_types.len(),
+                sent = STRIPE_TYPES_MAX,
+                "Stripe /v1/events accepts at most {} event types per request; \
+                 extra types dropped — callers should chunk requests to cover them",
+                STRIPE_TYPES_MAX
+            );
+        }
+
         let mut query: Vec<(&str, String)> = vec![
             ("created[gte]", params.created_gte.to_string()),
             ("created[lte]", params.created_lte.to_string()),
             ("limit", params.limit.to_string()),
         ];
-        for et in &params.event_types {
-            query.push(("type[]", et.clone()));
+        for et in types_to_send {
+            query.push(("types[]", et.clone()));
         }
         if let Some(sa) = &params.starting_after {
             query.push(("starting_after", sa.clone()));
@@ -470,7 +493,7 @@ impl StripeClient {
 
         tracing::info!(
             "Listing Stripe events: {} types, limit {}, range {}-{}",
-            params.event_types.len(),
+            types_to_send.len(),
             params.limit,
             params.created_gte,
             params.created_lte
@@ -1104,13 +1127,26 @@ mod tests {
     // has_more passthrough, and empty-response handling.
 
     /// Verifies that `list_events` sends the correct GET request with query
-    /// parameters (`created[gte]`, `created[lte]`, `type[]`, `limit`) and
+    /// parameters (`created[gte]`, `created[lte]`, `types[]`, `limit`) and
     /// `Bearer` auth to `/v1/events`.
+    ///
+    /// Regression guard: an earlier version sent each event type under the
+    /// unsupported `type[]` key, which Stripe parses as the scalar `type`
+    /// parameter and rejects with `400 Invalid string: [...] param=type` when
+    /// more than one value is supplied. This test asserts the documented
+    /// `types[]` array parameter is used, that each event type becomes its own
+    /// repeated query key (never a single JSON-array-encoded value), and that
+    /// no scalar `type` key leaks onto the wire.
     #[tokio::test]
     async fn test_list_events_sends_correct_query_params() {
         let mock_server = MockServer::start().await;
         let client =
             StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        let event_types = vec![
+            "checkout.session.completed".to_string(),
+            "customer.subscription.*".to_string(),
+        ];
 
         Mock::given(any())
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -1124,10 +1160,7 @@ mod tests {
             .list_events(&ListEventsParams {
                 created_gte: 1_700_000_000,
                 created_lte: 1_700_001_000,
-                event_types: vec![
-                    "checkout.session.completed".to_string(),
-                    "customer.subscription.*".to_string(),
-                ],
+                event_types: event_types.clone(),
                 limit: 100,
                 starting_after: None,
             })
@@ -1154,6 +1187,39 @@ mod tests {
             Some("Bearer sk_test_123")
         );
 
+        // The raw query string must contain one `types[]=<value>` occurrence
+        // per event type as genuinely separate keys. If reqwest ever
+        // regressed to collapsing repeated keys into a single JSON-array
+        // literal (the failure mode observed in production), this raw-string
+        // assertion would catch it — `query_pairs()` would otherwise paper
+        // over the difference.
+        let raw_query = requests[0].url.query().unwrap_or("");
+        assert!(
+            !raw_query.contains("%5B%22") && !raw_query.contains("%5D%22"),
+            "raw query must not embed event types as a JSON-array string literal: {}",
+            raw_query
+        );
+        for et in &event_types {
+            // Each event type must appear as its own `types[]=<value>` key.
+            // For plain alphanumeric+dot event-type strings reqwest emits them
+            // verbatim (no percent-encoding), so we look for the literal
+            // `types%5B%5D=<value>` segment in the raw query.
+            let expected = format!("types%5B%5D={et}");
+            assert!(
+                raw_query.contains(&expected),
+                "raw query should contain a separate `types[]={}` key; got: {}",
+                et,
+                raw_query
+            );
+        }
+        assert!(
+            !raw_query.contains("type%5B%5D=")
+                && !raw_query.contains("&type=")
+                && !raw_query.starts_with("type="),
+            "legacy scalar `type` / unsupported `type[]` keys must not appear; got: {}",
+            raw_query
+        );
+
         // Parse query string from the URL
         let query_pairs: std::collections::HashMap<String, String> = requests[0]
             .url
@@ -1177,28 +1243,91 @@ mod tests {
             "limit query param"
         );
 
-        // type[] is repeated — collect all values
+        // types[] is repeated — collect all values
         let type_values: Vec<String> = requests[0]
             .url
             .query_pairs()
-            .filter(|(k, _)| k == "type[]")
+            .filter(|(k, _)| k == "types[]")
             .map(|(_, v)| v.to_string())
             .collect();
-        assert_eq!(type_values.len(), 2, "should have two type[] query params");
-        assert!(
-            type_values.contains(&"checkout.session.completed".to_string()),
-            "type[] should contain checkout.session.completed"
+        assert_eq!(
+            type_values.len(),
+            event_types.len(),
+            "should have one types[] query param per event type"
         );
+        for et in &event_types {
+            assert!(type_values.contains(et), "types[] should contain {}", et);
+        }
         assert!(
-            type_values.contains(&"customer.subscription.*".to_string()),
-            "type[] should contain customer.subscription.*"
+            !query_pairs.contains_key("type") && !query_pairs.contains_key("type[]"),
+            "scalar `type` / unsupported `type[]` keys must not be present"
         );
 
-        // No starting-After since starting_after was None
+        // No starting_after since starting_after was None
         assert!(
             !query_pairs.contains_key("starting_after"),
             "starting_after should not be present when None"
         );
+    }
+
+    /// Regression guard: Stripe's /v1/events endpoint documents a maximum of
+    /// 20 `types[]` values per request. The production webhook-compensation
+    /// worker currently supplies 23 event types; the client must cap the
+    /// outgoing array at 20 so the request is accepted instead of rejected
+    /// with 400. Callers are responsible for chunking to cover the remainder.
+    #[tokio::test]
+    async fn test_list_events_caps_types_at_stripe_maximum() {
+        let mock_server = MockServer::start().await;
+        let client =
+            StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [],
+                "has_more": false
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // 23 types — mirrors the production webhook-compensation configuration.
+        let event_types: Vec<String> = (0..23).map(|i| format!("event.type.{i}")).collect();
+
+        client
+            .list_events(&ListEventsParams {
+                created_gte: 1_700_000_000,
+                created_lte: 1_700_001_000,
+                event_types,
+                limit: 100,
+                starting_after: None,
+            })
+            .await
+            .expect("list_events should succeed");
+
+        let requests = mock_server
+            .received_requests()
+            .await
+            .expect("request recording should be enabled");
+        assert_eq!(requests.len(), 1);
+
+        let type_values: Vec<String> = requests[0]
+            .url
+            .query_pairs()
+            .filter(|(k, _)| k == "types[]")
+            .map(|(_, v)| v.to_string())
+            .collect();
+        assert_eq!(
+            type_values.len(),
+            20,
+            "Stripe /v1/events accepts at most 20 types[] values; client must cap the array"
+        );
+        // The first 20 requested types are sent in order.
+        for i in 0..20 {
+            assert!(
+                type_values.contains(&format!("event.type.{i}")),
+                "expected event.type.{} to be sent",
+                i
+            );
+        }
     }
 
     /// Verifies that `list_events` parses a single-page response into

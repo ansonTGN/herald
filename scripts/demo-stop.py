@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from lib import docker
+from lib import ngrok
 from lib.proc import kill_process_by_port
 # Removed state file dependencies: terminate_from_state, wait_process_exit, load_state
 from lib.paths import LOG_DIR
@@ -139,6 +140,11 @@ def main() -> int:
     if should_print(quiet):
         print("Stopping frontend...")
     kill_demo_node_processes(quiet)
+
+    # Step 2.5: Stop the ngrok webhook tunnel (if running)
+    if should_print(quiet):
+        print("Stopping ngrok tunnel...")
+    ngrok.stop()
 
     # Step 3: Stop and remove Docker containers
     if should_print(quiet):

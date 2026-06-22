@@ -15,6 +15,9 @@
 #[allow(dead_code)]
 mod tests {
     use crate::tests::helpers::billing_helpers::setup_stripe_config;
+    use crate::tests::helpers::webhook_helpers::{
+        generate_test_event_id, send_stripe_webhook_with_signature,
+    };
     use crate::tests::schema_test_context::SchemaTestContext;
     use axum::http::StatusCode;
     use serde_json::json;
@@ -714,6 +717,252 @@ mod tests {
             count_invoices_by_external_order_id(ctx, &realm_id, &event_id_1).await,
             1,
             "Expected exactly one invoice after duplicate Creem webhook (idempotent)"
+        );
+    }
+
+    // =========================================================================
+    // One-time checkout PI -> invoice.external_order_id linkage regression
+    // =========================================================================
+    //
+    // Background:
+    //   For Stripe Checkout Sessions in `mode=payment` with `invoice_creation`
+    //   enabled, Stripe emits the PaymentIntent ID on the Checkout Session
+    //   object but NEVER on the resulting `invoice.*` webhook event payloads.
+    //   Herald's `handle_stripe_invoice_event` reads `object["payment_intent"]`,
+    //   so without explicit linkage `invoice.external_order_id` stays null for
+    //   every one-time purchase.
+    //
+    // Fix:
+    //   `handle_checkout_session_completed` captures `payment_intent` and
+    //   `invoice` from the session and upserts the invoice with
+    //   `external_order_id = payment_intent`. Subsequent `invoice.*` events
+    //   reuse Branch A's COALESCE so the PaymentIntent already stored is
+    //   preserved.
+    //
+    // These tests guard that linkage end-to-end through the webhook surface
+    // that the live demo test (us-pu-006-stripe-one-time-invoice-live.e2e.ts)
+    // exercises against real Stripe.
+
+    /// Build a `checkout.session.completed` payload for a one-time (mode=payment)
+    /// Checkout Session with `invoice_creation` enabled. Mirrors the real Stripe
+    /// payload shape: the session carries both `payment_intent` and `invoice`.
+    fn build_one_time_checkout_completed(
+        event_id: &str,
+        realm_id: &str,
+        user_id: Uuid,
+        client_app_id: Uuid,
+        payment_intent: &str,
+        stripe_invoice_id: &str,
+    ) -> serde_json::Value {
+        json!({
+            "id": event_id,
+            "object": "event",
+            "type": "checkout.session.completed",
+            "api_version": "2020-08-27",
+            "created": chrono::Utc::now().timestamp(),
+            "data": {
+                "object": {
+                    "id": format!("cs_test_{}", Uuid::now_v7()),
+                    "object": "checkout.session",
+                    "status": "complete",
+                    "payment_status": "paid",
+                    "mode": "payment",
+                    "customer": format!("cus_test_{}", Uuid::now_v7()),
+                    "payment_intent": payment_intent,
+                    "invoice": stripe_invoice_id,
+                    "metadata": {
+                        "herald_realm_id": realm_id,
+                        "herald_user_id": user_id.to_string(),
+                        "herald_client_app_id": client_app_id.to_string(),
+                        "userId": user_id.to_string(),
+                        "clientAppId": client_app_id.to_string(),
+                    }
+                }
+            }
+        })
+    }
+
+    /// Build an `invoice.*` event payload where the invoice object intentionally
+    /// OMITS `payment_intent` — this is what Stripe actually sends for invoices
+    /// produced from a one-time Checkout Session.
+    fn build_stripe_invoice_event_without_pi(
+        event_type: &str,
+        stripe_invoice_id: &str,
+        realm_id: &str,
+        amount: i64,
+        stripe_status: &str,
+    ) -> serde_json::Value {
+        json!({
+            "id": format!("evt_{}", Uuid::now_v7()),
+            "object": "event",
+            "type": event_type,
+            "api_version": "2020-08-27",
+            "created": chrono::Utc::now().timestamp(),
+            "data": {
+                "object": {
+                    "id": stripe_invoice_id,
+                    "object": "invoice",
+                    "status": stripe_status,
+                    "total": amount,
+                    "currency": "usd",
+                    // NOTE: no payment_intent field — this is the bug condition.
+                    "metadata": {
+                        "realmId": realm_id
+                    }
+                }
+            }
+        })
+    }
+
+    /// Regression: checkout.session.completed in payment mode links the
+    /// PaymentIntent to invoice.external_order_id even when the handler cannot
+    /// fulfill (no attemptId in metadata — the legacy checkout endpoint path).
+    ///
+    /// Given: Stripe webhook configured; no payment attempt was created
+    /// When: checkout.session.completed arrives with mode=payment, payment_intent,
+    ///       and invoice IDs but no attemptId
+    /// Then: A provider=stripe invoice row exists with external_order_id equal
+    ///       to the PaymentIntent id
+    #[test_context(SyncTestContext)]
+    #[tokio::test]
+    async fn test_one_time_checkout_links_payment_intent_to_invoice_external_order_id(
+        ctx: &mut SyncTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+        let webhook_secret = "whsec_test_one_time_pi_link";
+        let realm_id = ctx._realm_id.clone();
+        let stripe_invoice_id = format!("in_onetime_{}", Uuid::now_v7());
+        let payment_intent = format!("pi_onetime_{}", Uuid::now_v7());
+
+        setup_stripe_config(ctx, &realm_id, "sk_test_key", webhook_secret).await;
+
+        let user_id = Uuid::now_v7();
+        let client_app_id = Uuid::now_v7();
+        let payload = build_one_time_checkout_completed(
+            &generate_test_event_id(),
+            &realm_id,
+            user_id,
+            client_app_id,
+            &payment_intent,
+            &stripe_invoice_id,
+        );
+
+        let response =
+            send_stripe_webhook_with_signature(&app, &realm_id, payload, webhook_secret).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "checkout.session.completed (mode=payment) should be accepted"
+        );
+
+        // The fix must populate external_order_id with the PaymentIntent id.
+        let invoice = find_invoice_by_external_id(ctx, &realm_id, &stripe_invoice_id)
+            .await
+            .expect("Expected invoice row to be created from checkout.session.completed linkage");
+
+        let stored_external_order_id: Option<String> =
+            sqlx::query_scalar("SELECT external_order_id FROM invoice WHERE id = $1")
+                .bind(invoice.0)
+                .fetch_one(&ctx.app_state.pool)
+                .await
+                .expect("Failed to query external_order_id");
+
+        assert_eq!(
+            stored_external_order_id.as_deref(),
+            Some(payment_intent.as_str()),
+            "invoice.external_order_id must equal the PaymentIntent id captured from \
+             checkout.session.completed (got {:?})",
+            stored_external_order_id
+        );
+    }
+
+    /// Regression: a subsequent invoice.* event that omits payment_intent must
+    /// NOT clobber the PaymentIntent already stored by the checkout.session.completed
+    /// linkage (Branch A COALESCE preserves it).
+    ///
+    /// Given: An invoice row exists with external_order_id=pi_xxx (from
+    ///        checkout.session.completed linkage)
+    /// When: invoice.created arrives with the same stripe_invoice_id and NO
+    ///       payment_intent field
+    /// Then: external_order_id is still pi_xxx (preserved by COALESCE)
+    #[test_context(SyncTestContext)]
+    #[tokio::test]
+    async fn test_subsequent_invoice_event_preserves_payment_intent_linkage(
+        ctx: &mut SyncTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+        let webhook_secret = "whsec_test_one_time_pi_preserve";
+        let realm_id = ctx._realm_id.clone();
+        let stripe_invoice_id = format!("in_preserve_{}", Uuid::now_v7());
+        let payment_intent = format!("pi_preserve_{}", Uuid::now_v7());
+
+        setup_stripe_config(ctx, &realm_id, "sk_test_key", webhook_secret).await;
+
+        // Step 1: checkout.session.completed establishes the PI linkage.
+        let user_id = Uuid::now_v7();
+        let client_app_id = Uuid::now_v7();
+        let checkout_payload = build_one_time_checkout_completed(
+            &generate_test_event_id(),
+            &realm_id,
+            user_id,
+            client_app_id,
+            &payment_intent,
+            &stripe_invoice_id,
+        );
+        let response =
+            send_stripe_webhook_with_signature(&app, &realm_id, checkout_payload, webhook_secret)
+                .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Step 2: invoice.created arrives without payment_intent (the bug condition).
+        let invoice_created_payload = build_stripe_invoice_event_without_pi(
+            "invoice.created",
+            &stripe_invoice_id,
+            &realm_id,
+            5000,
+            "draft",
+        );
+        let response = send_stripe_webhook_with_signature(
+            &app,
+            &realm_id,
+            invoice_created_payload,
+            webhook_secret,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Step 3: invoice.paid arrives without payment_intent.
+        let invoice_paid_payload = build_stripe_invoice_event_without_pi(
+            "invoice.paid",
+            &stripe_invoice_id,
+            &realm_id,
+            5000,
+            "paid",
+        );
+        let response = send_stripe_webhook_with_signature(
+            &app,
+            &realm_id,
+            invoice_paid_payload,
+            webhook_secret,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Verify external_order_id is still the original PaymentIntent.
+        let stored_external_order_id: Option<String> =
+            sqlx::query_scalar("SELECT external_order_id FROM invoice WHERE realm_id = $1 AND external_invoice_id = $2")
+                .bind(&realm_id)
+                .bind(&stripe_invoice_id)
+                .fetch_one(&ctx.app_state.pool)
+                .await
+                .expect("Failed to query external_order_id");
+
+        assert_eq!(
+            stored_external_order_id.as_deref(),
+            Some(payment_intent.as_str()),
+            "Subsequent invoice.* events without payment_intent must not clobber the \
+             PaymentIntent stored by checkout.session.completed linkage (got {:?})",
+            stored_external_order_id
         );
     }
 }

@@ -3,6 +3,7 @@ import argparse
 import sys
 from lib.paths import REPO_ROOT, ensure_dir
 from lib import demo_env
+from lib import ngrok
 from lib.logger import Logger, LogLevel
 
 
@@ -46,6 +47,12 @@ Examples:
         action="store_true",
         help="Show detailed timing summary"
     )
+    parser.add_argument(
+        "--no-ngrok",
+        action="store_true",
+        help="Do not start the ngrok webhook tunnel "
+             "(auto-started when NGROK_AUTHTOKEN is set in demo/.env.demo)",
+    )
 
     args = parser.parse_args()
 
@@ -68,6 +75,11 @@ Examples:
         logger=logger,
         timeout=args.timeout,
     )
+
+    # Start the ngrok tunnel for live third-party (Stripe) webhook callbacks.
+    # Managed here so it isn't forgotten; skips silently if not configured.
+    if success and not args.no_ngrok:
+        ngrok.start(logger=logger)
 
     # Print timing summary if profiling
     if args.profile:
