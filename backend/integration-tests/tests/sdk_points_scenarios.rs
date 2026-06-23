@@ -77,11 +77,10 @@ async fn create_points_wallet_with_balance(
     query(
         "INSERT INTO points_wallets (
             id, user_id, realm_id, bucket_id,
-            topup_balance, subscription_balance,
             total_topup_granted, total_subscription_granted,
             total_recharged, total_consumed, status
          )
-         VALUES ($1, $2, $3, $4, 0, $5, 0, $5, 0, 0, 'active')",
+         VALUES ($1, $2, $3, $4, 0, $5, 0, 0, 'active')",
     )
     .bind(account_uuid)
     .bind(user_uuid)
