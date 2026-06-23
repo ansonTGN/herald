@@ -19,6 +19,7 @@ use sqlx::PgPool;
 
 pub use jobs::InvoiceOverdueJob;
 pub use jobs::PointsExpirationJob;
+pub use jobs::PointsPreGrantJob;
 pub use jobs::WebhookCompensationJob;
 
 /// Configuration for the worker
@@ -43,6 +44,16 @@ where
 
     /// Interval (and lookback window) for webhook compensation in seconds.
     pub compensation_interval_secs: u64,
+
+    /// Optional points pre-grant warming job (design §5.6). When Some, the
+    /// pre-grant job runs on its own interval as a pre-warming optimization.
+    /// The worker is NOT a correctness boundary; correctness comes from the
+    /// availability predicate + realization backstops (subscription chained
+    /// pre-grant + free-periodic read-path realization).
+    pub pre_grant: Option<Arc<PointsPreGrantJob>>,
+
+    /// Interval for the points pre-grant warming job (in seconds).
+    pub pre_grant_interval_secs: u64,
 }
 
 impl<R> WorkerConfig<R>
@@ -65,6 +76,10 @@ where
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(1800);
+        let pre_grant_interval_secs = std::env::var("WORKER_PRE_GRANT_INTERVAL_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(300);
         Self {
             expiration_service,
             invoice_repo,
@@ -72,12 +87,22 @@ where
             expiration_interval_secs,
             event_processor: None,
             compensation_interval_secs,
+            pre_grant: None,
+            pre_grant_interval_secs,
         }
     }
 
     /// Set the webhook compensation event processor.
     pub fn with_event_processor(mut self, processor: Arc<dyn WebhookEventProcessor>) -> Self {
         self.event_processor = Some(processor);
+        self
+    }
+
+    /// Attach the points pre-grant warming job (design §5.6). The job runs on
+    /// `pre_grant_interval_secs` as a pre-warming optimization; correctness is
+    /// NOT gated on it firing on time.
+    pub fn with_pre_grant(mut self, job: Arc<PointsPreGrantJob>) -> Self {
+        self.pre_grant = Some(job);
         self
     }
 }
@@ -110,6 +135,8 @@ where
         let compensation_interval = Duration::from_secs(self.config.compensation_interval_secs);
         let event_processor = self.config.event_processor.clone();
         let compensation_lookback_secs = self.config.compensation_interval_secs;
+        let pre_grant = self.config.pre_grant.clone();
+        let pre_grant_interval = Duration::from_secs(self.config.pre_grant_interval_secs);
 
         // Spawn the worker loop
         let handle = tokio::spawn(async move {
@@ -121,6 +148,8 @@ where
                 compensation_interval,
                 event_processor,
                 compensation_lookback_secs,
+                pre_grant,
+                pre_grant_interval,
             )
             .await
         });
@@ -129,6 +158,7 @@ where
     }
 
     /// Main worker loop
+    #[allow(clippy::too_many_arguments)]
     async fn worker_loop(
         expiration_service: Arc<ExpirationService<PostgresPointsRepository>>,
         invoice_repo: Arc<R>,
@@ -137,6 +167,8 @@ where
         compensation_interval: Duration,
         event_processor: Option<Arc<dyn WebhookEventProcessor>>,
         compensation_lookback_secs: u64,
+        pre_grant: Option<Arc<PointsPreGrantJob>>,
+        pre_grant_interval: Duration,
     ) {
         info!("Starting worker service");
 
@@ -152,6 +184,13 @@ where
         let mut expiration_timer = tokio::time::interval(expiration_interval);
         let mut compensation_timer = tokio::time::interval(if compensation_job.is_some() {
             compensation_interval
+        } else {
+            Duration::MAX
+        });
+        // Pre-grant warming runs on its own interval; when no job is attached
+        // the timer is parked at Duration::MAX so the arm never fires.
+        let mut pre_grant_timer = tokio::time::interval(if pre_grant.is_some() {
+            pre_grant_interval
         } else {
             Duration::MAX
         });
@@ -206,6 +245,30 @@ where
                             }
                             Err(e) => {
                                 tracing::error!(error = %e, "Webhook compensation failed");
+                            }
+                        }
+                    }
+                }
+
+                // Run points pre-grant warming job on its own schedule
+                // (design §5.6). Pre-warming only — not a correctness boundary.
+                _ = pre_grant_timer.tick(), if pre_grant.is_some() => {
+                    if let Some(ref job) = pre_grant {
+                        match job.run().await {
+                            Ok(summary) => {
+                                info!(
+                                    free_processed = summary.free_processed,
+                                    free_skipped = summary.free_skipped,
+                                    free_failed = summary.free_failed,
+                                    sub_attempted = summary.subscription_attempted,
+                                    sub_granted = summary.subscription_granted,
+                                    sub_skipped = summary.subscription_skipped,
+                                    sub_failed = summary.subscription_failed,
+                                    "Points pre-grant warming completed"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::error!(error = %e, "Points pre-grant warming failed");
                             }
                         }
                     }

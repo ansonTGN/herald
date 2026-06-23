@@ -747,6 +747,8 @@ async fn registration_pool_independent_of_subscription_bucket(ctx: &mut TestCont
             CreditSourceType::SubscriptionInitial,
             1_000,
             None,
+            // effective_at: None ⟺ immediately available (BE-D02 added arg).
+            None,
             Some(format!("sub-grant-{}", Uuid::now_v7())),
             Some("Subscription cycle grant".to_string()),
             None,

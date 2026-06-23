@@ -48,7 +48,7 @@ docs/
 | PRD 文档 | 标题 | 相关角色 |
 |---------|------|---------|
 | [subscription.md](billing/subscription.md) | 订阅计费、Entitlement 映射、Webhook 处理（含 One-time 购买） | Realm Admin, Regular User, Third-Party App, System |
-| [points.md](billing/points.md) | 积分系统（含发放、免费用户积分） | Realm Admin, Regular User, Third-Party App |
+| [points.md](billing/points.md) | 积分系统（含发放、免费用户积分、发放时序与可用性） | Realm Admin, Regular User, Third-Party App |
 | [stripe-payment.md](billing/stripe-payment.md) | Stripe 支付集成 | Realm Admin |
 | [invoice.md](billing/invoice.md) | Invoice 发票管理（含 Provider 发票同步和自研 Fallback） | Realm Admin, Regular User |
 

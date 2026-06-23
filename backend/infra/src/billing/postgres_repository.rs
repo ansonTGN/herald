@@ -677,9 +677,25 @@ impl PostgresBillingRepository {
         .await
         .map_err(|e| CoreError::DatabaseError(format!("Failed to count subscriptions: {}", e)))?;
 
-        // Holders with remaining balance.
+        // Holders with remaining *derived available* balance.
+        //
+        // BE-D06 (design §5.1 / A7): the delete guard uses the SAME derived
+        // availability predicate as `compute_bucket_available_balances`
+        // (`status='active' AND remaining_amount>0 AND (effective_at IS NULL
+        // OR effective_at<=NOW()) AND (expires_at IS NULL OR
+        // expires_at>NOW())`) instead of the Stored `points_wallets.total_balance`
+        // column. Future-effective pre-grant rows do NOT block delete here (they
+        // are not yet spendable); they are swept by
+        // `clear_deletable_bucket_references_tx` below. If the predicate text
+        // drifts from the one in `points/postgres_repository.rs`, BE-A03 step 2
+        // will catch it.
         let holders_with_balance: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM points_wallets WHERE bucket_id = $1 AND total_balance > 0",
+            "SELECT COUNT(*) FROM points_credit_ledger \
+             WHERE bucket_id = $1 \
+               AND status = 'active' \
+               AND remaining_amount > 0 \
+               AND (effective_at IS NULL OR effective_at <= NOW()) \
+               AND (expires_at IS NULL OR expires_at > NOW())",
         )
         .bind(bucket_id)
         .fetch_one(&mut *tx)
@@ -756,15 +772,18 @@ impl PostgresBillingRepository {
                 CoreError::DatabaseError(format!("Failed to delete bucket grant schedules: {}", e))
             })?;
 
-        sqlx::query("DELETE FROM points_wallets WHERE bucket_id = $1 AND total_balance = 0")
+        // BE-D06/BE-D11: `points_wallets.total_balance` was physically dropped
+        // (A7); this is a cleanup of orphan wallet rows for a deleted bucket,
+        // NOT a balance-authority read. By this point all ledger rows for the
+        // bucket are deleted above, so any remaining wallet rows are orphans
+        // (their analytics are retained only for historical totals; with the
+        // bucket gone they have no remaining referent). Delete unconditionally.
+        sqlx::query("DELETE FROM points_wallets WHERE bucket_id = $1")
             .bind(bucket_id)
             .execute(&mut **tx)
             .await
             .map_err(|e| {
-                CoreError::DatabaseError(format!(
-                    "Failed to delete zero-balance bucket wallets: {}",
-                    e
-                ))
+                CoreError::DatabaseError(format!("Failed to delete orphan bucket wallets: {}", e))
             })?;
 
         // bucket_id is NOT NULL on subscription/payment_attempts/mappings, so
@@ -815,62 +834,102 @@ impl PostgresBillingRepository {
     /// Overview matrix: per-bucket × credit-type aggregates (residual rows kept for
     /// disabled buckets) plus a SEPARATE grand total across all buckets.
     ///
-    /// Aggregation joins `points_wallets` balances by bucket. Wallets are the
-    /// authoritative remaining-balance source; ledger remaining_amount would
-    /// double-count revoked amounts.
+    /// BE-D06 (design §5.1 / A7): the per-bucket available balance is the derived
+    /// SUM over `points_credit_ledger` using the SAME availability predicate as
+    /// `compute_bucket_available_balances` in `points/postgres_repository.rs`
+    /// (`status='active' AND remaining_amount>0 AND (effective_at IS NULL OR
+    /// effective_at<=NOW()) AND (expires_at IS NULL OR expires_at>NOW())`),
+    /// grouped by `(bucket_id, credit_type)`. This replaces the previous
+    /// `LEFT JOIN points_wallets ... SUM(w.<x>_balance)` aggregation, which read
+    /// Stored/GENERATED columns and would (a) leak future-effective pre-grant
+    /// rows into the overview and (b) misjudge a bucket as in-use. If the
+    /// predicate text drifts from the points repository, BE-A03 step 2 will
+    /// catch it.
     pub async fn list_bucket_overview(
         &self,
         realm_id: &str,
     ) -> Result<CreditBucketOverview, CoreError> {
         use sqlx::Row;
 
-        let rows = sqlx::query(
-            "SELECT b.id AS bucket_id, b.name, b.enabled, \
-                    COALESCE(SUM(w.topup_balance), 0)::bigint AS topup, \
-                    COALESCE(SUM(w.subscription_balance), 0)::bigint AS subscription, \
-                    COALESCE(SUM(w.registration_balance), 0)::bigint AS registration, \
-                    COALESCE(SUM(w.free_periodic_balance), 0)::bigint AS free_periodic, \
-                    COALESCE(SUM(w.granted_balance), 0)::bigint AS granted \
-             FROM credit_buckets b \
-             LEFT JOIN points_wallets w ON w.bucket_id = b.id \
-             WHERE b.realm_id = $1 \
-             GROUP BY b.id, b.name, b.enabled \
-             ORDER BY b.display_order ASC, b.created_at ASC",
+        // Bucket metadata ordered for display.
+        let bucket_rows = sqlx::query(
+            "SELECT id AS bucket_id, name, enabled \
+             FROM credit_buckets \
+             WHERE realm_id = $1 \
+             ORDER BY display_order ASC, created_at ASC",
         )
         .bind(realm_id)
         .fetch_all(self.db.get_postgres_connection_pool())
         .await
         .map_err(|e| CoreError::DatabaseError(format!("Failed to load bucket overview: {}", e)))?;
 
-        let mut out_rows = Vec::with_capacity(rows.len());
+        // Derived per-(bucket_id, credit_type) available-balance aggregates using
+        // the shared availability predicate (same text as
+        // `compute_bucket_available_balances`).
+        let agg_rows: Vec<(Uuid, String, i64)> = sqlx::query_as(
+            "SELECT bucket_id, credit_type, COALESCE(SUM(remaining_amount), 0)::bigint AS available \
+             FROM points_credit_ledger \
+             WHERE realm_id = $1 \
+               AND status = 'active' \
+               AND remaining_amount > 0 \
+               AND (effective_at IS NULL OR effective_at <= NOW()) \
+               AND (expires_at IS NULL OR expires_at > NOW()) \
+             GROUP BY bucket_id, credit_type",
+        )
+        .bind(realm_id)
+        .fetch_all(self.db.get_postgres_connection_pool())
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to load bucket overview: {}", e)))?;
+
+        // Index aggregates by bucket_id for O(1) lookup while walking buckets.
+        let mut agg_by_bucket: std::collections::HashMap<
+            Uuid,
+            herald_domain::billing::credit_bucket::BucketByCreditType,
+        > = std::collections::HashMap::new();
+        for (bucket_id, credit_type, available) in agg_rows {
+            let entry = agg_by_bucket.entry(bucket_id).or_default();
+            match credit_type.as_str() {
+                "topup_credit" => entry.topup = entry.topup.saturating_add(available),
+                "subscription_credit" => {
+                    entry.subscription = entry.subscription.saturating_add(available)
+                }
+                "granted_credit" => entry.granted = entry.granted.saturating_add(available),
+                "registration_credit" => {
+                    entry.registration = entry.registration.saturating_add(available)
+                }
+                "free_periodic_credit" => {
+                    entry.free_periodic = entry.free_periodic.saturating_add(available)
+                }
+                other => {
+                    return Err(CoreError::DatabaseError(format!(
+                        "invalid credit_type in points_credit_ledger: {other}"
+                    )));
+                }
+            }
+        }
+
+        let mut out_rows = Vec::with_capacity(bucket_rows.len());
         let mut grand_total_topup = 0i64;
         let mut grand_total_subscription = 0i64;
         let mut grand_total_registration = 0i64;
         let mut grand_total_free_periodic = 0i64;
         let mut grand_total_granted = 0i64;
 
-        for row in &rows {
-            let topup: i64 = row.get("topup");
-            let subscription: i64 = row.get("subscription");
-            let registration: i64 = row.get("registration");
-            let free_periodic: i64 = row.get("free_periodic");
-            let granted: i64 = row.get("granted");
+        for row in &bucket_rows {
+            let bucket_id: Uuid = row.get("bucket_id");
+            let by_credit_type = agg_by_bucket.remove(&bucket_id).unwrap_or_default();
 
-            grand_total_topup = grand_total_topup.saturating_add(topup);
-            grand_total_subscription = grand_total_subscription.saturating_add(subscription);
-            grand_total_registration = grand_total_registration.saturating_add(registration);
-            grand_total_free_periodic = grand_total_free_periodic.saturating_add(free_periodic);
-            grand_total_granted = grand_total_granted.saturating_add(granted);
+            grand_total_topup = grand_total_topup.saturating_add(by_credit_type.topup);
+            grand_total_subscription =
+                grand_total_subscription.saturating_add(by_credit_type.subscription);
+            grand_total_registration =
+                grand_total_registration.saturating_add(by_credit_type.registration);
+            grand_total_free_periodic =
+                grand_total_free_periodic.saturating_add(by_credit_type.free_periodic);
+            grand_total_granted = grand_total_granted.saturating_add(by_credit_type.granted);
 
-            let by_credit_type = herald_domain::billing::credit_bucket::BucketByCreditType {
-                topup,
-                subscription,
-                registration,
-                free_periodic,
-                granted,
-            };
             out_rows.push(CreditBucketOverviewRow {
-                bucket_id: row.get("bucket_id"),
+                bucket_id,
                 name: row.get("name"),
                 enabled: row.get("enabled"),
                 bucket_total: by_credit_type.total(),

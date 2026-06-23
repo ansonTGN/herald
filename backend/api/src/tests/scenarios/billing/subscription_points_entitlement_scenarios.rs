@@ -80,9 +80,13 @@ mod tests {
             realm_id,
         )
         .await;
+        // BE-D11 / point-time: per-type balance columns and the `total_balance`
+        // GENERATED column were dropped from `points_wallets`; available balance
+        // is derived from `points_credit_ledger`. Seed only the retained
+        // lifetime-analytics columns (all 0).
         sqlx::query(
-            "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())
+            "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 0, 0, 0, 0, 'active', NOW(), NOW())
              ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING",
         )
         .bind(Uuid::now_v7())

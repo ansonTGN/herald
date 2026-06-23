@@ -25,3 +25,8 @@ pub mod bucket_directory_crud_scenarios;
 // BE-T05: per-bucket query surface — wallets grouped by bucket + crossBucketTotal,
 // transactions bucketId field + bucketId filter, admin cross-tenant wallets (§4.2.3 / §6.1)
 pub mod bucket_query_scenarios;
+// BE-T10: bucket overview/delete derived availability predicate — future-effective
+// rows excluded from overview available balance, do not block delete; subscription
+// check independent; clear_deletable_bucket_references_tx sweeps future-effective
+// residue (design §5.1 / §6.1 / §6.3 risk P1).
+pub mod bucket_overview_delete_effective_at_scenarios;

@@ -403,10 +403,10 @@ pub async fn get_api_key_stats(
 ///
 /// This is needed because ext endpoints call `require_principal_permission` which checks
 /// the RBAC system for the API key's principal.
-/// TODO: Consolidate with api::tests::helpers::client_helpers::grant_api_key_permissions
-/// and fixtures::grant_api_key_ext_permissions into a single shared implementation.
 pub async fn grant_api_key_permissions(
-    ctx: &TestContext,
+    pool: &sqlx::PgPool,
+    realm_id: &str,
+    client_id: &str,
     api_key_id: &str,
     permissions: &[(&str, &str)],
 ) {
@@ -416,9 +416,9 @@ pub async fn grant_api_key_permissions(
     )
     .bind(role_id)
     .bind(format!("test-api-key-role-{}", &api_key_id[..8]))
-    .bind(&ctx._realm_id)
-    .bind(&ctx._client_id)
-    .execute(&ctx.app_state.pool)
+    .bind(realm_id)
+    .bind(client_id)
+    .execute(pool)
     .await
     .expect("Failed to create role for API key");
 
@@ -428,10 +428,10 @@ pub async fn grant_api_key_permissions(
         )
         .bind(Uuid::now_v7())
         .bind(role_id)
-        .bind(&ctx._realm_id)
+        .bind(realm_id)
         .bind(resource)
         .bind(action)
-        .execute(&ctx.app_state.pool)
+        .execute(pool)
         .await
         .expect("Failed to grant permission to API key role");
     }
@@ -441,10 +441,10 @@ pub async fn grant_api_key_permissions(
     )
     .bind(Uuid::now_v7())
     .bind(role_id)
-    .bind(&ctx._realm_id)
-    .bind(&ctx._client_id)
+    .bind(realm_id)
+    .bind(client_id)
     .bind(api_key_id)
-    .execute(&ctx.app_state.pool)
+    .execute(pool)
     .await
     .expect("Failed to assign role to API key");
 }

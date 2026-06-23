@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::webhook_common::{
     create_placeholder_transaction, metadata_value, parse_attempt_id, parse_event_id,
-    parse_optional_uuid_field, parse_uuid_field,
+    parse_optional_uuid_field, parse_uuid_field, reclaim_pregrant_for_subscription,
 };
 use crate::webhook_subscription_helpers::{
     SyncSubscriptionInput, resolve_bucket_id_for_entitlement, resolve_entitlement_key,
@@ -151,6 +151,233 @@ fn parse_optional_stripe_datetime(value: &Value) -> Result<Option<DateTime<Utc>>
     }
 
     parse_stripe_datetime(value, "timestamp").map(Some)
+}
+
+/// Normalize a Stripe subscription's billing period to a unique
+/// `(period_start, period_end)` pair (design §5.2, A8 P0).
+///
+/// Stripe 2025-03-31.basil removed the top-level `current_period_start` /
+/// `current_period_end` fields from the subscription object; the period now
+/// lives on each subscription item (`items.data[].current_period_*`). Older
+/// API versions still expose the top-level fields. This function reconciles
+/// both shapes.
+///
+/// Resolution order:
+/// 1. **Item-level** (`items.data[].current_period_start/end`):
+///    - Single item with period fields → use it.
+///    - Multiple items all sharing the same period → use the shared period.
+///    - Multiple items with disagreeing periods → cannot uniquely map the
+///      points entitlement's item → `None` (A8 P0: do not guess).
+/// 2. **Top-level fallback** (`current_period_start/end`) — old API versions.
+/// 3. Missing / unparseable / `start >= end` → `None`.
+///
+/// Returns `None` whenever the period cannot be uniquely resolved; the caller
+/// must then skip pre-grant, emit a structured warning, and await a later
+/// webhook / API compensation (design A8 P0 — never guess, never write a
+/// ledger with an invented period).
+///
+/// Errors (e.g. malformed timestamp that would otherwise be silently
+/// ignored) are mapped to `None` so that the strict A8 P0 "skip + warn"
+/// behavior applies uniformly; parse failures are surfaced via the returned
+/// resolution reason in `warn!`.
+fn normalize_stripe_period(subscription: &Value) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+    // 1. Item-level resolution (2025-03-31.basil+).
+    let items = subscription
+        .get("items")
+        .and_then(|v| v.get("data"))
+        .and_then(|v| v.as_array());
+    if let Some(item_periods) = items.and_then(|arr| collect_item_periods(arr)) {
+        if item_periods.len() == 1 {
+            return validate_optional_period(item_periods[0]);
+        }
+        // Multiple items: require unanimous period. Any divergence means we
+        // cannot uniquely identify the points entitlement's item → A8 P0 None.
+        let first = &item_periods[0];
+        if item_periods
+            .iter()
+            .all(|p| p.0 == first.0 && p.1 == first.1)
+        {
+            return validate_optional_period(*first);
+        }
+        // Disagreement — cannot uniquely resolve.
+        return None;
+    }
+
+    // 2. Top-level fallback (pre-basil API versions).
+    let top_start = read_stripe_period_field(subscription, "current_period_start");
+    let top_end = read_stripe_period_field(subscription, "current_period_end");
+    match (top_start, top_end) {
+        (Some(s), Some(e)) => validate_period((s, e)),
+        _ => None,
+    }
+}
+
+/// A subscription item's optional period endpoints (each side independently
+/// nullable because Stripe may populate only one on some events).
+type ItemPeriod = (Option<DateTime<Utc>>, Option<DateTime<Utc>>);
+
+/// Read one item's `(current_period_start, current_period_end)` pair, or
+/// `None` if the item lacks both period fields (some items legitimately
+/// carry no period — e.g. one-time add-ons bundled into a subscription).
+fn read_item_period(item: &Value) -> Option<ItemPeriod> {
+    let has_start = item
+        .get("current_period_start")
+        .map(|v| !v.is_null())
+        .unwrap_or(false);
+    let has_end = item
+        .get("current_period_end")
+        .map(|v| !v.is_null())
+        .unwrap_or(false);
+    if !has_start && !has_end {
+        return None;
+    }
+    let start = read_stripe_period_field(item, "current_period_start");
+    let end = read_stripe_period_field(item, "current_period_end");
+    Some((start, end))
+}
+
+/// Collect `(start, end)` pairs from every subscription item that carries
+/// period fields. Returns `None` when no item exposes period fields at all
+/// (so the caller can fall back to the top-level fields).
+fn collect_item_periods(items: &[Value]) -> Option<Vec<ItemPeriod>> {
+    let mut collected: Vec<ItemPeriod> = Vec::new();
+    for item in items {
+        if let Some(period) = read_item_period(item) {
+            collected.push(period);
+        }
+    }
+    if collected.is_empty() {
+        None
+    } else {
+        Some(collected)
+    }
+}
+
+fn read_stripe_period_field(obj: &Value, field: &str) -> Option<DateTime<Utc>> {
+    let v = obj.get(field)?;
+    if v.is_null() {
+        return None;
+    }
+    // `parse_stripe_datetime` returns Result; on error we treat as absent so
+    // the A8 P0 "skip + warn" path applies (do not abort the whole handler
+    // with a BadRequest on a period we cannot parse).
+    parse_stripe_datetime(v, field).ok()
+}
+
+/// Final guard for a fully-resolved pair: a valid period must have
+/// `start < end`. Inverted / zero-length windows are rejected as
+/// unresolvable (A8 P0).
+fn validate_period(pair: (DateTime<Utc>, DateTime<Utc>)) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+    let (start, end) = pair;
+    if start < end {
+        Some((start, end))
+    } else {
+        None
+    }
+}
+
+/// Guard for an item-level partial pair (each side independently optional):
+/// both endpoints must be present and form a valid window (`start < end`).
+/// Partial pairs (one side missing) or inverted windows are rejected as
+/// unresolvable (A8 P0).
+fn validate_optional_period(pair: ItemPeriod) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+    match pair {
+        (Some(start), Some(end)) => validate_period((start, end)),
+        _ => None,
+    }
+}
+
+/// Normalize a Stripe **Invoice** object's billing period to a unique
+/// `(period_start, period_end)` pair (design §5.2, A8 P0).
+///
+/// This is the invoice counterpart to `normalize_stripe_period`. A Stripe
+/// `invoice.payment_succeeded` event carries a Stripe **Invoice** object as
+/// `data.object`, which has NO top-level `current_period_*` fields (those live
+/// on Subscription/SubscriptionItem objects) and exposes its line items under
+/// `lines.data` (NOT `items.data`). For a subscription renewal invoice each
+/// invoice line's `period.{start,end}` IS the subscription billing period
+/// being paid (Stripe docs: "For subscription line items, this is the
+/// subscription period."). That makes the period resolvable directly from the
+/// invoice without an extra Stripe API call.
+///
+/// Resolution order:
+/// 1. **Line-level** (`lines.data[].period.{start,end}`):
+///    - Single line carrying a period → use it.
+///    - Multiple lines all sharing the same period → use the shared period.
+///    - Multiple lines with disagreeing periods → cannot uniquely map the
+///      points entitlement's line → `None` (A8 P0: do not guess).
+///    - Lines legitimately without `period` (e.g. one-time add-on lines) are
+///      skipped; resolution requires at least one line with a period.
+///    - A line that carries a `period` object but with a null/unparseable
+///      `start`/`end` or an inverted (`start >= end`) window is skipped (treated
+///      as unresolvable for that line), NOT short-circuited. This lets a valid
+///      subscription line still resolve when a sibling proration/credit line
+///      carries a malformed period. If every carrying line is malformed → `None`.
+/// 2. No resolvable line at all (all lines lack/malform a period) → `None`.
+///
+/// Returns `None` whenever the period cannot be uniquely resolved; the caller
+/// must then skip the renewal grant, emit a structured warning, and await a
+/// later webhook / API compensation (design A8 P0 — never guess, never write a
+/// ledger with an invented period).
+///
+/// Parse errors are mapped to `None` so that the strict A8 P0 "skip + warn"
+/// behavior applies uniformly.
+fn normalize_stripe_invoice_period(invoice: &Value) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+    let lines = invoice
+        .get("lines")
+        .and_then(|v| v.get("data"))
+        .and_then(|v| v.as_array())?;
+
+    // Collect `(start, end)` pairs from every line that carries a `period`.
+    let mut line_periods: Vec<(DateTime<Utc>, DateTime<Utc>)> = Vec::new();
+    for line in lines {
+        let Some(period) = line.get("period") else {
+            // Line legitimately carries no period (e.g. one-time add-on) — skip.
+            continue;
+        };
+        // A line that carries a `period` object but with a null/unparseable
+        // start or end is treated as unresolvable FOR THIS LINE and skipped
+        // (mirroring the no-period branch above), NOT short-circuited to a
+        // whole-function None. Real Stripe invoices can carry such lines
+        // (proration/credit/tax adjustment lines whose period is absent or
+        // malformed) alongside the subscription line whose period IS valid.
+        // Short-circuiting would doom the whole resolution whenever ANY single
+        // line is malformed, skipping a renewal grant the user paid for. If
+        // every carrying line is malformed, `line_periods` stays empty and we
+        // return None below (A8 P0 still holds when nothing resolves).
+        let Some(start) = read_stripe_period_field(period, "start") else {
+            continue;
+        };
+        let Some(end) = read_stripe_period_field(period, "end") else {
+            continue;
+        };
+        match validate_period((start, end)) {
+            Some(pair) => line_periods.push(pair),
+            // Inverted / zero-length window on a line that DOES carry a period
+            // is a malformed signal — skip this line (consistent with the
+            // null/unparseable branches above); resolution proceeds via the
+            // remaining valid lines, or returns None if none remain.
+            None => continue,
+        }
+    }
+
+    if line_periods.is_empty() {
+        return None;
+    }
+    if line_periods.len() == 1 {
+        return Some(line_periods[0]);
+    }
+    // Multiple lines: require unanimous period. Any divergence means we cannot
+    // uniquely identify the points entitlement's line → A8 P0 None.
+    let first = line_periods[0];
+    if line_periods
+        .iter()
+        .all(|p| p.0 == first.0 && p.1 == first.1)
+    {
+        Some(first)
+    } else {
+        None
+    }
 }
 
 fn parse_stripe_subscription_status(
@@ -1517,10 +1744,24 @@ async fn handle_payment_failed(
 ) -> Result<PointsTransaction, CoreError> {
     let event_id = parse_event_id(&event)?;
     let Some(payload) = parse_payment_failed_payload(&event)? else {
+        // No `attemptId` metadata ⟹ this is not a one-time purchase payment
+        // attempt. For `invoice.payment_failed` on a subscription, reclaim
+        // the chained pre-grant row for the subscription's next period
+        // (design §5.2 A4 / BE-D09). Row-precise locator, no wallet
+        // back-adjust, idempotent on repeat delivery.
+        reclaim_subscription_pregrant_from_event(
+            &app_state,
+            realm_id,
+            &event,
+            &event["data"]["object"]["subscription"],
+            "invoice.payment_failed",
+        )
+        .await?;
+
         warn!(
             realm_id = %realm_id,
             event_id = %event_id,
-            "Stripe payment_failed event has no attemptId metadata - ignoring"
+            "Stripe payment_failed event has no attemptId metadata - ignoring purchase-attempt path"
         );
         return Ok(create_placeholder_transaction(
             Uuid::now_v7(),
@@ -1537,6 +1778,48 @@ async fn handle_payment_failed(
         realm_id,
         TransactionType::Recharge,
     ))
+}
+
+/// Resolve an external Stripe subscription id to its internal `Subscription`
+/// and reclaim the chained pre-grant row for its next period (design §5.2 A4
+/// / BE-D09). Used by `invoice.payment_failed` /
+/// `customer.subscription.deleted` where the event carries the Stripe
+/// subscription id rather than the internal UUID.
+///
+/// `external_sub_value` is the JSON node holding the Stripe subscription id
+/// (may be missing / null for events not tied to a subscription). `event_kind`
+/// is used only for structured logging. Idempotent: no schedule, no
+/// subscription, or already-revoked row ⟹ no-op.
+async fn reclaim_subscription_pregrant_from_event(
+    app_state: &AppState,
+    realm_id: &str,
+    _event: &Value,
+    external_sub_value: &Value,
+    event_kind: &str,
+) -> Result<(), CoreError> {
+    let Some(external_sub_id) = external_sub_value.as_str() else {
+        tracing::debug!(
+            realm_id = %realm_id,
+            event_kind,
+            "reclaim: event has no subscription reference, no pre-grant to reclaim"
+        );
+        return Ok(());
+    };
+    let Some(subscription) = app_state
+        .billing_repository
+        .find_by_external_subscription_id(external_sub_id, "stripe")
+        .await?
+    else {
+        tracing::debug!(
+            realm_id = %realm_id,
+            event_kind,
+            external_subscription_id = %external_sub_id,
+            "reclaim: no internal subscription row, no pre-grant to reclaim"
+        );
+        return Ok(());
+    };
+    reclaim_pregrant_for_subscription(app_state, realm_id, subscription.id).await?;
+    Ok(())
 }
 
 /// Handle customer.subscription.created events
@@ -1599,31 +1882,45 @@ async fn handle_subscription_created(
     )
     .await?;
 
-    // Stripe omits current_period_end on the first subscription.created event for
-    // checkout-initiated subscriptions (set only after the first invoice is paid).
-    // Credits still need an expiry, so fall back to a 30-day window from now —
-    // it will be corrected when the subsequent subscription.updated /
-    // invoice.payment_succeeded event arrives with the real period end.
-    let period_end = payload
-        .current_period_end
-        .unwrap_or_else(|| Utc::now() + ChronoDuration::days(30));
-
-    // Route grant to subscription.bucket_id (design §5.5 / A8). The synced
-    // subscription is created non-null, so the persisted bucket_id is the
-    // authoritative routing target.
-    app_state
-        .subscription_service
-        .handle_subscription_paid(
-            payload.user_id,
-            subscription.id,
-            subscription.bucket_id,
-            realm_id,
-            &entitlement_key,
-            false,
-            period_end,
-            payload.event_id.clone(),
-        )
-        .await?;
+    // Normalize the provider billing period (design §5.2, A8 P0). Stripe
+    // 2025-03-31.basil moved `current_period_*` from the subscription top
+    // level to each subscription item; older API versions keep them at the
+    // top level. `normalize_stripe_period` reconciles both shapes and
+    // returns `None` when the points entitlement's period cannot be uniquely
+    // resolved (e.g. multiple items with disagreeing periods) — per A8 P0 we
+    // must NOT guess the period from event time and must NOT write a ledger
+    // with an invented period; we skip the grant and await a later
+    // webhook / API compensation.
+    let normalized_period = normalize_stripe_period(&event["data"]["object"]);
+    if let Some((period_start, period_end)) = normalized_period {
+        // Route grant to subscription.bucket_id (design §5.5 / A8). The synced
+        // subscription is created non-null, so the persisted bucket_id is the
+        // authoritative routing target.
+        app_state
+            .subscription_service
+            .handle_subscription_paid(
+                payload.user_id,
+                subscription.id,
+                subscription.bucket_id,
+                realm_id,
+                &entitlement_key,
+                false,
+                period_start,
+                period_end,
+                payload.event_id.clone(),
+            )
+            .await?;
+    } else {
+        warn!(
+            realm_id = %realm_id,
+            user_id = %payload.user_id,
+            stripe_subscription_id = %payload.stripe_subscription_id,
+            event_id = %event_id,
+            reason = "period_uniquely_unresolvable",
+            source = "stripe",
+            "Stripe period normalization failed; skipping subscription grant and awaiting compensation (A8 P0)"
+        );
+    }
 
     info!(
         realm_id = %realm_id,
@@ -2121,6 +2418,15 @@ async fn handle_subscription_deleted(
     )
     .await?;
 
+    // Reclaim the chained pre-grant row for the subscription's next period
+    // (design §5.2 A4 / BE-D09). Row-precise locator — does NOT touch other
+    // active credits, does NOT back-adjust wallet (derived balance auto-
+    // excludes revoked rows). Idempotent: missing schedule / already-revoked
+    // ⟹ no-op. Runs BEFORE the ImmediateCancel path so the future-effective
+    // pre-grant row is revoked row-precisely; ImmediateCancel then handles
+    // already-effective rows via the existing entitlement-scoped revocation.
+    reclaim_pregrant_for_subscription(&app_state, realm_id, subscription.id).await?;
+
     // Route revocation to subscription.bucket_id (design §5.5 / A8). The synced
     // subscription is non-null.
     app_state
@@ -2399,28 +2705,44 @@ async fn handle_invoice_payment_succeeded(
     )
     .await?;
 
-    // invoice.payment_succeeded should normally include current_period_end
-    // (subscription is active), but apply the +30 day fallback defensively so a
-    // missing field can never silently block renewal credit grants.
-    let period_end = payload
-        .current_period_end
-        .unwrap_or_else(|| Utc::now() + ChronoDuration::days(30));
-
-    // Route grant to subscription.bucket_id (design §5.5 / A8). The synced
-    // subscription is non-null.
-    app_state
-        .subscription_service
-        .handle_subscription_paid(
-            payload.user_id,
-            subscription.id,
-            subscription.bucket_id,
-            realm_id,
-            &entitlement_key,
-            true,
-            period_end,
-            payload.event_id.clone(),
-        )
-        .await?;
+    // Normalize the provider billing period (design §5.2, A8 P0). For the
+    // renewal grant the period is sourced from the Invoice object carried by
+    // the `invoice.payment_succeeded` event: a Stripe Invoice has NO top-level
+    // `current_period_*` (those are Subscription/SubscriptionItem fields) and
+    // exposes its line items under `lines.data`; each subscription line's
+    // `period.{start,end}` IS the subscription billing period being paid.
+    // When the period cannot be uniquely resolved we skip the renewal grant
+    // and emit a structured warning — never guess, never write a ledger with
+    // an invented period (A8 P0).
+    let normalized_period = normalize_stripe_invoice_period(&event["data"]["object"]);
+    if let Some((period_start, period_end)) = normalized_period {
+        // Route grant to subscription.bucket_id (design §5.5 / A8). The synced
+        // subscription is non-null.
+        app_state
+            .subscription_service
+            .handle_subscription_paid(
+                payload.user_id,
+                subscription.id,
+                subscription.bucket_id,
+                realm_id,
+                &entitlement_key,
+                true,
+                period_start,
+                period_end,
+                payload.event_id.clone(),
+            )
+            .await?;
+    } else {
+        warn!(
+            realm_id = %realm_id,
+            user_id = %payload.user_id,
+            stripe_subscription_id = %payload.stripe_subscription_id,
+            event_id = %event_id,
+            reason = "period_uniquely_unresolvable",
+            source = "stripe",
+            "Stripe period normalization failed on renewal; skipping grant and awaiting compensation (A8 P0)"
+        );
+    }
 
     info!(
         realm_id = %realm_id,
@@ -3680,5 +4002,400 @@ mod tests {
             .current_period_end
             .expect("current_period_end should be present");
         assert_eq!(end.timestamp(), 1_800_000_000);
+    }
+
+    // ---- normalize_stripe_period — A8 P0 four quadrants (design §5.2 / A8) ----
+    //
+    // The period normalizer is the P0 prerequisite for subscription chained
+    // pre-grant: when it cannot uniquely resolve the points entitlement's
+    // billing period, the webhook handler must skip the grant and emit a
+    // structured warning rather than guess from event time (design A8).
+    // These four quadrants pin the contract:
+    //   Q1 top-level (pre-basil API)         → Some
+    //   Q2 item-level single item (basil+)   → Some
+    //   Q3 multi-item disagreeing periods    → None  (cannot uniquely map)
+    //   Q4 both top-level and item-level absent → None
+    // Plus: multi-item unanimous period → Some (entitlement item is ambiguous
+    // but the period is not, so the period itself is uniquely resolvable).
+
+    fn ts(value: i64) -> DateTime<Utc> {
+        DateTime::<Utc>::from_timestamp(value, 0).unwrap()
+    }
+
+    #[test]
+    fn normalize_stripe_period_top_level_fields_resolved() {
+        // Pre-basil API: period lives at the subscription top level.
+        let sub = serde_json::json!({
+            "id": "sub_1",
+            "current_period_start": 1_700_000_000,
+            "current_period_end": 1_700_000_000 + 2_592_000,
+        });
+        let got = normalize_stripe_period(&sub).expect("top-level period must resolve");
+        assert_eq!(got.0, ts(1_700_000_000));
+        assert_eq!(got.1, ts(1_700_000_000 + 2_592_000));
+    }
+
+    #[test]
+    fn normalize_stripe_period_item_level_single_item_resolved() {
+        // 2025-03-31.basil: period lives on the subscription item. Top-level
+        // fields are absent.
+        let sub = serde_json::json!({
+            "id": "sub_1",
+            "items": {
+                "data": [
+                    {
+                        "id": "si_1",
+                        "current_period_start": 1_700_000_000,
+                        "current_period_end": 1_700_000_000 + 2_592_000
+                    }
+                ]
+            }
+        });
+        let got = normalize_stripe_period(&sub).expect("single-item period must resolve");
+        assert_eq!(got.0, ts(1_700_000_000));
+        assert_eq!(got.1, ts(1_700_000_000 + 2_592_000));
+    }
+
+    #[test]
+    fn normalize_stripe_period_multi_item_disagreeing_periods_is_none() {
+        // Two items with DIFFERENT billing periods. Without the entitlement
+        // mapping in hand the normalizer cannot uniquely identify which item
+        // owns the points entitlement → A8 P0: return None, do not guess.
+        let sub = serde_json::json!({
+            "id": "sub_1",
+            "items": {
+                "data": [
+                    {
+                        "id": "si_1",
+                        "current_period_start": 1_700_000_000,
+                        "current_period_end": 1_700_000_000 + 2_592_000
+                    },
+                    {
+                        "id": "si_2",
+                        "current_period_start": 1_700_000_000,
+                        "current_period_end": 1_700_000_000 + 777_6000
+                    }
+                ]
+            }
+        });
+        assert!(
+            normalize_stripe_period(&sub).is_none(),
+            "disagreeing multi-item periods must NOT be resolved (A8 P0)"
+        );
+    }
+
+    #[test]
+    fn normalize_stripe_period_both_levels_absent_is_none() {
+        // No period fields anywhere. Must return None — the caller skips the
+        // grant and awaits compensation (A8 P0: never guess from event time).
+        let sub = serde_json::json!({
+            "id": "sub_1",
+            "items": { "data": [ { "id": "si_1" } ] }
+        });
+        assert!(
+            normalize_stripe_period(&sub).is_none(),
+            "absent period fields must NOT be resolved (A8 P0)"
+        );
+    }
+
+    #[test]
+    fn normalize_stripe_period_multi_item_unanimous_resolved() {
+        // Multiple items that AGREE on the period: the period is uniquely
+        // resolvable even though the entitlement item is ambiguous.
+        let sub = serde_json::json!({
+            "id": "sub_1",
+            "items": {
+                "data": [
+                    {
+                        "id": "si_1",
+                        "current_period_start": 1_700_000_000,
+                        "current_period_end": 1_700_000_000 + 2_592_000
+                    },
+                    {
+                        "id": "si_2",
+                        "current_period_start": 1_700_000_000,
+                        "current_period_end": 1_700_000_000 + 2_592_000
+                    }
+                ]
+            }
+        });
+        let got = normalize_stripe_period(&sub).expect("unanimous multi-item period must resolve");
+        assert_eq!(got.0, ts(1_700_000_000));
+        assert_eq!(got.1, ts(1_700_000_000 + 2_592_000));
+    }
+
+    #[test]
+    fn normalize_stripe_period_top_level_takes_precedence_when_items_have_no_period() {
+        // Items legitimately without period fields (e.g. one-time add-ons)
+        // must not block top-level resolution on older API versions.
+        let sub = serde_json::json!({
+            "id": "sub_1",
+            "current_period_start": 1_700_000_000,
+            "current_period_end": 1_700_000_000 + 2_592_000,
+            "items": { "data": [ { "id": "si_1" } ] }
+        });
+        let got = normalize_stripe_period(&sub).expect("top-level must win when items lack period");
+        assert_eq!(got.0, ts(1_700_000_000));
+    }
+
+    #[test]
+    fn normalize_stripe_period_inverted_window_is_none() {
+        // start >= end is not a valid billing window.
+        let sub = serde_json::json!({
+            "id": "sub_1",
+            "current_period_start": 1_700_000_000 + 2_592_000,
+            "current_period_end": 1_700_000_000,
+        });
+        assert!(normalize_stripe_period(&sub).is_none());
+    }
+
+    // ---- normalize_stripe_invoice_period — invoice renewal path (A8 P0) ----
+    //
+    // The invoice resolver is what unblocks Stripe `invoice.payment_succeeded`
+    // renewal grants. A Stripe Invoice has NO top-level `current_period_*`
+    // (those are Subscription fields) and uses `lines.data` (NOT `items.data`);
+    // each subscription line's `period.{start,end}` IS the subscription
+    // billing period being paid. These quadrants pin the invoice counterpart
+    // of the A8 P0 contract, mirroring the `normalize_stripe_period_*` tests:
+    //   (1) single-line period resolved                → Some
+    //   (2) multi-line unanimous period resolved       → Some
+    //   (3) multi-line disagreeing periods             → None (cannot uniquely map)
+    //   (4) line with no period (add-on) skipped       → Some via the other line
+    //   (5) all lines lacking period                   → None
+    //   (6) inverted window on a carrying line         → None
+
+    #[test]
+    fn normalize_stripe_invoice_period_single_line_resolved() {
+        // A renewal invoice with a single subscription line: that line's
+        // `period` IS the subscription period being paid.
+        let invoice = serde_json::json!({
+            "id": "in_1",
+            "object": "invoice",
+            "subscription": "sub_1",
+            "lines": {
+                "data": [
+                    {
+                        "id": "il_1",
+                        "period": {
+                            "start": 1_700_000_000,
+                            "end": 1_700_000_000 + 2_592_000
+                        }
+                    }
+                ]
+            }
+        });
+        let got =
+            normalize_stripe_invoice_period(&invoice).expect("single-line period must resolve");
+        assert_eq!(got.0, ts(1_700_000_000));
+        assert_eq!(got.1, ts(1_700_000_000 + 2_592_000));
+    }
+
+    #[test]
+    fn normalize_stripe_invoice_period_multi_line_unanimous_resolved() {
+        // Two subscription lines that AGREE on the period (e.g. base plan +
+        // metered add-on billed in the same window): the period is uniquely
+        // resolvable even though the entitlement line is ambiguous.
+        let invoice = serde_json::json!({
+            "id": "in_1",
+            "object": "invoice",
+            "subscription": "sub_1",
+            "lines": {
+                "data": [
+                    {
+                        "id": "il_1",
+                        "period": {
+                            "start": 1_700_000_000,
+                            "end": 1_700_000_000 + 2_592_000
+                        }
+                    },
+                    {
+                        "id": "il_2",
+                        "period": {
+                            "start": 1_700_000_000,
+                            "end": 1_700_000_000 + 2_592_000
+                        }
+                    }
+                ]
+            }
+        });
+        let got = normalize_stripe_invoice_period(&invoice)
+            .expect("unanimous multi-line period must resolve");
+        assert_eq!(got.0, ts(1_700_000_000));
+        assert_eq!(got.1, ts(1_700_000_000 + 2_592_000));
+    }
+
+    #[test]
+    fn normalize_stripe_invoice_period_multi_line_disagreeing_is_none() {
+        // Two subscription lines with DIFFERENT periods (e.g. a proration line
+        // whose window does not match the base subscription window). Without
+        // the entitlement mapping in hand we cannot uniquely identify which
+        // line owns the points entitlement → A8 P0: return None, do not guess.
+        let invoice = serde_json::json!({
+            "id": "in_1",
+            "object": "invoice",
+            "subscription": "sub_1",
+            "lines": {
+                "data": [
+                    {
+                        "id": "il_1",
+                        "period": {
+                            "start": 1_700_000_000,
+                            "end": 1_700_000_000 + 2_592_000
+                        }
+                    },
+                    {
+                        "id": "il_2",
+                        "period": {
+                            "start": 1_700_000_000,
+                            "end": 1_700_000_000 + 777_6000
+                        }
+                    }
+                ]
+            }
+        });
+        assert!(
+            normalize_stripe_invoice_period(&invoice).is_none(),
+            "disagreeing multi-line periods must NOT be resolved (A8 P0)"
+        );
+    }
+
+    #[test]
+    fn normalize_stripe_invoice_period_skips_line_without_period() {
+        // A line legitimately without a `period` (e.g. a one-time add-on line
+        // Stripe may emit without a period) must be skipped, and resolution
+        // must still succeed via the subscription line that DOES carry a
+        // period.
+        let invoice = serde_json::json!({
+            "id": "in_1",
+            "object": "invoice",
+            "subscription": "sub_1",
+            "lines": {
+                "data": [
+                    {
+                        "id": "il_1",
+                        "period": {
+                            "start": 1_700_000_000,
+                            "end": 1_700_000_000 + 2_592_000
+                        }
+                    },
+                    {
+                        "id": "il_2"
+                        // no `period` — one-time add-on style line
+                    }
+                ]
+            }
+        });
+        let got = normalize_stripe_invoice_period(&invoice)
+            .expect("period must resolve via the line that carries one");
+        assert_eq!(got.0, ts(1_700_000_000));
+        assert_eq!(got.1, ts(1_700_000_000 + 2_592_000));
+    }
+
+    #[test]
+    fn normalize_stripe_invoice_period_no_line_with_period_is_none() {
+        // No line carries a `period` field. Must return None — the caller skips
+        // the renewal grant and awaits compensation (A8 P0: never guess).
+        let invoice = serde_json::json!({
+            "id": "in_1",
+            "object": "invoice",
+            "subscription": "sub_1",
+            "lines": { "data": [ { "id": "il_1" } ] }
+        });
+        assert!(
+            normalize_stripe_invoice_period(&invoice).is_none(),
+            "absent period on all lines must NOT be resolved (A8 P0)"
+        );
+    }
+
+    #[test]
+    fn normalize_stripe_invoice_period_inverted_window_is_none() {
+        // A carrying line with `start >= end` is a malformed period — reject
+        // as unresolvable (A8 P0). Mirrors the subscription-side inverted
+        // window guard.
+        let invoice = serde_json::json!({
+            "id": "in_1",
+            "object": "invoice",
+            "subscription": "sub_1",
+            "lines": {
+                "data": [
+                    {
+                        "id": "il_1",
+                        "period": {
+                            "start": 1_700_000_000 + 2_592_000,
+                            "end": 1_700_000_000
+                        }
+                    }
+                ]
+            }
+        });
+        assert!(normalize_stripe_invoice_period(&invoice).is_none());
+    }
+
+    #[test]
+    fn normalize_stripe_invoice_period_skips_malformed_sibling_line() {
+        // A renewal invoice carrying (a) a valid subscription line and (b) a
+        // sibling proration/credit line whose `period.start` is null. The
+        // malformed sibling must NOT doom the whole resolution — the valid
+        // subscription line still resolves the period. (Earlier behavior
+        // short-circuited the whole function to None on the null start,
+        // skipping a renewal grant the user paid for.)
+        let invoice = serde_json::json!({
+            "id": "in_1",
+            "object": "invoice",
+            "subscription": "sub_1",
+            "lines": {
+                "data": [
+                    {
+                        "id": "il_sub",
+                        "period": {
+                            "start": 1_700_000_000,
+                            "end": 1_700_000_000 + 2_592_000
+                        }
+                    },
+                    {
+                        "id": "il_proration",
+                        "period": {
+                            "start": null,
+                            "end": 1_700_000_000 + 2_592_000
+                        }
+                    }
+                ]
+            }
+        });
+        let got = normalize_stripe_invoice_period(&invoice)
+            .expect("valid subscription line must resolve despite malformed sibling");
+        assert_eq!(got.0, ts(1_700_000_000));
+        assert_eq!(got.1, ts(1_700_000_000 + 2_592_000));
+    }
+
+    #[test]
+    fn normalize_stripe_invoice_period_all_lines_malformed_is_none() {
+        // Every carrying line is malformed (null end / inverted window) — no
+        // line resolves, so the whole function returns None (A8 P0 still
+        // holds when nothing resolves).
+        let invoice = serde_json::json!({
+            "id": "in_1",
+            "object": "invoice",
+            "subscription": "sub_1",
+            "lines": {
+                "data": [
+                    {
+                        "id": "il_1",
+                        "period": { "start": 1_700_000_000, "end": null }
+                    },
+                    {
+                        "id": "il_2",
+                        "period": {
+                            "start": 1_700_000_000 + 2_592_000,
+                            "end": 1_700_000_000
+                        }
+                    }
+                ]
+            }
+        });
+        assert!(
+            normalize_stripe_invoice_period(&invoice).is_none(),
+            "all-malformed lines must yield None (A8 P0)"
+        );
     }
 }

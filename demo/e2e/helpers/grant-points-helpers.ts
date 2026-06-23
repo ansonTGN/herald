@@ -296,12 +296,24 @@ export async function grantPointsViaExtApi(
  * @param testStartTime - Unique suffix for resource names (use Date.now())
  * @param realmId - Realm to mint the key in (default 'admin'; pass a realm id
  *                  for SDK tests targeting a user in that realm)
+ * @param boundClientAppId - Optional UUID of an EXISTING client app the API
+ *                           key should bind to. When provided AND non-empty,
+ *                           step 1 (creating a temp client app) is SKIPPED and
+ *                           the key binds to this id directly. Pass this when
+ *                           the caller's consume target is a seeded client app
+ *                           (e.g. `points-demo-app`) so the backend
+ *                           `ensure_client_app_scope` check (key's bound app
+ *                           == consume target app) passes. When omitted/empty,
+ *                           a temp `grant-test-app-${suffix}` is created (the
+ *                           historical behavior — DE-D07 siblings +
+ *                           points-grant-sdk-demo are unaffected).
  */
 export async function createTestApiKeyWithPermission(
   page: Page,
   permission: string,
   testStartTime: number,
   realmId: string = 'admin',
+  boundClientAppId: string = '',
 ): Promise<ApiKeyWithPermission> {
   const suffix = testStartTime
   const clientAppName = `grant-test-app-${suffix}`
@@ -313,29 +325,36 @@ export async function createTestApiKeyWithPermission(
     process.env.BASE_URL?.replace(/:\d+/, ':8080') ||
     'http://localhost:8080'
 
-  // 1. Create Client App via admin API
-  const clientAppResponse = await page.context().request.post(
-    `${backendUrl}/api/client/${realmId}`,
-    {
-      data: {
-        clientId: clientAppName,
-        name: clientAppName,
-        redirectUris: ['https://example.com/callback'],
-        enabled: true,
-        sessionTtlSeconds: 1800,
+  // 1. Create Client App via admin API — UNLESS the caller passed an existing
+  //    `boundClientAppId` (e.g. a seeded app that consume's
+  //    ensure_client_app_scope will check the key against).
+  let clientId: string
+  if (boundClientAppId) {
+    clientId = boundClientAppId
+  } else {
+    const clientAppResponse = await page.context().request.post(
+      `${backendUrl}/api/client/${realmId}`,
+      {
+        data: {
+          clientId: clientAppName,
+          name: clientAppName,
+          redirectUris: ['https://example.com/callback'],
+          enabled: true,
+          sessionTtlSeconds: 1800,
+        },
       },
-    },
-  )
-
-  if (!clientAppResponse.ok()) {
-    const text = await clientAppResponse.text()
-    throw new Error(
-      `Failed to create client app "${clientAppName}": ${clientAppResponse.status()} ${text}`,
     )
-  }
 
-  const clientAppBody = await clientAppResponse.json()
-  const clientId = clientAppBody.id ?? clientAppName
+    if (!clientAppResponse.ok()) {
+      const text = await clientAppResponse.text()
+      throw new Error(
+        `Failed to create client app "${clientAppName}": ${clientAppResponse.status()} ${text}`,
+      )
+    }
+
+    const clientAppBody = await clientAppResponse.json()
+    clientId = clientAppBody.id ?? clientAppName
+  }
 
   // 2. Create API Key bound to the new Client App
   const apiKeyResponse = await page.context().request.post(

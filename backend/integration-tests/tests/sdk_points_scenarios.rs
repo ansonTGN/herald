@@ -141,7 +141,9 @@ async fn test_scenario_sdk_get_balance_success(ctx: &mut SchemaTestContext) {
     let (api_key, api_key_entity) =
         herald_test_support::helpers::create_test_api_key(ctx, "SDK Test Key", true, None).await;
     herald_test_support::helpers::grant_api_key_permissions(
-        ctx,
+        &ctx.app_state.pool,
+        &ctx._realm_id,
+        &ctx._client_id,
         &api_key_entity.id,
         &[("points", "view"), ("points", "manage")],
     )
@@ -195,7 +197,9 @@ async fn test_scenario_sdk_consume_points_success(ctx: &mut SchemaTestContext) {
     let (api_key, api_key_entity) =
         herald_test_support::helpers::create_test_api_key(ctx, "SDK Test Key", true, None).await;
     herald_test_support::helpers::grant_api_key_permissions(
-        ctx,
+        &ctx.app_state.pool,
+        &ctx._realm_id,
+        &ctx._client_id,
         &api_key_entity.id,
         &[("points", "view"), ("points", "manage")],
     )
@@ -260,7 +264,9 @@ async fn test_scenario_sdk_consume_points_insufficient(ctx: &mut SchemaTestConte
     let (api_key, api_key_entity) =
         herald_test_support::helpers::create_test_api_key(ctx, "SDK Test Key", true, None).await;
     herald_test_support::helpers::grant_api_key_permissions(
-        ctx,
+        &ctx.app_state.pool,
+        &ctx._realm_id,
+        &ctx._client_id,
         &api_key_entity.id,
         &[("points", "view"), ("points", "manage")],
     )

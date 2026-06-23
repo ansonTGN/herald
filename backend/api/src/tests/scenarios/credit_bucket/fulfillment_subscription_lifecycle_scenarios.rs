@@ -492,6 +492,7 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
 
     // --- When: a renewal grant fires (is_renewal = true). ------------------
     let period_end = chrono::Utc::now() + chrono::Duration::days(30);
+    let period_start = period_end - chrono::Duration::days(30);
     let event_id = format!("evt_renew_{}", Uuid::now_v7());
     let result = ctx
         .app_state
@@ -503,6 +504,7 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
             &realm_id,
             &entitlement_key,
             true, // is_renewal
+            period_start,
             period_end,
             event_id,
         )
@@ -576,6 +578,7 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
     // Seed the user with old-plan subscription credits in the SAME bucket so
     // the upgrade revoke has something to revoke.
     let period_end = chrono::Utc::now() + chrono::Duration::days(30);
+    let period_start = period_end - chrono::Duration::days(30);
     let seed_event = format!("evt_upg_seed_{}", Uuid::now_v7());
     ctx.app_state
         .subscription_service
@@ -586,6 +589,7 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
             &realm_id,
             &old_key,
             false,
+            period_start,
             period_end,
             seed_event,
         )
@@ -679,6 +683,7 @@ async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut Tes
     // granted credits in another bucket. The cancel must only touch the
     // subscription bucket pool.
     let period_end = chrono::Utc::now() + chrono::Duration::days(30);
+    let period_start = period_end - chrono::Duration::days(30);
     let seed_event = format!("evt_cancel_seed_{}", Uuid::now_v7());
     ctx.app_state
         .subscription_service
@@ -689,6 +694,7 @@ async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut Tes
             &realm_id,
             &entitlement_key,
             false,
+            period_start,
             period_end,
             seed_event,
         )
@@ -806,6 +812,7 @@ async fn subscription_refund_revokes_only_subscription_bucket_pool(ctx: &mut Tes
 
     // Seed: subscription credits in bucket_sub + GrantedCredit in bucket_other.
     let period_end = chrono::Utc::now() + chrono::Duration::days(30);
+    let period_start = period_end - chrono::Duration::days(30);
     let seed_event = format!("evt_refund_seed_{}", Uuid::now_v7());
     ctx.app_state
         .subscription_service
@@ -816,6 +823,7 @@ async fn subscription_refund_revokes_only_subscription_bucket_pool(ctx: &mut Tes
             &realm_id,
             &entitlement_key,
             false,
+            period_start,
             period_end,
             seed_event,
         )
@@ -915,6 +923,7 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
 
     // Seed current-cycle credits at the old-plan amount.
     let period_end = chrono::Utc::now() + chrono::Duration::days(30);
+    let period_start = period_end - chrono::Duration::days(30);
     let seed_event = format!("evt_dg_seed_{}", Uuid::now_v7());
     ctx.app_state
         .subscription_service
@@ -925,6 +934,7 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
             &realm_id,
             &old_key,
             false,
+            period_start,
             period_end,
             seed_event,
         )
@@ -1050,6 +1060,7 @@ async fn subscription_with_unresolved_bucket_fails_loud(ctx: &mut TestContext) {
 
     // --- When: a renewal grant fires against the unmapped entitlement. -----
     let period_end = chrono::Utc::now() + chrono::Duration::days(30);
+    let period_start = period_end - chrono::Duration::days(30);
     let event_id = format!("evt_unresolved_{}", Uuid::now_v7());
     let result = ctx
         .app_state
@@ -1061,6 +1072,7 @@ async fn subscription_with_unresolved_bucket_fails_loud(ctx: &mut TestContext) {
             &realm_id,
             &entitlement_key,
             true,
+            period_start,
             period_end,
             event_id,
         )

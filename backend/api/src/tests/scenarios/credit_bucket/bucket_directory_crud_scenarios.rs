@@ -33,7 +33,7 @@ use crate::tests::helpers::billing_helpers::{
 use crate::tests::helpers::credit_bucket_helpers::{
     CreditBucketOpts, attach_bucket_client_app, auth_admin_request_via_api,
     create_test_credit_bucket, seed_active_subscription_on_bucket,
-    seed_wallet_with_balance_on_bucket,
+    seed_granted_credit_ledger_on_bucket, seed_wallet_with_balance_on_bucket,
 };
 use crate::tests::scenarios::points::fixtures::{create_test_client_app, create_test_user};
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
@@ -1106,6 +1106,12 @@ async fn credit_bucket_overview_returns_rows_and_grand_total(ctx: &mut TestConte
     let holder_b = create_test_user(pool, &realm_id, "cb_t04_ov_b@example.com").await;
     seed_wallet_with_balance_on_bucket(pool, &realm_id, holder_a, bucket_a, 100).await;
     seed_wallet_with_balance_on_bucket(pool, &realm_id, holder_b, bucket_b, 250).await;
+    // Under point-time the overview total is a derived SUM over
+    // `points_credit_ledger` (BE-D06 / BE-D11), so seed real `granted_credit`
+    // ledger rows — otherwise `grandTotal.granted` stays 0 despite the wallet
+    // analytics rows above.
+    seed_granted_credit_ledger_on_bucket(pool, &realm_id, holder_a, bucket_a, 100).await;
+    seed_granted_credit_ledger_on_bucket(pool, &realm_id, holder_b, bucket_b, 250).await;
 
     let (status, body) = auth_admin_request_via_api(
         ctx,

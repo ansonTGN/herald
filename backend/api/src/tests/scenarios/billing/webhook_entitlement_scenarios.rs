@@ -81,9 +81,13 @@ mod tests {
             realm_id,
         )
         .await;
+        // BE-D11 / point-time: per-type balance columns and the `total_balance`
+        // GENERATED column were dropped from `points_wallets`; available balance
+        // is now derived from `points_credit_ledger`. This INSERT seeds only the
+        // retained lifetime-analytics columns (all 0).
         sqlx::query(
-            "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())
+            "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 0, 0, 0, 0, 'active', NOW(), NOW())
              ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING",
         )
         .bind(Uuid::now_v7())
@@ -95,10 +99,20 @@ mod tests {
         .expect("Failed to create points wallet");
     }
 
-    // Helper: get wallet balance for a user
+    // Helper: get wallet balance for a user.
+    // BE-D11: derived from `points_credit_ledger` (same predicate as production
+    // `compute_available_balance`); `points_wallets.total_balance` was dropped.
     async fn get_wallet_balance(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) -> i64 {
         sqlx::query_scalar::<_, i64>(
-            "SELECT COALESCE(total_balance, 0) FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
+            "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                        WHERE l.status = 'active' AND l.remaining_amount > 0
+                          AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                          AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                    ), 0)::BIGINT
+             FROM points_wallets w
+             LEFT JOIN points_credit_ledger l
+               ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+             WHERE w.user_id = $1 AND w.realm_id = $2",
         )
         .bind(user_id)
         .bind(realm_id)

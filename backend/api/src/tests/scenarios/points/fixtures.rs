@@ -146,11 +146,13 @@ pub async fn create_test_points_wallet(pool: &PgPool, user_id: Uuid, balance: i6
 
     let wallet_id = Uuid::now_v7();
 
-    // Create the points_wallets entry with subscription_balance
-    // (total_balance is computed as topup_balance + subscription_balance)
+    // Create the points_wallets entry. Under point-time (BE-D11) the wallet
+    // has no Stored balance columns; available balance is derived from
+    // `points_credit_ledger` (seeded below). `total_subscription_granted`
+    // is a retained lifetime-analytics column.
     sqlx::query(
-        "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, subscription_balance, total_subscription_granted, topup_balance, total_topup_granted, total_recharged, total_consumed, status)
-         VALUES ($1, $2, $3, $4, $5, $5, 0, 0, 0, 0, 'active')
+        "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, total_subscription_granted, total_topup_granted, total_recharged, total_consumed, status)
+         VALUES ($1, $2, $3, $4, $5, 0, $5, 0, 'active')
          ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING",
     )
     .bind(wallet_id)
@@ -408,61 +410,20 @@ pub async fn create_test_api_key(pool: &PgPool, realm_id: &str, client_app_id: U
 
     // 5. Grant ext endpoint permissions to the API key
     let client_id = format!("client-{}", client_app_id);
-    grant_api_key_ext_permissions(pool, realm_id, &client_id, &api_key_id.to_string()).await;
+    herald_test_support::helpers::grant_api_key_permissions(
+        pool,
+        realm_id,
+        &client_id,
+        &api_key_id.to_string(),
+        &[
+            ("billing", "view"),
+            ("points", "view"),
+            ("points", "manage"),
+        ],
+    )
+    .await;
 
     api_key_plaintext
-}
-
-/// Grant permissions needed by ext endpoints to an API key principal.
-/// TODO: Consolidate with grant_api_key_permissions in client_helpers into a single shared implementation.
-async fn grant_api_key_ext_permissions(
-    pool: &PgPool,
-    realm_id: &str,
-    client_id: &str,
-    api_key_id: &str,
-) {
-    let role_id = Uuid::now_v7();
-
-    sqlx::query(
-        "INSERT INTO roles (id, name, realm_id, client_id, is_builtin) VALUES ($1, $2, $3, $4, false)"
-    )
-    .bind(role_id)
-    .bind(format!("ext-api-key-role-{}", &api_key_id[..8]))
-    .bind(realm_id)
-    .bind(client_id)
-    .execute(pool)
-    .await
-    .expect("Failed to create role for API key");
-
-    for (resource, action) in [
-        ("billing", "view"),
-        ("points", "view"),
-        ("points", "manage"),
-    ] {
-        sqlx::query(
-            "INSERT INTO role_policies (id, role_id, realm_id, resource, action) VALUES ($1, $2, $3, $4, $5)"
-        )
-        .bind(Uuid::now_v7())
-        .bind(role_id)
-        .bind(realm_id)
-        .bind(resource)
-        .bind(action)
-        .execute(pool)
-        .await
-        .expect("Failed to grant permission");
-    }
-
-    sqlx::query(
-        "INSERT INTO user_roles (id, user_id, role_id, realm_id, client_id, principal_type, principal_id) VALUES ($1, NULL, $2, $3, $4, 'api_key', $5)"
-    )
-    .bind(Uuid::now_v7())
-    .bind(role_id)
-    .bind(realm_id)
-    .bind(client_id)
-    .bind(api_key_id)
-    .execute(pool)
-    .await
-    .expect("Failed to assign role to API key");
 }
 
 /// Helper function to create a test client app

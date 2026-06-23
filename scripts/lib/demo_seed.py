@@ -377,6 +377,7 @@ DECLARE
     v_wallet_id UUID := uuidv7();
     v_subscription_ledger_id UUID := uuidv7();
     v_topup_ledger_id UUID := uuidv7();
+    v_pregrant_ledger_id UUID := uuidv7();
     v_tx_subscription UUID := uuidv7();
     v_tx_topup UUID := uuidv7();
     v_tx_consume_1 UUID := uuidv7();
@@ -413,8 +414,6 @@ BEGIN
         user_id,
         realm_id,
         bucket_id,
-        topup_balance,
-        subscription_balance,
         total_topup_granted,
         total_subscription_granted,
         total_recharged,
@@ -427,8 +426,6 @@ BEGIN
         v_user_id,
         '{POINTS_REALM_ID}',
         v_bucket_id,
-        3000,
-        1900,
         3000,
         2000,
         5000,
@@ -464,7 +461,7 @@ BEGIN
         2000,
         100,
         0,
-        TIMESTAMPTZ '2026-04-15 00:00:00+00',
+        NOW() + INTERVAL '365 days',
         'active',
         TIMESTAMPTZ '2026-03-10 09:00:00+00',
         TIMESTAMPTZ '2026-03-22 16:00:00+00'
@@ -497,6 +494,44 @@ BEGIN
         0,
         0,
         NULL,
+        'active',
+        TIMESTAMPTZ '2026-03-12 10:00:00+00',
+        TIMESTAMPTZ '2026-03-12 10:00:00+00'
+    );
+
+    -- Pre-granted credit that is NOT yet effective: effective_at is far in the
+    -- future, so the derived-balance predicate (effective_at IS NULL OR
+    -- effective_at <= NOW()) excludes it from available/consumable/visible
+    -- balance until the effective moment. Used by future-effective E2E tests.
+    INSERT INTO points_credit_ledger (
+        id,
+        user_id,
+        realm_id,
+        bucket_id,
+        credit_type,
+        source_type,
+        source_id,
+        granted_amount,
+        used_amount,
+        revoked_amount,
+        expires_at,
+        effective_at,
+        status,
+        created_at,
+        updated_at
+    ) VALUES (
+        v_pregrant_ledger_id,
+        v_user_id,
+        '{POINTS_REALM_ID}',
+        v_bucket_id,
+        'granted_credit',
+        'system_grant',
+        'demo-pregrant-future-effective',
+        1000,
+        0,
+        0,
+        NULL,
+        NOW() + INTERVAL '365 days',
         'active',
         TIMESTAMPTZ '2026-03-12 10:00:00+00',
         TIMESTAMPTZ '2026-03-12 10:00:00+00'

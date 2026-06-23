@@ -254,22 +254,6 @@ impl CreditType {
     pub fn is_granted(&self) -> bool {
         matches!(self, CreditType::GrantedCredit)
     }
-
-    /// Returns the (topup_delta, subscription_delta, granted_delta, registration_delta, free_periodic_delta)
-    /// balance deltas for this credit type.
-    ///
-    /// Subscription credits count toward subscription balance, granted credits toward granted balance,
-    /// registration credits toward registration balance, free periodic credits toward free_periodic balance,
-    /// and topup credits toward topup balance.
-    pub fn wallet_balance_delta(&self, amount: i64) -> (i64, i64, i64, i64, i64) {
-        match self {
-            CreditType::TopupCredit => (amount, 0, 0, 0, 0),
-            CreditType::SubscriptionCredit => (0, amount, 0, 0, 0),
-            CreditType::GrantedCredit => (0, 0, amount, 0, 0),
-            CreditType::RegistrationCredit => (0, 0, 0, amount, 0),
-            CreditType::FreePeriodicCredit => (0, 0, 0, 0, amount),
-        }
-    }
 }
 
 impl std::str::FromStr for CreditType {
@@ -492,6 +476,13 @@ pub struct PointsCreditLedger {
     pub revoked_amount: i64,
     pub remaining_amount: i64,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Expected effective time (design §4.3.2 / §5.1). NULL ⟺ immediately
+    /// available (current behavior; existing rows zero-regression); non-null ⟺
+    /// enters the available set only when `effective_at <= NOW()`. Consumption
+    /// selection AND derived balance share the same predicate so future-effective
+    /// active rows are excluded from both until the effective moment — zero
+    /// state migration, zero delay.
+    pub effective_at: Option<chrono::DateTime<chrono::Utc>>,
     pub status: CreditLedgerStatus,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -538,18 +529,19 @@ pub struct PointsRevocationRecord {
 }
 
 /// Points Wallet entity
+///
+/// Design §1.3 / A7 (BE-D11): the 5 per-type balance columns and
+/// `total_balance` are gone from `points_wallets`; available balance is a
+/// derived SUM over `points_credit_ledger`. This entity now carries only the
+/// 4 lifetime analytics columns plus identity/status. Callers that need the
+/// available balance must use `compute_available_balance` /
+/// `compute_bucket_available_balances` (PointsRepository).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PointsWallet {
     pub id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
     pub bucket_id: Option<Uuid>,
-    pub total_balance: i64, // Computed: topup_balance + subscription_balance + granted_balance + registration_balance + free_periodic_balance
-    pub topup_balance: i64,
-    pub subscription_balance: i64,
-    pub granted_balance: i64,
-    pub registration_balance: i64,
-    pub free_periodic_balance: i64,
     pub total_topup_granted: i64,
     pub total_subscription_granted: i64,
     // Historical column name. Semantically this is total_topup_granted + total_subscription_granted,
@@ -584,10 +576,25 @@ pub struct PointsTransaction {
     /// replay can reassemble the full result set. NULL for non-consume / legacy
     /// single-pool consume rows.
     pub correlation_id: Option<String>,
+    /// Expected effective time of the granted points (design §4.2 / §5.1,
+    /// BE-D10/BE-D11). Sourced from the linked `points_credit_ledger` row for
+    /// grant-type transactions; `None` for consume/refund/revoke/expiration
+    /// (immediate operations) and for grant rows whose ledger had a NULL
+    /// `effective_at` (immediately available). Surfaced to admin/audit only
+    /// (`points.manage`); the HTTP layer forces `None` on the `points.view`
+    /// path and `skip_serializing_if` omits the key entirely.
+    pub effective_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Points Balance DTO
+///
+/// Design §1.3 / A7 (BE-D11): the 5 typed balance fields and `total_balance`
+/// are no longer read from `points_wallets` Stored columns. They are retained
+/// on this DTO (external contract) and populated exclusively by the derived
+/// SUM (`compute_available_balance`) in `PointsService::build_balance_from_derived`.
+/// There is intentionally no `From<PointsWallet>` impl anymore — a bare
+/// wallet row carries no balance information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PointsBalance {
     pub user_id: Uuid,
@@ -602,24 +609,6 @@ pub struct PointsBalance {
     pub total_consumed: i64,
     pub unit: String,
     pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-impl From<PointsWallet> for PointsBalance {
-    fn from(account: PointsWallet) -> Self {
-        PointsBalance {
-            user_id: account.user_id,
-            balance: account.total_balance,
-            topup_balance: account.topup_balance,
-            subscription_balance: account.subscription_balance,
-            granted_balance: account.granted_balance,
-            registration_balance: account.registration_balance,
-            free_periodic_balance: account.free_periodic_balance,
-            total_recharged: account.total_recharged,
-            total_consumed: account.total_consumed,
-            unit: "points".to_string(),
-            updated_at: account.updated_at,
-        }
-    }
 }
 
 /// Idempotency status enum

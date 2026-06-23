@@ -20,18 +20,50 @@ use herald_api_base::application::http::server::api_entities::{
 };
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::points::entities::PointsWallet;
-use herald_core::domain::points::ports::WalletFilters;
+use herald_core::domain::points::entities::{CreditType, PointsWallet};
+use herald_core::domain::points::ports::{PointsRepository, WalletFilters};
 
-/// Map a domain `PointsWallet` to the HTTP response shape.
+/// Map a derived `(CreditType, amount)` slice into the 5-field
+/// `BalancesByType` (design §5.1 A7). Unknown credit types are ignored (none
+/// exist today; future types would need an explicit field added first).
+fn derived_to_balances_by_type(derived: &[(CreditType, i64)]) -> BalancesByType {
+    let mut out = BalancesByType::default();
+    for (credit_type, amount) in derived {
+        match credit_type {
+            CreditType::TopupCredit => out.topup = out.topup.saturating_add(*amount),
+            CreditType::SubscriptionCredit => {
+                out.subscription = out.subscription.saturating_add(*amount)
+            }
+            CreditType::GrantedCredit => out.granted = out.granted.saturating_add(*amount),
+            CreditType::RegistrationCredit => {
+                out.registration = out.registration.saturating_add(*amount)
+            }
+            CreditType::FreePeriodicCredit => {
+                out.free_periodic = out.free_periodic.saturating_add(*amount)
+            }
+        }
+    }
+    out
+}
+
+/// Map a domain `PointsWallet` + derived balances to the HTTP response shape
+/// (design §5.1 A7). The 5 typed balances and `total_balance` come from the
+/// derived SUM (same predicate as consumption — future-effective rows are
+/// excluded, so the user-visible balance never leaks un-granted periods);
+/// analytics (`total_recharged` / `total_consumed`) stay on the Stored wallet
+/// projection (lifetime totals, unaffected by `effective_at`).
 ///
 /// The aggregate user-total view (`find_by_user_id` for a multi-bucket user)
 /// has `bucket_id = None` and no single concrete wallet to expose — return
 /// `id: None` so a client can never mistake a synthesized id for "the wallet"
 /// (review #6 chimera fix). For a single-bucket user `bucket_id` is `Some`
 /// and `id` is that wallet row's id.
-fn wallet_to_response(account: PointsWallet) -> PointsWalletResponse {
+fn wallet_to_response(
+    account: PointsWallet,
+    derived: Vec<(CreditType, i64)>,
+) -> PointsWalletResponse {
     let bucket_id = account.bucket_id;
+    let total_balance = derived_to_balances_by_type(&derived).total();
     PointsWalletResponse {
         // Only expose a concrete wallet id when the row is tied to a single
         // bucket. The aggregate view (bucket_id = None) has no canonical id.
@@ -39,7 +71,7 @@ fn wallet_to_response(account: PointsWallet) -> PointsWalletResponse {
         user_id: account.user_id,
         realm_id: account.realm_id,
         bucket_id,
-        balance: account.total_balance,
+        balance: total_balance,
         total_paid_granted: account.total_recharged,
         total_recharged: account.total_recharged,
         total_consumed: account.total_consumed,
@@ -93,37 +125,54 @@ async fn load_bucket_dir(state: &AppState, realm_id: &str) -> BTreeMap<Uuid, Buc
 }
 
 /// Group the per-wallet rows by `(bucket_id, user_id)` and produce the
-/// `WalletByBucket[]` aggregation (design §4.2.3).
+/// `WalletByBucket[]` aggregation (design §4.2.3 / §5.1 A7).
 ///
-/// `bucket_dir` carries `(name, enabled)` per bucket id resolved once from the
-/// bucket directory (avoids N+1 on the grouped rows).
-fn group_wallets_by_bucket(
+/// The 5 typed balances per `(user, bucket)` come from the derived SUM (same
+/// predicate as consumption — future-effective pre-grant rows are excluded so
+/// the admin view never leaks un-granted periods). The repository read happens
+/// once per distinct `(user, bucket)` pair on the page: pages are bounded
+/// (≤100 rows, typically far fewer distinct pairs), keeping this off the N+1
+/// cliff. `bucket_dir` carries `(name, enabled)` per bucket id resolved once
+/// from the bucket directory.
+async fn group_wallets_by_bucket(
+    state: &AppState,
+    realm_id: &str,
     wallets: Vec<PointsWallet>,
     bucket_dir: &BTreeMap<Uuid, BucketDirInfo>,
 ) -> (Vec<WalletByBucketResponse>, i64) {
+    let now = chrono::Utc::now();
+
     // BTreeMap keyed by (bucket_id, user_id) for deterministic output ordering.
     // `None` bucket_id sorts first; user_id breaks ties so the admin
     // (cross-user) view keeps one row per (user, bucket).
-    let mut groups: BTreeMap<(Option<Uuid>, Uuid), BalancesByType> = BTreeMap::new();
+    let mut group_keys: BTreeMap<(Option<Uuid>, Uuid), ()> = BTreeMap::new();
+    for wallet in &wallets {
+        group_keys.insert((wallet.bucket_id, wallet.user_id), ());
+    }
 
-    for wallet in wallets {
-        let key = (wallet.bucket_id, wallet.user_id);
-        let entry = groups.entry(key).or_default();
-        entry.topup = entry.topup.saturating_add(wallet.topup_balance);
-        entry.subscription = entry
-            .subscription
-            .saturating_add(wallet.subscription_balance);
-        entry.registration = entry
-            .registration
-            .saturating_add(wallet.registration_balance);
-        entry.free_periodic = entry
-            .free_periodic
-            .saturating_add(wallet.free_periodic_balance);
-        entry.granted = entry.granted.saturating_add(wallet.granted_balance);
+    let mut balances_by_key: BTreeMap<(Option<Uuid>, Uuid), BalancesByType> = BTreeMap::new();
+    for (bucket_id, user_id) in group_keys.keys() {
+        // Aggregate (bucket_id=None) rows have no concrete bucket; their
+        // derived balance is the user-total across all buckets, fetched with
+        // an empty bucket_ids slice. Concrete bucket rows restrict to that
+        // single bucket_id.
+        let bucket_filter: &[Uuid] = match bucket_id {
+            Some(id) => std::slice::from_ref(id),
+            None => &[],
+        };
+        let derived = state
+            .points_repository
+            .compute_available_balance(realm_id, *user_id, bucket_filter, now)
+            .await
+            .unwrap_or_default();
+        balances_by_key.insert(
+            (*bucket_id, *user_id),
+            derived_to_balances_by_type(&derived),
+        );
     }
 
     let mut cross_bucket_total: i64 = 0;
-    let items = groups
+    let items = balances_by_key
         .into_iter()
         .map(|((bucket_id, user_id), balances_by_type)| {
             let bucket_total = balances_by_type.total();
@@ -223,7 +272,8 @@ pub async fn list_wallets(
             // gracefully: rows keep `name`/`enabled` unset rather than 500ing
             // the balance view (the directory is a display-only enrichment).
             let bucket_dir = load_bucket_dir(&state, &realm_id).await;
-            let (items, cross_bucket_total) = group_wallets_by_bucket(paginated.data, &bucket_dir);
+            let (items, cross_bucket_total) =
+                group_wallets_by_bucket(&state, &realm_id, paginated.data, &bucket_dir).await;
             Ok(ApiResult::ok(ListWalletsByBucketResponse {
                 items,
                 cross_bucket_total,
@@ -275,7 +325,20 @@ pub async fn get_wallet(
         .get_wallet(identity, &realm_id, user_uuid)
         .await
     {
-        Ok(account) => Ok(Json(wallet_to_response(account))),
+        Ok(account) => {
+            // Derived SUM (design §5.1 A7) — same predicate as consumption, so
+            // future-effective pre-grant rows are excluded and the visible
+            // balance never leaks un-granted periods. Empty bucket_ids ⟺
+            // aggregate across all the user's buckets (matches the user-total
+            // view returned by get_wallet).
+            let now = chrono::Utc::now();
+            let derived = state
+                .points_repository
+                .compute_available_balance(&realm_id, user_uuid, &[], now)
+                .await
+                .map_err(ApiError::from)?;
+            Ok(Json(wallet_to_response(account, derived)))
+        }
         Err(e) => Err(ApiError::from(e)),
     }
 }

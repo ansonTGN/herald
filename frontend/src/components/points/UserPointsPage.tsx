@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,7 +8,6 @@ import { TransactionHistoryTable } from './TransactionHistoryTable'
 import { TransactionFilters } from './TransactionFilters'
 import { deriveUserPointsView } from './user-points-view'
 import { walletsByBucketQueryOptions, pointsTransactionsQueryOptions } from '@/data/query-options'
-import { useEnabledBuckets } from '@/data/use-buckets'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import type { TransactionFilters as TransactionFiltersType } from '@/lib/schemas/points-forms'
 import { m } from '@/paraglide/messages'
@@ -57,9 +56,22 @@ export function UserPointsPage({
     walletsByBucketQueryOptions(realmId)
   )
 
-  // Enabled buckets feed the user-facing Bucket Select (disabled buckets are
-  // not selectable for filtering) and the Bucket column lookup.
-  const { buckets: enabledBuckets } = useEnabledBuckets(realmId)
+  // Bucket name lookup for the Bucket Select + Bucket column. The admin-only
+  // credit-buckets directory (`/billing/credit-buckets`) 403s for regular users
+  // (they only hold `points.view`), so we resolve bucket names from the user's
+  // own wallets response — each held wallet already carries `{ bucketId, name }`.
+  const bucketOptions = useMemo(() => {
+    return (walletsData?.items ?? [])
+      .filter((w): w is typeof w => Boolean(w.bucketId) && Boolean(w.name))
+      .map((w) => ({
+        id: w.bucketId as string,
+        name: w.name as string,
+        // Wallets carry `enabled?: boolean | null`; TransactionFilters requires a
+        // concrete boolean for its option type. Treat null/undefined as enabled
+        // (a wallet row only exists for a bucket the user holds balance in).
+        enabled: w.enabled ?? true,
+      }))
+  }, [walletsData?.items])
 
   // Effective filters = ephemeral (type/dates) + URL-derived bucketId. The
   // URL wins for `bucketId` so the page always matches the shareable URL.
@@ -176,7 +188,7 @@ export function UserPointsPage({
             filters={effectiveFilters}
             onChange={handleFiltersChange}
             onClear={handleFiltersClear}
-            buckets={enabledBuckets}
+            buckets={bucketOptions}
             admin={false}
             loading={transactionsLoading}
           />
@@ -184,7 +196,7 @@ export function UserPointsPage({
             transactions={transactions}
             loading={transactionsLoading && loadedPages === 1}
             filters={effectiveFilters}
-            buckets={enabledBuckets}
+            buckets={bucketOptions}
             admin={false}
           />
           {reachedLimit && (

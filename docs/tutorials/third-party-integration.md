@@ -589,6 +589,8 @@ println!("扣费后余额: {}", result.balance_after);
 
 扣减发生在哪个积分池由 Herald 根据 `client_app_id` 自动决定：系统找到所有覆盖这个 Client App 的 Credit Bucket 池，按过期时间从近到远跨池扣减。你的后端不用关心 Bucket，但要知道同一个用户在不同 Client App 下的可用余额可能不同，取决于哪些 Bucket 覆盖了那个应用。Bucket 的背景见[计费架构](billing-overview.md#credit-bucket)。
 
+余额是 Herald 实时从积分账本派生计算的，不含尚未到生效时间的预发积分——你查到的余额就是当前可消费的额度。
+
 ## 6. 订阅系统
 
 查询 Client App 的订阅状态：

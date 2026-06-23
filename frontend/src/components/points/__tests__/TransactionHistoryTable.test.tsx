@@ -148,4 +148,57 @@ describe('TransactionHistoryTable', () => {
       expect(screen.queryByTestId('transaction-row-0')).not.toBeInTheDocument()
     })
   })
+
+  describe('bucket column', () => {
+    // Locks the fix for the TanStack Table v8 column-id / getValue mismatch:
+    // the bucket column declares `id: 'bucket'` + `accessorKey: 'bucketId'`,
+    // so the cell must NOT call `row.getValue('bucketId')` (which resolves to
+    // no column and logs "Column with id 'bucketId' does not exist").
+    const bucketId = 'bucket-aaaaaaaa1111'
+    const txnWithBucket = {
+      ...mockRechargeTransaction,
+      bucketId,
+    }
+    const buckets = [{ id: bucketId, name: 'Primary Pool' }]
+
+    it('GIVEN buckets provided WHEN a row matches a bucket THEN renders the bucket NAME', () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      render(
+        <TransactionHistoryTable
+          transactions={[txnWithBucket]}
+          filters={mockFilters}
+          buckets={buckets}
+        />
+      )
+
+      const bucketCell = screen.getByTestId('transaction-bucket-0')
+      expect(bucketCell).toHaveTextContent('Primary Pool')
+      // Must NOT fall back to the UUID prefix when a name is resolvable.
+      expect(bucketCell).not.toHaveTextContent(bucketId.slice(0, 8))
+      // The v8 column-id mismatch surfaces as a console.error; assert silence.
+      expect(consoleError).not.toHaveBeenCalled()
+      const offending = consoleError.mock.calls.find((args) =>
+        String(args[0] ?? '').includes("Column with id 'bucketId' does not exist")
+      )
+      expect(offending).toBeUndefined()
+      consoleError.mockRestore()
+    })
+
+    it('GIVEN buckets provided WHEN a row has no matching bucket THEN falls back to bucketId prefix', () => {
+      const orphanTxn = {
+        ...mockRechargeTransaction,
+        bucketId: 'orphan-bucket-1234',
+      }
+      render(
+        <TransactionHistoryTable
+          transactions={[orphanTxn]}
+          filters={mockFilters}
+          buckets={buckets}
+        />
+      )
+
+      // Fallback mirrors the client-app fallback: first 8 chars of the id.
+      expect(screen.getByTestId('transaction-bucket-0')).toHaveTextContent('orphan-b')
+    })
+  })
 })

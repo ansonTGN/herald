@@ -119,6 +119,7 @@ where
                         CreditSourceType::Registration,
                         registration_bonus,
                         None, // expires_at = None (permanent)
+                        None, // effective_at = None (registration grant is immediately available, design §5.3)
                         None, // source_id
                         None, // description
                         Some(format!("grant:registration:{}", user_id)),
@@ -268,6 +269,7 @@ where
                 CreditSourceType::FreePeriodicGrant,
                 amount,
                 expires_at,
+                None, // effective_at = None (first periodic grant at registration is immediately available, design §5.3)
                 Some(schedule.id.to_string()),
                 None, // description
                 Some(format!("grant:periodic:{}", schedule.id)),

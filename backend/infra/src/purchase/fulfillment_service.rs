@@ -165,6 +165,8 @@ where
                             CreditSourceType::SubscriptionInitial,
                             points,
                             Some(period_end),
+                            // One-time grant on subscribe: immediately available.
+                            None,
                             Some(entitlement_key.clone()),
                             None,
                             Some(format!("subscription_initial_grant:{}", attempt.id)),
@@ -294,6 +296,8 @@ where
                 CreditSourceType::Topup,
                 points,
                 expires_at,
+                // One-time purchase: immediately available.
+                None,
                 Some(attempt.id.to_string()),
                 Some(format!(
                     "One-time purchase: {} ({} points) via {}",

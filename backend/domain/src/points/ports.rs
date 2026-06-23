@@ -17,6 +17,31 @@ use crate::points::{
     UpdateRealmConfigInput, UserPointsConfig,
 };
 
+/// Row-level locator for pre-grant reclaim (design §4.2 / §5.2 A4).
+///
+/// `points_credit_ledger` itself carries no `schedule_id`/`period_number`
+/// columns — the business idempotency key `(schedule_id, period_number)` lives
+/// only in `points_grant_records`. So reclaim must resolve to the unique
+/// ledger row through one of:
+/// - `BySourceId` — direct lookup on `points_credit_ledger.source_id`.
+/// - `BySchedulePeriod` — resolved through the `points_grant_records.ledger_id`
+///   FK (BE-D01) subquery: the unique ledger row linked to
+///   `(schedule_id, period_number)`.
+///
+/// The trait layer declares only the locator shape; the infra impl
+/// (BE-D05) owns the resolution SQL.
+#[derive(Debug, Clone)]
+pub enum ReclaimLocator {
+    /// Reclaim the single ledger row whose `source_id` matches.
+    BySourceId(String),
+    /// Reclaim the unique ledger row linked to `(schedule_id, period_number)`
+    /// via `points_grant_records.ledger_id` FK.
+    BySchedulePeriod {
+        schedule_id: Uuid,
+        period_number: u32,
+    },
+}
+
 /// Transaction filters
 #[derive(Debug, Clone, Default)]
 pub struct TransactionFilters {
@@ -78,22 +103,21 @@ pub enum LedgerUpdate {
     SetStatus(CreditLedgerStatus),
 }
 
-/// Delta applied to a wallet row's maintained projection columns by the
-/// single writer `apply_wallet_delta_in_tx`. Negative deltas are valid
-/// (consume / revoke / refund). The DB CHECK (`*_balance >= 0`) is the
-/// backstop against an over-deduct.
+/// Delta applied to a wallet row's lifetime analytics columns by the single
+/// writer `apply_wallet_delta_in_tx`.
+///
+/// Design §1.3 / A7 (BE-D11): the 5 per-type balance delta fields are gone
+/// (the underlying `points_wallets` balance columns were physically dropped;
+/// available balance is now a derived SUM over `points_credit_ledger`).
+/// Only the 4 monotonic lifetime analytics columns remain Stored, so this
+/// delta only describes how to advance them.
 ///
 /// `total_*_granted` and `total_consumed` are monotonic lifetime totals —
 /// grant/consume writers add positive deltas; revocation/refund writers leave
 /// them unchanged (revocation does not "un-consume" or "un-grant", it only
-/// moves `remaining_amount`).
+/// moves `remaining_amount` on the ledger).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct WalletDelta {
-    pub topup: i64,
-    pub subscription: i64,
-    pub granted: i64,
-    pub registration: i64,
-    pub free_periodic: i64,
     pub total_recharged: i64,
     pub total_consumed: i64,
     pub total_topup_granted: i64,
@@ -105,63 +129,20 @@ impl WalletDelta {
         Self::default()
     }
 
-    /// Delta for granting `amount` of `credit_type`. Adds to the matching
-    /// balance + the matching lifetime total. Paid grants (topup /
-    /// subscription) also accrue `total_recharged`.
+    /// Delta for granting `amount` of `credit_type`. Advances the matching
+    /// lifetime total; paid grants (topup / subscription) also accrue
+    /// `total_recharged`. No longer touches any balance column (A7).
     pub fn grant(credit_type: CreditType, amount: i64) -> Self {
-        let (topup, subscription, granted, registration, free_periodic) =
-            credit_type.wallet_balance_delta(amount);
         let (total_topup_granted, total_subscription_granted) = match credit_type {
             CreditType::TopupCredit => (amount, 0),
             CreditType::SubscriptionCredit => (0, amount),
             _ => (0, 0),
         };
         Self {
-            topup,
-            subscription,
-            granted,
-            registration,
-            free_periodic,
             total_recharged: total_topup_granted + total_subscription_granted,
             total_consumed: 0,
             total_topup_granted,
             total_subscription_granted,
-        }
-    }
-
-    /// Delta for consuming `amount` of `credit_type`. Subtracts from the
-    /// matching balance; adds to `total_consumed`.
-    pub fn consume(credit_type: CreditType, amount: i64) -> Self {
-        let (topup, subscription, granted, registration, free_periodic) =
-            credit_type.wallet_balance_delta(-amount);
-        Self {
-            topup,
-            subscription,
-            granted,
-            registration,
-            free_periodic,
-            total_recharged: 0,
-            total_consumed: amount,
-            total_topup_granted: 0,
-            total_subscription_granted: 0,
-        }
-    }
-
-    /// Delta for revoking `amount` of `credit_type`. Subtracts from the
-    /// matching balance; lifetime totals unchanged.
-    pub fn revoke(credit_type: CreditType, amount: i64) -> Self {
-        let (topup, subscription, granted, registration, free_periodic) =
-            credit_type.wallet_balance_delta(-amount);
-        Self {
-            topup,
-            subscription,
-            granted,
-            registration,
-            free_periodic,
-            total_recharged: 0,
-            total_consumed: 0,
-            total_topup_granted: 0,
-            total_subscription_granted: 0,
         }
     }
 }
@@ -660,6 +641,11 @@ pub trait PointsRepository: Send + Sync {
         source_type: CreditSourceType,
         amount: i64,
         expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        // Expected effective time (design §5.1). `None` ⟺ immediately
+        // available; `Some(t)` ⟺ enters the available set only when
+        // `effective_at <= NOW()`. INSERT writes the column; derived balance
+        // and consumption predicates gate on it.
+        effective_at: Option<chrono::DateTime<chrono::Utc>>,
         source_id: Option<String>,
         description: Option<String>,
         idempotency_key: Option<String>,
@@ -693,6 +679,11 @@ pub trait PointsRepository: Send + Sync {
         entitlement_key: String,
         points_amount: i64,
         source_type: CreditSourceType,
+        // Billing period start (design §5.2). Used as the ledger
+        // `effective_at` (`period_start <= now` ⟺ immediately available) and
+        // drives the period/schedule business idempotency key
+        // (`points_grant_records(schedule_id, period_number)`).
+        period_start: chrono::DateTime<chrono::Utc>,
         period_end: chrono::DateTime<chrono::Utc>,
         idempotency_key: String,
         disable_daily_grant: bool,
@@ -704,4 +695,94 @@ pub trait PointsRepository: Send + Sync {
     ) -> impl Future<
         Output = Result<crate::points::expiration_service::ExpirationSummary, CoreError>,
     > + Send;
+
+    // ========== point-time: derived balance + pre-grant + reclaim ==========
+
+    /// Derived available balance (design §4.1 / §5.1 A7). SUM(remaining_amount)
+    /// over the shared predicate `status='active' AND remaining_amount>0 AND
+    /// (effective_at IS NULL OR effective_at<=now) AND (expires_at IS NULL OR
+    /// expires_at>now)` grouped by `credit_type`. Same source as consumption
+    /// selection — "seen balance == spendable balance". Replaces reading
+    /// `points_wallets` Stored balance columns for available-balance semantics.
+    ///
+    /// `bucket_ids` semantics: empty slice ⟺ aggregate across ALL the user's
+    /// buckets (for `get_balance`'s user-total view); non-empty ⟺ restrict to
+    /// the listed buckets (for per-bucket grant responses). The infra impl
+    /// maps empty to "no `bucket_id` filter".
+    fn compute_available_balance(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_ids: &[Uuid],
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<Vec<(CreditType, i64)>, CoreError>> + Send;
+
+    /// Derived available balance broken down by `(bucket_id, credit_type)`
+    /// (design §5.1). Same predicate as `compute_available_balance`, used by
+    /// bucket overview / bucket delete guard so they no longer read
+    /// `points_wallets.total_balance` (avoids future-effective leakage and
+    /// bucket mis-judgement).
+    fn compute_bucket_available_balances(
+        &self,
+        realm_id: &str,
+        bucket_ids: &[Uuid],
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<Vec<(Uuid, CreditType, i64)>, CoreError>> + Send;
+
+    /// Pre-grant the next period for a schedule (design §5.2 / §5.3). Writes a
+    /// ledger row carrying `effective_at`/`expires_at` PLUS a
+    /// `points_grant_records(schedule_id, period_number)` row (UNIQUE
+    /// idempotency) linked to the new ledger via `ledger_id` FK. Idempotent:
+    /// re-call for the same `(schedule_id, period_number)` returns the
+    /// existing ledger row without re-writing. Subscription and free-periodic
+    /// pre-grant share this port; `effective_at` anchors to period start
+    /// (subscription `period_start` / free-period `next_grant_time`).
+    fn pregrant_next_period_atomic(
+        &self,
+        realm_id: &str,
+        schedule: &crate::points::PointsGrantSchedule,
+        period_number: u32,
+        effective_at: Option<chrono::DateTime<chrono::Utc>>,
+        expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> impl Future<Output = Result<PointsCreditLedger, CoreError>> + Send;
+
+    /// Scan for schedules whose next pre-grant is due (design §5.3). Returns
+    /// candidates whose `next_grant_time` is within the caller's per-row
+    /// `lead_time` window; caller (worker `PointsPreGrantJob`) re-checks
+    /// per-row against its `lead_time_map`. Used as a belt-and-braces warming
+    /// scan — correctness is not gated on this port.
+    fn find_schedules_due_for_pregrant(
+        &self,
+        before: chrono::DateTime<chrono::Utc>,
+        limit: u64,
+    ) -> impl Future<Output = Result<Vec<crate::points::PointsGrantSchedule>, CoreError>> + Send;
+
+    /// Single-user free-periodic due schedule scan for read-path realization
+    /// (design §5.3.1). `WHERE realm_id AND user_id AND active AND
+    /// subscription_id IS NULL AND next_grant_time <= before` (lead_time=0,
+    /// only already-due periods). Single-user scope avoids cross-user lock
+    /// contention; subscription schedules are excluded so the request path
+    /// never guesses paid-grant fulfillment.
+    fn find_due_free_grant_schedules_for_user(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        before: chrono::DateTime<chrono::Utc>,
+        limit: u64,
+    ) -> impl Future<Output = Result<Vec<crate::points::PointsGrantSchedule>, CoreError>> + Send;
+
+    /// Row-level reclaim of a pre-granted ledger row (design §5.2 A4). Sets
+    /// the resolved ledger row to `status='revoked'` and
+    /// `revoked_amount += remaining_amount`; derived balance auto-excludes it,
+    /// so no wallet back-adjustment is needed. Returns the number of rows
+    /// affected (0 if the locator did not resolve — caller treats as
+    /// idempotent no-op or surfaces per BE-D09 policy). Used by BE-D09
+    /// webhook reclaim via the trait (cross-crate, cannot call infra private
+    /// helpers directly).
+    fn revoke_pregrant_ledger_row_atomic(
+        &self,
+        realm_id: &str,
+        locator: ReclaimLocator,
+        reason: &str,
+    ) -> impl Future<Output = Result<usize, CoreError>> + Send;
 }

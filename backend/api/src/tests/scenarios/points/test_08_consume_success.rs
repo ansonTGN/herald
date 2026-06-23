@@ -30,15 +30,21 @@
 //
 // =============================================================================
 
+use crate::tests::helpers::points_helpers::{
+    assert_derived_balance, create_credit_ledger_entry_with_effective_at, get_ledger_by_id,
+};
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use chrono::{Duration, Utc};
+use herald_core::domain::points::entities::{CreditSourceType, CreditType};
 use serde_json::json;
 use test_context::test_context;
 use tower::ServiceExt;
+use uuid::Uuid;
 
 /// ============================================================================
 /// Scenario 2.1: Third Party Consumes Points Successfully
@@ -148,12 +154,26 @@ async fn test_scenario_consume_points_success(ctx: &mut TestContext) {
     // Verify database state
     println!("[Step 4] Verify database state");
 
-    let (new_balance, total_consumed): (i64, i64) =
-        sqlx::query_as("SELECT total_balance, total_consumed FROM points_wallets WHERE id = $1")
-            .bind(wallet_id)
-            .fetch_one(&ctx._app_state.pool)
-            .await
-            .expect("Failed to fetch account");
+    // point-time (BE-D11): `points_wallets.total_balance` was dropped; the
+    // available balance is derived from `points_credit_ledger` using the same
+    // predicate as consumption.
+    let (new_balance, total_consumed): (i64, i64) = sqlx::query_as(
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT AS new_balance,
+                w.total_consumed AS total_consumed
+         FROM points_wallets w
+         LEFT JOIN points_credit_ledger l
+           ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+         WHERE w.id = $1
+         GROUP BY w.id, w.total_consumed",
+    )
+    .bind(wallet_id)
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .expect("Failed to fetch account");
 
     assert_eq!(
         new_balance, expected_balance_after,
@@ -214,5 +234,328 @@ async fn test_scenario_consume_points_success(ctx: &mut TestContext) {
         txn_type, txn_amount
     );
 
+    // ============================================================================
+    // Step 6 — point-time zero-regression assertion (design §6.1 P0 / §6.3 P0).
+    //
+    // The seed (`create_test_points_wallet`) wrote a `subscription_credit`
+    // ledger row with `granted_amount = initial_balance = 5000` and
+    // `effective_at = NULL` (immediately available). The consume above
+    // decremented 100. Under point-time the available balance is a derived
+    // SUM (BE-D04) over ledger rows gated by
+    //   status='active' AND remaining_amount>0
+    //     AND (effective_at IS NULL OR effective_at <= NOW())
+    //     AND (expires_at  IS NULL OR expires_at  >  NOW())
+    // — for the all-NULL/active case this MUST equal the value the old
+    // Stored-balance口径 would have held (5000 − 100 = 4900). If the derived
+    // predicate diverged from the legacy Stored口径 for effective_at=NULL
+    // rows, this assertion fails — locking out the §6.3 P0 regression risk.
+    // (We MUST NOT `SELECT subscription_balance FROM points_wallets`:
+    // BE-D11 physically removed that column — see
+    // `test_wallet_balance_columns_dropped` below.)
+    // ============================================================================
+    println!("[Step 6] point-time zero-regression: assert derived balance == legacy seed baseline");
+
+    assert_derived_balance(
+        ctx,
+        user_id,
+        &ctx._realm_id,
+        CreditType::SubscriptionCredit,
+        initial_balance - consume_amount,
+    )
+    .await;
+
+    println!("[Step 6] ✓ Derived balance = 4900 (matches legacy Stored口径 for effective_at=NULL)");
+
     println!("\n✅ Scenario 2.1 完成：第三方成功消耗积分");
+}
+
+// ============================================================================
+// point-time BE-T02: consume must exclude future-effective rows (§6.1 P0)
+// ============================================================================
+//
+// User Story: US-PU-004 / US-PU-005 — only credits whose effective moment has
+// arrived may be spent; future periods are invisible to the consumer.
+//
+// Covers design §6.1 P0 "未到生效时间不可见/不可消费" + §6.3 risk "消费可用性
+// 谓词增 effective_at：影响 consume/refund/cancel/expire 全场景".
+//
+// Why this test exists: the consume selection predicate gates on
+// `(effective_at IS NULL OR effective_at <= NOW())` (BE-D04). When a wallet
+// holds BOTH an immediately-available row and a future-effective row of the
+// same credit type, a consume sized to the immediately-available amount
+// MUST draw only from the immediate row — the future row's `remaining_amount`
+// and `used_amount` stay unchanged. If the effective_at gate were ever
+// dropped from the consume predicate, this test fails (future row spent).
+//
+// We seed ledger rows via `create_credit_ledger_entry_with_effective_at`
+// (BE-T01 helper), which does NOT touch the BE-D11-removed wallet Stored
+// columns — the derived SUM is the sole balance authority here.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_consume_with_future_effective_excluded(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "be-t02-fexcl@exam.com").await;
+
+    // Immediately-available subscription_credit row — 2000.
+    let _immediate_id = create_credit_ledger_entry_with_effective_at(
+        ctx,
+        user_id,
+        &realm_id,
+        CreditType::SubscriptionCredit,
+        CreditSourceType::SubscriptionInitial,
+        format!("be-t02-fexcl-imm-{}", Uuid::now_v7()),
+        2000,
+        None,
+        None, // effective_at = NULL → available now
+    )
+    .await;
+
+    // Future-effective subscription_credit row — 3000, effective tomorrow.
+    let future_id = create_credit_ledger_entry_with_effective_at(
+        ctx,
+        user_id,
+        &realm_id,
+        CreditType::SubscriptionCredit,
+        CreditSourceType::SubscriptionRenewal,
+        format!("be-t02-fexcl-fut-{}", Uuid::now_v7()),
+        3000,
+        None,
+        Some(Utc::now() + Duration::days(1)),
+    )
+    .await;
+
+    // Pre-condition: derived balance sees only the immediately-available row.
+    assert_derived_balance(
+        ctx,
+        user_id,
+        &realm_id,
+        CreditType::SubscriptionCredit,
+        2000,
+    )
+    .await;
+
+    // Consume 2000 — exactly the immediately-available amount. The future
+    // 3000 MUST NOT be touched.
+    let identity =
+        crate::tests::helpers::points_helpers::create_test_third_party_identity(&realm_id);
+    let input = herald_core::domain::points::dtos::ConsumePointsInput {
+        user_id: user_id.to_string(),
+        client_app_id: ctx._client_app_id.clone(),
+        amount: 2000,
+        description: Some("be-t02 future-effective exclusion consume".to_string()),
+    };
+    let result = ctx
+        .app_state
+        .points_service
+        .consume_points(identity, &realm_id, input)
+        .await
+        .expect("consume of the immediately-available 2000 must succeed");
+    assert_eq!(result.len(), 1, "single-bucket consume");
+
+    // The future-effective row is untouched — proving it was never selected.
+    let future = get_ledger_by_id(ctx, future_id).await;
+    assert_eq!(
+        future.used_amount, 0,
+        "future-effective row used_amount must remain 0 (not selected by consume)"
+    );
+    assert_eq!(
+        future.remaining_amount, 3000,
+        "future-effective row remaining_amount must remain unchanged"
+    );
+
+    // Post-consume: derived subscription_credit balance is 0 (immediate row
+    // drained; future row still excluded by effective_at gate).
+    assert_derived_balance(ctx, user_id, &realm_id, CreditType::SubscriptionCredit, 0).await;
+}
+
+// ============================================================================
+// point-time BE-D11: physical removal of wallet balance columns (§6.1 P0)
+// ============================================================================
+//
+// User Story: — (developer / contract invariants; not user-facing).
+//
+// Covers design §6.1 P0 "Stored balance 列物理删除 + balance_after 真实快照
+// (BE-D11)" + §6.3 risk "`points_wallets` Stored balance 列物理删除：必须同
+// 一编译单元原子完成".
+//
+// Why this test exists: BE-D11 dropped 6 columns (`topup_balance`,
+// `subscription_balance`, `granted_balance`, `registration_balance`,
+// `free_periodic_balance`, `total_balance`) from the base DDL of
+// `points_wallets` (project not yet in production → destructive in-place,
+// no DROP COLUMN delta). Available balance is exclusively the derived SUM
+// over `points_credit_ledger` now. If any of those columns ever re-appears
+// (or any of the 4 lifetime-analytics columns is accidentally removed),
+// this test fails — locking the schema invariant.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_wallet_balance_columns_dropped(ctx: &mut TestContext) {
+    // All columns currently present on `points_wallets`.
+    let columns: Vec<String> =
+        sqlx::query_scalar("SELECT column_name FROM information_schema.columns WHERE table_name = 'points_wallets' ORDER BY column_name")
+            .fetch_all(&ctx.app_state.pool)
+            .await
+            .expect("Failed to introspect points_wallets columns");
+
+    let has = |name: &str| -> bool { columns.iter().any(|c| c == name) };
+
+    // The 5 per-type balance columns + the GENERATED total must be GONE.
+    for dropped in [
+        "topup_balance",
+        "subscription_balance",
+        "granted_balance",
+        "registration_balance",
+        "free_periodic_balance",
+        "total_balance",
+    ] {
+        assert!(
+            !has(dropped),
+            "BE-D11 invariant: points_wallets.{} should be physically removed, but column still present. columns = {:?}",
+            dropped,
+            columns
+        );
+    }
+
+    // The 4 lifetime-analytics Stored columns MUST remain.
+    for retained in [
+        "total_consumed",
+        "total_recharged",
+        "total_topup_granted",
+        "total_subscription_granted",
+    ] {
+        assert!(
+            has(retained),
+            "BE-D11 invariant: points_wallets.{} analytics column must remain, but it is missing. columns = {:?}",
+            retained,
+            columns
+        );
+    }
+}
+
+// ============================================================================
+// point-time BE-D11: balance_after is a REAL derived snapshot, not seed-0
+// ============================================================================
+//
+// User Story: US-PU-001 (balance visibility) / contract A5 (transaction
+// history balance_after reflects the real post-mutation derived balance).
+//
+// Covers design §6.1 P0 "Stored balance 列物理删除 + balance_after 真实快照
+// (BE-D11)" + §6.3 risk "`balance_after` 非 0 真实" + design ref to
+// `webhook_common.rs:20-22` seed-0 fix.
+//
+// Why this test exists: before BE-D11, several transaction-insert sites
+// (notably `webhook_common.rs:20-22`) seeded `balance_after` and the typed
+// `*_balance_after` snapshots with `0` as a placeholder, breaking the A5
+// contract that a transaction records the real post-mutation balance. BE-D11
+// fixed those sites to compute the real derived SUM (same predicate as
+// `compute_available_balance`) in-transaction. This test grants a ledger
+// row then consumes from it via the real service path, and asserts that the
+// resulting `points_transactions.balance_after` is NON-ZERO and EQUALS the
+// derived SUM for the same (realm, user, bucket) at that moment — proving
+// the snapshot is real, not a placeholder. If any future change re-introduces
+// a seed-0 placeholder on the consume path, this test fails.
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_balance_after_is_real_snapshot(ctx: &mut TestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "be-t02-ba@exam.com").await;
+
+    // Seed 3000 immediately-available topup_credit (no wallet Stored columns
+    // touched — BE-D11 removed them).
+    let _ledger_id = create_credit_ledger_entry_with_effective_at(
+        ctx,
+        user_id,
+        &realm_id,
+        CreditType::TopupCredit,
+        CreditSourceType::Topup,
+        format!("be-t02-ba-{}", Uuid::now_v7()),
+        3000,
+        None,
+        None,
+    )
+    .await;
+
+    // Derived available balance pre-consume: 3000 topup_credit.
+    assert_derived_balance(ctx, user_id, &realm_id, CreditType::TopupCredit, 3000).await;
+
+    // Consume 1000 via the real service path — this is the path BE-D11
+    // touched to write the real derived snapshot into `balance_after`.
+    let identity =
+        crate::tests::helpers::points_helpers::create_test_third_party_identity(&realm_id);
+    let input = herald_core::domain::points::dtos::ConsumePointsInput {
+        user_id: user_id.to_string(),
+        client_app_id: ctx._client_app_id.clone(),
+        amount: 1000,
+        description: Some("be-t02 balance_after snapshot".to_string()),
+    };
+    let saved = ctx
+        .app_state
+        .points_service
+        .consume_points(identity, &realm_id, input)
+        .await
+        .expect("consume must succeed");
+    assert_eq!(saved.len(), 1, "single-bucket consume");
+    let txn_id = saved[0].id;
+
+    // Read the consume transaction row back from DB to inspect the snapshot
+    // columns exactly as written by the consume atomic flow.
+    let row = sqlx::query(
+        "SELECT balance_after, topup_balance_after, subscription_balance_after, bucket_id
+         FROM points_transactions WHERE id = $1",
+    )
+    .bind(txn_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("Failed to fetch consume transaction row");
+
+    use sqlx::Row;
+    let balance_after: i64 = row.get("balance_after");
+    let topup_after: Option<i64> = row.get("topup_balance_after");
+    let subscription_after: Option<i64> = row.get("subscription_balance_after");
+    let bucket_id: Uuid = row.get("bucket_id");
+
+    // A5 contract: balance_after is NON-ZERO (would be 0 if seed-0 placeholder
+    // were still in place — only 0 accidentally here means a regression).
+    assert_ne!(
+        balance_after, 0,
+        "balance_after must be a real derived snapshot, not the legacy seed-0 placeholder"
+    );
+
+    // balance_after must equal the derived available balance SUM at the
+    // post-consume moment for the same (realm, user, bucket). We recompute
+    // the derived SUM scoped to the same single bucket so the assertion is
+    // exact (not affected by other buckets the user might own).
+    let expected_derived: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(remaining_amount), 0)::BIGINT FROM points_credit_ledger
+         WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3
+           AND status = 'active' AND remaining_amount > 0
+           AND (effective_at IS NULL OR effective_at <= NOW())
+           AND (expires_at  IS NULL OR expires_at  >  NOW())",
+    )
+    .bind(&realm_id)
+    .bind(user_id)
+    .bind(bucket_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("Failed to compute expected derived balance for snapshot assertion");
+
+    assert_eq!(
+        balance_after, expected_derived,
+        "balance_after ({}) must equal post-consume derived SUM ({}) for the same bucket — BE-D11 A5 contract",
+        balance_after, expected_derived
+    );
+
+    // The per-type snapshots also come from the derived SUM split by
+    // credit_type (BE-D11). After consuming 1000 of 3000 topup_credit,
+    // 2000 topup_credit remains available → topup_balance_after = 2000.
+    // subscription_credit has 0 available → subscription_balance_after = 0.
+    assert_eq!(
+        topup_after,
+        Some(2000),
+        "topup_balance_after must be the real derived topup available (2000), not a placeholder"
+    );
+    assert_eq!(
+        subscription_after,
+        Some(0),
+        "subscription_balance_after must be the real derived subscription available (0)"
+    );
 }

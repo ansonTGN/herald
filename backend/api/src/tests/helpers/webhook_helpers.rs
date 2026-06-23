@@ -96,7 +96,14 @@ pub fn build_creem_subscription_paid_with_herald_metadata(
     external_product_id: &str,
     is_renewal: bool,
 ) -> serde_json::Value {
-    let period_end = chrono::Utc::now() + chrono::Duration::days(30);
+    // A8 P0: `normalize_creem_period` requires BOTH `currentPeriodStart` and
+    // `currentPeriodEnd` (start < end) to resolve the billing period; otherwise
+    // the grant is skipped with `reason="period_uniquely_unresolvable"`. Real
+    // Creem subscription.paid payloads always carry both bounds, so emit a
+    // realistic 30-day window (mirrors creem_webhook_patch_scenarios.rs and the
+    // legacy build_subscription_paid_event_full helper).
+    let period_start = chrono::Utc::now();
+    let period_end = period_start + chrono::Duration::days(30);
     let mut metadata = json!({
         "herald_entitlement_key": entitlement_key,
         "herald_realm_id": realm_id,
@@ -116,6 +123,7 @@ pub fn build_creem_subscription_paid_with_herald_metadata(
                 "productId": external_product_id,
                 "userId": user_id.to_string(),
                 "isRenewal": is_renewal,
+                "currentPeriodStart": period_start.to_rfc3339(),
                 "currentPeriodEnd": period_end.to_rfc3339(),
                 "status": "active",
                 "cancelAtPeriodEnd": false,
@@ -138,7 +146,9 @@ pub fn build_creem_subscription_paid_without_entitlement_key(
     external_product_id: &str,
     is_renewal: bool,
 ) -> serde_json::Value {
-    let period_end = chrono::Utc::now() + chrono::Duration::days(30);
+    // A8 P0: emit BOTH period bounds (see build_creem_subscription_paid_with_herald_metadata).
+    let period_start = chrono::Utc::now();
+    let period_end = period_start + chrono::Duration::days(30);
     let mut metadata = json!({
         "herald_realm_id": realm_id,
         "herald_user_id": user_id.to_string(),
@@ -157,6 +167,7 @@ pub fn build_creem_subscription_paid_without_entitlement_key(
                 "productId": external_product_id,
                 "userId": user_id.to_string(),
                 "isRenewal": is_renewal,
+                "currentPeriodStart": period_start.to_rfc3339(),
                 "currentPeriodEnd": period_end.to_rfc3339(),
                 "status": "active",
                 "cancelAtPeriodEnd": false,
@@ -484,6 +495,25 @@ pub fn build_stripe_invoice_with_herald_metadata(
                 "currency": "usd",
                 "current_period_start": period_start,
                 "current_period_end": period_end,
+                // A8 P0: `normalize_stripe_invoice_period` resolves the billing
+                // period from `lines.data[].period.{start,end}` (NOT the invoice
+                // top-level current_period_* fields, which Stripe invoices do not
+                // carry). Without a resolvable line period the renewal grant is
+                // skipped with `reason="period_uniquely_unresolvable"`. Real
+                // Stripe subscription renewal invoices populate each line's
+                // `period` with the subscription billing period being paid.
+                "lines": {
+                    "data": [{
+                        "id": format!("il_test_{}", Uuid::now_v7()),
+                        "object": "line_item",
+                        "type": "subscription",
+                        "subscription": stripe_subscription_id,
+                        "period": {
+                            "start": period_start,
+                            "end": period_end,
+                        }
+                    }]
+                },
                 "metadata": {
                     "herald_realm_id": realm_id,
                     "herald_user_id": user_id.to_string(),
@@ -732,10 +762,11 @@ pub fn build_subscription_paid_event_full(
     status: &str,
     billing_period: &str,
 ) -> serde_json::Value {
-    let period_end = match billing_period {
-        "yearly" => chrono::Utc::now() + chrono::Duration::days(365),
-        "quarterly" => chrono::Utc::now() + chrono::Duration::days(90),
-        _ => chrono::Utc::now() + chrono::Duration::days(30),
+    let now = chrono::Utc::now();
+    let (period_start, period_end) = match billing_period {
+        "yearly" => (now, now + chrono::Duration::days(365)),
+        "quarterly" => (now, now + chrono::Duration::days(90)),
+        _ => (now, now + chrono::Duration::days(30)),
     };
 
     let amount = match billing_period {
@@ -763,6 +794,7 @@ pub fn build_subscription_paid_event_full(
                 "planId": plan_id.to_string(),
                 "entitlementKey": plan_id.to_string(),
                 "isRenewal": is_renewal,
+                "currentPeriodStart": period_start.to_rfc3339(),
                 "currentPeriodEnd": period_end.to_rfc3339(),
                 "amount": amount,
                 "currency": "USD",

@@ -25,12 +25,17 @@
 //
 // =============================================================================
 
+use crate::tests::helpers::points_helpers::{
+    assert_derived_balance, count_future_effective_active_rows,
+    create_credit_ledger_entry_with_effective_at,
+};
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
 use axum::{
     body::Body,
     http::{Request, StatusCode, header},
 };
+use chrono::{Duration, Utc};
 use serde_json::json;
 use test_context::test_context;
 use tower::ServiceExt;
@@ -270,5 +275,145 @@ async fn test_scenario_get_wallet_auto_creates_empty_wallet(ctx: &mut TestContex
     assert_eq!(
         wallet_count_after, 0,
         "GET must NOT persist a bucket-less wallet row; bucket-wallets are created lazily on grant/consume"
+    );
+}
+
+/// ============================================================================
+/// Scenario 1.4 (point-time BE-T09): user PointsWalletResponse does NOT leak
+/// future-effective rows
+/// ============================================================================
+///
+/// User Story: US-PU-001 / US-PU-004 / US-PU-005 (future-period credits must
+/// not be visible to regular users before their effective time).
+///
+/// Covers design `.ai/design/point-time.md` §6.1 P1 "响应不泄漏未来期积分" +
+/// §6.3 risk "wallet Stored 列读点遗漏：get_balance 之外的 list_wallets ... 若
+/// 继续读 points_wallets.total_balance 会泄漏未来期积分" (P1).
+///
+/// Why this test exists: the GET `/wallets/{userId}` response assembles
+/// `balance`/typed balances from the DERIVED SUM (`compute_available_balance`,
+/// design §5.1 A7), whose predicate includes
+/// `(effective_at IS NULL OR effective_at <= NOW())`. A future-effective
+/// pre-grant row must therefore NOT show up in the regular-user balance
+/// response — otherwise the invariant "balance you see == balance you can
+/// spend" breaks and a future period silently leaks into the user-visible
+/// balance. The test also confirms the same row IS present in the ledger
+/// (so the non-leak is a predicate effect, not "row missing").
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_user_balance_excludes_future_effective(ctx: &mut TestContext) {
+    let app = ctx.create_unified_test_router();
+    let realm_id = ctx._realm_id.clone();
+
+    // Given: A user with two subscription_credit ledger rows on the same
+    // (user, realm, bucket): one immediately available (effective_at=NULL,
+    // amount A), one future-effective (effective_at=now+1d, amount B).
+    let email = "user-be-t09-noleak@example.com";
+    let password = "password123";
+    let user_id =
+        create_test_user_with_auth(&ctx._app_state.pool, &realm_id, email, password).await;
+
+    let amount_immediate = 2_000;
+    let amount_future = 3_000;
+    let future_effective_at = Utc::now() + Duration::days(1);
+
+    let _imm_ledger = create_credit_ledger_entry_with_effective_at(
+        ctx,
+        user_id,
+        &realm_id,
+        herald_core::domain::points::entities::CreditType::SubscriptionCredit,
+        herald_core::domain::points::entities::CreditSourceType::SubscriptionInitial,
+        format!("be-t09-noleak-imm-{}", uuid::Uuid::now_v7()),
+        amount_immediate,
+        None,
+        None, // effective_at=NULL ⟺ immediately available
+    )
+    .await;
+    let _fut_ledger = create_credit_ledger_entry_with_effective_at(
+        ctx,
+        user_id,
+        &realm_id,
+        herald_core::domain::points::entities::CreditType::SubscriptionCredit,
+        herald_core::domain::points::entities::CreditSourceType::SubscriptionInitial,
+        format!("be-t09-noleak-fut-{}", uuid::Uuid::now_v7()),
+        amount_future,
+        None,
+        Some(future_effective_at), // future ⟺ excluded from derived SUM
+    )
+    .await;
+
+    // Cross-check (a): the derived balance predicate excludes B; the row IS
+    // present in the ledger (count=1 future-effective active row).
+    assert_derived_balance(
+        ctx,
+        user_id,
+        &realm_id,
+        herald_core::domain::points::entities::CreditType::SubscriptionCredit,
+        amount_immediate,
+    )
+    .await;
+    assert_eq!(
+        count_future_effective_active_rows(ctx, user_id, &realm_id).await,
+        1,
+        "future-effective row is present in the ledger (the non-leak is a predicate effect, not a missing row)"
+    );
+
+    // When: the user logs in and requests their wallet.
+    let login_payload = json!({
+        "clientId": ctx._client_id,
+        "email": email,
+        "password": password,
+        "turnstileToken": "dummy"
+    });
+    let login_request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/auth/{}/login", realm_id))
+        .header("content-type", "application/json")
+        .header("x-forwarded-for", "3.3.3.9")
+        .body(Body::from(login_payload.to_string()))
+        .unwrap();
+    let login_response = app.clone().oneshot(login_request).await.unwrap();
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let set_cookie = login_response
+        .headers()
+        .get(header::SET_COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .expect("Should return Set-Cookie header");
+    let token = crate::tests::extract_set_cookie_token(set_cookie, "X-Auth")
+        .expect("Should extract X-Auth token");
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/points/{}/wallets/{}", realm_id, user_id))
+        .header("cookie", format!("X-Auth={}", token))
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+
+    // Then: the response balance == A (immediate only), NOT A+B — the future
+    // row does not leak into the user-visible PointsWalletResponse.balance.
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Get wallet should return 200 OK"
+    );
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("Failed to read response body");
+    let body: serde_json::Value =
+        serde_json::from_slice(&body_bytes).expect("Failed to parse JSON");
+
+    assert_eq!(
+        body["balance"].as_i64(),
+        Some(amount_immediate),
+        "PointsWalletResponse.balance must be the derived SUM excluding future-effective rows \
+         (design §5.1 A7); expected {} (immediate only), got {:?}",
+        amount_immediate,
+        body["balance"].as_i64()
+    );
+
+    println!(
+        "\n✅ Scenario 1.4 完成：普通用户 PointsWalletResponse 不含 future-effective（balance={}，未泄漏未来期 {}）",
+        amount_immediate, amount_future
     );
 }

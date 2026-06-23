@@ -21,7 +21,7 @@ backend/
 ├── api-ext/             # 外部 API handler（API Key 认证，供第三方调用）
 ├── api-oauth/           # OAuth handler（GitHub/Google/微信登录）
 ├── api-points/          # 积分 handler（余额查询、消费、充值）
-├── worker/              # 后台任务（积分过期、发票逾期标记）
+├── worker/              # 后台任务（积分过期、积分预发放、发票逾期标记）
 ├── app/                 # 入口（main.rs、数据库迁移）
 ├── sdk/                 # 发布给第三方用的 Rust SDK crate
 ├── test-db/             # 测试数据库工具（testcontainers）
@@ -145,6 +145,7 @@ domain 层 trait 的具体实现。`PostgresXxxRepository` 命名，一个 trait
 定时执行的循环任务，和 API server 跑在同一个进程里：
 
 - **积分过期**：每小时扫描过期积分，批量标记为已过期
+- **积分预发放**：每 5 分钟扫描即将到期的积分发放计划（订阅续费、免费周期），在生效时间前提前预发，吸收 webhook 与调度延迟。这是性能优化而非正确性保障——即使该任务不运行，余额查询与消费也会在请求路径同步补发已到期权益
 - **发票逾期标记**：每小时扫描未支付发票，标记逾期状态
 
 `WorkerConfig` 接受泛型 `R: InvoiceRepository`，方便测试时注入 mock。实际生产用 `PostgresInvoiceRepository`。

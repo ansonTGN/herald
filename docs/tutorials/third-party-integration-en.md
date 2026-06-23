@@ -587,6 +587,8 @@ Always pass an `idempotency_key`. On network timeout retries, the same key preve
 
 Which points pool gets debited is decided by Herald from the `client_app_id`: it finds every Credit Bucket pool that covers this client app and debits across them, nearest-expiry first. Your backend does not deal with buckets, but be aware that the same user may have different available balances under different client apps, depending on which buckets cover each app. See [billing architecture](billing-overview.md#credit-bucket) for the bucket model.
 
+The balance Herald returns is derived in real time from the points ledger and excludes pre-granted credits that have not reached their effective time — the balance you read is exactly what can be consumed right now.
+
 ## 6. Subscription System
 
 Query a client app's subscription status:

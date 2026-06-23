@@ -225,13 +225,19 @@ export class ApiKeysPage extends BasePage {
   /**
    * Find a table row by API key name
    *
+   * Uses `expect(...).toBeVisible({ timeout })` so Playwright auto-waits for the
+   * row to settle (e.g. React Query resolution). `locator.isVisible({ timeout })`
+   * is deprecated and returns immediately, which caused races right after
+   * `goto()` — see `waitForApiKeyByName` for the same auto-wait pattern.
+   *
    * @param name API key name to find
-   * @returns Locator for the table row, or null if not found
+   * @returns Locator for the table row, or null if not found after waiting
    */
   async findRowByName(name: string): Promise<Locator | null> {
     const nameCell = this.page.getByText(name, { exact: true }).first();
-    const isVisible = await nameCell
-      .isVisible({ timeout: 5000 })
+    const isVisible = await expect(nameCell, `API Key "${name}" to be visible`)
+      .toBeVisible({ timeout: 5000 })
+      .then(() => true)
       .catch(() => false);
 
     if (!isVisible) {
@@ -244,11 +250,18 @@ export class ApiKeysPage extends BasePage {
   /**
    * Check if an API key exists in the table
    *
+   * Auto-waits via `expect(...).toBeVisible({ timeout })` before deciding
+   * presence/absence. `locator.isVisible({ timeout })` is deprecated and does
+   * not auto-wait — see `waitForApiKeyByName` for the same pattern.
+   *
    * @param name API key name
    */
   async apiKeyExists(name: string): Promise<boolean> {
     const nameCell = this.page.getByText(name, { exact: true }).first();
-    return await nameCell.isVisible({ timeout: 5000 }).catch(() => false);
+    return await expect(nameCell, `API Key "${name}" to be visible`)
+      .toBeVisible({ timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
   }
 
   /**

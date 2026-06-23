@@ -11,20 +11,11 @@ pub struct Model {
     pub user_id: Uuid,
     pub realm_id: String,
     pub bucket_id: Uuid,
-    // Computed total balance (topup_balance + subscription_balance + granted_balance + registration_balance + free_periodic_balance)
-    // GENERATED ALWAYS AS (...) STORED in the DB — SeaORM must NOT write it on
-    // INSERT/UPDATE, so it is excluded from the ActiveModel via `ignore`. The
-    // mapper recomputes it from the parts for the domain entity (the expression
-    // matches the DB exactly).
-    #[sea_orm(ignore)]
-    pub total_balance: i64,
-    // Type-specific balance fields
-    pub topup_balance: i64,
-    pub subscription_balance: i64,
-    pub granted_balance: i64,
-    pub registration_balance: i64,
-    pub free_periodic_balance: i64,
-    // Type-specific grant tracking
+    // Design §1.3 / A7 (BE-D11): the 5 per-type balance columns and the
+    // `total_balance` GENERATED column were physically dropped from the base
+    // schema. Available balance is now exclusively a derived SUM over
+    // `points_credit_ledger`; only the 4 lifetime analytics columns below
+    // remain Stored here.
     pub total_topup_granted: i64,
     pub total_subscription_granted: i64,
     // Legacy compatibility field: topup + subscription grants, not all grant types.

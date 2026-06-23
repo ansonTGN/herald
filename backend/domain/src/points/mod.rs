@@ -26,7 +26,7 @@ pub use expiration_service::{ExpirationService, ExpirationSummary};
 pub use idempotency_service::{IdempotencyService, IdempotencyStore};
 pub use policies::PointsPolicy;
 pub use ports::{
-    GrantScheduleUpdate, LedgerFilters, LedgerUpdate, Pagination, PointsRepository,
+    GrantScheduleUpdate, LedgerFilters, LedgerUpdate, Pagination, PointsRepository, ReclaimLocator,
     TransactionFilters, UserConfigUpdate, WalletDelta, WalletFilters,
 };
 pub use service::PointsService;

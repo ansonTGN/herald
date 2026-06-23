@@ -126,6 +126,14 @@ pub struct PointsTransactionResponse {
     pub subscription_id: Option<Uuid>,
     pub external_ref_id: Option<String>,
     pub created_at: String,
+    /// Expected effective time (design §4.2 / §5.1 P1-2). Read-only, for
+    /// admin/audit reconciliation of pre-generated vs already-effective rows.
+    /// `None` on the `points.view` (regular user) path — the handler forces it
+    /// to `None` and `skip_serializing_if` omits the key from JSON entirely, so
+    /// the field never appears in regular-user responses. Populated (when
+    /// available) only on the `points.manage` path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effective_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Points plan config response
@@ -481,6 +489,10 @@ mod tests {
             subscription_id: Some(uuid::Uuid::now_v7()),
             external_ref_id: Some("ref-123".to_string()),
             created_at: "2024-01-01T00:00:00Z".to_string(),
+            // None (regular-user / `points.view` shape) — `skip_serializing_if`
+            // omits the key entirely (design §4.2 P1-2: the field must not
+            // appear in regular-user JSON).
+            effective_at: None,
         };
 
         let json = serde_json::to_string(&transaction).unwrap();
@@ -526,6 +538,20 @@ mod tests {
         assert!(
             json.contains("\"createdAt\""),
             "Should contain camelCase 'createdAt'"
+        );
+
+        // design §4.2 P1-2: when `effective_at` is None the key must be ABSENT
+        // from the JSON (skip_serializing_if). This is the regular-user
+        // (`points.view`) response shape — the field must never leak. If this
+        // assertion fails, someone removed the `skip_serializing_if` attribute
+        // and regular users would see an `effectiveAt: null` key.
+        assert!(
+            !json.contains("effective_at"),
+            "Should not contain snake_case 'effective_at'"
+        );
+        assert!(
+            !json.contains("effectiveAt"),
+            "effectiveAt must be omitted (not null) when effective_at is None (design §4.2 P1-2)"
         );
 
         // Verify snake_case is not present

@@ -21,7 +21,7 @@ backend/
 ├── api-ext/             # External API handlers (API Key auth, for third-party consumption)
 ├── api-oauth/           # OAuth handlers (GitHub/Google/WeChat login)
 ├── api-points/          # Points handlers (balance queries, consumption, top-up)
-├── worker/              # Background jobs (points expiration, invoice overdue marking)
+├── worker/              # Background jobs (points expiration, points pre-grant, invoice overdue marking)
 ├── app/                 # Entry point (main.rs, database migrations)
 ├── sdk/                 # Rust SDK crate published for third-party use
 ├── test-db/             # Test database utilities (testcontainers)
@@ -145,6 +145,7 @@ Splitting into multiple crates is a compile-time optimization. `api-billing` is 
 Recurring tasks that run in the same process as the API server:
 
 - **Points expiration**: hourly scan for expired points, batch-marked as expired
+- **Points pre-grant**: every 5 minutes, scans grant schedules due soon (subscription renewals, free periodic grants) and pre-grants them ahead of their effective time, absorbing webhook and scheduling latency. This is a performance optimization, not a correctness guarantee — even when this job is not running, balance queries and consumption sync-grant due credits on the request path
 - **Invoice overdue marking**: hourly scan for unpaid invoices, marked as overdue
 
 `WorkerConfig` is generic over `R: InvoiceRepository`, making it straightforward to inject mocks during testing. Production uses `PostgresInvoiceRepository`.

@@ -428,3 +428,290 @@ async fn test_refund_subscription_same_refund_id_different_event_id_is_idempoten
     assert_eq!(ledger.revoked_amount, 3000);
     assert_eq!(ledger.remaining_amount, 0);
 }
+
+// ============================================================================
+// BE-T06: Creem refund.created reclaim (row-level, design §5.2 A4 / §6.1 P1)
+// ============================================================================
+//
+// User Story: docs/user-stories/points-billing-events.md
+// Covers: design point-time §6.1 "预生成失败回收（P1）" Creem refund.created
+// branch + §5.2 A4 (row-level reclaim via (schedule_id, period_number)) + A7
+// (derived balance, no wallet back-adjust).
+//
+// The Creem refund.created handler invokes the same
+// `reclaim_pregrant_for_subscription` row-level path as Stripe
+// invoice.payment_failed / subscription.canceled (design §5.2: "Creem
+// subscription.canceled / refund.created, 与 Stripe 对称"). For a subscription
+// refund (refundType != "topup") it first resolves the routing bucket via the
+// payment_attempt snapshot, then for each active subscription schedule in that
+// bucket reclaims the chained pre-grant row, and finally calls
+// `revoke_subscription_unused` to revoke any still-active subscription credits.
+// These tests isolate the reclaim row-level effect by seeding only the
+// pre-grant row as active subscription_credit (after reclaim it is revoked, so
+// `revoke_subscription_unused` finds nothing else to revoke).
+
+/// Seed a Creem subscription + chained pre-grant row for refund reclaim tests.
+///
+/// Mirrors `seed_pregrant_for_reclaim` in test_43 but returns the pieces the
+/// refund test needs (external_sub for the event, schedule_id + ledger_id +
+/// period_number for assertions, payment_id for the payment_attempt snapshot).
+async fn seed_creem_pregrant_for_refund_reclaim(
+    ctx: &mut SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    external_subscription_id: &str,
+    entitlement_key: &str,
+    payment_id: &str,
+    amount: i64,
+    effective_at: Option<chrono::DateTime<chrono::Utc>>,
+    used_amount: i64,
+) -> (Uuid, Uuid, Uuid, i64) {
+    use chrono::Duration;
+
+    let pool = &ctx.app_state.pool;
+    let subscription_id = Uuid::now_v7();
+    let client_app_id = Uuid::now_v7();
+    let bucket_id = ensure_test_bucket_for_realm(pool, realm_id).await;
+
+    sqlx::query(
+        "INSERT INTO client_app (id, realm_id, client_id, name, enabled)
+         VALUES ($1, $2, $3, $4, true)",
+    )
+    .bind(client_app_id)
+    .bind(realm_id)
+    .bind(format!("client-{}", client_app_id))
+    .bind("BE-T06 creem refund seed")
+    .execute(pool)
+    .await
+    .expect("creem seed: client_app insert");
+
+    sqlx::query(
+        "INSERT INTO subscription
+            (id, realm_id, user_id, external_subscription_id, external_product_id,
+             payment_provider, status, entitlement_key, current_period_start,
+             current_period_end, cancel_at_period_end, client_app_id, created_at,
+             updated_at, bucket_id)
+         VALUES ($1, $2, $3, $4, 'prod_test_monthly', 'creem', 'active', $5, NOW(),
+                 NOW() + INTERVAL '30 days', false, $6, NOW(), NOW(), $7)",
+    )
+    .bind(subscription_id)
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(external_subscription_id)
+    .bind(entitlement_key)
+    .bind(client_app_id)
+    .bind(bucket_id)
+    .execute(pool)
+    .await
+    .expect("creem seed: subscription insert");
+
+    let first_period_start = chrono::Utc::now() - Duration::days(15);
+    let next_grant_time = effective_at.unwrap_or_else(chrono::Utc::now);
+    let schedule_id = create_subscription_grant_schedule(
+        ctx,
+        user_id,
+        realm_id,
+        subscription_id,
+        entitlement_key,
+        amount,
+        next_grant_time,
+        first_period_start,
+        // Production invariant: `pregrant_next_period_atomic` advances
+        // `granted_periods = max(old, period_number)` after writing the chained
+        // pre-grant, so when a pre-grant exists at period 2, `granted_periods`
+        // is ALREADY 2 (not 1). Both reclaim paths (Creem cancel via
+        // `handle_subscription_canceled` → `reclaim_pregrant_for_subscription`,
+        // and Creem refund via `handle_refund_created` →
+        // `reclaim_pregrant_for_subscription`) resolve the reclaim target as
+        // `granted_periods` itself, which resolves to the period-2 pre-grant
+        // row. Mirrors `seed_pregrant_for_reclaim` in test_43.
+        2, // granted_periods — pre-grant bumped it to the pre-granted period
+    )
+    .await;
+
+    let expires_at = effective_at.unwrap_or_else(chrono::Utc::now) + chrono::Duration::days(30);
+    let ledger_id = create_credit_ledger_entry_with_effective_at(
+        ctx,
+        user_id,
+        realm_id,
+        CreditType::SubscriptionCredit,
+        CreditSourceType::SubscriptionRenewal,
+        external_subscription_id.to_string(),
+        amount,
+        Some(expires_at),
+        effective_at,
+    )
+    .await;
+
+    if used_amount > 0 {
+        consume_points_from_ledger(ctx, ledger_id, used_amount).await;
+    }
+
+    let period_number: i64 = 2;
+    create_grant_record(
+        ctx,
+        schedule_id,
+        period_number,
+        amount,
+        next_grant_time,
+        ledger_id,
+    )
+    .await;
+
+    // Payment attempt snapshot — the Creem refund handler resolves the routing
+    // bucket from this. It must match the schedule's bucket (both use the
+    // realm's legacy test bucket via ensure_test_bucket_for_realm).
+    create_payment_attempt_snapshot(ctx, realm_id, user_id, payment_id, bucket_id, amount).await;
+
+    (subscription_id, schedule_id, ledger_id, period_number)
+}
+
+// ----------------------------------------------------------------------------
+// BE-T06 §6.1 P1 scenario (5a): Creem refund.created triggers row-level
+// reclaim of the subscription's chained pre-grant row (Stripe-symmetric).
+// ----------------------------------------------------------------------------
+
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_creem_refund_reclaim_row_level(ctx: &mut SchemaTestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let user_id = create_test_user(
+        &ctx.app_state.pool,
+        &realm_id,
+        "creem_refund_reclaim@example.com",
+    )
+    .await;
+    let plan_id = Uuid::now_v7();
+    let event_id = generate_test_event_id();
+    let refund_id = format!("refund_{}", Uuid::now_v7());
+    let payment_id = format!("payment_{}", Uuid::now_v7());
+    let external_sub = format!("sub_{}", Uuid::now_v7());
+
+    ctx.with_creem_config(&realm_id, None, None, None).await;
+    setup_test_plan_config(ctx, &realm_id, plan_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
+
+    // Future-effective pre-grant row — not yet in the available set.
+    let effective_at = chrono::Utc::now() + chrono::Duration::days(5);
+    let (_sub_id, schedule_id, ledger_id, period_number) = seed_creem_pregrant_for_refund_reclaim(
+        ctx,
+        &realm_id,
+        user_id,
+        &external_sub,
+        &plan_id.to_string(),
+        &payment_id,
+        10_000,
+        Some(effective_at),
+        0,
+    )
+    .await;
+
+    // Locator resolves to our row (proves the (schedule_id, period) bridge).
+    let located = find_ledger_id_by_schedule_period(ctx, schedule_id, period_number)
+        .await
+        .expect("creem pre-grant row must be locatable via (schedule_id, period_number)");
+    assert_eq!(located, ledger_id);
+    assert_derived_balance(ctx, user_id, &realm_id, CreditType::SubscriptionCredit, 0).await;
+
+    // Fire Creem refund.created as a subscription refund.
+    let event = build_refund_created_event_with_user_and_type(
+        event_id,
+        refund_id.clone(),
+        payment_id.clone(),
+        10_000,
+        10_000,
+        &realm_id,
+        user_id,
+        "subscription",
+    );
+    let app = ctx.create_unified_test_router();
+    let response = send_webhook_with_signature(&app, &realm_id, event, "test_webhook_secret").await;
+    assert_webhook_success(&response);
+
+    // Row-level reclaim revoked the chained pre-grant row.
+    let ledger = get_ledger_by_id(ctx, ledger_id).await;
+    assert_eq!(ledger.status, CreditLedgerStatus::Revoked);
+    assert_eq!(ledger.remaining_amount, 0);
+    assert_eq!(
+        ledger.revoked_amount, 10_000,
+        "full pre-grant amount revoked by row-level reclaim"
+    );
+    assert_eq!(ledger.used_amount, 0);
+
+    // Derived balance excludes the revoked row (A7).
+    assert_derived_balance(ctx, user_id, &realm_id, CreditType::SubscriptionCredit, 0).await;
+
+    // Fully-unused row ⟹ no reclaim debt record.
+    let revocations = get_revocation_records(ctx, user_id).await;
+    assert!(
+        revocations
+            .iter()
+            .all(|r| r.reason != "subscription_pre_grant_reclaim"),
+        "fully-unused creem refund reclaim must not produce a debt record; got {revocations:?}"
+    );
+}
+
+// ----------------------------------------------------------------------------
+// BE-T06 §6.1 P1 scenario (5b): Creem subscription.canceled reclaims an
+// unfulfilled (future-effective) pre-grant row (Stripe-symmetric with test_43
+// scenario 1). Covers the Creem arm of the cancel→reclaim symmetry.
+// ----------------------------------------------------------------------------
+
+#[test_context(SchemaTestContext)]
+#[tokio::test]
+async fn test_creem_cancel_reclaim_unfulfilled(ctx: &mut SchemaTestContext) {
+    let realm_id = ctx._realm_id.clone();
+    let user_id = create_test_user(
+        &ctx.app_state.pool,
+        &realm_id,
+        "creem_cancel_reclaim@example.com",
+    )
+    .await;
+    let plan_id = Uuid::now_v7();
+    let event_id = generate_test_event_id();
+    let external_sub = format!("sub_{}", event_id);
+
+    ctx.with_creem_config(&realm_id, None, None, None).await;
+    setup_test_plan_config(ctx, &realm_id, plan_id).await;
+    create_points_wallet(ctx, user_id, &realm_id).await;
+
+    // Future-effective pre-grant row.
+    let effective_at = chrono::Utc::now() + chrono::Duration::days(5);
+    let (_sub_id, schedule_id, ledger_id, _period) = seed_creem_pregrant_for_refund_reclaim(
+        ctx,
+        &realm_id,
+        user_id,
+        &external_sub,
+        &plan_id.to_string(),
+        &format!("payment_{}", Uuid::now_v7()), // unused for cancel path
+        10_000,
+        Some(effective_at),
+        0,
+    )
+    .await;
+
+    assert_eq!(
+        find_ledger_id_by_schedule_period(ctx, schedule_id, 2).await,
+        Some(ledger_id),
+        "pre-grant row locatable before webhook"
+    );
+
+    // Creem subscription.canceled with cancel_at_period_end=true isolates the
+    // reclaim (cancel path only sets expiry; no bulk revoke).
+    let event = build_subscription_canceled_event(event_id, user_id, true, &realm_id);
+    let app = ctx.create_unified_test_router();
+    let response = send_webhook_with_signature(&app, &realm_id, event, "test_webhook_secret").await;
+    assert_webhook_success(&response);
+
+    let ledger = get_ledger_by_id(ctx, ledger_id).await;
+    assert_eq!(
+        ledger.status,
+        CreditLedgerStatus::Revoked,
+        "creem cancel reclaims the pre-grant row"
+    );
+    assert_eq!(ledger.revoked_amount, 10_000);
+    assert_eq!(ledger.remaining_amount, 0);
+    assert_eq!(ledger.used_amount, 0);
+
+    assert_derived_balance(ctx, user_id, &realm_id, CreditType::SubscriptionCredit, 0).await;
+}

@@ -20,7 +20,7 @@ mod tests {
         setup_billing_admin_session, setup_billing_admin_session_with_user,
         setup_test_entitlement_mapping_full,
     };
-    use crate::tests::helpers::client_helpers::{create_test_api_key, grant_api_key_permissions};
+    use crate::tests::helpers::client_helpers::create_test_api_key;
     use crate::tests::schema_test_context::SchemaTestContext as TestContext;
     use axum::{
         body::{Body, to_bytes},
@@ -42,7 +42,14 @@ mod tests {
             create_test_api_key(ctx, "one-time-api-test-key", true, None).await;
 
         // Grant billing.view permission so ext endpoint can read mappings
-        grant_api_key_permissions(ctx, &api_key_entity.id, &[("billing", "view")]).await;
+        herald_test_support::helpers::grant_api_key_permissions(
+            &ctx._app_state.pool,
+            &ctx._realm_id,
+            &ctx._client_id,
+            &api_key_entity.id,
+            &[("billing", "view")],
+        )
+        .await;
 
         let _ = realm_id; // realm is implicit from context
         api_key_plaintext

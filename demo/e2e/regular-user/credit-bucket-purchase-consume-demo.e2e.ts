@@ -131,9 +131,6 @@ const BUCKET_B_VALIDITY_DAYS = 365
  */
 const CROSS_BUCKET_CONSUME_AMOUNT = 500
 
-/** A UUID-shaped but non-existent client app id, for the no-covered-pool case. */
-const UNCOVERED_CLIENT_APP_ID = '00000000-0000-0000-0000-000000000099'
-
 // ============================================================================
 // In-file consume helper (US-CB-007)
 // ============================================================================
@@ -236,6 +233,12 @@ interface SetupContext {
   coveredClientAppId: string
   /** API key with `points.manage` in realm-001 (for SDK consume calls). */
   apiKey: ApiKeyWithPermission
+  /**
+   * Key bound to a fresh temp client app with NO bucket coverage, for the
+   * US-CB-007 场景2 no_covered_pool sub-case. `clientId` is the uncovered
+   * app's UUID (consume target == key's bound app → scope passes → 409).
+   */
+  uncoveredApiKey: ApiKeyWithPermission
 }
 
 /**
@@ -334,10 +337,29 @@ test.beforeAll(async ({ browser }) => {
     // 5. Mint a realm-001 API key with points.manage (DE-D04 sanctioned
     //    widening of createTestApiKeyWithPermission — the helper now accepts
     //    an optional realmId param; the realm-001 admin session is reused).
+    //    Bind the key to the seeded `points-demo-app` UUID so consume's
+    //    ensure_client_app_scope check (key's bound app == consume target)
+    //    passes — otherwise 场景1/2/3 hit a 403 from the client_app scope
+    //    layer instead of reaching the real consume logic.
     const apiKey = await createTestApiKeyWithPermission(
       page,
       'points.manage',
       setupStartTime,
+      TEST_REALM,
+      coveredClientAppId,
+    )
+
+    // 5b. A key bound to a client app with NO bucket coverage, for the
+    //     US-CB-007 场景2 no_covered_pool sub-case. Default helper path
+    //     creates a fresh grant-test-app-${suffix} that no bucket covers;
+    //     binding the key to it lets consume's ensure_client_app_scope pass
+    //     so the request reaches the real no_covered_pool logic (→ 409),
+    //     instead of the client_app-scope 403. Distinct suffix avoids
+    //     client_id collision with the covered key's resources.
+    const uncoveredApiKey = await createTestApiKeyWithPermission(
+      page,
+      'points.manage',
+      setupStartTime + 1,
       TEST_REALM,
     )
 
@@ -385,6 +407,7 @@ test.beforeAll(async ({ browser }) => {
       demoUserId,
       coveredClientAppId,
       apiKey,
+      uncoveredApiKey,
     }
   } finally {
     await context.close()
@@ -445,10 +468,14 @@ test.describe('[Regular User / SDK] 购买 Bucket 套餐与跨池消费 (US-CB-0
     const { primaryPoolBucketId } = setupCtx!
 
     // The assigned one-time mappings (every product EXCEPT the intentionally
-    // unassigned ones) credit primary-pool on purchase. Pick the first
-    // assigned product id deterministically.
-    const assignedProductIds = ['prod_stripe_onetime_500', 'prod_stripe_onetime_1000']
-    const targetProductId = assignedProductIds[0]
+    // unassigned ones) credit primary-pool on purchase. Target a specific
+    // assigned mapping deterministically. NOTE: `mappingCard.card(key)` takes
+    // the mapping's ENTITLEMENT KEY (data-testid="mapping-card-{entitlementKey}"),
+    // NOT the external_product_id. We pick `credits-1000` because it is the
+    // only stripe-backed one-time entitlement with a single seed row (the
+    // `credits-500` key is shared by stripe + creem rows, so its selector
+    // would match 2 cards and trip Playwright strict mode).
+    const targetEntitlementKey = 'credits-1000'
 
     let balanceBefore = 0
 
@@ -483,7 +510,7 @@ test.describe('[Regular User / SDK] 购买 Bucket 套餐与跨池消费 (US-CB-0
       await page.goto(`/${TEST_REALM}/user/purchase-points`)
       await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
 
-      const card = page.locator(SELECTORS.mappingCard.card(targetProductId))
+      const card = page.locator(SELECTORS.mappingCard.card(targetEntitlementKey))
       await expect(card).toBeVisible({ timeout: 10000 })
       await card.click()
       await expect(
@@ -768,7 +795,7 @@ test.describe('[Regular User / SDK] 购买 Bucket 套餐与跨池消费 (US-CB-0
 
   test('US-CB-007 场景2: 余额不足 → 409 insufficient_points; 无覆盖池 → 409 no_covered_pool', async () => {
     expect(setupCtx, 'beforeAll must have resolved ids').not.toBeNull()
-    const { demoUserId, coveredClientAppId, apiKey } = setupCtx!
+    const { demoUserId, coveredClientAppId, apiKey, uncoveredApiKey } = setupCtx!
 
     await test.step('When: SDK 消费 amount 超过覆盖池合计余额', async () => {
       // A huge amount that exceeds any plausible combined balance.
@@ -792,13 +819,21 @@ test.describe('[Regular User / SDK] 购买 Bucket 套餐与跨池消费 (US-CB-0
     })
 
     await test.step('When: SDK 为一个未被任何 Bucket 覆盖的 client app 消费', async () => {
-      const response = await consumePointsViaExtApi(apiKey.apiKey, TEST_REALM, {
-        userId: demoUserId,
-        amount: 10,
-        clientAppId: UNCOVERED_CLIENT_APP_ID,
-        description: 'DE-D04 US-CB-007 场景2: no covered pool',
-        idempotencyKey: `de-d04-cb007-s2-nopool-${setupStartTime}-${Date.now()}`,
-      })
+      // Target the uncovered temp client app the uncoveredApiKey is bound to
+      // (its `clientId`). Binding lets ensure_client_app_scope pass so the
+      // request reaches the real no_covered_pool path (→ 409), not the
+      // client_app-scope 403.
+      const response = await consumePointsViaExtApi(
+        uncoveredApiKey.apiKey,
+        TEST_REALM,
+        {
+          userId: demoUserId,
+          amount: 10,
+          clientAppId: uncoveredApiKey.clientId,
+          description: 'DE-D04 US-CB-007 场景2: no covered pool',
+          idempotencyKey: `de-d04-cb007-s2-nopool-${setupStartTime}-${Date.now()}`,
+        },
+      )
 
       await test.step('Then: 返回 409 no_covered_pool', async () => {
         expect(response.status).toBe(409)

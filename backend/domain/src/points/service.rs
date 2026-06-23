@@ -91,12 +91,6 @@ where
             user_id,
             realm_id: realm_id.to_string(),
             bucket_id: None,
-            total_balance: 0,
-            topup_balance: 0,
-            subscription_balance: 0,
-            granted_balance: 0,
-            registration_balance: 0,
-            free_periodic_balance: 0,
             total_topup_granted: 0,
             total_subscription_granted: 0,
             total_recharged: 0,
@@ -108,14 +102,186 @@ where
     }
 
     /// Get points balance for a user
+    ///
+    /// Switched to derived SUM (design §5.1 / A7): the 5 typed balances and
+    /// `total_balance` are projected from `compute_available_balance` (same
+    /// predicate as consumption — "seen balance == spendable balance"), so
+    /// future-effective pre-grant rows never leak into the user-visible
+    /// balance. `analytics` (`total_recharged` / `total_consumed`) still come
+    /// from the wallet Stored columns (lifetime totals, unaffected by
+    /// `effective_at`). Read-path realization runs FIRST
+    /// (`reconcile_due_for_user`) so a due free-period schedule is fulfilled
+    /// before the balance is computed on the same request — this is the
+    /// correctness backstop for US-FU-004 scenario 1.1 when the worker never
+    /// runs.
     pub async fn get_balance(
         &self,
         identity: Identity,
         realm_id: &str,
         user_id: Uuid,
     ) -> Result<PointsBalance, CoreError> {
+        // Permission + realm boundary checks (same gate as before).
+        ensure_policy(
+            self.policy
+                .can_view_points(identity.clone(), Some(user_id))
+                .await,
+            "Insufficient permissions to view points balance",
+        )?;
+        if !identity.has_access_to_realm(realm_id) {
+            return Err(CoreError::Forbidden(
+                "Access denied: cannot access points from a different realm".to_string(),
+            ));
+        }
+
+        let now = chrono::Utc::now();
+
+        // Read-path realization (design §5.3.1). Independent committed short
+        // transaction; the derived SUM below runs in a separate transaction
+        // and under the project default READ COMMITTED sees the committed
+        // realization rows. Failure is fail-loud (5xx) — never silently
+        // degrade to an old balance or `InsufficientBalance`.
+        self.reconcile_due_for_user(realm_id, user_id, now).await?;
+
+        // Analytics still from Stored wallet columns (lifetime totals).
         let account = self.get_wallet(identity, realm_id, user_id).await?;
-        Ok(account.into())
+
+        // Derived SUM by credit_type (same predicate as consumption).
+        let derived = self
+            .repository
+            .compute_available_balance(realm_id, user_id, &[], now)
+            .await?;
+
+        Ok(Self::build_balance_from_derived(account, derived))
+    }
+
+    /// Build `PointsBalance` from derived SUM + Stored analytics. The 5 typed
+    /// balances and `total_balance` come from the derived SUM keyed by
+    /// `CreditType`; analytics (`total_recharged` / `total_consumed`) are
+    /// passed through from the Stored wallet (A7: analytics remain Stored).
+    fn build_balance_from_derived(
+        account: PointsWallet,
+        derived: Vec<(CreditType, i64)>,
+    ) -> PointsBalance {
+        let mut topup = 0i64;
+        let mut subscription = 0i64;
+        let mut granted = 0i64;
+        let mut registration = 0i64;
+        let mut free_periodic = 0i64;
+        for (credit_type, amount) in derived {
+            match credit_type {
+                CreditType::TopupCredit => topup += amount,
+                CreditType::SubscriptionCredit => subscription += amount,
+                CreditType::GrantedCredit => granted += amount,
+                CreditType::RegistrationCredit => registration += amount,
+                CreditType::FreePeriodicCredit => free_periodic += amount,
+            }
+        }
+        let total_balance = topup + subscription + granted + registration + free_periodic;
+        PointsBalance {
+            user_id: account.user_id,
+            balance: total_balance,
+            topup_balance: topup,
+            subscription_balance: subscription,
+            granted_balance: granted,
+            registration_balance: registration,
+            free_periodic_balance: free_periodic,
+            total_recharged: account.total_recharged,
+            total_consumed: account.total_consumed,
+            unit: "points".to_string(),
+            updated_at: account.updated_at,
+        }
+    }
+
+    /// Read-path realization for free-periodic schedules (design §5.3.1).
+    ///
+    /// Single-user, bounded (N=3), idempotent (`points_grant_records`
+    /// `(schedule_id, period_number)` UNIQUE + schedule row `FOR UPDATE`),
+    /// lead_time=0 (only already-due periods), and restricted to
+    /// `subscription_id IS NULL` (free-periodic only — never guess paid-grant
+    /// fulfillment on the request path; subscriptions rely on event-driven
+    /// chained pre-grant, §5.2). This is the correctness backstop for
+    /// US-FU-004 scenario 1.1 when the worker never runs.
+    ///
+    /// Fail-loud: on write failure returns the infra `CoreError` unchanged
+    /// (caller surfaces 5xx). NEVER downgrades to `InsufficientBalance` or
+    /// swallows the error — masking a write fault as "low balance" would hide
+    /// system failure behind a user-visible business error.
+    ///
+    /// Transaction/visibility (P1-2): runs as an independent committed short
+    /// transaction on the request's connection; the caller's subsequent
+    /// balance/consume query runs in a separate transaction and under the
+    /// project default READ COMMITTED sees the committed realization rows.
+    /// The two are NOT merged into one long transaction (avoids widening the
+    /// ledger `FOR UPDATE` lock range).
+    ///
+    /// No due schedule ⟹ pure read, no write transaction, no risk.
+    pub async fn reconcile_due_for_user(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), CoreError> {
+        /// Per-request cap on how many past-due periods are realized in one
+        /// call (design §5.3.1). Free-periodic credits do not roll over, so
+        /// periods beyond this cap are already expired (predicate-excluded)
+        /// and do not affect current availability.
+        const RECONCILE_PERIOD_CAP: u64 = 3;
+
+        let due_schedules = self
+            .repository
+            .find_due_free_grant_schedules_for_user(realm_id, user_id, now, RECONCILE_PERIOD_CAP)
+            .await?;
+
+        if due_schedules.is_empty() {
+            // Pure read path: no write transaction opened.
+            return Ok(());
+        }
+
+        for schedule in due_schedules {
+            // period_number follows the schedule's own progression
+            // (granted_periods + 1) — same convention as GrantScheduler.
+            let period_number = u32::try_from(schedule.granted_periods + 1).map_err(|_| {
+                CoreError::InternalServerError("schedule.granted_periods overflow".to_string())
+            })?;
+
+            // Anchor to the expected period boundary (already-due ⟹ <=now).
+            // `Some(next_grant_time)` documents the boundary even though the
+            // predicate now contains it; the infra impl may collapse to None
+            // when next_grant_time <= now if it prefers immediate semantics.
+            let effective_at = Some(schedule.next_grant_time);
+            let expires_at = schedule
+                .grant_period_type
+                .calculate_expiration(schedule.next_grant_time, schedule.validity_days);
+
+            // Idempotent: if a grant_record already exists for this
+            // (schedule_id, period_number), the infra impl returns the
+            // existing ledger row without re-writing. Schedule row is locked
+            // FOR UPDATE inside the impl for concurrent-request dedup.
+            self.repository
+                .pregrant_next_period_atomic(
+                    realm_id,
+                    &schedule,
+                    period_number,
+                    effective_at,
+                    expires_at,
+                )
+                .await
+                .map_err(|e| {
+                    // Fail-loud: surface infra error verbatim. NEVER rewrite
+                    // to InsufficientBalance or swallow.
+                    tracing::error!(
+                        realm_id = %realm_id,
+                        user_id = %user_id,
+                        schedule_id = %schedule.id,
+                        period_number,
+                        error = %e,
+                        "reconcile_due_for_user write failed (fail-loud)"
+                    );
+                    e
+                })?;
+        }
+
+        Ok(())
     }
 
     /// List wallets in a realm. `points.manage` holders see all users' wallets;
@@ -202,6 +368,15 @@ where
         // coverage-set availability via `insufficient_points`. Per-bucket
         // wallets are also created lazily inside the consume transaction via
         // `ensure_wallet_in_tx`, so no pre-created single wallet is needed.
+
+        // Read-path realization (design §5.3.1) runs as an independent
+        // committed short transaction BEFORE the consume transaction opens —
+        // the consume transaction then re-queries under READ COMMITTED and
+        // sees the realized rows. Reconcile failure is fail-loud (5xx); it
+        // MUST NOT be swallowed or rewritten to InsufficientBalance (masking
+        // a write fault as "low balance" hides system failure).
+        self.reconcile_due_for_user(realm_id, user_id, chrono::Utc::now())
+            .await?;
 
         let saved_transactions = self
             .repository
@@ -385,7 +560,9 @@ where
             input.reason
         ));
 
-        // Grant points via internal method
+        // Grant points via internal method. Admin/SDK grants are immediately
+        // available (`effective_at = None`); exposing an `effective_at` entry
+        // point on the grant API is explicitly out of scope (design §1.3).
         let ledger_id = self
             .grant_points_internal(
                 realm_id,
@@ -395,25 +572,42 @@ where
                 input.source_type,
                 input.amount,
                 expires_at,
+                None,
                 Some(input.source_id),
                 description,
                 None,
             )
             .await?;
 
-        // Fetch the updated wallet to get current balances
-        let wallet = self
+        // Derived fill (design §5.1 / A7): `granted_balance`/`total_balance`
+        // come from `compute_available_balance` post-grant (same source as
+        // `get_balance`), NOT from the wallet Stored columns. This keeps the
+        // grant response consistent with the derived-balance world and
+        // prevents any future-effective rows from leaking into the response.
+        let now = chrono::Utc::now();
+        let derived = self
             .repository
-            .find_by_user_id(realm_id, input.user_id)
-            .await?
-            .ok_or_else(|| CoreError::wallet_not_found(&input.user_id.to_string()))?;
+            .compute_available_balance(realm_id, input.user_id, &[input.bucket_id], now)
+            .await?;
+        let (granted_balance, total_balance) =
+            derived
+                .into_iter()
+                .fold((0i64, 0i64), |(g, t), (credit_type, amount)| {
+                    let new_t = t + amount;
+                    let new_g = if credit_type == CreditType::GrantedCredit {
+                        g + amount
+                    } else {
+                        g
+                    };
+                    (new_g, new_t)
+                });
 
         Ok(GrantPointsOutput {
             transaction_id: ledger_id,
             user_id: input.user_id,
             amount: input.amount,
-            granted_balance: wallet.granted_balance,
-            total_balance: wallet.total_balance,
+            granted_balance,
+            total_balance,
             expires_at,
         })
     }
@@ -851,6 +1045,11 @@ where
         source_type: crate::points::entities::CreditSourceType,
         amount: i64,
         expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        // Expected effective time (design §5.1). `None` ⟺ immediately
+        // available (current behavior); `Some(t)` ⟺ enters the available
+        // set only when `effective_at <= NOW()`. Passed through to
+        // `grant_points_atomic`.
+        effective_at: Option<chrono::DateTime<chrono::Utc>>,
         source_id: Option<String>,
         description: Option<String>,
         idempotency_key: Option<String>,
@@ -879,6 +1078,7 @@ where
                 source_type,
                 amount,
                 expires_at,
+                effective_at,
                 source_id,
                 description,
                 idempotency_key,
@@ -892,6 +1092,7 @@ where
             credit_type = ?credit_type,
             source_type = ?source_type,
             expires_at = ?expires_at,
+            effective_at = ?effective_at,
             "Points granted internally"
         );
 

@@ -53,9 +53,12 @@ mod tests {
             realm_id,
         )
         .await;
+        // BE-D11 / point-time: per-type balance columns were dropped; the ledger
+        // row inserted below by `create_subscription_credit_with_ledger` is the
+        // source of truth for the derived subscription_balance.
         sqlx::query(
-            "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())
+            "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 0, 0, 0, 0, 'active', NOW(), NOW())
              ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING",
         )
         .bind(Uuid::now_v7())
@@ -127,10 +130,11 @@ mod tests {
         .await
         .expect("Failed to create credit ledger entry");
 
+        // BE-D11: only bump the retained lifetime-analytics column; the ledger
+        // row above is the source of truth for the derived subscription_balance.
         sqlx::query(
             "UPDATE points_wallets
-             SET subscription_balance = subscription_balance + $1,
-                 total_subscription_granted = total_subscription_granted + $1,
+             SET total_subscription_granted = total_subscription_granted + $1,
                  updated_at = NOW()
              WHERE user_id = $2 AND realm_id = $3",
         )
@@ -281,13 +285,22 @@ mod tests {
     }
 
     /// Get subscription_balance for a user's wallet.
+    /// BE-D11: `points_wallets.subscription_balance` was dropped; the available
+    /// subscription balance is now the derived SUM over `points_credit_ledger`
+    /// subscription_credit rows (same predicate as production).
     async fn get_subscription_balance(
         ctx: &SchemaTestContext,
         user_id: Uuid,
         realm_id: &str,
     ) -> i64 {
         sqlx::query_scalar::<_, i64>(
-            "SELECT COALESCE(subscription_balance, 0) FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
+            "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                        WHERE l.status = 'active' AND l.remaining_amount > 0
+                          AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                          AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                    ), 0)::BIGINT
+             FROM points_credit_ledger l
+             WHERE l.user_id = $1 AND l.realm_id = $2 AND l.credit_type = 'subscription_credit'",
         )
         .bind(user_id)
         .bind(realm_id)

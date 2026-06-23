@@ -163,6 +163,14 @@ pub struct PointsGrantRecord {
     pub period_number: i64,
     pub granted_amount: i64,
     pub grant_time: DateTime<Utc>,
+    /// FK bridge to the single ledger row this grant record deduplicates
+    /// (design §4.3.2 / §5.2 A4). `pregrant_next_period_atomic` and the
+    /// subscription current-period grant both populate this in the same
+    /// transaction that inserts the ledger row, so reclaim can resolve
+    /// `(schedule_id, period_number) → ledger_id → ledger row` without a
+    /// `schedule_id` column on `points_credit_ledger`. NOT NULL at the SQL
+    /// layer (BE-D01); pre-launch, no backfill needed (A6).
+    pub ledger_id: Uuid,
     pub created_at: DateTime<Utc>,
 }
 

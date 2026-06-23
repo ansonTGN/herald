@@ -116,8 +116,12 @@ export function TransactionHistoryTable({
               id: 'bucket',
               accessorKey: 'bucketId' as const,
               header: m['points.transaction_bucket_column'](),
-              cell: ({ row }: { row: { getValue: (key: string) => unknown; index: number } }) => {
-                const bucketId = row.getValue('bucketId') as string | null | undefined
+              cell: ({ row }: { row: { original: PointsTransactionResponse; index: number } }) => {
+                // Read bucketId from `row.original` rather than `row.getValue('bucketId')`:
+                // this column sets an explicit `id: 'bucket'`, which overrides the
+                // accessor-derived id in TanStack Table v8, so `getValue('bucketId')`
+                // resolves to no column and logs "Column with id 'bucketId' does not exist".
+                const bucketId = row.original.bucketId
                 const bucket = bucketId ? bucketsMap.get(bucketId) : undefined
                 const label = bucket ? bucket.name : bucketId ? String(bucketId).slice(0, 8) : '-'
                 return (

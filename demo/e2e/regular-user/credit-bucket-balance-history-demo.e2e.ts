@@ -478,12 +478,18 @@ test.describe('[Regular User] 按 Bucket 分组的积分余额与交易历史 (U
  * Parse a numeric amount from a card/cell textContent.
  *
  * Card totals are rendered via `.toLocaleString()` (e.g. "4,900"), so commas
- * and whitespace must be stripped before parsing. Returns 0 for empty/null.
+ * and whitespace must be stripped before parsing. The cross-bucket-total bar
+ * lives on a Card whose textContent ALSO includes a localized label prefix
+ * (e.g. "跨桶合计"), so parsing from the start with `parseInt` would hit the
+ * non-digit prefix and return NaN. Extracting the contiguous digit run after
+ * stripping commas/whitespace makes parsing robust to that prefix while still
+ * handling the value-only balance-total cells. Returns 0 for empty/null.
  */
 function parseAmount(raw: string | null): number {
   if (!raw) return 0
   const cleaned = raw.replace(/[,\s]/g, '')
-  const n = Number.parseInt(cleaned, 10)
+  const match = cleaned.match(/\d+/)
+  const n = match ? Number.parseInt(match[0], 10) : NaN
   return Number.isFinite(n) ? n : 0
 }
 

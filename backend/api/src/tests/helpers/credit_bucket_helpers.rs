@@ -134,6 +134,8 @@ pub async fn grant_points_to_bucket(
             source_type,
             amount,
             expires_at,
+            // effective_at: None ⟺ immediately available (BE-D02 added arg).
+            None,
             source_id,
             description,
             idempotency_key,
@@ -326,8 +328,11 @@ pub async fn read_attempt_bucket(pool: &PgPool, attempt_id: Uuid) -> Option<Uuid
         .flatten()
 }
 
-/// Read `total_balance` for a `(user, bucket)` wallet; returns 0 if no wallet
-/// row exists yet (the wallet is created lazily on first grant).
+/// Read the derived available balance for a `(user, bucket)` wallet; returns 0
+/// if no wallet row exists yet (the wallet is created lazily on first grant).
+/// Under point-time (BE-D11) `points_wallets` has no Stored balance columns;
+/// the available balance is derived from `points_credit_ledger` using the same
+/// predicate as consumption.
 pub async fn read_wallet_total_balance(
     pool: &PgPool,
     realm_id: &str,
@@ -335,8 +340,16 @@ pub async fn read_wallet_total_balance(
     bucket_id: Uuid,
 ) -> i64 {
     let row: Option<i64> = sqlx::query_scalar(
-        "SELECT total_balance FROM points_wallets
-          WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3",
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT
+         FROM points_wallets w
+         LEFT JOIN points_credit_ledger l
+           ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+         WHERE w.realm_id = $1 AND w.user_id = $2 AND w.bucket_id = $3
+         GROUP BY w.id",
     )
     .bind(realm_id)
     .bind(user_id)
@@ -715,11 +728,46 @@ pub async fn seed_active_subscription_on_bucket(
     id
 }
 
-/// Seed a `points_wallets` row for `(realm, user, bucket)` with the given
-/// `total_balance` so the `delete_credit_bucket` "holders with balance"
-/// intercept fires. The wallet is written with a non-zero `granted_balance`
-/// (the only balance column the `total_balance` generated column sums); all
-/// other balance columns stay 0.
+/// Seed a `points_wallets` row for `(realm, user, bucket)` plus a
+/// `points_credit_ledger` row of the given `balance` so the
+/// `delete_credit_bucket` "holders with balance" intercept (which reads the
+/// DERIVED available balance post-point-time, BE-D11) fires. Under point-time
+/// the wallet has no Stored balance columns; the ledger row is what makes the
+/// derived balance non-zero.
+/// Seed an available `granted_credit` ledger row on a bucket so the derived
+/// Credit Bucket overview (BE-D06) reports a real balance. Under point-time
+/// `grandTotal` / `byCreditType` are a derived SUM over `points_credit_ledger`
+/// (the wallet Stored balance columns were dropped in BE-D11), so a bucket
+/// with only a `points_wallets` analytics row shows zero — tests asserting a
+/// non-zero overview total must seed a real ledger row.
+pub async fn seed_granted_credit_ledger_on_bucket(
+    pool: &PgPool,
+    realm_id: &str,
+    user_id: Uuid,
+    bucket_id: Uuid,
+    amount: i64,
+) -> Uuid {
+    let ledger_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO points_credit_ledger
+            (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
+             granted_amount, used_amount, revoked_amount,
+             expires_at, effective_at, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'granted_credit', 'admin_grant', $5, $6, 0, 0,
+                 NULL, NULL, 'active', NOW(), NOW())",
+    )
+    .bind(ledger_id)
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(bucket_id)
+    .bind(format!("granted-overview-{}", Uuid::now_v7()))
+    .bind(amount)
+    .execute(pool)
+    .await
+    .expect("seed granted_credit ledger row on bucket");
+    ledger_id
+}
+
 pub async fn seed_wallet_with_balance_on_bucket(
     pool: &PgPool,
     realm_id: &str,
@@ -732,9 +780,11 @@ pub async fn seed_wallet_with_balance_on_bucket(
     let wallet_id = Uuid::now_v7();
     let row = sqlx::query(
         r#"INSERT INTO points_wallets
-             (id, realm_id, user_id, bucket_id, granted_balance, status,
-              created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, 'active', NOW(), NOW())
+             (id, realm_id, user_id, bucket_id, total_topup_granted,
+              total_recharged, total_consumed, total_subscription_granted,
+              status, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $5, 0, 0, 'active', NOW(), NOW())
+           ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING
            RETURNING id"#,
     )
     .bind(wallet_id)
@@ -742,10 +792,47 @@ pub async fn seed_wallet_with_balance_on_bucket(
     .bind(user_id)
     .bind(bucket_id)
     .bind(balance)
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await
     .expect("insert points_wallets row with balance");
-    let id: Uuid = row.get("id");
+
+    let id: Uuid = match row {
+        Some(row) => row.get("id"),
+        None => {
+            // Row pre-existed; fetch the canonical id.
+            sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM points_wallets
+                  WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3",
+            )
+            .bind(realm_id)
+            .bind(user_id)
+            .bind(bucket_id)
+            .fetch_one(pool)
+            .await
+            .expect("fetch pre-existing wallet id in seed_wallet_with_balance_on_bucket")
+        }
+    };
+
+    if balance > 0 {
+        sqlx::query(
+            r#"INSERT INTO points_credit_ledger
+                 (id, realm_id, user_id, bucket_id, credit_type, source_type,
+                  source_id, granted_amount, used_amount, revoked_amount,
+                  status, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, 'topup_credit', 'system_grant', $5,
+                       $6, 0, 0, 'active', NOW(), NOW())"#,
+        )
+        .bind(Uuid::now_v7())
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(bucket_id)
+        .bind(format!("seed-bucket-{}", id))
+        .bind(balance)
+        .execute(pool)
+        .await
+        .expect("insert ledger row for seed_wallet_with_balance_on_bucket");
+    }
+
     id
 }
 
@@ -890,12 +977,13 @@ pub async fn seed_transaction_on_bucket(
     .unwrap_or_else(Uuid::now_v7);
 
     // Insert the wallet row if it did not exist (cheap no-op when already
-    // present via ON CONFLICT).
+    // present via ON CONFLICT). Under point-time (BE-D11) `points_wallets`
+    // has no Stored balance columns; available balance is derived.
     sqlx::query(
         r#"INSERT INTO points_wallets
-             (id, realm_id, user_id, bucket_id, granted_balance, status,
+             (id, realm_id, user_id, bucket_id, status,
               created_at, updated_at)
-           VALUES ($1, $2, $3, $4, 0, 'active', NOW(), NOW())
+           VALUES ($1, $2, $3, $4, 'active', NOW(), NOW())
            ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING"#,
     )
     .bind(wallet_id)

@@ -39,6 +39,7 @@ pub fn points_credit_ledger_from_model(model: points_credit_ledger::Model) -> Po
         revoked_amount: model.revoked_amount,
         remaining_amount: model.remaining_amount,
         expires_at: model.expires_at.map(chrono::DateTime::from),
+        effective_at: model.effective_at.map(chrono::DateTime::from),
         status: parse_enum_with_default(&model.status, "status", CreditLedgerStatus::Active),
         created_at: chrono::DateTime::from(model.created_at),
         updated_at: chrono::DateTime::from(model.updated_at),
@@ -103,6 +104,7 @@ pub fn points_credit_ledger_to_active_model(
         revoked_amount: Set(domain.revoked_amount),
         remaining_amount: sea_orm::ActiveValue::NotSet, // GENERATED ALWAYS AS column
         expires_at: Set(domain.expires_at.map(|dt| dt.into())),
+        effective_at: Set(domain.effective_at.map(|dt| dt.into())),
         status: Set(domain.status.to_string()),
         created_at: Set(domain.created_at.into()),
         updated_at: Set(domain.updated_at.into()),

@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::webhook_common::{
     create_placeholder_transaction, metadata_value, parse_attempt_id, parse_event_id,
-    parse_optional_uuid_field, parse_uuid_field,
+    parse_optional_uuid_field, parse_uuid_field, reclaim_pregrant_for_subscription,
 };
 use crate::webhook_subscription_helpers::{
     SyncSubscriptionInput, resolve_bucket_id_for_entitlement, resolve_entitlement_key,
@@ -202,6 +202,61 @@ fn parse_optional_creem_datetime(value: &Value) -> Result<Option<DateTime<Utc>>,
     }
 
     parse_creem_datetime(value, "timestamp").map(Some)
+}
+
+/// Normalize a Creem subscription object's billing period to a unique
+/// `(period_start, period_end)` pair (design §5.2, A8 P0, symmetric to
+/// Stripe's `normalize_stripe_period`).
+///
+/// Creem exposes the period under several field-name variants
+/// (`currentPeriodStart` / `current_period_start` / `current_period_start_date`,
+/// and the matching `*End` / `*end_date`). This function tries each variant
+/// for both endpoints.
+///
+/// Returns `Some((start, end))` only when both endpoints resolve and form a
+/// valid window (`start < end`). Returns `None` on any partial / missing /
+/// unparseable / inverted result — per A8 P0 the caller must then skip the
+/// grant, emit a structured warning, and await a later webhook / API
+/// compensation (never guess the period from event time, never write a
+/// ledger with an invented period).
+fn normalize_creem_period(object: &Value) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+    let start = read_creem_period_field(
+        object,
+        &[
+            "currentPeriodStart",
+            "current_period_start",
+            "current_period_start_date",
+        ],
+    );
+    let end = read_creem_period_field(
+        object,
+        &[
+            "currentPeriodEnd",
+            "current_period_end",
+            "current_period_end_date",
+        ],
+    );
+    match (start, end) {
+        (Some(s), Some(e)) if s < e => Some((s, e)),
+        _ => None,
+    }
+}
+
+fn read_creem_period_field(object: &Value, fields: &[&str]) -> Option<DateTime<Utc>> {
+    for field in fields {
+        let Some(v) = object.get(*field) else {
+            continue;
+        };
+        if v.is_null() {
+            continue;
+        }
+        // `parse_creem_datetime` returns Result; on error treat as absent so
+        // the A8 P0 "skip + warn" path applies uniformly.
+        if let Ok(dt) = parse_creem_datetime(v, field) {
+            return Some(dt);
+        }
+    }
+    None
 }
 
 /// Extract tax details from a Creem checkout.completed event object.
@@ -1019,9 +1074,11 @@ async fn handle_subscription_paid(
         .await?;
     }
 
-    let period_end = payload
-        .current_period_end
-        .unwrap_or_else(|| Utc::now() + chrono::Duration::days(30));
+    // Normalize the provider billing period (design §5.2, A8 P0, symmetric
+    // to Stripe). When the period cannot be uniquely resolved we skip the
+    // grant and emit a structured warning — never guess the period from
+    // event time, never write a ledger with an invented period (A8 P0).
+    let normalized_period = normalize_creem_period(creem_event_object(&event));
 
     // bucket_id was resolved eagerly above and bound at subscription creation.
     // synced carries the persisted subscription_id (fallback to nil only when
@@ -1031,21 +1088,40 @@ async fn handle_subscription_paid(
         .map(|(subscription, _)| subscription.id)
         .unwrap_or_else(Uuid::nil);
 
-    let grant_result = app_state
-        .subscription_service
-        .handle_subscription_paid(
-            user_id,
-            subscription_id,
-            bucket_id,
-            realm_id,
-            &entitlement_key,
-            payload.is_renewal,
-            period_end,
-            payload.event_id.clone(),
+    let grant_result = if let Some((period_start, period_end)) = normalized_period {
+        Some(
+            app_state
+                .subscription_service
+                .handle_subscription_paid(
+                    user_id,
+                    subscription_id,
+                    bucket_id,
+                    realm_id,
+                    &entitlement_key,
+                    payload.is_renewal,
+                    period_start,
+                    period_end,
+                    payload.event_id.clone(),
+                )
+                .await,
         )
-        .await;
+    } else {
+        warn!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            external_subscription_id = %payload.external_subscription_id,
+            event_id = %event_id,
+            reason = "period_uniquely_unresolvable",
+            source = "creem",
+            "Creem period normalization failed; skipping subscription grant and awaiting compensation (A8 P0)"
+        );
+        // Mirrors the graceful-skip outcome of EntitlementMappingNotFound
+        // below: no grant is issued, the event is acknowledged, and a later
+        // webhook / API compensation can reprocess.
+        None
+    };
 
-    if let Err(error) = grant_result {
+    if let Some(Err(error)) = grant_result {
         if matches!(error, CoreError::EntitlementMappingNotFound) {
             info!(
                 realm_id = %realm_id,
@@ -1065,7 +1141,7 @@ async fn handle_subscription_paid(
         entitlement_key = %entitlement_key,
         event_id = %event_id,
         is_renewal = payload.is_renewal,
-        period_end = %period_end,
+        normalized_period = ?normalized_period,
         "Subscription paid event processed - credit ledger created"
     );
 
@@ -1441,6 +1517,16 @@ async fn handle_subscription_canceled(
     )
     .await?;
 
+    // Reclaim the chained pre-grant row for the subscription's next period
+    // (design §5.2 A4 / BE-D09). Row-precise — does NOT touch other active
+    // credits, does NOT back-adjust wallet. Idempotent: missing schedule /
+    // already-revoked ⟹ no-op. Runs BEFORE the cancel path so the future-
+    // effective pre-grant row is revoked row-precisely; the cancel path then
+    // handles already-effective rows via entitlement-scoped revocation.
+    if let Some((subscription, _previous)) = &synced {
+        reclaim_pregrant_for_subscription(&app_state, realm_id, subscription.id).await?;
+    }
+
     // bucket_id resolved above; synced carries the persisted subscription.
     let _output = app_state
         .subscription_service
@@ -1554,6 +1640,25 @@ async fn handle_refund_created(
             );
         }
         _ => {
+            // Reclaim the chained pre-grant row for the subscription's next
+            // period (design §5.2 A4 / BE-D09). Row-precise — does NOT touch
+            // other active credits, does NOT back-adjust wallet. A refund
+            // targets the originating subscription; resolve its schedule via
+            // the user's active subscription schedules in this realm+bucket.
+            // Idempotent: no schedule / already-revoked ⟹ no-op.
+            let schedules = app_state
+                .points_repository
+                .find_grant_schedules_by_user_realm(realm_id, payload.user_id)
+                .await?;
+            for schedule in schedules
+                .iter()
+                .filter(|s| s.active && s.subscription_id.is_some() && s.bucket_id == bucket_id)
+            {
+                if let Some(sub_id) = schedule.subscription_id {
+                    reclaim_pregrant_for_subscription(&app_state, realm_id, sub_id).await?;
+                }
+            }
+
             let _output = app_state
                 .points_service
                 .revoke_subscription_unused(
@@ -2351,5 +2456,76 @@ mod tests {
 
         let payload = parse_checkout_completed_payload(&event).unwrap();
         assert!(payload.attempt_id.is_none());
+    }
+
+    // ---- normalize_creem_period — A8 P0 symmetric (design §5.2 / A8) ----
+    //
+    // Creem exposes the billing period under several field-name variants.
+    // The normalizer must resolve all of them or return None (A8 P0: skip +
+    // warn, never guess).
+
+    fn creem_ts(value: i64) -> DateTime<Utc> {
+        DateTime::<Utc>::from_timestamp(value, 0).unwrap()
+    }
+
+    #[test]
+    fn normalize_creem_period_camel_case_resolved() {
+        let obj = serde_json::json!({
+            "currentPeriodStart": "2023-11-14T22:13:20Z",
+            "currentPeriodEnd": "2023-12-14T22:13:20Z",
+        });
+        let got = normalize_creem_period(&obj).expect("camelCase period must resolve");
+        assert_eq!(got.0, creem_ts(1_700_000_000));
+        assert_eq!(got.1, creem_ts(1_700_000_000 + 2_592_000));
+    }
+
+    #[test]
+    fn normalize_creem_period_snake_case_resolved() {
+        let obj = serde_json::json!({
+            "current_period_start": "2023-11-14T22:13:20Z",
+            "current_period_end": "2023-12-14T22:13:20Z",
+        });
+        let got = normalize_creem_period(&obj).expect("snake_case period must resolve");
+        assert_eq!(got.0, creem_ts(1_700_000_000));
+    }
+
+    #[test]
+    fn normalize_creem_period_date_variants_resolved() {
+        let obj = serde_json::json!({
+            "current_period_start_date": "2023-11-14T22:13:20Z",
+            "current_period_end_date": "2023-12-14T22:13:20Z",
+        });
+        let got = normalize_creem_period(&obj).expect("date-variant period must resolve");
+        assert_eq!(got.0, creem_ts(1_700_000_000));
+    }
+
+    #[test]
+    fn normalize_creem_period_missing_is_none() {
+        let obj = serde_json::json!({ "subscriptionId": "sub_1" });
+        assert!(
+            normalize_creem_period(&obj).is_none(),
+            "absent Creem period must NOT be resolved (A8 P0)"
+        );
+    }
+
+    #[test]
+    fn normalize_creem_period_partial_is_none() {
+        // Only start present — cannot form a valid window.
+        let obj = serde_json::json!({
+            "currentPeriodStart": "2023-11-14T22:13:20Z",
+        });
+        assert!(
+            normalize_creem_period(&obj).is_none(),
+            "partial Creem period must NOT be resolved (A8 P0)"
+        );
+    }
+
+    #[test]
+    fn normalize_creem_period_inverted_is_none() {
+        let obj = serde_json::json!({
+            "currentPeriodStart": "2023-12-14T22:13:20Z",
+            "currentPeriodEnd": "2023-11-14T22:13:20Z",
+        });
+        assert!(normalize_creem_period(&obj).is_none());
     }
 }

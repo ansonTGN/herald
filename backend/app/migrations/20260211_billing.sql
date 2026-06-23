@@ -93,19 +93,19 @@ COMMENT ON COLUMN subscription.bucket_id IS 'Credit bucket bound to this subscri
 -- ====================================
 -- Points Accounts
 -- ====================================
+-- Design §1.3 / A7 / §4.3.3 (BE-D11): the 5 per-type balance columns and the
+-- `total_balance` GENERATED column are physically removed from the base
+-- schema. Available balance is now exclusively a derived SUM over
+-- `points_credit_ledger` (same predicate as consumption), eliminating the
+-- Stored/derived dual-track. Only the 4 lifetime analytics columns remain
+-- Stored (they are cumulative totals unaffected by `effective_at`).
+-- `points_transactions.balance_after`(+typed snapshots) is retained and
+-- filled with the real post-mutation derived balance (A5 contract).
 CREATE TABLE points_wallets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,
     realm_id TEXT NOT NULL,
     bucket_id UUID NOT NULL REFERENCES credit_buckets(id) ON DELETE RESTRICT,
-    topup_balance BIGINT NOT NULL DEFAULT 0 CHECK (topup_balance >= 0),
-    subscription_balance BIGINT NOT NULL DEFAULT 0 CHECK (subscription_balance >= 0),
-    granted_balance BIGINT NOT NULL DEFAULT 0 CHECK (granted_balance >= 0),
-    registration_balance BIGINT NOT NULL DEFAULT 0 CHECK (registration_balance >= 0),
-    free_periodic_balance BIGINT NOT NULL DEFAULT 0 CHECK (free_periodic_balance >= 0),
-    total_balance BIGINT GENERATED ALWAYS AS (
-        topup_balance + subscription_balance + granted_balance + registration_balance + free_periodic_balance
-    ) STORED CHECK (total_balance >= 0),
     total_recharged BIGINT NOT NULL DEFAULT 0 CHECK (total_recharged >= 0),
     total_consumed BIGINT NOT NULL DEFAULT 0 CHECK (total_consumed >= 0),
     total_topup_granted BIGINT NOT NULL DEFAULT 0 CHECK (total_topup_granted >= 0),
@@ -121,18 +121,15 @@ CREATE INDEX idx_points_wallets_realm_id ON points_wallets(realm_id);
 CREATE INDEX idx_points_wallets_bucket_id ON points_wallets(bucket_id);
 CREATE INDEX idx_points_wallets_status ON points_wallets(status);
 
-COMMENT ON TABLE points_wallets IS 'User-level points wallets tracking balance, recharges, and consumption';
+COMMENT ON TABLE points_wallets IS 'User-level points wallets tracking lifetime analytics (recharges/consumption). Available balance is derived from points_credit_ledger (design §5.1 / A7); no Stored balance columns.';
 COMMENT ON COLUMN points_wallets.id IS 'Unique wallet identifier';
 COMMENT ON COLUMN points_wallets.user_id IS 'Reference to user who owns this wallet';
 COMMENT ON COLUMN points_wallets.realm_id IS 'Realm ID for permission isolation';
 COMMENT ON COLUMN points_wallets.bucket_id IS 'Credit bucket this wallet belongs to';
-COMMENT ON COLUMN points_wallets.topup_balance IS 'Current balance of topup credits (purchased points)';
-COMMENT ON COLUMN points_wallets.subscription_balance IS 'Current balance of subscription credits (from subscriptions)';
-COMMENT ON COLUMN points_wallets.total_balance IS 'Computed total balance: topup_balance + subscription_balance';
-COMMENT ON COLUMN points_wallets.total_recharged IS 'Total points ever recharged (for analytics)';
-COMMENT ON COLUMN points_wallets.total_consumed IS 'Total points ever consumed (for analytics)';
-COMMENT ON COLUMN points_wallets.total_topup_granted IS 'Total purchased points ever granted';
-COMMENT ON COLUMN points_wallets.total_subscription_granted IS 'Total subscription points ever granted';
+COMMENT ON COLUMN points_wallets.total_recharged IS 'Total points ever recharged (lifetime analytics; paid topup + subscription grants)';
+COMMENT ON COLUMN points_wallets.total_consumed IS 'Total points ever consumed (lifetime analytics)';
+COMMENT ON COLUMN points_wallets.total_topup_granted IS 'Total purchased points ever granted (lifetime analytics)';
+COMMENT ON COLUMN points_wallets.total_subscription_granted IS 'Total subscription points ever granted (lifetime analytics)';
 COMMENT ON COLUMN points_wallets.status IS 'Wallet status: active (normal operations), frozen (temporarily disabled), closed (permanently disabled)';
 
 -- ====================================
