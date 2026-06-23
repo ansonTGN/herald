@@ -336,8 +336,34 @@ async fn test_75_8_wallet_auto_created_on_first_grant(ctx: &mut TestContext) {
 
     // Verify DB: wallet created with granted_balance=75, other balances=0
     let wallet: (i64, i64, i64, i64) = sqlx::query_as(
-        "SELECT granted_balance, topup_balance, subscription_balance, total_balance \
-         FROM points_wallets WHERE user_id = $1",
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND l.credit_type = 'granted_credit'
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT AS granted_balance,
+                COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND l.credit_type IN ('topup_credit','registration_credit','free_periodic_credit')
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT AS topup_balance,
+                COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND l.credit_type = 'subscription_credit'
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT AS subscription_balance,
+                COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT AS total_balance
+         FROM points_wallets w
+         LEFT JOIN points_credit_ledger l
+           ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+         WHERE w.user_id = $1
+         GROUP BY w.id",
     )
     .bind(target_user_id)
     .fetch_one(&ctx._app_state.pool)

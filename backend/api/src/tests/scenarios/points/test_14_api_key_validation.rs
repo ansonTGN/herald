@@ -74,12 +74,23 @@ async fn test_scenario_api_key_validation(ctx: &mut TestContext) {
 
     println!("[Step 3] Verify no points were deducted");
 
-    let (current_balance, total_consumed): (i64, i64) =
-        sqlx::query_as("SELECT total_balance, total_consumed FROM points_wallets WHERE id = $1")
-            .bind(wallet_id)
-            .fetch_one(&ctx._app_state.pool)
-            .await
-            .expect("Failed to fetch account");
+    let (current_balance, total_consumed): (i64, i64) = sqlx::query_as(
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT AS total_balance,
+                w.total_consumed
+         FROM points_wallets w
+         LEFT JOIN points_credit_ledger l
+           ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+         WHERE w.id = $1
+         GROUP BY w.id, w.total_consumed",
+    )
+    .bind(wallet_id)
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .expect("Failed to fetch account");
 
     assert_eq!(current_balance, balance, "Balance should remain unchanged");
     assert_eq!(total_consumed, 0, "Total consumed should remain 0");

@@ -40,8 +40,8 @@ pub async fn create_points_wallet(ctx: &SchemaTestContext, user_id: Uuid, realm_
     )
     .await;
     sqlx::query(
-        "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, 0, 0, 0, 0, 0, 0, 'active', NOW(), NOW())
+        "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 0, 0, 0, 0, 'active', NOW(), NOW())
          ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING",
     )
     .bind(Uuid::now_v7())
@@ -174,29 +174,57 @@ pub async fn get_payment_attempt_status(
 }
 
 /// Get topup_balance for a user's wallet.
+///
+/// BE-D11: `points_wallets.topup_balance` was dropped; available topup balance
+/// is derived from `points_credit_ledger` (topup + registration + free_periodic).
 pub async fn get_topup_balance(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) -> i64 {
     sqlx::query_scalar::<_, i64>(
-        "SELECT COALESCE(topup_balance, 0) FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND l.credit_type IN ('topup_credit','registration_credit','free_periodic_credit')
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT
+         FROM points_wallets w
+         LEFT JOIN points_credit_ledger l
+           ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+         WHERE w.user_id = $1 AND w.realm_id = $2
+         GROUP BY w.id",
     )
     .bind(user_id)
     .bind(realm_id)
-    .fetch_one(&ctx.app_state.pool)
+    .fetch_optional(&ctx.app_state.pool)
     .await
+    .unwrap()
     .unwrap_or(0)
 }
 
 /// Get subscription_balance for a user's wallet.
+///
+/// BE-D11: `points_wallets.subscription_balance` was dropped; available
+/// subscription balance is derived from `points_credit_ledger`.
 pub async fn get_subscription_balance(
     ctx: &SchemaTestContext,
     user_id: Uuid,
     realm_id: &str,
 ) -> i64 {
     sqlx::query_scalar::<_, i64>(
-        "SELECT COALESCE(subscription_balance, 0) FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND l.credit_type = 'subscription_credit'
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT
+         FROM points_wallets w
+         LEFT JOIN points_credit_ledger l
+           ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+         WHERE w.user_id = $1 AND w.realm_id = $2
+         GROUP BY w.id",
     )
     .bind(user_id)
     .bind(realm_id)
-    .fetch_one(&ctx.app_state.pool)
+    .fetch_optional(&ctx.app_state.pool)
     .await
+    .unwrap()
     .unwrap_or(0)
 }

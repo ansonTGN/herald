@@ -84,8 +84,8 @@ mod tests {
         )
         .await;
         sqlx::query(
-            "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, topup_balance, subscription_balance, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, 0, $5, 0, $5, 0, 0, 'active', NOW(), NOW())
+            "INSERT INTO points_wallets (id, user_id, realm_id, bucket_id, total_topup_granted, total_subscription_granted, total_recharged, total_consumed, status, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 0, $5, $5, 0, 'active', NOW(), NOW())
              ON CONFLICT (realm_id, user_id, bucket_id) DO NOTHING",
         )
         .bind(Uuid::now_v7())
@@ -96,6 +96,26 @@ mod tests {
         .execute(&ctx.app_state.pool)
         .await
         .expect("Failed to create points wallet with sub balance");
+
+        // BE-D11: the subscription_balance is no longer Stored on points_wallets;
+        // seed a points_credit_ledger row so the derived balance reflects the
+        // requested initial subscription_balance (mirrors
+        // create_points_wallet_with_balance in points_helpers.rs).
+        if subscription_balance > 0 {
+            sqlx::query(
+                "INSERT INTO points_credit_ledger (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id, granted_amount, used_amount, revoked_amount, status, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, 'subscription_credit', 'system_grant', $5, $6, 0, 0, 'active', NOW(), NOW())",
+            )
+            .bind(Uuid::now_v7())
+            .bind(user_id)
+            .bind(realm_id)
+            .bind(bucket_id)
+            .bind(format!("seed-sub-{}", user_id))
+            .bind(subscription_balance)
+            .execute(&ctx.app_state.pool)
+            .await
+            .expect("Failed to seed subscription ledger for create_points_wallet_with_sub_balance");
+        }
     }
 
     /// Create a ledger-backed subscription credit entry.
@@ -273,9 +293,19 @@ mod tests {
 
     #[allow(dead_code)]
     /// Get topup_balance for a user's wallet.
+    /// BE-D11: `points_wallets.topup_balance` was dropped; the available topup
+    /// balance is the derived SUM over `points_credit_ledger` topup/registration/
+    /// free_periodic rows (same predicate as production).
     async fn get_topup_balance(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) -> i64 {
         sqlx::query_scalar::<_, i64>(
-            "SELECT COALESCE(topup_balance, 0) FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
+            "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                        WHERE l.status = 'active' AND l.remaining_amount > 0
+                          AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                          AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                    ), 0)::BIGINT
+             FROM points_credit_ledger l
+             WHERE l.user_id = $1 AND l.realm_id = $2
+               AND l.credit_type IN ('topup_credit','registration_credit','free_periodic_credit')",
         )
         .bind(user_id)
         .bind(realm_id)

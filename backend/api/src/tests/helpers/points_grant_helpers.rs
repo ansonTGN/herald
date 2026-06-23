@@ -94,12 +94,25 @@ pub async fn grant_points_admin_via_api(
 
 /// Assert granted_balance for a user matches the expected value.
 pub async fn assert_granted_balance(pool: &sqlx::PgPool, user_id: Uuid, expected: i64) {
-    let row: Option<i64> =
-        sqlx::query_scalar("SELECT granted_balance FROM points_wallets WHERE user_id = $1")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .unwrap();
+    // BE-D11: `points_wallets.granted_balance` was dropped; derive available
+    // granted credit from `points_credit_ledger` (credit_type = 'granted_credit').
+    let row: Option<i64> = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                        WHERE l.status = 'active' AND l.remaining_amount > 0
+                          AND l.credit_type = 'granted_credit'
+                          AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                          AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                    ), 0)::BIGINT
+             FROM points_wallets w
+             LEFT JOIN points_credit_ledger l
+               ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+             WHERE w.user_id = $1
+             GROUP BY w.id",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap();
 
     let actual = row.unwrap_or(0);
     assert_eq!(
@@ -110,13 +123,26 @@ pub async fn assert_granted_balance(pool: &sqlx::PgPool, user_id: Uuid, expected
 }
 
 /// Assert total_balance for a user matches the expected value.
+///
+/// BE-D11: `points_wallets.total_balance` was dropped; derive the total
+/// available balance from `points_credit_ledger`.
 pub async fn assert_total_balance(pool: &sqlx::PgPool, user_id: Uuid, expected: i64) {
-    let row: Option<i64> =
-        sqlx::query_scalar("SELECT total_balance FROM points_wallets WHERE user_id = $1")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .unwrap();
+    let row: Option<i64> = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                        WHERE l.status = 'active' AND l.remaining_amount > 0
+                          AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                          AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                    ), 0)::BIGINT
+             FROM points_wallets w
+             LEFT JOIN points_credit_ledger l
+               ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+             WHERE w.user_id = $1
+             GROUP BY w.id",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap();
 
     let actual = row.unwrap_or(0);
     assert_eq!(

@@ -72,12 +72,22 @@ async fn test_scenario_concurrent_consumption_prevents_overspending(ctx: &mut Te
         statuses
     );
 
-    let (final_balance,): (i64,) =
-        sqlx::query_as("SELECT total_balance FROM points_wallets WHERE id = $1")
-            .bind(wallet_id)
-            .fetch_one(&ctx._app_state.pool)
-            .await
-            .expect("Failed to fetch account");
+    let (final_balance,): (i64,) = sqlx::query_as(
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT AS total_balance
+         FROM points_wallets w
+         LEFT JOIN points_credit_ledger l
+           ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+         WHERE w.id = $1
+         GROUP BY w.id",
+    )
+    .bind(wallet_id)
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .expect("Failed to fetch account");
     assert_eq!(
         final_balance, 20,
         "final balance should reflect a single successful consumption"
@@ -106,12 +116,25 @@ async fn test_scenario_concurrent_consumption_prevents_overspending(ctx: &mut Te
         "should persist allocations only for the successful request"
     );
 
-    let (negative_balance_count,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM points_wallets WHERE id = $1 AND total_balance < 0")
-            .bind(wallet_id)
-            .fetch_one(&ctx._app_state.pool)
-            .await
-            .expect("Failed to verify final balance");
+    let (negative_balance_count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM (
+            SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT AS total_balance
+            FROM points_wallets w
+            LEFT JOIN points_credit_ledger l
+              ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+            WHERE w.id = $1
+            GROUP BY w.id
+         ) balances
+         WHERE balances.total_balance < 0",
+    )
+    .bind(wallet_id)
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .expect("Failed to verify final balance");
     assert_eq!(
         negative_balance_count, 0,
         "account balance must never go negative"

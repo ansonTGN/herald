@@ -153,7 +153,7 @@ async fn test_scenario_unfreeze_restores_consume(ctx: &mut TestContext) {
 
     // Verify balance was deducted
     let remaining_balance: i64 =
-        sqlx::query_scalar("SELECT total_balance FROM points_wallets WHERE id = $1")
+        sqlx::query_scalar("SELECT COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT FROM points_wallets w LEFT JOIN points_credit_ledger l ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id WHERE w.id = $1 GROUP BY w.id")
             .bind(wallet_id)
             .fetch_one(&ctx._app_state.pool)
             .await

@@ -97,12 +97,23 @@ async fn test_scenario_consume_exact_single_ledger(ctx: &mut TestContext) {
     );
 
     // Verify account balance in database is 0
-    let (db_balance, db_consumed): (i64, i64) =
-        sqlx::query_as("SELECT total_balance, total_consumed FROM points_wallets WHERE id = $1")
-            .bind(wallet_id)
-            .fetch_one(&ctx._app_state.pool)
-            .await
-            .expect("Failed to fetch account");
+    let (db_balance, db_consumed): (i64, i64) = sqlx::query_as(
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT AS total_balance,
+                w.total_consumed
+         FROM points_wallets w
+         LEFT JOIN points_credit_ledger l
+           ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+         WHERE w.id = $1
+         GROUP BY w.id, w.total_consumed",
+    )
+    .bind(wallet_id)
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .expect("Failed to fetch account");
 
     assert_eq!(
         db_balance, 0,
@@ -320,12 +331,21 @@ async fn test_scenario_consume_after_balance_zero_rejected(ctx: &mut TestContext
     );
 
     // Verify balance is still 0
-    let (db_balance,): (i64,) =
-        sqlx::query_as("SELECT total_balance FROM points_wallets WHERE user_id = $1")
-            .bind(user_id)
-            .fetch_one(&ctx._app_state.pool)
-            .await
-            .unwrap();
+    let (db_balance,): (i64,) = sqlx::query_as(
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT AS total_balance
+         FROM points_wallets w
+         LEFT JOIN points_credit_ledger l
+           ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+         WHERE w.user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(&ctx._app_state.pool)
+    .await
+    .unwrap();
 
     assert_eq!(
         db_balance, 0,

@@ -111,7 +111,7 @@ async fn test_scenario_consume_zero_amount_rejected(ctx: &mut TestContext) {
 
     // Verify balance unchanged
     let (balance,): (i64,) =
-        sqlx::query_as("SELECT total_balance FROM points_wallets WHERE id = $1")
+        sqlx::query_as("SELECT COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT AS total_balance FROM points_wallets w LEFT JOIN points_credit_ledger l ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id WHERE w.id = $1 GROUP BY w.id")
             .bind(wallet_id)
             .fetch_one(&ctx._app_state.pool)
             .await
@@ -242,7 +242,7 @@ async fn test_scenario_consume_oversized_amount_insufficient_balance(ctx: &mut T
 
     // Verify balance unchanged
     let (balance,): (i64,) =
-        sqlx::query_as("SELECT total_balance FROM points_wallets WHERE id = $1")
+        sqlx::query_as("SELECT COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT AS total_balance FROM points_wallets w LEFT JOIN points_credit_ledger l ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id WHERE w.id = $1 GROUP BY w.id")
             .bind(wallet_id)
             .fetch_one(&ctx._app_state.pool)
             .await

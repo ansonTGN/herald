@@ -83,11 +83,10 @@ mod tests {
         .await
         .expect("Failed to create topup credit ledger entry");
 
-        // Update wallet balance
+        // Update wallet lifetime analytics (derived balance comes from ledger)
         sqlx::query(
             "UPDATE points_wallets
-             SET topup_balance = topup_balance + $1,
-                 total_topup_granted = total_topup_granted + $1,
+             SET total_topup_granted = total_topup_granted + $1,
                  updated_at = NOW()
              WHERE user_id = $2 AND realm_id = $3",
         )
@@ -110,9 +109,9 @@ mod tests {
         attempt_id: Uuid,
         consume_amount: i64,
     ) {
-        // Reduce wallet balance
+        // Update wallet lifetime analytics (derived balance comes from ledger)
         sqlx::query(
-            "UPDATE points_wallets SET topup_balance = topup_balance - $1, updated_at = NOW()
+            "UPDATE points_wallets SET total_consumed = total_consumed + $1, updated_at = NOW()
              WHERE user_id = $2 AND realm_id = $3",
         )
         .bind(consume_amount)
@@ -170,8 +169,7 @@ mod tests {
 
         sqlx::query(
             "UPDATE points_wallets
-             SET subscription_balance = subscription_balance + $1,
-                 total_subscription_granted = total_subscription_granted + $1,
+             SET total_subscription_granted = total_subscription_granted + $1,
                  updated_at = NOW()
              WHERE user_id = $2 AND realm_id = $3",
         )

@@ -121,7 +121,18 @@ async fn test_scenario_account_creation_on_subscribe(ctx: &mut TestContext) {
 
     // Verify account was created in database
     let account: (Uuid, String, i64, String) = sqlx::query_as(
-        "SELECT id, user_id::text, total_balance, status FROM points_wallets WHERE user_id = $1",
+        "SELECT w.id, w.user_id::text,
+                COALESCE(SUM(l.remaining_amount) FILTER (
+                    WHERE l.status = 'active' AND l.remaining_amount > 0
+                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
+                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
+                ), 0)::BIGINT AS total_balance,
+                w.status
+         FROM points_wallets w
+         LEFT JOIN points_credit_ledger l
+           ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
+         WHERE w.user_id = $1
+         GROUP BY w.id, w.user_id, w.status",
     )
     .bind(user_id)
     .fetch_one(&ctx._app_state.pool)

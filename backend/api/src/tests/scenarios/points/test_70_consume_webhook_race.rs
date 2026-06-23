@@ -35,30 +35,19 @@ async fn assert_account_balance_matches_ledger_remaining(
     realm_id: &str,
     credit_types: &[CreditType],
 ) {
-    // Credit Buckets model: a wallet row carries separate projection columns
-    // per credit type (topup / subscription / granted / registration /
-    // free_periodic). Sum the columns that correspond to the asserted credit
-    // types so the projection matches the ledger remaining sum. (Previously
-    // the helper read a single `topup_balance` column for all non-subscription
-    // types, which under-counted registration / free-periodic credits.)
-    let mut columns: Vec<&'static str> = Vec::new();
-    for ct in credit_types {
-        let col = match ct {
-            CreditType::SubscriptionCredit => "subscription_balance",
-            CreditType::TopupCredit => "topup_balance",
-            CreditType::GrantedCredit => "granted_balance",
-            CreditType::RegistrationCredit => "registration_balance",
-            CreditType::FreePeriodicCredit => "free_periodic_balance",
-        };
-        if !columns.contains(&col) {
-            columns.push(col);
-        }
-    }
-    let projection_expr = columns.to_vec().join(" + ");
+    // BE-D11 / point-time: `points_wallets` no longer carries Stored per-type
+    // balance columns; available balance is DERIVED from `points_credit_ledger`
+    // (same predicate as consumption). The wallet-derived available balance for
+    // the asserted credit types must match the raw ledger remaining sum.
+    let in_list = credit_types
+        .iter()
+        .map(ToString::to_string)
+        .map(|s| format!("'{}'", s.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let account_balance: i64 = sqlx::query_scalar(&format!(
-        "SELECT COALESCE(SUM({}), 0)::BIGINT FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
-        projection_expr
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND l.credit_type IN ({in_list}) AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT FROM points_wallets w LEFT JOIN points_credit_ledger l ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id WHERE w.user_id = $1 AND w.realm_id = $2"
     ))
     .bind(user_id)
     .bind(realm_id)
@@ -190,7 +179,7 @@ async fn test_scenario_consume_refund_race_balance_not_negative(ctx: &mut Schema
 
     // 1. Balance must never go negative
     let account = sqlx::query(
-        "SELECT total_balance, topup_balance, subscription_balance FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT AS total_balance, COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND l.credit_type IN ('topup_credit','registration_credit','free_periodic_credit') AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT AS topup_balance, COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND l.credit_type = 'subscription_credit' AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT AS subscription_balance FROM points_wallets w LEFT JOIN points_credit_ledger l ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id WHERE w.user_id = $1 AND w.realm_id = $2",
     )
     .bind(user_id)
     .bind(&realm_id)
@@ -350,7 +339,7 @@ async fn test_scenario_consume_cancel_race_balance_not_negative(ctx: &mut Schema
 
     // 1. Balance must never go negative
     let account = sqlx::query(
-        "SELECT total_balance, topup_balance, subscription_balance FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT AS total_balance, COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND l.credit_type IN ('topup_credit','registration_credit','free_periodic_credit') AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT AS topup_balance, COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND l.credit_type = 'subscription_credit' AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT AS subscription_balance FROM points_wallets w LEFT JOIN points_credit_ledger l ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id WHERE w.user_id = $1 AND w.realm_id = $2",
     )
     .bind(user_id)
     .bind(&realm_id)
@@ -530,7 +519,7 @@ async fn test_scenario_multi_consume_refund_race_no_overspending(ctx: &mut Schem
 
     // 2. Balance must never go negative
     let account = sqlx::query(
-        "SELECT total_balance, topup_balance, subscription_balance FROM points_wallets WHERE user_id = $1 AND realm_id = $2",
+        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT AS total_balance, COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND l.credit_type IN ('topup_credit','registration_credit','free_periodic_credit') AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT AS topup_balance, COALESCE(SUM(l.remaining_amount) FILTER (WHERE l.status = 'active' AND l.remaining_amount > 0 AND l.credit_type = 'subscription_credit' AND (l.effective_at IS NULL OR l.effective_at <= NOW()) AND (l.expires_at IS NULL OR l.expires_at > NOW())), 0)::BIGINT AS subscription_balance FROM points_wallets w LEFT JOIN points_credit_ledger l ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id WHERE w.user_id = $1 AND w.realm_id = $2",
     )
     .bind(user_id)
     .bind(&realm_id)
