@@ -17,7 +17,7 @@ import {
   DEFAULT_SCOPES,
   type ProviderType,
 } from '@/lib/oauth-provider-constants'
-import { getFieldErrorMessage } from '@/lib/error-utils'
+import { getFieldErrorMessage } from '@/lib/form-utils'
 import { getOAuthConfigSchema, type OAuthConfigFormData } from '@/lib/schemas/oauth-config'
 import { m } from '@/paraglide/messages'
 
