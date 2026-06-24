@@ -77,10 +77,16 @@ export interface CreemPaymentAttemptResult {
 /**
  * Execute a PostgreSQL query inside the demo Postgres container.
  * Standalone function using execSync -- no Page object needed.
+ *
+ * `--set ON_ERROR_STOP=on` makes psql exit non-zero on any SQL error so a
+ * failed INSERT/SELECT surfaces via execSync (which throws on non-zero exit)
+ * instead of being silently swallowed. Without this, a NOT NULL / FK violation
+ * would print to stderr but exit 0, returning an empty string and leaving the
+ * caller with a phantom id (the root cause of the Creem fallback test timeout).
  */
 function execPgSql(query: string): string {
   return execSync(
-    `docker exec -i ${POSTGRES_CONTAINER} psql -U postgres -d herald_demo -t -A`,
+    `docker exec -i ${POSTGRES_CONTAINER} psql -U postgres -d herald_demo -t -A --set ON_ERROR_STOP=on`,
     {
       input: query,
       encoding: 'utf-8',
@@ -197,6 +203,24 @@ export function seedExternalInvoice(
  * Create a payment_attempt row with payment_provider='creem' via direct DB insert.
  *
  * Used by DE-D03 for the Creem rejection test.
+ *
+ * The row must satisfy all NOT NULL columns to actually persist. Critically:
+ * - `bucket_id` is `uuid NOT NULL REFERENCES credit_buckets(id)`; omitting it
+ *   makes Postgres reject the INSERT. Because the previous `execPgSql` did not
+ *   set `ON_ERROR_STOP=on`, that failure was silent and the test proceeded with
+ *   a phantom id, causing the purchase-history row (and its Invoice button) to
+ *   never render. We resolve a real `bucket_id` for the realm the same way the
+ *   companion `seedPurchaseAttempt` does.
+ * - `target_type` must be `'entitlement_mapping'` (the only value allowed by
+ *   the current `chk_target_type` constraint, and the value the purchase-history
+ *   list filter requires) and `target_id` must reference a real
+ *   `provider_entitlement_mappings.id` so the list join populates product info.
+ * - `status='Succeeded'` is required for the row to appear in purchase history
+ *   and for the per-row Invoice button to render.
+ * - `payment_provider='creem'` is what the eligibility rule
+ *   (`determine_invoice_apply_route`) matches to return the disabled +
+ *   "Merchant of Record" verdict.
+ *
  * Returns the created payment_attempt ID.
  */
 export function seedCreemPaymentAttempt(
@@ -210,16 +234,49 @@ export function seedCreemPaymentAttempt(
     throw new Error(`User not found: ${options.userEmail} in realm ${realmId}`)
   }
 
+  // Resolve a credit bucket for the realm (bucket_id is NOT NULL FK).
+  const bucketId = execPgSql(
+    `SELECT id FROM credit_buckets WHERE realm_id = '${realmId}' ORDER BY created_at LIMIT 1`,
+  )
+  if (!bucketId) {
+    throw new Error(`No credit_buckets row found for realm ${realmId}`)
+  }
+
+  // Resolve an enabled entitlement mapping to use as target_id. Prefer a Creem
+  // one_time mapping; fall back to any enabled one_time mapping in the realm.
+  // The purchase-history query LEFT JOINs provider_entitlement_mappings on
+  // target_id, so a real row keeps the product-info columns populated.
+  let mappingId = execPgSql(
+    `SELECT id FROM provider_entitlement_mappings WHERE realm_id = '${realmId}' AND billing_type = 'one_time' AND enabled = true AND payment_provider = 'creem' ORDER BY created_at LIMIT 1`,
+  )
+  if (!mappingId) {
+    mappingId = execPgSql(
+      `SELECT id FROM provider_entitlement_mappings WHERE realm_id = '${realmId}' AND billing_type = 'one_time' AND enabled = true ORDER BY created_at LIMIT 1`,
+    )
+  }
+  if (!mappingId) {
+    throw new Error(
+      `No enabled one_time provider_entitlement_mappings row found for realm ${realmId}`,
+    )
+  }
+
   const id = randomUUID()
-  const targetType = options.targetType ?? 'subscription_entitlement'
-  const targetId = options.targetId ?? randomUUID()
+  // target_type is constrained to 'entitlement_mapping' (single-value CHECK);
+  // the purchase-history filter also requires this exact value.
+  const targetType = 'entitlement_mapping'
   const amount = options.amount ?? 1000
   const currency = options.currency ?? 'USD'
   const status = options.status ?? 'Succeeded'
+  const providerReference = `creem_demo_${id.slice(-3)}`
+  // provider_status mirrors what a real Creem webhook would set for a paid
+  // one-time purchase; completed_at marks it finished (required for the row to
+  // read as a completed purchase).
+  const providerStatus = 'paid'
 
   const sql =
-    `INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, expires_at, completed_at, created_at, updated_at) ` +
-    `VALUES ('${id}', '${realmId}', '${userId}', 'creem', '${targetType}', '${targetId}', ${amount}, '${currency}', '${status}', NOW() + INTERVAL '1 hour', NOW(), NOW(), NOW())`
+    `INSERT INTO payment_attempts ` +
+    `(id, realm_id, user_id, payment_provider, target_type, target_id, bucket_id, amount, currency, status, provider_reference, provider_status, metadata, expires_at, completed_at, created_at, updated_at) ` +
+    `VALUES ('${id}', '${realmId}', '${userId}'::uuid, 'creem', '${targetType}', '${mappingId}'::uuid, '${bucketId}'::uuid, ${amount}, '${currency}', '${status}', '${providerReference}', '${providerStatus}', NULL, NOW() + INTERVAL '1 hour', NOW(), NOW(), NOW())`
   execPgSql(sql)
 
   return {

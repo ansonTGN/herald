@@ -427,20 +427,23 @@ test.describe('[Realm Admin] RBAC Comprehensive Demo Tests', () => {
         // 重新打开权限对话框
         await rolesPage.clickPermissionsButton('realm-admin')
 
-        // 验证内置权限被禁用且无法修改
+        // US-BP-001 Scenario 7: 内置角色已分配的内置权限受保护（复选框禁用，不可移除）
         const usersManageDisabled = await rolesPage.isPermissionCheckboxDisabled('users.manage')
         expect(usersManageDisabled).toBeTruthy()
         console.log('✓ Built-in permission "users.manage" is disabled (protected)')
 
-        // 注意：实际业务逻辑中，内置角色的所有权限（包括自定义权限）都被禁用
-        // 这是预期行为 - 内置角色是系统预定义的，不允许修改任何权限配置
+        // US-BP-001 Scenario 9: 内置角色上的自定义权限仍可自由增删（复选框启用）
         const customPermissionName = `reports.view_${testStartTime}`
         const isCustomPermissionDisabled = await rolesPage.isPermissionCheckboxDisabled(customPermissionName)
-        expect(isCustomPermissionDisabled).toBeTruthy()
-        console.log('✓ Custom permission also disabled (built-in role protection)')
+        expect(isCustomPermissionDisabled).toBeFalsy() // 启用 — 可修改
+        console.log('✓ Custom permission checkbox is enabled (editable on built-in role)')
+
+        // 刚分配的自定义权限应处于勾选状态
+        expect(await rolesPage.isPermissionChecked(customPermissionName)).toBeTruthy()
+        console.log('✓ Custom permission is checked (just assigned)')
 
         await rolesPage.cancelPermissions()
-        console.log('✓ Built-in role protection verified - all permissions are protected')
+        console.log('✓ Built-in role protection verified - built-in perms protected, custom perms editable')
       })
     })
   })

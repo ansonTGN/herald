@@ -13,21 +13,109 @@
  *   frontend/src/components/users/reset-password-result-dialog.tsx (result dialog)
  */
 
+import { Page } from '@playwright/test'
 import { test, expect, cleanupTestData } from '../fixtures/demo-page.fixtures'
+
+const TEST_REALM = 'admin'
+
+/**
+ * Backend base URL for the admin user API (search/delete).
+ *
+ * Mirrors the resolution used in billing-admin/points-grant-sdk-demo.e2e.ts
+ * and helpers/api-validator.ts. The page's request context inherits the
+ * logged-in session cookies, so the same admin identity authenticates these
+ * calls — no separate token extraction needed.
+ */
+function backendBaseUrl(): string {
+  return (
+    process.env.API_BASE_URL ||
+    process.env.BASE_URL?.replace(/:\d+$/, ':8080') ||
+    'http://localhost:8080'
+  )
+}
+
+/**
+ * Resolve a user's id by email via the admin user list API.
+ *
+ * GET /api/users/{realmId}?search={email} → PageResponse<{ id, email, ... }>
+ *
+ * @returns The matching user id, or '' when the user does not exist.
+ */
+async function findUserIdByEmail(page: Page, email: string): Promise<string> {
+  const url = `${backendBaseUrl()}/api/users/${TEST_REALM}?search=${encodeURIComponent(email)}`
+  const response = await page.request.get(url)
+  if (!response.ok()) {
+    // Non-200 here is unexpected; surface it rather than silently returning ''.
+    const body = await response.text().catch(() => '<unreadable>')
+    throw new Error(
+      `findUserIdByEmail: list users failed (HTTP ${response.status()}): ${body}`
+    )
+  }
+  const body = await response.json()
+  const items = (body?.items ?? []) as Array<{ id: string; email: string }>
+  const match = items.find((u) => u.email === email)
+  return match?.id ?? ''
+}
+
+/**
+ * Idempotent setup: ensure no user with the given email exists before the
+ * test creates one. A previous run may have left a user behind (the
+ * create-user API returns 400 "Email already exists" on collision), which
+ * historically turned into a silent pass because the page object did not
+ * read the create response. Deleting up-front guarantees each run starts
+ * from a clean state.
+ *
+ * Uses the admin user delete API:
+ *   DELETE /api/users/{realmId}/{userId}
+ *
+ * Failures are non-fatal (logged) — the create step will surface any
+ * remaining conflict loudly via submitUserForm's response check.
+ */
+async function deleteExistingUser(page: Page, email: string): Promise<void> {
+  try {
+    const userId = await findUserIdByEmail(page, email)
+    if (!userId) {
+      return
+    }
+    const url = `${backendBaseUrl()}/api/users/${TEST_REALM}/${userId}`
+    const response = await page.request.delete(url)
+    if (response.status() >= 400 && response.status() !== 404) {
+      const body = await response.text().catch(() => '<unreadable>')
+      console.warn(
+        `[reset-pw setup] delete existing user ${email} (${userId}) ` +
+          `returned HTTP ${response.status()}: ${body}`
+      )
+    } else {
+      console.log(`[reset-pw setup] deleted stale user ${email} (${userId})`)
+    }
+  } catch (error) {
+    console.warn(`[reset-pw setup] deleteExistingUser error (non-fatal):`, error)
+  }
+}
 
 test.describe('[ResetPassword] Admin resets user password', () => {
   const testUserEmail = `reset-pw-test@demo.com`
 
-  test.afterEach(async ({ usersPage, testStartTime }) => {
-    await cleanupTestData(usersPage.page, 'admin', {
+  test.afterEach(async ({ usersPage, page, testStartTime }) => {
+    // Prefer targeted API cleanup by id (the generic timestamp-based
+    // cleanupTestData only clears subscription plans, not users, so users
+    // survived across runs). Delete the specific test user we may have
+    // created, then run the shared cleanup for any other test data.
+    await deleteExistingUser(page, testUserEmail).catch((error) => {
+      console.warn('[reset-pw afterEach] cleanup error (non-fatal):', error)
+    })
+
+    await cleanupTestData(usersPage.page, TEST_REALM, {
       timestamp: testStartTime,
       keepUsers: [],
     })
   })
 
-  test('should reset password and show new password in result dialog', async ({ usersPage }) => {
+  test('should reset password and show new password in result dialog', async ({ usersPage, page }) => {
     // Given: a user exists in the admin realm
     await test.step('Given a test user exists', async () => {
+      // Idempotent: clear any stale user from a previous run before creating.
+      await deleteExistingUser(page, testUserEmail)
       await usersPage.createUser({
         email: testUserEmail,
         password: 'TestPass123!',
@@ -77,9 +165,11 @@ test.describe('[ResetPassword] Admin resets user password', () => {
     })
   })
 
-  test('should cancel reset password without changing password', async ({ usersPage }) => {
+  test('should cancel reset password without changing password', async ({ usersPage, page }) => {
     // Given: a user exists
     await test.step('Given a test user exists', async () => {
+      // Idempotent: clear any stale user from a previous run before creating.
+      await deleteExistingUser(page, testUserEmail)
       await usersPage.createUser({
         email: testUserEmail,
         password: 'TestPass123!',

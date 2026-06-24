@@ -263,7 +263,7 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       await page.getByRole("button", { name: "Complete Purchase" }).click();
 
       // Verify countdown timer is displayed
-      await expect(page.getByText("Time Remaining")).toBeVisible();
+      await expect(page.getByTestId("payment-countdown-timer")).toBeVisible();
 
       console.log("[P1] ✓ Payment countdown timer verified");
       console.log(
@@ -272,40 +272,40 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
     });
 
     await test.step("[P1] User: View Purchase History", async () => {
-      await page.goto(`/${REALM_ID}/user/points`);
-      await page.getByTestId("points-tab-purchase-history").click();
+      // Purchase History is a separate route (not a tab on /user/points).
+      // The points page is intentionally non-tabbed (balance + ledger only).
+      await page.goto(`/${REALM_ID}/user/subscription-history`);
 
-      // Verify purchase history page is displayed
+      // Verify purchase history page container is displayed
       await expect(
-        page.getByText("Points Package Purchase History"),
+        page.locator(SELECTORS.purchaseHistory.page),
       ).toBeVisible();
+      await expect(page.getByText("Purchase History")).toBeVisible();
 
-      // Note: In demo environment, purchases are left in "Payment Pending" state
-      // (not completed via webhook simulation), so we expect to see the empty state
-      await expect(page.getByText("No purchase history")).toBeVisible();
-      await expect(
-        page.getByText("You haven't purchased any points packages yet"),
-      ).toBeVisible();
+      // Demo seed contains completed purchases — verify the list is populated.
+      await expect(page.locator(SELECTORS.purchaseHistory.list)).toBeVisible();
+      await expect(page.getByText("Succeeded").first()).toBeVisible();
 
       console.log(
-        "[P1] ✓ Purchase history page displayed (empty state as expected)",
-      );
-      console.log(
-        "[P1] ℹ️  Note: Completed purchases would appear here after webhook simulation",
+        "[P1] ✓ Purchase history page displayed with seeded completed purchases",
       );
     });
 
     await test.step("[P1] User: Filter Purchase History (UI Availability)", async () => {
-      await page.goto(`/${REALM_ID}/user/points`);
-      await page.getByTestId("points-tab-purchase-history").click();
+      // Same route correction as View Purchase History step.
+      await page.goto(`/${REALM_ID}/user/subscription-history`);
 
-      // Verify filter UI elements exist (even if empty state is shown)
+      // Verify the purchase history page is reachable.
+      // NOTE: the current frontend component (purchase-history-list.tsx) does not
+      // render any filter controls, so we only assert the page container and title
+      // here. Do not assert a filter testid that does not exist in the frontend.
       await expect(
-        page.getByText("Points Package Purchase History"),
+        page.locator(SELECTORS.purchaseHistory.page),
       ).toBeVisible();
+      await expect(page.getByText("Purchase History")).toBeVisible();
 
       console.log(
-        "[P1] ✓ Purchase history filter UI verified (empty state as expected)",
+        "[P1] ✓ Purchase history page reachable (filter UI not yet implemented in frontend)",
       );
       console.log(
         "[P1] ℹ️  Note: Filter functionality requires completed purchases after webhook simulation",

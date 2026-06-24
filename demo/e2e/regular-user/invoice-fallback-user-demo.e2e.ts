@@ -70,10 +70,17 @@ function seedStripeInvoiceForUser(options: {
   const realmId = options.realmId ?? REALM_ID
   const accountId = lookupAccountId(options.userEmail, realmId)
 
+  // Honor an explicit `undefined` externalPdfUrl so it flows through as null
+  // to seedExternalInvoice (which omits the column when falsy). Only apply the
+  // default when the key is genuinely absent, preserving callers that rely on
+  // the default. (A bare `??` would treat explicit undefined as "absent".)
+  const defaultPdfUrl = 'https://pay.stripe.com/invoice/acct_test/pdf123'
+  const externalPdfUrl = 'externalPdfUrl' in options ? options.externalPdfUrl : defaultPdfUrl
+
   return seedExternalInvoice(realmId, {
     provider: 'stripe',
     accountId,
-    externalPdfUrl: options.externalPdfUrl ?? 'https://pay.stripe.com/invoice/acct_test/pdf123',
+    externalPdfUrl,
     externalHostedUrl: options.externalHostedUrl ?? 'https://pay.stripe.com/invoice/acct_test',
     status: options.status ?? 'issued',
   })
@@ -270,10 +277,10 @@ test.describe('[Regular User] Invoice Fallback User Demo Tests', () => {
       })
       attemptIdsToCleanup.push(creemAttempt.id)
 
-      await test.step('Given: user is logged in and on the Points page', async () => {
+      await test.step('Given: user is logged in and on the purchase history page', async () => {
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
-        await page.goto(`/${REALM_ID}/user/points`)
-        await page.getByTestId('points-tab-purchase-history').click()
+        await page.goto(`/${REALM_ID}/user/subscription-history`)
+        await expect(page.getByTestId('purchase-records-page')).toBeVisible({ timeout: 10000 })
       })
 
       await test.step('Then: the Creem row Invoice button is disabled with the MoR reason', async () => {
@@ -340,23 +347,23 @@ test.describe('[Regular User] Invoice Fallback User Demo Tests', () => {
         await expect(page.getByTestId('invoice-user-page')).toBeVisible({ timeout: 10000 })
       })
 
-      await test.step('Then: the row shows a view-provider link (list summary omits externalPdfUrl)', async () => {
-        // The list API summary does not include external_pdf_url, so the
-        // "Download PDF" button is NOT rendered in the list.  Instead, the
-        // externalHostedUrl triggers the "View in Provider" button.
-        const viewProviderButton = page.getByTestId(`invoice-view-provider-${invoice.id}`)
-        await expect(viewProviderButton).toBeVisible({ timeout: 10000 })
+      await test.step('Then: the row shows a PDF download link (externalPdfUrl takes precedence)', async () => {
+        // The list API returns external_pdf_url. When BOTH externalPdfUrl and
+        // externalHostedUrl are present, the "Download PDF" button takes
+        // precedence over the "View in Provider" button.
+        const downloadPdfButton = page.getByTestId(`invoice-download-pdf-${invoice.id}`)
+        await expect(downloadPdfButton).toBeVisible({ timeout: 10000 })
 
-        // Verify the href points to the hosted URL (the <a> is the direct target of the testid via asChild)
-        const linkHref = await viewProviderButton.getAttribute('href')
-        expect(linkHref).toBe(hostedUrl)
+        // Verify the href points to the PDF URL (the <a> is the direct target of the testid via asChild)
+        const linkHref = await downloadPdfButton.getAttribute('href')
+        expect(linkHref).toBe(pdfUrl)
       })
 
       // Cleanup
       cleanupExternalInvoices(REALM_ID, invoiceIdsToCleanup)
 
       await demoLogger.testCode.log(
-        'Verified view-provider link for external invoice with externalPdfUrl (PDF only available in detail dialog)'
+        'Verified PDF download link for external invoice with externalPdfUrl (PDF takes precedence over hosted URL)'
       )
     })
 

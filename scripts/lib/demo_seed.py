@@ -222,7 +222,7 @@ def _ensure_registration_enabled(logger: "Logger | None") -> None:
     _sql_exec(
         f"""
         INSERT INTO realm_config (realm_id, config_type, config_key, config_value, is_secret, enabled, metadata)
-        VALUES ('{POINTS_REALM_ID}', 'registration', 'allowed', 'true', false, true, '{{}}')
+        VALUES ('{POINTS_REALM_ID}', 'registration', 'enabled', 'true', false, true, '{{}}')
         ON CONFLICT (realm_id, config_type, config_key)
         DO UPDATE SET enabled = true, config_value = 'true';
         """

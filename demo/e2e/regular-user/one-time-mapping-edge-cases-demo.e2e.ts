@@ -172,15 +172,9 @@ test.describe('[Regular User] US-PU-006 Edge Cases + US-PU-007 Purchase History'
     page,
     demoLogger,
   }) => {
-    await test.step('Navigate to user points page', async () => {
-      await page.goto(`/${REALM_ID}/user/points`)
-      await expect(page.locator(SELECTORS.pointsUser.page)).toBeVisible()
-    })
-
-    await test.step('Switch to purchase history tab', async () => {
-      const purchaseHistoryTab = page.getByTestId('points-tab-purchase-history')
-      await expect(purchaseHistoryTab).toBeVisible()
-      await purchaseHistoryTab.click()
+    await test.step('Navigate to purchase records page', async () => {
+      await page.goto(`/${REALM_ID}/user/subscription-history`)
+      await expect(page.locator(SELECTORS.purchaseHistory.page)).toBeVisible()
     })
 
     await test.step('Wait for purchase history to load', async () => {
@@ -247,15 +241,9 @@ test.describe('[Regular User] US-PU-006 Edge Cases + US-PU-007 Purchase History'
     page,
     demoLogger,
   }) => {
-    await test.step('Navigate to user points page', async () => {
-      await page.goto(`/${REALM_ID}/user/points`)
-      await expect(page.locator(SELECTORS.pointsUser.page)).toBeVisible()
-    })
-
-    await test.step('Switch to purchase history tab', async () => {
-      const purchaseHistoryTab = page.getByTestId('points-tab-purchase-history')
-      await expect(purchaseHistoryTab).toBeVisible()
-      await purchaseHistoryTab.click()
+    await test.step('Navigate to purchase records page', async () => {
+      await page.goto(`/${REALM_ID}/user/subscription-history`)
+      await expect(page.locator(SELECTORS.purchaseHistory.page)).toBeVisible()
     })
 
     await test.step('Wait for purchase history content', async () => {
@@ -314,7 +302,7 @@ test.describe('[Regular User] US-PU-006 Edge Cases + US-PU-007 Purchase History'
       if (!isListVisible) return
 
       // Verify dialog is visible
-      const dialog = page.getByTestId('purchase-details-dialog')
+      const dialog = page.getByRole('dialog')
       await expect(dialog).toBeVisible()
 
       // Verify package info section
@@ -337,7 +325,7 @@ test.describe('[Regular User] US-PU-006 Edge Cases + US-PU-007 Purchase History'
       // Close the dialog via Escape key (most reliable for Dialog components)
       await page.keyboard.press('Escape')
 
-      const dialog = page.getByTestId('purchase-details-dialog')
+      const dialog = page.getByRole('dialog')
       await expect(dialog).not.toBeVisible()
     })
   })

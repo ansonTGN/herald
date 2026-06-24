@@ -42,8 +42,8 @@ function futureDueDate(): string {
 }
 
 /**
- * Open the apply-invoice form via the per-row Invoice button on the Points
- * page > Purchase History tab.
+ * Open the apply-invoice form via the per-row Invoice button on the Purchase
+ * Records page (`/user/subscription-history`).
  *
  * The standalone "Apply Invoice" page-level button on /user/invoices was
  * removed; the apply form is now reached ONLY via per-row Invoice buttons,
@@ -57,8 +57,7 @@ async function openApplyInvoiceForm(
   realmId: string,
   paymentAttemptId: string
 ): Promise<void> {
-  await page.goto(`/${realmId}/user/points`)
-  await page.getByTestId('points-tab-purchase-history').click()
+  await page.goto(`/${realmId}/user/subscription-history`)
 
   const rowButton = page.getByTestId(`purchase-history-invoice-button-${paymentAttemptId}`)
   await expect(rowButton).toBeVisible({ timeout: 10000 })
@@ -81,11 +80,16 @@ async function submitApplyInvoiceForm(page: Page): Promise<void> {
 }
 
 function execPgSql(query: string): string {
-  return execSync(`docker exec -i ${POSTGRES_CONTAINER} psql -U postgres -d herald_demo -t -A`, {
-    input: query,
-    encoding: 'utf-8',
-    timeout: 10000,
-  }).trim()
+  // --set ON_ERROR_STOP=on makes psql exit non-zero on any SQL error so a
+  // failed INSERT/SELECT surfaces via execSync instead of silently exiting 0.
+  return execSync(
+    `docker exec -i ${POSTGRES_CONTAINER} psql -U postgres -d herald_demo -t -A --set ON_ERROR_STOP=on`,
+    {
+      input: query,
+      encoding: 'utf-8',
+      timeout: 10000,
+    }
+  ).trim()
 }
 
 function seedPaymentAttempt(realmId: string, userEmail: string): string {
@@ -112,23 +116,38 @@ function seedPurchaseAttempt(
   )
   if (!userId) throw new Error(`User not found: ${userEmail} in realm ${realmId}`)
 
-  // Find or create a one-time entitlement mapping
+  // Resolve a credit bucket for the realm (NOT NULL FK on both tables).
+  const bucketId = execPgSql(
+    `SELECT id FROM credit_buckets WHERE realm_id = '${realmId}' ORDER BY created_at LIMIT 1`
+  )
+  if (!bucketId) {
+    throw new Error(`No credit_buckets row found for realm ${realmId}`)
+  }
+
+  // Reuse an existing enabled one_time mapping if present; otherwise create one
+  // with the CURRENT schema only (no removed columns like credit_amount/is_active).
   let mappingId = execPgSql(
-    `SELECT id FROM provider_entitlement_mappings WHERE realm_id = '${realmId}' AND billing_type = 'one_time' LIMIT 1`
+    `SELECT id FROM provider_entitlement_mappings WHERE realm_id = '${realmId}' AND billing_type = 'one_time' AND enabled = true ORDER BY created_at LIMIT 1`
   )
   if (!mappingId) {
     mappingId = randomUUID()
+    const externalProductId = `demo-credit-pack-${marker}`
     execPgSql(
-      `INSERT INTO provider_entitlement_mappings (id, realm_id, entitlement_key, billing_type, credit_amount, credit_type, price_amount, price_currency, payment_provider, is_active, created_at, updated_at) ` +
-        `VALUES ('${mappingId}', '${realmId}', 'demo-credit-pack-${marker}', 'one_time', 100, 'topup_credit', 1000, 'CNY', 'stripe', true, NOW(), NOW())`
+      `INSERT INTO provider_entitlement_mappings ` +
+        `(id, realm_id, payment_provider, external_product_id, bucket_id, entitlement_key, billing_type, points_per_period, validity_days, enabled, grant_on_subscribe, created_at, updated_at) ` +
+        `VALUES ('${mappingId}', '${realmId}', 'stripe', '${externalProductId}', '${bucketId}', 'demo-credit-pack-${marker}', 'one_time', 100, 365, true, false, NOW(), NOW())`
     )
   }
 
-  // Create a succeeded payment attempt for the entitlement mapping
+  // Insert a Succeeded entitlement_mapping payment attempt using the full
+  // current column set (mirrors scripts/lib/demo_seed.py).
+  // list_purchase_history filters status='Succeeded' AND target_type='entitlement_mapping'.
   const paymentAttemptId = randomUUID()
+  const providerReference = `cs_demo_${paymentAttemptId.slice(-3)}`
   execPgSql(
-    `INSERT INTO payment_attempts (id, realm_id, user_id, payment_provider, target_type, target_id, amount, currency, status, completed_at, created_at, updated_at) ` +
-      `VALUES ('${paymentAttemptId}', '${realmId}', '${userId}', 'stripe', 'entitlement_mapping', '${mappingId}', 1000, 'CNY', 'Succeeded', NOW(), NOW(), NOW())`
+    `INSERT INTO payment_attempts ` +
+      `(id, realm_id, user_id, payment_provider, target_type, target_id, bucket_id, amount, currency, status, provider_reference, provider_status, metadata, expires_at, completed_at, created_at, updated_at) ` +
+      `VALUES ('${paymentAttemptId}', '${realmId}', '${userId}'::uuid, 'stripe', 'entitlement_mapping', '${mappingId}'::uuid, '${bucketId}'::uuid, 1000, 'usd', 'Succeeded', '${providerReference}', 'paid', NULL, NOW() + INTERVAL '1 hour', NOW(), NOW(), NOW())`
   )
 
   return { paymentAttemptId }
@@ -282,8 +301,7 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
       await test.step('When: user opens purchase history', async () => {
         await page.context().clearCookies()
         await loginPage.loginAsUser(user.email, user.password, REALM_ID)
-        await page.goto(`/${REALM_ID}/user/points`)
-        await page.getByTestId('points-tab-purchase-history').click()
+        await page.goto(`/${REALM_ID}/user/subscription-history`)
         await expect(page.getByTestId(`purchase-history-item-${paymentAttemptId}`)).toBeVisible({
           timeout: 10000,
         })
@@ -746,14 +764,15 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
         // it no longer renders on /user/invoices.
         await expect(page.getByTestId('apply-invoice-button')).toHaveCount(0)
 
-        // Verify table headers: #, Invoice Number, Amount, Status, Due Date, Actions
+        // Verify table headers: #, Invoice Number, Provider, Total, Status, Due Date, Actions
         const tableHeaders = page.getByTestId('invoice-user-table').locator('th')
         await expect(tableHeaders.nth(0)).toHaveText('#')
         await expect(tableHeaders.nth(1)).toHaveText('Invoice Number')
-        await expect(tableHeaders.nth(2)).toHaveText('Amount')
-        await expect(tableHeaders.nth(3)).toHaveText('Status')
-        await expect(tableHeaders.nth(4)).toHaveText('Due Date')
-        await expect(tableHeaders.nth(5)).toHaveText('Actions')
+        await expect(tableHeaders.nth(2)).toHaveText('Provider')
+        await expect(tableHeaders.nth(3)).toHaveText('Total')
+        await expect(tableHeaders.nth(4)).toHaveText('Status')
+        await expect(tableHeaders.nth(5)).toHaveText('Due Date')
+        await expect(tableHeaders.nth(6)).toHaveText('Actions')
 
         // Verify at least one invoice row exists
         const tableRows = page.getByTestId('invoice-user-table').locator('tbody tr')
@@ -761,8 +780,9 @@ test.describe('[Regular User] Invoice User Application Demo Tests', () => {
 
         // Verify the row contains expected data patterns
         const firstRow = tableRows.first()
-        // Status badge should be visible (Draft for new application)
-        await expect(firstRow.locator('td').nth(3)).toBeVisible()
+        // Status badge should be visible (Draft for new application).
+        // Column order: #, Invoice Number, Provider, Total, Status, Due Date, Actions -> Status is td index 4.
+        await expect(firstRow.locator('td').nth(4)).toBeVisible()
       })
 
       await test.step('And: user cannot see admin-only elements', async () => {

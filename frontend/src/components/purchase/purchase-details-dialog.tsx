@@ -26,8 +26,8 @@ export function PurchaseDetailsDialog({
   if (!open) return null
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} data-testid="purchase-details-dialog">
-      <DialogContent className="max-w-2xl">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent data-testid="purchase-details-dialog" className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{m['points.purchase_details_title']()}</DialogTitle>
           <DialogDescription>{m['points.purchase_details_description']()}</DialogDescription>

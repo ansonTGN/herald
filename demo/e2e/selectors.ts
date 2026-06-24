@@ -775,11 +775,11 @@ export const SELECTORS = {
 
   /**
    * Mapping Card Selectors (One-Time Purchase)
-   * Displayed on purchase-points page within the mapping-cards grid.
+   * Displayed on purchase-points page within the mapping-groups grid.
    * Each card uses data-testid="mapping-card-{entitlementKey}".
    */
   mappingCard: {
-    grid: '[data-testid="mapping-cards"]',
+    grid: '[data-testid="mapping-groups"]',
     card: (entitlementKey: string) => `[data-testid="mapping-card-${entitlementKey}"]`,
     firstCard: () => '[data-testid^="mapping-card-"]',
     noProviderHint: '[data-testid="no-provider-hint"]',
@@ -970,10 +970,10 @@ export const SELECTORS = {
 
   /**
    * Unified Purchase - Purchase History (User)
-   * Route: /{realmId}/user/purchase-history
+   * Route: /{realmId}/user/subscription-history
    */
   purchaseHistory: {
-    page: '[data-testid="purchase-history-page"]',
+    page: '[data-testid="purchase-records-page"]',
     list: '[data-testid="purchase-history-list"]',
     loading: '[data-testid="purchase-history-loading"]',
     empty: '[data-testid="purchase-history-empty"]',

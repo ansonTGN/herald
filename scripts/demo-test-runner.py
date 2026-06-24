@@ -19,7 +19,7 @@ from pathlib import Path
 from lib.cli import require_executable
 from lib.logger import Logger, LogLevel
 from lib.paths import REPO_ROOT
-from lib import demo_env
+from lib import demo_env, ngrok
 
 
 def escape_regex_pattern(pattern: str) -> str:
@@ -135,6 +135,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-auto-env",
         action="store_true",
         help="Do not auto-manage environment (assume it's already running)",
+    )
+    parser.add_argument(
+        "--no-ngrok",
+        action="store_true",
+        help="Do not start the ngrok public tunnel (needed for live webhook tests)",
     )
     return parser
 
@@ -416,6 +421,12 @@ def main() -> int:
         ):
             print("ERROR: Failed to start/verify environment")
             return 1
+
+        # 启动 ngrok 公网隧道，供 live 支付测试接收第三方 webhook 回调
+        # （与 demo-start 一致；隧道指向前端 :3000，由 vite /api 代理转发到后端 :8080）
+        if not args.no_ngrok:
+            ngrok_logger = Logger(LogLevel.NORMAL)
+            ngrok.start(logger=ngrok_logger)
 
     # 运行测试
     exit_code = run_tests(

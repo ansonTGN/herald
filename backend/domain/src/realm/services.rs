@@ -540,7 +540,11 @@ where
         )?;
 
         let mut filters = filters;
-        filters.accessible_realm_id = Some(identity.realm_id());
+        // Admin realm lists all realms; other realms are scoped to their own.
+        // Mirrors the non-paginated `list_realms` access semantics.
+        if identity.realm_id() != "admin" {
+            filters.accessible_realm_id = Some(identity.realm_id());
+        }
 
         self.realm_repository.list_realms_paginated(filters).await
     }

@@ -207,28 +207,25 @@ async function isCardBrandDetected(page: Page): Promise<boolean> {
 }
 
 /**
- * Locate the Frame that actually hosts the Creem card-number input.
+ * Locate the Frame that hosts the Creem card-number input.
  *
- * Creem renders the payment fields inside a same-origin iframe (snapshot
- * evidence: iframe `e38`). `page.keyboard.type()` dispatches at the top-frame
- * level and never reaches the iframe, and `locator.fill()` on a top-frame
- * locator likewise doesn't reach the iframe input. We must find the Frame that
- * contains a "Card number" textbox and operate on a locator scoped to THAT frame.
- *
- * Probing strategy: ask each non-main frame for its "Card number" textbox via
- * the frame's own locator API. (Frame exposes no `accessibility.snapshot()` —
- * that is a Page-only API.) Creem exposes a labelled a11y node ("Card number")
- * on the iframe, so getByRole('textbox', { name: /card number/i }) resolves it.
+ * Creem renders the payment fields inside a Stripe Elements iframe whose URL
+ * contains the stable fragment "elements-inner-accessory-target". `page.keyboard.type()`
+ * dispatches at the top-frame level and never reaches the iframe, and
+ * `locator.fill()` on a top-frame locator likewise doesn't reach the iframe
+ * input, so callers must operate on a locator scoped to THIS frame. Stripe
+ * rotates the per-session hash suffix on the iframe name/URL, so we match by
+ * the stable URL fragment only.
  */
 async function findCardNumberFrame(page: Page): Promise<Frame | null> {
-  const frames = page.frames()
-  for (const frame of frames) {
+  // The Creem card form is rendered inside a Stripe Elements iframe whose URL
+  // contains the stable fragment "elements-inner-accessory-target". Stripe
+  // rotates the per-session hash suffix, so name/url-equality probing is
+  // fragile; locate the frame by that URL fragment instead.
+  for (const frame of page.frames()) {
     if (frame === page.mainFrame()) continue
-    try {
-      const count = await frame.getByRole('textbox', { name: /card number/i }).count()
-      if (count > 0) return frame
-    } catch {
-      // Frame may be detached or cross-origin; skip.
+    if (frame.url().includes('elements-inner-accessory-target')) {
+      return frame
     }
   }
   return null
@@ -240,14 +237,14 @@ async function findCardNumberFrame(page: Page): Promise<Frame | null> {
  * 16-digit placeholder and would otherwise fool the test into proceeding with
  * an empty card — see isCardBrandDetected).
  *
- * The card input lives inside an iframe; `locator.fill()` and top-frame
- * `page.keyboard.type()` do NOT reach it (confirmed: at submit time the card
- * field was empty with placeholder + "incomplete" alert). Strategy (in order,
- * retrying until brand is detected):
- *   1. Resolve the iframe hosting the "Card number" textbox via a11y probing,
- *      then on THAT frame's locator: `click()` to focus, then
- *      `pressSequentially(digits, { delay: 80 })` — per-keystroke events slow
- *      enough for Creem's masked formatter.
+ * The card input lives inside a Stripe Elements iframe; `locator.fill()` and
+ * top-frame `page.keyboard.type()` do NOT reach it (confirmed: at submit time
+ * the card field was empty with placeholder + "incomplete" alert). Strategy
+ * (in order, retrying until brand is detected):
+ *   1. Resolve the Stripe Elements iframe by URL fragment, then on
+ *      `input#payment-numberInput` scoped to THAT frame: `click()` to focus,
+ *      then `pressSequentially(digits, { delay: 80 })` — per-keystroke events
+ *      slow enough for Creem's masked formatter.
  *   2. Top-frame fallback: original `cardLocator.fill()` then
  *      `page.keyboard.type()` (kept for paths where the card input is NOT
  *      inside an iframe).
@@ -270,13 +267,17 @@ async function fillCardNumberWithBrandCheck(
   const tryFillIframe = async (): Promise<boolean> => {
     const cardFrame = await findCardNumberFrame(page)
     if (!cardFrame) {
-      console.log('[card-fill] no iframe hosting "Card number" textbox found; skipping iframe attempt')
+      console.log('[card-fill] no Stripe Elements iframe found; skipping iframe attempt')
       return false
     }
     try {
-      const frameCard = cardFrame
-        .getByRole('textbox', { name: /card number/i })
-        .first()
+      // Stripe Elements exposes the card input as input#payment-numberInput
+      // (NOT via a labelled a11y "Card number" role), which is why the prior
+      // getByRole('textbox', { name: /card number/i }) probe never matched.
+      // Scope to the real element ID inside the located iframe, mirroring the
+      // proven reference implementation in us-pa-001-creem-checkout-live.e2e.ts.
+      const frameCard = cardFrame.locator('input#payment-numberInput').first()
+      await frameCard.waitFor({ state: 'visible', timeout: 10000 })
       await frameCard.scrollIntoViewIfNeeded()
       await frameCard.click({ delay: 50 })
       await frameCard.pressSequentially(cardNumber, { delay: 80 })
@@ -393,7 +394,7 @@ async function ensureClientApp(request: import('@playwright/test').APIRequestCon
 
 /**
  * Poll the invoice API until a Creem external invoice appears.
- * Returns the first invoice with provider='creem' and a truthy external_invoice_id.
+ * Returns the first invoice with provider='creem' and a truthy externalInvoiceId.
  * Throws on timeout.
  */
 async function waitForCreemInvoice(
@@ -402,9 +403,9 @@ async function waitForCreemInvoice(
 ): Promise<{
   id: string
   provider: string
-  external_invoice_id: string
-  external_hosted_url: string | null
-  external_pdf_url: string | null
+  externalInvoiceId: string
+  externalHostedUrl: string | null
+  externalPdfUrl: string | null
   status: string
   total: number
   [key: string]: unknown
@@ -424,7 +425,7 @@ async function waitForCreemInvoice(
         const creemInvoice = items.find(
           (inv: any) =>
             inv.provider === 'creem' &&
-            inv.external_invoice_id,
+            inv.externalInvoiceId,
         )
         if (creemInvoice) {
           return creemInvoice
@@ -563,21 +564,41 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
       await page.waitForSelector('body', { timeout: 15000 }).catch(() => {})
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
 
+      // Creem renders its card form inside a Stripe Elements iframe whose URL
+      // contains the stable fragment "elements-inner-accessory-target". Stripe
+      // rotates the per-session hash suffix, so the iframe cannot be targeted
+      // by name. Scope by the URL fragment and target the real element IDs
+      // (input#payment-numberInput / expiryInput / cvcInput), mirroring the
+      // proven approach in us-pa-001-creem-checkout-live.e2e.ts. The previous
+      // generic-selector probe (CARD_NUMBER_SELECTORS / EXPIRY_SELECTORS /
+      // CVC_SELECTORS via findVisibleCheckoutControl) raced the iframe mount
+      // and threw "Creem checkout expiry control not found." because the inner
+      // inputs were not yet rendered when probed.
+      //
+      // Explicit mount waits below are REQUIRED: the iframe DOM is present
+      // shortly after `networkidle`, but its inner inputs mount slightly later.
+      // Without these waits the locators resolve to a not-yet-rendered input
+      // and the subsequent click/fill silently no-ops or throws.
+      const cardFrame = page.frameLocator('iframe[src*="elements-inner-accessory-target"]')
+      const cardInput   = cardFrame.locator('input#payment-numberInput')
+      const expiryInput = cardFrame.locator('input#payment-expiryInput')
+      const cvcInput    = cardFrame.locator('input#payment-cvcInput')
+
+      await cardInput.waitFor({ state: 'visible', timeout: 10000 })
+      await expiryInput.waitFor({ state: 'visible', timeout: 10000 })
+
       // Fill test card. The card number is verified via brand detection, NOT
       // inputValue() — Creem's placeholder "1234 1234 1234 1234" fools digit
       // checks and previously caused the test to click "Pay" on an empty card.
       //
-      // The card input lives inside Creem's iframe. fillCardNumberWithBrandCheck
-      // needs the expiry locator up-front so it can click it after typing —
-      // moving focus out of the card field is what triggers Creem's validation
-      // (clearing the "incomplete" alert and updating the brand indicator).
-      const cardInput = await findVisibleCheckoutControl(page, 'card number', CARD_NUMBER_SELECTORS)
-      const expiryInput = await findVisibleCheckoutControl(page, 'expiry', EXPIRY_SELECTORS)
+      // fillCardNumberWithBrandCheck needs the expiry locator up-front so it
+      // can click it after typing — moving focus out of the card field is what
+      // triggers Creem's validation (clearing the "incomplete" alert and
+      // updating the brand indicator).
       await fillCardNumberWithBrandCheck(page, cardInput, '4242424242424242', expiryInput)
 
       await fillWithVerification(expiryInput, '1230', 4)
 
-      const cvcInput = await findVisibleCheckoutControl(page, 'CVC', CVC_SELECTORS)
       await fillWithVerification(cvcInput, '123', 3)
 
       const fullNameInput = page.getByRole('textbox', { name: /full name/i })
@@ -642,19 +663,19 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
       console.log(`[live-s7] Creem one-time external invoice: ${JSON.stringify(invoice)}`)
 
       expect(invoice.provider).toBe('creem')
-      expect(invoice.external_invoice_id, 'Expected external_invoice_id to be a non-empty string').toBeTruthy()
+      expect(invoice.externalInvoiceId, 'Expected externalInvoiceId to be a non-empty string').toBeTruthy()
       expect(invoice.status, `Expected status 'paid', got '${invoice.status}'`).toBe('paid')
       expect(invoice.total, 'Expected total > 0').toBeGreaterThan(0)
       // Creem may or may not provide hosted/pdf URLs
-      if (invoice.external_hosted_url) {
-        expect(invoice.external_hosted_url).toBeTruthy()
+      if (invoice.externalHostedUrl) {
+        expect(invoice.externalHostedUrl).toBeTruthy()
       } else {
-        console.log('[live-s7] external_hosted_url not present (Creem may not provide this)')
+        console.log('[live-s7] externalHostedUrl not present (Creem may not provide this)')
       }
-      if (invoice.external_pdf_url) {
-        expect(invoice.external_pdf_url).toBeTruthy()
+      if (invoice.externalPdfUrl) {
+        expect(invoice.externalPdfUrl).toBeTruthy()
       } else {
-        console.log('[live-s7] external_pdf_url not present (Creem may not provide this)')
+        console.log('[live-s7] externalPdfUrl not present (Creem may not provide this)')
       }
     })
 
@@ -670,12 +691,12 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
 
       expect(detail.id).toBe(invoice.id)
       expect(detail.provider).toBe('creem')
-      expect(detail.external_invoice_id).toBeTruthy()
-      if (detail.external_hosted_url) {
-        expect(detail.external_hosted_url).toBeTruthy()
+      expect(detail.externalInvoiceId).toBeTruthy()
+      if (detail.externalHostedUrl) {
+        expect(detail.externalHostedUrl).toBeTruthy()
       }
-      if (detail.external_pdf_url) {
-        expect(detail.external_pdf_url).toBeTruthy()
+      if (detail.externalPdfUrl) {
+        expect(detail.externalPdfUrl).toBeTruthy()
       }
     })
   })

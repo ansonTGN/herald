@@ -555,3 +555,116 @@ async fn test_scenario_realm_dashboard_access(ctx: &mut TestContext) {
 
     println!("\n✅ Realm Dashboard 访问测试完成！");
 }
+
+/// ============================================================================
+/// Scenario 4: Admin can list all realms via paginated endpoint
+///
+/// **User Story**: As a super-admin in the admin realm, when I create a new
+/// realm, the paginated realm list (`GET /api/realms/paginated`) must include
+/// BOTH the admin realm and the newly created realm.
+///
+/// **Regression intent**: `list_realms_paginated` previously scoped the SQL
+/// query to `WHERE realm.id = <identity.realm_id()>` even for the admin
+/// identity, so the admin could only ever see their own "admin" realm — never
+/// the realm they just created. This test encodes WHY that is wrong: a super
+/// admin's realm list must reflect every realm in the system, mirroring the
+/// non-paginated `list_realms` access semantics.
+///
+/// **Given**: A super-admin session in the admin realm
+/// **When**:
+///   1. Create a new realm
+///   2. Call `GET /api/realms/paginated`
+/// **Then**:
+///   - `total >= 2` (admin realm + new realm, at minimum)
+///   - The new realm id is present in `items`
+/// ============================================================================
+#[test_context(TestContext)]
+#[tokio::test]
+async fn test_scenario_admin_list_realms_paginated_includes_all_realms(ctx: &mut TestContext) {
+    let app = ctx.create_unified_test_router();
+
+    // Setup: super-admin session in the admin realm
+    println!("[Setup] 创建 Admin realm 管理员会话");
+    let (admin_token, admin_user_id) =
+        create_admin_session_with_user(ctx, "admin-paginated@cas.com", 1800).await;
+    grant_realm_admin_role(ctx, &admin_user_id).await;
+    println!("[Setup] ✓ Admin realm 管理员会话创建成功");
+
+    // Step 1: create a new realm
+    println!("[Step 1] 创建新 Realm");
+    let timestamp = chrono::Utc::now().timestamp_millis();
+    let new_realm_id = format!("paglist_{}", timestamp % 1000000000);
+    let create_payload = json!({
+        "id": new_realm_id,
+        "name": "Paginated List Test Realm",
+        "adminUser": {
+            "email": format!("admin@{}.com", new_realm_id),
+            "password": "Password123!"
+        }
+    });
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/realms")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .body(Body::from(serde_json::to_string(&create_payload).unwrap()))
+        .unwrap();
+
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::CREATED,
+        "创建新 Realm 应返回 201"
+    );
+    println!("[Step 1] ✓ 新 Realm 创建成功: {}", new_realm_id);
+
+    // Step 2: call the paginated realm list as the admin identity
+    println!("[Step 2] 调用 GET /api/realms/paginated");
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/realms/paginated?page=0&pageSize=100")
+        .header(header::COOKIE, format!("X-Auth={}", admin_token))
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK, "分页列表请求应返回 200");
+
+    let body: serde_json::Value = crate::tests::response_json(resp).await;
+    let total = body["total"].as_i64().expect("响应应包含 total");
+
+    // Intent: a super-admin must see every realm, not be scoped to its own.
+    // With the bug, `accessible_realm_id = "admin"` scopes the SQL to a single
+    // row, so `total` would be exactly 1 and the new realm would be missing.
+    assert!(
+        total >= 2,
+        "admin 应至少看到 admin realm 与新建 realm 共 {} 个 (total >= 2)，实际 total = {}",
+        2,
+        total
+    );
+
+    let items = body["items"].as_array().expect("响应应包含 items 数组");
+    let returned_ids: Vec<&str> = items
+        .iter()
+        .map(|item| item["id"].as_str().unwrap_or(""))
+        .collect();
+    assert!(
+        returned_ids.iter().any(|id| *id == new_realm_id),
+        "admin 分页列表应包含新建的 realm id {}，实际返回: {:?}",
+        new_realm_id,
+        returned_ids
+    );
+    println!("[Step 2] ✓ 分页列表 total = {}, 包含新建 realm", total);
+
+    // Cleanup
+    println!("[Cleanup] 删除测试 Realm");
+    sqlx::query("DELETE FROM realm WHERE id::text = $1")
+        .bind(&new_realm_id)
+        .execute(&ctx._app_state.pool)
+        .await
+        .unwrap();
+    println!("[Cleanup] ✓ 测试 Realm 已删除");
+
+    println!("\n✅ Admin 分页 Realm 列表测试通过！");
+}

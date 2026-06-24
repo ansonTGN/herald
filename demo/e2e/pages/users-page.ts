@@ -154,11 +154,19 @@ export class UsersPage extends BasePage {
   }
 
   /**
-   * Submit the user form (click submit button)
+   * Submit the user form (click submit button).
    *
-   * Includes comprehensive error handling, validation, and logging.
+   * Captures the POST /api/users/{realmId} response and fails loudly on 4xx
+   * (e.g. "Email already exists") instead of letting a swallowed backend
+   * error pass as success. The dialog-hidden / table-visible signals alone
+   * are insufficient: on a 400 the frontend keeps the dialog open, but if
+   * the dialog was closed by any other interaction the test could pass with
+   * stale data. Reading the actual API response is the only reliable signal.
+   *
+   * @returns The created user's id (from the 201 response body) when creating
+   *          a user via the admin dialog. Empty string for edit flows.
    */
-  async submitUserForm(): Promise<void> {
+  async submitUserForm(): Promise<string> {
     console.log('[UsersPage] Starting form submission...')
 
     // Verify dialog is visible before proceeding
@@ -180,10 +188,44 @@ export class UsersPage extends BasePage {
     await expect(this.dialogSubmitButton).toBeVisible()
     console.log('[UsersPage] Submit button is visible')
 
+    // Capture the create-user API response that fires on submit. We match
+    // POST to /api/users/{realmId} so this does not fire for edit (PUT) flows;
+    // for edit flows the promise simply times out and is treated as no-op.
+    const createResponsePromise = this.page
+      .waitForResponse(
+        (response) =>
+          /\/api\/users\/[^/]+(?:\?|$)/.test(response.url()) &&
+          response.request().method() === 'POST',
+        { timeout: 8000 }
+      )
+      .catch(() => null)
+
     // Click submit button
     console.log('[UsersPage] Clicking submit button...')
     await this.smartClick(this.dialogSubmitButton)
     console.log('[UsersPage] Submit button clicked')
+
+    const createResponse = await createResponsePromise
+
+    // Read the response body and fail loudly on 4xx/5xx. This is what
+    // previously turned a 400 "Email already exists" into a silent pass.
+    let createdUserId = ''
+    if (createResponse) {
+      const status = createResponse.status()
+      const bodyText = await createResponse.text().catch(() => '<unreadable body>')
+      if (status >= 400) {
+        throw new Error(
+          `Create user API failed: HTTP ${status}. Response body: ${bodyText}`
+        )
+      }
+      // 201 Created carries the new user's id; parse defensively.
+      try {
+        const body = JSON.parse(bodyText)
+        createdUserId = body?.id ?? ''
+      } catch {
+        // Non-JSON body (e.g. edit PUT returns different shape) — ignore.
+      }
+    }
 
     // Wait for dialog to close with explicit error handling
     try {
@@ -211,28 +253,34 @@ export class UsersPage extends BasePage {
     console.log('[UsersPage] Table refreshed successfully')
 
     console.log('[UsersPage] Form submission completed')
+    return createdUserId
   }
 
   /**
-   * Create a new user
+   * Create a new user.
    *
    * @param userData User data
+   * @returns The created user's id (empty string if the create response did
+   *          not carry one).
    */
-  async createUser(userData: UserData): Promise<void> {
+  async createUser(userData: UserData): Promise<string> {
     await this.clickAddUser()
     await this.fillUserForm(userData)
-    await this.submitUserForm()
+    return this.submitUserForm()
   }
 
   /**
-   * Find user row in table by email
+   * Find user row in table by email.
+   *
+   * Uses row-level `filter({ hasText })` so the locator resolves to the `<tr>`
+   * itself (not an inner text node). Downstream row-relative selectors (edit,
+   * delete, reset-password buttons) rely on resolving to the row element.
    *
    * @param email User email to search for
-   * @returns Row locator or null if not found
+   * @returns Row locator (use with expect().toBeVisible()/toBeHidden())
    */
   findUserRow(email: string): Locator {
-    // Find table row containing the email
-    return this.table.locator(`tr >> text="${email}"`).first()
+    return this.table.locator('tr').filter({ hasText: email }).first()
   }
 
   /**
@@ -272,6 +320,7 @@ export class UsersPage extends BasePage {
     await this.clickEditUser(email)
     await this.fillUserForm(updatedData)
     await this.submitUserForm()
+    // Discard the returned id; edit PUT does not produce a create response.
   }
 
   /**
