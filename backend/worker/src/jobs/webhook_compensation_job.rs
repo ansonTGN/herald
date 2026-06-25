@@ -88,6 +88,14 @@ impl WebhookCompensationJob {
         }
     }
 
+    #[tracing::instrument(
+        // BE-D09 governance (§5.4): root span — no inbound request context.
+        // `self` carries provider api keys / DB pool handles (compensation
+        // fetches Stripe/Creem API keys from realm_config), so it is skipped.
+        // Only the low-cardinality job name is recorded.
+        skip(self),
+        fields(job.name = "webhook_compensation")
+    )]
     pub async fn run(&self) -> anyhow::Result<CompensationResult> {
         let mut result = CompensationResult::default();
         let now = chrono::Utc::now();
@@ -487,4 +495,95 @@ struct CompensationStats {
     events_fetched: usize,
     events_compensated: usize,
     events_failed: usize,
+}
+
+// BE-T03 governance tests (design §5.4 / §4.5).
+//
+// Covers: BE-D09 — worker jobs `WebhookCompensationJob::run`,
+// `PointsExpirationJob::run`, `PointsPreGrantJob::run` instrument skip
+// correctness.
+//
+// WHY: these are root spans with no inbound request context, and `self`
+// carries provider API keys / DB pool / repository handles. If the
+// `#[instrument]` macro ever stops skipping `self`, those handles/keys may be
+// recorded as span fields. Source-scan baseline (design §6.1), anchored per
+// method to the immediately-preceding `#[tracing::instrument(...)]`.
+#[cfg(test)]
+mod instrument_skip_tests {
+    const COMP_SRC: &str = include_str!("webhook_compensation_job.rs");
+    const EXP_SRC: &str = include_str!("points_expiration_job.rs");
+    const PREGRANT_SRC: &str = include_str!("points_pre_grant_job.rs");
+
+    fn instrument_body_preceding(src: &str, fn_name: &str) -> String {
+        let needle = format!("fn {fn_name}");
+        let fn_pos = src
+            .find(&needle)
+            .unwrap_or_else(|| panic!("fn {fn_name} not found in source"));
+        let attr_start = src[..fn_pos]
+            .rfind("#[tracing::instrument(")
+            .unwrap_or_else(|| panic!("no #[tracing::instrument( preceding fn {fn_name}"));
+        let body_start = attr_start + "#[tracing::instrument(".len();
+        // Find the attribute close: the first line at/after body_start whose
+        // trimmed content is exactly `)]`. This handles indented closes (e.g.
+        // inside an `impl` block) and ignores inline `))]` sequences such as
+        // `#[validate(length(...))]` that appear on struct fields.
+        let tail = &src[body_start..];
+        let mut consumed = 0usize;
+        for line in tail.lines() {
+            let prev = consumed;
+            consumed += line.len() + 1; // +1 for the line separator
+            if line.trim() == ")]" {
+                return tail[..prev].to_string();
+            }
+        }
+        panic!("unterminated #[tracing::instrument( for fn {fn_name}")
+    }
+
+    #[test]
+    fn instrument_skip_worker_webhook_compensation_run_is_root_span_skipping_self() {
+        let body = instrument_body_preceding(COMP_SRC, "run");
+        assert!(
+            body.contains("skip(self)"),
+            "WebhookCompensationJob::run must skip(self) (carries provider API keys / DB pool); body was:\n{body}"
+        );
+        for banned in ["token", "password", "email", "secret", "api_key", "apikey"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "webhook_compensation span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_skip_worker_points_expiration_run_is_root_span_skipping_self() {
+        let body = instrument_body_preceding(EXP_SRC, "run");
+        assert!(
+            body.contains("skip(self)"),
+            "PointsExpirationJob::run must skip(self) (holds repository/DB handles); body was:\n{body}"
+        );
+        for banned in ["token", "password", "email", "secret", "api_key", "apikey"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "points_expiration span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_skip_worker_points_pre_grant_run_is_root_span_skipping_self() {
+        let body = instrument_body_preceding(PREGRANT_SRC, "run");
+        assert!(
+            body.contains("skip(self)"),
+            "PointsPreGrantJob::run must skip(self) (holds GrantScheduler / points_repo); body was:\n{body}"
+        );
+        for banned in ["token", "password", "email", "secret", "api_key", "apikey"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "points_pre_grant span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
 }

@@ -337,6 +337,13 @@ pub async fn delete_permission(
       (status = 500, description = "Internal server error", body = ErrorResponse)
     )
   )]
+#[tracing::instrument(
+    // BE-D07 governance (§4.5/§5.4): `headers` carry auth; `payload` carries
+    // the session `token` (credential) and rules that may reference resources
+    // bound to a user. All skipped; only the low-cardinality op type recorded.
+    skip(state, headers, payload),
+    fields(db.operation = "check_permission")
+)]
 pub async fn check_permission(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -397,4 +404,62 @@ pub fn router() -> axum::Router<AppState> {
         .route("/", post(create_permission))
         .route("/{client_id}", get(list_permission))
         .route("/delete", post(delete_permission))
+}
+
+// BE-T03 governance tests (design §5.4 / §4.5).
+//
+// Covers: BE-D07 — admin `check_permission` instrument skip correctness.
+//
+// WHY: `check_permission` reads auth from `headers` and a session `token`
+// (credential) from `payload`, plus rules that may reference resources bound to
+// a user. If the `#[instrument]` macro ever stops skipping those, the token /
+// user-bound data leaks into a span field. Source-scan baseline (design
+// §6.1), anchored to `fn check_permission` and its immediately-preceding
+// `#[tracing::instrument(...)]`.
+#[cfg(test)]
+mod instrument_skip_tests {
+    const SRC: &str = include_str!("permission.rs");
+
+    fn instrument_body_preceding(fn_name: &str) -> String {
+        let needle = format!("fn {fn_name}");
+        let fn_pos = SRC
+            .find(&needle)
+            .unwrap_or_else(|| panic!("fn {fn_name} not found in source"));
+        let attr_start = SRC[..fn_pos]
+            .rfind("#[tracing::instrument(")
+            .unwrap_or_else(|| panic!("no #[tracing::instrument( preceding fn {fn_name}"));
+        let body_start = attr_start + "#[tracing::instrument(".len();
+        // Find the attribute close: the first line at/after body_start whose
+        // trimmed content is exactly `)]`. This handles indented closes (e.g.
+        // inside an `impl` block) and ignores inline `))]` sequences such as
+        // `#[validate(length(...))]` that appear on struct fields.
+        let tail = &SRC[body_start..];
+        let mut consumed = 0usize;
+        for line in tail.lines() {
+            let prev = consumed;
+            consumed += line.len() + 1; // +1 for the line separator
+            if line.trim() == ")]" {
+                return tail[..prev].to_string();
+            }
+        }
+        panic!("unterminated #[tracing::instrument( for fn {fn_name}")
+    }
+
+    #[test]
+    fn instrument_skip_admin_check_permission_excludes_token_and_payload() {
+        let body = instrument_body_preceding("check_permission");
+        for required in ["state", "headers", "payload"] {
+            assert!(
+                body.contains(required),
+                "check_permission must skip `{required}`; body was:\n{body}"
+            );
+        }
+        for banned in ["token", "password", "email", "secret", "code"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "check_permission span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
 }

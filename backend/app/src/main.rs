@@ -7,10 +7,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::signal;
 use tracing::info;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{
+    filter::{Directive, EnvFilter},
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+};
 
 use herald_api::WebhookEventProcessorImpl;
 use herald_api::config::ApiConfig;
+use herald_api::observability;
 use herald_core::domain::billing::compensation::WebhookEventProcessor;
 use herald_core::domain::points::{ExpirationService, GrantPeriodType, GrantScheduler};
 use herald_worker::PointsPreGrantJob;
@@ -39,21 +44,72 @@ async fn main() -> Result<()> {
     let config_path = env::var("HERALD_CONFIG").unwrap_or("config/config.toml".to_owned());
     let config = ApiConfig::load(&config_path)?;
 
-    // Initialize tracing with config from file
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| config.server.log_level.clone().into()),
-        )
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_ansi(false)
-                .with_target(true)
-                .with_thread_ids(true)
-                .with_level(true)
-                .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE),
-        )
-        .init();
+    // Initialize observability: meter provider is always built (metrics on);
+    // traces layer is built only when `traces_enabled=true` (baseline = off,
+    // P0 back-pressure mitigation — design §4.1). The traces provider is
+    // spliced into the handles so `shutdown` can flush it at exit.
+    let mut handles = observability::build_meter_provider(&config.observability);
+    let traces = observability::build_traces_layer(&config.observability);
+    handles = handles.with_tracer_provider(traces.provider);
+
+    // EnvFilter: honor RUST_LOG when present, otherwise fall back to the
+    // configured `server.log_level`. Then silence high-volume transport
+    // crates so they never spam stdout regardless of the base level. These
+    // `=off` directives override the base level for the named targets
+    // (tracing-subscriber: more specific directives win).
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(config.server.log_level.clone()))
+        .add_directive("hyper=off".parse::<Directive>().expect("static directive"))
+        .add_directive("tonic=off".parse::<Directive>().expect("static directive"))
+        .add_directive("h2=off".parse::<Directive>().expect("static directive"))
+        .add_directive(
+            "reqwest=off"
+                .parse::<Directive>()
+                .expect("static directive"),
+        );
+
+    // Conditionally attach the OTel traces layer.
+    //
+    // The traces layer is `Box<dyn Layer<Registry>>`. Two composability
+    // constraints drive the structure:
+    //   1. It is only composable on a *bare* `Registry` (not generic over
+    //      the subscriber type), so it must be layered on first.
+    //   2. `fmt::Layer<S>` captures the subscriber type `S` at construction
+    //      via inference, so each arm builds its own fmt layer — the two
+    //      arms have different concrete subscriber types and must not share
+    //      a single fmt layer value.
+    //
+    // Under the baseline (`traces_enabled=false`) `traces.layer` is `None`
+    // and NOTHING is installed — traces do not leave the process. Branching
+    // here (rather than `.with(Option<...>)`) is what makes the baseline a
+    // structural guarantee rather than a runtime toggle.
+    match traces.layer {
+        Some(otel_layer) => tracing_subscriber::registry()
+            .with(otel_layer)
+            .with(env_filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_ansi(false)
+                    .with_target(true)
+                    .with_thread_ids(true)
+                    .with_level(true)
+                    .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE),
+            )
+            .init(),
+        None => tracing_subscriber::registry()
+            .with(env_filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_ansi(false)
+                    .with_target(true)
+                    .with_thread_ids(true)
+                    .with_level(true)
+                    .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE),
+            )
+            .init(),
+    }
 
     info!("Starting Herald Application");
     info!("Configuration loaded from: {}", config_path);
@@ -124,6 +180,11 @@ async fn main() -> Result<()> {
             info!("Received shutdown signal");
         }
     }
+
+    // Flush + shut down OTel providers (meter always; tracer only when
+    // traces were enabled). Takes handles by value and never panics — a
+    // failing exporter cannot crash the process on exit (design §5.2).
+    observability::shutdown(handles);
 
     info!("Herald Application shutdown complete");
     Ok(())

@@ -39,6 +39,12 @@ use herald_core::domain::points::ports::TransactionFilters;
     ),
     tag = "Points"
 )]
+#[tracing::instrument(
+    // BE-D07 governance (§4.5/§5.4): identity carries user_id/realm_id; query
+    // may carry user_id/bucket_id filters; realm_id conservatively skipped.
+    skip_all,
+    fields(db.operation = "list_transactions")
+)]
 pub async fn list_transactions(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

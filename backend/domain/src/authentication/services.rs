@@ -47,6 +47,14 @@ where
     U: UserService,
     S: SessionRepository,
 {
+    #[tracing::instrument(
+        // BE-D08 governance (§4.5/§5.4): request carries password (credential)
+        // + email/username (PII); client_id/client_ip are identifiers;
+        // self holds the session repo. Only the low-cardinality operation
+        // type and db.system are recorded.
+        skip(self, request, client_id, client_ip),
+        fields(db.system = "postgres", db.operation = "auth_login")
+    )]
     async fn login(
         &self,
         request: LoginRequest,
@@ -91,6 +99,13 @@ where
     }
 
     /// Create a session for an authenticated user
+    #[tracing::instrument(
+        // BE-D08 governance (§4.5/§5.4): user carries identity/email;
+        // client_id/client_ip are identifiers; self holds the session repo.
+        // Only the low-cardinality operation type is recorded.
+        skip(self, user, client_id, client_ip),
+        fields(db.operation = "create_session")
+    )]
     async fn create_session(
         &self,
         user: crate::user::entities::User,
@@ -128,10 +143,20 @@ where
         Ok((session, identity))
     }
 
+    #[tracing::instrument(
+        // BE-D08 governance (§4.5/§5.4): token is the session credential.
+        skip(self, token),
+        fields(db.operation = "logout")
+    )]
     async fn logout(&self, token: String) -> Result<(), CoreError> {
         self.session_repository.delete_session(&token).await
     }
 
+    #[tracing::instrument(
+        // BE-D08 governance (§4.5/§5.4): token is the session credential.
+        skip(self, _token),
+        fields(db.operation = "verify_session")
+    )]
     async fn verify_session(
         &self,
         _token: String,
@@ -144,6 +169,11 @@ where
         ))
     }
 
+    #[tracing::instrument(
+        // BE-D08 governance (§4.5/§5.4): token is the session credential.
+        skip(self, token),
+        fields(db.operation = "refresh_session")
+    )]
     async fn refresh_session(&self, token: String) -> Result<Session, CoreError> {
         let session = self
             .session_repository
@@ -201,5 +231,108 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AuthenticationServiceImpl").finish()
+    }
+}
+
+// BE-T03 governance tests (design §5.4 / §4.5).
+//
+// Covers: BE-D08 — `AuthenticationServiceImpl` login / create_session / logout
+// / verify_session / refresh_session instrument skip correctness.
+//
+// WHY: login carries password + email/username; the session methods take the
+// session `token` — a credential. If the `#[instrument]` macro ever stops
+// skipping those, the credential/PII leaks into a span field. Source-scan
+// baseline (design §6.1), anchored per method to the immediately-preceding
+// `#[tracing::instrument(...)]`.
+#[cfg(test)]
+mod instrument_skip_tests {
+    const SRC: &str = include_str!("services.rs");
+
+    fn instrument_body_preceding(fn_name: &str) -> String {
+        let needle = format!("fn {fn_name}");
+        let fn_pos = SRC
+            .find(&needle)
+            .unwrap_or_else(|| panic!("fn {fn_name} not found in source"));
+        let attr_start = SRC[..fn_pos]
+            .rfind("#[tracing::instrument(")
+            .unwrap_or_else(|| panic!("no #[tracing::instrument( preceding fn {fn_name}"));
+        let body_start = attr_start + "#[tracing::instrument(".len();
+        // Find the attribute close: the first line at/after body_start whose
+        // trimmed content is exactly `)]`. This handles indented closes (e.g.
+        // inside an `impl` block) and ignores inline `))]` sequences such as
+        // `#[validate(length(...))]` that appear on struct fields.
+        let tail = &SRC[body_start..];
+        let mut consumed = 0usize;
+        for line in tail.lines() {
+            let prev = consumed;
+            consumed += line.len() + 1; // +1 for the line separator
+            if line.trim() == ")]" {
+                return tail[..prev].to_string();
+            }
+        }
+        panic!("unterminated #[tracing::instrument( for fn {fn_name}")
+    }
+
+    #[test]
+    fn instrument_skip_auth_service_login_excludes_password_email() {
+        let body = instrument_body_preceding("login");
+        for required in ["request", "client_id", "client_ip"] {
+            assert!(
+                body.contains(required),
+                "AuthenticationServiceImpl::login must skip `{required}`; body was:\n{body}"
+            );
+        }
+        for banned in ["password", "email", "token", "secret"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "auth login span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_skip_auth_service_create_session_excludes_user_and_identifiers() {
+        let body = instrument_body_preceding("create_session");
+        for required in ["user", "client_id", "client_ip"] {
+            assert!(
+                body.contains(required),
+                "create_session must skip `{required}`; body was:\n{body}"
+            );
+        }
+        for banned in ["token", "password", "email", "secret"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "create_session span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_skip_auth_service_logout_excludes_session_token() {
+        let body = instrument_body_preceding("logout");
+        assert!(
+            body.contains("token"),
+            "logout must skip `token` (session credential); body was:\n{body}"
+        );
+    }
+
+    #[test]
+    fn instrument_skip_auth_service_verify_session_excludes_session_token() {
+        let body = instrument_body_preceding("verify_session");
+        assert!(
+            body.contains("_token") || body.contains("token"),
+            "verify_session must skip the session token; body was:\n{body}"
+        );
+    }
+
+    #[test]
+    fn instrument_skip_auth_service_refresh_session_excludes_session_token() {
+        let body = instrument_body_preceding("refresh_session");
+        assert!(
+            body.contains("token"),
+            "refresh_session must skip `token` (session credential); body was:\n{body}"
+        );
     }
 }

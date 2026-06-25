@@ -15,6 +15,7 @@ use crate::models::{
     generate_out_trade_no,
 };
 use herald_domain::common::entities::app_errors::CoreError;
+use herald_domain::telemetry::external_http::timed_external_http_span;
 
 /// WeChat Pay client wrapping the SDK
 ///
@@ -141,6 +142,12 @@ impl WechatPayClient {
             params.amount.into(),
         );
 
+        // BE-D10: external.http span + duration histogram around the SDK call
+        // (the SDK issues the outbound HTTPS request to WeChat internally).
+        // Host-only attribute (no path/query/out_trade_no) per governance §5.4.
+        let timing = timed_external_http_span(&self.base_url, "POST");
+        let _span_enter = timing.span().enter();
+
         // native_pay is synchronous, not async
         let wechat_pay = self.wechat_pay.as_ref().ok_or_else(|| {
             CoreError::InternalServerError("WeChat Pay SDK not available".to_string())
@@ -185,6 +192,11 @@ impl WechatPayClient {
             "{}/v3/pay/transactions/out-trade-no/{}?mchid={}",
             self.base_url, out_trade_no, self.mch_id
         );
+
+        // BE-D10: external.http span + duration histogram. Host-only attribute
+        // (no path/query/out_trade_no, no auth headers) per governance §5.4.
+        let timing = timed_external_http_span(&self.base_url, "GET");
+        let _span_enter = timing.span().enter();
 
         let response = client
             .get(&url)
@@ -273,6 +285,10 @@ impl WechatPayClient {
         let body = CloseOrderRequest {
             mchid: self.mch_id.clone(),
         };
+
+        // BE-D10: external.http span + duration histogram.
+        let timing = timed_external_http_span(&self.base_url, "POST");
+        let _span_enter = timing.span().enter();
 
         let response = client
             .post(&url)

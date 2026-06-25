@@ -9,14 +9,10 @@
 ## 核心特性
 
 - **SaaS 账户体系** — 多租户（Realm）架构，开箱即用的认证、授权与后台管理
+- **认证与社交登录** — 邮箱密码登录，支持 Google / GitHub / Apple / Facebook / 微信等 OAuth 提供商，可选 TOTP 两步验证
 - **支付集成** — 对接 Stripe、Creem，支持订阅、发票与 Webhook 驱动的权益发放
 - **积分系统** — 自带积分钱包，支持交易流水、定时发放、过期与幂等
-
-## 技术栈
-
-- **后端**：Rust 2024 edition / Axum 0.8 / SeaORM 1.1 / PostgreSQL 16+ / Redis
-- **前端**：React 19 / TypeScript / TanStack Router & Query / Tailwind CSS v4 / Vite
-- **部署**：Docker 多阶段构建 + Caddy TLS 反代
+- **开发者友好** — OpenAPI / Swagger 自动生成，OpenTelemetry 链路追踪，提供 Rust SDK 便于第三方后端接入
 
 ## 快速开始
 
@@ -26,7 +22,7 @@
 uv run scripts/demo-start.py
 ```
 
-启动完成后前端在 http://localhost:3000，后端 API 在 http://localhost:8080。
+启动完成后前端在 http://localhost:3000 ，后端 API 在 http://localhost:8080 。
 
 ## 演示
 
@@ -39,12 +35,7 @@ uv run scripts/demo-start.py
 
 - [快速上手](docs/tutorials/getting-started.md) — 本地开发环境搭建
 - [架构](docs/tutorials/architecture.md) — 项目结构和技术选型
-- [配置](docs/tutorials/configuration.md) — 配置项说明
-- [部署](docs/tutorials/deployment.md) — Docker 生产环境部署
 - [计费架构](docs/tutorials/billing-overview.md) — Entitlement Mapping、订阅投影、积分策略
-- [Stripe 支付对接](docs/tutorials/billing-stripe-payment.md) — 支付方配置和 Webhook 处理
-- [Creem 支付对接](docs/tutorials/billing-creem-payment.md) — 支付方配置和 Webhook 处理
-- [发票管理](docs/tutorials/billing-invoice.md) — 发票创建、开票、PDF 生成
 - [第三方后端对接](docs/tutorials/third-party-integration.md) — 用 SDK 接入 Herald
 
 ## 许可证

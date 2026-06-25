@@ -3,6 +3,7 @@ use crate::models::{
     SearchSubscriptionsParams, SearchTransactionsParams,
 };
 use herald_domain::common::entities::app_errors::CoreError;
+use herald_domain::telemetry::external_http::timed_external_http_span;
 use std::time::Duration;
 
 #[derive(Clone)]
@@ -76,6 +77,11 @@ impl CreemClient {
     ) -> Result<CheckoutSession, CoreError> {
         let url = format!("{}/v1/checkouts", self.base_url);
 
+        // BE-D10: external.http span + duration histogram. Host-only attribute
+        // (no path/query, no api key, no body) per governance §5.4.
+        let timing = timed_external_http_span(&self.base_url, "POST");
+        let _span_enter = timing.span().enter();
+
         let response = self
             .http
             .post(&url)
@@ -116,6 +122,10 @@ impl CreemClient {
             None => url,
         };
 
+        // BE-D10: external.http span + duration histogram.
+        let timing = timed_external_http_span(&self.base_url, "GET");
+        let _span_enter = timing.span().enter();
+
         let response = self
             .http
             .get(&url)
@@ -153,6 +163,10 @@ impl CreemClient {
             Some(ts) => format!("{url}&created_after={ts}"),
             None => url,
         };
+
+        // BE-D10: external.http span + duration histogram.
+        let timing = timed_external_http_span(&self.base_url, "GET");
+        let _span_enter = timing.span().enter();
 
         let response = self
             .http

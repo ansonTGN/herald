@@ -372,6 +372,15 @@ impl PermissionService for RedisPermissionChecker {
     ///   which are invalidated atomically on role changes.  This eliminates the
     ///   TOCTOU race where a concurrent request re-caches a stale "granted" result
     ///   after cache invalidation.
+    #[tracing::instrument(
+        // BE-D07 governance (§4.5/§5.4): realm_id / principal_id are tenant +
+        // user identifiers (principal_id is commonly a user_id) — skipped.
+        // resource/action are low-cardinality enums but skipped to stay
+        // conservative and keep the span minimal; only db.system + cache.hit
+        // (bool, low cardinality) are recorded.
+        skip(self, realm_id, principal_type, principal_id, resource, action),
+        fields(db.system = "redis")
+    )]
     async fn check_principal_permission(
         &self,
         realm_id: &str,
@@ -398,6 +407,8 @@ impl PermissionService for RedisPermissionChecker {
             action,
         );
         if let Some(cached) = self.get_cached_result(&cache_key).await {
+            // BE-D07: record only the low-cardinality bool hit/miss into the span.
+            tracing::Span::current().record("cache.hit", true);
             if !cached {
                 debug!("Principal permission denied (cached denial)");
                 return Ok(false);
@@ -781,5 +792,68 @@ mod tests {
         // manage still covers view and itself
         assert!(test_action_hierarchy("manage", "view"));
         assert!(test_action_hierarchy("manage", "manage"));
+    }
+}
+
+// BE-T03 governance tests (design §5.4 / §4.5).
+//
+// Covers: BE-D07 — `check_principal_permission` instrument skip correctness.
+//
+// WHY: `realm_id` / `principal_id` are tenant + user identifiers
+// (principal_id is commonly a user_id). If the `#[instrument]` macro ever
+// stops skipping them, the identifiers leak into a span field. Source-scan
+// baseline (design §6.1), anchored to `fn check_principal_permission` and its
+// immediately-preceding `#[tracing::instrument(...)]`.
+#[cfg(test)]
+mod instrument_skip_tests {
+    const SRC: &str = include_str!("redis_permission_checker.rs");
+
+    fn instrument_body_preceding(fn_name: &str) -> String {
+        let needle = format!("fn {fn_name}");
+        let fn_pos = SRC
+            .find(&needle)
+            .unwrap_or_else(|| panic!("fn {fn_name} not found in source"));
+        let attr_start = SRC[..fn_pos]
+            .rfind("#[tracing::instrument(")
+            .unwrap_or_else(|| panic!("no #[tracing::instrument( preceding fn {fn_name}"));
+        let body_start = attr_start + "#[tracing::instrument(".len();
+        // Find the attribute close: the first line at/after body_start whose
+        // trimmed content is exactly `)]`. This handles indented closes (e.g.
+        // inside an `impl` block) and ignores inline `))]` sequences such as
+        // `#[validate(length(...))]` that appear on struct fields.
+        let tail = &SRC[body_start..];
+        let mut consumed = 0usize;
+        for line in tail.lines() {
+            let prev = consumed;
+            consumed += line.len() + 1; // +1 for the line separator
+            if line.trim() == ")]" {
+                return tail[..prev].to_string();
+            }
+        }
+        panic!("unterminated #[tracing::instrument( for fn {fn_name}")
+    }
+
+    #[test]
+    fn instrument_skip_check_principal_permission_excludes_realm_and_principal_id() {
+        let body = instrument_body_preceding("check_principal_permission");
+        for required in [
+            "realm_id",
+            "principal_id",
+            "principal_type",
+            "resource",
+            "action",
+        ] {
+            assert!(
+                body.contains(required),
+                "check_principal_permission must skip `{required}`; body was:\n{body}"
+            );
+        }
+        for banned in ["token", "password", "email", "secret", "user_id"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "check_principal_permission span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
     }
 }

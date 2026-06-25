@@ -57,6 +57,14 @@ pub struct RegisterResponse {
     (status = 500, description = "Internal server error", body = ErrorResponse)
   )
 )]
+#[tracing::instrument(
+    // BE-D08 governance (§4.5/§5.4): payload carries password (credential),
+    // turnstile_token, email/username (PII); realm_id conservatively skipped.
+    // state holds session/db handles; ip is client PII. Only the low-cardinality
+    // operation type is recorded.
+    skip(state, payload, realm_id, ip),
+    fields(db.system = "postgres", db.operation = "register")
+)]
 pub async fn register(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,

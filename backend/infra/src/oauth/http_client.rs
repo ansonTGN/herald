@@ -6,6 +6,7 @@ pub use herald_domain::oauth::http_client::{
 use herald_domain::security_constants::{
     DEFAULT_HTTP_CLIENT_CONNECT_TIMEOUT_SECS, DEFAULT_HTTP_CLIENT_TIMEOUT_SECS,
 };
+use herald_domain::telemetry::external_http::timed_external_http_span;
 use std::time::Duration;
 
 /// Reqwest HTTP client implementation
@@ -53,6 +54,12 @@ impl HttpClient for ReqwestHttpClient {
     ) -> impl Future<Output = Result<HttpClientResponse, HttpClientError>> + Send {
         let url = url.to_string();
         async move {
+            // BE-D10: external.http span + duration histogram. The helper's
+            // sanitize_host strips path/query (OAuth callback URLs may carry
+            // `code=...`/`state=...`) so only the bare host reaches telemetry.
+            let timing = timed_external_http_span(&url, "GET");
+            let _span_enter = timing.span().enter();
+
             let response = self.client.get(&url).send().await.map_err(|e| {
                 let error_msg = e.to_string();
                 if error_msg.contains("timeout") || error_msg.contains("timed out") {
@@ -93,6 +100,11 @@ impl HttpClient for ReqwestHttpClient {
     ) -> impl Future<Output = Result<HttpClientResponse, HttpClientError>> + Send {
         let url = url.to_string();
         async move {
+            // BE-D10: external.http span + duration histogram. Host-only
+            // (token-exchange bodies are not recorded).
+            let timing = timed_external_http_span(&url, "POST");
+            let _span_enter = timing.span().enter();
+
             let response = self
                 .client
                 .post(&url)
@@ -170,6 +182,18 @@ impl HttpClient for ReqwestHttpClient {
             }
 
             // Execute request
+            // BE-D10: external.http span + duration histogram. Host-only
+            // (query params / headers / body not recorded).
+            let method_str = match request.method {
+                HttpMethod::Get => "GET",
+                HttpMethod::Post => "POST",
+                HttpMethod::Put => "PUT",
+                HttpMethod::Delete => "DELETE",
+                HttpMethod::Patch => "PATCH",
+            };
+            let timing = timed_external_http_span(&url, method_str);
+            let _span_enter = timing.span().enter();
+
             let response = reqwest_req.send().await.map_err(|e| {
                 let error_msg = e.to_string();
                 if error_msg.contains("timeout") || error_msg.contains("timed out") {

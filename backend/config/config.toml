@@ -20,3 +20,10 @@ url = "http://localhost:3000"
 
 [jwt]
 secret = "change-me-to-a-secure-random-base64-string"
+
+[observability]
+service_name = "herald-api"
+otlp_endpoint = "http://localhost:4318"
+metrics_export_interval_secs = 5
+traces_enabled = false
+sqlx_slow_statement_ms = 200

@@ -17,6 +17,7 @@ use tracing::info;
 
 pub mod application;
 pub mod config;
+pub mod observability;
 
 // Test support - only included when building tests
 #[cfg(test)]
@@ -158,7 +159,17 @@ pub async fn build_app_state_with_migrations(
         ))
         .connect_timeout(std::time::Duration::from_secs(
             config.database.connect_timeout_secs,
-        ));
+        ))
+        // Observability (BE-D06): enable sqlx statement logging + slow-statement
+        // warning at the configured threshold. Slow-statement logging emits the
+        // SQL statement via tracing; sensitive value governance is handled at the
+        // tracing layer (see design §4.5/§5.4). With traces-off baseline, DB
+        // spans produced here are not exported (BE-D03/04).
+        .sqlx_logging(true)
+        .sqlx_slow_statements_logging_settings(
+            log::LevelFilter::Warn,
+            std::time::Duration::from_millis(config.observability.sqlx_slow_statement_ms),
+        );
     let db: sea_orm::DatabaseConnection = sea_orm::Database::connect(connect_options).await?;
     tracing::info!(
         "Connected to database (max_connections: {}, acquire_timeout: {}s)",

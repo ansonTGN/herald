@@ -236,6 +236,13 @@ where
         Ok(code)
     }
 
+    #[tracing::instrument(
+        // BE-D08 governance (§4.5/§5.4): request carries password (credential)
+        // + email/username (PII) + realm_id. self holds the user repo.
+        // Only the low-cardinality operation type is recorded.
+        skip(self, request),
+        fields(db.system = "postgres", db.operation = "user_login")
+    )]
     async fn login(&self, request: LoginRequest) -> Result<User, CoreError> {
         // Use get_user_by_email_or_username to handle both email and username
         let Some((user_id, password_hash, status)) = self
@@ -274,6 +281,13 @@ where
         self.user_repository.get_user_by_id(user_id).await
     }
 
+    #[tracing::instrument(
+        // BE-D08 governance (§4.5/§5.4): request carries password (credential)
+        // + email (PII) + realm_id. self holds the user repo.
+        // Only the low-cardinality operation type is recorded.
+        skip(self, request),
+        fields(db.system = "postgres", db.operation = "user_register")
+    )]
     async fn register(&self, request: RegisterRequest) -> Result<User, CoreError> {
         match self
             .user_repository
@@ -571,5 +585,77 @@ mod tests {
             .expect_err("invalid code should be rejected");
 
         assert_eq!(err, CoreError::BadRequest("invalid reset code".to_string()));
+    }
+}
+
+// BE-T03 governance tests (design §5.4 / §4.5).
+//
+// Covers: BE-D08 — `UserServiceImpl` login / register instrument skip
+// correctness.
+//
+// WHY: login/register take `request` (carries password + email/username +
+// realm_id — credential + PII). If the `#[instrument]` macro ever stops
+// skipping `request`, the password/email leaks into a span field. Source-scan
+// baseline (design §6.1), anchored per method to the immediately-preceding
+// `#[tracing::instrument(...)]`.
+#[cfg(test)]
+mod instrument_skip_tests {
+    const SRC: &str = include_str!("basic.rs");
+
+    fn instrument_body_preceding(fn_name: &str) -> String {
+        let needle = format!("fn {fn_name}");
+        let fn_pos = SRC
+            .find(&needle)
+            .unwrap_or_else(|| panic!("fn {fn_name} not found in source"));
+        let attr_start = SRC[..fn_pos]
+            .rfind("#[tracing::instrument(")
+            .unwrap_or_else(|| panic!("no #[tracing::instrument( preceding fn {fn_name}"));
+        let body_start = attr_start + "#[tracing::instrument(".len();
+        // Find the attribute close: the first line at/after body_start whose
+        // trimmed content is exactly `)]`. This handles indented closes (e.g.
+        // inside an `impl` block) and ignores inline `))]` sequences such as
+        // `#[validate(length(...))]` that appear on struct fields.
+        let tail = &SRC[body_start..];
+        let mut consumed = 0usize;
+        for line in tail.lines() {
+            let prev = consumed;
+            consumed += line.len() + 1; // +1 for the line separator
+            if line.trim() == ")]" {
+                return tail[..prev].to_string();
+            }
+        }
+        panic!("unterminated #[tracing::instrument( for fn {fn_name}")
+    }
+
+    #[test]
+    fn instrument_skip_user_service_login_excludes_password_email() {
+        let body = instrument_body_preceding("login");
+        assert!(
+            body.contains("request"),
+            "UserServiceImpl::login must skip `request` (carries password/email); body was:\n{body}"
+        );
+        for banned in ["password", "email", "token", "secret"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "user login span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_skip_user_service_register_excludes_password_email() {
+        let body = instrument_body_preceding("register");
+        assert!(
+            body.contains("request"),
+            "UserServiceImpl::register must skip `request` (carries password/email); body was:\n{body}"
+        );
+        for banned in ["password", "email", "token", "secret"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "user register span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
     }
 }

@@ -51,6 +51,14 @@ pub struct OAuthCallbackResponse {
         (status = 500, description = "Internal server error", body = ErrorResponse)
     )
 )]
+#[tracing::instrument(
+    // BE-D08 governance (§4.5/§5.4): query carries provider authorization
+    // code + state (CSRF) — both secrets. state holds handles; headers may
+    // carry cookies; client_ip is PII; realm_id/provider are low-cardinality
+    // but conservatively skipped. Only http.route is recorded.
+    skip(state, headers, client_ip, query),
+    fields(http.route = "/api/oauth/{realmId}/{provider}/callback")
+)]
 pub async fn oauth_callback(
     State(state): State<AppState>,
     ClientIp(client_ip): ClientIp,
@@ -198,4 +206,101 @@ async fn load_client_session_config(
             .map_err(|_| ApiError::internal("Client session TTL is invalid".to_string()))?,
         renewal_ttl_seconds: renewal_ttl_seconds_from_i32(renewal_ttl)?,
     })
+}
+
+// BE-T03 governance tests (design §5.4 / §4.5).
+//
+// Covers: BE-D08 — oauth `oauth_callback` (callback.rs), `oauth_token`
+// (token.rs), and `handle_oauth_callback` (helper.rs) instrument skip
+// correctness.
+//
+// WHY: the oauth callback/token paths carry the provider authorization `code`,
+// the CSRF `state`/`state_token`, PKCE `code_verifier`, and `client_id` — all
+// secrets. If the `#[instrument]` macro ever stops skipping those, the secret
+// leaks into a span field. Source-scan baseline (design §6.1), anchored per
+// function to the immediately-preceding `#[tracing::instrument(...)]`.
+#[cfg(test)]
+mod instrument_skip_tests {
+    const CALLBACK_SRC: &str = include_str!("callback.rs");
+    const TOKEN_SRC: &str = include_str!("token.rs");
+    const HELPER_SRC: &str = include_str!("helper.rs");
+
+    fn instrument_body_preceding(src: &str, fn_name: &str) -> String {
+        let needle = format!("fn {fn_name}");
+        let fn_pos = src
+            .find(&needle)
+            .unwrap_or_else(|| panic!("fn {fn_name} not found in source"));
+        let attr_start = src[..fn_pos]
+            .rfind("#[tracing::instrument(")
+            .unwrap_or_else(|| panic!("no #[tracing::instrument( preceding fn {fn_name}"));
+        let body_start = attr_start + "#[tracing::instrument(".len();
+        // Find the attribute close: the first line at/after body_start whose
+        // trimmed content is exactly `)]`. This handles indented closes (e.g.
+        // inside an `impl` block) and ignores inline `))]` sequences such as
+        // `#[validate(length(...))]` that appear on struct fields.
+        let tail = &src[body_start..];
+        let mut consumed = 0usize;
+        for line in tail.lines() {
+            let prev = consumed;
+            consumed += line.len() + 1; // +1 for the line separator
+            if line.trim() == ")]" {
+                return tail[..prev].to_string();
+            }
+        }
+        panic!("unterminated #[tracing::instrument( for fn {fn_name}")
+    }
+
+    #[test]
+    fn instrument_skip_oauth_callback_excludes_code_state() {
+        let body = instrument_body_preceding(CALLBACK_SRC, "oauth_callback");
+        // `query` carries the provider authorization `code` + CSRF `state`.
+        for required in ["query", "headers", "client_ip", "state"] {
+            assert!(
+                body.contains(required),
+                "oauth_callback must skip `{required}`; body was:\n{body}"
+            );
+        }
+        for banned in ["code", "token", "secret", "email", "password"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "oauth_callback span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_skip_oauth_token_excludes_code_and_verifier() {
+        let body = instrument_body_preceding(TOKEN_SRC, "oauth_token");
+        // `req` carries authorization code, PKCE code_verifier, client_id.
+        assert!(
+            body.contains("req"),
+            "oauth_token must skip `req` (carries auth code / code_verifier / client_id); body was:\n{body}"
+        );
+        for banned in ["code", "token", "verifier", "secret", "client_id"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "oauth_token span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_skip_oauth_helper_excludes_code_and_state_token() {
+        let body = instrument_body_preceding(HELPER_SRC, "handle_oauth_callback");
+        for required in ["code", "state_token", "realm_id", "state"] {
+            assert!(
+                body.contains(required),
+                "handle_oauth_callback must skip `{required}`; body was:\n{body}"
+            );
+        }
+        for banned in ["token", "secret", "email", "password"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "handle_oauth_callback span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
 }

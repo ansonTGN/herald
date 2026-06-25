@@ -77,6 +77,13 @@ fn verify_pkce(code_verifier: &str, code_challenge: &str) -> bool {
         (status = 400, description = "Bad request", body = ErrorResponse),
     )
 )]
+#[tracing::instrument(
+    // BE-D08 governance (§4.5/§5.4): req carries authorization code, PKCE
+    // code_verifier, client_id — all credentials/secrets. state holds handles;
+    // realm_id conservatively skipped. Only http.route is recorded.
+    skip(state, req),
+    fields(http.route = "/api/oauth/{realmId}/token")
+)]
 pub async fn oauth_token(
     Path(realm_id): Path<String>,
     State(state): State<AppState>,

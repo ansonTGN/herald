@@ -335,6 +335,14 @@ where
     ///
     /// Consumption priority: expiration-based (soonest expiring first, permanent last)
     /// This is the NEW correct implementation per the design specification.
+    #[tracing::instrument(
+        // BE-D07 governance (§4.5/§5.4): identity carries user_id/realm_id;
+        // input payload references user_id/client_app_id; realm_id is
+        // conservatively skipped. Only the low-cardinality operation type and
+        // db.system are recorded (no raw SQL, no ids).
+        skip(self, identity, realm_id, input),
+        fields(db.system = "postgres", db.operation = "consume_points")
+    )]
     pub async fn consume_points(
         &self,
         identity: Identity,
@@ -462,6 +470,12 @@ where
     }
 
     /// List transactions with filters
+    #[tracing::instrument(
+        // BE-D07 governance: identity carries user_id/realm_id; filters carry
+        // user_id/bucket_id; realm_id conservatively skipped.
+        skip(self, identity, realm_id, filters),
+        fields(db.system = "postgres", db.operation = "list_transactions")
+    )]
     pub async fn list_transactions(
         &self,
         identity: Identity,
@@ -504,6 +518,12 @@ where
     ///
     /// Performs permission check and realm boundary check, validates input,
     /// then delegates to `grant_points_internal`.
+    #[tracing::instrument(
+        // BE-D07 governance: identity carries user_id/realm_id; input payload
+        // carries the target user_id; realm_id conservatively skipped.
+        skip(self, identity, realm_id, input),
+        fields(db.system = "postgres", db.operation = "grant_points")
+    )]
     pub async fn grant_points(
         &self,
         identity: Identity,
@@ -1097,5 +1117,99 @@ where
         );
 
         Ok(saved_ledger.id)
+    }
+}
+
+// BE-T03 governance tests (design §5.4 / §4.5).
+//
+// Covers: BE-D07 — domain points service `consume_points`,
+// `list_transactions`, `grant_points` instrument skip correctness.
+//
+// WHY: these methods take `identity` (carries user_id/realm_id), `realm_id`,
+// and `input`/`filters` (reference user_id/bucket_id). If the `#[instrument]`
+// macro ever stops skipping those, the identifiers leak into a span field.
+// Source-scan baseline (design §6.1), anchored per method to the
+// immediately-preceding `#[tracing::instrument(...)]`.
+#[cfg(test)]
+mod instrument_skip_tests {
+    const SRC: &str = include_str!("service.rs");
+
+    fn instrument_body_preceding(fn_name: &str) -> String {
+        let needle = format!("fn {fn_name}");
+        let fn_pos = SRC
+            .find(&needle)
+            .unwrap_or_else(|| panic!("fn {fn_name} not found in source"));
+        let attr_start = SRC[..fn_pos]
+            .rfind("#[tracing::instrument(")
+            .unwrap_or_else(|| panic!("no #[tracing::instrument( preceding fn {fn_name}"));
+        let body_start = attr_start + "#[tracing::instrument(".len();
+        // Find the attribute close: the first line at/after body_start whose
+        // trimmed content is exactly `)]`. This handles indented closes (e.g.
+        // inside an `impl` block) and ignores inline `))]` sequences such as
+        // `#[validate(length(...))]` that appear on struct fields.
+        let tail = &SRC[body_start..];
+        let mut consumed = 0usize;
+        for line in tail.lines() {
+            let prev = consumed;
+            consumed += line.len() + 1; // +1 for the line separator
+            if line.trim() == ")]" {
+                return tail[..prev].to_string();
+            }
+        }
+        panic!("unterminated #[tracing::instrument( for fn {fn_name}")
+    }
+
+    #[test]
+    fn instrument_skip_points_consume_excludes_identity_realm_input() {
+        let body = instrument_body_preceding("consume_points");
+        for required in ["identity", "realm_id", "input"] {
+            assert!(
+                body.contains(required),
+                "consume_points must skip `{required}`; body was:\n{body}"
+            );
+        }
+        for banned in ["token", "password", "email", "secret", "user_id"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "consume_points span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_skip_points_list_transactions_excludes_identity_filters() {
+        let body = instrument_body_preceding("list_transactions");
+        for required in ["identity", "realm_id", "filters"] {
+            assert!(
+                body.contains(required),
+                "list_transactions must skip `{required}`; body was:\n{body}"
+            );
+        }
+        for banned in ["token", "password", "email", "secret", "user_id"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "list_transactions span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_skip_points_grant_excludes_identity_realm_input() {
+        let body = instrument_body_preceding("grant_points");
+        for required in ["identity", "realm_id", "input"] {
+            assert!(
+                body.contains(required),
+                "grant_points must skip `{required}`; body was:\n{body}"
+            );
+        }
+        for banned in ["token", "password", "email", "secret", "user_id"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "grant_points span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
     }
 }

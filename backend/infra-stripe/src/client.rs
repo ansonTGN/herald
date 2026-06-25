@@ -3,6 +3,7 @@ use crate::models::{
     PaymentIntent, StripeEventList,
 };
 use herald_domain::common::entities::app_errors::CoreError;
+use herald_domain::telemetry::external_http::timed_external_http_span;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::time::Duration;
@@ -304,6 +305,11 @@ impl StripeClient {
             request.mapping_id
         );
 
+        // BE-D10: external.http span + duration histogram. Host-only attribute
+        // (no path/query, no api key, no body) per governance §5.4.
+        let timing = timed_external_http_span(&self.base_url, "POST");
+        let _span_enter = timing.span().enter();
+
         let response = self
             .http
             .post(&url)
@@ -394,6 +400,10 @@ impl StripeClient {
                 .iter()
                 .map(|(key, value)| (format!("metadata[{key}]"), value.clone())),
         );
+
+        // BE-D10: external.http span + duration histogram.
+        let timing = timed_external_http_span(&self.base_url, "POST");
+        let _span_enter = timing.span().enter();
 
         let response = self
             .http
@@ -498,6 +508,10 @@ impl StripeClient {
             params.created_gte,
             params.created_lte
         );
+
+        // BE-D10: external.http span + duration histogram.
+        let timing = timed_external_http_span(&self.base_url, "GET");
+        let _span_enter = timing.span().enter();
 
         let response = self
             .http

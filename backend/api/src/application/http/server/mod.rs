@@ -6,10 +6,11 @@ use axum::{
     Json, Router,
     extract::State,
     http::{
-        HeaderName, HeaderValue, Method,
+        HeaderName, HeaderValue, Method, Request,
         header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
     },
 };
+use opentelemetry::global;
 use serde::Serialize;
 use std::sync::Arc;
 use tower::ServiceBuilder;
@@ -19,6 +20,7 @@ use tower_http::{
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
+use tower_otel_http_metrics::HTTPMetricsLayerBuilder;
 
 use super::points::routes;
 use utoipa::OpenApi;
@@ -178,6 +180,25 @@ pub fn create_router(
     // Define the request ID header name
     let request_id_header_name = HeaderName::from_static("x-request-id");
 
+    // Build the RED metrics layer (design §5.3).
+    //
+    // The meter comes from the global meter provider set up in
+    // `crate::observability::build_meter_provider` (BE-D03, metrics always on).
+    // Under `feature="axum"` the library reads the axum `MatchedPath` route
+    // template from the request extensions and emits `http.route` itself.
+    // `RedAttributeExtractor` adds only the `error.type` label on 5xx; see
+    // `crate::observability::metrics_extractor` for the governance argument.
+    let red_extractor = crate::observability::metrics_extractor::RedAttributeExtractor::new();
+    let red_layer = HTTPMetricsLayerBuilder::builder()
+        .with_meter(global::meter("herald-api"))
+        .with_request_extractor::<_, axum::body::Body>(red_extractor.clone())
+        .with_response_extractor::<_, axum::body::Body>(red_extractor)
+        .build()
+        // The builder only returns Err when no meter is set, and we just set one.
+        // There is no runtime exporter state to fail (exporter is owned by the
+        // global meter provider, built once in BE-D03).
+        .expect("RED metrics layer build: meter was just provided");
+
     // Merge all stateful routers and convert to stateless by calling with_state
     // api_routes is Router<AppState>, needs with_state
     // health_route is Router<AppState>, needs with_state
@@ -193,9 +214,42 @@ pub fn create_router(
                     MakeRequestUuid,
                 ))
                 // 2. Propagate X-Request-ID to downstream services (if any)
-                .layer(PropagateRequestIdLayer::new(request_id_header_name))
-                // 3. HTTP request tracing (automatically logs request_id)
-                .layer(TraceLayer::new_for_http())
+                .layer(PropagateRequestIdLayer::new(request_id_header_name.clone()))
+                // 3. RED metrics (design §5.3 mount order: request-id -> RED -> trace -> cors).
+                //    Placed before TraceLayer so the library's `http.route` is recorded
+                //    on the same request the TraceLayer span describes.
+                .layer(red_layer)
+                // 4. HTTP request tracing with `request_id` span field.
+                //    The span is created at request start; `MatchedPath` may not yet be
+                //    populated, so for the span's path field we use the route template if
+                //    present, else the fixed `"UNMATCHED"` sentinel — never the raw path
+                //    (design §5.2 governance).
+                .layer(
+                    TraceLayer::new_for_http().make_span_with(move |request: &Request<_>| {
+                        let request_id = request
+                            .headers()
+                            .get(&request_id_header_name)
+                            .and_then(|v| v.to_str().ok())
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or("-")
+                            .to_owned();
+                        let method = request.method().as_str();
+                        let route = request
+                            .extensions()
+                            .get::<axum::extract::MatchedPath>()
+                            .map(|m| m.as_str().to_owned())
+                            .unwrap_or_else(|| "UNMATCHED".to_owned());
+                        tracing::info_span!(
+                            "http.request",
+                            method = method,
+                            // Route TEMPLATE (or UNMATCHED), never the raw path / params.
+                            http.route = %route,
+                            // Low-cardinality ops correlation key (design §5.2). Always present
+                            // so every request log line carries it regardless of traces on/off.
+                            request_id = %request_id,
+                        )
+                    }),
+                )
                 .layer(cors),
         );
 

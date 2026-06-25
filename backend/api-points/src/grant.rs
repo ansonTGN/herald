@@ -50,6 +50,13 @@ fn grant_bucket_required_error() -> ApiError {
     ),
     tag = "Points"
 )]
+#[tracing::instrument(
+    // BE-D07 governance (§4.5/§5.4): identity carries user_id/realm_id; request
+    // body carries the target user_id; realm_id is conservatively skipped.
+    // Only the low-cardinality operation type is recorded.
+    skip_all,
+    fields(db.operation = "grant_points")
+)]
 pub async fn grant_points(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,

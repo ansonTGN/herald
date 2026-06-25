@@ -73,6 +73,13 @@ impl PointsPreGrantJob {
         }
     }
 
+    #[tracing::instrument(
+        // BE-D09 governance (§5.4): root span — no inbound request context.
+        // `self` holds the GrantScheduler / points_repo (repository handles).
+        // Only the low-cardinality job name is recorded.
+        skip(self),
+        fields(job.name = "points_pre_grant")
+    )]
     pub async fn run(&self) -> Result<PreGrantSummary> {
         let mut summary = PreGrantSummary::default();
 

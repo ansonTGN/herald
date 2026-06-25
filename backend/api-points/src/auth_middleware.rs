@@ -32,6 +32,10 @@ use tracing::{debug, error, info, warn};
 // are now imported from common::api_key_utils to eliminate duplication
 
 /// Try API key authentication
+#[tracing::instrument(
+    // BE-D07 governance: `headers` carry the raw X-API-Key credential.
+    skip(state, headers)
+)]
 async fn try_api_key_auth(
     state: &AppState,
     headers: &HeaderMap,
@@ -188,6 +192,12 @@ async fn try_api_key_auth(
 /// - Third-party clients to use API keys (consume points, webhooks)
 /// - Regular users to view their balance via session cookies
 /// - Admin users to manage accounts via session cookies
+#[tracing::instrument(
+    // BE-D07 governance (§4.5/§5.4): req headers carry X-API-Key / X-Auth
+    // (token/session) — both credentials MUST be skipped.
+    skip(state, req, next),
+    fields(http.route = "points_flexible_auth")
+)]
 pub async fn flexible_auth_middleware(
     State(state): State<AppState>,
     mut req: Request,
@@ -305,6 +315,120 @@ pub async fn flexible_auth_middleware(
                 "Authentication required (API key or session cookie)",
             )
             .into_response()
+        }
+    }
+}
+
+// BE-T03 governance tests (design §5.4 / §4.5).
+//
+// Covers: BE-D07 — points `flexible_auth_middleware` + `try_api_key_auth`
+// (auth_middleware.rs), `grant_points` (grant.rs), `list_transactions`
+// (transactions.rs) instrument skip correctness.
+//
+// WHY: the auth middleware reads X-API-Key / X-Auth (token/session) from
+// request headers — credentials. The grant/transactions handlers carry
+// `identity` (user_id/realm_id) and the request body/query (target user_id).
+// If the `#[instrument]` macro ever stops skipping those, the credential/PII
+// leaks into a span field. Source-scan baseline (design §6.1), anchored per
+// function to the immediately-preceding `#[tracing::instrument(...)]`.
+#[cfg(test)]
+mod instrument_skip_tests {
+    const AUTH_SRC: &str = include_str!("auth_middleware.rs");
+    const GRANT_SRC: &str = include_str!("grant.rs");
+    const TX_SRC: &str = include_str!("transactions.rs");
+
+    fn instrument_body_preceding(src: &str, fn_name: &str) -> String {
+        let needle = format!("fn {fn_name}");
+        let fn_pos = src
+            .find(&needle)
+            .unwrap_or_else(|| panic!("fn {fn_name} not found in source"));
+        let attr_start = src[..fn_pos]
+            .rfind("#[tracing::instrument(")
+            .unwrap_or_else(|| panic!("no #[tracing::instrument( preceding fn {fn_name}"));
+        let body_start = attr_start + "#[tracing::instrument(".len();
+        // Find the attribute close: the first line at/after body_start whose
+        // trimmed content is exactly `)]`. This handles indented closes (e.g.
+        // inside an `impl` block) and ignores inline `))]` sequences such as
+        // `#[validate(length(...))]` that appear on struct fields.
+        let tail = &src[body_start..];
+        let mut consumed = 0usize;
+        for line in tail.lines() {
+            let prev = consumed;
+            consumed += line.len() + 1; // +1 for the line separator
+            if line.trim() == ")]" {
+                return tail[..prev].to_string();
+            }
+        }
+        panic!("unterminated #[tracing::instrument( for fn {fn_name}")
+    }
+
+    #[test]
+    fn instrument_skip_points_flexible_auth_excludes_api_key_and_token() {
+        let body = instrument_body_preceding(AUTH_SRC, "flexible_auth_middleware");
+        // `req` headers carry X-API-Key / X-Auth (token/session).
+        for required in ["req", "state", "next"] {
+            assert!(
+                body.contains(required),
+                "flexible_auth_middleware must skip `{required}`; body was:\n{body}"
+            );
+        }
+        for banned in ["token", "api_key", "apikey", "secret", "password", "auth"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "flexible_auth_middleware span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_skip_points_try_api_key_auth_excludes_headers() {
+        let body = instrument_body_preceding(AUTH_SRC, "try_api_key_auth");
+        // `headers` carry the raw X-API-Key credential.
+        assert!(
+            body.contains("headers"),
+            "try_api_key_auth must skip `headers` (raw X-API-Key); body was:\n{body}"
+        );
+        for banned in ["token", "api_key", "apikey", "secret"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "try_api_key_auth span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_skip_points_grant_excludes_identity_and_body() {
+        let body = instrument_body_preceding(GRANT_SRC, "grant_points");
+        // Uses `skip_all` — assert that's still the case (covers identity,
+        // realm_id, request body which carries target user_id).
+        assert!(
+            body.contains("skip_all"),
+            "grant_points must use skip_all (identity carries user_id/realm_id; body carries target user_id); body was:\n{body}"
+        );
+        for banned in ["token", "password", "email", "secret", "user_id"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "grant_points span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_skip_points_list_transactions_excludes_identity_and_filters() {
+        let body = instrument_body_preceding(TX_SRC, "list_transactions");
+        assert!(
+            body.contains("skip_all"),
+            "list_transactions must use skip_all (identity + query filters carry user_id/bucket_id); body was:\n{body}"
+        );
+        for banned in ["token", "password", "email", "secret", "user_id"] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "list_transactions span must not record a `{banned}` field; body was:\n{body}"
+            );
         }
     }
 }

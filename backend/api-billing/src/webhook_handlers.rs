@@ -2025,6 +2025,14 @@ async fn process_creem_event_once(
 ///
 /// Verifies signature, checks idempotency, routes to appropriate handler,
 /// and returns 202 Accepted immediately. Processing happens asynchronously.
+#[tracing::instrument(
+    // BE-D09 governance (§4.5/§5.4): `body` is the raw provider payload
+    // (Creem event bodies may carry PII / customer data); `headers` carries
+    // the `creem-signature` header; `realm_id` is conservatively skipped.
+    // Only the low-cardinality route template is recorded.
+    skip(app_state, realm_id, headers, body),
+    fields(http.route = "/api/billing/webhook")
+)]
 pub async fn handle_creem_webhook(
     State(app_state): State<AppState>,
     Path(realm_id): Path<String>,
@@ -2527,5 +2535,87 @@ mod tests {
             "currentPeriodEnd": "2023-11-14T22:13:20Z",
         });
         assert!(normalize_creem_period(&obj).is_none());
+    }
+}
+
+// BE-T03 governance tests (design §5.4 / §4.5).
+//
+// Covers: BE-D09 — billing `handle_creem_webhook` (webhook_handlers.rs) and
+// `handle_stripe_webhook` (stripe_webhook_handlers.rs) instrument skip
+// correctness.
+//
+// WHY: webhook `body` is the raw provider payload (may carry PII / customer
+// data) and `headers` carry the provider signature header. If the
+// `#[instrument]` macro ever stops skipping those, raw PII / the signature
+// leaks into a span field. Source-scan baseline (design §6.1), anchored per
+// function to the immediately-preceding `#[tracing::instrument(...)]`.
+#[cfg(test)]
+mod instrument_skip_tests {
+    const CREEM_SRC: &str = include_str!("webhook_handlers.rs");
+    const STRIPE_SRC: &str = include_str!("stripe_webhook_handlers.rs");
+
+    fn instrument_body_preceding(src: &str, fn_name: &str) -> String {
+        let needle = format!("fn {fn_name}");
+        let fn_pos = src
+            .find(&needle)
+            .unwrap_or_else(|| panic!("fn {fn_name} not found in source"));
+        let attr_start = src[..fn_pos]
+            .rfind("#[tracing::instrument(")
+            .unwrap_or_else(|| panic!("no #[tracing::instrument( preceding fn {fn_name}"));
+        let body_start = attr_start + "#[tracing::instrument(".len();
+        // Find the attribute close: the first line at/after body_start whose
+        // trimmed content is exactly `)]`. This handles indented closes (e.g.
+        // inside an `impl` block) and ignores inline `))]` sequences such as
+        // `#[validate(length(...))]` that appear on struct fields.
+        let tail = &src[body_start..];
+        let mut consumed = 0usize;
+        for line in tail.lines() {
+            let prev = consumed;
+            consumed += line.len() + 1; // +1 for the line separator
+            if line.trim() == ")]" {
+                return tail[..prev].to_string();
+            }
+        }
+        panic!("unterminated #[tracing::instrument( for fn {fn_name}")
+    }
+
+    #[test]
+    fn instrument_skip_billing_creem_webhook_excludes_body_headers_secret() {
+        let body = instrument_body_preceding(CREEM_SRC, "handle_creem_webhook");
+        for required in ["body", "headers", "realm_id"] {
+            assert!(
+                body.contains(required),
+                "handle_creem_webhook must skip `{required}`; body was:\n{body}"
+            );
+        }
+        for banned in [
+            "token", "password", "email", "secret", "payload", "raw_body",
+        ] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "handle_creem_webhook span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn instrument_skip_billing_stripe_webhook_excludes_body_headers_secret() {
+        let body = instrument_body_preceding(STRIPE_SRC, "handle_stripe_webhook");
+        for required in ["body", "headers", "realm_id"] {
+            assert!(
+                body.contains(required),
+                "handle_stripe_webhook must skip `{required}`; body was:\n{body}"
+            );
+        }
+        for banned in [
+            "token", "password", "email", "secret", "payload", "raw_body",
+        ] {
+            assert!(
+                !body.contains(&format!("{banned} ="))
+                    && !body.contains(&format!("fields({banned}")),
+                "handle_stripe_webhook span must not record a `{banned}` field; body was:\n{body}"
+            );
+        }
     }
 }

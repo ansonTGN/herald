@@ -3336,6 +3336,14 @@ async fn handle_credit_note_voided(
 ///
 /// Verifies signature, checks idempotency, routes to appropriate handler,
 /// and returns 200 OK immediately. Processing happens synchronously (for now).
+#[tracing::instrument(
+    // BE-D09 governance (§4.5/§5.4): `body` is the raw provider payload
+    // (Stripe event bodies may carry PII / customer data); `headers` carries
+    // the `stripe-signature` header; `realm_id` is conservatively skipped.
+    // Only the low-cardinality route template is recorded.
+    skip(app_state, realm_id, headers, body),
+    fields(http.route = "/api/billing/webhook")
+)]
 pub async fn handle_stripe_webhook(
     State(app_state): State<AppState>,
     Path(realm_id): Path<String>,

@@ -10,6 +10,8 @@ pub struct ApiConfig {
     pub jwt: Option<JwtConfig>,
     #[serde(default)]
     _email: Option<EmailConfig>,
+    #[serde(default)]
+    pub observability: ObservabilityConfig,
 }
 
 #[derive(serde::Deserialize, Clone)]
@@ -82,6 +84,48 @@ pub struct EmailConfig {
     _api_key: String,
 }
 
+#[derive(serde::Deserialize, Clone)]
+pub struct ObservabilityConfig {
+    #[serde(default = "default_service_name")]
+    pub service_name: String,
+    #[serde(default = "default_otlp_endpoint")]
+    pub otlp_endpoint: String,
+    #[serde(default = "default_metrics_export_interval_secs")]
+    pub metrics_export_interval_secs: u64,
+    #[serde(default)]
+    pub traces_enabled: bool,
+    #[serde(default = "default_sqlx_slow_statement_ms")]
+    pub sqlx_slow_statement_ms: u64,
+}
+
+impl Default for ObservabilityConfig {
+    fn default() -> Self {
+        Self {
+            service_name: default_service_name(),
+            otlp_endpoint: default_otlp_endpoint(),
+            metrics_export_interval_secs: default_metrics_export_interval_secs(),
+            traces_enabled: false,
+            sqlx_slow_statement_ms: default_sqlx_slow_statement_ms(),
+        }
+    }
+}
+
+fn default_service_name() -> String {
+    "herald-api".to_string()
+}
+
+fn default_otlp_endpoint() -> String {
+    "http://localhost:4318".to_string()
+}
+
+fn default_metrics_export_interval_secs() -> u64 {
+    5
+}
+
+fn default_sqlx_slow_statement_ms() -> u64 {
+    200
+}
+
 fn default_redis_url() -> String {
     "redis://127.0.0.1:6379".to_string()
 }
@@ -107,5 +151,78 @@ impl ApiConfig {
         let config = fs::read_to_string(path)?;
         let cfg: ApiConfig = toml::from_str(&config)?;
         Ok(cfg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// User Story: Technical invariant — `ObservabilityConfig` defaults equal
+    /// the design baseline (`.ai/design/observability.md` §4.1/§4.5).
+    /// Covers: design §6.1 "默认值 = baseline" + BE-D02 handoff.
+    ///
+    /// WHY: the baseline is a security/cost contract — `traces_enabled=false`
+    /// (no trace export by default), conservative OTLP endpoint, 5s metrics
+    /// cadence, 200ms sqlx slow-statement threshold. If a default drifts, the
+    /// baseline stops being the baseline and every downstream "traces off"
+    /// assumption silently breaks. Lock all five fields to the documented
+    /// values so a future change to the `Default` impl or a `#[serde(default)]`
+    /// fn is caught here, not in production traffic.
+    #[test]
+    fn config_observability_defaults_match_baseline() {
+        let cfg = ObservabilityConfig::default();
+        assert_eq!(cfg.service_name, "herald-api");
+        assert_eq!(cfg.otlp_endpoint, "http://localhost:4318");
+        assert_eq!(cfg.metrics_export_interval_secs, 5);
+        assert!(!cfg.traces_enabled, "baseline must default traces off");
+        assert_eq!(cfg.sqlx_slow_statement_ms, 200);
+    }
+
+    /// User Story: Technical invariant — legacy configs without an
+    /// `[observability]` section still parse and yield the baseline
+    /// (`.ai/design/observability.md` §6.1 `#[serde(default)]` resilience).
+    /// Covers: design §6.1 "缺 `[observability]` 段的旧 toml 仍解析" + BE-D02 handoff.
+    ///
+    /// WHY: existing deployments ship `config.toml` files written before
+    /// observability existed. A rollout of this code MUST NOT break them, and
+    /// MUST NOT silently turn traces on either — the missing section must
+    /// resolve to the exact baseline defaults, preserving default-off. This
+    /// test fails if anyone removes `#[serde(default)]` from the `observability`
+    /// field of `ApiConfig` or from the per-field defaults of
+    /// `ObservabilityConfig`, either of which would make a pre-observability
+    /// config fail to load or flip traces on.
+    #[test]
+    fn config_api_config_parses_without_observability_section() {
+        // Minimal legal TOML for ApiConfig with NO `[observability]` section.
+        // `database.url` is the only field without a serde default, so it must
+        // be present; `[redis]`/`[server]`/`[frontend]` are required struct
+        // fields but every one of their inner fields has a default, so the
+        // empty section headers let them deserialize to their defaults.
+        let toml = r#"
+[database]
+url = "postgres://test:test@localhost/test"
+
+[redis]
+
+[server]
+
+[frontend]
+"#;
+        let cfg: ApiConfig = toml::from_str(toml).expect(
+            "ApiConfig MUST parse a pre-observability config (no [observability] section) — \
+             #[serde(default)] on the field is load-bearing for backwards compatibility",
+        );
+
+        // The missing section must resolve to the exact baseline, NOT to
+        // something that turns traces on or points at a different collector.
+        assert_eq!(cfg.observability.service_name, "herald-api");
+        assert_eq!(cfg.observability.otlp_endpoint, "http://localhost:4318");
+        assert_eq!(cfg.observability.metrics_export_interval_secs, 5);
+        assert!(
+            !cfg.observability.traces_enabled,
+            "missing [observability] section MUST default to traces off (baseline isolation)"
+        );
+        assert_eq!(cfg.observability.sqlx_slow_statement_ms, 200);
     }
 }

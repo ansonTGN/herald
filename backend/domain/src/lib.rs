@@ -27,6 +27,7 @@ pub mod rbac_init;
 pub mod realm;
 pub mod realm_config;
 pub mod security_constants;
+pub mod telemetry;
 pub mod totp_key_management;
 pub mod user;
 pub mod user_totp;

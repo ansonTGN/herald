@@ -1,5 +1,6 @@
 use std::future::Future;
 
+use herald_domain::telemetry::external_http::timed_external_http_span;
 use serde::Serialize;
 use sqlx::PgPool;
 
@@ -61,6 +62,12 @@ impl EmailProvider for ResendClient {
             subject,
             html,
         };
+
+        // BE-D10: external.http span + duration histogram. Host-only
+        // (no path, no bearer token, no email HTML body) per governance §5.4.
+        const RESEND_BASE: &str = "https://api.resend.com";
+        let timing = timed_external_http_span(RESEND_BASE, "POST");
+        let _span_enter = timing.span().enter();
 
         let resp = self
             .http
