@@ -1,5 +1,5 @@
 // PostgreSQL implementation of Purchase repository
-// PurchaseRepository trait was removed in BE-D02 (points_package_purchases table deprecated).
+// PurchaseRepository trait was removed (points_package_purchases table deprecated).
 // This struct is retained for API compatibility and may be removed in a future cleanup.
 
 use std::sync::Arc;

@@ -127,6 +127,36 @@ secret = "your-random-base64-secret-key-here"
 openssl rand -base64 48
 ```
 
+### [observability]
+
+OpenTelemetry 可观测性配置。整段缺省（旧配置文件没有 `[observability]`）时也能正常解析，等价于下面的代码默认值——即 metrics 开、traces 关。
+
+| 参数 | 类型 | 代码默认值 | Docker 配置值 | 必填 | 说明 |
+|---|---|---|---|---|---|
+| `service_name` | string | `herald-api` | 未设置 | 否 | 上报到 OTLP 的服务名 |
+| `otlp_endpoint` | string | `http://localhost:4318` | 未设置 | 否 | OTLP/HTTP 端点；`4318` 是 OTLP HTTP 标准端口 |
+| `metrics_export_interval_secs` | u64 | `5` | 未设置 | 否 | metrics 导出周期（秒） |
+| `traces_enabled` | bool | `false` | 未设置 | 否 | 是否开启 trace 导出 |
+| `sqlx_slow_statement_ms` | u64 | `200` | 未设置 | 否 | SQL 慢查询日志阈值（毫秒），超过则记录 |
+
+两点需要留意：
+
+- **metrics 默认常开**：无论 `traces_enabled` 如何，metrics（OTLP meter provider 加 RED 指标中间件）始终导出到 `otlp_endpoint`。要让指标被收集，部署侧需要在该端点有可达的 OTLP collector。
+- **traces 默认关闭**：`traces_enabled = false` 是有意为之，避免 trace 导出的回压影响主线请求。设为 `true` 才接入 tracing registry，并在进程优雅退出时 flush。
+
+`sqlx_slow_statement_ms` 控制 sqlx 的慢语句日志：执行时间超过阈值的 SQL 会被记录，用于定位慢查询。
+
+```toml
+[observability]
+service_name = "herald-api"
+otlp_endpoint = "http://localhost:4318"
+metrics_export_interval_secs = 5
+traces_enabled = false
+sqlx_slow_statement_ms = 200
+```
+
+`production.toml` 没有显式设置这一段，所以 Docker 默认走上面的代码 baseline。本地若要接自己的 collector，改 `otlp_endpoint` 即可。
+
 ## RBAC 配置
 
 RBAC 策略不在主配置文件中，而是通过数据库中的 `role_policies` 表存储。系统初始化时，`RealmInitializationService` 会为每个 realm 创建默认角色和权限。权限检查由 `RedisPermissionChecker` 完成，先查 Redis 缓存，缓存 miss 时回源 PostgreSQL。

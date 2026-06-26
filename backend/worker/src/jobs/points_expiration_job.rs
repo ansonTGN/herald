@@ -25,7 +25,7 @@ where
     }
 
     #[tracing::instrument(
-        // BE-D09 governance (§5.4): root span — no inbound request context.
+        // Governance: root span — no inbound request context.
         // `self` holds the ExpirationService (repository / DB handles).
         // Only the low-cardinality job name is recorded.
         skip(self),

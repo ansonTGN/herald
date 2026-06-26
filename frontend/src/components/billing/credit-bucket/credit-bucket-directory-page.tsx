@@ -22,12 +22,12 @@ interface CreditBucketsDirectoryPageProps {
 }
 
 /**
- * Bucket directory Master-Detail (design §4.4.2).
+ * Bucket directory Master-Detail.
  *
  * Left column: search + "New Bucket" + Bucket list. Right column: editor for
  * the selected bucket (or the create form when `selectedId === 'new'`, or an
  * empty-state when nothing is selected). Deletion goes through a destructive
- * AlertDialog that surfaces 409 `bucket_in_use`. NO isDefault control (A4).
+ * AlertDialog that surfaces 409 `bucket_in_use`. NO isDefault control.
  */
 export function CreditBucketsDirectoryPage({
   realmId,

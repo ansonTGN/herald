@@ -15,8 +15,8 @@ pub mod metadata_keys {
     pub const TARGET_TYPE: &str = "targetType";
     pub const TARGET_ID: &str = "targetId";
     pub const ATTEMPT_ID: &str = "attemptId";
-    /// Diagnostic/webhook fallback for the credit Bucket the purchase is bound to
-    /// (design §5.3). Source of truth remains `payment_attempt.bucket_id` /
+    /// Diagnostic/webhook fallback for the credit Bucket the purchase is bound to.
+    /// Source of truth remains `payment_attempt.bucket_id` /
     /// `subscription.bucket_id`; this is only a redundancy/diagnostic channel.
     pub const HERALD_BUCKET_ID: &str = "heraldBucketId";
 }

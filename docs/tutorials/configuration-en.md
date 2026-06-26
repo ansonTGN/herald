@@ -127,6 +127,36 @@ Example key generation (Linux/macOS):
 openssl rand -base64 48
 ```
 
+### [observability]
+
+OpenTelemetry observability settings. The whole section is optional: a config file without `[observability]` still parses and resolves to the code defaults below -- metrics on, traces off.
+
+| Parameter | Type | Code Default | Docker Config Value | Required | Description |
+|---|---|---|---|---|---|
+| `service_name` | string | `herald-api` | unset | No | Service name reported to OTLP |
+| `otlp_endpoint` | string | `http://localhost:4318` | unset | No | OTLP/HTTP endpoint; `4318` is the standard OTLP HTTP port |
+| `metrics_export_interval_secs` | u64 | `5` | unset | No | Metrics export interval (seconds) |
+| `traces_enabled` | bool | `false` | unset | No | Whether trace export is enabled |
+| `sqlx_slow_statement_ms` | u64 | `200` | unset | No | SQL slow-query log threshold (milliseconds); statements above it are logged |
+
+Two things to note:
+
+- **Metrics are always on**: regardless of `traces_enabled`, metrics (the OTLP meter provider plus the RED metrics middleware) are always exported to `otlp_endpoint`. An OTLP collector must be reachable at that endpoint for the metrics to be collected.
+- **Traces are off by default**: `traces_enabled = false` is deliberate, to keep trace-export back-pressure off the request path. Set it to `true` to splice into the tracing registry; traces are flushed on graceful shutdown.
+
+`sqlx_slow_statement_ms` controls sqlx's slow-statement logging: SQL whose execution time exceeds the threshold is logged, useful for tracking down slow queries.
+
+```toml
+[observability]
+service_name = "herald-api"
+otlp_endpoint = "http://localhost:4318"
+metrics_export_interval_secs = 5
+traces_enabled = false
+sqlx_slow_statement_ms = 200
+```
+
+`production.toml` does not set this section, so Docker runs on the code baseline above. To point at your own collector locally, change `otlp_endpoint`.
+
 ## RBAC Configuration
 
 RBAC policies are not stored in the main config file. They live in the `role_policies` database table. During initialization, `RealmInitializationService` creates default roles and permissions for each realm. Permission checks are handled by `RedisPermissionChecker`, which checks Redis cache first and falls back to PostgreSQL on cache miss.

@@ -28,7 +28,7 @@ use test_context::test_context;
 use uuid::Uuid;
 
 /// Seed a `subscription` row bound to the realm's legacy test bucket. Used by
-/// BE-T04 tests below so the schedule's `subscription_id` is known ahead of
+/// subscription tests below so the schedule's `subscription_id` is known ahead of
 /// the service call. Mirrors `seed_subscription_row` in test_40 — kept local
 /// to avoid cross-file test helper churn.
 async fn seed_subscription_row_77(
@@ -57,7 +57,7 @@ async fn seed_subscription_row_77(
     .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
-    .expect("Failed to seed subscription row for BE-T04 idempotency test");
+    .expect("Failed to seed subscription row for idempotency test");
     subscription_id
 }
 
@@ -106,7 +106,7 @@ async fn test_grant_idempotency_prevents_duplicate_ledger(ctx: &mut SchemaTestCo
             CreditSourceType::AdminGrant,
             500,
             None,
-            // effective_at: None ⟺ immediately available (BE-D02 added arg).
+            // effective_at: None ⟺ immediately available.
             None,
             Some(source_id.clone()),
             Some("idempotency test: first grant".to_string()),
@@ -128,7 +128,7 @@ async fn test_grant_idempotency_prevents_duplicate_ledger(ctx: &mut SchemaTestCo
             CreditSourceType::AdminGrant,
             500,
             None,
-            // effective_at: None ⟺ immediately available (BE-D02 added arg).
+            // effective_at: None ⟺ immediately available.
             None,
             Some(source_id.clone()),
             Some("idempotency test: duplicate grant".to_string()),
@@ -159,7 +159,7 @@ async fn test_grant_idempotency_prevents_duplicate_ledger(ctx: &mut SchemaTestCo
         "Real ledger should have granted_amount=500"
     );
 
-    // Verify the wallet balance is not inflated. point-time (BE-D11):
+    // Verify the wallet balance is not inflated. point-time:
     // `points_wallets.total_balance` was dropped; available balance is derived
     // from `points_credit_ledger` using the same predicate as consumption.
     let balance: i64 = sqlx::query_scalar(
@@ -434,7 +434,7 @@ async fn test_revoke_topup_proportional_idempotency(ctx: &mut SchemaTestContext)
 }
 
 // ============================================================================
-// point-time BE-T04 — Two-layer subscription idempotency (design §5.2 / §6.3 P1)
+// Two-layer subscription idempotency (P1)
 // ============================================================================
 //
 // Layer 1 — PERIOD / SCHEDULE business idempotency:
@@ -452,7 +452,7 @@ async fn test_revoke_topup_proportional_idempotency(ctx: &mut SchemaTestContext)
 // The two layers are defense-in-depth; both must hold independently.
 
 /// User Story: US-PU-009 — period-level business idempotency dedup.
-/// Covers (design §6.3 P1 — business idempotency dimension shift from event
+/// Covers (P1 — business idempotency dimension shift from event
 /// to schedule/period): the `points_grant_records(schedule_id, period_number)`
 /// UNIQUE constraint is the single source of truth. A second insert for the
 /// same key MUST be rejected at the DB level; the grantRecord for that period
@@ -572,7 +572,7 @@ async fn test_period_schedule_business_idempotency_dedup(ctx: &mut SchemaTestCon
 }
 
 /// User Story: US-PU-009 — provider event-level idempotency preserved.
-/// Covers (design §6.1 P0 — event-level idempotency retained as backstop):
+/// Covers (P0 — event-level idempotency retained as backstop):
 /// the webhook layer's `creem_{event_id}` idempotency key intercepts a
 /// duplicate event delivery BEFORE `handle_subscription_paid` is reached. The
 /// second delivery returns the cached result and produces no additional

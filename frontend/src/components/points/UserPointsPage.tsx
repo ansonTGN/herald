@@ -16,9 +16,9 @@ interface UserPointsPageProps {
   realmId: string
   userId: string
   /**
-   * URL-synced `bucketId` transaction filter (design §4.2.3 `?bucketId=`).
+   * URL-synced `bucketId` transaction filter (`?bucketId=`).
    * Source of truth is the `/$realmId/user/points` route `validateSearch`
-   * (FE-D06); this component mirrors it into `transactionFilters` and reports
+   * (`validateSearch`); this component mirrors it into `transactionFilters` and reports
    * user-driven changes back via {@link onBucketIdChange} so the URL stays
    * shareable. `undefined` means "all buckets".
    */
@@ -36,14 +36,14 @@ export function UserPointsPage({
 }: UserPointsPageProps) {
   // TODO: Migrate pagination/filter state to URL search params via parent route
   // (/$realmId/user/points) for link sharing and refresh restoration.
-  // `bucketId` is already URL-synced (FE-D06); the remaining ephemeral filters
+  // `bucketId` is already URL-synced; the remaining ephemeral filters
   // (type/startTime/endTime) are intentionally local state.
   // loadedPages counts how many "Load More" windows have been expanded; the
   // server returns the latest N transactions in a single growing page, so we
   // never accumulate fetched pages in component state (which would need effects).
   const [loadedPages, setLoadedPages] = useState(1)
   // Ephemeral transaction filters (type/dates). `bucketId` is intentionally
-  // NOT stored here: it is URL-synced (FE-D06) and merged in below so external
+  // NOT stored here: it is URL-synced and merged in below so external
   // URL changes (e.g. opening a shared `?bucketId=` link) reflect immediately.
   const [transactionFilters, setTransactionFilters] = useState<TransactionFiltersType>({})
 
@@ -111,7 +111,7 @@ export function UserPointsPage({
     }
     setTransactionFilters(ephemeral)
     setLoadedPages(1)
-    // Mirror the shareable bucket dimension back to the URL (FE-D06).
+    // Mirror the shareable bucket dimension back to the URL.
     onBucketIdChange?.(filters.bucketId)
   }
 

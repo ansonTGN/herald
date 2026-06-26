@@ -89,7 +89,7 @@ impl WebhookCompensationJob {
     }
 
     #[tracing::instrument(
-        // BE-D09 governance (§5.4): root span — no inbound request context.
+        // Governance: root span — no inbound request context.
         // `self` carries provider api keys / DB pool handles (compensation
         // fetches Stripe/Creem API keys from realm_config), so it is skipped.
         // Only the low-cardinality job name is recorded.
@@ -497,16 +497,16 @@ struct CompensationStats {
     events_failed: usize,
 }
 
-// BE-T03 governance tests (design §5.4 / §4.5).
+// Governance tests.
 //
-// Covers: BE-D09 — worker jobs `WebhookCompensationJob::run`,
+// Covers: worker jobs `WebhookCompensationJob::run`,
 // `PointsExpirationJob::run`, `PointsPreGrantJob::run` instrument skip
 // correctness.
 //
 // WHY: these are root spans with no inbound request context, and `self`
 // carries provider API keys / DB pool / repository handles. If the
 // `#[instrument]` macro ever stops skipping `self`, those handles/keys may be
-// recorded as span fields. Source-scan baseline (design §6.1), anchored per
+// recorded as span fields. Source-scan baseline, anchored per
 // method to the immediately-preceding `#[tracing::instrument(...)]`.
 #[cfg(test)]
 mod instrument_skip_tests {

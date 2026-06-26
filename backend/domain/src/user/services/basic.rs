@@ -237,7 +237,7 @@ where
     }
 
     #[tracing::instrument(
-        // BE-D08 governance (§4.5/§5.4): request carries password (credential)
+        // Governance: request carries password (credential)
         // + email/username (PII) + realm_id. self holds the user repo.
         // Only the low-cardinality operation type is recorded.
         skip(self, request),
@@ -282,7 +282,7 @@ where
     }
 
     #[tracing::instrument(
-        // BE-D08 governance (§4.5/§5.4): request carries password (credential)
+        // Governance: request carries password (credential)
         // + email (PII) + realm_id. self holds the user repo.
         // Only the low-cardinality operation type is recorded.
         skip(self, request),
@@ -588,15 +588,15 @@ mod tests {
     }
 }
 
-// BE-T03 governance tests (design §5.4 / §4.5).
+// Governance tests.
 //
-// Covers: BE-D08 — `UserServiceImpl` login / register instrument skip
+// Covers: `UserServiceImpl` login / register instrument skip
 // correctness.
 //
 // WHY: login/register take `request` (carries password + email/username +
 // realm_id — credential + PII). If the `#[instrument]` macro ever stops
 // skipping `request`, the password/email leaks into a span field. Source-scan
-// baseline (design §6.1), anchored per method to the immediately-preceding
+// baseline, anchored per method to the immediately-preceding
 // `#[tracing::instrument(...)]`.
 #[cfg(test)]
 mod instrument_skip_tests {

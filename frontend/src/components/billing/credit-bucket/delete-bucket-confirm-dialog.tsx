@@ -12,7 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { m } from '@/paraglide/messages'
 
 /**
- * Shape of a 409 `bucket_in_use` error body (design §4.2.3 / generated
+ * Shape of a 409 `bucket_in_use` error body (generated
  * `BucketInUseErrorBody`). Surfaced by `useDeleteCreditBucket` when the
  * backend refuses deletion due to in-flight subscriptions or residual
  * balances.

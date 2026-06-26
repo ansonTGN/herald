@@ -180,10 +180,10 @@ pub fn create_router(
     // Define the request ID header name
     let request_id_header_name = HeaderName::from_static("x-request-id");
 
-    // Build the RED metrics layer (design §5.3).
+    // Build the RED metrics layer.
     //
     // The meter comes from the global meter provider set up in
-    // `crate::observability::build_meter_provider` (BE-D03, metrics always on).
+    // `crate::observability::build_meter_provider` (metrics always on).
     // Under `feature="axum"` the library reads the axum `MatchedPath` route
     // template from the request extensions and emits `http.route` itself.
     // `RedAttributeExtractor` adds only the `error.type` label on 5xx; see
@@ -196,7 +196,7 @@ pub fn create_router(
         .build()
         // The builder only returns Err when no meter is set, and we just set one.
         // There is no runtime exporter state to fail (exporter is owned by the
-        // global meter provider, built once in BE-D03).
+        // global meter provider, built once).
         .expect("RED metrics layer build: meter was just provided");
 
     // Merge all stateful routers and convert to stateless by calling with_state
@@ -215,7 +215,7 @@ pub fn create_router(
                 ))
                 // 2. Propagate X-Request-ID to downstream services (if any)
                 .layer(PropagateRequestIdLayer::new(request_id_header_name.clone()))
-                // 3. RED metrics (design §5.3 mount order: request-id -> RED -> trace -> cors).
+                // 3. RED metrics (mount order: request-id -> RED -> trace -> cors).
                 //    Placed before TraceLayer so the library's `http.route` is recorded
                 //    on the same request the TraceLayer span describes.
                 .layer(red_layer)
@@ -223,7 +223,7 @@ pub fn create_router(
                 //    The span is created at request start; `MatchedPath` may not yet be
                 //    populated, so for the span's path field we use the route template if
                 //    present, else the fixed `"UNMATCHED"` sentinel — never the raw path
-                //    (design §5.2 governance).
+                //    (governance).
                 .layer(
                     TraceLayer::new_for_http().make_span_with(move |request: &Request<_>| {
                         let request_id = request
@@ -244,7 +244,7 @@ pub fn create_router(
                             method = method,
                             // Route TEMPLATE (or UNMATCHED), never the raw path / params.
                             http.route = %route,
-                            // Low-cardinality ops correlation key (design §5.2). Always present
+                            // Low-cardinality ops correlation key. Always present
                             // so every request log line carries it regardless of traces on/off.
                             request_id = %request_id,
                         )

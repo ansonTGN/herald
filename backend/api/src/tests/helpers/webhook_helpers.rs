@@ -96,7 +96,7 @@ pub fn build_creem_subscription_paid_with_herald_metadata(
     external_product_id: &str,
     is_renewal: bool,
 ) -> serde_json::Value {
-    // A8 P0: `normalize_creem_period` requires BOTH `currentPeriodStart` and
+    // P0: `normalize_creem_period` requires BOTH `currentPeriodStart` and
     // `currentPeriodEnd` (start < end) to resolve the billing period; otherwise
     // the grant is skipped with `reason="period_uniquely_unresolvable"`. Real
     // Creem subscription.paid payloads always carry both bounds, so emit a
@@ -146,7 +146,7 @@ pub fn build_creem_subscription_paid_without_entitlement_key(
     external_product_id: &str,
     is_renewal: bool,
 ) -> serde_json::Value {
-    // A8 P0: emit BOTH period bounds (see build_creem_subscription_paid_with_herald_metadata).
+    // P0: emit BOTH period bounds (see build_creem_subscription_paid_with_herald_metadata).
     let period_start = chrono::Utc::now();
     let period_end = period_start + chrono::Duration::days(30);
     let mut metadata = json!({
@@ -495,7 +495,7 @@ pub fn build_stripe_invoice_with_herald_metadata(
                 "currency": "usd",
                 "current_period_start": period_start,
                 "current_period_end": period_end,
-                // A8 P0: `normalize_stripe_invoice_period` resolves the billing
+                // P0: `normalize_stripe_invoice_period` resolves the billing
                 // period from `lines.data[].period.{start,end}` (NOT the invoice
                 // top-level current_period_* fields, which Stripe invoices do not
                 // carry). Without a resolvable line period the renewal grant is
@@ -694,7 +694,7 @@ pub fn generate_test_plan_id() -> Uuid {
 /// ============================================================================
 /// These builders reference the pre-product_reduce schema (plan_id, planId).
 /// New tests should use the herald_* metadata builders above.
-/// BE-T03 / BE-T04 will migrate or remove the tests that depend on these.
+/// Pending work will migrate or remove the tests that depend on these.
 ///
 /// Build a subscription.paid webhook event (legacy, uses plan_id)
 pub fn build_subscription_paid_event(
@@ -963,7 +963,7 @@ pub async fn setup_test_plan_config_with_points(
     let external_product_id = format!("prod_test_{}", plan_id);
     let entitlement_key = plan_id.to_string();
 
-    // Credit Buckets model (design §5.5): a subscription grant routes to the
+    // Credit Buckets model: a subscription grant routes to the
     // bucket bound on the entitlement mapping. Bind both mappings below to the
     // realm's legacy test bucket so the lazy subscription-bucket resolution in
     // the Creem webhook handler succeeds (case "mapping present + bucket").
@@ -1020,7 +1020,7 @@ pub async fn setup_test_plan_config_with_points(
 /// Create a test entitlement mapping for webhook tests via direct SQL.
 ///
 /// This is self-contained in webhook_helpers.rs (not dependent on billing_helpers.rs)
-/// because BE-T01 and BE-T02 run in parallel.
+/// because the parallel test groups run independently.
 ///
 /// Returns the mapping ID.
 #[allow(clippy::too_many_arguments)]

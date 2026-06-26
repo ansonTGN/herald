@@ -80,7 +80,7 @@ mod tests {
             realm_id,
         )
         .await;
-        // BE-D11 / point-time: per-type balance columns and the `total_balance`
+        // point-time: per-type balance columns and the `total_balance`
         // GENERATED column were dropped from `points_wallets`; available balance
         // is derived from `points_credit_ledger`. Seed only the retained
         // lifetime-analytics columns (all 0).

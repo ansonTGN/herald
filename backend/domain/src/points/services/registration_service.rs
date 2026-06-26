@@ -13,11 +13,11 @@ use crate::points::{
 
 /// Registration Service - Handles user registration and initial points grant
 ///
-/// Per design §5.4 / §4.3.2 (credit-bucket): registration and free periodic
+/// Per design (credit-bucket): registration and free periodic
 /// grants target the Realm's registration pool Bucket (the single Bucket flagged
 /// `receives_registration_credits = true`). That Bucket is resolved through the
-/// injected `RegistrationPoolResolver` port (infra impl by BE-D07). When no
-/// Bucket is marked, grants are skipped fail-safe (no cross-pool fallback, A4/A5).
+/// injected `RegistrationPoolResolver` port (infra impl). When no
+/// Bucket is marked, grants are skipped fail-safe (no cross-pool fallback).
 pub struct RegistrationService<R, P, Z>
 where
     R: PointsRepository + Send + Sync,
@@ -64,11 +64,11 @@ where
     /// - User config already exists (duplicate registration)
     /// - Database errors
     ///
-    /// # Registration pool resolution (design §5.4)
+    /// # Registration pool resolution
     /// The target Bucket for registration and free periodic grants is the Realm's
     /// registration pool Bucket (`receives_registration_credits = true`). When no
     /// Bucket is marked, both grants are skipped fail-safe (warn, not an error) —
-    /// never fall back to an implicit pool (A4/A5).
+    /// never fall back to an implicit pool.
     pub async fn handle_user_registration(
         &self,
         user_id: Uuid,
@@ -96,10 +96,10 @@ where
             .ok_or(CoreError::NotFound)?;
 
         // 3. Resolve the registration pool Bucket for this Realm.
-        // Per design §5.4: target = the Realm's Bucket flagged
+        // Per design: target = the Realm's Bucket flagged
         // `receives_registration_credits = true` (at most one per Realm).
         // `None` means no marked Bucket → fail-safe skip grants (no cross-pool
-        // fallback, A4/A5). This is NOT an error: a Realm may legitimately
+        // fallback). This is NOT an error: a Realm may legitimately
         // have no registration pool configured.
         let registration_pool_bucket_id = self
             .registration_pool_resolver
@@ -119,7 +119,7 @@ where
                         CreditSourceType::Registration,
                         registration_bonus,
                         None, // expires_at = None (permanent)
-                        None, // effective_at = None (registration grant is immediately available, design §5.3)
+                        None, // effective_at = None (registration grant is immediately available)
                         None, // source_id
                         None, // description
                         Some(format!("grant:registration:{}", user_id)),
@@ -163,7 +163,7 @@ where
 
         // 5. Create periodic grant schedule (only if free_periodic_points_amount > 0
         //    AND a registration pool Bucket is configured — periodic grants target
-        //    that pool per design §5.4). When no registration pool Bucket is marked
+        //    that pool per design). When no registration pool Bucket is marked
         //    the schedule is skipped fail-safe: a schedule without a target Bucket
         //    would only fail loud at grant time, so we do not create one at all.
         if realm_config.free_periodic_points_amount > 0 {
@@ -269,7 +269,7 @@ where
                 CreditSourceType::FreePeriodicGrant,
                 amount,
                 expires_at,
-                None, // effective_at = None (first periodic grant at registration is immediately available, design §5.3)
+                None, // effective_at = None (first periodic grant at registration is immediately available)
                 Some(schedule.id.to_string()),
                 None, // description
                 Some(format!("grant:periodic:{}", schedule.id)),
@@ -451,14 +451,14 @@ mod tests {
         assert_eq!(schedule.calculate_next_expiration(), None); // Permanent
     }
 
-    // ===== Credit-bucket registration-pool resolution tests (BE-D05) =====
+    // ===== Credit-bucket registration-pool resolution tests =====
     //
-    // Per design §5.4 / A4 / A5: registration and free-periodic grants target the
+    // Per design: registration and free-periodic grants target the
     // Realm's single registration-pool Bucket (`receives_registration_credits`).
     // When the resolver returns `None` (no marked Bucket) the service MUST skip
     // grants fail-safe and never fall back to an implicit pool. These tests pin
     // the resolver contract via a stub so the fail-safe rule has a regression
-    // guard independent of the DB-backed infra impl (BE-D07).
+    // guard independent of the DB-backed infra impl.
 
     struct StubRegistrationPoolResolver {
         bucket: Option<Uuid>,

@@ -48,7 +48,7 @@ where
     S: SessionRepository,
 {
     #[tracing::instrument(
-        // BE-D08 governance (§4.5/§5.4): request carries password (credential)
+        // Governance: request carries password (credential)
         // + email/username (PII); client_id/client_ip are identifiers;
         // self holds the session repo. Only the low-cardinality operation
         // type and db.system are recorded.
@@ -100,7 +100,7 @@ where
 
     /// Create a session for an authenticated user
     #[tracing::instrument(
-        // BE-D08 governance (§4.5/§5.4): user carries identity/email;
+        // Governance: user carries identity/email;
         // client_id/client_ip are identifiers; self holds the session repo.
         // Only the low-cardinality operation type is recorded.
         skip(self, user, client_id, client_ip),
@@ -144,7 +144,7 @@ where
     }
 
     #[tracing::instrument(
-        // BE-D08 governance (§4.5/§5.4): token is the session credential.
+        // Governance: token is the session credential.
         skip(self, token),
         fields(db.operation = "logout")
     )]
@@ -153,7 +153,7 @@ where
     }
 
     #[tracing::instrument(
-        // BE-D08 governance (§4.5/§5.4): token is the session credential.
+        // Governance: token is the session credential.
         skip(self, _token),
         fields(db.operation = "verify_session")
     )]
@@ -170,7 +170,7 @@ where
     }
 
     #[tracing::instrument(
-        // BE-D08 governance (§4.5/§5.4): token is the session credential.
+        // Governance: token is the session credential.
         skip(self, token),
         fields(db.operation = "refresh_session")
     )]
@@ -234,15 +234,15 @@ where
     }
 }
 
-// BE-T03 governance tests (design §5.4 / §4.5).
+// Governance tests.
 //
-// Covers: BE-D08 — `AuthenticationServiceImpl` login / create_session / logout
+// Covers: `AuthenticationServiceImpl` login / create_session / logout
 // / verify_session / refresh_session instrument skip correctness.
 //
 // WHY: login carries password + email/username; the session methods take the
 // session `token` — a credential. If the `#[instrument]` macro ever stops
 // skipping those, the credential/PII leaks into a span field. Source-scan
-// baseline (design §6.1), anchored per method to the immediately-preceding
+// baseline, anchored per method to the immediately-preceding
 // `#[tracing::instrument(...)]`.
 #[cfg(test)]
 mod instrument_skip_tests {

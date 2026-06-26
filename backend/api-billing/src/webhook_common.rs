@@ -19,7 +19,7 @@ pub fn create_placeholder_transaction(
         bucket_id: Uuid::nil(),
         transaction_type,
         amount: 0,
-        // BE-D11/A5: this is a pure idempotency/no-op placeholder — no ledger
+        // Pure idempotency/no-op placeholder — no ledger
         // mutation, no real wallet (synthetic wallet_id, nil bucket_id), amount
         // = 0. `balance_after`/typed snapshots legitimately read 0 (no points
         // moved); computing a derived balance against the nil bucket would also
@@ -73,16 +73,15 @@ pub fn parse_attempt_id(value: &Value) -> Option<Uuid> {
 }
 
 /// Reason string recorded on `PointsRevocationRecord` rows produced by
-/// pre-grant reclaim (design §5.2 A4). The infra reclaim path
+/// pre-grant reclaim. The infra reclaim path
 /// (`revoke_pregrant_ledger_row_atomic`) writes the revocation record for
 /// partially-consumed rows using this reason; fully-unused rows need no
 /// debt record.
 pub const RECLAIM_REASON: &str = "subscription_pre_grant_reclaim";
 
-/// Row-level reclaim of a subscription's pre-granted future period
-/// (design §5.2 A4 / BE-D09).
+/// Row-level reclaim of a subscription's pre-granted future period.
 ///
-/// Subscription pre-grant is **chained one period ahead** (design §5.2):
+/// Subscription pre-grant is **chained one period ahead**:
 /// each `handle_subscription_paid` / activation writes the current period
 /// and pre-grants the next period. `pregrant_next_period_atomic` advances
 /// `granted_periods` to the pre-granted period number, so the highest
@@ -101,7 +100,7 @@ pub const RECLAIM_REASON: &str = "subscription_pre_grant_reclaim";
 /// - Row active & partially consumed → set `revoked` + write
 ///   `PointsRevocationRecord(reason = subscription_pre_grant_reclaim)`.
 ///
-/// **No wallet back-adjustment** (A4): derived balance auto-excludes revoked
+/// **No wallet back-adjustment**: derived balance auto-excludes revoked
 /// rows. **No other active credits touched** (row-precise locator).
 ///
 /// Returns the number of ledger rows revoked (0 ⟹ idempotent no-op).

@@ -75,7 +75,7 @@ pub mod points;
 // Email config scenarios
 pub mod email_config_scenarios;
 
-// Credit Bucket scenarios (authored by backend-test slot, BE-T01..BE-T05)
+// Credit Bucket scenarios (authored by backend-test slot)
 pub mod credit_bucket;
 
 // Realm management scenarios

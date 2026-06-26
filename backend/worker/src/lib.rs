@@ -45,7 +45,7 @@ where
     /// Interval (and lookback window) for webhook compensation in seconds.
     pub compensation_interval_secs: u64,
 
-    /// Optional points pre-grant warming job (design §5.6). When Some, the
+    /// Optional points pre-grant warming job. When Some, the
     /// pre-grant job runs on its own interval as a pre-warming optimization.
     /// The worker is NOT a correctness boundary; correctness comes from the
     /// availability predicate + realization backstops (subscription chained
@@ -98,7 +98,7 @@ where
         self
     }
 
-    /// Attach the points pre-grant warming job (design §5.6). The job runs on
+    /// Attach the points pre-grant warming job. The job runs on
     /// `pre_grant_interval_secs` as a pre-warming optimization; correctness is
     /// NOT gated on it firing on time.
     pub fn with_pre_grant(mut self, job: Arc<PointsPreGrantJob>) -> Self {
@@ -250,8 +250,8 @@ where
                     }
                 }
 
-                // Run points pre-grant warming job on its own schedule
-                // (design §5.6). Pre-warming only — not a correctness boundary.
+                // Run points pre-grant warming job on its own schedule.
+                // Pre-warming only — not a correctness boundary.
                 _ = pre_grant_timer.tick(), if pre_grant.is_some() => {
                     if let Some(ref job) = pre_grant {
                         match job.run().await {

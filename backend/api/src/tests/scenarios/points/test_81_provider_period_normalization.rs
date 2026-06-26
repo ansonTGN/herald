@@ -1,15 +1,15 @@
 // =============================================================================
-// point-time BE-T05: provider Period Normalization (Stripe + Creem, A8 P0)
+// provider Period Normalization (Stripe + Creem, P0)
 // =============================================================================
 //
-// SCENARIO-LAYER coverage of design `.ai/design/point-time.md` §6.1:
+// SCENARIO-LAYER coverage of design `.ai/design/point-time.md`:
 //   * "provider 周期归一化（P0）" — Stripe top-level + item-level periods and
 //     Creem symmetric variants must normalize to a unique `(period_start,
 //     period_end)` and DRIVE the grant (`Some ⟹ grant`).
 //   * "provider 周期归一化前置失败（P0）" — when the provider payload cannot
 //     uniquely yield `period_start/period_end`, the handler MUST skip the
 //     grant, emit a structured `warn!(reason = "period_uniquely_unresolvable")`,
-//     and await a later webhook / API compensation (A8 P0 — never guess the
+//     and await a later webhook / API compensation (P0 — never guess the
 //     period from event time, never write a ledger with an invented period).
 //
 // These tests exercise the normalization behavior END-TO-END via the webhook
@@ -17,7 +17,7 @@
 // way to observe them is through `handle_subscription_paid` being invoked or
 // skipped). They are NOT duplicates of the `normalize_stripe_period` /
 // `normalize_creem_period` `#[cfg(test)]` unit tests inside
-// `backend/api-billing/src/*_webhook_handlers.rs` (those are owned by BE-D08,
+// `backend/api-billing/src/*_webhook_handlers.rs` (those are owned elsewhere,
 // dev item P2-3 — the four quadrants + Creem variants are already covered
 // there). This file asserts the *consequence* of normalization at the
 // scenario layer: ledger rows written (Some) vs. NOT written + no
@@ -31,11 +31,11 @@
 //     → `normalize_creem_period(creem_event_object(&event))`
 //     (backend/api-billing/src/webhook_handlers.rs:1067)
 //
-// All balance assertions use the BE-T01 derived-predicate helper
-// (`assert_derived_balance`), never `points_wallets.total_balance` (BE-D11
-// physically removed that column).
+// All balance assertions use the derived-predicate helper
+// (`assert_derived_balance`), never `points_wallets.total_balance` (that
+// column was physically removed).
 //
-// A8 P0 quadrants covered:
+// P0 quadrants covered:
 //   (a) Stripe top-level current_period_*           → Some  → grant
 //   (b) Stripe item-level items.data[].current_*    → Some  → grant
 //   (c) Stripe multi-item disagreeing periods       → None  → SKIP grant
@@ -63,9 +63,9 @@ use uuid::Uuid;
 
 /// Create a test account row directly (mirrors fixtures::create_test_user but
 /// avoids pulling in points_helpers::create_test_user which lives in a
-/// different import path). We need this local copy because the BE-T01
+/// different import path). We need this local copy because the
 /// `create_test_user` helper (points_helpers) takes a `&PgPool` and several
-/// BE-T05 sibling tests already use a ctx-bound variant — keeping a local
+/// sibling tests already use a ctx-bound variant — keeping a local
 /// copy makes this file self-contained and avoids the broken legacy
 /// `create_points_wallet` helper (it references dropped columns).
 async fn create_user(ctx: &SchemaTestContext, realm_id: &str, email: &str) -> Uuid {
@@ -88,7 +88,7 @@ async fn create_user(ctx: &SchemaTestContext, realm_id: &str, email: &str) -> Uu
 /// Build a Stripe `customer.subscription.created` event with the given
 /// subscription object as `data.object`. The caller controls whether
 /// `current_period_*` appears at the top level, at the item level, both, or
-/// neither — which is exactly what selects the A8 P0 quadrant under test.
+/// neither — which is exactly what selects the P0 quadrant under test.
 fn build_stripe_subscription_created_event(
     event_id: &str,
     realm_id: &str,
@@ -124,7 +124,7 @@ fn build_stripe_subscription_created_event(
 
 /// Build a Creem `subscription.paid` event with caller-supplied period
 /// fields on `data.object`. Passing `None` for either side omits the field,
-/// exercising the A8 P0 "missing / partial ⟹ None" quadrant.
+/// exercising the P0 "missing / partial ⟹ None" quadrant.
 fn build_creem_subscription_paid_event(
     event_id: &str,
     realm_id: &str,
@@ -168,7 +168,7 @@ fn build_creem_subscription_paid_event(
 // ============================================================================
 
 // User Story: US-PU-009 (use this period's credits on time).
-// Covers design §6.1 P0 "provider 周期归一化" + A8 P0 quadrant (a):
+// Covers P0 "provider 周期归一化" + P0 quadrant (a):
 //   old Stripe API versions put `current_period_start` / `current_period_end`
 //   at the subscription TOP LEVEL. The normalizer must resolve them to a
 //   unique `(period_start, period_end)` and DRIVE `handle_subscription_paid`
@@ -269,8 +269,8 @@ async fn test_stripe_subscription_top_level_period_normalized(ctx: &mut SchemaTe
 // ============================================================================
 
 // User Story: US-PU-009.
-// Covers design §6.1 P0 "provider 周期归一化" + A8 P0 quadrant (b) +
-// §3.1 note: Stripe 2025-03-31.basil REMOVED subscription top-level
+// Covers P0 "provider 周期归一化" + P0 quadrant (b) +
+// note: Stripe 2025-03-31.basil REMOVED subscription top-level
 // `current_period_*` — period fields now live on each subscription item.
 // A single-item subscription must resolve its period unambiguously from
 // `items.data[0]` and drive the grant.
@@ -361,14 +361,14 @@ async fn test_stripe_subscription_item_level_period_normalized(ctx: &mut SchemaT
 // ============================================================================
 
 // User Story: US-PU-009 (never grant against a guessed period).
-// Covers design §6.1 P0 "provider 周期归一化前置失败" + A8 P0 quadrant (c):
+// Covers P0 "provider 周期归一化前置失败" + P0 quadrant (c):
 //   when a subscription has MULTIPLE items with DISAGREEING periods, the
 //   points entitlement cannot be uniquely mapped to one item's period. The
 //   normalizer MUST return None; the handler MUST skip the grant and emit a
 //   structured warning (never guess from event time, never write a ledger
 //   with an invented period). A later webhook / API call must compensate.
 //
-// Why this test exists: this is the central A8 P0 safety guarantee. If the
+// Why this test exists: this is the central P0 safety guarantee. If the
 // normalizer silently picked the first item's period (or top-level fallback
 // when items disagree), a multi-product subscription could grant against the
 // WRONG billing window — leaking or short-changing the user. The strict
@@ -448,14 +448,14 @@ async fn test_stripe_multi_item_period_unresolvable_skips_pregrant(ctx: &mut Sch
     assert_webhook_success(&response);
 
     // Then: NO subscription_credit ledger was written. Neither the formal
-    // current-period grant NOR a next-period pre-grant may appear — A8 P0
+    // current-period grant NOR a next-period pre-grant may appear — P0
     // forbids writing a ledger with an invented period.
     let ledgers =
         get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
         ledgers.is_empty(),
         "Stripe multi-item disagreeing periods must SKIP grant and write NO ledger \
-         (A8 P0 — never guess); got {} subscription_credit ledgers",
+         (P0 — never guess); got {} subscription_credit ledgers",
         ledgers.len()
     );
 
@@ -468,13 +468,13 @@ async fn test_stripe_multi_item_period_unresolvable_skips_pregrant(ctx: &mut Sch
 // ============================================================================
 
 // User Story: US-PU-009 (never grant against a guessed period).
-// Covers design §6.1 P0 "provider 周期归一化前置失败" + A8 P0 quadrant (d):
+// Covers P0 "provider 周期归一化前置失败" + P0 quadrant (d):
 //   when NEITHER top-level NOR item-level period fields are present (a
 //   malformed / partial payload, or a provider quirk), the normalizer
 //   returns None and the handler skips the grant.
 //
 // Why this test exists: this is the "no signal at all" case. Combined with
-// scenario (c), it pins down the A8 P0 invariant: the handler writes a
+// scenario (c), it pins down the P0 invariant: the handler writes a
 // ledger IFF the normalizer resolved a unique period. Without this test, a
 // regression that fell back to "event time as period_start" on missing
 // fields would silently grant against the wrong window.
@@ -537,7 +537,7 @@ async fn test_stripe_no_period_anywhere_skips_pregrant(ctx: &mut SchemaTestConte
         get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
         ledgers.is_empty(),
-        "Stripe payload with NO period anywhere must SKIP grant (A8 P0); \
+        "Stripe payload with NO period anywhere must SKIP grant (P0); \
          got {} subscription_credit ledgers",
         ledgers.len()
     );
@@ -550,7 +550,7 @@ async fn test_stripe_no_period_anywhere_skips_pregrant(ctx: &mut SchemaTestConte
 // ============================================================================
 
 // User Story: US-PU-009.
-// Covers design §6.1 P0 "provider 周期归一化" — Creem symmetric case:
+// Covers P0 "provider 周期归一化" — Creem symmetric case:
 //   Creem exposes the period under several field-name variants
 //   (`currentPeriodStart` / `current_period_start` /
 //   `current_period_start_date`, and matching `*End`). When both endpoints
@@ -628,14 +628,14 @@ async fn test_creem_period_normalized(ctx: &mut SchemaTestContext) {
 // ============================================================================
 
 // User Story: US-PU-009 (never grant against a guessed period).
-// Covers design §6.1 P0 "provider 周期归一化前置失败" — Creem symmetric:
+// Covers P0 "provider 周期归一化前置失败" — Creem symmetric:
 //   when neither period endpoint can be resolved (fields missing / partial /
 //   inverted), the normalizer returns None and the handler MUST skip the
 //   grant, emit a structured warning, and await a later webhook / API
 //   compensation. Never guess from event time.
 //
 // Why this test exists: this is the Creem counterpart to scenario (d). It
-// pins down that the A8 P0 "None ⟹ skip" gate applies symmetrically to
+// pins down that the P0 "None ⟹ skip" gate applies symmetrically to
 // both providers — a regression on either side must not silently fall back
 // to event-time guessing. The default `build_subscription_paid_event` helper
 // (omits `currentPeriodStart`) makes this case easy to hit accidentally;
@@ -684,7 +684,7 @@ async fn test_creem_period_missing_skips_pregrant(ctx: &mut SchemaTestContext) {
         get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
         ledgers.is_empty(),
-        "Creem payload with NO period fields must SKIP grant (A8 P0 — never guess \
+        "Creem payload with NO period fields must SKIP grant (P0 — never guess \
          from event time); got {} subscription_credit ledgers",
         ledgers.len()
     );

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { createCreditBucketSchema, updateCreditBucketSchema } from '../credit-bucket-forms'
 
 /**
- * Factory for valid Create Credit Bucket input (design §4.2.2).
+ * Factory for valid Create Credit Bucket input.
  * `enabled` / `receivesRegistrationCredits` are required booleans in the schema
  * (no `.default()`), so the factory must supply them explicitly.
  */
@@ -137,7 +137,7 @@ describe('updateCreditBucketSchema', () => {
       expect(result.success).toBe(true)
     })
 
-    // bucketKey is immutable identity (design §4.2.3). zod strips unknown keys
+    // bucketKey is immutable identity. zod strips unknown keys
     // by default, so submitting a bucketKey on update does NOT fail — it is
     // silently dropped. Assert it never lands in the parsed output so a future
     // schema change (e.g. .strict()) cannot silently start mutating identity.

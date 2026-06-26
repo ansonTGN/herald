@@ -24,7 +24,7 @@ use herald_core::domain::points::entities::{CreditType, PointsWallet};
 use herald_core::domain::points::ports::{PointsRepository, WalletFilters};
 
 /// Map a derived `(CreditType, amount)` slice into the 5-field
-/// `BalancesByType` (design §5.1 A7). Unknown credit types are ignored (none
+/// `BalancesByType`. Unknown credit types are ignored (none
 /// exist today; future types would need an explicit field added first).
 fn derived_to_balances_by_type(derived: &[(CreditType, i64)]) -> BalancesByType {
     let mut out = BalancesByType::default();
@@ -46,8 +46,8 @@ fn derived_to_balances_by_type(derived: &[(CreditType, i64)]) -> BalancesByType 
     out
 }
 
-/// Map a domain `PointsWallet` + derived balances to the HTTP response shape
-/// (design §5.1 A7). The 5 typed balances and `total_balance` come from the
+/// Map a domain `PointsWallet` + derived balances to the HTTP response shape.
+/// The 5 typed balances and `total_balance` come from the
 /// derived SUM (same predicate as consumption — future-effective rows are
 /// excluded, so the user-visible balance never leaks un-granted periods);
 /// analytics (`total_recharged` / `total_consumed`) stay on the Stored wallet
@@ -84,7 +84,7 @@ fn wallet_to_response(
 }
 
 /// Directory metadata for a Credit Bucket, used to enrich `WalletByBucket`
-/// rows with `name` / `enabled` (design §4.2.3). Looked up once per request
+/// rows with `name` / `enabled`. Looked up once per request
 /// from `billing_repository.list_credit_buckets` to avoid N+1.
 struct BucketDirInfo {
     name: String,
@@ -125,7 +125,7 @@ async fn load_bucket_dir(state: &AppState, realm_id: &str) -> BTreeMap<Uuid, Buc
 }
 
 /// Group the per-wallet rows by `(bucket_id, user_id)` and produce the
-/// `WalletByBucket[]` aggregation (design §4.2.3 / §5.1 A7).
+/// `WalletByBucket[]` aggregation.
 ///
 /// The 5 typed balances per `(user, bucket)` come from the derived SUM (same
 /// predicate as consumption — future-effective pre-grant rows are excluded so
@@ -263,7 +263,7 @@ pub async fn list_wallets(
     {
         Ok(paginated) => {
             // We discard the PageResponse shape here because the bucket-grouped
-            // view is the contract (design §4.2.3). Pagination of the
+            // view is the contract. Pagination of the
             // underlying wallet rows is still honoured by the repository; the
             // grouping collapses the visible page.
             //
@@ -326,7 +326,7 @@ pub async fn get_wallet(
         .await
     {
         Ok(account) => {
-            // Derived SUM (design §5.1 A7) — same predicate as consumption, so
+            // Derived SUM — same predicate as consumption, so
             // future-effective pre-grant rows are excluded and the visible
             // balance never leaks un-granted periods. Empty bucket_ids ⟺
             // aggregate across all the user's buckets (matches the user-total

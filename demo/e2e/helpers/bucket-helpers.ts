@@ -19,7 +19,7 @@
  * Selectors are imported from `../selectors` (single source of truth). Bucket
  * keys/names come from `./bucket-seed-ids`.
  *
- * @see .ai/design/credit-bucket.md §4.2 (API + error codes), §4.3.2 (schema)
+ * @see .ai/design/credit-bucket.md (API + error codes, schema)
  * @see docs/user-stories/billing/credit-bucket.md
  */
 

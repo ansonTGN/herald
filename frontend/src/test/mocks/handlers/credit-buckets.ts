@@ -10,7 +10,7 @@ export interface BucketInUseErrorBody {
 }
 
 /**
- * Per-domain MSW handlers for Credit Buckets (design §4.2.3).
+ * Per-domain MSW handlers for Credit Buckets.
  *
  * Default handlers are intentionally minimal; tests cover error branches
  * ad-hoc via the exported factory helpers below + `server.use(...)`.
@@ -41,19 +41,19 @@ export const creditBucketsHandlers = [
 
 // ===== Error-scenario factories (consumed via server.use) =====
 
-/** 409 `bucket_in_use` body — design §4.2.3. */
+/** 409 `bucket_in_use` body. */
 export function deleteBucketInUseHandler(body: BucketInUseErrorBody) {
   return http.delete(`${BASE}/:bucketId`, () => HttpResponse.json(body, { status: 409 }))
 }
 
-/** 409 `registration_pool_conflict` on PUT — design §4.2.2. */
+/** 409 `registration_pool_conflict` on PUT. */
 export function updateBucketRegistrationConflictHandler() {
   return http.put(`${BASE}/:bucketId`, () =>
     HttpResponse.json({ code: 'registration_pool_conflict' }, { status: 409 })
   )
 }
 
-/** 409 `registration_pool_conflict` on POST (create flow) — design §4.2.2. */
+/** 409 `registration_pool_conflict` on POST (create flow). */
 export function createBucketRegistrationConflictHandler() {
   return http.post(`${BASE}`, () =>
     HttpResponse.json({ code: 'registration_pool_conflict' }, { status: 409 })

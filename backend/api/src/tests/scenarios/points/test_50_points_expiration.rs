@@ -116,7 +116,7 @@ async fn test_expired_points_cannot_consume(ctx: &mut SchemaTestContext) {
 }
 
 // ============================================================================
-// point-time BE-T07: expiration regression (design §6.1 P0 + §6.3 risk P1)
+// expiration regression (P0 + risk P1)
 // ============================================================================
 //
 // WHY these tests exist (encode intent, not just behavior — Rule 9):
@@ -124,28 +124,28 @@ async fn test_expired_points_cannot_consume(ctx: &mut SchemaTestContext) {
 //   (a) The PointsExpirationJob sweeps rows with `status='active' AND
 //       expires_at <= NOW() AND remaining_amount > 0`. A pre-generated
 //       future-effective row is NOT swept because its `expires_at` is in the
-//       future (`expires_at >= effective_at` per the BE-D01 CHECK constraint).
+//       future (`expires_at >= effective_at` per the CHECK constraint).
 //       The job predicate does not even mention `effective_at` — it relies on
 //       the monotone relationship `effective_at <= expires_at`. Asserting this
-//       pins the design §5.4 invariant: "过期 job 不误扫预生成未来期行".
+//       pins the invariant: "过期 job 不误扫预生成未来期行".
 //
 //   (b) Derived available balance uses the predicate
 //       `(expires_at IS NULL OR expires_at > NOW())`, so an expired row drops
 //       from the SUM automatically — correct availability does NOT depend on
-//       the job having marked it `expired` (design §5.4 "正确性不依赖").
+//       the job having marked it `expired` ("正确性不依赖").
 //
 //   (c) A row with BOTH `effective_at` in the future AND `expires_at` in the
 //       future is doubly-protected: it is neither swept (future `expires_at`)
 //       nor in the available set (future `effective_at`).
 //
 // User Story: docs/user-stories/points-billing-events.md
-// Covers: design §6.1 过期回归（P0）+ §6.3 risk P1 (过期 job 对带未来
+// Covers: 过期回归（P0）+ risk P1 (过期 job 对带未来
 // effective_at 的 active 行处理正确). The pre-existing
 // `test_expired_points_cannot_consume` above is the zero-regression anchor for
 // the consume path; the four tests below pin the expiration job + derived
 // balance behavior specific to point-time.
 //
-// Helper policy: per the BE-T07 task spec, these tests use the BE-T01 helpers
+// Helper policy: these tests use the derived-balance helpers
 // `create_credit_ledger_entry_with_effective_at`, `inject_effective_at`,
 // `get_derived_balance_by_credit_type`, `assert_derived_balance`, and
 // `count_future_effective_active_rows` — NOT the broken legacy helpers that
@@ -163,15 +163,15 @@ async fn ledger_status(ctx: &SchemaTestContext, ledger_id: Uuid) -> String {
 }
 
 // ============================================================================
-// Test (BE-T07 #1): expiration job sweeps past-expired rows but NOT
+// Test (#1): expiration job sweeps past-expired rows but NOT
 // future-effective rows.
 // ============================================================================
 //
 // User Story: docs/user-stories/points-billing-events.md
-// Covers: US-PO-06 (Expired points are automatically revoked) — design §5.4,
-// §6.3 risk P1. The expiration job selects `expires_at <= NOW()`; a
-// future-effective pre-grant row has `expires_at >= effective_at` (BE-D01
-// CHECK), so `expires_at` is also in the future and the row is NOT swept.
+// Covers: US-PO-06 (Expired points are automatically revoked),
+// risk P1. The expiration job selects `expires_at <= NOW()`; a
+// future-effective pre-grant row has `expires_at >= effective_at` (CHECK
+// constraint), so `expires_at` is also in the future and the row is NOT swept.
 #[test_context(SchemaTestContext)]
 #[tokio::test]
 async fn test_expiration_job_skips_future_effective_rows(ctx: &mut SchemaTestContext) {
@@ -219,8 +219,7 @@ async fn test_expiration_job_skips_future_effective_rows(ctx: &mut SchemaTestCon
     assert_eq!(ledger_status(ctx, future_row).await, "active");
 
     // Run the PointsExpirationJob's underlying service entry point directly
-    // (same path the worker calls — worker loop is not a correctness boundary,
-    // design §5.6).
+    // (same path the worker calls — worker loop is not a correctness boundary).
     let expiration_service = ExpirationService::new(ctx.app_state.points_repository.clone());
     let summary = expiration_service
         .scan_and_expire_points(100)
@@ -254,13 +253,13 @@ async fn test_expiration_job_skips_future_effective_rows(ctx: &mut SchemaTestCon
 }
 
 // ============================================================================
-// Test (BE-T07 #2): derived available balance excludes expired rows even
+// Test (#2): derived available balance excludes expired rows even
 // before the job marks them.
 // ============================================================================
 //
 // User Story: docs/user-stories/points-billing-events.md
-// Covers: US-PU-001 (View My Points Balance) — design §5.4 "正确性不依赖"
-// + §6.1 派生余额 = 可消费额. The derived predicate
+// Covers: US-PU-001 (View My Points Balance) — "正确性不依赖"
+// + 派生余额 = 可消费额. The derived predicate
 // `(expires_at IS NULL OR expires_at > NOW())` drops expired rows from the
 // available SUM regardless of whether the job has marked them; this is WHY
 // best-effort expiration scheduling is acceptable.
@@ -319,12 +318,12 @@ async fn test_derived_balance_excludes_expired_rows(ctx: &mut SchemaTestContext)
 }
 
 // ============================================================================
-// Test (BE-T07 #3): a purely future-effective row (effective_at AND expires_at
+// Test (#3): a purely future-effective row (effective_at AND expires_at
 // both in the future) is neither swept nor in the available set.
 // ============================================================================
 //
 // User Story: docs/user-stories/points-billing-events.md
-// Covers: §6.3 risk P1 (过期 job/回收对带未来 effective_at 的 active 行处理
+// Covers: risk P1 (过期 job/回收对带未来 effective_at 的 active 行处理
 // 正确). Pins the doubly-protected case: the row is not swept (future
 // expires_at) AND not available (future effective_at).
 #[test_context(SchemaTestContext)]
@@ -388,12 +387,12 @@ async fn test_future_effective_row_with_future_expires_not_scanned(ctx: &mut Sch
 }
 
 // ============================================================================
-// Test (BE-T07 #4): zero-regression — effective_at=NULL behaves identically
+// Test (#4): zero-regression — effective_at=NULL behaves identically
 // to pre-point-time for both expiration sweep and derived balance.
 // ============================================================================
 //
 // User Story: docs/user-stories/points-billing-events.md
-// Covers: §6.1 effective_at 回归（P0）+ §6.3 risk P0 (派生余额替代 Stored 列
+// Covers: effective_at 回归（P0）+ risk P0 (派生余额替代 Stored 列
 // 读取须保证 effective_at=NULL 时零回归). Every pre-point-time ledger row had
 // effective_at=NULL; this test pins that the expiration sweep + derived
 // predicate treat such rows exactly as before.

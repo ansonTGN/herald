@@ -1,11 +1,11 @@
-//! Points pre-grant warming job (design §5.6).
+//! Points pre-grant warming job.
 //!
-//! This job is a **pre-warming optimization, NOT a correctness boundary**
-//! (design §5.5 / §5.6, decision A9). Correctness comes from:
+//! This job is a **pre-warming optimization, NOT a correctness boundary**.
+//! Correctness comes from:
 //! - the availability predicate (`effective_at <= NOW()`) making pre-granted
 //!   rows auto-available at period start, and
-//! - the realization backstops: subscription chained pre-grant (BE-D03) and
-//!   free-periodic read-path realization (`reconcile_due_for_user`, BE-D02).
+//! - the realization backstops: subscription chained pre-grant and
+//!   free-periodic read-path realization (`reconcile_due_for_user`).
 //!
 //! The job runs two belt-and-braces scans each tick:
 //! 1. **Free-periodic** via `GrantScheduler::process_due_schedules`, which
@@ -22,7 +22,7 @@
 //! The repository and policy are pinned to the concrete
 //! `PostgresPointsRepository` / `PermissionBasedPointsPolicy` (matching the
 //! `WorkerConfig` shape where `expiration_service` is concrete). This avoids
-//! widening `WorkerConfig<R>`'s generic bounds (BE-D07 step 5).
+//! widening `WorkerConfig<R>`'s generic bounds (step 5).
 
 use anyhow::Result;
 use chrono::Utc;
@@ -74,7 +74,7 @@ impl PointsPreGrantJob {
     }
 
     #[tracing::instrument(
-        // BE-D09 governance (§5.4): root span — no inbound request context.
+        // Governance: root span — no inbound request context.
         // `self` holds the GrantScheduler / points_repo (repository handles).
         // Only the low-cardinality job name is recorded.
         skip(self),
@@ -107,8 +107,8 @@ impl PointsPreGrantJob {
         //    (free-periodic are already handled above) and re-check per-row
         //    absence via `find_grant_record` before the atomic grant.
         let now = Utc::now();
-        // Loose upper bound: subscription pre-grant lead defaults to 24h
-        // (design §5.5). The scan is belt-and-braces; over-scanning is safe
+        // Loose upper bound: subscription pre-grant lead defaults to 24h.
+        // The scan is belt-and-braces; over-scanning is safe
         // because `pregrant_next_period_atomic` is idempotent on
         // (schedule_id, period_number).
         let before = now + chrono::Duration::hours(subscription_pre_grant_lead_hours());
@@ -148,7 +148,7 @@ impl PointsPreGrantJob {
     }
 
     /// Process a single subscription schedule through the atomic infra path.
-    /// Mirrors the BE-D05 worker contract: period_number = granted_periods + 1,
+    /// Mirrors the worker contract: period_number = granted_periods + 1,
     /// re-check grant-record absence, then `pregrant_next_period_atomic`.
     async fn process_subscription_schedule(
         &self,
@@ -167,7 +167,7 @@ impl PointsPreGrantJob {
 
         // Idempotency re-check (pregrant_next_period_atomic is itself
         // idempotent, but this avoids a redundant tx for already-granted
-        // periods and matches the BE-D05 worker contract).
+        // periods and matches the worker contract).
         if self
             .points_repo
             .find_grant_record(schedule.id, next_period)
@@ -213,7 +213,7 @@ enum SubscriptionOutcome {
     Skipped,
 }
 
-/// Read the subscription pre-grant lead (design §5.5 default 24h) from env.
+/// Read the subscription pre-grant lead (default 24h) from env.
 /// Free-periodic lead times are owned by the `GrantScheduler`'s `lead_time_map`
 /// (injected at construction in `main.rs`); this is only for the subscription
 /// backstop's loose scan window.

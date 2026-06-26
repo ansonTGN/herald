@@ -62,7 +62,7 @@ where
             ));
         }
 
-        // Credit Buckets model (design §3.1 / §5.1): a wallet is per-(user,
+        // Credit Buckets model: a wallet is per-(user,
         // bucket); a "get wallet for a user" is a user-total view (sum across
         // the user's per-bucket wallet rows; 0 if none). We must NOT auto-
         // create a `bucket_id = None` wallet row here — `points_wallets.
@@ -103,7 +103,7 @@ where
 
     /// Get points balance for a user
     ///
-    /// Switched to derived SUM (design §5.1 / A7): the 5 typed balances and
+    /// Switched to derived SUM: the 5 typed balances and
     /// `total_balance` are projected from `compute_available_balance` (same
     /// predicate as consumption — "seen balance == spendable balance"), so
     /// future-effective pre-grant rows never leak into the user-visible
@@ -135,7 +135,7 @@ where
 
         let now = chrono::Utc::now();
 
-        // Read-path realization (design §5.3.1). Independent committed short
+        // Read-path realization. Independent committed short
         // transaction; the derived SUM below runs in a separate transaction
         // and under the project default READ COMMITTED sees the committed
         // realization rows. Failure is fail-loud (5xx) — never silently
@@ -157,7 +157,7 @@ where
     /// Build `PointsBalance` from derived SUM + Stored analytics. The 5 typed
     /// balances and `total_balance` come from the derived SUM keyed by
     /// `CreditType`; analytics (`total_recharged` / `total_consumed`) are
-    /// passed through from the Stored wallet (A7: analytics remain Stored).
+    /// passed through from the Stored wallet (analytics remain Stored).
     fn build_balance_from_derived(
         account: PointsWallet,
         derived: Vec<(CreditType, i64)>,
@@ -192,14 +192,14 @@ where
         }
     }
 
-    /// Read-path realization for free-periodic schedules (design §5.3.1).
+    /// Read-path realization for free-periodic schedules.
     ///
     /// Single-user, bounded (N=3), idempotent (`points_grant_records`
     /// `(schedule_id, period_number)` UNIQUE + schedule row `FOR UPDATE`),
     /// lead_time=0 (only already-due periods), and restricted to
     /// `subscription_id IS NULL` (free-periodic only — never guess paid-grant
     /// fulfillment on the request path; subscriptions rely on event-driven
-    /// chained pre-grant, §5.2). This is the correctness backstop for
+    /// chained pre-grant). This is the correctness backstop for
     /// US-FU-004 scenario 1.1 when the worker never runs.
     ///
     /// Fail-loud: on write failure returns the infra `CoreError` unchanged
@@ -222,7 +222,7 @@ where
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), CoreError> {
         /// Per-request cap on how many past-due periods are realized in one
-        /// call (design §5.3.1). Free-periodic credits do not roll over, so
+        /// call. Free-periodic credits do not roll over, so
         /// periods beyond this cap are already expired (predicate-excluded)
         /// and do not affect current availability.
         const RECONCILE_PERIOD_CAP: u64 = 3;
@@ -336,7 +336,7 @@ where
     /// Consumption priority: expiration-based (soonest expiring first, permanent last)
     /// This is the NEW correct implementation per the design specification.
     #[tracing::instrument(
-        // BE-D07 governance (§4.5/§5.4): identity carries user_id/realm_id;
+        // Governance: identity carries user_id/realm_id;
         // input payload references user_id/client_app_id; realm_id is
         // conservatively skipped. Only the low-cardinality operation type and
         // db.system are recorded (no raw SQL, no ids).
@@ -367,7 +367,7 @@ where
 
         // NOTE: The legacy single-wallet precheck (find_by_user_id → status +
         // balance check) is intentionally removed. With the multi-bucket model
-        // (design §3.1 / §5.1) a user holds one wallet row per Bucket, so
+        // a user holds one wallet row per Bucket, so
         // `find_by_user_id` (`.one()`) returns an arbitrary row and its
         // `total_balance` reflects a single pool — not the covered set. The
         // authoritative precheck is the infra layer's `consume_points_atomic`,
@@ -377,7 +377,7 @@ where
         // wallets are also created lazily inside the consume transaction via
         // `ensure_wallet_in_tx`, so no pre-created single wallet is needed.
 
-        // Read-path realization (design §5.3.1) runs as an independent
+        // Read-path realization runs as an independent
         // committed short transaction BEFORE the consume transaction opens —
         // the consume transaction then re-queries under READ COMMITTED and
         // sees the realized rows. Reconcile failure is fail-loud (5xx); it
@@ -402,7 +402,7 @@ where
         Ok(saved_transactions)
     }
 
-    /// Idempotency replay (design §5.1). Reassemble the original consume result
+    /// Idempotency replay. Reassemble the original consume result
     /// set from its primary transaction id WITHOUT re-deducting. Used by the
     /// HTTP-layer Redis-cache replay path when `check_or_create` returns a
     /// cached primary transaction: the primary → correlation_id → all N sibling
@@ -421,8 +421,8 @@ where
             .await
     }
 
-    /// Surface the ledger-level allocations of a consume by its `correlation_id`
-    /// (design §4.3.2 / §5.1). Used by the SDK consume response to populate the
+    /// Surface the ledger-level allocations of a consume by its `correlation_id`.
+    /// Used by the SDK consume response to populate the
     /// `allocations` slice without re-deducting. Legacy single-pool rows (NULL
     /// correlation_id) return an empty vec.
     ///
@@ -471,7 +471,7 @@ where
 
     /// List transactions with filters
     #[tracing::instrument(
-        // BE-D07 governance: identity carries user_id/realm_id; filters carry
+        // Governance: identity carries user_id/realm_id; filters carry
         // user_id/bucket_id; realm_id conservatively skipped.
         skip(self, identity, realm_id, filters),
         fields(db.system = "postgres", db.operation = "list_transactions")
@@ -519,7 +519,7 @@ where
     /// Performs permission check and realm boundary check, validates input,
     /// then delegates to `grant_points_internal`.
     #[tracing::instrument(
-        // BE-D07 governance: identity carries user_id/realm_id; input payload
+        // Governance: identity carries user_id/realm_id; input payload
         // carries the target user_id; realm_id conservatively skipped.
         skip(self, identity, realm_id, input),
         fields(db.system = "postgres", db.operation = "grant_points")
@@ -582,7 +582,7 @@ where
 
         // Grant points via internal method. Admin/SDK grants are immediately
         // available (`effective_at = None`); exposing an `effective_at` entry
-        // point on the grant API is explicitly out of scope (design §1.3).
+        // point on the grant API is explicitly out of scope.
         let ledger_id = self
             .grant_points_internal(
                 realm_id,
@@ -599,7 +599,7 @@ where
             )
             .await?;
 
-        // Derived fill (design §5.1 / A7): `granted_balance`/`total_balance`
+        // Derived fill: `granted_balance`/`total_balance`
         // come from `compute_available_balance` post-grant (same source as
         // `get_balance`), NOT from the wallet Stored columns. This keeps the
         // grant response consistent with the derived-balance world and
@@ -1065,7 +1065,7 @@ where
         source_type: crate::points::entities::CreditSourceType,
         amount: i64,
         expires_at: Option<chrono::DateTime<chrono::Utc>>,
-        // Expected effective time (design §5.1). `None` ⟺ immediately
+        // Expected effective time. `None` ⟺ immediately
         // available (current behavior); `Some(t)` ⟺ enters the available
         // set only when `effective_at <= NOW()`. Passed through to
         // `grant_points_atomic`.
@@ -1120,15 +1120,15 @@ where
     }
 }
 
-// BE-T03 governance tests (design §5.4 / §4.5).
+// Governance tests.
 //
-// Covers: BE-D07 — domain points service `consume_points`,
+// Covers: domain points service `consume_points`,
 // `list_transactions`, `grant_points` instrument skip correctness.
 //
 // WHY: these methods take `identity` (carries user_id/realm_id), `realm_id`,
 // and `input`/`filters` (reference user_id/bucket_id). If the `#[instrument]`
 // macro ever stops skipping those, the identifiers leak into a span field.
-// Source-scan baseline (design §6.1), anchored per method to the
+// Source-scan baseline, anchored per method to the
 // immediately-preceding `#[tracing::instrument(...)]`.
 #[cfg(test)]
 mod instrument_skip_tests {

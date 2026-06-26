@@ -9,9 +9,9 @@
  *   `.min(1)` — fail-loud validation error, no silent submit).
  * - US-CB-003 场景1: assigning ≥1 entitlement mapping to a bucket persists.
  *
- * Design truth: `.ai/design/credit-bucket.md` §4.2.2/§4.2.3 (POST/PUT/DELETE +
+ * Design truth: `.ai/design/credit-bucket.md` (POST/PUT/DELETE +
  * error codes `bucket_key_duplicate` 400, `registration_pool_conflict` 409,
- * `bucket_in_use` 409), §4.3.2 (schema), note A4 (NO `isDefault` control).
+ * `bucket_in_use` 409, schema, NO `isDefault` control).
  *
  * Role: realm-admin (`REALM_ADMINS[realmId]`). Navigation is by route
  * `/${realmId}/manage/billing/credit-buckets` — the sidebar entry testid
@@ -63,8 +63,8 @@ import {
 const REALM_ID = CREDIT_BUCKET_REALMS.POINTS
 
 /**
- * A4 — design truth: NO `isDefault` / `set-default` / `default-bucket` control
- * exists anywhere in the Bucket editor (`.ai/design/credit-bucket.md` A4 +
+ * Design truth: NO `isDefault` / `set-default` / `default-bucket` control
+ * exists anywhere in the Bucket editor (`.ai/design/credit-bucket.md` +
  * `frontend/src/components/billing/credit-bucket/*.tsx` — verified by grep:
  * no `data-testid` matching these patterns is emitted). The test below asserts
  * this absence with a negative locator so a future regression that reintroduces
@@ -157,7 +157,7 @@ test.describe('[Realm Admin] Credit Bucket 目录管理 (US-CB-001/002/003)', ()
 
     await test.step('Then: A4 — 编辑器内不存在 *is-default* / *set-default* / *default-bucket* 控件', async () => {
       // Open the editor for the just-edited bucket and assert no default-bucket
-      // control exists within the editor scope. Documents design decision A4.
+      // control exists within the editor scope. Documents design decision.
       await openBucketEditor(page, createdBucketId!)
       const editorScope = page.locator(SELECTORS.creditBucket.editor)
       await expect(editorScope.locator(A4_DEFAULT_CONTROL_TESTIDS)).toHaveCount(0)
@@ -568,7 +568,7 @@ test.describe('[Realm Admin] Credit Bucket 目录管理 (US-CB-001/002/003)', ()
 
     await test.step('Then: admin wallets 页该持有者余额不变（非零，持久状态）', async () => {
       // Re-read the SAME balance total cell after disabling. Disable affects
-      // future grants, not existing holdings (design §4.2.3), so the total
+      // future grants, not existing holdings (design), so the total
       // must be identical. The `Disabled` Badge is intentionally NOT part of
       // this comparison (it is the expected new UI state, not a balance
       // change).

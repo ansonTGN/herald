@@ -1,9 +1,9 @@
 // =============================================================================
-// BE-T05 — Scenario Tests: per-bucket query surface
+// Scenario Tests: per-bucket query surface
 // =============================================================================
 //
 // Covers design `.ai/design/credit-bucket.md`:
-//   - §4.2.3 response contracts for the per-bucket query endpoints:
+//   - response contracts for the per-bucket query endpoints:
 //       * `GET .../points/wallets` → `ListWalletsByBucketResponse`
 //         `{ items: WalletByBucket[], crossBucketTotal }` where each
 //         `WalletByBucket` carries `bucketId / name / enabled / userId /
@@ -13,11 +13,11 @@
 //         filter.
 //       * admin cross-tenant wallets view returns `WalletByBucket[]` with
 //         `userId` and rows expanded per `(user, bucket)`.
-//   - §6.1 "查询" testable behaviors.
+//   - "查询" testable behaviors.
 //   - User Stories US-CB-005 (查看按 Bucket 分组的积分余额) and
 //     US-CB-006 (查看 Bucket 维度的交易历史).
 //
-// KNOWN CONTRACT GAPS (from BE-D11 handoff; flagged in this item's
+// KNOWN CONTRACT GAPS (from handoff; flagged in this item's
 // `open_questions` and encoded as intended contract — tests do NOT hardcode
 // the broken current shapes):
 //   (a) Wallet grouping + txn bucket filter are handler-side; txn paged `total`
@@ -29,7 +29,7 @@
 //       (bucket directory not yet wired into the grouping). Tests assert the
 //       fields are PRESENT (intended contract) but tolerate `null`.
 //   (c) There is NO distinct `/users/me/points/wallets` or
-//       `/billing/points/wallets` route — BE-D11 lands a single
+//       `/billing/points/wallets` route — a single
 //       `GET /api/points/{realmId}/wallets` handler (gated on `points.view`)
 //       that groups by `(bucket_id, user_id)`. The user-facing and admin
 //       scenarios both exercise the real route; the admin scenario additionally
@@ -90,8 +90,8 @@ fn find_row_by_bucket<'a>(items: &'a [Value], bucket_id: &str) -> Option<&'a Val
 // =============================================================================
 
 /// User Story: US-CB-005 (查看按 Bucket 分组的积分余额).
-/// Covers (BE-T05 scope):
-///   - design §4.2.3 `GET .../points/wallets` → `WalletByBucket[]` grouped by
+/// Covers:
+///   - `GET .../points/wallets` → `WalletByBucket[]` grouped by
 ///     `(bucket_id, user_id)` with one row per bucket.
 ///   - Each row exposes `bucketId`, `balancesByType{}`, and `bucketTotal`.
 ///   - Top-level `crossBucketTotal` equals the sum of every row's `bucketTotal`.
@@ -162,9 +162,9 @@ async fn user_wallets_grouped_by_bucket_with_cross_bucket_total(ctx: &mut TestCo
     let row_b = find_row_by_bucket(items, &bucket_b.to_string())
         .expect("wallets items[] must contain bucket B row");
 
-    // Intended contract (§4.2.3): each row exposes bucketId, balancesByType,
+    // Intended contract: each row exposes bucketId, balancesByType,
     // and bucketTotal. `name`/`enabled` are part of the intended contract but
-    // may currently be null (BE-D11 gap b) — assert presence only.
+    // may currently be null (gap b) — assert presence only.
     for row in [row_a, row_b] {
         assert!(
             row.get("bucketId").is_some(),
@@ -183,7 +183,7 @@ async fn user_wallets_grouped_by_bucket_with_cross_bucket_total(ctx: &mut TestCo
         );
         assert!(
             row.get("userId").is_some(),
-            "row missing userId (§4.2.3 WalletByBucket): {:?}",
+            "row missing userId (WalletByBucket): {:?}",
             row
         );
         // name / enabled are intended-contract fields; tolerate null per gap (b).
@@ -230,8 +230,8 @@ async fn user_wallets_grouped_by_bucket_with_cross_bucket_total(ctx: &mut TestCo
 // =============================================================================
 
 /// User Story: US-CB-005 (查看按 Bucket 分组的积分余额 — single-bucket case).
-/// Covers (BE-T05 scope):
-///   - design §4.2.3 `ListWalletsByBucketResponse.crossBucketTotal` is ALWAYS
+/// Covers:
+///   - `ListWalletsByBucketResponse.crossBucketTotal` is ALWAYS
 ///     present. With a single bucket, it equals that bucket's `bucketTotal`
 ///     (no degradation of the response shape).
 #[test_context(TestContext)]
@@ -299,8 +299,8 @@ async fn user_wallets_single_bucket_no_cross_bucket_total_degradation(ctx: &mut 
 // =============================================================================
 
 /// User Story: US-CB-005 (查看按 Bucket 分组的积分余额 — empty case).
-/// Covers (BE-T05 scope):
-///   - design §4.2.3 empty case: a user holding no pool returns an empty
+/// Covers:
+///   - empty case: a user holding no pool returns an empty
 ///     `items[]` array and `crossBucketTotal = 0` (never null, never 404).
 #[test_context(TestContext)]
 #[tokio::test]
@@ -344,8 +344,8 @@ async fn user_wallets_empty_when_no_buckets(ctx: &mut TestContext) {
 // =============================================================================
 
 /// User Story: US-CB-006 (查看 Bucket 维度的交易历史 — bucketId field).
-/// Covers (BE-T05 scope):
-///   - design §4.2.3 each transaction row carries `bucketId` matching the pool
+/// Covers:
+///   - each transaction row carries `bucketId` matching the pool
 ///     the transaction landed in.
 #[test_context(TestContext)]
 #[tokio::test]
@@ -416,7 +416,7 @@ async fn user_transactions_include_bucket_id_field(ctx: &mut TestContext) {
     for row in items {
         assert!(
             row.get("bucketId").is_some(),
-            "transaction row missing bucketId (§4.2.3): {:?}",
+            "transaction row missing bucketId: {:?}",
             row
         );
     }
@@ -442,11 +442,11 @@ async fn user_transactions_include_bucket_id_field(ctx: &mut TestContext) {
 // =============================================================================
 
 /// User Story: US-CB-006 (查看 Bucket 维度的交易历史 — bucket filter).
-/// Covers (BE-T05 scope):
-///   - design §4.2.3 `?bucketId=<uuid>` filter returns only that bucket's
+/// Covers:
+///   - `?bucketId=<uuid>` filter returns only that bucket's
 ///     transactions.
 ///
-/// Note (BE-D11 gap a): the bucket filter is applied at the handler on the
+/// Note (gap a): the bucket filter is applied at the handler on the
 /// returned page, so the paged `total` may reflect the PRE-filter page. This
 /// test only asserts that every returned `items[]` row belongs to the filtered
 /// bucket — it does NOT assert `total` reflects the filtered count.
@@ -547,8 +547,8 @@ async fn user_transactions_filtered_by_bucket_id(ctx: &mut TestContext) {
 // =============================================================================
 
 /// User Story: US-CB-005 (管理员视角 — 跨租户 WalletByBucket with userId).
-/// Covers (BE-T05 scope):
-///   - design §4.2.3 admin wallets view returns `WalletByBucket[]` with
+/// Covers:
+///   - admin wallets view returns `WalletByBucket[]` with
 ///     `userId`, rows expanded per `(user, bucket)` — i.e. two users in the
 ///     same bucket produce TWO rows, each tagged with its `userId`.
 #[test_context(TestContext)]

@@ -35,11 +35,11 @@ sqlx = { workspace = true }
 redis = { workspace = true }
 reqwest = { workspace = true }
 axum = { workspace = true }
-# BE-D10: shared external-HTTP span + duration histogram helper. Version pinned
-# by BE-D01 in backend/Cargo.toml workspace.dependencies.
+# Shared external-HTTP span + duration histogram helper. Version pinned
+# by backend/Cargo.toml workspace.dependencies.
 opentelemetry = { workspace = true }
 
 [dev-dependencies]
-# BE-T04: tests capture span fields via a JSON fmt layer (same pattern as the
+# Tests capture span fields via a JSON fmt layer (same pattern as the
 # request_id span tests in `herald-api::observability::metrics_extractor`).
 tracing-subscriber = { workspace = true }

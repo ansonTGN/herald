@@ -69,7 +69,7 @@
  * Backend contract verified against:
  * - backend/api-ext/src/points.rs (consume 409 `insufficient_points` body
  *   shape: { code, message, have, need }).
- * - .ai/design/point-time.md §4.1/§5.1 (derived balance + consume predicate
+ * - .ai/design/point-time.md (derived balance + consume predicate
  *   both gate on effective_at).
  *
  * Assertion discipline: assertions 1 & 2 land on persistent UI state
@@ -148,7 +148,7 @@ interface ConsumePointsExtApiBody {
   idempotencyKey?: string
 }
 
-/** Structured 409 error body (design §4.2.3). */
+/** Structured 409 error body (design). */
 interface ConsumeErrorBody {
   code: string
   message: string
@@ -456,7 +456,7 @@ test.describe('[Regular User / SDK] 预发未来生效积分对普通用户不�
       expect(body?.code, 'consume must be rejected as insufficient_points').toBe(
         'insufficient_points',
       )
-      // The design §4.2.3 contract surfaces have/need on this error. `need`
+      // The design contract surfaces have/need on this error. `need`
       // echoes the requested amount; `have` is the effective available total
       // (E, NOT E + the pregrant). Asserting need pins the requested amount
       // and have < need confirms the pregrant did not enlarge availability.
@@ -477,7 +477,7 @@ test.describe('[Regular User / SDK] 预发未来生效积分对普通用户不�
   }) => {
     // LOUD NOTE — assertion 3 SKIPPED at runtime with justification.
     //
-    // The point-time design (`.ai/design/point-time.md` §4.2/§4.4) exposes
+    // The point-time design (`.ai/design/point-time.md`) exposes
     // `effective_at` to admins/auditors ONLY via `PointsTransactionResponse`
     // (admin path fills it; `points.view` path forces it to None + skips
     // serialization). But the seed inserts the pregrant as a LEDGER row

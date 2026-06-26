@@ -31,7 +31,7 @@ use uuid::Uuid;
 /// - Session is not found in Redis
 /// - User/Client entity is not found in database
 #[tracing::instrument(
-    // BE-D07 governance (§4.5/§5.4): `req` headers carry the X-Auth session
+    // Governance: `req` headers carry the X-Auth session
     // token (cookie) — a credential, MUST be skipped.
     skip(state, req, next),
     fields(http.route = "inject_identity")
@@ -132,9 +132,9 @@ pub async fn inject_identity(
     Ok(response)
 }
 
-// BE-T03 governance tests (design §5.4 / §4.5).
+// Governance tests.
 //
-// Covers: BE-D07 — `inject_identity` instrument skip correctness.
+// Covers: `inject_identity` instrument skip correctness.
 //
 // WHY: `inject_identity` reads the X-Auth session cookie/token from request
 // headers — a credential. If the `#[instrument]` macro ever stops skipping
@@ -143,7 +143,7 @@ pub async fn inject_identity(
 // attribute; the reliable way to assert the skip is to inspect the attribute
 // text anchored to THIS function (a runtime test-subscriber would require a
 // live Request/cookie and only observes the fields the macro actually emitted
-// — same property, more brittle setup). This source-scan is the design §6.1
+// — same property, more brittle setup). This source-scan is the
 // baseline governance assertion; it fails loud the moment a refactor drops
 // `req` from `skip(...)` or adds a sensitive-named field. The lookup is
 // anchored to `fn inject_identity` and takes only the immediately-preceding

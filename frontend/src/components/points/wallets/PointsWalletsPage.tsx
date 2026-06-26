@@ -43,11 +43,11 @@ const BALANCES_BY_TYPE_KEYS = [
 /**
  * Admin wallets view: realm-wide balances grouped by `(user, bucket)`.
  *
- * Source: `walletsByBucketQueryOptions` (FE-D01, `listWallets` SDK,
- * `points.view`). Unlike the user-facing page (FE-D05) we consume the FULL
+ * Source: `walletsByBucketQueryOptions` (`listWallets` SDK,
+ * `points.view`). Unlike the user-facing page we consume the FULL
  * `items` set (every realm user × bucket) and the realm `crossBucketTotal`.
  *
- * LOUD (FE-D01 tech-debt resolution): this page previously consumed the
+ * LOUD (tech-debt resolution): this page previously consumed the
  * temporary `pointsWalletsQueryOptions` legacy adapter. The adapter and its
  * legacy view-model were removed in this item; rows are now driven directly by
  * `WalletByBucketResponse`. `WalletByBucketResponse.name`/`enabled` are

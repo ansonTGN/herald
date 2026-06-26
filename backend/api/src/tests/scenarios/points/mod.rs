@@ -87,42 +87,42 @@ mod test_77_idempotency_guards;
 // Refund precision tests
 mod test_78_refund_precision;
 
-// point-time BE-T02: effective_at semantics — future-effective exclusion,
+// point-time: effective_at semantics — future-effective exclusion,
 // zero-delay availability (clock-advance only, no worker), immediate
 // availability when effective_at IS NULL.
 mod test_80_effective_at_semantics;
 
-// point-time BE-T05: provider period normalization (Stripe top-level +
+// point-time: provider period normalization (Stripe top-level +
 // item-level + multi-item disagreeing + both absent; Creem symmetric +
-// missing). Scenario-layer coverage of design §6.1 P0 + A8 P0. The pure
-// `normalize_*` unit tests live in backend/api-billing (owned by BE-D08);
+// missing). Scenario-layer coverage of P0. The pure
+// `normalize_*` unit tests live in backend/api-billing (owned elsewhere);
 // these tests exercise the consequence end-to-end via the webhook HTTP
 // path (grant written vs. skipped).
 mod test_81_provider_period_normalization;
 
-// point-time BE-T08: worker-down + read-path realization (US-FU-004 scenario
+// point-time: worker-down + read-path realization (US-FU-004 scenario
 // 1.1) + realization write-failure fail-loud (P2). Scenario-layer coverage of
-// design §6.1 P0 (worker-down still usable) + §5.3.1 (reconcile_due_for_user:
-// single-user, N=3, idempotent, lead_time=0, subscription_id IS NULL only,
+// P0 (worker-down still usable) + reconcile_due_for_user
+// (single-user, N=3, idempotent, lead_time=0, subscription_id IS NULL only,
 // fail-loud 5xx). The worker is NEVER started; correctness is exercised
 // purely via the read path (`PointsService::get_balance` / `consume_points`)
 // and clock-advance SQL UPDATE on ledger rows.
 mod test_82_worker_down_read_path_realization;
 
-// point-time BE-T09: response/wallet-list non-leak + DTO effective_at hiding
-// (design §6.1 P1 "管理员钱包列表不泄漏未来期积分" + §4.2/§5.1 P1-2 DTO
+// point-time: response/wallet-list non-leak + DTO effective_at hiding
+// (P1 "管理员钱包列表不泄漏未来期积分" + P1-2 DTO
 // `effective_at` permission hiding). Asserts the `skip_serializing_if`
 // field-level contract via raw JSON KEY presence/absence (not just value),
 // and the cross-user batched derived assembly in `list_wallets`.
 mod test_83_response_non_leak_dto_hidden;
 
-// point-time BE-T05 (renewal path): Stripe invoice.payment_succeeded period
-// normalization (sibling to test_81). Covers the renewal event that the A8
+// point-time (renewal path): Stripe invoice.payment_succeeded period
+// normalization (sibling to test_81). Covers the renewal event that the
 // strictness regression silently broke — a Stripe Invoice has NO top-level
 // `current_period_*` and uses `lines.data` (NOT `items.data`); the invoice
 // resolver reads `lines.data[].period.{start,end}`. Exercises the renewal
 // grant END-TO-END via the webhook HTTP path: single-line period → grant;
-// line without a period → SKIP (A8 P0).
+// line without a period → SKIP (P0).
 mod test_84_stripe_invoice_period_normalization;
 
 pub mod fixtures;

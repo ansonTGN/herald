@@ -11,9 +11,9 @@
 //   - Invoice status unchanged (US-IF-007 scenario 3)
 //   - No point clawback side effect (US-IF-007 scenario 4)
 //
-// Refund visibility on the invoice detail response is populated by dev item
-// BE-D06 (amountRefunded / amountRemaining / creditNotes fields); the underlying
-// invoice refund totals are written by the handler in dev item BE-D04.
+// Refund visibility on the invoice detail response is populated by the
+// amountRefunded / amountRemaining / creditNotes fields; the underlying
+// invoice refund totals are written by the handler.
 //
 // User Story: docs/user-stories/billing/invoice-fallback.md
 // Covers: US-IF-007 scenarios 1-6, US-IF-008 scenario 1

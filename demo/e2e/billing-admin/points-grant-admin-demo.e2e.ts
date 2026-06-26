@@ -66,7 +66,7 @@ test.describe('[Points Admin] Grant Points Demo Tests (US-PO-08)', () => {
         amount: 100,
         validityDays: 30,
         reason: 'Event reward',
-        // credit-bucket §4.2.4 / A5: bucketId is required. The admin realm is
+        // bucketId is required. The admin realm is
         // seeded with `primary-pool` (the registration pool); targeting it keeps
         // US-PO-08 S1 intent (grant-with-validity lands for the user) intact.
         bucketId: REGISTRATION_POOL_KEY,
@@ -102,7 +102,7 @@ test.describe('[Points Admin] Grant Points Demo Tests (US-PO-08)', () => {
         amount: 50,
         permanent: true,
         reason: 'Loyalty bonus',
-        // credit-bucket §4.2.4 / A5: bucketId is required (admin realm primary-pool).
+        // bucketId is required (admin realm primary-pool).
         bucketId: REGISTRATION_POOL_KEY,
       })
       await confirmGrantDialog(page)
@@ -166,7 +166,7 @@ test.describe('[Points Admin] Grant Points Demo Tests (US-PO-08)', () => {
       await reasonInput.fill('Test reason')
 
       // Select the target bucket so the amount field is the SOLE invalid field
-      // (credit-bucket §4.2.4 / A5: bucket is now required; without this the
+      // (bucket is now required; without this the
       // bucket-missing error would compete with the amount error).
       await page.locator(gp.bucketSelect).click()
       await page
@@ -227,7 +227,7 @@ test.describe('[Points Admin] Grant Points Demo Tests (US-PO-08)', () => {
       await reasonInput.clear()
 
       // Select the target bucket so the reason field is the SOLE invalid field
-      // (credit-bucket §4.2.4 / A5: bucket is now required; without this the
+      // (bucket is now required; without this the
       // bucket-missing error would compete with the reason error).
       await page.locator(gp.bucketSelect).click()
       await page
@@ -305,7 +305,7 @@ test.describe('[Points Admin] Grant Points Demo Tests (US-PO-08)', () => {
         amount: 100,
         validityDays: 30,
         reason: 'Test non-existent user',
-        // credit-bucket §4.2.4 / A5: bucketId is required for the form to
+        // bucketId is required for the form to
         // submit. The route interception below only swaps `userId`, so the
         // bucketId is preserved in the request body.
         bucketId: REGISTRATION_POOL_KEY,
@@ -387,7 +387,7 @@ test.describe('[Points Admin] Grant Points Demo Tests (US-PO-08)', () => {
         amount: 50,
         validityDays: 7,
         reason: 'Test cross-realm user',
-        // credit-bucket §4.2.4 / A5: bucketId is required for the form to
+        // bucketId is required for the form to
         // submit. The route interception below only swaps `userId`.
         bucketId: REGISTRATION_POOL_KEY,
       })

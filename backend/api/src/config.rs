@@ -159,8 +159,8 @@ mod tests {
     use super::*;
 
     /// User Story: Technical invariant — `ObservabilityConfig` defaults equal
-    /// the design baseline (`.ai/design/observability.md` §4.1/§4.5).
-    /// Covers: design §6.1 "默认值 = baseline" + BE-D02 handoff.
+    /// the design baseline (`.ai/design/observability.md`).
+    /// Covers: "默认值 = baseline".
     ///
     /// WHY: the baseline is a security/cost contract — `traces_enabled=false`
     /// (no trace export by default), conservative OTLP endpoint, 5s metrics
@@ -181,8 +181,8 @@ mod tests {
 
     /// User Story: Technical invariant — legacy configs without an
     /// `[observability]` section still parse and yield the baseline
-    /// (`.ai/design/observability.md` §6.1 `#[serde(default)]` resilience).
-    /// Covers: design §6.1 "缺 `[observability]` 段的旧 toml 仍解析" + BE-D02 handoff.
+    /// (`.ai/design/observability.md`, `#[serde(default)]` resilience).
+    /// Covers: "缺 `[observability]` 段的旧 toml 仍解析".
     ///
     /// WHY: existing deployments ship `config.toml` files written before
     /// observability existed. A rollout of this code MUST NOT break them, and

@@ -93,14 +93,14 @@ COMMENT ON COLUMN subscription.bucket_id IS 'Credit bucket bound to this subscri
 -- ====================================
 -- Points Accounts
 -- ====================================
--- Design §1.3 / A7 / §4.3.3 (BE-D11): the 5 per-type balance columns and the
+-- The 5 per-type balance columns and the
 -- `total_balance` GENERATED column are physically removed from the base
 -- schema. Available balance is now exclusively a derived SUM over
 -- `points_credit_ledger` (same predicate as consumption), eliminating the
 -- Stored/derived dual-track. Only the 4 lifetime analytics columns remain
 -- Stored (they are cumulative totals unaffected by `effective_at`).
 -- `points_transactions.balance_after`(+typed snapshots) is retained and
--- filled with the real post-mutation derived balance (A5 contract).
+-- filled with the real post-mutation derived balance.
 CREATE TABLE points_wallets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,
@@ -121,7 +121,7 @@ CREATE INDEX idx_points_wallets_realm_id ON points_wallets(realm_id);
 CREATE INDEX idx_points_wallets_bucket_id ON points_wallets(bucket_id);
 CREATE INDEX idx_points_wallets_status ON points_wallets(status);
 
-COMMENT ON TABLE points_wallets IS 'User-level points wallets tracking lifetime analytics (recharges/consumption). Available balance is derived from points_credit_ledger (design §5.1 / A7); no Stored balance columns.';
+COMMENT ON TABLE points_wallets IS 'User-level points wallets tracking lifetime analytics (recharges/consumption). Available balance is derived from points_credit_ledger; no Stored balance columns.';
 COMMENT ON COLUMN points_wallets.id IS 'Unique wallet identifier';
 COMMENT ON COLUMN points_wallets.user_id IS 'Reference to user who owns this wallet';
 COMMENT ON COLUMN points_wallets.realm_id IS 'Realm ID for permission isolation';

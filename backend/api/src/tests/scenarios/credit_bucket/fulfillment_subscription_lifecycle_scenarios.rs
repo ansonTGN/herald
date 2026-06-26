@@ -1,14 +1,14 @@
 // =============================================================================
-// BE-T02 — Scenario Tests: fulfillment + subscription lifecycle bucket routing
+// Scenario Tests: fulfillment + subscription lifecycle bucket routing
 // =============================================================================
 //
 // Covers design `.ai/design/credit-bucket.md`:
-//   - §5.3 (grant/fulfillment Bucket routing)
-//   - §5.5 (subscription lifecycle reclamation)
-//   - §6.1 履约 / 订阅生命周期
-//   - decision A7: in-flight attempt is NOT rerouted when the mapping's
+//   - (grant/fulfillment Bucket routing)
+//   - (subscription lifecycle reclamation)
+//   - 履约 / 订阅生命周期
+//   - in-flight attempt is NOT rerouted when the mapping's
 //     bucket_id is changed after purchase.
-//   - decision A8: routing source = `payment_attempt.bucket_id` snapshot
+//   - routing source = `payment_attempt.bucket_id` snapshot
 //     (taken at purchase creation); first fulfillment freezes
 //     `subscription.bucket_id` from that snapshot; missing snapshot/subscription
 //     bucket fails loud.
@@ -24,11 +24,11 @@
 // Per authoring rules: tests target the intended design contract. Where the
 // landed production signature/behavior differs from the item's assumptions,
 // the gap is recorded inline (`RUNTIME GAP`) and the test is written against
-// the intended contract — the runner (BE-T06) will triage runtime failures.
+// the intended contract — the runner will triage runtime failures.
 //
 // Authoritative runtime gaps surfaced by these tests:
 //   1. (none expected at compile time — all targets below use stable,
-//      already-landed production APIs from BE-D05/BE-D06.)
+//      already-landed production APIs.)
 //
 // =============================================================================
 
@@ -176,20 +176,20 @@ async fn insert_subscription_in_bucket(
 // `provider_entitlement_mappings.bucket_id` is NOT NULL in the base schema
 // (`20260607_product_reduce.sql`). A bucket-less mapping can therefore no longer exist,
 // so the purchase-time runtime check — CoreError::EntitlementMappingNotAttachedToBucket
-// (design A8, §5.3) — was removed from `resolve_target`. The invariant this
+// — was removed from `resolve_target`. The invariant this
 // scenario guarded ("a mapping without a credit bucket cannot be purchased") is
 // now enforced structurally at the schema layer instead of at request time.
 
 // =============================================================================
-// Scenario 2: fulfillment grants to the attempt-snapshot Bucket (A8)
+// Scenario 2: fulfillment grants to the attempt-snapshot Bucket
 // =============================================================================
 
 /// User Story: US-CB-004 (purchase Bucket plan), US-PA-003 (payment success
 /// fulfillment).
-/// Covers (BE-T02 scope):
+/// Covers:
 ///   - `fulfill_subscription_purchase` reads `attempt.bucket_id` snapshot (NOT
 ///     live `mapping.bucket_id`) and grants initial subscription credits to
-///     that Bucket's pool (design A8 / §5.3).
+///     that Bucket's pool.
 ///   - DB check: the new `points_credit_ledger.bucket_id` equals the snapshot
 ///     Bucket, and no ledger row leaks to any other Bucket.
 #[test_context(TestContext)]
@@ -266,15 +266,15 @@ async fn fulfillment_grants_to_attempt_snapshot_bucket(ctx: &mut TestContext) {
 }
 
 // =============================================================================
-// Scenario 3: first fulfillment freezes subscription.bucket_id (A8)
+// Scenario 3: first fulfillment freezes subscription.bucket_id
 // =============================================================================
 
 /// User Story: US-CB-008 (subscription lifecycle by Bucket).
-/// Covers (BE-T02 scope):
+/// Covers:
 ///   - After the first `fulfill_subscription_purchase`, `subscription.bucket_id`
 ///     is non-NULL and equals the attempt snapshot. This is the freeze event
 ///     that makes the subscription's lifecycle resolve deterministically to
-///     one pool (design A8 / §5.5).
+///     one pool.
 ///   - Subsequent subscription lifecycle events (renewal/upgrade/cancel) read
 ///     this frozen value as their routing source — so a NULL here is a
 ///     data-integrity breach, not a valid state.
@@ -330,13 +330,13 @@ async fn fulfillment_freezes_subscription_bucket_on_first_renewal(ctx: &mut Test
 }
 
 // =============================================================================
-// Scenario 4: A7 regression — mapping bucket change after purchase does not
+// Scenario 4: regression — mapping bucket change after purchase does not
 // reroute an in-flight attempt
 // =============================================================================
 
 /// User Story: US-CB-003 (coverage-set / mapping changes affect only future
-/// purchases), A7 (覆盖集变更不回溯).
-/// Covers (BE-T02 scope):
+/// purchases); 覆盖集变更不回溯.
+/// Covers:
 ///   - Purchase attempt is created with snapshot Bucket A.
 ///   - Mapping is then re-pointed to Bucket B.
 ///   - Fulfilling the in-flight attempt STILL grants to Bucket A (reads the
@@ -441,14 +441,14 @@ async fn mapping_bucket_change_after_purchase_does_not_reroute_inflight_attempt(
 }
 
 // =============================================================================
-// Scenario 5: renewal grant lands in subscription.bucket_id pool (§5.5)
+// Scenario 5: renewal grant lands in subscription.bucket_id pool
 // =============================================================================
 
 /// User Story: US-CB-008 (subscription lifecycle by Bucket), US-PU subscription
 /// renewal.
-/// Covers (BE-T02 scope):
-///   - `handle_subscription_paid` (renewal path) grants to `subscription.bucket_id`
-///     (design §5.5). The grant ledger row's `bucket_id` matches the
+/// Covers:
+///   - `handle_subscription_paid` (renewal path) grants to `subscription.bucket_id`.
+///     The grant ledger row's `bucket_id` matches the
 ///     subscription's bound Bucket; no leak.
 #[test_context(TestContext)]
 #[tokio::test]
@@ -534,14 +534,14 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
 }
 
 // =============================================================================
-// Scenario 6: upgrade revokes old + grants new within the same Bucket (§5.5)
+// Scenario 6: upgrade revokes old + grants new within the same Bucket
 // =============================================================================
 
 /// User Story: US-CB-008 (subscription lifecycle by Bucket), US-PU upgrade.
-/// Covers (BE-T02 scope):
+/// Covers:
 ///   - `handle_subscription_upgrade` revokes the old plan's subscription credits
-///     and grants the new plan's credits, both routed to `subscription.bucket_id`
-///     (design §5.5). No cross-pool leak: the revoke and the grant share one
+///     and grants the new plan's credits, both routed to `subscription.bucket_id`.
+///     No cross-pool leak: the revoke and the grant share one
 ///     Bucket.
 #[test_context(TestContext)]
 #[tokio::test]
@@ -626,11 +626,11 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
 }
 
 // =============================================================================
-// Scenario 7: cancel revokes only the subscription bucket pool (§5.5)
+// Scenario 7: cancel revokes only the subscription bucket pool
 // =============================================================================
 
 /// User Story: US-CB-008, US-PU cancel.
-/// Covers (BE-T02 scope):
+/// Covers:
 ///   - `handle_subscription_cancel` (ImmediateCancel) revokes subscription
 ///     credits routed to `subscription.bucket_id` only; an unrelated Bucket's
 ///     balance is untouched (no cross-pool revoke).
@@ -757,13 +757,13 @@ async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut Tes
 }
 
 // =============================================================================
-// Scenario 8: refund revokes only the subscription bucket pool (§5.5)
+// Scenario 8: refund revokes only the subscription bucket pool
 // =============================================================================
 
 /// User Story: US-CB-008, US-PU refund.
-/// Covers (BE-T02 scope):
+/// Covers:
 ///   - Refund (revoke by credit type) routed to `subscription.bucket_id` only;
-///     design §5.5 "退款同上" maps to revoke routed to the subscription bucket.
+///     "退款同上" maps to revoke routed to the subscription bucket.
 ///   - An unrelated Bucket's balance is NOT touched (no cross-pool leak).
 #[test_context(TestContext)]
 #[tokio::test]
@@ -853,7 +853,7 @@ async fn subscription_refund_revokes_only_subscription_bucket_pool(ctx: &mut Tes
         .revoke_points_by_credit_type(
             &realm_id,
             user_id,
-            bucket_sub, // subscription.bucket_id — the refund routing source (§5.5)
+            bucket_sub, // subscription.bucket_id — the refund routing source
             CreditType::SubscriptionCredit,
             RevocationType::RefundRevoke,
             "Subscription refund".to_string(),
@@ -880,13 +880,13 @@ async fn subscription_refund_revokes_only_subscription_bucket_pool(ctx: &mut Tes
 }
 
 // =============================================================================
-// Scenario 9: downgrade preserves current cycle; next cycle same pool (§5.5)
+// Scenario 9: downgrade preserves current cycle; next cycle same pool
 // =============================================================================
 
 /// User Story: US-CB-008, US-PU downgrade.
-/// Covers (BE-T02 scope):
+/// Covers:
 ///   - `handle_subscription_downgrade` does NOT revoke any current-cycle
-///     balance (design §5.5); it only validates the entitlement keys and
+///     balance; it only validates the entitlement keys and
 ///     records the intent. The next-cycle grant_schedule (routed via the same
 ///     `subscription.bucket_id`) uses the new entitlement.
 ///   - The current-cycle balance is unchanged immediately after the downgrade.
@@ -977,7 +977,7 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
     );
 
     // --- And: the subscription stays bound to the same Bucket (next-cycle
-    // grant_schedule will route to subscription.bucket_id per design §5.5). --
+    // grant_schedule will route to subscription.bucket_id). --
     assert_eq!(
         read_subscription_bucket(pool, subscription_id).await,
         bucket,
@@ -1008,7 +1008,7 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
 // inline comment in `subscription_service.rs`).
 
 /// User Story: US-CB-008 — fail-loud contract for an unresolvable renewal.
-/// Covers (BE-T02 scope):
+/// Covers:
 ///   - A subscription bound to a valid Bucket, but whose `entitlement_key` has
 ///     NO `provider_entitlement_mappings` row (points policy missing).
 ///   - `handle_subscription_paid` returns `CoreError::EntitlementMappingNotFound`

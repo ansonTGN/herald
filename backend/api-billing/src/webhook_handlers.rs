@@ -205,7 +205,7 @@ fn parse_optional_creem_datetime(value: &Value) -> Result<Option<DateTime<Utc>>,
 }
 
 /// Normalize a Creem subscription object's billing period to a unique
-/// `(period_start, period_end)` pair (design §5.2, A8 P0, symmetric to
+/// `(period_start, period_end)` pair (P0, symmetric to
 /// Stripe's `normalize_stripe_period`).
 ///
 /// Creem exposes the period under several field-name variants
@@ -215,7 +215,7 @@ fn parse_optional_creem_datetime(value: &Value) -> Result<Option<DateTime<Utc>>,
 ///
 /// Returns `Some((start, end))` only when both endpoints resolve and form a
 /// valid window (`start < end`). Returns `None` on any partial / missing /
-/// unparseable / inverted result — per A8 P0 the caller must then skip the
+/// unparseable / inverted result — per P0 the caller must then skip the
 /// grant, emit a structured warning, and await a later webhook / API
 /// compensation (never guess the period from event time, never write a
 /// ledger with an invented period).
@@ -251,7 +251,7 @@ fn read_creem_period_field(object: &Value, fields: &[&str]) -> Option<DateTime<U
             continue;
         }
         // `parse_creem_datetime` returns Result; on error treat as absent so
-        // the A8 P0 "skip + warn" path applies uniformly.
+        // the P0 "skip + warn" path applies uniformly.
         if let Ok(dt) = parse_creem_datetime(v, field) {
             return Some(dt);
         }
@@ -1074,10 +1074,10 @@ async fn handle_subscription_paid(
         .await?;
     }
 
-    // Normalize the provider billing period (design §5.2, A8 P0, symmetric
+    // Normalize the provider billing period (P0, symmetric
     // to Stripe). When the period cannot be uniquely resolved we skip the
     // grant and emit a structured warning — never guess the period from
-    // event time, never write a ledger with an invented period (A8 P0).
+    // event time, never write a ledger with an invented period (P0).
     let normalized_period = normalize_creem_period(creem_event_object(&event));
 
     // bucket_id was resolved eagerly above and bound at subscription creation.
@@ -1113,7 +1113,7 @@ async fn handle_subscription_paid(
             event_id = %event_id,
             reason = "period_uniquely_unresolvable",
             source = "creem",
-            "Creem period normalization failed; skipping subscription grant and awaiting compensation (A8 P0)"
+            "Creem period normalization failed; skipping subscription grant and awaiting compensation (P0)"
         );
         // Mirrors the graceful-skip outcome of EntitlementMappingNotFound
         // below: no grant is issued, the event is acknowledged, and a later
@@ -1517,8 +1517,8 @@ async fn handle_subscription_canceled(
     )
     .await?;
 
-    // Reclaim the chained pre-grant row for the subscription's next period
-    // (design §5.2 A4 / BE-D09). Row-precise — does NOT touch other active
+    // Reclaim the chained pre-grant row for the subscription's next period.
+    // Row-precise — does NOT touch other active
     // credits, does NOT back-adjust wallet. Idempotent: missing schedule /
     // already-revoked ⟹ no-op. Runs BEFORE the cancel path so the future-
     // effective pre-grant row is revoked row-precisely; the cancel path then
@@ -1588,7 +1588,7 @@ async fn handle_refund_created(
     );
 
     // Resolve the routing Bucket from the originating payment_attempt snapshot
-    // (design A8 / BE-D06: revocation targets the same Bucket the original grant
+    // (revocation targets the same Bucket the original grant
     // targeted). Look up by provider reference (Creem payment_id). When no
     // attempt snapshot exists, fail loud rather than revoke from an arbitrary
     // implicit pool — over-revoking unrelated credits would be a silent bug.
@@ -1641,7 +1641,7 @@ async fn handle_refund_created(
         }
         _ => {
             // Reclaim the chained pre-grant row for the subscription's next
-            // period (design §5.2 A4 / BE-D09). Row-precise — does NOT touch
+            // period. Row-precise — does NOT touch
             // other active credits, does NOT back-adjust wallet. A refund
             // targets the originating subscription; resolve its schedule via
             // the user's active subscription schedules in this realm+bucket.
@@ -1793,7 +1793,7 @@ async fn handle_subscription_lifecycle_status(
     // Revoke credits AFTER subscription status is synced to Expired.
     // If sync fails, no credits are revoked and the webhook retries naturally.
     if status == SubscriptionStatus::Expired {
-        // Route revocation to subscription.bucket_id (design §5.5 / A8).
+        // Route revocation to subscription.bucket_id.
         // The synced subscription is the post-update snapshot and carries the
         // persisted bucket_id. Fail loud when unresolved.
         let (_, bucket_id) = synced
@@ -2026,7 +2026,7 @@ async fn process_creem_event_once(
 /// Verifies signature, checks idempotency, routes to appropriate handler,
 /// and returns 202 Accepted immediately. Processing happens asynchronously.
 #[tracing::instrument(
-    // BE-D09 governance (§4.5/§5.4): `body` is the raw provider payload
+    // Governance: `body` is the raw provider payload
     // (Creem event bodies may carry PII / customer data); `headers` carries
     // the `creem-signature` header; `realm_id` is conservatively skipped.
     // Only the low-cardinality route template is recorded.
@@ -2466,10 +2466,10 @@ mod tests {
         assert!(payload.attempt_id.is_none());
     }
 
-    // ---- normalize_creem_period — A8 P0 symmetric (design §5.2 / A8) ----
+    // ---- normalize_creem_period — P0 symmetric ----
     //
     // Creem exposes the billing period under several field-name variants.
-    // The normalizer must resolve all of them or return None (A8 P0: skip +
+    // The normalizer must resolve all of them or return None (P0: skip +
     // warn, never guess).
 
     fn creem_ts(value: i64) -> DateTime<Utc> {
@@ -2512,7 +2512,7 @@ mod tests {
         let obj = serde_json::json!({ "subscriptionId": "sub_1" });
         assert!(
             normalize_creem_period(&obj).is_none(),
-            "absent Creem period must NOT be resolved (A8 P0)"
+            "absent Creem period must NOT be resolved (P0)"
         );
     }
 
@@ -2524,7 +2524,7 @@ mod tests {
         });
         assert!(
             normalize_creem_period(&obj).is_none(),
-            "partial Creem period must NOT be resolved (A8 P0)"
+            "partial Creem period must NOT be resolved (P0)"
         );
     }
 
@@ -2538,16 +2538,16 @@ mod tests {
     }
 }
 
-// BE-T03 governance tests (design §5.4 / §4.5).
+// Governance tests.
 //
-// Covers: BE-D09 — billing `handle_creem_webhook` (webhook_handlers.rs) and
+// Covers: billing `handle_creem_webhook` (webhook_handlers.rs) and
 // `handle_stripe_webhook` (stripe_webhook_handlers.rs) instrument skip
 // correctness.
 //
 // WHY: webhook `body` is the raw provider payload (may carry PII / customer
 // data) and `headers` carry the provider signature header. If the
 // `#[instrument]` macro ever stops skipping those, raw PII / the signature
-// leaks into a span field. Source-scan baseline (design §6.1), anchored per
+// leaks into a span field. Source-scan baseline, anchored per
 // function to the immediately-preceding `#[tracing::instrument(...)]`.
 #[cfg(test)]
 mod instrument_skip_tests {

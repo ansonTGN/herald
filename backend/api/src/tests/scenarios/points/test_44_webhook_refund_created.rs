@@ -58,7 +58,7 @@ async fn test_refund_topup_proportional_recovery(ctx: &mut SchemaTestContext) {
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
 
     // Seed the payment_attempts snapshot the Creem refund webhook resolves the
-    // routing bucket from (design A8). Without it the handler fails loud with
+    // routing bucket from. Without it the handler fails loud with
     // "no payment_attempt for payment_id".
     let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
     create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
@@ -149,7 +149,7 @@ async fn test_refund_subscription_only_unused(ctx: &mut SchemaTestContext) {
     consume_points_from_ledger(ctx, ledger_id, 2000).await;
 
     // Seed the payment_attempts snapshot the Creem refund webhook resolves the
-    // routing bucket from (design A8). Without it the handler fails loud with
+    // routing bucket from. Without it the handler fails loud with
     // "no payment_attempt for payment_id".
     let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
     create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 5000).await;
@@ -266,7 +266,7 @@ async fn test_refund_created_idempotency(ctx: &mut SchemaTestContext) {
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
 
     // Seed the payment_attempts snapshot the Creem refund webhook resolves the
-    // routing bucket from (design A8).
+    // routing bucket from.
     let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
     create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
 
@@ -430,17 +430,17 @@ async fn test_refund_subscription_same_refund_id_different_event_id_is_idempoten
 }
 
 // ============================================================================
-// BE-T06: Creem refund.created reclaim (row-level, design §5.2 A4 / §6.1 P1)
+// Creem refund.created reclaim (row-level, P1)
 // ============================================================================
 //
 // User Story: docs/user-stories/points-billing-events.md
-// Covers: design point-time §6.1 "预生成失败回收（P1）" Creem refund.created
-// branch + §5.2 A4 (row-level reclaim via (schedule_id, period_number)) + A7
-// (derived balance, no wallet back-adjust).
+// Covers: point-time "预生成失败回收（P1）" Creem refund.created
+// branch + row-level reclaim via (schedule_id, period_number)
+// + derived balance (no wallet back-adjust).
 //
 // The Creem refund.created handler invokes the same
 // `reclaim_pregrant_for_subscription` row-level path as Stripe
-// invoice.payment_failed / subscription.canceled (design §5.2: "Creem
+// invoice.payment_failed / subscription.canceled ("Creem
 // subscription.canceled / refund.created, 与 Stripe 对称"). For a subscription
 // refund (refundType != "topup") it first resolves the routing bucket via the
 // payment_attempt snapshot, then for each active subscription schedule in that
@@ -480,7 +480,7 @@ async fn seed_creem_pregrant_for_refund_reclaim(
     .bind(client_app_id)
     .bind(realm_id)
     .bind(format!("client-{}", client_app_id))
-    .bind("BE-T06 creem refund seed")
+    .bind("creem refund seed")
     .execute(pool)
     .await
     .expect("creem seed: client_app insert");
@@ -567,7 +567,7 @@ async fn seed_creem_pregrant_for_refund_reclaim(
 }
 
 // ----------------------------------------------------------------------------
-// BE-T06 §6.1 P1 scenario (5a): Creem refund.created triggers row-level
+// P1 scenario (5a): Creem refund.created triggers row-level
 // reclaim of the subscription's chained pre-grant row (Stripe-symmetric).
 // ----------------------------------------------------------------------------
 
@@ -638,7 +638,7 @@ async fn test_creem_refund_reclaim_row_level(ctx: &mut SchemaTestContext) {
     );
     assert_eq!(ledger.used_amount, 0);
 
-    // Derived balance excludes the revoked row (A7).
+    // Derived balance excludes the revoked row.
     assert_derived_balance(ctx, user_id, &realm_id, CreditType::SubscriptionCredit, 0).await;
 
     // Fully-unused row ⟹ no reclaim debt record.
@@ -652,7 +652,7 @@ async fn test_creem_refund_reclaim_row_level(ctx: &mut SchemaTestContext) {
 }
 
 // ----------------------------------------------------------------------------
-// BE-T06 §6.1 P1 scenario (5b): Creem subscription.canceled reclaims an
+// P1 scenario (5b): Creem subscription.canceled reclaims an
 // unfulfilled (future-effective) pre-grant row (Stripe-symmetric with test_43
 // scenario 1). Covers the Creem arm of the cancel→reclaim symmetry.
 // ----------------------------------------------------------------------------

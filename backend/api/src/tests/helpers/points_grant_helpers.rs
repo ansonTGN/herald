@@ -61,8 +61,8 @@ pub async fn grant_points_admin_via_api(
     validity_days: Option<i64>,
     session_token: &str,
 ) -> (StatusCode, Option<serde_json::Value>) {
-    // Credit Buckets model: every grant targets an explicit bucket (design
-    // §4.2.4 / A5). Bind the realm's legacy test bucket so the grant succeeds.
+    // Credit Buckets model: every grant targets an explicit bucket.
+    // Bind the realm's legacy test bucket so the grant succeeds.
     let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
         &ctx._app_state.pool,
         realm_id,
@@ -94,7 +94,7 @@ pub async fn grant_points_admin_via_api(
 
 /// Assert granted_balance for a user matches the expected value.
 pub async fn assert_granted_balance(pool: &sqlx::PgPool, user_id: Uuid, expected: i64) {
-    // BE-D11: `points_wallets.granted_balance` was dropped; derive available
+    // `points_wallets.granted_balance` was dropped; derive available
     // granted credit from `points_credit_ledger` (credit_type = 'granted_credit').
     let row: Option<i64> = sqlx::query_scalar(
         "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
@@ -124,7 +124,7 @@ pub async fn assert_granted_balance(pool: &sqlx::PgPool, user_id: Uuid, expected
 
 /// Assert total_balance for a user matches the expected value.
 ///
-/// BE-D11: `points_wallets.total_balance` was dropped; derive the total
+/// `points_wallets.total_balance` was dropped; derive the total
 /// available balance from `points_credit_ledger`.
 pub async fn assert_total_balance(pool: &sqlx::PgPool, user_id: Uuid, expected: i64) {
     let row: Option<i64> = sqlx::query_scalar(
@@ -203,8 +203,8 @@ pub async fn grant_points_ext_via_api(
     validity_days: Option<i64>,
     api_key: &str,
 ) -> (StatusCode, Option<serde_json::Value>) {
-    // Credit Buckets model: every grant targets an explicit bucket (design
-    // §4.2.4 / A5). Bind the realm's legacy test bucket so the grant succeeds.
+    // Credit Buckets model: every grant targets an explicit bucket.
+    // Bind the realm's legacy test bucket so the grant succeeds.
     let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
         &ctx._app_state.pool,
         realm_id,

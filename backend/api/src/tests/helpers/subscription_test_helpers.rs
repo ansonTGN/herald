@@ -5,9 +5,6 @@
 // Helpers for subscription CRUD with the new schema (entitlement_key,
 // external_price_id, provider_metadata, synced_at).
 //
-// BE-T03 owns this file. BE-T01 owns billing_helpers.rs. BE-T02 owns
-// webhook_helpers.rs.
-//
 // =============================================================================
 
 #![allow(dead_code)]

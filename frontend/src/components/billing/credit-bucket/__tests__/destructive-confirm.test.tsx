@@ -31,7 +31,7 @@ function withQueryClient(ui: React.ReactNode) {
  * `clientApps` MUST be non-empty: `updateCreditBucketSchema` enforces
  * `clientAppIds.min(1)`, so an empty coverage set makes the form zod-invalid
  * and submit never fires (no mutation, no 409, no conflict Alert). A real
- * bucket always has at least one covered client app (design §4.2.2).
+ * bucket always has at least one covered client app.
  */
 function makeBucket(overrides: Partial<BucketDetailResponse> = {}): BucketDetailResponse {
   return {
@@ -79,7 +79,7 @@ describe('Credit Bucket destructive-confirm states', () => {
 
       // The dialog's description states the refusal, and a separate destructive
       // Alert carries the counts — both must reach the admin so they understand
-      // WHY deletion was refused (design §4.2.3 body fields).
+      // WHY deletion was refused (body fields).
       const dialog = screen.getByTestId('delete-bucket-confirm-dialog')
       expect(dialog).toHaveTextContent(/cannot be deleted/i)
       const alert = screen.getByTestId('delete-bucket-error-message')
@@ -168,7 +168,7 @@ describe('Credit Bucket destructive-confirm states', () => {
       const conflictAlert = await screen.findByTestId('credit-bucket-editor-registration-conflict')
       expect(conflictAlert).toHaveAttribute('role', 'alert')
       // The copy instructs the admin to unset the OTHER bucket first
-      // (design §4.2.2 — no silent override).
+      // (no silent override).
       expect(conflictAlert).toHaveTextContent(
         /another bucket already receives registration credits/i
       )

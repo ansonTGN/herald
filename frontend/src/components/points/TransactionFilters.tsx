@@ -26,7 +26,7 @@ interface TransactionFiltersProps {
   onClear: () => void
   clientApps?: Array<{ id: string; name: string }>
   /**
-   * Credit Bucket option source for the Bucket Select (design §4.4.2). When
+   * Credit Bucket option source for the Bucket Select. When
    * provided, the Select renders; user-facing callers pass `useEnabledBuckets`
    * output, admin callers pass `useBuckets` output (incl. disabled). Each
    * option only needs the fields `BucketOption` exposes.
@@ -165,7 +165,7 @@ export function TransactionFilters({
                 </form.Field>
               </div>
 
-              {/* Bucket (design §4.4.2) — shown for both user and admin faces
+              {/* Bucket — shown for both user and admin faces
                   whenever the caller supplies bucket options. */}
               {buckets && buckets.length > 0 && (
                 <div className="min-w-[160px]">

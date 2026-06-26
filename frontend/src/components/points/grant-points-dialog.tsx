@@ -58,8 +58,8 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
 
   const grantMutation = useGrantPoints(realmId)
 
-  // Enabled buckets for the mandatory Target Bucket Select (design §4.4 /
-  // FE-D02). Disabled buckets are filtered out so admins can't target them.
+  // Enabled buckets for the mandatory Target bucket Select.
+  // Disabled buckets are filtered out so admins can't target them.
   const { buckets } = useEnabledBuckets(realmId)
 
   // User search query -- enabled only when query is non-empty
@@ -77,7 +77,7 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
       userId: '',
       amount: 1,
       reason: '',
-      // No default bucket — grant must explicitly target a bucket (design §4.2.4).
+      // No default bucket — grant must explicitly target a bucket.
       bucketId: '',
       validityDays: null as number | null,
     },
@@ -270,8 +270,8 @@ export function GrantPointsDialog({ open, onOpenChange, realmId }: GrantPointsDi
                 })()}
               </div>
 
-              {/* Target Bucket (design §4.2.4 / §4.4) — REQUIRED, no default.
-                  Mirrors the TransactionFilters Select pattern (FE-D06).
+              {/* Target Bucket — REQUIRED, no default.
+                  Mirrors the TransactionFilters Select pattern.
                   Options come from useEnabledBuckets so disabled buckets are
                   not selectable. */}
               <form.Field name="bucketId">

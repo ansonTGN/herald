@@ -12,8 +12,7 @@
 //   - Invoice not found (edge case)
 //
 // Refund visibility (US-IF-008) is verified through the invoice detail
-// response's `amountRefunded` / `amountRemaining` fields populated by
-// dev item BE-D06.
+// response's `amountRefunded` / `amountRemaining` fields.
 //
 // User Story: docs/user-stories/billing/invoice-fallback.md
 // Covers: US-IF-010, US-IF-008

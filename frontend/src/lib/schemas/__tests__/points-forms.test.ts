@@ -91,7 +91,7 @@ describe('accountFiltersSchema', () => {
 
 /**
  * Factory for valid grant-points input. `bucketId` is the required Credit
- * Bucket target (design §4.2.4 / FE-D07) — schema enforces non-empty via
+ * Bucket target — schema enforces non-empty via
  * `min(1)`, NOT `.uuid()`. UUID grammar is the backend's authority (400
  * `grant_bucket_required`); the fail-loud concern at the schema layer is
  * "non-empty required".
@@ -107,7 +107,7 @@ function validGrantInput(overrides: Record<string, unknown> = {}) {
 }
 
 describe('grantPointsSchema', () => {
-  describe('bucketId is a required target (design §4.2.4)', () => {
+  describe('bucketId is a required target', () => {
     it.each([
       ['missing field', undefined],
       ['empty string', ''],

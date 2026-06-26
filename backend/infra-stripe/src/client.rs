@@ -305,8 +305,8 @@ impl StripeClient {
             request.mapping_id
         );
 
-        // BE-D10: external.http span + duration histogram. Host-only attribute
-        // (no path/query, no api key, no body) per governance §5.4.
+        // external.http span + duration histogram. Host-only attribute
+        // (no path/query, no api key, no body) per governance.
         let timing = timed_external_http_span(&self.base_url, "POST");
         let _span_enter = timing.span().enter();
 
@@ -401,7 +401,7 @@ impl StripeClient {
                 .map(|(key, value)| (format!("metadata[{key}]"), value.clone())),
         );
 
-        // BE-D10: external.http span + duration histogram.
+        // external.http span + duration histogram.
         let timing = timed_external_http_span(&self.base_url, "POST");
         let _span_enter = timing.span().enter();
 
@@ -509,7 +509,7 @@ impl StripeClient {
             params.created_lte
         );
 
-        // BE-D10: external.http span + duration histogram.
+        // external.http span + duration histogram.
         let timing = timed_external_http_span(&self.base_url, "GET");
         let _span_enter = timing.span().enter();
 

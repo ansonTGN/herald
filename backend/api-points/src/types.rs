@@ -19,7 +19,7 @@ pub struct PointsWalletResponse {
     pub id: Option<Uuid>,
     pub user_id: Uuid,
     pub realm_id: String,
-    /// Credit Bucket this wallet belongs to (design §4.2.1). `None` for the
+    /// Credit Bucket this wallet belongs to. `None` for the
     /// aggregate user-total view (multi-bucket user).
     pub bucket_id: Option<Uuid>,
     pub balance: i64,
@@ -35,7 +35,7 @@ pub struct PointsWalletResponse {
     pub currency: String,
 }
 
-/// Per-credit-type balances (design §4.2.3 `balancesByType` / `byCreditType`).
+/// Per-credit-type balances (`balancesByType` / `byCreditType`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BalancesByType {
@@ -57,7 +57,7 @@ impl BalancesByType {
     }
 }
 
-/// Wallet balances grouped by Credit Bucket (design §4.2.3 `WalletByBucket`).
+/// Wallet balances grouped by Credit Bucket (`WalletByBucket`).
 ///
 /// For the admin (`billing/points/wallets`) view, `user_id` is populated and
 /// the response groups per `(user, bucket)`. For the `users/me/points/wallets`
@@ -80,7 +80,7 @@ pub struct WalletByBucketResponse {
     pub bucket_total: i64,
 }
 
-/// Aggregated wallets-by-bucket list response (design §4.2.3).
+/// Aggregated wallets-by-bucket list response.
 ///
 /// `cross_bucket_total` is the sum of every bucket's `bucketTotal`. The field
 /// is always present; for a single-bucket realm it equals `bucketTotal` of the
@@ -116,7 +116,7 @@ pub struct PointsTransactionResponse {
     pub wallet_id: Uuid,
     pub user_id: Uuid,
     pub realm_id: String,
-    /// Credit Bucket the transaction landed in (design §4.2.3).
+    /// Credit Bucket the transaction landed in.
     pub bucket_id: Option<Uuid>,
     pub transaction_type: String,
     pub amount: i64,
@@ -126,7 +126,7 @@ pub struct PointsTransactionResponse {
     pub subscription_id: Option<Uuid>,
     pub external_ref_id: Option<String>,
     pub created_at: String,
-    /// Expected effective time (design §4.2 / §5.1 P1-2). Read-only, for
+    /// Expected effective time (P1-2). Read-only, for
     /// admin/audit reconciliation of pre-generated vs already-effective rows.
     /// `None` on the `points.view` (regular user) path — the handler forces it
     /// to `None` and `skip_serializing_if` omits the key from JSON entirely, so
@@ -212,7 +212,7 @@ pub struct ListTransactionsQuery {
     pub client_app_id: Option<String>,
     pub subscription_id: Option<String>,
     pub external_ref_id: Option<String>,
-    /// Filter by Credit Bucket (design §4.2.3). Applied at the handler because
+    /// Filter by Credit Bucket. Applied at the handler because
     /// `TransactionFilters` does not yet carry `bucket_id`.
     pub bucket_id: Option<String>,
     pub start_time: Option<String>,
@@ -227,7 +227,7 @@ pub struct ListTransactionsQuery {
 pub struct ListWalletsQuery {
     pub status: Option<String>,
     pub search: Option<String>,
-    /// Filter by Credit Bucket (design §4.2.1). Applied at the handler because
+    /// Filter by Credit Bucket. Applied at the handler because
     /// `WalletFilters` does not yet carry `bucket_id`.
     pub bucket_id: Option<String>,
     pub page: Option<u64>,
@@ -297,7 +297,7 @@ pub struct UserPointsConfigResponse {
 #[serde(rename_all = "camelCase")]
 pub struct GrantPointsRequest {
     pub user_id: String,
-    /// Target Credit Bucket (design §4.2.4 / A5). REQUIRED — every grant must
+    /// Target Credit Bucket. REQUIRED — every grant must
     /// name an explicit bucket; missing → 400 `grant_bucket_required`.
     pub bucket_id: Option<String>,
     pub amount: i64,
@@ -311,7 +311,7 @@ pub struct GrantPointsRequest {
 pub struct GrantPointsResponse {
     pub transaction_id: Uuid,
     pub user_id: Uuid,
-    /// Credit Bucket the grant landed in (design §4.2.3 / §4.2.4). Mirrors the
+    /// Credit Bucket the grant landed in. Mirrors the
     /// api-ext `ExtGrantPointsResponse.bucketId` and SDK `GrantPointsResponse`
     /// contract so consumers see one shape.
     pub bucket_id: Uuid,
@@ -490,7 +490,7 @@ mod tests {
             external_ref_id: Some("ref-123".to_string()),
             created_at: "2024-01-01T00:00:00Z".to_string(),
             // None (regular-user / `points.view` shape) — `skip_serializing_if`
-            // omits the key entirely (design §4.2 P1-2: the field must not
+            // omits the key entirely (P1-2: the field must not
             // appear in regular-user JSON).
             effective_at: None,
         };
@@ -540,7 +540,7 @@ mod tests {
             "Should contain camelCase 'createdAt'"
         );
 
-        // design §4.2 P1-2: when `effective_at` is None the key must be ABSENT
+        // when `effective_at` is None the key must be ABSENT
         // from the JSON (skip_serializing_if). This is the regular-user
         // (`points.view`) response shape — the field must never leak. If this
         // assertion fails, someone removed the `skip_serializing_if` attribute
@@ -551,7 +551,7 @@ mod tests {
         );
         assert!(
             !json.contains("effectiveAt"),
-            "effectiveAt must be omitted (not null) when effective_at is None (design §4.2 P1-2)"
+            "effectiveAt must be omitted (not null) when effective_at is None (P1-2)"
         );
 
         // Verify snake_case is not present

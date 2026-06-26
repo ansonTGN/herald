@@ -35,7 +35,7 @@ async fn assert_account_balance_matches_ledger_remaining(
     realm_id: &str,
     credit_types: &[CreditType],
 ) {
-    // BE-D11 / point-time: `points_wallets` no longer carries Stored per-type
+    // point-time: `points_wallets` no longer carries Stored per-type
     // balance columns; available balance is DERIVED from `points_credit_ledger`
     // (same predicate as consumption). The wallet-derived available balance for
     // the asserted credit types must match the raw ledger remaining sum.
@@ -134,7 +134,7 @@ async fn test_scenario_consume_refund_race_balance_not_negative(ctx: &mut Schema
         "description": "Race consume"
     });
 
-    // Credit Buckets model (design A8): the refund webhook resolves its
+    // Credit Buckets model: the refund webhook resolves its
     // revocation bucket from the originating `payment_attempts.bucket_id`
     // snapshot (looked up by provider reference = `payment_id`). Seed it on
     // the same legacy bucket the topup ledger lives in.
@@ -471,7 +471,7 @@ async fn test_scenario_multi_consume_refund_race_no_overspending(ctx: &mut Schem
             .unwrap()
     };
 
-    // Credit Buckets model (design A8): seed the payment_attempt bucket
+    // Credit Buckets model: seed the payment_attempt bucket
     // snapshot the refund webhook resolves its revocation target from.
     let refund_bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, &realm_id).await;
     create_payment_attempt_snapshot(

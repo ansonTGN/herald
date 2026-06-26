@@ -76,7 +76,7 @@ async fn test_scenario_free_user_registration_grants_initial_bonus(ctx: &mut Tes
 
     println!("[Step 1] ✓ Realm default config created");
 
-    // Credit Buckets model (design §4.3.2): registration-bonus grants route to
+    // Credit Buckets model: registration-bonus grants route to
     // the realm's registration-pool bucket (`receives_registration_credits =
     // true`). `ensure_test_bucket_for_realm` materializes that pool for the
     // realm; without it the resolver returns None and the grant is skipped.
@@ -162,7 +162,7 @@ async fn test_scenario_free_user_registration_grants_initial_bonus(ctx: &mut Tes
 
     // Check that the user has a derived available balance of 1050
     // 1000 (registration bonus) + 50 (first periodic grant) = 1050.
-    // point-time (BE-D11): `points_wallets.total_balance` was dropped; available
+    // point-time: `points_wallets.total_balance` was dropped; available
     // balance is derived from `points_credit_ledger` using the same predicate
     // as consumption.
     let total_balance: i64 = sqlx::query_scalar(
@@ -231,7 +231,7 @@ async fn test_scenario_free_user_registration_prevents_duplicate_bonuses(ctx: &m
     .await
     .expect("Failed to enable registration");
 
-    // Materialize the realm's registration-pool bucket (design §4.3.2) so the
+    // Materialize the realm's registration-pool bucket so the
     // registration-bonus grant lands in a credit ledger the assertions read.
     crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
         &ctx._app_state.pool,
@@ -267,7 +267,7 @@ async fn test_scenario_free_user_registration_prevents_duplicate_bonuses(ctx: &m
         .expect("Failed to fetch user_id");
     let user_id = uuid::Uuid::parse_str(&user_id).expect("Invalid user ID");
 
-    // Verify initial registration credit. point-time (BE-D11): read the
+    // Verify initial registration credit. point-time: read the
     // derived available balance instead of the dropped `total_balance`.
     let initial_balance: i64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
@@ -326,7 +326,7 @@ async fn test_scenario_free_user_registration_prevents_duplicate_bonuses(ctx: &m
             || error_body.contains("already registered")
     );
 
-    // And: No additional registration points are granted. point-time (BE-D11):
+    // And: No additional registration points are granted. point-time:
     // read the derived available balance instead of the dropped `total_balance`.
     let final_balance: i64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
@@ -409,7 +409,7 @@ async fn test_scenario_free_user_registration_periodic_points_disabled(ctx: &mut
 
     println!("[Step 1] ✓ Realm config created with periodic points disabled");
 
-    // Materialize the realm's registration-pool bucket (design §4.3.2).
+    // Materialize the realm's registration-pool bucket.
     crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
         &ctx._app_state.pool,
         &ctx._realm_id,
@@ -500,17 +500,17 @@ async fn test_scenario_free_user_registration_periodic_points_disabled(ctx: &mut
 }
 
 // =============================================================================
-// BE-T03: Free-periodic on-time grant + two distinct sources (A10)
+// Free-periodic on-time grant + two distinct sources
 // =============================================================================
 //
 // **User Story**: US-FU-004 (按时获得每期免费积分) + US-FU-002 (免费定期积分按时发放)
 // **Priority**: P0
 //
-// **Design refs**: `.ai/design/point-time.md` §5.3 (GrantScheduler process_due
-// pre-grant anchors), §5.5 (lead_time table), §1.4 A10 (registration initial
+// **Design refs**: `.ai/design/point-time.md` (GrantScheduler process_due
+// pre-grant anchors), (lead_time table), (registration initial
 // credit and free_periodic first period are two distinct entitlement sources).
 //
-// **Testability decision (BE-T03)**: `SchemaTestContext` does NOT expose a
+// **Testability decision**: `SchemaTestContext` does NOT expose a
 // `GrantScheduler` handle. Per the item-file precheck guidance, we construct
 // `GrantScheduler::new(points_repository, points_service, lead_time_map)`
 // directly in-test using the `ctx._app_state.points_repository` /
@@ -519,14 +519,14 @@ async fn test_scenario_free_user_registration_periodic_points_disabled(ctx: &mut
 // against the live test schema, mirroring what the worker would do, without
 // depending on the worker loop. The read-path realization
 // (`reconcile_due_for_user`) is also reachable via `ctx._app_state.points_service`
-// and is exercised by BE-T08; these tests focus on the scheduler-driven
+// and is exercised by other tests; these tests focus on the scheduler-driven
 // "worker normal on-time grant" path.
 
 use herald_core::domain::points::{GrantPeriodType, GrantScheduler};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Build the lead_time_map (design §5.5) for the in-test `GrantScheduler`.
+/// Build the lead_time_map for the in-test `GrantScheduler`.
 /// Mirrors `app/src/main.rs::build_lead_time_map` defaults.
 fn build_test_lead_time_map() -> HashMap<GrantPeriodType, chrono::Duration> {
     let mut map = HashMap::new();
@@ -538,12 +538,12 @@ fn build_test_lead_time_map() -> HashMap<GrantPeriodType, chrono::Duration> {
 }
 
 /// ============================================================================
-/// Scenario BE-T03.1: Free-periodic first period is immediately available
+/// Scenario 1: Free-periodic first period is immediately available
 /// (next_grant_time <= now ⟹ effective_at = NULL ⟺ immediately available)
 /// ============================================================================
 // User Story: docs/user-stories/points-free-user.md#US-FU-004
-// Covers: design §5.3 (first period due immediately grants with effective_at=NULL),
-//         §6.1 "免费周期按时发放（P0）".
+// Covers: first period due immediately grants with effective_at=NULL,
+//         "免费周期按时发放（P0）".
 //
 // WHY this test exists: the availability predicate
 //   `effective_at IS NULL OR effective_at <= NOW()`
@@ -615,7 +615,7 @@ async fn test_free_periodic_first_period_immediately_available(ctx: &mut TestCon
     );
 
     // The free_periodic_credit ledger row must exist with effective_at IS NULL
-    // (next_grant_time <= now ⟹ immediately available, design §5.3).
+    // (next_grant_time <= now ⟹ immediately available).
     let row = sqlx::query(
         "SELECT effective_at, expires_at, granted_amount, remaining_amount, status
          FROM points_credit_ledger
@@ -653,11 +653,11 @@ async fn test_free_periodic_first_period_immediately_available(ctx: &mut TestCon
 }
 
 /// ============================================================================
-/// Scenario BE-T03.2: Registration credit and free_periodic first period are
-/// two distinct sources (design §1.4 A10)
+/// Scenario 2: Registration credit and free_periodic first period are
+/// two distinct sources
 /// ============================================================================
 // User Story: docs/user-stories/points-free-user.md#US-FU-001 + US-FU-002
-// Covers: design §1.4 A10, §6.1 "注册初始积分与 free_periodic 首期作为两笔不同来源".
+// Covers: "注册初始积分与 free_periodic 首期作为两笔不同来源".
 //
 // WHY this test exists: registration initial bonus points and the free_periodic
 // first-period grant are TWO DIFFERENT entitlement sources. They must land as
@@ -742,7 +742,7 @@ async fn test_registration_credit_and_free_periodic_two_distinct_sources(ctx: &m
         .expect("Failed to fetch registered user id");
     let user_id = uuid::Uuid::parse_str(&user_id_str).expect("Invalid user ID");
 
-    // A10 invariant: TWO distinct ledger rows — one registration_credit, one
+    // Invariant: TWO distinct ledger rows — one registration_credit, one
     // free_periodic_credit. They differ in credit_type AND source_type, and
     // neither substitutes for the other.
     let registration_ledgers =
@@ -831,12 +831,12 @@ async fn test_registration_credit_and_free_periodic_two_distinct_sources(ctx: &m
 }
 
 /// ============================================================================
-/// Scenario BE-T03.3: lead_time pre-grant — effective_at is the future period
+/// Scenario 3: lead_time pre-grant — effective_at is the future period
 /// boundary; row is excluded from derived balance until the clock catches up
 /// ============================================================================
 // User Story: docs/user-stories/points-free-user.md#US-FU-004
-// Covers: design §5.3 (next_grant_time > now ⟹ effective_at=Some(next_grant_time)),
-//         §5.5 (lead_time table), §6.1 "lead_time 提前预生成 + 零延迟可用".
+// Covers: next_grant_time > now ⟹ effective_at=Some(next_grant_time),
+//         (lead_time table), "lead_time 提前预生成 + 零延迟可用".
 //
 // WHY this test exists: lead_time lets the worker pre-grant a FUTURE period so
 // the ledger row exists before the period starts. The availability predicate
@@ -869,8 +869,8 @@ async fn test_free_periodic_pre_grant_lead_time_effective_at_future(ctx: &mut Te
     .expect("Failed to ensure user exists");
 
     let now = chrono::Utc::now();
-    // Schedule a MONTHLY period starting 2h from now. With monthly lead_time=24h
-    // (§5.5), `next_grant_time - 24h <= now` holds, so the scheduler treats it
+    // Schedule a MONTHLY period starting 2h from now. With monthly lead_time=24h,
+    // `next_grant_time - 24h <= now` holds, so the scheduler treats it
     // as due and pre-grants with effective_at = Some(next_grant_time).
     //
     // Truncate to microsecond precision: Postgres `TIMESTAMPTZ` stores
@@ -943,7 +943,7 @@ async fn test_free_periodic_pre_grant_lead_time_effective_at_future(ctx: &mut Te
 
     // Simulate the clock catching up to the period boundary: flip effective_at
     // into the past. NO worker, NO status flip — only the predicate changes
-    // outcome. This is the zero-delay availability proof (design §6.1).
+    // outcome. This is the zero-delay availability proof.
     crate::tests::helpers::points_helpers::inject_effective_at(
         ctx,
         ledger_id,
@@ -962,12 +962,12 @@ async fn test_free_periodic_pre_grant_lead_time_effective_at_future(ctx: &mut Te
 }
 
 /// ============================================================================
-/// Scenario BE-T03.4: expires_at is anchored to next_grant_time + validity_days
+/// Scenario 4: expires_at is anchored to next_grant_time + validity_days
 /// (NOT to the actual grant/created_at moment)
 /// ============================================================================
 // User Story: docs/user-stories/points-free-user.md#US-FU-004
-// Covers: design §5.3 (expires_at = calculate_expiration(next_grant_time,
-//         validity_days)), §6.1 "expires 锚定 next_grant_time + validity_days".
+// Covers: expires_at = calculate_expiration(next_grant_time,
+//         validity_days), "expires 锚定 next_grant_time + validity_days".
 //
 // WHY this test exists: anchoring expiration to the actual grant moment
 // (created_at) would let worker latency or a delayed webhook shorten or

@@ -501,7 +501,7 @@ function parseAmount(raw: string | null): number {
  *  1. Open the wallets page + grant dialog (`openGrantDialog`).
  *  2. Search the user by email + fill amount/permanent/reason AND select the
  *     promo-pool bucket (`fillGrantForm` now performs the bucket Select
- *     itself — credit-bucket §4.2.4 / A5 made `bucketId` REQUIRED on
+ *     itself — credit-bucket made `bucketId` REQUIRED on
  *     `GrantFormOptions`, so the manual select that used to live here is
  *     redundant and was removed during DE-D07 reconciliation).
  *  3. Submit + confirm (`confirmGrantDialog`).
@@ -524,7 +524,7 @@ async function grantPromoPoolBalanceViaAdminUI(
     // with a non-zero total; expiry is out of scope for US-CB-005/006.
     permanent: true,
     reason: PROMO_POOL_GRANT_REASON,
-    // credit-bucket §4.2.4 / A5: bucketId is REQUIRED by `fillGrantForm`.
+    // bucketId is REQUIRED by `fillGrantForm`.
     // Pass the seeded promo-pool KEY; the helper resolves it to the visible
     // "Promo Pool" option label and selects it. This replaces the manual
     // bucket-select step that previously followed `fillGrantForm`.

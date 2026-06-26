@@ -27,7 +27,7 @@ pub struct Model {
 
     // 时间与状态
     pub expires_at: Option<DateTimeWithTimeZone>,
-    /// Expected effective time (design §4.3.2 / §5.1). NULL ⟺ immediately
+    /// Expected effective time. NULL ⟺ immediately
     /// available; non-null ⟺ enters the available set only when
     /// `effective_at <= NOW()`. Anchored to the expected period start
     /// (subscription `period_start`, free-periodic `next_grant_time`).

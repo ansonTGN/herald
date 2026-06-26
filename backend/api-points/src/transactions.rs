@@ -25,7 +25,7 @@ use herald_core::domain::points::ports::TransactionFilters;
         ("transactionType" = Option<String>, Query, description = "Filter by transaction type"),
         ("clientAppId" = Option<String>, Query, description = "Filter by client app ID"),
         ("subscriptionId" = Option<String>, Query, description = "Filter by subscription ID"),
-        ("bucketId" = Option<String>, Query, description = "Filter by Credit Bucket ID (design §4.2.3)"),
+        ("bucketId" = Option<String>, Query, description = "Filter by Credit Bucket ID"),
         ("startTime" = Option<String>, Query, description = "Filter by start time (ISO 8601)"),
         ("endTime" = Option<String>, Query, description = "Filter by end time (ISO 8601)"),
         ("page" = Option<u64>, Query, description = "Page number (0-based, default: 0)"),
@@ -40,7 +40,7 @@ use herald_core::domain::points::ports::TransactionFilters;
     tag = "Points"
 )]
 #[tracing::instrument(
-    // BE-D07 governance (§4.5/§5.4): identity carries user_id/realm_id; query
+    // Governance: identity carries user_id/realm_id; query
     // may carry user_id/bucket_id filters; realm_id conservatively skipped.
     skip_all,
     fields(db.operation = "list_transactions")
@@ -54,7 +54,7 @@ pub async fn list_transactions(
     let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "points transactions")?;
     // Authenticated caller id, captured before the filter `user_id` (Option<Uuid>)
     // shadows the outer binding below. Used for the `points.manage` probe that
-    // gates `effective_at` visibility (design §4.2 P1-2).
+    // gates `effective_at` visibility (P1-2).
     let caller_user_id = user_id;
     require_permission(
         &state,
@@ -126,7 +126,7 @@ pub async fn list_transactions(
         .await
     {
         Ok(paginated) => {
-            // Design §4.2 / §5.1 P1-2: `effective_at` is admin/audit-only.
+            // `effective_at` is admin/audit-only (P1-2).
             // Regular users (`points.view` alone) must never see it. Probe
             // `points.manage` non-erroringly — deny resolves to `false`, which
             // forces `effective_at = None` for every row below. Combined with
@@ -135,7 +135,7 @@ pub async fn list_transactions(
             // base `points.view` gate above already rejected users lacking even
             // view permission, so a `false` here means "view-only".
             //
-            // BE-D11 Part B: the plumbing gap is closed — `PointsTransaction`
+            // The plumbing gap is closed — `PointsTransaction`
             // now carries `effective_at` (sourced via LEFT JOIN to
             // `points_credit_ledger` in `find_transactions`), so the
             // `points.manage` path surfaces the real ledger effective_at.
@@ -168,7 +168,7 @@ pub async fn list_transactions(
                     created_at: transaction.created_at.to_rfc3339(),
                     // P1-2 hiding: `points.view`-only callers get `None`
                     // (serialized away by `skip_serializing_if`); `points.manage`
-                    // callers get the real ledger `effective_at` (BE-D11 Part B).
+                    // callers get the real ledger `effective_at`.
                     effective_at: if can_manage {
                         transaction.effective_at
                     } else {

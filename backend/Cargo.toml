@@ -70,10 +70,10 @@ thiserror = "2.0"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-# `log` facade: consumed directly by sea-orm ConnectOptions slow-statement API (BE-D06).
+# `log` facade: consumed directly by sea-orm ConnectOptions slow-statement API.
 log = "0.4"
 
-# OpenTelemetry observability (BE-D01 pinned combo).
+# OpenTelemetry observability (pinned combo).
 # Lockstep note: tower-otel-http-metrics 0.16.0 depends on opentelemetry 0.30,
 # so the whole OTel stack is pinned to the 0.30 line (not 0.32) to keep the
 # RED metrics middleware library usable. tracing-opentelemetry 0.31 pairs with

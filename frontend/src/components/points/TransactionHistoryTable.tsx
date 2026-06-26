@@ -23,7 +23,7 @@ interface TransactionHistoryTableProps {
   admin?: boolean
   clientApps?: Array<{ id: string; name: string }>
   /**
-   * Credit Bucket lookup source for the Bucket column (design §4.4.2). When
+   * Credit Bucket lookup source for the Bucket column. When
    * provided the column renders; rows whose `bucketId` has no entry fall back
    * to the first 8 chars of `bucketId` (mirrors the client-app fallback).
    */
@@ -107,7 +107,7 @@ export function TransactionHistoryTable({
           )
         },
       },
-      // Bucket dimension (design §4.4.2). Column renders whenever the caller
+      // Bucket dimension. Column renders whenever the caller
       // supplies a bucket lookup; rows without a resolvable bucket fall back
       // to the first 8 chars of `bucketId`, matching the client-app fallback.
       ...(buckets

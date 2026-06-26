@@ -81,7 +81,7 @@ mod tests {
             realm_id,
         )
         .await;
-        // BE-D11 / point-time: per-type balance columns and the `total_balance`
+        // point-time: per-type balance columns and the `total_balance`
         // GENERATED column were dropped from `points_wallets`; available balance
         // is now derived from `points_credit_ledger`. This INSERT seeds only the
         // retained lifetime-analytics columns (all 0).
@@ -100,7 +100,7 @@ mod tests {
     }
 
     // Helper: get wallet balance for a user.
-    // BE-D11: derived from `points_credit_ledger` (same predicate as production
+    // Derived from `points_credit_ledger` (same predicate as production
     // `compute_available_balance`); `points_wallets.total_balance` was dropped.
     async fn get_wallet_balance(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) -> i64 {
         sqlx::query_scalar::<_, i64>(

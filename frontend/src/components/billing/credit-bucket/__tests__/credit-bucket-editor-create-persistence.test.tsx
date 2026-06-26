@@ -23,7 +23,7 @@ function withQueryClient(ui: React.ReactNode) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
-// ===== FE-T04 follow-up verification (slot: FE-D03 follow-up, outside T01..T06) =====
+// ===== Follow-up verification (outside T01..T06) =====
 //
 // Question: does the CREATE branch of CreditBucketEditor wipe entered values
 // when a re-render is triggered by flipping the `receivesRegistrationCredits`

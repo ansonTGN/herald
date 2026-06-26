@@ -142,9 +142,9 @@ impl WechatPayClient {
             params.amount.into(),
         );
 
-        // BE-D10: external.http span + duration histogram around the SDK call
+        // external.http span + duration histogram around the SDK call
         // (the SDK issues the outbound HTTPS request to WeChat internally).
-        // Host-only attribute (no path/query/out_trade_no) per governance §5.4.
+        // Host-only attribute (no path/query/out_trade_no) per governance.
         let timing = timed_external_http_span(&self.base_url, "POST");
         let _span_enter = timing.span().enter();
 
@@ -193,8 +193,8 @@ impl WechatPayClient {
             self.base_url, out_trade_no, self.mch_id
         );
 
-        // BE-D10: external.http span + duration histogram. Host-only attribute
-        // (no path/query/out_trade_no, no auth headers) per governance §5.4.
+        // external.http span + duration histogram. Host-only attribute
+        // (no path/query/out_trade_no, no auth headers) per governance.
         let timing = timed_external_http_span(&self.base_url, "GET");
         let _span_enter = timing.span().enter();
 
@@ -286,7 +286,7 @@ impl WechatPayClient {
             mchid: self.mch_id.clone(),
         };
 
-        // BE-D10: external.http span + duration histogram.
+        // external.http span + duration histogram.
         let timing = timed_external_http_span(&self.base_url, "POST");
         let _span_enter = timing.span().enter();
 

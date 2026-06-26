@@ -49,7 +49,7 @@ pub struct PartialSyncError {
 }
 
 /// Port for accessing external provider APIs (Stripe, Creem, etc.)
-/// Concrete implementations live in the infra layer (BE-D05).
+/// Concrete implementations live in the infra layer.
 pub trait ProviderApiPort: Send + Sync {
     /// Fetch all products from the provider for a given realm
     fn fetch_products(
@@ -75,8 +75,7 @@ pub trait ProviderApiPort: Send + Sync {
 ///   `RegistrationPoolResolver` pattern (the same port
 ///   `webhook_subscription_helpers::resolve_bucket_id_for_entitlement` and the
 ///   registration grant path rely on) to pick the realm's single registration
-///   pool. There is no separate "default" / "draft" bucket concept by design
-///   (design A4).
+///   pool. There is no separate "default" / "draft" bucket concept by design.
 pub struct ProviderProductSyncService<R, P, A, B>
 where
     R: BillingRepository,
@@ -161,7 +160,7 @@ where
                     // it to the realm's registration-pool bucket — the same
                     // bucket the registration/free-periodic grant path and the
                     // webhook entitlement resolver use. No "default"/"draft"
-                    // bucket concept exists by design (design A4).
+                    // bucket concept exists by design.
                     let bucket_id = self
                         .bucket_resolver
                         .resolve_registration_pool_bucket(realm_id)
@@ -178,7 +177,7 @@ where
                         .ok_or_else(|| {
                             // Fail loud: a realm with no registration-pool bucket
                             // cannot accept newly-synced products. The operator
-                            // must configure a registration pool first (design A5).
+                            // must configure a registration pool first.
                             CoreError::BadRequest(format!(
                                 "Cannot sync new provider product {}: realm '{}' has no registration-pool credit bucket; create one before syncing",
                                 product.external_product_id, realm_id

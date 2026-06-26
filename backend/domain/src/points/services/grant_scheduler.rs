@@ -11,11 +11,11 @@ use crate::points::{
 
 /// Grant Scheduler Service - Background job that grants points based on schedules
 ///
-/// `lead_time_map` (design §5.3 / §5.5): per-`GrantPeriodType` lead time. The
+/// `lead_time_map`: per-`GrantPeriodType` lead time. The
 /// port `find_due_grant_schedules` takes a loose upper bound `before =
 /// now + max_lead_time`; this scheduler then filters each candidate row by its
 /// own `grant_period_type` lead time. `Once` ⟹ 0 (no lead); `Daily` ⟹ 1h,
-/// `Weekly` ⟹ 12h, `Monthly` ⟹ 24h by design default (§5.5).
+/// `Weekly` ⟹ 12h, `Monthly` ⟹ 24h by design default.
 pub struct GrantScheduler<R, P>
 where
     R: PointsRepository,
@@ -31,8 +31,8 @@ where
     R: PointsRepository + Send + Sync,
     P: PointsPolicy,
 {
-    /// Construct with an explicit `lead_time_map` (design §5.5). `main.rs`
-    /// (BE-D07) builds the map from env/defaults and injects it here.
+    /// Construct with an explicit `lead_time_map`. `main.rs`
+    /// builds the map from env/defaults and injects it here.
     pub fn new(
         repository: Arc<R>,
         points_service: Arc<PointsService<R, P>>,
@@ -48,7 +48,7 @@ where
     /// Process all due grant schedules
     ///
     /// This is called by the background worker (typically every hour). Per
-    /// design §5.3 the port takes a loose upper bound (`now + max_lead_time`)
+    /// design, the port takes a loose upper bound (`now + max_lead_time`)
     /// and this scheduler filters each row by its own
     /// `lead_time_map[grant_period_type]`. The worker is a warming/preheat
     /// path — correctness does NOT depend on it firing on time (free-periodic
@@ -72,7 +72,7 @@ where
         let mut summary = GrantSummary::default();
 
         for schedule in schedules {
-            // Per-row lead_time filtering (design §5.3). A row is "due" iff
+            // Per-row lead_time filtering. A row is "due" iff
             // `next_grant_time - lead_time(grant_period_type) <= now`.
             if !self.is_due(&schedule, now) {
                 summary.skipped += 1;
@@ -110,7 +110,7 @@ where
         Ok(summary)
     }
 
-    /// Per-row due judgement (design §5.3): `next_grant_time -
+    /// Per-row due judgement: `next_grant_time -
     /// lead_time(grant_period_type) <= now`. `Once` has lead_time=0 (no lead).
     /// A schedule whose `grant_period_type` is missing from the map is treated
     /// as lead_time=0 (only already-due).
@@ -136,7 +136,7 @@ where
             .unwrap_or_else(|| Self::default_lead_time(GrantPeriodType::Once))
     }
 
-    /// Design §5.5 defaults: Daily=1h, Weekly=12h, Monthly=24h, Once=0. Used
+    /// Defaults: Daily=1h, Weekly=12h, Monthly=24h, Once=0. Used
     /// when the map is missing an entry (e.g. `Once` is typically absent
     /// because 0 is the "no lead" default).
     pub(crate) fn default_lead_time(period_type: GrantPeriodType) -> Duration {
@@ -186,7 +186,7 @@ where
             return Ok(ProcessResult::Skipped);
         }
 
-        // Pre-grant anchors (design §5.3). The period boundary is
+        // Pre-grant anchors. The period boundary is
         // `schedule.next_grant_time`. If it lies in the future (lead-time
         // early hit), the ledger row carries `effective_at = Some(next_grant_time)`
         // so the availability predicate excludes it until the period starts;
@@ -374,7 +374,7 @@ mod tests {
     // functions replicated below. These mirror the impl exactly (same
     // formulas), so a behavior change in the impl MUST update these too — the
     // duplication is intentional: it gives the due-judgement a test surface
-    // independent of the infra trait (which lands in BE-D04) and the
+    // independent of the infra trait and the
     // concrete `GrantScheduler::new` constructor (which requires a live repo
     // + service).
     //
@@ -515,7 +515,7 @@ mod tests {
         ));
     }
 
-    /// Sanity: default_lead_time values match design §5.5 table exactly.
+    /// Sanity: default_lead_time values match the design table exactly.
     #[test]
     fn default_lead_times_match_design_table() {
         assert_eq!(default_lead(GrantPeriodType::Once), Duration::zero());

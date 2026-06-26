@@ -10,7 +10,7 @@ name = "herald_api"
 path = "src/lib.rs"
 
 [features]
-# All features default-off. Phase 2 profiling gates (design §5.6):
+# All features default-off. Phase 2 profiling gates:
 # implementation is intentionally NOT wired in main.rs this phase.
 default = []
 tokio-console = ["dep:console-subscriber"]
@@ -41,17 +41,17 @@ serde_json = { workspace = true }
 bytes = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-# `log` facade for sea-orm ConnectOptions slow-statement logging settings (BE-D06).
+# `log` facade for sea-orm ConnectOptions slow-statement logging settings.
 log = { workspace = true }
-# OpenTelemetry observability (versions/features pinned by BE-D01 in backend/Cargo.toml [workspace.dependencies]).
+# OpenTelemetry observability (versions/features pinned in backend/Cargo.toml [workspace.dependencies]).
 # OTLP/HTTP only — opentelemetry-otlp keeps default-features=false upstream; never add tonic.
 opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 tracing-opentelemetry = { workspace = true }
-# RED metrics middleware (versions/features pinned by BE-D01 in backend/Cargo.toml [workspace.dependencies]).
+# RED metrics middleware (versions/features pinned in backend/Cargo.toml [workspace.dependencies]).
 tower-otel-http-metrics = { workspace = true }
-# Phase 2 profiling (design §5.6) — optional, default-off, NOT OTel-version-matrix (independent of BE-D01).
+# Phase 2 profiling — optional, default-off, NOT OTel-version-matrix.
 # Implementation (ConsoleLayer / pprof sampler endpoint) is intentionally NOT wired this phase.
 console-subscriber = { version = "0.5", optional = true }
 # pprof is unix-only (libc sigaction/pthread_t); declared under
@@ -70,7 +70,7 @@ bcrypt = { workspace = true }
 clap = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
-# Phase 2 cpu profiling sampler (design §5.6). Unix-only — pprof relies on
+# Phase 2 cpu profiling sampler. Unix-only — pprof relies on
 # signal/ptrace APIs absent on Windows. Referenced by the `cpu-profiling`
 # feature above; on non-unix targets enabling that feature resolves to nothing.
 pprof = { version = "0.15", optional = true }

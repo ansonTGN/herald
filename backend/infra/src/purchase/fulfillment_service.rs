@@ -97,10 +97,10 @@ where
 
         let entitlement_key = mapping.entitlement_key.clone();
 
-        // A8: fulfillment routes by the `payment_attempt.bucket_id` snapshot taken
-        // at purchase creation (§5.3). Live `mapping.bucket_id` is intentionally
+        // Fulfillment routes by the `payment_attempt.bucket_id` snapshot taken
+        // at purchase creation. Live `mapping.bucket_id` is intentionally
         // NOT consulted here — mapping re-bucketing must not affect in-flight
-        // attempts (A7).
+        // attempts.
         let bucket_id = attempt.bucket_id;
 
         let now = chrono::Utc::now();
@@ -154,7 +154,7 @@ where
         let points_granted = if mapping.grant_on_subscribe {
             match mapping.points_per_period {
                 Some(points) if points > 0 => {
-                    // bucket_id snapshot already resolved above (A8); pass through.
+                    // bucket_id snapshot already resolved above; pass through.
                     let credit_ledger = self
                         .points_repository
                         .grant_points_atomic(
@@ -283,7 +283,7 @@ where
 
         // Grant TopupCredit via points_repository
         // Use attempt.id as source_id AND idempotency_key to prevent double-grant on concurrent webhooks
-        // A8: route grant to `attempt.bucket_id` snapshot (source of truth). Live
+        // Route grant to `attempt.bucket_id` snapshot (source of truth). Live
         // mapping.bucket_id is not consulted.
         let bucket_id = attempt.bucket_id;
         let credit_ledger = self

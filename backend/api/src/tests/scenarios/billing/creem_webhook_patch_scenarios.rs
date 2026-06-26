@@ -53,7 +53,7 @@ mod tests {
             realm_id,
         )
         .await;
-        // BE-D11 / point-time: per-type balance columns were dropped; the ledger
+        // point-time: per-type balance columns were dropped; the ledger
         // row inserted below by `create_subscription_credit_with_ledger` is the
         // source of truth for the derived subscription_balance.
         sqlx::query(
@@ -97,7 +97,7 @@ mod tests {
         .await
         .expect("Failed to create points wallet with sub balance");
 
-        // BE-D11: the subscription_balance is no longer Stored on points_wallets;
+        // The subscription_balance is no longer Stored on points_wallets;
         // seed a points_credit_ledger row so the derived balance reflects the
         // requested initial subscription_balance (mirrors
         // create_points_wallet_with_balance in points_helpers.rs).
@@ -150,7 +150,7 @@ mod tests {
         .await
         .expect("Failed to create credit ledger entry");
 
-        // BE-D11: only bump the retained lifetime-analytics column; the ledger
+        // Only bump the retained lifetime-analytics column; the ledger
         // row above is the source of truth for the derived subscription_balance.
         sqlx::query(
             "UPDATE points_wallets
@@ -293,7 +293,7 @@ mod tests {
 
     #[allow(dead_code)]
     /// Get topup_balance for a user's wallet.
-    /// BE-D11: `points_wallets.topup_balance` was dropped; the available topup
+    /// `points_wallets.topup_balance` was dropped; the available topup
     /// balance is the derived SUM over `points_credit_ledger` topup/registration/
     /// free_periodic rows (same predicate as production).
     async fn get_topup_balance(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) -> i64 {
@@ -315,7 +315,7 @@ mod tests {
     }
 
     /// Get subscription_balance for a user's wallet.
-    /// BE-D11: `points_wallets.subscription_balance` was dropped; the available
+    /// `points_wallets.subscription_balance` was dropped; the available
     /// subscription balance is now the derived SUM over `points_credit_ledger`
     /// subscription_credit rows (same predicate as production).
     async fn get_subscription_balance(

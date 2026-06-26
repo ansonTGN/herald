@@ -1,13 +1,13 @@
 // =============================================================================
-// BE-T03 — Scenario Tests: explicit bucketId grant + registration pool resolution
+// Scenario Tests: explicit bucketId grant + registration pool resolution
 // =============================================================================
 //
 // Covers design `.ai/design/credit-bucket.md`:
-//   - §5.4 (non-purchase grant Bucket target resolution)
-//   - §4.3.2 (`receives_registration_credits` + partial unique index
+//   - (non-purchase grant Bucket target resolution)
+//   - (`receives_registration_credits` + partial unique index
 //     `uq_credit_buckets_registration_pool` — at most one per Realm)
-//   - §6.1 grant bucketId
-//   - decision A5: every grant carries an EXPLICIT `bucketId`; no implicit
+//   - grant bucketId
+//   - every grant carries an EXPLICIT `bucketId`; no implicit
 //     resolution. SDK/admin grants missing `bucketId` → 400
 //     `grant_bucket_required`. Registration / free-periodic grants resolve to
 //     the Realm's single registration-pool Bucket; no marked Bucket → fail-safe
@@ -15,7 +15,7 @@
 //     Bucket are independent — no cross-pool leak.
 //
 // All scenarios exercise the real production paths:
-//   - HTTP: `POST /api/ext/points/{realmId}/grant` (SDK, BE-D10)
+//   - HTTP: `POST /api/ext/points/{realmId}/grant` (SDK)
 //   - HTTP: `POST /api/points/{realmId}/grant` (admin, api-points/grant.rs)
 //   - Service: `RegistrationService::handle_user_registration`
 //     (resolves pool via `RegistrationPoolResolver::resolve_registration_pool_bucket`)
@@ -25,11 +25,11 @@
 // Per authoring rules: tests target the intended design contract. Where the
 // landed production signature/behavior differs from the item's assumptions,
 // the gap is recorded inline (`RUNTIME GAP`) and the test is written against
-// the intended contract — the runner (BE-T06) will triage runtime failures.
+// the intended contract — the runner will triage runtime failures.
 //
 // Authoritative runtime gaps surfaced by these tests:
 //   1. (none expected at compile time — all targets below use stable,
-//      already-landed production APIs from BE-D05/BE-D07/BE-D10.)
+//      already-landed production APIs.)
 //
 // =============================================================================
 
@@ -96,7 +96,7 @@ async fn set_realm_default_config(
 
 /// Read the first `points_grant_schedules.bucket_id` for a user (returns None
 /// when no schedule row exists). Used to assert the periodic grant schedule
-/// targets the registration pool Bucket (design §5.4).
+/// targets the registration pool Bucket.
 async fn read_first_grant_schedule_bucket(pool: &PgPool, user_id: Uuid) -> Option<Uuid> {
     sqlx::query_scalar::<_, Option<Uuid>>(
         "SELECT bucket_id FROM points_grant_schedules
@@ -117,12 +117,12 @@ fn error_code(body: &Option<Value>) -> Option<&str> {
 }
 
 // =============================================================================
-// Scenario 1: SDK grant without bucketId → 400 grant_bucket_required (A5)
+// Scenario 1: SDK grant without bucketId → 400 grant_bucket_required
 // =============================================================================
 
 /// User Story: US-CB-007 (SDK grants must carry an explicit target Bucket).
-/// Covers (BE-T03 scope):
-///   - design §4.2.4 / A5: SDK grant missing `bucketId` → 400
+/// Covers:
+///   - SDK grant missing `bucketId` → 400
 ///     `grant_bucket_required`. No implicit bucket resolution is permitted.
 ///   - `backend/api-ext/src/points.rs::grant_points_ext` rejects with a
 ///     structured `grant_bucket_required` body before reaching the service.
@@ -180,12 +180,12 @@ async fn sdk_grant_without_bucket_id_returns_400_grant_bucket_required(ctx: &mut
 }
 
 // =============================================================================
-// Scenario 2: SDK grant with a valid bucketId → lands in that pool (A5)
+// Scenario 2: SDK grant with a valid bucketId → lands in that pool
 // =============================================================================
 
 /// User Story: US-CB-007 (SDK grants route to the explicitly targeted Bucket).
-/// Covers (BE-T03 scope):
-///   - design §4.2.4 / A5: SDK grant with a valid `bucketId` grants to that
+/// Covers:
+///   - SDK grant with a valid `bucketId` grants to that
 ///     exact pool; the response echoes `bucketId`.
 ///   - DB check: `points_credit_ledger.bucket_id` and the wallet total balance
 ///     reflect the targeted Bucket (no cross-pool leak).
@@ -266,12 +266,12 @@ async fn sdk_grant_with_bucket_id_grants_to_specified_pool(ctx: &mut TestContext
 }
 
 // =============================================================================
-// Scenario 3: admin grant without bucketId → rejected (A5)
+// Scenario 3: admin grant without bucketId → rejected
 // =============================================================================
 
 /// User Story: US-CB-004 (admin grants must carry an explicit target Bucket).
-/// Covers (BE-T03 scope):
-///   - design §4.2.4 / A5: admin (`POST /api/points/{realmId}/grant`) grant
+/// Covers:
+///   - admin (`POST /api/points/{realmId}/grant`) grant
 ///     missing `bucketId` → 400 `grant_bucket_required`. Admin grants have the
 ///     same explicit-bucketId contract as SDK grants.
 ///   - `backend/api-points/src/grant.rs::grant_points` rejects with a
@@ -325,13 +325,13 @@ async fn admin_grant_without_bucket_id_rejected(ctx: &mut TestContext) {
 }
 
 // =============================================================================
-// Scenario 4: registration grant lands in the marked registration pool (§5.4)
+// Scenario 4: registration grant lands in the marked registration pool
 // =============================================================================
 
 /// User Story: US-FU-001 (registration bonus lands in the Realm's registration
 /// pool Bucket).
-/// Covers (BE-T03 scope):
-///   - design §5.4 / §4.3.2: `handle_user_registration` resolves the Realm's
+/// Covers:
+///   - `handle_user_registration` resolves the Realm's
 ///     registration-pool Bucket (`receives_registration_credits = true`) via
 ///     `RegistrationPoolResolver::resolve_registration_pool_bucket` and grants
 ///     the registration bonus into that exact Bucket.
@@ -393,13 +393,13 @@ async fn registration_grant_lands_in_marked_registration_pool(ctx: &mut TestCont
 }
 
 // =============================================================================
-// Scenario 5: free periodic grant lands in the registration pool (§5.4)
+// Scenario 5: free periodic grant lands in the registration pool
 // =============================================================================
 
 /// User Story: US-FU-002 (free periodic grant schedule targets the Realm's
 /// registration pool Bucket).
-/// Covers (BE-T03 scope):
-///   - design §5.4: registration builds the periodic `points_grant_schedules`
+/// Covers:
+///   - registration builds the periodic `points_grant_schedules`
 ///     row with `bucket_id` = the marked registration pool Bucket; the first
 ///     periodic grant (issued synchronously by `handle_user_registration`)
 ///     lands in that Bucket via the schedule's `bucket_id`.
@@ -466,13 +466,13 @@ async fn free_periodic_grant_lands_in_registration_pool(ctx: &mut TestContext) {
 }
 
 // =============================================================================
-// Scenario 6: registration pool absent → fail-safe skip (no grant) (§5.4 / A4)
+// Scenario 6: registration pool absent → fail-safe skip (no grant)
 // =============================================================================
 
 /// User Story: US-FU-001 (no implicit pool — fail-safe skip when no Bucket is
 /// marked).
-/// Covers (BE-T03 scope):
-///   - design §5.4 / A4 / A5: when no Bucket in the Realm is flagged
+/// Covers:
+///   - when no Bucket in the Realm is flagged
 ///     `receives_registration_credits = true`, the resolver returns `None` and
 ///     `handle_user_registration` SKIPS both the registration bonus and the
 ///     periodic grant schedule fail-safe — it never falls back to any implicit
@@ -539,18 +539,18 @@ async fn registration_pool_absent_skips_grant_fail_safe(ctx: &mut TestContext) {
 }
 
 // =============================================================================
-// Scenario 7: second registration pool in same Realm → 409 (§4.3.2)
+// Scenario 7: second registration pool in same Realm → 409
 // =============================================================================
 
 /// User Story: US-CB-001 (at most one registration pool per Realm).
-/// Covers (BE-T03 scope):
-///   - design §4.3.2: the partial unique index
+/// Covers:
+///   - the partial unique index
 ///     `uq_credit_buckets_registration_pool ON credit_buckets(realm_id)
 ///      WHERE receives_registration_credits = true` enforces "at most one per
 ///     Realm". A second marker in the same Realm raises a DB-level unique
 ///     violation; the production write path
 ///     (`PostgresBillingRepository::create_credit_bucket` /
-///      `update_credit_bucket`, BE-D07) surfaces this as 409
+///      `update_credit_bucket`) surfaces this as 409
 ///     `registration_pool_conflict`.
 ///   - This scenario asserts BOTH layers:
 ///       (a) raw DB unique violation when bypassing the handler, and
@@ -675,13 +675,13 @@ async fn second_registration_pool_in_same_realm_returns_409_registration_pool_co
 }
 
 // =============================================================================
-// Scenario 8: registration pool independent of subscription bucket (§5.4)
+// Scenario 8: registration pool independent of subscription bucket
 // =============================================================================
 
 /// User Story: US-FU-003 + US-CB-008 (registration pool and subscription
 /// Bucket do not cross-contaminate).
-/// Covers (BE-T03 scope):
-///   - design §5.4: registration grants target the registration pool Bucket;
+/// Covers:
+///   - registration grants target the registration pool Bucket;
 ///     subscription lifecycle grants target `subscription.bucket_id`. The two
 ///     are independent — a registration grant MUST NOT land in the subscription
 ///     Bucket and vice versa.
@@ -734,9 +734,9 @@ async fn registration_pool_independent_of_subscription_bucket(ctx: &mut TestCont
 
     // --- And: a subscription-cycle grant lands in sub_bucket (mirrors
     // `subscription_service.handle_subscription_paid` routing via
-    // `subscription.bucket_id`, design §5.5). We use the real domain write
+    // `subscription.bucket_id`). We use the real domain write
     // path `points_service.grant_points_internal` with the subscription
-    // Bucket as the explicit target (same path BE-D05 routes through). ---
+    // Bucket as the explicit target. ---
     ctx.app_state
         .points_service
         .grant_points_internal(
@@ -747,7 +747,7 @@ async fn registration_pool_independent_of_subscription_bucket(ctx: &mut TestCont
             CreditSourceType::SubscriptionInitial,
             1_000,
             None,
-            // effective_at: None ⟺ immediately available (BE-D02 added arg).
+            // effective_at: None ⟺ immediately available.
             None,
             Some(format!("sub-grant-{}", Uuid::now_v7())),
             Some("Subscription cycle grant".to_string()),

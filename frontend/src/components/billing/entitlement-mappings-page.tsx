@@ -61,7 +61,7 @@ export function EntitlementMappingsPage({ realmId, search }: EntitlementMappings
   const [detailOpen, setDetailOpen] = useState(false)
 
   // Admin-facing bucket option source (incl. disabled) for the Bucket column
-  // name lookup and the detail-dialog Select (FE-D02 useBuckets).
+  // name lookup and the detail-dialog Select (useBuckets).
   const { buckets } = useBuckets(realmId)
   const bucketNameById = useMemo(() => {
     const map = new Map<string, string>()
@@ -217,8 +217,8 @@ function MappingRow({
 
   const pointsPolicyLabel = mapping.pointsPerPeriod != null ? 'Grant Configured' : 'No Grant'
 
-  // Bound bucket name, or muted "Unassigned" fallback when bucketId is null
-  // (design §4.2.1). Fall back to the raw id if the bucket was deleted but the
+  // Bound bucket name, or muted "Unassigned" fallback when bucketId is null.
+  // Fall back to the raw id if the bucket was deleted but the
   // FK still resolves to an id not in the option list.
   const bucketName = mapping.bucketId ? bucketNameById.get(mapping.bucketId) : undefined
   const hasBucket = mapping.bucketId != null

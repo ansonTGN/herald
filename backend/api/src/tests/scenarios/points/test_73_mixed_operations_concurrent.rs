@@ -65,7 +65,7 @@ async fn test_scenario_mixed_operations_concurrent_no_corruption(ctx: &mut Schem
     .await
     .expect("Failed to update total_consumed");
 
-    // Credit Buckets model (design A8): the refund webhook resolves its
+    // Credit Buckets model: the refund webhook resolves its
     // revocation bucket from the originating `payment_attempts.bucket_id`
     // snapshot (looked up by provider reference = the test's `payment_id`).
     // Seed that snapshot on the same legacy bucket the topup ledger lives in so

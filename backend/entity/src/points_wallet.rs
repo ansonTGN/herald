@@ -11,7 +11,7 @@ pub struct Model {
     pub user_id: Uuid,
     pub realm_id: String,
     pub bucket_id: Uuid,
-    // Design §1.3 / A7 (BE-D11): the 5 per-type balance columns and the
+    // The 5 per-type balance columns and the
     // `total_balance` GENERATED column were physically dropped from the base
     // schema. Available balance is now exclusively a derived SUM over
     // `points_credit_ledger`; only the 4 lifetime analytics columns below

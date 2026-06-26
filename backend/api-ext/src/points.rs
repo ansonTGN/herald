@@ -73,7 +73,7 @@ pub struct ExtConsumePointsRequest {
     pub idempotency_key: Option<String>,
 }
 
-/// Per-bucket transaction inside a multi-bucket consume response (design §4.2.2).
+/// Per-bucket transaction inside a multi-bucket consume response.
 ///
 /// Single-pool consume → `transactions` has length 1 (structure unified with the
 /// multi-bucket case). `amount` is the points deducted from this pool (negative
@@ -89,7 +89,7 @@ pub struct BucketTransaction {
     pub balance_after: i64,
 }
 
-/// Ledger-level truth source for a consume (design §4.2.2/A6).
+/// Ledger-level truth source for a consume.
 ///
 /// Populated from `points_consumption_allocations` joined with its ledger's
 /// credit_type via the consume `correlation_id`. Empty for legacy single-pool
@@ -106,7 +106,7 @@ pub struct AllocationDetail {
     pub allocated_amount: i64,
 }
 
-/// Consume points response (SDK-compatible, design §4.2.2).
+/// Consume points response (SDK-compatible).
 ///
 /// Breaking change: the previous single-transaction shape is replaced by a
 /// per-bucket multi-transaction shape. `correlation_id` groups the N
@@ -125,13 +125,13 @@ pub struct ExtConsumePointsResponse {
     /// One entry per affected bucket, sorted by `bucket_id` ASC. Length 1 for a
     /// single-pool hit.
     pub transactions: Vec<BucketTransaction>,
-    /// Ledger-level allocations (design §4.2.2). See [`AllocationDetail`].
+    /// Ledger-level allocations. See [`AllocationDetail`].
     pub allocations: Vec<AllocationDetail>,
 }
 
 /// Grant points request (SDK-compatible).
 ///
-/// `bucket_id` is REQUIRED (design §4.2.4 / A5): every grant must target an
+/// `bucket_id` is REQUIRED: every grant must target an
 /// explicit Credit Bucket. Missing → 400 `grant_bucket_required`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -414,7 +414,7 @@ pub async fn consume_points_ext(
             .await
         {
             Ok(herald_core::domain::points::IdempotencyResult::Cached { transaction }) => {
-                // Idempotent replay (design §5.1). The cached `transaction` is
+                // Idempotent replay. The cached `transaction` is
                 // the primary transaction (first by bucket_id ASC). To return the
                 // FULL original result set across the correlation_id group
                 // (multi-pool consume shares one correlation_id across N
@@ -432,7 +432,7 @@ pub async fn consume_points_ext(
                         let primary = sorted.first().unwrap_or(&transaction);
 
                         // Surface the original consume's ledger-level
-                        // allocations (design §4.2.2 / A6). Multi-pool replays
+                        // allocations. Multi-pool replays
                         // share a correlation_id; legacy single-pool rows have
                         // none and surface an empty slice.
                         let allocations = match primary.correlation_id.as_deref() {
@@ -558,8 +558,8 @@ pub async fn consume_points_ext(
         description: request.description.clone(),
     };
 
-    // 6. Consume points — returns one transaction per affected bucket (design
-    // §5.1 / BE-D04). All share one correlation_id; each carries its own
+    // 6. Consume points — returns one transaction per affected bucket.
+    // All share one correlation_id; each carries its own
     // wallet_id/bucket_id/balance_after.
     let transactions = match state
         .points_service
@@ -587,7 +587,7 @@ pub async fn consume_points_ext(
         }
     };
 
-    // Surface the ledger-level allocations of this consume (design §4.2.2 / A6).
+    // Surface the ledger-level allocations of this consume.
     // Multi-bucket consumes share one correlation_id across their N transactions;
     // legacy single-pool rows (NULL correlation_id) have no grouping key and
     // surface an empty slice.
@@ -783,7 +783,7 @@ pub async fn grant_points_ext(
         }
     };
 
-    // 4. bucketId is REQUIRED (design §4.2.4 / A5): every grant must target an
+    // 4. bucketId is REQUIRED: every grant must target an
     // explicit Credit Bucket. Missing → 400 `grant_bucket_required`; present
     // but malformed → 400 grant_bucket_required as well (consumers should fix
     // the request either way).
@@ -893,7 +893,7 @@ pub async fn grant_points_ext(
 // =============================================================================
 
 /// Map a repository consumption-allocation view (allocation + ledger credit
-/// type) to the SDK response `AllocationDetail` (design §4.2.2).
+/// type) to the SDK response `AllocationDetail`.
 fn allocation_view_to_detail(view: ConsumptionAllocationView) -> AllocationDetail {
     AllocationDetail {
         bucket_id: view.allocation.bucket_id.to_string(),
@@ -936,7 +936,7 @@ fn build_consume_response_from_primary(
     }
 }
 
-/// Structured error body used by the consume error contract (design §4.2.3).
+/// Structured error body used by the consume error contract.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ConsumeErrorBody {
@@ -948,7 +948,7 @@ struct ConsumeErrorBody {
     need: Option<i64>,
 }
 
-/// Map a consume `CoreError` to the design §4.2.3 contract:
+/// Map a consume `CoreError` to the consume error contract:
 /// - `NoCoveredPointsPool` → 409 `no_covered_pool`
 /// - `insufficient_points` (materialized as `BadRequest("Insufficient points
 ///   balance. Required: {need}, Available: {have}")`) → 409 `insufficient_points`
@@ -1013,7 +1013,7 @@ fn parse_have_need(msg: &str) -> Option<(Option<i64>, Option<i64>)> {
     Some((have, need))
 }
 
-/// Structured 400 `grant_bucket_required` body (design §4.2.3 / §4.2.4).
+/// Structured 400 `grant_bucket_required` body.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct GrantBucketRequiredBody {

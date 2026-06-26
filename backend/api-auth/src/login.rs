@@ -89,7 +89,7 @@ pub struct LoginResponse {
   )
 )]
 #[tracing::instrument(
-    // BE-D08 governance (§4.5/§5.4): payload carries password (credential),
+    // Governance: payload carries password (credential),
     // turnstile_token, oauth state, email/username (PII); realm_id is
     // conservatively skipped. state holds session/redis handles; headers may
     // carry cookies. Only the low-cardinality operation type is recorded.
@@ -566,16 +566,16 @@ pub async fn login(
     Ok(response)
 }
 
-// BE-T03 governance tests (design §5.4 / §4.5).
+// Governance tests.
 //
-// Covers: BE-D08 — `login` (login.rs) and `register` (register.rs) instrument
+// Covers: `login` (login.rs) and `register` (register.rs) instrument
 // skip correctness.
 //
 // WHY: the login/register handlers take `payload` (carries password,
 // turnstile_token, email/username) and `headers` (may carry cookies). If the
 // `#[instrument]` macro ever stops skipping those, the credential/PII leaks
 // into a span field and is exported off-process. This source-scan is the
-// design §6.1 baseline governance assertion — anchored per function to the
+// baseline governance assertion — anchored per function to the
 // immediately-preceding `#[tracing::instrument(...)]`, so it cannot match a
 // `skip(...)` in a comment/string/other function.
 #[cfg(test)]

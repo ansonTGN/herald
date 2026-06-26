@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
 
     // Initialize observability: meter provider is always built (metrics on);
     // traces layer is built only when `traces_enabled=true` (baseline = off,
-    // P0 back-pressure mitigation — design §4.1). The traces provider is
+    // P0 back-pressure mitigation). The traces provider is
     // spliced into the handles so `shutdown` can flush it at exit.
     let mut handles = observability::build_meter_provider(&config.observability);
     let traces = observability::build_traces_layer(&config.observability);
@@ -127,9 +127,9 @@ async fn main() -> Result<()> {
         herald_core::infrastructure::billing::PostgresInvoiceRepository::new((*state.db).clone()),
     );
 
-    // Construct the pre-grant lead_time_map (design §5.5). Defaults: Daily=1h,
+    // Construct the pre-grant lead_time_map. Defaults: Daily=1h,
     // Weekly=12h, Monthly=24h, Once=0. Env-overridable for ops tuning; not
-    // exposed to Realm/frontend (decision A2). Subscription schedules share
+    // exposed to Realm/frontend. Subscription schedules share
     // the Monthly entry (their grant_period_type placeholder is monthly).
     let lead_time_map = build_lead_time_map();
 
@@ -183,7 +183,7 @@ async fn main() -> Result<()> {
 
     // Flush + shut down OTel providers (meter always; tracer only when
     // traces were enabled). Takes handles by value and never panics — a
-    // failing exporter cannot crash the process on exit (design §5.2).
+    // failing exporter cannot crash the process on exit.
     observability::shutdown(handles);
 
     info!("Herald Application shutdown complete");
@@ -218,10 +218,10 @@ async fn shutdown_signal() {
     }
 }
 
-/// Build the pre-grant `lead_time_map` (design §5.5) for the
+/// Build the pre-grant `lead_time_map` for the
 /// `GrantScheduler`. Defaults: Daily=1h, Weekly=12h, Monthly=24h, Once=0.
 /// Ops can override via env; the map is a backend scheduling parameter and is
-/// NOT exposed to Realm/frontend (decision A2). Subscription schedules reuse
+/// NOT exposed to Realm/frontend. Subscription schedules reuse
 /// the Monthly entry (their `grant_period_type` placeholder is monthly).
 fn build_lead_time_map() -> HashMap<GrantPeriodType, Duration> {
     let daily = env_hours("WORKER_FREE_GRANT_LEAD_HOURLY", 1);

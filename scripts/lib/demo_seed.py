@@ -1280,7 +1280,7 @@ def _error(logger: "Logger | None", message: str) -> None:
 #   - PRIMARY_POOL: receives_registration_credits=true; all seeded points
 #     wallet/ledger/txn rows, assigned one-time mappings, and the seeded
 #     subscription reference this bucket. Registration / free-periodic grants
-#     target this bucket (design §5.4, A5).
+#     target this bucket.
 #   - SECONDARY_POOL: enabled, NOT a registration pool; covers POINTS_CLIENT_APP_ID
 #     so DE-D03/DE-D04 can exercise cross-bucket assertions. Holds no seeded
 #     balance by default.

@@ -231,7 +231,7 @@ pub async fn update_entitlement_mapping(
         external_product_id: existing.external_product_id,
         external_price_id: existing.external_price_id,
         // Preserve the bound Bucket; this handler does not expose a way to
-        // reassign it via PATCH (BE-D08/BE-D09 own bucket assignment).
+        // reassign it via PATCH (bucket assignment is owned elsewhere).
         bucket_id: existing.bucket_id,
         entitlement_key: request.entitlement_key.unwrap_or(existing.entitlement_key),
         billing_type: existing.billing_type,

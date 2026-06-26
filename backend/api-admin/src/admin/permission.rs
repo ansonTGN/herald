@@ -338,7 +338,7 @@ pub async fn delete_permission(
     )
   )]
 #[tracing::instrument(
-    // BE-D07 governance (§4.5/§5.4): `headers` carry auth; `payload` carries
+    // Governance: `headers` carry auth; `payload` carries
     // the session `token` (credential) and rules that may reference resources
     // bound to a user. All skipped; only the low-cardinality op type recorded.
     skip(state, headers, payload),
@@ -406,15 +406,15 @@ pub fn router() -> axum::Router<AppState> {
         .route("/delete", post(delete_permission))
 }
 
-// BE-T03 governance tests (design §5.4 / §4.5).
+// Governance tests.
 //
-// Covers: BE-D07 — admin `check_permission` instrument skip correctness.
+// Covers: admin `check_permission` instrument skip correctness.
 //
 // WHY: `check_permission` reads auth from `headers` and a session `token`
 // (credential) from `payload`, plus rules that may reference resources bound to
 // a user. If the `#[instrument]` macro ever stops skipping those, the token /
-// user-bound data leaks into a span field. Source-scan baseline (design
-// §6.1), anchored to `fn check_permission` and its immediately-preceding
+// user-bound data leaks into a span field. Source-scan baseline,
+// anchored to `fn check_permission` and its immediately-preceding
 // `#[tracing::instrument(...)]`.
 #[cfg(test)]
 mod instrument_skip_tests {

@@ -100,7 +100,7 @@ mod tests {
         .await
         .expect("Failed to create points wallet with sub balance");
 
-        // BE-D11: points_wallets no longer holds Stored per-type balances; the
+        // points_wallets no longer holds Stored per-type balances; the
         // requested subscription_balance is seeded as a ledger row so the
         // derived balance reflects it (mirrors create_points_wallet_with_balance).
         if subscription_balance > 0 {

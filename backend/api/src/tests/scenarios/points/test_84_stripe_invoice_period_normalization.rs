@@ -1,12 +1,12 @@
 // =============================================================================
-// point-time BE-T05 (renewal path): Stripe invoice.payment_succeeded period
-// normalization (design §6.1, A8 P0)
+// Stripe invoice.payment_succeeded period (renewal path)
+// normalization (P0)
 // =============================================================================
 //
 // SCENARIO-LAYER coverage of the renewal grant on a REALISTIC Stripe Invoice
 // payload. Sibling to `test_81_provider_period_normalization.rs`, which covers
 // `customer.subscription.created`. This file covers the renewal event that
-// the A8 strictness regression silently broke:
+// the strictness regression silently broke:
 //
 //   Stripe `invoice.payment_succeeded` carries a Stripe **Invoice** object as
 //   `data.object`. A Stripe Invoice has NO top-level `current_period_*`
@@ -38,11 +38,11 @@
 //     → `normalize_stripe_invoice_period(&event["data"]["object"])`
 //     (backend/api-billing/src/stripe_webhook_handlers.rs, renewal handler)
 //
-// All balance assertions use the BE-T01 derived-predicate helper
-// (`assert_derived_balance`), never `points_wallets.total_balance` (BE-D11
-// physically removed that column).
+// All balance assertions use the derived-predicate helper
+// (`assert_derived_balance`), never `points_wallets.total_balance` (that
+// column was physically removed).
 //
-// A8 P0 quadrants covered:
+// P0 quadrants covered:
 //   (g) Stripe invoice single-line period              → Some  → grant
 //   (h) Stripe invoice with NO line carrying a period  → None  → SKIP grant
 //
@@ -92,7 +92,7 @@ async fn create_user(ctx: &SchemaTestContext, realm_id: &str, email: &str) -> Uu
 ///   * `Some((start_ts, end_ts))` → the line carries the period → resolver
 ///     returns Some → renewal grant fires.
 ///   * `None`                     → the line carries no period → resolver
-///     returns None → renewal grant is skipped (A8 P0).
+///     returns None → renewal grant is skipped (P0).
 fn build_stripe_invoice_payment_succeeded_event(
     event_id: &str,
     realm_id: &str,
@@ -149,7 +149,7 @@ fn build_stripe_invoice_payment_succeeded_event(
 // ============================================================================
 
 // User Story: US-PU-009 (use this period's credits on time, on renewal).
-// Covers design §6.1 P0 "provider 周期归一化" + A8 P0 renewal quadrant (g):
+// Covers P0 "provider 周期归一化" + P0 renewal quadrant (g):
 //   a Stripe `invoice.payment_succeeded` renewal invoice carries the billing
 //   period on each subscription line's `period.{start,end}`. The normalizer
 //   must resolve it to a unique `(period_start, period_end)` and DRIVE
@@ -241,7 +241,7 @@ async fn test_stripe_invoice_period_normalized_drives_renewal_grant(ctx: &mut Sc
 // ============================================================================
 
 // User Story: US-PU-009 (never grant against a guessed period).
-// Covers design §6.1 P0 "provider 周期归一化前置失败" + A8 P0 renewal quadrant (h):
+// Covers P0 "provider 周期归一化前置失败" + P0 renewal quadrant (h):
 //   when the renewal invoice's subscription line does NOT carry a `period`
 //   (a malformed / partial payload, or a provider quirk), the normalizer
 //   returns None and the handler MUST skip the renewal grant, emit a
@@ -249,7 +249,7 @@ async fn test_stripe_invoice_period_normalized_drives_renewal_grant(ctx: &mut Sc
 //   guess from event time.
 //
 // Why this test exists: this is the renewal-path counterpart to scenario (d)
-// in test_81. It pins down that the A8 P0 "None ⟹ skip" gate applies to the
+// in test_81. It pins down that the P0 "None ⟹ skip" gate applies to the
 // renewal event as well — a regression that fell back to "event time as
 // period_start" on missing invoice line periods would silently grant against
 // the wrong window.
@@ -303,13 +303,13 @@ async fn test_stripe_invoice_no_line_period_skips_renewal_grant(ctx: &mut Schema
     // EntitlementMappingNotFound graceful-skip behavior.
     assert_webhook_success(&response);
 
-    // Then: NO subscription_credit ledger was written — A8 P0 forbids writing
+    // Then: NO subscription_credit ledger was written — P0 forbids writing
     // a ledger with an invented period.
     let ledgers =
         get_user_ledgers_by_credit_type(ctx, user_id, CreditType::SubscriptionCredit).await;
     assert!(
         ledgers.is_empty(),
-        "Stripe invoice with NO line carrying a period must SKIP the renewal grant (A8 P0 — \
+        "Stripe invoice with NO line carrying a period must SKIP the renewal grant (P0 — \
          never guess); got {} subscription_credit ledgers",
         ledgers.len()
     );

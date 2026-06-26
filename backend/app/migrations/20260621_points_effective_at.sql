@@ -3,11 +3,11 @@
 -- ====================================
 -- Migration: 20260621_points_effective_at
 -- Description: Add effective_at column + CHECK constraint + partial index to points_credit_ledger,
---              and ledger_id FK to points_grant_records (A4 reclaim row-level positioning bridge).
+--              and ledger_id FK to points_grant_records (reclaim row-level positioning bridge).
 -- Created: 2026-06-21
 -- Design ref: .ai/design/point-time.md §4.3.2 / §4.3.3 / §8
 -- ====================================
--- Additive only: no backfill (A6 project not in production; existing rows effective_at IS NULL
+-- Additive only: no backfill (project not in production; existing rows effective_at IS NULL
 -- ⟺ immediately available, zero regression). No new tables. No points_wallets change. No
 -- points_grant_schedules change.
 
@@ -39,18 +39,18 @@ CREATE INDEX idx_points_credit_ledger_bucket_avail
 
 COMMENT ON COLUMN points_credit_ledger.effective_at IS 'Expected effective time; NULL = immediately available, non-null = enters available set only at/after this time (consumption selection + derived balance predicate gating)';
 
--- (b) points_grant_records: ledger_id FK (A4 reclaim row-level positioning bridge)
+-- (b) points_grant_records: ledger_id FK (reclaim row-level positioning bridge)
 -- Reverse-links the business idempotency key (schedule_id, period_number) — which lives only in
 -- points_grant_records — to a unique ledger row in points_credit_ledger (which has no
--- schedule_id/period_number columns). This lets BE-D05 reclaim do row-level positioning via:
+-- schedule_id/period_number columns). This lets reclaim do row-level positioning via:
 --   UPDATE points_credit_ledger SET status='revoked', revoked_amount = revoked_amount + remaining_amount
 --   ... WHERE id IN (SELECT g.ledger_id FROM points_grant_records g
 --                   WHERE g.schedule_id=$1 AND g.period_number=$2)
--- NOT NULL: A6 no existing rows, no backfill. All future writes come from
+-- NOT NULL: no existing rows, no backfill. All future writes come from
 -- pregrant_next_period_atomic which INSERTs the ledger row in-tx first, fetches its id, then
 -- writes points_grant_records(..., ledger_id).
 -- ON DELETE RESTRICT: prevent orphaning a grant_record by deleting its ledger row.
 -- Reuses the existing uk_points_grant_records_schedule_period UNIQUE index — no new index needed.
 ALTER TABLE points_grant_records ADD COLUMN ledger_id UUID NOT NULL REFERENCES points_credit_ledger(id) ON DELETE RESTRICT;
 
-COMMENT ON COLUMN points_grant_records.ledger_id IS 'FK to points_credit_ledger(id); bridges (schedule_id, period_number) idempotency key to a unique ledger row for row-level reclaim positioning (A4)';
+COMMENT ON COLUMN points_grant_records.ledger_id IS 'FK to points_credit_ledger(id); bridges (schedule_id, period_number) idempotency key to a unique ledger row for row-level reclaim positioning';

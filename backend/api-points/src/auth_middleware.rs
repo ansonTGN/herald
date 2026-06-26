@@ -33,7 +33,7 @@ use tracing::{debug, error, info, warn};
 
 /// Try API key authentication
 #[tracing::instrument(
-    // BE-D07 governance: `headers` carry the raw X-API-Key credential.
+    // Governance: `headers` carry the raw X-API-Key credential.
     skip(state, headers)
 )]
 async fn try_api_key_auth(
@@ -193,7 +193,7 @@ async fn try_api_key_auth(
 /// - Regular users to view their balance via session cookies
 /// - Admin users to manage accounts via session cookies
 #[tracing::instrument(
-    // BE-D07 governance (§4.5/§5.4): req headers carry X-API-Key / X-Auth
+    // Governance: req headers carry X-API-Key / X-Auth
     // (token/session) — both credentials MUST be skipped.
     skip(state, req, next),
     fields(http.route = "points_flexible_auth")
@@ -319,9 +319,9 @@ pub async fn flexible_auth_middleware(
     }
 }
 
-// BE-T03 governance tests (design §5.4 / §4.5).
+// Governance tests.
 //
-// Covers: BE-D07 — points `flexible_auth_middleware` + `try_api_key_auth`
+// Covers: points `flexible_auth_middleware` + `try_api_key_auth`
 // (auth_middleware.rs), `grant_points` (grant.rs), `list_transactions`
 // (transactions.rs) instrument skip correctness.
 //
@@ -329,7 +329,7 @@ pub async fn flexible_auth_middleware(
 // request headers — credentials. The grant/transactions handlers carry
 // `identity` (user_id/realm_id) and the request body/query (target user_id).
 // If the `#[instrument]` macro ever stops skipping those, the credential/PII
-// leaks into a span field. Source-scan baseline (design §6.1), anchored per
+// leaks into a span field. Source-scan baseline, anchored per
 // function to the immediately-preceding `#[tracing::instrument(...)]`.
 #[cfg(test)]
 mod instrument_skip_tests {

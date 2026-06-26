@@ -9,7 +9,7 @@
 // User Stories covered:
 // - Core operations (user CRUD, realm create, login/logout) produce audit events
 //
-// Reference: BE-T04 -- Integration tests verifying audit events are recorded
+// Reference: Integration tests verifying audit events are recorded
 // Design: .ai/design/audit.md
 //
 // =============================================================================

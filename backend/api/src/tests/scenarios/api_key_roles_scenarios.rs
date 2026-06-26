@@ -33,7 +33,6 @@ use tower::ServiceExt;
 // =============================================================================
 // Helper: grant a single permission to a user via a dedicated role
 // =============================================================================
-// NOTE: also used by BE-T03 -- keep in sync
 
 /// Creates a role with a single permission and assigns it to the user.
 ///
@@ -95,7 +94,6 @@ async fn grant_single_permission(ctx: &TestContext, user_id: &str, resource: &st
 // =============================================================================
 // Helper: seed an API key via direct DB insert
 // =============================================================================
-// NOTE: also used by BE-T03 -- keep in sync
 
 /// Inserts an API key row directly into the database and returns its ID.
 async fn seed_api_key(ctx: &TestContext) -> String {
@@ -120,7 +118,6 @@ async fn seed_api_key(ctx: &TestContext) -> String {
 // =============================================================================
 // Helper: seed an API key role binding via direct DB insert
 // =============================================================================
-// NOTE: also used by BE-T03 -- keep in sync
 
 /// Inserts a role binding for an API key principal into user_roles.
 async fn seed_api_key_role(ctx: &TestContext, api_key_id: &str, role_id: uuid::Uuid) {
@@ -909,7 +906,7 @@ async fn test_api_key_roles_cache_invalidation_on_remove(ctx: &mut TestContext) 
 }
 
 // =============================================================================
-// BE-T03: API Key Client App Lifecycle Scenarios (tests 12-16)
+// API Key Client App Lifecycle Scenarios (tests 12-16)
 // =============================================================================
 //
 // Tests the relationship between API Keys and the realm's built-in API Key

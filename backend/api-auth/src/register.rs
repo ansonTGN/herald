@@ -58,7 +58,7 @@ pub struct RegisterResponse {
   )
 )]
 #[tracing::instrument(
-    // BE-D08 governance (§4.5/§5.4): payload carries password (credential),
+    // Governance: payload carries password (credential),
     // turnstile_token, email/username (PII); realm_id conservatively skipped.
     // state holds session/db handles; ip is client PII. Only the low-cardinality
     // operation type is recorded.

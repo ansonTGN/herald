@@ -1138,10 +1138,10 @@ export const creditBucketOverviewQueryOptions = (realmId: string) =>
  *     `user_id`; the client cannot target another user — `search` is stripped
  *     server-side for non-managers).
  *   - `points.manage` holders receive the full realm-wide (cross-user) set.
- *   - FE-D05 (user points page) still client-filters `items` by the current `userId`
+ *   - the user points page still client-filters `items` by the current `userId`
  *     via `deriveUserPointsView` — now a defensive no-op for view-only callers, kept
  *     because it is harmless and still correct.
- *   - FE-D10 (admin wallets) consumes the full `items` + `crossBucketTotal`.
+ *   - admin wallets consumes the full `items` + `crossBucketTotal`.
  *
  * For a `points.view`-only caller `crossBucketTotal` is that user's own cross-bucket
  * total; for a `points.manage` caller it is the realm-wide cross-user total.

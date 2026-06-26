@@ -311,6 +311,129 @@ And 每条变更记录显示：
 
 ---
 
+### 故事 7：同步并配置一个产品的多个价格 [US-EM-007]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Realm Admin（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：当支付方一个产品存在多个价格（如月付与年付，或 recurring 与 one-time）时，能为每个价格分别配置计费类型、计费周期与积分策略
+**从而**：让同一产品的不同价格成为各自独立、可正确授权与发放积分的购买选项，与 Stripe 的 Product→Price 模型对齐
+
+**【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：同步多价格产品**
+```gherkin
+Given realm-1 已配置 Stripe 支付平台
+And Stripe 产品 prod_pro 有两个价格 price_monthly（recurring/月）和 price_annual（recurring/年）
+When 我触发 Stripe 产品同步
+Then Entitlement Mappings 列表为 prod_pro 生成两条映射，分别对应 price_monthly 与 price_annual
+And 每条映射可独立显示其外部价格、计费类型与计费周期
+```
+
+**场景 2：为不同价格配置不同积分策略**
+```gherkin
+Given prod_pro 已同步出 price_monthly 与 price_annual 两条映射
+When 我将 price_monthly 配置为 entitlement_key=pro-plan、每月发放 1000 积分
+And 将 price_annual 配置为 entitlement_key=pro-plan、每年发放 12000 积分
+Then 两条映射各自保存独立的积分策略
+And 两者可共享同一 entitlement_key "pro-plan"
+```
+
+**场景 3：为不同价格配置不同 entitlement**
+```gherkin
+Given 产品 prod_bundle 同步出 recurring 与 one-time 两个价格
+When 我将 recurring 价格配置为 entitlement_key=pro-plan
+And 将 one-time 价格配置为 entitlement_key=credit-100
+Then 两个价格分别映射到不同 entitlement，互不影响
+```
+
+**场景 4：单价格产品只生成一条映射**
+```gherkin
+Given 产品 prod_basic 在 Stripe 只有一个价格
+When 我同步该产品
+Then 只为该产品生成一条映射
+```
+
+---
+
+### 故事 8：Webhook 在一产品多价格时正确解析订阅归属 [US-EM-008]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：System
+**我希望**：当一个产品存在多个价格映射时，webhook 能识别订阅实际归属哪个价格/entitlement
+**从而**：首次订阅、续费、取消等事件按正确价格的积分策略发放或回收积分，不会因"产品多价格"而误用策略
+
+**【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：metadata 携带 entitlement_key 时按 entitlement 解析**
+```gherkin
+Given 产品 prod_pro 有 price_monthly 与 price_annual 两条映射，共享 entitlement_key=pro-plan
+And Stripe 发送 subscription.active webhook，metadata 含 herald_entitlement_key=pro-plan
+And webhook 标识订阅使用的价格为 price_annual
+When 系统处理该 webhook
+Then 订阅投影按 entitlement_key=pro-plan 正确建立
+And 积分按 price_annual 对应的年付策略发放
+```
+
+**场景 2：metadata 缺失 entitlement_key 时按价格回退解析**
+```gherkin
+Given 产品 prod_pro 有 price_monthly 与 price_annual 两条映射，且两条 entitlement_key 不同
+And webhook metadata 缺少 herald_entitlement_key
+And webhook 标识订阅使用价格为 price_annual
+When 系统处理该 webhook
+Then 系统按 (支付方, 产品, 价格) 命中 price_annual 对应的映射
+And 按 price_annual 的 entitlement 与积分策略处理
+```
+
+**场景 3：无法唯一确定价格时显式失败**
+```gherkin
+Given 产品 prod_pro 有多个价格映射
+And webhook 既无 herald_entitlement_key 也无法确定具体价格
+When 系统处理该 webhook
+Then 系统不静默使用默认策略
+And 记录诊断并让错误对管理员可见
+```
+
+---
+
+### 故事 9：用户购买多价格产品的指定价格 [US-EM-009]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Regular User（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：在购买一个有多价格的产品时，能选择具体价格（如月付或年付）并按所选价格完成购买
+**从而**：我买到的是我选定的计费方式，支付方按真实价格收费，Herald 按该价格授权与发放
+
+**【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：选择并购买具体价格**
+```gherkin
+Given 产品 prod_pro 在购买页展示 price_monthly 与 price_annual 两个可选价格
+And 两者均已启用且配置了可用的支付平台
+When 我选择 price_annual 并发起购买
+Then checkout 指向 price_annual 对应的真实支付方价格
+And 购买完成后我获得 price_annual 对应的 entitlement 与积分
+```
+
+**场景 2：价格未启用或未配置支付平台**
+```gherkin
+Given 价格 price_annual 未启用，或其对应支付平台未在 Realm 启用
+When 我查看该产品的购买选项
+Then 该价格不可购买或被禁用，并给出明确提示
+```
+
+---
+
 ## 业务规则总结
 
 ### Provider Ownership 边界
@@ -347,6 +470,14 @@ And 每条变更记录显示：
 2. **Plan CRUD**：本地 SubscriptionPlan 管理页面和接口废弃并移除
 3. **关联表**：subscription_plan_payment_provider、client_app_subscription_plan、points_plan_configs 废弃并移除
 4. **plan_id 外键**：全链路从 plan_id 迁移到 entitlement_key 后移除
+
+### 多价格规则（support-multiple-price）
+1. **Price 一等概念**：Herald 的 provider 模型引入 Price 维度，对齐 Stripe 的 Product→Price；一个产品可拥有多个价格，每个价格是独立可购与可配置单元
+2. **按价格配置**：entitlement_key、计费类型、计费周期与积分策略均按价格配置；同一产品的多个价格可共享 entitlement_key（月付/年付同属 pro-plan）或映射到不同 entitlement
+3. **单价格产品**：只有一个价格的产品（含 Creem 等无 price 概念的支付方）自然只有一行映射
+4. **Price-aware 同步**：产品同步按价格粒度建立/更新映射，不再仅取首个价格
+5. **Price-aware 解析**：webhook 解析优先使用 metadata 的 herald_entitlement_key，回退时按 (支付方, 产品, 价格) 命中映射；无法唯一确定时 fail loud
+6. **Price-aware 购买**：checkout 引用真实 provider 价格（对有 price 概念的支付方），不再为每次购买重建临时价格
 
 ---
 

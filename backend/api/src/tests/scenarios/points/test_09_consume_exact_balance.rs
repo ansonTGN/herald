@@ -77,7 +77,7 @@ async fn test_scenario_consume_exact_single_ledger(ctx: &mut TestContext) {
     let body: serde_json::Value =
         serde_json::from_slice(&body_bytes).expect("Failed to parse JSON");
 
-    // Credit-bucket contract (design §4.2.2): the consume response no longer
+    // Credit-bucket contract: the consume response no longer
     // carries a top-level `balanceAfter`. The per-bucket balance lives on each
     // entry of `transactions[].balanceAfter` (single-pool hits return exactly
     // one entry, per `consume_single_pool_hits_returns_one_transaction`).
@@ -308,7 +308,7 @@ async fn test_scenario_consume_after_balance_zero_rejected(ctx: &mut TestContext
     let retry_response = app.clone().oneshot(retry_request).await.unwrap();
 
     // Then: rejected with error.
-    // Credit-bucket contract (design §4.2.2 / §4.2.3): insufficient balance is
+    // Credit-bucket contract: insufficient balance is
     // surfaced as HTTP 409 `insufficient_points`, not 400. Mirrors
     // `consume_insufficient_points_returns_insufficient_points`.
     assert_eq!(

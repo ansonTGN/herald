@@ -22,7 +22,7 @@ use crate::points::{
 const IDEMPOTENCY_KEY_SUBSCRIPTION_PAID: &str = "sub_paid";
 const ERROR_ENTITLEMENT_NO_GRANT: &str = "Entitlement does not grant points on subscribe";
 
-/// Resolve the per-period points amount an entitlement grants (design §5.2).
+/// Resolve the per-period points amount an entitlement grants.
 ///
 /// Extracted from the inline `mapping.points_per_period` read so the
 /// pre-grant path and the formal subscription-paid webhook share one amount
@@ -38,7 +38,7 @@ fn resolve_entitlement_points(mapping: &EntitlementMapping) -> Option<i64> {
 }
 
 /// Derive the 1-based `period_number` for a subscription period anchored to
-/// the schedule's `first_period_start` (design §5.2).
+/// the schedule's `first_period_start`.
 ///
 /// `period_number = floor((period_start − first_period_start) / nominal_period_duration) + 1`
 ///
@@ -124,8 +124,8 @@ fn derive_period_number(
 }
 
 /// Estimate the end of the period that starts at `period_start` when the
-/// formal webhook has not yet supplied the provider's actual `period_end`
-/// (design §5.2). Monthly uses `chrono::Months` calendar arithmetic;
+/// formal webhook has not yet supplied the provider's actual `period_end`.
+/// Monthly uses `chrono::Months` calendar arithmetic;
 /// `Once` returns `None` (no expiry).
 fn estimate_next_period_end(
     period_start: DateTime<Utc>,
@@ -271,7 +271,7 @@ where
                 CreditSourceType::SubscriptionUpgrade,
                 new_points,
                 Some(period_end),
-                None, // effective_at = None (upgrade grant is immediately available; BE-D03 revisits for period anchoring)
+                None, // effective_at = None (upgrade grant is immediately available; period anchoring revisited later)
                 Some(new_entitlement_key.to_string()),
                 None,
                 Some(format!("grant:upgrade:{}", new_entitlement_key)),
@@ -340,7 +340,7 @@ where
     /// `period_start <= now` ⟺ immediately spendable) and
     /// `expires_at = period_end`.
     ///
-    /// **Business idempotency (period-level, design §5.2 / A3)**: when the
+    /// **Business idempotency (period-level)**: when the
     /// subscription's grant schedule is resolvable, the grant is deduplicated
     /// by `points_grant_records(schedule_id, period_number)` where
     /// `period_number` is derived from `period_start` anchored to
@@ -362,10 +362,10 @@ where
     /// subscription's `bucket_id`.
     ///
     /// Provider event-level idempotency (`event_id`) is retained at the
-    /// webhook handler layer (design §5.2) as a defense-in-depth backstop;
+    /// webhook handler layer as a defense-in-depth backstop;
     /// the `event_id` passed here is used only for the secondary
     /// `sub_paid:{event_id}` idempotency key (kept for cross-crate
-    /// compatibility until BE-D04/D09 land).
+    /// compatibility until provider event-level dedup lands).
     pub async fn handle_subscription_paid(
         &self,
         user_id: Uuid,
@@ -374,9 +374,9 @@ where
         realm_id: &str,
         entitlement_key: &str,
         is_renewal: bool,
-        // Billing period start (design §5.2). Drives `effective_at`,
-        // `period_number`, and chained pre-grant. BE-D08 (provider period
-        // normalization) is the upstream source; this method does not guess.
+        // Billing period start. Drives `effective_at`,
+        // `period_number`, and chained pre-grant. Provider period
+        // normalization is the upstream source; this method does not guess.
         period_start: DateTime<Utc>,
         period_end: DateTime<Utc>,
         event_id: String,
@@ -386,8 +386,8 @@ where
         // period_number)` is the primary gate (checked below when a schedule
         // is resolvable). This key is retained so the existing
         // `check_completed_idempotency` infra path keeps working during the
-        // BE-D04/D09 rollout; provider event-level dedup is finalized at the
-        // webhook handler layer (BE-D09).
+        // rollout period; provider event-level dedup is finalized at the
+        // webhook handler layer.
         let idempotency_key = format!("{}:{}", IDEMPOTENCY_KEY_SUBSCRIPTION_PAID, event_id);
 
         // Resolve the entitlement mapping FIRST. This preserves the domain
@@ -418,7 +418,7 @@ where
         }
 
         // Resolve the per-period amount via the shared helper so pre-grant
-        // and formal webhook converge on the same amount source (design §5.2).
+        // and formal webhook converge on the same amount source.
         let points_amount = match resolve_entitlement_points(&mapping) {
             Some(amount) => amount,
             None => {
@@ -461,7 +461,7 @@ where
         // schedule's `base_time` is the `first_period_start` anchor
         // (subscription schedules are created at subscription binding time
         // with `base_time = first period start`). When absent (no schedule
-        // row yet — e.g. legacy subscription or BE-D08 normalization gap),
+        // row yet — e.g. legacy subscription or provider normalization gap),
         // we fall back to the legacy atomic grant path WITHOUT period-level
         // idempotency or chained pre-grant; provider event-level idempotency
         // remains the backstop.
@@ -532,7 +532,7 @@ where
         Ok(created_ledger)
     }
 
-    /// Period-aware subscription grant path (design §5.2). Handles both the
+    /// Period-aware subscription grant path. Handles both the
     /// "pre-grant already exists for this period" correction case and the
     /// "no prior pre-grant, grant now" case, then chains the next period.
     #[allow(clippy::too_many_arguments)]
@@ -556,7 +556,7 @@ where
     ) -> Result<PointsCreditLedger, CoreError> {
         let period_number = derive_period_number(schedule.base_time, period_start, nominal)?;
 
-        // Period-level business idempotency (design §5.2 / A3). The grant
+        // Period-level business idempotency. The grant
         // record UNIQUE(schedule_id, period_number) is the primary dedup;
         // pre-grant and formal webhook both converge here for the same
         // (schedule_id, period_number).
@@ -568,7 +568,7 @@ where
         let created_ledger = if let Some(record) = existing_record {
             // Pre-grant already wrote this period's ledger row. Correct its
             // `expires_at` to the provider's actual period_end if the
-            // pre-grant estimate differs (design §5.2). No re-grant.
+            // pre-grant estimate differs. No re-grant.
             let existing_ledger = self
                 .repo
                 .find_ledger_by_id(record.ledger_id)
@@ -631,7 +631,7 @@ where
             // No prior pre-grant for this period — grant the current period
             // atomically. `handle_subscription_paid_atomic` writes the
             // ledger with effective_at=period_start, expires_at=period_end
-            // and (infra side, BE-D04) records the grant_record linking the
+            // and (infra side) records the grant_record linking the
             // new ledger via `ledger_id` so subsequent webhook retries /
             // pre-grant collisions hit the idempotency gate above. The
             // secondary `sub_paid:{event_id}` key remains a backstop for
@@ -653,7 +653,7 @@ where
                 .await?;
 
             // Defensive: if the infra path did not (yet) write the
-            // grant_record — e.g. during BE-D04 rollout before the atomic
+            // grant_record — e.g. during rollout before the atomic
             // impl is updated — record one here so the period-level
             // idempotency gate has a row to hit on the next retry / pre-grant.
             // The grant_record's UNIQUE(schedule_id, period_number) makes
@@ -674,8 +674,8 @@ where
             };
             if let Err(e) = self.repo.create_grant_record(defensive_record).await {
                 // Only a UNIQUE-violation is safe to swallow: it means the
-                // infra atomic path already wrote the record (BE-D04+
-                // behavior) — the period was successfully recorded. Any OTHER
+                // infra atomic path already wrote the record
+                // — the period was successfully recorded. Any OTHER
                 // error (DB drop, deadlock, CHECK violation, serialization
                 // failure) must surface fail-loud: silently proceeding would
                 // leave a granted ledger with NO grant_record, so the next
@@ -722,11 +722,11 @@ where
             granted
         };
 
-        // Chained pre-grant of the NEXT period (design §5.2). The next
+        // Chained pre-grant of the NEXT period. The next
         // period's `effective_at` is its `period_start` (= current
         // period_end for monthly; computed via `advance_one_period`); its
         // `expires_at` uses the estimate (`estimate_next_period_end`) since
-        // the formal webhook has not arrived yet. The trait impl (BE-D05)
+        // the formal webhook has not arrived yet. The trait impl
         // is idempotent on `(schedule_id, period_number)`, so calling this
         // on every webhook retry is safe. A `Once` nominal period has no
         // "next period" — skip the chained pre-grant.

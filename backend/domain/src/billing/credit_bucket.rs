@@ -1,9 +1,9 @@
 // Credit Bucket domain entities
 //
-// Per design `.ai/design/credit-bucket.md` §4.2.2/§4.2.3: the Credit Bucket is the
+// Per design `.ai/design/credit-bucket.md`: the Credit Bucket is the
 // unit of points-pool isolation. This module defines the domain DTOs returned by the
-// infra-layer bucket directory CRUD (BE-D07) and consumed by api-billing handlers
-// (BE-D08/BE-D09). There is intentionally NO `is_default` field (design A4: no
+// infra-layer bucket directory CRUD and consumed by api-billing handlers.
+// There is intentionally NO `is_default` field (no
 // default bucket concept). The registration-pool flag `receives_registration_credits`
 // is the only system-grant routing signal and is enforced unique-per-realm by the
 // partial unique index `uq_credit_buckets_registration_pool`.
@@ -17,7 +17,7 @@ use crate::common::entities::app_errors::CoreError;
 /// Credit Bucket catalog row.
 ///
 /// Mirrors `credit_buckets` table columns (minus audit timestamps which are not
-/// surfaced to API consumers in §4.2.3 list/shape).
+/// surfaced to API consumers in list/shape).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreditBucket {
     pub id: Uuid,
@@ -36,7 +36,7 @@ pub struct CreditBucket {
 /// Input for creating a Credit Bucket.
 ///
 /// The coverage set (`client_app_ids`) MUST be non-empty (handler enforces 400 on
-/// empty; design §4.2.2). `entitlement_mapping_ids` is optional: when present, the
+/// empty). `entitlement_mapping_ids` is optional: when present, the
 /// listed mappings are re-attached to this bucket (their `bucket_id` is set).
 #[derive(Debug, Clone)]
 pub struct CreateCreditBucketInput {
@@ -56,7 +56,7 @@ pub struct CreateCreditBucketInput {
 /// Input for updating a Credit Bucket.
 ///
 /// All provided fields replace the stored state (coverage set and attached mappings
-/// are fully replaced, not merged — design A7 "coverage-set changes do not
+/// are fully replaced, not merged — "coverage-set changes do not
 /// retroactively reclaim balances" still holds: only future routing is affected).
 #[derive(Debug, Clone)]
 pub struct UpdateCreditBucketInput {
@@ -127,7 +127,7 @@ pub struct CreditBucketOverviewRow {
 /// disabled buckets) + a SEPARATE grand total across all buckets.
 ///
 /// `grand_total` is intentionally a sibling field of `rows`, NOT mixed into the
-/// rows array (design §4.2.3).
+/// rows array.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreditBucketOverview {
     pub rows: Vec<CreditBucketOverviewRow>,
@@ -136,8 +136,8 @@ pub struct CreditBucketOverview {
 
 /// Credit Bucket directory operation errors.
 ///
-/// These carry structured bodies so api-billing handlers (BE-D08/BE-D09) can emit
-/// the exact §4.2.3 error contracts. Convertible to `CoreError` for uniform
+/// These carry structured bodies so api-billing handlers can emit
+/// the exact error contracts. Convertible to `CoreError` for uniform
 /// propagation through the repository layer; handlers translate back via
 /// `ApiError::conflict_json` with the structured payload.
 #[derive(Debug, Clone, Error)]
@@ -168,8 +168,8 @@ pub enum CreditBucketError {
 
     /// Update refused: the PUT's `entitlement_mapping_ids` would remove one or
     /// more mappings currently attached to this bucket. `provider_entitlement_mappings.
-    /// bucket_id` is NOT NULL (commit `aa6cc2da`) and there is no default bucket
-    /// (design A4), so a detached mapping has no legal home — removal is rejected.
+    /// bucket_id` is NOT NULL (commit `aa6cc2da`) and there is no default bucket,
+    /// so a detached mapping has no legal home — removal is rejected.
     /// To move a mapping out, assign it to another bucket via that bucket's PUT.
     /// HTTP 400 `bucket_orphan_mapping`.
     #[error(
@@ -245,7 +245,7 @@ mod tests {
         assert_eq!(by_type.total(), i64::MAX);
     }
 
-    /// Design §4.2.3 invariant: `grand_total` is a SEPARATE field of
+    /// Design invariant: `grand_total` is a SEPARATE field of
     /// `CreditBucketOverview`, NOT a synthesized extra row appended to `rows`.
     /// Building an overview must not mutate the rows vector with the total.
     #[test]

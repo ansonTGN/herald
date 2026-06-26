@@ -68,8 +68,8 @@ export function EntitlementMappingDetailDialog({
 
   const updateMutation = useUpdateEntitlementMapping(realmId, mappingId ?? '')
 
-  // Bucket display names for the read-only attribution readout (FE-D02
-  // useBuckets). The PATCH handler ignores bucket_id and preserves the
+  // Bucket display names for the read-only attribution readout
+  // (useBuckets). The PATCH handler ignores bucket_id and preserves the
   // existing attribution (assignment is owned by the Credit Bucket directory
   // page), so the bucket is shown read-only here.
   const { buckets } = useBuckets(realmId)

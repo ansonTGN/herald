@@ -52,7 +52,7 @@
  *     - Scenario 9: `subscription_downgrade_preserves_current_cycle`
  *       → US-CB-008 场景4 (downgrade).
  *     - `subscription_with_unresolved_bucket_fails_loud`
- *       → design §5.5 `SubscriptionBucketNotResolved` fail-loud.
+ *       → design `SubscriptionBucketNotResolved` fail-loud.
  *   These run against the REAL `subscription_service` /
  *   `points_service.revoke_points_by_credit_type` via `ctx.app_state` (no
  *   mocking), so the "不串池" (bound pool changes, sibling pool unchanged)

@@ -78,7 +78,7 @@ fn verify_pkce(code_verifier: &str, code_challenge: &str) -> bool {
     )
 )]
 #[tracing::instrument(
-    // BE-D08 governance (§4.5/§5.4): req carries authorization code, PKCE
+    // Governance: req carries authorization code, PKCE
     // code_verifier, client_id — all credentials/secrets. state holds handles;
     // realm_id conservatively skipped. Only http.route is recorded.
     skip(state, req),

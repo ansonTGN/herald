@@ -52,7 +52,7 @@ pub struct OAuthCallbackResponse {
     )
 )]
 #[tracing::instrument(
-    // BE-D08 governance (§4.5/§5.4): query carries provider authorization
+    // Governance: query carries provider authorization
     // code + state (CSRF) — both secrets. state holds handles; headers may
     // carry cookies; client_ip is PII; realm_id/provider are low-cardinality
     // but conservatively skipped. Only http.route is recorded.
@@ -208,16 +208,16 @@ async fn load_client_session_config(
     })
 }
 
-// BE-T03 governance tests (design §5.4 / §4.5).
+// Governance tests.
 //
-// Covers: BE-D08 — oauth `oauth_callback` (callback.rs), `oauth_token`
+// Covers: oauth `oauth_callback` (callback.rs), `oauth_token`
 // (token.rs), and `handle_oauth_callback` (helper.rs) instrument skip
 // correctness.
 //
 // WHY: the oauth callback/token paths carry the provider authorization `code`,
 // the CSRF `state`/`state_token`, PKCE `code_verifier`, and `client_id` — all
 // secrets. If the `#[instrument]` macro ever stops skipping those, the secret
-// leaks into a span field. Source-scan baseline (design §6.1), anchored per
+// leaks into a span field. Source-scan baseline, anchored per
 // function to the immediately-preceding `#[tracing::instrument(...)]`.
 #[cfg(test)]
 mod instrument_skip_tests {

@@ -90,7 +90,7 @@ pub struct ConsumePointsRequest {
     pub idempotency_key: Option<String>,
 }
 
-/// Per-bucket transaction inside a multi-bucket consume response (design §4.2.2).
+/// Per-bucket transaction inside a multi-bucket consume response.
 ///
 /// Single-pool consume → `transactions` has length 1 (structure unified with
 /// the multi-bucket case). `amount` is the deduction magnitude (positive).
@@ -105,7 +105,7 @@ pub struct BucketTransaction {
     pub balance_after: i64,
 }
 
-/// Ledger-level allocation detail for a consume (design §4.2.2/A6).
+/// Ledger-level allocation detail for a consume.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AllocationDetail {
@@ -116,8 +116,8 @@ pub struct AllocationDetail {
     pub allocated_amount: i64,
 }
 
-/// Points consume response (per-bucket multi-transaction shape, design §4.2.2 /
-/// §4.2.4 — breaking change from the old single-transaction response).
+/// Points consume response (per-bucket multi-transaction shape — breaking
+/// change from the old single-transaction response).
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumePointsResponse {
@@ -130,7 +130,7 @@ pub struct ConsumePointsResponse {
 
 /// Points grant request (admin/SDK)
 ///
-/// `bucket_id` is REQUIRED (design §4.2.4 / A5): every grant must target an
+/// `bucket_id` is REQUIRED: every grant must target an
 /// explicit Credit Bucket.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -157,7 +157,7 @@ pub struct GrantPointsResponse {
     pub expires_at: Option<String>,
 }
 
-/// Per-credit-type balances (design §4.2.3 `balancesByType`).
+/// Per-credit-type balances (`balancesByType`).
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BalancesByType {
@@ -173,7 +173,7 @@ pub struct BalancesByType {
     pub granted: i64,
 }
 
-/// Wallet balances grouped by Credit Bucket (design §4.2.3 `WalletByBucket`).
+/// Wallet balances grouped by Credit Bucket (`WalletByBucket`).
 ///
 /// Mirrors the api-points `WalletByBucketResponse` shape. For the admin
 /// (`billing/points/wallets`) view, `user_id` is populated and rows group per
@@ -594,7 +594,7 @@ impl Client {
     ///
     /// * `realm_id` - The realm ID
     /// * `user_id` - The user ID to grant points to
-    /// * `bucket_id` - The target Credit Bucket (REQUIRED, design §4.2.4 / A5)
+    /// * `bucket_id` - The target Credit Bucket (REQUIRED)
     /// * `amount` - The amount of points to grant (must be > 0)
     /// * `reason` - The reason for granting points (must be non-empty)
     /// * `validity_days` - Optional validity period in days (None = permanent)

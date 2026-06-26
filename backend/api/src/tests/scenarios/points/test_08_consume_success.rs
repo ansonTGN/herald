@@ -116,7 +116,7 @@ async fn test_scenario_consume_points_success(ctx: &mut TestContext) {
 
     assert!(
         body["transactions"].is_array(),
-        "Response should contain a transactions array (multi-bucket consume, design §4.2.2)"
+        "Response should contain a transactions array (multi-bucket consume)"
     );
     let transactions = body["transactions"].as_array().unwrap();
     assert_eq!(
@@ -154,7 +154,7 @@ async fn test_scenario_consume_points_success(ctx: &mut TestContext) {
     // Verify database state
     println!("[Step 4] Verify database state");
 
-    // point-time (BE-D11): `points_wallets.total_balance` was dropped; the
+    // point-time: `points_wallets.total_balance` was dropped; the
     // available balance is derived from `points_credit_ledger` using the same
     // predicate as consumption.
     let (new_balance, total_consumed): (i64, i64) = sqlx::query_as(
@@ -235,22 +235,22 @@ async fn test_scenario_consume_points_success(ctx: &mut TestContext) {
     );
 
     // ============================================================================
-    // Step 6 — point-time zero-regression assertion (design §6.1 P0 / §6.3 P0).
+    // Step 6 — point-time zero-regression assertion (P0 / P0).
     //
     // The seed (`create_test_points_wallet`) wrote a `subscription_credit`
     // ledger row with `granted_amount = initial_balance = 5000` and
     // `effective_at = NULL` (immediately available). The consume above
     // decremented 100. Under point-time the available balance is a derived
-    // SUM (BE-D04) over ledger rows gated by
+    // SUM over ledger rows gated by
     //   status='active' AND remaining_amount>0
     //     AND (effective_at IS NULL OR effective_at <= NOW())
     //     AND (expires_at  IS NULL OR expires_at  >  NOW())
     // — for the all-NULL/active case this MUST equal the value the old
     // Stored-balance口径 would have held (5000 − 100 = 4900). If the derived
     // predicate diverged from the legacy Stored口径 for effective_at=NULL
-    // rows, this assertion fails — locking out the §6.3 P0 regression risk.
+    // rows, this assertion fails — locking out the P0 regression risk.
     // (We MUST NOT `SELECT subscription_balance FROM points_wallets`:
-    // BE-D11 physically removed that column — see
+    // That column was physically removed — see
     // `test_wallet_balance_columns_dropped` below.)
     // ============================================================================
     println!("[Step 6] point-time zero-regression: assert derived balance == legacy seed baseline");
@@ -270,17 +270,17 @@ async fn test_scenario_consume_points_success(ctx: &mut TestContext) {
 }
 
 // ============================================================================
-// point-time BE-T02: consume must exclude future-effective rows (§6.1 P0)
+// consume must exclude future-effective rows (P0)
 // ============================================================================
 //
 // User Story: US-PU-004 / US-PU-005 — only credits whose effective moment has
 // arrived may be spent; future periods are invisible to the consumer.
 //
-// Covers design §6.1 P0 "未到生效时间不可见/不可消费" + §6.3 risk "消费可用性
+// Covers P0 "未到生效时间不可见/不可消费" + risk "消费可用性
 // 谓词增 effective_at：影响 consume/refund/cancel/expire 全场景".
 //
 // Why this test exists: the consume selection predicate gates on
-// `(effective_at IS NULL OR effective_at <= NOW())` (BE-D04). When a wallet
+// `(effective_at IS NULL OR effective_at <= NOW())`. When a wallet
 // holds BOTH an immediately-available row and a future-effective row of the
 // same credit type, a consume sized to the immediately-available amount
 // MUST draw only from the immediate row — the future row's `remaining_amount`
@@ -288,7 +288,7 @@ async fn test_scenario_consume_points_success(ctx: &mut TestContext) {
 // dropped from the consume predicate, this test fails (future row spent).
 //
 // We seed ledger rows via `create_credit_ledger_entry_with_effective_at`
-// (BE-T01 helper), which does NOT touch the BE-D11-removed wallet Stored
+// (helper), which does NOT touch the removed wallet Stored
 // columns — the derived SUM is the sole balance authority here.
 #[test_context(TestContext)]
 #[tokio::test]
@@ -369,16 +369,16 @@ async fn test_consume_with_future_effective_excluded(ctx: &mut TestContext) {
 }
 
 // ============================================================================
-// point-time BE-D11: physical removal of wallet balance columns (§6.1 P0)
+// point-time: physical removal of wallet balance columns (P0)
 // ============================================================================
 //
 // User Story: — (developer / contract invariants; not user-facing).
 //
-// Covers design §6.1 P0 "Stored balance 列物理删除 + balance_after 真实快照
-// (BE-D11)" + §6.3 risk "`points_wallets` Stored balance 列物理删除：必须同
+// Covers P0 "Stored balance 列物理删除 + balance_after 真实快照"
+//   + risk "`points_wallets` Stored balance 列物理删除：必须同
 // 一编译单元原子完成".
 //
-// Why this test exists: BE-D11 dropped 6 columns (`topup_balance`,
+// Why this test exists: the migration dropped 6 columns (`topup_balance`,
 // `subscription_balance`, `granted_balance`, `registration_balance`,
 // `free_periodic_balance`, `total_balance`) from the base DDL of
 // `points_wallets` (project not yet in production → destructive in-place,
@@ -409,7 +409,7 @@ async fn test_wallet_balance_columns_dropped(ctx: &mut TestContext) {
     ] {
         assert!(
             !has(dropped),
-            "BE-D11 invariant: points_wallets.{} should be physically removed, but column still present. columns = {:?}",
+            "invariant: points_wallets.{} should be physically removed, but column still present. columns = {:?}",
             dropped,
             columns
         );
@@ -424,7 +424,7 @@ async fn test_wallet_balance_columns_dropped(ctx: &mut TestContext) {
     ] {
         assert!(
             has(retained),
-            "BE-D11 invariant: points_wallets.{} analytics column must remain, but it is missing. columns = {:?}",
+            "invariant: points_wallets.{} analytics column must remain, but it is missing. columns = {:?}",
             retained,
             columns
         );
@@ -432,20 +432,20 @@ async fn test_wallet_balance_columns_dropped(ctx: &mut TestContext) {
 }
 
 // ============================================================================
-// point-time BE-D11: balance_after is a REAL derived snapshot, not seed-0
+// point-time: balance_after is a REAL derived snapshot, not seed-0
 // ============================================================================
 //
-// User Story: US-PU-001 (balance visibility) / contract A5 (transaction
+// User Story: US-PU-001 (balance visibility) / contract (transaction
 // history balance_after reflects the real post-mutation derived balance).
 //
-// Covers design §6.1 P0 "Stored balance 列物理删除 + balance_after 真实快照
-// (BE-D11)" + §6.3 risk "`balance_after` 非 0 真实" + design ref to
+// Covers P0 "Stored balance 列物理删除 + balance_after 真实快照"
+//   + risk "`balance_after` 非 0 真实" + design ref to
 // `webhook_common.rs:20-22` seed-0 fix.
 //
-// Why this test exists: before BE-D11, several transaction-insert sites
+// Why this test exists: before the migration, several transaction-insert sites
 // (notably `webhook_common.rs:20-22`) seeded `balance_after` and the typed
-// `*_balance_after` snapshots with `0` as a placeholder, breaking the A5
-// contract that a transaction records the real post-mutation balance. BE-D11
+// `*_balance_after` snapshots with `0` as a placeholder, breaking the
+// contract that a transaction records the real post-mutation balance. The migration
 // fixed those sites to compute the real derived SUM (same predicate as
 // `compute_available_balance`) in-transaction. This test grants a ledger
 // row then consumes from it via the real service path, and asserts that the
@@ -460,7 +460,7 @@ async fn test_balance_after_is_real_snapshot(ctx: &mut TestContext) {
     let user_id = create_test_user(&ctx.app_state.pool, &realm_id, "be-t02-ba@exam.com").await;
 
     // Seed 3000 immediately-available topup_credit (no wallet Stored columns
-    // touched — BE-D11 removed them).
+    // touched — they were removed).
     let _ledger_id = create_credit_ledger_entry_with_effective_at(
         ctx,
         user_id,
@@ -477,7 +477,7 @@ async fn test_balance_after_is_real_snapshot(ctx: &mut TestContext) {
     // Derived available balance pre-consume: 3000 topup_credit.
     assert_derived_balance(ctx, user_id, &realm_id, CreditType::TopupCredit, 3000).await;
 
-    // Consume 1000 via the real service path — this is the path BE-D11
+    // Consume 1000 via the real service path — this is the path the migration
     // touched to write the real derived snapshot into `balance_after`.
     let identity =
         crate::tests::helpers::points_helpers::create_test_third_party_identity(&realm_id);
@@ -513,7 +513,7 @@ async fn test_balance_after_is_real_snapshot(ctx: &mut TestContext) {
     let subscription_after: Option<i64> = row.get("subscription_balance_after");
     let bucket_id: Uuid = row.get("bucket_id");
 
-    // A5 contract: balance_after is NON-ZERO (would be 0 if seed-0 placeholder
+    // Contract: balance_after is NON-ZERO (would be 0 if seed-0 placeholder
     // were still in place — only 0 accidentally here means a regression).
     assert_ne!(
         balance_after, 0,
@@ -540,12 +540,12 @@ async fn test_balance_after_is_real_snapshot(ctx: &mut TestContext) {
 
     assert_eq!(
         balance_after, expected_derived,
-        "balance_after ({}) must equal post-consume derived SUM ({}) for the same bucket — BE-D11 A5 contract",
+        "balance_after ({}) must equal post-consume derived SUM ({}) for the same bucket — derived-balance contract",
         balance_after, expected_derived
     );
 
     // The per-type snapshots also come from the derived SUM split by
-    // credit_type (BE-D11). After consuming 1000 of 3000 topup_credit,
+    // credit_type. After consuming 1000 of 3000 topup_credit,
     // 2000 topup_credit remains available → topup_balance_after = 2000.
     // subscription_credit has 0 available → subscription_balance_after = 0.
     assert_eq!(

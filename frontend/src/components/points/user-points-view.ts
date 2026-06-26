@@ -33,13 +33,13 @@ export interface DerivedUserPointsView {
  * Pure derivation of the user-facing points view from the realm-wide
  * `listWallets` response items.
  *
- * LOUD DEVIATION (FE-D01 / query-options.ts): the `listWallets` endpoint is
+ * LOUD DEVIATION (query-options.ts): the `listWallets` endpoint is
  * realm-wide and `points.view`-gated with no `userId` filter, so `items`
  * contains wallet rows for EVERY user in the realm. This function isolates
  * the calling user's rows, recomputes their cross-bucket total, and decides
  * whether the cross-bucket total bar should render.
  *
- * Framework-agnostic and side-effect-free so FE-T02 can unit-test the
+ * Framework-agnostic and side-effect-free so it can be unit-tested — the
  * >=2 / =1 / =0 branches directly.
  */
 export function deriveUserPointsView(

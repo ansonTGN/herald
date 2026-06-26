@@ -314,12 +314,12 @@ async fn test_mixed_balance_multiple_topup_ledgers(ctx: &mut SchemaTestContext) 
 }
 
 // ============================================================================
-// Test: derived available balance == consumable amount (point-time §6.1 P0)
+// Test: derived available balance == consumable amount (point-time P0)
 // ============================================================================
 //
 // User Story: US-PU-001 (view my balance) / US-PU-004 (consume credits).
 //
-// Covers design §6.1 P0 "派生余额 = 可消费额" + §6.3 risk "派生余额替代
+// Covers P0 "派生余额 = 可消费额" + risk "派生余额替代
 // Stored 列读取" / "消费可用性谓词增 effective_at 影响全场景".
 //
 // Why this test exists: the derived SUM (`compute_available_balance`) and the
@@ -327,7 +327,7 @@ async fn test_mixed_balance_multiple_topup_ledgers(ctx: &mut SchemaTestContext) 
 //   status='active' AND remaining_amount>0
 //     AND (effective_at IS NULL OR effective_at <= NOW())
 //     AND (expires_at  IS NULL OR expires_at  >  NOW())
-// (design §5.1, BE-D04). "The balance you see" MUST equal "the balance you
+// (derived predicate). "The balance you see" MUST equal "the balance you
 // can spend". We construct a mixed wallet with four ledger rows —
 // immediately-available, future-effective, expired, fully-consumed — then
 // assert each row contributes 0 to the derived balance except the
@@ -336,7 +336,7 @@ async fn test_mixed_balance_multiple_topup_ledgers(ctx: &mut SchemaTestContext) 
 // two predicates ever diverged, this test would fail.
 //
 // Uses `create_credit_ledger_entry_with_effective_at` (not the v2 helper)
-// because the v2 helper still UPDATEs the BE-D11-removed wallet Stored
+// because the v2 helper still UPDATEs the removed wallet Stored
 // columns — we want the derived SUM to be the ONLY authority in this
 // assertion, unmasked by any Stored write.
 #[test_context(SchemaTestContext)]

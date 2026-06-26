@@ -58,7 +58,7 @@ async fn test_refund_non_round_ratio(ctx: &mut SchemaTestContext) {
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
 
     // Seed the payment_attempts snapshot the Creem refund webhook resolves the
-    // routing bucket from (design A8).
+    // routing bucket from.
     let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
     create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
 
@@ -134,7 +134,7 @@ async fn test_refund_zero_amount_skipped(ctx: &mut SchemaTestContext) {
     .await;
 
     // Seed the payment_attempts snapshot the Creem refund webhook resolves the
-    // routing bucket from (design A8).
+    // routing bucket from.
     let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
     create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 100000).await;
 
@@ -208,7 +208,7 @@ async fn test_refund_full_amount_revokes_all_remaining(ctx: &mut SchemaTestConte
     consume_points_from_ledger(ctx, ledger_id, 3000).await;
 
     // Seed the payment_attempts snapshot the Creem refund webhook resolves the
-    // routing bucket from (design A8).
+    // routing bucket from.
     let bucket_id = get_wallet_bucket_id(ctx, &realm_id, user_id).await;
     create_payment_attempt_snapshot(ctx, &realm_id, user_id, &payment_id, bucket_id, 10000).await;
 

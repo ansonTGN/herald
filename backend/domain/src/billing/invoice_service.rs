@@ -1081,7 +1081,7 @@ mod tests {
         assert_eq!(result, 667);
     }
 
-    // BE-T01: fixed tax — verify AdjustmentMode::Fixed for tax adds directly
+    // Fixed tax — verify AdjustmentMode::Fixed for tax adds directly
     #[test]
     fn calculate_invoice_amounts_with_fixed_tax() {
         let line_items = vec![NewLineItem {
@@ -1107,7 +1107,7 @@ mod tests {
         assert_eq!(amounts.total, 10750);
     }
 
-    // BE-T01: total_cannot_be_negative — large discount can produce negative total,
+    // total_cannot_be_negative — large discount can produce negative total,
     // and issue() must reject it via validate_status_transition(total <= 0).
     #[test]
     fn calculate_invoice_amounts_total_can_be_negative_and_issue_rejects() {
@@ -1148,7 +1148,7 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // BE-D03: Provider guard tests
+    // Provider guard tests
     // -------------------------------------------------------------------------
 
     #[test]

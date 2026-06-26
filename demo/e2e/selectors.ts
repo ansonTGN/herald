@@ -707,7 +707,7 @@ export const SELECTORS = {
     confirmButton: '[data-testid="grant-points-confirm-button"]',
     // Error alert
     errorMessage: '[data-testid="grant-points-error-message"]',
-    // Target Bucket Select (credit-bucket US-CB / A5: bucketId is required).
+    // Target Bucket Select (credit-bucket US-CB: bucketId is required).
     // CONSUMED BY DE-D07 (grant-points-helpers.ts). DE-D01 only declares the
     // selector; it does NOT modify pre-existing grant-points-helpers.ts.
     bucketSelect: '[data-testid="grant-points-bucket-select"]',
@@ -890,7 +890,7 @@ export const SELECTORS = {
    * `m['nav.credit_buckets']().toLowerCase().replace(/\s+/g,'-')`. The testid
    * therefore differs per locale. Demo tests MUST navigate by route
    * (`/{realmId}/manage/billing/credit-buckets`), NOT by clicking the
-   * locale-derived sidebar testid. See `.ai/design/credit-bucket.md` §4.4.2/§7
+   * locale-derived sidebar testid. See `.ai/design/credit-bucket.md`
    * and `demo/dev/dev.md` loud notes.
    *
    * User stories: US-CB-001 (admin CRUD), US-CB-002 (coverage set),

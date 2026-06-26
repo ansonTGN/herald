@@ -54,7 +54,7 @@ impl HttpClient for ReqwestHttpClient {
     ) -> impl Future<Output = Result<HttpClientResponse, HttpClientError>> + Send {
         let url = url.to_string();
         async move {
-            // BE-D10: external.http span + duration histogram. The helper's
+            // external.http span + duration histogram. The helper's
             // sanitize_host strips path/query (OAuth callback URLs may carry
             // `code=...`/`state=...`) so only the bare host reaches telemetry.
             let timing = timed_external_http_span(&url, "GET");
@@ -100,7 +100,7 @@ impl HttpClient for ReqwestHttpClient {
     ) -> impl Future<Output = Result<HttpClientResponse, HttpClientError>> + Send {
         let url = url.to_string();
         async move {
-            // BE-D10: external.http span + duration histogram. Host-only
+            // external.http span + duration histogram. Host-only
             // (token-exchange bodies are not recorded).
             let timing = timed_external_http_span(&url, "POST");
             let _span_enter = timing.span().enter();
@@ -182,7 +182,7 @@ impl HttpClient for ReqwestHttpClient {
             }
 
             // Execute request
-            // BE-D10: external.http span + duration histogram. Host-only
+            // external.http span + duration histogram. Host-only
             // (query params / headers / body not recorded).
             let method_str = match request.method {
                 HttpMethod::Get => "GET",

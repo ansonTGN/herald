@@ -544,7 +544,7 @@ pub fn jwt_expiration_seconds() -> Result<i64, AuthError> {
 /// # Returns
 /// * (user_id, jwt_token)
 #[tracing::instrument(
-    // BE-D08 governance (§4.5/§5.4): code is the provider authorization code,
+    // Governance: code is the provider authorization code,
     // state_token is the CSRF state — both secrets. state holds handles;
     // realm_id conservatively skipped. Only the operation type is recorded.
     skip(state, realm_id, code, state_token),

@@ -110,7 +110,7 @@ pub async fn setup_test_entitlement_mapping_with_points(
 ) -> Uuid {
     let mapping_id = Uuid::now_v7();
 
-    // Credit Buckets model (design §5.5): a subscription grant routes to the
+    // Credit Buckets model: a subscription grant routes to the
     // bucket bound on the entitlement mapping. Bind the realm's legacy test
     // bucket so grant flows resolve a real bucket (matches the bucket-bound
     // mappings created by `create_test_entitlement_mapping` / webhook helpers).

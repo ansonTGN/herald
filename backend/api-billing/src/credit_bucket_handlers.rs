@@ -1,10 +1,10 @@
-//! Credit Bucket directory handlers (BE-D08 reads + BE-D09 writes/overview).
+//! Credit Bucket directory handlers (reads + writes/overview).
 //!
 //! Implements the directory endpoints over `PostgresBillingRepository`'s inherent
-//! bucket directory methods (BE-D07). Permission gate: Realm Admin `points.manage`
-//! (design §4.5). DTOs follow the crate's camelCase convention and match design
-//! §4.2.3 response contracts (includes `receivesRegistrationCredits`, NO
-//! `isDefault` — design A4).
+//! bucket directory methods. Permission gate: Realm Admin `points.manage`
+//! (Realm Admin gate). DTOs follow the crate's camelCase convention and match
+//! the response contracts (includes `receivesRegistrationCredits`, NO
+//! `isDefault`).
 
 use axum::{
     Json,
@@ -25,23 +25,23 @@ use herald_core::domain::billing::{
 use herald_core::domain::common::entities::app_errors::CoreError;
 
 /// `bucket_key` format: lowercase ASCII letters/digits/hyphens, 1..=64 chars
-/// (mirrors DB CHECK constraint `chk_credit_buckets_key`, design §4.2.2).
+/// (mirrors DB CHECK constraint `chk_credit_buckets_key`).
 const BUCKET_KEY_MAX_LEN: usize = 64;
 
-// ===== Named 409 error bodies (design §4.2.3) =====
+// ===== Named 409 error bodies =====
 //
 // Surfaced as typed OpenAPI schemas so `@hey-api/openapi-ts` can generate
 // strongly-typed clients. The serialized JSON is byte-for-byte equivalent to
 // the previous `serde_json::json!` bodies — only the OpenAPI contract changes.
 
-/// 409 `registration_pool_conflict` body (design §4.2.3).
+/// 409 `registration_pool_conflict` body.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct RegistrationPoolConflictErrorBody {
     pub code: &'static str,
     pub message: &'static str,
 }
 
-/// 400 `bucket_key_duplicate` body (design §4.2.3): the requested `bucketKey`
+/// 400 `bucket_key_duplicate` body: the requested `bucketKey`
 /// already exists in this realm (`uq_credit_buckets_realm_key`).
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct BucketKeyDuplicateErrorBody {
@@ -49,7 +49,7 @@ pub struct BucketKeyDuplicateErrorBody {
     pub message: &'static str,
 }
 
-/// 409 `bucket_in_use` body (design §4.2.3).
+/// 409 `bucket_in_use` body.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BucketInUseErrorBody {
@@ -59,7 +59,7 @@ pub struct BucketInUseErrorBody {
 }
 
 /// 400 `bucket_orphan_mapping` body. `bucket_id` is NOT NULL (commit `aa6cc2da`)
-/// and there is no default bucket (design A4), so removing an attached mapping
+/// and there is no default bucket, so removing an attached mapping
 /// from a bucket would orphan it — rejected. Assign the mapping to another
 /// bucket first (via that bucket's PUT) to move it.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -87,7 +87,7 @@ fn validate_bucket_key(key: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
-/// Translate a `CreditBucketError` into the §4.2.3 error contract.
+/// Translate a `CreditBucketError` into the error contract.
 ///
 /// Structured variants (`RegistrationPoolConflict`, `BucketInUse`) produce 409
 /// with the exact body shapes; passthrough `Other(CoreError)` keeps the wrapped
@@ -136,11 +136,10 @@ fn map_core_error(err: CoreError) -> ApiError {
 }
 
 /// Permission check helper for Credit Bucket directory operations and sibling
-/// `points.manage`-gated writes (e.g. entitlement-mapping ownership writes —
-/// design §4.5).
+/// `points.manage`-gated writes (e.g. entitlement-mapping ownership writes).
 ///
 /// Mirrors `handlers::require_billing_permission` but gated on `points.manage`
-/// (design §4.5: bucket directory / ownership / grant management requires Realm
+/// (bucket directory / ownership / grant management requires Realm
 /// Admin `points.manage`). Performs realm boundary + business permission check.
 pub(crate) async fn require_points_manage_permission(
     state: &AppState,
@@ -200,7 +199,7 @@ pub struct EntitlementMappingRef {
     pub id: Uuid,
 }
 
-/// List-item shape of a Credit Bucket (design §4.2.3 `Bucket[]`).
+/// List-item shape of a Credit Bucket (`Bucket[]`).
 #[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BucketResponse {
@@ -214,7 +213,7 @@ pub struct BucketResponse {
     pub entitlement_mapping_count: i64,
 }
 
-/// Detail shape of a Credit Bucket (design §4.2.3 `BucketDetail`).
+/// Detail shape of a Credit Bucket (`BucketDetail`).
 #[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BucketDetailResponse {
@@ -222,7 +221,7 @@ pub struct BucketDetailResponse {
     pub bucket_key: String,
     pub name: String,
     /// Optional human-readable description (echoed from the stored bucket;
-    /// POST/PUT already accept this field, design §4.2.2/§4.2.3).
+    /// POST/PUT already accept this field).
     pub description: Option<String>,
     pub display_order: i32,
     pub enabled: bool,
@@ -279,7 +278,7 @@ fn bucket_detail_to_response(detail: CreditBucketDetail) -> BucketDetailResponse
 
 // ===== Handlers =====
 
-/// List all Credit Buckets for a realm (design §4.2.1, §4.2.3).
+/// List all Credit Buckets for a realm.
 #[utoipa::path(
     get,
     path = "/api/realms/{realmId}/billing/credit-buckets",
@@ -370,12 +369,12 @@ pub async fn get_credit_bucket_handler(
     Ok(Json(bucket_detail_to_response(detail)))
 }
 
-// ===== Request DTOs (BE-D09) =====
+// ===== Request DTOs =====
 
-/// Request body for creating a Credit Bucket (design §4.2.2).
+/// Request body for creating a Credit Bucket.
 ///
 /// `client_app_ids` (coverage set) MUST be non-empty — enforced fail-loud at the
-/// handler layer (400). NO `isDefault` field (design A4).
+/// handler layer (400). NO `isDefault` field.
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateCreditBucketRequest {
@@ -384,7 +383,7 @@ pub struct CreateCreditBucketRequest {
     pub description: Option<String>,
     pub display_order: Option<i32>,
     pub enabled: Option<bool>,
-    /// Coverage set — at least one entry required (design §4.2.2).
+    /// Coverage set — at least one entry required.
     pub client_app_ids: Vec<Uuid>,
     /// Optional mappings to attach (may be empty / omitted).
     #[serde(default)]
@@ -395,10 +394,10 @@ pub struct CreateCreditBucketRequest {
     pub receives_registration_credits: bool,
 }
 
-/// Request body for updating a Credit Bucket (design §4.2.3 PUT).
+/// Request body for updating a Credit Bucket (PUT).
 ///
 /// All provided fields fully replace the stored state (coverage set + attached
-/// mappings are replaced, not merged — design A7). Clearing the coverage set
+/// mappings are replaced, not merged). Clearing the coverage set
 /// (`client_app_ids` empty) is rejected with 400. NO `isDefault` field.
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -416,7 +415,7 @@ pub struct UpdateCreditBucketRequest {
     pub receives_registration_credits: bool,
 }
 
-// ===== Overview response DTOs (BE-D09) =====
+// ===== Overview response DTOs =====
 
 /// Per-credit-type balance totals surfaced in the overview matrix.
 #[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
@@ -453,7 +452,7 @@ pub struct OverviewRowResponse {
 }
 
 /// Overview response: rows per bucket + a SEPARATE `grandTotal` field
-/// (design §4.2.3 — grandTotal is NOT appended as an extra row).
+/// (grandTotal is NOT appended as an extra row).
 #[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BucketOverviewResponse {
@@ -471,9 +470,9 @@ fn overview_row_to_response(row: CreditBucketOverviewRow) -> OverviewRowResponse
     }
 }
 
-// ===== Write handlers (BE-D09) =====
+// ===== Write handlers =====
 
-/// Create a Credit Bucket (design §4.2.2, §4.2.3).
+/// Create a Credit Bucket.
 #[utoipa::path(
     post,
     path = "/api/realms/{realmId}/billing/credit-buckets",
@@ -502,7 +501,7 @@ pub async fn create_credit_bucket_handler(
 
     require_points_manage_permission(&state, &identity, &realm_id).await?;
 
-    // Fail-loud request validation (design §4.2.2).
+    // Fail-loud request validation.
     validate_bucket_key(&request.bucket_key)?;
     if request.client_app_ids.is_empty() {
         return Err(ApiError::bad_request(
@@ -531,7 +530,7 @@ pub async fn create_credit_bucket_handler(
     Ok((StatusCode::CREATED, Json(bucket_detail_to_response(detail))))
 }
 
-/// Update a Credit Bucket (design §4.2.3 PUT). Coverage set is fully replaced.
+/// Update a Credit Bucket (PUT). Coverage set is fully replaced.
 #[utoipa::path(
     put,
     path = "/api/realms/{realmId}/billing/credit-buckets/{bucketId}",
@@ -566,7 +565,7 @@ pub async fn update_credit_bucket_handler(
 
     require_points_manage_permission(&state, &identity, &realm_id).await?;
 
-    // Clearing the coverage set is rejected (design §4.2.3).
+    // Clearing the coverage set is rejected.
     if request.client_app_ids.is_empty() {
         return Err(ApiError::bad_request(
             "clientAppIds must contain at least one entry".to_string(),
@@ -594,7 +593,7 @@ pub async fn update_credit_bucket_handler(
     Ok(Json(bucket_detail_to_response(detail)))
 }
 
-/// Delete a Credit Bucket (design §4.2.3 DELETE).
+/// Delete a Credit Bucket (DELETE).
 ///
 /// 204 on success; 409 `bucket_in_use` with `{ code, activeSubscriptions,
 /// holdersWithBalance }` when in-flight subscriptions or residual balances exist.
@@ -638,7 +637,7 @@ pub async fn delete_credit_bucket_handler(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Get the bucket overview matrix (design §4.2.3).
+/// Get the bucket overview matrix.
 ///
 /// Returns `{ rows: OverviewRow[], grandTotal: ByCreditType }` — `grandTotal`
 /// is a SEPARATE top-level field, not appended to rows.

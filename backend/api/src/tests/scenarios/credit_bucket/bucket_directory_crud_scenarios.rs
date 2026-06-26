@@ -1,27 +1,27 @@
 // =============================================================================
-// BE-T04 — Scenario Tests: Credit Bucket directory CRUD + overview + delete intercept
+// Scenario Tests: Credit Bucket directory CRUD + overview + delete intercept
 // =============================================================================
 //
 // Covers design `.ai/design/credit-bucket.md`:
-//   - §4.2.1 / §4.2.2 / §4.2.3 (Bucket directory CRUD + overview + error
+//   - (Bucket directory CRUD + overview + error
 //     contracts).
-//   - §6.1 "directory CRUD" testable behaviors:
+//   - "directory CRUD" testable behaviors:
 //       * coverage set must be non-empty (schema/handler fail-loud);
 //       * bucket_key format + uniqueness;
 //       * delete rejected on in-flight subscriptions or residual balances
 //         (409 `bucket_in_use` with `activeSubscriptions` / `holdersWithBalance`);
 //       * overview rows + a SEPARATE `grandTotal` field;
-//       * NO `is_default` field anywhere (decision A4).
-//   - decision A4: there is no default Bucket concept — `isDefault` MUST NOT
+//       * NO `is_default` field anywhere.
+//   - there is no default Bucket concept — `isDefault` MUST NOT
 //     appear in any response JSON.
 //
 // All scenarios exercise the real production HTTP path through the unified test
 // router (`/api/realms/{realmId}/billing/credit-buckets...`) gated on Realm
-// Admin `points.manage`. Direct-DB seed helpers (BE-T04 helpers) materialize
+// Admin `points.manage`. Direct-DB seed helpers (these helpers) materialize
 // the in-flight subscription / residual wallet rows the delete intercept reads.
 //
 // Per authoring rules: tests target the intended design contract. Runtime gaps
-// (if any) are recorded inline; the runner (BE-T06) triages runtime failures.
+// (if any) are recorded inline; the runner triages runtime failures.
 //
 // =============================================================================
 
@@ -61,7 +61,7 @@ fn int_field(body: &Option<Value>, field: &str) -> Option<i64> {
 }
 
 /// Recursively check that NO key named `isDefault` (camelCase) or `is_default`
-/// (snake_case) appears anywhere in the JSON value (decision A4 negative
+/// (snake_case) appears anywhere in the JSON value (negative
 /// regression). Returns the dotted path of the first offending occurrence, if any.
 fn find_is_default_key(value: &Value, path: &str) -> Option<String> {
     match value {
@@ -99,7 +99,7 @@ fn assert_no_is_default(body: &Option<Value>, context: &str) {
     if let Some(v) = body {
         assert!(
             find_is_default_key(v, "").is_none(),
-            "A4 regression: found `isDefault`/`is_default` in {} — design A4 removed the default-bucket concept; body: {}",
+            "regression: found `isDefault`/`is_default` in {} — design removed the default-bucket concept; body: {}",
             context,
             v
         );
@@ -137,10 +137,10 @@ async fn create_bucket_via_api(
 // =============================================================================
 
 /// User Story: US-CB-001 (admin lists the realm's Buckets).
-/// Covers (BE-T04 scope):
-///   - design §4.2.3 `GET .../credit-buckets` → `Bucket[]`. An empty Realm
+/// Covers:
+///   - `GET .../credit-buckets` → `Bucket[]`. An empty Realm
 ///     yields `[]` (not null, not 404).
-///   - A4: response items have NO `isDefault` field.
+///   - response items have NO `isDefault` field.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn list_credit_buckets_empty(ctx: &mut TestContext) {
@@ -176,15 +176,15 @@ async fn list_credit_buckets_empty(ctx: &mut TestContext) {
 }
 
 // =============================================================================
-// Scenario 2: list returns rows with the §4.2.3 list-item fields
+// Scenario 2: list returns rows with the list-item fields
 // =============================================================================
 
 /// User Story: US-CB-001 (admin lists Buckets with coverage/mapping counts).
-/// Covers (BE-T04 scope):
-///   - design §4.2.3 list-item fields: `bucketKey`, `name`, `displayOrder`,
+/// Covers:
+///   - list-item fields: `bucketKey`, `name`, `displayOrder`,
 ///     `enabled`, `receivesRegistrationCredits`, `coveredClientAppCount`,
 ///     `entitlementMappingCount`.
-///   - A4: NO `isDefault`.
+///   - NO `isDefault`.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn list_credit_buckets_with_data(ctx: &mut TestContext) {
@@ -244,7 +244,7 @@ async fn list_credit_buckets_with_data(ctx: &mut TestContext) {
     ] {
         assert!(
             row.get(field).is_some(),
-            "list-item must expose `{}` (design §4.2.3), row: {:?}",
+            "list-item must expose `{}`, row: {:?}",
             field,
             row
         );
@@ -262,8 +262,8 @@ async fn list_credit_buckets_with_data(ctx: &mut TestContext) {
 // =============================================================================
 
 /// User Story: US-CB-001 (admin fetches a Bucket; missing id → 404).
-/// Covers (BE-T04 scope):
-///   - design §4.2.3 `GET .../{bucketId}` 404 when the bucket does not exist.
+/// Covers:
+///   - `GET .../{bucketId}` 404 when the bucket does not exist.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn get_credit_bucket_detail_404_when_missing(ctx: &mut TestContext) {
@@ -297,10 +297,10 @@ async fn get_credit_bucket_detail_404_when_missing(ctx: &mut TestContext) {
 // =============================================================================
 
 /// User Story: US-CB-002 + US-CB-003 (detail surfaces coverage set + mappings).
-/// Covers (BE-T04 scope):
-///   - design §4.2.3 `BucketDetail` shape: bucket fields + `clientApps[]` +
+/// Covers:
+///   - `BucketDetail` shape: bucket fields + `clientApps[]` +
 ///     `entitlementMappings[]`.
-///   - A4: NO `isDefault`.
+///   - NO `isDefault`.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn get_credit_bucket_detail_returns_client_apps_and_mappings(ctx: &mut TestContext) {
@@ -358,8 +358,8 @@ async fn get_credit_bucket_detail_returns_client_apps_and_mappings(ctx: &mut Tes
 // =============================================================================
 
 /// User Story: US-CB-002 (coverage set must be non-empty — fail-loud).
-/// Covers (BE-T04 scope):
-///   - design §4.2.2 / §4.2.3: `clientAppIds=[]` → 400 (coverage set empty).
+/// Covers:
+///   - `clientAppIds=[]` → 400 (coverage set empty).
 #[test_context(TestContext)]
 #[tokio::test]
 async fn create_credit_bucket_requires_at_least_one_client_app(ctx: &mut TestContext) {
@@ -391,8 +391,8 @@ async fn create_credit_bucket_requires_at_least_one_client_app(ctx: &mut TestCon
 // =============================================================================
 
 /// User Story: US-CB-001 (bucketKey must match `^[a-z0-9-]{1,64}$`).
-/// Covers (BE-T04 scope):
-///   - design §4.2.2 / `validate_bucket_key`: uppercase / spaces / punctuation
+/// Covers:
+///   - `validate_bucket_key`: uppercase / spaces / punctuation
 ///     → 400.
 #[test_context(TestContext)]
 #[tokio::test]
@@ -427,12 +427,12 @@ async fn create_credit_bucket_rejects_invalid_bucket_key_format(ctx: &mut TestCo
 // =============================================================================
 
 /// User Story: US-CB-001 (bucketKey is unique within a realm).
-/// Covers (BE-T04 scope):
-///   - design §4.2.2 / §4.2.3: a second bucket with the same `bucketKey` in the
+/// Covers:
+///   - a second bucket with the same `bucketKey` in the
 ///     same Realm is rejected with 400 `bucket_key_duplicate`. This is the
 ///     exact error contract surfaced via `map_bucket_error(BucketKeyDuplicate)`
 ///     after `classify_bucket_insert_error` translates the underlying
-///     `UNIQUE(realm_id, bucket_key)` violation. Pins BE-A03 P0-1: a regression
+///     `UNIQUE(realm_id, bucket_key)` violation. Pins P0-1: a regression
 ///     that drops back to 500 (constraint-name mismatch) will fail here.
 #[test_context(TestContext)]
 #[tokio::test]
@@ -475,8 +475,8 @@ async fn create_credit_bucket_rejects_duplicate_bucket_key(ctx: &mut TestContext
     )
     .await;
 
-    // Per design §4.2.2/§4.2.3 a duplicate bucketKey is 400 `bucket_key_duplicate`.
-    // Pins BE-A03 P0-1: must not regress to a generic 500 from a missed
+    // A duplicate bucketKey is 400 `bucket_key_duplicate`.
+    // Pins P0-1: must not regress to a generic 500 from a missed
     // constraint-name match in `classify_bucket_insert_error`.
     assert_eq!(
         status2,
@@ -498,8 +498,8 @@ async fn create_credit_bucket_rejects_duplicate_bucket_key(ctx: &mut TestContext
 // =============================================================================
 
 /// User Story: US-CB-001 (write requires Realm Admin `points.manage`).
-/// Covers (BE-T04 scope):
-///   - design §4.5 / §4.2.3: a caller without `points.manage` is rejected 403.
+/// Covers:
+///   - a caller without `points.manage` is rejected 403.
 ///   - This scenario uses a freshly created NON-admin user session (no Realm
 ///     Admin role granted) to prove the permission gate fires.
 #[test_context(TestContext)]
@@ -539,8 +539,8 @@ async fn create_credit_bucket_without_points_manage_returns_403(ctx: &mut TestCo
 
 /// User Story: US-CB-001 + US-CB-002 (update mutates fields; coverage set must
 /// stay non-empty).
-/// Covers (BE-T04 scope):
-///   - design §4.2.3 PUT: name/displayOrder/enabled/coverage are fully replaced;
+/// Covers:
+///   - PUT: name/displayOrder/enabled/coverage are fully replaced;
 ///     clearing the coverage set (`clientAppIds=[]`) → 400.
 #[test_context(TestContext)]
 #[tokio::test]
@@ -631,7 +631,7 @@ async fn update_credit_bucket_changes_name_order_enabled_coverage(ctx: &mut Test
 // correct (a plain auto-commit LEFT JOIN/GROUP BY; read-after-write is
 // immediate under READ COMMITTED).
 //
-// Under the NOT NULL model (no default bucket — design A4) a mapping may JOIN a
+// Under the NOT NULL model (no default bucket) a mapping may JOIN a
 // bucket (move-in) but cannot be removed via PUT (detaching would orphan it).
 // This scenario asserts both halves:
 //   - PUT with `entitlementMappingIds=[M]` → 200 and the list count for this
@@ -790,8 +790,8 @@ async fn update_credit_bucket_attaching_mapping_increases_count_and_removal_reje
 // =============================================================================
 
 /// User Story: US-CB-001 (at most one registration pool per Realm via PUT).
-/// Covers (BE-T04 scope):
-///   - design §4.2.3 PUT 409 `registration_pool_conflict`: marking a second
+/// Covers:
+///   - PUT 409 `registration_pool_conflict`: marking a second
 ///     Bucket as registration pool when one already exists in the Realm.
 #[test_context(TestContext)]
 #[tokio::test]
@@ -875,8 +875,8 @@ async fn update_credit_bucket_toggle_registration_pool_conflict_returns_409(ctx:
 // =============================================================================
 
 /// User Story: US-CB-001 (delete refuses in-flight subscriptions).
-/// Covers (BE-T04 scope):
-///   - design §4.2.3 DELETE 409 `bucket_in_use` with `activeSubscriptions >= 1`.
+/// Covers:
+///   - DELETE 409 `bucket_in_use` with `activeSubscriptions >= 1`.
 ///   - `delete_credit_bucket` counts `subscription.bucket_id` rows in in-flight
 ///     statuses; the seed helper materializes exactly such a row.
 #[test_context(TestContext)]
@@ -938,8 +938,8 @@ async fn delete_credit_bucket_rejected_when_active_subscriptions_exist(ctx: &mut
 // =============================================================================
 
 /// User Story: US-CB-001 (delete refuses residual balances).
-/// Covers (BE-T04 scope):
-///   - design §4.2.3 DELETE 409 `bucket_in_use` with `holdersWithBalance >= 1`.
+/// Covers:
+///   - DELETE 409 `bucket_in_use` with `holdersWithBalance >= 1`.
 ///   - `delete_credit_bucket` counts `points_wallets.bucket_id` rows with
 ///     `total_balance > 0`; the seed helper materializes such a wallet.
 #[test_context(TestContext)]
@@ -1002,8 +1002,8 @@ async fn delete_credit_bucket_rejected_when_holders_with_balance_exist(ctx: &mut
 // =============================================================================
 
 /// User Story: US-CB-001 (delete removes an unused Bucket).
-/// Covers (BE-T04 scope):
-///   - design §4.2.3 DELETE 204 when no in-flight subscriptions and no residual
+/// Covers:
+///   - DELETE 204 when no in-flight subscriptions and no residual
 ///     balances.
 ///   - DB check: the `credit_buckets` row is gone post-delete.
 #[test_context(TestContext)]
@@ -1056,15 +1056,15 @@ async fn delete_credit_bucket_succeeds_when_unused(ctx: &mut TestContext) {
 }
 
 // =============================================================================
-// Scenario 14 (overview): rows + SEPARATE grandTotal (A4 negative regression combined)
+// Scenario 14 (overview): rows + SEPARATE grandTotal (negative regression combined)
 // =============================================================================
 
 /// User Story: US-CB-001 (admin views the bucket×credit-type overview matrix).
-/// Covers (BE-T04 scope):
-///   - design §4.2.3 overview `{ rows: OverviewRow[], grandTotal: ByCreditType }`:
+/// Covers:
+///   - overview `{ rows: OverviewRow[], grandTotal: ByCreditType }`:
 ///     `grandTotal` is a SEPARATE top-level field, NOT appended to `rows`.
 ///   - Each row exposes `byCreditType{}` + `bucketTotal`.
-///   - A4 negative regression: the overview response (and every other response
+///   - negative regression: the overview response (and every other response
 ///     exercised above) contains NO `isDefault`/`is_default` key anywhere. This
 ///     final scenario explicitly re-asserts the absence on the overview payload,
 ///     which is the most structurally distinct response in the directory API.
@@ -1107,7 +1107,7 @@ async fn credit_bucket_overview_returns_rows_and_grand_total(ctx: &mut TestConte
     seed_wallet_with_balance_on_bucket(pool, &realm_id, holder_a, bucket_a, 100).await;
     seed_wallet_with_balance_on_bucket(pool, &realm_id, holder_b, bucket_b, 250).await;
     // Under point-time the overview total is a derived SUM over
-    // `points_credit_ledger` (BE-D06 / BE-D11), so seed real `granted_credit`
+    // `points_credit_ledger`, so seed real `granted_credit`
     // ledger rows — otherwise `grandTotal.granted` stays 0 despite the wallet
     // analytics rows above.
     seed_granted_credit_ledger_on_bucket(pool, &realm_id, holder_a, bucket_a, 100).await;
@@ -1174,7 +1174,7 @@ async fn credit_bucket_overview_returns_rows_and_grand_total(ctx: &mut TestConte
         grand_total
     );
 
-    // A4 negative regression: NO isDefault / is_default key anywhere.
+    // negative regression: NO isDefault / is_default key anywhere.
     assert_no_is_default(&Some(body.clone()), "overview response");
 }
 

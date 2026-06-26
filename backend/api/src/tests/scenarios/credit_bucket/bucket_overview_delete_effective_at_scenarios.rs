@@ -1,17 +1,17 @@
 // =============================================================================
-// BE-T10 — Scenario Tests: Bucket overview/delete derived availability predicate
+// Scenario Tests: Bucket overview/delete derived availability predicate
 // =============================================================================
 //
 // Covers design `.ai/design/point-time.md`:
-//   - §5.1 "list_bucket_overview/delete_credit_bucket ... 不得再使用
+//   - "list_bucket_overview/delete_credit_bucket ... 不得再使用
 //     points_wallets.total_balance ... 改用 compute_bucket_available_balances
 //     的同源谓词。删除保护语义定为'仍存在已生效且未过期的可用余额则不可删除'；
 //     未来未生效预生成行对普通可用余额不可见,但 bucket 删除前仍必须先确认
 //     无 active subscription,并在清理阶段删除该 bucket 下未生效 ledger/schedule
 //     残留".
-//   - §6.1 "bucket overview/delete 派生口径(P1)": future-effective 行不计入
+//   - "bucket overview/delete 派生口径(P1)": future-effective 行不计入
 //     bucket 可用余额展示,不因 wallet Stored 列误判 bucket 使用中。
-//   - §6.3 回归风险点 P1: wallet Stored 列读点遗漏 — bucket overview、bucket
+//   - 回归风险点 P1: wallet Stored 列读点遗漏 — bucket overview、bucket
 //     delete guard 若继续读 points_wallets.total_balance 会泄漏未来期积分或
 //     误判 bucket 使用中。
 //
@@ -46,7 +46,7 @@
 // All scenarios exercise the real production HTTP path through the unified test
 // router (`/api/realms/{realmId}/billing/credit-buckets...`) gated on Realm
 // Admin `points.manage`. Derived balance is asserted via direct SQL mirroring
-// the production `compute_bucket_available_balances` predicate (BE-T01
+// the production `compute_bucket_available_balances` predicate (the
 // helper), NOT by reading any Stored wallet column.
 //
 // Per authoring rules: tests target the intended design contract. Runtime gaps
@@ -70,15 +70,15 @@ use test_context::test_context;
 use uuid::Uuid;
 
 // =============================================================================
-// Local helpers (BE-T10-specific)
+// Local helpers
 // =============================================================================
 
 /// Availability predicate mirroring production `compute_bucket_available_
 /// balancelist_bucket_overview` and the `delete_credit_bucket` holders guard
-/// (design §5.1, BE-D06). Kept inline so the full SQL is readable at the call
+/// Kept inline so the full SQL is readable at the call
 /// site. If this drifts from the production text in
-/// `backend/infra/src/billing/postgres_repository.rs`, BE-A03 step 2 will
-/// catch it; this local copy is for SEED-TIME filtering only.
+/// `backend/infra/src/billing/postgres_repository.rs`, step 2 will catch it;
+/// this local copy is for SEED-TIME filtering only.
 const DERIVED_AVAILABILITY_PREDICATE: &str = concat!(
     "status = 'active'",
     " AND remaining_amount > 0",
@@ -89,17 +89,17 @@ const DERIVED_AVAILABILITY_PREDICATE: &str = concat!(
 /// Seed a `points_credit_ledger` row bound to a SPECIFIC `bucket_id` with an
 /// explicit `effective_at`.
 ///
-/// This is the BE-T10-specific variant of BE-T01's
-/// `create_credit_ledger_entry_with_effective_at`: the BE-T01 helper always
+/// This is a bucket-directory-specific variant of the
+/// `create_credit_ledger_entry_with_effective_at` helper: that helper always
 /// binds the row to the realm's legacy test bucket (via
 /// `ensure_test_bucket_for_realm`), which is wrong for bucket-directory
 /// scenarios that need the row tied to a freshly created, identifiable bucket
 /// so the overview/delete endpoints read it under that bucket.
 ///
-/// Mirrors the column list of BE-T01's helper verbatim (including
-/// `effective_at`, added by BE-D01 migration `20260621_points_effective_at.sql`)
+/// Mirrors the column list of the helper verbatim (including
+/// `effective_at`, added by migration `20260621_points_effective_at.sql`)
 /// and does NOT touch any `points_wallets` Stored column (the balance columns
-/// were physically dropped by BE-D11 / design §1.3 / A7; available balance is
+/// were physically dropped; available balance is
 /// exclusively a derived SUM over this table).
 ///
 /// `effective_at`:
@@ -151,7 +151,7 @@ async fn seed_ledger_on_bucket_with_effective_at(
 
 /// Count ledger rows on a specific bucket matching the derived availability
 /// predicate. Mirrors production `delete_credit_bucket` holders_with_balance
-/// count (BE-D06). Used post-delete to assert residual future-effective rows
+/// count. Used post-delete to assert residual future-effective rows
 /// were swept by `clear_deletable_bucket_references_tx`.
 async fn count_available_ledger_rows_on_bucket(pool: &sqlx::PgPool, bucket_id: Uuid) -> i64 {
     let sql = format!(
@@ -210,8 +210,8 @@ fn find_overview_row(body: &Value, bucket_id: Uuid) -> Option<&serde_json::Map<S
 
 /// User Story: US-CB-001 (admin views the bucket × credit-type overview matrix;
 /// the displayed available balance must reflect only spendable credits).
-/// Covers (BE-T10 scope, design §5.1 / §6.1 / §6.3 risk P1):
-///   - `list_bucket_overview` (BE-D06) builds each bucket's `byCreditType` /
+/// Covers (risk P1):
+///   - `list_bucket_overview` builds each bucket's `byCreditType` /
 ///     `bucketTotal` from a DERIVED SUM over `points_credit_ledger` with the
 ///     availability predicate `status='active' AND remaining_amount>0 AND
 ///     (effective_at IS NULL OR effective_at<=NOW()) AND (expires_at IS NULL
@@ -312,7 +312,7 @@ async fn test_bucket_overview_excludes_future_effective(ctx: &mut TestContext) {
         .unwrap_or(-1);
     assert_eq!(
         bucket_total, 0,
-        "bucketTotal MUST be 0 for a future-effective-only bucket (design §5.1 derived \
+        "bucketTotal MUST be 0 for a future-effective-only bucket (derived \
          predicate excludes effective_at > NOW()); got {} — overview is leaking \
          future-effective rows into the displayed available balance; body: {}",
         bucket_total, body
@@ -332,8 +332,8 @@ async fn test_bucket_overview_excludes_future_effective(ctx: &mut TestContext) {
             if let Some(val) = by_ct.get(typed_field).and_then(|v| v.as_i64()) {
                 assert_eq!(
                     val, 0,
-                    "byCreditType.{} MUST be 0 for a future-effective-only bucket \
-                     (design §5.1); got {} — body: {}",
+                    "byCreditType.{} MUST be 0 for a future-effective-only bucket; \
+                     got {} — body: {}",
                     typed_field, val, body
                 );
             }
@@ -348,8 +348,8 @@ async fn test_bucket_overview_excludes_future_effective(ctx: &mut TestContext) {
 
 /// User Story: US-CB-001 (admin deletes a bucket whose only credits are not
 /// yet spendable).
-/// Covers (BE-T10 scope, design §5.1 / §6.1 / §6.3 risk P1):
-///   - `delete_credit_bucket` (BE-D06) guards on the SAME derived availability
+/// Covers (risk P1):
+///   - `delete_credit_bucket` guards on the SAME derived availability
 ///     predicate as overview. A bucket whose ONLY ledger row is future-
 ///     effective has ZERO matching rows under that predicate, so the guard
 ///     does NOT refuse (holders_with_balance == 0). Combined with
@@ -419,7 +419,7 @@ async fn test_bucket_delete_allowed_when_only_future_effective(ctx: &mut TestCon
         status,
         StatusCode::NO_CONTENT,
         "delete of a future-effective-only bucket with no active subscription MUST be \
-         204 (design §5.1 derived guard does not block on effective_at > NOW()); \
+         204 (derived guard does not block on effective_at > NOW()); \
          got {}: {:?}",
         status,
         body
@@ -451,7 +451,7 @@ async fn test_bucket_delete_allowed_when_only_future_effective(ctx: &mut TestCon
     assert!(
         ledger_gone.is_none(),
         "future-effective ledger row MUST be swept by clear_deletable_bucket_references_tx \
-         on bucket delete (design §5.1); it survived — cleanup residue"
+         on bucket delete; it survived — cleanup residue"
     );
 
     // Post-delete: all ledger rows on the bucket are gone (belt-and-suspenders
@@ -469,15 +469,15 @@ async fn test_bucket_delete_allowed_when_only_future_effective(ctx: &mut TestCon
 
 /// User Story: US-CB-001 (admin cannot delete a bucket still holding
 /// spendable credits).
-/// Covers (BE-T10 scope, design §5.1 / §6.1 / §6.3 risk P1):
-///   - `delete_credit_bucket` (BE-D06) refuses with 409 `bucket_in_use` +
+/// Covers (risk P1):
+///   - `delete_credit_bucket` refuses with 409 `bucket_in_use` +
 ///     `holdersWithBalance >= 1` when at least one currently-effective (i.e.
 ///     matching the derived availability predicate) active ledger row exists
 ///     on the bucket.
 ///   - The seeded row is immediately available (effective_at = NULL,
 ///     expires_at wide, remaining_amount > 0). It MUST count under the guard.
-///   - This pins the "still spendable ⇒ not deletable" half of the design
-///     §5.1 delete-protection semantics; paired with scenario 2 (future-
+///   - This pins the "still spendable ⇒ not deletable" half of the
+///     delete-protection semantics; paired with scenario 2 (future-
 ///     effective-only ⇒ deletable) it locks the predicate as the sole
 ///     authority for the holders_with_balance count.
 #[test_context(TestContext)]
@@ -538,7 +538,7 @@ async fn test_bucket_delete_rejected_when_has_effective_balance(ctx: &mut TestCo
         status,
         StatusCode::CONFLICT,
         "delete with currently-effective available balance MUST be 409 bucket_in_use \
-         (design §5.1 derived guard); got {}: {:?}",
+         (derived guard); got {}: {:?}",
         status,
         body
     );
@@ -578,10 +578,10 @@ async fn test_bucket_delete_rejected_when_has_effective_balance(ctx: &mut TestCo
 
 /// User Story: US-CB-001 (admin cannot delete a bucket still bound to an
 /// in-flight subscription).
-/// Covers (BE-T10 scope, design §5.1 / §6.1):
-///   - `delete_credit_bucket` (BE-D06) refuses with 409 `bucket_in_use` +
+/// Covers:
+///   - `delete_credit_bucket` refuses with 409 `bucket_in_use` +
 ///     `activeSubscriptions >= 1` when an in-flight subscription is bound to
-///     the bucket, REGARDLESS of ledger balance state. Design §5.1: "bucket
+///     the bucket, REGARDLESS of ledger balance state. "bucket
 ///     删除前仍必须先确认无 active subscription".
 ///   - This scenario pairs an active subscription with a future-effective-
 ///     only ledger state (derived balance == 0). The delete MUST still be
@@ -652,7 +652,7 @@ async fn test_bucket_delete_rejected_when_has_active_subscription(ctx: &mut Test
         status,
         StatusCode::CONFLICT,
         "delete with an active subscription MUST be 409 bucket_in_use, even when \
-         derived balance is 0 (design §5.1: subscription check is independent); \
+         derived balance is 0 (subscription check is independent); \
          got {}: {:?}",
         status,
         body

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { m } from '@/paraglide/messages'
 
 /**
- * bucketKey format: lowercase alphanumeric + hyphen, 1-64 chars (design §4.2.2).
+ * bucketKey format: lowercase alphanumeric + hyphen, 1-64 chars.
  * Matches backend `^[a-z0-9-]{1,64}$`.
  */
 export const bucketKeyRegex = /^[a-z0-9-]{1,64}$/
@@ -17,11 +17,11 @@ export const bucketKeyRegex = /^[a-z0-9-]{1,64}$/
 const idField = z.string().min(1)
 
 /**
- * Create schema for a Credit Bucket (design §4.2.2).
+ * Create schema for a Credit Bucket.
  *
  * Coverage set (`clientAppIds`) MUST be non-empty — fail loud at the schema
  * layer with `.min(1)` so the form never submits an empty coverage set. NO
- * `isDefault` field anywhere (design A4).
+ * `isDefault` field anywhere.
  */
 export const createCreditBucketSchema = z.object({
   bucketKey: z
@@ -44,7 +44,7 @@ export const createCreditBucketSchema = z.object({
 export type CreateCreditBucketFormData = z.infer<typeof createCreditBucketSchema>
 
 /**
- * Update schema for a Credit Bucket (design §4.2.3 PUT).
+ * Update schema for a Credit Bucket (PUT).
  *
  * `bucketKey` is NOT editable on update (immutable identity) — hence absent.
  * Coverage set still must be non-empty (backend rejects empty with 400).

@@ -49,7 +49,7 @@ async fn ensure_test_user_exists(ctx: &SchemaTestContext, user_id: Uuid, realm_i
 /// transactions in that realm, mirroring the pre-bucket single-pool semantics
 /// these tests were written against. Marking it as the realm's registration
 /// pool means registration-bonus grants (which require a registration-pool
-/// bucket per design §4.3.2) land in the same legacy pool the tests assert on.
+/// bucket) land in the same legacy pool the tests assert on.
 pub async fn ensure_test_bucket_for_realm(pool: &sqlx::PgPool, realm_id: &str) -> Uuid {
     use sqlx::Row;
 
@@ -84,7 +84,7 @@ pub async fn ensure_test_bucket_for_realm(pool: &sqlx::PgPool, realm_id: &str) -
     let bucket_id: Uuid = row.get("id");
 
     // Legacy consume paths resolve coverage from `credit_bucket_client_apps`
-    // (production design A4: no default-bucket merging). Legacy scenario tests
+    // (production behavior: no default-bucket merging). Legacy scenario tests
     // were written against a single shared pool per realm, so attach every
     // existing client app in this realm to the legacy bucket. Idempotent:
     // client apps created later are attached at their own creation site (see
@@ -152,7 +152,7 @@ pub async fn create_points_wallet(
     let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
     let wallet_id = Uuid::now_v7();
 
-    // BE-D11 / point-time: the 5 per-type balance columns and the
+    // point-time: the 5 per-type balance columns and the
     // `total_balance` GENERATED column were dropped from `points_wallets`;
     // available balance is derived from `points_credit_ledger`. This INSERT
     // therefore seeds only the retained lifetime-analytics columns.
@@ -186,7 +186,7 @@ pub async fn create_points_wallet(
 
 /// Create a points wallet with initial balance
 ///
-/// Under point-time (BE-D11) `points_wallets` no longer holds Stored per-type
+/// Under point-time `points_wallets` no longer holds Stored per-type
 /// balances; available balance is derived from `points_credit_ledger`. To keep
 /// this helper's contract ("after this returns, the wallet shows
 /// `topup_balance` of topup credit and `subscription_balance` of subscription
@@ -372,7 +372,7 @@ pub async fn create_credit_ledger_entry(
 /// Get points wallet by user ID
 ///
 /// Returns (wallet_id, balance, topup_balance, subscription_balance).
-/// Under point-time (BE-D11) the balance figures are DERIVED from
+/// Under point-time the balance figures are DERIVED from
 /// `points_credit_ledger` (same predicate as consumption) — the wallet row no
 /// longer carries Stored per-type balances. The grouping matches the legacy
 /// meaning: `topup` = topup + registration + free_periodic credit types.
@@ -421,7 +421,7 @@ pub async fn get_points_wallet_by_user(
 
 /// Get points wallet balance
 ///
-/// Returns (total, topup, subscription). Under point-time (BE-D11) the balance
+/// Returns (total, topup, subscription). Under point-time the balance
 /// figures are DERIVED from `points_credit_ledger` using the same predicate as
 /// consumption — `points_wallets` no longer carries Stored per-type balances.
 pub async fn get_points_balance(
@@ -695,7 +695,7 @@ pub async fn create_credit_ledger_entry_v2(
     .await
     .expect("Failed to create credit ledger entry");
 
-    // BE-D11 / point-time: `points_wallets` no longer holds Stored per-type
+    // point-time: `points_wallets` no longer holds Stored per-type
     // balances; available balance is derived from `points_credit_ledger`. We
     // only bump the retained lifetime-analytics columns (topup / subscription
     // / recharged) so analytics-style assertions still hold.
@@ -742,7 +742,7 @@ pub async fn get_wallet_bucket_id(ctx: &SchemaTestContext, realm_id: &str, user_
 /// resolve the routing `bucket_id` for `provider_reference` (the original
 /// payment id). The refund handler (`webhook_handlers.rs` refund path)
 /// requires a payment_attempt with a non-null `bucket_id` to scope revocation
-/// to the same pool the original grant targeted (design A8 fail-loud) — tests
+/// to the same pool the original grant targeted (fail-loud) — tests
 /// that grant a ledger directly via `create_credit_ledger_entry_v2` must also
 /// seed this snapshot before sending a refund webhook, otherwise the handler
 /// rejects with "no payment_attempt for payment_id".
@@ -859,7 +859,7 @@ pub async fn get_ledger_by_id(
 ///
 /// Bumps the ledger's `used_amount` (which recomputes the GENERATED
 /// `remaining_amount`) AND bumps the matching wallet's `total_consumed`
-/// lifetime-analytics column. Under point-time (BE-D11) there is no per-type
+/// lifetime-analytics column. Under point-time there is no per-type
 /// Stored balance column to decrement — the available balance is derived from
 /// `points_credit_ledger`, so bumping `used_amount` is sufficient to reduce
 /// the derived balance.
@@ -1034,7 +1034,7 @@ pub fn create_test_third_party_identity(realm_id: &str) -> Identity {
 /// `(user, bucket)` pool under the multi-bucket model). Returns the summed
 /// `(total_balance, topup_balance, subscription_balance)`.
 ///
-/// Under point-time (BE-D11) the balance figures are DERIVED from
+/// Under point-time the balance figures are DERIVED from
 /// `points_credit_ledger` (same predicate as consumption); the assertion that
 /// each is >= 0 still holds because `remaining_amount` is non-negative.
 pub async fn assert_balances_non_negative(
@@ -1119,7 +1119,7 @@ pub async fn assert_ledger_invariants(ctx: &SchemaTestContext, user_id: Uuid) {
 
 /// Assert caller-supplied balance figures match SUM(ledger.remaining_amount)
 /// grouped by credit type, using the same derived predicate as consumption
-/// (status / effective_at / expires_at). Under point-time (BE-D11) this is a
+/// (status / effective_at / expires_at). Under point-time this is a
 /// derived-vs-derived comparison: callers should obtain the values from
 /// `assert_balances_non_negative` (which uses the same predicate and grouping).
 pub async fn assert_account_matches_ledger_sums(
@@ -1170,7 +1170,7 @@ pub async fn assert_account_matches_ledger_sums(
 }
 
 // ============================================================================
-// Entitlement-Based Points Verification Helpers (BE-T03)
+// Entitlement-Based Points Verification Helpers
 // ============================================================================
 
 /// Verify points were granted with correct entitlement_key association.
@@ -1203,7 +1203,7 @@ pub async fn verify_points_granted_for_entitlement(
 
 /// Get current points balance for a user (derived SUM from ledger).
 ///
-/// Returns 0 if the user has no wallet. Under point-time (BE-D11) the balance
+/// Returns 0 if the user has no wallet. Under point-time the balance
 /// is DERIVED from `points_credit_ledger` using the same predicate as
 /// consumption — `points_wallets` no longer carries a Stored `total_balance`.
 pub async fn get_points_balance_for_user(ctx: &SchemaTestContext, user_id: Uuid) -> i64 {
@@ -1261,7 +1261,7 @@ pub async fn get_points_grant_schedule_by_entitlement(
 }
 
 // ============================================================================
-// point-time helpers (BE-T01)
+// point-time helpers
 // ============================================================================
 
 /// Truncate a UTC datetime to microsecond precision.
@@ -1279,9 +1279,9 @@ pub fn trunc_to_micros(ts: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<ch
         .expect("truncated_nanos is a valid subsec nanos value (< 2e9)")
 }
 //
-// Shared helpers for the point-time feature (design `.ai/design/point-time.md`
-// §5.1/§5.2/§5.3/§5.3.1). These cover three reuse needs expressed by the
-// §6.1 scenario matrix:
+// Shared helpers for the point-time feature (design `.ai/design/point-time.md`).
+// These cover three reuse needs expressed by the
+// scenario matrix:
 //
 //   1. Future-effective row injection — `inject_effective_at`,
 //      `create_credit_ledger_entry_with_effective_at`. The new entry helper
@@ -1291,7 +1291,7 @@ pub fn trunc_to_micros(ts: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<ch
 //   2. Derived-predicate balance assertion — `get_derived_balance_by_credit_type`,
 //      `get_derived_total_balance`, `assert_derived_balance`. The SQL predicate
 //      mirrors production `compute_available_balance` /
-//      `compute_bucket_available_balances` (BE-D04) verbatim:
+//      `compute_bucket_available_balances` verbatim:
 //        status='active' AND remaining_amount>0
 //          AND (effective_at IS NULL OR effective_at <= NOW())
 //          AND (expires_at  IS NULL OR expires_at  >  NOW())
@@ -1321,7 +1321,7 @@ pub fn trunc_to_micros(ts: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<ch
 // should pass that non-empty value.
 
 /// Derived-predicate fragment mirroring production
-/// `compute_available_balance` / consumption selection (design §5.1, BE-D04).
+/// `compute_available_balance` / consumption selection.
 /// Kept inline (not a constant) so the full SQL stays readable at call sites.
 const DERIVED_AVAILABLE_PREDICATE: &str = concat!(
     "status = 'active'",
@@ -1402,7 +1402,7 @@ pub async fn create_credit_ledger_entry_with_effective_at(
 
 /// Derived available balance for one `(user, realm, credit_type)` pool.
 ///
-/// Mirrors production `compute_available_balance` (BE-D04) verbatim — does NOT
+/// Mirrors production `compute_available_balance` verbatim — does NOT
 /// read `points_wallets.total_balance`. Future-effective and expired active
 /// rows are excluded by the shared predicate.
 pub async fn get_derived_balance_by_credit_type(
@@ -1427,7 +1427,7 @@ pub async fn get_derived_balance_by_credit_type(
 
 /// Derived available balance summed across all credit types for a user.
 ///
-/// Mirrors production total derived balance (BE-D04). Use this for "total
+/// Mirrors production total derived balance. Use this for "total
 /// available" assertions; prefer `get_derived_balance_by_credit_type` for
 /// per-pool assertions.
 pub async fn get_derived_total_balance(
@@ -1453,7 +1453,7 @@ pub async fn get_derived_total_balance(
 /// This is the canonical point-time balance assertion. Downstream scenario
 /// items MUST use this instead of reading `points_wallets.total_balance` —
 /// the Stored column is not the available-balance authority under point-time
-/// and may lag or diverge (design §5.1, A7).
+/// and may lag or diverge.
 pub async fn assert_derived_balance(
     ctx: &SchemaTestContext,
     user_id: Uuid,
@@ -1522,10 +1522,10 @@ pub async fn create_free_grant_schedule(
     schedule_id
 }
 
-/// Seed a SUBSCRIPTION-bound `points_grant_schedules` row (BE-T04/T06 use).
+/// Seed a SUBSCRIPTION-bound `points_grant_schedules` row.
 ///
 /// `first_period_start` is stored as `base_time` (the period_number derivation
-/// anchor, design §5.2). `entitlement_key` mirrors the subscription's key
+/// anchor). `entitlement_key` mirrors the subscription's key
 /// (non-empty for subscription schedules).
 pub async fn create_subscription_grant_schedule(
     ctx: &SchemaTestContext,
@@ -1569,7 +1569,7 @@ pub async fn create_subscription_grant_schedule(
 ///
 /// Use this in worker-down scenarios to simulate the progression that
 /// `GrantScheduler::process_due_schedules` would have applied, without
-/// invoking the worker (design A9 — worker is preheat, not correctness).
+/// invoking the worker (worker is preheat, not correctness).
 pub async fn advance_schedule(
     ctx: &SchemaTestContext,
     schedule_id: Uuid,
@@ -1591,8 +1591,8 @@ pub async fn advance_schedule(
 
 /// Seed a `points_grant_records(schedule_id, period_number)` idempotency row.
 ///
-/// `ledger_id` is REQUIRED — BE-D01 made `points_grant_records.ledger_id` a
-/// NOT NULL FK (the A4 reclaim row-positioning bridge). Callers should first
+/// `ledger_id` is REQUIRED — `points_grant_records.ledger_id` is a
+/// NOT NULL FK (the reclaim row-positioning bridge). Callers should first
 /// create the ledger row via `create_credit_ledger_entry_with_effective_at`
 /// (or `create_credit_ledger_entry_v2`) and pass the returned id here.
 pub async fn create_grant_record(
@@ -1636,7 +1636,7 @@ pub async fn create_grant_record(
 
 /// Return TRUE iff a `points_grant_records` row exists for
 /// `(schedule_id, period_number)`. Use this to assert the period-level
-/// business idempotency key (design §5.3.1).
+/// business idempotency key.
 pub async fn grant_record_exists(
     ctx: &SchemaTestContext,
     schedule_id: Uuid,
@@ -1653,7 +1653,7 @@ pub async fn grant_record_exists(
 }
 
 /// Locate the ledger id for a `(user, source_id)`. Used by reclaim tests
-/// asserting row-level positioning by `source_id` (design §5.2).
+/// asserting row-level positioning by `source_id`.
 pub async fn find_ledger_by_source_id(
     ctx: &SchemaTestContext,
     user_id: Uuid,
@@ -1671,9 +1671,9 @@ pub async fn find_ledger_by_source_id(
 }
 
 /// Locate the ledger id for a `(schedule_id, period_number)` via the
-/// `points_grant_records.ledger_id` FK (BE-D01 reclaim bridge, design §5.2).
+/// `points_grant_records.ledger_id` FK (reclaim bridge).
 ///
-/// This is the same lookup production BE-D05 reclaim performs — it resolves
+/// This is the same lookup production reclaim performs — it resolves
 /// the business idempotency key `(schedule_id, period_number)` (which lives
 /// only in `points_grant_records`) to a unique ledger row. Reclaim tests MUST
 /// use this rather than guessing by `source_id`.
@@ -1695,7 +1695,7 @@ pub async fn find_ledger_id_by_schedule_period(
 
 /// Count active ledger rows for a user that are future-effective
 /// (`effective_at > NOW()`). Use this to assert response/path non-leak of
-/// future-effective rows (design §6.1 BE-T02/T09) and pre-grant counts.
+/// future-effective rows and pre-grant counts.
 pub async fn count_future_effective_active_rows(
     ctx: &SchemaTestContext,
     user_id: Uuid,

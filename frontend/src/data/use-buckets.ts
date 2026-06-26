@@ -4,8 +4,8 @@ import type { BucketResponse } from '@/lib/api-generated'
 
 /**
  * Minimal bucket view-model consumed by Select/option groups across the
- * credit-bucket feature (FE-D07 grant dialog, FE-D08 entitlement mappings,
- * FE-D09 purchase grouping, FE-D10 admin wallets).
+ * credit-bucket feature (grant dialog, entitlement mappings,
+ * purchase grouping, admin wallets).
  *
  * Source-of-truth type is {@link BucketResponse}; we project only the fields
  * downstream selects need so callers don't couple to the full DTO.
@@ -15,7 +15,7 @@ export type BucketOption = Pick<BucketResponse, 'id' | 'name' | 'enabled' | 'buc
 /**
  * All credit buckets for `realmId` (enabled + disabled).
  *
- * Backed by {@link creditBucketsListQueryOptions} (FE-D01). `buckets` is `[]`
+ * Backed by {@link creditBucketsListQueryOptions}. `buckets` is `[]`
  * while loading so select components can render an empty state without
  * distinguishing undefined; use `isLoading` for skeletons.
  */

@@ -373,7 +373,7 @@ impl PermissionService for RedisPermissionChecker {
     ///   TOCTOU race where a concurrent request re-caches a stale "granted" result
     ///   after cache invalidation.
     #[tracing::instrument(
-        // BE-D07 governance (§4.5/§5.4): realm_id / principal_id are tenant +
+        // Governance: realm_id / principal_id are tenant +
         // user identifiers (principal_id is commonly a user_id) — skipped.
         // resource/action are low-cardinality enums but skipped to stay
         // conservative and keep the span minimal; only db.system + cache.hit
@@ -407,7 +407,7 @@ impl PermissionService for RedisPermissionChecker {
             action,
         );
         if let Some(cached) = self.get_cached_result(&cache_key).await {
-            // BE-D07: record only the low-cardinality bool hit/miss into the span.
+            // Record only the low-cardinality bool hit/miss into the span.
             tracing::Span::current().record("cache.hit", true);
             if !cached {
                 debug!("Principal permission denied (cached denial)");
@@ -795,14 +795,14 @@ mod tests {
     }
 }
 
-// BE-T03 governance tests (design §5.4 / §4.5).
+// Governance tests.
 //
-// Covers: BE-D07 — `check_principal_permission` instrument skip correctness.
+// Covers: `check_principal_permission` instrument skip correctness.
 //
 // WHY: `realm_id` / `principal_id` are tenant + user identifiers
 // (principal_id is commonly a user_id). If the `#[instrument]` macro ever
 // stops skipping them, the identifiers leak into a span field. Source-scan
-// baseline (design §6.1), anchored to `fn check_principal_permission` and its
+// baseline, anchored to `fn check_principal_permission` and its
 // immediately-preceding `#[tracing::instrument(...)]`.
 #[cfg(test)]
 mod instrument_skip_tests {

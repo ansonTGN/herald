@@ -3,13 +3,13 @@
 // =============================================================================
 //
 // Tests for the invoice list/detail refund dimension fields
-// (`amountRefunded`, `amountRemaining`, `creditNotes`) populated by dev item
-// BE-D06. Covers the query side of US-IF-008 (admin refund visibility) and
+// (`amountRefunded`, `amountRemaining`, `creditNotes`). Covers the query side
+// of US-IF-008 (admin refund visibility) and
 // US-IF-009 (user refund annotation), the transaction consistency invariant
 // (credit note creation + invoice cache update happen atomically), and the
 // Creem provider exclusion rule (design section 1.3).
 //
-// Spec deviation: BE-T03 item step 3.e specified `source='external'` for the
+// Spec deviation: item step 3.e specified `source='external'` for the
 // Creem invoice insert. The `invoice.source` column has a CHECK constraint
 // limiting it to `('admin_manual', 'user_application', 'external_sync')`
 // (see `backend/app/migrations/20260508_invoice.sql` line 34). The provider
@@ -203,7 +203,7 @@ mod tests {
     }
 
     /// Insert a Creem invoice directly into DB with `provider='creem'`,
-    /// `status='paid'`, and no refund dimensions (per design §1.3 Creem
+    /// `status='paid'`, and no refund dimensions (Creem
     /// exclusion). The invoice is owned by `applicant_user_id` so the
     /// user-side detail endpoint (`get_my_invoice`) can be exercised.
     ///
@@ -724,7 +724,7 @@ mod tests {
     // When: GET my invoice detail (user endpoint)
     // Then: Response includes amountRefunded and amountRemaining
     // And: Each entry in creditNotes has externalCreditNoteId == null
-    //      (per design §4.2.2 "用户端响应的 creditNotes 不包含 externalCreditNoteId 和内部编号")
+    //      ("用户端响应的 creditNotes 不包含 externalCreditNoteId 和内部编号")
 
     #[test_context(RefundQueryTestContext)]
     #[tokio::test]
@@ -834,7 +834,7 @@ mod tests {
             credit_notes[0]
                 .get("externalCreditNoteId")
                 .is_none_or(|v| v.is_null()),
-            "externalCreditNoteId must be null on the user-side response (design §4.2.2), got: {:?}",
+            "externalCreditNoteId must be null on the user-side response, got: {:?}",
             credit_notes[0].get("externalCreditNoteId")
         );
         assert_eq!(credit_notes[0]["amount"], 3000);
@@ -846,13 +846,13 @@ mod tests {
     // (US-IF-008 scenario 6, US-IF-009 scenario 4)
     // =========================================================================
     // User Story: docs/user-stories/billing/invoice-fallback.md
-    // Covers: US-IF-008 scenario 6, US-IF-009 scenario 4, Design §1.3
+    // Covers: US-IF-008 scenario 6, US-IF-009 scenario 4
     //
     // Given: A Creem invoice (provider=creem) in the database
     // When: GET invoice detail (admin) and GET my invoice detail (user)
     // Then: creditNotes is empty and amountRefunded is 0
     //
-    // This validates the Creem exclusion rule from design §1.3: credit notes
+    // This validates the Creem exclusion rule: credit notes
     // are never created for provider=creem invoices (managed externally), so
     // the refund dimension fields reflect "no refunds" for these invoices.
 
@@ -891,12 +891,12 @@ mod tests {
         assert_eq!(admin_detail["provider"], "creem");
         assert_eq!(
             admin_detail["amountRefunded"], 0,
-            "Creem invoices must show amountRefunded=0 (refund fields excluded by design §1.3)"
+            "Creem invoices must show amountRefunded=0 (refund fields excluded by design)"
         );
         let admin_credit_notes = admin_detail["creditNotes"].as_array().unwrap();
         assert!(
             admin_credit_notes.is_empty(),
-            "Creem invoices must have an empty creditNotes list (design §1.3)"
+            "Creem invoices must have an empty creditNotes list by design"
         );
 
         // User GET my invoice detail
@@ -918,12 +918,12 @@ mod tests {
         assert_eq!(user_detail["provider"], "creem");
         assert_eq!(
             user_detail["amountRefunded"], 0,
-            "Creem invoices must show amountRefunded=0 on user-side (design §1.3)"
+            "Creem invoices must show amountRefunded=0 on user-side by design"
         );
         let user_credit_notes = user_detail["creditNotes"].as_array().unwrap();
         assert!(
             user_credit_notes.is_empty(),
-            "Creem invoices must have an empty creditNotes list on user-side (design §1.3)"
+            "Creem invoices must have an empty creditNotes list on user-side by design"
         );
     }
 }

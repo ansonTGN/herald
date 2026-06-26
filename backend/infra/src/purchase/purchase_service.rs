@@ -47,7 +47,7 @@ fn build_herald_metadata(
         metadata_keys::ATTEMPT_ID.to_string(),
         attempt_id.to_string(),
     );
-    // §5.3: diagnostic/webhook fallback. Source of truth remains the
+    // Diagnostic/webhook fallback. Source of truth remains the
     // payment_attempt / subscription snapshot columns.
     metadata.insert(
         metadata_keys::HERALD_BUCKET_ID.to_string(),
@@ -280,7 +280,7 @@ where
             )));
         }
 
-        // A8: purchase creation is the source-of-truth snapshot site for
+        // Purchase creation is the source-of-truth snapshot site for
         // `payment_attempt.bucket_id`.
         let bucket_id = mapping.bucket_id;
 

@@ -43,12 +43,12 @@ interface CreditBucketOverviewPageProps {
 }
 
 /**
- * Bucket × Credit-type overview matrix audit page (design §4.4.2).
+ * Bucket × Credit-type overview matrix audit page.
  *
  * Rows = buckets; columns = per-credit-type balance + `bucketTotal`. A final
  * dedicated row renders the top-level `grandTotal` (cross-bucket aggregate).
- * `grandTotal` is rendered as a separate row, NOT mixed into `rows` (design
- * §4.2.3 — it's a distinct top-level field on `BucketOverviewResponse`).
+ * `grandTotal` is rendered as a separate row, NOT mixed into `rows`
+ * (it's a distinct top-level field on `BucketOverviewResponse`).
  *
  * Filtering (creditTypes multi-select + enabledOnly) is client-side and driven
  * from URL search params — it never triggers a refetch. Disabled buckets render

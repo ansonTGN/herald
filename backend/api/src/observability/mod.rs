@@ -10,7 +10,7 @@
 //! When `cfg.traces_enabled == false`, [`build_traces_layer`] returns `None`
 //! and **no** OTel traces layer is installed — traces do not leave the
 //! process. This is the core back-pressure mitigation
-//! (`.ai/design/observability.md` §4.1). Metrics are always enabled.
+//! (`.ai/design/observability.md`). Metrics are always enabled.
 //!
 //! # Sensitive governance
 //!
@@ -57,7 +57,7 @@ impl ObservabilityHandles {
     /// Merge the tracer provider produced by [`build_traces_layer`] into this
     /// handle so [`shutdown`] can flush it.
     ///
-    /// This is the cross-crate merge point used by `main.rs` (BE-D04): the
+    /// This is the cross-crate merge point used by `main.rs`: the
     /// meter provider is built first ([`build_meter_provider`]), then the
     /// traces layer is built separately ([`build_traces_layer`]); the caller
     /// splices the traces provider into the handles before handing them to
@@ -77,8 +77,7 @@ impl ObservabilityHandles {
 /// [`shutdown`]).
 ///
 /// Build failures degrade gracefully: an `error!` is logged and `None` is
-/// returned so the process still starts (`.ai/design/observability.md`
-/// §5.2).
+/// returned so the process still starts (`.ai/design/observability.md`).
 pub struct TracesLayer {
     pub layer: Option<TracingOpenTelemetryLayer>,
     pub provider: Option<SdkTracerProvider>,
@@ -98,7 +97,7 @@ pub type TracingOpenTelemetryLayer =
 /// Uses a [`PeriodicReader`] backed by an OTLP/HTTP [`MetricExporter`] with
 /// export interval `cfg.metrics_export_interval_secs`. Calls
 /// [`global::set_meter_provider`] so `opentelemetry::global::meter(...)` (used
-/// by the RED middleware in BE-D05) resolves to this provider.
+/// by the RED middleware) resolves to this provider.
 pub fn build_meter_provider(cfg: &ObservabilityConfig) -> ObservabilityHandles {
     let metrics_endpoint = format!("{}/v1/metrics", cfg.otlp_endpoint.trim_end_matches('/'));
 
@@ -228,9 +227,9 @@ mod tests {
     use crate::config::ObservabilityConfig;
 
     /// User Story: Technical invariant — baseline traces-off isolation per
-    /// design `.ai/design/observability.md` §4.1/§4.5.
-    /// Covers: design §6.1 "baseline 隔离：`build_traces_layer(&baseline_cfg)`
-    /// 返回 `None`" + BE-D03 handoff.
+    /// design `.ai/design/observability.md`.
+    /// Covers: "baseline 隔离：`build_traces_layer(&baseline_cfg)`
+    /// 返回 `None`".
     ///
     /// WHY this test exists: the baseline deployment MUST NOT install any OTel
     /// traces layer — when `traces_enabled == false`, no span ever leaves the
@@ -261,16 +260,16 @@ mod tests {
 
     /// User Story: Technical invariant — `build_traces_layer` honours an
     /// explicitly enabled cfg rather than short-circuiting.
-    /// Covers: design §6.1 "enabled 分支" + BE-D03 handoff.
+    /// Covers: "enabled 分支".
     ///
     /// WHY: with `traces_enabled == true`, the function MUST attempt to build a
     /// real exporter against the configured OTLP endpoint. We do NOT assert
     /// `Some` here: in a unit-test environment without a live collector, exporter
-    /// construction can legitimately fall back to `None` (graceful degradation,
-    /// §5.2). The load-bearing assertion is therefore "the baseline short-circuit
+    /// construction can legitimately fall back to `None` (graceful degradation).
+    /// The load-bearing assertion is therefore "the baseline short-circuit
     /// was NOT taken": reaching the exporter-construction path proves the
     /// enabled branch is wired. (If a live collector makes `Some` reachable, an
-    /// integration test in BE-T05 covers that path; this unit test stays
+    /// integration test covers that path; this unit test stays
     /// hermetic.) Crucially it must never panic.
     #[test]
     fn observability_build_traces_layer_enabled_does_not_panic() {
@@ -286,8 +285,8 @@ mod tests {
     }
 
     /// User Story: Technical invariant — observability shutdown is safe
-    /// regardless of which providers were built (design §5.2 graceful exit).
-    /// Covers: design §6.1 "`shutdown(handles)` 不 panic" + BE-D03 handoff.
+    /// regardless of which providers were built (graceful exit).
+    /// Covers: "`shutdown(handles)` 不 panic".
     ///
     /// WHY: `shutdown` runs on the process exit path. A panicking shutdown would
     /// crash the process on graceful exit, masking the real exit code and

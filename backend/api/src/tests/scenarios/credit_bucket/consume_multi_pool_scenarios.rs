@@ -1,16 +1,16 @@
 // =============================================================================
-// BE-T01 — Scenario Tests: consume multi-pool cross-Bucket spread (A6, P0)
+// Scenario Tests: consume multi-pool cross-Bucket spread (P0)
 // =============================================================================
 //
-// Covers design `.ai/design/credit-bucket.md` §5.1 (consume algorithm),
-// §4.2.2 (SDK consume response contract), §4.3.2 (correlation_id /
-// external_ref_id), §6.1 (consume test strategy).
+// Covers design `.ai/design/credit-bucket.md` (consume algorithm,
+// SDK consume response contract, correlation_id /
+// external_ref_id, consume test strategy).
 //
 // All tests target the real multi-bucket write path:
 //   `consume_points_ext` (api-ext) → `PointsService::consume_points`
-//   → `PostgresPointsRepository::consume_points_atomic` (A6).
+//   → `PostgresPointsRepository::consume_points_atomic`.
 //
-// Authoritative runtime gaps surfaced by these tests (BE-T06 to triage):
+// Authoritative runtime gaps surfaced by these tests:
 //   1. `allocations` is currently always `[]` in the response — service
 //      consume returns only `Vec<PointsTransaction>`. Tests asserting the
 //      intended allocation breakdown will compile and fail at runtime.
@@ -116,7 +116,7 @@ async fn wallet_total_balance(
 // =============================================================================
 
 /// User Story: US-CB-007 (SDK consume) — single-pool hit path.
-/// Covers (BE-T01 scope):
+/// Covers:
 ///   - 1 covered Bucket with a positive ledger → `transactions.len() == 1`.
 ///   - `bucket_id`/`wallet_id` correct, `balance_after` matches new balance.
 ///   - `correlationId` non-empty; every consume row's `external_ref_id`
@@ -197,7 +197,7 @@ async fn consume_single_pool_hits_returns_one_transaction(ctx: &mut TestContext)
     assert_eq!(*balance_after, 4_900, "stored balance_after correct");
     assert!(
         external_ref_id.is_none(),
-        "consume rows must keep external_ref_id NULL (design A6)"
+        "consume rows must keep external_ref_id NULL (design contract)"
     );
 
     // --- And: wallet balance reflects the deduction. ----------------------
@@ -210,7 +210,7 @@ async fn consume_single_pool_hits_returns_one_transaction(ctx: &mut TestContext)
 // =============================================================================
 
 /// User Story: US-CB-007 (SDK consume) — multi-Bucket cross-pool spread.
-/// Covers (BE-T01 scope):
+/// Covers:
 ///   - ≥2 covered Buckets sharing one client_app; amount spans N pools.
 ///   - N per-bucket transactions, each carrying the correct
 ///     `bucket_id`/`wallet_id`/`balance_after`.
@@ -319,7 +319,7 @@ async fn consume_multi_pool_spreads_across_buckets_returns_n_transactions(ctx: &
         assert!(*balance_after >= 0, "balance_after non-negative");
         assert!(
             external_ref_id.is_none(),
-            "consume rows keep external_ref_id NULL (A6)"
+            "consume rows keep external_ref_id NULL (design contract)"
         );
     }
 
@@ -338,7 +338,7 @@ async fn consume_multi_pool_spreads_across_buckets_returns_n_transactions(ctx: &
 // =============================================================================
 
 /// User Story: US-CB-007 (SDK consume) — expiry-ordered spread.
-/// Covers (BE-T01 scope):
+/// Covers:
 ///   - One short-term ledger (expires soon) + one permanent ledger in the
 ///     same covered set; the short-term ledger drains first; the permanent
 ///     pool is consumed only when the short-term balance is exhausted.
@@ -449,7 +449,7 @@ async fn consume_picks_permanent_pool_last(ctx: &mut TestContext) {
 
 /// User Story: US-CB-007 (SDK consume) — explicit rejection when no pool
 /// covers the requested client_app.
-/// Covers (BE-T01 scope):
+/// Covers:
 ///   - client_app has zero `credit_bucket_client_apps` rows (or all buckets
 ///     disabled) → 409 `no_covered_pool`.
 #[test_context(TestContext)]
@@ -543,7 +543,7 @@ async fn consume_no_covered_pool_returns_no_covered_pool(ctx: &mut TestContext) 
 // =============================================================================
 
 /// User Story: US-CB-007 (SDK consume) — coverage set total balance < amount.
-/// Covers (BE-T01 scope):
+/// Covers:
 ///   - Covered set resolves, but `sum(remaining_amount) < amount`
 ///     → 409 `insufficient_points` with `have`/`need` fields present.
 #[test_context(TestContext)]
@@ -627,7 +627,7 @@ async fn consume_insufficient_points_returns_insufficient_points(ctx: &mut TestC
 // =============================================================================
 
 /// User Story: US-CB-007 (SDK consume) — coverage-set filter isolation.
-/// Covers (BE-T01 scope):
+/// Covers:
 ///   - User holds a ledger in a Bucket that is NOT covered by the client_app.
 ///   - Consume with an amount larger than the covered pool balance should
 ///     reject (insufficient) and NEVER touch the unauthorized pool's wallet.
@@ -725,14 +725,14 @@ async fn consume_excludes_unauthorized_bucket(ctx: &mut TestContext) {
 // =============================================================================
 
 /// User Story: US-CB-007 (SDK consume) — multi-pool idempotency replay.
-/// Covers (BE-T01 scope):
+/// Covers:
 ///   - Replaying the same `idempotencyKey` returns 200 with the original
 ///     correlation_id + the same per-bucket transaction set; the user's
 ///     balances are NOT re-deducted.
 ///
 /// NOTE (runtime gap, see file header): the current replay path returns the
 /// cached primary transaction only, not the full N-txn set. This test encodes
-/// the INTENDED contract per design §4.2.2/§5.1; the runner/BE-T06 will see
+/// the INTENDED contract; the runner will see
 /// it fail and triage the underlying gap in service.rs.
 #[test_context(TestContext)]
 #[tokio::test]
@@ -863,19 +863,19 @@ async fn consume_idempotency_replay_returns_same_result_set(ctx: &mut TestContex
 }
 
 // =============================================================================
-// Scenario 8: concurrent consumes do not overdraw (run serially; see BE-T06)
+// Scenario 8: concurrent consumes do not overdraw (run serially)
 // =============================================================================
 
 /// User Story: US-CB-007 (SDK consume) — concurrency safety.
-/// Covers (BE-T01 scope):
+/// Covers:
 ///   - Two concurrent consumes against the same user+covered set whose total
 ///     equals the available balance; the actual deductions never exceed the
 ///     balance (no overdraw).
 ///
 /// Runner note: this test exercises the same `(user, wallet)` row under
 /// concurrency, which is sensitive to DB row locks. It should be executed
-/// serially with the rest of the BE-T01 concurrent subset
-/// (`--test-threads 1`); see BE-T06.
+/// serially with the rest of the concurrent subset
+/// (`--test-threads 1`).
 #[test_context(TestContext)]
 #[tokio::test]
 async fn consume_concurrent_does_not_overdraw(ctx: &mut TestContext) {

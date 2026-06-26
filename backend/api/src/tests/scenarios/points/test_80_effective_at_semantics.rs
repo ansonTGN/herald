@@ -1,8 +1,8 @@
 // =============================================================================
-// point-time BE-T02: effective_at Semantics (P0)
+// effective_at Semantics (P0)
 // =============================================================================
 //
-// Encodes design `.ai/design/point-time.md` §6.1 P0 scenarios 3-5:
+// Encodes design `.ai/design/point-time.md` P0 scenarios 3-5:
 //
 //   3. "未到生效时间不可见/不可消费": a future-effective active row is excluded
 //      from the consumption selection predicate AND from the derived available
@@ -15,10 +15,10 @@
 //   5. "立即可用语义": `effective_at = NULL` ⟺ immediately available — zero
 //      regression for every existing row (which is the production default).
 //
-// All balance assertions in this file use the BE-T01 derived-predicate helpers
+// All balance assertions in this file use the derived-predicate helpers
 // (`assert_derived_balance` / `get_derived_balance_by_credit_type`), mirroring
 // production `compute_available_balance` verbatim. They NEVER read
-// `points_wallets.total_balance` — BE-D11 physically removed that column and
+// `points_wallets.total_balance` — that column was physically removed and
 // the derived SUM is the only available-balance authority under point-time.
 //
 // Ledger rows are seeded with `create_credit_ledger_entry_with_effective_at`
@@ -42,17 +42,17 @@ use test_context::test_context;
 use uuid::Uuid;
 
 // ----------------------------------------------------------------------------
-// Scenario §6.1 #3: future-effective row is invisible & unconsumable
+// Scenario #3: future-effective row is invisible & unconsumable
 // ----------------------------------------------------------------------------
 
 // User Story: US-PU-001 / US-PU-004 / US-PU-005 (future-period credits must
 // not be visible or consumable before their effective time).
 //
-// Covers design §6.1 P0 "未到生效时间不可见/不可消费" + §6.3 risk
+// Covers P0 "未到生效时间不可见/不可消费" + risk
 // "消费可用性谓词增 effective_at：影响 consume/refund/cancel/expire 全场景".
 //
 // Why this test exists: the consumption selection predicate and the derived
-// balance predicate share the same `effective_at <= NOW()` gate (BE-D04). A
+// balance predicate share the same `effective_at <= NOW()` gate. A
 // future-effective active row must therefore be excluded from BOTH the
 // "consumable ledger set" and the "available balance"口径 — otherwise the
 // invariant "balance you see == balance you can spend" breaks and future
@@ -155,13 +155,13 @@ async fn test_future_effective_not_visible_not_consumable(ctx: &mut TestContext)
 }
 
 // ----------------------------------------------------------------------------
-// Scenario §6.1 #4: zero-delay availability — advance clock ONLY, no worker
+// Scenario #4: zero-delay availability — advance clock ONLY, no worker
 // ----------------------------------------------------------------------------
 
 // User Story: US-PU-009 (use this period's credits on time, unaffected by
 // distribution / webhook / scheduler latency).
 //
-// Covers design §6.1 P0 "零延迟可用" + §6.3 risk "派生余额替代 Stored 列读取".
+// Covers P0 "零延迟可用" + risk "派生余额替代 Stored 列读取".
 //
 // Why this test exists: this is THE core point-time correctness claim. A
 // pre-written future-effective ledger row must enter the available set purely
@@ -266,18 +266,18 @@ async fn test_zero_delay_available_advance_clock_only(ctx: &mut TestContext) {
 }
 
 // ----------------------------------------------------------------------------
-// Scenario §6.1 #5: immediate availability when effective_at IS NULL
+// Scenario #5: immediate availability when effective_at IS NULL
 // ----------------------------------------------------------------------------
 
 // User Story: US-PU-001 (view my balance) — zero regression for every existing
-// ledger row, which by construction has `effective_at = NULL` (BE-D01
-// additive migration, no backfill).
+// ledger row, which by construction has `effective_at = NULL` (additive
+// migration, no backfill).
 //
-// Covers design §6.1 P0 "立即可用语义" + §6.3 risk "派生余额替代 Stored 列读
+// Covers P0 "立即可用语义" + risk "派生余额替代 Stored 列读
 // 取：effective_at=NULL 时派生 SUM 与原 Stored 口径逐分桶一致".
 //
 // Why this test exists: the production default for `effective_at` is NULL
-// (column added nullable, no backfill, A6). Every existing row must remain
+// (column added nullable, no backfill). Every existing row must remain
 // immediately available — `effective_at IS NULL OR effective_at <= NOW()`
 // must short-circuit true on NULL. If a future change accidentally made
 // NULL mean "pending" (e.g. tightening the predicate to require a non-NULL

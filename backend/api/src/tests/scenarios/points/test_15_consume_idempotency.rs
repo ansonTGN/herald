@@ -61,7 +61,7 @@ async fn parse_response_body(response: axum::response::Response) -> serde_json::
 }
 
 /// Return the single primary per-bucket transaction from a multi-bucket
-/// consume response (design §4.2.2). Single-pool consumes have exactly one.
+/// consume response. Single-pool consumes have exactly one.
 fn primary_transaction(body: &serde_json::Value) -> &serde_json::Value {
     let txns = body["transactions"]
         .as_array()

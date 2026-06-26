@@ -144,9 +144,9 @@ const CROSS_BUCKET_CONSUME_AMOUNT = 500
 //
 // Consume does NOT take a bucketId — the backend decides cross-bucket
 // allocation by client_app coverage + expiry ordering and returns N
-// per-bucket transactions (design §4.2.2 / §5.1).
+// per-bucket transactions (design).
 
-/** Request body for `POST /api/ext/points/{realmId}/consume` (design §4.2.2). */
+/** Request body for `POST /api/ext/points/{realmId}/consume` (design). */
 interface ConsumePointsExtApiBody {
   userId: string
   amount: number
@@ -155,7 +155,7 @@ interface ConsumePointsExtApiBody {
   idempotencyKey?: string
 }
 
-/** Per-bucket transaction inside the consume response (design §4.2.2). */
+/** Per-bucket transaction inside the consume response (design). */
 interface BucketTransaction {
   transactionId: string
   bucketId: string
@@ -165,7 +165,7 @@ interface BucketTransaction {
   balanceAfter: number
 }
 
-/** Ledger-level allocation (design §4.2.2 / A6). */
+/** Ledger-level allocation (design). */
 interface AllocationDetail {
   bucketId: string
   walletId: string
@@ -174,7 +174,7 @@ interface AllocationDetail {
   allocatedAmount: number
 }
 
-/** Consume success response (design §4.2.2). */
+/** Consume success response (design). */
 interface ConsumePointsResponse {
   userId: string
   amount: number
@@ -183,7 +183,7 @@ interface ConsumePointsResponse {
   allocations: AllocationDetail[]
 }
 
-/** Structured 409 error body (design §4.2.3). */
+/** Structured 409 error body (design). */
 interface ConsumeErrorBody {
   code: string
   message: string
@@ -717,8 +717,8 @@ test.describe('[Regular User / SDK] 购买 Bucket 套餐与跨池消费 (US-CB-0
       expect(typeof body.correlationId).toBe('string')
 
       // The response-level correlationId groups every per-bucket transaction
-      // of this consume (design §4.2.2 / §5.1). This is the load-bearing
-      // A6 contract — NOT a single aggregated transaction.
+      // of this consume (design). This is the load-bearing
+      // contract — NOT a single aggregated transaction.
       expect(body.transactions.length).toBeGreaterThanOrEqual(2)
     })
 
@@ -731,7 +731,7 @@ test.describe('[Regular User / SDK] 购买 Bucket 套餐与跨池消费 (US-CB-0
     })
 
     await test.step('Then: allocations 与 transactions 按 bucket 对账一致', async () => {
-      // allocations are the ledger-level truth source (design §4.2.2 / A6).
+      // allocations are the ledger-level truth source (design).
       // Sum allocations by bucket and compare to transactions by bucket.
       expect(Array.isArray(body.allocations)).toBe(true)
       expect(body.allocations.length).toBeGreaterThan(0)
@@ -812,7 +812,7 @@ test.describe('[Regular User / SDK] 购买 Bucket 套餐与跨池消费 (US-CB-0
         expect(response.status).toBe(409)
         const body = response.body as ConsumeErrorBody
         expect(body?.code).toBe('insufficient_points')
-        // The design §4.2.3 contract surfaces have/need on this error.
+        // The design contract surfaces have/need on this error.
         expect(body?.need).toBe(excessiveAmount)
         expect(typeof body?.have).toBe('number')
       })
@@ -858,7 +858,7 @@ test.describe('[Regular User / SDK] 购买 Bucket 套餐与跨池消费 (US-CB-0
     } = setupCtx!
 
     // Both seeded buckets cover `points-demo-app`, so a normal consume hits
-    // both. The over-scope contract (design §4.2.3 / US-CB-007 场景3) says a
+    // both. The over-scope contract (design / US-CB-007 场景3) says a
     // bucket NOT covering the consume's client app is excluded from
     // transactions. To exercise this deterministically WITHOUT mutating the
     // directory (out of scope — would require admin UI/API writes and break

@@ -16,7 +16,7 @@ use herald_core::domain::authentication::Identity;
 use herald_core::domain::points::dtos::GrantPointsInput;
 use herald_core::domain::points::entities::CreditSourceType;
 
-/// Structured 400 `grant_bucket_required` body (design §4.2.3 / §4.2.4).
+/// Structured 400 `grant_bucket_required` body.
 /// Mirrors the api-ext grant handler contract so consumers see one shape.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,7 +51,7 @@ fn grant_bucket_required_error() -> ApiError {
     tag = "Points"
 )]
 #[tracing::instrument(
-    // BE-D07 governance (§4.5/§5.4): identity carries user_id/realm_id; request
+    // Governance: identity carries user_id/realm_id; request
     // body carries the target user_id; realm_id is conservatively skipped.
     // Only the low-cardinality operation type is recorded.
     skip_all,
@@ -80,7 +80,7 @@ pub async fn grant_points(
         .parse::<Uuid>()
         .map_err(|_| ApiError::bad_request("Invalid user ID"))?;
 
-    // bucketId is REQUIRED (design §4.2.4 / A5): every grant must target an
+    // bucketId is REQUIRED: every grant must target an
     // explicit Credit Bucket. Missing or malformed → 400 grant_bucket_required.
     let bucket_id = match request.bucket_id.as_deref().map(str::trim) {
         Some(s) if !s.is_empty() => match s.parse::<Uuid>() {
@@ -119,9 +119,9 @@ pub async fn grant_points(
         source_id: identity.user_id(),
     };
 
-    // Echo the resolved target bucket back to the caller (design §4.2.3 /
-    // §4.2.4). `GrantPointsOutput` does not carry `bucket_id`, so the input
-    // value is reused — it is the authoritative routing target (A5).
+    // Echo the resolved target bucket back to the caller.
+    // `GrantPointsOutput` does not carry `bucket_id`, so the input
+    // value is reused — it is the authoritative routing target.
     let response_bucket_id = input.bucket_id;
 
     match state

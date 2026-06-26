@@ -1,8 +1,8 @@
 /**
- * bucketId URL search-param parsing (TransactionFilters / design §4.4.2, §4.2.3).
+ * bucketId URL search-param parsing (TransactionFilters).
  *
  * SUT = `transactionBucketSearchSchema` exported from `@/lib/schemas/points-forms`
- * (FE-D06 contract), which backs the `/$realmId/user/points` route's
+ * (its contract), which backs the `/$realmId/user/points` route's
  * `validateSearch`. Tests the business semantic that a malformed URL `bucketId`
  * is not let through — not zod library guarantees.
  */

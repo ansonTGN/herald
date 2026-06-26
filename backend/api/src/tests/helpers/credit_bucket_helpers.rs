@@ -1,14 +1,14 @@
 // =============================================================================
-// Credit Bucket Test Helpers (BE-T01 authoring)
+// Credit Bucket Test Helpers
 // =============================================================================
 //
 // Test-owned helpers for credit-bucket scenario tests. These directly drive the
 // real domain write paths (`PointsService::grant_points_internal` →
 // `PostgresPointsRepository::grant_points_atomic`) so tests exercise the
-// intended multi-bucket contracts (design A5/A6) instead of any single-wallet
+// intended multi-bucket contracts instead of any single-wallet
 // legacy helpers.
 //
-// Owned by the backend-test slot. Extended by BE-T02..BE-T05 in place.
+// Owned by the backend-test slot. Extended in place by later items.
 //
 // =============================================================================
 
@@ -83,8 +83,8 @@ pub async fn create_test_credit_bucket(
 
 /// Attach a Client App to a Bucket (writes a `credit_bucket_client_apps` row).
 ///
-/// Coverage sets are resolved from these explicit rows at consume time (design
-/// §5.1 step 3); no implicit / default bucket is merged in.
+/// Coverage sets are resolved from these explicit rows at consume time; no
+/// implicit / default bucket is merged in.
 pub async fn attach_bucket_client_app(
     pool: &PgPool,
     realm_id: &str,
@@ -109,7 +109,7 @@ pub async fn attach_bucket_client_app(
 /// path (`PointsService::grant_points_internal` → `grant_points_atomic`).
 ///
 /// This routes through the same `bucket_id` parameter the production grant path
-/// uses (design §5.3 / A5) so tests assert the intended multi-bucket behavior.
+/// uses so tests assert the intended multi-bucket behavior.
 /// Returns the new ledger id (i.e. the "transaction" id surfaced by grants).
 pub async fn grant_points_to_bucket(
     ctx: &TestContext,
@@ -134,7 +134,7 @@ pub async fn grant_points_to_bucket(
             source_type,
             amount,
             expires_at,
-            // effective_at: None ⟺ immediately available (BE-D02 added arg).
+            // effective_at: None ⟺ immediately available.
             None,
             source_id,
             description,
@@ -242,14 +242,13 @@ pub async fn consume_points_ext_via_api(
 }
 
 // =============================================================================
-// BE-T02 helpers — fulfillment + subscription lifecycle bucket routing
+// Fulfillment + subscription lifecycle bucket routing helpers
 // =============================================================================
 //
-// Direct-DB and direct-service helpers for design §5.3 (grant/fulfillment
-// bucket routing) + §5.5 (subscription lifecycle reclamation) + decisions A7
-// (in-flight attempt not rerouted on mapping change) + A8 (routing source =
-// `payment_attempt.bucket_id` snapshot; first fulfillment freezes
-// `subscription.bucket_id`).
+// Direct-DB and direct-service helpers for grant/fulfillment bucket routing
+// + subscription lifecycle reclamation (in-flight attempt not rerouted on
+// mapping change; routing source = `payment_attempt.bucket_id` snapshot;
+// first fulfillment freezes `subscription.bucket_id`).
 //
 // These intentionally do NOT replicate webhook signature logic — the existing
 // `billing_helpers` / `webhook_helpers` cover the HTTP path. These helpers
@@ -261,7 +260,7 @@ pub async fn consume_points_ext_via_api(
 /// Attach (or re-attach) a `provider_entitlement_mappings` row to a Bucket by
 /// writing `provider_entitlement_mappings.bucket_id`.
 ///
-/// Used by the A7 regression scenario to re-point the mapping AFTER the
+/// Used by the regression scenario to re-point the mapping AFTER the
 /// purchase attempt is in flight, proving the in-flight attempt still fulfills
 /// to the original snapshot Bucket.
 pub async fn attach_mapping_to_bucket(pool: &PgPool, mapping_id: Uuid, bucket_id: Uuid) {
@@ -288,12 +287,12 @@ pub async fn detach_mapping_from_bucket(pool: &PgPool, mapping_id: Uuid) {
 }
 
 /// Read `subscription.bucket_id` for a subscription. The column is NOT NULL
-/// since the eager-binding migration (design §5.5 / A8: `bucket_id` is frozen
+/// since the eager-binding migration (`bucket_id` is frozen
 /// at subscription creation from the entitlement mapping), so this returns a
 /// flat `Uuid`. Panics if the row does not exist (a missing subscription row
 /// in these scenarios is always a test-setup bug, not a runtime state).
 ///
-/// Used to assert the first-fulfillment snapshot freeze (design A8) and that
+/// Used to assert the first-fulfillment snapshot freeze and that
 /// lifecycle events stay bound to the original Bucket.
 pub async fn read_subscription_bucket(pool: &PgPool, subscription_id: Uuid) -> Uuid {
     sqlx::query_scalar::<_, Uuid>("SELECT bucket_id FROM subscription WHERE id = $1")
@@ -305,7 +304,7 @@ pub async fn read_subscription_bucket(pool: &PgPool, subscription_id: Uuid) -> U
 }
 
 /// Force-set `subscription.bucket_id` to a specific Bucket. The column is NOT
-/// NULL (eager binding — design §5.5 / A8), so callers must pass a real
+/// NULL (eager binding), so callers must pass a real
 /// `bucket_id`. Kept for scenarios that need to re-bind a subscription to a
 /// different Bucket after creation.
 pub async fn set_subscription_bucket(pool: &PgPool, subscription_id: Uuid, bucket_id: Uuid) {
@@ -330,7 +329,7 @@ pub async fn read_attempt_bucket(pool: &PgPool, attempt_id: Uuid) -> Option<Uuid
 
 /// Read the derived available balance for a `(user, bucket)` wallet; returns 0
 /// if no wallet row exists yet (the wallet is created lazily on first grant).
-/// Under point-time (BE-D11) `points_wallets` has no Stored balance columns;
+/// Under point-time `points_wallets` has no Stored balance columns;
 /// the available balance is derived from `points_credit_ledger` using the same
 /// predicate as consumption.
 pub async fn read_wallet_total_balance(
@@ -421,13 +420,13 @@ pub async fn count_ledger_outside_bucket(
 }
 
 // =============================================================================
-// BE-T03 helpers — explicit bucketId grant + registration pool resolution
+// Explicit bucketId grant + registration pool resolution helpers
 // =============================================================================
 //
-// Direct-DB and HTTP helpers for design §5.4 (non-purchase grant bucket target)
-// + §4.3.2 (`receives_registration_credits` + partial unique index
-// `uq_credit_buckets_registration_pool`) + decision A5 (every grant carries an
-// explicit bucketId; no implicit resolution).
+// Direct-DB and HTTP helpers for non-purchase grant bucket target
+// (`receives_registration_credits` + partial unique index
+// `uq_credit_buckets_registration_pool`): every grant carries an
+// explicit bucketId; no implicit resolution.
 //
 // These intentionally rely on the already-landed helpers above and the existing
 // `points_grant_helpers` (admin + ext HTTP builders). They add only the small
@@ -441,7 +440,7 @@ pub async fn count_ledger_outside_bucket(
 /// Mark an existing `credit_buckets` row as the Realm's registration-pool Bucket
 /// by writing `receives_registration_credits = true`.
 ///
-/// Per design §4.3.2 the partial unique index
+/// Per the partial unique index
 /// `uq_credit_buckets_registration_pool ON credit_buckets(realm_id)
 ///  WHERE receives_registration_credits = true` enforces "at most one per Realm"
 /// at the DB layer; a second marker in the same Realm will raise a unique
@@ -474,7 +473,7 @@ pub async fn read_receives_registration_credits(pool: &PgPool, bucket_id: Uuid) 
 
 /// Resolve the Realm's registration-pool Bucket id directly from the DB
 /// (mirrors `RegistrationPoolResolver::resolve_registration_pool_bucket` in
-/// `PostgresBillingRepository`, BE-D07). Returns `None` when no Bucket in the
+/// `PostgresBillingRepository`). Returns `None` when no Bucket in the
 /// Realm is marked.
 pub async fn find_registration_pool_for_realm(pool: &PgPool, realm_id: &str) -> Option<Uuid> {
     sqlx::query_scalar::<_, Option<Uuid>>(
@@ -515,15 +514,14 @@ pub async fn try_mark_registration_pool_raw(
 //
 // Mirror `points_grant_helpers::grant_points_admin_request` /
 // `grant_points_ext_request` but accept an OPTIONAL `bucket_id`. Passing `None`
-// exercises the A5 "missing bucketId → 400 grant_bucket_required" rejection;
-// passing `Some(uuid)` exercises the intended multi-bucket routing (design
-// §4.2.4 / A5).
+// exercises the "missing bucketId → 400 grant_bucket_required" rejection;
+// passing `Some(uuid)` exercises the intended multi-bucket routing.
 //
 // =============================================================================
 
 /// Build a `POST /api/points/{realmId}/grant` (admin) request. When
 /// `bucket_id` is `None` the field is omitted entirely so the handler exercises
-/// the A5 missing-bucketId rejection path.
+/// the missing-bucketId rejection path.
 pub fn grant_points_admin_request_with_bucket(
     realm_id: &str,
     user_id: Uuid,
@@ -595,7 +593,7 @@ pub async fn grant_points_admin_with_bucket_via_api(
 
 /// Build a `POST /api/ext/points/{realmId}/grant` (SDK) request. When
 /// `bucket_id` is `None` the field is omitted entirely so the handler exercises
-/// the A5 missing-bucketId rejection path.
+/// the missing-bucketId rejection path.
 pub fn grant_points_ext_request_with_bucket(
     realm_id: &str,
     user_id: Uuid,
@@ -663,12 +661,12 @@ pub async fn grant_points_ext_with_bucket_via_api(
 }
 
 // =============================================================================
-// BE-T04 helpers — Credit Bucket directory CRUD + overview + delete intercept
+// Credit Bucket directory CRUD + overview + delete intercept helpers
 // =============================================================================
 //
-// Direct-DB seed helpers + HTTP request builders for design §4.2.1/§4.2.2/§4.2.3
-// (Bucket directory CRUD + overview + error contract) + §6.1 "directory CRUD" +
-// decision A4 (NO `is_default` field anywhere).
+// Direct-DB seed helpers + HTTP request builders for the Bucket directory CRUD
+// + overview + error contract + "directory CRUD" testable behavior
+// (NO `is_default` field anywhere).
 //
 // `delete_credit_bucket` (infra `postgres_repository.rs`) rejects when:
 //   - `subscription.bucket_id = $bucket_id` AND status IN
@@ -731,13 +729,13 @@ pub async fn seed_active_subscription_on_bucket(
 /// Seed a `points_wallets` row for `(realm, user, bucket)` plus a
 /// `points_credit_ledger` row of the given `balance` so the
 /// `delete_credit_bucket` "holders with balance" intercept (which reads the
-/// DERIVED available balance post-point-time, BE-D11) fires. Under point-time
+/// DERIVED available balance post-point-time) fires. Under point-time
 /// the wallet has no Stored balance columns; the ledger row is what makes the
 /// derived balance non-zero.
 /// Seed an available `granted_credit` ledger row on a bucket so the derived
-/// Credit Bucket overview (BE-D06) reports a real balance. Under point-time
+/// Credit Bucket overview reports a real balance. Under point-time
 /// `grandTotal` / `byCreditType` are a derived SUM over `points_credit_ledger`
-/// (the wallet Stored balance columns were dropped in BE-D11), so a bucket
+/// (the wallet Stored balance columns were dropped), so a bucket
 /// with only a `points_wallets` analytics row shows zero — tests asserting a
 /// non-zero overview total must seed a real ledger row.
 pub async fn seed_granted_credit_ledger_on_bucket(
@@ -884,17 +882,17 @@ pub async fn auth_admin_request_via_api(
 }
 
 // =============================================================================
-// BE-T05 helpers — per-bucket query surface (wallets / transactions / admin)
+// Per-bucket query surface helpers (wallets / transactions / admin)
 // =============================================================================
 //
-// HTTP request builders for design §4.2.3 query contracts. The user-facing and
-// admin-facing query endpoints in BE-D11 are Served by a single handler at
+// HTTP request builders for the query contracts. The user-facing and
+// admin-facing query endpoints are served by a single handler at
 // `GET /api/points/{realmId}/wallets` (and `.../transactions`) gated on
 // `points.view`; both group rows by `(bucket_id, user_id)` (the admin view
 // therefore expands per `(user, bucket)`). The design's intended
 // `/users/me/points/wallets` / `/billing/points/wallets` distinct routes are a
-// KNOWN contract gap (recorded in BE-T05 `open_questions`); tests exercise the
-// real route that implements the §4.2.3 response contract.
+// KNOWN contract gap (recorded in `open_questions`); tests exercise the
+// real route that implements the response contract.
 //
 // `seed_transaction_on_bucket` writes a `points_transactions` row directly with
 // a known bucket_id so the bucketId filter scenario has deterministic rows
@@ -977,7 +975,7 @@ pub async fn seed_transaction_on_bucket(
     .unwrap_or_else(Uuid::now_v7);
 
     // Insert the wallet row if it did not exist (cheap no-op when already
-    // present via ON CONFLICT). Under point-time (BE-D11) `points_wallets`
+    // present via ON CONFLICT). Under point-time `points_wallets`
     // has no Stored balance columns; available balance is derived.
     sqlx::query(
         r#"INSERT INTO points_wallets

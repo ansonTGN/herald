@@ -182,7 +182,7 @@ async fn test_scenario_user_view_own_balance(ctx: &mut TestContext) {
 /// Scenario 1.3: GET wallet returns a zero-balance user-total view (no row)
 /// ============================================================================
 ///
-/// Credit Buckets model (design §3.1 / §5.1): a wallet is per-(user, bucket).
+/// Credit Buckets model: a wallet is per-(user, bucket).
 /// A bare GET for a user with no wallet returns a synthesized zero-balance
 /// user-total view and does NOT persist a `bucket_id = NULL` row (the column is
 /// NOT NULL). Wallet rows are created lazily only when a grant/consume targets
@@ -279,20 +279,20 @@ async fn test_scenario_get_wallet_auto_creates_empty_wallet(ctx: &mut TestContex
 }
 
 /// ============================================================================
-/// Scenario 1.4 (point-time BE-T09): user PointsWalletResponse does NOT leak
+/// Scenario 1.4: user PointsWalletResponse does NOT leak
 /// future-effective rows
 /// ============================================================================
 ///
 /// User Story: US-PU-001 / US-PU-004 / US-PU-005 (future-period credits must
 /// not be visible to regular users before their effective time).
 ///
-/// Covers design `.ai/design/point-time.md` §6.1 P1 "响应不泄漏未来期积分" +
-/// §6.3 risk "wallet Stored 列读点遗漏：get_balance 之外的 list_wallets ... 若
+/// Covers design `.ai/design/point-time.md` P1 "响应不泄漏未来期积分" +
+/// risk "wallet Stored 列读点遗漏：get_balance 之外的 list_wallets ... 若
 /// 继续读 points_wallets.total_balance 会泄漏未来期积分" (P1).
 ///
 /// Why this test exists: the GET `/wallets/{userId}` response assembles
 /// `balance`/typed balances from the DERIVED SUM (`compute_available_balance`,
-/// design §5.1 A7), whose predicate includes
+/// derived predicate), whose predicate includes
 /// `(effective_at IS NULL OR effective_at <= NOW())`. A future-effective
 /// pre-grant row must therefore NOT show up in the regular-user balance
 /// response — otherwise the invariant "balance you see == balance you can
@@ -406,8 +406,8 @@ async fn test_user_balance_excludes_future_effective(ctx: &mut TestContext) {
     assert_eq!(
         body["balance"].as_i64(),
         Some(amount_immediate),
-        "PointsWalletResponse.balance must be the derived SUM excluding future-effective rows \
-         (design §5.1 A7); expected {} (immediate only), got {:?}",
+        "PointsWalletResponse.balance must be the derived SUM excluding future-effective rows; \
+         expected {} (immediate only), got {:?}",
         amount_immediate,
         body["balance"].as_i64()
     );

@@ -63,8 +63,8 @@ impl EmailProvider for ResendClient {
             html,
         };
 
-        // BE-D10: external.http span + duration histogram. Host-only
-        // (no path, no bearer token, no email HTML body) per governance §5.4.
+        // external.http span + duration histogram. Host-only
+        // (no path, no bearer token, no email HTML body) per governance.
         const RESEND_BASE: &str = "https://api.resend.com";
         let timing = timed_external_http_span(RESEND_BASE, "POST");
         let _span_enter = timing.span().enter();

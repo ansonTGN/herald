@@ -204,12 +204,12 @@ async fn test_subscription_paid_idempotency(ctx: &mut SchemaTestContext) {
 }
 
 // ============================================================================
-// point-time BE-T04 — Subscription pre-grant, period-level idempotency,
-// chained pre-grant, expires_at correction (design §5.2 / §6.1 P0)
+// Subscription pre-grant, period-level idempotency,
+// chained pre-grant, expires_at correction (P0)
 // ============================================================================
 //
-// These tests exercise the period-aware `handle_subscription_paid` path
-// (design §5.2). They invoke the real `subscription_service.handle_subscription_paid`
+// These tests exercise the period-aware `handle_subscription_paid` path.
+// They invoke the real `subscription_service.handle_subscription_paid`
 // directly with a pre-seeded `subscription` + `points_grant_schedules` row
 // (`base_time` = first_period_start, `subscription_id` bound) so the
 // period-level business idempotency gate (`points_grant_records(schedule_id,
@@ -228,7 +228,7 @@ async fn test_subscription_paid_idempotency(ctx: &mut SchemaTestContext) {
 //     schedule, exercising the period path deterministically.
 
 /// Seed a `subscription` row bound to the realm's legacy test bucket and
-/// return its id. Used by BE-T04 tests so the schedule's `subscription_id`
+/// return its id. Used by subscription tests so the schedule's `subscription_id`
 /// and the grant target `bucket_id` are known ahead of the service call.
 async fn seed_subscription_row(
     ctx: &mut SchemaTestContext,
@@ -257,12 +257,12 @@ async fn seed_subscription_row(
     .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
-    .expect("Failed to seed subscription row for BE-T04");
+    .expect("Failed to seed subscription row");
     subscription_id
 }
 
 /// User Story: US-PU-009 (use current-period points without distribution delay).
-/// Covers (design §6.1 P0 — 订阅预生成):
+/// Covers (P0 — 订阅预生成):
 ///   - Subscription activation grants the CURRENT period (`effective_at =
 ///     period_start <= now` ⟺ immediately available) AND pre-grants the NEXT
 ///     period (`effective_at = next_period_start`, future) atomically.
@@ -416,7 +416,7 @@ async fn test_subscription_activation_writes_current_and_pregrants_next(
 }
 
 /// User Story: US-PU-009 (renewal must not double-grant).
-/// Covers (design §6.1 P0 — 续费幂等 + §6.3 P1 business idempotency dimension
+/// Covers (P0 — 续费幂等 + P1 business idempotency dimension
 /// shift): when a pre-grant and a formal renewal webhook converge on the same
 /// `(schedule_id, period_number)`, the `points_grant_records` UNIQUE constraint
 /// is the primary dedup. The renewal must NOT re-grant; it only CORRECTS the
@@ -547,7 +547,7 @@ async fn test_subscription_renewal_period_idempotency(ctx: &mut SchemaTestContex
     );
 
     // --- And: the pre-granted ledger's expires_at was CORRECTED to the
-    // provider's actual period_end (design §5.2).
+    // provider's actual period_end.
     let corrected_ledger = get_ledger_by_id(ctx, pregrant_ledger_id).await;
     assert_eq!(
         corrected_ledger.expires_at,
@@ -575,7 +575,7 @@ async fn test_subscription_renewal_period_idempotency(ctx: &mut SchemaTestContex
 
 /// User Story: US-PU-009 (duplicate provider webhook delivery must not
 /// double-grant).
-/// Covers (design §6.1 P0 — provider event-level idempotency preserved):
+/// Covers (P0 — provider event-level idempotency preserved):
 /// when the SAME `event_id` is delivered twice, the webhook layer's
 /// idempotency_service (`creem_{event_id}` key) returns the cached result on
 /// the second hit and does NOT re-enter `handle_subscription_paid`. This is
@@ -598,7 +598,7 @@ async fn test_subscription_renewal_event_idempotency(ctx: &mut SchemaTestContext
     create_points_wallet(ctx, user_id, &realm_id).await;
 
     // Build a subscription.paid webhook with `currentPeriodStart` so the
-    // period-normalization layer resolves a real window (A8 P0). The default
+    // period-normalization layer resolves a real window (P0). The default
     // `build_subscription_paid_event` helper omits `currentPeriodStart`.
     let now = chrono::Utc::now();
     let period_start_str = now.to_rfc3339();
@@ -653,7 +653,7 @@ async fn test_subscription_renewal_event_idempotency(ctx: &mut SchemaTestContext
 }
 
 /// User Story: US-PU-009 (always one period ahead — no distribution vacuum).
-/// Covers (design §5.2 / §6.1 P0 — 链式预生成): after a renewal webhook hits
+/// Covers (P0 — 链式预生成): after a renewal webhook hits
 /// (whether it grants the current period fresh or hits an existing
 /// pre-grant), the service CHAINS a pre-grant for `period_number + 1` so
 /// there is always one future-period ledger row waiting.

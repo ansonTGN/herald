@@ -62,7 +62,7 @@ pub fn core_error_to_api_error(e: CoreError, operation: &str) -> ApiError {
         CoreError::Conflict(msg) => ApiError::conflict(msg),
         CoreError::BadRequest(msg) => ApiError::bad_request(msg),
         CoreError::Forbidden(msg) => ApiError::forbidden(msg),
-        // Credit-bucket routing errors (design credit-bucket §4.2.3 / §5.5).
+        // Credit-bucket routing errors.
         // Must surface as client errors (4xx) instead of being swallowed by
         // the 500 fallback; status codes align with `app_errors.rs`.
         CoreError::EntitlementMappingNotFound => {

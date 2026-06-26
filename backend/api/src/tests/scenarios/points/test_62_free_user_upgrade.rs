@@ -77,7 +77,7 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
     .await
     .expect("Failed to enable registration");
 
-    // Materialize the realm's registration-pool bucket (design §4.3.2) so the
+    // Materialize the realm's registration-pool bucket so the
     // registration-bonus grant lands in a credit ledger.
     crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
         &ctx._app_state.pool,
@@ -327,7 +327,7 @@ async fn test_scenario_free_user_downgrade_from_paid(ctx: &mut TestContext) {
     .await
     .expect("Failed to enable registration");
 
-    // Materialize the realm's registration-pool bucket (design §4.3.2).
+    // Materialize the realm's registration-pool bucket.
     crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
         &ctx._app_state.pool,
         &ctx._realm_id,

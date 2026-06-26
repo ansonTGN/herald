@@ -6,8 +6,8 @@ import type { OneTimeMappingItem, PaymentProviderInfo } from '@/lib/api-generate
  * Intent encoded here (Rule 9): an entitlement with one mapping per provider
  * MUST resolve to the mapping whose provider matches the user's payment-method
  * choice — never the originally-clicked card's provider. Backend rejects a
- * targetMappingId whose provider disagrees with the requested paymentProvider
- * (design §4.2.2), so submitting a cross-provider pair is always wrong.
+ * targetMappingId whose provider disagrees with the requested paymentProvider,
+ * so submitting a cross-provider pair is always wrong.
  *
  * Mirrors the demo seed (scripts/lib/demo_seed.py): the `credits-500`
  * entitlement has two mappings, one for `stripe` and one for `creem`.

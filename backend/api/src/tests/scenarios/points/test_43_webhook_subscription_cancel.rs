@@ -227,12 +227,12 @@ async fn test_subscription_cancel_idempotency(ctx: &mut SchemaTestContext) {
 }
 
 // ============================================================================
-// BE-T06: Pre-grant reclaim (row-level positioning, design §5.2 A4 / §6.1 P1)
+// Pre-grant reclaim (row-level positioning, P1)
 // ============================================================================
 //
 // User Story: docs/user-stories/points-billing-events.md
-// Covers: design point-time §6.1 "预生成失败回收（P1）" + §5.2 A4 (row-level
-// reclaim) + A7 (derived balance, no wallet back-adjust).
+// Covers: point-time "预生成失败回收（P1）" + row-level
+// reclaim + derived balance (no wallet back-adjust).
 //
 // These tests isolate the row-level pre-grant reclaim path
 // (`reclaim_pregrant_for_subscription` → `revoke_pregrant_ledger_row_atomic`)
@@ -252,7 +252,7 @@ async fn test_subscription_cancel_idempotency(ctx: &mut SchemaTestContext) {
 /// ALREADY 2, not 1), a pre-granted `points_credit_ledger` row (future-effective
 /// or already effective per `effective_at`), optionally partially consumed, and
 /// the `points_grant_records` bridge row linking schedule+period to the ledger
-/// (the A4 reclaim locator).
+/// (the reclaim locator).
 ///
 /// The reclaim target is `granted_periods` (= 2), so the period-2 pre-grant row
 /// is the row that gets revoked — matching production post-renewal state.
@@ -283,7 +283,7 @@ async fn seed_pregrant_for_reclaim(
     .bind(client_app_id)
     .bind(realm_id)
     .bind(format!("client-{}", client_app_id))
-    .bind("BE-T06 reclaim seed")
+    .bind("reclaim seed")
     .execute(pool)
     .await
     .expect("seed_pregrant: client_app insert");
@@ -356,7 +356,7 @@ async fn seed_pregrant_for_reclaim(
     }
 
     // Bridge row: this is what `ReclaimLocator::BySchedulePeriod` resolves to
-    // locate the ledger row to revoke (design A4 / BE-D05).
+    // locate the ledger row to revoke.
     let period_number: i64 = 2;
     create_grant_record(
         ctx,
@@ -372,7 +372,7 @@ async fn seed_pregrant_for_reclaim(
 }
 
 // ----------------------------------------------------------------------------
-// BE-T06 §6.1 P1 scenario (1): unfulfilled pre-grant row revoked + derived
+// P1 scenario (1): unfulfilled pre-grant row revoked + derived
 // balance excludes it. WHY: the chained next-period row was pre-granted with a
 // future `effective_at`; a cancel webhook must revoke that row row-precisely
 // (via (schedule_id, period_number)), and because available balance is a
@@ -440,7 +440,7 @@ async fn test_pregrant_reclaim_unfulfilled_row_revoked(ctx: &mut SchemaTestConte
     );
     assert_eq!(ledger.used_amount, 0, "nothing was consumed");
 
-    // Derived balance still excludes the now-revoked row (A7: derived SUM
+    // Derived balance still excludes the now-revoked row (derived SUM
     // auto-excludes revoked; no wallet back-adjust was needed).
     assert_derived_balance(ctx, user_id, &realm_id, CreditType::SubscriptionCredit, 0).await;
 
@@ -455,8 +455,8 @@ async fn test_pregrant_reclaim_unfulfilled_row_revoked(ctx: &mut SchemaTestConte
 }
 
 // ----------------------------------------------------------------------------
-// BE-T06 §6.1 P1 scenario (2): reclaim does NOT touch other active credits.
-// WHY: A4 mandates row-precise locator — reclaiming by (schedule_id, period)
+// P1 scenario (2): reclaim does NOT touch other active credits.
+// WHY: row-precise locator — reclaiming by (schedule_id, period)
 // must not cascade to other active subscription/topup credits the user holds.
 // ----------------------------------------------------------------------------
 
@@ -553,8 +553,8 @@ async fn test_pregrant_reclaim_does_not_touch_other_active(ctx: &mut SchemaTestC
 }
 
 // ----------------------------------------------------------------------------
-// BE-T06 §6.1 P1 scenario (3): reclaim does NOT back-adjust the wallet Stored
-// columns (A4+A7). WHY: available balance is a derived SUM — revoking a row
+// P1 scenario (3): reclaim does NOT back-adjust the wallet Stored
+// columns. WHY: available balance is a derived SUM — revoking a row
 // auto-excludes it, so no `apply_wallet_delta(WalletDelta::revoke)` is needed.
 // Asserting the wallet analytics columns are unchanged proves no back-adjust
 // path was silently invoked.
@@ -621,7 +621,7 @@ async fn test_pregrant_reclaim_no_wallet_reverse(ctx: &mut SchemaTestContext) {
 
     assert_eq!(
         before, after,
-        "reclaim must NOT back-adjust wallet analytics/Stored columns (A4+A7): before={before:?} after={after:?}"
+        "reclaim must NOT back-adjust wallet analytics/Stored columns: before={before:?} after={after:?}"
     );
 
     // And the revoked row is excluded from the derived balance.
@@ -629,7 +629,7 @@ async fn test_pregrant_reclaim_no_wallet_reverse(ctx: &mut SchemaTestContext) {
 }
 
 // ----------------------------------------------------------------------------
-// BE-T06 §6.1 P1 scenario (4): partially-consumed pre-grant row records a
+// P1 scenario (4): partially-consumed pre-grant row records a
 // PointsRevocationRecord on reclaim. WHY: when the pre-granted period was
 // already partly spent before the cancel, the consumed portion is a debt the
 // user owes — the reclaim path writes a `PointsRevocationRecord` with
@@ -737,7 +737,7 @@ async fn test_pregrant_reclaim_partial_consumed_records_debt(ctx: &mut SchemaTes
 }
 
 // ----------------------------------------------------------------------------
-// BE-T06 §6.1 P1 scenario (6): event-level idempotency. WHY: webhook
+// P1 scenario (6): event-level idempotency. WHY: webhook
 // providers redeliver; a second cancel event with the same event_id must be a
 // no-op — the row is already revoked, and no second PointsRevocationRecord or
 // additional revoked_amount may be written.
@@ -819,7 +819,7 @@ async fn test_pregrant_reclaim_event_idempotency(ctx: &mut SchemaTestContext) {
 }
 
 // ----------------------------------------------------------------------------
-// BE-T06 §6.1 P1 regression: off-by-one in `reclaim_pregrant_for_subscription`
+// P1 regression: off-by-one in `reclaim_pregrant_for_subscription`
 // target period. WHY: the reclaim target must be `granted_periods` (the
 // highest-numbered period row, which is the future-effective pre-grant),
 // NOT `granted_periods + 1`. The earlier `+1` code pointed one period too

@@ -1,10 +1,10 @@
 // =============================================================================
-// point-time BE-T08: worker-down + read-path realization + fail-loud (P0/P2)
+// worker-down + read-path realization + fail-loud (P0/P2)
 // =============================================================================
 //
-// Encodes design `.ai/design/point-time.md` §6.1 P0 "worker 未运行仍可用" +
-// "读路径兑现 US-FU-004 场景 1.1" + §6.1 P2 "读路径兑现写入失败 fail-loud",
-// with the realization logic pinned by §5.3.1 + decision A9.
+// Encodes design `.ai/design/point-time.md` P0 "worker 未运行仍可用" +
+// "读路径兑现 US-FU-004 场景 1.1" + P2 "读路径兑现写入失败 fail-loud",
+// with the realization logic pinned by the design below.
 //
 // CORE INVARIANTS under test (the hardest scenarios in the whole feature):
 //
@@ -12,7 +12,7 @@
 //     free-periodic schedule is realized on the READ path — calling
 //     `PointsService::get_balance` (or `consume_points`) grants the due
 //     period and the derived balance reflects it. No worker tick is needed
-//     (design A9: worker is preheat, not a correctness boundary).
+//     (worker is preheat, not a correctness boundary).
 //
 //  2. N=3 CAP: realization grants at most 3 due schedules in one call
 //     (`find_due_free_grant_schedules_for_user(... limit=3)`); the schedule
@@ -37,19 +37,19 @@
 //     to `BadRequest("Insufficient points balance...")` (which is the
 //     400-mapping `CoreError::insufficient_points` variant) — masking a
 //     system write fault as user "low balance" is precisely the
-//     anti-pattern §5.3.1 forbids.
+//     anti-pattern the design forbids.
 //
-// All balance assertions use the BE-T01 derived-predicate helpers
+// All balance assertions use the derived-predicate helpers
 // (`assert_derived_balance` / `get_derived_balance_by_credit_type`) — these
 // mirror production `compute_available_balance` verbatim and NEVER read
-// `points_wallets.total_balance` (physically removed by BE-D11).
+// `points_wallets.total_balance` (physically removed).
 //
 // Worker is NEVER started or invoked in this file. Clock progression is
 // simulated via SQL UPDATE on schedule rows (`advance_schedule` helper) or
 // by seeding `next_grant_time` at the desired offset, mirroring the
 // virtual-clock idiom established in test_80 / testing.md.
 //
-// Provenance labels for fail-loud (BE-A02 evidence strength):
+// Provenance labels for fail-loud (evidence strength):
 //   * test_realization_failure_fail_loud_get_balance_5xx
 //       → service-direct Err propagation (CoreError::DatabaseError).
 //     The HTTP 500 mapping is verifiable in `app_errors.rs::status_code()`
@@ -78,15 +78,15 @@ use test_context::test_context;
 use uuid::Uuid;
 
 // =============================================================================
-// Scenario §6.1 "worker 未运行仍可用" (子用例 b) + US-FU-004 场景 1.1
+// Scenario "worker 未运行仍可用" (子用例 b) + US-FU-004 场景 1.1
 // =============================================================================
 
 // User Story: US-FU-004 scenario 1.1 (free user receives each period's free
 // credits on time even when the worker never runs).
 //
-// Covers design §6.1 P0 "免费周期——不启动 worker，`get_balance`/消费入口经
-// `reconcile_due_for_user` 同步补写本期行" + §5.3.1 (single-user, idempotent,
-// lead_time=0, subscription_id IS NULL only, fail-loud 5xx) + decision A9
+// Covers P0 "免费周期——不启动 worker，`get_balance`/消费入口经
+// `reconcile_due_for_user` 同步补写本期行" + (single-user, idempotent,
+// lead_time=0, subscription_id IS NULL only, fail-loud 5xx) +
 // (worker is preheat, not correctness).
 //
 // WHY this test exists: this is THE central point-time correctness backstop
@@ -172,7 +172,7 @@ async fn test_free_periodic_worker_down_read_path_realization(ctx: &mut TestCont
 }
 
 // ----------------------------------------------------------------------------
-// Scenario §6.1 "读路径兑现 (P0)" — consume entry-point also triggers
+// Scenario "读路径兑现 (P0)" — consume entry-point also triggers
 // realization, so a consume request immediately after period start succeeds
 // without any worker tick.
 // ----------------------------------------------------------------------------
@@ -180,8 +180,8 @@ async fn test_free_periodic_worker_down_read_path_realization(ctx: &mut TestCont
 // User Story: US-FU-004 scenario 1.1 (consume after period start succeeds
 // because consume also reconciles inline).
 //
-// Covers design §6.1 P0 "免费周期——`get_balance`/消费入口经
-// `reconcile_due_for_user` 同步补写本期行" + §5.3.1 "顺序保证：消费入口
+// Covers P0 "免费周期——`get_balance`/消费入口经
+// `reconcile_due_for_user` 同步补写本期行" + "顺序保证：消费入口
 // 固定为 reconcile_due_for_user → find_active_ledgers_for_update".
 //
 // WHY this test exists: the design places realization at BOTH read entries
@@ -262,7 +262,7 @@ async fn test_free_periodic_consume_triggers_realization(ctx: &mut TestContext) 
 }
 
 // =============================================================================
-// Scenario §6.1 "读路径兑现 (P0)" — concurrent get_balance calls do NOT
+// Scenario "读路径兑现 (P0)" — concurrent get_balance calls do NOT
 // double-grant (idempotency).
 // =============================================================================
 
@@ -270,8 +270,8 @@ async fn test_free_periodic_consume_triggers_realization(ctx: &mut TestContext) 
 // concurrent requests — free credits are bounded and double-granting would
 // break accounting invariants).
 //
-// Covers design §5.3.1 "幂等：points_grant_records(schedule_id, period_number)
-// UNIQUE + schedule 行 FOR UPDATE，并发请求天然去重" + §6.1 "并发请求不重复发放".
+// Covers "幂等：points_grant_records(schedule_id, period_number)
+// UNIQUE + schedule 行 FOR UPDATE，并发请求天然去重" + "并发请求不重复发放".
 //
 // WHY this test exists: the read path is hit by every balance/consume
 // request — including concurrent ones (e.g. multiple tabs, retry storms).
@@ -377,15 +377,15 @@ async fn test_realization_concurrent_no_duplicate_grant(ctx: &mut TestContext) {
 }
 
 // =============================================================================
-// Scenario §6.1 "兑现期数上限 N (默认 3)"
+// Scenario "兑现期数上限 N (默认 3)"
 // =============================================================================
 
 // User Story: US-FU-004 (the read-path backstop must stay bounded — a single
 // request must not write an unbounded number of ledger rows when many
 // schedules are overdue).
 //
-// Covers design §5.3.1 "兑现上限 N (默认 3 期/请求): worker 长宕机时不一次性
-// 放出大量历史期" + §6.1 "兑现期数上限 N 生效".
+// Covers "兑现上限 N (默认 3 期/请求): worker 长宕机时不一次性
+// 放出大量历史期" + "兑现期数上限 N 生效".
 //
 // WHY this test exists: if the worker is down for a long time and a user
 // accumulates many due schedules (one per realm/bucket/entitlement
@@ -496,14 +496,14 @@ async fn test_realization_period_cap_n(ctx: &mut TestContext) {
 }
 
 // =============================================================================
-// Scenario §6.1 "兑现 lead_time=0"
+// Scenario "兑现 lead_time=0"
 // =============================================================================
 
 // User Story: US-FU-004 (realization is a catch-up path, not a pre-grant
 // path — it must not grant future periods early).
 //
-// Covers design §5.3.1 "lead_time=0: 兑现只补 next_grant_time<=now 的已到期
-// (不提前), 提前预生成由 worker PointsPreGrantJob 负责" + §6.1 "兑现 lead_time=0".
+// Covers "lead_time=0: 兑现只补 next_grant_time<=now 的已到期
+// (不提前), 提前预生成由 worker PointsPreGrantJob 负责" + "兑现 lead_time=0".
 //
 // WHY this test exists: the worker pre-grants with a `lead_time_map` (Daily
 // = 1h, Monthly = 24h, etc.) — it may write a row for the NEXT period before
@@ -561,15 +561,15 @@ async fn test_realization_lead_time_zero_no_advance(ctx: &mut TestContext) {
 }
 
 // =============================================================================
-// Scenario §6.1 "兑现仅 subscription_id IS NULL"
+// Scenario "兑现仅 subscription_id IS NULL"
 // =============================================================================
 
 // User Story: US-PU-009 (subscription grant fulfillment must NOT be guessed
 // by the request path — it relies on event-driven chained pre-grant, not on
 // read-path reconciliation).
 //
-// Covers design §5.3.1 "订阅不在读路径兑现: reconcile_due_for_user 只选择
-// subscription_id IS NULL 的免费周期 schedule" + §6.1 "兑现仅
+// Covers "订阅不在读路径兑现: reconcile_due_for_user 只选择
+// subscription_id IS NULL 的免费周期 schedule" + "兑现仅
 // subscription_id IS NULL".
 //
 // WHY this test exists: subscriptions have a real provider (Stripe/Creem)
@@ -630,15 +630,15 @@ async fn test_realization_skips_subscription_schedule(ctx: &mut TestContext) {
 }
 
 // =============================================================================
-// Scenario §6.1 "读路径兑现写入失败 fail-loud (P2)" — get_balance
+// Scenario "读路径兑现写入失败 fail-loud (P2)" — get_balance
 // =============================================================================
 
 // User Story: US-FU-004 (system write faults must surface as system errors,
 // not be masked as user-visible "low balance").
 //
-// Covers design §5.3.1 "失败行为 (错误语义钉死): get_balance/消费入口若 due
+// Covers "失败行为 (错误语义钉死): get_balance/消费入口若 due
 // schedule 存在且兑现写入失败，必须 fail loud...不得静默降级为旧余额或
-// InsufficientBalance" + §6.1 "读路径兑现写入失败 fail-loud (P2)".
+// InsufficientBalance" + "读路径兑现写入失败 fail-loud (P2)".
 //
 // WHY this test exists: this is the most important defensive assertion in
 // the realization design. If a write fault (DB error, constraint violation,
@@ -668,7 +668,7 @@ async fn test_realization_skips_subscription_schedule(ctx: &mut TestContext) {
 // `PointsService::get_balance` directly (the HTTP `get_wallet` route does
 // not invoke `reconcile_due_for_user`); the asserted variant
 // (`CoreError::DatabaseError`) maps to HTTP 500 INTERNAL_SERVER_ERROR via
-// `app_errors.rs::status_code()`. BE-A02 should treat this as
+// `app_errors.rs::status_code()`. This should be treated as
 // service-level fail-loud evidence; HTTP-level fail-loud would require an
 // additional test exercising a route that calls reconcile_due_for_user
 // (the consume SDK route is the natural candidate — see the next test).
@@ -764,15 +764,15 @@ async fn test_realization_failure_fail_loud_get_balance_5xx(ctx: &mut TestContex
 }
 
 // ----------------------------------------------------------------------------
-// Scenario §6.1 "读路径兑现写入失败 fail-loud (P2)" — consume entry-point
+// Scenario "读路径兑现写入失败 fail-loud (P2)" — consume entry-point
 // ----------------------------------------------------------------------------
 
 // User Story: US-PU-009 (the SDK consume path must also fail loud — it must
 // not fabricate an `InsufficientBalance` response when the real cause is a
 // realization write fault).
 //
-// Covers design §5.3.1 "SDK 消费入口返回既有 infra 错误码 (不产出
-// InsufficientBalance)" + §6.1 "SDK 消费入口同样 fail-loud".
+// Covers "SDK 消费入口返回既有 infra 错误码 (不产出
+// InsufficientBalance)" + "SDK 消费入口同样 fail-loud".
 //
 // WHY this test exists: the consume path runs `reconcile_due_for_user` and
 // THEN opens the consume transaction. If realization fails inside that
@@ -875,7 +875,7 @@ async fn test_realization_failure_consume_fail_loud(ctx: &mut TestContext) {
 }
 
 // =============================================================================
-// Scenario §6.1 "worker 未运行仍可用 (子用例 a)" — subscription chained
+// Scenario "worker 未运行仍可用 (子用例 a)" — subscription chained
 // pre-grant survives worker downtime via the effective_at predicate.
 // =============================================================================
 
@@ -883,9 +883,8 @@ async fn test_realization_failure_consume_fail_loud(ctx: &mut TestContext) {
 // job not running ⟹ the chained pre-grant row written at the previous
 // renewal still satisfies the period via the effective_at predicate).
 //
-// Covers design §6.1 P0 "订阅——不启动 worker，靠激活/续费时链式预生成的既有
-// 行 + effective_at 谓词" + §5.3.1 "订阅靠 §5.2 事件驱动链式预生成满足" +
-// decision A9.
+// Covers P0 "订阅——不启动 worker，靠激活/续费时链式预生成的既有
+// 行 + effective_at 谓词" + "订阅靠 事件驱动链式预生成满足".
 //
 // WHY this test exists: subscription correctness does NOT depend on the
 // worker. At each renewal confirmation, `handle_subscription_paid` writes
@@ -900,10 +899,10 @@ async fn test_realization_failure_consume_fail_loud(ctx: &mut TestContext) {
 // the row enters the available set immediately. This mirrors the test_80
 // zero-delay test but in the subscription scenario context.
 //
-// Test boundary note (BE-T08 scope): we do NOT exercise the webhook handler
-// itself (that's BE-T04). We seed the chained pre-grant row directly via
-// the BE-T01 `create_credit_ledger_entry_with_effective_at` helper and
-// focus on the worker-down availability claim — the part BE-T08 owns.
+// Test boundary note: we do NOT exercise the webhook handler
+// itself (that is covered elsewhere). We seed the chained pre-grant row directly via
+// the `create_credit_ledger_entry_with_effective_at` helper and
+// focus on the worker-down availability claim — the part this file owns.
 #[test_context(TestContext)]
 #[tokio::test]
 async fn test_subscription_worker_down_still_available_via_chained_pregrant(ctx: &mut TestContext) {

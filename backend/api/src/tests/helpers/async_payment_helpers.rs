@@ -175,7 +175,7 @@ pub async fn get_payment_attempt_status(
 
 /// Get topup_balance for a user's wallet.
 ///
-/// BE-D11: `points_wallets.topup_balance` was dropped; available topup balance
+/// `points_wallets.topup_balance` was dropped; available topup balance
 /// is derived from `points_credit_ledger` (topup + registration + free_periodic).
 pub async fn get_topup_balance(ctx: &SchemaTestContext, user_id: Uuid, realm_id: &str) -> i64 {
     sqlx::query_scalar::<_, i64>(
@@ -201,7 +201,7 @@ pub async fn get_topup_balance(ctx: &SchemaTestContext, user_id: Uuid, realm_id:
 
 /// Get subscription_balance for a user's wallet.
 ///
-/// BE-D11: `points_wallets.subscription_balance` was dropped; available
+/// `points_wallets.subscription_balance` was dropped; available
 /// subscription balance is derived from `points_credit_ledger`.
 pub async fn get_subscription_balance(
     ctx: &SchemaTestContext,

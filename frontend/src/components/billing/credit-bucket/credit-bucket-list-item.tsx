@@ -14,7 +14,7 @@ interface CreditBucketListItemProps {
  *
  * Surfaces: name, disabled badge (when `enabled=false`), registration-pool
  * badge (`receivesRegistrationCredits`), displayOrder, coveredClientAppCount,
- * entitlementMappingCount. NO isDefault badge/control anywhere (design A4).
+ * entitlementMappingCount. NO isDefault badge/control anywhere.
  */
 export function CreditBucketListItem({ bucket, selected, onSelect }: CreditBucketListItemProps) {
   return (

@@ -1340,7 +1340,7 @@ test.describe('[Regular User] TOTP 综合演示测试', () => {
   })
 
   // ============================================================================
-  // Keyboard Navigation Accessibility Tests (DEMO-D06)
+  // Keyboard Navigation Accessibility Tests
   // ============================================================================
 
   test.describe('Keyboard Navigation Accessibility', () => {
@@ -1592,7 +1592,7 @@ test.describe('[Regular User] TOTP 综合演示测试', () => {
   })
 
   // ============================================================================
-  // Animation and Micro-Interaction Tests (DEMO-D05)
+  // Animation and Micro-Interaction Tests
   // ============================================================================
 
   test.describe('Animation and Micro-Interactions', () => {

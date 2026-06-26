@@ -1,4 +1,4 @@
-//! Shared external-HTTP observability helper (BE-D10).
+//! Shared external-HTTP observability helper.
 //!
 //! A single shared mechanism that all outbound HTTP clients
 //! (`herald-infra-stripe`, `herald-infra-creem`, `herald-infra-wechat`,
@@ -6,7 +6,7 @@
 //! call to produce a consistent `external.http` tracing span and a
 //! `external.http.duration` histogram measurement.
 //!
-//! # Sensitive-data governance (`.ai/design/observability.md` §5.4)
+//! # Sensitive-data governance (`.ai/design/observability.md`)
 //!
 //! Only **low-cardinality, non-sensitive** attributes are ever recorded, on
 //! both the span and the histogram:
@@ -32,11 +32,11 @@
 //!
 //! # Baseline behavior
 //!
-//! Under the baseline (`traces_enabled=false`, BE-D03/BE-D04) the span is
+//! Under the baseline (`traces_enabled=false`) the span is
 //! still created in-process (cheap) but is not exported because no OTel traces
 //! layer is installed. The histogram is always recorded; if no meter provider
 //! has been set yet, `global::meter(...)` returns a no-op meter (acceptable —
-//! BE-D04 sets the provider at main startup).
+//! the provider is set at main startup).
 
 use opentelemetry::KeyValue;
 use opentelemetry::global;
@@ -45,7 +45,7 @@ use tracing::Span;
 /// Histogram instrument name for outbound HTTP request duration.
 pub const EXTERNAL_HTTP_DURATION_METRIC: &str = "external.http.duration";
 
-/// Meter name shared with the RED middleware (BE-D05) — kept consistent so all
+/// Meter name shared with the RED middleware — kept consistent so all
 /// Herald metrics land under one instrumentation scope.
 const METER_NAME: &str = "herald-api";
 
@@ -97,7 +97,7 @@ pub fn external_http_span(host: &str, method: &str) -> Span {
 /// `std::time::Instant`). The only attribute recorded is `external.host`
 /// (sanitized to the bare domain).
 ///
-/// If no meter provider has been registered (e.g. before BE-D04 runs at main
+/// If no meter provider has been registered (e.g. before main
 /// startup), `global::meter(...)` returns a no-op meter and this call is
 /// effectively free.
 pub fn record_external_http_duration(host: &str, elapsed: std::time::Duration) {
@@ -164,7 +164,7 @@ mod tests {
     use tracing_subscriber::prelude::*;
 
     // =====================================================================
-    // Pre-existing (authored by BE-D10, left unchanged): pure-function host
+    // Pre-existing (left unchanged): pure-function host
     // reduction + span-build-no-panic smoke test. These establish the
     // `sanitize_host` contract the field-level tests below build on.
     // =====================================================================
@@ -200,11 +200,11 @@ mod tests {
         let _enter = span.enter();
         // The span records external.host and http.request.method only — no
         // assertion on the raw value is possible without a subscriber, which
-        // is the test slot's (BE-T04) responsibility.
+        // is the test slot's responsibility.
     }
 
     // =====================================================================
-    // BE-T04 (newly added): field-level span governance.
+    // Field-level span governance.
     //
     // The two tests above only assert `sanitize_host` in isolation and that
     // the span builds without panicking — neither inspects what the span
@@ -213,17 +213,17 @@ mod tests {
     // production helper, emit one event inside it (so the fmt layer flushes
     // the span fields), and assert on the serialized JSON. This is the same
     // harness pattern used by the request_id span tests in
-    // `herald-api::observability::metrics_extractor` (BE-T02).
+    // `herald-api::observability::metrics_extractor`.
     //
-    // Covers: design `.ai/design/observability.md` §5.4 (external HTTP
+    // Covers: design `.ai/design/observability.md` (external HTTP
     // target + attribute allow-list `external.host` domain, no path/query)
-    // and §4.5 (governance: no full URL / api_key / token / payload).
+    // and (governance: no full URL / api_key / token / payload).
     // =====================================================================
 
     /// In-memory `MakeWriter` capturing the fmt layer's bytes into a shared
     /// buffer. Canonical `MockWriter` pattern from the tracing-subscriber
     /// test suite (its `MockMakeWriter` is not publicly exported in 0.3.x).
-    /// Mirrors BE-T02's harness verbatim to keep one pattern across the
+    /// Mirrors the request_id span harness verbatim to keep one pattern across the
     /// observability test slot.
     #[derive(Clone)]
     struct BufWriter(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
@@ -296,13 +296,13 @@ mod tests {
     /// record the request path or query, because those carry secrets and
     /// correlation ids that would be leaked to logs / traces: OAuth `code=`,
     /// WeChat `out_trade_no`, Stripe `types[]=`, `realm_id`, `session_id`
-    /// (design §4.5, §5.4). The defense is layered: callers SHOULD pass the
+    /// The defense is layered: callers SHOULD pass the
     /// host only, but [`external_http_span`] must also strip a fuller string
     /// if one slips through. This test deliberately passes a full URL with a
     /// secret-bearing query and asserts the recorded `external.host` is the
     /// bare domain and contains NONE of the path/query/secret substrings.
-    /// Covers: BE-D10 handoff "host 仅域名" + §5.4 allow-list + §4.5 governance.
-    /// Failure here MUST be delegated to BE-D10 (production helper fix) — this
+    /// Covers: handoff "host 仅域名".
+    /// Failure here MUST be delegated to production helper fix — this
     /// item does not modify production code.
     #[test]
     fn external_http_span_strips_path_and_query_from_host() {
@@ -346,7 +346,7 @@ mod tests {
     /// names appear as a recorded span attribute. If a future change adds a
     /// `token`/`api_key`/`secret`/`authorization` field to the
     /// `info_span!` macro, this test fails.
-    /// Covers: BE-D10 handoff "api_key/token 绝不入 span" + §4.5 governance.
+    /// Covers: handoff "api_key/token 绝不入 span".
     #[test]
     fn external_http_span_excludes_api_key_and_token_fields() {
         let captured = drive_span_through_json_subscriber(
@@ -397,7 +397,7 @@ mod tests {
     /// request method (low cardinality: GET/POST/...) so ops can slice
     /// external-call latency/error by verb without scraping the reqwest
     /// call site. This test asserts the field EXISTS on the recorded span.
-    /// Covers: BE-D10 handoff allow-list (`http.request.method`) + §5.4.
+    /// Covers: handoff allow-list (`http.request.method`).
     #[test]
     fn external_http_span_records_method() {
         let captured = drive_span_through_json_subscriber("https://api.stripe.com", "POST");
@@ -419,8 +419,8 @@ mod tests {
     /// against. This test asserts the span records ONLY `external.host` and
     /// `http.request.method` from the URL family — none of the URL-bearing
     /// attribute names appears.
-    /// Covers: BE-D10 handoff allow-list ("ONLY external.host +
-    /// http.request.method") + §4.5 governance.
+    /// Covers: handoff allow-list ("ONLY external.host +
+    /// http.request.method").
     #[test]
     fn external_http_span_has_no_url_path_or_query_attributes() {
         let captured = drive_span_through_json_subscriber("https://api.mch.weixin.qq.com", "GET");
@@ -442,17 +442,17 @@ mod tests {
 
     // ---------------------------------------------------------------------
     // Test (new): host reduction works for the 5 distinct external-HTTP
-    // clients BE-D10 covers (Stripe / Creem / WeChat Pay / Resend email /
+    // clients covered (Stripe / Creem / WeChat Pay / Resend email /
     // OAuth provider), locking the variety in.
     // ---------------------------------------------------------------------
 
-    /// User Story: Technical invariant — the 5 outbound HTTP targets BE-D10
-    /// instruments (Stripe, Creem, WeChat Pay, Resend, OAuth provider) all
+    /// User Story: Technical invariant — the 5 outbound HTTP targets
+    /// instrumented (Stripe, Creem, WeChat Pay, Resend, OAuth provider) all
     /// reduce to their bare public domain when passed through the helper, so
     /// low-cardinality `external.host` labels stay stable per provider. This
     /// guards against a regression that would (e.g.) keep a per-realm
     /// `out_trade_no` path segment on the WeChat host.
-    /// Covers: BE-D10 handoff "host 仅域名（api.stripe.com 等）" + §5.4.
+    /// Covers: handoff "host 仅域名（api.stripe.com 等）".
     #[test]
     fn external_http_span_reduces_all_client_hosts() {
         for (host_input, expected_bare) in [
@@ -483,14 +483,14 @@ mod tests {
 
     /// User Story: Technical invariant — every outbound HTTP call records a
     /// duration on the global meter via [`record_external_http_duration`].
-    /// At main startup the provider is set (BE-D04), but in unit tests (and
+    /// At main startup the provider is set, but in unit tests (and
     /// briefly during main init) no provider is registered, so
     /// `global::meter(...)` returns a no-op meter. The call MUST NOT panic in
     /// either case — a panic here would crash the process on every outbound
     /// request. This test calls it both paths (bare host and full URL input)
     /// and asserts no panic; it does not inspect the recorded value (that is
     /// OTel internals, out of scope).
-    /// Covers: BE-D10 handoff "duration histogram record 不 panic" + §6.1.
+    /// Covers: handoff "duration histogram record 不 panic".
     #[test]
     fn record_external_http_duration_does_not_panic_without_provider() {
         // Bare host: the normal caller input.

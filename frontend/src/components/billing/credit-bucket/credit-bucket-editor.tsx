@@ -42,13 +42,13 @@ interface CreditBucketEditorProps {
  * Two modes share this component:
  * - create (`bucket === null`) → `useCreateCreditBucket`, bucketKey editable
  * - update (`bucket !== null`) → `useUpdateCreditBucket(realmId, bucket.id)`,
- *   bucketKey read-only (immutable identity, design §4.2.3)
+ *   bucketKey read-only (immutable identity)
  *
  * `receivesRegistrationCredits` Switch: when the server returns 409
  * `registration_pool_conflict` (another bucket already holds the registration
  * pool), a destructive Alert surfaces the conflict and instructs the admin to
  * unset it on the other bucket first — no silent override. NO isDefault
- * control anywhere (design A4).
+ * control anywhere.
  */
 export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: CreditBucketEditorProps) {
   const isCreate = bucket === null
@@ -57,7 +57,7 @@ export function CreditBucketEditor({ realmId, bucket, formKey, onSaved }: Credit
   const createMutation = useCreateCreditBucket(realmId)
   const updateMutation = useUpdateCreditBucket(realmId, bucketId)
 
-  // Coverage-set option source + mappings option source (FE-D01 query options).
+  // Coverage-set option source + mappings option source (query options).
   const { data: clientAppsData, isLoading: clientAppsLoading } = useQuery({
     ...clientAppsQueryOptions(realmId, { pageSize: 100 }),
   })

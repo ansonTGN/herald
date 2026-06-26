@@ -1,21 +1,21 @@
 // =============================================================================
-// point-time BE-T09: response/wallet-list non-leak + DTO effective_at hiding
+// response/wallet-list non-leak + DTO effective_at hiding
 // =============================================================================
 //
 // Encodes design `.ai/design/point-time.md`:
-//   * §6.1 P1 "管理员钱包列表不泄漏未来期积分" — `list_wallets` cross-user
+//   * P1 "管理员钱包列表不泄漏未来期积分" — `list_wallets` cross-user
 //     batched derived assembly must not leak future-effective rows.
-//   * §4.2 / §5.1 P1-2 — `PointsTransactionResponse.effective_at` is
+//   * P1-2 — `PointsTransactionResponse.effective_at` is
 //     admin/audit-only. A `points.view` (regular user) response MUST have the
 //     `effectiveAt` JSON key ABSENT (via `skip_serializing_if`); a
 //     `points.manage` (admin) response MUST include the key with the real
 //     ledger value when the source row carries one.
-//   * §6.3 risk "wallet Stored 列读点遗漏" (P1).
+//   * risk "wallet Stored 列读点遗漏" (P1).
 //
-// All derived-balance cross-checks use the BE-T01 helpers
+// All derived-balance cross-checks use the helpers
 // (`assert_derived_balance`, `count_future_effective_active_rows`); they mirror
 // production `compute_available_balance` verbatim and never read
-// `points_wallets` Stored columns (BE-D11 removed those — derived SUM is the
+// `points_wallets` Stored columns (those were removed — derived SUM is the
 // sole available-balance authority under point-time).
 //
 // HTTP response JSON is inspected via `serde_json::Value` so we can assert
@@ -45,11 +45,11 @@ use uuid::Uuid;
 // Shared local helpers
 // =============================================================================
 
-/// Create a `points_wallets` row with the POST-BE-D11 schema (no Stored
+/// Create a `points_wallets` row with the post-migration schema (no Stored
 /// balance columns — only analytics + status). We can NOT use the legacy
 /// `create_test_points_wallet` fixture because it still writes the now-deleted
 /// `subscription_balance`/`topup_balance` columns (BE-TR is migrating those
-/// helpers; see BE-T09 spec "AVOID broken old helpers").
+/// helpers; see the spec note "AVOID broken old helpers").
 async fn create_wallet_row_post_be_d11(
     ctx: &mut TestContext,
     user_id: Uuid,
@@ -74,7 +74,7 @@ async fn create_wallet_row_post_be_d11(
     .bind(bucket_id)
     .execute(&ctx._app_state.pool)
     .await
-    .expect("Failed to create points_wallets row (post-BE-D11 schema)");
+    .expect("Failed to create points_wallets row (post-refactor schema)");
 
     // Re-read in case a wallet already existed for this (user, bucket).
     sqlx::query_scalar::<_, Uuid>(
@@ -176,7 +176,7 @@ async fn login(ctx: &mut TestContext, app_url: &str, email: &str, password: &str
 // User Story: US-PU-002 / US-PU-003 (regular users must not see pre-grant
 // timing metadata; effective_at is admin/audit-only).
 //
-// Covers design §4.2 P1-2 + §6.1 P1 "PointsTransactionResponse 在 points.view
+// Covers P1-2 + P1 "PointsTransactionResponse 在 points.view
 // 下不含 effective_at".
 //
 // Why this test exists: the `effective_at` field on
@@ -270,7 +270,7 @@ async fn test_user_transaction_response_hides_effective_at_for_view(ctx: &mut Te
 
     // ...and its `effectiveAt` key is ABSENT — NOT just null. The
     // `skip_serializing_if` attribute must drop the key entirely on the
-    // `points.view` path (design §4.2 P1-2). This is the load-bearing check.
+    // `points.view` path (P1-2). This is the load-bearing check.
     assert!(
         matching.get("effectiveAt").is_none(),
         "points.view response must OMIT the `effectiveAt` key entirely (skip_serializing_if); \
@@ -293,9 +293,9 @@ async fn test_user_transaction_response_hides_effective_at_for_view(ctx: &mut Te
 // =============================================================================
 
 // User Story: admin/audit reconciliation of pre-generated vs already-effective
-// rows (design §4.2 P1-2 motivation).
+// rows (P1-2 motivation).
 //
-// Covers design §4.2 / §5.1 P1-2 + §6.1 P1 "PointsTransactionResponse 在
+// Covers P1-2 + P1 "PointsTransactionResponse 在
 // points.manage 下含 effective_at".
 //
 // Why this test exists: the same `effective_at` column must surface to
@@ -372,7 +372,7 @@ async fn test_admin_transaction_response_includes_effective_at_for_manage(ctx: &
         serde_json::from_slice(&body_bytes).expect("Failed to parse JSON");
 
     // Then: the matching transaction's `effectiveAt` key IS present and holds
-    // the future timestamp (design §4.2 P1-2 manage path).
+    // the future timestamp (P1-2 manage path).
     let items = body["items"]
         .as_array()
         .expect("response should contain items[]");
@@ -383,7 +383,7 @@ async fn test_admin_transaction_response_includes_effective_at_for_manage(ctx: &
 
     assert!(
         matching.get("effectiveAt").is_some(),
-        "points.manage response MUST include the `effectiveAt` key (design §4.2 P1-2 admin/audit \
+        "points.manage response MUST include the `effectiveAt` key (P1-2 admin/audit \
          path); got object keys: {:?}",
         matching.as_object().map(|o| o.keys().collect::<Vec<_>>())
     );
@@ -415,7 +415,7 @@ async fn test_admin_transaction_response_includes_effective_at_for_manage(ctx: &
 // future-effective pre-grant rows into any admin-visible "available/remaining"
 // figure.
 //
-// Covers design §6.1 P1 "管理员钱包列表不泄漏未来期积分" + §6.3 risk "wallet
+// Covers P1 "管理员钱包列表不泄漏未来期积分" + risk "wallet
 // Stored 列读点遗漏：list_wallets ... 若继续读 points_wallets.total_balance 会
 // 泄漏未来期积分" (P1).
 //
@@ -435,7 +435,7 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
     // Given: two regular users in the same realm/bucket.
     //   * user_future  — only future-effective subscription_credit rows.
     //   * user_now     — only immediately-available subscription_credit rows.
-    // Both wallet rows are pre-created (post-BE-D11 schema: analytics-only).
+    // Both wallet rows are pre-created (post-migration schema: analytics-only).
     let user_future_email = "be-t09-lw-future@example.com";
     let user_now_email = "be-t09-lw-now@example.com";
     let user_pwd = "password123";
@@ -557,7 +557,7 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
 
     // Then: the future-only user's row shows bucket_total == 0 (future rows
     // do not leak into available balance), while analytics remain non-zero
-    // (Stored口径, unaffected by effective_at — design §5.1 A7).
+    // (Stored口径, unaffected by effective_at — derived predicate).
     let row_future = items
         .iter()
         .find(|item| item["userId"].as_str() == Some(user_future.to_string().as_str()))
@@ -602,7 +602,7 @@ async fn test_admin_list_wallets_excludes_future_effective(ctx: &mut TestContext
     );
 
     println!(
-        "\n✅ Scenario BE-T09 #3 完成：管理员 list_wallets 跨用户批量派生不泄漏 future-effective \
+        "\n✅ Scenario #3 完成：管理员 list_wallets 跨用户批量派生不泄漏 future-effective \
          (user_future bucketTotal=0, user_now bucketTotal=3000)"
     );
 }

@@ -169,7 +169,7 @@ async fn test_scenario_consume_amount_one_succeeds(ctx: &mut TestContext) {
 
     let body = parse_response_body(response).await;
 
-    // Multi-bucket consume response (design §4.2.2): total consumed at the
+    // Multi-bucket consume response: total consumed at the
     // top level; per-bucket transaction carries the deduction magnitude and
     // resulting balance.
     let transactions = body["transactions"]

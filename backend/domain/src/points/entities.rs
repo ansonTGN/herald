@@ -476,7 +476,7 @@ pub struct PointsCreditLedger {
     pub revoked_amount: i64,
     pub remaining_amount: i64,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
-    /// Expected effective time (design §4.3.2 / §5.1). NULL ⟺ immediately
+    /// Expected effective time. NULL ⟺ immediately
     /// available (current behavior; existing rows zero-regression); non-null ⟺
     /// enters the available set only when `effective_at <= NOW()`. Consumption
     /// selection AND derived balance share the same predicate so future-effective
@@ -504,8 +504,8 @@ pub struct PointsConsumptionAllocation {
 }
 
 /// Consumption allocation joined with its ledger's credit type — the shape
-/// needed to surface the SDK consume response `allocations` slice (design
-/// §4.2.2 `AllocationDetail`). `PointsConsumptionAllocation` alone does not
+/// needed to surface the SDK consume response `allocations` slice (`AllocationDetail`).
+/// `PointsConsumptionAllocation` alone does not
 /// carry `credit_type` (it lives on the ledger), so the consume-surface query
 /// returns this view instead.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -530,7 +530,7 @@ pub struct PointsRevocationRecord {
 
 /// Points Wallet entity
 ///
-/// Design §1.3 / A7 (BE-D11): the 5 per-type balance columns and
+/// The 5 per-type balance columns and
 /// `total_balance` are gone from `points_wallets`; available balance is a
 /// derived SUM over `points_credit_ledger`. This entity now carries only the
 /// 4 lifetime analytics columns plus identity/status. Callers that need the
@@ -571,13 +571,13 @@ pub struct PointsTransaction {
     pub client_app_id: Option<Uuid>,
     pub subscription_id: Option<Uuid>,
     pub external_ref_id: Option<String>,
-    /// Cross-bucket consumption grouping key (design §4.3.2). Non-unique; shared
+    /// Cross-bucket consumption grouping key. Non-unique; shared
     /// by the N transactions of a single multi-bucket consume so idempotency
     /// replay can reassemble the full result set. NULL for non-consume / legacy
     /// single-pool consume rows.
     pub correlation_id: Option<String>,
-    /// Expected effective time of the granted points (design §4.2 / §5.1,
-    /// BE-D10/BE-D11). Sourced from the linked `points_credit_ledger` row for
+    /// Expected effective time of the granted points.
+    /// Sourced from the linked `points_credit_ledger` row for
     /// grant-type transactions; `None` for consume/refund/revoke/expiration
     /// (immediate operations) and for grant rows whose ledger had a NULL
     /// `effective_at` (immediately available). Surfaced to admin/audit only
@@ -589,7 +589,7 @@ pub struct PointsTransaction {
 
 /// Points Balance DTO
 ///
-/// Design §1.3 / A7 (BE-D11): the 5 typed balance fields and `total_balance`
+/// The 5 typed balance fields and `total_balance`
 /// are no longer read from `points_wallets` Stored columns. They are retained
 /// on this DTO (external contract) and populated exclusively by the derived
 /// SUM (`compute_available_balance`) in `PointsService::build_balance_from_derived`.

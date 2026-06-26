@@ -10,8 +10,8 @@ export const Route = createFileRoute('/$realmId/user/points')({
       to: '/$realmId/user/profile',
       params: { realmId: params.realmId },
     }),
-  // FE-D06: `bucketId` is the shareable transaction-bucket filter
-  // (design §4.2.3 `?bucketId=`). Parsing + URL ↔ filter sync covered by the
+  // `bucketId` is the shareable transaction-bucket filter
+  // (`?bucketId=`). Parsing + URL ↔ filter sync covered by the
   // frontend/test slot.
   validateSearch: transactionBucketSearchSchema,
   component: UserPointsWrapper,

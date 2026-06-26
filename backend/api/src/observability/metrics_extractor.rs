@@ -3,7 +3,7 @@
 //! This is the **single governance authority** for which custom attributes
 //! the RED middleware adds beyond the library's built-in semconv labels.
 //!
-//! # Sensitive-data governance (design §4.5 / §5.4)
+//! # Sensitive-data governance
 //!
 //! The `tower-otel-http-metrics` library already emits the low-cardinality
 //! semconv labels `http.route` (axum `MatchedPath` route **template**, not raw
@@ -51,7 +51,7 @@ const ERROR_TYPE_SERVER_ERROR: &str = "server_error";
 /// middleware.
 ///
 /// A unit struct (no state): construction is trivial and the test slot
-/// (BE-T02) can instantiate it directly without a tower `Service` stack and
+/// can instantiate it directly without a tower `Service` stack and
 /// assert exactly which attributes it produces.
 #[derive(Clone, Default, Debug)]
 pub struct RedAttributeExtractor;
@@ -162,10 +162,10 @@ mod tests {
     }
 
     // ---------------------------------------------------------------------
-    // BE-T02 — additional RED extractor governance unit tests.
+    // Additional RED extractor governance unit tests.
     //
     // The three tests above established the per-status behavior and the
-    // empty-on-one-request-shape contract. The scope (BE-T02) additionally
+    // empty-on-one-request-shape contract. The scope additionally
     // requires the FULL allow-list to be locked as a *set* (not just "no
     // error.type below 500"), and that the request side stays empty no
     // matter how much sensitive material is crammed into headers / URI /
@@ -174,9 +174,9 @@ mod tests {
     // ---------------------------------------------------------------------
 
     /// User Story: Technical invariant — RED extractor response-side label
-    /// allow-list (design §4.5 / §5.3).
-    /// Covers: BE-D05 handoff "extractor 仅白名单 … 5xx error.type" + design
-    /// §6.1 "RED extractor 治理 … 产出 label 不含这些值".
+    /// allow-list.
+    /// Covers: "extractor 仅白名单 … 5xx error.type" +
+    /// "RED extractor 治理 … 产出 label 不含这些值".
     ///
     /// WHY this test exists (and is not redundant with
     /// `response_extractor_emits_error_type_only_on_5xx`): the earlier test
@@ -237,11 +237,11 @@ mod tests {
     }
 
     /// User Story: Technical invariant — RED extractor request-side label
-    /// allow-list is empty by construction (design §4.5 / §5.3, "WHY
+    /// allow-list is empty by construction ("WHY
     /// request-side extraction is empty" module docs).
-    /// Covers: BE-D05 handoff "extractor 仅白名单 … http.route 路由模板/
+    /// Covers: "extractor 仅白名单 … http.route 路由模板/
     /// UNMATCHED、method、status、5xx error.type" (request side owned by the
-    /// library) + design §6.1 "给定含 token/email/原始 path 的请求，产出
+    /// library) + "给定含 token/email/原始 path 的请求，产出
     /// label 不含这些值".
     ///
     /// WHY this test exists (and is not redundant with
@@ -259,7 +259,7 @@ mod tests {
     fn red_extractor_request_allow_list_is_empty_across_all_sensitive_surfaces() {
         let extractor = RedAttributeExtractor::new();
 
-        // Every sensitive surface the design §4.5 names, all at once.
+        // Every sensitive surface the governance spec names, all at once.
         //
         // Note: a `MatchedPath` extension (which the LIBRARY, not this
         // extractor, reads to emit `http.route`) cannot be injected here —
@@ -291,11 +291,11 @@ mod tests {
 }
 
 // =========================================================================
-// BE-T02 — request_id span-field correlation unit tests.
+// request_id span-field correlation unit tests.
 //
 // These are UNIT tests that construct a `TraceLayer` with the SAME
 // `make_span_with` closure shape as production
-// (`application::http::server::mod.rs`, BE-D05). The production closure is
+// (`application::http::server::mod.rs`). The production closure is
 // defined inline inside `create_router` and is not separately exported, and
 // the scenario-test router (`create_unified_test_router`) deliberately does
 // NOT go through the ServiceBuilder chain (confirmed in
@@ -310,12 +310,12 @@ mod request_id_span_tests {
     use tracing_subscriber::fmt::MakeWriter;
     use tracing_subscriber::layer::SubscriberExt;
 
-    /// The production request-id header name (BE-D05, `server/mod.rs`).
+    /// The production request-id header name (`server/mod.rs`).
     const REQUEST_ID_HEADER: axum::http::HeaderName =
         axum::http::HeaderName::from_static("x-request-id");
 
     /// Reproduce the production `make_span_with` closure body
-    /// (`application::http::server::mod.rs`, BE-D05) as a standalone
+    /// (`application::http::server::mod.rs`) as a standalone
     /// function over `&Request`: read `X-Request-ID` (falling back to
     /// `"-"`), record it on the span as the `request_id` field, and use
     /// the route template / `UNMATCHED` sentinel for `http.route` (never
@@ -399,8 +399,8 @@ mod request_id_span_tests {
     /// User Story: Technical invariant — every HTTP request span carries the
     /// ops correlation key `request_id` read from `X-Request-ID`, so a log
     /// line / metric / trace for a request can always be tied back to the
-    /// caller-supplied id (design §5.2).
-    /// Covers: BE-D05 handoff "request_id 入 span field" + design §6.1
+    /// caller-supplied id.
+    /// Covers: "request_id 入 span field" +
     /// "request_id 关联".
     ///
     /// WHY this test exists: `request_id` is the primary ops correlation
@@ -427,9 +427,9 @@ mod request_id_span_tests {
     /// User Story: Technical invariant — under the baseline deployment
     /// (`traces_enabled == false`, no OTel traces layer installed) the
     /// request_id correlation key STILL reaches the local JSON log, while no
-    /// `trace_id` is emitted (design §5.2 / §6.1 "traces off 兜底").
-    /// Covers: BE-D05 handoff "baseline traces off 时 request_id 仍经 fmt
-    /// layer 出现在 JSON 日志" + design §6.1 "baseline traces off 时
+    /// `trace_id` is emitted ("traces off 兜底").
+    /// Covers: "baseline traces off 时 request_id 仍经 fmt
+    /// layer 出现在 JSON 日志" + "baseline traces off 时
     /// `trace_id` 缺失而 `request_id` 存在".
     ///
     /// WHY this test exists: the back-pressure mitigation (baseline = traces

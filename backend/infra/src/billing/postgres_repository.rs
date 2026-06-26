@@ -319,11 +319,11 @@ impl PostgresBillingRepository {
         Self::model_to_subscription_history_event(saved_event)
     }
 
-    // ===== Credit Bucket directory (BE-D07) =====
+    // ===== Credit Bucket directory =====
     //
     // All multi-table writes run in a single sqlx transaction (matches the
     // invoice_postgres_repository pattern: `self.db.get_postgres_connection_pool().begin()`).
-    // Coverage-set changes only affect future routing (design A7); attached-mapping
+    // Coverage-set changes only affect future routing; attached-mapping
     // replacement only sets `bucket_id` on the listed mappings (does not touch
     // balances). Registration-pool uniqueness is guarded by pre-check + the partial
     // unique index `uq_credit_buckets_registration_pool` (caught → 409 conflict).
@@ -561,7 +561,7 @@ impl PostgresBillingRepository {
         let bucket = Self::row_to_credit_bucket(&row);
 
         // Replace coverage set (delete + insert). CASCADE-safe since we hold the
-        // bucket lock; existing wallets/ledgers are untouched (design A7).
+        // bucket lock; existing wallets/ledgers are untouched.
         sqlx::query("DELETE FROM credit_bucket_client_apps WHERE bucket_id = $1")
             .bind(input.bucket_id)
             .execute(&mut *tx)
@@ -588,7 +588,7 @@ impl PostgresBillingRepository {
         }
 
         // Attach mappings. `provider_entitlement_mappings.bucket_id` is NOT NULL
-        // (commit `aa6cc2da`) and there is no default bucket (design A4), so a
+        // (commit `aa6cc2da`) and there is no default bucket, so a
         // mapping can only JOIN this bucket (move-in) — it cannot be removed via
         // this PUT, since detaching would orphan it (no NULL home). Reject any
         // shrink of the attached set with `bucket_orphan_mapping` (400). The
@@ -679,7 +679,7 @@ impl PostgresBillingRepository {
 
         // Holders with remaining *derived available* balance.
         //
-        // BE-D06 (design §5.1 / A7): the delete guard uses the SAME derived
+        // The delete guard uses the SAME derived
         // availability predicate as `compute_bucket_available_balances`
         // (`status='active' AND remaining_amount>0 AND (effective_at IS NULL
         // OR effective_at<=NOW()) AND (expires_at IS NULL OR
@@ -687,8 +687,8 @@ impl PostgresBillingRepository {
         // column. Future-effective pre-grant rows do NOT block delete here (they
         // are not yet spendable); they are swept by
         // `clear_deletable_bucket_references_tx` below. If the predicate text
-        // drifts from the one in `points/postgres_repository.rs`, BE-A03 step 2
-        // will catch it.
+        // drifts from the one in `points/postgres_repository.rs`, step 2 will
+        // catch it.
         let holders_with_balance: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM points_credit_ledger \
              WHERE bucket_id = $1 \
@@ -772,8 +772,8 @@ impl PostgresBillingRepository {
                 CoreError::DatabaseError(format!("Failed to delete bucket grant schedules: {}", e))
             })?;
 
-        // BE-D06/BE-D11: `points_wallets.total_balance` was physically dropped
-        // (A7); this is a cleanup of orphan wallet rows for a deleted bucket,
+        // `points_wallets.total_balance` was physically dropped; this is
+        // a cleanup of orphan wallet rows for a deleted bucket,
         // NOT a balance-authority read. By this point all ledger rows for the
         // bucket are deleted above, so any remaining wallet rows are orphans
         // (their analytics are retained only for historical totals; with the
@@ -834,7 +834,7 @@ impl PostgresBillingRepository {
     /// Overview matrix: per-bucket × credit-type aggregates (residual rows kept for
     /// disabled buckets) plus a SEPARATE grand total across all buckets.
     ///
-    /// BE-D06 (design §5.1 / A7): the per-bucket available balance is the derived
+    /// The per-bucket available balance is the derived
     /// SUM over `points_credit_ledger` using the SAME availability predicate as
     /// `compute_bucket_available_balances` in `points/postgres_repository.rs`
     /// (`status='active' AND remaining_amount>0 AND (effective_at IS NULL OR
@@ -843,8 +843,8 @@ impl PostgresBillingRepository {
     /// `LEFT JOIN points_wallets ... SUM(w.<x>_balance)` aggregation, which read
     /// Stored/GENERATED columns and would (a) leak future-effective pre-grant
     /// rows into the overview and (b) misjudge a bucket as in-use. If the
-    /// predicate text drifts from the points repository, BE-A03 step 2 will
-    /// catch it.
+    /// predicate text drifts from the points repository, step 2 will catch
+    /// it.
     pub async fn list_bucket_overview(
         &self,
         realm_id: &str,
@@ -970,7 +970,7 @@ impl PostgresBillingRepository {
     /// Map an INSERT/UPDATE error to a structured bucket error.
     ///
     /// Distinguishes the two `credit_buckets` uniqueness violations by their
-    /// constraint name (design §4.2.2 / §4.2.3):
+    /// constraint name:
     /// - partial unique index on `(realm_id) WHERE receives_registration_credits`
     ///   → `RegistrationPoolConflict` (409 `registration_pool_conflict`).
     /// - `UNIQUE(realm_id, bucket_key)` → `BucketKeyDuplicate`
@@ -1009,7 +1009,7 @@ impl PostgresBillingRepository {
     /// Re-attach the listed mappings to `bucket_id` (realm-scoped). Mappings that do
     /// not exist or belong to a different realm are silently ignored — the handler
     /// is responsible for validating the requested set if strict semantics are
-    /// required (currently we accept the best-effort attach per design §4.2.2).
+    /// required (currently we accept the best-effort attach).
     async fn reattach_mappings_tx(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         bucket_id: Uuid,
@@ -1041,7 +1041,7 @@ impl RegistrationPoolResolver for PostgresBillingRepository {
     /// Relies on the partial unique index `uq_credit_buckets_registration_pool`
     /// (at most one row per realm with `receives_registration_credits=true`).
     /// Returns `Ok(None)` when no such bucket exists — callers must fail-safe
-    /// (do not grant; do not fall back to an implicit pool — design A4/A5).
+    /// (do not grant; do not fall back to an implicit pool).
     async fn resolve_registration_pool_bucket(
         &self,
         realm_id: &str,
@@ -1851,7 +1851,7 @@ fn classify_from_message(msg: &str) -> Option<BucketConstraintKind> {
 mod tests {
     use super::*;
 
-    /// Regression guard for BE-A03 P0-1: `credit_buckets` uniqueness violations
+    /// Regression guard for P0-1: `credit_buckets` uniqueness violations
     /// must classify into `BucketKeyDuplicate` (→ 400) or `RegistrationPoolConflict`
     /// (→ 409) regardless of whether the runtime schema carries the
     /// migration-assigned explicit constraint names or PostgreSQL's
@@ -1873,7 +1873,7 @@ mod tests {
         );
 
         // PostgreSQL auto-generated names (cloned/restored schema — the actual
-        // runtime names observed in the failing BE-T04/BE-T03 scenarios).
+        // runtime names observed in the failing scenarios).
         let auto = classify_bucket_constraint("credit_buckets_realm_id_bucket_key_key");
         assert!(
             matches!(auto, Some(BucketConstraintKind::RealmKey)),
@@ -1896,7 +1896,7 @@ mod tests {
 
     /// The message-based fallback must catch the same two collisions when the
     /// driver omits `constraint()` (older sqlx/PG combos) — using the real
-    /// runtime error text observed in BE-A03.
+    /// runtime error text observed in the regression.
     #[test]
     fn classifies_from_runtime_duplicate_key_messages() {
         let realm_key_msg = "error returned from database: duplicate key value \

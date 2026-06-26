@@ -146,7 +146,7 @@ pub async fn create_test_points_wallet(pool: &PgPool, user_id: Uuid, balance: i6
 
     let wallet_id = Uuid::now_v7();
 
-    // Create the points_wallets entry. Under point-time (BE-D11) the wallet
+    // Create the points_wallets entry. Under point-time the wallet
     // has no Stored balance columns; available balance is derived from
     // `points_credit_ledger` (seeded below). `total_subscription_granted`
     // is a retained lifetime-analytics column.
@@ -253,7 +253,7 @@ pub async fn create_test_entitlement_mapping(
     let mapping_id = Uuid::now_v7();
     let external_product_id = format!("prod_test_{}", entitlement_name);
 
-    // Credit Buckets model (design §5.5): a subscription grant routes to the
+    // Credit Buckets model: a subscription grant routes to the
     // bucket bound on the entitlement mapping. Bind the realm's legacy test
     // bucket so the lazy subscription-bucket resolution in the webhook handler
     // succeeds (case "mapping present + bucket").
@@ -382,7 +382,7 @@ pub async fn create_test_api_key(pool: &PgPool, realm_id: &str, client_app_id: U
     .expect("Failed to create client app");
 
     // 2b. Attach this client app to the realm's legacy credit bucket so the
-    // consume-path coverage resolution (design A4) includes it.
+    // consume-path coverage resolution includes it.
     crate::tests::helpers::points_helpers::attach_client_app_to_legacy_bucket(
         pool,
         realm_id,
@@ -446,7 +446,7 @@ pub async fn create_test_client_app(pool: &PgPool, realm_id: &str) -> Uuid {
     .expect("Failed to create client app");
 
     // Attach this client app to the realm's legacy credit bucket so the
-    // consume-path coverage resolution (design A4) includes it.
+    // consume-path coverage resolution includes it.
     crate::tests::helpers::points_helpers::attach_client_app_to_legacy_bucket(
         pool,
         realm_id,

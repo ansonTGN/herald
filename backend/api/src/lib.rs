@@ -160,11 +160,11 @@ pub async fn build_app_state_with_migrations(
         .connect_timeout(std::time::Duration::from_secs(
             config.database.connect_timeout_secs,
         ))
-        // Observability (BE-D06): enable sqlx statement logging + slow-statement
+        // Observability: enable sqlx statement logging + slow-statement
         // warning at the configured threshold. Slow-statement logging emits the
         // SQL statement via tracing; sensitive value governance is handled at the
-        // tracing layer (see design §4.5/§5.4). With traces-off baseline, DB
-        // spans produced here are not exported (BE-D03/04).
+        // tracing layer. With traces-off baseline, DB
+        // spans produced here are not exported.
         .sqlx_logging(true)
         .sqlx_slow_statements_logging_settings(
             log::LevelFilter::Warn,

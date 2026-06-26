@@ -28,7 +28,7 @@ import {
  * Form options for the admin UI Grant Points dialog.
  *
  * `bucketId` is REQUIRED since the credit-bucket backend breaking change
- * (design credit-bucket.md §4.2.4 / A5): every grant must target an explicit
+ * (design credit-bucket.md): every grant must target an explicit
  * Credit Bucket, and the frontend `grant-points-dialog.tsx` requires the
  * `grant-points-bucket-select` to be populated before submit. Omitting it
  * yields `400 grant_bucket_required` from the backend (or the frontend
@@ -60,7 +60,7 @@ export interface GrantPointsExtApiBody {
   userId: string
   amount: number
   reason: string
-  /** REQUIRED target Credit Bucket UUID (design §4.2.4 / A5). */
+  /** REQUIRED target Credit Bucket UUID. */
   bucketId: string
   validityDays?: number
 }
@@ -105,7 +105,7 @@ export async function openGrantDialog(
  *    otherwise fills `validityDays` (defaulting to 30 if not specified)
  * 5. Fills the reason textarea
  * 6. Selects the target Credit Bucket via the required `grant-points-bucket-select`
- *    (credit-bucket breaking change §4.2.4 / A5; declared by DE-D01).
+ *    (credit-bucket breaking change; declared by DE-D01).
  *    The option is chosen by visible bucket name resolved from
  *    `bucket-seed-ids.ts` (`CREDIT_BUCKET_NAMES`). The dialog's bucket Select
  *    is required and has no default — selecting it here is a real step, not a
@@ -163,7 +163,7 @@ export async function fillGrantForm(
   await reasonInput.clear()
   await reasonInput.fill(options.reason)
 
-  // 5. Select the target Credit Bucket (REQUIRED — credit-bucket §4.2.4 / A5).
+  // 5. Select the target Credit Bucket (REQUIRED).
   //    The Select is a Radix Select; options render as `[role="option"]` whose
   //    visible label is the bucket display name. Resolve the display name from
   //    the seeded directory via `bucket-seed-ids.ts` so callers only need the

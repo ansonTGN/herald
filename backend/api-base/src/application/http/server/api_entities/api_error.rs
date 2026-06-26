@@ -183,7 +183,7 @@ impl From<herald_core::domain::common::entities::app_errors::CoreError> for ApiE
             CoreError::EntitlementMappingNotFound => {
                 Self::not_found("Entitlement mapping not found".to_string())
             }
-            // Credit-bucket routing errors (design credit-bucket §4.2.3 / §5.5).
+            // Credit-bucket routing errors.
             // These surface from consume / grant / fulfillment write paths.
             CoreError::EntitlementMappingNotAttachedToBucket { mapping_id } => Self::bad_request(
                 format!("Entitlement mapping {mapping_id} is not attached to a credit bucket"),

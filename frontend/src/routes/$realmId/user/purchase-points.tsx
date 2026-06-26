@@ -42,7 +42,7 @@ type PurchaseStep = 'packages' | 'payment' | 'processing' | 'complete'
  * Resolve the concrete mapping id for (entitlementKey, provider). An
  * entitlement may have one mapping per configured provider; the purchase flow
  * must submit the mapping whose provider matches the user's payment-method
- * choice, NOT the originally-clicked card (design §4.2.2: backend rejects a
+ * choice, NOT the originally-clicked card (backend rejects a
  * targetMappingId whose provider does not match the requested paymentProvider).
  * Returns undefined when no mapping exists for that combination (the product
  * is not offered through that provider) — the submit button must stay disabled.
@@ -154,8 +154,8 @@ function PurchasePointsPage() {
   // One entitlement may have multiple mappings (one per payment provider). The
   // clicked card tracks the entitlement identity; the concrete mappingId is
   // resolved at submit from (selectedEntitlementKey, selectedProvider) so the
-  // provider picker can never submit a cross-provider mismatch (design §4.2.2,
-  // §4.4.2). See resolveMappingForProvider below.
+  // provider picker can never submit a cross-provider mismatch.
+  // See resolveMappingForProvider below.
   const [selectedEntitlementKey, setSelectedEntitlementKey] = useState<string | null>(null)
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null)
 
@@ -175,7 +175,7 @@ function PurchasePointsPage() {
   )
 
   // Credit-bucket display names for grouping one-time packs by attributed
-  // bucket (FE-D02 useBuckets; design §4.4.2). Under the forbid-null contract
+  // bucket (useBuckets). Under the forbid-null contract
   // every mapping carries a bucketId, so all packs group under their bucket.
   const { buckets } = useBuckets(realmId)
   const bucketNameById = useMemo(() => {
@@ -261,7 +261,7 @@ function PurchasePointsPage() {
   }, [paymentStatus])
 
   // Stripe/Creem redirect is user-initiated from the redirect prompt rendered
-  // by <PaymentAttemptStatus /> (design §4.4.2 "跳转提示"). We deliberately do
+  // by <PaymentAttemptStatus /> ("跳转提示"). We deliberately do
   // NOT auto-navigate: an automatic window.location change would leave this
   // origin before persisted purchase state (cas-purchase-flow in localStorage)
   // can be verified, and contradicts the design's redirect-prompt UX. The
