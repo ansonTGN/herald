@@ -11,6 +11,8 @@ use crate::types::{
     CancelSubscriptionResponse,
     CreateCheckoutResponse,
     CreateCheckoutSessionRequest,
+    PurchaseOptionListResponse,
+    PurchaseOptionView,
     // Subscription types
     SubscriptionDetailResponse,
     SubscriptionListItemResponse,
@@ -18,12 +20,13 @@ use crate::types::{
     SubscriptionListResponse,
 };
 
+use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 // Import the trait and types from herald_core
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::PermissionService;
-use herald_core::domain::billing::{BillingRepository, Subscription};
+use herald_core::domain::billing::{BillingRepository, EntitlementMapping, Subscription};
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::realm_config::RealmConfigRepository;
 use herald_core::infrastructure::creem::{
@@ -445,38 +448,45 @@ pub async fn create_checkout_session(
     Json(request): Json<CreateCheckoutSessionRequest>,
 ) -> Result<Json<CreateCheckoutResponse>, ApiError> {
     tracing::info!(
-        "Creating checkout session for client app {} with entitlement {} in realm: {}",
+        "Creating checkout session for client app {} with mapping {} in realm: {}",
         client_app_id,
-        request.entitlement_key,
+        request.mapping_id,
         realm_id
     );
 
-    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
+    // Purchase is an authenticated-user action: end users check
+    // out; no `billing.manage` required. Realm boundary is enforced here and
+    // re-checked against the resolved mapping below.
+    require_authenticated_user_in_realm(&identity, &realm_id, "checkout")?;
 
-    // Look up entitlement mapping by entitlement_key
+    // Resolve the price-level mapping by id (checkout target is
+    // mapping_id). The mapping carries entitlement_key + external_price_id +
+    // provider_product_info; external_price_id is fed to Stripe as price_id.
     let mapping = state
         .billing_repository
-        .find_entitlement_mapping_by_key(&realm_id, &request.entitlement_key)
+        .find_entitlement_mapping_by_id(request.mapping_id)
         .await
         .map_err(|e| {
             tracing::error!(
-                entitlement_key = %request.entitlement_key,
+                mapping_id = %request.mapping_id,
                 error = %e,
                 "Failed to look up entitlement mapping"
             );
             ApiError::internal("Failed to look up entitlement mapping".to_string())
         })?
-        .ok_or_else(|| {
-            ApiError::not_found(format!(
-                "Entitlement mapping not found for key: {}",
-                request.entitlement_key
-            ))
-        })?;
+        .ok_or_else(|| ApiError::not_found("Entitlement mapping not found"))?;
+
+    // Scope check: mappingId must belong to this realm.
+    if mapping.realm_id != realm_id {
+        return Err(ApiError::not_found("Entitlement mapping not found"));
+    }
+
+    let entitlement_key = mapping.entitlement_key.clone();
 
     if !mapping.enabled {
         return Err(ApiError::bad_request(format!(
             "Entitlement mapping '{}' is not enabled",
-            request.entitlement_key
+            entitlement_key
         )));
     }
 
@@ -499,12 +509,11 @@ pub async fn create_checkout_session(
     }
 
     // Route to appropriate payment provider
-    let entitlement_key = request.entitlement_key.clone();
     let checkout_url = match payment_provider.as_str() {
         "stripe" => {
             tracing::info!(
                 "Creating Stripe checkout session for entitlement: {}",
-                request.entitlement_key
+                entitlement_key
             );
 
             let stripe_client = get_stripe_client_for_realm(&realm_id, &state).await?;
@@ -546,6 +555,9 @@ pub async fn create_checkout_session(
                     .unwrap_or("usd")
                     .to_string(),
                 plan_name: entitlement_key.clone(),
+                // Reference the real Stripe Price when the mapping carries one;
+                // None falls back to price_data in the client.
+                price_id: mapping.external_price_id.clone(),
                 realm_id: realm_id.clone(),
                 webhook_url: Some(format!(
                     "{}/api/third/pay/{}/stripe/webhooks",
@@ -582,7 +594,7 @@ pub async fn create_checkout_session(
         "creem" => {
             tracing::info!(
                 "Creating Creem checkout session for entitlement: {}",
-                request.entitlement_key
+                entitlement_key
             );
 
             let creem_client = get_creem_client_for_realm(&realm_id, &state).await?;
@@ -641,4 +653,89 @@ pub async fn create_checkout_session(
         checkout_url,
         checkout_id,
     }))
+}
+
+/// Map a price-level entitlement mapping to the purchase-page view.
+///
+/// `display_name` / `amount` / `currency` are read from the
+/// `provider_product_info` JSONB cache populated by sync (same source the
+/// one-time-mappings read model and checkout price_amount use).
+fn mapping_to_purchase_option(m: EntitlementMapping) -> PurchaseOptionView {
+    let info = m.provider_product_info.as_ref();
+    PurchaseOptionView {
+        mapping_id: m.id,
+        external_product_id: m.external_product_id,
+        external_price_id: m.external_price_id,
+        payment_provider: m.payment_provider,
+        entitlement_key: m.entitlement_key,
+        billing_type: m.billing_type.map(|t| t.as_str().to_string()),
+        billing_period: m.billing_period,
+        display_name: info
+            .and_then(|i| i.get("name"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        amount: info.and_then(|i| i.get("price")).and_then(|v| v.as_i64()),
+        currency: info
+            .and_then(|i| i.get("currency"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        points_per_period: m.points_per_period,
+        enabled: m.enabled,
+    }
+}
+
+/// List purchasable price-level options for a client app.
+///
+/// Returns a FLAT list of enabled price-granularity mappings (recurring +
+/// one_time) for the purchase page; the frontend groups by
+/// `external_product_id` / billing period. Replaces the purchase page's
+/// dependency on `list_one_time_mappings` (which only covered one_time).
+#[utoipa::path(
+    get,
+    path = "/api/bill/{realmId}/client/{clientAppId}/purchase-options",
+    tag = "billing",
+    params(
+        ("realmId" = String, Path, description = "Realm ID"),
+        ("clientAppId" = Uuid, Path, description = "Client App ID")
+    ),
+    responses(
+        (status = 200, description = "Purchase options listed successfully", body = PurchaseOptionListResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_purchase_options(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path((realm_id, client_app_id)): Path<(String, Uuid)>,
+) -> Result<Json<PurchaseOptionListResponse>, ApiError> {
+    tracing::info!(
+        "Listing purchase options for client app {} in realm {}",
+        client_app_id,
+        realm_id
+    );
+
+    // Purchase-page read is an authenticated-user action.
+    require_authenticated_user_in_realm(&identity, &realm_id, "purchase-options")?;
+
+    // List ALL enabled price-granularity mappings for the realm (recurring +
+    // one_time). Page size is set high to return the full purchasable set in a
+    // single page; the purchase page expects a flat list, not pagination.
+    let (mappings, _total) = state
+        .billing_repository
+        .list_entitlement_mappings(&realm_id, None, Some(true), Some(1), Some(200))
+        .await
+        .map_err(|e| {
+            tracing::error!(realm_id = %realm_id, error = %e, "Failed to list purchase options");
+            ApiError::internal("Failed to list purchase options".to_string())
+        })?;
+
+    let items: Vec<PurchaseOptionView> = mappings
+        .into_iter()
+        .map(mapping_to_purchase_option)
+        .collect();
+
+    Ok(Json(PurchaseOptionListResponse { items }))
 }

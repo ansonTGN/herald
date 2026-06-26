@@ -232,10 +232,107 @@ pub struct CancelSubscriptionResponse {
     pub message: String,
 }
 
-/// Request to create checkout session
+/// Request to create checkout session.
+///
+/// Purchase target is price-level: callers pass the entitlement **mapping** id.
+/// The checkout handler resolves the mapping to its
+/// entitlement key / provider product / price and routes to the payment
+/// provider. Replaces the former `entitlement_key`-only contract.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateCheckoutSessionRequest {
-    pub entitlement_key: String,
+    pub mapping_id: Uuid,
     pub payment_provider: String,
+}
+
+// ===== Batch Update (Price-Granularity) =====
+
+/// Single price-mapping row within a batch save.
+///
+/// One row per price of a product; `entitlement_key` is shared across the
+/// product's prices. Credit-strategy fields (`points_per_period` etc.)
+/// require `points.manage` server-side.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceMappingUpdate {
+    pub mapping_id: Uuid,
+    pub entitlement_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_period: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points_per_period: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_period_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validity_days: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_on_subscribe: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_periods: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
+/// PUT `/api/bill/{realmId}/entitlement-mappings/batch` request body.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchUpdateEntitlementMappingsRequest {
+    pub payment_provider: String,
+    pub external_product_id: String,
+    pub updates: Vec<PriceMappingUpdate>,
+}
+
+/// PUT `/api/bill/{realmId}/entitlement-mappings/batch` response body.
+///
+/// `prices` returns the product's full latest set of price rows.
+/// Reuses `EntitlementMappingResponse` as the per-price view.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchUpdateEntitlementMappingsResponse {
+    pub saved: u32,
+    pub prices: Vec<EntitlementMappingResponse>,
+}
+
+// ===== Purchase Options =====
+
+/// A purchasable price-level option for the purchase page.
+///
+/// Flat list; the frontend groups by `external_product_id` / billing period.
+/// Field set evolves `OneTimeMappingItem` down to price granularity.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PurchaseOptionView {
+    pub mapping_id: Uuid,
+    pub external_product_id: String,
+    /// Stripe real price id; `None` for price-less providers (Creem).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_price_id: Option<String>,
+    pub payment_provider: String,
+    pub entitlement_key: String,
+    /// `recurring` | `one_time`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_type: Option<String>,
+    /// `month` / `year` / …
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_period: Option<String>,
+    /// Product / plan name (card title).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    /// Price amount (minor units).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub amount: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points_per_period: Option<i64>,
+    pub enabled: bool,
+}
+
+/// GET `/api/bill/{realmId}/client/{clientAppId}/purchase-options` response.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PurchaseOptionListResponse {
+    pub items: Vec<PurchaseOptionView>,
 }

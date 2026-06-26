@@ -219,26 +219,23 @@ where
     ///
     /// Revokes subscription credits for the old entitlement, then grants the new entitlement's full points.
     /// The new points expire at the end of the recalculated billing period.
+    ///
+    /// Strategy source is the **price-level** mapping (US-EM-008):
+    /// `old_mapping`/`new_mapping` are the resolved price-level entitlement
+    /// mappings the caller (webhook handler) obtained via price-aware
+    /// resolution. This kills the shared-`entitlement_key` ambiguity (e.g.
+    /// monthly 1000 vs annual 12000 both under `pro-plan`).
     pub async fn handle_subscription_upgrade(
         &self,
         user_id: Uuid,
         bucket_id: Uuid,
         realm_id: &str,
-        old_entitlement_key: &str,
-        new_entitlement_key: &str,
+        old_mapping: &EntitlementMapping,
+        new_mapping: &EntitlementMapping,
         period_end: DateTime<Utc>,
     ) -> Result<PointsCreditLedger, CoreError> {
-        let _old_mapping = self
-            .repo
-            .find_points_policy_by_entitlement_key(realm_id, old_entitlement_key)
-            .await?
-            .ok_or(CoreError::EntitlementMappingNotFound)?;
-
-        let new_mapping = self
-            .repo
-            .find_points_policy_by_entitlement_key(realm_id, new_entitlement_key)
-            .await?
-            .ok_or(CoreError::EntitlementMappingNotFound)?;
+        let old_entitlement_key = old_mapping.entitlement_key.as_str();
+        let new_entitlement_key = new_mapping.entitlement_key.as_str();
 
         let new_points = new_mapping.points_per_period.unwrap_or(0);
         if new_points <= 0 {
@@ -304,21 +301,11 @@ where
         subscription_id: Uuid,
         bucket_id: Uuid,
         realm_id: &str,
-        old_entitlement_key: &str,
-        new_entitlement_key: &str,
+        old_mapping: &EntitlementMapping,
+        new_mapping: &EntitlementMapping,
     ) -> Result<(), CoreError> {
-        // Validate that both entitlements exist
-        let _old_mapping = self
-            .repo
-            .find_points_policy_by_entitlement_key(realm_id, old_entitlement_key)
-            .await?
-            .ok_or(CoreError::EntitlementMappingNotFound)?;
-
-        let _new_mapping = self
-            .repo
-            .find_points_policy_by_entitlement_key(realm_id, new_entitlement_key)
-            .await?
-            .ok_or(CoreError::EntitlementMappingNotFound)?;
+        let old_entitlement_key = old_mapping.entitlement_key.as_str();
+        let new_entitlement_key = new_mapping.entitlement_key.as_str();
 
         tracing::info!(
             realm_id = %realm_id,
@@ -372,7 +359,7 @@ where
         subscription_id: Uuid,
         bucket_id: Uuid,
         realm_id: &str,
-        entitlement_key: &str,
+        mapping: &EntitlementMapping,
         is_renewal: bool,
         // Billing period start. Drives `effective_at`,
         // `period_number`, and chained pre-grant. Provider period
@@ -381,6 +368,14 @@ where
         period_end: DateTime<Utc>,
         event_id: String,
     ) -> Result<PointsCreditLedger, CoreError> {
+        // Strategy source is the **price-level** mapping
+        // (US-EM-008): the caller (webhook handler) supplies the mapping
+        // resolved via price-aware resolution, so shared-`entitlement_key`
+        // ambiguity (monthly 1000 vs annual 12000 under one key) cannot reach
+        // the grant. `entitlement_key` is read from the mapping for downstream
+        // ledger/revoke bookkeeping.
+        let entitlement_key = mapping.entitlement_key.as_str();
+
         // Secondary (legacy) event-level idempotency key. Period-level
         // business idempotency via `points_grant_records(schedule_id,
         // period_number)` is the primary gate (checked below when a schedule
@@ -390,22 +385,14 @@ where
         // webhook handler layer.
         let idempotency_key = format!("{}:{}", IDEMPOTENCY_KEY_SUBSCRIPTION_PAID, event_id);
 
-        // Resolve the entitlement mapping FIRST. This preserves the domain
-        // contract that an absent (or disabled) mapping raises
-        // `EntitlementMappingNotFound` — which the Creem webhook handler
-        // swallows for a graceful skip (no grant, no retry). Resolving the
-        // bucket before the mapping would wrongly surface a missing-bucket
-        // data-integrity error (`SubscriptionBucketNotResolved`) for an
-        // entitlement that should simply be ignored. The fail-loud bucket
-        // check (`mapping exists but no bucket`) runs below, right before the
-        // grant, so `subscription_with_unresolved_bucket_fails_loud` still
-        // holds.
-        let mapping = self
-            .repo
-            .find_points_policy_by_entitlement_key(realm_id, entitlement_key)
-            .await?
-            .ok_or(CoreError::EntitlementMappingNotFound)?;
-
+        // The mapping is the price-level strategy source supplied by the
+        // caller. `grant_on_subscribe=false` means this entitlement should be
+        // ignored (graceful skip), matching the prior contract where an
+        // absent/disabled mapping raised `EntitlementMappingNotFound` (which
+        // the Creem webhook handler swallows). The fail-loud bucket check
+        // (`mapping exists but no bucket`) runs at the webhook layer before
+        // calling this method, so `subscription_with_unresolved_bucket_fails_loud`
+        // still holds.
         if !mapping.grant_on_subscribe {
             tracing::info!(
                 realm_id = %realm_id,
@@ -419,7 +406,7 @@ where
 
         // Resolve the per-period amount via the shared helper so pre-grant
         // and formal webhook converge on the same amount source.
-        let points_amount = match resolve_entitlement_points(&mapping) {
+        let points_amount = match resolve_entitlement_points(mapping) {
             Some(amount) => amount,
             None => {
                 tracing::info!(
@@ -455,7 +442,7 @@ where
 
         // Nominal period (from entitlement/plan) drives period_number
         // derivation, chained-pregrant effective_at, and estimated expires_at.
-        let nominal = nominal_period_for(&mapping);
+        let nominal = nominal_period_for(mapping);
 
         // Resolve the subscription's grant schedule. When present, the
         // schedule's `base_time` is the `first_period_start` anchor

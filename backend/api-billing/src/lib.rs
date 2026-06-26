@@ -41,12 +41,14 @@ pub mod webhook_handlers;
         crate::entitlement_mapping_handlers::update_entitlement_mapping,
         crate::entitlement_mapping_handlers::sync_provider_products,
         crate::entitlement_mapping_handlers::list_one_time_mappings,
+        crate::entitlement_mapping_handlers::batch_update_entitlement_mappings,
         // Subscription handlers
         crate::handlers::list_subscriptions,
         crate::handlers::get_subscription,
         crate::handlers::get_subscription_for_client_app,
         crate::handlers::cancel_subscription_for_client_app,
         crate::handlers::create_checkout_session,
+        crate::handlers::list_purchase_options,
         crate::handlers_history::get_subscription_history,
         crate::handlers_history::list_subscription_history,
         crate::handlers_history::get_my_subscription_history,
@@ -102,6 +104,12 @@ pub mod webhook_handlers;
         crate::types::PartialSyncErrorDto,
         crate::types::OneTimeMappingItem,
         crate::types::OneTimeMappingListResponse,
+        // Price-granularity batch + purchase options
+        crate::types::PriceMappingUpdate,
+        crate::types::BatchUpdateEntitlementMappingsRequest,
+        crate::types::BatchUpdateEntitlementMappingsResponse,
+        crate::types::PurchaseOptionView,
+        crate::types::PurchaseOptionListResponse,
         // Subscription types
         crate::types::SubscriptionDetailResponse,
         crate::types::SubscriptionListItemResponse,

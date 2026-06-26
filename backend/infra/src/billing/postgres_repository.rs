@@ -12,7 +12,8 @@ use herald_domain::billing::credit_bucket::{
 };
 use herald_domain::billing::entities::EntitlementMapping;
 use herald_domain::billing::{
-    BillingRepository, FeatureFacts, HistoryEventType, PaymentEvent, SortOrder, Subscription,
+    BatchMappingError, BatchUpdateMappingsInput, BatchUpdateResult, BillingRepository,
+    FeatureFacts, HistoryEventType, PaymentEvent, SortOrder, Subscription,
     SubscriptionHistoryEvent, SubscriptionHistoryQuery,
 };
 use herald_domain::common::entities::app_errors::CoreError;
@@ -1490,12 +1491,16 @@ impl BillingRepository for PostgresBillingRepository {
         &self,
         mapping: EntitlementMapping,
     ) -> Result<EntitlementMapping, CoreError> {
-        // Try to find existing by unique constraint
+        // Try to find existing by the price-level unique constraint
+        // (realm_id, payment_provider, external_product_id, external_price_id).
+        // external_price_id IS NULL (Creem) dedups via NULLS NOT DISTINCT
+        // (migration `20260607_product_reduce.sql`).
         let existing = self
-            .find_entitlement_mapping_by_provider_product(
+            .find_entitlement_mapping_by_provider_product_price(
                 &mapping.realm_id,
                 &mapping.payment_provider,
                 &mapping.external_product_id,
+                mapping.external_price_id.as_deref(),
             )
             .await?;
 
@@ -1521,16 +1526,31 @@ impl BillingRepository for PostgresBillingRepository {
         }
     }
 
-    async fn find_entitlement_mapping_by_provider_product(
+    async fn find_entitlement_mapping_by_provider_product_price(
         &self,
         realm_id: &str,
         payment_provider: &str,
         external_product_id: &str,
+        external_price_id: Option<&str>,
     ) -> Result<Option<EntitlementMapping>, CoreError> {
-        let result = provider_entitlement_mapping::Entity::find()
+        // NULL handling is encapsulated here, not at the call site.
+        // Some(price_id) -> external_price_id = $x (Stripe)
+        // None          -> external_price_id IS NULL (Creem; dedup via
+        //                  NULLS NOT DISTINCT)
+        let mut query = provider_entitlement_mapping::Entity::find()
             .filter(provider_entitlement_mapping::Column::RealmId.eq(realm_id))
             .filter(provider_entitlement_mapping::Column::PaymentProvider.eq(payment_provider))
-            .filter(provider_entitlement_mapping::Column::ExternalProductId.eq(external_product_id))
+            .filter(
+                provider_entitlement_mapping::Column::ExternalProductId.eq(external_product_id),
+            );
+        query = match external_price_id {
+            Some(pid) => {
+                query.filter(provider_entitlement_mapping::Column::ExternalPriceId.eq(pid))
+            }
+            None => query.filter(provider_entitlement_mapping::Column::ExternalPriceId.is_null()),
+        };
+
+        let result = query
             .one(&self.db)
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
@@ -1551,6 +1571,52 @@ impl BillingRepository for PostgresBillingRepository {
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
         Ok(result.map(Self::model_to_entitlement_mapping))
+    }
+
+    async fn find_entitlement_mapping_by_key_price(
+        &self,
+        realm_id: &str,
+        entitlement_key: &str,
+        external_price_id: Option<&str>,
+    ) -> Result<Option<EntitlementMapping>, CoreError> {
+        // NULL handling encapsulated here (symmetric to
+        // find_entitlement_mapping_by_provider_product_price).
+        let mut query = provider_entitlement_mapping::Entity::find()
+            .filter(provider_entitlement_mapping::Column::RealmId.eq(realm_id))
+            .filter(provider_entitlement_mapping::Column::EntitlementKey.eq(entitlement_key));
+        query = match external_price_id {
+            Some(pid) => {
+                query.filter(provider_entitlement_mapping::Column::ExternalPriceId.eq(pid))
+            }
+            None => query.filter(provider_entitlement_mapping::Column::ExternalPriceId.is_null()),
+        };
+
+        let result = query
+            .one(&self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(result.map(Self::model_to_entitlement_mapping))
+    }
+
+    async fn list_entitlement_mappings_by_provider_product(
+        &self,
+        realm_id: &str,
+        payment_provider: &str,
+        external_product_id: &str,
+    ) -> Result<Vec<EntitlementMapping>, CoreError> {
+        let results = provider_entitlement_mapping::Entity::find()
+            .filter(provider_entitlement_mapping::Column::RealmId.eq(realm_id))
+            .filter(provider_entitlement_mapping::Column::PaymentProvider.eq(payment_provider))
+            .filter(provider_entitlement_mapping::Column::ExternalProductId.eq(external_product_id))
+            .all(&self.db)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        Ok(results
+            .into_iter()
+            .map(Self::model_to_entitlement_mapping)
+            .collect())
     }
 
     async fn list_one_time_mappings(
@@ -1778,6 +1844,266 @@ impl BillingRepository for PostgresBillingRepository {
             has_invoices: row.get("has_invoices"),
             has_subscription_history: row.get("has_subscription_history"),
         })
+    }
+
+    /// Atomically batch-upsert all price rows for one product.
+    ///
+    /// Pipeline within a single sqlx transaction:
+    /// 1. `SELECT ... FOR UPDATE` the mappings named in `updates` (lock the
+    ///    group) and verify every `mapping_id` belongs to the
+    ///    `(realm, provider, product)` group — else `MappingNotInGroup` (400).
+    /// 2. Shared-key rename cross-product leak check: if the batch would rename
+    ///    the group's `entitlement_key` to a value that OTHER products in this
+    ///    realm already use under a different key, reject with
+    ///    `CrossProductSharedKeyRename` (400). Same-product rows are renamed
+    ///    atomically as a group.
+    /// 3. Active-subscription lock: for every row transitioning
+    ///    `enabled` true→false, count access-granting subscriptions anchored to
+    ///    that mapping's `(realm, provider, product, external_price_id)`. Any >0
+    ///    → roll back the whole tx and return `ActiveSubscriptionLock` (409).
+    /// 4. Upsert each row (UPDATE existing in place; the batch is scoped to
+    ///    already-synced price rows, so no INSERT path is exercised here).
+    /// 5. Re-read the product's full latest price-row set and return it.
+    async fn batch_update_mappings(
+        &self,
+        input: BatchUpdateMappingsInput,
+    ) -> Result<BatchUpdateResult, BatchMappingError> {
+        use sqlx::Row;
+
+        if input.updates.is_empty() {
+            // Nothing to write — return the current full set for the product.
+            let prices = self
+                .list_entitlement_mappings_by_provider_product(
+                    &input.realm_id,
+                    &input.payment_provider,
+                    &input.external_product_id,
+                )
+                .await?;
+            return Ok(BatchUpdateResult { saved: 0, prices });
+        }
+
+        let mut tx = self
+            .db
+            .get_postgres_connection_pool()
+            .begin()
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to begin batch transaction: {}", e))
+            })?;
+
+        // 1. Lock + ownership check for every requested mapping_id.
+        let requested_ids: Vec<Uuid> = input.updates.iter().map(|u| u.mapping_id).collect();
+        let rows = sqlx::query(
+            "SELECT id, external_price_id, entitlement_key, enabled \
+             FROM provider_entitlement_mappings \
+             WHERE realm_id = $1 AND payment_provider = $2 AND external_product_id = $3 \
+               AND id = ANY($4) FOR UPDATE",
+        )
+        .bind(&input.realm_id)
+        .bind(&input.payment_provider)
+        .bind(&input.external_product_id)
+        .bind(&requested_ids)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(format!("Failed to lock batch mappings: {}", e)))?;
+
+        if rows.len() != input.updates.len() {
+            // Identify the first offender for a precise error.
+            let found: std::collections::HashSet<Uuid> =
+                rows.iter().map(|r| r.get::<Uuid, _>("id")).collect();
+            let offender = input
+                .updates
+                .iter()
+                .map(|u| u.mapping_id)
+                .find(|id| !found.contains(id))
+                .unwrap_or_else(|| input.updates[0].mapping_id);
+            let _ = tx.rollback().await;
+            return Err(BatchMappingError::MappingNotInGroup {
+                mapping_id: offender,
+                provider: input.payment_provider.clone(),
+                product: input.external_product_id.clone(),
+            });
+        }
+
+        // Index current state by id for diffing.
+        let mut current_by_id: std::collections::HashMap<Uuid, (String, Option<String>, bool)> =
+            std::collections::HashMap::with_capacity(input.updates.len());
+        for r in rows {
+            current_by_id.insert(
+                r.get::<Uuid, _>("id"),
+                (
+                    r.get::<String, _>("entitlement_key"),
+                    r.get::<Option<String>, _>("external_price_id"),
+                    r.get::<bool, _>("enabled"),
+                ),
+            );
+        }
+
+        // 2. Shared-key rename cross-product leak check.
+        //
+        // The batch is single-product; the group's entitlement_key is renamed
+        // atomically. If the NEW key collides with mappings of OTHER products in
+        // this realm that already use it (different external_product_id), the
+        // rename would silently retarget those subscriptions' projection —
+        // reject with an error response.
+        let new_keys: std::collections::HashSet<&str> = input
+            .updates
+            .iter()
+            .map(|u| u.entitlement_key.as_str())
+            .collect();
+        if new_keys.len() == 1 {
+            let new_key = input.updates[0].entitlement_key.as_str();
+            let old_keys: std::collections::HashSet<&str> =
+                current_by_id.values().map(|(k, _, _)| k.as_str()).collect();
+            let is_rename = !old_keys.contains(new_key);
+            if is_rename {
+                let leaked: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM provider_entitlement_mappings \
+                     WHERE realm_id = $1 AND entitlement_key = $2 \
+                       AND external_product_id <> $3",
+                )
+                .bind(&input.realm_id)
+                .bind(new_key)
+                .bind(&input.external_product_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| {
+                    CoreError::DatabaseError(format!(
+                        "Failed to check cross-product shared-key rename: {}",
+                        e
+                    ))
+                })?;
+                if leaked > 0 {
+                    let _ = tx.rollback().await;
+                    return Err(BatchMappingError::CrossProductSharedKeyRename {
+                        provider: input.payment_provider.clone(),
+                        product: input.external_product_id.clone(),
+                        affected_count: leaked,
+                    });
+                }
+            }
+        }
+
+        // 3. Active-subscription lock: sum access-granting subscriptions across
+        // every row that transitions enabled true→false. Any >0 rolls back the
+        // WHOLE batch.
+        //
+        // Collect both the non-null price ids (Stripe) and whether any
+        // disabling row is price-less (Creem, NULL external_price_id). The
+        // count query ORs the two matching branches so NULL-price subscriptions
+        // are covered without a sentinel.
+        let mut disabling_price_ids: Vec<String> = Vec::new();
+        let mut disabling_includes_null_price = false;
+        for u in &input.updates {
+            let Some(false) = u.enabled else {
+                continue;
+            };
+            let Some((_, price_id, was_enabled)) = current_by_id.get(&u.mapping_id) else {
+                continue;
+            };
+            if *was_enabled {
+                match price_id {
+                    Some(pid) => disabling_price_ids.push(pid.clone()),
+                    None => disabling_includes_null_price = true,
+                }
+            }
+        }
+        if !disabling_price_ids.is_empty() || disabling_includes_null_price {
+            // Access-granting statuses mirror SubscriptionStatus::has_access().
+            // Branch 1: subscriptions whose external_price_id is one of the
+            // disabling non-null price ids. Branch 2 (only when a disabling row
+            // is price-less): subscriptions with NULL external_price_id.
+            let active_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM subscription \
+                 WHERE realm_id = $1 \
+                   AND payment_provider = $2 \
+                   AND external_product_id = $3 \
+                   AND status IN ('active','trialing','past_due','scheduled_cancel','dispute') \
+                   AND ( \
+                        external_price_id = ANY($4) \
+                     OR ($5 AND external_price_id IS NULL) \
+                   )",
+            )
+            .bind(&input.realm_id)
+            .bind(&input.payment_provider)
+            .bind(&input.external_product_id)
+            .bind(&disabling_price_ids)
+            .bind(disabling_includes_null_price)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!(
+                    "Failed to count active subscriptions for batch: {}",
+                    e
+                ))
+            })?;
+            if active_count > 0 {
+                let _ = tx.rollback().await;
+                return Err(BatchMappingError::ActiveSubscriptionLock {
+                    provider: input.payment_provider.clone(),
+                    product: input.external_product_id.clone(),
+                    active_subscriptions: active_count,
+                });
+            }
+        }
+
+        // 4. Upsert (UPDATE) each row in tx order. Fields the client omits
+        // (`None`) are preserved via COALESCE — matches the single-PATCH contract
+        // (entitlement_mapping_handlers.rs `update_entitlement_mapping`).
+        let now = chrono::Utc::now();
+        let mut saved: u32 = 0;
+        for u in &input.updates {
+            let billing_type_str = u.billing_type.as_deref();
+            let result = sqlx::query(
+                "UPDATE provider_entitlement_mappings SET \
+                   entitlement_key = $4, \
+                   billing_type = COALESCE($5, billing_type), \
+                   billing_period = COALESCE($6, billing_period), \
+                   points_per_period = COALESCE($7, points_per_period), \
+                   grant_period_type = COALESCE($8, grant_period_type), \
+                   validity_days = COALESCE($9, validity_days), \
+                   grant_on_subscribe = COALESCE($10, grant_on_subscribe), \
+                   max_periods = COALESCE($11, max_periods), \
+                   enabled = COALESCE($12, enabled), \
+                   updated_at = $13 \
+                 WHERE realm_id = $1 AND payment_provider = $2 \
+                   AND external_product_id = $3 AND id = $14",
+            )
+            .bind(&input.realm_id)
+            .bind(&input.payment_provider)
+            .bind(&input.external_product_id)
+            .bind(&u.entitlement_key)
+            .bind(billing_type_str)
+            .bind(&u.billing_period)
+            .bind(u.points_per_period.map(|v| v as i32))
+            .bind(&u.grant_period_type)
+            .bind(u.validity_days.map(|v| v as i32))
+            .bind(u.grant_on_subscribe)
+            .bind(u.max_periods)
+            .bind(u.enabled)
+            .bind(now)
+            .bind(u.mapping_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                CoreError::DatabaseError(format!("Failed to update mapping in batch: {}", e))
+            })?;
+            saved += result.rows_affected() as u32;
+        }
+
+        tx.commit().await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to commit batch_update_mappings: {}", e))
+        })?;
+
+        // 5. Re-read the product's full latest price-row set.
+        let prices = self
+            .list_entitlement_mappings_by_provider_product(
+                &input.realm_id,
+                &input.payment_provider,
+                &input.external_product_id,
+            )
+            .await?;
+        Ok(BatchUpdateResult { saved, prices })
     }
 }
 

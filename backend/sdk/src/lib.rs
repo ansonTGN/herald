@@ -55,6 +55,11 @@ pub struct SubscriptionDetail {
     pub status: String,
     pub entitlement_key: String,
     pub payment_provider: String,
+    /// Provider price id bound to this subscription.
+    /// `None` for price-less providers (Creem) or when the subscription has no
+    /// bound price yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_price_id: Option<String>,
     pub current_period_start: Option<String>,
     pub current_period_end: Option<String>,
     pub cancel_at: Option<String>,

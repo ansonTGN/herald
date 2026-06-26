@@ -13,9 +13,29 @@ use crate::tests::helpers::points_helpers::*;
 use crate::tests::helpers::webhook_helpers::*;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext;
+use herald_core::domain::billing::BillingRepository;
 use herald_core::domain::points::entities::{CreditLedgerStatus, CreditSourceType, CreditType};
 use test_context::test_context;
 use uuid::Uuid;
+
+/// Resolve the price-level EntitlementMapping for a key in these scenarios.
+///
+/// The price-level mapping refactor changed `handle_subscription_paid` to consume the price-level mapping
+/// directly. These scenarios seed a single mapping per
+/// entitlement_key, so resolving by key is identity-equivalent to the
+/// price-level mapping the webhook path resolves.
+async fn mapping_for_key(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    key: &str,
+) -> herald_core::domain::billing::entities::EntitlementMapping {
+    ctx.app_state
+        .billing_repository
+        .find_entitlement_mapping_by_key(realm_id, key)
+        .await
+        .unwrap_or_else(|_| panic!("mapping for key '{key}' should exist"))
+        .unwrap_or_else(|| panic!("mapping for key '{key}' should be Some"))
+}
 
 // ============================================================================
 // Test 1: Initial Subscription Grant
@@ -325,6 +345,7 @@ async fn test_subscription_activation_writes_current_and_pregrants_next(
     .await;
 
     // --- When: subscription activation fires handle_subscription_paid -------
+    let mapping = mapping_for_key(ctx, &realm_id, &entitlement_key).await;
     let result = ctx
         .app_state
         .subscription_service
@@ -337,7 +358,7 @@ async fn test_subscription_activation_writes_current_and_pregrants_next(
             )
             .await,
             &realm_id,
-            &entitlement_key,
+            &mapping,
             false, // initial activation
             current_period_start,
             current_period_end,
@@ -510,6 +531,7 @@ async fn test_subscription_renewal_period_idempotency(ctx: &mut SchemaTestContex
 
     // --- When: formal renewal webhook fires for the SAME period/schedule -----
     let provider_actual_period_end = estimate_expires + chrono::Duration::days(2);
+    let mapping = mapping_for_key(ctx, &realm_id, &entitlement_key).await;
     let result = ctx
         .app_state
         .subscription_service
@@ -518,7 +540,7 @@ async fn test_subscription_renewal_period_idempotency(ctx: &mut SchemaTestContex
             subscription_id,
             bucket_id,
             &realm_id,
-            &entitlement_key,
+            &mapping,
             true, // renewal
             period_start,
             provider_actual_period_end,
@@ -718,6 +740,7 @@ async fn test_subscription_renewal_chains_next_period_pregrant(ctx: &mut SchemaT
     );
 
     // --- When: renewal webhook fires (no pre-grant → fresh grant path) ------
+    let mapping = mapping_for_key(ctx, &realm_id, &entitlement_key).await;
     let result = ctx
         .app_state
         .subscription_service
@@ -726,7 +749,7 @@ async fn test_subscription_renewal_chains_next_period_pregrant(ctx: &mut SchemaT
             subscription_id,
             bucket_id,
             &realm_id,
-            &entitlement_key,
+            &mapping,
             true,
             current_period_start,
             current_period_end,

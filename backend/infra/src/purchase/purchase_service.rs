@@ -314,6 +314,7 @@ where
             currency,
             title,
             provider_external_product_id: Some(mapping.external_product_id.clone()),
+            provider_external_price_id: mapping.external_price_id.clone(),
             billing_period: mapping.billing_period.clone(),
             billing_type: mapping.billing_type,
         })
@@ -460,6 +461,9 @@ where
                 price_amount: target.amount,
                 currency: target.currency.clone(),
                 plan_name: target.title.clone(),
+                // Reference the real Stripe Price when the mapping carries one;
+                // None falls back to price_data in the client.
+                price_id: target.provider_external_price_id.clone(),
                 realm_id: realm_id.to_string(),
                 webhook_url: Some(format!(
                     "{}/api/third/pay/{}/stripe/webhooks",

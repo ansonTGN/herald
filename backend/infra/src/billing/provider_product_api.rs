@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use herald_domain::billing::{ProviderApiPort, ProviderProduct};
+use herald_domain::billing::{ProviderApiPort, ProviderPrice, ProviderProduct};
 use herald_domain::common::entities::app_errors::CoreError;
 use serde_json::Value;
 use sqlx::PgPool;
@@ -90,44 +90,53 @@ impl ConfiguredProviderProductApi {
                 continue;
             };
 
-            let price_url = format!(
+            // Collect ALL active prices for this product. Stripe
+            // exposes one Price per (currency, billing period); each becomes its
+            // own ProviderPrice variant. We deliberately do NOT collapse to a
+            // "first price" — multi-price products must yield one mapping row per
+            // price.
+            let prices_url = format!(
                 "{}/v1/prices?active=true&limit=100&product={}",
                 base_url, product_id
             );
-            let price = self
-                .http
-                .get(price_url)
-                .bearer_auth(&api_key)
-                .send()
-                .await
-                .ok()
-                .filter(|res| res.status().is_success());
+            let prices_response = self.http.get(prices_url).bearer_auth(&api_key).send().await;
 
-            let price_json = match price {
-                Some(res) => res.json::<Value>().await.unwrap_or(Value::Null),
-                None => Value::Null,
+            let prices: Vec<ProviderPrice> = match prices_response {
+                Ok(res) if res.status().is_success() => {
+                    let prices_json = res.json::<Value>().await.unwrap_or(Value::Null);
+                    prices_json["data"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|price| {
+                            let is_recurring = price["recurring"].is_object();
+                            ProviderPrice {
+                                external_price_id: price["id"].as_str().map(str::to_string),
+                                price: price["unit_amount"].as_i64(),
+                                currency: price["currency"].as_str().map(str::to_string),
+                                billing_type: Some(
+                                    if is_recurring {
+                                        "recurring"
+                                    } else {
+                                        "one_time"
+                                    }
+                                    .to_string(),
+                                ),
+                                billing_period: price["recurring"]["interval"]
+                                    .as_str()
+                                    .map(str::to_string),
+                            }
+                        })
+                        .collect()
+                }
+                _ => Vec::new(),
             };
-            let first_price = price_json["data"]
-                .as_array()
-                .and_then(|prices| prices.first())
-                .cloned()
-                .unwrap_or(Value::Null);
 
             synced.push(ProviderProduct {
                 external_product_id: product_id.to_string(),
-                external_price_id: first_price["id"].as_str().map(str::to_string),
                 name: product["name"].as_str().unwrap_or(product_id).to_string(),
                 description: product["description"].as_str().map(str::to_string),
-                price: first_price["unit_amount"].as_i64(),
-                currency: first_price["currency"].as_str().map(str::to_string),
-                billing_type: Some(if first_price["recurring"].is_object() {
-                    "recurring".to_string()
-                } else {
-                    "one_time".to_string()
-                }),
-                billing_period: first_price["recurring"]["interval"]
-                    .as_str()
-                    .map(str::to_string),
+                prices,
             });
         }
 
@@ -161,6 +170,11 @@ impl ConfiguredProviderProductApi {
         }
 
         let body: Value = response.json().await?;
+        // Creem is product-level only: it has no Stripe-style Price object and no
+        // price id. Emit an empty `prices` vec; the sync service falls back to a
+        // single NULL-price row (`external_price_id = NULL`),
+        // which dedups via the NULLS NOT DISTINCT unique constraint. We do NOT
+        // synthesize a placeholder price id.
         let products = body
             .get("items")
             .and_then(|v| v.as_array())
@@ -170,13 +184,9 @@ impl ConfiguredProviderProductApi {
                 let id = product["id"].as_str()?;
                 Some(ProviderProduct {
                     external_product_id: id.to_string(),
-                    external_price_id: None,
                     name: product["name"].as_str().unwrap_or(id).to_string(),
                     description: product["description"].as_str().map(str::to_string),
-                    price: product["price"].as_i64(),
-                    currency: product["currency"].as_str().map(str::to_string),
-                    billing_type: product["billing_type"].as_str().map(str::to_string),
-                    billing_period: product["billing_period"].as_str().map(str::to_string),
+                    prices: Vec::new(),
                 })
             })
             .collect();

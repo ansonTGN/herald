@@ -1803,46 +1803,6 @@ impl PointsRepository for PostgresPointsRepository {
         result.map(Self::model_to_points_transaction).transpose()
     }
 
-    async fn find_points_policy_by_entitlement_key(
-        &self,
-        realm_id: &str,
-        entitlement_key: &str,
-    ) -> Result<Option<herald_domain::billing::entities::EntitlementMapping>, CoreError> {
-        use herald_entity::provider_entitlement_mapping;
-
-        let result = provider_entitlement_mapping::Entity::find()
-            .filter(provider_entitlement_mapping::Column::RealmId.eq(realm_id))
-            .filter(provider_entitlement_mapping::Column::EntitlementKey.eq(entitlement_key))
-            .filter(provider_entitlement_mapping::Column::Enabled.eq(true))
-            .one(&*self.db)
-            .await
-            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
-
-        Ok(result.map(
-            |model| herald_domain::billing::entities::EntitlementMapping {
-                id: model.id,
-                realm_id: model.realm_id,
-                payment_provider: model.payment_provider,
-                external_product_id: model.external_product_id,
-                external_price_id: model.external_price_id,
-                bucket_id: model.bucket_id,
-                entitlement_key: model.entitlement_key,
-                billing_type: model.billing_type.and_then(|s| s.parse().ok()),
-                billing_period: model.billing_period,
-                points_per_period: model.points_per_period.map(|v| v as i64),
-                grant_period_type: model.grant_period_type,
-                validity_days: model.validity_days.map(|v| v as i64),
-                grant_on_subscribe: model.grant_on_subscribe,
-                max_periods: model.max_periods.map(|v| v as i64),
-                enabled: model.enabled,
-                provider_product_info: model.provider_product_info,
-                synced_at: model.synced_at.map(chrono::DateTime::from),
-                created_at: chrono::DateTime::from(model.created_at),
-                updated_at: chrono::DateTime::from(model.updated_at),
-            },
-        ))
-    }
-
     async fn list_wallets(
         &self,
         realm_id: &str,

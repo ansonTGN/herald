@@ -154,38 +154,48 @@ impl StripeClient {
             form_fields.push(("customer_email".to_string(), customer_email.clone()));
         }
 
-        // Line items[0] fields
-        form_fields.push((
-            "line_items[0][price_data][currency]".to_string(),
-            request.currency.clone(),
-        ));
-        form_fields.push((
-            "line_items[0][price_data][product_data][name]".to_string(),
-            request.plan_name.clone(),
-        ));
-        form_fields.push((
-            "line_items[0][price_data][product_data][metadata][herald_mapping_id]".to_string(),
-            request.mapping_id.to_string(),
-        ));
-        form_fields.push((
-            "line_items[0][price_data][unit_amount]".to_string(),
-            request.price_amount.to_string(),
-        ));
-
-        // Recurring interval only for subscription mode
-        if !is_payment_mode {
-            let interval = if request.billing_period == "monthly" {
-                "month"
-            } else {
-                "year"
-            };
+        // Line items[0] — reference the REAL Stripe Price when available
+        // (real-price semantics); otherwise fall back to rebuilding
+        // an ad-hoc Price via price_data (price-less providers / no external
+        // price). The price-less branch is explicit price-less-provider
+        // semantics, NOT a compatibility layer.
+        if let Some(pid) = request.price_id.as_deref().filter(|s| !s.is_empty()) {
+            form_fields.push(("line_items[0][price]".to_string(), pid.to_string()));
+            form_fields.push(("line_items[0][quantity]".to_string(), "1".to_string()));
+        } else {
+            // price-less fallback: rebuild an ad-hoc Price via price_data
             form_fields.push((
-                "line_items[0][price_data][recurring][interval]".to_string(),
-                interval.to_string(),
+                "line_items[0][price_data][currency]".to_string(),
+                request.currency.clone(),
             ));
-        }
+            form_fields.push((
+                "line_items[0][price_data][product_data][name]".to_string(),
+                request.plan_name.clone(),
+            ));
+            form_fields.push((
+                "line_items[0][price_data][product_data][metadata][herald_mapping_id]".to_string(),
+                request.mapping_id.to_string(),
+            ));
+            form_fields.push((
+                "line_items[0][price_data][unit_amount]".to_string(),
+                request.price_amount.to_string(),
+            ));
 
-        form_fields.push(("line_items[0][quantity]".to_string(), "1".to_string()));
+            // Recurring interval only for subscription mode
+            if !is_payment_mode {
+                let interval = if request.billing_period == "monthly" {
+                    "month"
+                } else {
+                    "year"
+                };
+                form_fields.push((
+                    "line_items[0][price_data][recurring][interval]".to_string(),
+                    interval.to_string(),
+                ));
+            }
+
+            form_fields.push(("line_items[0][quantity]".to_string(), "1".to_string()));
+        }
 
         if is_payment_mode {
             // For one-time payments, propagate metadata to payment_intent_data
@@ -801,6 +811,7 @@ mod tests {
                 price_amount: 1999,
                 currency: "usd".to_string(),
                 plan_name: "Pro Plan".to_string(),
+                price_id: None, // price-less fallback -> price_data
                 realm_id: "realm-1".to_string(),
                 webhook_url: None,
                 metadata: Some(std::collections::HashMap::from([(
@@ -943,6 +954,7 @@ mod tests {
                 price_amount: 500,
                 currency: "usd".to_string(),
                 plan_name: "Points Pack 100".to_string(),
+                price_id: None, // price-less fallback -> price_data
                 realm_id: "realm-2".to_string(),
                 webhook_url: None,
                 metadata: Some(std::collections::HashMap::from([(
@@ -1078,6 +1090,7 @@ mod tests {
                 price_amount: 9999,
                 currency: "usd".to_string(),
                 plan_name: "Annual Plan".to_string(),
+                price_id: None, // price-less fallback -> price_data
                 realm_id: "realm-3".to_string(),
                 webhook_url: None,
                 metadata: None,
@@ -1131,6 +1144,194 @@ mod tests {
         assert!(
             !form.contains_key("invoice_creation[enabled]"),
             "subscription mode should not include invoice_creation fields"
+        );
+    }
+
+    // --- price_id branch unit tests ---
+    // Real-price semantics: `CreateCheckoutRequest.price_id` selects
+    // between two mutually exclusive line-item shapes:
+    //   - Some(non-empty) -> reference the real Stripe Price
+    //     (`line_items[0][price]` + `quantity`); MUST NOT emit `price_data`.
+    //   - None            -> price-less fallback, rebuild an ad-hoc Price via
+    //     `line_items[0][price_data]`; this is explicit price-less-provider
+    //     semantics (NOT a compatibility layer); MUST NOT emit `line_items[0][price]`.
+    // These two tests encode WHY the distinction matters: referencing the real
+    // Price keeps Stripe-side analytics, coupons, and webhook `price` fields
+    // consistent with the catalog, while the None branch preserves price-less
+    // provider support. Each test fails if the branch is removed or inverted.
+
+    /// User Story: US-EM-009 — as a billing operator I need checkout to
+    /// reference the real Stripe Price (configured per entitlement mapping)
+    /// when one exists, so that Stripe-side analytics, coupons, and webhook
+    /// `price` fields stay consistent with the catalog.
+    /// Covers: price_id=Some -> `line_items[0][price]` + `quantity`; no
+    /// `price_data` fields leak onto the wire (mutual exclusivity of the two
+    /// branches). Fails if the Some-branch is removed or if price_data is
+    /// accidentally emitted alongside a real Price reference.
+    #[tokio::test]
+    async fn create_checkout_session_with_price_id_references_real_price() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "cs_test_price",
+                "url": "https://checkout.stripe.com/price",
+                "customer": null,
+                "status": "open",
+                "payment_intent": null,
+                "subscription": "sub_test_price",
+                "metadata": {}
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client =
+            StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        let request = CreateCheckoutRequest {
+            client_app_id: uuid::Uuid::now_v7(),
+            mapping_id: uuid::Uuid::now_v7(),
+            user_id: Some(uuid::Uuid::now_v7()),
+            customer_email: Some("buyer@example.com".to_string()),
+            success_url: "https://example.com/success".to_string(),
+            cancel_url: "https://example.com/cancel".to_string(),
+            billing_period: "monthly".to_string(),
+            trial_days: None,
+            price_amount: 1999,
+            currency: "usd".to_string(),
+            plan_name: "Pro Plan".to_string(),
+            price_id: Some("price_real_abc".to_string()), // real Price reference
+            realm_id: "realm-x".to_string(),
+            webhook_url: None,
+            metadata: None,
+            mode: None, // subscription mode
+        };
+
+        client
+            .create_checkout_session(&request)
+            .await
+            .expect("checkout with real price_id should succeed");
+
+        let requests = mock_server
+            .received_requests()
+            .await
+            .expect("request recording should be enabled");
+        assert_eq!(requests.len(), 1, "exactly one checkout call");
+        let form: std::collections::HashMap<_, _> = url::form_urlencoded::parse(&requests[0].body)
+            .into_owned()
+            .collect();
+
+        // Real Price is referenced verbatim...
+        assert_eq!(
+            form.get("line_items[0][price]"),
+            Some(&"price_real_abc".to_string()),
+            "Some(price_id) must populate line_items[0][price] with the real Price ID"
+        );
+        assert_eq!(
+            form.get("line_items[0][quantity]"),
+            Some(&"1".to_string()),
+            "Some(price_id) must set line_items[0][quantity]=1"
+        );
+        // ...and NO price_data fields may leak onto the wire. Mutual
+        // exclusivity is the load-bearing assertion: emitting price_data
+        // alongside a real Price reference would let Stripe silently override
+        // the catalog Price, breaking analytics/webhook consistency.
+        assert!(
+            !form
+                .keys()
+                .any(|k| k.starts_with("line_items[0][price_data]")),
+            "Some(price_id) must NOT emit any price_data fields; got: {:?}",
+            form.keys()
+                .filter(|k| k.starts_with("line_items[0][price_data]"))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// User Story: A2 price-less provider — as a billing operator I need
+    /// checkout to keep working for price-less providers (no external Stripe
+    /// Price) by rebuilding an ad-hoc Price via `price_data`, so that
+    /// amount-based checkout remains a first-class path (NOT a compatibility
+    /// layer that could be deleted).
+    /// Covers: price_id=None -> `line_items[0][price_data]` (currency /
+    /// product_data.name / unit_amount) is present and `line_items[0][price]`
+    /// is absent. Fails if the None-branch price_data fallback is removed or
+    /// if a stray `line_items[0][price]` is emitted.
+    #[tokio::test]
+    async fn create_checkout_session_without_price_id_falls_back_to_price_data() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "cs_test_priceless",
+                "url": "https://checkout.stripe.com/priceless",
+                "customer": null,
+                "status": "open",
+                "payment_intent": null,
+                "subscription": "sub_test_priceless",
+                "metadata": {}
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client =
+            StripeClient::with_base_url("sk_test_123".to_string(), mock_server.uri(), 30).unwrap();
+
+        let request = CreateCheckoutRequest {
+            client_app_id: uuid::Uuid::now_v7(),
+            mapping_id: uuid::Uuid::now_v7(),
+            user_id: Some(uuid::Uuid::now_v7()),
+            customer_email: Some("buyer@example.com".to_string()),
+            success_url: "https://example.com/success".to_string(),
+            cancel_url: "https://example.com/cancel".to_string(),
+            billing_period: "monthly".to_string(),
+            trial_days: None,
+            price_amount: 1999,
+            currency: "usd".to_string(),
+            plan_name: "Pro Plan".to_string(),
+            price_id: None, // price-less fallback -> price_data
+            realm_id: "realm-x".to_string(),
+            webhook_url: None,
+            metadata: None,
+            mode: None, // subscription mode
+        };
+
+        client
+            .create_checkout_session(&request)
+            .await
+            .expect("checkout with price_id=None should succeed");
+
+        let requests = mock_server
+            .received_requests()
+            .await
+            .expect("request recording should be enabled");
+        assert_eq!(requests.len(), 1, "exactly one checkout call");
+        let form: std::collections::HashMap<_, _> = url::form_urlencoded::parse(&requests[0].body)
+            .into_owned()
+            .collect();
+
+        // price_data fallback is present (amount-based price-less checkout).
+        assert_eq!(
+            form.get("line_items[0][price_data][currency]"),
+            Some(&"usd".to_string()),
+            "None price_id must fall back to price_data[currency]"
+        );
+        assert_eq!(
+            form.get("line_items[0][price_data][product_data][name]"),
+            Some(&"Pro Plan".to_string()),
+            "None price_id must fall back to price_data[product_data][name]"
+        );
+        assert_eq!(
+            form.get("line_items[0][price_data][unit_amount]"),
+            Some(&"1999".to_string()),
+            "None price_id must fall back to price_data[unit_amount]"
+        );
+        // ...and line_items[0][price] must NOT be set. Emitting a real-Price
+        // reference when none was configured would point checkout at an
+        // undefined Stripe object and break price-less providers.
+        assert!(
+            !form.contains_key("line_items[0][price]"),
+            "None price_id must NOT emit line_items[0][price]; got: {:?}",
+            form.get("line_items[0][price]")
         );
     }
 

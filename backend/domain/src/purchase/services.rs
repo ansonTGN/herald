@@ -41,6 +41,10 @@ pub struct PurchaseTargetSnapshot {
     pub currency: String,
     pub title: String,
     pub provider_external_product_id: Option<String>,
+    /// Real provider Price ID (e.g. Stripe `price_...`). Populated from
+    /// `EntitlementMapping.external_price_id`. None for price-less providers
+    /// (Creem) or mappings without an external price.
+    pub provider_external_price_id: Option<String>,
     pub billing_period: Option<String>,
     pub billing_type: Option<BillingType>,
 }

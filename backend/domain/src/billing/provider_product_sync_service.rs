@@ -10,18 +10,45 @@ use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::ensure_policy;
 use crate::points::services::registration_pool_resolver::RegistrationPoolResolver;
 
-/// External provider product info returned by ProviderApiPort
+/// A single price variant of a provider product.
+///
+/// Stripe exposes one `Price` per (product, currency, billing period) and gives
+/// each a real `external_price_id`. Creem is product-level only and has no price
+/// id, so `external_price_id` is `None` for Creem rows.
 #[derive(Debug, Clone)]
-pub struct ProviderProduct {
-    pub external_product_id: String,
+pub struct ProviderPrice {
     pub external_price_id: Option<String>,
-    pub name: String,
-    pub description: Option<String>,
     pub price: Option<i64>,
     pub currency: Option<String>,
     pub billing_type: Option<String>,
     pub billing_period: Option<String>,
 }
+
+/// External provider product info returned by ProviderApiPort.
+///
+/// One product can carry multiple price variants (`prices`). A product with no
+/// price info (Creem) carries an empty `prices` vec.
+#[derive(Debug, Clone)]
+pub struct ProviderProduct {
+    pub external_product_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub prices: Vec<ProviderPrice>,
+}
+
+/// Stand-in `ProviderPrice` for products that carry no price variants at all
+/// (Creem: product-level, no Stripe-style price object). Fields are all `None`,
+/// which writes `external_price_id = NULL` and dedups via the `NULLS NOT
+/// DISTINCT` unique constraint. A real `ProviderPrice` instance is
+/// not `const`, so this is expressed as a plain static for the sync loop's
+/// empty-prices fallback.
+static NULL_PRICE: ProviderPrice = ProviderPrice {
+    external_price_id: None,
+    price: None,
+    currency: None,
+    billing_type: None,
+    billing_period: None,
+};
 
 /// Result of a full provider sync operation
 #[derive(Debug, Clone)]
@@ -138,110 +165,144 @@ where
         let mut partial_errors = Vec::new();
 
         for product in products {
-            let existing = self
-                .repository
-                .find_entitlement_mapping_by_provider_product(
-                    realm_id,
-                    payment_provider,
-                    &product.external_product_id,
-                )
-                .await?;
+            // A product with zero price variants still needs one mapping row
+            // (Creem: product-level, no price concept). Treat the empty case as
+            // a single NULL-price variant so Creem keeps producing exactly one
+            // row with `external_price_id IS NULL` (the
+            // NULLS NOT DISTINCT unique constraint dedups on it).
+            let prices: Vec<&ProviderPrice> = if product.prices.is_empty() {
+                vec![&NULL_PRICE]
+            } else {
+                product.prices.iter().collect()
+            };
 
-            let (mapping_id, bucket_id, entitlement_key, draft_defaults) = match existing.as_ref() {
-                Some(existing_mapping) => (
-                    existing_mapping.id,
-                    existing_mapping.bucket_id,
-                    existing_mapping.entitlement_key.clone(),
-                    None,
-                ),
-                None => {
-                    // New provider product: create a draft mapping. `bucket_id` is
-                    // NOT NULL (commits aa6cc2da / f134dcf8 / 57c313ba), so bind
-                    // it to the realm's registration-pool bucket — the same
-                    // bucket the registration/free-periodic grant path and the
-                    // webhook entitlement resolver use. No "default"/"draft"
-                    // bucket concept exists by design.
-                    let bucket_id = self
-                        .bucket_resolver
-                        .resolve_registration_pool_bucket(realm_id)
-                        .await
-                        .map_err(|e| {
-                            tracing::error!(
-                                realm_id = %realm_id,
-                                external_product_id = %product.external_product_id,
-                                error = %e,
-                                "Failed to resolve registration-pool bucket during provider product sync"
-                            );
-                            e
-                        })?
-                        .ok_or_else(|| {
-                            // Fail loud: a realm with no registration-pool bucket
-                            // cannot accept newly-synced products. The operator
-                            // must configure a registration pool first.
-                            CoreError::BadRequest(format!(
-                                "Cannot sync new provider product {}: realm '{}' has no registration-pool credit bucket; create one before syncing",
-                                product.external_product_id, realm_id
-                            ))
-                        })?;
-                    (
-                        Uuid::now_v7(),
-                        bucket_id,
-                        draft_entitlement_key(&product.external_product_id),
-                        Some(DraftDefaults::default()),
+            let mut product_had_any_upsert = false;
+
+            for price in prices {
+                let external_price_id = price.external_price_id.as_deref();
+
+                let existing = self
+                    .repository
+                    .find_entitlement_mapping_by_provider_product_price(
+                        realm_id,
+                        payment_provider,
+                        &product.external_product_id,
+                        external_price_id,
                     )
-                }
-            };
+                    .await?;
 
-            let draft = draft_defaults.unwrap_or_default();
-
-            let mapping = EntitlementMapping {
-                id: mapping_id,
-                realm_id: realm_id.to_string(),
-                payment_provider: payment_provider.to_string(),
-                external_product_id: product.external_product_id.clone(),
-                external_price_id: product.external_price_id.clone(),
-                bucket_id,
-                entitlement_key,
-                billing_type: product
-                    .billing_type
-                    .as_deref()
-                    .and_then(|s: &str| s.parse().ok()),
-                billing_period: product.billing_period.clone(),
-                points_per_period: draft.points_per_period,
-                grant_period_type: draft.grant_period_type,
-                validity_days: draft.validity_days,
-                grant_on_subscribe: draft.grant_on_subscribe,
-                max_periods: draft.max_periods,
-                enabled: draft.enabled,
-                provider_product_info: Some(serde_json::json!({
-                    "name": product.name,
-                    "description": product.description,
-                    "price": product.price,
-                    "currency": product.currency,
-                    "billing_type": product.billing_type,
-                    "billing_period": product.billing_period,
-                })),
-                synced_at: Some(chrono::Utc::now()),
-                created_at: existing
+                let (mapping_id, bucket_id, entitlement_key, draft_defaults) = match existing
                     .as_ref()
-                    .map(|m| m.created_at)
-                    .unwrap_or_else(chrono::Utc::now),
-                updated_at: chrono::Utc::now(),
-            };
+                {
+                    Some(existing_mapping) => (
+                        existing_mapping.id,
+                        existing_mapping.bucket_id,
+                        existing_mapping.entitlement_key.clone(),
+                        None,
+                    ),
+                    None => {
+                        // New provider product+price: create a draft mapping.
+                        // `bucket_id` is NOT NULL (commits aa6cc2da /
+                        // f134dcf8 / 57c313ba), so bind it to the realm's
+                        // registration-pool bucket — the same bucket the
+                        // registration/free-periodic grant path and the
+                        // webhook entitlement resolver use. No
+                        // "default"/"draft" bucket concept exists by design.
+                        let bucket_id = self
+                                .bucket_resolver
+                                .resolve_registration_pool_bucket(realm_id)
+                                .await
+                                .map_err(|e| {
+                                    tracing::error!(
+                                        realm_id = %realm_id,
+                                        external_product_id = %product.external_product_id,
+                                        external_price_id = ?external_price_id,
+                                        error = %e,
+                                        "Failed to resolve registration-pool bucket during provider product sync"
+                                    );
+                                    e
+                                })?
+                                .ok_or_else(|| {
+                                    // Fail loud: a realm with no registration-pool
+                                    // bucket cannot accept newly-synced products.
+                                    // The operator must configure a registration
+                                    // pool first.
+                                    CoreError::BadRequest(format!(
+                                        "Cannot sync new provider product {}: realm '{}' has no registration-pool credit bucket; create one before syncing",
+                                        product.external_product_id, realm_id
+                                    ))
+                                })?;
+                        (
+                            Uuid::now_v7(),
+                            bucket_id,
+                            draft_entitlement_key(&product.external_product_id),
+                            Some(DraftDefaults::default()),
+                        )
+                    }
+                };
 
-            match self.repository.upsert_entitlement_mapping(mapping).await {
-                Ok(_) => {
-                    products_synced += 1;
-                    if product.external_price_id.is_some() {
+                let draft = draft_defaults.unwrap_or_default();
+
+                let mapping = EntitlementMapping {
+                    id: mapping_id,
+                    realm_id: realm_id.to_string(),
+                    payment_provider: payment_provider.to_string(),
+                    external_product_id: product.external_product_id.clone(),
+                    external_price_id: price.external_price_id.clone(),
+                    bucket_id,
+                    entitlement_key,
+                    billing_type: price
+                        .billing_type
+                        .as_deref()
+                        .and_then(|s: &str| s.parse().ok()),
+                    billing_period: price.billing_period.clone(),
+                    points_per_period: draft.points_per_period,
+                    grant_period_type: draft.grant_period_type,
+                    validity_days: draft.validity_days,
+                    grant_on_subscribe: draft.grant_on_subscribe,
+                    max_periods: draft.max_periods,
+                    enabled: draft.enabled,
+                    provider_product_info: Some(serde_json::json!({
+                        "name": product.name,
+                        "description": product.description,
+                        "price": price.price,
+                        "currency": price.currency,
+                        "billing_type": price.billing_type,
+                        "billing_period": price.billing_period,
+                    })),
+                    synced_at: Some(chrono::Utc::now()),
+                    created_at: existing
+                        .as_ref()
+                        .map(|m| m.created_at)
+                        .unwrap_or_else(chrono::Utc::now),
+                    updated_at: chrono::Utc::now(),
+                };
+
+                match self.repository.upsert_entitlement_mapping(mapping).await {
+                    Ok(_) => {
+                        // `prices_synced` counts price-level upsert rows:
+                        // every successful price-level upsert,
+                        // including disabled/draft/Creem-NULL-price rows,
+                        // increments. `products_synced` counts distinct
+                        // products with at least one successful upsert.
                         prices_synced += 1;
+                        product_had_any_upsert = true;
+                    }
+                    Err(e) => {
+                        let external_id = match external_price_id {
+                            Some(p) => format!("{}#{}", product.external_product_id, p),
+                            None => product.external_product_id.clone(),
+                        };
+                        partial_errors.push(PartialSyncError {
+                            external_id,
+                            reason: e.to_string(),
+                        });
                     }
                 }
-                Err(e) => {
-                    partial_errors.push(PartialSyncError {
-                        external_id: product.external_product_id.clone(),
-                        reason: e.to_string(),
-                    });
-                }
+            }
+
+            if product_had_any_upsert {
+                products_synced += 1;
             }
         }
 
@@ -292,9 +353,9 @@ struct DraftDefaults {
 /// insert must already carry a key that satisfies the regex. The placeholder
 /// is derived from the product's `external_product_id` so it is:
 /// - stable across re-syncs (idempotent: the same external id yields the same
-///   key, and dedup is by `(realm_id, provider, external_product_id)` via
-///   `find_entitlement_mapping_by_provider_product`, so this never creates a
-///   duplicate row),
+///   key, and dedup is by `(realm_id, provider, external_product_id,
+///   external_price_id)` via `find_entitlement_mapping_by_provider_product_price`,
+///   so this never creates a duplicate row),
 /// - never consumed by `resolve_bucket_id_for_entitlement`, because drafts are
 ///   inserted with `enabled=false` and the resolver filters on `enabled`,
 /// - overwritten by the operator's PATCH with the real Herald entitlement key

@@ -24,7 +24,7 @@ CREATE TABLE provider_entitlement_mappings (
     synced_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_pem_realm_provider_product UNIQUE (realm_id, payment_provider, external_product_id),
+    CONSTRAINT uq_pem_realm_provider_product_price UNIQUE NULLS NOT DISTINCT (realm_id, payment_provider, external_product_id, external_price_id),
     CONSTRAINT chk_pem_entitlement_key CHECK (entitlement_key ~ '^[a-z0-9-]{1,64}$'),
     CONSTRAINT chk_pem_billing_type CHECK (billing_type IS NULL OR billing_type IN ('recurring', 'one_time')),
     CONSTRAINT chk_pem_payment_provider CHECK (payment_provider IN ('stripe', 'creem'))

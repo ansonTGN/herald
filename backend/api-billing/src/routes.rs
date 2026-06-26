@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     middleware::{Next, from_fn},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, post, put},
 };
 
 use crate::credit_bucket_handlers::{
@@ -12,13 +12,13 @@ use crate::credit_bucket_handlers::{
     get_credit_bucket_handler, list_credit_buckets_handler, update_credit_bucket_handler,
 };
 use crate::entitlement_mapping_handlers::{
-    get_entitlement_mapping, list_entitlement_mappings, list_one_time_mappings,
-    sync_provider_products, update_entitlement_mapping,
+    batch_update_entitlement_mappings, get_entitlement_mapping, list_entitlement_mappings,
+    list_one_time_mappings, sync_provider_products, update_entitlement_mapping,
 };
 use crate::feature_availability::get_feature_availability;
 use crate::handlers::{
     cancel_subscription_for_client_app, create_checkout_session, get_subscription,
-    get_subscription_for_client_app, list_subscriptions,
+    get_subscription_for_client_app, list_purchase_options, list_subscriptions,
 };
 use crate::handlers_history::{
     get_my_subscription_history, get_subscription_history, list_my_subscription_history,
@@ -115,6 +115,12 @@ pub fn billing_routes() -> Router<AppState> {
             "/api/bill/{realmId}/entitlement-mappings/sync",
             post(sync_provider_products),
         )
+        // Static `batch` segment is registered BEFORE `/{mappingId}` so it is
+        // matched unambiguously (same convention as `/overview` above).
+        .route(
+            "/api/bill/{realmId}/entitlement-mappings/batch",
+            put(batch_update_entitlement_mappings),
+        )
         .route(
             "/api/bill/{realmId}/entitlement-mappings/{mappingId}",
             get(get_entitlement_mapping).patch(update_entitlement_mapping),
@@ -137,6 +143,10 @@ pub fn billing_routes() -> Router<AppState> {
         .route(
             "/api/bill/{realmId}/client/{clientAppId}/checkout",
             post(create_checkout_session),
+        )
+        .route(
+            "/api/bill/{realmId}/client/{clientAppId}/purchase-options",
+            get(list_purchase_options),
         )
         // ===== Subscription History =====
         .route(

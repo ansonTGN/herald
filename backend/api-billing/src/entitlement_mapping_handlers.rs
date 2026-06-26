@@ -1,12 +1,15 @@
 use axum::{
     Json,
     extract::{Extension, Path, Query, State},
+    http::StatusCode,
 };
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::credit_bucket_handlers::require_points_manage_permission;
 use crate::handlers::require_billing_permission;
 use crate::types::{
+    BatchUpdateEntitlementMappingsRequest, BatchUpdateEntitlementMappingsResponse,
     EntitlementMappingListResponse, EntitlementMappingQuery, EntitlementMappingResponse,
     OneTimeMappingItem, OneTimeMappingListResponse, PartialSyncErrorDto, SyncProviderRequest,
     SyncProviderResponse, UpdateEntitlementMappingRequest,
@@ -15,7 +18,16 @@ use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::billing::entities::EntitlementMapping;
-use herald_core::domain::billing::{BillingRepository, SyncStatus};
+use herald_core::domain::billing::{BatchMappingError, BillingRepository, SyncStatus};
+
+/// 409 `mapping_in_use` body for a batch save blocked by the active-subscription
+/// lock. The whole batch transaction is rolled back.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MappingActiveSubscriptionLockErrorBody {
+    pub code: &'static str,
+    pub active_subscriptions: i64,
+}
 
 /// Convert domain EntitlementMapping to API response
 fn mapping_to_response(m: EntitlementMapping) -> EntitlementMappingResponse {
@@ -379,4 +391,164 @@ pub async fn sync_provider_products(
             })
             .collect(),
     }))
+}
+
+/// Batch-save all price mappings for a product.
+///
+/// Validation/permission order:
+/// 1. `billing.manage` (realm boundary + business permission).
+/// 2. If any update row carries a credit-strategy field → `points.manage`.
+/// 3. `entitlement_key` regex `^[a-z0-9-]{1,64}$` (DB CHECK + handler double).
+///
+/// Then the repository performs a single-transaction upsert of all the
+/// product's price rows: shared-key rename consistency (group-wide), and
+/// any row transitioning enabled true→false while protected by an active
+/// subscription rolls back the WHOLE transaction (409 with
+/// `{ activeSubscriptions }`). Cross-product shared-key rename leaks and
+/// cross-realm/product `mapping_id` tampering surface as 400.
+#[utoipa::path(
+    put,
+    path = "/api/bill/{realmId}/entitlement-mappings/batch",
+    tag = "billing",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    request_body = BatchUpdateEntitlementMappingsRequest,
+    responses(
+        (status = 201, description = "Batch saved successfully", body = BatchUpdateEntitlementMappingsResponse),
+        (status = 400, description = "Bad request - invalid entitlement key, cross-product shared-key rename, or mapping_id not in this product/realm", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 403, description = "Forbidden - missing billing.manage (or points.manage for credit fields)", body = herald_api_base::application::http::server::api_entities::ErrorResponse),
+        (status = 409, description = "Conflict - active subscription protects a disabled mapping (whole batch rolled back)", body = MappingActiveSubscriptionLockErrorBody),
+        (status = 500, description = "Internal server error", body = herald_api_base::application::http::server::api_entities::ErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn batch_update_entitlement_mappings(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path(realm_id): Path<String>,
+    Json(request): Json<BatchUpdateEntitlementMappingsRequest>,
+) -> Result<(StatusCode, Json<BatchUpdateEntitlementMappingsResponse>), ApiError> {
+    tracing::info!(
+        provider = %request.payment_provider,
+        product = %request.external_product_id,
+        update_count = request.updates.len(),
+        "Batch update entitlement mappings for realm {}",
+        realm_id
+    );
+
+    // 1. billing.manage (realm boundary + business permission).
+    require_billing_permission(&state, &identity, &realm_id, "manage").await?;
+
+    // 2. points.manage if any row writes a credit-strategy field.
+    let touches_credit_fields = request.updates.iter().any(|u| {
+        u.points_per_period.is_some()
+            || u.grant_period_type.is_some()
+            || u.validity_days.is_some()
+            || u.grant_on_subscribe.is_some()
+            || u.max_periods.is_some()
+    });
+    if touches_credit_fields {
+        require_points_manage_permission(&state, &identity, &realm_id).await?;
+    }
+
+    // 3. entitlement_key regex double-check (DB CHECK is the source of truth;
+    //    handler mirrors the single-PATCH validation).
+    for u in &request.updates {
+        if u.entitlement_key.is_empty() || u.entitlement_key.len() > 64 {
+            return Err(ApiError::bad_request(format!(
+                "Invalid entitlement_key for mapping {}: must be 1-64 characters",
+                u.mapping_id
+            )));
+        }
+        if !u
+            .entitlement_key
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        {
+            return Err(ApiError::bad_request(format!(
+                "Invalid entitlement_key for mapping {}: must match ^[a-z0-9-]{{1,64}}$",
+                u.mapping_id
+            )));
+        }
+        if let Some(points) = u.points_per_period
+            && points < 0
+        {
+            return Err(ApiError::bad_request(format!(
+                "points_per_period must be non-negative for mapping {}",
+                u.mapping_id
+            )));
+        }
+    }
+
+    // Delegate the transactional write to the repository.
+    let input = herald_core::domain::billing::BatchUpdateMappingsInput {
+        realm_id: realm_id.clone(),
+        payment_provider: request.payment_provider.clone(),
+        external_product_id: request.external_product_id.clone(),
+        updates: request
+            .updates
+            .into_iter()
+            .map(|u| herald_core::domain::billing::PriceMappingUpdateInput {
+                mapping_id: u.mapping_id,
+                entitlement_key: u.entitlement_key,
+                billing_type: u.billing_type,
+                billing_period: u.billing_period,
+                points_per_period: u.points_per_period,
+                grant_period_type: u.grant_period_type,
+                validity_days: u.validity_days,
+                grant_on_subscribe: u.grant_on_subscribe,
+                max_periods: u.max_periods,
+                enabled: u.enabled,
+            })
+            .collect(),
+    };
+
+    let result = state
+        .billing_repository
+        .batch_update_mappings(input)
+        .await
+        .map_err(map_batch_error)?;
+
+    let prices = result.prices.into_iter().map(mapping_to_response).collect();
+    Ok((
+        StatusCode::CREATED,
+        Json(BatchUpdateEntitlementMappingsResponse {
+            saved: result.saved,
+            prices,
+        }),
+    ))
+}
+
+/// Translate [`BatchMappingError`] into the HTTP error contract.
+///
+/// - `MappingNotInGroup` / `CrossProductSharedKeyRename` → 400 (field-level).
+/// - `ActiveSubscriptionLock` → 409 with `{ code, activeSubscriptions }`.
+/// - `Other(CoreError)` → preserves the wrapped status (404 / 500 / …).
+fn map_batch_error(err: BatchMappingError) -> ApiError {
+    match err {
+        BatchMappingError::MappingNotInGroup {
+            mapping_id,
+            provider,
+            product,
+        } => ApiError::bad_request(format!(
+            "mapping {mapping_id} does not belong to provider '{provider}' product '{product}' in this realm"
+        )),
+        BatchMappingError::CrossProductSharedKeyRename {
+            provider,
+            product,
+            affected_count,
+        } => ApiError::bad_request(format!(
+            "shared-key rename would affect {affected_count} mapping(s) outside provider '{provider}' product '{product}'"
+        )),
+        BatchMappingError::ActiveSubscriptionLock {
+            active_subscriptions,
+            ..
+        } => ApiError::conflict_json(MappingActiveSubscriptionLockErrorBody {
+            code: "mapping_in_use",
+            active_subscriptions,
+        }),
+        BatchMappingError::Other(core) => ApiError::from(core),
+    }
 }

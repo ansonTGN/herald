@@ -1,3 +1,4 @@
+pub mod batch;
 pub mod compensation;
 pub mod credit_bucket;
 pub mod credit_note;
@@ -11,6 +12,7 @@ pub mod provider_product_sync_service;
 pub mod subscription_history;
 pub mod subscription_history_service;
 
+pub use batch::*;
 pub use credit_bucket::*;
 pub use credit_note::*;
 pub use entities::*;

@@ -16,8 +16,8 @@ use crate::webhook_common::{
     parse_optional_uuid_field, parse_uuid_field, reclaim_pregrant_for_subscription,
 };
 use crate::webhook_subscription_helpers::{
-    SyncSubscriptionInput, resolve_bucket_id_for_entitlement, resolve_entitlement_key,
-    save_subscription_history_in_txn, sync_subscription_in_txn,
+    ResolvedEntitlement, SyncSubscriptionInput, resolve_bucket_id_for_entitlement,
+    resolve_entitlement_mapping, save_subscription_history_in_txn, sync_subscription_in_txn,
 };
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::billing::credit_note::{
@@ -406,24 +406,47 @@ fn parse_stripe_subscription_status(
     }
 }
 
-/// Extract herald_entitlement_key from Stripe metadata, falling back to local mapping.
+/// Resolve entitlement for a Stripe webhook event, returning the projection
+/// `entitlement_key`. Delegates to the price-aware resolver;
+/// callers that need the price-level mapping for points issuance should call
+/// `resolve_entitlement_mapping` directly and consume `ResolvedEntitlement.mapping`.
+async fn resolve_stripe_entitlement(
+    app_state: &AppState,
+    realm_id: &str,
+    metadata: &Value,
+    external_product_id: &str,
+    external_price_id: Option<&str>,
+) -> Result<ResolvedEntitlement, CoreError> {
+    let metadata_key = metadata["herald_entitlement_key"]
+        .as_str()
+        .or_else(|| metadata["entitlementKey"].as_str());
+    Ok(resolve_entitlement_mapping(
+        app_state,
+        realm_id,
+        "stripe",
+        external_product_id,
+        external_price_id,
+        metadata_key,
+    )
+    .await?)
+}
+
 async fn resolve_stripe_entitlement_key(
     app_state: &AppState,
     realm_id: &str,
     metadata: &Value,
     external_product_id: &str,
+    external_price_id: Option<&str>,
 ) -> Result<String, CoreError> {
-    let metadata_key = metadata["herald_entitlement_key"]
-        .as_str()
-        .or_else(|| metadata["entitlementKey"].as_str());
-    resolve_entitlement_key(
+    Ok(resolve_stripe_entitlement(
         app_state,
         realm_id,
-        "stripe",
+        metadata,
         external_product_id,
-        metadata_key,
+        external_price_id,
     )
-    .await
+    .await?
+    .entitlement_key)
 }
 
 fn parse_checkout_completed_payload(
@@ -1227,13 +1250,24 @@ async fn handle_checkout_session_completed(
         "Processing checkout.session.completed event"
     );
 
-    // Resolve entitlement_key via fallback chain
+    // Extract price_id (best-effort) from display_items; used both for price-aware
+    // resolution and for the subscription projection write.
+    let checkout_price_id = event["data"]["object"]["display_items"]
+        .as_array()
+        .and_then(|items| items.first())
+        .and_then(|item| item["price"]["id"].as_str())
+        .map(str::to_string);
+
+    // Resolve entitlement_key via price-aware fallback chain.
+    // checkout.session.completed only enters the resolver branch when metadata
+    // key is empty; price_id falls through to step 3c single-row fallback when None.
     let entitlement_key = if payload.entitlement_key.is_empty() {
         resolve_stripe_entitlement_key(
             &app_state,
             realm_id,
             &event["data"]["object"]["metadata"],
             &payload.stripe_product_id,
+            checkout_price_id.as_deref(),
         )
         .await?
     } else {
@@ -1301,7 +1335,7 @@ async fn handle_checkout_session_completed(
             Some(payload.client_app_id),
             entitlement_key.clone(),
             payload.stripe_product_id.clone(),
-            None,
+            checkout_price_id.clone(),
             status,
             Some(now),
             None,
@@ -1840,22 +1874,30 @@ async fn handle_subscription_created(
         "Processing customer.subscription.created event"
     );
 
-    // Resolve entitlement_key via fallback chain
-    let entitlement_key = if payload.entitlement_key.is_empty() {
-        resolve_stripe_entitlement_key(
-            &app_state,
-            realm_id,
-            &event["data"]["object"]["metadata"],
-            &payload.external_product_id,
-        )
-        .await?
-    } else {
-        payload.entitlement_key.clone()
-    };
-
+    // Extract price_id first so the price-aware resolver can use it.
     let external_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"]
         .as_str()
         .map(str::to_string);
+
+    // Resolve the price-level entitlement (projection key + strategy mapping).
+    // Always run through the price-aware resolver so the strategy mapping is
+    // price-level (kills shared-key ambiguity; US-EM-008). When
+    // metadata carries `herald_entitlement_key`, the resolver re-locates the
+    // mapping by (key, price); otherwise it resolves by (provider, product, price).
+    let resolved = resolve_stripe_entitlement(
+        &app_state,
+        realm_id,
+        &event["data"]["object"]["metadata"],
+        &payload.external_product_id,
+        external_price_id.as_deref(),
+    )
+    .await?;
+    let entitlement_key = if payload.entitlement_key.is_empty() {
+        resolved.entitlement_key.clone()
+    } else {
+        payload.entitlement_key.clone()
+    };
+    let strategy_mapping = resolved.mapping;
 
     // Resolve the routing bucket eagerly from the entitlement mapping before
     // sync, so the new subscription is created with a non-null bucket_id.
@@ -1903,7 +1945,7 @@ async fn handle_subscription_created(
                 subscription.id,
                 subscription.bucket_id,
                 realm_id,
-                &entitlement_key,
+                &strategy_mapping,
                 false,
                 period_start,
                 period_end,
@@ -1957,18 +1999,25 @@ async fn handle_subscription_updated(
         "Processing customer.subscription.updated event"
     );
 
-    // Resolve entitlement_keys via fallback chain
+    // Resolve the CURRENT (new) price-level entitlement (projection key +
+    // strategy mapping) via the price-aware chain (US-EM-008).
+    // Always run the resolver so the strategy mapping is price-level, killing
+    // shared-key ambiguity (e.g. monthly 1000 vs annual 12000 under `pro-plan`).
+    let current_price_id = event["data"]["object"]["items"]["data"][0]["price"]["id"].as_str();
+    let current_resolved = resolve_stripe_entitlement(
+        &app_state,
+        realm_id,
+        &event["data"]["object"]["items"]["data"][0]["price"]["metadata"],
+        &payload.external_product_id,
+        current_price_id,
+    )
+    .await?;
     let current_entitlement_key = if payload.current_entitlement_key.is_empty() {
-        resolve_stripe_entitlement_key(
-            &app_state,
-            realm_id,
-            &event["data"]["object"]["items"]["data"][0]["price"]["metadata"],
-            &payload.external_product_id,
-        )
-        .await?
+        current_resolved.entitlement_key.clone()
     } else {
         payload.current_entitlement_key.clone()
     };
+    let new_mapping = current_resolved.mapping;
 
     // Fetch existing subscription once — reuse for both entitlement resolution and sync
     let existing_subscription_for_update = if payload.previous_entitlement_key.is_empty() {
@@ -1988,12 +2037,16 @@ async fn handle_subscription_updated(
             .unwrap_or_default();
 
         if from_db.is_empty() {
-            // Pre-migration subscription with no entitlement_key — resolve via mapping
+            // Pre-migration subscription with no entitlement_key — resolve via mapping.
+            // Use the previous_attributes price id (the prior plan's price).
+            let previous_price_id =
+                event["data"]["previous_attributes"]["items"]["data"][0]["price"]["id"].as_str();
             resolve_stripe_entitlement_key(
                 &app_state,
                 realm_id,
                 &event["data"]["previous_attributes"]["items"]["data"][0]["price"]["metadata"],
                 &payload.external_product_id,
+                previous_price_id,
             )
             .await?
         } else {
@@ -2049,10 +2102,26 @@ async fn handle_subscription_updated(
         ));
     }
 
-    // Get plan configs to determine if upgrade or downgrade
+    // Resolve the PREVIOUS (old) price-level strategy mapping. The previous
+    // entitlement comes from the prior subscription state (no ResolvedEntitlement
+    // in scope here), so re-locate the price-level mapping by (entitlement_key,
+    // price). This is the necessary price-level query — not a compat layer.
+    // Price source: the `previous_attributes` price id (prior plan's price) when
+    // present, else the existing subscription's bound `external_price_id`.
+    let previous_price_id = event["data"]["previous_attributes"]["items"]["data"][0]["price"]["id"]
+        .as_str()
+        .or_else(|| {
+            existing_subscription_for_update
+                .as_ref()
+                .and_then(|s| s.external_price_id.as_deref())
+        });
     let old_mapping = app_state
-        .points_repository
-        .find_points_policy_by_entitlement_key(realm_id, &previous_entitlement_key)
+        .billing_repository
+        .find_entitlement_mapping_by_key_price(
+            realm_id,
+            &previous_entitlement_key,
+            previous_price_id,
+        )
         .await?
         .ok_or_else(|| {
             CoreError::InternalServerError(format!(
@@ -2060,12 +2129,6 @@ async fn handle_subscription_updated(
                 previous_entitlement_key
             ))
         })?;
-
-    let new_mapping = app_state
-        .points_repository
-        .find_points_policy_by_entitlement_key(realm_id, &current_entitlement_key)
-        .await?
-        .ok_or(CoreError::EntitlementMappingNotFound)?;
 
     let is_upgrade = {
         let old_points = old_mapping.points_per_period.unwrap_or(0);
@@ -2152,8 +2215,8 @@ async fn handle_subscription_updated(
                 payload.user_id,
                 subscription.bucket_id,
                 realm_id,
-                &previous_entitlement_key,
-                &current_entitlement_key,
+                &old_mapping,
+                &new_mapping,
                 period_end,
             )
             .await?;
@@ -2210,8 +2273,8 @@ async fn handle_subscription_updated(
                 subscription.id,
                 subscription.bucket_id,
                 realm_id,
-                &previous_entitlement_key,
-                &current_entitlement_key,
+                &old_mapping,
+                &new_mapping,
             )
             .await?;
 
@@ -2283,9 +2346,16 @@ async fn handle_subscription_status_change(
         "Processing customer.subscription paused/resumed event"
     );
 
-    // Resolve entitlement_key via fallback chain
+    // Resolve entitlement_key via price-aware fallback chain
     let entitlement_key = if entitlement_key.is_empty() {
-        resolve_stripe_entitlement_key(&app_state, realm_id, metadata, &external_product_id).await?
+        resolve_stripe_entitlement_key(
+            &app_state,
+            realm_id,
+            metadata,
+            &external_product_id,
+            external_price_id.as_deref(),
+        )
+        .await?
     } else {
         entitlement_key
     };
@@ -2649,23 +2719,6 @@ async fn handle_invoice_payment_succeeded(
         .find_by_external_subscription_id(&payload.stripe_subscription_id, "stripe")
         .await?;
 
-    // Resolve entitlement_key via fallback chain
-    let entitlement_key = if payload.entitlement_key.is_empty() {
-        let external_product_id = existing_subscription
-            .as_ref()
-            .map(|s| s.external_product_id.clone())
-            .unwrap_or_default();
-        resolve_stripe_entitlement_key(
-            &app_state,
-            realm_id,
-            &event["data"]["object"]["metadata"],
-            &external_product_id,
-        )
-        .await?
-    } else {
-        payload.entitlement_key.clone()
-    };
-
     let external_product_id = existing_subscription
         .as_ref()
         .map(|subscription| subscription.external_product_id.clone())
@@ -2673,6 +2726,25 @@ async fn handle_invoice_payment_succeeded(
     let external_price_id = existing_subscription
         .as_ref()
         .and_then(|s| s.external_price_id.clone());
+
+    // Resolve the price-level entitlement (projection key + strategy mapping).
+    // Always run the price-aware resolver so the strategy mapping is price-level
+    // (US-EM-008). The webhook price is the subscription's bound
+    // price (renewal of the same plan).
+    let resolved = resolve_stripe_entitlement(
+        &app_state,
+        realm_id,
+        &event["data"]["object"]["metadata"],
+        &external_product_id,
+        external_price_id.as_deref(),
+    )
+    .await?;
+    let entitlement_key = if payload.entitlement_key.is_empty() {
+        resolved.entitlement_key.clone()
+    } else {
+        payload.entitlement_key.clone()
+    };
+    let strategy_mapping = resolved.mapping;
 
     // Resolve the routing bucket before sync: prefer the existing
     // subscription's non-null bucket_id; otherwise resolve eagerly from the
@@ -2725,7 +2797,7 @@ async fn handle_invoice_payment_succeeded(
                 subscription.id,
                 subscription.bucket_id,
                 realm_id,
-                &entitlement_key,
+                &strategy_mapping,
                 true,
                 period_start,
                 period_end,

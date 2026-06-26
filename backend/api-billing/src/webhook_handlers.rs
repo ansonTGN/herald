@@ -15,8 +15,8 @@ use crate::webhook_common::{
     parse_optional_uuid_field, parse_uuid_field, reclaim_pregrant_for_subscription,
 };
 use crate::webhook_subscription_helpers::{
-    SyncSubscriptionInput, resolve_bucket_id_for_entitlement, resolve_entitlement_key,
-    save_subscription_history, sync_subscription,
+    ResolvedEntitlement, SyncSubscriptionInput, resolve_bucket_id_for_entitlement,
+    resolve_entitlement_mapping, save_subscription_history, sync_subscription,
 };
 use crate::webhooks::verify_webhook_signature;
 use herald_api_base::application::http::state::AppState;
@@ -41,6 +41,47 @@ struct CreemCheckoutCompletedPayload {
     is_trial: bool,
     creem_product_id: String,
     attempt_id: Option<Uuid>,
+}
+
+/// Resolve entitlement_key for a Creem webhook event via the price-aware resolver.
+/// Creem is price-less: `external_price_id` is always `None`,
+/// which the repository maps to `external_price_id IS NULL`. We never
+/// synthesize a product_id placeholder.
+///
+/// `metadata` is the event metadata object (may carry `herald_entitlement_key`).
+async fn resolve_creem_entitlement(
+    app_state: &AppState,
+    realm_id: &str,
+    external_product_id: &str,
+    metadata: Option<&Value>,
+) -> Result<ResolvedEntitlement, CoreError> {
+    let metadata_key = metadata.and_then(|m| {
+        m["herald_entitlement_key"]
+            .as_str()
+            .or_else(|| m["entitlementKey"].as_str())
+    });
+    Ok(resolve_entitlement_mapping(
+        app_state,
+        realm_id,
+        "creem",
+        external_product_id,
+        None,
+        metadata_key,
+    )
+    .await?)
+}
+
+async fn resolve_creem_entitlement_key(
+    app_state: &AppState,
+    realm_id: &str,
+    external_product_id: &str,
+    metadata: Option<&Value>,
+) -> Result<String, CoreError> {
+    Ok(
+        resolve_creem_entitlement(app_state, realm_id, external_product_id, metadata)
+            .await?
+            .entitlement_key,
+    )
 }
 
 struct CreemSubscriptionPaidPayload {
@@ -708,16 +749,9 @@ async fn handle_checkout_completed(
         "Processing checkout.completed event"
     );
 
-    // Resolve entitlement_key via fallback chain
+    // Resolve entitlement_key via price-aware fallback chain (price-less)
     let entitlement_key = if payload.entitlement_key.is_empty() {
-        resolve_entitlement_key(
-            &app_state,
-            realm_id,
-            "creem",
-            &payload.creem_product_id,
-            None,
-        )
-        .await?
+        resolve_creem_entitlement_key(&app_state, realm_id, &payload.creem_product_id, None).await?
     } else {
         payload.entitlement_key.clone()
     };
@@ -1019,19 +1053,18 @@ async fn handle_subscription_paid(
         "Processing subscription.paid event"
     );
 
-    // Resolve entitlement_key via fallback chain
+    // Resolve the price-level entitlement (projection key + strategy mapping).
+    // Always run the price-aware resolver so the strategy mapping is price-level
+    // (US-EM-008). Creem is price-less, so the resolver maps to
+    // `external_price_id IS NULL`.
+    let resolved =
+        resolve_creem_entitlement(&app_state, realm_id, &payload.external_product_id, None).await?;
     let entitlement_key = if payload.entitlement_key.is_empty() {
-        resolve_entitlement_key(
-            &app_state,
-            realm_id,
-            "creem",
-            &payload.external_product_id,
-            None,
-        )
-        .await?
+        resolved.entitlement_key.clone()
     } else {
         payload.entitlement_key.clone()
     };
+    let strategy_mapping = resolved.mapping;
 
     // Resolve the routing bucket eagerly from the entitlement mapping before
     // sync, so the subscription is created with a non-null bucket_id.
@@ -1097,7 +1130,7 @@ async fn handle_subscription_paid(
                     subscription_id,
                     bucket_id,
                     realm_id,
-                    &entitlement_key,
+                    &strategy_mapping,
                     payload.is_renewal,
                     period_start,
                     period_end,
@@ -1197,19 +1230,19 @@ async fn handle_subscription_updated(
         "Processing subscription.update event"
     );
 
-    // Resolve entitlement_keys via fallback chain
+    // Resolve the CURRENT (new) price-level entitlement (projection key +
+    // strategy mapping) via the price-aware chain (US-EM-008).
+    // Always run the resolver so the strategy mapping is price-level, killing
+    // shared-key ambiguity. Creem is price-less, so the resolver maps to
+    // `external_price_id IS NULL`.
+    let current_resolved =
+        resolve_creem_entitlement(&app_state, realm_id, &payload.external_product_id, None).await?;
     let current_entitlement_key = if payload.current_entitlement_key.is_empty() {
-        resolve_entitlement_key(
-            &app_state,
-            realm_id,
-            "creem",
-            &payload.external_product_id,
-            None,
-        )
-        .await?
+        current_resolved.entitlement_key.clone()
     } else {
         payload.current_entitlement_key.clone()
     };
+    let new_mapping = current_resolved.mapping;
 
     // Resolve the routing bucket eagerly from the current entitlement mapping
     // (the new plan), so the subscription is created/updated with a non-null
@@ -1236,14 +1269,8 @@ async fn handle_subscription_updated(
 
         if from_db.is_empty() {
             // Pre-migration subscription with no entitlement_key — resolve via mapping
-            resolve_entitlement_key(
-                &app_state,
-                realm_id,
-                "creem",
-                &payload.external_product_id,
-                None,
-            )
-            .await?
+            resolve_creem_entitlement_key(&app_state, realm_id, &payload.external_product_id, None)
+                .await?
         } else {
             from_db
         }
@@ -1251,25 +1278,18 @@ async fn handle_subscription_updated(
         payload.previous_entitlement_key.clone()
     };
 
+    // Resolve the PREVIOUS (old) price-level strategy mapping. The previous
+    // entitlement comes from the prior subscription state (no ResolvedEntitlement
+    // in scope here), so re-locate the price-level mapping by (entitlement_key,
+    // price). Creem is price-less, so this maps to `external_price_id IS NULL`.
     let old_mapping = app_state
-        .points_repository
-        .find_points_policy_by_entitlement_key(realm_id, &previous_entitlement_key)
+        .billing_repository
+        .find_entitlement_mapping_by_key_price(realm_id, &previous_entitlement_key, None)
         .await?
         .ok_or_else(|| {
             CoreError::InternalServerError(format!(
                 "Entitlement mapping not found for previous key '{}' during subscription update",
                 previous_entitlement_key
-            ))
-        })?;
-
-    let new_mapping = app_state
-        .points_repository
-        .find_points_policy_by_entitlement_key(realm_id, &current_entitlement_key)
-        .await?
-        .ok_or_else(|| {
-            CoreError::InternalServerError(format!(
-                "Entitlement mapping not found for current key '{}' during subscription update",
-                current_entitlement_key
             ))
         })?;
 
@@ -1352,8 +1372,8 @@ async fn handle_subscription_updated(
                 user_id,
                 subscription_bucket_id,
                 realm_id,
-                &previous_entitlement_key,
-                &current_entitlement_key,
+                &old_mapping,
+                &new_mapping,
                 period_end_fallback,
             )
             .await?;
@@ -1366,8 +1386,8 @@ async fn handle_subscription_updated(
                 subscription_id,
                 subscription_bucket_id,
                 realm_id,
-                &previous_entitlement_key,
-                &current_entitlement_key,
+                &old_mapping,
+                &new_mapping,
             )
             .await?;
         HistoryEventType::Downgraded
@@ -1467,29 +1487,17 @@ async fn handle_subscription_canceled(
         (CancelMode::ImmediateCancel, None, Some(Utc::now()))
     };
 
-    // Resolve entitlement_key early for targeted revocation
+    // Resolve entitlement_key early for targeted revocation (price-less)
     let entitlement_key = if let Some(key) = &payload.entitlement_key {
         if !key.is_empty() {
             key.clone()
         } else {
-            resolve_entitlement_key(
-                &app_state,
-                realm_id,
-                "creem",
-                &payload.external_product_id,
-                None,
-            )
-            .await?
+            resolve_creem_entitlement_key(&app_state, realm_id, &payload.external_product_id, None)
+                .await?
         }
     } else {
-        resolve_entitlement_key(
-            &app_state,
-            realm_id,
-            "creem",
-            &payload.external_product_id,
-            None,
-        )
-        .await?
+        resolve_creem_entitlement_key(&app_state, realm_id, &payload.external_product_id, None)
+            .await?
     };
 
     // Resolve the routing bucket eagerly: reuse the existing subscription's
@@ -1723,14 +1731,8 @@ async fn handle_subscription_lifecycle_status(
     } else if let Some(subscription) = &existing {
         subscription.entitlement_key.clone()
     } else {
-        resolve_entitlement_key(
-            &app_state,
-            realm_id,
-            "creem",
-            &payload.external_product_id,
-            None,
-        )
-        .await?
+        resolve_creem_entitlement_key(&app_state, realm_id, &payload.external_product_id, None)
+            .await?
     };
     let external_product_id = if payload.external_product_id.is_empty() {
         existing

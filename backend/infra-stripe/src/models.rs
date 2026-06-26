@@ -56,6 +56,13 @@ pub struct CreateCheckoutRequest {
     /// Plan name
     #[serde(rename = "planName")]
     pub plan_name: String,
+    /// Real Stripe Price ID to reference (e.g. "price_...").
+    /// - Some(non-empty) -> checkout references the existing Price via
+    ///   `line_items[0][price]` (real-price semantics).
+    /// - None -> price-less fallback: rebuild an ad-hoc Price via
+    ///   `line_items[0][price_data]` (price-less providers / no external price).
+    #[serde(rename = "priceId", skip_serializing_if = "Option::is_none")]
+    pub price_id: Option<String>,
     /// Realm ID (for webhook routing)
     #[serde(rename = "realmId")]
     pub realm_id: String,

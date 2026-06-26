@@ -22,3 +22,5 @@ sqlx = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
+tower = { workspace = true }
+serde_json = { workspace = true }

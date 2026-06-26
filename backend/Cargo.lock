@@ -2059,9 +2059,11 @@ dependencies = [
  "herald-core",
  "herald-sdk",
  "herald-test-support",
+ "serde_json",
  "sqlx",
  "test-context",
  "tokio",
+ "tower",
  "uuid",
 ]
 

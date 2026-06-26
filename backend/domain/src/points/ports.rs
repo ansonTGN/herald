@@ -243,15 +243,6 @@ pub trait PointsRepository: Send + Sync {
         external_ref_id: &str,
     ) -> impl Future<Output = Result<Option<PointsTransaction>, CoreError>> + Send;
 
-    /// Find points policy by entitlement_key
-    fn find_points_policy_by_entitlement_key(
-        &self,
-        realm_id: &str,
-        entitlement_key: &str,
-    ) -> impl Future<
-        Output = Result<Option<crate::billing::entities::EntitlementMapping>, CoreError>,
-    > + Send;
-
     /// List accounts with filters
     fn list_wallets(
         &self,

@@ -3,8 +3,8 @@ use std::future::Future;
 use uuid::Uuid;
 
 use crate::billing::{
-    EntitlementMapping, FeatureFacts, PaymentEvent, Subscription, SubscriptionHistoryEvent,
-    SubscriptionHistoryQuery,
+    BatchMappingError, BatchUpdateMappingsInput, BatchUpdateResult, EntitlementMapping,
+    FeatureFacts, PaymentEvent, Subscription, SubscriptionHistoryEvent, SubscriptionHistoryQuery,
 };
 use crate::common::entities::app_errors::CoreError;
 
@@ -149,12 +149,18 @@ pub trait BillingRepository: Send + Sync {
         mapping: EntitlementMapping,
     ) -> impl Future<Output = Result<EntitlementMapping, CoreError>> + Send;
 
-    /// Find entitlement mapping by provider and external product ID
-    fn find_entitlement_mapping_by_provider_product(
+    /// Find entitlement mapping by (realm, provider, external product, external price).
+    ///
+    /// `external_price_id: Option<&str>` — Stripe passes `Some(price_id)`; Creem
+    /// (product-level, no price id) passes `None`, which maps to
+    /// `external_price_id IS NULL` and relies on the `NULLS NOT DISTINCT` unique
+    /// constraint (migration `20260607_product_reduce.sql`) for dedup.
+    fn find_entitlement_mapping_by_provider_product_price(
         &self,
         realm_id: &str,
         payment_provider: &str,
         external_product_id: &str,
+        external_price_id: Option<&str>,
     ) -> impl Future<Output = Result<Option<EntitlementMapping>, CoreError>> + Send;
 
     /// Find entitlement mapping by entitlement key
@@ -163,6 +169,33 @@ pub trait BillingRepository: Send + Sync {
         realm_id: &str,
         entitlement_key: &str,
     ) -> impl Future<Output = Result<Option<EntitlementMapping>, CoreError>> + Send;
+
+    /// Find entitlement mapping by (realm, entitlement_key, external_price_id).
+    ///
+    /// Used by the webhook resolution chain step 3.b to re-locate
+    /// the strategy mapping when the (provider, product, price) lookup missed but
+    /// a metadata `herald_entitlement_key` is present. Under shared-key + multiple
+    /// prices this disambiguates to the price-level row.
+    ///
+    /// `external_price_id: Option<&str>` — Stripe passes `Some(price_id)`; Creem
+    /// passes `None`, mapping to `external_price_id IS NULL`.
+    fn find_entitlement_mapping_by_key_price(
+        &self,
+        realm_id: &str,
+        entitlement_key: &str,
+        external_price_id: Option<&str>,
+    ) -> impl Future<Output = Result<Option<EntitlementMapping>, CoreError>> + Send;
+
+    /// List entitlement mappings for (realm, payment_provider, external_product_id).
+    ///
+    /// Used by the webhook resolution chain step 3.c to detect the
+    /// ambiguous multi-price case (>1 row) when metadata is missing.
+    fn list_entitlement_mappings_by_provider_product(
+        &self,
+        realm_id: &str,
+        payment_provider: &str,
+        external_product_id: &str,
+    ) -> impl Future<Output = Result<Vec<EntitlementMapping>, CoreError>> + Send;
 
     /// List enabled one-time entitlement mappings with product info for external API
     fn list_one_time_mappings(
@@ -197,4 +230,19 @@ pub trait BillingRepository: Send + Sync {
         realm_id: &str,
         pool: &sqlx::PgPool,
     ) -> impl Future<Output = Result<FeatureFacts, CoreError>> + Send;
+
+    /// Atomically batch-upsert ALL price rows for one product.
+    ///
+    /// Single transaction: upsert every row, apply shared-key rename consistency
+    /// (group-wide), and reject the WHOLE batch with
+    /// [`BatchMappingError::ActiveSubscriptionLock`] if any row transitions
+    /// `enabled` true→false while protected by an active subscription.
+    /// Cross-product shared-key rename leaks surface as
+    /// [`BatchMappingError::CrossProductSharedKeyRename`]; cross-realm/product
+    /// `mapping_id` tampering surfaces as
+    /// [`BatchMappingError::MappingNotInGroup`].
+    fn batch_update_mappings(
+        &self,
+        input: BatchUpdateMappingsInput,
+    ) -> impl Future<Output = Result<BatchUpdateResult, BatchMappingError>> + Send;
 }

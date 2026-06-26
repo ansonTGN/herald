@@ -177,10 +177,11 @@ where
         external_product_id: &str,
     ) -> Result<Option<EntitlementMapping>, CoreError> {
         self.repository
-            .find_entitlement_mapping_by_provider_product(
+            .find_entitlement_mapping_by_provider_product_price(
                 realm_id,
                 payment_provider,
                 external_product_id,
+                None,
             )
             .await
     }

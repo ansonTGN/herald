@@ -14,10 +14,30 @@ use crate::tests::helpers::webhook_helpers::*;
 use crate::tests::scenarios::points::fixtures::*;
 use crate::tests::schema_test_context::SchemaTestContext;
 use chrono::{Duration, Utc};
+use herald_core::domain::billing::BillingRepository;
 use herald_core::domain::points::entities::{
     CreditLedgerStatus, CreditSourceType, CreditType, RevocationType,
 };
 use test_context::test_context;
+
+/// Resolve the price-level EntitlementMapping for a key in these scenarios.
+///
+/// The price-level mapping refactor changed `handle_subscription_paid` to consume the price-level mapping
+/// directly. These scenarios seed a single mapping per
+/// entitlement_key, so resolving by key is identity-equivalent to the
+/// price-level mapping the webhook path resolves.
+async fn mapping_for_key(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    key: &str,
+) -> herald_core::domain::billing::entities::EntitlementMapping {
+    ctx.app_state
+        .billing_repository
+        .find_entitlement_mapping_by_key(realm_id, key)
+        .await
+        .unwrap_or_else(|_| panic!("mapping for key '{key}' should exist"))
+        .unwrap_or_else(|| panic!("mapping for key '{key}' should be Some"))
+}
 use uuid::Uuid;
 
 // ============================================================================
@@ -901,6 +921,7 @@ async fn test_pregrant_reclaim_targets_granted_periods_after_real_chain(
 
     // --- Drive the REAL chain via production code (NOT hand-seeded) --------
     // Activation: grants period 1 + chains pre-grant period 2.
+    let mapping = mapping_for_key(ctx, &realm_id, &entitlement_key).await;
     ctx.app_state
         .subscription_service
         .handle_subscription_paid(
@@ -908,7 +929,7 @@ async fn test_pregrant_reclaim_targets_granted_periods_after_real_chain(
             subscription_id,
             bucket_id,
             &realm_id,
-            &entitlement_key,
+            &mapping,
             false, // activation, not renewal
             period1_start,
             period1_start + Duration::days(30),
@@ -926,7 +947,7 @@ async fn test_pregrant_reclaim_targets_granted_periods_after_real_chain(
             subscription_id,
             bucket_id,
             &realm_id,
-            &entitlement_key,
+            &mapping,
             true, // renewal
             period2_start,
             period2_start + Duration::days(30),
