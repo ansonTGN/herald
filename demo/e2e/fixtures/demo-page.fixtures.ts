@@ -373,17 +373,22 @@ export const test = base.extend<{
   },
 
   /**
-   * Fixture: Entitlement Mappings Page
+   * Fixture: Entitlement Mappings Page (master-detail)
    *
    * Automatically:
    * 1. Verifies environment
    * 2. Logs in as admin
-   * 3. Navigates to /{realmId}/manage/billing/entitlement-mappings
+   * 3. Navigates to /{realmId}/manage/billing/entitlement-mappings (by route —
+   *    the sidebar entry testid is i18n-derived and must not be relied on)
    *
    * Use for:
-   * - Entitlement mapping list viewing and filtering
-   * - Provider product sync tests
-   * - Mapping detail dialog and configuration tests
+   * - Multi-price master-detail configuration (US-EM-007)
+   * - Entitlement mapping product-list viewing and filtering
+   * - Provider product sync (returns {productsSynced, pricesSynced})
+   * - Protected-price 409 dialog (Cancel-only) and webhook-unresolved banner
+   *
+   * The POM exposes selectProduct/fillPriceRow/saveChanges/sync; see
+   * pages/entitlement-mappings-page.ts for the full method surface.
    */
   entitlementMappingsPage: async ({ page, demoLogger, testStartTime, loginPage }, use) => {
     await verifyTestEnvironment(page, {

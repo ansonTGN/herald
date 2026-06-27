@@ -57,10 +57,19 @@ test.describe('[Regular User] US-PU-006: One-Time Mapping Purchase Flow', () => 
       await expect(page.locator(SELECTORS.purchasePoints.stepPackages)).toBeVisible()
     })
 
-    await test.step('Verify mapping cards grid contains at least one card', async () => {
-      await expect(page.locator(SELECTORS.mappingCard.grid)).toBeVisible()
+    await test.step('Verify price-card grid contains at least one card', async () => {
+      // `mapping-groups` grid + `mapping-card-*` cards were replaced by
+      // `purchase-price-grid-${period}` + `purchase-price-card-*`. The page
+      // boots in the Monthly pane; one_time cards render here too
+      // (period-agnostic), so the month grid is the canonical place to assert.
+      const monthGrid = page.locator(
+        SELECTORS.purchasePriceCard.priceGrid('month'),
+      )
+      await expect(monthGrid).toBeVisible()
 
-      const firstCard = page.locator(SELECTORS.mappingCard.firstCard()).first()
+      const firstCard = monthGrid
+        .locator('[data-testid^="purchase-price-card-"]')
+        .first()
       await expect(firstCard).toBeVisible()
     })
 
@@ -73,7 +82,16 @@ test.describe('[Regular User] US-PU-006: One-Time Mapping Purchase Flow', () => 
     })
 
     await test.step('Verify cards display entitlement key text', async () => {
-      const firstCard = page.locator(SELECTORS.mappingCard.firstCard()).first()
+      // Card testid changed from `mapping-card-{key}` to
+      // `purchase-price-card-{priceId}`; the card still renders the entitlement
+      // key as display text, so the textContent assertion still encodes the
+      // US-PU-006 S7 "user sees a purchasable pack" intent.
+      const monthGrid = page.locator(
+        SELECTORS.purchasePriceCard.priceGrid('month'),
+      )
+      const firstCard = monthGrid
+        .locator('[data-testid^="purchase-price-card-"]')
+        .first()
       const cardText = await firstCard.textContent()
       expect(cardText).toBeTruthy()
       // Each card should show entitlement key as text content
@@ -81,7 +99,11 @@ test.describe('[Regular User] US-PU-006: One-Time Mapping Purchase Flow', () => 
     })
 
     await test.step('Verify no empty state is shown (mappings exist from Demo Seed)', async () => {
-      const emptyState = page.locator(SELECTORS.mappingCard.emptyState)
+      // Empty-state testid migrated from `purchase-empty-state` (still under
+      // mappingCard.emptyState) to `purchase-empty-state` under
+      // purchasePriceCard.emptyState — same testid string, now sourced from the
+      // price-card group. Rendered per-pane when `periodPane.length === 0`.
+      const emptyState = page.locator(SELECTORS.purchasePriceCard.emptyState)
       await expect(emptyState).not.toBeVisible()
     })
   })

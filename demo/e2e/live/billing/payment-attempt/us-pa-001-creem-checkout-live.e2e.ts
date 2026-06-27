@@ -496,6 +496,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
     let clientAppId: string
     let attemptId: string
     let checkoutUrl: string
+    let mappingId: string
 
     await test.step('Given an entitlement mapping is configured', async () => {
       // Sync provider products
@@ -516,6 +517,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
         (m: any) => m.externalProductId === secrets.creem.productId,
       )
       expect(targetMapping).toBeTruthy()
+      mappingId = targetMapping.id
 
       // Check if already configured with our entitlement key
       if (targetMapping.entitlementKey !== ENTITLEMENT_KEY || !targetMapping.enabled) {
@@ -545,7 +547,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
         `${BASE_URL}/api/bill/${REALM_ID}/client/${clientAppId}/checkout`,
         {
           data: {
-            entitlementKey: ENTITLEMENT_KEY,
+            mappingId,
             paymentProvider: 'creem',
           },
         },
@@ -628,6 +630,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
     let attemptId: string
     let checkoutUrl: string
     let balanceBefore: number
+    let mappingId: string
 
     await test.step('Given an entitlement mapping is configured with pointsPerPeriod: 1000', async () => {
       // Sync provider products
@@ -648,6 +651,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
         (m: any) => m.externalProductId === secrets.creem.productId,
       )
       expect(targetMapping).toBeTruthy()
+      mappingId = targetMapping.id
 
       if (targetMapping.entitlementKey !== ENTITLEMENT_KEY || !targetMapping.enabled) {
         const patchResp = await page.request.patch(
@@ -680,7 +684,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
         `${BASE_URL}/api/bill/${REALM_ID}/client/${clientAppId}/checkout`,
         {
           data: {
-            entitlementKey: ENTITLEMENT_KEY,
+            mappingId,
             paymentProvider: 'creem',
           },
         },
@@ -847,6 +851,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
     // final assertion can only be satisfied by a NEW invoice created via the
     // real checkout.completed webhook for this run.
     let invoiceBaseline: Set<string>
+    let mappingId: string
 
     await test.step('Given an entitlement mapping is configured', async () => {
       const syncResp = await page.request.post(
@@ -865,6 +870,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
         (m: any) => m.externalProductId === secrets.creem.productId,
       )
       expect(targetMapping).toBeTruthy()
+      mappingId = targetMapping.id
 
       if (targetMapping.entitlementKey !== ENTITLEMENT_KEY || !targetMapping.enabled) {
         const patchResp = await page.request.patch(
@@ -897,7 +903,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Creem checkout payment
         `${BASE_URL}/api/bill/${REALM_ID}/client/${clientAppId}/checkout`,
         {
           data: {
-            entitlementKey: ENTITLEMENT_KEY,
+            mappingId,
             paymentProvider: 'creem',
           },
         },

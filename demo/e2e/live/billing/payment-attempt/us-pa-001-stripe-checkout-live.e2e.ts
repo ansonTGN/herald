@@ -403,6 +403,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
     let clientAppId: string
     let attemptId: string
     let checkoutUrl: string
+    let mappingId: string
 
     await test.step('Given an entitlement mapping is configured', async () => {
       // Sync provider products
@@ -423,6 +424,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
         (m: any) => m.externalProductId === secrets.stripe.productId,
       )
       expect(targetMapping).toBeTruthy()
+      mappingId = targetMapping.id
 
       if (targetMapping.entitlementKey !== ENTITLEMENT_KEY || !targetMapping.enabled) {
         const patchResp = await page.request.patch(
@@ -450,7 +452,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
         `${BASE_URL}/api/bill/${REALM_ID}/client/${clientAppId}/checkout`,
         {
           data: {
-            entitlementKey: ENTITLEMENT_KEY,
+            mappingId,
             paymentProvider: 'stripe',
           },
         },
@@ -566,6 +568,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
     let attemptId: string
     let checkoutUrl: string
     let balanceBefore: number
+    let mappingId: string
 
     await test.step('Given an entitlement mapping is configured with pointsPerPeriod: 1000', async () => {
       // Sync provider products
@@ -586,6 +589,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
         (m: any) => m.externalProductId === secrets.stripe.productId,
       )
       expect(targetMapping).toBeTruthy()
+      mappingId = targetMapping.id
 
       if (targetMapping.entitlementKey !== ENTITLEMENT_KEY || !targetMapping.enabled) {
         const patchResp = await page.request.patch(
@@ -618,7 +622,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
         `${BASE_URL}/api/bill/${REALM_ID}/client/${clientAppId}/checkout`,
         {
           data: {
-            entitlementKey: ENTITLEMENT_KEY,
+            mappingId,
             paymentProvider: 'stripe',
           },
         },
@@ -811,6 +815,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
     let clientAppId: string
     let attemptId: string
     let checkoutUrl: string
+    let mappingId: string
 
     await test.step('Given an entitlement mapping is configured', async () => {
       const syncResp = await page.request.post(
@@ -829,6 +834,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
         (m: any) => m.externalProductId === secrets.stripe.productId,
       )
       expect(targetMapping).toBeTruthy()
+      mappingId = targetMapping.id
 
       if (targetMapping.entitlementKey !== ENTITLEMENT_KEY || !targetMapping.enabled) {
         const patchResp = await page.request.patch(
@@ -856,7 +862,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
         `${BASE_URL}/api/bill/${REALM_ID}/client/${clientAppId}/checkout`,
         {
           data: {
-            entitlementKey: ENTITLEMENT_KEY,
+            mappingId,
             paymentProvider: 'stripe',
           },
         },
@@ -1042,6 +1048,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
     let clientAppId: string
     let attemptId: string
     let creditNoteAmount = 0
+    let mappingId: string
 
     // Snapshot existing Stripe invoices so we can identify THIS run's invoice among
     // lingering invoices from sibling scenarios (all share the admin realm).
@@ -1062,6 +1069,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
       const items = body.items ?? body
       const targetMapping = items.find((m: any) => m.externalProductId === secrets.stripe.productId)
       expect(targetMapping).toBeTruthy()
+      mappingId = targetMapping.id
 
       if (targetMapping.entitlementKey !== ENTITLEMENT_KEY || !targetMapping.enabled) {
         const patchResp = await page.request.patch(
@@ -1089,7 +1097,7 @@ test.describe('[Live][Billing Payment Attempt] US-PA-001: Stripe checkout paymen
         `${BASE_URL}/api/bill/${REALM_ID}/client/${clientAppId}/checkout`,
         {
           data: {
-            entitlementKey: ENTITLEMENT_KEY,
+            mappingId,
             paymentProvider: 'stripe',
           },
         },

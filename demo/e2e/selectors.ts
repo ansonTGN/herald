@@ -525,38 +525,6 @@ export const SELECTORS = {
   },
 
   /**
-   * Entitlement Mappings Page Selectors
-   * Route: /{realmId}/manage/billing/entitlement-mappings
-   */
-  entitlementMappings: {
-    page: '[data-testid="entitlement-mappings-page"]',
-    heading: '[data-testid="entitlement-mappings-heading"]',
-    table: '[data-testid="entitlement-mappings-table"]',
-    providerFilterSelect: '[data-testid="provider-filter-select"]',
-    mappingRow: (id: string) => `[data-testid="mapping-row-${id}"]`,
-    firstMappingRow: () => '[data-testid^="mapping-row-"]',
-    mappingEnabledToggle: (id: string) => `[data-testid="mapping-enabled-toggle-${id}"]`,
-    providerSyncButton: '[data-testid="provider-sync-button"]',
-    syncProviderSelect: '[data-testid="sync-provider-select"]',
-    syncButton: '[data-testid="sync-button"]',
-    // Detail dialog
-    detailDialog: '[data-testid="entitlement-mapping-detail-dialog"]',
-    entitlementKeyInput: '[data-testid="entitlement-key-input"]',
-    pointsPerPeriodInput: '[data-testid="points-per-period-input"]',
-    grantPeriodTypeSelect: '[data-testid="grant-period-type-select"]',
-    validityDaysInput: '[data-testid="validity-days-input"]',
-    grantOnSubscribeSwitch: '[data-testid="grant-on-subscribe-switch"]',
-    maxPeriodsInput: '[data-testid="max-periods-input"]',
-    mappingEnabledSwitch: '[data-testid="mapping-enabled-switch"]',
-    saveMappingButton: '[data-testid="save-mapping-button"]',
-    providerProductInfoCard: '[data-testid="provider-product-info-card"]',
-    // Empty state
-    emptyState: '[data-testid="entitlement-mappings-empty-state"]',
-    // Pagination
-    pagination: '[data-testid="entitlement-mappings-pagination"]',
-  },
-
-  /**
    * Admin Subscription List Page Selectors
    * Route: /{realmId}/manage/billing/subscriptions
    */
@@ -632,7 +600,7 @@ export const SELECTORS = {
     balanceCard: '[data-testid="points-balance-card"]',
     balanceAmount: '[data-testid="points-balance"]',
     accountStatus: '[data-testid="points-wallet-status"]',
-    // Credit-bucket (DE-D07): the bucket-aware UI renders one
+    // Credit-bucket: the bucket-aware UI renders one
     // `points-balance-card-${bucketId}` per held bucket (PointsBalanceCard.tsx).
     // The flat `points-balance-card` testid above only matches the loading
     // skeleton or a null-bucket fallback card. Sibling demos that just need to
@@ -708,8 +676,6 @@ export const SELECTORS = {
     // Error alert
     errorMessage: '[data-testid="grant-points-error-message"]',
     // Target Bucket Select (credit-bucket US-CB: bucketId is required).
-    // CONSUMED BY DE-D07 (grant-points-helpers.ts). DE-D01 only declares the
-    // selector; it does NOT modify pre-existing grant-points-helpers.ts.
     bucketSelect: '[data-testid="grant-points-bucket-select"]',
   },
 
@@ -771,19 +737,6 @@ export const SELECTORS = {
     stepPayment: '[data-testid="purchase-step-payment"]',
     stepProcessing: '[data-testid="purchase-step-processing"]',
     stepComplete: '[data-testid="purchase-step-complete"]',
-  },
-
-  /**
-   * Mapping Card Selectors (One-Time Purchase)
-   * Displayed on purchase-points page within the mapping-groups grid.
-   * Each card uses data-testid="mapping-card-{entitlementKey}".
-   */
-  mappingCard: {
-    grid: '[data-testid="mapping-groups"]',
-    card: (entitlementKey: string) => `[data-testid="mapping-card-${entitlementKey}"]`,
-    firstCard: () => '[data-testid^="mapping-card-"]',
-    noProviderHint: '[data-testid="no-provider-hint"]',
-    emptyState: '[data-testid="purchase-empty-state"]',
   },
 
   /**
@@ -967,6 +920,115 @@ export const SELECTORS = {
     mappingsMultiselectItem: (mappingId: string) =>
       `[data-testid="bucket-mappings-multiselect-item-${mappingId}"]`,
   },
+
+  /**
+   * Multi-Price Entitlement Mappings — master-detail page
+   * Route: /{realmId}/manage/billing/entitlement-mappings
+   *
+   * Frontend source (verified): frontend/src/components/billing/entitlement-mappings-page.tsx
+   * + entitlement-mapping-detail-dialog.tsx (ProtectedPriceConfirmDialog)
+   * + provider-sync-button.tsx (wrapper `<div data-testid="provider-sync-button">`).
+   *
+   * LOUD NOTE — price-edit-row testid fallback:
+   * The price row testid is `price-edit-row-${externalPriceId ?? mappingId}`.
+   * For Stripe rows (non-NULL external_price_id) the suffix is the price id; for
+   * Creem rows (NULL external_price_id — price-less provider) the
+   * suffix falls back to the mapping id. Test fixtures mixing Stripe + Creem
+   * MUST account for this — see `multi-price-seed-ids.ts` for the seeded ids and
+   * `priceEditRow(priceKey)` below (accepts either the price id or mapping id).
+   *
+   * LOUD NOTE — ProtectedPriceConfirmDialog:
+   * The 409 dialog renders ONLY `protected-price-active-subs` +
+   * `protected-price-confirm-cancel`. There is NO `protected-price-confirm-proceed`:
+   * the active-subscription lock is enforced authoritatively by the backend 409
+   * (the batch rolls back; the client offers no "force" path). Tests assert the
+   * dialog surfaces the active-sub count, not a confirm action.
+   */
+  multiPriceMapping: {
+    // Page shell + banner regions
+    page: '[data-testid="entitlement-mappings-page"]',
+    readonlyPermBanner: '[data-testid="readonly-perm-banner"]',
+    webhookPriceUnresolvedBanner: '[data-testid="webhook-price-unresolved-banner"]',
+    emptyState: '[data-testid="entitlement-mappings-empty-state"]',
+    emptySyncButton: '[data-testid="empty-sync-button"]',
+    // Toolbar filters
+    providerFilterSelect: '[data-testid="provider-filter-select"]',
+    productFilterSelect: '[data-testid="product-filter-select"]',
+    entitlementKeyFilterSelect: '[data-testid="entitlement-key-filter-select"]',
+    // Master list (left pane)
+    mappingProductList: '[data-testid="mapping-product-list"]',
+    mappingProductRow: (productId: string) =>
+      `[data-testid="mapping-product-row-${productId}"]`,
+    firstMappingProductRow: () => '[data-testid^="mapping-product-row-"]',
+    // Detail panel (right pane)
+    mappingDetailPanel: '[data-testid="mapping-detail-panel"]',
+    detailHead: '[data-testid="detail-head"]',
+    sharedKeyChip: (entitlementKey: string) =>
+      `[data-testid="shared-key-chip-${entitlementKey}"]`,
+    // Per-price edit row. `priceKey` is external_price_id for Stripe, mapping id
+    // for Creem (NULL price) — see the loud note above.
+    priceEditRow: (priceKey: string) => `[data-testid="price-edit-row-${priceKey}"]`,
+    priceEnabledToggle: (priceKey: string) =>
+      `[data-testid="price-enabled-toggle-${priceKey}"]`,
+    // Save (batch PUT). Rendered only when canManage.
+    saveMappingButton: '[data-testid="save-mapping-button"]',
+    // Provider sync. `provider-sync-button` is a wrapper `<div>`; the clickable
+    // Button inside carries `sync-button`. Sync result spans appear post-sync.
+    providerSyncButton: '[data-testid="provider-sync-button"]',
+    syncButton: '[data-testid="sync-button"]',
+    syncResultProducts: '[data-testid="sync-result-products"]',
+    syncResultPrices: '[data-testid="sync-result-prices"]',
+    // Protected-price 409 dialog (Cancel-only; no Proceed action — see loud note).
+    protectedPriceConfirmDialog: '[data-testid="protected-price-confirm-dialog"]',
+    protectedPriceActiveSubs: '[data-testid="protected-price-active-subs"]',
+    protectedPriceConfirmCancel: '[data-testid="protected-price-confirm-cancel"]',
+  },
+
+  /**
+   * Multi-Price Purchase — price-card grid + period toggle
+   * Route: /{realmId}/user/purchase-points
+   *
+   * Frontend source (verified): frontend/src/routes/$realmId/user/purchase-points.tsx.
+   *
+   * LOUD NOTE — period suffix:
+   * The price-card testid is `purchase-price-card-${priceId}` in the Monthly
+   * pane and `purchase-price-card-${priceId}-annual` in the Annual pane. Same
+   * priceId, different suffix. `priceCard(priceId, 'month')` produces the bare
+   * form; `priceCard(priceId, 'year')` appends `-annual`. `priceId` itself is
+   * `externalPriceId ?? mappingId` (Creem NULL-price rows fall back to mapping
+   * id, matching the master-detail row fallback).
+   */
+  purchasePriceCard: {
+    page: '[data-testid="purchase-points-page"]',
+    noClientAppMessage: '[data-testid="no-client-app-message"]',
+    // Period toggle (packages step)
+    periodToggle: '[data-testid="purchase-period-toggle"]',
+    periodToggleMonth: '[data-testid="purchase-period-toggle-month"]',
+    periodToggleYear: '[data-testid="purchase-period-toggle-year"]',
+    // Price-card grid keyed by the active period pane
+    priceGrid: (period: 'month' | 'year') =>
+      `[data-testid="purchase-price-grid-${period}"]`,
+    // Per-price card. `period='year'` appends `-annual`.
+    priceCard: (priceId: string, period?: 'month' | 'year') =>
+      `[data-testid="purchase-price-card-${priceId}${period === 'year' ? '-annual' : ''}"]`,
+    // Disabled/not-purchasable reason row (rendered only when the card is disabled)
+    priceCardReason: (priceId: string, period?: 'month' | 'year') =>
+      `[data-testid="purchase-price-card-${priceId}${period === 'year' ? '-annual' : ''}-reason"]`,
+    // Empty state (period pane has zero cards)
+    emptyState: '[data-testid="purchase-empty-state"]',
+    // Navigation buttons (packages/payment steps)
+    nextButton: '[data-testid="purchase-next-button"]',
+    backButton: '[data-testid="purchase-back-button"]',
+  },
+
+  /**
+   * Stripe Checkout Button
+   * Frontend source: frontend/src/components/billing/stripe-checkout-button.tsx
+   * The testid is keyed by the entitlement MAPPING id (not entitlement_key) so
+   * multiple prices under one shared key each resolve their own checkout target.
+   */
+  stripeCheckoutButton: (mappingId: string) =>
+    `[data-testid="stripe-checkout-button-${mappingId}"]`,
 
   /**
    * Unified Purchase - Purchase History (User)

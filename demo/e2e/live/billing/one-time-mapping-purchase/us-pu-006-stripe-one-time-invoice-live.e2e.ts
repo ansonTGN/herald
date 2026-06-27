@@ -205,6 +205,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoi
   test('US-PU-006 Scenario 7: Stripe one-time checkout creates external invoice with correct fields', async ({ page }) => {
     let clientAppId: string
     let attemptId: string
+    let mappingId: string
 
     await test.step('Given a one-time entitlement mapping is configured', async () => {
       // Sync provider products to pull real one-time product from Stripe
@@ -225,6 +226,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoi
         (m: any) => m.externalProductId === secrets.stripe.onetimeProductId,
       )
       expect(targetMapping, `One-time Stripe product mapping not found after sync. Available products: ${JSON.stringify(items.map((m: any) => m.externalProductId))}`).toBeTruthy()
+      mappingId = targetMapping.id
 
       if (targetMapping.entitlementKey !== ENTITLEMENT_KEY || !targetMapping.enabled) {
         const patchResp = await page.request.patch(
@@ -252,7 +254,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Stripe one-time invoi
         `${BASE_URL}/api/bill/${REALM_ID}/client/${clientAppId}/checkout`,
         {
           data: {
-            entitlementKey: ENTITLEMENT_KEY,
+            mappingId,
             paymentProvider: 'stripe',
           },
         },

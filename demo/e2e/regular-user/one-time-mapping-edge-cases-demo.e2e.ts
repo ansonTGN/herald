@@ -63,54 +63,81 @@ test.describe('[Regular User] US-PU-006 Edge Cases + US-PU-007 Purchase History'
       await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
     })
 
-    await test.step('Wait for mapping cards or empty state', async () => {
-      // The page will show either mapping cards grid or empty state.
-      // We need cards to exist for this test to be meaningful.
-      const cardsGrid = page.locator(SELECTORS.mappingCard.grid)
-      const emptyState = page.locator(SELECTORS.mappingCard.emptyState)
+    await test.step('Wait for price-card grid or empty state', async () => {
+      // The page now renders either a price-card grid
+      // (`purchase-price-grid-${period}`) or the per-pane empty state
+      // (`purchase-empty-state`). The page boots in Monthly.
+      const cardsGrid = page.locator(
+        SELECTORS.purchasePriceCard.priceGrid('month'),
+      )
+      const emptyState = page.locator(SELECTORS.purchasePriceCard.emptyState)
 
       await expect(
         cardsGrid.or(emptyState)
       ).toBeVisible({ timeout: TEST_DATA.TIMEOUTS.ELEMENT_VISIBLE })
     })
 
-    await test.step('Check for no-provider hint on any card', async () => {
-      const noProviderHints = page.locator(SELECTORS.mappingCard.noProviderHint)
-      const hintCount = await noProviderHints.count()
-
-      if (hintCount === 0) {
-        // All seed mappings have providers; S5/S8 not testable with current seed.
+    await test.step('Check for disabled (no-provider) card', async () => {
+      // The legacy `no-provider-hint` testid is gone. A non-purchasable card
+      // (mapping disabled OR no payment provider wired)
+      // now renders a persistent `purchase-price-card-${priceId}-reason` row
+      // (frontend disabledReason: !enabled || !paymentProvider) and gains an
+      // `opacity-60` class; its onClick is undefined. The reason row is the
+      // load-bearing marker (no auto-dismissing toast).
+      const cardsGrid = page.locator(
+        SELECTORS.purchasePriceCard.priceGrid('month'),
+      )
+      // Only meaningful when cards exist.
+      const gridVisible = await cardsGrid.isVisible().catch(() => false)
+      if (!gridVisible) {
         demoLogger.testCode.log(
-          'All seed mappings have payment providers. ' +
+          'No price-card grid rendered (empty state). ' +
           'S5/S8 (no-provider card) not testable with current demo seed data.'
         )
         return
       }
 
-      demoLogger.testCode.log(`Found ${hintCount} card(s) without payment provider`)
+      // Enumerate cards and find any disabled one (presence of a `-reason`
+      // child row). Card testid prefix: `purchase-price-card-`.
+      const cards = cardsGrid.locator('[data-testid^="purchase-price-card-"]')
+      const cardCount = await cards.count()
+      let disabledCard: ReturnType<typeof cards.nth> | null = null
+      let disabledReason: ReturnType<typeof cards.nth> | null = null
+      for (let i = 0; i < cardCount; i++) {
+        const card = cards.nth(i)
+        const testid = (await card.getAttribute('data-testid')) ?? ''
+        if (testid.endsWith('-reason')) continue
+        const reason = card.locator(`[data-testid="${testid}-reason"]`)
+        if ((await reason.count()) > 0) {
+          disabledCard = card
+          disabledReason = reason
+          break
+        }
+      }
 
-      // Verify the first no-provider card has reduced opacity
-      const firstHint = noProviderHints.first()
-      const card = firstHint.locator('..') // Navigate up to the card container
+      if (!disabledCard || !disabledReason) {
+        // All seed cards have providers; S5/S8 not testable with current seed.
+        demoLogger.testCode.log(
+          'All seed price cards have payment providers. ' +
+          'S5/S8 (no-provider card) not testable with current demo seed data.'
+        )
+        return
+      }
 
-      // The card parent should have opacity-60 class
-      const cardElement = page.locator(SELECTORS.mappingCard.firstCard()).first()
-      await expect(cardElement).toHaveClass(/opacity-60/)
+      demoLogger.testCode.log('Found a price card without payment provider')
 
-      // Verify the hint text is visible
-      await expect(firstHint).toBeVisible()
+      // Verify the disabled card has reduced opacity (persistent visual cue).
+      await expect(disabledCard).toHaveClass(/opacity-60/)
 
-      // Verify clicking the card does NOT trigger selection
-      // (no selection ring appears, Next button stays disabled)
+      // Verify the reason row is visible (persistent, non-toast marker).
+      await expect(disabledReason).toBeVisible()
+
+      // Verify clicking the disabled card does NOT enable Next (onClick is
+      // undefined for disabled cards, so no selection occurs).
       const nextButton = page.locator(SELECTORS.purchasePoints.nextButton)
-      const wasEnabledBefore = await nextButton.isEnabled()
-
-      await cardElement.click()
-
-      // Wait briefly for any potential state change
+      await disabledCard.click()
       await page.waitForTimeout(500)
 
-      // Next button should remain disabled since the card is non-interactive
       const isEnabledAfter = await nextButton.isEnabled()
       expect(isEnabledAfter).toBe(false)
     })
@@ -130,9 +157,14 @@ test.describe('[Regular User] US-PU-006 Edge Cases + US-PU-007 Purchase History'
       await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
     })
 
-    await test.step('Check for empty state vs mapping cards', async () => {
-      const emptyState = page.locator(SELECTORS.mappingCard.emptyState)
-      const cardsGrid = page.locator(SELECTORS.mappingCard.grid)
+    await test.step('Check for empty state vs price-card grid', async () => {
+      // Empty-state + grid testids migrated from mappingCard.* to
+      // purchasePriceCard.* (same testid strings, new group). The page boots
+      // in Monthly; empty state renders per-pane when periodPane.length === 0.
+      const emptyState = page.locator(SELECTORS.purchasePriceCard.emptyState)
+      const cardsGrid = page.locator(
+        SELECTORS.purchasePriceCard.priceGrid('month'),
+      )
 
       // Wait for either state to render
       await expect(
@@ -157,7 +189,7 @@ test.describe('[Regular User] US-PU-006 Edge Cases + US-PU-007 Purchase History'
           'Test deferred: empty state is verified by component tests instead.'
         )
 
-        // At minimum, verify that mapping cards ARE visible (positive assertion)
+        // At minimum, verify that price cards ARE visible (positive assertion)
         await expect(cardsGrid).toBeVisible()
       }
     })

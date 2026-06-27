@@ -71,11 +71,13 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
-      // Wait for Complete Purchase button to be ready and clickable
+      // The payment→checkout action is the shared `purchase-next-button`
+      // (label is i18n "Continue to checkout"). The old "Complete Purchase"
+      // role-name selector is stale.
       await expect(
-        page.getByRole("button", { name: "Complete Purchase" }),
+        page.locator(SELECTORS.purchasePriceCard.nextButton),
       ).toBeVisible();
-      await page.getByRole("button", { name: "Complete Purchase" }).click();
+      await page.locator(SELECTORS.purchasePriceCard.nextButton).click();
 
       // Wait for payment status to be initialized (Stripe redirect heading)
       await expect(
@@ -120,11 +122,13 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
-      // Wait for Complete Purchase button to be ready and clickable
+      // The payment→checkout action is the shared `purchase-next-button`
+      // (label is i18n "Continue to checkout"). The old "Complete Purchase"
+      // role-name selector is stale.
       await expect(
-        page.getByRole("button", { name: "Complete Purchase" }),
+        page.locator(SELECTORS.purchasePriceCard.nextButton),
       ).toBeVisible();
-      await page.getByRole("button", { name: "Complete Purchase" }).click();
+      await page.locator(SELECTORS.purchasePriceCard.nextButton).click();
 
       // Wait for payment status to be initialized (Stripe redirect heading)
       await expect(
@@ -175,10 +179,8 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
 
-      // Click the Complete Purchase button once
-      const purchaseButton = page.getByRole("button", {
-        name: "Complete Purchase",
-      });
+      // Payment→checkout uses the shared `purchase-next-button`.
+      const purchaseButton = page.locator(SELECTORS.purchasePriceCard.nextButton);
       await purchaseButton.click();
 
       // Verify payment was initiated (navigates to Payment Pending page with Stripe redirect heading)
@@ -256,11 +258,11 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
-      // Wait for Complete Purchase button to be ready and clickable
+      // Payment→checkout uses the shared `purchase-next-button`.
       await expect(
-        page.getByRole("button", { name: "Complete Purchase" }),
+        page.locator(SELECTORS.purchasePriceCard.nextButton),
       ).toBeVisible();
-      await page.getByRole("button", { name: "Complete Purchase" }).click();
+      await page.locator(SELECTORS.purchasePriceCard.nextButton).click();
 
       // Verify countdown timer is displayed
       await expect(page.getByTestId("payment-countdown-timer")).toBeVisible();
@@ -322,11 +324,11 @@ test.describe("[Unified Purchase] Comprehensive Scenarios", () => {
       await page.getByTestId("payment-method-select-stripe").click();
       // Wait for payment method selection state to update
       await expect(page.getByTestId(/^payment-method-selected-/)).toBeVisible();
-      // Wait for Complete Purchase button to be ready and clickable
+      // Payment→checkout uses the shared `purchase-next-button`.
       await expect(
-        page.getByRole("button", { name: "Complete Purchase" }),
+        page.locator(SELECTORS.purchasePriceCard.nextButton),
       ).toBeVisible();
-      await page.getByRole("button", { name: "Complete Purchase" }).click();
+      await page.locator(SELECTORS.purchasePriceCard.nextButton).click();
 
       await page.context().setOffline(true);
 

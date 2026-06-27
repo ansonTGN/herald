@@ -4,73 +4,124 @@ import { BasePage } from './base-page'
 import type { UnifiedLogger } from '../helpers/unified-logger'
 
 /**
- * Page Object for the Entitlement Mappings page.
+ * Page Object for the master-detail Entitlement Mappings page.
  *
  * Route: /{realmId}/manage/billing/entitlement-mappings
  *
- * User stories:
- * - US-EM-001: View provider entitlement mappings
- * - US-EM-002: Trigger provider product sync
- * - US-EM-004: Entitlement-based points policy configuration
+ * Frontend source:
+ * frontend/src/components/billing/entitlement-mappings-page.tsx
+ * + entitlement-mapping-detail-dialog.tsx (ProtectedPriceConfirmDialog — Cancel-only)
+ * + provider-sync-button.tsx (wrapper `<div data-testid="provider-sync-button">`).
  *
- * @see docs/user-stories/billing/entitlement-mapping.md
+ * User stories:
+ * - US-EM-001: View provider entitlement mappings (list-pane view)
+ * - US-EM-002: Trigger provider product sync
+ * - US-EM-007: Multi-price master-detail configuration (shared key, per-price policy)
+ *
+ * LOUD NOTE — priceKey suffix:
+ * `price-edit-row-${externalPriceId ?? mappingId}` and the toggle share the same
+ * suffix. For Stripe rows (non-NULL external_price_id) the suffix is the price id;
+ * for Creem rows (NULL external_price_id — price-less provider) the
+ * suffix falls back to the mapping id. Callers MUST pass the correct key for the
+ * provider under test.
+ *
+ * LOUD NOTE — ProtectedPriceConfirmDialog:
+ * The 409 dialog renders ONLY `protected-price-active-subs` +
+ * `protected-price-confirm-cancel`. There is NO proceed button: the active-
+ * subscription lock is enforced authoritatively by the backend 409 (batch rolls
+ * back); the client offers no force path. Tests assert the dialog surfaces the
+ * active-sub count, then dismiss it.
  */
 export class EntitlementMappingsPage extends BasePage {
-  // Page-level locators
+  // Page shell
   readonly container: Locator
   readonly heading: Locator
-  readonly table: Locator
-  readonly providerFilterSelect: Locator
-  readonly pagination: Locator
 
-  // Provider sync controls
+  // Banner regions
+  readonly readonlyPermBanner: Locator
+  readonly webhookPriceUnresolvedBanner: Locator
+  readonly emptyState: Locator
+
+  // Toolbar filters
+  readonly providerFilterSelect: Locator
+  readonly productFilterSelect: Locator
+  readonly entitlementKeyFilterSelect: Locator
+
+  // Master list (left pane)
+  readonly mappingProductList: Locator
+
+  // Detail panel (right pane)
+  readonly mappingDetailPanel: Locator
+  readonly detailHead: Locator
+  readonly saveMappingButton: Locator
+
+  // Provider sync controls (wrapper div + inner Button)
   readonly providerSyncButton: Locator
   readonly syncProviderSelect: Locator
   readonly syncButton: Locator
+  readonly syncResultProducts: Locator
+  readonly syncResultPrices: Locator
 
-  // Detail dialog locators
-  readonly detailDialog: Locator
-  readonly entitlementKeyInput: Locator
-  readonly pointsPerPeriodInput: Locator
-  readonly grantPeriodTypeSelect: Locator
-  readonly validityDaysInput: Locator
-  readonly grantOnSubscribeSwitch: Locator
-  readonly maxPeriodsInput: Locator
-  readonly mappingEnabledSwitch: Locator
-  readonly saveMappingButton: Locator
-  readonly providerProductInfoCard: Locator
-
-  // Empty state
-  readonly emptyState: Locator
+  // Protected-price 409 dialog (Cancel-only)
+  readonly protectedPriceConfirmDialog: Locator
+  readonly protectedPriceActiveSubs: Locator
+  readonly protectedPriceConfirmCancel: Locator
 
   constructor(page: Page, logger?: UnifiedLogger) {
     super(page, logger)
-    this.container = page.locator(SELECTORS.entitlementMappings.page)
-    this.heading = page.locator(SELECTORS.entitlementMappings.heading)
-    this.table = page.locator(SELECTORS.entitlementMappings.table)
-    this.providerFilterSelect = page.locator(SELECTORS.entitlementMappings.providerFilterSelect)
-    this.pagination = page.locator(SELECTORS.entitlementMappings.pagination)
+    this.container = page.locator(SELECTORS.multiPriceMapping.page)
+    this.heading = page.locator('[data-testid="entitlement-mappings-heading"]')
 
-    this.providerSyncButton = page.locator(SELECTORS.entitlementMappings.providerSyncButton)
-    this.syncProviderSelect = page.locator(SELECTORS.entitlementMappings.syncProviderSelect)
-    this.syncButton = page.locator(SELECTORS.entitlementMappings.syncButton)
+    this.readonlyPermBanner = page.locator(SELECTORS.multiPriceMapping.readonlyPermBanner)
+    this.webhookPriceUnresolvedBanner = page.locator(
+      SELECTORS.multiPriceMapping.webhookPriceUnresolvedBanner,
+    )
+    this.emptyState = page.locator(SELECTORS.multiPriceMapping.emptyState)
 
-    this.detailDialog = page.locator(SELECTORS.entitlementMappings.detailDialog)
-    this.entitlementKeyInput = page.locator(SELECTORS.entitlementMappings.entitlementKeyInput)
-    this.pointsPerPeriodInput = page.locator(SELECTORS.entitlementMappings.pointsPerPeriodInput)
-    this.grantPeriodTypeSelect = page.locator(SELECTORS.entitlementMappings.grantPeriodTypeSelect)
-    this.validityDaysInput = page.locator(SELECTORS.entitlementMappings.validityDaysInput)
-    this.grantOnSubscribeSwitch = page.locator(SELECTORS.entitlementMappings.grantOnSubscribeSwitch)
-    this.maxPeriodsInput = page.locator(SELECTORS.entitlementMappings.maxPeriodsInput)
-    this.mappingEnabledSwitch = page.locator(SELECTORS.entitlementMappings.mappingEnabledSwitch)
-    this.saveMappingButton = page.locator(SELECTORS.entitlementMappings.saveMappingButton)
-    this.providerProductInfoCard = page.locator(SELECTORS.entitlementMappings.providerProductInfoCard)
+    this.providerFilterSelect = page.locator(SELECTORS.multiPriceMapping.providerFilterSelect)
+    this.productFilterSelect = page.locator(SELECTORS.multiPriceMapping.productFilterSelect)
+    this.entitlementKeyFilterSelect = page.locator(
+      SELECTORS.multiPriceMapping.entitlementKeyFilterSelect,
+    )
 
-    this.emptyState = page.locator(SELECTORS.entitlementMappings.emptyState)
+    this.mappingProductList = page.locator(SELECTORS.multiPriceMapping.mappingProductList)
+
+    this.mappingDetailPanel = page.locator(SELECTORS.multiPriceMapping.mappingDetailPanel)
+    this.detailHead = page.locator(SELECTORS.multiPriceMapping.detailHead)
+    this.saveMappingButton = page.locator(SELECTORS.multiPriceMapping.saveMappingButton)
+
+    // `provider-sync-button` is a wrapper `<div>`; the actionable controls live
+    // inside it. Resolve via the wrapper scope so multiple sync buttons (if any)
+    // never collide.
+    this.providerSyncButton = page.locator(SELECTORS.multiPriceMapping.providerSyncButton)
+    // The sync controls live DIRECTLY inside the wrapper `<div data-testid="provider-sync-button">`.
+    // Do NOT re-scope by the wrapper testid (that would require the wrapper to
+    // contain itself and resolve to 0 elements).
+    this.syncProviderSelect = this.providerSyncButton.locator('[data-testid="sync-provider-select"]')
+    this.syncButton = this.providerSyncButton.locator(SELECTORS.multiPriceMapping.syncButton)
+    this.syncResultProducts = this.providerSyncButton.locator(
+      SELECTORS.multiPriceMapping.syncResultProducts,
+    )
+    this.syncResultPrices = this.providerSyncButton.locator(
+      SELECTORS.multiPriceMapping.syncResultPrices,
+    )
+
+    this.protectedPriceConfirmDialog = page.locator(
+      SELECTORS.multiPriceMapping.protectedPriceConfirmDialog,
+    )
+    this.protectedPriceActiveSubs = page.locator(
+      SELECTORS.multiPriceMapping.protectedPriceActiveSubs,
+    )
+    this.protectedPriceConfirmCancel = page.locator(
+      SELECTORS.multiPriceMapping.protectedPriceConfirmCancel,
+    )
   }
 
   /**
-   * Navigate to the entitlement mappings page for a given realm.
+   * Navigate to the entitlement mappings page for a given realm by route.
+   *
+   * The sidebar entry testid is i18n-derived and must NOT be relied on; always
+   * navigate by route.
    */
   async goto(realmId: string = 'admin'): Promise<void> {
     await super.goto(`/${realmId}/manage/billing/entitlement-mappings`)
@@ -86,49 +137,56 @@ export class EntitlementMappingsPage extends BasePage {
   }
 
   /**
-   * Wait for data to finish loading (table or empty state becomes visible).
+   * Wait for data to finish loading (master list or empty state becomes visible).
    *
-   * The frontend renders a loading skeleton while the API call is in flight.
-   * Neither the table nor the empty state has its data-testid set during loading,
-   * so tests must wait for data to settle before checking table/empty state.
+   * The frontend renders a loading skeleton while the API call is in flight;
+   * neither the product list nor the empty state has its testid during loading.
    */
   async waitForDataLoaded(timeout: number = 10000): Promise<void> {
-    await this.page.locator(
-      `${SELECTORS.entitlementMappings.table}, ${SELECTORS.entitlementMappings.emptyState}`
-    ).first().waitFor({ state: 'visible', timeout })
+    await this.page
+      .locator(
+        `${SELECTORS.multiPriceMapping.mappingProductList}, ${SELECTORS.multiPriceMapping.emptyState}`,
+      )
+      .first()
+      .waitFor({ state: 'visible', timeout })
   }
 
   /**
-   * Get the number of visible mapping rows in the table.
+   * Check if the empty state card is visible (no mappings).
    */
-  async getMappingRowCount(): Promise<number> {
-    await expect(this.table).toBeVisible()
-    const rows = this.table.locator('tbody tr')
-    return await rows.count()
+  async isListEmpty(): Promise<boolean> {
+    return await this.isVisible(this.emptyState)
+  }
+
+  // ==================== Master list ====================
+
+  /**
+   * Select a product in the master list (left pane) by its external product id.
+   * The product row testid is `mapping-product-row-${externalProductId}`.
+   */
+  async selectProduct(productId: string): Promise<void> {
+    const row = this.page.locator(SELECTORS.multiPriceMapping.mappingProductRow(productId))
+    await this.smartClick(row)
+    // The detail panel mounts/remounts on selection change.
+    await expect(this.mappingDetailPanel).toBeVisible({ timeout: 5000 })
   }
 
   /**
-   * Get text content of all cells in a mapping row by index.
+   * Click the first product row (helper for tests that don't know the seeded id).
    */
-  async getMappingRowTexts(rowIndex: number): Promise<string[]> {
-    const row = this.table.locator('tbody tr').nth(rowIndex)
-    await expect(row).toBeVisible()
-    const cells = row.locator('td')
-    const count = await cells.count()
-    const texts: string[] = []
-    for (let i = 0; i < count; i++) {
-      texts.push((await cells.nth(i).textContent()) || '')
-    }
-    return texts
+  async selectFirstProduct(): Promise<void> {
+    const row = this.page.locator(SELECTORS.multiPriceMapping.firstMappingProductRow()).first()
+    await this.smartClick(row)
+    await expect(this.mappingDetailPanel).toBeVisible({ timeout: 5000 })
   }
 
   /**
-   * Click a mapping row by index to open the detail dialog.
+   * Check if a product row is rendered as selected (aria-current="true").
    */
-  async clickMappingRow(rowIndex: number): Promise<void> {
-    const row = this.table.locator('tbody tr').nth(rowIndex)
-    await expect(row).toBeVisible()
-    await row.click()
+  async isProductSelected(productId: string): Promise<boolean> {
+    const row = this.page.locator(SELECTORS.multiPriceMapping.mappingProductRow(productId))
+    const current = await row.getAttribute('aria-current')
+    return current === 'true'
   }
 
   /**
@@ -136,73 +194,200 @@ export class EntitlementMappingsPage extends BasePage {
    */
   async filterByProvider(provider: string): Promise<void> {
     await this.selectRadixOption(this.providerFilterSelect, provider)
-    // Wait for table to settle after filter change
     await this.page.waitForLoadState('domcontentloaded')
   }
 
+  // ==================== Detail panel ====================
+
   /**
-   * Check if the empty state card is visible (no mappings).
+   * Get the price-edit-row locator for a single price.
+   *
+   * `priceKey` is `externalPriceId` for Stripe rows and `mappingId` for Creem
+   * (NULL price) rows — see the loud note on the class.
    */
-  async isTableEmpty(): Promise<boolean> {
-    return await this.isVisible(this.emptyState)
+  getPriceEditRow(priceKey: string): Locator {
+    return this.mappingDetailPanel.locator(SELECTORS.multiPriceMapping.priceEditRow(priceKey))
   }
 
   /**
-   * Get the empty state message text.
+   * Get the enabled-toggle locator for a single price.
    */
-  async getEmptyStateText(): Promise<string> {
-    await expect(this.emptyState).toBeVisible()
-    return (await this.emptyState.textContent()) || ''
+  getPriceEnabledToggle(priceKey: string): Locator {
+    return this.mappingDetailPanel.locator(
+      SELECTORS.multiPriceMapping.priceEnabledToggle(priceKey),
+    )
   }
 
   /**
-   * Open the detail dialog by clicking a mapping row.
+   * Get the shared-key chip locator for an entitlement key (renders once per
+   * shared key inside the detail panel).
    */
-  async openDetailDialog(rowIndex: number): Promise<void> {
-    await this.clickMappingRow(rowIndex)
-    await expect(this.detailDialog).toBeVisible({ timeout: 5000 })
+  getSharedKeyChip(entitlementKey: string): Locator {
+    return this.mappingDetailPanel.locator(
+      SELECTORS.multiPriceMapping.sharedKeyChip(entitlementKey),
+    )
   }
 
   /**
-   * Check if the detail dialog is currently open.
+   * Fill configurable fields on a single price row. Only the supplied fields
+   * are touched. The entitlement-key input is matched by the "Entitlement Key"
+   * Field label position within the row (no dedicated testid on the input).
+   *
+   * Options:
+   * - entitlementKey: free-text input under "Entitlement Key" label
+   * - pointsPerPeriod: numeric input under "Points per period" label
+   * - billingPeriod: free-text input under "Period" label
+   *
+   * billingType / grantPeriodType / validityDays / maxPeriods / grantOnSubscribe
+   * live under the "Advanced" collapsible — callers needing them should open
+   * it first. This helper covers the common top-level fields only.
    */
-  async isDetailDialogOpen(): Promise<boolean> {
-    return await this.isVisible(this.detailDialog)
+  async fillPriceRow(
+    priceKey: string,
+    fields: {
+      entitlementKey?: string
+      pointsPerPeriod?: number
+      billingPeriod?: string
+    },
+  ): Promise<void> {
+    const row = this.getPriceEditRow(priceKey)
+    await expect(row).toBeVisible()
+
+    if (fields.entitlementKey !== undefined) {
+      // The "Entitlement Key" Field is `<div class="space-y-1"><Label>…</Label>
+      // <input/></div>`. Scope to the Field wrapper via its Label, then to the
+      // input that is a SIBLING of the Label — NOT a descendant of an ancestor
+      // div (which would match the price-id Field's readOnly input first).
+      // `locator('div', {hasText})` matches ancestors too, so we anchor on the
+      // Label element and go up to its immediate Field wrapper.
+      const keyField = row
+        .locator('label', { hasText: 'Entitlement Key' })
+        .locator('xpath=ancestor::div[starts-with(@class,"space-y-1")][1]')
+      const keyInput = keyField.locator('input').first()
+      await this.fillField(keyInput, fields.entitlementKey)
+    }
+    if (fields.pointsPerPeriod !== undefined) {
+      const pointsField = row
+        .locator('label', { hasText: 'Points per period' })
+        .locator('xpath=ancestor::div[starts-with(@class,"space-y-1")][1]')
+      const pointsInput = pointsField.locator('input[type="number"]').first()
+      await this.fillField(pointsInput, String(fields.pointsPerPeriod))
+    }
+    if (fields.billingPeriod !== undefined) {
+      // `hasText:'Period'` is case-insensitive substring, so it ALSO matches the
+      // "Points per period" Field label. Match a <label> whose text is EXACTLY
+      // "Period" (frontend i18n key billing.field_period → "Period") to avoid
+      // landing on the points input.
+      const periodField = row
+        .locator("xpath=./label[normalize-space()='Period']")
+        .locator('xpath=ancestor::div[starts-with(@class,"space-y-1")][1]')
+      const periodInput = periodField.locator('input').first()
+      await this.fillField(periodInput, fields.billingPeriod)
+    }
   }
 
   /**
-   * Close the detail dialog using the Escape key.
+   * Toggle the enabled switch on a single price row.
+   *
+   * NOTE: When the price protects active subscriptions, the backend rejects the
+   * disable with a 409 AFTER save (the toggle itself is not pre-disabled on the
+   * client). Callers expecting the 409 path should call saveChanges() next and
+   * then expectProtectedPriceDialog().
    */
-  async closeDetailDialog(): Promise<void> {
-    await this.page.keyboard.press('Escape')
-    await expect(this.detailDialog).toBeHidden({ timeout: 3000 })
-  }
-
-  /**
-   * Toggle the enabled switch on a specific mapping row.
-   */
-  async toggleMappingEnabled(mappingId: string): Promise<void> {
-    const toggle = this.page.locator(SELECTORS.entitlementMappings.mappingEnabledToggle(mappingId))
+  async togglePriceEnabled(priceKey: string): Promise<void> {
+    const toggle = this.getPriceEnabledToggle(priceKey)
     await this.smartClick(toggle)
   }
 
   /**
-   * Check if pagination controls are visible.
+   * Click the Save Changes button (batch PUT). Does not wait for the response —
+   * callers that need to assert the result should follow with the appropriate
+   * expect* call (banner / dialog / panel re-render).
    */
-  async isPaginationVisible(): Promise<boolean> {
-    return await this.isVisible(this.pagination)
+  async saveChanges(): Promise<void> {
+    await expect(this.saveMappingButton).toBeVisible()
+    await this.saveMappingButton.click()
+  }
+
+  // ==================== Protected-price 409 dialog ====================
+
+  /**
+   * Assert the protected-price 409 dialog is visible (surfaces after a save that
+   * the backend rejected because the toggled price protects active subscriptions).
+   */
+  async expectProtectedPriceDialog(): Promise<void> {
+    await expect(this.protectedPriceConfirmDialog).toBeVisible({ timeout: 5000 })
+    await expect(this.protectedPriceActiveSubs).toBeVisible()
   }
 
   /**
-   * Get all table header text content.
+   * Read the active-subscription count surfaced by the 409 dialog.
    */
-  async getTableHeaders(): Promise<string[]> {
-    const headers = this.table.locator('thead th')
-    const count = await headers.count()
-    const texts: string[] = []
-    for (let i = 0; i < count; i++) {
-      texts.push((await headers.nth(i).textContent()) || '')
+  async getProtectedPriceActiveSubs(): Promise<number> {
+    await expect(this.protectedPriceActiveSubs).toBeVisible()
+    const text = (await this.protectedPriceActiveSubs.textContent()) || ''
+    const match = text.match(/\d+/)
+    return match ? Number(match[0]) : 0
+  }
+
+  /**
+   * Dismiss the protected-price dialog via its Cancel button (the only action;
+   * there is NO proceed button — the lock is backend-enforced).
+   */
+  async cancelProtectedPrice(): Promise<void> {
+    await expect(this.protectedPriceConfirmCancel).toBeVisible()
+    await this.protectedPriceConfirmCancel.click()
+    await expect(this.protectedPriceConfirmDialog).toBeHidden({ timeout: 3000 })
+  }
+
+  // ==================== Webhook-unresolved banner ====================
+
+  /**
+   * Assert the webhook-price-unresolved banner is visible (rendered when at
+   * least one loaded mapping has an unresolved webhook price).
+   */
+  async expectWebhookUnresolvedBanner(): Promise<void> {
+    await expect(this.webhookPriceUnresolvedBanner).toBeVisible()
+  }
+
+  // ==================== Provider sync ====================
+
+  /**
+   * Trigger a provider product sync via the toolbar sync button.
+   *
+   * Selects the provider in the sync-provider dropdown, clicks Sync, and waits
+   * for the result spans to surface. Returns the parsed {productsSynced,
+   * pricesSynced} counts from the result spans.
+   *
+   * @param provider 'stripe' | 'creem'
+   */
+  async sync(
+    provider: 'stripe' | 'creem',
+  ): Promise<{ productsSynced: number; pricesSynced: number }> {
+    await expect(this.providerSyncButton).toBeVisible()
+    await this.selectRadixOption(this.syncProviderSelect, provider)
+
+    // Click the inner sync button, then wait for either the result spans or a
+    // toast (sync may fail with test credentials). Resolve counts if present.
+    await this.smartClick(this.syncButton)
+
+    // Best-effort: wait for result spans (completed/partial sync renders them).
+    const resultVisible = await this.syncResultProducts
+      .waitFor({ state: 'visible', timeout: 10000 })
+      .then(() => true)
+      .catch(() => false)
+
+    if (!resultVisible) {
+      return { productsSynced: 0, pricesSynced: 0 }
     }
-    return texts
+
+    const productsText = (await this.syncResultProducts.textContent()) || ''
+    const pricesText = (await this.syncResultPrices.textContent()) || ''
+    const productsMatch = productsText.match(/\d+/)
+    const pricesMatch = pricesText.match(/\d+/)
+    return {
+      productsSynced: productsMatch ? Number(productsMatch[0]) : 0,
+      pricesSynced: pricesMatch ? Number(pricesMatch[0]) : 0,
+    }
   }
 }

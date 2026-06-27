@@ -135,8 +135,8 @@ const CROSS_BUCKET_CONSUME_AMOUNT = 500
 // In-file consume helper (US-CB-007)
 // ============================================================================
 //
-// PINNED SPLIT DECISION (DE-D04): the consume helper is co-located IN-FILE
-// rather than extracted to `demo/e2e/helpers/consume-points-helpers.ts`.
+// PINNED SPLIT DECISION: the consume helper is co-located IN-FILE rather
+// than extracted to `demo/e2e/helpers/consume-points-helpers.ts`.
 // Rationale: this file is the single consumer; there is no reusable UI/POM
 // surface around consume (it is a thin transport over the ext API). Splitting
 // guidance allows co-location when no reusable surface exists. Mirrors
@@ -334,10 +334,8 @@ test.beforeAll(async ({ browser }) => {
       )
     }
 
-    // 5. Mint a realm-001 API key with points.manage (DE-D04 sanctioned
-    //    widening of createTestApiKeyWithPermission — the helper now accepts
-    //    an optional realmId param; the realm-001 admin session is reused).
-    //    Bind the key to the seeded `points-demo-app` UUID so consume's
+    // 5. Mint a realm-001 API key with points.manage. Bind the key to the
+    //    seeded `points-demo-app` UUID so consume's
     //    ensure_client_app_scope check (key's bound app == consume target)
     //    passes — otherwise 场景1/2/3 hit a 403 from the client_app scope
     //    layer instead of reaching the real consume logic.
@@ -467,16 +465,20 @@ test.describe('[Regular User / SDK] 购买 Bucket 套餐与跨池消费 (US-CB-0
     expect(setupCtx, 'beforeAll must have resolved ids').not.toBeNull()
     const { primaryPoolBucketId } = setupCtx!
 
-    // The assigned one-time mappings (every product EXCEPT the intentionally
-    // unassigned ones) credit primary-pool on purchase. Target a specific
-    // assigned mapping deterministically. NOTE: `mappingCard.card(key)` takes
-    // the mapping's ENTITLEMENT KEY (data-testid="mapping-card-{entitlementKey}"),
-    // NOT the external_product_id. We pick `credits-1000` because it is the
-    // only stripe-backed one-time entitlement with a single seed row (the
-    // `credits-500` key is shared by stripe + creem rows, so its selector
-    // would match 2 cards and trip Playwright strict mode).
-    const targetEntitlementKey = 'credits-1000'
-
+    // The purchase page renders a price-card grid (`purchase-price-card-${priceId}`,
+    // priceId = externalPriceId ?? mappingId) instead of the legacy
+    // entitlement-key-grouped `mapping-card-{entitlementKey}` cards. The
+    // credit-bucket seed no longer exposes
+    // a stable entitlement-key testid; the previous `credits-1000` key was an
+    // entitlement key, not a priceId. US-CB-004 intent — "purchase an assigned
+    // mapping credits the bound bucket" — does NOT depend on which specific
+    // mapping is purchased: every mapping is assigned to a bucket by design
+    // (migration 20260607_product_reduce.sql makes provider_entitlement_mappings
+    // .bucket_id NOT NULL; PUT detach is rejected). We therefore select the
+    // FIRST purchasable price card in the Monthly pane (one_time cards are
+    // period-agnostic and render here), drive the checkout inline, and assert
+    // the primary-pool balance increased — exactly the load-bearing
+    // persistent-state assertion.
     let balanceBefore = 0
 
     await test.step('Given: 读取绑定 Bucket 购买前的余额', async () => {
@@ -493,26 +495,42 @@ test.describe('[Regular User / SDK] 购买 Bucket 套餐与跨池消费 (US-CB-0
     let attemptId = ''
 
     await test.step('When: 购买已归属 mapping 并模拟支付成功', async () => {
-      // initiatePurchaseFlow clears the purchase-flow localStorage, navigates
-      // to /{realm}/user/purchase-points, selects the FIRST mapping card, and
-      // proceeds through payment-method selection. It returns the payment
-      // attempt id from localStorage.
-      //
-      // NOTE: initiatePurchaseFlow selects the first card via
-      // `mappingCard.firstCard()` — the unassigned cards render under a
-      // DIFFERENT testid prefix (`mapping-card-unassigned-*`) and are not
-      // matched by `mappingCard.firstCard()` (which is `[data-testid^="mapping-card-"]`).
-      // To target a specific assigned product deterministically, we drive the
-      // purchase steps inline here instead.
+      // Card-selection uses the price-card grid (migrated from the legacy
+      // `mappingCard.card(targetEntitlementKey)`). We pick the first
+      // purchasable card in the Monthly pane (skipping any
+      // disabled card with a `-reason` row). The page resolves the checkout
+      // mappingId from the clicked option, so we do not pin it here.
       await page.evaluate(() =>
         localStorage.removeItem('cas-purchase-flow'),
       )
       await page.goto(`/${TEST_REALM}/user/purchase-points`)
       await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
 
-      const card = page.locator(SELECTORS.mappingCard.card(targetEntitlementKey))
-      await expect(card).toBeVisible({ timeout: 10000 })
-      await card.click()
+      const monthGrid = page.locator(
+        SELECTORS.purchasePriceCard.priceGrid('month'),
+      )
+      await expect(monthGrid).toBeVisible({ timeout: 10000 })
+
+      // Enumerate cards, skip disabled ones (those carrying a `-reason` row).
+      const cards = monthGrid.locator('[data-testid^="purchase-price-card-"]')
+      const cardCount = await cards.count()
+      let clickedPriceId: string | null = null
+      for (let i = 0; i < cardCount; i++) {
+        const card = cards.nth(i)
+        const testid = (await card.getAttribute('data-testid')) ?? ''
+        if (testid.endsWith('-reason')) continue
+        const reason = card.locator(`[data-testid="${testid}-reason"]`)
+        if ((await reason.count()) > 0) continue // disabled card
+        await card.click()
+        // Recover priceId from the testid (Monthly pane → no `-annual` suffix).
+        clickedPriceId = testid.replace(/^purchase-price-card-/, '')
+        break
+      }
+      expect(
+        clickedPriceId,
+        'a purchasable price card must exist in the month pane',
+      ).not.toBeNull()
+
       await expect(
         page.locator(SELECTORS.purchasePoints.nextButton),
       ).toBeEnabled()

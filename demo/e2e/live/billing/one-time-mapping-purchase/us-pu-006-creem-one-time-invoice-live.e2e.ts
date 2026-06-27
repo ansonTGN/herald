@@ -501,6 +501,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
   test('US-PU-006 Scenario 7: Creem one-time checkout creates external invoice with correct fields', async ({ page }) => {
     let clientAppId: string
     let attemptId: string
+    let mappingId: string
 
     await test.step('Given a one-time entitlement mapping is configured', async () => {
       // Sync provider products to pull real one-time product from Creem
@@ -521,6 +522,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
         (m: any) => m.externalProductId === secrets.creem.onetimeProductId,
       )
       expect(targetMapping, `One-time Creem product mapping not found after sync. Available products: ${JSON.stringify(items.map((m: any) => m.externalProductId))}`).toBeTruthy()
+      mappingId = targetMapping.id
 
       if (targetMapping.entitlementKey !== ENTITLEMENT_KEY || !targetMapping.enabled) {
         const patchResp = await page.request.patch(
@@ -548,7 +550,7 @@ test.describe('[Live][Billing One-Time Mapping] US-PU-006: Creem one-time invoic
         `${BASE_URL}/api/bill/${REALM_ID}/client/${clientAppId}/checkout`,
         {
           data: {
-            entitlementKey: ENTITLEMENT_KEY,
+            mappingId,
             paymentProvider: 'creem',
           },
         },

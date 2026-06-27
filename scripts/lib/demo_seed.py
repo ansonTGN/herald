@@ -109,11 +109,17 @@ def ensure_demo_seed_data(logger: "Logger | None" = None) -> bool:
         # app not yet seeded" warning. This second pass is the one that actually
         # writes `credit_bucket_client_apps` rows on every seed run, making the
         # coverage set deterministic without requiring a manual second re-seed.
-        # (DE-D06 in-slot seed fix; admin realm has no points-demo-app so its
-        # pass no-ops cleanly.)
+        # (In-slot seed fix; admin realm has no points-demo-app so its pass
+        # no-ops cleanly.)
         for realm_id in (POINTS_REALM_ID, ADMIN_REALM):
             _ensure_realm_bucket_directory(realm_id, logger)
         _ensure_points_package_payment_demo_data(logger)
+
+        # Seed the multi-price Stripe product (prod_stripe_multi_pro: monthly
+        # 1000 + annual 12000 sharing 'pro-plan'). Runs AFTER the one-time
+        # mappings so the admin master-detail page and the user purchase page
+        # render it alongside the legacy catalog.
+        _ensure_multi_price_demo_data(logger)
 
         # Ensure purchase history demo data (payment_attempts for the purchase-records page)
         _info(logger, "Ensuring purchase history demo data...")
@@ -685,20 +691,26 @@ BEGIN
     END IF;
 
     -- Ensure entitlement mapping exists for this realm (provider-sourced catalog)
+    -- external_price_id added; ON CONFLICT targets the new 4-column unique key
+    -- `uq_pem_realm_provider_product_price` (the old 3-column clause throws
+    -- `no unique or exclusion constraint matching`). This row is a single-price
+    -- subscription mapping; NULLS NOT DISTINCT lets a NULL external_price_id
+    -- still match on re-seed.
     INSERT INTO provider_entitlement_mappings (
-        id, realm_id, payment_provider, external_product_id, bucket_id,
+        id, realm_id, payment_provider, external_product_id, external_price_id, bucket_id,
         entitlement_key, billing_type, enabled
     ) VALUES (
         uuidv7(),
         '{POINTS_REALM_ID}',
         'stripe',
         'realm001-product-subscription',
+        NULL,
         '{bucket_id}',
         'professional',
         'recurring',
         TRUE
     )
-    ON CONFLICT (realm_id, payment_provider, external_product_id) DO UPDATE
+    ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id) DO UPDATE
         SET bucket_id = EXCLUDED.bucket_id,
             entitlement_key = EXCLUDED.entitlement_key,
             billing_type = EXCLUDED.billing_type,
@@ -842,24 +854,33 @@ BEGIN
 
     -- One-time entitlement mappings (used by one-time-mapping-purchase demo tests)
     -- provider_product_info is required (NOT NULL filter in list_one_time_mappings query)
+    -- external_price_id added; ON CONFLICT targets the new 4-column unique key
+    -- `uq_pem_realm_provider_product_price` (the old 3-column clause throws on
+    -- conflict resolution).
+    --   - Stripe rows get an explicit placeholder `external_price_id` (Stripe is
+    --     price-aware per the new contract; a NULL Stripe price would collide and
+    --     is wrong shape). Placeholders are fine: these rows are NEVER driven
+    --     through real Stripe (live tests create their own real prices).
+    --   - The Creem row KEEPS external_price_id = NULL (Creem is price-less;
+    --     NULLS NOT DISTINCT lets it match on re-seed).
     INSERT INTO provider_entitlement_mappings (
-        id, realm_id, payment_provider, external_product_id, bucket_id,
+        id, realm_id, payment_provider, external_product_id, external_price_id, bucket_id,
         entitlement_key, billing_type, points_per_period, validity_days, enabled,
         provider_product_info
     ) VALUES
-        (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_500',  '{points_bucket}', 'credits-500',  'one_time', 500,  365, TRUE,
+        (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_500',  'price_stripe_onetime_500',  '{points_bucket}', 'credits-500',  'one_time', 500,  365, TRUE,
          '{{"name": "500 Credits", "price": 500, "currency": "USD"}}'::jsonb),
-        (uuidv7(), '{POINTS_REALM_ID}', 'creem',  '{creem_product_id}',   '{points_bucket}', 'credits-500',  'one_time', 500,  365, TRUE,
+        (uuidv7(), '{POINTS_REALM_ID}', 'creem',  '{creem_product_id}',   NULL, '{points_bucket}', 'credits-500',  'one_time', 500,  365, TRUE,
          '{{"name": "500 Credits", "price": 500, "currency": "USD"}}'::jsonb),
-        (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_1000', '{points_bucket}', 'credits-1000', 'one_time', 1000, 365, TRUE,
+        (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_1000', 'price_stripe_onetime_1000', '{points_bucket}', 'credits-1000', 'one_time', 1000, 365, TRUE,
          '{{"name": "1000 Credits", "price": 900, "currency": "USD"}}'::jsonb),
-        (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_2000', '{points_bucket}', 'credits-2000', 'one_time', 2000, 365, TRUE,
+        (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_onetime_2000', 'price_stripe_onetime_2000', '{points_bucket}', 'credits-2000', 'one_time', 2000, 365, TRUE,
          '{{"name": "2000 Credits", "price": 1600, "currency": "USD"}}'::jsonb),
-        (uuidv7(), '{ADMIN_REALM}', 'stripe', 'prod_admin_stripe_onetime_500',  '{admin_bucket}', 'credits-500',  'one_time', 500, 365, TRUE,
+        (uuidv7(), '{ADMIN_REALM}', 'stripe', 'prod_admin_stripe_onetime_500',  'price_stripe_admin_onetime_500',  '{admin_bucket}', 'credits-500',  'one_time', 500, 365, TRUE,
          '{{"name": "500 Credits", "price": 500, "currency": "USD"}}'::jsonb),
-        (uuidv7(), '{ADMIN_REALM}', 'stripe', 'prod_admin_stripe_onetime_1000', '{admin_bucket}', 'credits-1000', 'one_time', 1000, 365, TRUE,
+        (uuidv7(), '{ADMIN_REALM}', 'stripe', 'prod_admin_stripe_onetime_1000', 'price_stripe_admin_onetime_1000', '{admin_bucket}', 'credits-1000', 'one_time', 1000, 365, TRUE,
          '{{"name": "1000 Credits", "price": 900, "currency": "USD"}}'::jsonb)
-    ON CONFLICT (realm_id, payment_provider, external_product_id) DO UPDATE
+    ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id) DO UPDATE
         SET bucket_id = EXCLUDED.bucket_id,
             entitlement_key = EXCLUDED.entitlement_key,
             billing_type = EXCLUDED.billing_type,
@@ -871,6 +892,60 @@ END $$;
 """
     _sql_exec(sql)
     _info(logger, "[OK] Payment provider config and one-time mappings demo data ready")
+
+
+def _ensure_multi_price_demo_data(logger: "Logger | None") -> None:
+    """Seed a multi-price Stripe product for support-multiple-price demos.
+
+    Inserts ONE Stripe product (`prod_stripe_multi_pro`) with TWO price rows
+    that SHARE `entitlement_key = 'pro-plan'` but carry DIFFERENT points
+    strategies:
+
+      - `price_stripe_pro_monthly`: recurring / month / 1000 points
+      - `price_stripe_pro_annual`:  recurring / year  / 12000 points
+
+    The 12000-vs-1000 distinction under one shared key is the load-bearing
+    invariant for US-EM-008/009 (the webhook grant MUST resolve price-level
+    strategy; a key-level resolver would collapse both to the same amount).
+
+    Both rows are enabled and assigned to the realm-001 registration-pool bucket
+    (`_default_bucket_id(POINTS_REALM_ID)`). Idempotent via
+    `ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id)
+     DO UPDATE` (the new 4-column unique key `uq_pem_realm_provider_product_price`).
+
+    LOUD-NOTE for sibling suites: this adds +2 rows to
+    `provider_entitlement_mappings` in realm-001. Suites that COUNT those rows
+    must adjust by +2.
+    """
+    _info(logger, "Ensuring multi-price product demo data (support-multiple-price)...")
+    points_bucket = _default_bucket_id(POINTS_REALM_ID)
+    admin_bucket = _default_bucket_id(ADMIN_REALM)
+    # Seed the multi-price product in BOTH the realm-001 registration pool
+    # (consumed by the live multi-price purchase demo) AND the admin realm
+    # (consumed by the admin master-detail demo, which navigates as
+    # DEMO_ADMIN.realmId='admin'). The same external_product_id is reused across
+    # the two realms — uniqueness is scoped to (realm, provider, product, price),
+    # so per-realm rows do not collide. Mirrors the dual-realm seeding already
+    # used by the one-time mappings above.
+    sql = f"""
+INSERT INTO provider_entitlement_mappings (
+    id, realm_id, payment_provider, external_product_id, external_price_id, bucket_id,
+    entitlement_key, billing_type, billing_period, points_per_period, enabled
+) VALUES
+    (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_multi_pro', 'price_stripe_pro_monthly', '{points_bucket}', 'pro-plan', 'recurring', 'month', 1000,  TRUE),
+    (uuidv7(), '{POINTS_REALM_ID}', 'stripe', 'prod_stripe_multi_pro', 'price_stripe_pro_annual',  '{points_bucket}', 'pro-plan', 'recurring', 'year',  12000, TRUE),
+    (uuidv7(), '{ADMIN_REALM}',     'stripe', 'prod_stripe_multi_pro', 'price_stripe_pro_monthly', '{admin_bucket}', 'pro-plan', 'recurring', 'month', 1000,  TRUE),
+    (uuidv7(), '{ADMIN_REALM}',     'stripe', 'prod_stripe_multi_pro', 'price_stripe_pro_annual',  '{admin_bucket}', 'pro-plan', 'recurring', 'year',  12000, TRUE)
+ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id) DO UPDATE
+    SET bucket_id = EXCLUDED.bucket_id,
+        entitlement_key = EXCLUDED.entitlement_key,
+        billing_type = EXCLUDED.billing_type,
+        billing_period = EXCLUDED.billing_period,
+        points_per_period = EXCLUDED.points_per_period,
+        enabled = TRUE;
+"""
+    _sql_exec(sql)
+    _info(logger, "[OK] Multi-price product demo data ready (prod_stripe_multi_pro: monthly 1000 + annual 12000, shared pro-plan; realm-001 + admin)")
 
 
 def _ensure_purchase_history_demo_data(logger: "Logger | None") -> None:
@@ -1079,20 +1154,24 @@ BEGIN
     END IF;
 
     -- Ensure entitlement mapping exists for admin realm
+    -- external_price_id added; ON CONFLICT targets the new 4-column unique key.
+    -- Single-price subscription row; NULL external_price_id matches on re-seed
+    -- via NULLS NOT DISTINCT.
     INSERT INTO provider_entitlement_mappings (
-        id, realm_id, payment_provider, external_product_id, bucket_id,
+        id, realm_id, payment_provider, external_product_id, external_price_id, bucket_id,
         entitlement_key, billing_type, enabled
     ) VALUES (
         uuidv7(),
         '{ADMIN_REALM}',
         'stripe',
         'test-product-subscription',
+        NULL,
         '{bucket_id}',
         'professional',
         'recurring',
         TRUE
     )
-    ON CONFLICT (realm_id, payment_provider, external_product_id) DO UPDATE
+    ON CONFLICT (realm_id, payment_provider, external_product_id, external_price_id) DO UPDATE
         SET bucket_id = EXCLUDED.bucket_id,
             entitlement_key = EXCLUDED.entitlement_key,
             billing_type = EXCLUDED.billing_type,
@@ -1282,7 +1361,7 @@ def _error(logger: "Logger | None", message: str) -> None:
 #     subscription reference this bucket. Registration / free-periodic grants
 #     target this bucket.
 #   - SECONDARY_POOL: enabled, NOT a registration pool; covers POINTS_CLIENT_APP_ID
-#     so DE-D03/DE-D04 can exercise cross-bucket assertions. Holds no seeded
+#     so cross-bucket demos can exercise cross-bucket assertions. Holds no seeded
 #     balance by default.
 CREDIT_BUCKET_KEY_PRIMARY = "primary-pool"
 CREDIT_BUCKET_KEY_SECONDARY = "promo-pool"
@@ -1307,8 +1386,8 @@ def _ensure_credit_buckets(logger: "Logger | None") -> None:
         registration pool per realm. All seeded points/mapping/payment rows
         reference this bucket via `bucket_id`.
       - `promo-pool` (receives_registration_credits=false) — a secondary pool
-        covering POINTS_CLIENT_APP_ID so cross-bucket demos (DE-D03/DE-D04)
-        have a covered-but-empty pool to exercise.
+        covering POINTS_CLIENT_APP_ID so cross-bucket demos have a
+        covered-but-empty pool to exercise.
 
     Both buckets bind the existing POINTS_CLIENT_APP_ID client app via
     `credit_bucket_client_apps` (`ON CONFLICT DO NOTHING`). All existing

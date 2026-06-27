@@ -1,17 +1,54 @@
 /**
  * Unified Purchase Test Helpers
  *
- * Reusable helper functions for one-time mapping purchase flow tests.
- * The purchase flow is:
- * 1. User sees mapping cards on purchase-points page
- * 2. Selects a mapping card (click sets selectedMappingId)
- * 3. Clicks Next to proceed to payment step
- * 4. Selects payment method and clicks Complete Purchase
- * 5. Payment attempt is created with targetType 'entitlement_mapping'
+ * Reusable helper functions for the user-domain purchase flow.
+ *
+ * The purchase-page rewrite replaced the entitlement-key-grouped
+ * `mapping-card-*` cards with a price-card grid + period toggle
+ * (`purchase-price-card-*`). The exported names importers rely on are
+ * PRESERVED (`selectFirstMappingAndProceed`, `selectMappingAndProceed`,
+ * `TEST_DATA`, `extractPaymentAttemptId`, `selectPaymentMethodAndProceed`,
+ * `initiatePurchaseFlow`, `verifyRedirectPromptOrDegraded`); only the
+ * card-selection internals switch to the price-card grid.
+ *
+ * Purchase flow (rewritten page):
+ * 1. User sees price cards on /{realm}/user/purchase-points (Monthly pane by
+ *    default; Annual pane via period toggle).
+ * 2. Selects a price card (click sets `selectedMappingId = option.mappingId`).
+ * 3. Clicks Next to proceed to the payment step.
+ * 4. Selects payment method and clicks Complete Purchase.
+ * 5. `createPaymentAttempt` POSTs `{targetType:'entitlement_mapping',
+ *    targetId:<selectedMappingId>, paymentProvider:<derived from option>}`.
+ *
+ * Period semantics (load-bearing — mirrors `multi-price-purchase.helpers.ts`):
+ * `selectPeriodPane` renders `recurring` items ONLY in the pane whose
+ * `billingPeriod` matches, and renders `one_time` items in BOTH panes
+ * (period-agnostic). A one-time card therefore resolves identically under
+ * either period; a recurring month card has NO Annual counterpart. This helper
+ * defaults to the Monthly pane so it works for both one-time and month-recurring
+ * products without callers pinning a period.
+ *
+ * Boundary:
+ * - Uses ONLY `SELECTORS.purchasePriceCard.*` + `SELECTORS.purchasePoints.*` +
+ *   `SELECTORS.paymentMethodSelector.*` + `SELECTORS.paymentProviderUI.*`.
+ * - Does NOT hardcode selector strings (every locator flows from selectors.ts).
+ * - Re-exports the period-toggle helper from `multi-price-purchase.helpers.ts`
+ *   to avoid duplicating the period-switch mechanics.
  */
 
 import { expect, type Page } from '@playwright/test'
 import { SELECTORS } from '../selectors'
+import {
+  selectPeriod,
+  selectPriceCard,
+  type PurchasePeriod,
+} from './multi-price-purchase.helpers'
+
+export type { PurchasePeriod }
+
+// Re-export so callers that need pane-level mechanics can reach the canonical
+// helpers without a second import line.
+export { selectPeriod, selectPriceCard }
 
 // Test constants
 export const TEST_DATA = {
@@ -63,33 +100,122 @@ export async function extractPaymentAttemptId(page: Page): Promise<string> {
 }
 
 /**
- * Selects the first available mapping card and proceeds to payment step.
- * Uses SELECTORS.mappingCard selectors from selectors.ts.
+ * Discover the first purchasable price card on the active period pane and
+ * return its (priceId, period) tuple so the caller can target the exact DOM
+ * node via `selectPriceCard`.
+ *
+ * The rewritten page renders price cards as
+ * `purchase-price-card-${priceId}` (Monthly) or
+ * `purchase-price-card-${priceId}-annual` (Annual). There is no enumerating
+ * grid child testid, so we read the testid attribute off the first card in the
+ * active grid and reverse-engineer the priceId + period.
+ *
+ * Disabled cards (mapping disabled or no provider wired) render the SAME card
+ * testid plus a sibling `-reason` row; they are skipped here so the helper
+ * never attempts to click a card whose `onClick` is undefined.
+ *
+ * Default period is `'month'`: the page boots in Monthly, and `one_time` cards
+ * appear in both panes so a single-price/one-time product resolves under
+ * either. Callers with a known annual-recurring product should pass `'year'`.
  */
-export async function selectFirstMappingAndProceed(page: Page): Promise<void> {
-  const firstCard = page.locator(SELECTORS.mappingCard.firstCard()).first()
-  await expect(firstCard).toBeVisible()
-  await firstCard.click()
+async function discoverFirstPurchasablePriceCard(
+  page: Page,
+  period: PurchasePeriod = 'month',
+): Promise<{ priceId: string; period: PurchasePeriod }> {
+  const grid = page.locator(SELECTORS.purchasePriceCard.priceGrid(period))
+  await expect(grid).toBeVisible({
+    timeout: TEST_DATA.TIMEOUTS.ELEMENT_VISIBLE,
+  })
 
-  // Verify the card shows selected state (ring-2 ring-primary)
-  await expect(page.locator(SELECTORS.purchasePoints.nextButton)).toBeEnabled()
+  // Enumerate the card testids in the active pane and pick the first that has
+  // no `-reason` sibling (i.e. is purchasable). Cards share the testid prefix
+  // `purchase-price-card-`; the grid only contains cards, so children are all
+  // cards.
+  const cards = grid.locator('[data-testid^="purchase-price-card-"]')
+  const count = await cards.count()
+  if (count === 0) {
+    throw new Error(
+      `No price cards rendered in the ${period} pane — purchase page seed empty?`,
+    )
+  }
 
-  await page.locator(SELECTORS.purchasePoints.nextButton).click()
+  for (let i = 0; i < count; i++) {
+    const card = cards.nth(i)
+    const testid = (await card.getAttribute('data-testid')) ?? ''
+    // Skip reason rows just in case (they live as children of cards, not the
+    // grid, so this is defensive).
+    if (testid.endsWith('-reason')) continue
+
+    // Recover priceId + detect annual suffix.
+    // testid shape: `purchase-price-card-<priceId>` or
+    // `purchase-price-card-<priceId>-annual`.
+    const stripped = testid.replace(/^purchase-price-card-/, '')
+    if (stripped.endsWith('-annual')) {
+      const priceId = stripped.slice(0, -'-annual'.length)
+      // Annual-pane cards are only recurring-year; respect the requested period.
+      if (period === 'year') {
+        return { priceId, period: 'year' }
+      }
+      continue
+    }
+    return { priceId: stripped, period }
+  }
+
+  throw new Error(
+    `No purchasable price card found in the ${period} pane (all cards disabled?).`,
+  )
 }
 
 /**
- * Selects a specific mapping card by entitlement key and proceeds to payment step.
+ * Selects the first available price card and proceeds to the payment step.
+ *
+ * Replaces the legacy `mappingCard.firstCard()` click. Defaults to the Monthly
+ * pane so both one-time (period-agnostic) and month-recurring products resolve.
+ * Pass `period: 'year'` for annual-recurring products.
+ *
+ * Internals:
+ * - mapping-card testid → `purchase-price-card-${priceId}` (Monthly) /
+ *   `purchase-price-card-${priceId}-annual` (Annual).
+ * - The page derives the checkout `mappingId` itself from the clicked option
+ *   (`selectedMappingId = option.mappingId`), so this helper does NOT need to
+ *   resolve mappingId — the click is the load-bearing act.
+ */
+export async function selectFirstMappingAndProceed(
+  page: Page,
+  opts?: { period?: PurchasePeriod },
+): Promise<void> {
+  const period = opts?.period ?? 'month'
+  const { priceId, period: resolvedPeriod } =
+    await discoverFirstPurchasablePriceCard(page, period)
+  await selectPriceCard(page, priceId, resolvedPeriod)
+
+  // Verify the card shows selected state and Next is enabled.
+  await expect(
+    page.locator(SELECTORS.purchasePriceCard.nextButton),
+  ).toBeEnabled()
+
+  await page.locator(SELECTORS.purchasePriceCard.nextButton).click()
+}
+
+/**
+ * Selects a specific price card by priceId and proceeds to the payment step.
+ *
+ * No current importer calls this; it is preserved for parity and any future
+ * price-pinned caller. `priceId` is `externalPriceId ?? mappingId` (Creem
+ * NULL-price rows use mappingId); targets `purchase-price-card-${priceId}`
+ * (Monthly) or `purchase-price-card-${priceId}-annual` (Annual).
  */
 export async function selectMappingAndProceed(
   page: Page,
-  entitlementKey: string
+  priceId: string,
+  period?: PurchasePeriod,
 ): Promise<void> {
-  const card = page.locator(SELECTORS.mappingCard.card(entitlementKey))
-  await expect(card).toBeVisible()
-  await card.click()
+  await selectPriceCard(page, priceId, period)
 
-  await expect(page.locator(SELECTORS.purchasePoints.nextButton)).toBeEnabled()
-  await page.locator(SELECTORS.purchasePoints.nextButton).click()
+  await expect(
+    page.locator(SELECTORS.purchasePriceCard.nextButton),
+  ).toBeEnabled()
+  await page.locator(SELECTORS.purchasePriceCard.nextButton).click()
 }
 
 /**
@@ -107,22 +233,29 @@ export async function selectPaymentMethodAndProceed(
 }
 
 /**
- * Full purchase flow: navigate -> select mapping -> select provider -> complete purchase.
- * Returns the payment attempt ID from localStorage.
+ * Full purchase flow: navigate -> select first price card -> select provider ->
+ * complete purchase. Returns the payment attempt ID from localStorage.
+ *
+ * The card-selection step is price-card driven via
+ * `selectFirstMappingAndProceed` (Monthly pane by default; pass `period:'year'`
+ * for annual-recurring products). The checkout `mappingId` is resolved by the
+ * page from the clicked option; this helper does not pin it.
  */
 export async function initiatePurchaseFlow(
   page: Page,
   provider: PaymentProvider,
-  realmId: string = TEST_DATA.REALMS.REALM_001
+  realmId: string = TEST_DATA.REALMS.REALM_001,
+  opts?: { period?: PurchasePeriod }
 ): Promise<string> {
   await page.evaluate(() => localStorage.removeItem('cas-purchase-flow'))
   await page.goto(`/${realmId}/user/purchase-points`)
   await expect(page.locator(SELECTORS.purchasePoints.page)).toBeVisible()
 
-  // Precondition: realm must have at least one active one-time entitlement mapping.
-  // If no mappings exist, the page shows empty state and this helper will fail.
-  // Callers in conditional test contexts should check for mapping cards first.
-  await selectFirstMappingAndProceed(page)
+  // Precondition: realm must have at least one purchasable price card in the
+  // target period pane. If none exist, the page shows the empty state and this
+  // helper will fail. Callers in conditional test contexts should check for
+  // price cards first.
+  await selectFirstMappingAndProceed(page, opts)
   await expect(page.locator(SELECTORS.purchasePoints.stepPayment)).toBeVisible()
 
   await selectPaymentMethodAndProceed(page, provider)
