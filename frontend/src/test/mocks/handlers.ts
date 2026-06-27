@@ -11,6 +11,7 @@ import { unifiedPurchaseHandlers } from './handlers/unified-purchase'
 import { auditHandlers } from './handlers/audit'
 import { deviceHandlers } from './handlers/device'
 import { dashboardHandlers } from './handlers/dashboard'
+import { entitlementMappingHandlers } from './handlers/entitlement-mappings'
 
 // Add API handlers here and override with `server.use(...)` in specific tests when needed.
 export const handlers = [
@@ -19,6 +20,10 @@ export const handlers = [
 
   // Points handlers
   ...pointsHandlers,
+
+  // Entitlement-mappings (price-granularity billing) handlers.
+  // Default GET returns an EMPTY list; feature tests override via server.use.
+  ...entitlementMappingHandlers,
 
   // Unified Purchase handlers
   ...unifiedPurchaseHandlers,

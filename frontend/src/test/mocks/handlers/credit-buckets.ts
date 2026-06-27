@@ -27,14 +27,13 @@ export const creditBucketsHandlers = [
     })
   ),
   http.get(`${BASE}/overview`, () => HttpResponse.json({ rows: [], grandTotal: {} })),
-  // Client apps + entitlement mappings pulled by the editor multiselects
-  // (`listClientApps` → /api/client/{realmId}; `listEntitlementMappings` →
-  // /api/bill/{realmId}/entitlement-mappings). Empty lists are enough — the
-  // editor's multiselects render from these and we don't exercise them here.
+  // Client apps pulled by the editor multiselect (`listClientApps` →
+  // /api/client/{realmId}). Empty list is enough — the editor's multiselect
+  // renders from it and we don't exercise it here.
+  // The mapping-list query is served by the shared `entitlementMappingHandlers`
+  // module (registered globally in handlers.ts); its default also returns an
+  // empty list.
   http.get(`${API_BASE_URL}/api/client/:realmId`, () =>
-    HttpResponse.json({ items: [], page: 0, pageSize: 100, total: 0 })
-  ),
-  http.get(`${API_BASE_URL}/api/bill/:realmId/entitlement-mappings`, () =>
     HttpResponse.json({ items: [], page: 0, pageSize: 100, total: 0 })
   ),
 ]

@@ -1,46 +1,60 @@
 import { z } from 'zod'
 import { m } from '@/paraglide/messages'
 
-// ==================== Entitlement Mapping Update Schema ====================
+// ==================== Price-Level Batch Save Schema ====================
+//
+// Mirrors the generated `PriceMappingUpdate` / `BatchUpdateEntitlementMappingsRequest`.
+// One price row per entry; `entitlementKey` is shared across the product's prices.
 
 const ENTITLEMENT_KEY_REGEX = /^[a-z0-9-]{1,64}$/
 
-export const entitlementMappingUpdateSchema = z.object({
+export const priceMappingUpdateSchema = z.object({
+  mappingId: z.string().min(1),
+
   entitlementKey: z
     .string()
     .min(1, { error: () => m['billing.entitlement_key_required']() })
     .regex(ENTITLEMENT_KEY_REGEX, { error: () => m['billing.entitlement_key_format']() }),
 
-  enabled: z.boolean().default(false),
+  billingType: z.string().nullable().optional(),
 
-  pointsPerPeriod: z.number().int().min(0).optional().nullable(),
+  billingPeriod: z.string().nullable().optional(),
 
-  grantPeriodType: z.enum(['once', 'daily', 'weekly', 'monthly']).optional().nullable(),
+  enabled: z.boolean().nullable().optional(),
 
-  validityDays: z.number().int().min(1).optional().nullable(),
+  pointsPerPeriod: z.number().int().min(0).nullable().optional(),
 
-  grantOnSubscribe: z.boolean().default(false),
+  grantPeriodType: z.enum(['once', 'daily', 'weekly', 'monthly']).nullable().optional(),
 
-  maxPeriods: z.number().int().min(1).optional().nullable(),
+  validityDays: z.number().int().min(1).nullable().optional(),
 
-  // Bound Credit Bucket is NOT settable via this form: the PATCH handler
-  // preserves the existing bucket_id (assignment is owned by the Credit
-  // Bucket directory page). The detail dialog shows it read-only.
+  grantOnSubscribe: z.boolean().nullable().optional(),
+
+  maxPeriods: z.number().int().min(1).nullable().optional(),
 })
 
-export type EntitlementMappingUpdateFormData = z.infer<typeof entitlementMappingUpdateSchema>
+export type PriceMappingUpdateFormData = z.infer<typeof priceMappingUpdateSchema>
 
-export function getEntitlementMappingUpdateDefaults(
-  config?: Partial<EntitlementMappingUpdateFormData>
-): EntitlementMappingUpdateFormData {
+export const batchEntitlementMappingsSchema = z.object({
+  paymentProvider: z.string().min(1),
+  externalProductId: z.string().min(1),
+  updates: z.array(priceMappingUpdateSchema).min(1),
+})
+
+export type BatchEntitlementMappingsFormData = z.infer<typeof batchEntitlementMappingsSchema>
+
+/**
+ * Build form defaults for the price-level batch editor from the product's
+ * current price rows. Each input row must already carry its `mappingId`;
+ * the entitlement key is seeded from the row (the editor renames it group-wide).
+ */
+export function getBatchEntitlementMappingsDefaults(
+  config?: Partial<BatchEntitlementMappingsFormData>
+): BatchEntitlementMappingsFormData {
   return {
-    entitlementKey: '',
-    enabled: false,
-    pointsPerPeriod: null,
-    grantPeriodType: null,
-    validityDays: null,
-    grantOnSubscribe: false,
-    maxPeriods: null,
+    paymentProvider: '',
+    externalProductId: '',
+    updates: [],
     ...config,
-  } as EntitlementMappingUpdateFormData
+  } as BatchEntitlementMappingsFormData
 }

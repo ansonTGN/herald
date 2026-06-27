@@ -8,7 +8,7 @@ import { m } from '@/paraglide/messages'
 interface StripeCheckoutButtonProps {
   realmId: string
   clientAppId: string
-  entitlementKey: string
+  mappingId: string
   variant?: 'default' | 'outline' | 'ghost' | 'destructive'
   size?: 'default' | 'sm' | 'lg' | 'icon'
   className?: string
@@ -24,7 +24,7 @@ interface StripeCheckoutButtonProps {
 export function StripeCheckoutButton({
   realmId,
   clientAppId,
-  entitlementKey,
+  mappingId,
   variant = 'default',
   size = 'default',
   className,
@@ -43,14 +43,14 @@ export function StripeCheckoutButton({
       await checkoutMutation.mutateAsync({
         realmId,
         clientAppId,
-        entitlementKey,
+        mappingId,
         paymentProvider: 'stripe',
       })
     } catch (error) {
       // Error is already handled by the mutation callbacks
       console.error('Checkout error:', error)
     }
-  }, [checkoutMutation, realmId, clientAppId, entitlementKey])
+  }, [checkoutMutation, realmId, clientAppId, mappingId])
 
   return (
     <Button
@@ -59,7 +59,7 @@ export function StripeCheckoutButton({
       variant={variant}
       size={size}
       className={className}
-      data-testid={`stripe-checkout-button-${entitlementKey}`}
+      data-testid={`stripe-checkout-button-${mappingId}`}
     >
       {checkoutMutation.isPending ? (
         <>

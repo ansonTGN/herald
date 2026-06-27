@@ -1,30 +1,27 @@
 import { m } from '@/paraglide/messages'
 import { useState, useEffect, useMemo } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AlertCircle, ArrowLeft, ArrowRight, Loader2, Check } from 'lucide-react'
 import { createPaymentAttempt, cancelPaymentAttempt } from '@/lib/api-generated'
-import type {
-  PaymentAttemptStatusResponse,
-  OneTimeMappingItem,
-  PaymentProviderInfo,
-} from '@/lib/api-generated'
+import type { PaymentAttemptStatusResponse, PurchaseOptionView } from '@/lib/api-generated'
 import {
-  oneTimeMappingsQueryOptions,
+  clientAppsQueryOptions,
+  purchaseOptionsQueryOptions,
   paymentProvidersQueryOptions,
   paymentAttemptStatusQueryOptions,
   queryKeys,
   requireFeature,
 } from '@/data/query-options'
-import { useBuckets } from '@/data/use-buckets'
 import { PaymentMethodSelector } from '@/components/purchase/payment-method-selector'
 import { PaymentAttemptStatus } from '@/components/purchase/payment-attempt-status'
 import { usePurchaseFlowActions, usePaymentAttempt } from '@/stores/purchase-flow-store'
 import { usePurchaseFlowStore } from '@/stores/purchase-flow-store'
 import { useAuthStore } from '@/stores/auth-store'
-import { formatInvoiceAmount, extractProviderPrice } from '@/lib/invoice-utils'
+import { formatInvoiceAmount } from '@/lib/invoice-utils'
+import { deriveSharedKeyColor } from '@/components/billing/shared-key-color'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/$realmId/user/purchase-points')({
@@ -33,63 +30,101 @@ export const Route = createFileRoute('/$realmId/user/purchase-points')({
       to: '/$realmId/user/points',
       params: { realmId: params.realmId },
     }),
-  component: PurchasePointsPage,
+  component: PurchasePointsRoute,
 })
 
 type PurchaseStep = 'packages' | 'payment' | 'processing' | 'complete'
+type BillingPeriod = 'month' | 'year'
 
 /**
- * Resolve the concrete mapping id for (entitlementKey, provider). An
- * entitlement may have one mapping per configured provider; the purchase flow
- * must submit the mapping whose provider matches the user's payment-method
- * choice, NOT the originally-clicked card (backend rejects a
- * targetMappingId whose provider does not match the requested paymentProvider).
- * Returns undefined when no mapping exists for that combination (the product
- * is not offered through that provider) — the submit button must stay disabled.
+ * Filter the flat purchase-option list to the cards visible in a given period
+ * pane.
  *
- * Exported pure function so the intent can be unit-tested without mounting
- * the Route component.
+ * Contract:
+ * - `recurring` items appear ONLY in the pane whose `billingPeriod` matches.
+ * - `one_time` items are period-agnostic and appear in BOTH panes (a one-time
+ *   pack is neither monthly nor annual; hiding it under either toggle would
+ *   regress vs. always listing it).
+ *
+ * Exported pure function so the filtering intent is unit-testable without
+ * mounting the Route component.
  */
 // eslint-disable-next-line react-refresh/only-export-components -- exported for unit testing
-export function resolveMappingForProvider(
-  mappings: OneTimeMappingItem[] | undefined,
-  entitlementKey: string | null,
-  provider: string | null
-): string | undefined {
-  if (!mappings || !entitlementKey || !provider) return undefined
-  return mappings.find((m) => m.entitlementKey === entitlementKey && m.paymentProvider === provider)
-    ?.id
+export function selectPeriodPane(
+  items: PurchaseOptionView[],
+  period: BillingPeriod
+): PurchaseOptionView[] {
+  return items.filter((item) => {
+    // one_time packs are period-agnostic: always visible.
+    if (item.billingType !== 'recurring') return true
+    return item.billingPeriod === period
+  })
 }
 
 /**
- * Providers that actually have a mapping for the selected entitlement, so the
- * payment-method picker never offers a provider that cannot fulfill this
- * product (latent UX bug: picker previously showed all realm providers).
+ * Reason a price card is not purchasable, or null when it is purchasable.
+ *
+ * A card is disabled when the mapping is not enabled for purchase, or when no
+ * payment provider is wired to it (the price exists but cannot be checked out).
+ * Returns the `purchase.not_enabled_reason` message args so the caller renders
+ * the canonical copy via Paraglide; returns null for purchasable cards so the
+ * caller can skip rendering a reason row.
  */
 // eslint-disable-next-line react-refresh/only-export-components -- exported for unit testing
-export function providersForEntitlement(
-  mappings: OneTimeMappingItem[] | undefined,
-  entitlementKey: string | null,
-  allProviders: PaymentProviderInfo[]
-): PaymentProviderInfo[] {
-  if (!mappings || !entitlementKey) return []
-  const offered = new Set(
-    mappings.filter((m) => m.entitlementKey === entitlementKey).map((m) => m.paymentProvider)
-  )
-  return allProviders.filter((p) => offered.has(p.platform))
+export function disabledReason(
+  option: PurchaseOptionView
+): { key: 'purchase.not_enabled_reason' } | null {
+  if (!option.enabled || !option.paymentProvider) {
+    return { key: 'purchase.not_enabled_reason' }
+  }
+  return null
 }
 
-function MappingCard({
-  mapping,
+function PurchasePointsRoute() {
+  const { realmId } = Route.useParams()
+
+  // clientAppId is not in useAuthStore or the route param; resolve it by listing
+  // the realm's client apps and taking the first (same pattern as the
+  // subscription pages).
+  const { data: clientAppsResponse } = useSuspenseQuery(
+    clientAppsQueryOptions(realmId, { page: 0, pageSize: 10 })
+  )
+  const clientAppId = clientAppsResponse.items[0]?.id ?? ''
+
+  if (!clientAppId) {
+    return (
+      <div className="container" data-testid="purchase-points-page">
+        <div className="p-4 text-center text-gray-600" data-testid="no-client-app-message">
+          {m['billing.subscription_no_client_app']()}
+        </div>
+      </div>
+    )
+  }
+
+  return <PurchasePointsPage realmId={realmId} clientAppId={clientAppId} />
+}
+
+function PriceCard({
+  option,
   isSelected,
   onSelect,
+  periodSuffix,
 }: {
-  mapping: OneTimeMappingItem
+  option: PurchaseOptionView
   isSelected: boolean
   onSelect: () => void
+  /**
+   * Appended to the testid in the Annual pane (`-annual`) so the same priceId
+   * can be disambiguated across panes. Empty for Monthly.
+   */
+  periodSuffix: '' | '-annual'
 }) {
-  const priceInfo = extractProviderPrice(mapping.providerProductInfo)
-  const hasProvider = !!mapping.paymentProvider
+  const reason = disabledReason(option)
+  const isDisabled = reason !== null
+  const color = deriveSharedKeyColor(option.entitlementKey)
+  // priceId falls back to mappingId for price-less providers (Creem) so the
+  // testid is always stable and non-empty.
+  const priceId = option.externalPriceId ?? option.mappingId
 
   return (
     <Card
@@ -97,43 +132,46 @@ function MappingCard({
         isSelected
           ? 'border-primary ring-2 ring-primary'
           : 'border-muted-foreground/25 hover:border-muted-foreground/50'
-      } ${!hasProvider ? 'opacity-60' : ''}`}
-      onClick={hasProvider ? onSelect : undefined}
-      data-testid={`mapping-card-${mapping.entitlementKey}`}
+      } ${isDisabled ? 'opacity-60' : ''}`}
+      onClick={isDisabled ? undefined : onSelect}
+      data-testid={`purchase-price-card-${priceId}${periodSuffix}`}
     >
       <CardContent className="p-4">
-        <div className="flex w-full items-center justify-between">
+        <div className="flex w-full items-start justify-between gap-3">
           <div className="flex-1 space-y-1">
-            <div className="font-medium">{mapping.entitlementKey}</div>
-            {mapping.pointsPerPeriod != null && (
+            <div className="flex items-center gap-2">
+              <span
+                className="inline-block h-3 w-3 rounded-full"
+                style={
+                  color.hue !== 0 ? { backgroundColor: `hsl(${color.hue} 70% 50%)` } : undefined
+                }
+                aria-hidden
+              />
+              <div className="font-medium">{option.displayName || option.entitlementKey}</div>
+            </div>
+            {option.pointsPerPeriod != null && (
               <div className="text-sm text-muted-foreground">
-                {m['points.purchase_mapping_points']({
-                  points: mapping.pointsPerPeriod.toLocaleString(),
-                })}
+                {option.pointsPerPeriod.toLocaleString()} points
               </div>
             )}
-            {mapping.validityDays != null && (
-              <div className="text-sm text-muted-foreground">
-                {m['points.purchase_mapping_validity']({ days: String(mapping.validityDays) })}
-              </div>
-            )}
-            {priceInfo ? (
+            {option.amount != null && option.currency ? (
               <div className="text-sm font-medium">
-                {formatInvoiceAmount(priceInfo.amount, priceInfo.currency)}
+                {formatInvoiceAmount(option.amount, option.currency)}
               </div>
             ) : (
-              <div className="text-sm text-muted-foreground">
-                {m['points.purchase_price_at_checkout']()}
-              </div>
+              <div className="text-sm text-muted-foreground">{m['purchase.unavailable']()}</div>
             )}
-            {!hasProvider && (
-              <div className="text-xs text-muted-foreground" data-testid="no-provider-hint">
-                {m['points.purchase_no_provider']()}
+            {isDisabled && reason && (
+              <div
+                className="text-xs text-muted-foreground"
+                data-testid={`purchase-price-card-${priceId}${periodSuffix}-reason`}
+              >
+                {m[reason.key]()}
               </div>
             )}
           </div>
           {isSelected && (
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary">
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary">
               <Check className="h-4 w-4 text-primary-foreground" />
             </div>
           )}
@@ -143,21 +181,23 @@ function MappingCard({
   )
 }
 
-function PurchasePointsPage() {
-  const { realmId } = Route.useParams()
+export function PurchasePointsPage({
+  realmId,
+  clientAppId,
+}: {
+  realmId: string
+  clientAppId: string
+}) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
 
-  // Purchase flow state
+  // Purchase flow state. Selection is now price-level: the clicked card's
+  // mappingId is the checkout target directly. The provider is
+  // derived from the selected option, not picked separately.
   const [currentStep, setCurrentStep] = useState<PurchaseStep>('packages')
-  // One entitlement may have multiple mappings (one per payment provider). The
-  // clicked card tracks the entitlement identity; the concrete mappingId is
-  // resolved at submit from (selectedEntitlementKey, selectedProvider) so the
-  // provider picker can never submit a cross-provider mismatch.
-  // See resolveMappingForProvider below.
-  const [selectedEntitlementKey, setSelectedEntitlementKey] = useState<string | null>(null)
-  const [selectedProvider, setSelectedProvider] = useState<string | null>(null)
+  const [selectedMappingId, setSelectedMappingId] = useState<string | null>(null)
+  const [period, setPeriod] = useState<BillingPeriod>('month')
 
   // Store actions
   const { setPurchaseState, setPaymentAttempt, clearPurchaseState, canRecover } =
@@ -166,49 +206,29 @@ function PurchasePointsPage() {
   const { attemptId } = paymentAttempt
   const paymentProvider = usePurchaseFlowStore((state) => state.paymentProvider)
 
-  // Fetch mappings and providers
-  const { data: mappings, isLoading: mappingsLoading } = useQuery(
-    oneTimeMappingsQueryOptions(realmId)
+  // Fetch purchase options (price-granularity flat list, replaces the former
+  // entitlement-key-grouped one-time-mappings source).
+  const { data: options, isLoading: optionsLoading } = useQuery(
+    purchaseOptionsQueryOptions(realmId, clientAppId)
   )
+  // Providers are still fetched so the payment step can render provider context;
+  // the selected option's own provider is the one used at submit.
   const { data: providers, isLoading: providersLoading } = useQuery(
     paymentProvidersQueryOptions(realmId)
   )
 
-  // Credit-bucket display names for grouping one-time packs by attributed
-  // bucket (useBuckets). Under the forbid-null contract
-  // every mapping carries a bucketId, so all packs group under their bucket.
-  const { buckets } = useBuckets(realmId)
-  const bucketNameById = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const b of buckets) map.set(b.id, b.name)
-    return map
-  }, [buckets])
+  const periodPane = useMemo(() => selectPeriodPane(options ?? [], period), [options, period])
 
-  // Group mappings by attributed bucket, preserving first-seen order.
-  const assignedGroups = useMemo(() => {
-    const orderedBucketIds: string[] = []
-    const byBucket = new Map<string, OneTimeMappingItem[]>()
-    for (const mapping of mappings ?? []) {
-      const bucketId = mapping.bucketId
-      if (!byBucket.has(bucketId)) {
-        byBucket.set(bucketId, [])
-        orderedBucketIds.push(bucketId)
-      }
-      byBucket.get(bucketId)!.push(mapping)
-    }
-    return orderedBucketIds.map((id) => ({
-      bucketId: id,
-      name: bucketNameById.get(id) ?? id,
-      mappings: byBucket.get(id)!,
-    }))
-  }, [mappings, bucketNameById])
+  const selectedOption = useMemo(
+    () => options?.find((o) => o.mappingId === selectedMappingId),
+    [options, selectedMappingId]
+  )
 
   // Poll payment status if attempt exists
   const paymentStatusQuery = useQuery({
     ...paymentAttemptStatusQueryOptions(realmId, attemptId || ''),
     enabled: !!attemptId && currentStep === 'processing',
     refetchInterval: (query) => {
-      // Handle test environment where query might be undefined or a mock
       if (!query || !query.state) {
         return false
       }
@@ -221,24 +241,20 @@ function PurchasePointsPage() {
       ) {
         return false
       }
-      return 2000 // Poll every 2 seconds
+      return 2000
     },
   })
   const paymentStatus = paymentStatusQuery.data as PaymentAttemptStatusResponse | undefined
 
-  // Handle page refresh recovery
   useEffect(() => {
     const checkRecovery = () => {
       if (canRecover() && attemptId) {
-        // Resume polling from existing attempt
         setCurrentStep('processing')
       }
     }
-
     checkRecovery()
   }, [attemptId, canRecover])
 
-  // Watch payment status changes
   useEffect(() => {
     if (paymentStatus) {
       if (paymentStatus.status === 'Succeeded') {
@@ -260,14 +276,9 @@ function PurchasePointsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paymentStatus])
 
-  // Stripe/Creem redirect is user-initiated from the redirect prompt rendered
-  // by <PaymentAttemptStatus /> ("跳转提示"). We deliberately do
-  // NOT auto-navigate: an automatic window.location change would leave this
-  // origin before persisted purchase state (cas-purchase-flow in localStorage)
-  // can be verified, and contradicts the design's redirect-prompt UX. The
-  // prompt's manual link (`payment-redirect-manual-link`) opens the checkout
-  // URL in a new tab when the user chooses to proceed.
-  // Create payment attempt mutation
+  // Create payment attempt. The targetType/targetId shape is unchanged from the
+  // prior flow (entitlement_mapping + mappingId); only the selection model that
+  // feeds mappingId changed (price-level vs entitlement-key-resolved).
   const createPaymentMutation = useMutation({
     mutationFn: async (data: { mappingId: string; provider: string }) => {
       const response = await createPaymentAttempt({
@@ -287,14 +298,14 @@ function PurchasePointsPage() {
           realmId,
           userId: user?.id || null,
           targetType: 'entitlement_mapping',
-          targetId: resolvedMappingId ?? null,
-          paymentProvider: selectedProvider,
+          targetId: selectedMappingId,
+          paymentProvider: selectedOption?.paymentProvider ?? null,
         })
 
         setPaymentAttempt(
           data.id,
           'Pending',
-          data.paymentContext || { paymentProvider: selectedProvider || '' },
+          data.paymentContext || { paymentProvider: selectedOption?.paymentProvider ?? '' },
           data.expiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString()
         )
 
@@ -307,7 +318,6 @@ function PurchasePointsPage() {
     },
   })
 
-  // Cancel payment mutation
   const cancelPaymentMutation = useMutation({
     mutationFn: async () => {
       if (!attemptId) throw new Error('No payment attempt to cancel')
@@ -325,34 +335,13 @@ function PurchasePointsPage() {
     },
   })
 
-  const selectedMapping = useMemo(
-    () =>
-      mappings?.find(
-        (m) => m.entitlementKey === selectedEntitlementKey && m.paymentProvider === selectedProvider
-      ),
-    [mappings, selectedEntitlementKey, selectedProvider]
-  )
-
-  // Resolve the concrete mapping id for (selectedEntitlementKey, selectedProvider).
-  const resolvedMappingId = resolveMappingForProvider(
-    mappings,
-    selectedEntitlementKey,
-    selectedProvider
-  )
-
-  // Providers that actually offer the selected entitlement (picker filtering).
-  const availableProvidersForEntitlement = useMemo(
-    () => providersForEntitlement(mappings, selectedEntitlementKey, providers || []),
-    [mappings, selectedEntitlementKey, providers]
-  )
-
   const handleNextStep = () => {
-    if (currentStep === 'packages' && selectedEntitlementKey) {
+    if (currentStep === 'packages' && selectedMappingId) {
       setCurrentStep('payment')
-    } else if (currentStep === 'payment' && resolvedMappingId && selectedProvider) {
+    } else if (currentStep === 'payment' && selectedMappingId && selectedOption?.paymentProvider) {
       createPaymentMutation.mutate({
-        mappingId: resolvedMappingId,
-        provider: selectedProvider,
+        mappingId: selectedMappingId,
+        provider: selectedOption.paymentProvider,
       })
     }
   }
@@ -363,24 +352,27 @@ function PurchasePointsPage() {
     }
   }
 
-  const handleRetry = () => {
-    setCurrentStep('payment')
-  }
+  const handleRetry = () => setCurrentStep('payment')
+  const handleCancel = () => cancelPaymentMutation.mutate()
+  const handleComplete = () => navigate({ to: `/${realmId}/user/points` })
 
-  const handleCancel = () => {
-    cancelPaymentMutation.mutate()
-  }
-
-  const handleComplete = () => {
-    navigate({ to: `/${realmId}/user/points` })
+  // Switch the billing-period toggle. A recurring selection only makes sense
+  // in its own pane: switching month<->year with a recurring card selected
+  // would otherwise leave Next enabled on a now-hidden card (one_time is
+  // period-agnostic, so its selection is retained).
+  const switchPeriod = (next: BillingPeriod) => {
+    setPeriod(next)
+    if (selectedOption?.billingType === 'recurring' && selectedOption.billingPeriod !== next) {
+      setSelectedMappingId(null)
+    }
   }
 
   const isNextDisabled = () => {
-    if (currentStep === 'packages') return !selectedEntitlementKey
-    // Submit is only enabled when (entitlement, provider) resolves to a real
-    // mapping; a provider with no mapping for this entitlement stays disabled.
+    if (currentStep === 'packages') return !selectedMappingId
     if (currentStep === 'payment')
-      return !resolvedMappingId || !selectedProvider || createPaymentMutation.isPending
+      return (
+        !selectedMappingId || !selectedOption?.paymentProvider || createPaymentMutation.isPending
+      )
     return true
   }
 
@@ -390,16 +382,49 @@ function PurchasePointsPage() {
         return (
           <div className="space-y-6" data-testid="purchase-step-packages">
             <div>
-              <h2 className="text-2xl font-bold">{m['points.purchase_select_package_title']()}</h2>
-              <p className="text-muted-foreground">
-                {m['points.purchase_select_package_description']()}
-              </p>
+              <h2 className="text-2xl font-bold">{m['purchase.choose_plan']()}</h2>
             </div>
-            {mappingsLoading ? (
+
+            {/* Period toggle. Switching re-renders a different card set;
+                one_time packs stay in both panes (selectPeriodPane). */}
+            <div
+              className="inline-flex items-center gap-1 rounded-lg border p-1"
+              data-testid="purchase-period-toggle"
+              role="group"
+              aria-label="Billing period"
+            >
+              <button
+                type="button"
+                onClick={() => switchPeriod('month')}
+                className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
+                  period === 'month' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                }`}
+                data-testid="purchase-period-toggle-month"
+                aria-pressed={period === 'month'}
+              >
+                {m['purchase.period_monthly']()}
+              </button>
+              <button
+                type="button"
+                onClick={() => switchPeriod('year')}
+                className={`flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
+                  period === 'year' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                }`}
+                data-testid="purchase-period-toggle-year"
+                aria-pressed={period === 'year'}
+              >
+                {m['purchase.period_annual']()}
+                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
+                  {m['purchase.save_percent']({ percent: '20' })}
+                </span>
+              </button>
+            </div>
+
+            {optionsLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
-            ) : !mappings || mappings.length === 0 ? (
+            ) : periodPane.length === 0 ? (
               <div
                 className="rounded-lg border border-dashed p-8 text-center text-muted-foreground"
                 data-testid="purchase-empty-state"
@@ -407,38 +432,18 @@ function PurchasePointsPage() {
                 {m['points.purchase_no_mappings']()}
               </div>
             ) : (
-              <div className="space-y-8" data-testid="mapping-groups">
-                {assignedGroups.map((group) => (
-                  <div
-                    key={group.bucketId}
-                    className="space-y-3"
-                    data-testid={`mapping-group-${group.bucketId}`}
-                  >
-                    <h3
-                      className="text-lg font-semibold"
-                      data-testid={`mapping-group-title-${group.bucketId}`}
-                    >
-                      {group.name}
-                    </h3>
-                    <div
-                      className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
-                      data-testid={`mapping-group-cards-${group.bucketId}`}
-                    >
-                      {group.mappings.map((mapping) => (
-                        <MappingCard
-                          key={mapping.id}
-                          mapping={mapping}
-                          isSelected={selectedEntitlementKey === mapping.entitlementKey}
-                          onSelect={() => {
-                            setSelectedEntitlementKey(mapping.entitlementKey)
-                            // Reset any stale provider choice; the picker is
-                            // re-filtered to the new entitlement's providers.
-                            setSelectedProvider(null)
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
+              <div
+                className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
+                data-testid={`purchase-price-grid-${period}`}
+              >
+                {periodPane.map((option) => (
+                  <PriceCard
+                    key={option.mappingId}
+                    option={option}
+                    isSelected={selectedMappingId === option.mappingId}
+                    onSelect={() => setSelectedMappingId(option.mappingId)}
+                    periodSuffix={period === 'year' ? '-annual' : ''}
+                  />
                 ))}
               </div>
             )}
@@ -452,22 +457,23 @@ function PurchasePointsPage() {
               <h2 className="text-2xl font-bold">{m['points.purchase_payment_title']()}</h2>
               <p className="text-muted-foreground">
                 {m['points.purchase_payment_description']({
-                  points: selectedMapping?.pointsPerPeriod?.toLocaleString() ?? '',
-                  price: selectedMapping
-                    ? (() => {
-                        const priceInfo = extractProviderPrice(selectedMapping.providerProductInfo)
-                        return priceInfo
-                          ? formatInvoiceAmount(priceInfo.amount, priceInfo.currency)
-                          : m['points.purchase_price_at_checkout']()
-                      })()
+                  points: selectedOption?.pointsPerPeriod?.toLocaleString() ?? '',
+                  price: selectedOption
+                    ? selectedOption.amount != null && selectedOption.currency
+                      ? formatInvoiceAmount(selectedOption.amount, selectedOption.currency)
+                      : m['points.purchase_price_at_checkout']()
                     : '',
                 })}
               </p>
             </div>
             <PaymentMethodSelector
-              availableProviders={availableProvidersForEntitlement}
-              selectedProvider={selectedProvider}
-              onSelect={setSelectedProvider}
+              availableProviders={
+                providers?.filter((p) => p.platform === selectedOption?.paymentProvider) ?? []
+              }
+              selectedProvider={selectedOption?.paymentProvider ?? null}
+              onSelect={() => {
+                /* provider is derived from the selected price; no-op */
+              }}
               disabled={providersLoading || createPaymentMutation.isPending}
             />
           </div>
@@ -609,7 +615,7 @@ function PurchasePointsPage() {
                   <>
                     {createPaymentMutation.isPending
                       ? m['points.purchase_processing_button']()
-                      : m['points.purchase_complete_button']()}
+                      : m['purchase.continue_to_checkout']()}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </>
                 ) : (

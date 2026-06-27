@@ -63,7 +63,7 @@ describe('StripeCheckoutButton', () => {
         reset: vi.fn(),
       })
 
-      render(<StripeCheckoutButton realmId="realm1" clientAppId="app1" entitlementKey="pro" />, {
+      render(<StripeCheckoutButton realmId="realm1" clientAppId="app1" mappingId="pro" />, {
         wrapper,
       })
 
@@ -74,7 +74,7 @@ describe('StripeCheckoutButton', () => {
         expect(mutateAsync).toHaveBeenCalledWith({
           realmId: 'realm1',
           clientAppId: 'app1',
-          entitlementKey: 'pro',
+          mappingId: 'pro',
           paymentProvider: 'stripe',
         })
       })
@@ -99,7 +99,7 @@ describe('StripeCheckoutButton', () => {
 
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-      render(<StripeCheckoutButton realmId="realm1" clientAppId="app1" entitlementKey="pro" />, {
+      render(<StripeCheckoutButton realmId="realm1" clientAppId="app1" mappingId="pro" />, {
         wrapper,
       })
 
@@ -132,7 +132,7 @@ describe('StripeCheckoutButton', () => {
         reset: vi.fn(),
       } as any)
 
-      render(<StripeCheckoutButton realmId="realm1" clientAppId="app1" entitlementKey="pro" />, {
+      render(<StripeCheckoutButton realmId="realm1" clientAppId="app1" mappingId="pro" />, {
         wrapper,
       })
 

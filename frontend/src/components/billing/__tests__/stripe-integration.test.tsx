@@ -42,17 +42,13 @@ describe('Stripe Integration', () => {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   )
 
-  test('renders checkout button with entitlement key', () => {
+  test('renders checkout button with mapping id', () => {
     render(
-      <StripeCheckoutButton
-        realmId="test-realm"
-        clientAppId="test-app"
-        entitlementKey="pro-monthly"
-      />,
+      <StripeCheckoutButton realmId="test-realm" clientAppId="test-app" mappingId="pro-map-1" />,
       { wrapper }
     )
 
-    expect(screen.getByTestId('stripe-checkout-button-pro-monthly')).toBeInTheDocument()
+    expect(screen.getByTestId('stripe-checkout-button-pro-map-1')).toBeInTheDocument()
   })
 
   test('calls mutation with correct payload on click', async () => {
@@ -73,21 +69,17 @@ describe('Stripe Integration', () => {
     })
 
     render(
-      <StripeCheckoutButton
-        realmId="test-realm"
-        clientAppId="test-app"
-        entitlementKey="pro-monthly"
-      />,
+      <StripeCheckoutButton realmId="test-realm" clientAppId="test-app" mappingId="pro-map-1" />,
       { wrapper }
     )
 
-    await user.click(screen.getByTestId('stripe-checkout-button-pro-monthly'))
+    await user.click(screen.getByTestId('stripe-checkout-button-pro-map-1'))
 
     await waitFor(() => {
       expect(mutateAsync).toHaveBeenCalledWith({
         realmId: 'test-realm',
         clientAppId: 'test-app',
-        entitlementKey: 'pro-monthly',
+        mappingId: 'pro-map-1',
         paymentProvider: 'stripe',
       })
     })

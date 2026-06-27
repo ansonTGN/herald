@@ -19,7 +19,7 @@ Object.defineProperty(window, 'location', {
 describe('useStripeCheckout', () => {
   const mockRealmId = 'test-realm'
   const mockClientAppId = 'test-app'
-  const mockEntitlementKey = 'basic'
+  const mockMappingId = 'basic'
   const mockPaymentProvider = 'stripe'
   const mockCheckoutUrl = 'https://checkout.stripe.com/pay/test'
 
@@ -57,14 +57,14 @@ describe('useStripeCheckout', () => {
     result.current.mutate({
       realmId: mockRealmId,
       clientAppId: mockClientAppId,
-      entitlementKey: mockEntitlementKey,
+      mappingId: mockMappingId,
       paymentProvider: mockPaymentProvider,
     })
 
     await waitFor(() => {
       expect(createCheckoutSession).toHaveBeenCalledWith({
         path: { realmId: mockRealmId, clientAppId: mockClientAppId },
-        body: { entitlementKey: mockEntitlementKey, paymentProvider: mockPaymentProvider },
+        body: { mappingId: mockMappingId, paymentProvider: mockPaymentProvider },
       })
     })
 
@@ -88,7 +88,7 @@ describe('useStripeCheckout', () => {
     result.current.mutate({
       realmId: mockRealmId,
       clientAppId: mockClientAppId,
-      entitlementKey: 'pro',
+      mappingId: 'pro',
       paymentProvider: 'stripe',
     })
 
@@ -112,7 +112,7 @@ describe('useStripeCheckout', () => {
     result.current.mutate({
       realmId: mockRealmId,
       clientAppId: mockClientAppId,
-      entitlementKey: mockEntitlementKey,
+      mappingId: mockMappingId,
       paymentProvider: mockPaymentProvider,
     })
 
@@ -122,7 +122,7 @@ describe('useStripeCheckout', () => {
     })
   })
 
-  test('passes correct parameters for different entitlement keys', async () => {
+  test('passes correct parameters for different mapping ids', async () => {
     const mockResponse = {
       data: { checkoutUrl: mockCheckoutUrl },
       error: undefined,
@@ -132,18 +132,18 @@ describe('useStripeCheckout', () => {
 
     const { result } = renderHook(() => useStripeCheckout(), { wrapper })
 
-    // Test with a different entitlement key
+    // Test with a different mapping id
     result.current.mutate({
       realmId: mockRealmId,
       clientAppId: mockClientAppId,
-      entitlementKey: 'pro',
+      mappingId: 'pro',
       paymentProvider: 'stripe',
     })
 
     await waitFor(() => {
       expect(createCheckoutSession).toHaveBeenCalledWith({
         path: { realmId: mockRealmId, clientAppId: mockClientAppId },
-        body: { entitlementKey: 'pro', paymentProvider: 'stripe' },
+        body: { mappingId: 'pro', paymentProvider: 'stripe' },
       })
     })
   })
@@ -166,7 +166,7 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        entitlementKey: mockEntitlementKey,
+        mappingId: mockMappingId,
         paymentProvider: mockPaymentProvider,
       })
 
@@ -194,7 +194,7 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        entitlementKey: mockEntitlementKey,
+        mappingId: mockMappingId,
         paymentProvider: mockPaymentProvider,
       })
 
@@ -221,7 +221,7 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        entitlementKey: mockEntitlementKey,
+        mappingId: mockMappingId,
         paymentProvider: mockPaymentProvider,
       })
 
@@ -257,7 +257,7 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        entitlementKey: mockEntitlementKey,
+        mappingId: mockMappingId,
         paymentProvider: mockPaymentProvider,
       })
 
@@ -288,7 +288,7 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        entitlementKey: mockEntitlementKey,
+        mappingId: mockMappingId,
         paymentProvider: mockPaymentProvider,
       })
 
@@ -319,7 +319,7 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        entitlementKey: mockEntitlementKey,
+        mappingId: mockMappingId,
         paymentProvider: mockPaymentProvider,
       })
 
@@ -335,7 +335,7 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        entitlementKey: mockEntitlementKey,
+        mappingId: mockMappingId,
         paymentProvider: mockPaymentProvider,
       })
 
@@ -363,7 +363,7 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        entitlementKey: mockEntitlementKey,
+        mappingId: mockMappingId,
         paymentProvider: mockPaymentProvider,
       })
 
@@ -383,7 +383,7 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        entitlementKey: mockEntitlementKey,
+        mappingId: mockMappingId,
         paymentProvider: mockPaymentProvider,
       })
 
@@ -406,7 +406,7 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        entitlementKey: 'basic',
+        mappingId: 'basic',
         paymentProvider: 'stripe',
       })
 
@@ -422,7 +422,7 @@ describe('useStripeCheckout', () => {
       result.current.mutate({
         realmId: mockRealmId,
         clientAppId: mockClientAppId,
-        entitlementKey: 'pro',
+        mappingId: 'pro',
         paymentProvider: 'stripe',
       })
 

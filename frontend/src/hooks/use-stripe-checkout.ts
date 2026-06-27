@@ -9,7 +9,7 @@ interface UseStripeCheckoutOptions {
 interface CreateCheckoutSessionParams {
   realmId: string
   clientAppId: string
-  entitlementKey: string
+  mappingId: string
   paymentProvider: string
 }
 
@@ -22,12 +22,12 @@ export function useStripeCheckout({ onSuccess, onError }: UseStripeCheckoutOptio
     mutationFn: async ({
       realmId,
       clientAppId,
-      entitlementKey,
+      mappingId,
       paymentProvider,
     }: CreateCheckoutSessionParams) => {
       const response = await createCheckoutSession({
         path: { realmId, clientAppId },
-        body: { entitlementKey, paymentProvider },
+        body: { mappingId, paymentProvider },
       })
 
       if (response.error) {

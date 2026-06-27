@@ -29,7 +29,7 @@ import {
   updateRealmDefaultConfig,
   getPaymentAttemptStatus,
   listPaymentProviders,
-  listOneTimeMappings,
+  listPurchaseOptions,
   getPurchaseHistory,
   listAuditEvents,
   getAuditEvent,
@@ -54,7 +54,7 @@ import type {
   EntitlementMappingResponse,
   SubscriptionListResponse,
   SubscriptionDetailResponse,
-  OneTimeMappingExtResponse,
+  PurchaseOptionView,
   PurchaseHistoryResponse,
   BucketResponse,
   BucketDetailResponse,
@@ -205,7 +205,8 @@ export const queryKeys = {
   realmConfigs: (realmId: string) => [QUERY_KEYS.REALM_CONFIGS, realmId] as const,
   emailStatus: (realmId: string) => [QUERY_KEYS.EMAIL_STATUS, realmId] as const,
   userRoles: () => [QUERY_KEYS.USER_ROLES] as const,
-  oneTimeMappings: (realmId: string) => [QUERY_KEYS.ONE_TIME_MAPPINGS_EXT, realmId] as const,
+  purchaseOptions: (realmId: string, clientAppId: string) =>
+    [QUERY_KEYS.PURCHASE_OPTIONS, realmId, clientAppId] as const,
   purchaseHistory: (realmId: string, filters: Record<string, unknown>) =>
     [QUERY_KEYS.PURCHASE_HISTORY, realmId, filters] as const,
   paymentAttemptStatus: (realmId: string, attemptId: string) =>
@@ -766,20 +767,20 @@ export const updatePointsDefaultConfigMutation = async (
   }
 }
 
-// ==================== One-Time Mappings ====================
+// ==================== Purchase Options (price-granularity) ====================
 
-export const oneTimeMappingsQueryOptions = (realmId: string) =>
+export const purchaseOptionsQueryOptions = (realmId: string, clientAppId: string) =>
   queryOptions({
-    queryKey: queryKeys.oneTimeMappings(realmId),
+    queryKey: queryKeys.purchaseOptions(realmId, clientAppId),
     queryFn: async () => {
-      const response = await listOneTimeMappings({
-        path: { realmId },
+      const response = await listPurchaseOptions({
+        path: { realmId, clientAppId },
       })
       if (response.error) throw response.error
-      return (response.data as OneTimeMappingExtResponse).items ?? []
+      return (response.data as { items?: PurchaseOptionView[] } | undefined)?.items ?? []
     },
     retry: RETRY_COUNT,
-    staleTime: STALE_TIME_5_MIN,
+    staleTime: STALE_TIME_2_MIN,
   })
 
 // ==================== Purchase History ====================

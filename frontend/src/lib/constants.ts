@@ -53,7 +53,7 @@ export const QUERY_KEYS = {
   POINTS_WALLETS: 'points-wallets',
   POINTS_WALLET: 'points-wallet',
   POINTS_TRANSACTIONS: 'points-transactions',
-  ONE_TIME_MAPPINGS_EXT: 'one-time-mappings-ext',
+  PURCHASE_OPTIONS: 'purchase-options',
   PURCHASE_HISTORY: 'purchase-history',
   PAYMENT_ATTEMPT_STATUS: 'payment-attempt-status',
   PAYMENT_PROVIDERS: 'payment-providers',

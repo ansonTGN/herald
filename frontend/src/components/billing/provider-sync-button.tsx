@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useSyncProviderProducts } from '@/data/entitlement-mapping-mutations'
+import { m } from '@/paraglide/messages'
 
 interface ProviderSyncButtonProps {
   realmId: string
@@ -36,11 +37,17 @@ export function ProviderSyncButton({ realmId, onSyncComplete }: ProviderSyncButt
     )
   }
 
+  // Show counts inline only for a completed sync (the mutation also toasts).
+  // `partial` still surfaces what synced so the admin can see price-level progress.
+  const syncData = syncMutation.data
+  const showCounts =
+    syncData != null && (syncData.syncStatus === 'completed' || syncData.syncStatus === 'partial')
+
   return (
     <div className="flex items-center gap-2" data-testid="provider-sync-button">
       <Select value={selectedProvider} onValueChange={setSelectedProvider}>
         <SelectTrigger className="w-[160px]" data-testid="sync-provider-select">
-          <SelectValue placeholder="Select provider" />
+          <SelectValue placeholder={m['billing.sync_provider']()} />
         </SelectTrigger>
         <SelectContent>
           {SYNC_PROVIDERS.map((provider) => (
@@ -55,13 +62,22 @@ export function ProviderSyncButton({ realmId, onSyncComplete }: ProviderSyncButt
         disabled={!selectedProvider || syncMutation.isPending}
         data-testid="sync-button"
       >
-        {syncMutation.isPending ? (
-          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          <RefreshCw className="mr-2 h-4 w-4" />
-        )}
-        Sync
+        <RefreshCw
+          className={syncMutation.isPending ? 'mr-2 h-4 w-4 animate-spin' : 'mr-2 h-4 w-4'}
+        />
+        {m['billing.sync_provider']()}
       </Button>
+      {showCounts && (
+        <span className="text-sm text-muted-foreground" data-testid="sync-result">
+          <span data-testid="sync-result-products">
+            {m['billing.sync_result_products']({ count: syncData.productsSynced })}
+          </span>
+          {' · '}
+          <span data-testid="sync-result-prices">
+            {m['billing.sync_result_prices']({ count: syncData.pricesSynced })}
+          </span>
+        </span>
+      )}
     </div>
   )
 }

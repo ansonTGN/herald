@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   queryKeys,
-  oneTimeMappingsQueryOptions,
   purchaseHistoryQueryOptions,
   paymentAttemptStatusQueryOptions,
   paymentProvidersQueryOptions,
@@ -14,7 +13,6 @@ vi.mock('@/lib/api-generated/sdk.gen', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/lib/api-generated/sdk.gen')>()
   return {
     ...original,
-    listOneTimeMappings: vi.fn(),
     getPurchaseHistory: vi.fn(),
     getPaymentAttemptStatus: vi.fn(),
     listPaymentProviders: vi.fn(),
@@ -22,33 +20,12 @@ vi.mock('@/lib/api-generated/sdk.gen', async (importOriginal) => {
 })
 
 import {
-  listOneTimeMappings,
   getPurchaseHistory,
   getPaymentAttemptStatus,
   listPaymentProviders,
 } from '@/lib/api-generated/sdk.gen'
 
 // ==================== Factory functions ====================
-
-function makeOneTimeMappingItem(
-  overrides?: Partial<{ id: string; entitlementKey: string; paymentProvider: string }>
-) {
-  return {
-    id: 'mapping-001',
-    entitlementKey: 'premium-access',
-    paymentProvider: 'stripe',
-    ...overrides,
-  }
-}
-
-function makeOneTimeMappingResponse(
-  overrides?: Partial<{ items: ReturnType<typeof makeOneTimeMappingItem>[] }>
-) {
-  return {
-    items: [makeOneTimeMappingItem()],
-    ...overrides,
-  }
-}
 
 function makePurchaseHistoryItem(
   overrides?: Partial<PurchaseHistoryItemDto>
@@ -77,80 +54,6 @@ function makePurchaseHistoryResponse(
     ...overrides,
   }
 }
-
-// ==================== oneTimeMappings query keys ====================
-
-describe('oneTimeMappings query keys', () => {
-  it('differentiates different realms', () => {
-    const keyRealm1 = queryKeys.oneTimeMappings('realm-1')
-    const keyRealm2 = queryKeys.oneTimeMappings('realm-2')
-    expect(keyRealm1).not.toEqual(keyRealm2)
-  })
-
-  it('has correct key structure', () => {
-    const key = queryKeys.oneTimeMappings('realm-1')
-    expect(key).toEqual([QUERY_KEYS.ONE_TIME_MAPPINGS_EXT, 'realm-1'])
-  })
-})
-
-// ==================== oneTimeMappingsQueryOptions ====================
-
-describe('oneTimeMappingsQueryOptions', () => {
-  beforeEach(() => {
-    vi.mocked(listOneTimeMappings).mockResolvedValue({
-      data: makeOneTimeMappingResponse({ items: [makeOneTimeMappingItem()] }),
-      error: undefined,
-    })
-  })
-
-  it('calls listOneTimeMappings with correct realm path param', async () => {
-    const options = oneTimeMappingsQueryOptions('realm-42')
-    await options.queryFn()
-
-    expect(listOneTimeMappings).toHaveBeenCalledWith({
-      path: { realmId: 'realm-42' },
-    })
-  })
-
-  it('returns items array from response', async () => {
-    const items = [makeOneTimeMappingItem({ id: 'm-1' }), makeOneTimeMappingItem({ id: 'm-2' })]
-    vi.mocked(listOneTimeMappings).mockResolvedValue({
-      data: makeOneTimeMappingResponse({ items }),
-      error: undefined,
-    })
-
-    const options = oneTimeMappingsQueryOptions('realm-1')
-    const result = await options.queryFn()
-
-    expect(result).toEqual(items)
-  })
-
-  it('returns empty array when response items are null', async () => {
-    vi.mocked(listOneTimeMappings).mockResolvedValue({
-      data: { items: null } as any,
-      error: undefined,
-    })
-
-    const options = oneTimeMappingsQueryOptions('realm-1')
-    const result = await options.queryFn()
-
-    expect(result).toEqual([])
-  })
-
-  it('throws when API returns error', async () => {
-    vi.mocked(listOneTimeMappings).mockResolvedValue({
-      data: undefined,
-      error: { message: 'Unauthorized', status: 401 },
-    })
-
-    const options = oneTimeMappingsQueryOptions('realm-1')
-
-    await expect(options.queryFn()).rejects.toEqual({
-      message: 'Unauthorized',
-      status: 401,
-    })
-  })
-})
 
 // ==================== purchaseHistory query keys ====================
 
