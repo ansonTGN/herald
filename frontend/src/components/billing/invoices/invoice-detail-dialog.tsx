@@ -325,9 +325,11 @@ function AdditionalInfo({ invoice }: { invoice: InvoiceDetailResponse }) {
           {format(new Date(invoice.issueDate), 'PPP')}
         </InfoField>
       )}
-      <InfoField label={m['billing.invoice_due_date_label']()}>
-        {format(new Date(invoice.dueDate ?? ''), 'PPP')}
-      </InfoField>
+      {invoice.dueDate && (
+        <InfoField label={m['billing.invoice_due_date_label']()}>
+          {format(new Date(invoice.dueDate), 'PPP')}
+        </InfoField>
+      )}
       {invoice.paymentTerms && (
         <InfoField label={m['billing.invoice_payment_terms']()}>{invoice.paymentTerms}</InfoField>
       )}

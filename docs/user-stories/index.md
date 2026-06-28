@@ -33,6 +33,7 @@ docs/user-stories/
 │   ├── payment-attempt.md # 支付尝试
 │   ├── invoice.md        # 发票
 │   ├── invoice-fallback.md # 发票 Fallback
+│   ├── payment-invoice-mapping.md # 支付-发票强制映射
 │   ├── entitlement-mapping.md # Entitlement 映射
 │   └── credit-bucket.md # Credit Bucket 积分桶
 └── integration/          # 集成扩展
@@ -171,6 +172,10 @@ docs/user-stories/
 | US-CB-006 | 查看 Bucket 维度的交易历史 | Regular User | P1 | [billing/credit-bucket](billing/credit-bucket.md#故事-6查看-bucket-维度的交易历史-us-cb-006) |
 | US-CB-007 | SDK 按 Client App 跨 Bucket 消费 | Third-Party App | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-7sdk-按-client-app-跨-bucket-消费-us-cb-007) |
 | US-CB-008 | 订阅生命周期按 Bucket 池发放与回收 | System | P0 | [billing/credit-bucket](billing/credit-bucket.md#故事-8订阅生命周期按-bucket-池发放与回收-us-cb-008) |
+| US-PM-001 | 订阅续费记录每一次支付 | System | P0 | [billing/payment-invoice-mapping](billing/payment-invoice-mapping.md#故事-1订阅续费记录每一次支付-us-pm-001) |
+| US-PM-002 | Creem 订阅续费同步发票 | System | P0 | [billing/payment-invoice-mapping](billing/payment-invoice-mapping.md#故事-2creem-订阅续费同步发票-us-pm-002) |
+| US-PM-003 | 外部发票归属本地支付或订阅 | System | P1 | [billing/payment-invoice-mapping](billing/payment-invoice-mapping.md#故事-3外部发票归属本地支付或订阅-us-pm-003) |
+| US-PM-004 | 发票-支付映射的补偿与可观测性 | System / Realm Admin | P2 | [billing/payment-invoice-mapping](billing/payment-invoice-mapping.md#故事-4发票-支付映射的补偿与可观测性-us-pm-004) |
 | US-AU-001 | 查看 Realm 审计日志 | Realm Admin | P0 | [core/audit](core/audit.md#故事-1查看-realm-审计日志-us-au-001) |
 | US-AU-002 | 按条件筛选审计日志 | Realm Admin | P0 | [core/audit](core/audit.md#故事-2按条件筛选审计日志-us-au-002) |
 | US-AU-003 | 查看审计日志详情 | Realm Admin | P1 | [core/audit](core/audit.md#故事-3查看审计日志详情-us-au-003) |
@@ -227,6 +232,7 @@ docs/user-stories/
 | Payment Attempt | [billing/payment-attempt.md](billing/payment-attempt.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Invoice | [billing/invoice.md](billing/invoice.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
 | Invoice Fallback | [billing/invoice-fallback.md](billing/invoice-fallback.md) | [Invoice PRD](/docs/prd/billing/invoice.md) |
+| Payment Invoice Mapping | [billing/payment-invoice-mapping.md](billing/payment-invoice-mapping.md) | [支付-发票强制映射 PRD](/docs/prd/billing/payment-invoice-mapping.md) |
 | Entitlement Mapping | [billing/entitlement-mapping.md](billing/entitlement-mapping.md) | [Subscription PRD](/docs/prd/billing/subscription.md) |
 | Credit Bucket | [billing/credit-bucket.md](billing/credit-bucket.md) | [Points PRD](/docs/prd/billing/points.md) |
 

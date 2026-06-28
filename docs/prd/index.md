@@ -52,6 +52,7 @@ docs/
 | [points.md](billing/points.md) | 积分系统（含发放、免费用户积分、发放时序与可用性） | Realm Admin, Regular User, Third-Party App |
 | [stripe-payment.md](billing/stripe-payment.md) | Stripe 支付集成 | Realm Admin |
 | [invoice.md](billing/invoice.md) | Invoice 发票管理（含 Provider 发票同步和自研 Fallback） | Realm Admin, Regular User |
+| [payment-invoice-mapping.md](billing/payment-invoice-mapping.md) | 支付-发票强制映射（订阅续费支付记录、外部发票本地归属、归属异常可观测） | Realm Admin, System |
 
 ### Integration 集成与扩展
 

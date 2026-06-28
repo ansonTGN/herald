@@ -58,12 +58,18 @@ async fn test_subscription_upgrade_grants_difference(ctx: &mut SchemaTestContext
     .await;
 
     // When: User upgrades to Premium Plan (10000 points)
-    let event = build_subscription_updated_event(
+    //
+    // Use the new plan's own external_product_id (prod_test_<premium_plan_id>)
+    // so the price-aware webhook resolver lands on the premium mapping instead
+    // of colliding on the shared `prod_test_monthly` product that both plans
+    // register via setup_test_plan_config_with_points.
+    let event = build_subscription_updated_event_with_product(
         event_id,
         user_id,
         basic_plan_id,
         premium_plan_id,
         &realm_id,
+        &format!("prod_test_{}", premium_plan_id),
     );
 
     // Extract period_end from the event JSON (to avoid time precision issues)
@@ -165,13 +171,15 @@ async fn test_subscription_upgrade_idempotency(ctx: &mut SchemaTestContext) {
     )
     .await;
 
-    // Build upgrade event with a shared event_id
-    let event = build_subscription_updated_event(
+    // Build upgrade event with a shared event_id. New plan's own product id so
+    // the resolver selects the premium mapping (see upgrade-grants test above).
+    let event = build_subscription_updated_event_with_product(
         event_id.clone(),
         user_id,
         basic_plan_id,
         premium_plan_id,
         &realm_id,
+        &format!("prod_test_{}", premium_plan_id),
     );
 
     let app = ctx.create_unified_test_router();

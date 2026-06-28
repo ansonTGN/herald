@@ -15,6 +15,7 @@ in the role or domain directories under `demo/e2e/`.
 | `billing/one-time-mapping-purchase/us-pu-006-one-time-purchase-live.e2e.ts` | US-PU-006 S1, S2 | Partial: Stripe / Creem redirect initiation only | Stripe / Creem | No |
 | `billing/one-time-mapping-purchase/us-pu-006-stripe-one-time-invoice-live.e2e.ts` | US-PU-006, US-IF-004 | Partial: one-time Stripe invoice field/provider-filter verification | Stripe | No |
 | `billing/one-time-mapping-purchase/us-pu-006-creem-one-time-invoice-live.e2e.ts` | US-PU-006 | Partial: one-time Creem invoice verification only | Creem | No |
+| `billing/payment-invoice-mapping/us-pm-002-creem-renewal-tran-stability-live.e2e.ts` | US-PM-001, US-PM-002 | Partial: Creem renewal tran_ existence + renewal attempt provider_reference smoke only | Creem | Yes |
 
 ## Rules
 

@@ -89,6 +89,10 @@ Subscription 是支付方订阅状态的本地只读副本，不是 Herald 拥�
 
 `has_access()` 方法判断用户是否有权限：Active 和 Trialing 状态返回 true，其他返回 false。
 
+### 支付尝试（Payment Attempt）
+
+支付尝试是记录每一次成功支付的统一账本，覆盖一次性购买、订阅首期和订阅续费。订阅续费以前只更新订阅周期和积分，不留下"这次支付"的记录；现在每次成功续费也写一条已成功的支付尝试，并作为外部发票的本地归属锚点。每张第三方同步的发票都能直接定位到它归属的支付尝试或订阅。零金额周期（100% 折扣 / 免费档）不产生续费支付尝试。归属和异常发现的细节见[发票管理](billing-invoice.md)。
+
 ### Metadata 契约
 
 所有 Herald 使用的 metadata key 统一用 `herald_` 前缀。这些 metadata 写入 Checkout Session 或 Subscription，支付方在 webhook 中原样返回。

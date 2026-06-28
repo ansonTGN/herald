@@ -168,6 +168,33 @@ async fn test_scenario_free_user_upgrade_preserves_registration_credits(ctx: &mu
     )
     .await;
 
+    // The price-aware webhook resolver keys off (provider, product, price).
+    // build_subscription_paid_event emits productId="prod_test_monthly", but
+    // create_test_entitlement_mapping above registers the mapping under
+    // "prod_test_pro-monthly". Add a generic "prod_test_monthly" mapping pointing
+    // at the same entitlement_key so the webhook resolves (mirrors scenario 4
+    // below, which already binds this fallback for the cancel webhook).
+    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx._app_state.pool,
+        &ctx._realm_id,
+    )
+    .await;
+    let generic_mapping_id = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO provider_entitlement_mappings
+            (id, realm_id, payment_provider, external_product_id, entitlement_key,
+             points_per_period, grant_on_subscribe, validity_days, enabled, bucket_id, created_at, updated_at)
+         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 1000, true, 30, true, $4, NOW(), NOW())
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(generic_mapping_id)
+    .bind(&ctx._realm_id)
+    .bind(mapping_id.to_string())
+    .bind(bucket_id)
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to create generic entitlement mapping for paid webhook");
+
     // Configure Creem webhook for this realm
     ctx.with_creem_config(
         &ctx._realm_id,

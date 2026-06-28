@@ -991,12 +991,43 @@ pub fn build_subscription_canceled_event(
 }
 
 /// Build a subscription.update webhook event (legacy)
+///
+/// Uses the shared `prod_test_monthly` product id. Only safe for single-plan
+/// realms — when two plans coexist, the price-aware webhook resolver cannot
+/// distinguish them by product. Multi-plan upgrade/downgrade scenarios must use
+/// `build_subscription_updated_event_with_product` so the new plan resolves to
+/// its own entitlement mapping.
 pub fn build_subscription_updated_event(
     event_id: String,
     user_id: Uuid,
     previous_plan_id: Uuid,
     current_plan_id: Uuid,
     realm_id: &str,
+) -> serde_json::Value {
+    build_subscription_updated_event_with_product(
+        event_id,
+        user_id,
+        previous_plan_id,
+        current_plan_id,
+        realm_id,
+        "prod_test_monthly",
+    )
+}
+
+/// Build a subscription.update webhook event with a custom product id.
+///
+/// Required for multi-plan scenarios: each plan's mapping has a distinct
+/// `external_product_id`, and the price-aware webhook resolver (US-EM-008)
+/// keys off `(provider, product, price)`. Passing the new plan's product id
+/// lets the resolver land on the correct plan-specific mapping instead of
+/// colliding on the shared `prod_test_monthly` fallback.
+pub fn build_subscription_updated_event_with_product(
+    event_id: String,
+    user_id: Uuid,
+    previous_plan_id: Uuid,
+    current_plan_id: Uuid,
+    realm_id: &str,
+    product_id: &str,
 ) -> serde_json::Value {
     let period_end = (chrono::Utc::now() + chrono::Duration::days(30)).to_rfc3339();
 
@@ -1006,7 +1037,7 @@ pub fn build_subscription_updated_event(
         "data": {
             "object": {
                 "subscriptionId": format!("sub_{}", event_id),
-                "productId": "prod_test_monthly",
+                "productId": product_id,
                 "userId": user_id.to_string(),
                 "planId": current_plan_id.to_string(),
                 "entitlementKey": current_plan_id.to_string(),

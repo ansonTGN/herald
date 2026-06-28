@@ -113,6 +113,30 @@ Issued、Paid、Overdue 状态的发票支持下载 PDF。PDF 由 Herald 服务�
 
 外部发票在列表中会显示支付方标签（如 "Stripe"），点击查看时跳转到支付方自己的发票页面。
 
+## 发票归属（支付-发票映射）
+
+外部发票除了保存 provider 的引用和跳转链接，还会记录它归属到本地的哪一笔支付或哪个订阅。对账时不用再靠外部 ID 反推"这张发票对应哪笔钱"。
+
+规则：
+
+- 每一次第三方支付（含订阅续费）成功，Herald 都记一条已成功的支付尝试，并映射一张已支付的发票。
+- 归属：一次性购买发票 → 对应的一次性支付尝试；订阅发票（含续费）→ 对应订阅；续费发票 → 同时归属本次续费的支付尝试和订阅。
+- Creem 续费以前只有首期同步发票，现在每个续费周期都有一张，和 Stripe 续费对齐。
+- 零金额周期（100% 折扣或免费档）没有实际扣款，不记续费支付尝试、也不生成续费发票，订阅周期和积分照常更新。
+- 重复的 webhook 不产生重复记录；既有的历史空归属不做回填，只对新同步的发票生效。
+- Manual 自研发票不要求归属（赠票、线下款等无支付场景允许空归属）。
+
+## 归属异常怎么发现
+
+两类异常对管理员可见，避免"成功支付却没发票"或"发票找不到对应支付"长期静默存在：
+
+- **无归属发票**：发票列表支持按 `?attribution=missing` 过滤，无归属的外部发票行会标"无归属"。Manual 自研发票不计入。
+- **已成功但无发票的支付**：调归属异常接口查最近 90 天内成功、却没有关联发票的支付尝试。
+
+管理员可见完整的归属信息（订阅、支付尝试）；普通用户只看自己的发票摘要，发票详情不暴露内部支付尝试 ID。
+
+归属异常接口 `GET /api/bill/{realmId}/invoice-attribution/anomalies` 返回两类结果：`unattributedInvoices`（无归属外部发票，最多 100 条）、`paymentsWithoutInvoice`（90 天内已成功但无发票的支付尝试，最多 200 条）。后者每条带 `paymentAttemptId`、`provider`、`amount`、`currency`、`completedAt`，以及恒为 null 的 `subscriptionId`（支付尝试表本身没有订阅列，订阅关联记在发票侧）。需要 `billing.view` 权限。
+
 ## 发票策略配置
 
 管理员可以配置发票策略（Invoice Policy），控制发票的自动生成行为。比如支付成功后是否自动创建发票、默认的付款条件等。
@@ -125,7 +149,7 @@ Issued、Paid、Overdue 状态的发票支持下载 PDF。PDF 由 Herald 服务�
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/bill/{realmId}/invoices` | 发票列表 |
+| GET | `/api/bill/{realmId}/invoices` | 发票列表（支持 `attribution=missing` 过滤无归属发票） |
 | POST | `/api/bill/{realmId}/invoices` | 创建发票 |
 | GET | `/api/bill/{realmId}/invoices/{invoiceId}` | 发票详情 |
 | PATCH | `/api/bill/{realmId}/invoices/{invoiceId}` | 更新发票（仅 Draft） |
@@ -133,7 +157,10 @@ Issued、Paid、Overdue 状态的发票支持下载 PDF。PDF 由 Herald 服务�
 | POST | `/api/bill/{realmId}/invoices/{invoiceId}/void` | 作废 |
 | POST | `/api/bill/{realmId}/invoices/{invoiceId}/mark-paid` | 标记已付 |
 | GET | `/api/bill/{realmId}/invoices/{invoiceId}/pdf` | 下载 PDF |
+| GET | `/api/bill/{realmId}/invoice-attribution/anomalies` | 归属异常：无归属发票 + 已成功但无发票的支付 |
 | GET/PUT | `/api/bill/{realmId}/invoice-seller-config` | 开票方配置 |
+
+发票列表和详情响应都带 `subscriptionId` / `paymentAttemptId` 两个归属字段（续费发票两者都有）。
 
 用户发票接口：
 
