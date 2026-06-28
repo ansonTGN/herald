@@ -61,6 +61,7 @@ interface InvoiceFilters {
   dateTo?: string
   search?: string
   provider?: string
+  attribution?: string
 }
 
 interface InvoiceAdminPageProps {
@@ -124,10 +125,22 @@ function createInvoiceColumns(
         if (provider === 'manual') {
           return <Badge variant="outline">{label}</Badge>
         }
+        const isUnattributed = !row.original.subscriptionId && !row.original.paymentAttemptId
         return (
-          <Badge variant="secondary" className="bg-teal-50 text-teal-700 border-teal-200">
-            {label}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <Badge variant="secondary" className="bg-teal-50 text-teal-700 border-teal-200">
+              {label}
+            </Badge>
+            {isUnattributed && (
+              <Badge
+                variant="outline"
+                className="bg-amber-50 text-amber-700 border-amber-200"
+                data-testid={`invoice-unattributed-badge-${row.original.id}`}
+              >
+                {m['billing.invoice_attribution_unattributed_badge']()}
+              </Badge>
+            )}
+          </div>
         )
       },
     },
@@ -298,6 +311,13 @@ function getProviderOptions() {
   ]
 }
 
+function getAttributionOptions() {
+  return [
+    { value: 'all', label: m['billing.invoice_attribution_all']() },
+    { value: 'missing', label: m['billing.invoice_attribution_missing']() },
+  ]
+}
+
 function FilterBar({
   filters,
   onFiltersChange,
@@ -354,6 +374,24 @@ function FilterBar({
         </SelectTrigger>
         <SelectContent>
           {getProviderOptions().map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select
+        value={filters.attribution ?? 'all'}
+        onValueChange={(value) =>
+          onFiltersChange({ ...filters, attribution: value === 'all' ? undefined : value })
+        }
+      >
+        <SelectTrigger className="w-[160px]" data-testid="invoice-attribution-filter">
+          <SelectValue placeholder={m['billing.invoice_attribution_all']()} />
+        </SelectTrigger>
+        <SelectContent>
+          {getAttributionOptions().map((opt) => (
             <SelectItem key={opt.value} value={opt.value}>
               {opt.label}
             </SelectItem>

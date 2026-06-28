@@ -508,4 +508,108 @@ describe('InvoiceAdminPage', () => {
       expect(link).toHaveAttribute('href', '/test-realm/manage/billing/invoices?open=seller')
     })
   })
+
+  // ==================== Attribution Filter ====================
+  //
+  // Business contract: selecting "Unattributed" in the attribution Select must
+  // drive attribution=missing on the listInvoices request.
+
+  describe('attribution filter', () => {
+    it('sends attribution=missing when "Unattributed" is selected', async () => {
+      const user = userEvent.setup()
+      let capturedAttribution: string | null = undefined
+
+      server.use(
+        http.get(`${BASE_URL}/api/bill/${REALM_ID}/invoices`, ({ request }) => {
+          const url = new URL(request.url)
+          capturedAttribution = url.searchParams.get('attribution')
+          return HttpResponse.json(makeListResponse([makeInvoice()]))
+        }),
+        http.get(`${BASE_URL}/api/realms/${REALM_ID}/feature-availability`, () => {
+          return HttpResponse.json(makeFeatureAvailabilityEligible())
+        })
+      )
+
+      renderWithProviders(<InvoiceAdminPage realmId={REALM_ID} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('INV-001')).toBeInTheDocument()
+      })
+
+      await user.click(screen.getByTestId('invoice-attribution-filter'))
+      const unattributedOption = await screen.findByRole('option', { name: 'Unattributed' })
+      await user.click(unattributedOption)
+
+      await waitFor(() => {
+        expect(capturedAttribution).toBe('missing')
+      })
+    })
+  })
+
+  // ==================== Unattributed Row Badge ====================
+  //
+  // Business state: the amber badge marks external invoices that have no local
+  // payment attribution. It must NOT appear on manual invoices (manual invoices
+  // legitimately have no payment attribution) nor on rows that are already
+  // attributed via subscriptionId/paymentAttemptId.
+
+  describe('unattributed row badge', () => {
+    it.each([
+      {
+        name: 'external row with no subscriptionId/paymentAttemptId shows the badge',
+        invoice: makeInvoice({
+          id: 'inv-ext',
+          invoiceNumber: 'INV-EXT',
+          provider: 'stripe',
+          subscriptionId: null,
+          paymentAttemptId: null,
+        }),
+        expectBadge: true,
+      },
+      {
+        name: 'manual row (provider=manual) hides the badge even when unattributed',
+        invoice: makeInvoice({
+          id: 'inv-manual',
+          invoiceNumber: 'INV-MANUAL',
+          provider: 'manual',
+          subscriptionId: null,
+          paymentAttemptId: null,
+        }),
+        expectBadge: false,
+      },
+      {
+        name: 'external row with subscriptionId set (attributed) hides the badge',
+        invoice: makeInvoice({
+          id: 'inv-sub',
+          invoiceNumber: 'INV-SUB',
+          provider: 'stripe',
+          subscriptionId: 'sub_abc',
+          paymentAttemptId: null,
+        }),
+        expectBadge: false,
+      },
+    ])('$name', async ({ invoice, expectBadge }) => {
+      server.use(
+        http.get(`${BASE_URL}/api/bill/${REALM_ID}/invoices`, () => {
+          return HttpResponse.json(makeListResponse([invoice]))
+        }),
+        http.get(`${BASE_URL}/api/realms/${REALM_ID}/feature-availability`, () => {
+          return HttpResponse.json(makeFeatureAvailabilityEligible())
+        })
+      )
+
+      renderWithProviders(<InvoiceAdminPage realmId={REALM_ID} />)
+
+      await waitFor(() => {
+        expect(screen.getByText(invoice.invoiceNumber)).toBeInTheDocument()
+      })
+
+      const badge = screen.queryByTestId(`invoice-unattributed-badge-${invoice.id}`)
+      if (expectBadge) {
+        expect(badge).toBeInTheDocument()
+      } else {
+        expect(badge).not.toBeInTheDocument()
+      }
+    })
+  })
 })

@@ -301,6 +301,8 @@ struct InvoiceSummaryRow {
     invoice_number: String,
     source: String,
     account_id: Option<Uuid>,
+    subscription_id: Option<Uuid>,
+    payment_attempt_id: Option<Uuid>,
     status: String,
     currency: String,
     total: i64,
@@ -322,6 +324,8 @@ fn row_to_summary(row: InvoiceSummaryRow) -> Result<InvoiceSummary, CoreError> {
         invoice_number: row.invoice_number,
         source: row.source.parse()?,
         account_id: row.account_id,
+        subscription_id: row.subscription_id,
+        payment_attempt_id: row.payment_attempt_id,
         status: row.status.parse()?,
         currency: row.currency,
         total: row.total,
@@ -378,7 +382,9 @@ const INVOICE_COLUMNS_READ: &str = r#"
 "#;
 
 const SUMMARY_COLUMNS: &str = r#"
-    id, realm_id, invoice_number, source, account_id, status, currency,
+    id, realm_id, invoice_number, source, account_id,
+    subscription_id, payment_attempt_id,
+    status, currency,
     total, amount_refunded, billing_name, due_date, created_at,
     provider, payment_provider, external_invoice_id, external_hosted_url, external_pdf_url
 "#;

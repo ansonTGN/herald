@@ -53,6 +53,7 @@ export function invoiceListQueryOptions(
     page?: number
     pageSize?: number
     provider?: string
+    attribution?: string
   }
 ) {
   return queryOptions({

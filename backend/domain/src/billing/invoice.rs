@@ -356,6 +356,8 @@ pub struct InvoiceSummary {
     pub invoice_number: String,
     pub source: InvoiceSource,
     pub account_id: Option<Uuid>,
+    pub subscription_id: Option<Uuid>,
+    pub payment_attempt_id: Option<Uuid>,
     pub status: InvoiceStatus,
     pub currency: String,
     pub total: i64,

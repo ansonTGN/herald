@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import {
@@ -107,7 +108,11 @@ export function InvoiceDetailDialog({
           )}
         </DialogHeader>
 
-        {isLoading ? <LoadingSkeleton /> : invoice ? <InvoiceContent invoice={invoice} /> : null}
+        {isLoading ? (
+          <LoadingSkeleton />
+        ) : invoice ? (
+          <InvoiceContent invoice={invoice} realmId={realmId} />
+        ) : null}
 
         <DialogFooter showCloseButton>
           {isExternal && externalPdfUrl && (
@@ -150,7 +155,7 @@ export function InvoiceDetailDialog({
   )
 }
 
-function InvoiceContent({ invoice }: { invoice: InvoiceDetailResponse }) {
+function InvoiceContent({ invoice, realmId }: { invoice: InvoiceDetailResponse; realmId: string }) {
   const fmt = (amount: number) => formatInvoiceAmount(amount, invoice.currency)
   const provider = invoice.provider
   const isExt = isExternalInvoice(provider)
@@ -237,6 +242,7 @@ function InvoiceContent({ invoice }: { invoice: InvoiceDetailResponse }) {
 
       <AmountBreakdown invoice={invoice} fmt={fmt} />
       <AdditionalInfo invoice={invoice} />
+      <Attribution invoice={invoice} realmId={realmId} />
       <StatusHistory events={invoice.history} />
     </div>
   )
@@ -328,6 +334,46 @@ function AdditionalInfo({ invoice }: { invoice: InvoiceDetailResponse }) {
       {invoice.notes && (
         <InfoField label={m['billing.invoice_additional_info']()}>{invoice.notes}</InfoField>
       )}
+    </div>
+  )
+}
+
+function Attribution({ invoice, realmId }: { invoice: InvoiceDetailResponse; realmId: string }) {
+  const hasSubscription = invoice.subscriptionId != null
+  const hasPaymentAttempt = invoice.paymentAttemptId != null
+
+  // Render by field presence. Hide the section entirely when both are null
+  // (manual / historical invoices stay clean).
+  if (!hasSubscription && !hasPaymentAttempt) return null
+
+  return (
+    <div data-testid="invoice-attribution-section">
+      <h3 className="mb-2 text-sm font-semibold">{m['billing.invoice_attribution_section']()}</h3>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {hasSubscription && (
+          <InfoField label={m['billing.invoice_attribution_subscription']()}>
+            <Link
+              to="/$realmId/manage/billing/subscriptions"
+              params={{ realmId }}
+              search={{ paymentProvider: invoice.provider }}
+              className="text-primary underline-offset-4 hover:underline"
+              data-testid="invoice-attribution-subscription-link"
+            >
+              {m['billing.invoice_attribution_view_subscription']()}
+            </Link>
+          </InfoField>
+        )}
+        {hasPaymentAttempt && (
+          <InfoField label={m['billing.invoice_attribution_payment_attempt']()}>
+            <span
+              className="font-mono text-sm break-all"
+              data-testid="invoice-attribution-payment-attempt"
+            >
+              {invoice.paymentAttemptId}
+            </span>
+          </InfoField>
+        )}
+      </div>
     </div>
   )
 }

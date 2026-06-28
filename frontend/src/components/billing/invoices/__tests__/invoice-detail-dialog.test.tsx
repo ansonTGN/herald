@@ -57,6 +57,39 @@ vi.mock('@/components/ui/button', () => {
   return { Button, buttonVariants: () => '' }
 })
 
+// The dialog imports Link from @tanstack/react-router. Link needs a router
+// context that JSDOM does not provide; render a plain <a> so the
+// attribution-link testid stays queryable. Mirrors invoice-admin-page.test.tsx.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({
+    to,
+    params,
+    search,
+    children,
+    ...props
+  }: {
+    to?: string
+    params?: Record<string, unknown>
+    search?: Record<string, unknown>
+    children?: React.ReactNode
+  }) => {
+    let href = typeof to === 'string' ? to : ''
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        href = href.replace(`$${k}`, String(v))
+      }
+    }
+    if (search && Object.keys(search).length) {
+      href += '?' + new URLSearchParams(search as Record<string, string>).toString()
+    }
+    return (
+      <a href={href} {...props}>
+        {children}
+      </a>
+    )
+  },
+}))
+
 // ==================== Test Helpers ====================
 
 const REALM_ID = 'test-realm'
@@ -204,6 +237,58 @@ function setupDetailDialog(
 describe('InvoiceDetailDialog', () => {
   beforeEach(() => {
     defaultOnOpenChange.mockClear()
+  })
+
+  // ==================== Attribution Block (by field presence) ====================
+
+  describe('attribution block by field presence', () => {
+    // The dialog's useQuery gates InvoiceContent (and thus the Attribution
+    // sub-component) behind isLoading. invoice-detail-dialog is present even
+    // during the skeleton phase, so we must wait on a post-load element
+    // (line-items section) before asserting attribution presence/absence.
+    const waitForInvoiceLoaded = () =>
+      waitFor(() => {
+        expect(screen.getByTestId('invoice-line-items-section')).toBeInTheDocument()
+      })
+
+    it('renders section, subscription link, and payment attempt when both fields present', async () => {
+      setupDetailDialog({
+        subscriptionId: 'sub-1',
+        paymentAttemptId: 'pay-1',
+      })
+
+      await waitForInvoiceLoaded()
+
+      expect(screen.getByTestId('invoice-attribution-section')).toBeInTheDocument()
+      expect(screen.getByTestId('invoice-attribution-subscription-link')).toBeInTheDocument()
+      expect(screen.getByTestId('invoice-attribution-payment-attempt')).toBeInTheDocument()
+    })
+
+    it('hides the section when both subscriptionId and paymentAttemptId are null', async () => {
+      setupDetailDialog()
+
+      await waitForInvoiceLoaded()
+
+      expect(screen.queryByTestId('invoice-attribution-section')).not.toBeInTheDocument()
+    })
+
+    it('renders only the subscription link when subscriptionId is set and paymentAttemptId is null', async () => {
+      setupDetailDialog({ subscriptionId: 'sub-1' })
+
+      await waitForInvoiceLoaded()
+
+      expect(screen.getByTestId('invoice-attribution-subscription-link')).toBeInTheDocument()
+      expect(screen.queryByTestId('invoice-attribution-payment-attempt')).not.toBeInTheDocument()
+    })
+
+    it('renders only the payment attempt when paymentAttemptId is set and subscriptionId is null', async () => {
+      setupDetailDialog({ paymentAttemptId: 'pay-1' })
+
+      await waitForInvoiceLoaded()
+
+      expect(screen.getByTestId('invoice-attribution-payment-attempt')).toBeInTheDocument()
+      expect(screen.queryByTestId('invoice-attribution-subscription-link')).not.toBeInTheDocument()
+    })
   })
 
   // ==================== Status History ====================
