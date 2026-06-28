@@ -6,8 +6,8 @@ use validator::Validate;
 
 use herald_core::domain::billing::credit_note::CreditNote;
 use herald_core::domain::billing::invoice::{
-    AdjustmentMode, InvoiceDetail, InvoiceHistory, InvoiceLineItem, InvoiceListFilters,
-    InvoiceProvider, InvoiceSellerConfig, InvoiceSource, InvoiceStatus,
+    AdjustmentMode, AttributionFilter, InvoiceDetail, InvoiceHistory, InvoiceLineItem,
+    InvoiceListFilters, InvoiceProvider, InvoiceSellerConfig, InvoiceSource, InvoiceStatus,
 };
 
 // ---------------------------------------------------------------------------
@@ -359,6 +359,11 @@ pub struct InvoiceListQuery {
     pub date_from: Option<NaiveDate>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_to: Option<NaiveDate>,
+    /// `attribution=missing` restricts the list to externally-synced invoices
+    /// that have no local attribution (`subscription_id`/`payment_attempt_id`).
+    /// Only the `missing` value is supported; any other value is ignored.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<String>,
     #[serde(default = "default_page")]
     pub page: Option<u64>,
     #[serde(default = "default_page_size")]
@@ -391,6 +396,10 @@ impl InvoiceListQuery {
             search: self.search.clone(),
             date_from: self.date_from,
             date_to: self.date_to,
+            attribution: match self.attribution.as_deref() {
+                Some("missing") => Some(AttributionFilter::Missing),
+                _ => None,
+            },
             page: self.page,
             page_size: self.page_size,
         }
@@ -504,6 +513,44 @@ pub struct InvoiceListResponse {
     pub page: u64,
     pub page_size: u64,
     pub data: Vec<InvoiceResponse>,
+}
+
+// ---------------------------------------------------------------------------
+// Attribution Anomalies — admin read-only
+// ---------------------------------------------------------------------------
+
+/// A succeeded payment attempt with no invoice linked via `payment_attempt_id`.
+///
+/// Surfaced by `GET /api/bill/{realmId}/invoice-attribution/anomalies` so an
+/// admin can investigate attribution gaps. Covers both renewal and one-time/
+/// checkout attempts — both write the canonical `target_type = 'entitlement_mapping'`
+/// (`subscription_entitlement` is only a legacy read alias).
+///
+/// `target_id` is the entitlement-mapping id the attempt was charged against.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentWithoutInvoiceResponse {
+    pub payment_attempt_id: Uuid,
+    pub subscription_id: Option<Uuid>,
+    /// "stripe" | "creem" | ... (raw payment_provider column).
+    pub provider: String,
+    /// Canonical `entitlement_mapping` for both renewal and one-time attempts.
+    pub target_type: String,
+    pub amount: i64,
+    pub currency: String,
+    pub completed_at: String,
+}
+
+/// Response for the admin attribution-anomaly discovery endpoint.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AttributionAnomaliesResponse {
+    /// Externally-synced invoices with no local attribution
+    /// (`provider != 'manual' AND subscription_id IS NULL AND payment_attempt_id IS NULL`).
+    pub unattributed_invoices: Vec<InvoiceResponse>,
+    /// Succeeded renewal / one-time payment attempts (within the lookback window)
+    /// that have no invoice row linked via `invoice.payment_attempt_id`.
+    pub payments_without_invoice: Vec<PaymentWithoutInvoiceResponse>,
 }
 
 // ---------------------------------------------------------------------------

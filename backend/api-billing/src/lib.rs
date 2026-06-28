@@ -65,6 +65,7 @@ pub mod webhook_handlers;
         crate::invoice_handlers::upsert_seller_config,
         crate::invoice_handlers::create_invoice,
         crate::invoice_handlers::list_invoices,
+        crate::invoice_handlers::list_attribution_anomalies,
         crate::invoice_handlers::get_invoice,
         crate::invoice_handlers::update_invoice,
         crate::invoice_handlers::issue_invoice,
@@ -166,6 +167,8 @@ pub mod webhook_handlers;
         crate::invoice_types::InvoiceListResponse,
         crate::invoice_types::CreateCreditNoteRequest,
         crate::invoice_types::CreditNoteResponse,
+        crate::invoice_types::PaymentWithoutInvoiceResponse,
+        crate::invoice_types::AttributionAnomaliesResponse,
     ))
 )]
 pub struct ApiDoc;

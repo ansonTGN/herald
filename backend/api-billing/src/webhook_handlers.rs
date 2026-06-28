@@ -96,6 +96,14 @@ struct CreemSubscriptionPaidPayload {
     current_period_start: Option<DateTime<Utc>>,
     current_period_end: Option<DateTime<Utc>>,
     status: SubscriptionStatus,
+    // Renewal charge attribution. `last_transaction_id` is the
+    // idempotency anchor for the renewal charge; `amount`/`currency` are in
+    // smallest currency units. All optional because Creem may omit them on
+    // edge events; callers skip the renewal attempt + invoice write when
+    // `amount` is missing or zero (zero-yuan cycle).
+    last_transaction_id: Option<String>,
+    amount: Option<i64>,
+    currency: Option<String>,
 }
 
 struct CreemSubscriptionUpdatedPayload {
@@ -471,6 +479,21 @@ fn parse_subscription_paid_payload(
             .or_else(|_| parse_optional_creem_datetime(&object["current_period_end"]))
             .or_else(|_| parse_optional_creem_datetime(&object["current_period_end_date"]))?,
         status: parse_creem_status(object["status"].as_str(), cancel_at_period_end)?,
+        // Renewal attribution. `last_transaction_id` falls back to
+        // camelCase; amount reuses the checkout resolver priority
+        // (object.amount -> object.product.price) and is in smallest currency
+        // units; currency falls back to `currency_code`.
+        last_transaction_id: object["last_transaction_id"]
+            .as_str()
+            .or_else(|| object["lastTransactionId"].as_str())
+            .map(str::to_string),
+        amount: object["amount"]
+            .as_i64()
+            .or_else(|| object["product"]["price"].as_i64()),
+        currency: object["currency"]
+            .as_str()
+            .or_else(|| object["currency_code"].as_str())
+            .map(str::to_string),
     })
 }
 
@@ -875,6 +898,15 @@ async fn handle_checkout_completed(
             currency: resolved_currency,
             total: resolved_amount,
             status: InvoiceStatus::Paid,
+            // Attribute the checkout invoice to the originating checkout payment
+            // attempt (one-time or first-period recurring). `subscription_id`
+            // stays None here: for one-time there is no subscription; for
+            // recurring the subscription is created later by `subscription.paid`,
+            // whose first-period branch returns early and does NOT re-upsert this
+            // checkout invoice (P0 dedup — the checkout invoice is keyed by
+            // checkout id, the renewal invoice by transaction id).
+            subscription_id: None,
+            payment_attempt_id: payload.attempt_id,
         };
 
         match app_state
@@ -1166,6 +1198,149 @@ async fn handle_subscription_paid(
         } else {
             return Err(error);
         }
+    }
+
+    // --- Renewal payment attempt + invoice sync ---
+    // Only the renewal branch reaches here: the first-period branch
+    // (`attempt_id` in metadata) returns early above, so this never duplicates
+    // the first-period invoice (P0 dedup).
+    //
+    // Zero-yuan cycle: when `amount` is missing or == 0 we SKIP both the
+    // renewal attempt and the invoice write (DB CHECK `amount > 0`,
+    // `20260408_unified_purchase.sql:100`). The subscription cycle / points
+    // grant above still ran. Best-effort: failures only warn and never block
+    // the already-completed cycle/points.
+    if let Some(amount) = payload.amount {
+        if amount > 0 {
+            let currency = payload.currency.clone().unwrap_or_default();
+            // Idempotency key: creem_renewal:{ext_sub_id}:{last_transaction_id},
+            // falling back to current_period_start. Without either anchor we
+            // cannot dedup safely, so we warn and skip the attempt/invoice.
+            let provider_reference = payload
+                .last_transaction_id
+                .as_deref()
+                .map(|tx| format!("creem_renewal:{}:{}", payload.external_subscription_id, tx))
+                .or_else(|| {
+                    payload.current_period_start.map(|ps| {
+                        format!(
+                            "creem_renewal:{}:{}",
+                            payload.external_subscription_id,
+                            ps.to_rfc3339()
+                        )
+                    })
+                });
+
+            let completed_at = payload.current_period_start.unwrap_or_else(Utc::now);
+
+            let renewal_attempt = match provider_reference {
+                Some(reference) => {
+                    match app_state
+                        .payment_attempt_service
+                        .record_subscription_renewal_attempt(
+                            herald_core::domain::payment_attempt::RecordRenewalAttemptInput {
+                                realm_id: realm_id.to_string(),
+                                user_id,
+                                payment_provider: "creem".to_string(),
+                                target_id: strategy_mapping.id,
+                                bucket_id,
+                                amount,
+                                currency: currency.clone(),
+                                provider_reference: reference.clone(),
+                                completed_at,
+                            },
+                        )
+                        .await
+                    {
+                        Ok(attempt) => Some(attempt),
+                        Err(e) => {
+                            warn!(
+                                realm_id = %realm_id,
+                                user_id = %user_id,
+                                external_subscription_id = %payload.external_subscription_id,
+                                event_id = %event_id,
+                                error = %e,
+                                "Failed to record Creem renewal payment attempt -- subscription cycle/points unaffected"
+                            );
+                            None
+                        }
+                    }
+                }
+                None => {
+                    warn!(
+                        realm_id = %realm_id,
+                        user_id = %user_id,
+                        external_subscription_id = %payload.external_subscription_id,
+                        event_id = %event_id,
+                        "Missing last_transaction_id and current_period_start -- cannot build renewal idempotency key, skipping renewal attempt/invoice"
+                    );
+                    None
+                }
+            };
+
+            // Upsert renewal invoice with attribution. external_invoice_id is
+            // the transaction id (fallback `{ext_sub_id}:{period_start}`); when
+            // no anchor at all is available we skip the invoice write.
+            let external_invoice_id = payload.last_transaction_id.clone().or_else(|| {
+                payload
+                    .current_period_start
+                    .map(|ps| format!("{}:{}", payload.external_subscription_id, ps.to_rfc3339()))
+            });
+
+            if let (Some(attempt), Some(external_invoice_id)) =
+                (renewal_attempt.as_ref(), external_invoice_id.as_deref())
+            {
+                let invoice_data = ExternalInvoiceData {
+                    realm_id: realm_id.to_string(),
+                    provider: InvoiceProvider::Creem,
+                    payment_provider: Some("creem".to_string()),
+                    external_invoice_id: Some(external_invoice_id.to_string()),
+                    external_order_id: Some(payload.event_id.clone()),
+                    external_status: Some("paid".to_string()),
+                    external_hosted_url: None,
+                    external_pdf_url: None,
+                    external_payload: Some(event.clone()),
+                    tax_details: extract_creem_tax_details(object),
+                    account_id: Some(user_id),
+                    currency: currency.clone(),
+                    total: amount,
+                    status: InvoiceStatus::Paid,
+                    subscription_id: Some(subscription_id),
+                    payment_attempt_id: Some(attempt.id),
+                };
+
+                if let Err(e) = app_state
+                    .invoice_repository
+                    .upsert_external_invoice(invoice_data)
+                    .await
+                {
+                    warn!(
+                        realm_id = %realm_id,
+                        user_id = %user_id,
+                        external_subscription_id = %payload.external_subscription_id,
+                        event_id = %event_id,
+                        error = %e,
+                        "Failed to sync Creem renewal invoice -- renewal attempt recorded, cycle/points unaffected"
+                    );
+                }
+            }
+        } else {
+            warn!(
+                realm_id = %realm_id,
+                user_id = %user_id,
+                external_subscription_id = %payload.external_subscription_id,
+                event_id = %event_id,
+                amount = amount,
+                "Creem renewal amount is zero -- skipping renewal attempt and invoice (zero-yuan cycle)"
+            );
+        }
+    } else {
+        warn!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            external_subscription_id = %payload.external_subscription_id,
+            event_id = %event_id,
+            "Creem renewal payload missing amount -- skipping renewal attempt and invoice"
+        );
     }
 
     info!(

@@ -9,10 +9,10 @@ use sea_orm::DatabaseConnection;
 use uuid::Uuid;
 
 use herald_domain::billing::invoice::{
-    ActorType, AdjustmentMode, ExternalInvoiceData, Invoice, InvoiceDetail, InvoiceEventType,
-    InvoiceHistory, InvoiceLineItem, InvoiceListFilters, InvoiceProvider, InvoiceRepository,
-    InvoiceSellerConfig, InvoiceSource, InvoiceStatus, InvoiceStatusTransition, InvoiceSummary,
-    NewInvoice, NewLineItem, PaginatedInvoices, UpdateInvoiceDraft,
+    ActorType, AdjustmentMode, AttributionFilter, ExternalInvoiceData, Invoice, InvoiceDetail,
+    InvoiceEventType, InvoiceHistory, InvoiceLineItem, InvoiceListFilters, InvoiceProvider,
+    InvoiceRepository, InvoiceSellerConfig, InvoiceSource, InvoiceStatus, InvoiceStatusTransition,
+    InvoiceSummary, NewInvoice, NewLineItem, PaginatedInvoices, UpdateInvoiceDraft,
 };
 use herald_domain::billing::invoice_service::{
     calculate_invoice_amounts, calculate_line_item_subtotal, format_invoice_number,
@@ -1047,23 +1047,43 @@ impl InvoiceRepository for PostgresInvoiceRepository {
         // Only the ON CONFLICT clause differs.
         let on_conflict = if data.external_invoice_id.is_some() {
             // Branch A: match on (realm_id, external_invoice_id)
+            //
+            // `external_hosted_url` / `external_pdf_url` use COALESCE(EXCLUDED, invoice)
+            // for the same reason as the attribution fields: a re-upsert from the
+            // renewal path (`invoice.payment_succeeded`) carries `None` for these when
+            // its payload omits `hosted_invoice_url`/`invoice_pdf` (the common case for
+            // renewals). Without COALESCE the NULL would overwrite the URL written by
+            // the earlier `invoice.finalized` sync event.
+            // When EXCLUDED is non-NULL (sync path) it still overrides, preserving the
+            // sync semantics.
             "ON CONFLICT (realm_id, external_invoice_id) WHERE external_invoice_id IS NOT NULL
              DO UPDATE SET
                 external_status = EXCLUDED.external_status,
-                external_hosted_url = EXCLUDED.external_hosted_url,
-                external_pdf_url = EXCLUDED.external_pdf_url,
+                external_hosted_url = COALESCE(EXCLUDED.external_hosted_url, invoice.external_hosted_url),
+                external_pdf_url = COALESCE(EXCLUDED.external_pdf_url, invoice.external_pdf_url),
                 external_order_id = COALESCE(EXCLUDED.external_order_id, invoice.external_order_id),
                 external_payload = EXCLUDED.external_payload,
                 tax_details = EXCLUDED.tax_details,
+                subscription_id = COALESCE(EXCLUDED.subscription_id, invoice.subscription_id),
+                payment_attempt_id = COALESCE(EXCLUDED.payment_attempt_id, invoice.payment_attempt_id),
                 status = EXCLUDED.status,
                 updated_at = NOW()"
         } else {
             // Branch B: match on (realm_id, external_order_id)
+            //
+            // This branch matches by external_order_id and is not exercised by the
+            // Stripe invoice.finalized/payment_succeeded sync paths (which always
+            // carry external_invoice_id). The two URL columns are left out of the
+            // UPDATE here because the carrier value (EXCLUDED.external_hosted_url /
+            // external_pdf_url) is the same as on the freshly-inserted row, and the
+            // existing row's URL set must be preserved verbatim.
             "ON CONFLICT (realm_id, external_order_id) WHERE external_order_id IS NOT NULL
              DO UPDATE SET
                 external_status = EXCLUDED.external_status,
                 external_payload = EXCLUDED.external_payload,
                 tax_details = EXCLUDED.tax_details,
+                subscription_id = COALESCE(EXCLUDED.subscription_id, invoice.subscription_id),
+                payment_attempt_id = COALESCE(EXCLUDED.payment_attempt_id, invoice.payment_attempt_id),
                 status = EXCLUDED.status,
                 updated_at = NOW()"
         };
@@ -1076,6 +1096,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
                 external_payload, tax_details,
                 subtotal, discount_amount, tax_amount, shipping_amount, total,
                 amount_refunded, amount_remaining,
+                subscription_id, payment_attempt_id,
                 created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7,
@@ -1084,6 +1105,7 @@ impl InvoiceRepository for PostgresInvoiceRepository {
                 $15, $16,
                 0, 0, 0, 0, $17,
                 0, $17,
+                $20, $21,
                 $18, $19
             )
             {on_conflict}
@@ -1111,6 +1133,8 @@ impl InvoiceRepository for PostgresInvoiceRepository {
             .bind(data.total)
             .bind(now)
             .bind(now)
+            .bind(data.subscription_id)
+            .bind(data.payment_attempt_id)
             .fetch_one(self.db.get_postgres_connection_pool())
             .await
             .map_err(|e| {
@@ -1249,6 +1273,16 @@ impl PostgresInvoiceRepository {
                 param_idx, param_idx
             ));
             param_idx += 1;
+        }
+
+        // attribution=missing — externally-synced invoice with no local
+        // attribution. Static condition (no bind), so it does not consume a
+        // param index. See domain::billing::invoice::AttributionFilter.
+        if matches!(filters.attribution, Some(AttributionFilter::Missing)) {
+            conditions.push(
+                "(provider <> 'manual' AND subscription_id IS NULL AND payment_attempt_id IS NULL)"
+                    .to_string(),
+            );
         }
 
         let where_clause = conditions.join(" AND ");

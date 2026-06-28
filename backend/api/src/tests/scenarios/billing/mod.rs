@@ -121,3 +121,20 @@ pub mod feature_availability_invoice_eligibility_scenarios;
 //         for a specific payment_attempt/subscription, so frontend can gate the
 //         Apply Invoice button on that resource before submit.
 pub mod invoice_apply_eligibility_scenarios;
+
+// Creem subscription renewal scenario tests (payment-invoice-mapping)
+// User Story: US-PM-001 (renewal payment_attempt), US-PM-002 (renewal invoice)
+// Covers: Design §5.2 (Creem renewal invoice sync), §6.1, §7 (P0 dedup / P1 fallback)
+pub mod creem_subscription_renewal_scenarios;
+
+// Stripe subscription renewal scenario tests (payment-invoice-mapping)
+// User Story: US-PM-001 (renewal payment_attempt), US-PM-003 (invoice attribution)
+// Covers: Design §5.3 (Stripe renewal attempt + re-upsert attribution),
+//         §6.1 (Stripe renewal cases), §6.3 (hosted_url/pdf_url non-regression)
+pub mod stripe_subscription_renewal_scenarios;
+
+// External invoice attribution + regression scenario tests (payment-invoice-mapping)
+// User Story: US-PM-003 (external invoice attribution)
+// Covers: Design §5.4 (attribution backfill + upsert COALESCE),
+//         §6.1 (attribution + regression cases), §6.3 (COALESCE non-clobber)
+pub mod external_invoice_attribution_scenarios;

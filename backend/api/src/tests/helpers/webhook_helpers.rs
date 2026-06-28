@@ -134,6 +134,78 @@ pub fn build_creem_subscription_paid_with_herald_metadata(
     })
 }
 
+/// Build a Creem `subscription.paid` **renewal** webhook event carrying the
+/// renewal-invoice attribution fields (`last_transaction_id` / `amount` /
+/// `currency`). This mirrors
+/// `build_creem_subscription_paid_with_herald_metadata` but emits a
+/// renewal-period payload (`isRenewal=true`) and the three new fields so the
+/// renewal branch in `handle_subscription_paid` can record a Succeeded attempt
+/// and upsert a Paid invoice.
+///
+/// `last_transaction_id` is `Option<&str>`: pass `None` to exercise the
+/// `current_period_start` fallback or the all-missing warn
+/// branch. `amount` is in **smallest currency units** (e.g. cents); `0`
+/// exercises the zero-yuan cycle skip.
+#[allow(clippy::too_many_arguments)]
+pub fn build_creem_subscription_paid_renewal_with_invoice(
+    event_id: &str,
+    entitlement_key: &str,
+    realm_id: &str,
+    user_id: Uuid,
+    client_app_id: Option<Uuid>,
+    external_subscription_id: &str,
+    external_product_id: &str,
+    last_transaction_id: Option<&str>,
+    amount: Option<i64>,
+    currency: Option<&str>,
+) -> serde_json::Value {
+    // P0: `normalize_creem_period` requires BOTH `currentPeriodStart` and
+    // `currentPeriodEnd` (start < end) to resolve the billing period; without
+    // both bounds the points grant is skipped. Real Creem renewal payloads
+    // always carry both bounds, so emit a realistic 30-day window.
+    let period_start = chrono::Utc::now();
+    let period_end = period_start + chrono::Duration::days(30);
+    let mut metadata = json!({
+        "herald_entitlement_key": entitlement_key,
+        "herald_realm_id": realm_id,
+        "herald_user_id": user_id.to_string(),
+    });
+    if let Some(caid) = client_app_id {
+        metadata["herald_client_app_id"] = json!(caid.to_string());
+        metadata["clientAppId"] = json!(caid.to_string());
+    }
+
+    let mut object = json!({
+        "subscriptionId": external_subscription_id,
+        "productId": external_product_id,
+        "userId": user_id.to_string(),
+        "isRenewal": true,
+        "currentPeriodStart": period_start.to_rfc3339(),
+        "currentPeriodEnd": period_end.to_rfc3339(),
+        "status": "active",
+        "cancelAtPeriodEnd": false,
+        "metadata": metadata,
+    });
+    if let Some(tx) = last_transaction_id {
+        object["last_transaction_id"] = json!(tx);
+    }
+    if let Some(amt) = amount {
+        object["amount"] = json!(amt);
+    }
+    if let Some(cur) = currency {
+        object["currency"] = json!(cur);
+    }
+
+    json!({
+        "id": event_id,
+        "eventType": "subscription.paid",
+        "data": {
+            "object": object,
+        },
+        "herald_entitlement_key": entitlement_key,
+    })
+}
+
 /// Build a Creem subscription.paid webhook without herald_entitlement_key
 /// (for fallback chain testing).
 #[allow(clippy::too_many_arguments)]
@@ -521,6 +593,89 @@ pub fn build_stripe_invoice_with_herald_metadata(
                     "userId": user_id.to_string(),
                 }
             }
+        }
+    })
+}
+
+/// Build a Stripe `invoice.payment_succeeded` event payload shaped for a
+/// **subscription renewal**.
+///
+/// Unlike `build_stripe_invoice_with_herald_metadata` (which only carries
+/// `amount_paid` and generates the `in_` id internally), this builder exposes
+/// the fields the renewal branch and the invoice re-upsert actually read:
+///
+/// - `total` (smallest currency unit) — drives the `amount > 0` gate and the
+///   renewal `payment_attempt.amount`;
+/// - `hosted_invoice_url` / `invoice_pdf` — captured into
+///   `invoice.external_hosted_url` / `invoice.external_pdf_url` and asserted
+///   unchanged across the renewal re-upsert;
+/// - a controllable `stripe_invoice_id` (`in_`) — used for idempotency and
+///   coexistence assertions;
+/// - `payment_intent` — flows into `invoice.external_order_id`;
+/// - `lines.data[].period.{start,end}` — the renewal grant depends on a
+///   resolvable line period (see `normalize_stripe_invoice_period`).
+///
+/// Set `total = 0` to exercise the zero-yuan skip path.
+pub fn build_stripe_invoice_payment_succeeded_renewal(
+    event_id: &str,
+    stripe_subscription_id: &str,
+    stripe_invoice_id: &str,
+    realm_id: &str,
+    user_id: Uuid,
+    entitlement_key: &str,
+    total: i64,
+    hosted_invoice_url: Option<&str>,
+    invoice_pdf: Option<&str>,
+) -> serde_json::Value {
+    let period_start = chrono::Utc::now().timestamp();
+    let period_end = (chrono::Utc::now() + chrono::Duration::days(30)).timestamp();
+    let mut object = json!({
+        "id": stripe_invoice_id,
+        "object": "invoice",
+        "status": "paid",
+        "subscription": stripe_subscription_id,
+        "total": total,
+        "currency": "usd",
+        "payment_intent": format!("pi_renewal_{}", Uuid::now_v7()),
+        // See `build_stripe_invoice_with_herald_metadata`: the renewal grant
+        // resolves the billing period from each line's `period`, NOT the
+        // invoice top-level current_period_* fields (which Stripe invoices do
+        // not carry).
+        "lines": {
+            "data": [{
+                "id": format!("il_renewal_{}", Uuid::now_v7()),
+                "object": "line_item",
+                "type": "subscription",
+                "subscription": stripe_subscription_id,
+                "period": {
+                    "start": period_start,
+                    "end": period_end,
+                }
+            }]
+        },
+        "metadata": {
+            "herald_realm_id": realm_id,
+            "herald_user_id": user_id.to_string(),
+            "herald_entitlement_key": entitlement_key,
+            "userId": user_id.to_string(),
+        }
+    });
+
+    if let Some(url) = hosted_invoice_url {
+        object["hosted_invoice_url"] = json!(url);
+    }
+    if let Some(url) = invoice_pdf {
+        object["invoice_pdf"] = json!(url);
+    }
+
+    json!({
+        "id": event_id,
+        "object": "event",
+        "type": "invoice.payment_succeeded",
+        "api_version": "2020-08-27",
+        "created": chrono::Utc::now().timestamp(),
+        "data": {
+            "object": object
         }
     })
 }

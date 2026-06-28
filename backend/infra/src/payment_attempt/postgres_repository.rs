@@ -10,7 +10,7 @@ use std::sync::Arc;
 use herald_domain::common::entities::app_errors::CoreError;
 use herald_domain::payment_attempt::{
     CreatePaymentAttemptInput, PaymentAttempt, PaymentAttemptErrorExt, PaymentAttemptRepository,
-    PaymentAttemptStatus, PurchaseHistoryRow,
+    PaymentAttemptStatus, PurchaseHistoryRow, RecordRenewalAttemptInput,
 };
 use herald_entity::payment_attempt as payment_attempt_entity;
 
@@ -80,6 +80,41 @@ impl PaymentAttemptRepository for PostgresPaymentAttemptRepository {
 
         let result = attempt_model.insert(self.db.as_ref()).await.map_err(|e| {
             CoreError::DatabaseError(format!("Failed to create payment attempt: {e}"))
+        })?;
+
+        Self::model_to_payment_attempt(result)
+    }
+
+    async fn insert_succeeded_renewal_attempt(
+        &self,
+        input: RecordRenewalAttemptInput,
+    ) -> Result<PaymentAttempt, CoreError> {
+        // Renewal attempt: already-Succeeded charge, no expiry semantics.
+        // expires_at = completed_at (NOT NULL column; already-succeeded has no real expiry).
+        let now = chrono::Utc::now();
+
+        let attempt_model = payment_attempt_entity::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            realm_id: Set(input.realm_id),
+            user_id: Set(input.user_id),
+            payment_provider: Set(input.payment_provider),
+            target_type: Set("entitlement_mapping".to_string()),
+            target_id: Set(input.target_id),
+            bucket_id: Set(input.bucket_id),
+            amount: Set(input.amount),
+            currency: Set(input.currency),
+            status: Set("Succeeded".to_string()),
+            provider_reference: Set(Some(input.provider_reference)),
+            provider_status: Set(Some("succeeded".to_string())),
+            metadata: Set(None),
+            expires_at: Set(input.completed_at.into()),
+            completed_at: Set(Some(input.completed_at.into())),
+            created_at: Set(now.into()),
+            updated_at: Set(now.into()),
+        };
+
+        let result = attempt_model.insert(self.db.as_ref()).await.map_err(|e| {
+            CoreError::DatabaseError(format!("Failed to insert renewal attempt: {e}"))
         })?;
 
         Self::model_to_payment_attempt(result)

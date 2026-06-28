@@ -133,6 +133,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 
 **Entitlement 映射规则**：
 
+- 映射按价格粒度分辨：同一产品的多个价格是各自独立的映射行，entitlement_key / 计费类型 / 计费周期 / 积分策略均按价格配置并可跨价格共享；价格感知的同步、webhook 解析与 checkout 见 [support-multiple-price.md](support-multiple-price.md)
 - `entitlement_key` 是 Herald 内部和第三方应用识别订阅权益的稳定业务标识
 - `provider_entitlement_mappings` 记录 provider、external_product_id、external_price_id、entitlement_key、billing_type、billing_period 和 provider_product_info
 - provider 商品/价格展示信息来自支付方同步缓存，不由 Herald 本地手工维护
@@ -345,7 +346,7 @@ Billing（订阅计费）是 Herald 系统为 Realm 提供的灵活订阅管理�
 - Entitlement mapping 查询、更新、禁用和 provider 产品同步由 Billing Admin API 提供
 - 订阅查询：订阅状态、`entitlement_key`、支付平台、周期和订阅变更历史
 - SDK 查询：第三方应用查询 client app 当前订阅状态，返回 `entitlement_key`
-- Checkout 发起：显式传递 `entitlement_key + payment_provider`
+- Checkout 发起：显式传递 `mapping_id + payment_provider`（entitlement_key 由所选价格映射解析得出，见 [support-multiple-price.md](support-multiple-price.md)）
 - Webhook 接收：优先使用 `herald_entitlement_key`，fallback 到本地 provider mapping
 
 **访问控制与数据边界**：

@@ -27,8 +27,8 @@ use crate::handlers_history::{
 use crate::invoice_handlers::{
     apply_invoice, create_credit_note, create_invoice, download_invoice_pdf,
     download_my_invoice_pdf, get_invoice, get_invoice_apply_eligibility, get_my_invoice,
-    get_seller_config, issue_invoice, list_invoices, list_my_invoices, mark_paid, update_invoice,
-    upsert_seller_config, void_invoice,
+    get_seller_config, issue_invoice, list_attribution_anomalies, list_invoices, list_my_invoices,
+    mark_paid, update_invoice, upsert_seller_config, void_invoice,
 };
 use crate::provider_handlers::list_payment_providers;
 use crate::purchase_handlers::{
@@ -192,6 +192,10 @@ pub fn billing_routes() -> Router<AppState> {
         .route(
             "/api/bill/{realmId}/invoice-seller-config",
             get(get_seller_config).put(upsert_seller_config),
+        )
+        .route(
+            "/api/bill/{realmId}/invoice-attribution/anomalies",
+            get(list_attribution_anomalies),
         )
         .route(
             "/api/bill/{realmId}/invoices",

@@ -14,9 +14,9 @@ use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::billing::credit_note::{CreditNoteRepository, NewCreditNote};
 use herald_core::domain::billing::invoice::{
-    ActorType, InvoiceDetail, InvoicePdfGenerator, InvoiceProvider, InvoiceRepository,
-    InvoiceSource, InvoiceStatus, InvoiceStatusTransition, NewInvoice, NewLineItem,
-    UpdateInvoiceDraft,
+    ActorType, AttributionFilter, InvoiceDetail, InvoiceListFilters, InvoicePdfGenerator,
+    InvoiceProvider, InvoiceRepository, InvoiceSource, InvoiceStatus, InvoiceStatusTransition,
+    NewInvoice, NewLineItem, UpdateInvoiceDraft,
 };
 use herald_core::domain::billing::invoice_service::{
     InvoicePolicyConfig, parse_invoice_policy_config, validate_external_invoice_readonly,
@@ -467,6 +467,152 @@ pub async fn list_invoices(
         page: result.page,
         page_size: result.page_size,
         data: result.data.into_iter().map(summary_to_response).collect(),
+    }))
+}
+
+// ============================================================================
+// Attribution Anomalies — admin read-only discovery
+// ============================================================================
+
+/// Lookback window for "payment without invoice": succeeded attempts older than
+/// this are considered out of scope for active anomaly triage. 90 days matches
+/// typical billing-investigation cadences without scanning the full history.
+const ANOMALY_LOOKBACK_DAYS: i64 = 90;
+
+/// Row shape for the payments-without-invoice SQL (keeps sqlx boilerplate local
+/// to this handler; not part of the domain layer). Uses runtime `query_as`
+/// (matches the rest of this handler file; the sqlx compile-time macro would
+/// require a DATABASE_URL / offline cache that this crate does not set up).
+#[derive(sqlx::FromRow)]
+struct PaymentWithoutInvoiceRow {
+    payment_attempt_id: Uuid,
+    payment_provider: String,
+    target_type: String,
+    amount: i64,
+    currency: String,
+    completed_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/bill/{realmId}/invoice-attribution/anomalies",
+    tag = "billing-invoice",
+    params(
+        ("realmId" = String, Path, description = "Realm ID")
+    ),
+    responses(
+        (status = 200, description = "Attribution anomalies", body = AttributionAnomaliesResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden - billing.view required", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+/// Admin read-only attribution anomaly discovery.
+///
+/// Returns two anomaly classes:
+/// - `unattributed_invoices`: externally-synced invoices that lack both
+///   `subscription_id` and `payment_attempt_id` (reuses `list_admin` with
+///   `attribution=Missing`, capped at the first 100 rows).
+/// - `payments_without_invoice`: succeeded renewal / one-time payment attempts
+///   inside a 90-day window with no invoice linked via
+///   `invoice.payment_attempt_id` (anti-join read; no writes).
+///
+/// Permission reuses `require_billing_permission(..., "view")` — same model as
+/// `GET /invoices`. Realm isolation is enforced both by the repository
+/// (`realm_id` filter) and the shared middleware.
+pub async fn list_attribution_anomalies(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+    Path(realm_id): Path<String>,
+) -> Result<Json<AttributionAnomaliesResponse>, ApiError> {
+    tracing::info!("Listing attribution anomalies for realm: {}", realm_id);
+    require_billing_permission(&state, &identity, &realm_id, "view").await?;
+
+    // --- unattributed invoices: reuse the existing list path with the
+    // attribution=missing filter. Capped at page_size=100 (infra clamps to 100).
+    let unattributed_filters = InvoiceListFilters {
+        attribution: Some(AttributionFilter::Missing),
+        page: Some(1),
+        page_size: Some(100),
+        ..Default::default()
+    };
+    let unattributed_result = state
+        .invoice_repository
+        .list_admin(&realm_id, unattributed_filters)
+        .await?;
+    let unattributed_invoices: Vec<InvoiceResponse> = unattributed_result
+        .data
+        .into_iter()
+        .map(summary_to_response)
+        .collect();
+
+    // --- payments_without_invoice: succeeded renewal / one-time attempts within
+    // the lookback window that have no invoice linked via payment_attempt_id.
+    //
+    // Shapes covered:
+    //   - renewal AND one-time: target_type = 'entitlement_mapping', status = 'Succeeded'
+    // (The renewal writer uses target_type = 'entitlement_mapping' too — migration
+    // 20260609 restricts payment_attempts.target_type to that single value and
+    // deletes any legacy 'subscription_entitlement' rows. Checkout attempts
+    // start as Pending; only Succeeded rows can be "missing an invoice". The
+    // amount>0 CHECK on payment_attempts makes the renewal 0-yuan-cycle skip
+    // explicit at the write side, so no extra filter here.)
+    //
+    // `subscription_id` is intentionally NULL here: `payment_attempts` has no
+    // such column (target_id is the entitlement-mapping id, not a subscription).
+    // The admin investigates via `payment_attempt_id` + `provider`; a real
+    // subscription link, when recoverable, lives on the invoice side. Surfacing
+    // NULL is more honest than a fragile provider_reference parse.
+    //
+    // Anti-join via NOT EXISTS keeps the query index-friendly and avoids
+    // duplicating attempt rows when multiple invoices exist.
+    let rows: Vec<PaymentWithoutInvoiceRow> = sqlx::query_as::<_, PaymentWithoutInvoiceRow>(
+        r#"
+        SELECT
+            pa.id AS payment_attempt_id,
+            pa.payment_provider,
+            pa.target_type,
+            pa.amount,
+            pa.currency,
+            pa.completed_at
+        FROM payment_attempts pa
+        WHERE pa.realm_id = $1
+          AND pa.status = 'Succeeded'
+          AND pa.target_type = 'entitlement_mapping'
+          AND pa.completed_at >= NOW() - ($2 || ' days')::interval
+          AND NOT EXISTS (
+              SELECT 1 FROM invoice inv
+              WHERE inv.realm_id = $1
+                AND inv.payment_attempt_id = pa.id
+          )
+        ORDER BY pa.completed_at DESC
+        LIMIT 200
+        "#,
+    )
+    .bind(realm_id)
+    .bind(ANOMALY_LOOKBACK_DAYS)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| ApiError::internal(format!("Database error: {}", e)))?;
+
+    let payments_without_invoice = rows
+        .into_iter()
+        .map(|r| PaymentWithoutInvoiceResponse {
+            payment_attempt_id: r.payment_attempt_id,
+            // payment_attempts has no subscription_id column; see note above.
+            subscription_id: None,
+            provider: r.payment_provider,
+            target_type: r.target_type,
+            amount: r.amount,
+            currency: r.currency,
+            completed_at: r.completed_at.to_rfc3339(),
+        })
+        .collect();
+
+    Ok(Json(AttributionAnomaliesResponse {
+        unattributed_invoices,
+        payments_without_invoice,
     }))
 }
 
@@ -1294,10 +1440,13 @@ pub async fn get_my_invoice(
         })
         .collect();
 
-    Ok(Json(invoice_to_detail_response_with_credits(
-        detail,
-        credit_notes,
-    )))
+    let mut response = invoice_to_detail_response_with_credits(detail, credit_notes);
+    // Regular users must NOT receive the internal `payment_attempt_id`; only
+    // admin responses carry it. The summary `InvoiceResponse` (used by
+    // list_my_invoices) has no such field, so only the detail path needs trimming.
+    response.payment_attempt_id = None;
+
+    Ok(Json(response))
 }
 
 // ============================================================================

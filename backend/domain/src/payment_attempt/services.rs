@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use super::entities::{PaymentAttempt, PaymentAttemptStatus, PaymentContext};
 use super::errors::{PaymentAttemptErrorExt, PaymentAttemptResult};
-use super::ports::{CreatePaymentAttemptInput, PaymentAttemptRepository};
+use super::ports::{
+    CreatePaymentAttemptInput, PaymentAttemptRepository, RecordRenewalAttemptInput,
+};
 use crate::common::entities::app_errors::CoreError;
 
 /// Payment Attempt service
@@ -103,6 +105,40 @@ impl<R: PaymentAttemptRepository> PaymentAttemptService<R> {
     ) -> PaymentAttemptResult<Option<PaymentAttempt>> {
         self.repository
             .find_payment_attempt_by_provider_reference(provider, reference)
+            .await
+    }
+
+    /// Find-or-create an already-Succeeded renewal payment attempt.
+    ///
+    /// Idempotent: looks up by `(payment_provider, provider_reference)`; if found,
+    /// returns the existing row (covers duplicate webhook delivery + compensation
+    /// replay). If not found, inserts a new row with `status=Succeeded` and
+    /// `completed_at=expires_at=input.completed_at`.
+    ///
+    /// Does NOT trigger fulfillment (renewal does not create a subscription; cycle
+    /// and points are handled by the existing `sync_*` + `handle_subscription_paid`
+    /// path).
+    ///
+    /// Precondition: `input.amount > 0` (enforced by `payment_attempts.amount
+    /// CHECK(amount > 0)`); callers must skip on zero-yuan cycles.
+    /// Concurrency: same webhook event is deduplicated via
+    /// `payment_event.external_event_id`, so find-or-create has no race.
+    pub async fn record_subscription_renewal_attempt(
+        &self,
+        input: RecordRenewalAttemptInput,
+    ) -> PaymentAttemptResult<PaymentAttempt> {
+        if let Some(existing) = self
+            .repository
+            .find_payment_attempt_by_provider_reference(
+                &input.payment_provider,
+                &input.provider_reference,
+            )
+            .await?
+        {
+            return Ok(existing);
+        }
+        self.repository
+            .insert_succeeded_renewal_attempt(input)
             .await
     }
 
@@ -317,7 +353,9 @@ mod tests {
     use crate::payment_attempt::entities::{
         PaymentAttempt, PaymentAttemptStatus, PurchasableTarget,
     };
-    use crate::payment_attempt::ports::{CreatePaymentAttemptInput, PaymentAttemptRepository};
+    use crate::payment_attempt::ports::{
+        CreatePaymentAttemptInput, PaymentAttemptRepository, RecordRenewalAttemptInput,
+    };
     use chrono::Utc;
     use std::sync::Arc;
     use uuid::Uuid;
@@ -463,10 +501,47 @@ mod tests {
 
         async fn find_payment_attempt_by_provider_reference(
             &self,
-            _provider: &str,
-            _reference: &str,
+            provider: &str,
+            reference: &str,
         ) -> PaymentAttemptResult<Option<PaymentAttempt>> {
-            Ok(None)
+            Ok(self
+                .attempts
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|a| {
+                    a.payment_provider == provider
+                        && a.provider_reference.as_deref() == Some(reference)
+                })
+                .cloned())
+        }
+
+        async fn insert_succeeded_renewal_attempt(
+            &self,
+            input: RecordRenewalAttemptInput,
+        ) -> PaymentAttemptResult<PaymentAttempt> {
+            let now = Utc::now();
+            let attempt = PaymentAttempt {
+                id: Uuid::now_v7(),
+                realm_id: input.realm_id,
+                user_id: input.user_id,
+                bucket_id: input.bucket_id,
+                payment_provider: input.payment_provider,
+                target_type: PurchasableTarget::EntitlementMapping,
+                target_id: input.target_id,
+                amount: input.amount,
+                currency: input.currency,
+                status: PaymentAttemptStatus::Succeeded,
+                provider_reference: Some(input.provider_reference),
+                provider_status: Some("succeeded".to_string()),
+                metadata: None,
+                expires_at: input.completed_at,
+                completed_at: Some(input.completed_at),
+                created_at: now,
+                updated_at: now,
+            };
+            self.attempts.lock().unwrap().push(attempt.clone());
+            Ok(attempt)
         }
 
         async fn list_purchase_history(
@@ -729,5 +804,63 @@ mod tests {
             .expect("same target status should be idempotent");
 
         assert_eq!(result.status, PaymentAttemptStatus::Succeeded);
+    }
+
+    // record_subscription_renewal_attempt must be idempotent: the first call for a
+    // given (provider, provider_reference) inserts a Succeeded renewal attempt;
+    // every subsequent call (duplicate webhook / compensation replay) returns the
+    // same row without rebuilding it. This guards against producing duplicate
+    // payment_attempts per renewal cycle.
+    #[tokio::test]
+    async fn test_record_renewal_attempt_is_idempotent() {
+        let repo = Arc::new(MockPaymentAttemptRepository::new());
+        let service = PaymentAttemptService::new(repo.clone());
+
+        let provider_reference = "stripe_renewal:sub_123:in_456".to_string();
+        let completed_at = Utc::now();
+        let input = RecordRenewalAttemptInput {
+            realm_id: "test-realm".to_string(),
+            user_id: Uuid::now_v7(),
+            payment_provider: "stripe".to_string(),
+            target_id: Uuid::now_v7(),
+            bucket_id: Uuid::now_v7(),
+            amount: 1500,
+            currency: "USD".to_string(),
+            provider_reference: provider_reference.clone(),
+            completed_at,
+        };
+
+        // First call: nothing matches → insert Succeeded renewal attempt.
+        let first = service
+            .record_subscription_renewal_attempt(input.clone())
+            .await
+            .expect("first call should insert renewal attempt");
+        assert_eq!(first.status, PaymentAttemptStatus::Succeeded);
+        assert_eq!(
+            first.provider_reference.as_deref(),
+            Some(provider_reference.as_str())
+        );
+        assert_eq!(first.completed_at, Some(completed_at));
+
+        // Second call: same provider_reference must return the existing row, not
+        // create a new one.
+        let second = service
+            .record_subscription_renewal_attempt(input)
+            .await
+            .expect("second call should return existing attempt");
+        assert_eq!(
+            second.id, first.id,
+            "duplicate renewal must be idempotent (same id)"
+        );
+
+        // Exactly one row for this provider_reference in the mock store.
+        let matching = repo
+            .attempts
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|a| a.provider_reference.as_deref() == Some(&provider_reference))
+            .count();
+        assert_eq!(matching, 1, "no duplicate renewal attempts should exist");
     }
 }

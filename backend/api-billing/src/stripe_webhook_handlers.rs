@@ -30,7 +30,7 @@ use herald_core::domain::billing::{
     SubscriptionHistoryService, SubscriptionStatus, detect_change_type,
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
-use herald_core::domain::payment_attempt::PaymentAttemptStatus;
+use herald_core::domain::payment_attempt::{PaymentAttemptStatus, RecordRenewalAttemptInput};
 use herald_core::domain::points::IdempotencyResult;
 use herald_core::domain::points::entities::{
     PointsRevocationRecord, PointsTransaction, RevocationType, TransactionType,
@@ -1046,12 +1046,14 @@ async fn sync_subscription_input_with_detected_history_in_txn(
 ///
 /// Failures are logged and swallowed: this linkage is best-effort enrichment and
 /// must never block fulfillment or the rest of the webhook handler.
+#[allow(clippy::too_many_arguments)]
 async fn link_one_time_payment_intent_to_invoice(
     app_state: &AppState,
     realm_id: &str,
     payment_intent: &str,
     stripe_invoice_id: &str,
     account_id: Option<Uuid>,
+    attempt_id: Option<Uuid>,
     total: i64,
     currency: &str,
 ) {
@@ -1075,6 +1077,9 @@ async fn link_one_time_payment_intent_to_invoice(
         // row in a terminal-ish state. invoice.paid will upsert back to paid if it
         // arrives, and invoice.created will downgrade to draft as expected.
         status: InvoiceStatus::Paid,
+        subscription_id: None,
+        // One-time checkout: attribute the invoice to the one-time payment attempt.
+        payment_attempt_id: attempt_id,
     };
 
     if let Err(e) = app_state
@@ -1128,6 +1133,9 @@ async fn handle_checkout_session_completed(
             // Best-effort: resolve account_id from metadata userId so the row is
             // attributable; falls back to None like the invoice.* handler does.
             let account_id = parse_optional_uuid_field(&session["metadata"]["userId"]);
+            // Resolve the one-time payment attempt id from metadata so the invoice
+            // row is attributed to the attempt that drove this checkout.
+            let attempt_id = parse_attempt_id(&session["metadata"][metadata_keys::ATTEMPT_ID]);
             // Carry the session's amount_total/currency so the placeholder row is
             // correct even when checkout.session.completed arrives before the
             // invoice.* events (Branch A UPDATE does not touch total/currency).
@@ -1139,6 +1147,7 @@ async fn handle_checkout_session_completed(
                 payment_intent,
                 stripe_invoice_id,
                 account_id,
+                attempt_id,
                 total,
                 &currency,
             )
@@ -2826,11 +2835,141 @@ async fn handle_invoice_payment_succeeded(
         "Invoice payment succeeded - renewal ledger granted"
     );
 
+    // Record a renewal payment_attempt and backfill invoice attribution.
+    // Best-effort: a failure here must NOT block the credit grant that has already
+    // succeeded above — it is logged and the webhook transaction is replayed by the
+    // existing `payment_event` compensation framework.
+    //
+    // amount == 0 → skip (zero-yuan cycle: no actual charge, and `payment_attempts.amount`
+    // has CHECK(amount > 0)). The renewal ledger/period update above already happened.
+    let invoice_object = &event["data"]["object"];
+    let renewal_amount = invoice_object["total"].as_i64().unwrap_or(0);
+    let renewal_currency = invoice_object["currency"]
+        .as_str()
+        .unwrap_or("usd")
+        .to_string();
+    let stripe_invoice_id = invoice_object["id"].as_str().map(str::to_string);
+
+    if renewal_amount > 0
+        && let Some(stripe_invoice_id) = stripe_invoice_id.as_ref()
+    {
+        let provider_reference = format!(
+            "stripe_renewal:{}:{}",
+            payload.stripe_subscription_id, stripe_invoice_id
+        );
+        let completed_at = payload.current_period_end.unwrap_or_else(Utc::now);
+
+        let renewal_outcome = async {
+            let renewal_attempt = app_state
+                .payment_attempt_service
+                .record_subscription_renewal_attempt(RecordRenewalAttemptInput {
+                    realm_id: realm_id.to_string(),
+                    user_id: payload.user_id,
+                    payment_provider: "stripe".to_string(),
+                    target_id: strategy_mapping.id,
+                    bucket_id: subscription.bucket_id,
+                    amount: renewal_amount,
+                    currency: renewal_currency.clone(),
+                    provider_reference: provider_reference.clone(),
+                    completed_at,
+                })
+                .await?;
+
+            // Re-upsert the invoice with attribution. Reuses the FULL field
+            // construction (hosted_url/pdf_url/external_payload/external_order_id) via
+            // the shared helper so the ON CONFLICT branches do NOT regress fields
+            // written by the earlier `invoice.*` sync event.
+            let external_data = build_stripe_invoice_external_data(
+                invoice_object,
+                realm_id,
+                stripe_invoice_id,
+                Some(payload.user_id),
+                Some(subscription.id),
+                Some(renewal_attempt.id),
+            )?;
+
+            app_state
+                .invoice_repository
+                .upsert_external_invoice(external_data)
+                .await?;
+
+            Ok::<(), CoreError>(())
+        }
+        .await;
+
+        if let Err(e) = renewal_outcome {
+            warn!(
+                realm_id = %realm_id,
+                user_id = %payload.user_id,
+                stripe_subscription_id = %payload.stripe_subscription_id,
+                stripe_invoice_id = %stripe_invoice_id,
+                event_id = %event_id,
+                error = %e,
+                "Stripe renewal attempt/invoice attribution failed - credits already granted; compensation will retry"
+            );
+        }
+    } else if renewal_amount == 0 {
+        info!(
+            realm_id = %realm_id,
+            user_id = %payload.user_id,
+            stripe_subscription_id = %payload.stripe_subscription_id,
+            event_id = %event_id,
+            "Stripe renewal invoice total=0 — skipping renewal payment_attempt and invoice attribution (zero-yuan cycle)"
+        );
+    }
+
     Ok(create_placeholder_transaction(
         payload.user_id,
         realm_id,
         TransactionType::SubscriptionRenewal,
     ))
+}
+
+/// Build the `ExternalInvoiceData` for a Stripe invoice upsert.
+///
+/// Shared by:
+/// - `handle_stripe_invoice_event` (invoice.created/finalized/paid/voided sync) — fills
+///   `subscription_id` when resolvable, `payment_attempt_id = None` (renewal attempt is
+///   created by `invoice.payment_succeeded`, not this path).
+/// - `handle_invoice_payment_succeeded` renewal re-upsert — fills both `subscription_id`
+///   and `payment_attempt_id` to backfill attribution on the same `external_invoice_id`.
+///
+/// Carrying the FULL field set (hosted_url / pdf_url / external_payload /
+/// external_order_id = payment_intent) on every call is intentional: the upsert's
+/// ON CONFLICT branches COALESCE these, so a re-upsert from the renewal path must NOT
+/// pass `None` for them, otherwise it would regress fields written by an earlier
+/// `invoice.*` sync event.
+fn build_stripe_invoice_external_data(
+    object: &Value,
+    realm_id: &str,
+    stripe_invoice_id: &str,
+    account_id: Option<Uuid>,
+    subscription_id: Option<Uuid>,
+    payment_attempt_id: Option<Uuid>,
+) -> Result<ExternalInvoiceData, CoreError> {
+    let stripe_status = object["status"].as_str().unwrap_or("draft");
+    let status = map_stripe_invoice_status(stripe_status)?;
+    let total = object["total"].as_i64().unwrap_or(0);
+    let currency = object["currency"].as_str().unwrap_or("usd").to_string();
+
+    Ok(ExternalInvoiceData {
+        realm_id: realm_id.to_string(),
+        provider: InvoiceProvider::Stripe,
+        payment_provider: Some("stripe".to_string()),
+        external_invoice_id: Some(stripe_invoice_id.to_string()),
+        external_order_id: object["payment_intent"].as_str().map(str::to_string),
+        external_status: Some(stripe_status.to_string()),
+        external_hosted_url: object["hosted_invoice_url"].as_str().map(str::to_string),
+        external_pdf_url: object["invoice_pdf"].as_str().map(str::to_string),
+        external_payload: Some(object.clone()),
+        tax_details: None,
+        account_id,
+        currency,
+        total,
+        status,
+        subscription_id,
+        payment_attempt_id,
+    })
 }
 
 /// Handle invoice.created / invoice.finalized / invoice.paid / invoice.voided events
@@ -2851,29 +2990,25 @@ async fn handle_stripe_invoice_event(
         .ok_or_else(|| CoreError::BadRequest("Missing Stripe invoice id".to_string()))?
         .to_string();
 
-    let stripe_status = object["status"].as_str().unwrap_or("draft");
-
-    let status = map_stripe_invoice_status(stripe_status)?;
-
-    let total = object["total"].as_i64().unwrap_or(0);
-
-    let currency = object["currency"].as_str().unwrap_or("usd").to_string();
-
-    let hosted_invoice_url = object["hosted_invoice_url"].as_str().map(str::to_string);
-    let invoice_pdf = object["invoice_pdf"].as_str().map(str::to_string);
-
-    // Resolve account_id: try subscription lookup first, then metadata userId
+    // Resolve account_id and local subscription_id: try subscription lookup first,
+    // then metadata userId for account_id. subscription_id stays None when the
+    // subscription cannot be resolved (e.g. invoice.created arriving before the
+    // subscription is synced); the renewal attribution is backfilled by
+    // `handle_invoice_payment_succeeded` instead.
     let stripe_subscription_id = object["subscription"].as_str();
     let mut account_id: Option<Uuid> = None;
+    let mut subscription_id: Option<Uuid> = None;
 
     if let Some(stripe_sub_id) = stripe_subscription_id
         && let Ok(Some(subscription)) = app_state
             .billing_repository
             .find_by_external_subscription_id(stripe_sub_id, "stripe")
             .await
-        && let Some(user_id) = subscription.user_id
     {
-        account_id = Some(user_id);
+        subscription_id = Some(subscription.id);
+        if let Some(user_id) = subscription.user_id {
+            account_id = Some(user_id);
+        }
     }
 
     if account_id.is_none() {
@@ -2893,30 +3028,20 @@ async fn handle_stripe_invoice_event(
         realm_id = %realm_id,
         event_id = %event_id,
         stripe_invoice_id = %stripe_invoice_id,
-        stripe_status = %stripe_status,
-        status = %status.as_str(),
-        total,
-        currency = %currency,
         account_id = ?account_id,
+        subscription_id = ?subscription_id,
         "Processing Stripe invoice event - upserting external invoice"
     );
 
-    let external_data = ExternalInvoiceData {
-        realm_id: realm_id.to_string(),
-        provider: InvoiceProvider::Stripe,
-        payment_provider: Some("stripe".to_string()),
-        external_invoice_id: Some(stripe_invoice_id.clone()),
-        external_order_id: object["payment_intent"].as_str().map(str::to_string),
-        external_status: Some(stripe_status.to_string()),
-        external_hosted_url: hosted_invoice_url,
-        external_pdf_url: invoice_pdf,
-        external_payload: Some(object.clone()),
-        tax_details: None,
+    let external_data = build_stripe_invoice_external_data(
+        object,
+        realm_id,
+        &stripe_invoice_id,
         account_id,
-        currency,
-        total,
-        status,
-    };
+        subscription_id,
+        // Renewal attempt is created by `invoice.payment_succeeded`, not this sync path.
+        None,
+    )?;
 
     app_state
         .invoice_repository

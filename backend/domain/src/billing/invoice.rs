@@ -480,6 +480,17 @@ pub struct InvoiceStatusTransition {
     pub paid_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+/// Attribution-based filter for the admin invoice list.
+///
+/// `Missing` selects externally-synced invoices that have NO local attribution:
+/// `provider != 'manual' AND subscription_id IS NULL AND payment_attempt_id IS NULL`.
+/// These are the rows an admin needs to investigate (webhook attribution gap).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AttributionFilter {
+    Missing,
+}
+
 /// Filters for listing invoices.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct InvoiceListFilters {
@@ -489,6 +500,10 @@ pub struct InvoiceListFilters {
     pub search: Option<String>,
     pub date_from: Option<chrono::NaiveDate>,
     pub date_to: Option<chrono::NaiveDate>,
+    /// When `Some(Missing)`, restrict to externally-synced invoices lacking
+    /// both `subscription_id` and `payment_attempt_id`.
+    #[serde(default)]
+    pub attribution: Option<AttributionFilter>,
     pub page: Option<u64>,
     pub page_size: Option<u64>,
 }
@@ -519,6 +534,14 @@ pub struct ExternalInvoiceData {
     pub currency: String,
     pub total: i64,
     pub status: InvoiceStatus,
+    /// Local attribution: which subscription this external invoice belongs to.
+    /// Real attribution is filled by webhook handlers; passing None preserves
+    /// prior behavior via upsert COALESCE.
+    pub subscription_id: Option<Uuid>,
+    /// Local attribution: which payment attempt this external invoice belongs to.
+    /// Real attribution is filled by webhook handlers; passing None preserves
+    /// prior behavior via upsert COALESCE.
+    pub payment_attempt_id: Option<Uuid>,
 }
 
 // ---------------------------------------------------------------------------

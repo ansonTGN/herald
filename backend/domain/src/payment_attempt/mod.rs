@@ -10,5 +10,5 @@ pub use entities::{
     PaymentAttempt, PaymentAttemptStatus, PaymentContext, PurchasableTarget, PurchaseHistoryRow,
 };
 pub use errors::{PaymentAttemptErrorExt, PaymentAttemptResult};
-pub use ports::{CreatePaymentAttemptInput, PaymentAttemptRepository};
+pub use ports::{CreatePaymentAttemptInput, PaymentAttemptRepository, RecordRenewalAttemptInput};
 pub use services::PaymentAttemptService;

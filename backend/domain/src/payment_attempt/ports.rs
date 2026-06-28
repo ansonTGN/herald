@@ -23,6 +23,28 @@ pub struct CreatePaymentAttemptInput {
     pub metadata: Option<Value>,
 }
 
+/// Input for recording a subscription renewal payment attempt (find-or-create).
+///
+/// Unlike checkout-driven `CreatePaymentAttemptInput`, this records an already-completed
+/// renewal charge: status is `Succeeded`, `expires_at`/`completed_at` are set to
+/// `input.completed_at`, and no fulfillment is triggered.
+///
+/// Precondition: `amount > 0` (enforced by `payment_attempts.amount CHECK(amount > 0)`,
+/// `20260408_unified_purchase.sql:100`). Callers MUST skip the renewal attempt + invoice
+/// write when `amount == 0` (zero-yuan cycle).
+#[derive(Debug, Clone)]
+pub struct RecordRenewalAttemptInput {
+    pub realm_id: String,
+    pub user_id: Uuid,
+    pub payment_provider: String, // "stripe" | "creem"
+    pub target_id: Uuid,          // entitlement mapping id
+    pub bucket_id: Uuid,
+    pub amount: i64, // smallest currency unit; caller guarantees > 0
+    pub currency: String,
+    pub provider_reference: String, // idempotency key
+    pub completed_at: DateTime<Utc>,
+}
+
 /// Repository trait for PaymentAttempt operations
 #[allow(async_fn_in_trait)]
 pub trait PaymentAttemptRepository: Send + Sync {
@@ -30,6 +52,23 @@ pub trait PaymentAttemptRepository: Send + Sync {
     async fn create_payment_attempt(
         &self,
         input: CreatePaymentAttemptInput,
+    ) -> Result<PaymentAttempt, CoreError>;
+
+    /// Direct-insert a renewal payment attempt as already-Succeeded.
+    ///
+    /// Dedicated port because `create_payment_attempt` hardcodes `status=Pending`/
+    /// `completed_at=None`/`expires_at=now+2h` (checkout semantics) which cannot
+    /// represent a renewal charge that has already completed. This port sets
+    /// `status=Succeeded`, `completed_at=Some(input.completed_at)`,
+    /// `expires_at=input.completed_at` (already-succeeded attempts have no expiry
+    /// semantics), `target_type=entitlement_mapping` (matches DB CHECK
+    /// chk_target_type from migration 20260609 and PurchasableTarget canonical
+    /// value; legacy "subscription_entitlement" is a read-only FromStr alias).
+    /// Does NOT trigger
+    /// fulfillment (renewal does not create a subscription).
+    async fn insert_succeeded_renewal_attempt(
+        &self,
+        input: RecordRenewalAttemptInput,
     ) -> Result<PaymentAttempt, CoreError>;
 
     /// Find a payment attempt by ID
