@@ -1,5 +1,3 @@
-// Webhook Event Handlers for Creem Billing Events
-//
 // Handles subscription lifecycle events (paid, update, canceled) and refund events.
 // All handlers return 202 Accepted immediately and process events asynchronously.
 
@@ -12,7 +10,7 @@ use uuid::Uuid;
 
 use crate::webhook_common::{
     create_placeholder_transaction, metadata_value, parse_attempt_id, parse_event_id,
-    parse_optional_uuid_field, parse_uuid_field, reclaim_pregrant_for_subscription,
+    parse_optional_uuid_field, parse_uuid_field,
 };
 use crate::webhook_subscription_helpers::{
     ResolvedEntitlement, SyncSubscriptionInput, resolve_bucket_id_for_entitlement,
@@ -27,7 +25,7 @@ use herald_core::domain::billing::{
 };
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::IdempotencyResult;
-use herald_core::domain::points::entities::{PointsTransaction, RevocationType, TransactionType};
+use herald_core::domain::points::entities::{PointsTransaction, TransactionType};
 use herald_core::domain::points::ports::PointsRepository;
 use herald_core::domain::points::subscription_service::CancelMode;
 use herald_core::domain::purchase::metadata_keys;
@@ -383,7 +381,6 @@ fn parse_checkout_completed_payload(
 ) -> Result<CreemCheckoutCompletedPayload, CoreError> {
     let metadata = &event["object"]["metadata"];
 
-    // Resolve entitlement_key from metadata
     let entitlement_key = metadata["herald_entitlement_key"]
         .as_str()
         .or_else(|| metadata["entitlementKey"].as_str())
@@ -427,7 +424,6 @@ fn parse_subscription_paid_payload(
     let object = creem_event_object(event);
     let cancel_at_period_end = object["cancelAtPeriodEnd"].as_bool().unwrap_or(false);
 
-    // Resolve entitlement_key from metadata
     let entitlement_key = object["herald_entitlement_key"]
         .as_str()
         .or_else(|| object["metadata"]["herald_entitlement_key"].as_str())
@@ -504,7 +500,6 @@ fn parse_subscription_updated_payload(
     let previous_attributes = creem_event_data(event, "previousAttributes");
     let cancel_at_period_end = object["cancelAtPeriodEnd"].as_bool().unwrap_or(false);
 
-    // Resolve entitlement_keys from metadata
     let current_entitlement_key = object["herald_entitlement_key"]
         .as_str()
         .or_else(|| object["metadata"]["herald_entitlement_key"].as_str())
@@ -576,7 +571,6 @@ fn parse_subscription_canceled_payload(
         SubscriptionStatus::Canceled
     };
 
-    // Resolve entitlement_key from metadata
     let entitlement_key = object["herald_entitlement_key"]
         .as_str()
         .or_else(|| object["metadata"]["herald_entitlement_key"].as_str())
@@ -779,7 +773,6 @@ async fn handle_checkout_completed(
         payload.entitlement_key.clone()
     };
 
-    // --- Determine billing_type via 3-tier fallback ---
     let metadata = &event["object"]["metadata"];
     let event_object = &event["object"];
 
@@ -824,7 +817,6 @@ async fn handle_checkout_completed(
         "Checkout completed -- dispatching by billing_type"
     );
 
-    // --- Creem invoice sync (best-effort, non-blocking) ---
     // Extract amount/currency with fallback: event.object -> event.object.product -> payment_attempts -> skip with warn
     let amount_from_event = event_object["amount"]
         .as_i64()
@@ -933,7 +925,6 @@ async fn handle_checkout_completed(
         }
     }
 
-    // --- Dispatch by billing_type ---
     match billing_type {
         BillingType::OneTime => {
             if let Some(attempt_id) = payload.attempt_id {
@@ -1200,11 +1191,9 @@ async fn handle_subscription_paid(
         }
     }
 
-    // --- Renewal payment attempt + invoice sync ---
     // Only the renewal branch reaches here: the first-period branch
     // (`attempt_id` in metadata) returns early above, so this never duplicates
     // the first-period invoice (P0 dedup).
-    //
     // Zero-yuan cycle: when `amount` is missing or == 0 we SKIP both the
     // renewal attempt and the invoice write (DB CHECK `amount > 0`,
     // `20260408_unified_purchase.sql:100`). The subscription cycle / points
@@ -1436,7 +1425,6 @@ async fn handle_subscription_updated(
     };
 
     let previous_entitlement_key = if payload.previous_entitlement_key.is_empty() {
-        // Try to get from existing subscription
         let from_db = existing_subscription_for_update
             .as_ref()
             .map(|s| s.entitlement_key.clone())
@@ -1475,7 +1463,6 @@ async fn handle_subscription_updated(
             realm_id = %realm_id,
             "Both mappings have no points configured; skipping upgrade/downgrade classification"
         );
-        // Still sync the subscription but skip points handling
         if let Some((subscription, previous)) = sync_creem_subscription(
             &app_state,
             realm_id,
@@ -1514,7 +1501,6 @@ async fn handle_subscription_updated(
         .current_period_end
         .unwrap_or_else(|| Utc::now() + chrono::Duration::days(30));
 
-    // Sync the subscription (created/updated with the eagerly-resolved bucket_id).
     let synced = sync_creem_subscription(
         &app_state,
         realm_id,
@@ -1547,6 +1533,7 @@ async fn handle_subscription_updated(
                 user_id,
                 subscription_bucket_id,
                 realm_id,
+                subscription_id,
                 &old_mapping,
                 &new_mapping,
                 period_end_fallback,
@@ -1700,15 +1687,17 @@ async fn handle_subscription_canceled(
     )
     .await?;
 
-    // Reclaim the chained pre-grant row for the subscription's next period.
-    // Row-precise — does NOT touch other active
-    // credits, does NOT back-adjust wallet. Idempotent: missing schedule /
-    // already-revoked ⟹ no-op. Runs BEFORE the cancel path so the future-
-    // effective pre-grant row is revoked row-precisely; the cancel path then
-    // handles already-effective rows via entitlement-scoped revocation.
-    if let Some((subscription, _previous)) = &synced {
-        reclaim_pregrant_for_subscription(&app_state, realm_id, subscription.id).await?;
-    }
+    // Subscription cancel (BE-D06/D10): revoke the subscription's active quota
+    // entitlement by `source_id = subscription_id`. No ledger-row reclaim; the
+    // pre-redesign chained pre-grant reclaim path is retired under the window
+    // quota model. Idempotent: no active entitlement ⟹ no-op.
+    // `subscription_id` resolves from the synced subscription; fall back to
+    // `Uuid::nil()` when the sync returned None (defensive — sync_creem_subscription
+    // always returns the persisted subscription on a cancel event).
+    let subscription_id = synced
+        .as_ref()
+        .map(|(subscription, _previous)| subscription.id)
+        .unwrap_or_default();
 
     // bucket_id resolved above; synced carries the persisted subscription.
     let _output = app_state
@@ -1717,6 +1706,7 @@ async fn handle_subscription_canceled(
             user_id,
             bucket_id,
             realm_id,
+            subscription_id,
             cancel_mode,
             period_end,
             Some(&entitlement_key),
@@ -1823,12 +1813,14 @@ async fn handle_refund_created(
             );
         }
         _ => {
-            // Reclaim the chained pre-grant row for the subscription's next
-            // period. Row-precise — does NOT touch
-            // other active credits, does NOT back-adjust wallet. A refund
-            // targets the originating subscription; resolve its schedule via
-            // the user's active subscription schedules in this realm+bucket.
-            // Idempotent: no schedule / already-revoked ⟹ no-op.
+            // Subscription refund (BE-D06/D10): revoke the originating
+            // subscription's active quota entitlement by `source_id =
+            // subscription_id`. The pre-redesign chained pre-grant reclaim +
+            // broad `revoke_subscription_unused` ledger-row paths are retired
+            // under the window quota model. A refund targets the originating
+            // subscription; resolve its id via the user's active subscription
+            // schedules in this realm+bucket. Idempotent: no active
+            // entitlement / already-revoked ⟹ no-op.
             let schedules = app_state
                 .points_repository
                 .find_grant_schedules_by_user_realm(realm_id, payload.user_id)
@@ -1838,25 +1830,26 @@ async fn handle_refund_created(
                 .filter(|s| s.active && s.subscription_id.is_some() && s.bucket_id == bucket_id)
             {
                 if let Some(sub_id) = schedule.subscription_id {
-                    reclaim_pregrant_for_subscription(&app_state, realm_id, sub_id).await?;
+                    let _output = app_state
+                        .subscription_service
+                        .handle_subscription_cancel(
+                            payload.user_id,
+                            bucket_id,
+                            realm_id,
+                            sub_id,
+                            CancelMode::ImmediateCancel,
+                            None,
+                            None,
+                        )
+                        .await?;
                 }
             }
-
-            let _output = app_state
-                .points_service
-                .revoke_subscription_unused(
-                    realm_id,
-                    payload.user_id,
-                    bucket_id,
-                    &payload.refund_id,
-                )
-                .await?;
 
             info!(
                 realm_id = %realm_id,
                 user_id = %payload.user_id,
                 refund_id = %payload.refund_id,
-                "Subscription refund - revoked unused subscription credits"
+                "Subscription refund - revoked subscription quota entitlements"
             );
         }
     }
@@ -1967,28 +1960,28 @@ async fn handle_subscription_lifecycle_status(
             .await?;
     }
 
-    // Revoke credits AFTER subscription status is synced to Expired.
-    // If sync fails, no credits are revoked and the webhook retries naturally.
+    // Subscription Expired (BE-D06/D10): under the window quota model the
+    // active entitlement's `effective_until` already encodes the period end
+    // from the grant, so it ages out naturally. The pre-redesign broad
+    // `revoke_subscription_credits_by_entitlement` ledger-row reclaim is
+    // retired. Route through `handle_subscription_cancel(DefaultCancel)` so the
+    // lifecycle end is logged and the entitlement self-expires (idempotent).
     if status == SubscriptionStatus::Expired {
-        // Route revocation to subscription.bucket_id.
-        // The synced subscription is the post-update snapshot and carries the
-        // persisted bucket_id. Fail loud when unresolved.
-        let (_, bucket_id) = synced
+        let (subscription_id, bucket_id) = synced
             .as_ref()
             .map(|(subscription, _)| (subscription.id, subscription.bucket_id))
             .unwrap_or((Uuid::nil(), bucket_id));
 
-        let output = app_state
-            .points_service
-            .revoke_subscription_credits_by_entitlement(
-                realm_id,
+        let _output = app_state
+            .subscription_service
+            .handle_subscription_cancel(
                 user_id,
                 bucket_id,
-                &entitlement_key,
-                RevocationType::ExpireRevoke,
-                format!("Subscription expired: {}", payload.external_subscription_id),
-                Some(payload.external_subscription_id.clone()),
-                Some(format!("creem:subscription_expired:{event_id}")),
+                realm_id,
+                subscription_id,
+                CancelMode::DefaultCancel,
+                None,
+                Some(&entitlement_key),
             )
             .await?;
 
@@ -1996,9 +1989,8 @@ async fn handle_subscription_lifecycle_status(
             realm_id = %realm_id,
             user_id = %user_id,
             entitlement_key = %entitlement_key,
-            total_revoked = output.total_revoked,
-            ledger_count = output.ledger_ids.len(),
-            "Subscription expired - revoked entitlement subscription credits"
+            subscription_id = %subscription_id,
+            "Subscription expired - entitlement ages out at effective_until (window quota model)"
         );
     }
 
@@ -2193,10 +2185,6 @@ async fn process_creem_event_once(
         }
     }
 }
-
-// ============================================================================
-// Main Webhook Handler
-// ============================================================================
 
 /// Handle Creem webhook events
 ///
@@ -2409,7 +2397,6 @@ pub(crate) async fn reprocess_creem_event(
 ) -> Result<(), CoreError> {
     let event_id = parse_event_id(event)?;
 
-    // Check existing payment event by external_event_id
     if let Some(existing) = app_state
         .billing_repository
         .find_payment_event_by_external_id(&event_id, "creem")
@@ -2434,7 +2421,6 @@ pub(crate) async fn reprocess_creem_event(
         return Ok(());
     }
 
-    // Create payment event record
     let new_payment_event = PaymentEvent {
         id: Uuid::now_v7(),
         realm_id: realm_id.to_string(),
@@ -2643,8 +2629,6 @@ mod tests {
         assert!(payload.attempt_id.is_none());
     }
 
-    // ---- normalize_creem_period — P0 symmetric ----
-    //
     // Creem exposes the billing period under several field-name variants.
     // The normalizer must resolve all of them or return None (P0: skip +
     // warn, never guess).
@@ -2716,11 +2700,9 @@ mod tests {
 }
 
 // Governance tests.
-//
 // Covers: billing `handle_creem_webhook` (webhook_handlers.rs) and
 // `handle_stripe_webhook` (stripe_webhook_handlers.rs) instrument skip
 // correctness.
-//
 // WHY: webhook `body` is the raw provider payload (may carry PII / customer
 // data) and `headers` carry the provider signature header. If the
 // `#[instrument]` macro ever stops skipping those, raw PII / the signature

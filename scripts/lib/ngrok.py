@@ -21,8 +21,12 @@ if TYPE_CHECKING:
     from lib.logger import Logger
 
 CONTAINER_NAME = "herald-ngrok"
+# Pinned to the v3 line (only public version tag; Docker Hub exposes latest/3/debian/alpine).
+# Matches the version-pinned convention used for postgres/redis in demo_env.py.
+IMAGE_NAME = "ngrok/ngrok"
+IMAGE_TAG = "3"
+IMAGE = f"{IMAGE_NAME}:{IMAGE_TAG}"
 INSPECTOR_PORT = 4040
-# Frontend port; its /api proxy forwards webhook calls to the backend (8080).
 DEFAULT_PORT = 3000
 ENV_PATH = REPO_ROOT / "demo" / ".env.demo"
 
@@ -77,7 +81,6 @@ def start(port: int = DEFAULT_PORT, logger: "Logger | None" = None) -> bool:
             )
         return False
 
-    # Clear any stale stopped container sharing the name before run.
     docker.rm_force_container(CONTAINER_NAME)
 
     cmd = ["http", "--log=stdout"]
@@ -90,7 +93,7 @@ def start(port: int = DEFAULT_PORT, logger: "Logger | None" = None) -> bool:
         "-p", f"{INSPECTOR_PORT}:{INSPECTOR_PORT}",
         "-e", f"NGROK_AUTHTOKEN={authtoken}",
         "--add-host=host.docker.internal:host-gateway",
-        "ngrok/ngrok:latest",
+        IMAGE,
         *cmd,
     ]
     ok = docker.run_detached(args)
@@ -109,3 +112,20 @@ def stop(logger: "Logger | None" = None) -> None:
         docker.rm_force_container(CONTAINER_NAME)
         if logger:
             logger.verbose_info("Stopped ngrok tunnel")
+
+
+def remove_image(logger: "Logger | None" = None) -> bool:
+    """Remove the ngrok image (best-effort, idempotent).
+
+    The container must already be gone (``docker rmi`` refuses images in use).
+    Returns True if the image was removed, False if absent or removal failed.
+    """
+    if not docker.image_exists(IMAGE):
+        return False
+    if docker.rmi_image(IMAGE):
+        if logger:
+            logger.verbose_info(f"Removed ngrok image {IMAGE}")
+        return True
+    if logger:
+        logger.warning(f"Failed to remove ngrok image {IMAGE}")
+    return False

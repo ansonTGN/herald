@@ -200,6 +200,12 @@ pub struct EntitlementMapping {
     pub max_periods: Option<i64>,
     pub enabled: bool,
     pub provider_product_info: Option<serde_json::Value>,
+    /// Subscription quota window definition (design §4.3.2). `None`/empty ⟺
+    /// no window-model grant (legacy `points_per_period` pool semantics apply).
+    /// Non-empty ⟺ this mapping grants a window entitlement at subscription
+    /// lifecycle time (snapshotted — A2). Reuses the points-domain `QuotaWindow`
+    /// (BE-D01) to avoid a duplicate definition.
+    pub quota_windows: Option<Vec<crate::points::entities::QuotaWindow>>,
     pub synced_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,

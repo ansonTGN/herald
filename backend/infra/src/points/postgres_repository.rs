@@ -14,8 +14,9 @@ use herald_domain::points::{
     dtos::RevokePointsOutput,
     entities::{
         ConsumptionAllocationView, CreditLedgerStatus, CreditSourceType, CreditType, Paginated,
-        PointsConsumptionAllocation, PointsCreditLedger, PointsRevocationRecord, PointsTransaction,
-        PointsWallet, RevocationType, TransactionType, WalletStatus,
+        PointsConsumptionAllocation, PointsCreditLedger, PointsQuotaEntitlement,
+        PointsRevocationRecord, PointsTransaction, PointsWallet, QuotaWindow, RevocationType,
+        TransactionType, WalletStatus,
     },
     errors::PointsErrorExt,
     expiration_service::ExpirationSummary,
@@ -23,6 +24,7 @@ use herald_domain::points::{
         LedgerFilters, LedgerUpdate, PointsRepository, ReclaimLocator, TransactionFilters,
         WalletDelta, WalletFilters,
     },
+    service::{MixedConsumePlan, plan_mixed_consume},
 };
 // Import mapping functions for ORM conversions
 use crate::points::{
@@ -140,6 +142,102 @@ struct ReclaimTargetRow {
     yanked: i64,
 }
 
+/// `points_quota_entitlements` sqlx row. Mirrors `PointsCreditLedgerRow`'s
+/// style: timestamps as `DateTimeWithTimeZone`, enums as raw strings parsed
+/// in the domain converter, and `quota_windows` read as a raw JSON value
+/// (the camelCase ↔ snake_case mapping is handled in the domain converter at
+/// this infra boundary — design BE-D04 handoff).
+#[derive(Debug, FromRow)]
+struct PointsQuotaEntitlementRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub realm_id: String,
+    pub bucket_id: Uuid,
+    pub credit_type: String,
+    pub source_type: String,
+    pub source_id: String,
+    pub quota_windows: serde_json::Value,
+    pub effective_from: sea_orm::prelude::DateTimeWithTimeZone,
+    pub effective_until: Option<sea_orm::prelude::DateTimeWithTimeZone>,
+    pub status: String,
+    pub idempotency_key: String,
+    pub created_at: sea_orm::prelude::DateTimeWithTimeZone,
+    pub updated_at: sea_orm::prelude::DateTimeWithTimeZone,
+}
+
+/// JSONB serde boundary for `quota_windows`. The DB column is
+/// `[{windowSeconds, limit, key}]` (camelCase); the domain `QuotaWindow` is
+/// snake_case Rust. This struct isolates the rename at the infra boundary so
+/// the domain entity stays as BE-D01 defined it (no DB-driven serde attrs on
+/// the entity). Mirrors how `client/mod.rs` round-trips `redirect_uris`.
+///
+/// `pub(crate)` so the billing infra repository can reuse the same boundary for
+/// `provider_entitlement_mappings.quota_windows` (BE-D09) instead of forking a
+/// second camelCase↔snake_case mapping.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct QuotaWindowDbJson {
+    #[serde(rename = "windowSeconds")]
+    pub(crate) window_seconds: i64,
+    pub(crate) limit: i64,
+    pub(crate) key: String,
+}
+
+/// Parse a raw JSONB value into the domain `Vec<QuotaWindow>`. `None` /
+/// `Null` ⟹ empty vec (the column is nullable; empty means "no window-model
+/// grant"). Used to hydrate `RealmDefaultConfig.free_periodic_quota_windows`
+/// (BE-D07 field wiring) and shares the `QuotaWindowDbJson` serde boundary
+/// with the `points_quota_entitlements.quota_windows` path.
+///
+/// `pub(crate)` so the billing infra repository reuses it for
+/// `provider_entitlement_mappings.quota_windows` (BE-D09).
+pub(crate) fn parse_quota_windows_value(
+    raw: Option<serde_json::Value>,
+) -> Result<Vec<QuotaWindow>, CoreError> {
+    match raw {
+        None | Some(serde_json::Value::Null) => Ok(Vec::new()),
+        Some(value) => {
+            let windows: Vec<QuotaWindowDbJson> = serde_json::from_value(value).map_err(|e| {
+                CoreError::DatabaseError(format!("invalid free_periodic_quota_windows JSONB: {e}"))
+            })?;
+            Ok(windows
+                .into_iter()
+                .map(|w| QuotaWindow {
+                    window_seconds: w.window_seconds,
+                    limit: w.limit,
+                    key: w.key,
+                })
+                .collect())
+        }
+    }
+}
+
+/// Serialize a `Vec<QuotaWindow>` into the JSONB column shape
+/// (`[{windowSeconds, limit, key}]`, camelCase — matches
+/// `QuotaWindowDbJson` / design §4.3.2). Returns `None` for an empty slice so
+/// the stored value stays SQL `NULL` (consistent with the read-path
+/// `parse_quota_windows_value` treating `None`/`Null` as "no window grant").
+///
+/// `pub(crate)` so the billing infra repository reuses it for
+/// `provider_entitlement_mappings.quota_windows` (BE-D09).
+pub(crate) fn serialize_quota_windows_value(
+    windows: &[QuotaWindow],
+) -> Result<Option<serde_json::Value>, CoreError> {
+    if windows.is_empty() {
+        return Ok(None);
+    }
+    let mapped: Vec<QuotaWindowDbJson> = windows
+        .iter()
+        .map(|w| QuotaWindowDbJson {
+            window_seconds: w.window_seconds,
+            limit: w.limit,
+            key: w.key.clone(),
+        })
+        .collect();
+    serde_json::to_value(mapped).map(Some).map_err(|e| {
+        CoreError::DatabaseError(format!("serialize free_periodic_quota_windows: {e}"))
+    })
+}
+
 /// Pure output of [`PostgresPointsRepository::plan_consume_allocation`].
 /// Describes how a consume request splits across the locked ledgers, independent
 /// of wallet/transaction writes so it can be unit-tested without Postgres.
@@ -154,6 +252,32 @@ struct PlannedAllocation {
     /// Index into the ledgers slice passed to `plan_consume_allocation`.
     ledger_index: usize,
     amount: i64,
+}
+
+/// Pure split of a single bucket's `window_part` across the two window
+/// credit_types, per the points-grant-redesign §5.3 priority rule
+/// (design BE-D05 step 3):
+/// - `subscription_credit` is consumed first (`sub_part`),
+/// - `free_periodic_credit` makes up the remainder (`free_part`).
+///
+/// Inputs are the per-credit_type window spendables (each = `min over active
+/// windows of (limit − used)`). Output is the per-type consume amounts plus the
+/// residual `window_remainder` that could not be covered by this bucket's
+/// windows and must overflow to the next bucket (or to the pool side, which the
+/// §5.3 gate already accounted for via the wholesale `pool_avail`).
+///
+/// This is deliberately free of DB / wallet concerns so the priority ordering,
+/// the `sub_part ≤ subscription_spendable` / `free_part ≤ free_spendable`
+/// overspend invariants and the exact `sub_part + free_part ≤ window_part`
+/// accounting can be unit-tested without Postgres (mirrors
+/// `plan_consume_allocation`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WindowCreditSplit {
+    sub_part: i64,
+    free_part: i64,
+    /// Part of `window_part` this bucket's windows could not absorb
+    /// (`window_part - sub_part - free_part`); overflowed to the next bucket.
+    window_remainder: i64,
 }
 
 /// PostgreSQL implementation of PointsRepository
@@ -509,6 +633,40 @@ impl PostgresPointsRepository {
             expires_at: row.expires_at.map(chrono::DateTime::from),
             effective_at: row.effective_at.map(chrono::DateTime::from),
             status: row.status.parse()?,
+            created_at: chrono::DateTime::from(row.created_at),
+            updated_at: chrono::DateTime::from(row.updated_at),
+        })
+    }
+
+    /// Convert `points_quota_entitlements` sqlx row to the domain entity.
+    /// The camelCase ↔ snake_case JSONB mapping for `quota_windows` is done
+    /// here at the infra boundary (design BE-D04).
+    fn row_to_points_quota_entitlement(
+        row: PointsQuotaEntitlementRow,
+    ) -> Result<PointsQuotaEntitlement, CoreError> {
+        let windows: Vec<QuotaWindowDbJson> = serde_json::from_value(row.quota_windows)
+            .map_err(|e| CoreError::DatabaseError(format!("invalid quota_windows JSONB: {e}")))?;
+        let quota_windows = windows
+            .into_iter()
+            .map(|w| QuotaWindow {
+                window_seconds: w.window_seconds,
+                limit: w.limit,
+                key: w.key,
+            })
+            .collect();
+        Ok(PointsQuotaEntitlement {
+            id: row.id,
+            user_id: row.user_id,
+            realm_id: row.realm_id,
+            bucket_id: row.bucket_id,
+            credit_type: row.credit_type.parse()?,
+            source_type: row.source_type.parse()?,
+            source_id: row.source_id,
+            quota_windows,
+            effective_from: chrono::DateTime::from(row.effective_from),
+            effective_until: row.effective_until.map(chrono::DateTime::from),
+            status: row.status.parse()?,
+            idempotency_key: row.idempotency_key,
             created_at: chrono::DateTime::from(row.created_at),
             updated_at: chrono::DateTime::from(row.updated_at),
         })
@@ -981,6 +1139,124 @@ impl PostgresPointsRepository {
                 Ok((credit_type, amount))
             })
             .collect()
+    }
+
+    /// Pure window-credit split for a single bucket (design BE-D05 step 3 /
+    /// points-grant-redesign §5.3 priority rule). See [`WindowCreditSplit`].
+    ///
+    /// Defensive: negative spendables (shrunk quota / aggregation glitch) are
+    /// clamped to 0 so the overspend invariant holds even if a negative slips
+    /// through — mirrors `plan_mixed_consume`'s clamp.
+    fn split_window_part_by_credit_type(
+        window_part: i64,
+        subscription_spendable: i64,
+        free_spendable: i64,
+    ) -> WindowCreditSplit {
+        let sub_spendable = subscription_spendable.max(0);
+        let free_spend = free_spendable.max(0);
+        // Priority: subscription_credit first, free_periodic_credit 补足.
+        let sub_part = window_part.min(sub_spendable);
+        let remaining_after_sub = window_part - sub_part;
+        let free_part = remaining_after_sub.min(free_spend);
+        let window_remainder = window_part - sub_part - free_part;
+        WindowCreditSplit {
+            sub_part,
+            free_part,
+            window_remainder,
+        }
+    }
+
+    /// In-transaction window spendable for `(user, bucket, credit_type)`
+    /// (points-grant-redesign §5.2 / design BE-D05 step 1). Returns the min over
+    /// active entitlement windows of `(limit − Σ consume in window)`, i.e. the
+    /// tightest window's remaining headroom for that credit_type.
+    ///
+    /// Mirrors [`Self::compute_available_balance_in_tx`]: runs against the
+    /// caller's open tx so the window aggregation reflects the just-locked
+    /// `points_wallets FOR UPDATE` serialization (the §5.3 P0 anti-overspend
+    /// invariant). Reuses the BE-D04 SQL text + `PointsQuotaEntitlementRow` /
+    /// `QuotaWindowDbJson` serde boundary structs — does NOT duplicate the
+    /// query strings.
+    ///
+    /// `now` is the consume timestamp; the window-start is derived per window as
+    /// `now - window_seconds`.
+    async fn compute_window_spendable_in_tx(
+        tx: &mut Transaction<'_, Postgres>,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_id: Uuid,
+        credit_type: CreditType,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<i64, CoreError> {
+        // Reuse the BE-D04 SELECT text for active entitlements — same predicate,
+        // run in-tx instead of on `self.pool`.
+        let entitlement_rows = sqlx::query_as::<_, PointsQuotaEntitlementRow>(
+            r#"
+            SELECT * FROM points_quota_entitlements
+            WHERE realm_id = $1
+              AND user_id = $2
+              AND bucket_id = $3
+              AND credit_type = $4
+              AND status = 'active'
+              AND effective_from <= $5
+              AND (effective_until IS NULL OR effective_until > $5)
+            "#,
+        )
+        .bind(realm_id)
+        .bind(user_id)
+        .bind(bucket_id)
+        .bind(credit_type.as_str())
+        .bind(now)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+        if entitlement_rows.is_empty() {
+            // No active entitlement of this credit_type ⟹ no window capacity.
+            return Ok(0);
+        }
+
+        let mut tightest: Option<i64> = None;
+        for row in entitlement_rows {
+            let windows: Vec<QuotaWindowDbJson> = serde_json::from_value(row.quota_windows)
+                .map_err(|e| {
+                    CoreError::DatabaseError(format!("invalid quota_windows JSONB: {e}"))
+                })?;
+            for window in windows {
+                if window.window_seconds <= 0 || window.limit < 0 {
+                    // Defensive: a malformed window snapshot cannot add capacity.
+                    // Treat it as a zero-remaining constraint so the min stays
+                    // safe (overspend invariant over correctness).
+                    return Ok(0);
+                }
+                let window_start = now - chrono::Duration::seconds(window.window_seconds);
+                // Reuse the BE-D04 window-aggregation SQL text in-tx.
+                let used: i64 = sqlx::query_scalar(
+                    r#"
+                    SELECT COALESCE(SUM(ABS(amount)), 0)::BIGINT
+                    FROM points_transactions
+                    WHERE realm_id = $1
+                      AND user_id = $2
+                      AND bucket_id = $3
+                      AND credit_type = $4
+                      AND type = 'consume'
+                      AND created_at >= $5
+                    "#,
+                )
+                .bind(realm_id)
+                .bind(user_id)
+                .bind(bucket_id)
+                .bind(credit_type.as_str())
+                .bind(window_start)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+                let remaining = window.limit - used;
+                tightest = Some(tightest.map_or(remaining, |t| t.min(remaining)));
+            }
+        }
+
+        Ok(tightest.unwrap_or(0).max(0))
     }
 
     /// Build `(balance_after, topup_balance_after, subscription_balance_after)`
@@ -1550,14 +1826,12 @@ impl PointsRepository for PostgresPointsRepository {
         // transaction→ledger relation has no FK, so we resolve the matching
         // ledger row via a LATERAL subquery that picks EXACTLY ONE row per
         // transaction. This fixes two issues with the prior plain LEFT JOIN:
-        //
         //   R1 (fan-out): a plain LEFT JOIN on the OR-based LIKE/equality
         //   conditions could match >1 ledger row per transaction (e.g. when
         //   the same `source_id` is reused across multiple grants), duplicating
         //   `points_transactions` rows and breaking pagination (`total` vs
         //   `len(data)` and LIMIT/OFFSET). LATERAL + LIMIT 1 guarantees at
         //   most one ledger row per transaction.
-        //
         //   R2 (subscription-grant miss): subscription grants write
         //   `ledger.source_id = "<entitlement_key>:<idempotency_key>"` and
         //   `txn.external_ref_id = "<idempotency_key>"`. The prior third
@@ -1567,7 +1841,6 @@ impl PointsRepository for PostgresPointsRepository {
         //   matches the `<entitlement_key>:<idempotency_key>` form regardless
         //   of the entitlement-key prefix, so `points.manage` now returns the
         //   real `effective_at` for subscription grants.
-        //
         // Match precedence (deterministic single pick via ORDER BY):
         //   1. exact equality `t.external_ref_id = l.source_id` (strongest),
         //   2. prefix form `t.external_ref_id LIKE l.source_id || ':%'`
@@ -1577,7 +1850,6 @@ impl PointsRepository for PostgresPointsRepository {
         //   then tie-break on `created_at DESC` for determinism.
         // Non-grant rows (consume/refund/expiration) have NULL or non-matching
         // external_ref_id and yield NULL effective_at (correct semantics).
-        //
         // The filter clauses mirror `apply_transaction_filters` exactly so
         // count and page stay consistent.
         let mut sql = String::from(
@@ -1880,8 +2152,6 @@ impl PointsRepository for PostgresPointsRepository {
 
         Ok(count)
     }
-
-    // ========== Ledger Management ==========
 
     fn create_ledger(
         &self,
@@ -2192,8 +2462,6 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    // ========== Consumption Allocations ==========
-
     fn create_consumption_allocation(
         &self,
         allocation: PointsConsumptionAllocation,
@@ -2283,8 +2551,6 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    // ========== Revocation Records ==========
-
     fn create_revocation_record(
         &self,
         record: PointsRevocationRecord,
@@ -2322,8 +2588,6 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    // ========== Account Management ==========
-
     fn find_expired_ledgers(
         &self,
         expiration_time: chrono::DateTime<chrono::Utc>,
@@ -2352,8 +2616,6 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    // ========== Realm Config Repository Methods (Iteration-2) ==========
-
     fn find_realm_config(
         &self,
         realm_id: &str,
@@ -2381,12 +2643,16 @@ impl PointsRepository for PostgresPointsRepository {
                             ))
                         })?;
 
+                    let free_periodic_quota_windows =
+                        parse_quota_windows_value(model.free_periodic_quota_windows)?;
+
                     Ok(herald_domain::points::realm_config::RealmDefaultConfig {
                         realm_id: model.realm_id,
                         registration_bonus_points: model.registration_bonus_points,
                         free_periodic_points_amount: model.free_periodic_points_amount,
                         free_periodic_grant_period_type: grant_period_type,
                         free_periodic_validity_days: model.free_periodic_validity_days,
+                        free_periodic_quota_windows,
                         created_at: chrono::DateTime::from(model.created_at),
                         updated_at: chrono::DateTime::from(model.updated_at),
                     })
@@ -2410,12 +2676,23 @@ impl PointsRepository for PostgresPointsRepository {
                 .map_err(|e| CoreError::BadRequest(format!("Invalid grant period type: {}", e)))?;
 
             let now = chrono::Utc::now();
+            // BE-D08: write-path DTO now carries `free_periodic_quota_windows`.
+            // `None` ⟺ leave column NULL (no window grant); `Some([])` ⟺ same;
+            // `Some([...])` ⟺ persist the snapshot (keys already derived by the
+            // api layer via `derive_window_key`).
+            let quota_windows_value = config
+                .free_periodic_quota_windows
+                .as_deref()
+                .map(serialize_quota_windows_value)
+                .transpose()?
+                .flatten();
             let active_model = realm_default_config::ActiveModel {
                 realm_id: Set(config.realm_id.clone()),
                 registration_bonus_points: Set(config.registration_bonus_points),
                 free_periodic_points_amount: Set(config.free_periodic_points_amount),
                 free_periodic_grant_period_type: Set(config.free_periodic_grant_period_type),
                 free_periodic_validity_days: Set(config.free_periodic_validity_days),
+                free_periodic_quota_windows: Set(quota_windows_value),
                 created_at: Set(now.into()),
                 updated_at: Set(now.into()),
             };
@@ -2425,12 +2702,16 @@ impl PointsRepository for PostgresPointsRepository {
                 .await
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
+            let free_periodic_quota_windows =
+                parse_quota_windows_value(result.free_periodic_quota_windows)?;
+
             Ok(herald_domain::points::realm_config::RealmDefaultConfig {
                 realm_id: result.realm_id,
                 registration_bonus_points: result.registration_bonus_points,
                 free_periodic_points_amount: result.free_periodic_points_amount,
                 free_periodic_grant_period_type: grant_period_type,
                 free_periodic_validity_days: result.free_periodic_validity_days,
+                free_periodic_quota_windows,
                 created_at: chrono::DateTime::from(result.created_at),
                 updated_at: chrono::DateTime::from(result.updated_at),
             })
@@ -2464,6 +2745,13 @@ impl PointsRepository for PostgresPointsRepository {
             active.free_periodic_points_amount = Set(input.free_periodic_points_amount);
             active.free_periodic_grant_period_type = Set(input.free_periodic_grant_period_type);
             active.free_periodic_validity_days = Set(input.free_periodic_validity_days);
+            // BE-D08: `None` ⟺ leave the stored column untouched (partial-update
+            // semantics, so a caller editing only the bonus points does not
+            // clobber an existing window config); `Some([...])` ⟺ replace,
+            // `Some([])` ⟺ clear to NULL.
+            if let Some(windows) = input.free_periodic_quota_windows.as_deref() {
+                active.free_periodic_quota_windows = Set(serialize_quota_windows_value(windows)?);
+            }
             active.updated_at = Set(chrono::Utc::now().into());
 
             let result = active
@@ -2471,19 +2759,21 @@ impl PointsRepository for PostgresPointsRepository {
                 .await
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
+            let free_periodic_quota_windows =
+                parse_quota_windows_value(result.free_periodic_quota_windows)?;
+
             Ok(herald_domain::points::realm_config::RealmDefaultConfig {
                 realm_id: result.realm_id,
                 registration_bonus_points: result.registration_bonus_points,
                 free_periodic_points_amount: result.free_periodic_points_amount,
                 free_periodic_grant_period_type: grant_period_type,
                 free_periodic_validity_days: result.free_periodic_validity_days,
+                free_periodic_quota_windows,
                 created_at: chrono::DateTime::from(result.created_at),
                 updated_at: chrono::DateTime::from(result.updated_at),
             })
         }
     }
-
-    // ========== User Config Repository Methods (Iteration-2) ==========
 
     fn find_user_config(
         &self,
@@ -2619,8 +2909,6 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    // ========== Grant Schedule Repository Methods (Iteration-2) ==========
-
     fn find_grant_schedule(
         &self,
         schedule_id: Uuid,
@@ -2690,8 +2978,6 @@ impl PointsRepository for PostgresPointsRepository {
                 .collect()
         }
     }
-
-    // ===== New: Free User Upgrade Support =====
 
     fn find_user_config_by_realm(
         &self,
@@ -2926,8 +3212,6 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    // ========== Grant Record Repository Methods (Iteration-2) ==========
-
     fn find_grant_record(
         &self,
         schedule_id: Uuid,
@@ -3124,8 +3408,6 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    // ========== Ledger Repository Methods (Consumption Priority) (Iteration-2) ==========
-
     fn find_active_ledgers_by_expiration(
         &self,
         realm_id: &str,
@@ -3155,8 +3437,6 @@ impl PointsRepository for PostgresPointsRepository {
                 .collect()
         }
     }
-
-    // ========== Statistics Repository Methods (Iteration-2) ==========
 
     fn count_paid_users_in_realm(
         &self,
@@ -3226,7 +3506,6 @@ impl PointsRepository for PostgresPointsRepository {
                 .await
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-            // Step 1 — idempotency replay. If the key already maps to a completed
             // consume, reassemble the original result set WITHOUT re-deducting.
             // Primary transaction → correlation_id → all N sibling transactions
             // (ordered by bucket_id) + their allocations. Legacy single-pool rows
@@ -3243,10 +3522,8 @@ impl PointsRepository for PostgresPointsRepository {
                 return Ok(replayed);
             }
 
-            // Step 2 — correlation_id for THIS consume (shared by its N txns).
             let correlation_id = Uuid::now_v7().to_string();
 
-            // Step 3 — resolve covered Bucket set for client_app_id (explicit rows
             // only, enabled=true; no default-bucket merging).
             let covered_bucket_ids =
                 Self::find_covered_bucket_ids_in_tx(&mut tx, &realm_id, client_app_id).await?;
@@ -3254,7 +3531,6 @@ impl PointsRepository for PostgresPointsRepository {
                 return Err(CoreError::NoCoveredPointsPool { client_app_id });
             }
 
-            // Step 4 — lock active ledgers across the WHOLE covered set, in
             // expires_at ASC NULLS LAST order (single FOR UPDATE).
             let ledgers = Self::find_active_ledgers_by_expiration_for_update(
                 &mut tx,
@@ -3264,17 +3540,94 @@ impl PointsRepository for PostgresPointsRepository {
             )
             .await?;
 
-            // Step 5 — precheck + pure allocation plan (unit-tested separately).
-            let available: i64 = ledgers.iter().map(|l| l.remaining_amount).sum();
-            if available < amount {
-                return Err(CoreError::insufficient_points(amount, available));
+            // `points_wallets FOR UPDATE` per bucket, bucket_id ASC) BEFORE the
+            // window+pool availability computation. This serializes the
+            // mixed-consume coordination (design §5.3 / §7 P0): two concurrent
+            // consumes for the same (user, bucket) compute window+pool spendable
+            // under the same row lock, so neither can overdraw a window or the
+            // pool. The window-quota model is per-(user, bucket, credit_type), so
+            // the lock must cover every bucket whose entitlements may be drawn.
+            // A closed/frozen wallet is rejected wholesale (account-status rule).
+            let now = chrono::Utc::now();
+            use std::collections::BTreeMap;
+            let mut bucket_wallets: BTreeMap<Uuid, Uuid> = BTreeMap::new();
+            for bucket_id in &covered_bucket_ids {
+                let wallet =
+                    Self::ensure_wallet_in_tx(&mut tx, &realm_id, user_id, *bucket_id).await?;
+                if wallet.status != WalletStatus::Active {
+                    return Err(CoreError::BadRequest(format!(
+                        "Cannot consume points from {} wallet",
+                        wallet.status.as_str()
+                    )));
+                }
+                bucket_wallets.insert(*bucket_id, wallet.id);
             }
-            let plan = Self::plan_consume_allocation(&ledgers, amount);
 
-            // Step 6 — apply ledger deductions and group totals per bucket.
+            // window_avail_total = Σ over covered buckets of (min over active
+            // windows of (limit − used)) for BOTH window credit_types
+            // (subscription_credit + free_periodic_credit). pool_avail is the
+            // existing locked-ledger remaining sum (unchanged source).
+            // `plan_mixed_consume` rejects wholesale when
+            // `amount > window_avail + pool_avail` (no partial deduction).
+            let pool_available: i64 = ledgers.iter().map(|l| l.remaining_amount).sum();
+            let mut window_avail_total: i64 = 0;
+            for bucket_id in &covered_bucket_ids {
+                let sub_spendable = Self::compute_window_spendable_in_tx(
+                    &mut tx,
+                    &realm_id,
+                    user_id,
+                    *bucket_id,
+                    CreditType::SubscriptionCredit,
+                    now,
+                )
+                .await?;
+                let free_spendable = Self::compute_window_spendable_in_tx(
+                    &mut tx,
+                    &realm_id,
+                    user_id,
+                    *bucket_id,
+                    CreditType::FreePeriodicCredit,
+                    now,
+                )
+                .await?;
+                // Per-bucket window headroom = subscription + free (each already
+                // clamped ≥ 0 by the helper).
+                window_avail_total += sub_spendable + free_spendable;
+            }
+
+            let mixed = plan_mixed_consume(window_avail_total, pool_available, amount);
+            let (window_part, pool_part) = match mixed {
+                MixedConsumePlan::Ok {
+                    window_part,
+                    pool_part,
+                } => (window_part, pool_part),
+                // Wholesale reject — rollback the whole transaction; NO partial
+                // deduction (the core P0 anti-overspend invariant).
+                MixedConsumePlan::Insufficient => {
+                    return Err(CoreError::insufficient_points(
+                        amount,
+                        window_avail_total + pool_available,
+                    ));
+                }
+            };
+
+            // Pool-side allocation plan, now scoped to `pool_part` only (the
+            // window side does NOT touch the ledger). The plan / ledger-decrement
+            // / per-bucket transaction bodies below are UNCHANGED — they simply
+            // receive `pool_part` instead of `amount`.
+            let plan = Self::plan_consume_allocation(&ledgers, pool_part);
+            if pool_part > 0 && !plan.fully_covers {
+                // Defensive: the gate already guaranteed pool_part ≤ pool_available,
+                // so a non-covering plan is drift (concurrent ledger mutation
+                // slipped past the wallet lock). Fail loud rather than under-deduct.
+                return Err(CoreError::InternalServerError(format!(
+                    "pool consume allocation drift: planned {} but ledgers cover < pool_part",
+                    pool_part
+                )));
+            }
+
             // `per_bucket` keyed by bucket_id; processed in bucket_id ASC below for
             // deterministic wallet-lock ordering (deadlock avoidance).
-            use std::collections::BTreeMap;
             #[derive(Default)]
             struct BucketAccumulator {
                 wallet_id: Option<Uuid>,
@@ -3296,29 +3649,14 @@ impl PointsRepository for PostgresPointsRepository {
                 .await?;
 
                 let bucket_id = ledger.bucket_id;
-                // Resolve (or create) the wallet for this (user, bucket) inside the
-                // same transaction; record it so all allocations in this bucket
-                // share the wallet_id and the bucket transaction does too.
-                let wallet_id = match per_bucket.get(&bucket_id).and_then(|a| a.wallet_id) {
-                    Some(id) => id,
-                    None => {
-                        let wallet =
-                            Self::ensure_wallet_in_tx(&mut tx, &realm_id, user_id, bucket_id)
-                                .await?;
-                        // Preserve the account-status business rule: a closed
-                        // or frozen wallet must not be drained. The bucket
-                        // model removed the single-wallet precheck, so the
-                        // check lives here at the per-bucket consume write.
-                        if wallet.status != WalletStatus::Active {
-                            return Err(CoreError::BadRequest(format!(
-                                "Cannot consume points from {} wallet",
-                                wallet.status.as_str()
-                            )));
-                        }
-                        per_bucket.entry(bucket_id).or_default().wallet_id = Some(wallet.id);
-                        wallet.id
-                    }
-                };
+                // The wallet for this (user, bucket) was already locked in
+                // Step 4b; `bucket_wallets` holds its id. Re-resolve via
+                // `ensure_wallet_in_tx` would re-lock the same row (a no-op in
+                // the same tx), so reuse the locked id directly.
+                let wallet_id = *bucket_wallets
+                    .get(&bucket_id)
+                    .expect("bucket_wallets covers every covered bucket (Step 4b)");
+                per_bucket.entry(bucket_id).or_default().wallet_id = Some(wallet_id);
 
                 let acc = per_bucket.entry(bucket_id).or_default();
                 acc.total += planned.amount;
@@ -3337,31 +3675,147 @@ impl PointsRepository for PostgresPointsRepository {
                     bucket_id,
                     allocated_amount: planned.amount,
                     ledger_remaining_after: updated_ledger.remaining_amount,
-                    created_at: chrono::Utc::now(),
+                    created_at: now,
                 });
             }
 
-            // Sanity: the plan guaranteed full coverage; guard against drift.
-            let consumed_total: i64 = per_bucket.values().map(|a| a.total).sum();
-            if consumed_total != amount {
+            // Sanity: the pool plan guaranteed full coverage of `pool_part`;
+            // guard against drift.
+            let pool_consumed_total: i64 = per_bucket.values().map(|a| a.total).sum();
+            if pool_consumed_total != pool_part {
                 return Err(CoreError::InternalServerError(format!(
-                    "consume allocation drift: planned {} but accumulated {}",
-                    amount, consumed_total
+                    "consume pool allocation drift: planned {} but accumulated {}",
+                    pool_part, pool_consumed_total
                 )));
             }
 
-            // Step 7 — per-bucket wallet update + transaction write, bucket_id ASC
+            // Distribute `window_part` across covered buckets in bucket_id ASC
+            // (window-first per bucket, mirroring the pool's greedy-in-order
+            // pattern), and within each bucket split by credit_type priority
+            // (subscription_credit first, free_periodic_credit 补足) via the
+            // pure `split_window_part_by_credit_type`. Each non-zero part writes
+            // ONE `points_transactions(type='consume', credit_type=<window type>)`
+            // row — NO ledger decrement (the window model tracks usage via the
+            // consume row itself, counted by `sum_consume_in_window`).
+            // Overspend invariant (P0): per-bucket `sub_part ≤ subscription_spendable`
+            // and `free_part ≤ free_spendable` (enforced by the pure split's
+            // `min`); Σ `sub_part + free_part` ≤ `window_part` (any residual
+            // overflows to the next bucket; the §5.3 gate already guaranteed
+            // `window_part ≤ window_avail_total`).
+            let mut transactions: Vec<PointsTransaction> = Vec::new();
+            let mut window_remaining = window_part;
+            // Per-bucket window consumption totals, folded into the same
+            // `WalletDelta.total_consumed` accounting as the pool side so wallet
+            // analytics stay correct.
+            let mut window_per_bucket: BTreeMap<Uuid, i64> = BTreeMap::new();
+            for bucket_id in covered_bucket_ids.iter().copied() {
+                if window_remaining <= 0 {
+                    break;
+                }
+                let sub_spendable = Self::compute_window_spendable_in_tx(
+                    &mut tx,
+                    &realm_id,
+                    user_id,
+                    bucket_id,
+                    CreditType::SubscriptionCredit,
+                    now,
+                )
+                .await?;
+                let free_spendable = Self::compute_window_spendable_in_tx(
+                    &mut tx,
+                    &realm_id,
+                    user_id,
+                    bucket_id,
+                    CreditType::FreePeriodicCredit,
+                    now,
+                )
+                .await?;
+                let split = Self::split_window_part_by_credit_type(
+                    window_remaining,
+                    sub_spendable,
+                    free_spendable,
+                );
+                let wallet_id = *bucket_wallets
+                    .get(&bucket_id)
+                    .expect("bucket_wallets covers every covered bucket (Step 4b)");
+
+                for (credit_type, part) in [
+                    (CreditType::SubscriptionCredit, split.sub_part),
+                    (CreditType::FreePeriodicCredit, split.free_part),
+                ] {
+                    if part <= 0 {
+                        continue;
+                    }
+                    // Wallet delta for this window consume (total_consumed only).
+                    let delta = WalletDelta {
+                        total_recharged: 0,
+                        total_consumed: part,
+                        total_topup_granted: 0,
+                        total_subscription_granted: 0,
+                    };
+                    let _updated_wallet =
+                        Self::apply_wallet_delta_in_tx(&mut tx, wallet_id, delta).await?;
+                    // Pool-derived balance snapshot for this bucket (window rows
+                    // do not touch ledger, so this is unaffected by the window
+                    // consume — consistent with the pool-side transaction write).
+                    let derived = Self::compute_available_balance_in_tx(
+                        &mut tx,
+                        &realm_id,
+                        user_id,
+                        std::slice::from_ref(&bucket_id),
+                        now,
+                    )
+                    .await?;
+                    let (balance_after, topup_after, subscription_after) =
+                        Self::derived_to_balance_snapshots(&derived);
+                    let transaction = Self::create_transaction_in_tx(
+                        &mut tx,
+                        PointsTransaction {
+                            id: Uuid::now_v7(),
+                            wallet_id,
+                            user_id,
+                            realm_id: realm_id.clone(),
+                            bucket_id,
+                            transaction_type: TransactionType::Consume,
+                            amount: -part,
+                            balance_after,
+                            topup_balance_after: topup_after,
+                            subscription_balance_after: subscription_after,
+                            credit_type: Some(credit_type),
+                            description: description.clone(),
+                            client_app_id: Some(client_app_id),
+                            subscription_id: None,
+                            external_ref_id: None,
+                            correlation_id: Some(correlation_id.clone()),
+                            effective_at: None,
+                            created_at: now,
+                        },
+                    )
+                    .await?;
+                    transactions.push(transaction);
+                    *window_per_bucket.entry(bucket_id).or_insert(0) += part;
+                }
+                window_remaining = split.window_remainder;
+            }
+            // The §5.3 gate guaranteed window_part ≤ window_avail_total, so the
+            // per-bucket distribution MUST have fully absorbed it. Fail loud on
+            // drift (concurrent entitlement revoke slipped past the wallet lock).
+            let window_consumed_total: i64 = window_per_bucket.values().sum();
+            if window_consumed_total != window_part {
+                return Err(CoreError::InternalServerError(format!(
+                    "consume window allocation drift: planned {} but accumulated {}",
+                    window_part, window_consumed_total
+                )));
+            }
+
             // (BTreeMap iterates ascending). One transaction per affected bucket,
             // all sharing correlation_id; external_ref_id NULL.
-            //
             // `balance_after` is the REAL post-consume derived SUM for
             // this bucket (same predicate as `compute_available_balance`),
             // sourced in-tx so it reflects the just-applied ledger mutations.
             // The per-type consume split is preserved in the ledger `used_amount`
             // increments (Step 5) and in the consumption allocations (Step 8),
             // not in any Stored balance column (dropped).
-            let now = chrono::Utc::now();
-            let mut transactions: Vec<PointsTransaction> = Vec::new();
             for (bucket_id, acc) in per_bucket.iter() {
                 let wallet_id = acc.wallet_id.ok_or_else(|| {
                     CoreError::InternalServerError(format!(
@@ -3421,12 +3875,10 @@ impl PointsRepository for PostgresPointsRepository {
                 transactions.push(transaction);
             }
 
-            // Step 8 — write all allocations (ledger-level truth source).
             for allocation in &allocations {
                 Self::create_consumption_allocation_in_tx(&mut tx, allocation).await?;
             }
 
-            // Step 9 — record idempotency. Primary = first transaction by bucket_id
             // ASC (transactions Vec is already in that order from the loop above).
             if let Some(ref key) = idempotency_key {
                 let primary_txn_id = transactions.first().map(|t| t.id).ok_or_else(|| {
@@ -3506,7 +3958,6 @@ impl PointsRepository for PostgresPointsRepository {
             {
                 Some(acc) => acc,
                 None => {
-                    // 钱包不存在，没有需要撤销的积分
                     tx.commit()
                         .await
                         .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
@@ -4120,7 +4571,6 @@ impl PointsRepository for PostgresPointsRepository {
         let pool = self.pool.clone();
         let realm_id = realm_id.to_string();
         async move {
-            // Verify user exists in the account table before granting points
             let user_exists: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM account WHERE id = $1 AND realm_id = $2)",
             )
@@ -4651,8 +5101,6 @@ impl PointsRepository for PostgresPointsRepository {
         }
     }
 
-    // ========== point-time: derived balance + pre-grant + reclaim ==========
-
     /// Derived available balance SUM(remaining_amount) grouped by credit_type.
     /// Same predicate as consumption selection — "seen
     /// balance == spendable balance" — so future-effective rows are excluded
@@ -5164,7 +5612,6 @@ impl PointsRepository for PostgresPointsRepository {
                 .await
                 .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-            // Build the WHERE-clause filter for the locator. `BySchedulePeriod`
             // resolves via the `points_grant_records.ledger_id` FK subquery
             // (UNIQUE(schedule_id, period_number) guarantees at most one row).
             // `points_credit_ledger.remaining_amount` is a GENERATED column
@@ -5279,6 +5726,282 @@ impl PointsRepository for PostgresPointsRepository {
             Ok(affected)
         }
     }
+
+    /// Locate active quota entitlements for the consume / balance read path
+    /// (design §5.2 / BE-D02 port). Window availability is computed by the
+    /// caller from the returned snapshots + `sum_consume_in_window`.
+    /// `bucket_id = None` omits the bucket filter, returning active
+    /// entitlements across all the user's buckets.
+    fn find_active_quota_entitlements(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_id: Option<Uuid>,
+        credit_type: CreditType,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> impl std::future::Future<Output = Result<Vec<PointsQuotaEntitlement>, CoreError>> + Send
+    {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let rows = if let Some(bucket_id) = bucket_id {
+                sqlx::query_as::<_, PointsQuotaEntitlementRow>(
+                    r#"
+                    SELECT * FROM points_quota_entitlements
+                    WHERE realm_id = $1
+                      AND user_id = $2
+                      AND bucket_id = $3
+                      AND credit_type = $4
+                      AND status = 'active'
+                      AND effective_from <= $5
+                      AND (effective_until IS NULL OR effective_until > $5)
+                    "#,
+                )
+                .bind(&realm_id)
+                .bind(user_id)
+                .bind(bucket_id)
+                .bind(credit_type.as_str())
+                .bind(now)
+                .fetch_all(&pool)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+            } else {
+                sqlx::query_as::<_, PointsQuotaEntitlementRow>(
+                    r#"
+                    SELECT * FROM points_quota_entitlements
+                    WHERE realm_id = $1
+                      AND user_id = $2
+                      AND credit_type = $3
+                      AND status = 'active'
+                      AND effective_from <= $4
+                      AND (effective_until IS NULL OR effective_until > $4)
+                    "#,
+                )
+                .bind(&realm_id)
+                .bind(user_id)
+                .bind(credit_type.as_str())
+                .bind(now)
+                .fetch_all(&pool)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+            };
+
+            rows.into_iter()
+                .map(Self::row_to_points_quota_entitlement)
+                .collect()
+        }
+    }
+
+    /// Sliding-window consume aggregation (design §5.2). Backed by
+    /// `idx_points_transactions_window_agg` (design §4.3.2). `window_start` is
+    /// `now - window_seconds`; the caller computes it per window.
+    fn sum_consume_in_window(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_id: Uuid,
+        credit_type: CreditType,
+        window_start: chrono::DateTime<chrono::Utc>,
+    ) -> impl std::future::Future<Output = Result<i64, CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        async move {
+            let total: i64 = sqlx::query_scalar(
+                r#"
+                SELECT COALESCE(SUM(ABS(amount)), 0)::BIGINT
+                FROM points_transactions
+                WHERE realm_id = $1
+                  AND user_id = $2
+                  AND bucket_id = $3
+                  AND credit_type = $4
+                  AND type = 'consume'
+                  AND created_at >= $5
+                "#,
+            )
+            .bind(&realm_id)
+            .bind(user_id)
+            .bind(bucket_id)
+            .bind(credit_type.as_str())
+            .bind(window_start)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            Ok(total)
+        }
+    }
+
+    /// Grant a quota entitlement atomically (design §5.4). Idempotent via
+    /// `UNIQUE(realm_id, user_id, bucket_id, credit_type, idempotency_key)`.
+    /// `ON CONFLICT DO NOTHING RETURNING *` returns the freshly inserted row;
+    /// if it returns nothing (replay), a follow-up SELECT returns the existing
+    /// row so the caller observes the persisted snapshot either way.
+    fn grant_quota_entitlement_atomic(
+        &self,
+        entitlement: PointsQuotaEntitlement,
+    ) -> impl std::future::Future<Output = Result<PointsQuotaEntitlement, CoreError>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let windows_json = serde_json::to_value(
+                entitlement
+                    .quota_windows
+                    .iter()
+                    .map(|w| QuotaWindowDbJson {
+                        window_seconds: w.window_seconds,
+                        limit: w.limit,
+                        key: w.key.clone(),
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .map_err(|e| CoreError::DatabaseError(format!("serialize quota_windows: {e}")))?;
+
+            let inserted = sqlx::query_as::<_, PointsQuotaEntitlementRow>(
+                r#"
+                INSERT INTO points_quota_entitlements (
+                    id, user_id, realm_id, bucket_id, credit_type, source_type,
+                    source_id, quota_windows, effective_from, effective_until,
+                    status, idempotency_key, created_at, updated_at
+                )
+                VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13
+                )
+                ON CONFLICT (realm_id, user_id, bucket_id, credit_type, idempotency_key)
+                DO NOTHING
+                RETURNING *
+                "#,
+            )
+            .bind(entitlement.id)
+            .bind(entitlement.user_id)
+            .bind(&entitlement.realm_id)
+            .bind(entitlement.bucket_id)
+            .bind(entitlement.credit_type.as_str())
+            .bind(entitlement.source_type.as_str())
+            .bind(&entitlement.source_id)
+            .bind(&windows_json)
+            .bind(entitlement.effective_from)
+            .bind(entitlement.effective_until)
+            .bind(entitlement.status.as_str())
+            .bind(&entitlement.idempotency_key)
+            .bind(entitlement.created_at)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+
+            // Idempotent replay path: conflict suppressed the INSERT — read the
+            // pre-existing row and return it so the caller sees the persisted
+            // snapshot (design §5.4).
+            let row = match inserted {
+                Some(row) => row,
+                None => sqlx::query_as::<_, PointsQuotaEntitlementRow>(
+                    r#"
+                        SELECT * FROM points_quota_entitlements
+                        WHERE realm_id = $1
+                          AND user_id = $2
+                          AND bucket_id = $3
+                          AND credit_type = $4
+                          AND idempotency_key = $5
+                        "#,
+                )
+                .bind(&entitlement.realm_id)
+                .bind(entitlement.user_id)
+                .bind(entitlement.bucket_id)
+                .bind(entitlement.credit_type.as_str())
+                .bind(&entitlement.idempotency_key)
+                .fetch_optional(&pool)
+                .await
+                .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+                .ok_or(CoreError::DatabaseError(
+                    "quota entitlement upsert returned no row".to_string(),
+                ))?,
+            };
+
+            Self::row_to_points_quota_entitlement(row)
+        }
+    }
+
+    /// Revoke the active quota entitlement for
+    /// `(realm_id, user_id, bucket_id, credit_type, source_id)` (design §5.4).
+    /// Sets `status='revoked'` + `effective_until=revoke_at`; already-consumed
+    /// usage is NOT reverse-adjusted (ages out via window slide). No-op
+    /// (`Ok(())`) if no active entitlement matches — replay-safe.
+    fn revoke_quota_entitlement_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_id: Uuid,
+        credit_type: CreditType,
+        source_id: &str,
+        revoke_at: chrono::DateTime<chrono::Utc>,
+    ) -> impl std::future::Future<Output = Result<(), CoreError>> + Send {
+        let pool = self.pool.clone();
+        let realm_id = realm_id.to_string();
+        let source_id = source_id.to_string();
+        async move {
+            sqlx::query(
+                r#"
+                UPDATE points_quota_entitlements
+                SET status = 'revoked',
+                    effective_until = $6,
+                    updated_at = NOW()
+                WHERE realm_id = $1
+                  AND user_id = $2
+                  AND bucket_id = $3
+                  AND credit_type = $4
+                  AND source_id = $5
+                  AND status = 'active'
+                "#,
+            )
+            .bind(&realm_id)
+            .bind(user_id)
+            .bind(bucket_id)
+            .bind(credit_type.as_str())
+            .bind(&source_id)
+            .bind(revoke_at)
+            .execute(&pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
+            Ok(())
+        }
+    }
+
+    /// Sweep-expire quota entitlements whose `effective_until` has passed
+    /// (design §4.1 / BE-D02 port). Sets matched rows to `status='expired'` in
+    /// batches of `batch_size`. Postgres has no `UPDATE ... LIMIT`, so a
+    /// CTE+ctid sub-select bounds the update (the standard Postgres idiom).
+    /// NOT a correctness backstop — window availability is a pure function of
+    /// the consume stream + effective interval.
+    fn expire_quota_entitlements_batch(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+        batch_size: usize,
+    ) -> impl std::future::Future<Output = Result<usize, CoreError>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let affected = sqlx::query(
+                r#"
+                WITH victims AS (
+                    SELECT ctid
+                    FROM points_quota_entitlements
+                    WHERE status = 'active'
+                      AND effective_until IS NOT NULL
+                      AND effective_until <= $1
+                    LIMIT $2
+                )
+                UPDATE points_quota_entitlements
+                SET status = 'expired',
+                    updated_at = NOW()
+                FROM victims
+                WHERE points_quota_entitlements.ctid = victims.ctid
+                "#,
+            )
+            .bind(now)
+            .bind(i64::try_from(batch_size).unwrap_or(i64::MAX))
+            .execute(&pool)
+            .await
+            .map_err(|e| CoreError::DatabaseError(e.to_string()))?
+            .rows_affected();
+            Ok(usize::try_from(affected).unwrap_or(usize::MAX))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -5307,8 +6030,6 @@ mod tests {
         assert_eq!(account.total_topup_granted, 100);
     }
 
-    // ===== Multi-pool consume allocation planner (pure) =====
-    //
     // The allocate-by-expiry loop is the heart of the consume allocation plan. It is extracted as
     // `plan_consume_allocation` so the cross-bucket split, permanent-pool-last
     // ordering, partial-coverage rejection and exact-amount boundary can be
@@ -5484,5 +6205,99 @@ mod tests {
         let plan = PostgresPointsRepository::plan_consume_allocation(&ledgers, 10);
         assert!(!plan.fully_covers);
         assert!(plan.allocations.is_empty());
+    }
+
+    // The priority rule (subscription_credit first, free_periodic_credit 补足)
+    // and the per-credit_type overspend invariants are the testable contract of
+    // the window side of the mixed consume. These pin WHY the ordering matters:
+    // subscription credits are the paid entitlement and must be drawn before the
+    // free periodic quota; the `min` clamps prevent any window from being
+    // overdrawn within a single transaction (the P0 anti-overspend invariant).
+
+    #[test]
+    fn window_split_subscription_first_until_exhausted() {
+        // window_part (40) fully covered by subscription (50) ⟹ free untouched.
+        let split = PostgresPointsRepository::split_window_part_by_credit_type(40, 50, 30);
+        assert_eq!(
+            split,
+            WindowCreditSplit {
+                sub_part: 40,
+                free_part: 0,
+                window_remainder: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn window_split_free_makes_up_remainder_when_subscription_insufficient() {
+        // Subscription covers 20 of 50; free covers the remaining 30.
+        let split = PostgresPointsRepository::split_window_part_by_credit_type(50, 20, 30);
+        assert_eq!(
+            split,
+            WindowCreditSplit {
+                sub_part: 20,
+                free_part: 30,
+                window_remainder: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn window_split_overspill_to_next_bucket_when_both_window_types_insufficient() {
+        // Both window types together (10+15=25) < window_part 40 ⟹ 15 must
+        // overflow to the next bucket (window_remainder). This is the per-bucket
+        // distribution contract: the caller hands the remainder to the next
+        // covered bucket's window; the §5.3 gate already guaranteed the TOTAL
+        // window_part ≤ Σ all buckets' window spendable.
+        let split = PostgresPointsRepository::split_window_part_by_credit_type(40, 10, 15);
+        assert_eq!(split.sub_part, 10);
+        assert_eq!(split.free_part, 15);
+        assert_eq!(split.window_remainder, 15);
+        // Overspend invariant (P0): neither part exceeds its spendable.
+        assert!(split.sub_part <= 10);
+        assert!(split.free_part <= 15);
+    }
+
+    #[test]
+    fn window_split_no_window_capacity_overspills_entire_part() {
+        // No active entitlements of either window type ⟹ entire window_part
+        // overflows (this bucket contributes nothing; next bucket / pool handles
+        // it per the gate). Guards against silently inventing window capacity.
+        let split = PostgresPointsRepository::split_window_part_by_credit_type(30, 0, 0);
+        assert_eq!(split.sub_part, 0);
+        assert_eq!(split.free_part, 0);
+        assert_eq!(split.window_remainder, 30);
+    }
+
+    #[test]
+    fn window_split_priority_subscription_drawn_before_free_even_when_free_larger() {
+        // Free has MORE capacity (100) than subscription (5), but priority says
+        // subscription is drawn FIRST. With window_part=8: sub=5, free=3 — NOT
+        // free=8. This pins the priority order against a naive max-first split.
+        let split = PostgresPointsRepository::split_window_part_by_credit_type(8, 5, 100);
+        assert_eq!(split.sub_part, 5);
+        assert_eq!(split.free_part, 3);
+        assert_eq!(split.window_remainder, 0);
+    }
+
+    #[test]
+    fn window_split_negative_spendables_clamped_to_zero() {
+        // Defensive: a negative remaining (shrunk quota / aggregation glitch) is
+        // clamped to 0 so the overspend invariant holds. Behaves like no capacity
+        // — entire part overflows.
+        let split = PostgresPointsRepository::split_window_part_by_credit_type(20, -5, -3);
+        assert_eq!(split.sub_part, 0);
+        assert_eq!(split.free_part, 0);
+        assert_eq!(split.window_remainder, 20);
+    }
+
+    #[test]
+    fn window_split_exact_coverage_boundary() {
+        // window_part exactly == sub_spendable + free_spendable ⟹ zero
+        // remainder, both parts at capacity (boundary of the overflow rule).
+        let split = PostgresPointsRepository::split_window_part_by_credit_type(30, 10, 20);
+        assert_eq!(split.sub_part, 10);
+        assert_eq!(split.free_part, 20);
+        assert_eq!(split.window_remainder, 0);
     }
 }

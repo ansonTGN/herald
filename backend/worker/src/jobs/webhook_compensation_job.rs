@@ -298,7 +298,6 @@ impl WebhookCompensationJob {
         let mut stats = CompensationStats::default();
         let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-        // --- Transactions path ---
         let mut page_number = 1;
         let page_size = 100;
 
@@ -379,7 +378,6 @@ impl WebhookCompensationJob {
             }
         }
 
-        // --- Subscriptions path ---
         let mut page_number = 1;
         loop {
             let params = herald_core::infrastructure::creem::SearchSubscriptionsParams {
@@ -498,11 +496,9 @@ struct CompensationStats {
 }
 
 // Governance tests.
-//
 // Covers: worker jobs `WebhookCompensationJob::run`,
-// `PointsExpirationJob::run`, `PointsPreGrantJob::run` instrument skip
+// `PointsExpirationJob::run`, `PointsQuotaExpirationJob::run` instrument skip
 // correctness.
-//
 // WHY: these are root spans with no inbound request context, and `self`
 // carries provider API keys / DB pool / repository handles. If the
 // `#[instrument]` macro ever stops skipping `self`, those handles/keys may be
@@ -572,17 +568,17 @@ mod instrument_skip_tests {
     }
 
     #[test]
-    fn instrument_skip_worker_points_pre_grant_run_is_root_span_skipping_self() {
+    fn instrument_skip_worker_points_quota_expiration_run_is_root_span_skipping_self() {
         let body = instrument_body_preceding(PREGRANT_SRC, "run");
         assert!(
             body.contains("skip(self)"),
-            "PointsPreGrantJob::run must skip(self) (holds GrantScheduler / points_repo); body was:\n{body}"
+            "PointsQuotaExpirationJob::run must skip(self) (holds GrantScheduler); body was:\n{body}"
         );
         for banned in ["token", "password", "email", "secret", "api_key", "apikey"] {
             assert!(
                 !body.contains(&format!("{banned} ="))
                     && !body.contains(&format!("fields({banned}")),
-                "points_pre_grant span must not record a `{banned}` field; body was:\n{body}"
+                "points_quota_expiration span must not record a `{banned}` field; body was:\n{body}"
             );
         }
     }

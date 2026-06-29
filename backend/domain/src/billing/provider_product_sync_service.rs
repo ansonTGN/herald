@@ -201,7 +201,6 @@ where
                         None,
                     ),
                     None => {
-                        // New provider product+price: create a draft mapping.
                         // `bucket_id` is NOT NULL (commits aa6cc2da /
                         // f134dcf8 / 57c313ba), so bind it to the realm's
                         // registration-pool bucket — the same bucket the
@@ -270,6 +269,11 @@ where
                         "billing_type": price.billing_type,
                         "billing_period": price.billing_period,
                     })),
+                    // Provider sync never carries quota config; preserve an
+                    // existing mapping's windows when re-syncing, else None
+                    // (new mapping). The upsert update-branch also preserves
+                    // the DB value, so this is belt-and-suspenders.
+                    quota_windows: existing.as_ref().and_then(|m| m.quota_windows.clone()),
                     synced_at: Some(chrono::Utc::now()),
                     created_at: existing
                         .as_ref()
@@ -470,12 +474,3 @@ mod tests {
         assert!(key.len() <= 64, "slug length {} exceeds 64", key.len());
     }
 }
-
-// Note on tests (AGENTS.md Rule 9, backend testing guide):
-// The sync-creates-draft-mappings behavior is verified at the integration
-// layer via `entitlement_mapping_crud_scenarios.rs` (which wires the real
-// `PostgresBillingRepository` through `schema_test_context`). A domain-crate
-// unit test would require mocking the ~30-method `BillingRepository` trait
-// (RPITIT, not dyn-safe) plus constructing a full `Identity::User` — that is
-// the "mechanical stub surface" the testing guide explicitly disallows, and it
-// would not encode intent beyond what the existing scenario coverage does.

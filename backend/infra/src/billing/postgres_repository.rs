@@ -17,9 +17,14 @@ use herald_domain::billing::{
     SubscriptionHistoryEvent, SubscriptionHistoryQuery,
 };
 use herald_domain::common::entities::app_errors::CoreError;
+use herald_domain::points::entities::QuotaWindow;
 use herald_domain::points::services::registration_pool_resolver::RegistrationPoolResolver;
 use herald_entity::{
     payment_event, provider_entitlement_mapping, subscription, subscription_history,
+};
+
+use crate::points::postgres_repository::{
+    parse_quota_windows_value, serialize_quota_windows_value,
 };
 
 /// PostgreSQL implementation of billing repository
@@ -84,6 +89,18 @@ impl PostgresBillingRepository {
     fn model_to_entitlement_mapping(
         model: provider_entitlement_mapping::Model,
     ) -> EntitlementMapping {
+        // Hydrate quota_windows via the shared infra serde boundary
+        // (BE-D09). DB NULL/empty ⟺ `None` (no window-model grant); non-empty
+        // JSONB array ⟺ `Some(Vec<QuotaWindow>)`. A malformed JSONB value is
+        // logged and treated as "no window grant" rather than poisoning the
+        // whole read (the read path must not crash a list on one bad row).
+        let quota_windows = parse_quota_windows_value(model.quota_windows)
+            .map_err(|e| {
+                tracing::warn!(error = %e, mapping_id = %model.id, "Malformed quota_windows JSONB on entitlement mapping; treating as no window grant");
+                e
+            })
+            .ok();
+        let quota_windows = quota_windows.filter(|w| !w.is_empty());
         EntitlementMapping {
             id: model.id,
             realm_id: model.realm_id,
@@ -101,6 +118,7 @@ impl PostgresBillingRepository {
             max_periods: model.max_periods.map(|v| v as i64),
             enabled: model.enabled,
             provider_product_info: model.provider_product_info,
+            quota_windows,
             synced_at: model.synced_at.map(chrono::DateTime::from),
             created_at: chrono::DateTime::from(model.created_at),
             updated_at: chrono::DateTime::from(model.updated_at),
@@ -111,6 +129,12 @@ impl PostgresBillingRepository {
     fn entitlement_mapping_to_active_model(
         mapping: EntitlementMapping,
     ) -> provider_entitlement_mapping::ActiveModel {
+        // Serialize quota_windows via the shared infra serde boundary (BE-D09).
+        // `None`/empty ⟺ SQL NULL (no window grant).
+        let quota_windows = mapping
+            .quota_windows
+            .as_deref()
+            .and_then(|w| serialize_quota_windows_value(w).ok().flatten());
         provider_entitlement_mapping::ActiveModel {
             id: Set(mapping.id),
             realm_id: Set(mapping.realm_id),
@@ -128,6 +152,7 @@ impl PostgresBillingRepository {
             max_periods: Set(mapping.max_periods.map(|v| v as i32)),
             enabled: Set(mapping.enabled),
             provider_product_info: Set(mapping.provider_product_info),
+            quota_windows: Set(quota_windows),
             synced_at: Set(mapping
                 .synced_at
                 .map(sea_orm::prelude::DateTimeWithTimeZone::from)),
@@ -320,8 +345,6 @@ impl PostgresBillingRepository {
         Self::model_to_subscription_history_event(saved_event)
     }
 
-    // ===== Credit Bucket directory =====
-    //
     // All multi-table writes run in a single sqlx transaction (matches the
     // invoice_postgres_repository pattern: `self.db.get_postgres_connection_pool().begin()`).
     // Coverage-set changes only affect future routing; attached-mapping
@@ -653,7 +676,6 @@ impl PostgresBillingRepository {
             .await
             .map_err(|e| CoreError::DatabaseError(e.to_string()))?;
 
-        // Verify ownership under lock.
         let exists: Option<Uuid> = sqlx::query_scalar(
             "SELECT id FROM credit_buckets WHERE realm_id = $1 AND id = $2 FOR UPDATE",
         )
@@ -679,7 +701,6 @@ impl PostgresBillingRepository {
         .map_err(|e| CoreError::DatabaseError(format!("Failed to count subscriptions: {}", e)))?;
 
         // Holders with remaining *derived available* balance.
-        //
         // The delete guard uses the SAME derived
         // availability predicate as `compute_bucket_available_balances`
         // (`status='active' AND remaining_amount>0 AND (effective_at IS NULL
@@ -951,8 +972,6 @@ impl PostgresBillingRepository {
             grand_total,
         })
     }
-
-    // ---- helpers ----
 
     fn row_to_credit_bucket(row: &sqlx::postgres::PgRow) -> CreditBucket {
         use sqlx::Row;
@@ -1236,8 +1255,6 @@ impl BillingRepository for PostgresBillingRepository {
         .map(|r| r.rows_affected())
     }
 
-    // ===== Subscription History =====
-
     async fn save_history_event(
         &self,
         event: SubscriptionHistoryEvent,
@@ -1376,8 +1393,6 @@ impl BillingRepository for PostgresBillingRepository {
 
         Ok((events, total))
     }
-
-    // ===== Entitlement Mapping CRUD =====
 
     async fn create_entitlement_mapping(
         &self,
@@ -1940,7 +1955,6 @@ impl BillingRepository for PostgresBillingRepository {
         }
 
         // 2. Shared-key rename cross-product leak check.
-        //
         // The batch is single-product; the group's entitlement_key is renamed
         // atomically. If the NEW key collides with mappings of OTHER products in
         // this realm that already use it (different external_product_id), the
@@ -1987,7 +2001,6 @@ impl BillingRepository for PostgresBillingRepository {
         // 3. Active-subscription lock: sum access-granting subscriptions across
         // every row that transitions enabled true→false. Any >0 rolls back the
         // WHOLE batch.
-        //
         // Collect both the non-null price ids (Stripe) and whether any
         // disabling row is price-less (Creem, NULL external_price_id). The
         // count query ORs the two matching branches so NULL-price subscriptions
@@ -2050,42 +2063,108 @@ impl BillingRepository for PostgresBillingRepository {
         // 4. Upsert (UPDATE) each row in tx order. Fields the client omits
         // (`None`) are preserved via COALESCE — matches the single-PATCH contract
         // (entitlement_mapping_handlers.rs `update_entitlement_mapping`).
+        // `quota_windows` is the exception: it is NOT COALESCE'd because the
+        // caller must be able to CLEAR the column (write NULL) by passing
+        // `Some([])`. So when the input carries `Some(windows)`, the column is
+        // SET explicitly (serialized: empty ⟹ NULL, non-empty ⟹ JSONB); when
+        // the input is `None`, the column is omitted from SET (leave unchanged).
+        // The SQL string is therefore built per-row to include the
+        // `quota_windows` clause only when the input provides it.
         let now = chrono::Utc::now();
         let mut saved: u32 = 0;
         for u in &input.updates {
             let billing_type_str = u.billing_type.as_deref();
-            let result = sqlx::query(
-                "UPDATE provider_entitlement_mappings SET \
-                   entitlement_key = $4, \
-                   billing_type = COALESCE($5, billing_type), \
-                   billing_period = COALESCE($6, billing_period), \
-                   points_per_period = COALESCE($7, points_per_period), \
-                   grant_period_type = COALESCE($8, grant_period_type), \
-                   validity_days = COALESCE($9, validity_days), \
-                   grant_on_subscribe = COALESCE($10, grant_on_subscribe), \
-                   max_periods = COALESCE($11, max_periods), \
-                   enabled = COALESCE($12, enabled), \
-                   updated_at = $13 \
-                 WHERE realm_id = $1 AND payment_provider = $2 \
-                   AND external_product_id = $3 AND id = $14",
-            )
-            .bind(&input.realm_id)
-            .bind(&input.payment_provider)
-            .bind(&input.external_product_id)
-            .bind(&u.entitlement_key)
-            .bind(billing_type_str)
-            .bind(&u.billing_period)
-            .bind(u.points_per_period.map(|v| v as i32))
-            .bind(&u.grant_period_type)
-            .bind(u.validity_days.map(|v| v as i32))
-            .bind(u.grant_on_subscribe)
-            .bind(u.max_periods)
-            .bind(u.enabled)
-            .bind(now)
-            .bind(u.mapping_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
+            // and serialize to the JSONB column shape. `None` ⟺ leave unchanged.
+            let quota_windows_value: Option<Option<serde_json::Value>> = match &u.quota_windows {
+                None => None,
+                Some(windows) => {
+                    let domain_windows: Vec<QuotaWindow> = windows
+                        .iter()
+                        .map(|w| QuotaWindow {
+                            window_seconds: w.window_seconds,
+                            limit: w.limit,
+                            key: herald_domain::points::derive_window_key(w.window_seconds),
+                        })
+                        .collect();
+                    let serialized = serialize_quota_windows_value(&domain_windows);
+                    match serialized {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            let _ = tx.rollback().await;
+                            return Err(BatchMappingError::Other(e));
+                        }
+                    }
+                }
+            };
+
+            let result = if let Some(qw) = quota_windows_value {
+                sqlx::query(
+                    "UPDATE provider_entitlement_mappings SET \
+                       entitlement_key = $4, \
+                       billing_type = COALESCE($5, billing_type), \
+                       billing_period = COALESCE($6, billing_period), \
+                       points_per_period = COALESCE($7, points_per_period), \
+                       grant_period_type = COALESCE($8, grant_period_type), \
+                       validity_days = COALESCE($9, validity_days), \
+                       grant_on_subscribe = COALESCE($10, grant_on_subscribe), \
+                       max_periods = COALESCE($11, max_periods), \
+                       enabled = COALESCE($12, enabled), \
+                       quota_windows = $13, \
+                       updated_at = $14 \
+                     WHERE realm_id = $1 AND payment_provider = $2 \
+                       AND external_product_id = $3 AND id = $15",
+                )
+                .bind(&input.realm_id)
+                .bind(&input.payment_provider)
+                .bind(&input.external_product_id)
+                .bind(&u.entitlement_key)
+                .bind(billing_type_str)
+                .bind(&u.billing_period)
+                .bind(u.points_per_period.map(|v| v as i32))
+                .bind(&u.grant_period_type)
+                .bind(u.validity_days.map(|v| v as i32))
+                .bind(u.grant_on_subscribe)
+                .bind(u.max_periods)
+                .bind(u.enabled)
+                .bind(qw)
+                .bind(now)
+                .bind(u.mapping_id)
+                .execute(&mut *tx)
+                .await
+            } else {
+                sqlx::query(
+                    "UPDATE provider_entitlement_mappings SET \
+                       entitlement_key = $4, \
+                       billing_type = COALESCE($5, billing_type), \
+                       billing_period = COALESCE($6, billing_period), \
+                       points_per_period = COALESCE($7, points_per_period), \
+                       grant_period_type = COALESCE($8, grant_period_type), \
+                       validity_days = COALESCE($9, validity_days), \
+                       grant_on_subscribe = COALESCE($10, grant_on_subscribe), \
+                       max_periods = COALESCE($11, max_periods), \
+                       enabled = COALESCE($12, enabled), \
+                       updated_at = $13 \
+                     WHERE realm_id = $1 AND payment_provider = $2 \
+                       AND external_product_id = $3 AND id = $14",
+                )
+                .bind(&input.realm_id)
+                .bind(&input.payment_provider)
+                .bind(&input.external_product_id)
+                .bind(&u.entitlement_key)
+                .bind(billing_type_str)
+                .bind(&u.billing_period)
+                .bind(u.points_per_period.map(|v| v as i32))
+                .bind(&u.grant_period_type)
+                .bind(u.validity_days.map(|v| v as i32))
+                .bind(u.grant_on_subscribe)
+                .bind(u.max_periods)
+                .bind(u.enabled)
+                .bind(now)
+                .bind(u.mapping_id)
+                .execute(&mut *tx)
+                .await
+            };
+            let result = result.map_err(|e| {
                 CoreError::DatabaseError(format!("Failed to update mapping in batch: {}", e))
             })?;
             saved += result.rows_affected() as u32;

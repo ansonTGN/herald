@@ -1,10 +1,5 @@
-// =============================================================================
-// Points System Scenario Test 61: Free User Registration
-// =============================================================================
-//
 // **User Story**: US-FU-01 (Registration grants initial bonus points)
 // **Priority**: P0
-//
 // **Scenarios**:
 // 1. Registration grants initial bonus points
 // 2. Prevent duplicate registration bonuses
@@ -16,8 +11,6 @@
 // 8. Registration during realm maintenance
 // 9. Registration with invalid email format
 // 10. Registration with weak password (rejected by policy)
-//
-// =============================================================================
 
 use crate::tests::helpers::points_helpers::trunc_to_micros;
 use crate::tests::schema_test_context::SchemaTestContext as TestContext;
@@ -39,9 +32,7 @@ use tower::ServiceExt;
 async fn test_scenario_free_user_registration_grants_initial_bonus(ctx: &mut TestContext) {
     let app = ctx.create_unified_test_router();
 
-    // ============================================================================
     // Given: realm-1 has default config: registration_bonus_points = 1000
-    // ============================================================================
     println!("[Step 1] Set up realm default config");
 
     sqlx::query(
@@ -86,9 +77,7 @@ async fn test_scenario_free_user_registration_grants_initial_bonus(ctx: &mut Tes
     )
     .await;
 
-    // ============================================================================
     // When: A new user registers in realm-1 (2026-03-23 15:30:00 UTC)
-    // ============================================================================
     println!("[Step 2] New user registers");
 
     let email = "newuser@example.com";
@@ -120,9 +109,7 @@ async fn test_scenario_free_user_registration_grants_initial_bonus(ctx: &mut Tes
 
     println!("[Step 2] ✓ User registered: {}", user_id);
 
-    // ============================================================================
     // Then: The user receives 1000 registration_credit points
-    // ============================================================================
     println!("[Step 3] Verify registration credit grant");
 
     let credit_type: String = sqlx::query_scalar(
@@ -199,9 +186,7 @@ async fn test_scenario_free_user_registration_grants_initial_bonus(ctx: &mut Tes
 async fn test_scenario_free_user_registration_prevents_duplicate_bonuses(ctx: &mut TestContext) {
     let app = ctx.create_unified_test_router();
 
-    // ============================================================================
     // Given: A user has already received registration bonus points
-    // ============================================================================
     println!("[Step 1] Create user with registration bonus");
 
     sqlx::query(
@@ -267,7 +252,6 @@ async fn test_scenario_free_user_registration_prevents_duplicate_bonuses(ctx: &m
         .expect("Failed to fetch user_id");
     let user_id = uuid::Uuid::parse_str(&user_id).expect("Invalid user ID");
 
-    // Verify initial registration credit. point-time: read the
     // derived available balance instead of the dropped `total_balance`.
     let initial_balance: i64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
@@ -293,9 +277,7 @@ async fn test_scenario_free_user_registration_prevents_duplicate_bonuses(ctx: &m
         user_id
     );
 
-    // ============================================================================
     // When: The same user attempts to register again (duplicate email)
-    // ============================================================================
     println!("[Step 2] Attempt duplicate registration");
 
     let duplicate_payload = json!({
@@ -315,9 +297,7 @@ async fn test_scenario_free_user_registration_prevents_duplicate_bonuses(ctx: &m
 
     let duplicate_response = app.clone().oneshot(duplicate_request).await.unwrap();
 
-    // ============================================================================
     // Then: The system returns error "Email already registered"
-    // ============================================================================
     assert_eq!(duplicate_response.status(), StatusCode::CONFLICT);
 
     let error_body = extract_error_body(duplicate_response).await;
@@ -373,9 +353,7 @@ async fn test_scenario_free_user_registration_prevents_duplicate_bonuses(ctx: &m
 async fn test_scenario_free_user_registration_periodic_points_disabled(ctx: &mut TestContext) {
     let app = ctx.create_unified_test_router();
 
-    // ============================================================================
     // Given: realm-1 has config: free_periodic_points_amount = 0 (periodic points disabled by default)
-    // ============================================================================
     println!("[Step 1] Set up realm config with periodic points disabled");
 
     // Set free_periodic_points_amount = 0 to disable periodic points
@@ -416,9 +394,7 @@ async fn test_scenario_free_user_registration_periodic_points_disabled(ctx: &mut
     )
     .await;
 
-    // ============================================================================
     // When: A new user registers in realm-1
-    // ============================================================================
     println!("[Step 2] New user registers");
 
     let email = "nodailyuser@example.com";
@@ -451,9 +427,7 @@ async fn test_scenario_free_user_registration_periodic_points_disabled(ctx: &mut
 
     println!("[Step 2] ✓ User registered: {}", user_id);
 
-    // ============================================================================
     // Then: The user receives registration_credit points but NO periodic grant (free_periodic_points_amount = 0)
-    // ============================================================================
     println!("[Step 3] Verify registration credit and no periodic grant");
 
     let registration_credit_amount: i64 = sqlx::query_scalar(
@@ -466,7 +440,6 @@ async fn test_scenario_free_user_registration_periodic_points_disabled(ctx: &mut
 
     assert_eq!(registration_credit_amount, 1000);
 
-    // Verify that NO periodic grant was granted (free_periodic_points_amount = 0)
     let periodic_credit_amount: i64 = sqlx::query_scalar(
         "SELECT CAST(COALESCE(SUM(granted_amount), 0) AS BIGINT) FROM points_credit_ledger WHERE user_id = $1 AND credit_type = 'free_periodic_credit'"
     )
@@ -499,17 +472,12 @@ async fn test_scenario_free_user_registration_periodic_points_disabled(ctx: &mut
     );
 }
 
-// =============================================================================
 // Free-periodic on-time grant + two distinct sources
-// =============================================================================
-//
 // **User Story**: US-FU-004 (按时获得每期免费积分) + US-FU-002 (免费定期积分按时发放)
 // **Priority**: P0
-//
 // **Design refs**: `.ai/design/point-time.md` (GrantScheduler process_due
 // pre-grant anchors), (lead_time table), (registration initial
 // credit and free_periodic first period are two distinct entitlement sources).
-//
 // **Testability decision**: `SchemaTestContext` does NOT expose a
 // `GrantScheduler` handle. Per the item-file precheck guidance, we construct
 // `GrantScheduler::new(points_repository, points_service, lead_time_map)`
@@ -522,20 +490,8 @@ async fn test_scenario_free_user_registration_periodic_points_disabled(ctx: &mut
 // and is exercised by other tests; these tests focus on the scheduler-driven
 // "worker normal on-time grant" path.
 
-use herald_core::domain::points::{GrantPeriodType, GrantScheduler};
-use std::collections::HashMap;
+use herald_core::domain::points::GrantScheduler;
 use std::sync::Arc;
-
-/// Build the lead_time_map for the in-test `GrantScheduler`.
-/// Mirrors `app/src/main.rs::build_lead_time_map` defaults.
-fn build_test_lead_time_map() -> HashMap<GrantPeriodType, chrono::Duration> {
-    let mut map = HashMap::new();
-    map.insert(GrantPeriodType::Daily, chrono::Duration::hours(1));
-    map.insert(GrantPeriodType::Weekly, chrono::Duration::hours(12));
-    map.insert(GrantPeriodType::Monthly, chrono::Duration::hours(24));
-    map.insert(GrantPeriodType::Once, chrono::Duration::zero());
-    map
-}
 
 /// ============================================================================
 /// Scenario 1: Free-periodic first period is immediately available
@@ -544,7 +500,6 @@ fn build_test_lead_time_map() -> HashMap<GrantPeriodType, chrono::Duration> {
 // User Story: docs/user-stories/points-free-user.md#US-FU-004
 // Covers: first period due immediately grants with effective_at=NULL,
 //         "免费周期按时发放（P0）".
-//
 // WHY this test exists: the availability predicate
 //   `effective_at IS NULL OR effective_at <= NOW()`
 // must treat a NULL effective_at as immediately consumable. A first-period
@@ -602,7 +557,6 @@ async fn test_free_periodic_first_period_immediately_available(ctx: &mut TestCon
     let scheduler = GrantScheduler::new(
         Arc::clone(&ctx._app_state.points_repository),
         Arc::clone(&ctx._app_state.points_service),
-        build_test_lead_time_map(),
     );
     let summary = scheduler
         .process_due_schedules()
@@ -658,7 +612,6 @@ async fn test_free_periodic_first_period_immediately_available(ctx: &mut TestCon
 /// ============================================================================
 // User Story: docs/user-stories/points-free-user.md#US-FU-001 + US-FU-002
 // Covers: "注册初始积分与 free_periodic 首期作为两笔不同来源".
-//
 // WHY this test exists: registration initial bonus points and the free_periodic
 // first-period grant are TWO DIFFERENT entitlement sources. They must land as
 // two independent ledger rows with different credit_type / source_type, each
@@ -837,7 +790,6 @@ async fn test_registration_credit_and_free_periodic_two_distinct_sources(ctx: &m
 // User Story: docs/user-stories/points-free-user.md#US-FU-004
 // Covers: next_grant_time > now ⟹ effective_at=Some(next_grant_time),
 //         (lead_time table), "lead_time 提前预生成 + 零延迟可用".
-//
 // WHY this test exists: lead_time lets the worker pre-grant a FUTURE period so
 // the ledger row exists before the period starts. The availability predicate
 // must EXCLUDE that row (effective_at in the future) until the period boundary,
@@ -872,7 +824,6 @@ async fn test_free_periodic_pre_grant_lead_time_effective_at_future(ctx: &mut Te
     // Schedule a MONTHLY period starting 2h from now. With monthly lead_time=24h,
     // `next_grant_time - 24h <= now` holds, so the scheduler treats it
     // as due and pre-grants with effective_at = Some(next_grant_time).
-    //
     // Truncate to microsecond precision: Postgres `TIMESTAMPTZ` stores
     // microseconds, so the round-tripped `effective_at` drops sub-microsecond
     // nanos. Truncating the seed keeps the strict equality assertion exact
@@ -896,7 +847,6 @@ async fn test_free_periodic_pre_grant_lead_time_effective_at_future(ctx: &mut Te
     let scheduler = GrantScheduler::new(
         Arc::clone(&ctx._app_state.points_repository),
         Arc::clone(&ctx._app_state.points_service),
-        build_test_lead_time_map(),
     );
     let summary = scheduler
         .process_due_schedules()
@@ -968,7 +918,6 @@ async fn test_free_periodic_pre_grant_lead_time_effective_at_future(ctx: &mut Te
 // User Story: docs/user-stories/points-free-user.md#US-FU-004
 // Covers: expires_at = calculate_expiration(next_grant_time,
 //         validity_days), "expires 锚定 next_grant_time + validity_days".
-//
 // WHY this test exists: anchoring expiration to the actual grant moment
 // (created_at) would let worker latency or a delayed webhook shorten or
 // lengthen the user's valid window unpredictably. The design pins expires_at
@@ -1001,7 +950,6 @@ async fn test_free_periodic_expires_anchored_to_grant_time(ctx: &mut TestContext
     // Anchor the period boundary at a fixed T in the past so the grant is
     // already due (next_grant_time <= now ⟹ effective_at=NULL, immediately
     // available), letting us isolate the expires_at assertion.
-    //
     // Truncate to microsecond precision: Postgres `TIMESTAMPTZ` stores
     // microseconds (not nanoseconds), so the seed value round-trips exactly
     // only when sub-microsecond nanos are dropped. Without this the strict
@@ -1027,7 +975,6 @@ async fn test_free_periodic_expires_anchored_to_grant_time(ctx: &mut TestContext
     let scheduler = GrantScheduler::new(
         Arc::clone(&ctx._app_state.points_repository),
         Arc::clone(&ctx._app_state.points_service),
-        build_test_lead_time_map(),
     );
     let summary = scheduler
         .process_due_schedules()
@@ -1088,7 +1035,6 @@ async fn test_free_periodic_expires_anchored_to_grant_time(ctx: &mut TestContext
     let scheduler2 = GrantScheduler::new(
         Arc::clone(&ctx._app_state.points_repository),
         Arc::clone(&ctx._app_state.points_service),
-        build_test_lead_time_map(),
     );
     let _ = scheduler2
         .process_due_schedules()

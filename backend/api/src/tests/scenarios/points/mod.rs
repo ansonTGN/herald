@@ -1,37 +1,7 @@
-// =============================================================================
-// Points System Scenario Tests
-// =============================================================================
-//
-// Comprehensive scenario tests for the Points system backend implementation.
-//
 // **Test Coverage**:
-// - Account creation and management (5 tests)
-// - Points consumption (4 tests)
-// - Points recharge/webhooks (0 tests)
-// - Transaction history (2 tests)
-// - Plan configuration (2 tests)
-// - Account status (1 test)
-// - API key validation (1 test)
-// - Unified filter tests (1 test)
-//
 // **Total Tests**: 16 scenario tests
-//
 // **User Stories Covered**:
-// - US-PO-01: Configure Points Plans (P0)
-// - US-PO-02: View All User Wallets (P1)
-// - US-PO-03: View User Points Transaction History (P1)
-// - US-PO-04: Manage Points Plan Configurations (P2)
-// - US-PU-01: View My Points Balance (P0)
-// - US-PU-02: View My Transaction History (P1)
-// - US-PU-03: Filter Transaction Records (P2)
-//
 // **Running Tests**:
-// ```bash
-// cd backend
-// uv run scripts/backend-test.py points
-// ```
-//
-// =============================================================================
 
 mod test_01_account_creation;
 mod test_02_view_balance;
@@ -124,5 +94,12 @@ mod test_83_response_non_leak_dto_hidden;
 // grant END-TO-END via the webhook HTTP path: single-line period → grant;
 // line without a period → SKIP (P0).
 mod test_84_stripe_invoice_period_normalization;
+mod test_90_window_slide_multi_min;
+mod test_91_lazy_grant_painpoints;
+mod test_92_mixed_consume_atomicity;
+mod test_93_pool_zero_regression;
+mod test_94_lifecycle_revoke_idempotent;
+mod test_95_worker_down_window_balance;
+mod test_96_wallets_quota_view;
 
 pub mod fixtures;

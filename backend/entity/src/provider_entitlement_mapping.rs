@@ -33,6 +33,10 @@ pub struct Model {
     pub enabled: bool,
     #[sea_orm(nullable)]
     pub provider_product_info: Option<Json>,
+    /// Subscription quota window definition `[{windowSeconds, limit, key}]`
+    /// (design §4.3.2). Nullable; NULL ⟺ no window-model grant.
+    #[sea_orm(nullable)]
+    pub quota_windows: Option<Json>,
     #[sea_orm(nullable)]
     pub synced_at: Option<DateTimeWithTimeZone>,
     pub created_at: DateTimeWithTimeZone,

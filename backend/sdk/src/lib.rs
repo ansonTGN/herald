@@ -178,6 +178,34 @@ pub struct BalancesByType {
     pub granted: i64,
 }
 
+/// Quota window read view (`QuotaWindowView`), mirrors the api-points
+/// `QuotaWindowViewDto` (points-grant-redesign §4.2.2).
+///
+/// One row per distinct window `key` for a (user, bucket). `key` is the stable
+/// display identity derived from the window length (e.g. `5h`/`week`/`month`),
+/// NOT a row ordinal. `isTightest` flags the minimum-remaining window (the
+/// spendable-from-quota constraint); `exhausted` flags `remaining == 0`.
+/// `resetsAt` is an ISO8601 string (matches the SDK's string-date convention).
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotaWindowView {
+    /// Stable display key (config-derived, not row ordinal).
+    pub key: String,
+    pub limit: i64,
+    pub used: i64,
+    pub remaining: i64,
+    /// Sliding window length in seconds (month ≈ 30d).
+    pub window_seconds: i64,
+    /// Approximate next reset point of the window (ISO8601). `None` when no
+    /// consume has occurred in the window yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resets_at: Option<String>,
+    /// True if this window is the minimum-remaining (tightest) constraint.
+    pub is_tightest: bool,
+    /// True if `remaining == 0`.
+    pub exhausted: bool,
+}
+
 /// Wallet balances grouped by Credit Bucket (`WalletByBucket`).
 ///
 /// Mirrors the api-points `WalletByBucketResponse` shape. For the admin
@@ -192,12 +220,25 @@ pub struct WalletByBucket {
     pub enabled: Option<bool>,
     pub user_id: String,
     pub balances_by_type: BalancesByType,
+    /// Currently spendable total for this bucket = window-available
+    /// (`spendable_from_quota`) + pool balance (`spendable_from_pool`).
     pub bucket_total: i64,
+    /// Per-window quota view for this (user, bucket) (points-grant-redesign
+    /// §4.2.2). `None` for a pool-only bucket (no active subscription /
+    /// free-periodic quota entitlement).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quota_windows: Option<Vec<QuotaWindowView>>,
+    /// Window-quota available amount = minimum `remaining` across
+    /// `quota_windows` (the tightest constraint). `None` for pool-only buckets.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spendable_from_quota: Option<i64>,
+    /// Pool-side balance sum (topup + registration + granted credit types)
+    /// for this bucket. `None` for window-only buckets with no pool balance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spendable_from_pool: Option<i64>,
 }
 
-// ============================================================================
 // Realm types
-// ============================================================================
 
 /// Request body for creating a realm
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -248,9 +289,7 @@ pub struct RealmItem {
     pub updated_at: String,
 }
 
-// ============================================================================
 // User types
-// ============================================================================
 
 /// Request body for creating a user
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -272,9 +311,7 @@ pub struct UserInfo {
     pub created_at: String,
 }
 
-// ============================================================================
 // Client App types
-// ============================================================================
 
 /// Request body for creating a client app
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -645,9 +682,7 @@ impl Client {
         resp
     }
 
-    // ========================================================================
     // Realm methods
-    // ========================================================================
 
     /// Create a new realm
     pub async fn create_realm(&self, request: CreateRealmSdkRequest) -> Result<RealmInfo, Error> {
@@ -686,9 +721,7 @@ impl Client {
         resp
     }
 
-    // ========================================================================
     // User methods
-    // ========================================================================
 
     /// Create a new user in a realm
     pub async fn create_user(
@@ -734,9 +767,7 @@ impl Client {
         resp
     }
 
-    // ========================================================================
     // Client App methods
-    // ========================================================================
 
     /// Create a new client app in a realm
     pub async fn create_client_app(
@@ -920,9 +951,7 @@ mod tests {
         server.verify().await;
     }
 
-    // ========================================================================
     // Billing API Tests
-    // ========================================================================
 
     #[tokio::test]
     async fn test_get_subscription_success() {
@@ -1007,9 +1036,7 @@ mod tests {
         assert!(result.is_err(), "Timeout should return error");
     }
 
-    // ========================================================================
     // Realm API Tests
-    // ========================================================================
 
     #[tokio::test]
     async fn test_create_realm_success() {
@@ -1164,9 +1191,7 @@ mod tests {
         server.verify().await;
     }
 
-    // ========================================================================
     // User API Tests
-    // ========================================================================
 
     #[tokio::test]
     async fn test_create_user_success() {
@@ -1313,9 +1338,7 @@ mod tests {
         server.verify().await;
     }
 
-    // ========================================================================
     // Client App API Tests
-    // ========================================================================
 
     #[tokio::test]
     async fn test_create_client_app_success() {
@@ -1467,9 +1490,7 @@ mod tests {
         server.verify().await;
     }
 
-    // ========================================================================
     // Cross-cutting error tests
-    // ========================================================================
 
     #[tokio::test]
     async fn test_realm_unauthorized() {
@@ -1514,10 +1535,6 @@ mod tests {
 
         server.verify().await;
     }
-
-    // ========================================================================
-    // Points Grant API Tests
-    // ========================================================================
 
     #[tokio::test]
     async fn test_grant_points_success() {

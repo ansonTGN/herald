@@ -1,5 +1,3 @@
-// Points API Types
-
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -57,6 +55,70 @@ impl BalancesByType {
     }
 }
 
+/// Quota window read view (`QuotaWindowView`), mirrors the domain entity
+/// `herald_core::domain::points::QuotaWindowView` (design §4.2.2).
+///
+/// One row per distinct window `key` for a (user, bucket). `key` is the stable
+/// display identity derived from the window length (e.g. `5h`/`week`/`month`),
+/// NOT a row ordinal — re-renders / config edits keep the same key.
+/// `isTightest` flags the minimum-remaining window (the spendable-from-quota
+/// constraint); `exhausted` flags `remaining == 0`.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotaWindowViewDto {
+    /// Stable display key (config-derived, not row ordinal).
+    pub key: String,
+    pub limit: i64,
+    pub used: i64,
+    pub remaining: i64,
+    /// Sliding window length in seconds (month ≈ 30d).
+    pub window_seconds: i64,
+    /// Approximate next reset point of the window (design D1 — precise
+    /// oldest-consume reset is deferred). `None` when no consume has occurred
+    /// in the window yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resets_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// True if this window is the minimum-remaining (tightest) constraint.
+    pub is_tightest: bool,
+    /// True if `remaining == 0`.
+    pub exhausted: bool,
+}
+
+impl QuotaWindowViewDto {
+    /// Map a domain `QuotaWindowView` into the HTTP DTO (1:1; the only job is
+    /// crossing the domain↔API boundary so the API contract is not bound to
+    /// the domain entity).
+    pub fn from_domain(view: herald_core::domain::points::QuotaWindowView) -> Self {
+        Self {
+            key: view.key,
+            limit: view.limit,
+            used: view.used,
+            remaining: view.remaining,
+            window_seconds: view.window_seconds,
+            resets_at: view.resets_at,
+            is_tightest: view.is_tightest,
+            exhausted: view.exhausted,
+        }
+    }
+}
+
+/// Free-periodic quota window **request** shape (design §4.2.2 / §4.4.3).
+///
+/// Carries only the editable fields; `key` is derived by the backend from
+/// `windowSeconds` (via `derive_window_key`) before persistence, so callers
+/// cannot drift the stable window identity.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, validator::Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotaWindowInputDto {
+    /// Sliding window length in seconds. Must be > 0.
+    #[validate(range(min = 1))]
+    pub window_seconds: i64,
+    /// Quota limit. Must be >= 0 (0 = window grants nothing but is a valid
+    /// config edge case).
+    #[validate(range(min = 0))]
+    pub limit: i64,
+}
+
 /// Wallet balances grouped by Credit Bucket (`WalletByBucket`).
 ///
 /// For the admin (`billing/points/wallets`) view, `user_id` is populated and
@@ -76,8 +138,27 @@ pub struct WalletByBucketResponse {
     /// users, the user view repeats the calling user).
     pub user_id: Uuid,
     pub balances_by_type: BalancesByType,
-    /// Sum of `balances_by_type` for this bucket.
+    /// Currently spendable total for this bucket = window-available
+    /// (`spendable_from_quota`) + pool balance (`spendable_from_pool`).
+    /// Semantically extended (design §4.2.2): for a pool-only bucket this
+    /// equals the pool sum (zero-regression — `quota_windows` /
+    /// `spendable_from_quota` are `None`); for a window bucket it folds in the
+    /// tightest window's remaining.
     pub bucket_total: i64,
+    /// Per-window quota view for this (user, bucket) (design §4.2.2).
+    /// `None` for a pool-only bucket (no active subscription / free-periodic
+    /// quota entitlement). `Some([])` is avoided — pool-only stays `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quota_windows: Option<Vec<QuotaWindowViewDto>>,
+    /// Window-quota available amount = minimum `remaining` across
+    /// `quota_windows` (the tightest constraint). `None` for pool-only buckets.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spendable_from_quota: Option<i64>,
+    /// Pool-side balance sum (topup + registration + granted credit types)
+    /// for this bucket. `None` for window-only buckets with no pool balance
+    /// component; otherwise the pool contribution to `bucket_total`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spendable_from_pool: Option<i64>,
 }
 
 /// Aggregated wallets-by-bucket list response.
@@ -243,6 +324,11 @@ pub struct RealmDefaultConfigResponse {
     pub free_periodic_points_amount: i64,
     pub free_periodic_grant_period_type: String,
     pub free_periodic_validity_days: i64,
+    /// Free-periodic quota window definitions (design §4.2.2 / §4.3.2).
+    /// `None` ⟺ no window-model free-periodic grant (the registration path
+    /// skips it, fail-safe). Mirrors the stored JSONB column.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub free_periodic_quota_windows: Option<Vec<QuotaWindowInputDto>>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -259,6 +345,12 @@ pub struct CreateRealmConfigRequest {
     pub free_periodic_grant_period_type: String,
     #[validate(range(min = 0))]
     pub free_periodic_validity_days: i64,
+    /// Free-periodic quota windows (design §4.2.2). Nullable; window count ≤ 8
+    /// and per-window `windowSeconds > 0` / `limit >= 0` enforced in the
+    /// handler (the `validator` derive covers the per-window ranges; the count
+    /// cap is checked explicitly because `validator` has no built-in for
+    /// `Option<Vec<_>>` length on the outer Option).
+    pub free_periodic_quota_windows: Option<Vec<QuotaWindowInputDto>>,
 }
 
 /// Update realm config request
@@ -273,6 +365,10 @@ pub struct UpdateRealmConfigRequest {
     pub free_periodic_grant_period_type: String,
     #[validate(range(min = 0))]
     pub free_periodic_validity_days: i64,
+    /// Free-periodic quota windows (design §4.2.2). `None` ⟺ leave the stored
+    /// value untouched (partial-update semantics); `Some([])` ⟺ clear;
+    /// `Some([...])` ⟺ replace. Same validation as create.
+    pub free_periodic_quota_windows: Option<Vec<QuotaWindowInputDto>>,
 }
 
 /// User points config response
@@ -347,7 +443,6 @@ mod tests {
         let json = serde_json::to_string(&account).unwrap();
         println!("Serialized JSON: {}", json);
 
-        // Verify that snake_case fields are converted to camelCase
         assert!(
             json.contains("\"userId\""),
             "Should contain camelCase 'userId'"
@@ -379,7 +474,6 @@ mod tests {
         assert!(json.contains("\"unit\""), "Should contain 'unit'");
         assert!(json.contains("\"currency\""), "Should contain 'currency'");
 
-        // Verify that original snake_case is not present
         assert!(
             !json.contains("\"user_id\""),
             "Should not contain snake_case 'user_id'"
@@ -426,7 +520,6 @@ mod tests {
         let json = serde_json::to_string(&balance).unwrap();
         println!("Serialized JSON: {}", json);
 
-        // Verify camelCase conversion
         assert!(
             json.contains("\"userId\""),
             "Should contain camelCase 'userId'"
@@ -450,7 +543,6 @@ mod tests {
         assert!(json.contains("\"unit\""), "Should contain 'unit'");
         assert!(json.contains("\"currency\""), "Should contain 'currency'");
 
-        // Verify snake_case is not present
         assert!(
             !json.contains("\"user_id\""),
             "Should not contain snake_case 'user_id'"
@@ -498,7 +590,6 @@ mod tests {
         let json = serde_json::to_string(&transaction).unwrap();
         println!("Serialized JSON: {}", json);
 
-        // Verify camelCase conversion
         assert!(
             json.contains("\"walletId\""),
             "Should contain camelCase 'walletId'"
@@ -554,7 +645,6 @@ mod tests {
             "effectiveAt must be omitted (not null) when effective_at is None (P1-2)"
         );
 
-        // Verify snake_case is not present
         assert!(
             !json.contains("\"wallet_id\""),
             "Should not contain snake_case 'wallet_id'"
@@ -612,7 +702,6 @@ mod tests {
         let json = serde_json::to_string(&plan_config).unwrap();
         println!("Serialized JSON: {}", json);
 
-        // Verify camelCase conversion
         assert!(
             json.contains("\"configId\""),
             "Should contain camelCase 'configId'"
@@ -654,7 +743,6 @@ mod tests {
             "Should contain camelCase 'updatedAt'"
         );
 
-        // Verify snake_case is not present
         assert!(
             !json.contains("\"config_id\""),
             "Should not contain snake_case 'config_id'"
@@ -710,7 +798,6 @@ mod tests {
         let json = serde_json::to_string(&response).unwrap();
         println!("Serialized JSON: {}", json);
 
-        // Verify camelCase conversion
         assert!(
             json.contains("\"transactionId\""),
             "Should contain camelCase 'transactionId'"
@@ -728,7 +815,6 @@ mod tests {
             "Should contain camelCase 'balanceAfter'"
         );
 
-        // Verify snake_case is not present
         assert!(
             !json.contains("\"transaction_id\""),
             "Should not contain snake_case 'transaction_id'"

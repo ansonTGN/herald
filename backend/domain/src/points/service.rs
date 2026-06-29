@@ -1,5 +1,3 @@
-// Points Service - Business logic for points operations
-
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -10,7 +8,8 @@ use crate::points::{
     dtos::{ConsumePointsInput, GrantPointsInput, GrantPointsOutput, RevokePointsOutput},
     entities::{
         ConsumptionAllocationView, CreditSourceType, CreditType, Paginated, PointsBalance,
-        PointsTransaction, PointsWallet, RechargeType, RevocationType, WalletStatus,
+        PointsQuotaEntitlement, PointsTransaction, PointsWallet, QuotaWindowView, RechargeType,
+        RevocationType, WalletStatus,
     },
     errors::PointsErrorExt,
     policies::PointsPolicy,
@@ -37,8 +36,6 @@ where
     pub fn new(repository: Arc<R>, policy: Arc<P>) -> Self {
         Self { repository, policy }
     }
-
-    // ===== Account Management =====
 
     /// Get points wallet for a user
     pub async fn get_wallet(
@@ -109,11 +106,16 @@ where
     /// future-effective pre-grant rows never leak into the user-visible
     /// balance. `analytics` (`total_recharged` / `total_consumed`) still come
     /// from the wallet Stored columns (lifetime totals, unaffected by
-    /// `effective_at`). Read-path realization runs FIRST
-    /// (`reconcile_due_for_user`) so a due free-period schedule is fulfilled
-    /// before the balance is computed on the same request — this is the
-    /// correctness backstop for US-FU-004 scenario 1.1 when the worker never
-    /// runs.
+    /// `effective_at`). Under points-grant-redesign, the active-entitlement
+    /// confirmation (`reconcile_due_for_user`) runs FIRST as a pure read —
+    /// availability is a function of the consume stream + entitlement
+    /// interval, so no write backstop is needed for correctness when the
+    /// worker never runs.
+    ///
+    /// Window-quota availability for `subscription_credit` / `free_periodic_credit`
+    /// is folded into the typed balances on top of the pool-side derived SUM,
+    /// so the returned balance reflects both ledger (pool) and window-model
+    /// entitlements.
     pub async fn get_balance(
         &self,
         identity: Identity,
@@ -151,16 +153,71 @@ where
             .compute_available_balance(realm_id, user_id, &[], now)
             .await?;
 
-        Ok(Self::build_balance_from_derived(account, derived))
+        // Window-quota availability for the window-model credit types
+        // (subscription + free-periodic). Folded into the balance so the
+        // user-visible total matches what `consume_points_atomic` can spend.
+        let window_balances = self
+            .compute_window_balance_by_credit_type(realm_id, user_id, now)
+            .await?;
+
+        Ok(Self::build_balance_from_derived(
+            account,
+            derived,
+            window_balances,
+        ))
     }
 
-    /// Build `PointsBalance` from derived SUM + Stored analytics. The 5 typed
-    /// balances and `total_balance` come from the derived SUM keyed by
-    /// `CreditType`; analytics (`total_recharged` / `total_consumed`) are
+    /// Compute per-credit-type window-quota availability across all buckets
+    /// for a user. Returns a map with entries for `SubscriptionCredit` and
+    /// `FreePeriodicCredit` when active quota entitlements exist; missing
+    /// entries mean zero window availability for that credit type.
+    async fn compute_window_balance_by_credit_type(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<std::collections::HashMap<CreditType, i64>, CoreError> {
+        use std::collections::{HashMap, HashSet};
+
+        let mut balances = HashMap::new();
+        for credit_type in [
+            CreditType::SubscriptionCredit,
+            CreditType::FreePeriodicCredit,
+        ] {
+            let entitlements = self
+                .repository
+                .find_active_quota_entitlements(realm_id, user_id, None, credit_type, now)
+                .await?;
+            if entitlements.is_empty() {
+                continue;
+            }
+            let bucket_ids: HashSet<Uuid> = entitlements.iter().map(|e| e.bucket_id).collect();
+            let mut total = 0i64;
+            for bucket_id in bucket_ids {
+                total += self
+                    .compute_window_available_for_credit_type(
+                        realm_id,
+                        user_id,
+                        bucket_id,
+                        credit_type,
+                        now,
+                    )
+                    .await?;
+            }
+            balances.insert(credit_type, total);
+        }
+        Ok(balances)
+    }
+
+    /// Build `PointsBalance` from derived SUM + window-quota availability +
+    /// Stored analytics. The 5 typed balances and `total_balance` come from
+    /// the derived SUM keyed by `CreditType` plus the window-model
+    /// contribution; analytics (`total_recharged` / `total_consumed`) are
     /// passed through from the Stored wallet (analytics remain Stored).
     fn build_balance_from_derived(
         account: PointsWallet,
         derived: Vec<(CreditType, i64)>,
+        window_balances: std::collections::HashMap<CreditType, i64>,
     ) -> PointsBalance {
         let mut topup = 0i64;
         let mut subscription = 0i64;
@@ -176,6 +233,17 @@ where
                 CreditType::FreePeriodicCredit => free_periodic += amount,
             }
         }
+        // Fold in window-quota availability for the window-model credit types.
+        // Under the new model the pool side for these types is zero, so this
+        // is additive; it also safely coexists with any legacy ledger rows.
+        subscription += window_balances
+            .get(&CreditType::SubscriptionCredit)
+            .copied()
+            .unwrap_or(0);
+        free_periodic += window_balances
+            .get(&CreditType::FreePeriodicCredit)
+            .copied()
+            .unwrap_or(0);
         let total_balance = topup + subscription + granted + registration + free_periodic;
         PointsBalance {
             user_id: account.user_id,
@@ -192,95 +260,54 @@ where
         }
     }
 
-    /// Read-path realization for free-periodic schedules.
+    /// Read-path "active entitlement in place" confirmation
+    /// (points-grant-redesign §5.5).
     ///
-    /// Single-user, bounded (N=3), idempotent (`points_grant_records`
-    /// `(schedule_id, period_number)` UNIQUE + schedule row `FOR UPDATE`),
-    /// lead_time=0 (only already-due periods), and restricted to
-    /// `subscription_id IS NULL` (free-periodic only — never guess paid-grant
-    /// fulfillment on the request path; subscriptions rely on event-driven
-    /// chained pre-grant). This is the correctness backstop for
-    /// US-FU-004 scenario 1.1 when the worker never runs.
+    /// Replaces the legacy per-period chained pre-grant write
+    /// loop. Under the new window-quota model, availability is a pure function
+    /// of the consume stream + active entitlement effective interval — there is
+    /// nothing to pre-grant on the request path. This method performs a
+    /// lightweight read that confirms at least one active quota entitlement
+    /// covers `now` for the window credit types. It NEVER writes and NEVER
+    /// guesses paid-state to construct a subscription entitlement on the
+    /// request path (A4: subscription entitlements are granted by webhooks).
     ///
-    /// Fail-loud: on write failure returns the infra `CoreError` unchanged
-    /// (caller surfaces 5xx). NEVER downgrades to `InsufficientBalance` or
-    /// swallows the error — masking a write fault as "low balance" would hide
-    /// system failure behind a user-visible business error.
+    /// Correctness does not depend on the worker running: when no entitlement
+    /// is active this returns `Ok(())` (window side contributes nothing; the
+    /// pool side handles the rest inside `consume_points_atomic`).
     ///
-    /// Transaction/visibility (P1-2): runs as an independent committed short
-    /// transaction on the request's connection; the caller's subsequent
-    /// balance/consume query runs in a separate transaction and under the
-    /// project default READ COMMITTED sees the committed realization rows.
-    /// The two are NOT merged into one long transaction (avoids widening the
-    /// ledger `FOR UPDATE` lock range).
-    ///
-    /// No due schedule ⟹ pure read, no write transaction, no risk.
+    /// Fail-loud: a read error is surfaced verbatim (caller surfaces 5xx); it
+    /// is NEVER rewritten to `InsufficientBalance` — masking a read fault as
+    /// "low balance" would hide system failure behind a user-visible business
+    /// error.
     pub async fn reconcile_due_for_user(
         &self,
         realm_id: &str,
         user_id: Uuid,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), CoreError> {
-        /// Per-request cap on how many past-due periods are realized in one
-        /// call. Free-periodic credits do not roll over, so
-        /// periods beyond this cap are already expired (predicate-excluded)
-        /// and do not affect current availability.
-        const RECONCILE_PERIOD_CAP: u64 = 3;
-
-        let due_schedules = self
-            .repository
-            .find_due_free_grant_schedules_for_user(realm_id, user_id, now, RECONCILE_PERIOD_CAP)
-            .await?;
-
-        if due_schedules.is_empty() {
-            // Pure read path: no write transaction opened.
-            return Ok(());
+        // Confirm an active subscription OR free-periodic quota entitlement
+        // covers `now` for this user. The bucket is intentionally left
+        // unscoped here — this is a coarse "entitlement in place" check, not
+        // the consume-time window calculation (which runs scoped to the
+        // target bucket inside `consume_points_atomic`).
+        for credit_type in [
+            CreditType::SubscriptionCredit,
+            CreditType::FreePeriodicCredit,
+        ] {
+            let entitlements = self
+                .repository
+                .find_active_quota_entitlements(realm_id, user_id, None, credit_type, now)
+                .await?;
+            if !entitlements.is_empty() {
+                return Ok(());
+            }
         }
 
-        for schedule in due_schedules {
-            // period_number follows the schedule's own progression
-            // (granted_periods + 1) — same convention as GrantScheduler.
-            let period_number = u32::try_from(schedule.granted_periods + 1).map_err(|_| {
-                CoreError::InternalServerError("schedule.granted_periods overflow".to_string())
-            })?;
-
-            // Anchor to the expected period boundary (already-due ⟹ <=now).
-            // `Some(next_grant_time)` documents the boundary even though the
-            // predicate now contains it; the infra impl may collapse to None
-            // when next_grant_time <= now if it prefers immediate semantics.
-            let effective_at = Some(schedule.next_grant_time);
-            let expires_at = schedule
-                .grant_period_type
-                .calculate_expiration(schedule.next_grant_time, schedule.validity_days);
-
-            // Idempotent: if a grant_record already exists for this
-            // (schedule_id, period_number), the infra impl returns the
-            // existing ledger row without re-writing. Schedule row is locked
-            // FOR UPDATE inside the impl for concurrent-request dedup.
-            self.repository
-                .pregrant_next_period_atomic(
-                    realm_id,
-                    &schedule,
-                    period_number,
-                    effective_at,
-                    expires_at,
-                )
-                .await
-                .map_err(|e| {
-                    // Fail-loud: surface infra error verbatim. NEVER rewrite
-                    // to InsufficientBalance or swallow.
-                    tracing::error!(
-                        realm_id = %realm_id,
-                        user_id = %user_id,
-                        schedule_id = %schedule.id,
-                        period_number,
-                        error = %e,
-                        "reconcile_due_for_user write failed (fail-loud)"
-                    );
-                    e
-                })?;
-        }
-
+        // No active quota entitlement — window side contributes nothing; the
+        // pool side handles availability inside `consume_points_atomic`. This
+        // is a pure read path: no write transaction opened, no entitlement
+        // constructed (A4).
         Ok(())
     }
 
@@ -327,14 +354,17 @@ where
         self.repository.list_wallets(realm_id, filters).await
     }
 
-    // ===== Helper Methods =====
-
-    // ===== Points Consumption =====
-
-    /// Consume points from a user's account using ledger-based consumption
+    /// Consume points from a user's account using ledger-based consumption.
     ///
-    /// Consumption priority: expiration-based (soonest expiring first, permanent last)
-    /// This is the NEW correct implementation per the design specification.
+    /// Domain coordination entry (points-grant-redesign §5.3): permission /
+    /// input / realm-boundary validation only, then delegates to
+    /// `repository.consume_points_atomic`. The window-first + overflow-to-pool
+    /// single-transaction mix happens INSIDE the infra atomic path (BE-D05),
+    /// which calls the pure `plan_mixed_consume` to split `window_part` /
+    /// `pool_part`. The consume request/response contract is unchanged.
+    ///
+    /// Consumption priority (pool side): expiration-based (soonest expiring
+    /// first, permanent last).
     #[tracing::instrument(
         // Governance: identity carries user_id/realm_id;
         // input payload references user_id/client_app_id; realm_id is
@@ -377,14 +407,12 @@ where
         // wallets are also created lazily inside the consume transaction via
         // `ensure_wallet_in_tx`, so no pre-created single wallet is needed.
 
-        // Read-path realization runs as an independent
-        // committed short transaction BEFORE the consume transaction opens —
-        // the consume transaction then re-queries under READ COMMITTED and
-        // sees the realized rows. Reconcile failure is fail-loud (5xx); it
-        // MUST NOT be swallowed or rewritten to InsufficientBalance (masking
-        // a write fault as "low balance" hides system failure).
-        self.reconcile_due_for_user(realm_id, user_id, chrono::Utc::now())
-            .await?;
+        // points-grant-redesign: the request path no longer runs a reconcile
+        // WRITE. The legacy per-period pre-grant write loop was removed;
+        // availability under the window-quota model is a pure function of the
+        // consume stream + active entitlement interval, computed inside
+        // `consume_points_atomic`. `reconcile_due_for_user` is now a pure read
+        // confirmation (no writes) and is not needed on the consume path.
 
         let saved_transactions = self
             .repository
@@ -396,7 +424,7 @@ where
             user_id = %user_id,
             amount,
             txn_count = saved_transactions.len(),
-            "Points consumed successfully (expiration-based priority, per-bucket transactions)"
+            "Points consumed successfully (window-first mix, per-bucket transactions)"
         );
 
         Ok(saved_transactions)
@@ -437,8 +465,6 @@ where
             .find_consumption_allocations_by_correlation_id(realm_id, correlation_id)
             .await
     }
-
-    // ===== Transaction Management =====
 
     /// Get a single transaction by ID
     pub async fn get_transaction(
@@ -511,8 +537,6 @@ where
 
         self.repository.find_transactions(realm_id, filters).await
     }
-
-    // ===== Points Grant =====
 
     /// Grant points to a user (admin endpoint)
     ///
@@ -631,8 +655,6 @@ where
             expires_at,
         })
     }
-
-    // ===== Internal Methods =====
 
     /// Recharge points for a user (internal method for billing webhooks)
     pub async fn recharge_points_internal(
@@ -1029,8 +1051,6 @@ where
         Ok(created_transaction)
     }
 
-    // ===== Internal Methods (for Background Services) =====
-
     /// Internal method to grant points directly to ledger
     ///
     /// This is used by background services (registration, scheduler)
@@ -1118,13 +1138,344 @@ where
 
         Ok(saved_ledger.id)
     }
+
+    /// Compute the per-window quota view for a (user, bucket), aggregating
+    /// across all active subscription + free-periodic quota entitlements
+    /// (design §4.1 / §4.2.2 / §5.2).
+    ///
+    /// For each active entitlement's snapshot window, queries the consume
+    /// aggregation port (`sum_consume_in_window`) for the sliding window
+    /// `[now - window_seconds, now]`, derives `remaining = max(0, limit - used)`,
+    /// then folds windows by stable `key` taking the **minimum remaining**
+    /// across entitlements (design: tightest constraint wins). `is_tightest`
+    /// flags the minimum-remaining window; `exhausted` flags remaining == 0.
+    /// `resets_at` is the approximate next reset point of the tightest window.
+    ///
+    /// Returns one `QuotaWindowView` per distinct `key`. Empty when the user
+    /// has no active quota entitlement for this bucket.
+    pub async fn compute_quota_windows_view(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_id: Uuid,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<QuotaWindowView>, CoreError> {
+        self.compute_quota_windows_view_for_credit_types(
+            realm_id,
+            user_id,
+            bucket_id,
+            &[
+                CreditType::SubscriptionCredit,
+                CreditType::FreePeriodicCredit,
+            ],
+            now,
+        )
+        .await
+    }
+
+    async fn compute_quota_windows_view_for_credit_types(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_id: Uuid,
+        credit_types: &[CreditType],
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<QuotaWindowView>, CoreError> {
+        // Active entitlements for the requested window credit types. Each entitlement
+        // carries its own credit_type, which selects the consume stream to
+        // aggregate against.
+        let mut entitlements = Vec::new();
+        for &credit_type in credit_types {
+            entitlements.extend(
+                self.repository
+                    .find_active_quota_entitlements(
+                        realm_id,
+                        user_id,
+                        Some(bucket_id),
+                        credit_type,
+                        now,
+                    )
+                    .await?,
+            );
+        }
+
+        // Pre-fetch used amounts for every distinct (credit_type, window_seconds)
+        // pair in the active entitlements' snapshots. Done in the async body
+        // (closures cannot `.await`); the pure aggregator then consumes a
+        // synchronous lookup. De-dupes repeated window lengths across
+        // entitlements sharing a key.
+        let mut used_map: std::collections::HashMap<(CreditType, i64), i64> =
+            std::collections::HashMap::new();
+        for ent in &entitlements {
+            for w in &ent.quota_windows {
+                let k = (ent.credit_type, w.window_seconds);
+                if used_map.contains_key(&k) {
+                    continue;
+                }
+                let window_start = now - chrono::Duration::seconds(w.window_seconds);
+                let used = self
+                    .repository
+                    .sum_consume_in_window(
+                        realm_id,
+                        user_id,
+                        bucket_id,
+                        ent.credit_type,
+                        window_start,
+                    )
+                    .await?;
+                used_map.insert(k, used);
+            }
+        }
+
+        let mut used_lookup = |credit_type: CreditType, window_seconds: i64| -> i64 {
+            used_map
+                .get(&(credit_type, window_seconds))
+                .copied()
+                .unwrap_or(0)
+        };
+
+        Ok(aggregate_quota_windows(
+            &entitlements,
+            &mut used_lookup,
+            now,
+        ))
+    }
+
+    /// Compute the window-quota available amount for consume coordination
+    /// (design §5.3): `min over (active entitlement windows) of (limit - used)`,
+    /// i.e. the tightest window's remaining. Returns 0 when no active quota
+    /// entitlement exists (window-quota contributes nothing; pool side handles
+    /// the rest).
+    pub async fn compute_window_available(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_id: Uuid,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<i64, CoreError> {
+        let views = self
+            .compute_quota_windows_view(realm_id, user_id, bucket_id, now)
+            .await?;
+        Ok(views.iter().map(|v| v.remaining).min().unwrap_or(0))
+    }
+
+    async fn compute_window_available_for_credit_type(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_id: Uuid,
+        credit_type: CreditType,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<i64, CoreError> {
+        let views = self
+            .compute_quota_windows_view_for_credit_types(
+                realm_id,
+                user_id,
+                bucket_id,
+                &[credit_type],
+                now,
+            )
+            .await?;
+        Ok(views.iter().map(|v| v.remaining).min().unwrap_or(0))
+    }
+}
+
+// These are pure functions separated from the async service wiring so the
+// window-availability orchestration (multi-window min aggregation, key
+// stability, slide recovery) is unit-testable without a DB or a port mock.
+
+/// Derive a stable display `key` from a window length in seconds.
+///
+/// Common lengths map to human-readable keys (`5h`/`day`/`week`/`month`);
+/// any length that does not map cleanly falls back to `"{seconds}s"`. The key
+/// is the frontend's stable window identity (design §4.2.2 / §4.4.3): the same
+/// length always yields the same key, so re-renders / config edits do not
+/// drift the window row identity. Month ≈ 30d (assumption A3).
+pub fn derive_window_key(window_seconds: i64) -> String {
+    const HOUR: i64 = 3_600;
+    const DAY: i64 = 86_400;
+
+    match window_seconds {
+        s if s == 5 * HOUR => "5h".to_string(),
+        s if s > 0 && s % DAY == 0 => {
+            let days = s / DAY;
+            match days {
+                1 => "day".to_string(),
+                7 => "week".to_string(),
+                30 => "month".to_string(),
+                _ => format!("{days}d"),
+            }
+        }
+        s if s > 0 && s % HOUR == 0 => {
+            let hours = s / HOUR;
+            match hours {
+                1 => "1h".to_string(),
+                _ => format!("{hours}h"),
+            }
+        }
+        s if s > 0 => format!("{s}s"),
+        // Non-positive lengths are invalid config; surface a stable key rather
+        // than panic so a bad snapshot never crashes the read path. Validation
+        // rejects these at grant time (design §4.2.2 / §4.4.3).
+        _ => format!("{window_seconds}s"),
+    }
+}
+
+/// Aggregate active entitlements into per-key window views, taking the
+/// minimum remaining across entitlements that share a window key (design
+/// §4.1: tightest constraint wins).
+///
+/// `used_lookup(credit_type, window_seconds) -> i64` supplies the consumed
+/// amount for a window; in production this is the `sum_consume_in_window`
+/// port, in tests it is a pure closure (enabling slide-recovery tests that
+/// vary the consumed amount by window length).
+///
+/// Aggregation rules (design §4.2.2 / BE-D02 handoff):
+/// - Windows are grouped by `key` across ALL entitlements (subscription +
+///   free-periodic) for this (user, bucket).
+/// - Per key: `used = max(used over entitlements sharing key)`,
+///   `limit = sum(limit over entitlements sharing key)`,
+///   `remaining = max(0, limit - used)`.
+///
+///   Rationale: a window key is defined by its length (e.g. `week`), so
+///   multiple entitlements with the same key share the SAME sliding consume
+///   window — their used amounts are identical, and limits stack. Taking
+///   `max(used)` (identical across the key) and summing limits yields the
+///   correct shared-window remaining. This matches "各窗口剩余最小值" for
+///   DISTINCT lengths and "并集" for same-length entitlements.
+/// - `is_tightest` flags the minimum-remaining window (ties: first by key
+///   order).
+/// - `exhausted` flags `remaining == 0`.
+/// - `resets_at` = `now + window_seconds` for the window's nominal reset
+///   cadence (approximate; precise oldest-consume reset is D1, deferred).
+fn aggregate_quota_windows(
+    entitlements: &[PointsQuotaEntitlement],
+    used_lookup: &mut dyn FnMut(CreditType, i64) -> i64,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Vec<QuotaWindowView> {
+    use std::collections::HashMap;
+
+    // Per-key accumulator: (limit_sum, used_max, window_seconds).
+    // window_seconds is identical across rows sharing a key (key is derived
+    // from length), so the first-seen value is canonical.
+    let mut by_key: HashMap<String, (i64, i64, i64)> = HashMap::new();
+    for ent in entitlements {
+        for w in &ent.quota_windows {
+            let used = used_lookup(ent.credit_type, w.window_seconds).max(0);
+            by_key
+                .entry(w.key.clone())
+                .and_modify(|(limit_sum, used_max, _sec)| {
+                    *limit_sum += w.limit;
+                    if used > *used_max {
+                        *used_max = used;
+                    }
+                })
+                .or_insert((w.limit, used, w.window_seconds));
+        }
+    }
+
+    let mut views: Vec<QuotaWindowView> = by_key
+        .into_iter()
+        .map(|(key, (limit, used, window_seconds))| {
+            let remaining = (limit - used).max(0);
+            QuotaWindowView {
+                key,
+                limit,
+                used,
+                remaining,
+                window_seconds,
+                resets_at: Some(now + chrono::Duration::seconds(window_seconds)),
+                is_tightest: false,
+                exhausted: remaining == 0,
+            }
+        })
+        .collect();
+
+    // Mark the tightest (minimum remaining) window. Stable tiebreak by key so
+    // the flag is deterministic across re-aggregations.
+    if let Some(min_remaining) = views.iter().map(|v| v.remaining).min() {
+        views.sort_by(|a, b| a.key.cmp(&b.key));
+        let mut tightest_set = false;
+        for v in &mut views {
+            if !tightest_set && v.remaining == min_remaining {
+                v.is_tightest = true;
+                tightest_set = true;
+            }
+        }
+    } else {
+        views.sort_by(|a, b| a.key.cmp(&b.key));
+    }
+
+    views
+}
+
+/// Planned split of a single consume across the window-quota and pool sides
+/// (points-grant-redesign §5.3). Produced by the pure `plan_mixed_consume`
+/// orchestrator; the infra `consume_points_atomic` path (BE-D05) applies it
+/// inside one transaction.
+///
+/// Invariants:
+/// - `window_part + pool_part == amount` for the `Ok` variant.
+/// - `window_part <= window_available` (window side never overspends).
+/// - `pool_part <= pool_available` (pool side never overspends).
+/// - When `amount > window_available + pool_available` the consume is
+///   rejected wholesale (`Insufficient`) — no partial deduction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixedConsumePlan {
+    /// Apply `window_part` to the window-quota side and `pool_part` to the
+    /// pool side. Either part may be 0 (window-only / pool-only consume).
+    Ok { window_part: i64, pool_part: i64 },
+    /// Total availability (`window_available + pool_available`) is below the
+    /// requested `amount`. The caller rejects the consume wholesale.
+    Insufficient,
+}
+
+/// Pure consume-mix orchestrator (points-grant-redesign §5.3, P0 overspend
+/// guard).
+///
+/// Splits a requested `amount` into a window-quota part and a pool part:
+/// - `window_part = min(amount, window_available)` (window-first).
+/// - `pool_part = amount - window_part` (overflow to pool).
+/// - If `amount > window_available + pool_available` → `Insufficient`
+///   (reject wholesale, no partial deduction).
+///
+/// `window_available` is the tightest-window remaining
+/// (`compute_window_available`, min over active windows); `pool_available` is
+/// the pool-side aggregate (`compute_available_balance` over pool credit
+/// types). Both are computed by the infra path inside the consume transaction
+/// (BE-D05) and passed here; this function is pure so the split + overspend
+/// guard is unit-testable without a DB.
+///
+/// Negative inputs are treated as 0 availability (defensive: a negative
+/// remaining from a shrunk quota clamps to 0 upstream, but this guard keeps
+/// the overspend invariant even if a negative slips through).
+pub fn plan_mixed_consume(
+    window_available: i64,
+    pool_available: i64,
+    amount: i64,
+) -> MixedConsumePlan {
+    let window_avail = window_available.max(0);
+    let pool_avail = pool_available.max(0);
+
+    // Overspend guard: reject wholesale when total availability is below the
+    // requested amount. No partial deduction (design §5.3).
+    if amount > window_avail + pool_avail {
+        return MixedConsumePlan::Insufficient;
+    }
+
+    // Window-first split. min(amount, window_avail); the rest overflows to pool.
+    let window_part = amount.min(window_avail);
+    let pool_part = amount - window_part;
+
+    MixedConsumePlan::Ok {
+        window_part,
+        pool_part,
+    }
 }
 
 // Governance tests.
-//
 // Covers: domain points service `consume_points`,
 // `list_transactions`, `grant_points` instrument skip correctness.
-//
 // WHY: these methods take `identity` (carries user_id/realm_id), `realm_id`,
 // and `input`/`filters` (reference user_id/bucket_id). If the `#[instrument]`
 // macro ever stops skipping those, the identifiers leak into a span field.
@@ -1211,5 +1562,480 @@ mod instrument_skip_tests {
                 "grant_points span must not record a `{banned}` field; body was:\n{body}"
             );
         }
+    }
+}
+
+// BE-D02 window-quota availability unit tests.
+// These target the pure orchestration (`derive_window_key` +
+// `aggregate_quota_windows`) — the value-bearing logic of window availability.
+// They do NOT touch the DB or the PointsRepository port; the async service
+// methods (`compute_quota_windows_view` / `compute_window_available`) are thin
+// wiring over these pure functions and the port calls, validated end-to-end by
+// scenario tests (BE-D0x scenario suite, out of this item's scope).
+#[cfg(test)]
+mod window_tests {
+    use super::*;
+    use crate::points::entities::{QuotaEntitlementStatus, QuotaSourceType, QuotaWindow};
+
+    const HOUR: i64 = 3_600;
+    const DAY: i64 = 86_400;
+    const WEEK: i64 = 7 * DAY;
+    const MONTH: i64 = 30 * DAY;
+
+    fn now() -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339("2026-06-29T12:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    }
+
+    fn window(window_seconds: i64, limit: i64) -> QuotaWindow {
+        QuotaWindow {
+            window_seconds,
+            limit,
+            key: derive_window_key(window_seconds),
+        }
+    }
+
+    fn entitlement(credit_type: CreditType, windows: &[QuotaWindow]) -> PointsQuotaEntitlement {
+        PointsQuotaEntitlement {
+            id: Uuid::nil(),
+            user_id: Uuid::nil(),
+            realm_id: "realm".to_string(),
+            bucket_id: Uuid::nil(),
+            credit_type,
+            source_type: QuotaSourceType::SubscriptionInitial,
+            source_id: "src".to_string(),
+            quota_windows: windows.to_vec(),
+            effective_from: now(),
+            effective_until: None,
+            status: QuotaEntitlementStatus::Active,
+            idempotency_key: "idem".to_string(),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn window_key_common_lengths_map_to_stable_human_keys() {
+        // Same length -> same key (stability under re-derivation).
+        assert_eq!(derive_window_key(5 * HOUR), "5h");
+        assert_eq!(derive_window_key(5 * HOUR), derive_window_key(5 * HOUR));
+
+        assert_eq!(derive_window_key(DAY), "day");
+        assert_eq!(derive_window_key(WEEK), "week");
+        assert_eq!(derive_window_key(MONTH), "month");
+    }
+
+    #[test]
+    fn window_key_month_is_30_days_canonical() {
+        // A3: month ≈ 30d. 30d and 31d must NOT both map to "month"
+        // (would collide distinct lengths into one frontend identity).
+        assert_eq!(derive_window_key(30 * DAY), "month");
+        assert_ne!(derive_window_key(31 * DAY), "month");
+        assert_eq!(derive_window_key(31 * DAY), "31d");
+    }
+
+    #[test]
+    fn window_key_distinct_lengths_yield_distinct_keys() {
+        let keys = [
+            derive_window_key(5 * HOUR),
+            derive_window_key(DAY),
+            derive_window_key(WEEK),
+            derive_window_key(MONTH),
+        ];
+        let unique: std::collections::HashSet<&str> = keys.iter().map(String::as_str).collect();
+        assert_eq!(
+            unique.len(),
+            keys.len(),
+            "distinct lengths must yield distinct keys: {keys:?}"
+        );
+    }
+
+    #[test]
+    fn window_key_non_whole_divisor_seconds_fall_back_to_seconds_form() {
+        // 90 minutes is neither a whole day nor a whole hour -> seconds form.
+        assert_eq!(derive_window_key(90 * 60), format!("{}s", 90 * 60));
+        // 12h is a whole-hour length but has no special-case mapping -> "12h".
+        assert_eq!(derive_window_key(12 * HOUR), "12h");
+    }
+
+    #[test]
+    fn window_key_never_panics_on_invalid_length() {
+        // Bad snapshot (<=0) must not crash the read path; stable fallback key.
+        assert_eq!(derive_window_key(0), "0s");
+        assert_eq!(derive_window_key(-60), "-60s");
+    }
+
+    #[test]
+    fn window_view_tightest_flag_marks_minimum_remaining_across_distinct_lengths() {
+        // One entitlement with two distinct-length windows (week + month).
+        // Used amounts chosen so week (remaining 30) is tighter than month (remaining 50).
+        let ent = entitlement(
+            CreditType::SubscriptionCredit,
+            &[window(WEEK, 100), window(MONTH, 200)],
+        );
+        let mut used = |_: CreditType, secs: i64| {
+            if secs == WEEK {
+                70
+            } else if secs == MONTH {
+                150
+            } else {
+                0
+            }
+        };
+
+        let views = aggregate_quota_windows(&[ent], &mut used, now());
+        let week = views.iter().find(|v| v.key == "week").unwrap();
+        let month = views.iter().find(|v| v.key == "month").unwrap();
+
+        assert_eq!(week.remaining, 30);
+        assert!(week.is_tightest, "week (min remaining) must be tightest");
+        assert!(!month.is_tightest);
+        assert_eq!(month.remaining, 50);
+        // exhausted flag is remaining == 0.
+        assert!(!week.exhausted);
+        assert!(!month.exhausted);
+    }
+
+    #[test]
+    fn window_view_same_key_across_entitlements_stacks_limit_takes_min_remaining() {
+        // Two entitlements each granting a `week` window (same key/length).
+        // Same-length same-key windows SHARE the sliding consume window, so:
+        //   limit = 80 + 120 = 200, used = 50 (max, identical across the key)
+        //   remaining = 200 - 50 = 150
+        let ent1 = entitlement(CreditType::SubscriptionCredit, &[window(WEEK, 80)]);
+        let ent2 = entitlement(CreditType::FreePeriodicCredit, &[window(WEEK, 120)]);
+        let mut used = |_: CreditType, secs: i64| if secs == WEEK { 50 } else { 0 };
+
+        let views = aggregate_quota_windows(&[ent1, ent2], &mut used, now());
+        assert_eq!(views.len(), 1, "same-key windows must collapse to one view");
+        let v = &views[0];
+        assert_eq!(v.key, "week");
+        assert_eq!(v.limit, 200);
+        assert_eq!(v.used, 50);
+        assert_eq!(v.remaining, 150);
+        assert!(v.is_tightest, "single window is trivially tightest");
+    }
+
+    #[test]
+    fn window_view_exhausted_window_drives_available_to_zero() {
+        // Week window fully consumed (used == limit) -> remaining 0, exhausted.
+        // Month window still has budget. Tightest is the exhausted week.
+        let ent = entitlement(
+            CreditType::SubscriptionCredit,
+            &[window(WEEK, 100), window(MONTH, 500)],
+        );
+        // Both windows consumed by 100 (week fully, month partially).
+        let mut used = |_: CreditType, _: i64| 100;
+
+        let views = aggregate_quota_windows(&[ent], &mut used, now());
+        let week = views.iter().find(|v| v.key == "week").unwrap();
+        let month = views.iter().find(|v| v.key == "month").unwrap();
+        assert!(week.exhausted);
+        assert_eq!(week.remaining, 0);
+        assert!(week.is_tightest);
+        assert!(!month.exhausted);
+        assert_eq!(month.remaining, 400);
+
+        // compute_window_available semantics: min remaining across windows.
+        let min_remaining = views.iter().map(|v| v.remaining).min().unwrap();
+        assert_eq!(min_remaining, 0);
+    }
+
+    #[test]
+    fn window_view_used_clamped_at_zero_when_lookup_underflows_limit() {
+        // If used > limit (e.g. quota shrunk after grant, or negative aggregation),
+        // remaining clamps to 0 rather than going negative.
+        let ent = entitlement(CreditType::FreePeriodicCredit, &[window(DAY, 10)]);
+        let mut used = |_: CreditType, _: i64| 99;
+
+        let views = aggregate_quota_windows(&[ent], &mut used, now());
+        assert_eq!(views[0].remaining, 0);
+        assert!(views[0].exhausted);
+    }
+
+    // WHY this test exists: window availability is a pure function of the
+    // consume stream + window length. As the window slides, old consumes age
+    // out and `used` drops — the orchestration must reflect that drop
+    // immediately (no cached/stale remaining). This test fixes the
+    // orchestration's contract: feeding a smaller `used` for the same window
+    // yields a larger `remaining`, which is exactly the slide-recovery behavior
+    // the consume path and dashboard rely on (design §6.1 test_window_slide_recovery
+    // exercises the SQL slide end-to-end; here we pin the orchestration layer).
+
+    #[test]
+    fn window_view_slide_recovery_remaining_restores_as_used_drops() {
+        let ent = entitlement(CreditType::SubscriptionCredit, &[window(WEEK, 100)]);
+
+        // Before slide: 80 consumed in the week window -> remaining 20.
+        let mut used_pre = |_: CreditType, _: i64| 80;
+        let pre = aggregate_quota_windows(std::slice::from_ref(&ent), &mut used_pre, now());
+        assert_eq!(pre[0].remaining, 20);
+
+        // After slide: the same 80 units aged out (window_start advanced),
+        // used Lookup now returns 10 -> remaining restores to 90.
+        let mut used_post = |_: CreditType, _: i64| 10;
+        let post = aggregate_quota_windows(&[ent], &mut used_post, now());
+        assert_eq!(post[0].remaining, 90);
+        assert!(post[0].remaining > pre[0].remaining);
+    }
+
+    #[test]
+    fn window_view_empty_entitlements_yields_empty_view() {
+        // No active quota entitlement -> no windows. compute_window_available
+        // returns 0 (window side contributes nothing; pool handles the rest).
+        let mut used = |_: CreditType, _: i64| 0;
+        let views = aggregate_quota_windows(&[], &mut used, now());
+        assert!(views.is_empty());
+    }
+
+    #[test]
+    fn window_view_resets_at_advances_by_window_seconds() {
+        // resets_at is a nominal reset cadence (now + window_seconds), used by
+        // the dashboard "resets in ~Nh" hint. Verify it tracks window length.
+        let ent = entitlement(CreditType::SubscriptionCredit, &[window(HOUR * 5, 100)]);
+        let now = now();
+        let mut used = |_: CreditType, _: i64| 0;
+        let views = aggregate_quota_windows(&[ent], &mut used, now);
+        assert_eq!(
+            views[0].resets_at,
+            Some(now + chrono::Duration::seconds(5 * HOUR))
+        );
+    }
+}
+
+// BE-D03 mixed-consume plan unit tests.
+// These target the pure overspend-guard orchestrator (`plan_mixed_consume`)
+// — the P0 anti-overspend core of the consume mix. They do NOT touch the DB
+// or the port; the in-transaction application (window-first deduction +
+// overflow-to-pool) is infra (BE-D05), validated end-to-end by scenario tests.
+// WHY: a bug here means either silent overspend (window/pool part exceeds
+// availability) or a wrongly-rejected consume. Each test pins one arm of the
+// decision so a regression in the split or the guard fails loudly.
+#[cfg(test)]
+mod mixed_consume_tests {
+    use super::*;
+
+    #[test]
+    fn mixed_consume_window_covers_whole_amount_pool_part_zero() {
+        // amount <= window_available ⟹ window-first, pool untouched.
+        let plan = plan_mixed_consume(100, 50, 30);
+        assert_eq!(
+            plan,
+            MixedConsumePlan::Ok {
+                window_part: 30,
+                pool_part: 0
+            }
+        );
+    }
+
+    #[test]
+    fn mixed_consume_window_partial_overflow_to_pool() {
+        // window covers part; remainder overflows atomically to pool.
+        let plan = plan_mixed_consume(40, 60, 70);
+        assert_eq!(
+            plan,
+            MixedConsumePlan::Ok {
+                window_part: 40,
+                pool_part: 30
+            }
+        );
+    }
+
+    #[test]
+    fn mixed_consume_window_zero_pool_only() {
+        // No window availability ⟹ entire consume drawn from pool.
+        let plan = plan_mixed_consume(0, 80, 80);
+        assert_eq!(
+            plan,
+            MixedConsumePlan::Ok {
+                window_part: 0,
+                pool_part: 80
+            }
+        );
+    }
+
+    #[test]
+    fn mixed_consume_total_insufficient_rejects_wholesale() {
+        // amount > window + pool ⟹ Insufficient. Wholesale reject — NO
+        // partial deduction (the core anti-overspend invariant).
+        let plan = plan_mixed_consume(40, 50, 100);
+        assert_eq!(plan, MixedConsumePlan::Insufficient);
+    }
+
+    #[test]
+    fn mixed_consume_exact_total_coverage_succeeds() {
+        // amount == window + pool exactly ⟹ Ok (boundary: not insufficient).
+        let plan = plan_mixed_consume(40, 60, 100);
+        assert_eq!(
+            plan,
+            MixedConsumePlan::Ok {
+                window_part: 40,
+                pool_part: 60
+            }
+        );
+    }
+
+    #[test]
+    fn mixed_consume_amount_zero_boundary_yields_zero_parts() {
+        // amount = 0 ⟹ both parts 0 (no-op consume is well-defined, not
+        // Insufficient). Pins that the guard uses strict `>`.
+        let plan = plan_mixed_consume(10, 20, 0);
+        assert_eq!(
+            plan,
+            MixedConsumePlan::Ok {
+                window_part: 0,
+                pool_part: 0
+            }
+        );
+    }
+
+    #[test]
+    fn mixed_consume_no_availability_nonzero_amount_is_insufficient() {
+        // Both sides 0, amount > 0 ⟹ Insufficient (not Ok with 0 parts).
+        let plan = plan_mixed_consume(0, 0, 1);
+        assert_eq!(plan, MixedConsumePlan::Insufficient);
+    }
+
+    #[test]
+    fn mixed_consume_clamps_negative_availability_to_zero() {
+        // Defensive: a negative remaining (shrunk quota / aggregation glitch)
+        // is clamped to 0 so the overspend invariant holds even if a negative
+        // slips through. Here window=-5 behaves like 0, so 6 from pool-only.
+        let plan = plan_mixed_consume(-5, 10, 6);
+        assert_eq!(
+            plan,
+            MixedConsumePlan::Ok {
+                window_part: 0,
+                pool_part: 6
+            }
+        );
+
+        // And negative pool alone cannot rescue an insufficient consume.
+        let plan = plan_mixed_consume(3, -2, 10);
+        assert_eq!(plan, MixedConsumePlan::Insufficient);
+    }
+
+    #[test]
+    fn mixed_consume_ok_parts_always_sum_to_amount() {
+        // Property-style check: for the Ok variant, window_part + pool_part
+        // MUST equal amount (the single-transaction mix relies on this).
+        for (window, pool, amount) in [(100, 0, 50), (40, 60, 70), (0, 80, 80), (40, 60, 100)] {
+            let plan = plan_mixed_consume(window, pool, amount);
+            match plan {
+                MixedConsumePlan::Ok {
+                    window_part,
+                    pool_part,
+                } => {
+                    assert_eq!(window_part + pool_part, amount);
+                    assert!(window_part <= window.max(0));
+                    assert!(pool_part <= pool.max(0));
+                }
+                MixedConsumePlan::Insufficient => {
+                    panic!("expected Ok for ({window},{pool},{amount})")
+                }
+            }
+        }
+    }
+}
+
+// BE-D03 reconcile-evolution unit tests.
+// These pin the post-redesign contract of `reconcile_due_for_user`: it is a
+// pure read confirmation that (a) NEVER writes, (b) returns Ok when an active
+// quota entitlement covers `now`, (c) returns Ok (no-op) when none is active
+// — it must NOT construct a subscription entitlement on the request path
+// (A4). Uses the mockall automock from BE-D02's `#[cfg_attr(test,
+// mockall::automock)]` on the port.
+#[cfg(test)]
+mod reconcile_evolution_tests {
+    use super::*;
+    use crate::points::entities::{QuotaEntitlementStatus, QuotaSourceType, QuotaWindow};
+    use crate::points::policies::AllowAllPointsPolicy;
+    use crate::points::ports::MockPointsRepository;
+
+    fn now() -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339("2026-06-29T12:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    }
+
+    fn active_entitlement(credit_type: CreditType) -> PointsQuotaEntitlement {
+        PointsQuotaEntitlement {
+            id: Uuid::nil(),
+            user_id: Uuid::nil(),
+            realm_id: "realm".to_string(),
+            bucket_id: Uuid::nil(),
+            credit_type,
+            source_type: QuotaSourceType::SubscriptionInitial,
+            source_id: "src".to_string(),
+            quota_windows: vec![QuotaWindow {
+                window_seconds: 86_400,
+                limit: 100,
+                key: "day".to_string(),
+            }],
+            effective_from: now(),
+            effective_until: None,
+            status: QuotaEntitlementStatus::Active,
+            idempotency_key: "idem".to_string(),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn reconcile_returns_ok_when_active_subscription_entitlement_covers_now() {
+        // Active subscription entitlement present ⟹ Ok after a single read.
+        // No write port method is invoked.
+        let mut repo = MockPointsRepository::new();
+        repo.expect_find_active_quota_entitlements()
+            .times(1)
+            .returning(|_, _, _, credit_type, _| {
+                assert_eq!(credit_type, CreditType::SubscriptionCredit);
+                Box::pin(async { Ok(vec![active_entitlement(CreditType::SubscriptionCredit)]) })
+            });
+
+        let svc = PointsService::new(Arc::new(repo), Arc::new(AllowAllPointsPolicy));
+        let res = svc
+            .reconcile_due_for_user("realm", Uuid::nil(), now())
+            .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn reconcile_returns_ok_no_op_when_no_active_entitlement() {
+        // No active entitlement on either side ⟹ Ok (window side contributes
+        // nothing). Critically: NO entitlement is constructed and NO write
+        // port is called (A4 — the request path never guesses paid state).
+        let mut repo = MockPointsRepository::new();
+        // Both credit types are queried; both return empty.
+        repo.expect_find_active_quota_entitlements()
+            .times(2)
+            .returning(|_, _, _, _, _| Box::pin(async { Ok(Vec::new()) }));
+
+        let svc = PointsService::new(Arc::new(repo), Arc::new(AllowAllPointsPolicy));
+        let res = svc
+            .reconcile_due_for_user("realm", Uuid::nil(), now())
+            .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn reconcile_short_circuits_on_first_active_side() {
+        // Subscription side active ⟹ free-periodic side is NOT queried
+        // (short-circuit). Pins the early-return and avoids the second read.
+        let mut repo = MockPointsRepository::new();
+        let mut seq = mockall::Sequence::new();
+        repo.expect_find_active_quota_entitlements()
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(|_, _, _, _, _| {
+                Box::pin(async { Ok(vec![active_entitlement(CreditType::SubscriptionCredit)]) })
+            });
+
+        let svc = PointsService::new(Arc::new(repo), Arc::new(AllowAllPointsPolicy));
+        let res = svc
+            .reconcile_due_for_user("realm", Uuid::nil(), now())
+            .await;
+        assert!(res.is_ok());
     }
 }

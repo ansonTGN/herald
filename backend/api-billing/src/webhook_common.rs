@@ -1,7 +1,5 @@
-use herald_api_base::application::http::state::AppState;
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::points::entities::{PointsTransaction, TransactionType};
-use herald_core::domain::points::ports::{PointsRepository, ReclaimLocator};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -70,91 +68,4 @@ pub fn parse_attempt_id(value: &Value) -> Option<Uuid> {
         .as_str()
         .and_then(|raw| Uuid::parse_str(raw).ok())
         .filter(|id| *id != Uuid::nil())
-}
-
-/// Reason string recorded on `PointsRevocationRecord` rows produced by
-/// pre-grant reclaim. The infra reclaim path
-/// (`revoke_pregrant_ledger_row_atomic`) writes the revocation record for
-/// partially-consumed rows using this reason; fully-unused rows need no
-/// debt record.
-pub const RECLAIM_REASON: &str = "subscription_pre_grant_reclaim";
-
-/// Row-level reclaim of a subscription's pre-granted future period.
-///
-/// Subscription pre-grant is **chained one period ahead**:
-/// each `handle_subscription_paid` / activation writes the current period
-/// and pre-grants the next period. `pregrant_next_period_atomic` advances
-/// `granted_periods` to the pre-granted period number, so the highest
-/// period row (the not-yet-current pre-grant) lives AT
-/// `granted_periods`. "All future-effective pre-grant rows for this
-/// subscription" therefore resolves to that single row, located
-/// row-precisely via `ReclaimLocator::BySchedulePeriod { schedule_id,
-/// period_number }`.
-///
-/// Behaviour:
-/// - No schedule on file (legacy subscription / pre-D08 gap) → no-op, returns
-///   `Ok(0)`. Provider event-level idempotency + the absence of a pre-grant
-///   row make this safe.
-/// - Row already revoked / never pre-granted → infra returns 0 (idempotent).
-/// - Row active & unused → set `revoked`, no revocation record (no shortfall).
-/// - Row active & partially consumed → set `revoked` + write
-///   `PointsRevocationRecord(reason = subscription_pre_grant_reclaim)`.
-///
-/// **No wallet back-adjustment**: derived balance auto-excludes revoked
-/// rows. **No other active credits touched** (row-precise locator).
-///
-/// Returns the number of ledger rows revoked (0 ⟹ idempotent no-op).
-pub async fn reclaim_pregrant_for_subscription(
-    app_state: &AppState,
-    realm_id: &str,
-    subscription_id: Uuid,
-) -> Result<usize, CoreError> {
-    // Resolve the subscription's grant schedule. When absent there is no
-    // chained pre-grant row to reclaim — return idempotently.
-    let Some(schedule) = app_state
-        .points_repository
-        .find_grant_schedule_by_subscription(subscription_id)
-        .await?
-    else {
-        tracing::debug!(
-            realm_id = %realm_id,
-            subscription_id = %subscription_id,
-            "reclaim: no grant schedule for subscription, no pre-grant row to revoke"
-        );
-        return Ok(0);
-    };
-
-    // The pre-grant to reclaim is the highest-numbered period row, which lives
-    // AT `granted_periods`. Reason: `pregrant_next_period_atomic` advances
-    // `granted_periods = max(old, period_number)` after writing the chained
-    // pre-grant, so once a pre-grant exists for period N, `granted_periods`
-    // already equals N (not N-1). The worker backstop still pre-grants
-    // `granted_periods + 1` (the next UN-pre-granted period) — that path is
-    // untouched. Reclaiming the row at `granted_periods` therefore covers the
-    // future-effective pre-grant state for this subscription. (Off-by-one fix:
-    // the previous `granted_periods + 1` target pointed one period too high and
-    // left the real pre-grant row active after cancel.)
-    let next_period_number = u32::try_from(schedule.granted_periods)
-        .map_err(|_| CoreError::InternalServerError("granted_periods overflows u32".to_string()))?;
-    let locator = ReclaimLocator::BySchedulePeriod {
-        schedule_id: schedule.id,
-        period_number: next_period_number,
-    };
-
-    let affected = app_state
-        .points_repository
-        .revoke_pregrant_ledger_row_atomic(realm_id, locator, RECLAIM_REASON)
-        .await?;
-
-    tracing::info!(
-        realm_id = %realm_id,
-        subscription_id = %subscription_id,
-        schedule_id = %schedule.id,
-        period_number = next_period_number,
-        affected,
-        reason = RECLAIM_REASON,
-        "Pre-grant reclaim: future-effective ledger row revoked (row-precise, no wallet back-adjust)"
-    );
-
-    Ok(affected)
 }

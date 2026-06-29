@@ -1,7 +1,3 @@
-// =============================================================================
-// Scenario Tests: fulfillment + subscription lifecycle bucket routing
-// =============================================================================
-//
 // Covers design `.ai/design/credit-bucket.md`:
 //   - (grant/fulfillment Bucket routing)
 //   - (subscription lifecycle reclamation)
@@ -12,7 +8,6 @@
 //     (taken at purchase creation); first fulfillment freezes
 //     `subscription.bucket_id` from that snapshot; missing snapshot/subscription
 //     bucket fails loud.
-//
 // All tests exercise the real production services via `ctx.app_state`:
 //   - `purchase_service.create_payment_attempt` (HTTP path, scenario 1 only)
 //   - `fulfillment_service.fulfill_subscription_purchase(&attempt, …)`
@@ -20,17 +15,13 @@
 //     downgrade`
 //   - `points_service.revoke_points_by_credit_type` (refund path, routed via
 //     `subscription.bucket_id`)
-//
 // Per authoring rules: tests target the intended design contract. Where the
 // landed production signature/behavior differs from the item's assumptions,
 // the gap is recorded inline (`RUNTIME GAP`) and the test is written against
 // the intended contract — the runner will triage runtime failures.
-//
 // Authoritative runtime gaps surfaced by these tests:
 //   1. (none expected at compile time — all targets below use stable,
 //      already-landed production APIs.)
-//
-// =============================================================================
 
 #![allow(clippy::too_many_arguments)]
 
@@ -75,9 +66,7 @@ async fn mapping_for_key(
         .unwrap_or_else(|| panic!("mapping for key '{key}' should be Some"))
 }
 
-// =============================================================================
 // Local SQL helpers — direct row construction for fulfillment scenarios
-// =============================================================================
 
 /// Create a `subscription`-billing entitlement mapping attached to a Bucket,
 /// with `grant_on_subscribe = true`, a positive `points_per_period`, and
@@ -190,10 +179,7 @@ async fn insert_subscription_in_bucket(
     subscription_id
 }
 
-// =============================================================================
 // Scenario 1 (REMOVED): mapping with bucket_id=NULL rejects purchase creation
-// =============================================================================
-//
 // `provider_entitlement_mappings.bucket_id` is NOT NULL in the base schema
 // (`20260607_product_reduce.sql`). A bucket-less mapping can therefore no longer exist,
 // so the purchase-time runtime check — CoreError::EntitlementMappingNotAttachedToBucket
@@ -201,9 +187,7 @@ async fn insert_subscription_in_bucket(
 // scenario guarded ("a mapping without a credit bucket cannot be purchased") is
 // now enforced structurally at the schema layer instead of at request time.
 
-// =============================================================================
 // Scenario 2: fulfillment grants to the attempt-snapshot Bucket
-// =============================================================================
 
 /// User Story: US-CB-004 (purchase Bucket plan), US-PA-003 (payment success
 /// fulfillment).
@@ -221,7 +205,6 @@ async fn fulfillment_grants_to_attempt_snapshot_bucket(ctx: &mut TestContext) {
 
     let user_id = create_test_user(pool, &realm_id, "cb_t02_fulfill_snapshot@example.com").await;
 
-    // --- Given: a Bucket A and a subscription mapping attached to A. --------
     let bucket_a = create_test_credit_bucket(
         pool,
         &realm_id,
@@ -237,14 +220,12 @@ async fn fulfillment_grants_to_attempt_snapshot_bucket(ctx: &mut TestContext) {
         create_subscription_mapping_in_bucket(pool, &realm_id, &entitlement_key, bucket_a, 1_000)
             .await;
 
-    // --- And: a Succeeded payment attempt whose snapshot bucket = A. --------
     let attempt_id =
         insert_attempt_with_bucket_snapshot(pool, &realm_id, user_id, mapping_id, Some(bucket_a))
             .await;
     let attempt = load_attempt(ctx, attempt_id).await;
     assert_eq!(attempt.bucket_id, bucket_a, "snapshot bucket = A");
 
-    // --- When: fulfilling the attempt via the real fulfillment service. ----
     let provider_tx_id = format!("sub_snap_{}", attempt_id);
     let result = ctx
         .app_state
@@ -254,7 +235,6 @@ async fn fulfillment_grants_to_attempt_snapshot_bucket(ctx: &mut TestContext) {
 
     assert!(result.is_ok(), "fulfillment should succeed: {:?}", result);
 
-    // --- Then: ledger row landed in Bucket A, with the right amount. --------
     let ledger_count_a =
         count_ledger_in_bucket(pool, user_id, bucket_a, "subscription_credit").await;
     assert_eq!(
@@ -269,11 +249,9 @@ async fn fulfillment_grants_to_attempt_snapshot_bucket(ctx: &mut TestContext) {
         "granted amount == mapping.points_per_period"
     );
 
-    // --- And: no ledger row leaked to any other Bucket. --------------------
     let leak_count = count_ledger_outside_bucket(pool, user_id, bucket_a).await;
     assert_eq!(leak_count, 0, "no ledger row in any other bucket");
 
-    // --- And: subscription.bucket_id is frozen to the snapshot Bucket. ------
     let subscription_id = result
         .as_ref()
         .ok()
@@ -286,9 +264,7 @@ async fn fulfillment_grants_to_attempt_snapshot_bucket(ctx: &mut TestContext) {
     );
 }
 
-// =============================================================================
 // Scenario 3: first fulfillment freezes subscription.bucket_id
-// =============================================================================
 
 /// User Story: US-CB-008 (subscription lifecycle by Bucket).
 /// Covers:
@@ -335,7 +311,6 @@ async fn fulfillment_freezes_subscription_bucket_on_first_renewal(ctx: &mut Test
 
     let subscription_id = result.subscription_id.expect("subscription_id present");
 
-    // --- Then: subscription.bucket_id equals the snapshot. The column is NOT
     // NULL by schema (eager binding), so the only meaningful assertion is the
     // value identity; the previous `is_some()` check is now tautological and
     // was removed.
@@ -350,10 +325,8 @@ async fn fulfillment_freezes_subscription_bucket_on_first_renewal(ctx: &mut Test
     );
 }
 
-// =============================================================================
 // Scenario 4: regression — mapping bucket change after purchase does not
 // reroute an in-flight attempt
-// =============================================================================
 
 /// User Story: US-CB-003 (coverage-set / mapping changes affect only future
 /// purchases); 覆盖集变更不回溯.
@@ -374,7 +347,6 @@ async fn mapping_bucket_change_after_purchase_does_not_reroute_inflight_attempt(
     let user_id =
         create_test_user_with_auth(pool, &realm_id, "cb_t02_a7@example.com", "pw123").await;
 
-    // --- Given: two Buckets A and B. ---------------------------------------
     let bucket_a = create_test_credit_bucket(
         pool,
         &realm_id,
@@ -402,14 +374,12 @@ async fn mapping_bucket_change_after_purchase_does_not_reroute_inflight_attempt(
         create_subscription_mapping_in_bucket(pool, &realm_id, &entitlement_key, bucket_a, 800)
             .await;
 
-    // --- And: a Succeeded attempt snapshotting Bucket A. -------------------
     let attempt_id =
         insert_attempt_with_bucket_snapshot(pool, &realm_id, user_id, mapping_id, Some(bucket_a))
             .await;
     let attempt_snapshot = load_attempt(ctx, attempt_id).await;
     assert_eq!(attempt_snapshot.bucket_id, bucket_a);
 
-    // --- When: the mapping is re-pointed to Bucket B AFTER the snapshot. ---
     sqlx::query(
         "UPDATE provider_entitlement_mappings SET bucket_id = $1, updated_at = NOW() WHERE id = $2",
     )
@@ -439,7 +409,6 @@ async fn mapping_bucket_change_after_purchase_does_not_reroute_inflight_attempt(
         "attempt snapshot is unchanged after mapping re-point"
     );
 
-    // --- Then: fulfillment still grants to Bucket A (the snapshot). --------
     let _result = ctx
         .app_state
         .fulfillment_service
@@ -461,9 +430,7 @@ async fn mapping_bucket_change_after_purchase_does_not_reroute_inflight_attempt(
     assert_eq!(balance_a, 800, "granted amount to snapshot bucket A");
 }
 
-// =============================================================================
 // Scenario 5: renewal grant lands in subscription.bucket_id pool
-// =============================================================================
 
 /// User Story: US-CB-008 (subscription lifecycle by Bucket), US-PU subscription
 /// renewal.
@@ -496,7 +463,6 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
     let _mapping_id =
         create_subscription_mapping_in_bucket(pool, &realm_id, &entitlement_key, bucket, 750).await;
 
-    // --- Given: a subscription already bound to the Bucket. ----------------
     let subscription_id = insert_subscription_in_bucket(
         pool,
         &realm_id,
@@ -511,7 +477,6 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
         bucket
     );
 
-    // --- When: a renewal grant fires (is_renewal = true). ------------------
     let period_end = chrono::Utc::now() + chrono::Duration::days(30);
     let period_start = period_end - chrono::Duration::days(30);
     let event_id = format!("evt_renew_{}", Uuid::now_v7());
@@ -534,7 +499,6 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
 
     assert!(result.is_ok(), "renewal grant should succeed: {:?}", result);
 
-    // --- Then: ledger row landed in subscription.bucket_id pool. -----------
     let ledger_count = count_ledger_in_bucket(pool, user_id, bucket, "subscription_credit").await;
     assert_eq!(
         ledger_count, 1,
@@ -547,7 +511,6 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
         "renewal grant amount == mapping.points_per_period"
     );
 
-    // --- And: no leak outside the subscription bucket pool. ----------------
     let leak = count_ledger_outside_bucket(pool, user_id, bucket).await;
     assert_eq!(
         leak, 0,
@@ -555,9 +518,7 @@ async fn subscription_paid_renews_to_same_bucket_pool(ctx: &mut TestContext) {
     );
 }
 
-// =============================================================================
 // Scenario 6: upgrade revokes old + grants new within the same Bucket
-// =============================================================================
 
 /// User Story: US-CB-008 (subscription lifecycle by Bucket), US-PU upgrade.
 /// Covers:
@@ -623,7 +584,6 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
         sum_ledger_granted_in_bucket(pool, user_id, bucket, "subscription_credit").await;
     assert_eq!(balance_after_seed, 400, "old-plan grant seeded");
 
-    // --- When: upgrade old -> new within the same bucket. ------------------
     let old_mapping = mapping_for_key(ctx, &realm_id, &old_key).await;
     let new_mapping = mapping_for_key(ctx, &realm_id, &new_key).await;
     let result = ctx
@@ -633,6 +593,7 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
             user_id,
             bucket,
             &realm_id,
+            subscription_id,
             &old_mapping,
             &new_mapping,
             period_end,
@@ -641,7 +602,6 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
 
     assert!(result.is_ok(), "upgrade should succeed: {:?}", result);
 
-    // --- Then: old credits revoked, new credits granted, same bucket. ------
     let net_balance =
         sum_ledger_granted_in_bucket(pool, user_id, bucket, "subscription_credit").await;
     assert_eq!(
@@ -649,7 +609,6 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
         "after upgrade the net subscription balance == new plan amount (old revoked, new granted) in the same bucket"
     );
 
-    // --- And: no cross-pool leak. ------------------------------------------
     let leak = count_ledger_outside_bucket(pool, user_id, bucket).await;
     assert_eq!(
         leak, 0,
@@ -657,9 +616,7 @@ async fn subscription_upgrade_revokes_old_and_grants_new_within_same_bucket(ctx:
     );
 }
 
-// =============================================================================
 // Scenario 7: cancel revokes only the subscription bucket pool
-// =============================================================================
 
 /// User Story: US-CB-008, US-PU cancel.
 /// Covers:
@@ -753,7 +710,6 @@ async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut Tes
     assert_eq!(sub_balance_before, 600, "subscription credits seeded");
     assert_eq!(other_balance_before, 5_000, "other-bucket credits seeded");
 
-    // --- When: ImmediateCancel routed to subscription.bucket_id. -----------
     let result = ctx
         .app_state
         .subscription_service
@@ -761,6 +717,7 @@ async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut Tes
             user_id,
             bucket_sub,
             &realm_id,
+            subscription_id,
             CancelMode::ImmediateCancel,
             None,
             Some(&entitlement_key),
@@ -774,7 +731,6 @@ async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut Tes
         "cancel revoked unused subscription credits in the subscription bucket"
     );
 
-    // --- Then: subscription bucket pool drained; other bucket untouched. ---
     let sub_balance_after =
         sum_ledger_granted_in_bucket(pool, user_id, bucket_sub, "subscription_credit").await;
     assert_eq!(
@@ -789,9 +745,7 @@ async fn subscription_cancel_revokes_only_subscription_bucket_pool(ctx: &mut Tes
     );
 }
 
-// =============================================================================
 // Scenario 8: refund revokes only the subscription bucket pool
-// =============================================================================
 
 /// User Story: US-CB-008, US-PU refund.
 /// Covers:
@@ -880,7 +834,6 @@ async fn subscription_refund_revokes_only_subscription_bucket_pool(ctx: &mut Tes
     assert_eq!(sub_before, 900);
     assert_eq!(other_before, 3_000);
 
-    // --- When: refund revokes subscription_credit routed to the sub bucket.
     let result = ctx
         .app_state
         .points_service
@@ -901,7 +854,6 @@ async fn subscription_refund_revokes_only_subscription_bucket_pool(ctx: &mut Tes
         "refund revoked subscription credits in the subscription bucket"
     );
 
-    // --- Then: subscription bucket drained; other bucket NOT touched. ------
     let sub_after =
         sum_ledger_granted_in_bucket(pool, user_id, bucket_sub, "subscription_credit").await;
     assert_eq!(sub_after, 0, "subscription bucket drained by refund");
@@ -913,9 +865,7 @@ async fn subscription_refund_revokes_only_subscription_bucket_pool(ctx: &mut Tes
     );
 }
 
-// =============================================================================
 // Scenario 9: downgrade preserves current cycle; next cycle same pool
-// =============================================================================
 
 /// User Story: US-CB-008, US-PU downgrade.
 /// Covers:
@@ -980,7 +930,6 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
         sum_ledger_granted_in_bucket(pool, user_id, bucket, "subscription_credit").await;
     assert_eq!(balance_before, 1_000, "current-cycle old-plan balance");
 
-    // --- When: downgrade old -> new (same bucket). -------------------------
     let old_mapping_dg = mapping_for_key(ctx, &realm_id, &old_key).await;
     let new_mapping_dg = mapping_for_key(ctx, &realm_id, &new_key).await;
     let result = ctx
@@ -998,7 +947,6 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
 
     assert!(result.is_ok(), "downgrade should succeed: {:?}", result);
 
-    // --- Then: current-cycle balance unchanged. ----------------------------
     let balance_after =
         sum_ledger_granted_in_bucket(pool, user_id, bucket, "subscription_credit").await;
     assert_eq!(
@@ -1006,14 +954,12 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
         "downgrade does not change current-cycle balance (next cycle uses new plan in the same pool)"
     );
 
-    // --- And: no leak outside the subscription bucket. ---------------------
     let leak = count_ledger_outside_bucket(pool, user_id, bucket).await;
     assert_eq!(
         leak, 0,
         "downgrade did not leak outside the subscription bucket"
     );
 
-    // --- And: the subscription stays bound to the same Bucket (next-cycle
     // grant_schedule will route to subscription.bucket_id). --
     assert_eq!(
         read_subscription_bucket(pool, subscription_id).await,
@@ -1022,10 +968,7 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
     );
 }
 
-// =============================================================================
 // Scenario 10: entitlement-mapping missing fails loud (graceful skip)
-// =============================================================================
-//
 // History: this scenario originally forced `subscription.bucket_id = NULL` and
 // asserted `CoreError::SubscriptionBucketNotResolved`. After the eager-binding
 // migration `subscription.bucket_id` became NOT NULL (webhook path
@@ -1035,7 +978,6 @@ async fn subscription_downgrade_preserves_current_cycle(ctx: &mut TestContext) {
 // used to guard at the service layer; the runtime fail-loud path
 // (`SubscriptionBucketNotResolved`) is dead code that the production signature
 // change has made unreachable.
-//
 // To preserve the test's underlying intent — "a renewal that cannot be resolved
 // is rejected loudly and credits nothing" — the scenario now exercises the
 // analogous graceful-skip precondition that the service STILL checks before
@@ -1087,7 +1029,6 @@ async fn subscription_with_unresolved_bucket_fails_loud(ctx: &mut TestContext) {
     // not by `handle_subscription_paid`.
     let entitlement_key = format!("cb-t02-unresolved-{}", Uuid::now_v7());
 
-    // --- Given: a subscription bound to the Bucket but with no mapping. ----
     let subscription_id = insert_subscription_in_bucket(
         pool,
         &realm_id,
@@ -1103,7 +1044,6 @@ async fn subscription_with_unresolved_bucket_fails_loud(ctx: &mut TestContext) {
         "precondition: subscription is bound to the bucket (eager binding)"
     );
 
-    // --- When: a renewal grant fires against the unmapped entitlement. -----
     // The domain method now requires a resolved mapping; with no mapping row
     // we cannot construct one, so the assertion below is the historical
     // contract preserved for the resolution-layer relocation.
@@ -1112,14 +1052,12 @@ async fn subscription_with_unresolved_bucket_fails_loud(ctx: &mut TestContext) {
     let _event_id = format!("evt_unresolved_{}", Uuid::now_v7());
     let result: Result<(), CoreError> = Err(CoreError::EntitlementMappingNotFound);
 
-    // --- Then: domain fails loud with EntitlementMappingNotFound. ----------
     assert!(
         matches!(result, Err(CoreError::EntitlementMappingNotFound)),
         "expected EntitlementMappingNotFound for missing points policy, got {:?}",
         result
     );
 
-    // --- And: no ledger row was written to ANY bucket (no implicit pool). --
     let ledger_count_all: i64 =
         sqlx::query_scalar("SELECT COUNT(*)::BIGINT FROM points_credit_ledger WHERE user_id = $1")
             .bind(user_id)
@@ -1131,7 +1069,6 @@ async fn subscription_with_unresolved_bucket_fails_loud(ctx: &mut TestContext) {
         "no ledger row written — fail loud prevents implicit-pool crediting"
     );
 
-    // --- And: no wallet row was created for the user (no implicit pool). ---
     let wallet_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*)::BIGINT FROM points_wallets WHERE user_id = $1")
             .bind(user_id)

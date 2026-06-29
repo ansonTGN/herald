@@ -8,7 +8,6 @@ from pathlib import Path
 from lib import docker
 from lib import ngrok
 from lib.proc import kill_process_by_port
-# Removed state file dependencies: terminate_from_state, wait_process_exit, load_state
 from lib.paths import LOG_DIR
 
 
@@ -28,10 +27,8 @@ DEMO_LOG_FILES = [
     LOG_DIR / "frontend-demo.log.out",
     LOG_DIR / "frontend-demo.log.err",
 ]
-# Skip all runtime files - they may be inaccurate
 DEMO_RUNTIME_FILES: list[Path] = []
 
-# Verbose mode flag (set by main())
 verbose = False
 
 
@@ -60,7 +57,6 @@ def _pids_holding_path_windows(path: str) -> set[int]:
 
     Disabled for Git Bash compatibility issues.
     """
-    # Disabled: handle.exe has compatibility issues with Git Bash
     return set()
 
 
@@ -124,29 +120,36 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Stop the demo environment")
     parser.add_argument("--quiet", action="store_true", help="Suppress all output")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument(
+        "--keep-ngrok-image",
+        action="store_true",
+        help="Keep the ngrok Docker image after removing the container (default: remove it)",
+    )
     args = parser.parse_args()
     quiet = args.quiet
     global verbose
     verbose = args.verbose
 
-    # Step 1: Kill backend process by port 8080
     if should_print(quiet):
         print("Stopping backend...")
     log_verbose(f"Checking port {BACKEND_PORT} for backend process...")
     kill_process_by_port(BACKEND_PORT)
     log_verbose(f"Backend process on port {BACKEND_PORT} killed (if present)")
 
-    # Step 2: Kill frontend processes by demo ports
     if should_print(quiet):
         print("Stopping frontend...")
     kill_demo_node_processes(quiet)
 
-    # Step 2.5: Stop the ngrok webhook tunnel (if running)
     if should_print(quiet):
         print("Stopping ngrok tunnel...")
     ngrok.stop()
 
-    # Step 3: Stop and remove Docker containers
+    # Asymmetric with postgres/redis (whose images are kept) — intentional, per request.
+    if not args.keep_ngrok_image:
+        if should_print(quiet):
+            print("Removing ngrok image...")
+        ngrok.remove_image()
+
     if should_print(quiet):
         print("Stopping containers...")
     containers_to_stop = ["cas-demo-redis", "cas-demo-postgres"]
@@ -162,10 +165,8 @@ def main() -> int:
             log_verbose(f"Removing container: {container}")
             docker.rm_force_container(container)
 
-    # Step 4: Best-effort cleanup for orphan processes
     kill_demo_log_holders(quiet)
 
-    # Step 5: Cleanup log files (optional, non-fatal)
     failed_logs = cleanup_demo_files()[1]
     if failed_logs and should_print(quiet):
         for failed in failed_logs:

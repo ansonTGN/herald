@@ -1,5 +1,3 @@
-// Webhook Event Handlers for Stripe Billing Events
-//
 // Handles subscription lifecycle events (checkout.session.completed, customer.subscription.*)
 // and payment events (charge.refunded). All handlers follow the Creem webhook pattern.
 
@@ -13,7 +11,7 @@ use uuid::Uuid;
 
 use crate::webhook_common::{
     create_placeholder_transaction, metadata_value, parse_attempt_id, parse_event_id,
-    parse_optional_uuid_field, parse_uuid_field, reclaim_pregrant_for_subscription,
+    parse_optional_uuid_field, parse_uuid_field,
 };
 use crate::webhook_subscription_helpers::{
     ResolvedEntitlement, SyncSubscriptionInput, resolve_bucket_id_for_entitlement,
@@ -462,7 +460,6 @@ fn parse_checkout_completed_payload(
         "userId",
     )?;
 
-    // Resolve entitlement_key from metadata
     let entitlement_key = metadata["herald_entitlement_key"]
         .as_str()
         .or_else(|| metadata["entitlementKey"].as_str())
@@ -515,7 +512,6 @@ fn parse_subscription_created_payload(
         .map(str::to_string)
         .unwrap_or_default();
 
-    // Resolve entitlement_key from metadata
     let entitlement_key = metadata["herald_entitlement_key"]
         .as_str()
         .or_else(|| metadata["entitlementKey"].as_str())
@@ -1027,10 +1023,6 @@ async fn sync_subscription_input_with_detected_history_in_txn(
     Ok(synced)
 }
 
-// ============================================================================
-// Webhook Event Handlers
-// ============================================================================
-
 /// For one-time Checkout Sessions (mode=payment), Stripe emits the PaymentIntent
 /// ID on the Checkout Session object — but NOT on the resulting `invoice.*` event
 /// payloads. Herald's external invoice sync (`handle_stripe_invoice_event`) reads
@@ -1116,7 +1108,6 @@ async fn handle_checkout_session_completed(
     realm_id: &str,
     _idempotency_key: &str,
 ) -> Result<PointsTransaction, CoreError> {
-    // Extract mode from the checkout session for dispatch
     let mode = event["data"]["object"]["mode"].as_str().map(str::to_string);
 
     // For one-time Checkout Sessions (mode=payment), the PaymentIntent is only
@@ -1228,7 +1219,6 @@ async fn handle_checkout_session_completed(
         ));
     }
 
-    // No attemptId — dispatch based on mode
     let payload = parse_checkout_completed_payload(&event)?;
     let event_id = payload.event_id.as_str();
 
@@ -1248,7 +1238,6 @@ async fn handle_checkout_session_completed(
         ));
     }
 
-    // Subscription flow requires a subscription id
     let stripe_subscription_id = payload.stripe_subscription_id.as_deref().ok_or_else(|| {
         CoreError::BadRequest("Missing subscription id for subscription checkout".to_string())
     })?;
@@ -1283,7 +1272,6 @@ async fn handle_checkout_session_completed(
         payload.entitlement_key.clone()
     };
 
-    // Determine status
     let status = if payload.is_trial {
         SubscriptionStatus::Trialing
     } else {
@@ -1369,7 +1357,6 @@ async fn handle_checkout_session_completed(
         (created, previous)
     };
 
-    // Return a placeholder transaction for compatibility
     // Actual subscription points will be granted by customer.subscription.created event
     Ok(create_placeholder_transaction(
         payload.client_app_id,
@@ -1472,7 +1459,6 @@ async fn handle_checkout_session_async_succeeded(
                 TransactionType::Recharge,
             ));
         }
-        // Pending/RequiresAction: proceed with normal fulfillment
     }
 
     fulfill_payment_attempt(
@@ -1512,7 +1498,6 @@ async fn handle_checkout_session_async_failed(
         ));
     };
 
-    // Fetch payment attempt to determine strategy path
     // Distinguish "not found" from DB errors: NotFound is safe (conservative path),
     // but DB errors must propagate so the webhook retry loop can recover.
     let attempt = match app_state
@@ -1597,29 +1582,55 @@ async fn handle_checkout_session_async_failed(
             .await?
             .map(|m| m.entitlement_key);
 
-        // Subscription cancel: route to subscription.bucket_id.
         // The originating payment_attempt snapshot carries the target bucket for
         // the subscription created via this checkout.
         let bucket_id = attempt.bucket_id;
-
-        // Subscription: cancel subscription + revoke SubscriptionCredit (done internally by handle_subscription_cancel)
-        let result = app_state
-            .subscription_service
-            .handle_subscription_cancel(
-                attempt.user_id,
-                bucket_id,
-                realm_id,
-                CancelMode::ImmediateCancel,
-                None,
-                entitlement_key.as_deref(),
-            )
-            .await?;
 
         // Update subscription record status to "canceled" — scope to the specific subscription
         // to avoid canceling unrelated subscriptions for the same user.
         // Try external_subscription_id from checkout session first, then fall back to
         // the most recent subscription for this entitlement.
         let stripe_subscription_id = object["subscription"].as_str();
+
+        // Resolve the originating subscription's internal id. BE-D06 revokes the
+        // active quota entitlement by `source_id = subscription_id`, so the
+        // cancel must pass the subscription that was eagerly granted. Prefer the
+        // external subscription id from the event. When no external id is
+        // present there is no lookup path to the internal id here, so the
+        // revoke is skipped (Uuid::nil() ⟹ idempotent no-op); the pre-redesign
+        // code already warned on this edge.
+        let subscription_id = if let Some(ext_sub_id) = stripe_subscription_id {
+            app_state
+                .billing_repository
+                .find_by_external_subscription_id(ext_sub_id, "stripe")
+                .await?
+                .map(|s| s.id)
+                .unwrap_or_default()
+        } else {
+            warn!(
+                realm_id = %realm_id,
+                attempt_id = %attempt_id,
+                "No subscription field in async_payment_failed event — entitlement revoke skipped (idempotent)"
+            );
+            Uuid::nil()
+        };
+
+        // Subscription: cancel subscription + revoke the subscription's active
+        // quota entitlement (done internally by handle_subscription_cancel via
+        // source_id = subscription_id). Idempotent on no-match.
+        let result = app_state
+            .subscription_service
+            .handle_subscription_cancel(
+                attempt.user_id,
+                bucket_id,
+                realm_id,
+                subscription_id,
+                CancelMode::ImmediateCancel,
+                None,
+                entitlement_key.as_deref(),
+            )
+            .await?;
+
         let rows_updated = if let Some(ext_sub_id) = stripe_subscription_id {
             app_state
                 .billing_repository
@@ -1788,23 +1799,16 @@ async fn handle_payment_failed(
     let event_id = parse_event_id(&event)?;
     let Some(payload) = parse_payment_failed_payload(&event)? else {
         // No `attemptId` metadata ⟹ this is not a one-time purchase payment
-        // attempt. For `invoice.payment_failed` on a subscription, reclaim
-        // the chained pre-grant row for the subscription's next period
-        // (row-level reclaim). Row-precise locator, no wallet
-        // back-adjust, idempotent on repeat delivery.
-        reclaim_subscription_pregrant_from_event(
-            &app_state,
-            realm_id,
-            &event,
-            &event["data"]["object"]["subscription"],
-            "invoice.payment_failed",
-        )
-        .await?;
-
+        // attempt. For `invoice.payment_failed` on a subscription renewal,
+        // the pre-redesign chained pre-grant ledger-row reclaim is retired
+        // under the window quota model (BE-D06/D10): renewal grants are
+        // idempotent and keyed to the subscription period, and the prior
+        // period's entitlement expires naturally at its `effective_until`.
+        // No reclaim is required on a failed renewal.
         warn!(
             realm_id = %realm_id,
             event_id = %event_id,
-            "Stripe payment_failed event has no attemptId metadata - ignoring purchase-attempt path"
+            "Stripe payment_failed event has no attemptId metadata - ignoring purchase-attempt path (subscription renewal reclaim retired under quota model)"
         );
         return Ok(create_placeholder_transaction(
             Uuid::now_v7(),
@@ -1821,48 +1825,6 @@ async fn handle_payment_failed(
         realm_id,
         TransactionType::Recharge,
     ))
-}
-
-/// Resolve an external Stripe subscription id to its internal `Subscription`
-/// and reclaim the chained pre-grant row for its next period.
-/// Used by `invoice.payment_failed` /
-/// `customer.subscription.deleted` where the event carries the Stripe
-/// subscription id rather than the internal UUID.
-///
-/// `external_sub_value` is the JSON node holding the Stripe subscription id
-/// (may be missing / null for events not tied to a subscription). `event_kind`
-/// is used only for structured logging. Idempotent: no schedule, no
-/// subscription, or already-revoked row ⟹ no-op.
-async fn reclaim_subscription_pregrant_from_event(
-    app_state: &AppState,
-    realm_id: &str,
-    _event: &Value,
-    external_sub_value: &Value,
-    event_kind: &str,
-) -> Result<(), CoreError> {
-    let Some(external_sub_id) = external_sub_value.as_str() else {
-        tracing::debug!(
-            realm_id = %realm_id,
-            event_kind,
-            "reclaim: event has no subscription reference, no pre-grant to reclaim"
-        );
-        return Ok(());
-    };
-    let Some(subscription) = app_state
-        .billing_repository
-        .find_by_external_subscription_id(external_sub_id, "stripe")
-        .await?
-    else {
-        tracing::debug!(
-            realm_id = %realm_id,
-            event_kind,
-            external_subscription_id = %external_sub_id,
-            "reclaim: no internal subscription row, no pre-grant to reclaim"
-        );
-        return Ok(());
-    };
-    reclaim_pregrant_for_subscription(app_state, realm_id, subscription.id).await?;
-    Ok(())
 }
 
 /// Handle customer.subscription.created events
@@ -2039,7 +2001,6 @@ async fn handle_subscription_updated(
     };
 
     let previous_entitlement_key = if payload.previous_entitlement_key.is_empty() {
-        // Try to get from existing subscription
         let from_db = existing_subscription_for_update
             .as_ref()
             .map(|s| s.entitlement_key.clone())
@@ -2224,6 +2185,7 @@ async fn handle_subscription_updated(
                 payload.user_id,
                 subscription.bucket_id,
                 realm_id,
+                subscription.id,
                 &old_mapping,
                 &new_mapping,
                 period_end,
@@ -2497,15 +2459,10 @@ async fn handle_subscription_deleted(
     )
     .await?;
 
-    // Reclaim the chained pre-grant row for the subscription's next period.
-    // Row-precise locator — does NOT touch other
-    // active credits, does NOT back-adjust wallet (derived balance auto-
-    // excludes revoked rows). Idempotent: missing schedule / already-revoked
-    // ⟹ no-op. Runs BEFORE the ImmediateCancel path so the future-effective
-    // pre-grant row is revoked row-precisely; ImmediateCancel then handles
-    // already-effective rows via the existing entitlement-scoped revocation.
-    reclaim_pregrant_for_subscription(&app_state, realm_id, subscription.id).await?;
-
+    // Subscription deleted (BE-D06/D10): revoke the subscription's active quota
+    // entitlement by `source_id = subscription_id`. The pre-redesign chained
+    // pre-grant ledger-row reclaim path is retired under the window quota
+    // model. Idempotent: no active entitlement / already-revoked ⟹ no-op.
     // Route revocation to subscription.bucket_id. The synced
     // subscription is non-null.
     app_state
@@ -2514,6 +2471,7 @@ async fn handle_subscription_deleted(
             payload.user_id,
             subscription.bucket_id,
             realm_id,
+            subscription.id,
             cancel_mode,
             if payload.cancel_at_period_end {
                 payload.current_period_end
@@ -2582,7 +2540,6 @@ async fn handle_charge_refunded(
         None
     };
 
-    // Revoke points based on refund type
     match payload.refund_type.as_str() {
         "topup" => {
             // Look up the originating payment_attempt snapshot for the routing
@@ -2612,7 +2569,6 @@ async fn handle_charge_refunded(
                 })?;
             let bucket_id = attempt.bucket_id;
 
-            // Proportionally revoke topup credits based on refund ratio
             let _output = app_state
                 .points_service
                 .revoke_topup_proportional(
@@ -2634,9 +2590,12 @@ async fn handle_charge_refunded(
             );
         }
         _ => {
-            // Revoke all unused subscription credits (default). Route to
-            // subscription.bucket_id. Fail loud when no
-            // subscription could be resolved for the refund.
+            // Subscription refund (BE-D06/D10): revoke the originating
+            // subscription's active quota entitlement by `source_id =
+            // subscription_id`. The pre-redesign broad
+            // `revoke_subscription_unused` ledger-row reclaim is retired under
+            // the window quota model. Route to subscription.bucket_id. Fail
+            // loud when no subscription could be resolved for the refund.
             let subscription = subscription.as_ref().ok_or_else(|| {
                 CoreError::BadRequest(format!(
                     "Cannot resolve bucket for subscription refund: no subscription for charge_id {}",
@@ -2646,12 +2605,15 @@ async fn handle_charge_refunded(
             let bucket_id = subscription.bucket_id;
 
             let _output = app_state
-                .points_service
-                .revoke_subscription_unused(
-                    realm_id,
+                .subscription_service
+                .handle_subscription_cancel(
                     payload.user_id,
                     bucket_id,
-                    &payload.charge_id,
+                    realm_id,
+                    subscription.id,
+                    CancelMode::ImmediateCancel,
+                    None,
+                    None,
                 )
                 .await?;
 
@@ -2659,7 +2621,8 @@ async fn handle_charge_refunded(
                 realm_id = %realm_id,
                 user_id = %payload.user_id,
                 charge_id = %payload.charge_id,
-                "Subscription refund - revoked unused subscription credits"
+                subscription_id = %subscription.id,
+                "Subscription refund - revoked subscription quota entitlement"
             );
         }
     }
@@ -2839,7 +2802,6 @@ async fn handle_invoice_payment_succeeded(
     // Best-effort: a failure here must NOT block the credit grant that has already
     // succeeded above — it is logged and the webhook transaction is replayed by the
     // existing `payment_event` compensation framework.
-    //
     // amount == 0 → skip (zero-yuan cycle: no actual charge, and `payment_attempts.amount`
     // has CHECK(amount > 0)). The renewal ledger/period update above already happened.
     let invoice_object = &event["data"]["object"];
@@ -3262,10 +3224,11 @@ async fn handle_charge_dispute_closed(
     if synced.is_some() && needs_cancel {
         // Route revocation to subscription.bucket_id; the
         // synced Subscription is the post-update snapshot carrying the
-        // persisted non-null bucket_id.
-        let bucket_id = synced
+        // persisted non-null bucket_id. BE-D06 revokes the subscription's
+        // active quota entitlement by `source_id = subscription_id`.
+        let (bucket_id, subscription_id) = synced
             .as_ref()
-            .map(|(subscription, _)| subscription.bucket_id)
+            .map(|(subscription, _)| (subscription.bucket_id, subscription.id))
             .ok_or_else(|| {
                 CoreError::InternalServerError(
                     "dispute close sync returned no subscription for cancel".to_string(),
@@ -3278,6 +3241,7 @@ async fn handle_charge_dispute_closed(
                 user_id,
                 bucket_id,
                 realm_id,
+                subscription_id,
                 CancelMode::ImmediateCancel,
                 None,
                 Some(dispute_entitlement_key.as_str()),
@@ -3525,10 +3489,6 @@ async fn handle_credit_note_voided(
     ))
 }
 
-// ============================================================================
-// Main Webhook Handler
-// ============================================================================
-
 /// Handle Stripe webhook events
 ///
 /// Verifies signature, checks idempotency, routes to appropriate handler,
@@ -3547,7 +3507,6 @@ pub async fn handle_stripe_webhook(
     headers: HeaderMap,
     body: String,
 ) -> Result<StatusCode, CoreError> {
-    // Step 1: Parse event JSON (for logging and processing)
     let event: Value = serde_json::from_str(&body).map_err(|e| {
         error!("Failed to parse webhook JSON: {}", e);
         CoreError::BadRequest(format!("Invalid JSON: {}", e))
@@ -3555,7 +3514,6 @@ pub async fn handle_stripe_webhook(
 
     // Note: realm_id is now extracted from URL path parameter, not from metadata
 
-    // Step 3: Extract and validate signature header
     let signature = headers
         .get("stripe-signature")
         .and_then(|h| h.to_str().ok())
@@ -3564,7 +3522,6 @@ pub async fn handle_stripe_webhook(
             CoreError::BadRequest("Missing signature".to_string())
         })?;
 
-    // Step 4: Get webhook secret from database for this realm
     let webhook_secret = app_state
         .realm_config_repository
         .get(
@@ -3590,14 +3547,12 @@ pub async fn handle_stripe_webhook(
             ))
         })?;
 
-    // Step 5: Verify webhook signature using StripeClient (static method)
     herald_core::infrastructure::stripe::StripeClient::verify_webhook_signature(
         body.as_bytes(),
         signature,
         &webhook_secret,
     )?;
 
-    // Step 6: Extract event metadata
     let event_id = event["id"]
         .as_str()
         .ok_or_else(|| CoreError::BadRequest("Missing event id".to_string()))?
@@ -3608,7 +3563,6 @@ pub async fn handle_stripe_webhook(
         .ok_or_else(|| CoreError::BadRequest("Missing event type".to_string()))?
         .to_string();
 
-    // Step 7: Save payment event to database (for audit trail and idempotency)
     let new_payment_event = PaymentEvent {
         id: Uuid::now_v7(),
         realm_id: realm_id.clone(),
@@ -3630,7 +3584,6 @@ pub async fn handle_stripe_webhook(
 
     let saved_event = match existing_event {
         Some(existing) if existing.processed => {
-            // True idempotent duplicate: previous attempt succeeded
             info!(
                 realm_id = %realm_id,
                 event_id = %event_id,
@@ -3674,17 +3627,14 @@ pub async fn handle_stripe_webhook(
         }
     };
 
-    // Step 8: Build idempotency key
     let idempotency_key = format!("stripe_{}", event_id);
 
-    // Step 9: Check idempotency
     let idempotency_service = &app_state.idempotency_service;
 
     let idempotency_result = idempotency_service
         .check_or_create(&realm_id, &idempotency_key, &body)
         .await?;
 
-    // If cached result exists, return 200 OK
     if let IdempotencyResult::Cached {
         transaction: PointsTransaction {
             id: transaction_id, ..
@@ -3705,7 +3655,6 @@ pub async fn handle_stripe_webhook(
         return Ok(StatusCode::OK);
     }
 
-    // Step 10: Route to appropriate handler, retrying transient handler failures.
     let result = process_stripe_event_with_retries(
         app_state.clone(),
         &event,
@@ -3716,7 +3665,6 @@ pub async fn handle_stripe_webhook(
     )
     .await;
 
-    // Step 11: Handle result
     match result {
         Ok(transaction) => {
             idempotency_service
@@ -3959,7 +3907,6 @@ pub(crate) async fn reprocess_stripe_event(
         .as_str()
         .ok_or_else(|| CoreError::BadRequest("Missing event id".to_string()))?;
 
-    // Check existing payment event by external_event_id
     let saved_event = if let Some(existing) = app_state
         .billing_repository
         .find_payment_event_by_external_id(event_id, "stripe")
@@ -3983,7 +3930,6 @@ pub(crate) async fn reprocess_stripe_event(
         );
         existing
     } else {
-        // Create payment event record
         let new_payment_event = PaymentEvent {
             id: Uuid::now_v7(),
             realm_id: realm_id.to_string(),
@@ -4021,7 +3967,6 @@ pub(crate) async fn reprocess_stripe_event(
     // Synthetic idempotency key (not used for Redis, only passed to handlers)
     let idempotency_key = format!("compensation_stripe_{}", event_id);
 
-    // Route to the same handler match branches
     let result = process_stripe_event_once(
         app_state.clone(),
         event,
@@ -4209,8 +4154,6 @@ mod tests {
         assert_eq!(end.timestamp(), 1_800_000_000);
     }
 
-    // ---- normalize_stripe_period — P0 four quadrants ----
-    //
     // The period normalizer is the P0 prerequisite for subscription chained
     // pre-grant: when it cannot uniquely resolve the points entitlement's
     // billing period, the webhook handler must skip the grant and emit a
@@ -4354,8 +4297,6 @@ mod tests {
         assert!(normalize_stripe_period(&sub).is_none());
     }
 
-    // ---- normalize_stripe_invoice_period — invoice renewal path (P0) ----
-    //
     // The invoice resolver is what unblocks Stripe `invoice.payment_succeeded`
     // renewal grants. A Stripe Invoice has NO top-level `current_period_*`
     // (those are Subscription fields) and uses `lines.data` (NOT `items.data`);

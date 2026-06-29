@@ -1,5 +1,3 @@
-// Points domain entities
-
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -681,6 +679,155 @@ pub struct Paginated<T> {
     pub page: u64,
     pub page_size: u64,
     pub data: Vec<T>,
+}
+
+/// Quota window snapshot (配额窗口快照) — captured at grant time (A2).
+///
+/// `key` is a stable display key derived from config (e.g. "5h"/"week"/"month"),
+/// NOT a row ordinal. Downstream DTO / frontend identifies a window row by `key`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuotaWindow {
+    /// Sliding window length in seconds (month ≈ 30d)
+    pub window_seconds: i64,
+    /// Quota limit (>= 0)
+    pub limit: i64,
+    /// Stable display key (config-derived, not row ordinal)
+    pub key: String,
+}
+
+/// Quota source type enum (配额权益来源类型) — corresponds to the
+/// points_quota_entitlements.source_type CHECK constraint.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum QuotaSourceType {
+    /// 订阅首次赠送
+    SubscriptionInitial,
+    /// 订阅续费赠送
+    SubscriptionRenewal,
+    /// 订阅升级
+    SubscriptionUpgrade,
+    /// 免费定期发放
+    FreePeriodicGrant,
+}
+
+impl QuotaSourceType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            QuotaSourceType::SubscriptionInitial => "subscription_initial",
+            QuotaSourceType::SubscriptionRenewal => "subscription_renewal",
+            QuotaSourceType::SubscriptionUpgrade => "subscription_upgrade",
+            QuotaSourceType::FreePeriodicGrant => "free_periodic_grant",
+        }
+    }
+}
+
+impl std::str::FromStr for QuotaSourceType {
+    type Err = CoreError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_enum(
+            s.to_lowercase().as_str(),
+            "Invalid quota source_type",
+            |s| match s {
+                "subscription_initial" => Some(QuotaSourceType::SubscriptionInitial),
+                "subscription_renewal" => Some(QuotaSourceType::SubscriptionRenewal),
+                "subscription_upgrade" => Some(QuotaSourceType::SubscriptionUpgrade),
+                "free_periodic_grant" => Some(QuotaSourceType::FreePeriodicGrant),
+                _ => None,
+            },
+        )
+    }
+}
+
+impl std::fmt::Display for QuotaSourceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// Quota entitlement status enum (配额权益状态) — corresponds to the
+/// points_quota_entitlements.status CHECK constraint.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum QuotaEntitlementStatus {
+    Active,
+    Revoked,
+    Expired,
+}
+
+impl QuotaEntitlementStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            QuotaEntitlementStatus::Active => "active",
+            QuotaEntitlementStatus::Revoked => "revoked",
+            QuotaEntitlementStatus::Expired => "expired",
+        }
+    }
+}
+
+impl std::str::FromStr for QuotaEntitlementStatus {
+    type Err = CoreError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_enum(
+            s.to_lowercase().as_str(),
+            "Invalid quota entitlement status",
+            |s| match s {
+                "active" => Some(QuotaEntitlementStatus::Active),
+                "revoked" => Some(QuotaEntitlementStatus::Revoked),
+                "expired" => Some(QuotaEntitlementStatus::Expired),
+                _ => None,
+            },
+        )
+    }
+}
+
+impl std::fmt::Display for QuotaEntitlementStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// Points Quota Entitlement entity (配额权益实体) — window-based grant replacing
+/// per-period ledger issuance for subscription_credit / free_periodic_credit.
+/// `credit_type` reuses the existing CreditType (only Subscription | FreePeriodic
+/// are valid for the window model; enforced at DB CHECK).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PointsQuotaEntitlement {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub realm_id: String,
+    pub bucket_id: Uuid,
+    pub credit_type: CreditType,
+    pub source_type: QuotaSourceType,
+    pub source_id: String,
+    /// Snapshot of windows captured at grant time (A2)
+    pub quota_windows: Vec<QuotaWindow>,
+    pub effective_from: chrono::DateTime<chrono::Utc>,
+    /// NULL ⟺ ongoing; set on revoke/expire
+    pub effective_until: Option<chrono::DateTime<chrono::Utc>>,
+    pub status: QuotaEntitlementStatus,
+    pub idempotency_key: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Quota window read view (配额窗口读视图) — computed per (user, bucket, credit_type)
+/// window: used amount from the points_transactions covering index aggregation, plus
+/// derived remaining / reset time / tightest-constraint / exhausted flags.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuotaWindowView {
+    pub key: String,
+    pub limit: i64,
+    pub used: i64,
+    pub remaining: i64,
+    pub window_seconds: i64,
+    /// When the sliding window's oldest consume ages out / next reset point
+    pub resets_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// True if this window is the minimum-remaining (tightest) constraint
+    pub is_tightest: bool,
+    /// True if remaining == 0
+    pub exhausted: bool,
 }
 
 #[cfg(test)]

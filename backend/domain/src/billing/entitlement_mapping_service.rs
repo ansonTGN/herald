@@ -6,6 +6,7 @@ use crate::billing::policies::BillingPolicy;
 use crate::billing::ports::BillingRepository;
 use crate::common::entities::app_errors::CoreError;
 use crate::common::policies::ensure_policy;
+use crate::points::entities::QuotaWindow;
 
 /// Input for updating an entitlement mapping
 #[derive(Debug, Clone)]
@@ -18,6 +19,8 @@ pub struct UpdateEntitlementMappingInput {
     pub grant_on_subscribe: Option<bool>,
     pub max_periods: Option<Option<i64>>,
     pub bucket_id: Option<uuid::Uuid>,
+    /// `None` = leave unchanged; `Some(None)` = clear; `Some(Some(vec))` = replace.
+    pub quota_windows: Option<Option<Vec<QuotaWindow>>>,
 }
 
 /// EntitlementMappingService - Business logic for entitlement mapping management
@@ -125,7 +128,6 @@ where
             return Err(CoreError::EntitlementMappingNotFound);
         }
 
-        // Validate entitlement_key format if provided
         if let Some(ref key) = input.entitlement_key {
             Self::validate_entitlement_key(key)?;
         }
@@ -161,6 +163,10 @@ where
             },
             enabled: input.enabled.unwrap_or(existing.enabled),
             provider_product_info: existing.provider_product_info,
+            quota_windows: match input.quota_windows {
+                Some(v) => v,
+                None => existing.quota_windows,
+            },
             synced_at: existing.synced_at,
             created_at: existing.created_at,
             updated_at: chrono::Utc::now(),

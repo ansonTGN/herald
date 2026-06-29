@@ -10,8 +10,6 @@ pub struct CreateCheckoutResponse {
     pub checkout_id: Uuid,
 }
 
-// ===== Entitlement Mapping Types =====
-
 /// Response for a single entitlement mapping
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -40,10 +38,28 @@ pub struct EntitlementMappingResponse {
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_product_info: Option<serde_json::Value>,
+    /// Subscription quota window config (design §4.3.2). `None` ⟺ no
+    /// window-model grant. Each window carries the stable display `key`
+    /// (derived from `windowSeconds`), the limit, and the window length.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quota_windows: Option<Vec<QuotaWindowViewDto>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub synced_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// Read-side quota window view (response DTO). Mirrors the domain `QuotaWindow`
+/// snapshot carried on an entitlement mapping.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotaWindowViewDto {
+    /// Sliding window length in seconds.
+    pub window_seconds: i64,
+    /// Quota limit.
+    pub limit: i64,
+    /// Stable display key (derived from `windowSeconds`, e.g. "5h"/"week"/"month").
+    pub key: String,
 }
 
 /// Response for listing entitlement mappings
@@ -86,6 +102,11 @@ pub struct UpdateEntitlementMappingRequest {
     pub grant_on_subscribe: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_periods: Option<i64>,
+    /// Subscription quota window config (design §4.3.2). `None` ⟺ leave the
+    /// stored value untouched; `Some([])` ⟺ clear (no window grant);
+    /// `Some([...])` ⟺ replace. Same validation as batch update.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quota_windows: Option<Vec<QuotaWindowInputDto>>,
 }
 
 /// Request to sync provider products
@@ -116,8 +137,6 @@ pub struct PartialSyncErrorDto {
     pub reason: String,
 }
 
-// ===== One-Time Mapping Types =====
-
 /// Single one-time mapping item for frontend display
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -141,8 +160,6 @@ pub struct OneTimeMappingItem {
 pub struct OneTimeMappingListResponse {
     pub items: Vec<OneTimeMappingItem>,
 }
-
-// ===== Subscription Types =====
 
 /// Response for subscription detail
 #[derive(Debug, Serialize, ToSchema)]
@@ -245,7 +262,24 @@ pub struct CreateCheckoutSessionRequest {
     pub payment_provider: String,
 }
 
-// ===== Batch Update (Price-Granularity) =====
+/// Input DTO for one quota window in a mapping batch save (design §4.3.2).
+///
+/// Carries only the editable fields; the stable display `key` is derived by
+/// the backend from `windowSeconds` (via `derive_window_key`) before
+/// persistence, so callers cannot drift window identity. Mirrors the
+/// points-domain `QuotaWindowInputDto` shape; kept local to billing so
+/// api-billing does not depend on api-points.
+#[derive(Debug, Deserialize, ToSchema, validator::Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotaWindowInputDto {
+    /// Sliding window length in seconds. Must be > 0.
+    #[validate(range(min = 1))]
+    pub window_seconds: i64,
+    /// Quota limit. Must be >= 0 (0 = window grants nothing but is a valid
+    /// config edge case).
+    #[validate(range(min = 0))]
+    pub limit: i64,
+}
 
 /// Single price-mapping row within a batch save.
 ///
@@ -273,6 +307,11 @@ pub struct PriceMappingUpdate {
     pub max_periods: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    /// Quota window config (design §4.3.2). `None` ⟺ leave unchanged;
+    /// `Some([])` ⟺ clear (no window grant); `Some(non-empty)` ⟺ set.
+    /// Non-empty triggers the `points.manage` credit-field permission gate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quota_windows: Option<Vec<QuotaWindowInputDto>>,
 }
 
 /// PUT `/api/bill/{realmId}/entitlement-mappings/batch` request body.
@@ -294,8 +333,6 @@ pub struct BatchUpdateEntitlementMappingsResponse {
     pub saved: u32,
     pub prices: Vec<EntitlementMappingResponse>,
 }
-
-// ===== Purchase Options =====
 
 /// A purchasable price-level option for the purchase page.
 ///

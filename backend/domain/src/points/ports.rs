@@ -1,5 +1,3 @@
-// Points repository ports
-
 use std::future::Future;
 
 use uuid::Uuid;
@@ -9,8 +7,8 @@ use crate::points::dtos::RevokePointsOutput;
 use crate::points::entities::CreditSourceType;
 use crate::points::entities::{
     ConsumptionAllocationView, CreditLedgerStatus, CreditType, Paginated,
-    PointsConsumptionAllocation, PointsCreditLedger, PointsRevocationRecord, PointsTransaction,
-    PointsWallet, RevocationType, TransactionType,
+    PointsConsumptionAllocation, PointsCreditLedger, PointsQuotaEntitlement,
+    PointsRevocationRecord, PointsTransaction, PointsWallet, RevocationType, TransactionType,
 };
 use crate::points::{
     CreateRealmConfigInput, PointsGrantRecord, PointsGrantSchedule, RealmDefaultConfig,
@@ -164,6 +162,7 @@ pub enum GrantScheduleUpdate {
 }
 
 /// Repository for points operations
+#[cfg_attr(test, mockall::automock)]
 pub trait PointsRepository: Send + Sync {
     /// Find points wallet by user ID
     fn find_by_user_id(
@@ -257,8 +256,6 @@ pub trait PointsRepository: Send + Sync {
         filters: &WalletFilters,
     ) -> impl Future<Output = Result<u64, CoreError>> + Send;
 
-    // ========== Ledger Management ==========
-
     /// Create a new credit ledger entry
     fn create_ledger(
         &self,
@@ -301,8 +298,6 @@ pub trait PointsRepository: Send + Sync {
         credit_type: CreditType,
     ) -> impl Future<Output = Result<Vec<PointsCreditLedger>, CoreError>> + Send;
 
-    // ========== Consumption Allocations ==========
-
     /// Create a consumption allocation record
     fn create_consumption_allocation(
         &self,
@@ -327,8 +322,6 @@ pub trait PointsRepository: Send + Sync {
         correlation_id: &str,
     ) -> impl Future<Output = Result<Vec<ConsumptionAllocationView>, CoreError>> + Send;
 
-    // ========== Revocation Records ==========
-
     /// Create a revocation record
     fn create_revocation_record(
         &self,
@@ -341,16 +334,12 @@ pub trait PointsRepository: Send + Sync {
         idempotency_key: &str,
     ) -> impl Future<Output = Result<Option<PointsRevocationRecord>, CoreError>> + Send;
 
-    // ========== Account Management ==========
-
     /// Find expired ledgers for cleanup
     fn find_expired_ledgers(
         &self,
         expiration_time: chrono::DateTime<chrono::Utc>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<PointsCreditLedger>, CoreError>> + Send;
-
-    // ========== Realm Config Repository Methods ==========
 
     /// Find realm default config by realm_id
     fn find_realm_config(
@@ -370,8 +359,6 @@ pub trait PointsRepository: Send + Sync {
         realm_id: &str,
         input: UpdateRealmConfigInput,
     ) -> impl Future<Output = Result<RealmDefaultConfig, CoreError>> + Send;
-
-    // ========== User Config Repository Methods ==========
 
     /// Find user points config by user_id
     fn find_user_config(
@@ -416,8 +403,6 @@ pub trait PointsRepository: Send + Sync {
         user_id: Uuid,
     ) -> impl Future<Output = Result<Option<UserPointsConfig>, CoreError>> + Send;
 
-    // ========== Grant Schedule Repository Methods ==========
-
     /// Find grant schedule by ID
     fn find_grant_schedule(
         &self,
@@ -436,8 +421,6 @@ pub trait PointsRepository: Send + Sync {
         &self,
         user_id: Uuid,
     ) -> impl Future<Output = Result<Vec<PointsGrantSchedule>, CoreError>> + Send;
-
-    // ===== New: Free User Upgrade Support =====
 
     /// Update user points config
     fn update_user_points_config(
@@ -487,8 +470,6 @@ pub trait PointsRepository: Send + Sync {
         schedule_id: Uuid,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
-    // ========== Grant Record Repository Methods ==========
-
     /// Check if a grant record exists for a schedule and period (idempotency)
     fn find_grant_record(
         &self,
@@ -516,8 +497,6 @@ pub trait PointsRepository: Send + Sync {
         pagination: &Pagination,
     ) -> impl Future<Output = Result<Paginated<PointsGrantRecord>, CoreError>> + Send;
 
-    // ========== Ledger Repository Methods (Consumption Priority) ==========
-
     /// Find active ledgers sorted by expiration (for FIFO consumption)
     /// Returns ledgers with status = 'active' AND remaining_amount > 0
     /// Sorted by expires_at ASC (NULL last, meaning permanent credits last)
@@ -527,8 +506,6 @@ pub trait PointsRepository: Send + Sync {
         user_id: Uuid,
     ) -> impl Future<Output = Result<Vec<PointsCreditLedger>, CoreError>> + Send;
 
-    // ========== Statistics Repository Methods ==========
-
     /// Count paid users in realm (for upgrade rate calculation)
     /// Returns count of users with active subscriptions in the realm
     fn count_paid_users_in_realm(
@@ -537,8 +514,6 @@ pub trait PointsRepository: Send + Sync {
         start_date: Option<chrono::DateTime<chrono::Utc>>,
         end_date: Option<chrono::DateTime<chrono::Utc>>,
     ) -> impl Future<Output = Result<u64, CoreError>> + Send;
-
-    // ========== Atomic Write Paths ==========
 
     fn consume_points_atomic(
         &self,
@@ -687,8 +662,6 @@ pub trait PointsRepository: Send + Sync {
         Output = Result<crate::points::expiration_service::ExpirationSummary, CoreError>,
     > + Send;
 
-    // ========== point-time: derived balance + pre-grant + reclaim ==========
-
     /// Derived available balance. SUM(remaining_amount)
     /// over the shared predicate `status='active' AND remaining_amount>0 AND
     /// (effective_at IS NULL OR effective_at<=now) AND (expires_at IS NULL OR
@@ -775,5 +748,75 @@ pub trait PointsRepository: Send + Sync {
         realm_id: &str,
         locator: ReclaimLocator,
         reason: &str,
+    ) -> impl Future<Output = Result<usize, CoreError>> + Send;
+
+    /// Locate active quota entitlements for the consume / balance read path.
+    ///
+    /// Maps to `status = 'active' AND effective_from <= now
+    /// AND (effective_until IS NULL OR effective_until > now)` scoped by
+    /// `(realm_id, user_id, credit_type)`. When `bucket_id` is `Some`, the
+    /// result is further restricted to that bucket; `None` returns active
+    /// entitlements across all the user's buckets (used by the coarse
+    /// `reconcile_due_for_user` read-path check). Window availability is
+    /// computed from the returned entitlement snapshots (design §5.2).
+    fn find_active_quota_entitlements(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_id: Option<Uuid>,
+        credit_type: CreditType,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<Vec<PointsQuotaEntitlement>, CoreError>> + Send;
+
+    /// Sliding-window consume aggregation. Returns
+    /// `COALESCE(SUM(ABS(amount)), 0)` over `points_transactions` filtered by
+    /// `(realm_id, user_id, bucket_id, credit_type, type='consume')` and
+    /// `created_at >= window_start` (design §5.2). Backed by the
+    /// `idx_points_transactions_window_agg` covering index (design §4.3.2).
+    fn sum_consume_in_window(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_id: Uuid,
+        credit_type: CreditType,
+        window_start: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<i64, CoreError>> + Send;
+
+    /// Grant a quota entitlement atomically. Idempotent: the
+    /// `UNIQUE(realm_id, user_id, bucket_id, credit_type, idempotency_key)`
+    /// constraint guarantees a replayed grant returns the existing row without
+    /// re-writing (design §5.4 / §4.3.2). Returns the persisted entitlement
+    /// (created or pre-existing).
+    fn grant_quota_entitlement_atomic(
+        &self,
+        entitlement: PointsQuotaEntitlement,
+    ) -> impl Future<Output = Result<PointsQuotaEntitlement, CoreError>> + Send;
+
+    /// Revoke the active quota entitlement identified by
+    /// `(realm_id, user_id, bucket_id, credit_type, source_id)`. Sets
+    /// `status = 'revoked'` and `effective_until = revoke_at`; already-consumed
+    /// usage is NOT reverse-adjusted (it ages out via window slide — design §4.1).
+    /// No-op (returns `Ok(())`) if no active entitlement matches, so revoke is
+    /// idempotent across replayed webhook events.
+    fn revoke_quota_entitlement_atomic(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+        bucket_id: Uuid,
+        credit_type: CreditType,
+        source_id: &str,
+        revoke_at: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    /// Sweep-expire quota entitlements whose `effective_until` has passed
+    /// (`status = 'active' AND effective_until <= now`), in batches of
+    /// `batch_size`. Sets matched rows to `status = 'expired'`. Returns the
+    /// number of rows expired. Invoked by the BE-D07/D11 expiry worker; NOT a
+    /// correctness backstop — window availability is a pure function of the
+    /// consume stream + effective interval (design §4.1).
+    fn expire_quota_entitlements_batch(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+        batch_size: usize,
     ) -> impl Future<Output = Result<usize, CoreError>> + Send;
 }

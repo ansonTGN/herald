@@ -31,6 +31,9 @@ impl RealmPointsConfigInitializer for PostgresRealmPointsConfigInitializer {
                 free_periodic_points_amount: Set(0),
                 free_periodic_grant_period_type: Set("once".to_string()),
                 free_periodic_validity_days: Set(0),
+                // free_periodic_quota_windows: NULL ⟹ no window-model grant
+                // (BE-D07 field wiring; default Realm has no free periodic quota).
+                free_periodic_quota_windows: Set(None),
                 created_at: Set(now.into()),
                 updated_at: Set(now.into()),
             };

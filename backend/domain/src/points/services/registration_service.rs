@@ -4,20 +4,34 @@ use uuid::Uuid;
 
 use crate::authentication::Identity;
 use crate::common::entities::app_errors::CoreError;
+use crate::common::entities::{generate_uuid_v7, now_utc};
 use crate::common::policies::ensure_policy;
-use crate::points::services::registration_pool_resolver::RegistrationPoolResolver;
-use crate::points::{
-    CreditSourceType, CreditType, PointsGrantSchedule, PointsPolicy, PointsRepository,
-    PointsService, UserPointsConfig,
+use crate::points::entities::{
+    CreditSourceType, CreditType, PointsQuotaEntitlement, QuotaEntitlementStatus, QuotaSourceType,
 };
+use crate::points::services::registration_pool_resolver::RegistrationPoolResolver;
+use crate::points::{PointsPolicy, PointsRepository, PointsService, UserPointsConfig};
 
 /// Registration Service - Handles user registration and initial points grant
+///
+/// points-grant-redesign (BE-D07): the free-periodic grant no longer builds a
+/// `points_grant_schedule` + first-period ledger grant. It grants a single
+/// window-quota entitlement (`points_quota_entitlements`, design §5.4) snapshotting
+/// `realm_default_configs.free_periodic_quota_windows`. Availability is computed
+/// from the consume stream + the entitlement's effective interval; there is no
+/// per-period issuance and no schedule to update. Upgrade-to-paid revokes the
+/// entitlement (replaces the pre-redesign `revoke_free_user_credits` ledger
+/// reclaim; consumed amounts NOT reverse-adjusted).
 ///
 /// Per design (credit-bucket): registration and free periodic
 /// grants target the Realm's registration pool Bucket (the single Bucket flagged
 /// `receives_registration_credits = true`). That Bucket is resolved through the
 /// injected `RegistrationPoolResolver` port (infra impl). When no
 /// Bucket is marked, grants are skipped fail-safe (no cross-pool fallback).
+///
+/// `registration_credit` (permanent pool) grant is PRESERVED zero-regression
+/// (design R5): it still routes through `PointsService::grant_points_internal`
+/// topup-style into `points_credit_ledger`.
 pub struct RegistrationService<R, P, Z>
 where
     R: PointsRepository + Send + Sync,
@@ -50,7 +64,8 @@ where
         }
     }
 
-    /// Handle user registration - grant initial registration bonus and setup daily grant
+    /// Handle user registration - grant initial registration bonus and the free
+    /// periodic quota entitlement.
     ///
     /// # Arguments
     /// * `user_id` - The newly registered user ID
@@ -106,7 +121,9 @@ where
             .resolve_registration_pool_bucket(realm_id)
             .await?;
 
-        // 4. Grant registration bonus (permanent).
+        // 4. Grant registration bonus (permanent). ZERO REGRESSION: routes
+        //    through the pool-side `grant_points_internal` topup-style path
+        //    into `points_credit_ledger`, unchanged from pre-redesign.
         let registration_bonus = realm_config.registration_bonus_points;
         if registration_bonus > 0 {
             if let Some(bucket_id) = registration_pool_bucket_id {
@@ -142,7 +159,8 @@ where
             }
         }
 
-        // 4. Create user points config
+        // 5. Create user points config (without a schedule — the window model
+        //    no longer writes `points_grant_schedule`).
         let now = Utc::now();
         let grant_period_type = realm_config.free_periodic_grant_period_type;
         let user_config = UserPointsConfig {
@@ -152,7 +170,11 @@ where
             free_periodic_points_amount: realm_config.free_periodic_points_amount,
             free_periodic_grant_period_type: Some(grant_period_type),
             free_periodic_validity_days: realm_config.free_periodic_validity_days,
-            next_grant_time: Some(now), // Grant immediately
+            // No schedule in the window model: next_grant_time / granted_periods
+            // / grant_schedule_id carry no meaning for a quota entitlement.
+            // They are retained on the struct (pool-side zero-regression +
+            // future schedule-cleanup) but left at their neutral values.
+            next_grant_time: None,
             granted_periods: 0,
             grant_schedule_id: None,
             created_at: now,
@@ -161,134 +183,104 @@ where
 
         let _user_config = self.repository.create_user_config(user_config).await?;
 
-        // 5. Create periodic grant schedule (only if free_periodic_points_amount > 0
-        //    AND a registration pool Bucket is configured — periodic grants target
-        //    that pool per design). When no registration pool Bucket is marked
-        //    the schedule is skipped fail-safe: a schedule without a target Bucket
-        //    would only fail loud at grant time, so we do not create one at all.
-        if realm_config.free_periodic_points_amount > 0 {
+        // 6. Grant the free-periodic quota entitlement (design §5.4). Replaces
+        //    the pre-redesign "build free schedule + first-period ledger grant"
+        //    pair. The snapshot is read from `realm_default_configs.
+        //    free_periodic_quota_windows` (BE-D07 field wiring). Empty snapshot
+        //    ⟹ fail-safe skip (no grant, no error): a Realm with no free
+        //    periodic quota configured simply gets no free window credit.
+        let quota_windows = realm_config.free_periodic_quota_windows.clone();
+        if !quota_windows.is_empty() {
             if let Some(bucket_id) = registration_pool_bucket_id {
-                let schedule = PointsGrantSchedule {
-                    id: Uuid::now_v7(),
+                self.grant_free_periodic_entitlement(
+                    realm_id,
                     user_id,
-                    realm_id: realm_id.to_string(),
                     bucket_id,
-                    subscription_id: None, // Free user has no subscription
-                    entitlement_key: None,
-                    grant_period_type,
-                    base_time: now,
-                    next_grant_time: now,
-                    points_per_period: realm_config.free_periodic_points_amount,
-                    validity_days: realm_config.free_periodic_validity_days,
-                    granted_periods: 0,
-                    max_periods: None, // Unlimited for free users
-                    active: true,
-                    created_at: now,
-                    updated_at: now,
-                };
-
-                let schedule = self.repository.create_grant_schedule(schedule).await?;
-
-                // 6. Update user config with schedule_id
-                let user_config = self
-                    .repository
-                    .update_user_config(user_id, Some(now), 0, Some(schedule.id))
-                    .await?;
-
-                // 7. Grant first periodic points immediately
-                self.grant_periodic_points(realm_id, user_id, &user_config, &schedule)
-                    .await?;
-
-                // 8. Calculate next grant time and update schedule
-                let next_grant_time = schedule.calculate_next_grant_time();
-                let _user_config = self
-                    .repository
-                    .update_user_config(user_id, Some(next_grant_time), 1, Some(schedule.id))
-                    .await?;
-
-                // 9. Update schedule's next_grant_time and granted_periods
-                let _ = self
-                    .repository
-                    .update_grant_schedule(schedule.id, next_grant_time, 1, true)
-                    .await?;
-
-                tracing::info!(
-                    realm_id = %realm_id,
-                    user_id = %user_id,
-                    schedule_id = %schedule.id,
-                    period_type = %grant_period_type.as_str(),
-                    "User registration completed with periodic grant"
-                );
+                    quota_windows,
+                    now,
+                )
+                .await?;
             } else {
                 tracing::warn!(
                     realm_id = %realm_id,
                     user_id = %user_id,
-                    "No registration pool Bucket configured; skipping periodic grant schedule (fail-safe)"
+                    "No registration pool Bucket configured; skipping free periodic quota entitlement grant (fail-safe)"
                 );
             }
         } else {
             tracing::info!(
                 realm_id = %realm_id,
                 user_id = %user_id,
-                "User registration completed without periodic grant"
+                "User registration completed without free periodic quota entitlement (no free_periodic_quota_windows configured)"
             );
         }
 
         Ok(())
     }
 
-    /// Grant periodic points to a free user
-    async fn grant_periodic_points(
+    /// Grant the free-periodic window-quota entitlement for a newly-registered
+    /// user. Delegates to `repository.grant_quota_entitlement_atomic`, which is
+    /// idempotent on the entitlement's `idempotency_key`
+    /// (`UNIQUE(realm_id, user_id, bucket_id, credit_type, idempotency_key)`,
+    /// design §4.3.2): a replayed registration anchor returns the pre-existing
+    /// entitlement row without re-writing.
+    ///
+    /// `source_id` / `idempotency_key` anchor to the registration event
+    /// (`registration:{user_id}` / `free:registration:{user_id}`) so a duplicate
+    /// registration for the same user converges on the same entitlement.
+    /// `effective_until = None` (the free entitlement is ongoing until revoked
+    /// on upgrade-to-paid, design §5.4).
+    async fn grant_free_periodic_entitlement(
         &self,
         realm_id: &str,
         user_id: Uuid,
-        user_config: &UserPointsConfig,
-        schedule: &PointsGrantSchedule,
+        bucket_id: Uuid,
+        quota_windows: Vec<crate::points::entities::QuotaWindow>,
+        effective_from: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), CoreError> {
-        let amount = user_config.free_periodic_points_amount;
-        if amount <= 0 {
-            tracing::warn!(
-                realm_id = %realm_id,
-                user_id = %user_id,
-                "Periodic grant amount is 0, skipping"
-            );
-            return Ok(());
-        }
+        let source_id = format!("registration:{}", user_id);
+        let idempotency_key = format!("free:registration:{}", user_id);
 
-        // Calculate expiration
-        let expires_at = schedule
-            .grant_period_type
-            .calculate_expiration(Utc::now(), user_config.free_periodic_validity_days);
+        let entitlement = PointsQuotaEntitlement {
+            id: generate_uuid_v7(),
+            user_id,
+            realm_id: realm_id.to_string(),
+            bucket_id,
+            credit_type: CreditType::FreePeriodicCredit,
+            source_type: QuotaSourceType::FreePeriodicGrant,
+            source_id: source_id.clone(),
+            quota_windows,
+            effective_from,
+            effective_until: None,
+            status: QuotaEntitlementStatus::Active,
+            idempotency_key: idempotency_key.clone(),
+            created_at: effective_from,
+            updated_at: effective_from,
+        };
 
-        self.points_service
-            .grant_points_internal(
-                realm_id,
-                user_id,
-                schedule.bucket_id,
-                CreditType::FreePeriodicCredit,
-                CreditSourceType::FreePeriodicGrant,
-                amount,
-                expires_at,
-                None, // effective_at = None (first periodic grant at registration is immediately available)
-                Some(schedule.id.to_string()),
-                None, // description
-                Some(format!("grant:periodic:{}", schedule.id)),
-            )
+        let granted = self
+            .repository
+            .grant_quota_entitlement_atomic(entitlement)
             .await?;
 
         tracing::info!(
             realm_id = %realm_id,
             user_id = %user_id,
-            amount,
-            expires_at = ?expires_at,
-            period_type = %schedule.grant_period_type.as_str(),
-            "Granted periodic points"
+            bucket_id = %bucket_id,
+            entitlement_id = %granted.id,
+            "Granted free periodic quota entitlement (window model; no schedule, no ledger row)"
         );
 
         Ok(())
     }
 
-    /// Revoke all free user credits (used when upgrading to paid plan)
+    /// Revoke the free-periodic quota entitlement (used when a free user
+    /// upgrades to a paid plan). Replaces the pre-redesign ledger-reclaim path
+    /// (`revoke_points_by_credit_type` + schedule deactivate) with a quota-
+    /// entitlement revoke (design §5.4). Consumed amounts are NOT reverse-
+    /// adjusted: they age out naturally as the sliding window advances.
+    ///
+    /// Method name retained for call-site compatibility; semantics changed.
     pub async fn revoke_free_user_credits(
         &self,
         identity: Identity,
@@ -299,7 +291,7 @@ where
         tracing::info!(
             realm_id = %realm_id,
             user_id = %user_id,
-            "Revoking free user credits"
+            "Revoking free periodic quota entitlement (upgrade to paid)"
         );
 
         // Check realm boundary
@@ -315,48 +307,27 @@ where
             "Insufficient permissions to revoke free user credits",
         )?;
 
-        // Revoke all free periodic credits from the registration pool Bucket.
-        self.points_service
-            .revoke_points_by_credit_type(
+        // Revoke the free-periodic quota entitlement. `source_id` mirrors the
+        // grant anchor (`registration:{user_id}`) so the revoke resolves the
+        // currently-active free entitlement. No-match ⟹ idempotent Ok(()).
+        let source_id = format!("registration:{}", user_id);
+        self.repository
+            .revoke_quota_entitlement_atomic(
                 realm_id,
                 user_id,
                 bucket_id,
                 CreditType::FreePeriodicCredit,
-                crate::points::entities::RevocationType::UpgradeRevoke,
-                "Upgraded to paid plan".to_string(),
+                &source_id,
+                now_utc(),
             )
             .await?;
 
-        // Deactivate daily grant schedule
-        let user_config = self
-            .repository
-            .find_user_config(user_id)
-            .await?
-            .ok_or(CoreError::NotFound)?;
-
-        if let Some(schedule_id) = user_config.grant_schedule_id {
-            self.repository
-                .deactivate_grant_schedule(schedule_id)
-                .await?;
-
-            // Update user config
-            let _ = self
-                .repository
-                .update_user_config(
-                    user_id,
-                    None, // Clear next_grant_time
-                    user_config.granted_periods,
-                    None, // Clear schedule_id
-                )
-                .await?;
-
-            tracing::info!(
-                realm_id = %realm_id,
-                user_id = %user_id,
-                schedule_id = %schedule_id,
-                "Deactivated daily grant schedule"
-            );
-        }
+        tracing::info!(
+            realm_id = %realm_id,
+            user_id = %user_id,
+            bucket_id = %bucket_id,
+            "Free periodic quota entitlement revoked (idempotent; consumed amounts not reverse-adjusted)"
+        );
 
         Ok(())
     }
@@ -365,7 +336,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::points::GrantPeriodType;
+    use crate::points::{GrantPeriodType, PointsGrantSchedule};
     use chrono::Duration;
 
     #[test]
@@ -451,8 +422,6 @@ mod tests {
         assert_eq!(schedule.calculate_next_expiration(), None); // Permanent
     }
 
-    // ===== Credit-bucket registration-pool resolution tests =====
-    //
     // Per design: registration and free-periodic grants target the
     // Realm's single registration-pool Bucket (`receives_registration_credits`).
     // When the resolver returns `None` (no marked Bucket) the service MUST skip

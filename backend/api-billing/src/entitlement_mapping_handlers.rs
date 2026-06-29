@@ -11,14 +11,16 @@ use crate::handlers::require_billing_permission;
 use crate::types::{
     BatchUpdateEntitlementMappingsRequest, BatchUpdateEntitlementMappingsResponse,
     EntitlementMappingListResponse, EntitlementMappingQuery, EntitlementMappingResponse,
-    OneTimeMappingItem, OneTimeMappingListResponse, PartialSyncErrorDto, SyncProviderRequest,
-    SyncProviderResponse, UpdateEntitlementMappingRequest,
+    OneTimeMappingItem, OneTimeMappingListResponse, PartialSyncErrorDto, QuotaWindowViewDto,
+    SyncProviderRequest, SyncProviderResponse, UpdateEntitlementMappingRequest,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::billing::entities::EntitlementMapping;
 use herald_core::domain::billing::{BatchMappingError, BillingRepository, SyncStatus};
+use herald_core::domain::points::derive_window_key;
+use herald_core::domain::points::entities::QuotaWindow;
 
 /// 409 `mapping_in_use` body for a batch save blocked by the active-subscription
 /// lock. The whole batch transaction is rolled back.
@@ -47,6 +49,16 @@ fn mapping_to_response(m: EntitlementMapping) -> EntitlementMappingResponse {
         max_periods: m.max_periods,
         enabled: m.enabled,
         provider_product_info: m.provider_product_info,
+        quota_windows: m.quota_windows.map(|windows| {
+            windows
+                .into_iter()
+                .map(|w| QuotaWindowViewDto {
+                    window_seconds: w.window_seconds,
+                    limit: w.limit,
+                    key: w.key,
+                })
+                .collect()
+        }),
         synced_at: m.synced_at.map(|dt| dt.to_rfc3339()),
         created_at: m.created_at.to_rfc3339(),
         updated_at: m.updated_at.to_rfc3339(),
@@ -193,7 +205,6 @@ pub async fn update_entitlement_mapping(
 
     require_points_manage_permission(&state, &identity, &realm_id).await?;
 
-    // Validate entitlement_key format if provided
     if let Some(ref key) = request.entitlement_key {
         if key.is_empty() || key.len() > 64 {
             return Err(ApiError::bad_request(
@@ -236,6 +247,45 @@ pub async fn update_entitlement_mapping(
         ));
     }
 
+    // Validate and materialize quota_windows (design §4.2.2 / §4.4.3):
+    // `None` = leave unchanged, `Some([])` = clear, `Some([...])` = replace.
+    let quota_windows = match request.quota_windows {
+        None => existing.quota_windows.clone(),
+        Some(ref windows) if windows.is_empty() => None,
+        Some(windows) => {
+            const QUOTA_WINDOWS_MAX: usize = 8;
+            if windows.len() > QUOTA_WINDOWS_MAX {
+                return Err(ApiError::bad_request(format!(
+                    "quota_windows may have at most {} windows, got {}",
+                    QUOTA_WINDOWS_MAX,
+                    windows.len()
+                )));
+            }
+            for w in &windows {
+                if w.window_seconds <= 0 {
+                    return Err(ApiError::bad_request(
+                        "quota_windows.windowSeconds must be > 0".to_string(),
+                    ));
+                }
+                if w.limit < 0 {
+                    return Err(ApiError::bad_request(
+                        "quota_windows.limit must be >= 0".to_string(),
+                    ));
+                }
+            }
+            Some(
+                windows
+                    .into_iter()
+                    .map(|w| QuotaWindow {
+                        window_seconds: w.window_seconds,
+                        limit: w.limit,
+                        key: derive_window_key(w.window_seconds),
+                    })
+                    .collect(),
+            )
+        }
+    };
+
     let updated = EntitlementMapping {
         id: existing.id,
         realm_id: existing.realm_id,
@@ -257,6 +307,7 @@ pub async fn update_entitlement_mapping(
         max_periods: request.max_periods.or(existing.max_periods),
         enabled: request.enabled.unwrap_or(existing.enabled),
         provider_product_info: existing.provider_product_info,
+        quota_windows,
         synced_at: existing.synced_at,
         created_at: existing.created_at,
         updated_at: chrono::Utc::now(),
@@ -448,6 +499,7 @@ pub async fn batch_update_entitlement_mappings(
             || u.validity_days.is_some()
             || u.grant_on_subscribe.is_some()
             || u.max_periods.is_some()
+            || u.quota_windows.is_some()
     });
     if touches_credit_fields {
         require_points_manage_permission(&state, &identity, &realm_id).await?;
@@ -480,9 +532,37 @@ pub async fn batch_update_entitlement_mappings(
                 u.mapping_id
             )));
         }
+        // Quota window config validation (design §4.2.2 / §4.4.3): window count
+        // ≤ 8, window_seconds > 0, limit >= 0. Matches the points-domain
+        // `FREE_PERIODIC_QUOTA_WINDOWS_MAX` cap and the `points_per_period < 0`
+        // inline-check style. Invalid → 400.
+        if let Some(windows) = &u.quota_windows {
+            const QUOTA_WINDOWS_MAX: usize = 8;
+            if windows.len() > QUOTA_WINDOWS_MAX {
+                return Err(ApiError::bad_request(format!(
+                    "quota_windows may have at most {} windows for mapping {}, got {}",
+                    QUOTA_WINDOWS_MAX,
+                    u.mapping_id,
+                    windows.len()
+                )));
+            }
+            for w in windows {
+                if w.window_seconds <= 0 {
+                    return Err(ApiError::bad_request(format!(
+                        "quota_windows.windowSeconds must be > 0 for mapping {}",
+                        u.mapping_id
+                    )));
+                }
+                if w.limit < 0 {
+                    return Err(ApiError::bad_request(format!(
+                        "quota_windows.limit must be >= 0 for mapping {}",
+                        u.mapping_id
+                    )));
+                }
+            }
+        }
     }
 
-    // Delegate the transactional write to the repository.
     let input = herald_core::domain::billing::BatchUpdateMappingsInput {
         realm_id: realm_id.clone(),
         payment_provider: request.payment_provider.clone(),
@@ -501,6 +581,15 @@ pub async fn batch_update_entitlement_mappings(
                 grant_on_subscribe: u.grant_on_subscribe,
                 max_periods: u.max_periods,
                 enabled: u.enabled,
+                quota_windows: u.quota_windows.map(|windows| {
+                    windows
+                        .into_iter()
+                        .map(|w| herald_core::domain::billing::QuotaWindowInput {
+                            window_seconds: w.window_seconds,
+                            limit: w.limit,
+                        })
+                        .collect()
+                }),
             })
             .collect(),
     };

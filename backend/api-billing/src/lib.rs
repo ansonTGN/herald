@@ -1,6 +1,3 @@
-// Herald API Billing Module
-// Handles billing, subscriptions, payments, webhooks
-
 pub mod compensation;
 pub(crate) mod webhook_common;
 pub(crate) mod webhook_subscription_helpers;
@@ -28,21 +25,18 @@ pub mod webhook_handlers;
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(
-        // Credit Bucket directory handlers
         crate::credit_bucket_handlers::list_credit_buckets_handler,
         crate::credit_bucket_handlers::get_credit_bucket_handler,
         crate::credit_bucket_handlers::create_credit_bucket_handler,
         crate::credit_bucket_handlers::update_credit_bucket_handler,
         crate::credit_bucket_handlers::delete_credit_bucket_handler,
         crate::credit_bucket_handlers::get_bucket_overview_handler,
-        // Entitlement Mapping handlers
         crate::entitlement_mapping_handlers::list_entitlement_mappings,
         crate::entitlement_mapping_handlers::get_entitlement_mapping,
         crate::entitlement_mapping_handlers::update_entitlement_mapping,
         crate::entitlement_mapping_handlers::sync_provider_products,
         crate::entitlement_mapping_handlers::list_one_time_mappings,
         crate::entitlement_mapping_handlers::batch_update_entitlement_mappings,
-        // Subscription handlers
         crate::handlers::list_subscriptions,
         crate::handlers::get_subscription,
         crate::handlers::get_subscription_for_client_app,
@@ -60,7 +54,6 @@ pub mod webhook_handlers;
         crate::purchase_handlers::cancel_payment_attempt,
         crate::purchase_handlers::fulfill_payment,
         crate::purchase_handlers::get_purchase_history,
-        // Invoice handlers
         crate::invoice_handlers::get_seller_config,
         crate::invoice_handlers::upsert_seller_config,
         crate::invoice_handlers::create_invoice,
@@ -72,17 +65,14 @@ pub mod webhook_handlers;
         crate::invoice_handlers::void_invoice,
         crate::invoice_handlers::mark_paid,
         crate::invoice_handlers::create_credit_note,
-        // User invoice handlers
         crate::invoice_handlers::apply_invoice,
         crate::invoice_handlers::list_my_invoices,
         crate::invoice_handlers::get_my_invoice,
         crate::invoice_handlers::get_invoice_apply_eligibility,
-        // PDF download handlers
         crate::invoice_handlers::download_invoice_pdf,
         crate::invoice_handlers::download_my_invoice_pdf,
     ),
     components(schemas(
-        // Credit Bucket directory types
         crate::credit_bucket_handlers::BucketResponse,
         crate::credit_bucket_handlers::BucketDetailResponse,
         crate::credit_bucket_handlers::ClientAppRef,
@@ -95,7 +85,6 @@ pub mod webhook_handlers;
         crate::credit_bucket_handlers::RegistrationPoolConflictErrorBody,
         crate::credit_bucket_handlers::BucketKeyDuplicateErrorBody,
         crate::credit_bucket_handlers::BucketInUseErrorBody,
-        // Entitlement Mapping types
         crate::types::EntitlementMappingResponse,
         crate::types::EntitlementMappingListResponse,
         crate::types::EntitlementMappingQuery,
@@ -105,13 +94,13 @@ pub mod webhook_handlers;
         crate::types::PartialSyncErrorDto,
         crate::types::OneTimeMappingItem,
         crate::types::OneTimeMappingListResponse,
-        // Price-granularity batch + purchase options
         crate::types::PriceMappingUpdate,
+        crate::types::QuotaWindowInputDto,
+        crate::types::QuotaWindowViewDto,
         crate::types::BatchUpdateEntitlementMappingsRequest,
         crate::types::BatchUpdateEntitlementMappingsResponse,
         crate::types::PurchaseOptionView,
         crate::types::PurchaseOptionListResponse,
-        // Subscription types
         crate::types::SubscriptionDetailResponse,
         crate::types::SubscriptionListItemResponse,
         crate::types::SubscriptionListResponse,
@@ -126,13 +115,11 @@ pub mod webhook_handlers;
         crate::types_history::SubscriptionHistoryEventWithUser,
         crate::types_history::SubscriptionSummary,
         crate::types_history::UserInfo,
-        // Provider common types (shared across Stripe/Creem)
         crate::provider_common_types::PaymentProvidersResponse,
         crate::provider_common_types::PaymentProviderInfo,
         crate::provider_common_types::ValidationErrorResponse,
         crate::provider_common_types::ValidationErrorDetail,
         crate::provider_common_types::GenericErrorResponse,
-        // Feature availability
         crate::feature_availability::FeatureAvailabilityResponse,
         crate::feature_availability::AdminFeatureAvailability,
         crate::feature_availability::UserFeatureAvailability,
@@ -147,7 +134,6 @@ pub mod webhook_handlers;
         crate::purchase_handlers::PurchaseHistoryResponse,
         crate::purchase_handlers::PurchaseHistoryItemDto,
         crate::purchase_handlers::FulfillPaymentRequest,
-        // Invoice types
         crate::invoice_types::SellerConfigRequest,
         crate::invoice_types::SellerConfigResponse,
         crate::invoice_types::LineItemRequest,
@@ -173,10 +159,8 @@ pub mod webhook_handlers;
 )]
 pub struct ApiDoc;
 
-// Re-export handler functions for external use
 pub use routes::{billing_public_routes, billing_routes};
 
 pub use routes::billing_test_routes;
 
-// Re-export compensation processor for assembly in main.rs
 pub use compensation::WebhookEventProcessorImpl;

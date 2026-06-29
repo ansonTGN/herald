@@ -8,6 +8,22 @@ use uuid::Uuid;
 
 use crate::billing::entities::EntitlementMapping;
 
+/// Billing-side input DTO for one quota window in a mapping batch update.
+///
+/// Carries only the editable fields (`window_seconds`, `limit`); the stable
+/// display `key` is derived by the API layer (via `derive_window_key`) before
+/// persistence, so callers cannot drift window identity. Mirrors the
+/// points-domain request shape (`api-points::types::QuotaWindowInputDto`) — kept
+/// local to billing so api-billing does not depend on api-points.
+#[derive(Debug, Clone)]
+pub struct QuotaWindowInput {
+    /// Sliding window length in seconds. Must be > 0.
+    pub window_seconds: i64,
+    /// Quota limit. Must be >= 0 (0 = window grants nothing but is a valid
+    /// config edge case).
+    pub limit: i64,
+}
+
 /// One price-mapping row within a batch save (domain input mirror of the API
 /// `PriceMappingUpdate` DTO). Credit-strategy fields are `Option<Option<T>>` so
 /// the caller can distinguish "leave unchanged" (`None`) from "clear" (outer
@@ -25,6 +41,10 @@ pub struct PriceMappingUpdateInput {
     pub grant_on_subscribe: Option<bool>,
     pub max_periods: Option<i32>,
     pub enabled: Option<bool>,
+    /// Quota window config (design §4.3.2). `None` ⟺ leave unchanged;
+    /// `Some(vec![])` ⟺ clear (no window grant); `Some(non-empty)` ⟺ set.
+    /// Non-empty triggers the `points.manage` credit-field permission gate.
+    pub quota_windows: Option<Vec<QuotaWindowInput>>,
 }
 
 /// Request payload for a batch price-mapping save scoped to one product.

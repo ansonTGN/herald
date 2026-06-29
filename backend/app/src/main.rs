@@ -1,7 +1,5 @@
 use anyhow::Result;
-use chrono::Duration;
 use clap::Parser;
-use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -17,8 +15,8 @@ use herald_api::WebhookEventProcessorImpl;
 use herald_api::config::ApiConfig;
 use herald_api::observability;
 use herald_core::domain::billing::compensation::WebhookEventProcessor;
-use herald_core::domain::points::{ExpirationService, GrantPeriodType, GrantScheduler};
-use herald_worker::PointsPreGrantJob;
+use herald_core::domain::points::{ExpirationService, GrantScheduler};
+use herald_worker::PointsQuotaExpirationJob;
 use herald_worker::WorkerConfig;
 
 /// Herald Application
@@ -69,7 +67,6 @@ async fn main() -> Result<()> {
         );
 
     // Conditionally attach the OTel traces layer.
-    //
     // The traces layer is `Box<dyn Layer<Registry>>`. Two composability
     // constraints drive the structure:
     //   1. It is only composable on a *bare* `Registry` (not generic over
@@ -78,7 +75,6 @@ async fn main() -> Result<()> {
     //      via inference, so each arm builds its own fmt layer — the two
     //      arms have different concrete subscriber types and must not share
     //      a single fmt layer value.
-    //
     // Under the baseline (`traces_enabled=false`) `traces.layer` is `None`
     // and NOTHING is installed — traces do not leave the process. Branching
     // here (rather than `.with(Option<...>)`) is what makes the baseline a
@@ -127,21 +123,15 @@ async fn main() -> Result<()> {
         herald_core::infrastructure::billing::PostgresInvoiceRepository::new((*state.db).clone()),
     );
 
-    // Construct the pre-grant lead_time_map. Defaults: Daily=1h,
-    // Weekly=12h, Monthly=24h, Once=0. Env-overridable for ops tuning; not
-    // exposed to Realm/frontend. Subscription schedules share
-    // the Monthly entry (their grant_period_type placeholder is monthly).
-    let lead_time_map = build_lead_time_map();
-
+    // Construct the quota-entitlement expiry cleanup scheduler. Under the
+    // window-quota model (points-grant-redesign §4.1) there is no pre-grant
+    // lead_time_map to assemble — the scheduler only sweeps already-lapsed
+    // quota entitlements. lead_time_map is retired (Legacy Cleanup Checklist).
     let grant_scheduler = Arc::new(GrantScheduler::new(
         state.points_repository.clone(),
         state.points_service.clone(),
-        lead_time_map,
     ));
-    let pre_grant_job = Arc::new(PointsPreGrantJob::new(
-        grant_scheduler,
-        state.points_repository.clone(),
-    ));
+    let quota_expiration_job = Arc::new(PointsQuotaExpirationJob::new(grant_scheduler));
 
     // Construct webhook compensation processor
     let event_processor: Arc<dyn WebhookEventProcessor> =
@@ -158,7 +148,7 @@ async fn main() -> Result<()> {
     info!("Starting Worker service");
     let worker_config = WorkerConfig::new(expiration_service, invoice_repo, state.pool.clone())
         .with_event_processor(event_processor)
-        .with_pre_grant(pre_grant_job);
+        .with_quota_expiration(quota_expiration_job);
     let worker_handle = herald_worker::start(worker_config)?;
 
     // Wait for either service to complete or shutdown signal
@@ -216,32 +206,4 @@ async fn shutdown_signal() {
             info!("Received SIGTERM");
         }
     }
-}
-
-/// Build the pre-grant `lead_time_map` for the
-/// `GrantScheduler`. Defaults: Daily=1h, Weekly=12h, Monthly=24h, Once=0.
-/// Ops can override via env; the map is a backend scheduling parameter and is
-/// NOT exposed to Realm/frontend. Subscription schedules reuse
-/// the Monthly entry (their `grant_period_type` placeholder is monthly).
-fn build_lead_time_map() -> HashMap<GrantPeriodType, Duration> {
-    let daily = env_hours("WORKER_FREE_GRANT_LEAD_HOURLY", 1);
-    let weekly = env_hours("WORKER_FREE_GRANT_LEAD_WEEKLY_HOURS", 12);
-    let monthly = env_hours("WORKER_FREE_GRANT_LEAD_MONTHLY_HOURS", 24);
-    let mut map = HashMap::new();
-    map.insert(GrantPeriodType::Daily, Duration::hours(daily));
-    map.insert(GrantPeriodType::Weekly, Duration::hours(weekly));
-    map.insert(GrantPeriodType::Monthly, Duration::hours(monthly));
-    // Once = 0 (no lead). Omitted from the map so GrantScheduler falls back
-    // to its default_lead_time(Once) = 0; this keeps the "no lead" semantics
-    // explicit even if defaults change upstream.
-    map.insert(GrantPeriodType::Once, Duration::zero());
-    map
-}
-
-/// Read an hours-valued env var with a default (in whole hours).
-fn env_hours(name: &str, default: i64) -> i64 {
-    env::var(name)
-        .ok()
-        .and_then(|v| v.parse::<i64>().ok())
-        .unwrap_or(default)
 }

@@ -1,12 +1,3 @@
-// =============================================================================
-// Points Test Helpers
-// =============================================================================
-//
-// Shared helpers for points-related API tests.
-// Provides functions for creating points wallets, transactions, and assertions.
-//
-// =============================================================================
-
 #![allow(dead_code)]
 
 use crate::tests::schema_test_context::SchemaTestContext;
@@ -182,6 +173,25 @@ pub async fn create_points_wallet(
     .expect("Failed to fetch points wallet after ensure");
     let existing: Uuid = row.get("id");
     existing
+}
+
+/// Create a user, ensure the legacy test wallet exists, and return
+/// `(user_id, bucket_id)`. New quota-window scenario tests use this to avoid
+/// repeating setup boilerplate in every case.
+pub async fn create_user_wallet_and_bucket_for_test(
+    ctx: &mut SchemaTestContext,
+    realm_id: &str,
+    email: &str,
+) -> (Uuid, Uuid) {
+    let user_id = crate::tests::scenarios::points::fixtures::create_test_user(
+        &ctx.app_state.pool,
+        realm_id,
+        email,
+    )
+    .await;
+    create_points_wallet(ctx, user_id, realm_id).await;
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+    (user_id, bucket_id)
 }
 
 /// Create a points wallet with initial balance
@@ -613,21 +623,18 @@ pub async fn assert_transaction_exists(
 /// ============================================================================
 /// Delete all points data for a user
 pub async fn cleanup_user_points(ctx: &mut SchemaTestContext, user_id: Uuid) {
-    // Delete transactions
     sqlx::query("DELETE FROM points_transactions WHERE user_id = $1")
         .bind(user_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();
 
-    // Delete credit ledger entries
     sqlx::query("DELETE FROM points_credit_ledger WHERE user_id = $1")
         .bind(user_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();
 
-    // Delete account
     sqlx::query("DELETE FROM points_wallets WHERE user_id = $1")
         .bind(user_id)
         .execute(&ctx.app_state.pool)
@@ -637,31 +644,24 @@ pub async fn cleanup_user_points(ctx: &mut SchemaTestContext, user_id: Uuid) {
 
 /// Delete all points data for an account
 pub async fn cleanup_wallet_points(ctx: &mut SchemaTestContext, wallet_id: Uuid) {
-    // Delete transactions
     sqlx::query("DELETE FROM points_transactions WHERE wallet_id = $1")
         .bind(wallet_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();
 
-    // Delete credit ledger entries
     sqlx::query("DELETE FROM points_credit_ledger WHERE wallet_id IN (SELECT id FROM points_wallets WHERE id = $1)")
         .bind(wallet_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();
 
-    // Delete account
     sqlx::query("DELETE FROM points_wallets WHERE id = $1")
         .bind(wallet_id)
         .execute(&ctx.app_state.pool)
         .await
         .unwrap();
 }
-
-// ============================================================================
-// Extended Helper Functions for fix-points-2 Tests
-// ============================================================================
 
 /// Create a credit ledger entry (user-focused version)
 pub async fn create_credit_ledger_entry_v2(
@@ -1169,10 +1169,6 @@ pub async fn assert_account_matches_ledger_sums(
     );
 }
 
-// ============================================================================
-// Entitlement-Based Points Verification Helpers
-// ============================================================================
-
 /// Verify points were granted with correct entitlement_key association.
 ///
 /// Checks that at least `expected_amount` subscription credit was granted
@@ -1260,10 +1256,6 @@ pub async fn get_points_grant_schedule_by_entitlement(
         .collect()
 }
 
-// ============================================================================
-// point-time helpers
-// ============================================================================
-
 /// Truncate a UTC datetime to microsecond precision.
 ///
 /// Postgres `TIMESTAMPTZ` stores microsecond precision (not nanoseconds), so a
@@ -1278,11 +1270,9 @@ pub fn trunc_to_micros(ts: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<ch
     ts.with_nanosecond(truncated_nanos)
         .expect("truncated_nanos is a valid subsec nanos value (< 2e9)")
 }
-//
 // Shared helpers for the point-time feature (design `.ai/design/point-time.md`).
 // These cover three reuse needs expressed by the
 // scenario matrix:
-//
 //   1. Future-effective row injection — `inject_effective_at`,
 //      `create_credit_ledger_entry_with_effective_at`. The new entry helper
 //      intentionally does NOT call `create_credit_ledger_entry_v2`'s UPDATE
@@ -1303,9 +1293,7 @@ pub fn trunc_to_micros(ts: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<ch
 //      `advance_schedule`, `create_grant_record`, `grant_record_exists`,
 //      `find_ledger_by_source_id`, `find_ledger_id_by_schedule_period`,
 //      `count_future_effective_active_rows`.
-//
 // # `entitlement_key` decision (Scope item 3 / P2-4)
-//
 // Free-periodic points are resolved by production `reconcile_due_for_user`
 // (domain/src/points/service.rs:218) → `pregrant_next_period_atomic`, which
 // reads `schedule.points_per_period` DIRECTLY. It does NOT consult
@@ -1711,4 +1699,344 @@ pub async fn count_future_effective_active_rows(
     .fetch_one(&ctx.app_state.pool)
     .await
     .expect("Failed to count future-effective active rows")
+}
+
+// points-grant-redesign helpers (quota entitlement + window view)
+// Shared helpers for the window-quota model (design
+// `.ai/design/points-grant-redesign.md` §4.3.2 / §5.1 / §5.4). These mirror
+// the production read path (`find_active_quota_entitlements` predicate +
+// `compute_quota_windows_view`) so scenario tests assert against the SAME
+// authority the consumption / balance read path uses, not a second DDL.
+// Active-entitlement predicate (infra `find_active_quota_entitlements`,
+// postgres_repository.rs:5793):
+//   status = 'active' AND effective_from <= now
+//     AND (effective_until IS NULL OR effective_until > now)
+// A revoked entitlement (status='revoked' + effective_until set) leaves the
+// active set, so its windows contribute ZERO availability — the core reclaim
+// invariant (US-CB-008 / design §7 P0).
+
+/// JSONB shape of `quota_windows` / `free_periodic_quota_windows` as written by
+/// production serde (`QuotaWindowDbJson`, infra postgres_repository.rs:178).
+/// `[{"windowSeconds": i64, "limit": i64, "key": "5h"}]`.
+pub fn quota_windows_jsonb(windows: &[(i64, i64, &str)]) -> serde_json::Value {
+    serde_json::Value::Array(
+        windows
+            .iter()
+            .map(|(secs, limit, key)| {
+                serde_json::json!({
+                    "windowSeconds": secs,
+                    "limit": limit,
+                    "key": key,
+                })
+            })
+            .collect(),
+    )
+}
+
+/// Count ACTIVE quota entitlement rows for `(user, bucket, credit_type)` under
+/// the production active predicate. A revoked/expired entitlement is excluded.
+pub async fn count_active_quota_entitlements(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    bucket_id: Uuid,
+    credit_type: herald_core::domain::points::entities::CreditType,
+) -> i64 {
+    sqlx::query_scalar(
+        r#"SELECT COUNT(*)::BIGINT FROM points_quota_entitlements
+           WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3
+             AND credit_type = $4
+             AND status = 'active'
+             AND effective_from <= NOW()
+             AND (effective_until IS NULL OR effective_until > NOW())"#,
+    )
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(bucket_id)
+    .bind(credit_type.to_string())
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("Failed to count active quota entitlements")
+}
+
+/// Count ALL quota entitlement rows for `(user, bucket, credit_type)`
+/// regardless of status (active + revoked + expired). Use this to assert grant
+/// idempotency (exactly one row after a duplicate event) independently of the
+/// active predicate.
+pub async fn count_all_quota_entitlements(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    bucket_id: Uuid,
+    credit_type: herald_core::domain::points::entities::CreditType,
+) -> i64 {
+    sqlx::query_scalar(
+        r#"SELECT COUNT(*)::BIGINT FROM points_quota_entitlements
+           WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3
+             AND credit_type = $4"#,
+    )
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(bucket_id)
+    .bind(credit_type.to_string())
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("Failed to count all quota entitlements")
+}
+
+/// Return `(status, effective_until_is_set)` for the quota entitlement matched
+/// by `(user, bucket, credit_type, source_id)`. `source_id` is the
+/// subscription_id (or registration source) string. Used to assert the revoke
+/// transition: `status='revoked'` AND `effective_until IS NOT NULL`.
+pub async fn quota_entitlement_status(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    bucket_id: Uuid,
+    credit_type: herald_core::domain::points::entities::CreditType,
+    source_id: &str,
+) -> (String, bool) {
+    let row = sqlx::query(
+        r#"SELECT status, effective_until IS NOT NULL AS effective_until_set
+           FROM points_quota_entitlements
+           WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3
+             AND credit_type = $4 AND source_id = $5
+           ORDER BY created_at DESC LIMIT 1"#,
+    )
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(bucket_id)
+    .bind(credit_type.to_string())
+    .bind(source_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("Failed to fetch quota entitlement status");
+    use sqlx::Row;
+    (
+        row.get::<String, _>("status"),
+        row.get::<bool, _>("effective_until_set"),
+    )
+}
+
+/// Window availability for `(user, bucket, credit_type)` = MIN over all ACTIVE
+/// entitlement windows of `(limit - SUM(consume in window))`, floored at 0.
+/// Mirrors production `compute_window_available_in_tx` (design §5.2). When no
+/// active entitlement exists, availability is 0 (the reclaim-zero invariant).
+///
+/// This recomputes the window aggregation in SQL exactly as production does:
+/// for each active entitlement's snapshot window, sum consume rows with
+/// `created_at >= now - window_seconds`, take `limit - used`, then take the
+/// min across windows (and across entitlements).
+pub async fn compute_window_available(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    bucket_id: Uuid,
+    credit_type: herald_core::domain::points::entities::CreditType,
+) -> i64 {
+    // Active entitlements and their snapshot windows.
+    let rows = sqlx::query(
+        r#"SELECT id, quota_windows FROM points_quota_entitlements
+           WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3
+             AND credit_type = $4
+             AND status = 'active'
+             AND effective_from <= NOW()
+             AND (effective_until IS NULL OR effective_until > NOW())"#,
+    )
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(bucket_id)
+    .bind(credit_type.to_string())
+    .fetch_all(&ctx.app_state.pool)
+    .await
+    .expect("Failed to fetch active quota entitlements for window view");
+
+    use sqlx::Row;
+    let mut min_remaining: Option<i64> = None;
+    for row in rows {
+        let entitlement_id: Uuid = row.get("id");
+        let windows: serde_json::Value = row.get("quota_windows");
+        let windows = windows
+            .as_array()
+            .expect("quota_windows must be a JSON array");
+        for win in windows {
+            let window_seconds: i64 = win
+                .get("windowSeconds")
+                .and_then(|v| v.as_i64())
+                .expect("windowSeconds present");
+            let limit: i64 = win
+                .get("limit")
+                .and_then(|v| v.as_i64())
+                .expect("limit present");
+            // Used = SUM(consume) in the sliding window, scoped to this
+            // entitlement's credit_type/bucket/user (production scopes by
+            // credit_type+bucket+user, not per-entitlement-id, because window
+            // availability is the shared rolling cap).
+            let _ = entitlement_id; // scope marker; aggregation is per (user,bucket,credit_type)
+            let used: i64 = sqlx::query_scalar(
+                r#"SELECT COALESCE(SUM(ABS(amount)), 0)::BIGINT FROM points_transactions
+                   WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3
+                     AND credit_type = $4 AND type = 'consume'
+                     AND created_at >= NOW() - make_interval(secs => $5)"#,
+            )
+            .bind(realm_id)
+            .bind(user_id)
+            .bind(bucket_id)
+            .bind(credit_type.to_string())
+            .bind(window_seconds)
+            .fetch_one(&ctx.app_state.pool)
+            .await
+            .expect("Failed to sum consume in window");
+            let remaining = (limit - used).max(0);
+            min_remaining = Some(match min_remaining {
+                None => remaining,
+                Some(cur) => cur.min(remaining),
+            });
+        }
+    }
+    min_remaining.unwrap_or(0)
+}
+
+/// Assert window availability equals `expected`. The canonical reclaim-zero
+/// assertion: after revoke, no active entitlement ⟹ availability 0.
+pub async fn assert_window_available(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    bucket_id: Uuid,
+    credit_type: herald_core::domain::points::entities::CreditType,
+    expected: i64,
+) {
+    let actual = compute_window_available(ctx, realm_id, user_id, bucket_id, credit_type).await;
+    assert_eq!(
+        actual, expected,
+        "window availability for {:?} (user {}) expected {}, got {}; \
+         active entitlement count determines availability (revoked/expired ⟹ 0)",
+        credit_type, user_id, expected, actual
+    );
+}
+
+/// Seed a `provider_entitlement_mappings` row WITH `quota_windows` attached,
+/// routed to the realm's legacy test bucket. Non-empty `quota_windows`
+/// switches the grant to the window-quota model (design §4.3.2). Returns the
+/// mapping id.
+pub async fn create_entitlement_mapping_with_quota_windows(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    provider: &str,
+    external_product_id: &str,
+    entitlement_key: &str,
+    quota_windows: &[(i64, i64, &str)],
+    grant_on_subscribe: bool,
+) -> Uuid {
+    let mapping_id = Uuid::now_v7();
+    let bucket_id = ensure_test_bucket_for_realm(&ctx.app_state.pool, realm_id).await;
+    let windows_json = quota_windows_jsonb(quota_windows);
+
+    sqlx::query(
+        r#"INSERT INTO provider_entitlement_mappings
+             (id, realm_id, payment_provider, external_product_id, entitlement_key,
+              grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, NOW(), NOW())"#,
+    )
+    .bind(mapping_id)
+    .bind(realm_id)
+    .bind(provider)
+    .bind(external_product_id)
+    .bind(entitlement_key)
+    .bind(grant_on_subscribe)
+    .bind(bucket_id)
+    .bind(&windows_json)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create entitlement mapping with quota_windows");
+
+    mapping_id
+}
+
+/// Grant a quota entitlement directly for scenario tests. This is intentionally
+/// table-level: the authoring tests need stable setup for window aggregation,
+/// not webhook/provider behavior.
+pub async fn grant_quota_entitlement_for_test(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    bucket_id: Uuid,
+    credit_type: herald_core::domain::points::entities::CreditType,
+    source_type: herald_core::domain::points::entities::QuotaSourceType,
+    source_id: &str,
+    quota_windows: &[(i64, i64, &str)],
+    effective_from: chrono::DateTime<chrono::Utc>,
+    effective_until: Option<chrono::DateTime<chrono::Utc>>,
+) -> Uuid {
+    let entitlement_id = Uuid::now_v7();
+    sqlx::query(
+        r#"INSERT INTO points_quota_entitlements
+             (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
+              quota_windows, effective_from, effective_until, status, idempotency_key,
+              created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, NOW(), NOW())"#,
+    )
+    .bind(entitlement_id)
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(bucket_id)
+    .bind(credit_type.to_string())
+    .bind(source_type.as_str())
+    .bind(source_id)
+    .bind(quota_windows_jsonb(quota_windows))
+    .bind(effective_from)
+    .bind(effective_until)
+    .bind(format!("test:{source_id}:{entitlement_id}"))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to grant quota entitlement for test");
+    entitlement_id
+}
+
+/// Seed a window-side consume transaction. Revoke tests use this to prove
+/// lifecycle cleanup does not delete or reverse already-written usage history.
+pub async fn seed_quota_consume_for_test(
+    ctx: &SchemaTestContext,
+    realm_id: &str,
+    user_id: Uuid,
+    bucket_id: Uuid,
+    credit_type: herald_core::domain::points::entities::CreditType,
+    amount: i64,
+    created_at: chrono::DateTime<chrono::Utc>,
+) -> Uuid {
+    let wallet_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM points_wallets
+         WHERE realm_id = $1 AND user_id = $2 AND bucket_id = $3",
+    )
+    .bind(realm_id)
+    .bind(user_id)
+    .bind(bucket_id)
+    .fetch_one(&ctx.app_state.pool)
+    .await
+    .expect("wallet should exist before seeding quota consume");
+
+    let transaction_id = Uuid::now_v7();
+    sqlx::query(
+        r#"INSERT INTO points_transactions
+             (id, wallet_id, user_id, realm_id, bucket_id, type, amount,
+              balance_after, credit_type, description, client_app_id, correlation_id,
+              created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, 'consume', $6, 0, $7,
+                   'quota consume test seed', $8, $9, $10, $10)"#,
+    )
+    .bind(transaction_id)
+    .bind(wallet_id)
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(bucket_id)
+    .bind(amount)
+    .bind(credit_type.to_string())
+    .bind(Uuid::parse_str(&ctx._client_app_id).expect("client_app_id must be a UUID"))
+    .bind(format!("quota-consume-{transaction_id}"))
+    .bind(created_at)
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to seed quota consume for test");
+    transaction_id
 }

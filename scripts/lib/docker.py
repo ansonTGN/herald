@@ -36,6 +36,19 @@ def rm_container(name: str) -> None:
     _run(["rm", name])
 
 
+def image_exists(image: str) -> bool:
+    result = _run(["image", "inspect", image], capture=True)
+    return result.returncode == 0
+
+
+def rmi_image(image: str, force: bool = False) -> bool:
+    args = ["rmi"]
+    if force:
+        args.append("-f")
+    args.append(image)
+    return _run(args).returncode == 0
+
+
 def run_detached(args: list[str]) -> bool:
     result = _run(["run", "-d", *args])
     return result.returncode == 0
