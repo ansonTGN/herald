@@ -1158,22 +1158,29 @@ pub async fn setup_test_plan_config_with_points(
         realm_id,
     )
     .await;
+    let quota_windows = serde_json::json!([
+        {
+            "windowSeconds": 2_592_000,
+            "limit": points_per_period,
+            "key": "period"
+        }
+    ]);
 
     // Create mapping with plan-specific external_product_id (for events that include entitlementKey)
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             billing_type, billing_period, points_per_period, grant_on_subscribe,
-             validity_days, enabled, bucket_id, created_at, updated_at)
-         VALUES ($1, $2, 'creem', $3, $4, 'recurring', 'monthly', $5, true, 30, true, $6, NOW(), NOW())
+             billing_type, billing_period, grant_on_subscribe,
+             validity_days, enabled, bucket_id, quota_windows, created_at, updated_at)
+         VALUES ($1, $2, 'creem', $3, $4, 'recurring', 'monthly', true, 30, true, $5, $6, NOW(), NOW())
          ON CONFLICT DO NOTHING",
     )
     .bind(plan_id)
     .bind(realm_id)
     .bind(&external_product_id)
     .bind(&entitlement_key)
-    .bind(points_per_period)
     .bind(bucket_id)
+    .bind(&quota_windows)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create test entitlement mapping");
@@ -1184,16 +1191,16 @@ pub async fn setup_test_plan_config_with_points(
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             billing_type, billing_period, points_per_period, grant_on_subscribe,
-             validity_days, enabled, bucket_id, created_at, updated_at)
-         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 'recurring', 'monthly', $4, true, 30, true, $5, NOW(), NOW())
+             billing_type, billing_period, grant_on_subscribe,
+             validity_days, enabled, bucket_id, quota_windows, created_at, updated_at)
+         VALUES ($1, $2, 'creem', 'prod_test_monthly', $3, 'recurring', 'monthly', true, 30, true, $4, $5, NOW(), NOW())
          ON CONFLICT DO NOTHING",
     )
     .bind(generic_mapping_id)
     .bind(realm_id)
     .bind(&entitlement_key)
-    .bind(points_per_period)
     .bind(bucket_id)
+    .bind(&quota_windows)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create generic test entitlement mapping");
@@ -1229,11 +1236,18 @@ pub async fn setup_test_entitlement_mapping_for_webhook(
         realm_id,
     )
     .await;
+    let quota_windows = serde_json::json!([
+        {
+            "windowSeconds": 2_592_000,
+            "limit": points_per_period,
+            "key": "period"
+        }
+    ]);
 
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             points_per_period, grant_on_subscribe, enabled, bucket_id, created_at, updated_at)
+             grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())",
     )
     .bind(mapping_id)
@@ -1241,10 +1255,10 @@ pub async fn setup_test_entitlement_mapping_for_webhook(
     .bind(provider)
     .bind(external_product_id)
     .bind(entitlement_key)
-    .bind(points_per_period)
     .bind(grant_on_subscribe)
     .bind(enabled)
     .bind(bucket_id)
+    .bind(quota_windows)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create test entitlement mapping for webhook");

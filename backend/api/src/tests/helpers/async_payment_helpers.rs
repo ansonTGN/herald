@@ -199,32 +199,23 @@ pub async fn get_topup_balance(ctx: &SchemaTestContext, user_id: Uuid, realm_id:
     .unwrap_or(0)
 }
 
-/// Get subscription_balance for a user's wallet.
-///
-/// `points_wallets.subscription_balance` was dropped; available
-/// subscription balance is derived from `points_credit_ledger`.
+/// Get subscription window availability for a user's wallet.
 pub async fn get_subscription_balance(
     ctx: &SchemaTestContext,
     user_id: Uuid,
     realm_id: &str,
 ) -> i64 {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
-                    WHERE l.status = 'active' AND l.remaining_amount > 0
-                      AND l.credit_type = 'subscription_credit'
-                      AND (l.effective_at IS NULL OR l.effective_at <= NOW())
-                      AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
-                ), 0)::BIGINT
-         FROM points_wallets w
-         LEFT JOIN points_credit_ledger l
-           ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
-         WHERE w.user_id = $1 AND w.realm_id = $2
-         GROUP BY w.id",
+    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx.app_state.pool,
+        realm_id,
     )
-    .bind(user_id)
-    .bind(realm_id)
-    .fetch_optional(&ctx.app_state.pool)
+    .await;
+    crate::tests::helpers::points_helpers::compute_window_available(
+        ctx,
+        realm_id,
+        user_id,
+        bucket_id,
+        herald_core::domain::points::entities::CreditType::SubscriptionCredit,
+    )
     .await
-    .unwrap()
-    .unwrap_or(0)
 }

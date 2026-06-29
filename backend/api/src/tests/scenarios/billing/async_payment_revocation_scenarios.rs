@@ -135,8 +135,7 @@ mod tests {
         .expect("Failed to update credit ledger for consumption");
     }
 
-    /// Create a ledger-backed subscription credit entry.
-    /// Inserts into points_credit_ledger AND updates points_wallets to match.
+    /// Create a quota-entitlement-backed subscription credit entry.
     async fn create_subscription_credit_with_ledger(
         ctx: &RevocationTestContext,
         user_id: Uuid,
@@ -144,28 +143,38 @@ mod tests {
         amount: i64,
         source_id: &str,
     ) {
-        let ledger_id = Uuid::now_v7();
         let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
             &ctx.app_state.pool,
             realm_id,
         )
         .await;
+        let entitlement_source_id = source_id
+            .rsplit(':')
+            .next()
+            .filter(|part| Uuid::parse_str(part).is_ok())
+            .unwrap_or(source_id);
+        let quota_windows = crate::tests::helpers::points_helpers::quota_windows_jsonb(&[(
+            2_592_000, amount, "period",
+        )]);
+
         sqlx::query(
-            "INSERT INTO points_credit_ledger
+            "INSERT INTO points_quota_entitlements
                 (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
-                 granted_amount, used_amount, revoked_amount, status, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, 'subscription_credit', 'system_grant', $5,
-                     $6, 0, 0, 'active', NOW(), NOW())",
+                 quota_windows, effective_from, effective_until, status, idempotency_key,
+                 created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 'subscription_credit', 'subscription_initial', $5,
+                     $6, NOW(), NOW() + INTERVAL '30 days', 'active', $7, NOW(), NOW())",
         )
-        .bind(ledger_id)
+        .bind(Uuid::now_v7())
         .bind(user_id)
         .bind(realm_id)
         .bind(bucket_id)
-        .bind(source_id)
-        .bind(amount)
+        .bind(entitlement_source_id)
+        .bind(quota_windows)
+        .bind(format!("test-sub-entitlement:{}", entitlement_source_id))
         .execute(&ctx.app_state.pool)
         .await
-        .expect("Failed to create credit ledger entry");
+        .expect("Failed to create subscription quota entitlement");
 
         sqlx::query(
             "UPDATE points_wallets
@@ -683,14 +692,8 @@ mod tests {
         .expect("Failed to set payment attempt to Succeeded");
 
         // Grant subscription credits via ledger + wallet
-        create_subscription_credit_with_ledger(
-            ctx,
-            user_id,
-            &realm_id,
-            500,
-            &format!("{}:{}", entitlement_key, attempt_id),
-        )
-        .await;
+        create_subscription_credit_with_ledger(ctx, user_id, &realm_id, 500, &sub_id.to_string())
+            .await;
 
         // Verify pre-conditions
         let sub_status_before = get_subscription_status(ctx, sub_id).await;

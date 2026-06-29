@@ -541,19 +541,18 @@ mod tests {
     }
 
     // =========================================================================
-    // Test: subscription with NULL user_id => 403
+    // Test: subscription owned by a soft-deleted user => 403
     // =========================================================================
-    // Covers: subscription.user_id is nullable in the schema. Eligibility must
-    // treat an unowned subscription as not belonging to the caller instead of
-    // decoding NULL into Uuid and returning a 500.
+    // Covers: subscription.user_id is NOT NULL. Deleted users are soft-deleted
+    // (account.status = Invalid), so subscriptions keep their owner FK.
     //
-    // Given: a subscription row in the realm with user_id NULL
+    // Given: a subscription row owned by a soft-deleted user
     // When:  a regular user GETs apply-eligibility for that subscription
-    // Then:  403 Forbidden, not 500 Internal Server Error
+    // Then:  403 Forbidden
 
     #[test_context(ApplyEligibilityTestContext)]
     #[tokio::test]
-    async fn test_apply_eligibility_unowned_subscription_is_forbidden(
+    async fn test_apply_eligibility_soft_deleted_owner_subscription_is_forbidden(
         ctx: &mut ApplyEligibilityTestContext,
     ) {
         let app = ctx.create_unified_test_router();
@@ -561,6 +560,17 @@ mod tests {
 
         let (user_token, _user_id) =
             create_regular_user_session(ctx, "apply-elig-null-owner@test.com").await;
+        let deleted_owner_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO account (id, realm_id, email, password, status)
+             VALUES ($1, $2, $3, '$2a$12$dummy_password_hash', 3)",
+        )
+        .bind(deleted_owner_id)
+        .bind(&realm_id)
+        .bind(format!("soft-deleted-owner-{}@test.com", deleted_owner_id))
+        .execute(&ctx.app_state.pool)
+        .await
+        .unwrap();
 
         let sub_id = Uuid::now_v7();
         // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
@@ -572,12 +582,13 @@ mod tests {
         .await;
         sqlx::query(
             "INSERT INTO subscription (id, realm_id, external_subscription_id, external_product_id, payment_provider, status, entitlement_key, user_id, created_at, updated_at, bucket_id)
-             VALUES ($1, $2, $3, $4, 'stripe', 'active', 'pro', NULL, NOW(), NOW(), $5)",
+             VALUES ($1, $2, $3, $4, 'stripe', 'active', 'pro', $5, NOW(), NOW(), $6)",
         )
         .bind(sub_id)
         .bind(&realm_id)
         .bind(format!("sub_ext_{}", sub_id))
         .bind(format!("prod_ext_{}", sub_id))
+        .bind(deleted_owner_id)
         .bind(bucket_id)
         .execute(&ctx.app_state.pool)
         .await
@@ -588,7 +599,7 @@ mod tests {
         assert_eq!(
             response.status(),
             StatusCode::FORBIDDEN,
-            "Expected 403 for subscription with no user owner"
+            "Expected 403 for subscription owned by another soft-deleted user"
         );
     }
 

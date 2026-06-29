@@ -96,7 +96,7 @@ pub mod webhook_handlers;
         crate::types::OneTimeMappingListResponse,
         crate::types::PriceMappingUpdate,
         crate::types::QuotaWindowInputDto,
-        crate::types::QuotaWindowViewDto,
+        crate::types::EntitlementQuotaWindowDto,
         crate::types::BatchUpdateEntitlementMappingsRequest,
         crate::types::BatchUpdateEntitlementMappingsResponse,
         crate::types::PurchaseOptionView,

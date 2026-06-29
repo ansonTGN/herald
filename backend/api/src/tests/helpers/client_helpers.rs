@@ -222,6 +222,17 @@ pub async fn create_third_party_test_subscription(
     _plan_name: Option<&str>,
 ) -> String {
     let subscription_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO account (id, realm_id, email, password, status)
+         VALUES ($1, $2, $3, '$2a$12$dummy_password_hash', 1)",
+    )
+    .bind(user_id)
+    .bind(&ctx._realm_id)
+    .bind(format!("thirdparty-sub-owner-{}@test.com", user_id))
+    .execute(&ctx._app_state.pool)
+    .await
+    .expect("Failed to create subscription owner");
 
     // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
     // legacy test bucket so the direct-SQL insert satisfies the constraint.
@@ -235,14 +246,15 @@ pub async fn create_third_party_test_subscription(
     sqlx::query(
         r#"
         INSERT INTO subscription
-            (id, realm_id, external_subscription_id, external_product_id, payment_provider,
+            (id, realm_id, user_id, external_subscription_id, external_product_id, payment_provider,
              client_app_id, status, entitlement_key, current_period_start, current_period_end,
              created_at, updated_at, bucket_id)
-        VALUES ($1, $2, $3, $4, 'creem', $5, $6, $7, $8, $9, $10, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, 'creem', $6, $7, $8, $9, $10, $11, $11, $12)
         "#,
     )
     .bind(subscription_id)
     .bind(&ctx._realm_id)
+    .bind(user_id)
     .bind(format!("ext-sub-thirdparty-{}", subscription_id))
     .bind("test_product_dummy")
     .bind(*client_app_id)

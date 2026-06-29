@@ -452,7 +452,7 @@ pub(crate) async fn sync_subscription(
         subscription.provider_metadata = provider_metadata.or(subscription.provider_metadata);
         subscription.synced_at = Some(now);
         if let Some(user_id) = user_id {
-            subscription.user_id = Some(user_id);
+            subscription.user_id = user_id;
         }
         subscription.current_period_start = current_period_start.or(previous.current_period_start);
         subscription.current_period_end = current_period_end.or(previous.current_period_end);
@@ -469,6 +469,9 @@ pub(crate) async fn sync_subscription(
             .await?;
         Ok(Some((updated, Some(previous))))
     } else {
+        let user_id = user_id.ok_or_else(|| {
+            CoreError::BadRequest("Missing user_id for subscription creation".to_string())
+        })?;
         let subscription = Subscription {
             id: Uuid::now_v7(),
             realm_id,
@@ -575,7 +578,7 @@ pub(crate) async fn sync_subscription_in_txn(
         subscription.provider_metadata = provider_metadata.or(subscription.provider_metadata);
         subscription.synced_at = Some(now);
         if let Some(user_id) = user_id {
-            subscription.user_id = Some(user_id);
+            subscription.user_id = user_id;
         }
         subscription.current_period_start = current_period_start.or(previous.current_period_start);
         subscription.current_period_end = current_period_end.or(previous.current_period_end);
@@ -590,6 +593,9 @@ pub(crate) async fn sync_subscription_in_txn(
             PostgresBillingRepository::update_subscription_conn(txn, subscription).await?;
         Ok(Some((updated, Some(previous))))
     } else {
+        let user_id = user_id.ok_or_else(|| {
+            CoreError::BadRequest("Missing user_id for subscription creation".to_string())
+        })?;
         let subscription = Subscription {
             id: Uuid::now_v7(),
             realm_id,

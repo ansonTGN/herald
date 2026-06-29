@@ -630,31 +630,6 @@ pub trait PointsRepository: Send + Sync {
         external_ref_id: Option<String>,
     ) -> impl Future<Output = Result<PointsTransaction, CoreError>> + Send;
 
-    fn set_subscription_ledger_expiration_atomic(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        period_end: chrono::DateTime<chrono::Utc>,
-    ) -> impl Future<Output = Result<Vec<Uuid>, CoreError>> + Send;
-
-    fn handle_subscription_paid_atomic(
-        &self,
-        realm_id: &str,
-        user_id: Uuid,
-        bucket_id: Uuid,
-        entitlement_key: String,
-        points_amount: i64,
-        source_type: CreditSourceType,
-        // Billing period start. Used as the ledger
-        // `effective_at` (`period_start <= now` ⟺ immediately available) and
-        // drives the period/schedule business idempotency key
-        // (`points_grant_records(schedule_id, period_number)`).
-        period_start: chrono::DateTime<chrono::Utc>,
-        period_end: chrono::DateTime<chrono::Utc>,
-        idempotency_key: String,
-        disable_daily_grant: bool,
-    ) -> impl Future<Output = Result<PointsCreditLedger, CoreError>> + Send;
-
     fn scan_and_expire_points_atomic(
         &self,
         batch_size: usize,

@@ -108,7 +108,7 @@ pub async fn setup_test_entitlement_mapping_with_points(
 /// realm's legacy test bucket (deterministic slug, idempotent). Mirrors
 /// `points_helpers::ensure_test_bucket_for_realm` in the api crate, which
 /// test-support cannot depend on.
-async fn ensure_test_bucket_for_realm(pool: &sqlx::PgPool, realm_id: &str) -> Uuid {
+pub(crate) async fn ensure_test_bucket_for_realm(pool: &sqlx::PgPool, realm_id: &str) -> Uuid {
     use sqlx::Row;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -203,6 +203,17 @@ pub async fn create_test_subscription_with_entitlement(
 ) -> Uuid {
     let subscription_id = Uuid::now_v7();
     let external_subscription_id = format!("sub_test_{}", subscription_id);
+    let user_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO account (id, realm_id, email, password, status)
+         VALUES ($1, $2, $3, '$2a$12$dummy_password_hash', 1)",
+    )
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(format!("subscription-owner-{}@test.com", user_id))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create subscription owner");
 
     // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
     // legacy test bucket so the direct-SQL insert satisfies the constraint.
@@ -210,16 +221,17 @@ pub async fn create_test_subscription_with_entitlement(
 
     sqlx::query(
         "INSERT INTO subscription
-            (id, realm_id, client_app_id, status, entitlement_key, external_price_id,
+            (id, realm_id, user_id, client_app_id, status, entitlement_key, external_price_id,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end,
              cancel_at_period_end, created_at, updated_at, bucket_id)
-         VALUES ($1, $2, $3, 'active', $4, $5,
-                 $6, $7, 'creem', NOW(), NOW() + INTERVAL '30 days',
-                 false, NOW(), NOW(), $8)",
+         VALUES ($1, $2, $3, $4, 'active', $5, $6,
+                 $7, $8, 'creem', NOW(), NOW() + INTERVAL '30 days',
+                 false, NOW(), NOW(), $9)",
     )
     .bind(subscription_id)
     .bind(realm_id)
+    .bind(user_id)
     .bind(client_app_id)
     .bind(entitlement_key)
     .bind(external_price_id)
@@ -314,20 +326,32 @@ pub async fn create_active_subscription_for_price_mapping(
 ) -> Uuid {
     let subscription_id = Uuid::now_v7();
     let external_subscription_id = format!("sub_protected_{}", subscription_id);
+    let user_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO account (id, realm_id, email, password, status)
+         VALUES ($1, $2, $3, '$2a$12$dummy_password_hash', 1)",
+    )
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(format!("protected-sub-owner-{}@test.com", user_id))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create protected subscription owner");
 
     // NULL client_app_id avoids uq_subscription_client_app; the active-sub
     // count query filters by (realm, provider, product, price), NOT by app.
     sqlx::query(
         "INSERT INTO subscription \
-            (id, realm_id, client_app_id, status, entitlement_key, external_price_id, \
+            (id, realm_id, user_id, client_app_id, status, entitlement_key, external_price_id, \
              external_subscription_id, external_product_id, payment_provider, \
              current_period_start, current_period_end, cancel_at_period_end, \
              created_at, updated_at, bucket_id) \
-         VALUES ($1, $2, NULL, 'active', $3, $4, $5, $6, $7, \
-                 NOW(), NOW() + INTERVAL '30 days', false, NOW(), NOW(), $8)",
+         VALUES ($1, $2, $3, NULL, 'active', $4, $5, $6, $7, $8, \
+                 NOW(), NOW() + INTERVAL '30 days', false, NOW(), NOW(), $9)",
     )
     .bind(subscription_id)
     .bind(realm_id)
+    .bind(user_id)
     .bind(entitlement_key)
     .bind(external_price_id)
     .bind(&external_subscription_id)

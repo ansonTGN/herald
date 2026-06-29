@@ -119,11 +119,18 @@ pub async fn setup_test_entitlement_mapping_with_points(
         realm_id,
     )
     .await;
+    let quota_windows = serde_json::json!([
+        {
+            "windowSeconds": 2_592_000,
+            "limit": points_per_period,
+            "key": "period"
+        }
+    ]);
 
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             points_per_period, grant_on_subscribe, enabled, bucket_id, created_at, updated_at)
+             grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())",
     )
     .bind(mapping_id)
@@ -131,10 +138,10 @@ pub async fn setup_test_entitlement_mapping_with_points(
     .bind(payment_provider)
     .bind(external_product_id)
     .bind(entitlement_key)
-    .bind(points_per_period)
     .bind(grant_on_subscribe)
     .bind(enabled)
     .bind(bucket_id)
+    .bind(quota_windows)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create test entitlement mapping with points");
@@ -170,12 +177,21 @@ pub async fn setup_test_entitlement_mapping_full(
         realm_id,
     )
     .await;
+    let quota_windows = points_per_period.map(|points| {
+        serde_json::json!([
+            {
+                "windowSeconds": 2_592_000,
+                "limit": points,
+                "key": "period"
+            }
+        ])
+    });
 
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, external_price_id, entitlement_key,
-             billing_type, billing_period, points_per_period, grant_period_type, validity_days,
-             grant_on_subscribe, max_periods, enabled, provider_product_info, bucket_id, created_at, updated_at)
+             billing_type, billing_period, grant_period_type, validity_days,
+             grant_on_subscribe, max_periods, enabled, provider_product_info, bucket_id, quota_windows, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())",
     )
     .bind(mapping_id)
@@ -186,7 +202,6 @@ pub async fn setup_test_entitlement_mapping_full(
     .bind(entitlement_key)
     .bind(billing_type)
     .bind(billing_period)
-    .bind(points_per_period)
     .bind(grant_period_type)
     .bind(validity_days)
     .bind(grant_on_subscribe)
@@ -194,6 +209,7 @@ pub async fn setup_test_entitlement_mapping_full(
     .bind(enabled)
     .bind(provider_product_info)
     .bind(bucket_id)
+    .bind(quota_windows)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create full test entitlement mapping");
@@ -217,24 +233,42 @@ pub async fn create_test_subscription_with_entitlement(
 ) -> Uuid {
     let subscription_id = Uuid::now_v7();
     let external_subscription_id = format!("sub_test_{}", subscription_id);
+    let user_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO account (id, realm_id, email, password, status)
+         VALUES ($1, $2, $3, '$2a$12$dummy_password_hash', 1)",
+    )
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(format!("subscription-owner-{}@test.com", user_id))
+    .execute(&ctx.app_state.pool)
+    .await
+    .expect("Failed to create subscription owner");
+    let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+        &ctx.app_state.pool,
+        realm_id,
+    )
+    .await;
 
     sqlx::query(
         "INSERT INTO subscription
-            (id, realm_id, client_app_id, status, entitlement_key, external_price_id,
+            (id, realm_id, user_id, client_app_id, status, entitlement_key, external_price_id,
              external_subscription_id, external_product_id, payment_provider,
              current_period_start, current_period_end,
-             cancel_at_period_end, created_at, updated_at)
-         VALUES ($1, $2, $3, 'active', $4, $5,
-                 $6, $7, 'creem', NOW(), NOW() + INTERVAL '30 days',
-                 false, NOW(), NOW())",
+             cancel_at_period_end, created_at, updated_at, bucket_id)
+         VALUES ($1, $2, $3, $4, 'active', $5, $6,
+                 $7, $8, 'creem', NOW(), NOW() + INTERVAL '30 days',
+                 false, NOW(), NOW(), $9)",
     )
     .bind(subscription_id)
     .bind(realm_id)
+    .bind(user_id)
     .bind(client_app_id)
     .bind(entitlement_key)
     .bind(external_price_id)
     .bind(&external_subscription_id)
     .bind(format!("prod_{}", subscription_id))
+    .bind(bucket_id)
     .execute(&ctx.app_state.pool)
     .await
     .expect("Failed to create test subscription with entitlement");

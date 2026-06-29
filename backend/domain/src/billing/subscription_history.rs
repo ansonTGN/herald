@@ -296,7 +296,7 @@ mod tests {
         Subscription {
             id: Uuid::now_v7(),
             realm_id: "test-realm".to_string(),
-            user_id: None,
+            user_id: Uuid::now_v7(),
             external_subscription_id: "sub_test_1".to_string(),
             external_product_id: "product-1".to_string(),
             payment_provider: "creem".to_string(),

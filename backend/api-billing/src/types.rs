@@ -42,7 +42,7 @@ pub struct EntitlementMappingResponse {
     /// window-model grant. Each window carries the stable display `key`
     /// (derived from `windowSeconds`), the limit, and the window length.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quota_windows: Option<Vec<QuotaWindowViewDto>>,
+    pub quota_windows: Option<Vec<EntitlementQuotaWindowDto>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub synced_at: Option<String>,
     pub created_at: String,
@@ -53,7 +53,7 @@ pub struct EntitlementMappingResponse {
 /// snapshot carried on an entitlement mapping.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct QuotaWindowViewDto {
+pub struct EntitlementQuotaWindowDto {
     /// Sliding window length in seconds.
     pub window_seconds: i64,
     /// Quota limit.

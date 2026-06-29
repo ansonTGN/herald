@@ -1606,11 +1606,29 @@ async fn handle_checkout_session_async_failed(
                 .await?
                 .map(|s| s.id)
                 .unwrap_or_default()
+        } else if let Some(ref ekey) = entitlement_key {
+            app_state
+                .billing_repository
+                .list_subscriptions(realm_id, Some(ekey), Some("active"), Some("stripe"), 1, 50)
+                .await?
+                .0
+                .into_iter()
+                .find(|s| s.user_id == attempt.user_id)
+                .map(|s| s.id)
+                .unwrap_or_else(|| {
+                    warn!(
+                        realm_id = %realm_id,
+                        attempt_id = %attempt_id,
+                        entitlement_key = %ekey,
+                        "No active subscription matched async_payment_failed fallback revoke"
+                    );
+                    Uuid::nil()
+                })
         } else {
             warn!(
                 realm_id = %realm_id,
                 attempt_id = %attempt_id,
-                "No subscription field in async_payment_failed event — entitlement revoke skipped (idempotent)"
+                "No subscription field or entitlement_key in async_payment_failed event — entitlement revoke skipped (idempotent)"
             );
             Uuid::nil()
         };
@@ -2968,9 +2986,7 @@ async fn handle_stripe_invoice_event(
             .await
     {
         subscription_id = Some(subscription.id);
-        if let Some(user_id) = subscription.user_id {
-            account_id = Some(user_id);
-        }
+        account_id = Some(subscription.user_id);
     }
 
     if account_id.is_none() {
@@ -3098,9 +3114,7 @@ async fn handle_charge_dispute_created(
             TransactionType::SubscriptionGrant,
         ));
     };
-    let user_id = existing
-        .user_id
-        .ok_or_else(|| CoreError::BadRequest("Disputed subscription has no userId".to_string()))?;
+    let user_id = existing.user_id;
     let mut provider_metadata = existing
         .provider_metadata
         .clone()
@@ -3169,9 +3183,7 @@ async fn handle_charge_dispute_closed(
             TransactionType::SubscriptionGrant,
         ));
     };
-    let user_id = existing
-        .user_id
-        .ok_or_else(|| CoreError::BadRequest("Disputed subscription has no userId".to_string()))?;
+    let user_id = existing.user_id;
     let dispute_status = object["status"].as_str().unwrap_or("");
     let needs_cancel = dispute_status == "lost";
     let target_status = match dispute_status {

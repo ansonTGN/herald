@@ -8,7 +8,7 @@ use crate::common::entities::app_errors::CoreError;
 pub struct Subscription {
     pub id: Uuid,
     pub realm_id: String,
-    pub user_id: Option<Uuid>,
+    pub user_id: Uuid,
     /// External subscription ID from payment provider (Stripe, Creem, etc.)
     pub external_subscription_id: String,
     /// External product ID from payment provider

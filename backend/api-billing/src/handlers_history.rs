@@ -117,7 +117,7 @@ pub async fn get_my_subscription_history(
         .await?
         .ok_or_else(|| ApiError::not_found("Subscription not found"))?;
 
-    if subscription.realm_id != realm_id || subscription.user_id != Some(user_id) {
+    if subscription.realm_id != realm_id || subscription.user_id != user_id {
         return Err(ApiError::not_found("Subscription not found"));
     }
 

@@ -1061,12 +1061,7 @@ async fn handle_subscription_paid(
                         payload.external_subscription_id
                     ))
                 })?;
-            existing.user_id.ok_or_else(|| {
-                CoreError::BadRequest(format!(
-                    "Existing subscription {} has no userId",
-                    payload.external_subscription_id
-                ))
-            })?
+            existing.user_id
         }
     };
 
@@ -1379,12 +1374,7 @@ async fn handle_subscription_updated(
                         payload.external_subscription_id
                     ))
                 })?;
-            existing.user_id.ok_or_else(|| {
-                CoreError::BadRequest(format!(
-                    "Existing subscription {} has no userId",
-                    payload.external_subscription_id
-                ))
-            })?
+            existing.user_id
         }
     };
 
@@ -1604,12 +1594,7 @@ async fn handle_subscription_canceled(
                         payload.external_subscription_id
                     ))
                 })?;
-            let uid = existing.user_id.ok_or_else(|| {
-                CoreError::BadRequest(format!(
-                    "Existing subscription {} has no userId",
-                    payload.external_subscription_id
-                ))
-            })?;
+            let uid = existing.user_id;
             (uid, Some(existing))
         }
     };
@@ -1883,11 +1868,7 @@ async fn handle_subscription_lifecycle_status(
         resolve_existing_creem_subscription(&app_state, &payload.external_subscription_id).await?;
     let user_id = payload
         .user_id
-        .or_else(|| {
-            existing
-                .as_ref()
-                .and_then(|subscription| subscription.user_id)
-        })
+        .or_else(|| existing.as_ref().map(|subscription| subscription.user_id))
         .ok_or_else(|| {
             CoreError::BadRequest(format!(
                 "Cannot resolve userId for subscription {}",
@@ -2016,9 +1997,7 @@ async fn handle_dispute_created(
             payload.external_subscription_id
         ))
     })?;
-    let user_id = existing
-        .user_id
-        .ok_or_else(|| CoreError::BadRequest("Disputed subscription has no userId".to_string()))?;
+    let user_id = existing.user_id;
     let provider_metadata = serde_json::json!({
         "disputeId": payload.dispute_id,
         "amount": payload.amount,

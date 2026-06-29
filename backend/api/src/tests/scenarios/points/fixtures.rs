@@ -259,19 +259,26 @@ pub async fn create_test_entitlement_mapping(
     // succeeds (case "mapping present + bucket").
     let bucket_id =
         crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(pool, realm_id).await;
+    let quota_windows = serde_json::json!([
+        {
+            "windowSeconds": 2_592_000,
+            "limit": points_per_period,
+            "key": "period"
+        }
+    ]);
 
     sqlx::query(
         "INSERT INTO provider_entitlement_mappings
             (id, realm_id, payment_provider, external_product_id, entitlement_key,
-             points_per_period, grant_on_subscribe, enabled, bucket_id, created_at, updated_at)
-         VALUES ($1, $2, 'creem', $3, $4, $5, true, true, $6, NOW(), NOW())",
+             grant_on_subscribe, enabled, bucket_id, quota_windows, created_at, updated_at)
+         VALUES ($1, $2, 'creem', $3, $4, true, true, $5, $6, NOW(), NOW())",
     )
     .bind(mapping_id)
     .bind(realm_id)
     .bind(&external_product_id)
     .bind(mapping_id.to_string())
-    .bind(points_per_period)
     .bind(bucket_id)
+    .bind(quota_windows)
     .execute(pool)
     .await
     .expect("Failed to create entitlement mapping");
@@ -291,14 +298,21 @@ pub async fn configure_test_entitlement_points(
     points_per_period: i64,
     validity_days: i64,
 ) -> Uuid {
-    // Update the entitlement mapping with points config
+    let quota_windows = serde_json::json!([
+        {
+            "windowSeconds": 2_592_000,
+            "limit": points_per_period,
+            "key": "period"
+        }
+    ]);
+
     sqlx::query(
         "UPDATE provider_entitlement_mappings
-         SET points_per_period = $1, validity_days = $2, updated_at = NOW()
+         SET validity_days = $1, quota_windows = $2, updated_at = NOW()
          WHERE id = $3 AND realm_id = $4",
     )
-    .bind(points_per_period)
     .bind(validity_days)
+    .bind(quota_windows)
     .bind(mapping_id)
     .bind(realm_id)
     .execute(pool)
@@ -320,6 +334,12 @@ pub async fn create_test_subscription(
     let subscription_id = Uuid::now_v7();
     let client_app_id = Uuid::now_v7();
     let client_id = format!("client-{}", Uuid::now_v7());
+    let user_id = create_test_user(
+        pool,
+        realm_id,
+        &format!("subscription-fixture-owner-{}@test.com", subscription_id),
+    )
+    .await;
 
     sqlx::query(
         "INSERT INTO client_app (id, realm_id, client_id, name, enabled)
@@ -334,20 +354,21 @@ pub async fn create_test_subscription(
     .expect("Failed to create client app for subscription");
 
     // subscription.bucket_id is NOT NULL (eager binding); bind the realm's
-    // legacy test bucket so the direct-SQL insert satisfies the constraint.
+    // default test bucket so the direct-SQL insert satisfies the constraint.
     let bucket_id =
         crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(pool, realm_id).await;
 
     sqlx::query(
         "INSERT INTO subscription
-            (id, realm_id, external_subscription_id, external_product_id, payment_provider,
+            (id, realm_id, user_id, external_subscription_id, external_product_id, payment_provider,
              status, entitlement_key, current_period_start, current_period_end,
              cancel_at_period_end, client_app_id, created_at, updated_at, bucket_id)
-         VALUES ($1, $2, $3, $4, 'creem', 'active', $5, NOW(), NOW() + INTERVAL '30 days',
-                 false, $6, NOW(), NOW(), $7)",
+         VALUES ($1, $2, $3, $4, $5, 'creem', 'active', $6, NOW(), NOW() + INTERVAL '30 days',
+                 false, $7, NOW(), NOW(), $8)",
     )
     .bind(subscription_id)
     .bind(realm_id)
+    .bind(user_id)
     .bind(format!("ext-sub-{}", subscription_id))
     .bind("test_product_id")
     .bind(mapping_id.to_string())

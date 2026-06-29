@@ -393,7 +393,7 @@ COMMENT ON TABLE email_verification_code IS 'Verification codes for email confir
 CREATE TABLE subscription (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     realm_id TEXT NOT NULL,
-    user_id UUID REFERENCES account(id) ON DELETE SET NULL,
+    user_id UUID NOT NULL REFERENCES account(id) ON DELETE RESTRICT,
     external_subscription_id TEXT NOT NULL,
     external_product_id TEXT NOT NULL,
     external_price_id TEXT,

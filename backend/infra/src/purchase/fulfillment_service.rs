@@ -111,7 +111,7 @@ where
         let subscription = Subscription {
             id: uuid::Uuid::now_v7(),
             realm_id: attempt.realm_id.clone(),
-            user_id: Some(attempt.user_id),
+            user_id: attempt.user_id,
             external_subscription_id: provider_transaction_id.clone(),
             external_product_id: attempt.target_id.to_string(),
             payment_provider: attempt.payment_provider.clone(),

@@ -7,8 +7,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: Uuid,
     pub realm_id: String,
-    #[sea_orm(nullable)]
-    pub user_id: Option<Uuid>,
+    pub user_id: Uuid,
     pub external_subscription_id: String,
     pub external_product_id: String,
     #[sea_orm(default_value = "creem")]

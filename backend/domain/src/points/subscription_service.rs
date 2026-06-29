@@ -433,7 +433,7 @@ where
         // A1 destructive rebuild: subscription credit uniformly uses the
         // window-quota model. The mapping's `quota_windows` snapshot is the
         // grant input. Until BE-D09 wires the mapping read, an empty
-        // snapshot skips the grant with a warn (no fallback to the legacy
+        // snapshot skips the grant with a warn (no fallback to the removed
         // points_per_period ledger path).
         let quota_windows = resolve_quota_windows(mapping);
         if quota_windows.is_empty() {
@@ -512,7 +512,7 @@ where
 
     /// Create placeholder transaction with external ref (for idempotency when
     /// grant_on_subscribe = false or quota_windows is empty). Records the
-    /// event id under the legacy idempotency namespace and returns the
+    /// event id under the historical idempotency namespace and returns the
     /// pre-redesign "no grant" error so the webhook layer (BE-D10) can
     /// classify the graceful skip consistently.
     async fn create_placeholder_transaction_with_ref(
@@ -624,7 +624,7 @@ where
 /// the `provider_entitlement_mappings.quota_windows` JSONB column — BE-D09).
 /// `None`/empty ⟹ empty vec (no window-model grant); the caller's grant path
 /// treats an empty snapshot as "warn + skip grant" (design A1: subscription
-/// credit uniformly uses the window model; there is no fallback to the legacy
+/// credit uniformly uses the window model; there is no fallback to the removed
 /// `points_per_period` ledger path). Callers do not change.
 fn resolve_quota_windows(mapping: &EntitlementMapping) -> Vec<QuotaWindow> {
     mapping.quota_windows.clone().unwrap_or_default()

@@ -705,17 +705,30 @@ pub async fn seed_active_subscription_on_bucket(
     .await
     .expect("insert client_app for subscription seed");
 
+    let user_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO account (id, realm_id, email, password, status)
+         VALUES ($1, $2, $3, '$2a$12$dummy_password_hash', 1)",
+    )
+    .bind(user_id)
+    .bind(realm_id)
+    .bind(format!("bucket-sub-owner-{}@test.com", user_id))
+    .execute(pool)
+    .await
+    .expect("insert account for subscription seed");
+
     let subscription_id = Uuid::now_v7();
     let row = sqlx::query(
         r#"INSERT INTO subscription
-             (id, realm_id, external_subscription_id, external_product_id,
+             (id, realm_id, user_id, external_subscription_id, external_product_id,
               payment_provider, status, entitlement_key, client_app_id, bucket_id,
               created_at, updated_at)
-           VALUES ($1, $2, $3, 'prod-seed', 'creem', 'active', '', $4, $5, NOW(), NOW())
+           VALUES ($1, $2, $3, $4, 'prod-seed', 'creem', 'active', '', $5, $6, NOW(), NOW())
            RETURNING id"#,
     )
     .bind(subscription_id)
     .bind(realm_id)
+    .bind(user_id)
     .bind(format!("ext-sub-{}", subscription_id))
     .bind(client_app_id)
     .bind(bucket_id)

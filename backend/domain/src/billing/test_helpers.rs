@@ -20,7 +20,7 @@ use uuid::Uuid;
 pub struct SubscriptionBuilder {
     id: Option<Uuid>,
     realm_id: String,
-    user_id: Option<Uuid>,
+    user_id: Uuid,
     external_subscription_id: String,
     external_product_id: String,
     payment_provider: String,
@@ -47,7 +47,7 @@ impl SubscriptionBuilder {
         Self {
             id: None,
             realm_id: "test-realm".to_string(),
-            user_id: None,
+            user_id: Uuid::now_v7(),
             external_subscription_id: "sub_test_123".to_string(),
             external_product_id: "prod_starter_monthly".to_string(),
             payment_provider: "creem".to_string(),
@@ -80,12 +80,7 @@ impl SubscriptionBuilder {
     }
 
     pub fn with_user_id(mut self, user_id: Uuid) -> Self {
-        self.user_id = Some(user_id);
-        self
-    }
-
-    pub fn with_no_user_id(mut self) -> Self {
-        self.user_id = None;
+        self.user_id = user_id;
         self
     }
 

@@ -120,8 +120,7 @@ mod tests {
         }
     }
 
-    /// Create a ledger-backed subscription credit entry.
-    /// Inserts into points_credit_ledger AND updates points_wallets to match.
+    /// Create a quota-entitlement-backed subscription credit entry.
     async fn create_subscription_credit_with_ledger(
         ctx: &SchemaTestContext,
         user_id: Uuid,
@@ -129,28 +128,38 @@ mod tests {
         amount: i64,
         source_id: &str,
     ) {
-        let ledger_id = Uuid::now_v7();
         let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
             &ctx.app_state.pool,
             realm_id,
         )
         .await;
+        let entitlement_source_id = source_id
+            .rsplit(':')
+            .next()
+            .filter(|part| Uuid::parse_str(part).is_ok())
+            .unwrap_or(source_id);
+        let quota_windows = crate::tests::helpers::points_helpers::quota_windows_jsonb(&[(
+            2_592_000, amount, "period",
+        )]);
+
         sqlx::query(
-            "INSERT INTO points_credit_ledger
+            "INSERT INTO points_quota_entitlements
                 (id, user_id, realm_id, bucket_id, credit_type, source_type, source_id,
-                 granted_amount, used_amount, revoked_amount, status, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, 'subscription_credit', 'system_grant', $5,
-                     $6, 0, 0, 'active', NOW(), NOW())",
+                 quota_windows, effective_from, effective_until, status, idempotency_key,
+                 created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 'subscription_credit', 'subscription_initial', $5,
+                     $6, NOW(), NOW() + INTERVAL '30 days', 'active', $7, NOW(), NOW())",
         )
-        .bind(ledger_id)
+        .bind(Uuid::now_v7())
         .bind(user_id)
         .bind(realm_id)
         .bind(bucket_id)
-        .bind(source_id)
-        .bind(amount)
+        .bind(entitlement_source_id)
+        .bind(quota_windows)
+        .bind(format!("test-sub-entitlement:{}", entitlement_source_id))
         .execute(&ctx.app_state.pool)
         .await
-        .expect("Failed to create credit ledger entry");
+        .expect("Failed to create subscription quota entitlement");
 
         sqlx::query(
             "UPDATE points_wallets
@@ -311,29 +320,25 @@ mod tests {
         .unwrap_or(0)
     }
 
-    /// Get subscription_balance for a user's wallet.
+    /// Get subscription window availability for a user's wallet.
     async fn get_subscription_balance(
         ctx: &SchemaTestContext,
         user_id: Uuid,
         realm_id: &str,
     ) -> i64 {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT COALESCE(SUM(l.remaining_amount) FILTER (
-                        WHERE l.status = 'active' AND l.remaining_amount > 0
-                          AND l.credit_type = 'subscription_credit'
-                          AND (l.effective_at IS NULL OR l.effective_at <= NOW())
-                          AND (l.expires_at  IS NULL OR l.expires_at  >  NOW())
-                    ), 0)::BIGINT
-             FROM points_wallets w
-             LEFT JOIN points_credit_ledger l
-               ON l.realm_id = w.realm_id AND l.user_id = w.user_id AND l.bucket_id = w.bucket_id
-             WHERE w.user_id = $1 AND w.realm_id = $2",
+        let bucket_id = crate::tests::helpers::points_helpers::ensure_test_bucket_for_realm(
+            &ctx.app_state.pool,
+            realm_id,
         )
-        .bind(user_id)
-        .bind(realm_id)
-        .fetch_one(&ctx.app_state.pool)
+        .await;
+        crate::tests::helpers::points_helpers::compute_window_available(
+            ctx,
+            realm_id,
+            user_id,
+            bucket_id,
+            herald_core::domain::points::entities::CreditType::SubscriptionCredit,
+        )
         .await
-        .unwrap_or(0)
     }
 
     /// Create a pending payment attempt targeting the given mapping.

@@ -11,7 +11,7 @@ use crate::handlers::require_billing_permission;
 use crate::types::{
     BatchUpdateEntitlementMappingsRequest, BatchUpdateEntitlementMappingsResponse,
     EntitlementMappingListResponse, EntitlementMappingQuery, EntitlementMappingResponse,
-    OneTimeMappingItem, OneTimeMappingListResponse, PartialSyncErrorDto, QuotaWindowViewDto,
+    EntitlementQuotaWindowDto, OneTimeMappingItem, OneTimeMappingListResponse, PartialSyncErrorDto,
     SyncProviderRequest, SyncProviderResponse, UpdateEntitlementMappingRequest,
 };
 use herald_api_base::application::http::server::api_entities::ApiError;
@@ -52,7 +52,7 @@ fn mapping_to_response(m: EntitlementMapping) -> EntitlementMappingResponse {
         quota_windows: m.quota_windows.map(|windows| {
             windows
                 .into_iter()
-                .map(|w| QuotaWindowViewDto {
+                .map(|w| EntitlementQuotaWindowDto {
                     window_seconds: w.window_seconds,
                     limit: w.limit,
                     key: w.key,
