@@ -818,6 +818,57 @@ export const SELECTORS = {
   },
 
   /**
+   * Points Usage Dashboard Selectors (rate-dashboard quota view)
+   * Route: /{realmId}/user/points
+   *
+   * Converged testid contract from
+   * `.ai/task/points-grant-redesign/frontend/accept/FE-A07-report.md`.
+   * `points-window-resets-in-{bucketId}-{winKey}` is intentionally omitted;
+   * read the resets-in copy from within `points-window-row-{bucketId}-{winKey}`.
+   */
+  pointsUsageDashboard: {
+    page: '[data-testid="points-usage-dashboard"], [data-testid^="points-usage-dashboard-"]',
+    spendableNow: '[data-testid="points-spendable-now"]',
+    spendableFormula: '[data-testid="points-spendable-formula"]',
+    windowRow: (bucketId: string, winKey: string) =>
+      `[data-testid="points-window-row-${bucketId}-${winKey}"]`,
+    windowBar: (bucketId: string, winKey: string) =>
+      `[data-testid="points-window-bar-${bucketId}-${winKey}"]`,
+    exhaustedAlert: '[data-testid="points-window-exhausted-alert"]',
+    overspendTopupAlert: '[data-testid="points-overspend-topup-alert"]',
+    insufficientAlert: '[data-testid="points-insufficient-alert"]',
+    emptyState: '[data-testid="points-empty-state"]',
+  },
+
+  /**
+   * Multi-Window Quota Editor Selectors
+   *
+   * Used by both entitlement-mapping (`prefix = 'quota-window'`) and realm
+   * default free-periodic config (`prefix = 'realm-default-window'`).
+   *
+   * Converged testid contract from FE-A07-report.md. Save buttons are owned by
+   * the hosting page: `save-mapping-button` / `save-config-button`.
+   */
+  pointsQuotaEditor: {
+    editor: (prefix: string) => `[data-testid="${prefix}-editor"]`,
+    impactAlert: (prefix: string) => `[data-testid="${prefix}-impact-alert"]`,
+    emptyRow: (prefix: string) => `[data-testid="${prefix}-empty-row"]`,
+    row: (prefix: string, n: number) => `[data-testid="${prefix}-row-${n}"]`,
+    lengthRow: (prefix: string, n: number) =>
+      `[data-testid="${prefix}-length-row-${n}"]`,
+    unitRow: (prefix: string, n: number) =>
+      `[data-testid="${prefix}-unit-row-${n}"]`,
+    limitRow: (prefix: string, n: number) =>
+      `[data-testid="${prefix}-limit-row-${n}"]`,
+    deleteRow: (prefix: string, n: number) =>
+      `[data-testid="${prefix}-delete-row-${n}"]`,
+    addButton: (prefix: string) => `[data-testid="${prefix}-add-button"]`,
+    windowCap: (prefix: string) => `[data-testid="${prefix}-window-cap"]`,
+    saveMappingButton: '[data-testid="save-mapping-button"]',
+    saveConfigButton: '[data-testid="save-config-button"]',
+  },
+
+  /**
    * Device Verification Page Selectors
    * Route: /{realmId}/device, /{realmId}/device/{userCode}
    */

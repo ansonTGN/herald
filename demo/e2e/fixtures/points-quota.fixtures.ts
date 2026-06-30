@@ -1,0 +1,77 @@
+/**
+ * Points Quota Demo Fixtures
+ *
+ * Seeded constants and reusable test data for the `points-grant-redesign`
+ * demo E2E suite (DE-D02..DE-D06).
+ *
+ * Sources:
+ * - `.ai/task/points-grant-redesign/frontend/accept/FE-A07-report.md`
+ * - `.ai/design/points-grant-redesign.md` §4.2.2 / §4.4.3
+ * - `scripts/lib/demo_seed.py` (seeded realm / users / entitlement mappings)
+ */
+
+export interface QuotaWindowFixture {
+  /** Window length in seconds. */
+  windowSeconds: number
+  /** Quota upper limit for this window. */
+  limit: number
+  /** Config-derived stable winKey (e.g. `5h`, `week`, `month`). */
+  key: string
+}
+
+/** Realm used by the quota redesign demo tests. */
+export const QUOTA_DEMO_REALM = 'realm-001'
+
+/** Seeded regular user in the quota demo realm. */
+export const QUOTA_DEMO_USER_EMAIL = 'user@realm-001.com'
+
+/** Seeded realm admin in the quota demo realm. */
+export const QUOTA_DEMO_ADMIN_EMAIL = 'admin@realm-001.com'
+
+/** Default password for seeded demo accounts. */
+export const QUOTA_DEMO_PASSWORD = 'password'
+
+/**
+ * Seeded multi-price subscription product in realm-001.
+ *
+ * The seed (`scripts/lib/demo_seed.py`) creates two recurring prices under this
+ * product sharing the `pro-plan` entitlement key:
+ *   - price_stripe_pro_monthly (monthly)
+ *   - price_stripe_pro_annual (annual)
+ */
+export const QUOTA_DEMO_PRODUCT_ID = 'prod_stripe_multi_pro'
+
+/** Seeded entitlement key for the quota demo product. */
+export const QUOTA_DEMO_ENTITLEMENT_KEY = 'pro-plan'
+
+/** Stable bucket hint used by points-quota demos (registration / primary pool). */
+export const QUOTA_DEMO_BUCKET_KEY = 'primary-pool'
+
+/**
+ * Example multi-window quota configuration used across DE-D02..DE-D05.
+ *
+ * Mirrors the user-story examples in `docs/user-stories/billing/points-admin.md`
+ * (US-PO-009 Scenario 1) and `docs/user-stories/billing/points-user.md`
+ * (US-PU-010 Scenario 2).
+ */
+export const DEMO_QUOTA_WINDOWS: QuotaWindowFixture[] = [
+  { windowSeconds: 5 * 60 * 60, limit: 500, key: '5h' },
+  { windowSeconds: 7 * 24 * 60 * 60, limit: 5_000, key: 'week' },
+  { windowSeconds: 30 * 24 * 60 * 60, limit: 20_000, key: 'month' },
+]
+
+/**
+ * Free-periodic window configuration used for realm-default / free-user demos.
+ *
+ * Mirrors US-PO-009 Scenario 2 and US-FU-005 in the published user stories.
+ */
+export const DEMO_FREE_QUOTA_WINDOWS: QuotaWindowFixture[] = [
+  { windowSeconds: 24 * 60 * 60, limit: 50, key: '1d' },
+  { windowSeconds: 7 * 24 * 60 * 60, limit: 200, key: '7d' },
+]
+
+/**
+ * Editor testid prefixes from the converged FE-A07 contract.
+ */
+export const QUOTA_EDITOR_PREFIX = 'quota-window' as const
+export const REALM_DEFAULT_EDITOR_PREFIX = 'realm-default-window' as const
