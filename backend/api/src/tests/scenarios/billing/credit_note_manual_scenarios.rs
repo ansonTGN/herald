@@ -14,8 +14,12 @@
 // Refund visibility (US-IF-008) is verified through the invoice detail
 // response's `amountRefunded` / `amountRemaining` fields.
 //
-// User Story: docs/user-stories/billing/invoice-fallback.md
-// Covers: US-IF-010, US-IF-008
+// void_invoice guard scenarios (US-IF-010 / design notes.md §5.2):
+//   - active Manual Credit Note blocks voiding (409)
+//   - only-voided Credit Notes do not block voiding (void succeeds)
+//
+// User Story: docs/user-stories/billing/invoice-fallback.md, .ai/user-stories/billing/notes.md
+// Covers: US-IF-010, US-IF-008, void guard (active refund credit notes block invoice voiding)
 //
 // =============================================================================
 
@@ -186,6 +190,46 @@ mod tests {
             )
             .await
             .unwrap()
+    }
+
+    // Helper: POST a void request against the given invoice.
+    // Sends an empty JSON body (matches VoidInvoiceRequest's single optional
+    // `voidReason` field). A paid manual invoice does not require a void reason.
+    async fn void_invoice(
+        app: &axum::Router,
+        token: &str,
+        realm_id: &str,
+        invoice_id: &str,
+    ) -> axum::response::Response {
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/bill/{}/invoices/{}/void",
+                        realm_id, invoice_id
+                    ))
+                    .header("content-type", "application/json")
+                    .header("cookie", format!("X-Auth={}", token))
+                    .body(Body::from(json!({}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+
+    async fn get_invoice_status_and_refund_fields(
+        ctx: &CreditNoteTestContext,
+        invoice_id: &str,
+    ) -> (String, i64, i64) {
+        let row: (String, i64, i64) = sqlx::query_as(
+            "SELECT status, amount_refunded, amount_remaining FROM invoice WHERE id = $1",
+        )
+        .bind(Uuid::parse_str(invoice_id).unwrap())
+        .fetch_one(&ctx.app_state.pool)
+        .await
+        .unwrap();
+        row
     }
 
     // Helper: insert a Stripe-provider paid invoice directly via SQL. Used for the
@@ -598,6 +642,179 @@ mod tests {
             response.status(),
             StatusCode::NOT_FOUND,
             "Expected 404 when posting a credit note to a nonexistent invoice"
+        );
+    }
+
+    // =========================================================================
+    // Test: Void Blocked When Active Credit Note Exists (design notes.md §5.2)
+    // =========================================================================
+    // User Story: .ai/user-stories/billing/notes.md
+    // Covers: void guard -- active refund credit notes block invoice voiding
+    //
+    // Rationale: voiding an invoice that still carries an active refund would
+    // leave the refund recorded against a voided invoice, producing an
+    // inconsistent state (refunded amount against a zero-payable invoice). The
+    // guard rejects the void so the refund must be reconciled first.
+    //
+    // Given: A paid manual invoice, total = 10000, with 1 active Manual Credit
+    //        Note for amount = 3000 (amount_refunded = 3000, amount_remaining = 7000)
+    // When: POST void
+    // Then: Returns 409 Conflict, message contains "active refund credit notes"
+    // And: Invoice status remains "paid", amount_refunded / amount_remaining
+    //      unchanged (no state mutation on rejection)
+
+    #[test_context(CreditNoteTestContext)]
+    #[tokio::test]
+    async fn test_void_invoice_blocked_when_active_credit_note_exists(
+        ctx: &mut CreditNoteTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+        let realm_id = ctx._realm_id.clone();
+        let (admin_token, _admin_user_id) =
+            setup_billing_admin_session_with_user(ctx, "cn-void-block@test.com").await;
+        let account_id = ensure_test_account(ctx, &realm_id).await;
+
+        // Given: a paid manual invoice (total = 10000) + an active Manual Credit Note (3000)
+        let paid_invoice =
+            create_paid_manual_invoice(&app, &admin_token, &realm_id, account_id, 10000).await;
+        assert_eq!(paid_invoice["status"], "paid");
+        let invoice_id = paid_invoice["id"].as_str().unwrap().to_string();
+
+        let credit_note_response = create_credit_note(
+            &app,
+            &admin_token,
+            &realm_id,
+            &invoice_id,
+            3000,
+            "Refund that should block void",
+        )
+        .await;
+        assert_eq!(
+            credit_note_response.status(),
+            StatusCode::CREATED,
+            "credit note creation must succeed for the setup to be valid"
+        );
+
+        // Capture the refund state before the void attempt
+        let (status_before, refunded_before, remaining_before) =
+            get_invoice_status_and_refund_fields(ctx, &invoice_id).await;
+        assert_eq!(status_before, "paid");
+        assert_eq!(refunded_before, 3000);
+        assert_eq!(remaining_before, 7000);
+
+        // When: attempt to void the invoice
+        let response = void_invoice(&app, &admin_token, &realm_id, &invoice_id).await;
+
+        // Then: rejected with 409 Conflict
+        assert_eq!(
+            response.status(),
+            StatusCode::CONFLICT,
+            "Voiding an invoice with an active credit note must be rejected with 409"
+        );
+
+        let body = parse_body(response.into_body()).await;
+        let message = body["message"]
+            .as_str()
+            .unwrap_or_else(|| body["error"].as_str().unwrap_or(""));
+        assert!(
+            message.contains("active refund credit notes"),
+            "Expected 409 message to mention active refund credit notes, got: {}",
+            message
+        );
+
+        // And: invoice status and refund totals are unchanged (no mutation on rejection)
+        let (status_after, refunded_after, remaining_after) =
+            get_invoice_status_and_refund_fields(ctx, &invoice_id).await;
+        assert_eq!(
+            status_after, "paid",
+            "Invoice status must remain 'paid' when the void is blocked"
+        );
+        assert_eq!(
+            refunded_after, refunded_before,
+            "amount_refunded must be unchanged when the void is blocked"
+        );
+        assert_eq!(
+            remaining_after, remaining_before,
+            "amount_remaining must be unchanged when the void is blocked"
+        );
+    }
+
+    // =========================================================================
+    // Test: Void Allowed When Only Voided Credit Notes Exist (design notes.md §5.2)
+    // =========================================================================
+    // User Story: .ai/user-stories/billing/notes.md
+    // Covers: void guard -- only-voided (historical, reversed) credit notes do
+    //         NOT block invoice voiding
+    //
+    // Rationale: a voided credit note has already been reversed (its amount no
+    // longer counts against the invoice), so it is audit-only and must not
+    // prevent the invoice itself from being voided.
+    //
+    // Given: A paid manual invoice, total = 10000, whose only Credit Note has
+    //        status = voided (amount_refunded rolled back to 0, amount_remaining = 10000)
+    // When: POST void
+    // Then: Returns 200 OK
+    // And: Invoice status transitions to "void"
+
+    #[test_context(CreditNoteTestContext)]
+    #[tokio::test]
+    async fn test_void_invoice_allowed_when_only_voided_credit_notes(
+        ctx: &mut CreditNoteTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+        let realm_id = ctx._realm_id.clone();
+        let (admin_token, admin_user_id) =
+            setup_billing_admin_session_with_user(ctx, "cn-void-ok@test.com").await;
+        let account_id = ensure_test_account(ctx, &realm_id).await;
+
+        // Given: a paid manual invoice (total = 10000)
+        let paid_invoice =
+            create_paid_manual_invoice(&app, &admin_token, &realm_id, account_id, 10000).await;
+        assert_eq!(paid_invoice["status"], "paid");
+        let invoice_id = paid_invoice["id"].as_str().unwrap().to_string();
+
+        // Insert a single Credit Note directly with status = 'voided' (the voided
+        // state is only reachable via the Stripe credit_note.voided webhook, which
+        // has no manual entry path; inserting the row directly models the same
+        // post-void DB state). A voided note does not count toward amount_refunded,
+        // so amount_refunded = 0 / amount_remaining = 10000 here.
+        sqlx::query(
+            "INSERT INTO credit_note (
+                id, invoice_id, realm_id, amount, currency, source, status,
+                created_by_user_id
+            ) VALUES ($1, $2, $3, 3000, 'USD', 'manual', 'voided', $4)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(Uuid::parse_str(&invoice_id).unwrap())
+        .bind(&realm_id)
+        .bind(admin_user_id)
+        .execute(&ctx.app_state.pool)
+        .await
+        .unwrap();
+
+        // Sanity: voided note is the only note and refund totals reflect the reversal
+        let (status_before, refunded_before, remaining_before) =
+            get_invoice_status_and_refund_fields(ctx, &invoice_id).await;
+        assert_eq!(status_before, "paid");
+        assert_eq!(refunded_before, 0);
+        assert_eq!(remaining_before, 10000);
+
+        // When: void the invoice
+        let response = void_invoice(&app, &admin_token, &realm_id, &invoice_id).await;
+
+        // Then: void succeeds
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "Voiding an invoice whose only credit note is voided must succeed"
+        );
+
+        // And: invoice status transitions to void
+        let (status_after, _refunded_after, _remaining_after) =
+            get_invoice_status_and_refund_fields(ctx, &invoice_id).await;
+        assert_eq!(
+            status_after, "void",
+            "Invoice status must transition to 'void' after a successful void"
         );
     }
 }

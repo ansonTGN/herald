@@ -11,12 +11,17 @@
 //   - Invoice status unchanged (US-IF-007 scenario 3)
 //   - No point clawback side effect (US-IF-007 scenario 4)
 //
+// Tests for the Stripe `credit_note.voided` webhook handler covering:
+//   - Voided reverses invoice refund totals (US-IF-011 scenario 1)
+//   - Voided is idempotent on duplicate events (US-IF-011 scenario 2)
+//   - Missing local credit note -> 5xx to trigger Stripe redelivery (US-IF-011 scenario 3)
+//
 // Refund visibility on the invoice detail response is populated by the
 // amountRefunded / amountRemaining / creditNotes fields; the underlying
 // invoice refund totals are written by the handler.
 //
-// User Story: docs/user-stories/billing/invoice-fallback.md
-// Covers: US-IF-007 scenarios 1-6, US-IF-008 scenario 1
+// User Story: docs/user-stories/billing/invoice-fallback.md, .ai/user-stories/billing/notes.md
+// Covers: US-IF-007 scenarios 1-6, US-IF-008 scenario 1, US-IF-011 scenarios 1-3
 //
 // =============================================================================
 
@@ -54,6 +59,43 @@ mod tests {
             "id": format!("evt_{}", Uuid::now_v7()),
             "object": "event",
             "type": "credit_note.created",
+            "api_version": "2020-08-27",
+            "created": chrono::Utc::now().timestamp(),
+            "data": {
+                "object": {
+                    "id": stripe_credit_note_id,
+                    "object": "credit_note",
+                    "invoice": stripe_invoice_id,
+                    "total": amount,
+                    "currency": currency,
+                    "metadata": {
+                        "realmId": realm_id
+                    }
+                }
+            }
+        })
+    }
+
+    /// Build a Stripe `credit_note.voided` webhook event payload.
+    ///
+    /// Mirrors `build_stripe_credit_note_event` but switches the event `type`
+    /// to `"credit_note.voided"`. The production parser
+    /// (`parse_credit_note_voided_payload`) reads exactly the same keys as the
+    /// created parser: `data.object.id` (stripe_credit_note_id),
+    /// `data.object.invoice` (stripe_invoice_id), and `data.object.total`
+    /// (amount). `currency` is not read by the voided handler but is kept in
+    /// the payload to match the real Stripe event shape.
+    fn build_stripe_credit_note_voided_event(
+        stripe_credit_note_id: &str,
+        stripe_invoice_id: &str,
+        realm_id: &str,
+        amount: i64,
+        currency: &str,
+    ) -> serde_json::Value {
+        json!({
+            "id": format!("evt_{}", Uuid::now_v7()),
+            "object": "event",
+            "type": "credit_note.voided",
             "api_version": "2020-08-27",
             "created": chrono::Utc::now().timestamp(),
             "data": {
@@ -716,6 +758,311 @@ mod tests {
         assert_eq!(
             charge_refunded_after, charge_refunded_before,
             "credit_note.created must not trigger a charge.refunded payment_event side effect"
+        );
+    }
+
+    // =========================================================================
+    // Test: credit_note.voided Reverses Invoice Refund Totals (US-IF-011 scenario 1)
+    // =========================================================================
+    // User Story: .ai/user-stories/billing/notes.md
+    // Covers: US-IF-011 scenario 1 -- voiding MUST restore remaining payable
+    //
+    // Given: A Stripe paid invoice (total = 10000) with an active Credit Note
+    //        for amount = 3000, so amount_refunded = 3000 / amount_remaining = 7000
+    // When: Send credit_note.voided webhook for that same stripe_credit_note_id
+    // Then: Webhook returns 200
+    // And: The credit note status transitions to "voided"
+    // And: Invoice amount_refunded is restored to 0, amount_remaining to 10000
+    // And: Invoice main status remains "paid"
+
+    #[test_context(CreditNoteWebhookTestContext)]
+    #[tokio::test]
+    async fn test_stripe_credit_note_voided_reverses_amounts(
+        ctx: &mut CreditNoteWebhookTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+        let webhook_secret = "whsec_test_cn_void_reverses";
+        let realm_id = ctx._realm_id.clone();
+        let stripe_invoice_id = format!("in_test_cn_void_reverses_{}", Uuid::now_v7());
+        let stripe_credit_note_id = format!("cn_test_void_reverses_{}", Uuid::now_v7());
+
+        setup_stripe_config(ctx, &realm_id, "sk_test_key", webhook_secret).await;
+
+        // Given: a Stripe paid invoice with total = 10000
+        let invoice_id =
+            insert_stripe_paid_invoice(ctx, &realm_id, &stripe_invoice_id, 10000).await;
+
+        // And: an active Credit Note for amount = 3000 is applied first
+        let created_payload = build_stripe_credit_note_event(
+            &stripe_credit_note_id,
+            &stripe_invoice_id,
+            &realm_id,
+            3000,
+            "usd",
+        );
+        let created_response =
+            crate::tests::helpers::webhook_helpers::send_stripe_webhook_with_signature(
+                &app,
+                &realm_id,
+                created_payload,
+                webhook_secret,
+            )
+            .await;
+        assert_eq!(
+            created_response.status(),
+            StatusCode::OK,
+            "credit_note.created must succeed before voided is applied"
+        );
+
+        // Sanity: after created, amount_refunded = 3000 / amount_remaining = 7000
+        let (refunded_after_created, remaining_after_created) =
+            get_invoice_refund_fields(ctx, invoice_id).await;
+        assert_eq!(refunded_after_created, 3000);
+        assert_eq!(remaining_after_created, 7000);
+
+        // When: send credit_note.voided for the same stripe_credit_note_id
+        let voided_payload = build_stripe_credit_note_voided_event(
+            &stripe_credit_note_id,
+            &stripe_invoice_id,
+            &realm_id,
+            3000,
+            "usd",
+        );
+        let voided_response =
+            crate::tests::helpers::webhook_helpers::send_stripe_webhook_with_signature(
+                &app,
+                &realm_id,
+                voided_payload,
+                webhook_secret,
+            )
+            .await;
+
+        // Then: webhook returns 200
+        assert_eq!(
+            voided_response.status(),
+            StatusCode::OK,
+            "credit_note.voided for an existing active credit note must return 200"
+        );
+
+        // And: the credit note status transitions to "voided"
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM credit_note WHERE external_credit_note_id = $1")
+                .bind(&stripe_credit_note_id)
+                .fetch_one(&ctx.app_state.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            status, "voided",
+            "voided webhook must mark the credit note status as voided"
+        );
+
+        // And: invoice refund totals are reversed (restore remaining payable)
+        let (amount_refunded, amount_remaining) = get_invoice_refund_fields(ctx, invoice_id).await;
+        assert_eq!(
+            amount_refunded, 0,
+            "amount_refunded must be restored to 0 after voiding the credit note"
+        );
+        assert_eq!(
+            amount_remaining, 10000,
+            "amount_remaining must be restored to 10000 (= original total) after voiding"
+        );
+
+        // And: invoice main status remains paid
+        assert_eq!(
+            get_invoice_status(ctx, invoice_id).await,
+            "paid",
+            "credit_note.voided must not change invoice main status"
+        );
+    }
+
+    // =========================================================================
+    // Test: credit_note.voided Is Idempotent (US-IF-011 scenario 2)
+    // =========================================================================
+    // User Story: .ai/user-stories/billing/notes.md
+    // Covers: US-IF-011 scenario 2 -- duplicate voided events must not double-roll-back
+    //
+    // Given: A Stripe paid invoice with an active Credit Note already voided once
+    // When: Send the same credit_note.voided event again (same stripe_credit_note_id)
+    // Then: Both voided webhooks return 200 (no error)
+    // And: The invoice refund totals equal the state after the FIRST voided only
+    //      (not rolled back a second time)
+    // And: The credit note is still voided and there is exactly one record
+
+    #[test_context(CreditNoteWebhookTestContext)]
+    #[tokio::test]
+    async fn test_stripe_credit_note_voided_is_idempotent(ctx: &mut CreditNoteWebhookTestContext) {
+        let app = ctx.create_unified_test_router();
+        let webhook_secret = "whsec_test_cn_void_idem";
+        let realm_id = ctx._realm_id.clone();
+        let stripe_invoice_id = format!("in_test_cn_void_idem_{}", Uuid::now_v7());
+        let stripe_credit_note_id = format!("cn_test_void_idem_{}", Uuid::now_v7());
+
+        setup_stripe_config(ctx, &realm_id, "sk_test_key", webhook_secret).await;
+
+        let invoice_id =
+            insert_stripe_paid_invoice(ctx, &realm_id, &stripe_invoice_id, 10000).await;
+
+        // Setup: apply created first so a voidable credit note exists
+        let created_payload = build_stripe_credit_note_event(
+            &stripe_credit_note_id,
+            &stripe_invoice_id,
+            &realm_id,
+            3000,
+            "usd",
+        );
+        let created_response =
+            crate::tests::helpers::webhook_helpers::send_stripe_webhook_with_signature(
+                &app,
+                &realm_id,
+                created_payload,
+                webhook_secret,
+            )
+            .await;
+        assert_eq!(created_response.status(), StatusCode::OK);
+
+        // First voided: performs the rollback
+        let voided_payload_1 = build_stripe_credit_note_voided_event(
+            &stripe_credit_note_id,
+            &stripe_invoice_id,
+            &realm_id,
+            3000,
+            "usd",
+        );
+        let voided_response_1 =
+            crate::tests::helpers::webhook_helpers::send_stripe_webhook_with_signature(
+                &app,
+                &realm_id,
+                voided_payload_1,
+                webhook_secret,
+            )
+            .await;
+        assert_eq!(
+            voided_response_1.status(),
+            StatusCode::OK,
+            "first voided must succeed and roll back the refund totals"
+        );
+
+        // Capture the post-first-voided totals as the baseline that the second
+        // voided must NOT alter.
+        let (refunded_after_first, remaining_after_first) =
+            get_invoice_refund_fields(ctx, invoice_id).await;
+
+        // Second voided: same stripe_credit_note_id (duplicate event) -> must be a no-op
+        let voided_payload_2 = build_stripe_credit_note_voided_event(
+            &stripe_credit_note_id,
+            &stripe_invoice_id,
+            &realm_id,
+            3000,
+            "usd",
+        );
+        let voided_response_2 =
+            crate::tests::helpers::webhook_helpers::send_stripe_webhook_with_signature(
+                &app,
+                &realm_id,
+                voided_payload_2,
+                webhook_secret,
+            )
+            .await;
+        assert_eq!(
+            voided_response_2.status(),
+            StatusCode::OK,
+            "duplicate voided must not error (idempotent no-op)"
+        );
+
+        // Then: refund totals are unchanged from after the first voided (no double rollback)
+        let (refunded_after_second, remaining_after_second) =
+            get_invoice_refund_fields(ctx, invoice_id).await;
+        assert_eq!(
+            refunded_after_second, refunded_after_first,
+            "duplicate voided must not roll back amount_refunded a second time"
+        );
+        assert_eq!(
+            remaining_after_second, remaining_after_first,
+            "duplicate voided must not increase amount_remaining a second time"
+        );
+
+        // And: credit note is still voided
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM credit_note WHERE external_credit_note_id = $1")
+                .bind(&stripe_credit_note_id)
+                .fetch_one(&ctx.app_state.pool)
+                .await
+                .unwrap();
+        assert_eq!(status, "voided");
+
+        // And: exactly one record (no duplicate credit note created by the voided event)
+        assert_eq!(
+            count_credit_notes_by_external_id(ctx, &stripe_credit_note_id).await,
+            1,
+            "duplicate voided must not create a second credit note record"
+        );
+    }
+
+    // =========================================================================
+    // Test: credit_note.voided Missing Local Credit Note -> 5xx for Redelivery
+    //       (US-IF-011 scenario 3)
+    // =========================================================================
+    // User Story: .ai/user-stories/billing/notes.md
+    // Covers: US-IF-011 scenario 3 -- out-of-order (create arrives late) must
+    //         error so Stripe redelivers the voided event rather than silently
+    //         dropping the credit note.
+    //
+    // Given: No local credit_note.created was processed for this stripe_credit_note_id
+    // When: Send credit_note.voided webhook directly
+    // Then: Webhook returns 5xx so Stripe retries the delivery
+    // And: No credit_note record is created
+
+    #[test_context(CreditNoteWebhookTestContext)]
+    #[tokio::test]
+    async fn test_stripe_credit_note_voided_missing_returns_error_for_redelivery(
+        ctx: &mut CreditNoteWebhookTestContext,
+    ) {
+        let app = ctx.create_unified_test_router();
+        let webhook_secret = "whsec_test_cn_void_missing";
+        let realm_id = ctx._realm_id.clone();
+        let stripe_invoice_id = format!("in_test_cn_void_missing_{}", Uuid::now_v7());
+        let stripe_credit_note_id = format!("cn_test_void_missing_{}", Uuid::now_v7());
+
+        setup_stripe_config(ctx, &realm_id, "sk_test_key", webhook_secret).await;
+
+        // Given: a Stripe paid invoice exists, but NO credit_note.created was sent,
+        // so the local credit note for this stripe_credit_note_id does not exist
+        // (simulating the create-arrives-late out-of-order race).
+        let _invoice_id =
+            insert_stripe_paid_invoice(ctx, &realm_id, &stripe_invoice_id, 10000).await;
+
+        let voided_payload = build_stripe_credit_note_voided_event(
+            &stripe_credit_note_id,
+            &stripe_invoice_id,
+            &realm_id,
+            3000,
+            "usd",
+        );
+
+        let response = crate::tests::helpers::webhook_helpers::send_stripe_webhook_with_signature(
+            &app,
+            &realm_id,
+            voided_payload,
+            webhook_secret,
+        )
+        .await;
+
+        // Then: webhook returns 5xx so Stripe redelivers the event. The local
+        // credit note is only transiently absent (created arrives on a later
+        // delivery), so acking with 200 would silently drop the voided event.
+        assert!(
+            response.status().is_server_error(),
+            "Missing local credit note must return 5xx to trigger Stripe redelivery, got {}",
+            response.status()
+        );
+
+        // And: no credit_note record was created (the voided handler must not
+        // synthesize an orphan credit note; the create event will materialize it
+        // on a later redelivery).
+        assert_eq!(
+            count_credit_notes_by_external_id(ctx, &stripe_credit_note_id).await,
+            0,
+            "voided for a missing credit note must not create a new credit note record"
         );
     }
 }

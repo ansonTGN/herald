@@ -12,7 +12,9 @@ use herald_api_base::application::http::common::auth_utils::require_authenticate
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::billing::credit_note::{CreditNoteRepository, NewCreditNote};
+use herald_core::domain::billing::credit_note::{
+    CreditNoteRepository, CreditNoteStatus, NewCreditNote,
+};
 use herald_core::domain::billing::invoice::{
     ActorType, AttributionFilter, InvoiceDetail, InvoiceListFilters, InvoicePdfGenerator,
     InvoiceProvider, InvoiceRepository, InvoiceSource, InvoiceStatus, InvoiceStatusTransition,
@@ -854,7 +856,7 @@ pub async fn issue_invoice(
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden", body = ErrorResponse),
         (status = 404, description = "Invoice not found", body = ErrorResponse),
-        (status = 409, description = "Conflict - terminal state", body = ErrorResponse),
+        (status = 409, description = "Conflict - terminal state or active refund credit note", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -873,15 +875,40 @@ pub async fn void_invoice(
     // Provider readonly guard: only manual invoices can be voided
     validate_external_invoice_readonly(detail.invoice.provider)?;
 
-    validate_status_transition(
-        detail.invoice.status,
-        InvoiceStatus::Void,
-        detail.line_items.len(),
-        detail.invoice.total,
-        ActorType::User,
-        false,
-        request.void_reason.as_deref(),
-    )?;
+    // Active Credit Note guard: an invoice cannot be voided while it has any
+    // active refund credit note. Voided notes are non-blocking (audit-only).
+    // This guard runs before status-transition validation so that the dedicated
+    // 409 message is reachable for `paid` invoices (which are otherwise terminal),
+    // and so that a `paid` invoice with only voided notes can still be voided.
+    let credit_notes = state
+        .credit_note_repository
+        .find_by_invoice_id(&realm_id, invoice_id)
+        .await?;
+    let has_active_note = credit_notes
+        .iter()
+        .any(|note| note.status == CreditNoteStatus::Active);
+    if has_active_note {
+        return Err(ApiError::conflict(
+            "Invoice cannot be voided while it has active refund credit notes",
+        ));
+    }
+
+    // Status-transition validation. `paid` is normally terminal, but a paid
+    // invoice with no active refund credit notes (i.e. only voided notes or none
+    // at all) is allowed to be voided. Already-void invoices are still rejected
+    // here via the terminal-state check (no active notes can exist for them).
+    let allow_paid_void = detail.invoice.status == InvoiceStatus::Paid;
+    if !allow_paid_void {
+        validate_status_transition(
+            detail.invoice.status,
+            InvoiceStatus::Void,
+            detail.line_items.len(),
+            detail.invoice.total,
+            ActorType::User,
+            false,
+            request.void_reason.as_deref(),
+        )?;
+    }
 
     let actor_user_id = Uuid::parse_str(&identity.user_id()).ok();
     state
