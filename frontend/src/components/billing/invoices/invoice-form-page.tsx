@@ -81,10 +81,19 @@ export function InvoiceFormPage({ mode, realmId, invoice }: InvoiceFormPageProps
     schema,
     defaultValues,
     onSubmit: async ({ value }) => {
-      if (isEditing) {
-        await updateMutation.mutateAsync(value as InvoiceEditFormData)
-      } else {
-        await createMutation.mutateAsync(value as InvoiceCreateFormData)
+      // The mutations' `onError` surface the failure toast and log the error.
+      // Catch the rejection so it doesn't propagate as an unhandled rejection
+      // (per vitest config, rejections are expected to be handled in
+      // components). On failure, stay on the form — navigating away would
+      // unmount it and discard the operator's unsaved input.
+      try {
+        if (isEditing) {
+          await updateMutation.mutateAsync(value as InvoiceEditFormData)
+        } else {
+          await createMutation.mutateAsync(value as InvoiceCreateFormData)
+        }
+      } catch {
+        return
       }
       navigate({
         to: '/$realmId/manage/billing/invoices',

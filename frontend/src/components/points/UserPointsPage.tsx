@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { History } from 'lucide-react'
 import { PointsBalanceCard } from './PointsBalanceCard'
+import { PointsUsageDashboard } from './PointsUsageDashboard'
 import { TransactionHistoryTable } from './TransactionHistoryTable'
 import { TransactionFilters } from './TransactionFilters'
 import { deriveUserPointsView } from './user-points-view'
@@ -145,6 +146,26 @@ export function UserPointsPage({
       {/* Bucket card stack / empty state */}
       {walletsLoading ? (
         <div className="space-y-4">
+          <PointsUsageDashboard
+            card={{
+              bucketId: '',
+              name: null,
+              enabled: null,
+              bucketTotal: 0,
+              balancesByType: {
+                subscription: 0,
+                topup: 0,
+                registration: 0,
+                freePeriodic: 0,
+                granted: 0,
+              },
+              // Loading skeleton — pool-only defaults (no quota windows yet).
+              quotaWindows: undefined,
+              spendableFromQuota: undefined,
+              spendableFromPool: undefined,
+            }}
+            loading
+          />
           <PointsBalanceCard
             card={{
               bucketId: '',
@@ -158,6 +179,10 @@ export function UserPointsPage({
                 freePeriodic: 0,
                 granted: 0,
               },
+              // Loading skeleton — pool-only defaults (no quota windows yet).
+              quotaWindows: undefined,
+              spendableFromQuota: undefined,
+              spendableFromPool: undefined,
             }}
             loading
           />
@@ -171,7 +196,10 @@ export function UserPointsPage({
       ) : (
         <div className="space-y-4">
           {cards.map((card) => (
-            <PointsBalanceCard key={card.bucketId || 'unnamed'} card={card} />
+            <div key={card.bucketId || 'unnamed'} className="space-y-4">
+              <PointsUsageDashboard card={card} />
+              <PointsBalanceCard card={card} />
+            </div>
           ))}
         </div>
       )}

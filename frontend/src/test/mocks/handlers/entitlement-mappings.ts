@@ -73,6 +73,23 @@ export function batchUpdateOkHandler(body?: BatchUpdateEntitlementMappingsRespon
 }
 
 /**
+ * Override: `PUT .../entitlement-mappings/batch` → 200 with the product's full
+ * latest price set, CAPTURING the request body into `capture` so tests assert
+ * the `updates[*].quotaWindows` payload by observing the MSW request (per the
+ * testing guide — do NOT mock the internal API function). Mirrors the capture
+ * ergonomics of `checkoutCaptureHandler`.
+ */
+export function batchUpdateOkCaptureHandler(
+  capture: { body: unknown },
+  body?: BatchUpdateEntitlementMappingsResponse
+) {
+  return http.put(`${MAPPING_BASE}/batch`, async ({ request }) => {
+    capture.body = await request.json()
+    return HttpResponse.json(body ?? batchUpdateOkBody())
+  })
+}
+
+/**
  * Override: `PUT .../entitlement-mappings/batch` → 400 validation error
  * (entitlement-key regex / cross-product shared-key rename).
  */

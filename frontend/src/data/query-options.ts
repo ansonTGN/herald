@@ -60,6 +60,7 @@ import type {
   BucketDetailResponse,
   BucketOverviewResponse,
   ListWalletsByBucketResponse,
+  UpdateRealmConfigRequest,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -745,15 +746,12 @@ export const pointsDefaultConfigQueryOptions = (realmId: string) =>
     staleTime: STALE_TIME_5_MIN,
   })
 
-// Wrapper function for mutation use
+// Accepts the full `UpdateRealmConfigRequest` (design §4.2.2) and forwards it
+// verbatim, including the optional `freePeriodicQuotaWindows` (None ⟺ leave
+// stored value untouched; Some([]) ⟺ clear; Some([...]) ⟺ replace).
 export const updatePointsDefaultConfigMutation = async (
   realmId: string,
-  data: {
-    registrationBonusPoints: number
-    freePeriodicPointsAmount: number
-    freePeriodicGrantPeriodType: 'once' | 'daily' | 'weekly' | 'monthly'
-    freePeriodicValidityDays: number
-  }
+  data: UpdateRealmConfigRequest
 ) => {
   try {
     const response = await updateRealmDefaultConfig({

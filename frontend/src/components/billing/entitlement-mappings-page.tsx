@@ -22,6 +22,7 @@ import { PageHeader } from '@/components/shared'
 import { ProviderSyncButton } from '@/components/billing/provider-sync-button'
 import { formatProviderName } from '@/components/billing/format-provider-name'
 import { ProtectedPriceConfirmDialog } from '@/components/billing/entitlement-mapping-detail-dialog'
+import { MultiWindowQuotaEditor } from '@/components/billing/MultiWindowQuotaEditor'
 import {
   groupByProduct,
   groupByEntitlementKey,
@@ -643,6 +644,20 @@ function PriceEditRow({
                 />
               </div>
             </Field>
+
+            {/* Quota windows span the full width of the advanced grid. */}
+            <div className="sm:col-span-2">
+              <Label className="mb-2 block text-xs font-medium text-muted-foreground">
+                {m['points.quota_editor_title']()}
+              </Label>
+              <MultiWindowQuotaEditor
+                value={row.quotaWindows ?? []}
+                onChange={(v) => onChange({ quotaWindows: v })}
+                disabled={pointsDisabled}
+                context="entitlement-mapping"
+                testIdPrefix="quota-window"
+              />
+            </div>
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -734,6 +749,7 @@ function seedRows(prices: EntitlementMappingResponse[]): PriceMappingUpdateFormD
     validityDays: p.validityDays ?? null,
     grantOnSubscribe: p.grantOnSubscribe,
     maxPeriods: p.maxPeriods ?? null,
+    quotaWindows: p.quotaWindows ?? null,
   }))
 }
 
@@ -749,6 +765,13 @@ function toPriceMappingUpdate(row: PriceMappingUpdateFormData): PriceMappingUpda
     validityDays: row.validityDays ?? undefined,
     grantOnSubscribe: row.grantOnSubscribe ?? undefined,
     maxPeriods: row.maxPeriods ?? undefined,
+    // Strip the read-side `key` (EntitlementQuotaWindowDto) before sending: the
+    // save payload's element shape is `QuotaWindowInputDto` ({windowSeconds,
+    // limit}). The seeded rows carry `key` straight from the GET response; if
+    // forwarded verbatim it would leak an excess property onto the wire.
+    quotaWindows:
+      row.quotaWindows?.map((w) => ({ windowSeconds: w.windowSeconds, limit: w.limit })) ??
+      undefined,
   }
 }
 

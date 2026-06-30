@@ -54,7 +54,11 @@ export function CreemConfigFormPage({ realmId, mode, initialValues }: CreemConfi
         )
       )
         return
-      await saveMutation.mutateAsync(value)
+      // The mutation's `onError` surfaces the failure toast and logs the error.
+      // Swallow the rejected promise so it doesn't propagate as an unhandled
+      // rejection (per vitest config, rejections are expected to be handled in
+      // components). Sibling forms share this latent leak; see FE-T06 handoff.
+      await saveMutation.mutateAsync(value).catch(() => {})
     },
   })
 

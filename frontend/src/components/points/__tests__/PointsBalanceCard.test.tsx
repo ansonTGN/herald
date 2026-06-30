@@ -18,6 +18,13 @@ function makeCard(overrides: Partial<DerivedBucketCard> = {}): DerivedBucketCard
       freePeriodic: 0,
       granted: 0,
     },
+    // Pool-only bucket default: no quota windows (design §4.2.2 — null/undefined
+    // for pool-only). `PointsBalanceCard` is pool-only by design (FE-D04): the
+    // big number is `spendableFromPool`, and only topup/registration/granted
+    // type badges render (subscription/freePeriodic moved to the dashboard).
+    quotaWindows: undefined,
+    spendableFromQuota: undefined,
+    spendableFromPool: 0,
     ...overrides,
   }
 }
@@ -26,8 +33,17 @@ function makeCard(overrides: Partial<DerivedBucketCard> = {}): DerivedBucketCard
 
 describe('PointsBalanceCard', () => {
   describe('rendering', () => {
-    it('GIVEN a bucket with a balance WHEN rendering THEN should display the formatted total', () => {
-      render(<PointsBalanceCard card={makeCard({ bucketTotal: 5000 })} />)
+    it('GIVEN a bucket with a pool balance WHEN rendering THEN should display the formatted pool total (spendableFromPool), not bucketTotal', () => {
+      // INTENT (FE-D04 pool-only contract): the big number is the pool-side
+      // balance only — subscription/free-periodic entitlements now surface via
+      // PointsUsageDashboard windows, so this card must NOT show the combined
+      // `bucketTotal`. Asserting spendableFromPool (5000) while bucketTotal is
+      // a deliberately larger 9999 pins that the card ignores bucketTotal.
+      render(
+        <PointsBalanceCard
+          card={makeCard({ bucketTotal: 9999, spendableFromPool: 5000 })}
+        />
+      )
 
       const total = screen.getByTestId('points-balance-total-bucket-1')
       expect(total).toBeInTheDocument()
@@ -42,25 +58,35 @@ describe('PointsBalanceCard', () => {
   })
 
   describe('per-type balances', () => {
-    it('GIVEN non-zero balances WHEN rendering THEN should show a badge per non-zero type and hide zero types', () => {
+    it('GIVEN non-zero pool balances WHEN rendering THEN shows a badge per non-zero pool type (topup/registration/granted) and never renders subscription/freePeriodic', () => {
+      // INTENT (FE-D04 pool-only contract): only the pool model types render
+      // here. subscription/freePeriodic are quota-window concerns now and MUST
+      // NOT appear on this card even when their balances are non-zero — a
+      // stale subscription badge would mislead users into thinking the pool
+      // card still tracks subscription entitlement. We seed non-zero
+      // subscription/freePeriodic to pin that they are intentionally dropped.
       render(
         <PointsBalanceCard
           card={makeCard({
             balancesByType: {
               subscription: 3000,
-              topup: 0,
+              topup: 1200,
               registration: 0,
-              freePeriodic: 0,
+              freePeriodic: 700,
               granted: 50,
             },
           })}
         />
       )
 
-      expect(screen.getByTestId('points-balance-type-bucket-1-subscription')).toBeInTheDocument()
+      // Pool types with non-zero balances render.
+      expect(screen.getByTestId('points-balance-type-bucket-1-topup')).toBeInTheDocument()
       expect(screen.getByTestId('points-balance-type-bucket-1-granted')).toBeInTheDocument()
-      // A zero balance type is omitted — indistinguishable from "not present"
-      expect(screen.queryByTestId('points-balance-type-bucket-1-topup')).not.toBeInTheDocument()
+      // A zero pool balance type is omitted — indistinguishable from "not present".
+      expect(screen.queryByTestId('points-balance-type-bucket-1-registration')).not.toBeInTheDocument()
+      // subscription/freePeriodic are no longer this card's concern (quota model).
+      expect(screen.queryByTestId('points-balance-type-bucket-1-subscription')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('points-balance-type-bucket-1-freePeriodic')).not.toBeInTheDocument()
     })
   })
 

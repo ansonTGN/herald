@@ -16,6 +16,25 @@ const DEFAULT_REALM_CONFIG = {
 
 // ===== Realm Config Handlers =====
 
+/**
+ * Builds a realm-config GET handler that seeds `freePeriodicQuotaWindows`
+ * (the design-§3.3/§4.2.2 free-periodic quota windows consumed by
+ * `MultiWindowQuotaEditor`). When `quotaWindows` is omitted the response has
+ * no `freePeriodicQuotaWindows` key (mirrors a pre-redesign config row).
+ */
+export function createRealmConfigHandlerWithQuotaWindows(
+  quotaWindows?: Array<{ windowSeconds: number; limit: number }>
+) {
+  return http.get(`${API_BASE_URL}/api/points/:realmId/default-config`, ({ params }) => {
+    const { realmId } = params
+    return HttpResponse.json({
+      ...DEFAULT_REALM_CONFIG,
+      realmId: realmId as string,
+      ...(quotaWindows ? { freePeriodicQuotaWindows: quotaWindows } : {}),
+    })
+  })
+}
+
 export const getRealmConfigHandler = http.get(
   `${API_BASE_URL}/api/points/:realmId/default-config`,
   ({ params }) => {

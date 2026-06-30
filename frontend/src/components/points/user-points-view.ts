@@ -12,6 +12,23 @@ export interface DerivedBucketCard {
   enabled: boolean | null
   bucketTotal: number
   balancesByType: WalletByBucketResponse['balancesByType']
+  /**
+   * Per-window quota view for this (user, bucket) (design §4.2.2). `null`/`undefined`
+   * for a pool-only bucket. Passed through verbatim from the backend — the dashboard
+   * (FE-D03) consumes `key`/`limit`/`used`/`remaining`/`windowSeconds`/`resetsAt`/
+   * `isTightest`/`exhausted` directly.
+   */
+  quotaWindows: WalletByBucketResponse['quotaWindows']
+  /**
+   * Window-quota available = minimum `remaining` across `quotaWindows`. `null`/`undefined`
+   * for pool-only buckets. Pass-through; `bucketTotal` is the backend-computed total.
+   */
+  spendableFromQuota: WalletByBucketResponse['spendableFromQuota']
+  /**
+   * Pool-side balance sum (topup + registration + granted) for this bucket.
+   * `null`/`undefined` for window-only buckets. Pass-through.
+   */
+  spendableFromPool: WalletByBucketResponse['spendableFromPool']
 }
 
 export interface DerivedUserPointsView {
@@ -54,6 +71,9 @@ export function deriveUserPointsView(
       enabled: item.enabled ?? null,
       bucketTotal: item.bucketTotal,
       balancesByType: item.balancesByType,
+      quotaWindows: item.quotaWindows,
+      spendableFromQuota: item.spendableFromQuota,
+      spendableFromPool: item.spendableFromPool,
     }))
 
   const crossBucketTotal = cards.reduce((sum, card) => sum + card.bucketTotal, 0)

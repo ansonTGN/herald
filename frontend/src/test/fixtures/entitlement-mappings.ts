@@ -102,6 +102,45 @@ export function multiPriceMappingList(): EntitlementMappingResponse[] {
 }
 
 /**
+ * A multi-price product where the monthly price carries pre-existing quota
+ * windows and the annual price has none (`null`). Used by the quota-editor
+ * integration tests: the editor must seed the monthly row's windows and leave
+ * the annual row empty.
+ *
+ * `quotaWindows` on the response is `EntitlementQuotaWindowDto[]` (carries a
+ * display `key`); the editor only consumes `windowSeconds`/`limit` from it.
+ */
+export function multiPriceWithQuotaWindowsList(): EntitlementMappingResponse[] {
+  return [
+    makeMapping({
+      id: 'map_pro_monthly',
+      entitlementKey: 'pro-plan',
+      externalProductId: 'prod_pro',
+      externalPriceId: 'price_pro_monthly',
+      paymentProvider: 'stripe',
+      billingType: 'recurring',
+      billingPeriod: 'month',
+      enabled: true,
+      quotaWindows: [
+        { key: '1h', windowSeconds: 3600, limit: 100 },
+        { key: '1d', windowSeconds: 86_400, limit: 1000 },
+      ],
+    }),
+    makeMapping({
+      id: 'map_pro_annual',
+      entitlementKey: 'pro-plan',
+      externalProductId: 'prod_pro',
+      externalPriceId: 'price_pro_annual',
+      paymentProvider: 'stripe',
+      billingType: 'recurring',
+      billingPeriod: 'year',
+      enabled: true,
+      quotaWindows: null,
+    }),
+  ]
+}
+
+/**
  * At least one row matches the DERIVED webhook-unresolved rule
  * `externalProductId` set AND `enabled === true` AND
  * (`!billingType` OR `pointsPerPeriod == null`).

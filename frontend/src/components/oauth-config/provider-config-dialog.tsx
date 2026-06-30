@@ -35,8 +35,12 @@ export function ProviderConfigDialog({
       await mutation.mutateAsync(values)
       console.log('[ProviderConfigDialog] Form submission completed successfully')
     } catch (error) {
+      // The mutation's `onError` surfaces the failure toast and logs the error.
+      // Do NOT re-throw: TanStack Form's onSubmit has no downstream catcher, so
+      // a re-thrown rejection propagates as an unhandled rejection (per vitest
+      // config, rejections are expected to be handled in components). Sibling
+      // forms share this latent leak; see FE-T06 handoff.
       console.error('[ProviderConfigDialog] Form submission failed', error)
-      throw error
     }
   }
 

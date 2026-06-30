@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { m } from '@/paraglide/messages'
+import { quotaWindowSchema } from '@/lib/schemas/points-forms'
 
 // ==================== Price-Level Batch Save Schema ====================
 //
@@ -31,6 +32,12 @@ export const priceMappingUpdateSchema = z.object({
   grantOnSubscribe: z.boolean().nullable().optional(),
 
   maxPeriods: z.number().int().min(1).nullable().optional(),
+
+  // Per-price quota windows (design §3.2 / §4.3.2). Mirrors
+  // `PriceMappingUpdate.quotaWindows`: `null`/undefined ⟺ leave unchanged,
+  // `[]` ⟺ clear. Capped at 8 windows (PRD §4). Validation rules per window
+  // are shared with the realm-default editor via `quotaWindowSchema`.
+  quotaWindows: z.array(quotaWindowSchema).max(8).nullable().optional(),
 })
 
 export type PriceMappingUpdateFormData = z.infer<typeof priceMappingUpdateSchema>

@@ -232,7 +232,11 @@ function SettingsPage() {
       return
     }
 
-    await mutation.mutateAsync([buildTOTPConfigRequest(config)])
+    // The mutation's `onError` surfaces the failure toast and logs the error.
+    // Swallow the rejected promise so it doesn't propagate as an unhandled
+    // rejection (per vitest config, rejections are expected to be handled in
+    // components). Sibling forms share this latent leak; see FE-T06 handoff.
+    await mutation.mutateAsync([buildTOTPConfigRequest(config)]).catch(() => {})
   }
 
   // Save Turnstile configuration
@@ -242,7 +246,7 @@ function SettingsPage() {
       return
     }
 
-    await mutation.mutateAsync(buildTurnstileConfigRequest(config))
+    await mutation.mutateAsync(buildTurnstileConfigRequest(config)).catch(() => {})
   }
 
   // Save Registration configuration
@@ -252,7 +256,7 @@ function SettingsPage() {
       return
     }
 
-    await mutation.mutateAsync(buildRegistrationConfigRequest(config))
+    await mutation.mutateAsync(buildRegistrationConfigRequest(config)).catch(() => {})
   }
 
   // Save Email configuration
@@ -262,7 +266,7 @@ function SettingsPage() {
       return
     }
 
-    await mutation.mutateAsync(buildEmailConfigRequest(config))
+    await mutation.mutateAsync(buildEmailConfigRequest(config)).catch(() => {})
     queryClient.invalidateQueries({ queryKey: queryKeys.emailStatus(realmId) })
   }
 

@@ -9,13 +9,10 @@ interface PointsBalanceCardProps {
   loading?: boolean
 }
 
-const BALANCES_BY_TYPE_KEYS = [
-  'subscription',
-  'topup',
-  'registration',
-  'freePeriodic',
-  'granted',
-] as const
+// Pool-only types (FE-D04). Subscription and free-periodic balances are now
+// surfaced via `PointsUsageDashboard` window rows; this card shows only the
+// pool model (topup/registration/granted) that PRD §2.2 keeps zero-regression.
+const BALANCES_BY_TYPE_KEYS = ['topup', 'registration', 'granted'] as const
 
 export function PointsBalanceCard({ card, loading }: PointsBalanceCardProps) {
   if (loading) {
@@ -56,13 +53,13 @@ export function PointsBalanceCard({ card, loading }: PointsBalanceCardProps) {
         <div className="text-center">
           <div className="flex items-center justify-center gap-2 text-muted-foreground text-sm mb-2">
             <Wallet className="h-4 w-4" />
-            <span>{m['points.balance_current']()}</span>
+            <span>{m['points.balance_pool']()}</span>
           </div>
           <div
             className="text-5xl font-bold"
             data-testid={`points-balance-total-${card.bucketId ?? ''}`}
           >
-            {card.bucketTotal.toLocaleString()}
+            {(card.spendableFromPool ?? 0).toLocaleString()}
           </div>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             {BALANCES_BY_TYPE_KEYS.map((typeKey) => {
