@@ -576,11 +576,54 @@ And 提示 "Only paid invoices support refund recording"
 
 ---
 
+### 故事 11：系统处理 Stripe Credit Note 作废 [US-IF-011]
+
+**优先级**: P0
+
+**【用户故事】**
+**作为**：Herald 系统（详见 [docs/user-stories/_roles.md](/docs/user-stories/_roles.md)）
+**我希望**：在 Stripe Credit Note 被作废时同步作废状态，并恢复关联发票的剩余应付
+**从而**：保持 Herald 发票退款金额与 Stripe Dashboard 一致，避免按已恢复金额的发票进行税务申报
+
+**【验收标准】**
+
+> 验收标准只描述用户动作与可见结果，不写 API 路径、数据表、字段变更、技术实现步骤。
+
+**场景 1：Stripe credit_note.voided 事件触发作废同步**
+```gherkin
+Given Realm 配置了 Stripe 支付平台且启用了外部发票能力
+And Herald 已同步一条 Stripe 发票
+And 该发票已有一张状态为有效的 Credit Note，金额为 30 元
+When Herald 收到 Stripe 的 "credit_note.voided" webhook 事件
+Then 该 Credit Note 状态变为已作废
+And 关联发票的累计退款金额减少 30 元
+And 关联发票的剩余应付增加 30 元
+And 发票主状态保持不变（仍为已支付）
+```
+
+**场景 2：重复 credit_note.voided 事件幂等**
+```gherkin
+Given Herald 已处理过某张 Stripe Credit Note 的 voided 事件
+When Herald 再次收到同一张 Credit Note 的 voided 事件
+Then 发票的退款金额不被重复扣减
+And 发票的剩余应付不被重复增加
+```
+
+**场景 3：本地不存在对应 Credit Note 时拒绝创建孤儿记录**
+```gherkin
+Given Stripe 发送了一张 Herald 本地未记录的 Credit Note 的 voided 事件
+When Herald 处理该事件
+Then 系统不创建新的 Credit Note 记录
+And 返回错误以触发 Stripe 重投递
+```
+
+---
+
 ## 用户故事优先级汇总
 
 | 优先级 | 用户故事数量 | 关键故事 |
 |--------|-------------|---------|
-| P0 | 7 | 配置发票策略、同步 Stripe 发票、同步 Creem 税务、管理员查看外部发票、同步 Stripe Credit Note、管理员查看发票退款信息、管理员记录自研发票线下退款 |
+| P0 | 8 | 配置发票策略、同步 Stripe 发票、同步 Creem 税务、管理员查看外部发票、同步 Stripe Credit Note、管理员查看发票退款信息、管理员记录自研发票线下退款、处理 Stripe Credit Note 作废 |
 | P1 | 3 | 用户查看外部发票、下载外部 PDF、用户查看退款标注 |
 | P2 | 0 | - |
 
@@ -589,5 +632,6 @@ And 提示 "Only paid invoices support refund recording"
 ## 相关文档
 
 - **PRD**: `docs/prd/billing/invoice.md` - Invoice 发票管理 PRD（含 Provider 发票同步）
+- **PRD**: `docs/prd/billing/notes.md` - Credit Note（发票贷记凭证）PRD
 - **技术预研**: `.ai/tech-research/invoice_fallback.md`
 - **需求文档**: `.ai/future/invoice_fallback.md`

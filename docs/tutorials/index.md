@@ -22,5 +22,6 @@
 - [Stripe 支付对接](billing-stripe-payment.md) — Stripe 支付方配置和 Webhook 处理
 - [Creem 支付对接](billing-creem-payment.md) — Creem 支付方配置和 Webhook 处理
 - [发票管理](billing-invoice.md) — 发票创建、开票、PDF 生成
+- [Credit Note（发票贷记凭证）](billing-credit-note.md) — Stripe / Manual 双轨退款凭证、作废回滚、前端展示
 - [第三方后端对接](third-party-integration.md) — 用 SDK 接入 Herald 的认证、权限、积分、订阅
 - [积分发放重设计](points-grant-redesign/index.md) — 滚动窗口配额、懒发放、混合消费
