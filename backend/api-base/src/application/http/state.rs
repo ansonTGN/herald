@@ -3,12 +3,15 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use herald_core::application::{ApplicationService, WebhookService};
+use herald_core::domain::legal::LegalService;
 use herald_core::domain::payment_attempt::PaymentAttemptService;
+use herald_core::domain::user::services::SelfDeleteService;
 use herald_core::domain::user::services::admin::{
     AdminUserServiceImpl, PermissionManagementServiceImpl, RoleAssignmentServiceImpl,
     UserPermissionServiceImpl,
 };
 use herald_core::infrastructure::audit::PostgresAuditEventRepository;
+use herald_core::infrastructure::authentication::RedisSessionRepository;
 use herald_core::infrastructure::authorization::RedisPermissionChecker;
 use herald_core::infrastructure::authorization::policies::{
     PermissionBasedBillingPolicy, PermissionBasedPointsPolicy,
@@ -18,6 +21,9 @@ use herald_core::infrastructure::billing::{
     PostgresInvoiceRepository,
 };
 use herald_core::infrastructure::client_api_keys::{ApiKeyCache, ClientApiKeyRepository};
+use herald_core::infrastructure::legal::{
+    PostgresLegalAgreementRepository, PostgresUserConsentRepository,
+};
 use herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository;
 use herald_core::infrastructure::points::PostgresPointsRepository;
 use herald_core::infrastructure::purchase::PurchaseService;
@@ -30,6 +36,7 @@ use herald_core::infrastructure::user::{
     PostgresAdminUserRepository, PostgresRolePolicyRepository, PostgresUserRoleRepository,
     repositories::PostgresUserRepository,
 };
+use herald_core::infrastructure::user_totp::PostgresUserTotpRepository;
 use sea_orm::DatabaseConnection;
 
 /// Type alias for the PurchaseService to reduce complexity in AppState
@@ -223,4 +230,35 @@ pub struct AppState {
 
     /// Realm config repository (for direct SQL access to realm_config table)
     pub realm_config_repository: Arc<PostgresRealmConfigRepository>,
+
+    /// Legal agreement repository (legal_agreement_version CRUD / resolution)
+    pub legal_repository: Arc<PostgresLegalAgreementRepository>,
+
+    /// User consent repository (user_agreement_consent upsert / read)
+    pub user_consent_repository: Arc<PostgresUserConsentRepository>,
+
+    /// Legal use-case service (public agreements + self consent gate).
+    /// Direct AppState field — same pattern as `billing_repository`, NOT the
+    /// `state.service.<svc>()` registry. BE-D08 reuses this from api-auth.
+    pub legal_service: Arc<
+        LegalService<
+            PostgresLegalAgreementRepository,
+            PostgresUserConsentRepository,
+            PostgresAuditEventRepository,
+        >,
+    >,
+
+    /// Self-service account deletion (soft-delete) pipeline — BE-D07.
+    /// Orchestrates user/profile anonymization + TOTP wipe (in-tx) with
+    /// subscription cancellation, session revocation, and `user.delete`
+    /// audit (post-tx). Direct AppState field, same pattern as `legal_service`.
+    pub self_delete_service: Arc<
+        SelfDeleteService<
+            PostgresUserRepository,
+            PostgresUserTotpRepository,
+            PostgresBillingRepository,
+            RedisSessionRepository,
+            PostgresAuditEventRepository,
+        >,
+    >,
 }

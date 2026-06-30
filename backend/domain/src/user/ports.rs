@@ -76,6 +76,37 @@ pub trait UserRepository: Send + Sync {
         user_id: Uuid,
         nickname: Option<String>,
     ) -> impl Future<Output = Result<Profile, CoreError>> + Send;
+
+    /// Look up a soft-deleted account by the hash of its original email.
+    ///
+    /// Used by the login path after an active-user lookup fails, so that a
+    /// login attempt with the original email of a deleted account can return
+    /// the same `Forbidden` response used for other inactive statuses.
+    fn find_deleted_user_by_email_hash(
+        &self,
+        realm_id: &str,
+        email_hash: &str,
+    ) -> impl Future<Output = Result<Option<(Uuid, i16)>, CoreError>> + Send;
+
+    /// Anonymize a user's PII and mark the account as soft-deleted.
+    ///
+    /// Single atomic transaction:
+    ///   - `account`: `status = 4` (Deleted),
+    ///     `email = "deleted+{id}@anonymized.local"` (derived from the account
+    ///     id so it is unique within `(realm_id, email)`), `password = NULL`,
+    ///     `username = NULL`, `provider_ids = '{}'`,
+    ///     `deleted_original_email_hash = SHA-256(original_email)`.
+    ///   - `profile`: `nickname = NULL` (no-op if the optional profile row is
+    ///     absent — 0 rows affected is not an error).
+    ///   - `user_totp_config`: cascade-deleted (also drops backup codes).
+    ///
+    /// Used by the self-service deletion service. Implementations must run all
+    /// three writes inside one DB transaction so the anonymization is atomic.
+    fn anonymize_user_for_deletion(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
 }
 
 #[cfg_attr(test, mockall::automock)]

@@ -245,16 +245,40 @@ where
     )]
     async fn login(&self, request: LoginRequest) -> Result<User, CoreError> {
         // Use get_user_by_email_or_username to handle both email and username
-        let Some((user_id, password_hash, status)) = self
+        let lookup = self
             .user_repository
             .get_user_by_email_or_username(
                 &request.realm_id,
                 request.email.clone(),
                 request.username.clone(),
             )
-            .await?
-        else {
-            return Err(CoreError::NotFound);
+            .await?;
+
+        let (user_id, password_hash, status) = match lookup {
+            Some(found) => found,
+            None => {
+                // Active lookup failed.  Check whether the original email belongs
+                // to a soft-deleted account so we can return the same Forbidden
+                // response used for other inactive statuses.
+                if let Some(email) = &request.email {
+                    let hash = {
+                        let mut hasher = sha2::Sha256::new();
+                        use sha2::Digest;
+                        hasher.update(email.as_bytes());
+                        format!("{:x}", hasher.finalize())
+                    };
+                    if let Some((_deleted_id, _deleted_status)) = self
+                        .user_repository
+                        .find_deleted_user_by_email_hash(&request.realm_id, &hash)
+                        .await?
+                    {
+                        return Err(CoreError::Forbidden(
+                            "User account is not active".to_string(),
+                        ));
+                    }
+                }
+                return Err(CoreError::NotFound);
+            }
         };
 
         // Check user status

@@ -32,6 +32,8 @@ use herald_core::domain::user::value_objects::LoginRequest as DomainLoginRequest
 use herald_core::domain::user_totp::UserTotpRepository;
 use herald_core::infrastructure::user_totp::PostgresUserTotpRepository;
 
+use crate::consent_gate::AuthConsentAgreement;
+
 #[derive(Serialize, Deserialize, ToSchema, validator::Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginRequestPayload {
@@ -49,6 +51,9 @@ pub struct LoginRequestPayload {
     pub redirect_uri: Option<String>, // OAuth redirect URI
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<String>, // OAuth state token (CSRF protection)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(required = false)]
+    pub agreements: Option<Vec<AuthConsentAgreement>>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -65,6 +70,21 @@ pub struct LoginResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(required = false)]
     pub redirect_to: Option<String>,
+    // Consent gate (BE-D08): mirrors `requires_totp` as a 200 flag — NO new
+    // status code. Present only when credentials+TOTP passed but the user's
+    // recorded consent is stale vs. the current effective agreement versions.
+    // When `Some(true)`, `agreements` carries the current effective summaries
+    // and NO session is issued. The front-end asks the user to accept those
+    // versions, then re-submits login with request `agreements`; the handler
+    // records re-consent after credentials/TOTP pass and before session issue.
+    // Absent (None) on every other branch → no frontend breakage. See design
+    // §4.1/§4.2.2.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(required = false)]
+    pub consent_required: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(required = false)]
+    pub agreements: Option<Vec<herald_core::domain::legal::LegalAgreementSummary>>,
 }
 
 /// Authenticate user with email/username and password
@@ -332,7 +352,8 @@ pub async fn login(
             tracing::warn!(error = %audit_err, "Failed to record audit event");
         }
 
-        // Return temp token instead of creating session
+        // Return temp token instead of creating session. Consent is checked
+        // after the second factor succeeds in verify_totp.rs.
         return Ok(Json(LoginResponse {
             message: "ok".to_string(),
             user_id: user.id,
@@ -341,6 +362,8 @@ pub async fn login(
             temp_token: Some(temp_token),
             expires_in_seconds: 300,
             redirect_to: None,
+            consent_required: None,
+            agreements: None,
         })
         .into_response());
     }
@@ -353,6 +376,44 @@ pub async fn login(
         "Login successful (no TOTP)"
     );
 
+    // Order: credentials → TOTP → consent → session (design §4.1/§5.1). We
+    // only reach here after credentials AND TOTP have passed, so it is safe to
+    // evaluate consent now. `consent_status` resolves each type's current
+    // effective version and compares to the user's recorded consent; any item
+    // with `needs_reconsent` (or a missing type) means consent is stale.
+    //
+    // Stale → HTTP 200 + consent_required=true + current effective summaries,
+    // NO session issued (mirrors `requires_totp`). The front-end routes to
+    // re-consent and re-submits login with request `agreements`; this handler
+    // records Reconsent once credentials/TOTP have passed.
+    //
+    // Current → record_consent(source=Login) idempotently (refreshes
+    // consented_at) and fall through to the existing OAuth/session issuance.
+    {
+        if let Some(summaries) = crate::consent_gate::evaluate_login_consent_gate(
+            &state,
+            &user,
+            &realm_id,
+            payload.agreements.as_deref(),
+            Some(ip.clone()),
+            user_agent.clone(),
+        )
+        .await
+        {
+            return Ok(Json(LoginResponse {
+                message: "consent required".to_string(),
+                user_id: user.id,
+                realm_id: realm_id.clone(),
+                requires_totp: Some(false),
+                temp_token: None,
+                expires_in_seconds: 0,
+                redirect_to: None,
+                consent_required: Some(true),
+                agreements: Some(summaries),
+            })
+            .into_response());
+        }
+    }
     // Determine OAuth flow presence before any session creation
     let is_oauth_flow = payload.oauth_client_id.is_some()
         && payload.redirect_uri.is_some()
@@ -484,6 +545,8 @@ pub async fn login(
             temp_token: None,
             expires_in_seconds: DEFAULT_OAUTH_SESSION_TTL_SECONDS as i64,
             redirect_to: Some(redirect_to),
+            consent_required: None,
+            agreements: None,
         })
         .into_response());
     }
@@ -560,6 +623,8 @@ pub async fn login(
             temp_token: None,
             expires_in_seconds: ttl,
             redirect_to: None,
+            consent_required: None,
+            agreements: None,
         }),
     )
         .into_response();

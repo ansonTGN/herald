@@ -1,7 +1,8 @@
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect,
+    QueryOrder, QuerySelect, Set, TransactionTrait,
 };
+use sha2::Digest;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -11,7 +12,7 @@ use herald_domain::user::{
     ports::{UserRepository, UserVerificationRepository},
     value_objects::{CreateUserRequest, UpdateUserRequest},
 };
-use herald_entity::{account, profile};
+use herald_entity::{account, profile, user_totp_backup_codes, user_totp_config};
 
 pub struct PostgresUserRepository {
     db: Arc<DatabaseConnection>,
@@ -83,6 +84,7 @@ impl UserRepository for PostgresUserRepository {
             password: sea_orm::Set(Some(password_hash)),
             provider_ids: sea_orm::Set(request.provider_ids.unwrap_or_default()),
             status: sea_orm::Set(UserStatus::WaitVerified.into()),
+            deleted_original_email_hash: sea_orm::Set(None),
             created_at: sea_orm::Set(now.into()),
             updated_at: sea_orm::Set(now.into()),
         };
@@ -146,6 +148,21 @@ impl UserRepository for PostgresUserRepository {
         let result = query.one(&*self.db).await?;
 
         Ok(result.map(|model| (model.id, model.password, model.status)))
+    }
+
+    async fn find_deleted_user_by_email_hash(
+        &self,
+        realm_id: &str,
+        email_hash: &str,
+    ) -> Result<Option<(Uuid, i16)>, CoreError> {
+        let result = account::Entity::find()
+            .filter(account::Column::RealmId.eq(realm_id))
+            .filter(account::Column::DeletedOriginalEmailHash.eq(email_hash))
+            .filter(account::Column::Status.eq(i16::from(UserStatus::Deleted)))
+            .one(&*self.db)
+            .await?;
+
+        Ok(result.map(|model| (model.id, model.status)))
     }
 
     async fn change_password(
@@ -281,6 +298,84 @@ impl UserRepository for PostgresUserRepository {
 
         let result = active_model.update(&*self.db).await?;
         Ok(Self::to_domain_profile(&result))
+    }
+
+    async fn anonymize_user_for_deletion(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> Result<(), CoreError> {
+        // Single SeaORM transaction. The anonymized email is derived from the
+        // account id so it stays unique within `(realm_id, email)`
+        // (account_realm_id_email_index). `profile.nickname` and the TOTP
+        // config (+ backup codes) are wiped in the same transaction so the
+        // PII/credential purge is atomic.
+        let txn = self.db.begin().await?;
+        let now = chrono::Utc::now();
+
+        // 1. account: status=Deleted, email=anonymized, password/username=NULL,
+        //    provider_ids='{}'. Scope by (realm_id, id) to honor the realm
+        //    boundary.
+        let account_model = account::Entity::find()
+            .filter(account::Column::RealmId.eq(realm_id))
+            .filter(account::Column::Id.eq(user_id))
+            .one(&txn)
+            .await?
+            .ok_or(CoreError::NotFound)?;
+        let original_email = account_model.email.clone();
+        let mut acc_model: account::ActiveModel = account_model.into();
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(original_email.as_bytes());
+        let email_hash = format!("{:x}", hasher.finalize());
+        let anonymized_email = format!("deleted+{}@anonymized.local", user_id);
+        acc_model.status = Set(i16::from(UserStatus::Deleted));
+        acc_model.email = Set(anonymized_email);
+        acc_model.password = Set(None);
+        acc_model.username = Set(None);
+        acc_model.provider_ids = Set(Vec::new());
+        acc_model.deleted_original_email_hash = Set(Some(email_hash));
+        acc_model.updated_at = Set(now.into());
+        acc_model.update(&txn).await?;
+
+        // 2. profile.nickname = NULL (optional row; 0 rows affected is fine).
+        //    Use update_many so a missing profile row is not an error.
+        profile::Entity::update_many()
+            .col_expr(
+                profile::Column::Nickname,
+                sea_orm::sea_query::Expr::value(None::<String>),
+            )
+            .col_expr(
+                profile::Column::UpdatedAt,
+                sea_orm::sea_query::Expr::value(sea_orm::prelude::DateTimeWithTimeZone::from(now)),
+            )
+            .filter(profile::Column::Id.eq(user_id))
+            .exec(&txn)
+            .await?;
+
+        // 3. TOTP config + backup codes wipe (mirrors the standalone
+        //    `delete_config` pattern, but on this transaction). First collect
+        //    the config ids owned by this user, delete their backup codes, then
+        //    delete the configs.
+        let config_ids: Vec<Uuid> = user_totp_config::Entity::find()
+            .filter(user_totp_config::Column::UserId.eq(user_id))
+            .all(&txn)
+            .await?
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
+        if !config_ids.is_empty() {
+            user_totp_backup_codes::Entity::delete_many()
+                .filter(user_totp_backup_codes::Column::UserTotpConfigId.is_in(config_ids))
+                .exec(&txn)
+                .await?;
+            user_totp_config::Entity::delete_many()
+                .filter(user_totp_config::Column::UserId.eq(user_id))
+                .exec(&txn)
+                .await?;
+        }
+
+        txn.commit().await?;
+        Ok(())
     }
 }
 

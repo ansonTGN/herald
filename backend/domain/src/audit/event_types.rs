@@ -10,6 +10,7 @@ pub enum AuditCategory {
     Auth,
     Billing,
     OAuth,
+    Compliance,
 }
 
 /// Specific action that was performed.
@@ -61,6 +62,12 @@ pub enum AuditAction {
     OAuthConfigUpdate,
     #[serde(rename = "oauth_config.delete")]
     OAuthConfigDelete,
+    #[serde(rename = "agreement.consent")]
+    AgreementConsent,
+    #[serde(rename = "agreement.published")]
+    AgreementPublished,
+    #[serde(rename = "agreement.reverted")]
+    AgreementReverted,
 }
 
 /// Type of the target entity an audit event refers to.
@@ -120,6 +127,9 @@ mod tests {
             (AuditAction::OAuthConfigCreate, "oauth_config.create"),
             (AuditAction::OAuthConfigUpdate, "oauth_config.update"),
             (AuditAction::OAuthConfigDelete, "oauth_config.delete"),
+            (AuditAction::AgreementConsent, "agreement.consent"),
+            (AuditAction::AgreementPublished, "agreement.published"),
+            (AuditAction::AgreementReverted, "agreement.reverted"),
         ];
 
         for (variant, expected) in pairs {

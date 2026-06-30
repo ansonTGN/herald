@@ -3,6 +3,7 @@ pub mod audit;
 pub mod client_apps;
 pub mod common;
 pub mod dashboard;
+pub mod legal;
 pub mod public_config;
 pub mod rate_limit;
 pub mod realm;

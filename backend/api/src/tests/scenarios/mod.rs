@@ -10,6 +10,7 @@ pub mod admin_role_definitions_scenarios;
 pub mod builtin_protection_scenarios;
 pub mod change_email_scenarios;
 pub mod client_app_scenarios;
+pub mod consent_gate_scenarios;
 pub mod login_flow_scenarios;
 pub mod permission_regression_scenarios;
 pub mod permission_security_scenarios;
@@ -77,6 +78,10 @@ pub mod email_config_scenarios;
 
 // Credit Bucket scenarios (authored by backend-test slot)
 pub mod credit_bucket;
+
+pub mod legal;
+
+pub mod account_self_delete_scenarios;
 
 // Realm management scenarios
 // (realm_config_update_scenarios and realm_delete_scenarios removed - see .ai/future/backend_test_delete.md)

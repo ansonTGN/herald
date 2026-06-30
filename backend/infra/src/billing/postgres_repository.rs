@@ -1255,6 +1255,33 @@ impl BillingRepository for PostgresBillingRepository {
         .map(|r| r.rows_affected())
     }
 
+    async fn list_active_subscriptions_by_user(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> Result<Vec<Subscription>, CoreError> {
+        // In-effect statuses mirror SubscriptionStatus::has_access
+        // (active / trialing / scheduled_cancel / dispute). The `status` column
+        // stores the lowercase as_str text (see SubscriptionStatus::as_str), so
+        // we filter on those exact text values.
+        let results = subscription::Entity::find()
+            .filter(subscription::Column::RealmId.eq(realm_id))
+            .filter(subscription::Column::UserId.eq(user_id))
+            .filter(subscription::Column::Status.is_in([
+                "active",
+                "trialing",
+                "scheduled_cancel",
+                "dispute",
+            ]))
+            .all(&self.db)
+            .await?;
+
+        results
+            .into_iter()
+            .map(Self::model_to_subscription)
+            .collect()
+    }
+
     async fn save_history_event(
         &self,
         event: SubscriptionHistoryEvent,

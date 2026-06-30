@@ -8,6 +8,7 @@ pub mod client;
 pub mod client_api_keys;
 pub mod creem;
 pub mod dashboard;
+pub mod legal;
 pub mod oauth;
 pub mod payment_attempt;
 pub mod points;

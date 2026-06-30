@@ -82,15 +82,13 @@ export function PointsUsageDashboard({ card, loading }: PointsUsageDashboardProp
   const hasWindows = windows.length > 0
 
   const anyWindowExhausted = windows.some((window) => window.exhausted)
-  const empty =
-    !hasWindows && spendableFromQuota === 0 && spendableFromPool === 0
+  const empty = !hasWindows && spendableFromQuota === 0 && spendableFromPool === 0
   // `insufficient` (bucket had a balance model but is now drained) excludes
   // the empty state, so a brand-new user sees the onboarding empty-state
   // instead of a contradictory "transaction rejected" alert with no
   // transaction in progress.
   const insufficient = !empty && spendableTotal <= 0 && !anyWindowExhausted
-  const overspendTopup =
-    anyWindowExhausted && spendableFromPool > 0 && spendableTotal > 0
+  const overspendTopup = anyWindowExhausted && spendableFromPool > 0 && spendableTotal > 0
 
   const sortedWindows = [...windows].sort((a, b) => {
     if (a.exhausted !== b.exhausted) return a.exhausted ? -1 : 1
@@ -106,16 +104,10 @@ export function PointsUsageDashboard({ card, loading }: PointsUsageDashboardProp
       <CardContent className="space-y-4">
         {/* Spendable total + formula */}
         <div className="space-y-1">
-          <div
-            className="text-4xl font-bold"
-            data-testid="points-spendable-now"
-          >
+          <div className="text-4xl font-bold" data-testid="points-spendable-now">
             {spendableTotal.toLocaleString()}
           </div>
-          <div
-            className="text-muted-foreground text-sm"
-            data-testid="points-spendable-formula"
-          >
+          <div className="text-muted-foreground text-sm" data-testid="points-spendable-formula">
             {m['points.spendable_formula']()}
           </div>
         </div>
@@ -123,9 +115,7 @@ export function PointsUsageDashboard({ card, loading }: PointsUsageDashboardProp
         {/* Tightest constraint alert (quota is the limiting factor) */}
         {spendableFromQuota >= 0 && hasWindows && (
           <Alert className="border-amber-500/50 text-amber-700 dark:text-amber-400">
-            <AlertDescription>
-              {m['points.tightest_constraint']()}
-            </AlertDescription>
+            <AlertDescription>{m['points.tightest_constraint']()}</AlertDescription>
           </Alert>
         )}
 
@@ -140,13 +130,8 @@ export function PointsUsageDashboard({ card, loading }: PointsUsageDashboardProp
           </Alert>
         )}
         {anyWindowExhausted && (
-          <Alert
-            variant="destructive"
-            data-testid="points-window-exhausted-alert"
-          >
-            <AlertDescription>
-              {m['points.window_exhausted']()}
-            </AlertDescription>
+          <Alert variant="destructive" data-testid="points-window-exhausted-alert">
+            <AlertDescription>{m['points.window_exhausted']()}</AlertDescription>
           </Alert>
         )}
         {overspendTopup && (
@@ -154,16 +139,12 @@ export function PointsUsageDashboard({ card, loading }: PointsUsageDashboardProp
             className="border-amber-500/50 text-amber-700 dark:text-amber-400"
             data-testid="points-overspend-topup-alert"
           >
-            <AlertDescription>
-              {m['points.overspend_topup_alert']()}
-            </AlertDescription>
+            <AlertDescription>{m['points.overspend_topup_alert']()}</AlertDescription>
           </Alert>
         )}
         {insufficient && (
           <Alert variant="destructive" data-testid="points-insufficient-alert">
-            <AlertDescription>
-              {m['points.insufficient_alert']()}
-            </AlertDescription>
+            <AlertDescription>{m['points.insufficient_alert']()}</AlertDescription>
           </Alert>
         )}
 
@@ -175,11 +156,9 @@ export function PointsUsageDashboard({ card, loading }: PointsUsageDashboardProp
               const limit = window.limit
               const used = window.used
               const remaining = window.remaining
-              const fillPct =
-                limit > 0 ? Math.min(100, (remaining / limit) * 100) : 0
+              const fillPct = limit > 0 ? Math.min(100, (remaining / limit) * 100) : 0
               const usedPct = limit > 0 ? used / limit : 0
-              const nearLimit =
-                !window.exhausted && usedPct >= NEAR_LIMIT_THRESHOLD
+              const nearLimit = !window.exhausted && usedPct >= NEAR_LIMIT_THRESHOLD
               const resetsDuration = formatResetsDuration(window.resetsAt)
               const barColor = windowBarColor(window)
 
@@ -197,14 +176,10 @@ export function PointsUsageDashboard({ card, loading }: PointsUsageDashboardProp
                     <span className="font-medium">{winKey}</span>
                     <div className="flex flex-wrap gap-1">
                       {window.isTightest && (
-                        <Badge variant="secondary">
-                          {m['points.tightest_constraint']()}
-                        </Badge>
+                        <Badge variant="secondary">{m['points.tightest_constraint']()}</Badge>
                       )}
                       {window.exhausted && (
-                        <Badge variant="destructive">
-                          {m['points.window_exhausted']()}
-                        </Badge>
+                        <Badge variant="destructive">{m['points.window_exhausted']()}</Badge>
                       )}
                       {nearLimit && (
                         <Badge
@@ -234,8 +209,8 @@ export function PointsUsageDashboard({ card, loading }: PointsUsageDashboardProp
 
                   <div className="text-muted-foreground flex items-center justify-between text-sm">
                     <span>
-                      {remaining.toLocaleString()} / {limit.toLocaleString()}{' '}
-                      · {used.toLocaleString()}
+                      {remaining.toLocaleString()} / {limit.toLocaleString()} ·{' '}
+                      {used.toLocaleString()}
                     </span>
                     {resetsDuration && (
                       <span>
@@ -254,12 +229,8 @@ export function PointsUsageDashboard({ card, loading }: PointsUsageDashboardProp
         {/* Pool balance summary (topup/registration/granted) */}
         {spendableFromPool > 0 && (
           <div className="border-t pt-3">
-            <div className="text-muted-foreground text-sm">
-              {m['points.balance_pool']()}
-            </div>
-            <div className="text-2xl font-semibold">
-              {spendableFromPool.toLocaleString()}
-            </div>
+            <div className="text-muted-foreground text-sm">{m['points.balance_pool']()}</div>
+            <div className="text-2xl font-semibold">{spendableFromPool.toLocaleString()}</div>
           </div>
         )}
       </CardContent>

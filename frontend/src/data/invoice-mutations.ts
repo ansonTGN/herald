@@ -9,8 +9,13 @@ import {
   upsertSellerConfig,
   applyInvoice,
   upsertRealmConfig,
+  createCreditNote,
 } from '@/lib/api-generated'
-import type { CreateInvoiceRequest, UpdateInvoiceRequest } from '@/lib/api-generated'
+import type {
+  CreateInvoiceRequest,
+  UpdateInvoiceRequest,
+  CreateCreditNoteRequest,
+} from '@/lib/api-generated'
 import type {
   InvoiceCreateFormData,
   InvoiceEditFormData,
@@ -18,8 +23,10 @@ import type {
   ApplyInvoiceFormData,
   InvoicePolicyConfigFormData,
 } from '@/lib/schemas/invoice-forms'
+import type { RecordRefundFormData } from '@/lib/schemas/credit-note-forms'
 import { displayPriceToCents } from '@/lib/invoice-utils'
 import { getErrorMessage } from '@/lib/error-utils'
+import { m } from '@/paraglide/messages'
 import { invoiceKeys } from '@/data/invoice-query-options'
 import { queryKeys } from '@/data/query-options'
 
@@ -285,5 +292,32 @@ export function useUpsertInvoicePolicy(realmId: string) {
       const errorMessage = getErrorMessage(error)
       toast.error(`Failed to save invoice policy: ${errorMessage}`)
     },
+  })
+}
+
+export function useCreateCreditNote(realmId: string, invoiceId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (values: RecordRefundFormData) => {
+      const body: CreateCreditNoteRequest = {
+        amount: displayPriceToCents(values.amount),
+        memo: values.memo,
+      }
+      const response = await createCreditNote({
+        path: { realmId, invoiceId },
+        body,
+      })
+      if (response.error) throw response.error
+      return response.data
+    },
+    onSuccess: () => {
+      toast.success(m['billing.credit_note_created']())
+      queryClient.invalidateQueries({ queryKey: invoiceKeys.detail(realmId, invoiceId) })
+      queryClient.invalidateQueries({ queryKey: invoiceKeys.all(realmId) })
+      queryClient.invalidateQueries({ queryKey: invoiceKeys.myDetail(realmId, invoiceId) })
+    },
+    // Intentionally no onError toast: Record Refund dialog shows inline errors
+    // and must stay open on failure. Callers should catch with mutateAsync.
   })
 }

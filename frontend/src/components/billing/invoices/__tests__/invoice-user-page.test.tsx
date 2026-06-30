@@ -26,6 +26,7 @@ function makeInvoice(overrides: Partial<InvoiceResponse> = {}): InvoiceResponse 
     provider: 'manual',
     status: 'issued',
     total: 9900,
+    amountRefunded: 0,
     currency: 'CNY',
     dueDate: '2025-06-01T00:00:00Z',
     createdAt: '2025-05-01T00:00:00Z',
@@ -406,6 +407,130 @@ describe('InvoiceUserPage', () => {
         // Manual invoice uses onClick button, not <a> link
         expect(button.closest('a')).toBeNull()
       })
+    })
+  })
+
+  // ==================== Refund Summary Pill ====================
+
+  describe('refund summary pill', () => {
+    it.each([
+      {
+        name: 'stripe invoice with refund shows summary pill',
+        invoice: {
+          id: 'inv-stripe-refund',
+          provider: 'stripe' as const,
+          amountRefunded: 5000,
+          total: 9900,
+          currency: 'CNY',
+        },
+        expectPill: true,
+      },
+      {
+        name: 'manual invoice with refund shows summary pill',
+        invoice: {
+          id: 'inv-manual-refund',
+          provider: 'manual' as const,
+          amountRefunded: 3000,
+          total: 9900,
+          currency: 'CNY',
+        },
+        expectPill: true,
+      },
+      {
+        // Creem is Merchant of Record; Herald does not maintain refund credit notes for Creem invoices,
+        // so the refund dimension (and its summary pill) is not exposed to users.
+        name: 'creem invoice hides pill (MoR excludes refund dimension)',
+        invoice: {
+          id: 'inv-creem-refund',
+          provider: 'creem' as const,
+          amountRefunded: 5000,
+          total: 9900,
+          currency: 'CNY',
+        },
+        expectPill: false,
+      },
+      {
+        name: 'invoice with amountRefunded=0 hides pill (no refund to summarize)',
+        invoice: {
+          id: 'inv-no-refund',
+          provider: 'stripe' as const,
+          amountRefunded: 0,
+          total: 9900,
+          currency: 'CNY',
+        },
+        expectPill: false,
+      },
+    ])('$name', async ({ invoice, expectPill }) => {
+      server.use(
+        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+          return HttpResponse.json(makeListResponse([makeInvoice(invoice)]))
+        })
+      )
+
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
+
+      // Wait for actual data row (table testid exists during loading state).
+      await waitFor(() => {
+        expect(screen.getByText('INV-001')).toBeInTheDocument()
+      })
+
+      const pill = screen.queryByTestId(`invoice-refund-summary-${invoice.id}`)
+      if (expectPill) {
+        expect(pill).toBeInTheDocument()
+      } else {
+        expect(pill).not.toBeInTheDocument()
+      }
+    })
+
+    it('summary pill shows refunded amount over total without source color or note id', async () => {
+      const invoice = makeInvoice({
+        id: 'inv-pill-content',
+        provider: 'stripe',
+        amountRefunded: 5000,
+        total: 9900,
+        currency: 'CNY',
+      })
+      server.use(
+        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+          return HttpResponse.json(makeListResponse([invoice]))
+        })
+      )
+
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
+
+      const pill = await screen.findByTestId(`invoice-refund-summary-${invoice.id}`)
+
+      expect(pill).toHaveTextContent(/Refunded/)
+      expect(pill).toHaveTextContent(/50\.00/)
+      expect(pill).toHaveTextContent(/99\.00/)
+      // Users are not exposed to internal credit note identifiers or provenance tags.
+      expect(pill).not.toHaveTextContent(/CN-/i)
+      expect(pill).not.toHaveTextContent(/NOTE-/i)
+    })
+
+    it('total amount still renders when pill is hidden for creem', async () => {
+      const invoice = makeInvoice({
+        id: 'inv-creem-total',
+        provider: 'creem',
+        amountRefunded: 0,
+        total: 9900,
+        currency: 'CNY',
+      })
+      server.use(
+        http.get(`${BASE_URL}/api/bill/${REALM_ID}/my/invoices`, () => {
+          return HttpResponse.json(makeListResponse([invoice]))
+        })
+      )
+
+      renderWithProviders(<InvoiceUserPage realmId={REALM_ID} />)
+
+      // Wait for actual data row (table testid exists during loading state).
+      await waitFor(() => {
+        expect(screen.getByText('INV-001')).toBeInTheDocument()
+      })
+
+      expect(screen.queryByTestId(`invoice-refund-summary-${invoice.id}`)).not.toBeInTheDocument()
+      expect(screen.getByText(/99\.00/)).toBeInTheDocument()
     })
   })
 })

@@ -342,7 +342,10 @@ export function RealmConfigPage() {
               <form.Field name="freePeriodicQuotaWindows">
                 {(field) => (
                   <div className="space-y-2">
-                    <Label id={`${field.name}-label`} className="text-xs font-medium text-muted-foreground">
+                    <Label
+                      id={`${field.name}-label`}
+                      className="text-xs font-medium text-muted-foreground"
+                    >
                       {m['points.quota_editor_title']()}
                     </Label>
                     <MultiWindowQuotaEditor

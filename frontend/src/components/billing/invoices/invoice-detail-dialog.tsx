@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
@@ -22,22 +22,31 @@ import {
 } from '@/components/ui/table'
 import { Download, Clock, User, ExternalLink } from 'lucide-react'
 import { InvoiceStatusBadge } from '@/components/billing/invoices/invoice-status-badge'
-import { invoiceDetailQueryOptions } from '@/data/invoice-query-options'
+import {
+  invoiceDetailQueryOptions,
+  myInvoiceDetailQueryOptions,
+} from '@/data/invoice-query-options'
 import {
   formatInvoiceAmount,
   PDF_DOWNLOADABLE_STATUSES,
   isExternalInvoice,
   getProviderLabel,
   getViewInProviderUrl,
+  shouldRenderRefundDimension,
 } from '@/lib/invoice-utils'
+import { InvoiceRefundSummary } from './invoice-refund-summary'
+import { CreditNoteList } from './credit-note-list'
+import { RecordRefundDialog } from './record-refund-dialog'
 import type { InvoiceDetailResponse } from '@/lib/api-generated'
 import { m } from '@/paraglide/messages'
+import { usePermission } from '@/hooks/use-permission'
 
 interface InvoiceDetailDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   realmId: string
   invoiceId: string | null
+  variant?: 'admin' | 'user'
 }
 
 function getEventTypeLabels(): Record<string, string> {
@@ -65,13 +74,22 @@ export function InvoiceDetailDialog({
   onOpenChange,
   realmId,
   invoiceId,
+  variant = 'admin',
 }: InvoiceDetailDialogProps) {
-  const { data: invoice, isLoading } = useQuery({
+  const adminQuery = useQuery({
     ...invoiceDetailQueryOptions(realmId, invoiceId ?? ''),
-    enabled: open && !!invoiceId,
+    enabled: open && !!invoiceId && variant === 'admin',
   })
 
-  const pdfUrl = invoiceId ? `/api/bill/${realmId}/invoices/${invoiceId}/pdf` : null
+  const userQuery = useQuery({
+    ...myInvoiceDetailQueryOptions(realmId, invoiceId ?? ''),
+    enabled: open && !!invoiceId && variant === 'user',
+  })
+
+  const { data: invoice, isLoading } = variant === 'user' ? userQuery : adminQuery
+
+  const pdfPathSegment = variant === 'user' ? 'my/invoices' : 'invoices'
+  const pdfUrl = invoiceId ? `/api/bill/${realmId}/${pdfPathSegment}/${invoiceId}/pdf` : null
   const provider = invoice?.provider
   const isExternal = invoice ? isExternalInvoice(provider!) : false
   const externalPdfUrl = invoice?.externalPdfUrl ?? null
@@ -111,7 +129,7 @@ export function InvoiceDetailDialog({
         {isLoading ? (
           <LoadingSkeleton />
         ) : invoice ? (
-          <InvoiceContent invoice={invoice} realmId={realmId} />
+          <InvoiceContent invoice={invoice} realmId={realmId} variant={variant} />
         ) : null}
 
         <DialogFooter showCloseButton>
@@ -155,11 +173,27 @@ export function InvoiceDetailDialog({
   )
 }
 
-function InvoiceContent({ invoice, realmId }: { invoice: InvoiceDetailResponse; realmId: string }) {
+function InvoiceContent({
+  invoice,
+  realmId,
+  variant = 'admin',
+}: {
+  invoice: InvoiceDetailResponse
+  realmId: string
+  variant?: 'admin' | 'user'
+}) {
   const fmt = (amount: number) => formatInvoiceAmount(amount, invoice.currency)
   const provider = invoice.provider
   const isExt = isExternalInvoice(provider)
   const externalUrl = getViewInProviderUrl(invoice)
+  const showCreditNotes = variant !== 'user'
+  const [recordRefundOpen, setRecordRefundOpen] = useState(false)
+  const { hasPermission } = usePermission()
+  const canRecordRefund =
+    provider === 'manual' &&
+    invoice.status === 'paid' &&
+    invoice.amountRemaining > 0 &&
+    hasPermission('billing.manage')
 
   return (
     <div className="space-y-6">
@@ -241,9 +275,37 @@ function InvoiceContent({ invoice, realmId }: { invoice: InvoiceDetailResponse; 
       </div>
 
       <AmountBreakdown invoice={invoice} fmt={fmt} />
+
+      {(canRecordRefund || shouldRenderRefundDimension(provider, invoice.amountRefunded)) && (
+        <div className="space-y-4">
+          {canRecordRefund && (
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setRecordRefundOpen(true)}
+                data-testid="record-refund-button"
+              >
+                + {m['billing.credit_note_record_refund_button']()}
+              </Button>
+            </div>
+          )}
+          <InvoiceRefundSummary invoice={invoice} />
+          <CreditNoteList invoice={invoice} showCreditNotes={showCreditNotes} />
+        </div>
+      )}
+
       <AdditionalInfo invoice={invoice} />
       <Attribution invoice={invoice} realmId={realmId} />
       <StatusHistory events={invoice.history} />
+
+      <RecordRefundDialog
+        key={`${invoice.id}-${recordRefundOpen ? 'open' : 'closed'}`}
+        open={recordRefundOpen}
+        onOpenChange={setRecordRefundOpen}
+        realmId={realmId}
+        invoice={invoice}
+      />
     </div>
   )
 }

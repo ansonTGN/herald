@@ -2,6 +2,7 @@
 // Authentication handlers (login, register, password reset, TOTP, email verification)
 
 pub mod change_email;
+pub mod consent_gate;
 pub mod login;
 pub mod logout;
 pub mod register;

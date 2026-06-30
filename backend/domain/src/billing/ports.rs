@@ -91,6 +91,15 @@ pub trait BillingRepository: Send + Sync {
         entitlement_key: &str,
     ) -> impl Future<Output = Result<u64, CoreError>> + Send;
 
+    /// List a user's in-effect subscriptions in a realm (statuses that grant
+    /// access: active, trialing, scheduled_cancel, dispute). Used by account
+    /// self-delete to cancel in-effect subscriptions post-transaction.
+    fn list_active_subscriptions_by_user(
+        &self,
+        realm_id: &str,
+        user_id: Uuid,
+    ) -> impl Future<Output = Result<Vec<Subscription>, CoreError>> + Send;
+
     // ===== Subscription History =====
     /// Save a subscription history event
     fn save_history_event(

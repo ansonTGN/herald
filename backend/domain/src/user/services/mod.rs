@@ -6,6 +6,8 @@
 
 pub mod admin;
 pub mod basic;
+pub mod self_delete;
 
 // Re-export basic user services for backward compatibility
 pub use basic::UserServiceImpl;
+pub use self_delete::SelfDeleteService;

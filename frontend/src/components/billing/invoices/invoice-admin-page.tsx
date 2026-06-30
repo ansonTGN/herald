@@ -37,6 +37,7 @@ import {
 import { DataTable } from '@/components/shared/data-table'
 import { PageHeader } from '@/components/shared'
 import { InvoiceStatusBadge } from '@/components/billing/invoices/invoice-status-badge'
+import { RefundAmountChip } from '@/components/billing/invoices/refund-amount-chip'
 import { ListPagination } from '@/components/shared'
 import type { InvoiceResponse } from '@/lib/api-generated'
 import { formatDate } from '@/lib/date-utils'
@@ -157,6 +158,11 @@ function createInvoiceColumns(
         const currency = row.original.currency
         return <span className="font-mono text-sm">{formatInvoiceAmount(total, currency)}</span>
       },
+    },
+    {
+      accessorKey: 'amountRefunded',
+      header: m['billing.invoice_refunded_column'](),
+      cell: ({ row }) => <RefundAmountChip invoice={row.original} />,
     },
     {
       accessorKey: 'dueDate',

@@ -327,7 +327,7 @@ impl AsyncTestContext for SchemaTestContext {
             pool: pool_with_schema.clone(),
             db: Arc::new(sea_conn.clone()),
             redis_manager: redis_manager.clone(), // NEW: 使用 RedisConnectionManager
-            billing_repository,
+            billing_repository: billing_repository.clone(),
             invoice_repository: Arc::new(
                 herald_core::infrastructure::billing::PostgresInvoiceRepository::new(
                     sea_conn.clone(),
@@ -348,7 +348,7 @@ impl AsyncTestContext for SchemaTestContext {
             public_base_url: "http://localhost:8080".to_string(),
             permission_checker: permission_checker.clone(),
             app_env: "test".to_string(),
-            user_repository,
+            user_repository: user_repository.clone(),
             api_key_cache,
             api_key_repo,
             startup_time: std::time::Instant::now(),
@@ -377,6 +377,54 @@ impl AsyncTestContext for SchemaTestContext {
             realm_config_repository: Arc::new(PostgresRealmConfigRepository::new(Arc::new(
                 sea_conn.clone(),
             ))),
+            legal_repository: Arc::new(
+                herald_core::infrastructure::legal::PostgresLegalAgreementRepository::new(
+                    sea_conn.clone(),
+                ),
+            ),
+            user_consent_repository: Arc::new(
+                herald_core::infrastructure::legal::PostgresUserConsentRepository::new(
+                    sea_conn.clone(),
+                ),
+            ),
+            legal_service: Arc::new(herald_core::domain::legal::LegalService::new(
+                Arc::new(
+                    herald_core::infrastructure::legal::PostgresLegalAgreementRepository::new(
+                        sea_conn.clone(),
+                    ),
+                ),
+                Arc::new(
+                    herald_core::infrastructure::legal::PostgresUserConsentRepository::new(
+                        sea_conn.clone(),
+                    ),
+                ),
+                Arc::new(
+                    herald_core::infrastructure::audit::PostgresAuditEventRepository::new(
+                        sea_conn.clone(),
+                    ),
+                ),
+            )),
+            self_delete_service: Arc::new(
+                herald_core::domain::user::services::SelfDeleteService::new(
+                    user_repository.clone(),
+                    Arc::new(
+                        herald_core::infrastructure::user_totp::PostgresUserTotpRepository::new(
+                            Arc::new(sea_conn.clone()),
+                        ),
+                    ),
+                    billing_repository.clone(),
+                    Arc::new(
+                        herald_core::infrastructure::authentication::RedisSessionRepository::new(
+                            redis_manager.clone(),
+                        ),
+                    ),
+                    Arc::new(
+                        herald_core::infrastructure::audit::PostgresAuditEventRepository::new(
+                            sea_conn.clone(),
+                        ),
+                    ),
+                ),
+            ),
         });
 
         // 13. 初始化 Redis Functions（只运行一次）

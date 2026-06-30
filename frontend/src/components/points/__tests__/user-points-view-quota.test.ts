@@ -3,10 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import type {
-  QuotaWindowViewDto,
-  WalletByBucketResponse,
-} from '@/lib/api-generated'
+import type { QuotaWindowViewDto, WalletByBucketResponse } from '@/lib/api-generated'
 import { deriveUserPointsView } from '@/components/points/user-points-view'
 
 /**

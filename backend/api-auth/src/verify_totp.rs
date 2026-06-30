@@ -23,10 +23,13 @@ use herald_core::domain::security_constants::{
     OAUTH_STATE_TTL_SECONDS, TOTP_LOCKOUT_SECONDS, TOTP_MAX_FAILURES, TOTP_VERIFY_IP_RATE_LIMIT,
     TOTP_VERIFY_USER_RATE_LIMIT,
 };
+use herald_core::domain::user::ports::UserRepository;
 use herald_core::domain::user_totp::{
     TotpVerificationResultWithBackup, UserTotpRepository, UserTotpService,
 };
 use herald_core::infrastructure::user_totp::PostgresUserTotpRepository;
+
+use crate::consent_gate::AuthConsentAgreement;
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +39,9 @@ pub struct VerifyTotpRequest {
     pub code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub backup_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(required = false)]
+    pub agreements: Option<Vec<AuthConsentAgreement>>,
 }
 
 impl Validate for VerifyTotpRequest {
@@ -89,6 +95,10 @@ pub struct VerifyTotpResponse {
     pub expires_in_seconds: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub redirect_to: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_required: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agreements: Option<Vec<herald_core::domain::legal::LegalAgreementSummary>>,
 }
 
 /// Temporary session data for TOTP verification
@@ -328,6 +338,31 @@ pub async fn handle_verify_totp(
     updated_config.update_last_used();
     totp_repo.update_config(updated_config).await?;
 
+    let user = state.user_repository.get_user_by_id(user_id).await?;
+    if let Some(summaries) = crate::consent_gate::evaluate_login_consent_gate(
+        &state,
+        &user,
+        &temp_session.realm_id,
+        req.agreements.as_deref(),
+        Some(client_ip.clone()),
+        None,
+    )
+    .await
+    {
+        let response = Json(VerifyTotpResponse {
+            message: "consent required".to_string(),
+            user_id: temp_session.user_id,
+            token: String::new(),
+            expires_in_seconds: 0,
+            redirect_to: None,
+            consent_required: Some(true),
+            agreements: Some(summaries),
+        })
+        .into_response();
+
+        return Ok(response);
+    }
+
     // 8. Check for OAuth context
     let has_oauth = temp_session.oauth_client_id.is_some()
         && temp_session.redirect_uri.is_some()
@@ -425,6 +460,8 @@ pub async fn handle_verify_totp(
             token: String::new(),
             expires_in_seconds: 0,
             redirect_to: Some(redirect_to),
+            consent_required: None,
+            agreements: None,
         })
         .into_response();
 
@@ -459,6 +496,8 @@ pub async fn handle_verify_totp(
             token,
             expires_in_seconds: session_ttl as i64,
             redirect_to: None,
+            consent_required: None,
+            agreements: None,
         }),
     )
         .into_response();

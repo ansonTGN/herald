@@ -199,6 +199,68 @@ interface CalculatedTotals {
   total: number
 }
 
+/**
+ * Gate rendering of refund-related sections (breakdown, Credit Note list,
+ * refund chips/pills). Creem never renders refund dimensions; other providers
+ * only render when there is a non-zero refund amount.
+ */
+export function shouldRenderRefundDimension(provider: string, amountRefunded: number): boolean {
+  return amountRefunded > 0 && (provider === 'stripe' || provider === 'manual')
+}
+
+/**
+ * Detect cumulative refund exceeding invoice total. This is an abnormal state
+ * that should only occur on the Stripe side (Manual creation rejects over-remaining).
+ */
+export function isRefundOverTotal(amountRefunded: number, total: number): boolean {
+  return amountRefunded > total
+}
+
+/**
+ * Source-aware color tokens for Credit Note badges and track top-bars.
+ *
+ * Aligns with the existing external-provider badge color used in
+ * `invoice-admin-page.tsx` (`bg-teal-50 text-teal-700 border-teal-200`), so
+ * Stripe (external) stays teal. Manual uses cyan to distinguish self-managed
+ * credit notes without inventing a second external-provider color.
+ */
+export function getCreditNoteSourceColorClass(source: string): {
+  badge: string
+  bar: string
+} {
+  switch (source) {
+    case 'manual':
+      return {
+        badge: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+        bar: 'border-t-cyan-500',
+      }
+    case 'stripe':
+      return {
+        badge: 'bg-teal-50 text-teal-700 border-teal-200',
+        bar: 'border-t-teal-500',
+      }
+    default:
+      return {
+        badge: 'bg-muted text-muted-foreground border-border',
+        bar: 'border-t-border',
+      }
+  }
+}
+
+/**
+ * Format a refund summary pill such as "Refunded $50.00/$100.00".
+ * The label is passed by callers (typically an i18n message factory) so this
+ * helper stays pure and presentation-only.
+ */
+export function formatRefundSummaryPill(
+  amountRefunded: number,
+  total: number,
+  currency: string,
+  label: string
+): string {
+  return `${label} ${formatInvoiceAmount(amountRefunded, currency)}/${formatInvoiceAmount(total, currency)}`
+}
+
 export function calculateTotals(
   lineItems: Pick<InvoiceLineItemFormData, 'quantity' | 'unitPrice'>[],
   modifiers: ModifierInput

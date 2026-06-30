@@ -2,10 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { PointsUsageDashboard } from '../PointsUsageDashboard'
 import type { DerivedBucketCard } from '../user-points-view'
-import type {
-  QuotaWindowViewDto,
-  WalletByBucketResponse,
-} from '@/lib/api-generated/types.gen'
+import type { QuotaWindowViewDto, WalletByBucketResponse } from '@/lib/api-generated/types.gen'
 
 /**
  * Factory for a single backend-precomputed quota window (design §4.2.2).
@@ -14,9 +11,7 @@ import type {
  * one place. The dashboard MUST consume these verbatim (no client recompute —
  * FE-T01 pins the pass-through intent one layer up).
  */
-function makeWindow(
-  overrides: Partial<QuotaWindowViewDto> & { key: string },
-): QuotaWindowViewDto {
+function makeWindow(overrides: Partial<QuotaWindowViewDto> & { key: string }): QuotaWindowViewDto {
   return {
     limit: 100,
     used: 0,
@@ -35,9 +30,7 @@ function makeWindow(
  * and does NOT recompute `spendableFromQuota + spendableFromPool` client-side.
  * Defaults reflect a healthy quota+pool bucket with one window.
  */
-function makeCard(
-  overrides: Partial<DerivedBucketCard> = {},
-): DerivedBucketCard {
+function makeCard(overrides: Partial<DerivedBucketCard> = {}): DerivedBucketCard {
   return {
     bucketId: 'bucket-a',
     name: 'Default',
@@ -85,7 +78,9 @@ describe('PointsUsageDashboard', () => {
       expect(screen.queryByTestId(`points-usage-dashboard-${BUCKET}`)).not.toBeInTheDocument()
       // Skeletons render via the Card chrome — assert at least one is present
       // so a future removal surfaces here.
-      expect(document.querySelectorAll('[class*="animate-pulse"], [class*="skeleton"]')).toBeTruthy()
+      expect(
+        document.querySelectorAll('[class*="animate-pulse"], [class*="skeleton"]')
+      ).toBeTruthy()
     })
   })
 
@@ -111,7 +106,7 @@ describe('PointsUsageDashboard', () => {
             spendableFromQuota: 0,
             spendableFromPool: 0,
           })}
-        />,
+        />
       )
 
       expect(screen.getByTestId('points-empty-state')).toBeInTheDocument()
@@ -121,7 +116,13 @@ describe('PointsUsageDashboard', () => {
   })
 
   describe('normal state (healthy quota + pool bucket)', () => {
-    const monthly = makeWindow({ key: 'monthly', limit: 100, used: 30, remaining: 70, isTightest: true })
+    const monthly = makeWindow({
+      key: 'monthly',
+      limit: 100,
+      used: 30,
+      remaining: 70,
+      isTightest: true,
+    })
     const daily = makeWindow({ key: 'daily', limit: 20, used: 5, remaining: 15, isTightest: false })
 
     it('renders each window row keyed by bucketId+winKey, with progress bars and the backend total in spendable-now', () => {
@@ -130,11 +131,7 @@ describe('PointsUsageDashboard', () => {
       // a window across reloads. spendable-now shows the BACKEND bucketTotal
       // verbatim — the dashboard must not recompute quota+pool client-side
       // (FE-T01 pins pass-through one layer up; this pins it at the render).
-      render(
-        <PointsUsageDashboard
-          card={makeCard({ quotaWindows: [monthly, daily] })}
-        />,
-      )
+      render(<PointsUsageDashboard card={makeCard({ quotaWindows: [monthly, daily] })} />)
 
       // Root testid carries the bucketId once resolved.
       expect(screen.getByTestId(`points-usage-dashboard-${BUCKET}`)).toBeInTheDocument()
@@ -162,11 +159,7 @@ describe('PointsUsageDashboard', () => {
       // must reflect the backend's authoritative numbers. Asserting via the
       // progressbar role's aria-valuenow keeps the test robust to CSS-width
       // formatting changes while still pinning the computed ratio.
-      render(
-        <PointsUsageDashboard
-          card={makeCard({ quotaWindows: [monthly] })}
-        />,
-      )
+      render(<PointsUsageDashboard card={makeCard({ quotaWindows: [monthly] })} />)
 
       const bar = screen.getByTestId(`points-window-bar-${BUCKET}-monthly`)
       expect(bar).toHaveAttribute('aria-valuenow', '70') // 70/100
@@ -191,22 +184,13 @@ describe('PointsUsageDashboard', () => {
         isTightest: false,
       })
 
-      render(
-        <PointsUsageDashboard
-          card={makeCard({ quotaWindows: [tightest, notTightest] })}
-        />,
-      )
+      render(<PointsUsageDashboard card={makeCard({ quotaWindows: [tightest, notTightest] })} />)
 
       const rows = screen.getAllByTestId(/^points-window-row-/)
       // Tightest sorts ahead of non-tightest (exhausted→tightest→limit desc).
-      expect(rows[0]).toHaveAttribute(
-        'data-testid',
-        `points-window-row-${BUCKET}-monthly`,
-      )
+      expect(rows[0]).toHaveAttribute('data-testid', `points-window-row-${BUCKET}-monthly`)
       // The tightest window carries the active-constraint badge text.
-      expect(
-        within(rows[0]).getByText('Current active constraint'),
-      ).toBeInTheDocument()
+      expect(within(rows[0]).getByText('Current active constraint')).toBeInTheDocument()
     })
   })
 
@@ -235,7 +219,7 @@ describe('PointsUsageDashboard', () => {
             spendableFromPool: 0,
             bucketTotal: 0,
           })}
-        />,
+        />
       )
 
       // Destructive alert for any exhausted window.
@@ -279,7 +263,7 @@ describe('PointsUsageDashboard', () => {
             spendableFromPool: 50,
             bucketTotal: 50, // pool keeps total > 0 despite exhausted window
           })}
-        />,
+        />
       )
 
       expect(screen.getByTestId('points-window-exhausted-alert')).toBeInTheDocument()
@@ -316,7 +300,7 @@ describe('PointsUsageDashboard', () => {
             spendableFromPool: 0,
             bucketTotal: 0,
           })}
-        />,
+        />
       )
 
       expect(screen.getByTestId('points-insufficient-alert')).toBeInTheDocument()
@@ -347,7 +331,7 @@ describe('PointsUsageDashboard', () => {
           card={makeCard({
             quotaWindows: [bigLimit, tightest, exhausted],
           })}
-        />,
+        />
       )
 
       const rows = screen.getAllByTestId(/^points-window-row-/)

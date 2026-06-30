@@ -13,6 +13,7 @@ pub struct Model {
     #[sea_orm(default_value = "ARRAY[]::UUID[]")]
     pub provider_ids: Vec<Uuid>,
     pub status: i16,
+    pub deleted_original_email_hash: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

@@ -52,9 +52,7 @@ const OTHER_USER = 'user-other'
 
 // ---------- Factory helpers ----------
 
-function makeWindow(
-  overrides: Partial<QuotaWindowViewDto> & { key: string }
-): QuotaWindowViewDto {
+function makeWindow(overrides: Partial<QuotaWindowViewDto> & { key: string }): QuotaWindowViewDto {
   return {
     limit: 100,
     used: 0,
@@ -145,9 +143,7 @@ const OTHER_USER_BUCKET: WalletByBucketResponse = makeWallet({
   bucketTotal: 9999,
   spendableFromQuota: 9999,
   spendableFromPool: 0,
-  quotaWindows: [
-    makeWindow({ key: 'monthly', remaining: 9999, isTightest: true }),
-  ],
+  quotaWindows: [makeWindow({ key: 'monthly', remaining: 9999, isTightest: true })],
 })
 
 const txnOnQuotaBucket: PointsTransactionResponse = {
@@ -199,9 +195,7 @@ function walletsAndTransactionsHandlers(opts: {
   const transactions = opts.transactions ?? []
 
   return [
-    http.get(`${API_BASE}/api/points/:realmId/wallets`, () =>
-      HttpResponse.json(walletsResponse)
-    ),
+    http.get(`${API_BASE}/api/points/:realmId/wallets`, () => HttpResponse.json(walletsResponse)),
     http.get(`${API_BASE}/api/points/:realmId/transactions`, ({ request }) => {
       const url = new URL(request.url)
       const bucketId = url.searchParams.get('bucketId')
@@ -209,9 +203,7 @@ function walletsAndTransactionsHandlers(opts: {
       // Server-side filter on bucketId so a filtered request only returns the
       // matching transaction — lets the URL-sync test assert the table content
       // narrowed, not just that the param was sent.
-      const filtered = bucketId
-        ? transactions.filter((t) => t.bucketId === bucketId)
-        : transactions
+      const filtered = bucketId ? transactions.filter((t) => t.bucketId === bucketId) : transactions
       return HttpResponse.json({
         items: filtered,
         page: 0,
@@ -222,10 +214,12 @@ function walletsAndTransactionsHandlers(opts: {
   ]
 }
 
-function renderPage(overrides: {
-  bucketId?: string
-  onBucketIdChange?: (id: string | undefined) => void
-} = {}) {
+function renderPage(
+  overrides: {
+    bucketId?: string
+    onBucketIdChange?: (id: string | undefined) => void
+  } = {}
+) {
   return renderWithProviders(
     <UserPointsPage
       realmId={REALM_ID}
@@ -258,9 +252,7 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       renderPage()
 
       // One dashboard per current-user bucket (other-user row dropped).
-      const quotaDashboard = await screen.findByTestId(
-        'points-usage-dashboard-bucket-quota'
-      )
+      const quotaDashboard = await screen.findByTestId('points-usage-dashboard-bucket-quota')
       expect(screen.getByTestId('points-usage-dashboard-bucket-pool')).toBeInTheDocument()
       // The other-user bucket shares bucketId 'bucket-quota' but must NOT
       // produce a second dashboard — userId narrowing happens before render.
@@ -273,13 +265,9 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       // spendable-now renders the BACKEND bucketTotal verbatim per bucket.
       // (FE-T03 pinned this at the dashboard layer; here we pin it end-to-end
       // through the query → derive → render pipeline.)
-      expect(within(quotaDashboard).getByTestId('points-spendable-now')).toHaveTextContent(
-        '120'
-      )
+      expect(within(quotaDashboard).getByTestId('points-spendable-now')).toHaveTextContent('120')
       const poolDashboard = screen.getByTestId('points-usage-dashboard-bucket-pool')
-      expect(within(poolDashboard).getByTestId('points-spendable-now')).toHaveTextContent(
-        '80'
-      )
+      expect(within(poolDashboard).getByTestId('points-spendable-now')).toHaveTextContent('80')
     })
 
     it('GIVEN a quota bucket WHEN rendered THEN the dashboard surfaces its window row AND the pool card big number is spendableFromPool (not bucketTotal)', async () => {
@@ -384,9 +372,7 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       await screen.findByTestId('transaction-history-table')
 
       // Bucket column reflects wallet-derived names, not bucket ids.
-      expect(screen.getByTestId('transaction-bucket-0')).toHaveTextContent(
-        'Subscription Bucket'
-      )
+      expect(screen.getByTestId('transaction-bucket-0')).toHaveTextContent('Subscription Bucket')
 
       // Bucket Select options come from wallet rows.
       const bucketSelect = screen.getByRole('combobox', { name: /^bucket$/i })
@@ -423,9 +409,7 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       await waitFor(() => expect(observedBucketId).toBe('bucket-quota'))
 
       // Only the quota-bucket transaction is present.
-      expect(screen.getByTestId('transaction-bucket-0')).toHaveTextContent(
-        'Subscription Bucket'
-      )
+      expect(screen.getByTestId('transaction-bucket-0')).toHaveTextContent('Subscription Bucket')
       expect(screen.queryByTestId('transaction-bucket-1')).not.toBeInTheDocument()
     })
   })
@@ -483,19 +467,13 @@ describe('UserPointsPage — quota dashboard + pool cards (MSW integration)', ()
       // the pool card skeleton. Because MSW resolves on the next microtask,
       // we assert the loading testids appear in the initial DOM snapshot
       // captured synchronously after render (before any await).
-      const loadingDashboards = container.querySelectorAll(
-        '[data-testid="points-usage-dashboard"]'
-      )
-      const loadingPoolCards = container.querySelectorAll(
-        '[data-testid="points-balance-card"]'
-      )
+      const loadingDashboards = container.querySelectorAll('[data-testid="points-usage-dashboard"]')
+      const loadingPoolCards = container.querySelectorAll('[data-testid="points-balance-card"]')
       expect(loadingDashboards.length).toBeGreaterThanOrEqual(1)
       expect(loadingPoolCards.length).toBeGreaterThanOrEqual(1)
 
       // Once the (empty) response settles, the empty state takes over.
-      await waitFor(() =>
-        expect(screen.getByTestId('points-balance-empty')).toBeInTheDocument()
-      )
+      await waitFor(() => expect(screen.getByTestId('points-balance-empty')).toBeInTheDocument())
     })
   })
 })

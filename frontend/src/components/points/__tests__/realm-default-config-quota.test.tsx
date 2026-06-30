@@ -179,18 +179,21 @@ describe('Realm default-config — free-periodic quota editor integration', () =
     // internal mutation function — testing-guide rule).
     const captured: { body: unknown } = { body: null }
     server.use(
-      http.put('http://localhost:3000/api/points/test-realm/default-config', async ({ request }) => {
-        captured.body = await request.json()
-        return HttpResponse.json({
-          realmId: 'test-realm',
-          registrationBonusPoints: 1000,
-          freePeriodicPointsAmount: 50,
-          freePeriodicGrantPeriodType: 'daily',
-          freePeriodicValidityDays: 1,
-          freePeriodicQuotaWindows: SEEDED_WINDOWS,
-          updatedAt: '2026-03-24T00:00:00Z',
-        })
-      })
+      http.put(
+        'http://localhost:3000/api/points/test-realm/default-config',
+        async ({ request }) => {
+          captured.body = await request.json()
+          return HttpResponse.json({
+            realmId: 'test-realm',
+            registrationBonusPoints: 1000,
+            freePeriodicPointsAmount: 50,
+            freePeriodicGrantPeriodType: 'daily',
+            freePeriodicValidityDays: 1,
+            freePeriodicQuotaWindows: SEEDED_WINDOWS,
+            updatedAt: '2026-03-24T00:00:00Z',
+          })
+        }
+      )
     )
 
     renderPage()
@@ -283,18 +286,21 @@ describe('Realm default-config — free-periodic quota editor integration', () =
     // both are present in one PUT.
     const captured: { body: unknown } = { body: null }
     server.use(
-      http.put('http://localhost:3000/api/points/test-realm/default-config', async ({ request }) => {
-        captured.body = await request.json()
-        return HttpResponse.json({
-          realmId: 'test-realm',
-          registrationBonusPoints: 2000,
-          freePeriodicPointsAmount: 50,
-          freePeriodicGrantPeriodType: 'weekly',
-          freePeriodicValidityDays: 7,
-          freePeriodicQuotaWindows: SEEDED_WINDOWS,
-          updatedAt: '2026-03-24T00:00:00Z',
-        })
-      })
+      http.put(
+        'http://localhost:3000/api/points/test-realm/default-config',
+        async ({ request }) => {
+          captured.body = await request.json()
+          return HttpResponse.json({
+            realmId: 'test-realm',
+            registrationBonusPoints: 2000,
+            freePeriodicPointsAmount: 50,
+            freePeriodicGrantPeriodType: 'weekly',
+            freePeriodicValidityDays: 7,
+            freePeriodicQuotaWindows: SEEDED_WINDOWS,
+            updatedAt: '2026-03-24T00:00:00Z',
+          })
+        }
+      )
     )
 
     renderPage()

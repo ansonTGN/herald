@@ -7,7 +7,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { InvoiceDetailDialog } from '../invoice-detail-dialog'
-import type { InvoiceDetailResponse } from '@/lib/api-generated'
+import type { InvoiceDetailResponse, CreditNoteResponse } from '@/lib/api-generated'
 import { server } from '@/test/mocks/server'
 
 // ==================== Mocks ====================
@@ -204,6 +204,10 @@ function makeInvoiceDetail(overrides: Partial<InvoiceDetailResponse> = {}): Invo
     voidReason: null,
     voidedAt: null,
     realmId: REALM_ID,
+    amountRefunded: 0,
+    amountRemaining: 0,
+    creditNotes: [],
+    provider: 'manual',
     ...overrides,
   }
 }
@@ -212,12 +216,17 @@ const defaultOnOpenChange = vi.fn()
 
 function setupDetailDialog(
   invoiceOverrides: Partial<InvoiceDetailResponse> = {},
-  props: { open?: boolean; invoiceId?: string | null } = {}
+  props: { open?: boolean; invoiceId?: string | null; variant?: 'admin' | 'user' } = {}
 ) {
   const invoice = makeInvoiceDetail(invoiceOverrides)
+  const variant = props.variant ?? 'admin'
+  const endpoint =
+    variant === 'user'
+      ? `${BASE_URL}/api/bill/${REALM_ID}/my/invoices/${invoice.id}`
+      : `${BASE_URL}/api/bill/${REALM_ID}/invoices/${invoice.id}`
 
   server.use(
-    http.get(`${BASE_URL}/api/bill/${REALM_ID}/invoices/${invoice.id}`, () => {
+    http.get(endpoint, () => {
       return HttpResponse.json(invoice)
     })
   )
@@ -228,8 +237,21 @@ function setupDetailDialog(
       onOpenChange={defaultOnOpenChange}
       realmId={REALM_ID}
       invoiceId={props.invoiceId ?? invoice.id}
+      variant={variant}
     />
   )
+}
+
+function makeCreditNote(overrides: Partial<CreditNoteResponse> = {}): CreditNoteResponse {
+  return {
+    id: 'cn-1',
+    amount: 5000,
+    currency: 'CNY',
+    source: 'manual',
+    status: 'active',
+    createdAt: '2025-06-01T00:00:00Z',
+    ...overrides,
+  }
 }
 
 // ==================== Tests ====================
@@ -461,6 +483,150 @@ describe('InvoiceDetailDialog', () => {
       await waitFor(() => {
         expect(screen.getByTestId('invoice-seller-info')).toBeInTheDocument()
       })
+    })
+  })
+
+  // ==================== Refund Summary & Credit Note List Rendering Gates ====================
+
+  describe('refund summary and credit note list rendering gates', () => {
+    // The refund dimension only makes sense for providers where Herald keeps
+    // refund evidence (manual / stripe). Creem acts as Merchant of Record and
+    // stores refunds outside Herald, so the breakdown/list must be omitted.
+    const waitForInvoiceLoaded = () =>
+      waitFor(() => {
+        expect(screen.getByTestId('invoice-line-items-section')).toBeInTheDocument()
+      })
+
+    it.each([
+      { provider: 'stripe', amountRefunded: 5000, amountRemaining: 16000, label: 'stripe' },
+      { provider: 'manual', amountRefunded: 3000, amountRemaining: 18000, label: 'manual' },
+    ])(
+      'renders refunded/remaining breakdown when provider is $label with refund',
+      async ({ provider, amountRefunded, amountRemaining }) => {
+        setupDetailDialog({
+          provider,
+          amountRefunded,
+          amountRemaining,
+          total: 21000,
+        })
+
+        expect(await screen.findByTestId('invoice-refund-summary')).toBeInTheDocument()
+        expect(screen.getByTestId('invoice-refunded-amount')).toBeInTheDocument()
+        expect(screen.getByTestId('invoice-remaining-amount')).toBeInTheDocument()
+      }
+    )
+
+    it('does NOT render breakdown when provider is creem (MoR excludes refund dimension)', async () => {
+      setupDetailDialog({
+        provider: 'creem',
+        amountRefunded: 5000,
+        amountRemaining: 16000,
+      })
+
+      await waitForInvoiceLoaded()
+
+      expect(screen.queryByTestId('invoice-refund-summary')).not.toBeInTheDocument()
+    })
+
+    it('does NOT render breakdown when amountRefunded is 0', async () => {
+      setupDetailDialog({
+        provider: 'stripe',
+        amountRefunded: 0,
+        amountRemaining: 21000,
+      })
+
+      await waitForInvoiceLoaded()
+
+      expect(screen.queryByTestId('invoice-refund-summary')).not.toBeInTheDocument()
+    })
+
+    it('renders manual and stripe tracks separated by source', async () => {
+      const manualNote = makeCreditNote({ id: 'cn-manual-1', source: 'manual' })
+      const stripeNote = makeCreditNote({ id: 'cn-stripe-1', source: 'stripe' })
+
+      setupDetailDialog({
+        provider: 'manual',
+        amountRefunded: 8000,
+        amountRemaining: 13000,
+        creditNotes: [manualNote, stripeNote],
+      })
+
+      expect(await screen.findByTestId('credit-note-list')).toBeInTheDocument()
+      expect(screen.getByTestId('credit-note-list-manual')).toBeInTheDocument()
+      expect(screen.getByTestId('credit-note-list-stripe')).toBeInTheDocument()
+      expect(screen.getByTestId(`credit-note-row-${manualNote.id}`)).toBeInTheDocument()
+      expect(screen.getByTestId(`credit-note-row-${stripeNote.id}`)).toBeInTheDocument()
+    })
+
+    it('marks voided credit note row with voided testid inline (audit retention)', async () => {
+      // Voided Stripe credit notes remain visible as audit evidence rather than
+      // being removed from the list; the testid is the stable contract.
+      const voidedNote = makeCreditNote({
+        id: 'cn-voided-1',
+        source: 'stripe',
+        status: 'voided',
+      })
+
+      setupDetailDialog({
+        provider: 'stripe',
+        amountRefunded: 5000,
+        amountRemaining: 16000,
+        creditNotes: [voidedNote],
+      })
+
+      expect(await screen.findByTestId(`credit-note-voided-${voidedNote.id}`)).toBeInTheDocument()
+    })
+
+    it('renders over-total alert when amountRefunded exceeds total (stripe anomaly)', async () => {
+      // Cumulative refunds exceeding the total can only happen as a Stripe-side
+      // anomaly; manual creation rejects over-remaining refunds upfront.
+      setupDetailDialog({
+        provider: 'stripe',
+        amountRefunded: 25000,
+        total: 21000,
+        amountRemaining: 0,
+      })
+
+      expect(await screen.findByTestId('invoice-refund-over-total-alert')).toBeInTheDocument()
+    })
+
+    it('does NOT render over-total alert when within total', async () => {
+      setupDetailDialog({
+        provider: 'stripe',
+        amountRefunded: 5000,
+        total: 21000,
+        amountRemaining: 16000,
+      })
+
+      await waitForInvoiceLoaded()
+      expect(screen.getByTestId('invoice-refund-summary')).toBeInTheDocument()
+
+      expect(screen.queryByTestId('invoice-refund-over-total-alert')).not.toBeInTheDocument()
+    })
+
+    it('hides credit note list and note ids for user role (prop-driven trimming)', async () => {
+      // Regular users should not see internal credit note numbers, operators,
+      // or the record-refund entry point; the Dialog hides them via prop.
+      const manualNote = makeCreditNote({ id: 'cn-user-1', source: 'manual' })
+      const stripeNote = makeCreditNote({ id: 'cn-user-stripe-1', source: 'stripe' })
+
+      setupDetailDialog(
+        {
+          provider: 'manual',
+          amountRefunded: 5000,
+          amountRemaining: 16000,
+          creditNotes: [manualNote, stripeNote],
+        },
+        { variant: 'user' }
+      )
+
+      await waitForInvoiceLoaded()
+      // Users still see the high-level refund breakdown per the user detail spec.
+      expect(screen.getByTestId('invoice-refund-summary')).toBeInTheDocument()
+
+      expect(screen.queryByTestId('credit-note-list')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('credit-note-list-manual')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('credit-note-list-stripe')).not.toBeInTheDocument()
     })
   })
 

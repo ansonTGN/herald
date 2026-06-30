@@ -176,7 +176,12 @@ pub async fn clone_schema_from_template(pool: &PgPool, template_schema: &str, ne
     for table in tables {
         let should_copy_data = matches!(
             table.as_str(),
-            "realm" | "client_app" | "roles" | "role_permissions" | "permissions"
+            "realm"
+                | "client_app"
+                | "roles"
+                | "role_permissions"
+                | "permissions"
+                | "legal_agreement_version"
         );
 
         let create_table_sql = format!(

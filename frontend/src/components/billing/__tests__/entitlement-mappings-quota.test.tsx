@@ -168,7 +168,10 @@ describe('EntitlementMappingsPage — quota-editor integration', () => {
     const body = captured.body as {
       paymentProvider: string
       externalProductId: string
-      updates: Array<{ mappingId: string; quotaWindows?: Array<{ windowSeconds: number; limit: number }> | null }>
+      updates: Array<{
+        mappingId: string
+        quotaWindows?: Array<{ windowSeconds: number; limit: number }> | null
+      }>
     }
     expect(body.paymentProvider).toBe('stripe')
     expect(body.externalProductId).toBe('prod_pro')

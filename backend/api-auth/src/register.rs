@@ -213,6 +213,75 @@ pub async fn register(
         "Registration successful"
     );
 
+    // Record consent to the current effective ToS + Privacy at registration
+    // time ("register = consent", design §4.1). Best-effort: a missing
+    // effective version (seed anomaly) or any repository error is logged and
+    // does NOT block registration — registration is the primary path and a
+    // consent gap must not prevent account creation. The user will be asked
+    // to re-consent at next login if the record is missing/stale.
+    {
+        let mut items = Vec::new();
+        for agreement_type in [
+            herald_core::domain::legal::AgreementType::TermsOfService,
+            herald_core::domain::legal::AgreementType::PrivacyPolicy,
+        ] {
+            match state
+                .legal_service
+                .current_effective(&realm_id, agreement_type.clone())
+                .await
+            {
+                Ok(Some(version)) => {
+                    items.push((agreement_type, version.id));
+                }
+                Ok(None) => {
+                    tracing::warn!(
+                        realm_id = %realm_id,
+                        agreement_type = %agreement_type.as_ref(),
+                        user_id = %user.id,
+                        "No effective agreement version deployed (seed missing); skipping register-consent for this type"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        realm_id = %realm_id,
+                        agreement_type = %agreement_type.as_ref(),
+                        user_id = %user.id,
+                        error = %e,
+                        "current_effective lookup failed; skipping register-consent for this type"
+                    );
+                }
+            }
+        }
+
+        if !items.is_empty() {
+            let actor_meta = herald_core::domain::legal::AuditActorMeta {
+                actor_id: user.id.to_string(),
+                actor_type: herald_core::domain::audit::ActorType::User,
+                actor_name: Some(email.clone()),
+                ip_address: Some(ip.clone()),
+                user_agent: None,
+                trace_id: None,
+            };
+            if let Err(e) = state
+                .legal_service
+                .record_consent(
+                    user.id,
+                    &realm_id,
+                    items,
+                    herald_core::domain::legal::ConsentSource::Register,
+                    actor_meta,
+                )
+                .await
+            {
+                tracing::warn!(
+                    realm_id = %realm_id,
+                    user_id = %user.id,
+                    error = %e,
+                    "record_consent(Register) failed; registration proceeds (user will re-consent at login)"
+                );
+            }
+        }
+    }
     let response = RegisterResponse {
         message: if verification_required {
             "Registration successful. Please check your email to verify your account.".to_string()

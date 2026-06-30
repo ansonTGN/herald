@@ -1,10 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import {
-  MultiWindowQuotaEditor,
-  type MultiWindowQuotaEditorProps,
-} from '../MultiWindowQuotaEditor'
+import { MultiWindowQuotaEditor, type MultiWindowQuotaEditorProps } from '../MultiWindowQuotaEditor'
 import type { QuotaWindowInputDto } from '@/lib/api-generated/types.gen'
 
 /**
@@ -18,7 +15,9 @@ function windowSeconds(windowSeconds: number, limit: number): QuotaWindowInputDt
 }
 
 /** Editor is a controlled, page-agnostic component; default props for the suite. */
-function defaultProps(overrides: Partial<MultiWindowQuotaEditorProps> = {}): MultiWindowQuotaEditorProps {
+function defaultProps(
+  overrides: Partial<MultiWindowQuotaEditorProps> = {}
+): MultiWindowQuotaEditorProps {
   return {
     value: [],
     onChange: vi.fn(),
@@ -42,7 +41,7 @@ describe('MultiWindowQuotaEditor', () => {
           {...defaultProps({
             value: [windowSeconds(3600, 100), windowSeconds(86400, 50)],
           })}
-        />,
+        />
       )
 
       // Each row stamps the full set of index-suffixed testids downstream
@@ -81,7 +80,7 @@ describe('MultiWindowQuotaEditor', () => {
             value: [windowSeconds(7200, 10)],
             onChange,
           })}
-        />,
+        />
       )
 
       await user.click(screen.getByTestId('quota-window-add-button'))
@@ -104,14 +103,10 @@ describe('MultiWindowQuotaEditor', () => {
       render(
         <MultiWindowQuotaEditor
           {...defaultProps({
-            value: [
-              windowSeconds(3600, 1),
-              windowSeconds(7200, 2),
-              windowSeconds(10800, 3),
-            ],
+            value: [windowSeconds(3600, 1), windowSeconds(7200, 2), windowSeconds(10800, 3)],
             onChange,
           })}
-        />,
+        />
       )
 
       await user.click(screen.getByTestId('quota-window-delete-row-1'))
@@ -135,7 +130,7 @@ describe('MultiWindowQuotaEditor', () => {
             value: [windowSeconds(3600, 0)],
             onChange,
           })}
-        />,
+        />
       )
 
       // Typing "5" in the length box means "5 of the current unit" (hours
@@ -158,7 +153,7 @@ describe('MultiWindowQuotaEditor', () => {
             value: [windowSeconds(86400, 0)],
             onChange,
           })}
-        />,
+        />
       )
 
       // Open the Select and pick "hours": the absolute window length (86400s)
@@ -177,9 +172,7 @@ describe('MultiWindowQuotaEditor', () => {
     it('emits limit as a non-negative integer', () => {
       const onChange = vi.fn()
       render(
-        <MultiWindowQuotaEditor
-          {...defaultProps({ value: [windowSeconds(3600, 5)], onChange })}
-        />,
+        <MultiWindowQuotaEditor {...defaultProps({ value: [windowSeconds(3600, 5)], onChange })} />
       )
 
       fireEvent.change(screen.getByTestId('quota-window-limit-row-0'), {
@@ -205,7 +198,7 @@ describe('MultiWindowQuotaEditor', () => {
             value: [windowSeconds(0, 0)],
             error: { 0: { windowSeconds: 'Window length must be positive' } },
           })}
-        />,
+        />
       )
 
       const lengthInput = screen.getByTestId('quota-window-length-row-0')
@@ -223,7 +216,7 @@ describe('MultiWindowQuotaEditor', () => {
             value: [windowSeconds(3600, -1)],
             error: { 0: { limit: 'Limit must be at least 0' } },
           })}
-        />,
+        />
       )
 
       const limitInput = screen.getByTestId('quota-window-limit-row-0')
@@ -232,18 +225,20 @@ describe('MultiWindowQuotaEditor', () => {
     })
 
     it('does not mark inputs invalid when no error is supplied for that row', () => {
-      render(
-        <MultiWindowQuotaEditor
-          {...defaultProps({ value: [windowSeconds(3600, 5)] })}
-        />,
-      )
+      render(<MultiWindowQuotaEditor {...defaultProps({ value: [windowSeconds(3600, 5)] })} />)
 
       // The Input primitive always serializes aria-invalid (as "false" when
       // valid); what matters is that no per-row error message is surfaced to
       // the operator and the inputs read as valid. (The impact-alert `Alert`
       // banner is always present and is unrelated to per-row validation.)
-      expect(screen.getByTestId('quota-window-length-row-0')).toHaveAttribute('aria-invalid', 'false')
-      expect(screen.getByTestId('quota-window-limit-row-0')).toHaveAttribute('aria-invalid', 'false')
+      expect(screen.getByTestId('quota-window-length-row-0')).toHaveAttribute(
+        'aria-invalid',
+        'false'
+      )
+      expect(screen.getByTestId('quota-window-limit-row-0')).toHaveAttribute(
+        'aria-invalid',
+        'false'
+      )
       expect(screen.queryByText('Window length must be positive')).not.toBeInTheDocument()
       expect(screen.queryByText('Limit must be at least 0')).not.toBeInTheDocument()
     })
@@ -272,11 +267,7 @@ describe('MultiWindowQuotaEditor', () => {
     it('clicking the disabled add button does not call onChange (no 9th window)', async () => {
       const onChange = vi.fn()
       const user = userEvent.setup()
-      render(
-        <MultiWindowQuotaEditor
-          {...defaultProps({ value: eightWindows(), onChange })}
-        />,
-      )
+      render(<MultiWindowQuotaEditor {...defaultProps({ value: eightWindows(), onChange })} />)
 
       await user.click(screen.getByTestId('quota-window-add-button'))
 
@@ -289,7 +280,7 @@ describe('MultiWindowQuotaEditor', () => {
       const eight = eightWindows()
       const onChange = vi.fn()
       const { rerender } = render(
-        <MultiWindowQuotaEditor {...defaultProps({ value: eight, onChange })} />,
+        <MultiWindowQuotaEditor {...defaultProps({ value: eight, onChange })} />
       )
       expect(screen.getByTestId('quota-window-add-button')).toBeDisabled()
 
@@ -312,7 +303,7 @@ describe('MultiWindowQuotaEditor', () => {
             value: [windowSeconds(3600, 1)],
             disabled: true,
           })}
-        />,
+        />
       )
 
       // disabled editor is used while a save mutation is in-flight; no
@@ -332,11 +323,11 @@ describe('MultiWindowQuotaEditor', () => {
             value: [],
             context: 'entitlement-mapping',
           })}
-        />,
+        />
       )
 
       // The impact alert is the only context-driven difference and is the
-          // operator's guarantee that editing here won't retroactively change
+      // operator's guarantee that editing here won't retroactively change
       // already-issued entitlements.
       const alert = screen.getByTestId('quota-window-impact-alert')
       expect(alert).toHaveTextContent(/future granted quota/i)
@@ -350,7 +341,7 @@ describe('MultiWindowQuotaEditor', () => {
             context: 'realm-default',
             testIdPrefix: 'default-quota',
           })}
-        />,
+        />
       )
 
       // Custom prefix lets a page embed two editors without testid clashes.
@@ -366,11 +357,7 @@ describe('MultiWindowQuotaEditor', () => {
     it('every emitted onChange entry is exactly {windowSeconds:number, limit:number}', async () => {
       const onChange = vi.fn()
       const user = userEvent.setup()
-      render(
-        <MultiWindowQuotaEditor
-          {...defaultProps({ value: [], onChange })}
-        />,
-      )
+      render(<MultiWindowQuotaEditor {...defaultProps({ value: [], onChange })} />)
 
       await user.click(screen.getByTestId('quota-window-add-button'))
 

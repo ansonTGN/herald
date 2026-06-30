@@ -188,7 +188,9 @@ export function MultiWindowQuotaEditor({
                     onChange={(e) => {
                       const parsed = Number.parseInt(e.target.value, 10)
                       const safeAmount = Number.isFinite(parsed) ? parsed : 0
-                      updateRow(index, { windowSeconds: Math.max(0, safeAmount) * unitFactor(unit) })
+                      updateRow(index, {
+                        windowSeconds: Math.max(0, safeAmount) * unitFactor(unit),
+                      })
                     }}
                   />
                   {lengthError && (

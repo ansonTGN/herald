@@ -38,6 +38,7 @@ pub enum UserStatus {
     Normal = 1,
     Forbidden = 2,
     Invalid = 3,
+    Deleted = 4,
 }
 
 impl From<i16> for UserStatus {
@@ -47,6 +48,7 @@ impl From<i16> for UserStatus {
             1 => UserStatus::Normal,
             2 => UserStatus::Forbidden,
             3 => UserStatus::Invalid,
+            4 => UserStatus::Deleted,
             _ => UserStatus::Invalid,
         }
     }

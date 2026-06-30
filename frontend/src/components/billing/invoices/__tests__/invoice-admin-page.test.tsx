@@ -9,6 +9,7 @@ import { http, HttpResponse } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { InvoiceAdminPage } from '../invoice-admin-page'
 import type { InvoiceResponse, InvoiceListResponse } from '@/lib/api-generated'
+import { getInvoiceStatusLabel } from '@/lib/invoice-utils'
 import { server } from '@/test/mocks/server'
 
 // TanStack Router's <Link> requires a router context; in component tests we
@@ -63,9 +64,11 @@ function makeInvoice(overrides: Partial<InvoiceResponse> = {}): InvoiceResponse 
     accountId: 'acc-1',
     billingName: 'Test Buyer',
     source: 'admin_manual',
+    provider: 'manual',
     status: 'draft',
     total: 9900,
     currency: 'CNY',
+    amountRefunded: 0,
     dueDate: '2025-06-01T00:00:00Z',
     createdAt: '2025-05-01T00:00:00Z',
     ...overrides,
@@ -610,6 +613,115 @@ describe('InvoiceAdminPage', () => {
       } else {
         expect(badge).not.toBeInTheDocument()
       }
+    })
+  })
+
+  // ==================== Refunded Column Refund Chip ====================
+  //
+  // Business contract: the Refunded column only renders a source-colored chip
+  // when the invoice has a refund dimension (stripe/manual with amountRefunded
+  // > 0). Creem is Merchant of Record and does not maintain invoice-level
+  // refund vouchers in Herald, so its cell falls back to an em dash placeholder
+  // to preserve column alignment. amountRefunded=0 means there is nothing to
+  // show, so the chip is also omitted.
+  describe('refunded column refund chip', () => {
+    it.each([
+      {
+        name: 'stripe invoice with refund shows chip',
+        invoice: makeInvoice({
+          id: 'inv-stripe-refund',
+          invoiceNumber: 'INV-STRIPE-REFUND',
+          provider: 'stripe',
+          amountRefunded: 5000,
+          total: 9900,
+        }),
+        expectChip: true,
+      },
+      {
+        name: 'manual invoice with refund shows chip',
+        invoice: makeInvoice({
+          id: 'inv-manual-refund',
+          invoiceNumber: 'INV-MANUAL-REFUND',
+          provider: 'manual',
+          amountRefunded: 3000,
+          total: 9900,
+        }),
+        expectChip: true,
+      },
+      {
+        name: 'creem invoice hides chip (MoR excludes refund dimension)',
+        invoice: makeInvoice({
+          id: 'inv-creem-refund',
+          invoiceNumber: 'INV-CREEM-REFUND',
+          provider: 'creem',
+          amountRefunded: 5000,
+          total: 9900,
+        }),
+        expectChip: false,
+      },
+      {
+        name: 'invoice with amountRefunded=0 hides chip (no refund to show)',
+        invoice: makeInvoice({
+          id: 'inv-no-refund',
+          invoiceNumber: 'INV-NO-REFUND',
+          provider: 'stripe',
+          amountRefunded: 0,
+          total: 9900,
+        }),
+        expectChip: false,
+      },
+    ])('$name', async ({ invoice, expectChip }) => {
+      server.use(
+        http.get(`${BASE_URL}/api/bill/${REALM_ID}/invoices`, () => {
+          return HttpResponse.json(makeListResponse([invoice]))
+        }),
+        http.get(`${BASE_URL}/api/realms/${REALM_ID}/feature-availability`, () => {
+          return HttpResponse.json(makeFeatureAvailabilityEligible())
+        })
+      )
+
+      renderWithProviders(<InvoiceAdminPage realmId={REALM_ID} />)
+
+      await waitFor(() => {
+        expect(screen.getByText(invoice.invoiceNumber)).toBeInTheDocument()
+      })
+
+      const chip = screen.queryByTestId(`invoice-refund-chip-${invoice.id}`)
+      if (expectChip) {
+        expect(chip).toBeInTheDocument()
+      } else {
+        expect(chip).not.toBeInTheDocument()
+      }
+    })
+
+    // Regression guard: adding the refund chip must not alter the primary
+    // status semantics. The status badge still reflects the invoice status.
+    it('does not change status badge when refund chip is shown', async () => {
+      const invoice = makeInvoice({
+        id: 'inv-status-stable',
+        invoiceNumber: 'INV-STATUS-STABLE',
+        provider: 'stripe',
+        amountRefunded: 5000,
+        status: 'paid',
+      })
+
+      server.use(
+        http.get(`${BASE_URL}/api/bill/${REALM_ID}/invoices`, () => {
+          return HttpResponse.json(makeListResponse([invoice]))
+        }),
+        http.get(`${BASE_URL}/api/realms/${REALM_ID}/feature-availability`, () => {
+          return HttpResponse.json(makeFeatureAvailabilityEligible())
+        })
+      )
+
+      renderWithProviders(<InvoiceAdminPage realmId={REALM_ID} />)
+
+      await waitFor(() => {
+        expect(screen.getByText(invoice.invoiceNumber)).toBeInTheDocument()
+      })
+
+      expect(screen.getByTestId(`invoice-refund-chip-${invoice.id}`)).toBeInTheDocument()
+      expect(screen.getByText(getInvoiceStatusLabel('paid'))).toBeInTheDocument()
     })
   })
 })

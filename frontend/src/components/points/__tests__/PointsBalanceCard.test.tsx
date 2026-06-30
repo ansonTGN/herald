@@ -39,11 +39,7 @@ describe('PointsBalanceCard', () => {
       // PointsUsageDashboard windows, so this card must NOT show the combined
       // `bucketTotal`. Asserting spendableFromPool (5000) while bucketTotal is
       // a deliberately larger 9999 pins that the card ignores bucketTotal.
-      render(
-        <PointsBalanceCard
-          card={makeCard({ bucketTotal: 9999, spendableFromPool: 5000 })}
-        />
-      )
+      render(<PointsBalanceCard card={makeCard({ bucketTotal: 9999, spendableFromPool: 5000 })} />)
 
       const total = screen.getByTestId('points-balance-total-bucket-1')
       expect(total).toBeInTheDocument()
@@ -83,10 +79,16 @@ describe('PointsBalanceCard', () => {
       expect(screen.getByTestId('points-balance-type-bucket-1-topup')).toBeInTheDocument()
       expect(screen.getByTestId('points-balance-type-bucket-1-granted')).toBeInTheDocument()
       // A zero pool balance type is omitted — indistinguishable from "not present".
-      expect(screen.queryByTestId('points-balance-type-bucket-1-registration')).not.toBeInTheDocument()
+      expect(
+        screen.queryByTestId('points-balance-type-bucket-1-registration')
+      ).not.toBeInTheDocument()
       // subscription/freePeriodic are no longer this card's concern (quota model).
-      expect(screen.queryByTestId('points-balance-type-bucket-1-subscription')).not.toBeInTheDocument()
-      expect(screen.queryByTestId('points-balance-type-bucket-1-freePeriodic')).not.toBeInTheDocument()
+      expect(
+        screen.queryByTestId('points-balance-type-bucket-1-subscription')
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByTestId('points-balance-type-bucket-1-freePeriodic')
+      ).not.toBeInTheDocument()
     })
   })
 

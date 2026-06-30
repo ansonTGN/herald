@@ -41,13 +41,16 @@ use herald_core::admin::rbac::init_admin_realm_rbac;
 use herald_core::admin::user::init_admin_user;
 use herald_core::application::WebhookService;
 use herald_core::domain::billing;
+use herald_core::domain::legal::LegalService;
 use herald_core::domain::payment_attempt;
 use herald_core::domain::points;
+use herald_core::domain::user::services::SelfDeleteService;
 use herald_core::domain::user::services::admin::{
     AdminUserServiceImpl, PermissionManagementServiceImpl, RoleAssignmentServiceImpl,
     UserPermissionServiceImpl,
 };
 use herald_core::infrastructure::audit::PostgresAuditEventRepository;
+use herald_core::infrastructure::authentication::RedisSessionRepository;
 use herald_core::infrastructure::authorization::{
     RedisCache, RedisPermissionChecker,
     policies::{PermissionBasedBillingPolicy, PermissionBasedPointsPolicy},
@@ -57,6 +60,9 @@ use herald_core::infrastructure::billing::{
     PostgresInvoiceRepository,
 };
 use herald_core::infrastructure::client_api_keys::{ApiKeyCache, ClientApiKeyRepository};
+use herald_core::infrastructure::legal::{
+    PostgresLegalAgreementRepository, PostgresUserConsentRepository,
+};
 use herald_core::infrastructure::payment_attempt::PostgresPaymentAttemptRepository;
 use herald_core::infrastructure::points::PostgresPointsRepository;
 use herald_core::infrastructure::points::init_idempotency_function;
@@ -69,6 +75,7 @@ use herald_core::infrastructure::user::repositories::PostgresUserRepository;
 use herald_core::infrastructure::user::{
     PostgresAdminUserRepository, PostgresRolePolicyRepository, PostgresUserRoleRepository,
 };
+use herald_core::infrastructure::user_totp::PostgresUserTotpRepository;
 use herald_core::infrastructure::webhook::WebhookEventRepository;
 
 /// Herald API Server
@@ -236,6 +243,30 @@ pub async fn build_app_state_with_migrations(
     let audit_event_repository = Arc::new(PostgresAuditEventRepository::new(db.clone()));
     let realm_config_repository =
         Arc::new(PostgresRealmConfigRepository::new(Arc::new(db.clone())));
+
+    // Legal agreement + consent repositories + service
+    let legal_repository = Arc::new(PostgresLegalAgreementRepository::new(db.clone()));
+    let user_consent_repository = Arc::new(PostgresUserConsentRepository::new(db.clone()));
+    let legal_service = Arc::new(LegalService::new(
+        legal_repository.clone(),
+        user_consent_repository.clone(),
+        audit_event_repository.clone(),
+    ));
+    info!("Legal service initialized");
+
+    // Self-service account deletion pipeline (BE-D07). Owns its own session
+    // repo instance (RedisSessionRepository wraps the shared RedisConnectionManager
+    // cheaply) so it can revoke all of a user's sessions post-transaction.
+    let session_repository = Arc::new(RedisSessionRepository::new(redis_manager.clone()));
+    let user_totp_repository = Arc::new(PostgresUserTotpRepository::new(db.clone().into()));
+    let self_delete_service = Arc::new(SelfDeleteService::new(
+        user_repository.clone(),
+        user_totp_repository,
+        billing_repository.clone(),
+        session_repository,
+        audit_event_repository.clone(),
+    ));
+    info!("Self-delete service initialized");
 
     // Create entitlement mapping service with permission-based policy
     let billing_policy = PermissionBasedBillingPolicy::new(permission_checker.clone());
@@ -442,6 +473,10 @@ pub async fn build_app_state_with_migrations(
         jwt_secret,
         user_role_repository,
         realm_config_repository,
+        legal_repository,
+        user_consent_repository,
+        legal_service,
+        self_delete_service,
     });
 
     // Initialize Redis Functions using the final state's redis_manager

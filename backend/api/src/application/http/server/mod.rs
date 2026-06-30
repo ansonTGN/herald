@@ -29,8 +29,8 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::application::http::auth::identity_middleware::inject_identity;
 use crate::application::http::state::AppState;
 use crate::application::http::{
-    admin, api_keys, audit, auth, billing, client_apps, dashboard, oauth, permission, points,
-    public_config, realm, realm_config, user, users,
+    admin, api_keys, audit, auth, billing, client_apps, dashboard, legal, oauth, permission,
+    points, public_config, realm, realm_config, user, users,
 };
 
 /// Health check response schema
@@ -78,9 +78,17 @@ pub struct HealthCheckResponse {
         user::get_profile,
         user::update_profile,
         user::change_password,
+        user::delete_account::delete_account,
         realm::totp_config::handle_update_realm_totp_config,
         realm::totp_config::handle_get_realm_totp_config,
         public_config::get_public_config,
+        legal::list_agreements,
+        legal::get_agreement,
+        legal::get_consent_status,
+        legal::record_consent,
+        legal::admin_list_agreements,
+        legal::admin_publish_custom,
+        legal::admin_revert_to_default,
         health_check,
     ),
     components(
@@ -92,6 +100,7 @@ pub struct HealthCheckResponse {
             user::profile::ChangePasswordRequest,
             user::profile::UserProfile,
             user::profile::UpdateProfileRequest,
+            user::delete_account::DeleteAccountRequest,
             user::roles::UserProfileRolesResponse,
             realm_config::UpsertRealmConfigValidator,
             realm_config::BatchUpsertRealmConfigValidator,
@@ -113,6 +122,18 @@ pub struct HealthCheckResponse {
             public_config::PublicConfigResponse,
             public_config::RegistrationConfig,
             public_config::OAuthProviderInfo,
+            legal::LegalAgreementDetail,
+            legal::AgreementsResponse,
+            legal::ConsentStatusResponse,
+            legal::RecordConsentRequest,
+            legal::RecordConsentItem,
+            legal::LegalAgreementVersionSummary,
+            legal::AdminAgreementView,
+            legal::AdminAgreementsResponse,
+            legal::PublishCustomRequest,
+            legal::PublishVersionResponse,
+            herald_core::domain::legal::entities::AgreementType,
+            herald_core::domain::legal::entities::AgreementSource,
             HealthCheckResponse,
         )
     ),
@@ -130,7 +151,8 @@ pub struct HealthCheckResponse {
         (name = "system", description = "System health and monitoring APIs"),
         (name = "audit", description = "Audit log query APIs"),
         (name = "dashboard", description = "Dashboard statistics APIs"),
-        (name = "device", description = "OAuth Device Authorization Grant APIs")
+        (name = "device", description = "OAuth Device Authorization Grant APIs"),
+        (name = "legal", description = "Legal agreements and user consent APIs")
     )
 )]
 pub struct ApiDoc;
@@ -294,6 +316,17 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
             "/api/public-config/{realmId}",
             get(super::public_config::get_public_config),
         )
+        // Public legal agreement endpoints (NO inject_identity).
+        // Grouped separately from the consent nest below so the inject_identity
+        // layer never covers the public agreements routes.
+        .route(
+            "/api/legal/{realmId}/agreements",
+            get(legal::list_agreements),
+        )
+        .route(
+            "/api/legal/{realmId}/agreements/{agreementType}",
+            get(legal::get_agreement),
+        )
         // OAuth routes
         .route(
             "/api/oauth/{realmId}/authorize",
@@ -406,6 +439,34 @@ pub fn create_api_routes(state: Arc<AppState>) -> Router<AppState> {
         .nest(
             "/api/realms",
             realm_routes.layer(from_fn_with_state((*state).clone(), inject_identity)),
+        )
+        // Self-service consent endpoints (WITH inject_identity).
+        // Distinct prefix from the public agreements routes above so the
+        // identity layer only covers consent, not the public agreement reads.
+        .nest(
+            "/api/legal/{realmId}/consent",
+            Router::new()
+                .route("/status", get(legal::get_consent_status))
+                .route("/", post(legal::record_consent))
+                .layer(from_fn_with_state((*state).clone(), inject_identity)),
+        )
+        // Admin legal agreement management (WITH inject_identity). Distinct
+        // `/admin` prefix keeps the public agreements routes above unguarded.
+        // Permission enforcement (settings.view / settings.manage) happens
+        // inside each handler via `require_permission`.
+        .nest(
+            "/api/legal/admin/{realmId}",
+            Router::new()
+                .route("/agreements", get(legal::admin_list_agreements))
+                .route(
+                    "/agreements/{agreementType}",
+                    axum::routing::put(legal::admin_publish_custom),
+                )
+                .route(
+                    "/agreements/{agreementType}/custom",
+                    axum::routing::delete(legal::admin_revert_to_default),
+                )
+                .layer(from_fn_with_state((*state).clone(), inject_identity)),
         )
         // Audit log query routes
         .nest(
