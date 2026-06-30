@@ -75,6 +75,10 @@ export const QUERY_KEYS = {
   CREDIT_BUCKET: 'credit-bucket',
   CREDIT_BUCKET_OVERVIEW: 'credit-bucket-overview',
   WALLETS_BY_BUCKET: 'wallets-by-bucket',
+  LEGAL_AGREEMENTS: 'legal-agreements',
+  LEGAL_AGREEMENT: 'legal-agreement',
+  LEGAL_ADMIN_AGREEMENTS: 'legal-admin-agreements',
+  CONSENT_STATUS: 'consent-status',
 } as const
 
 /**

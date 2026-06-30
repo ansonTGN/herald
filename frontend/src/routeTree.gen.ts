@@ -14,6 +14,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as RealmIdDeviceRouteImport } from './routes/$realmId/device'
 import { Route as RealmIdUserRouteRouteImport } from './routes/$realmId/user/route'
 import { Route as RealmIdManageRouteRouteImport } from './routes/$realmId/manage/route'
+import { Route as RealmIdLegalRouteRouteImport } from './routes/$realmId/legal/route'
 import { Route as RealmIdAuthRouteRouteImport } from './routes/$realmId/auth/route'
 import { Route as RealmIdManageIndexRouteImport } from './routes/$realmId/manage/index'
 import { Route as RealmIdDeviceIndexRouteImport } from './routes/$realmId/device.index'
@@ -35,6 +36,7 @@ import { Route as RealmIdManagePermissionsRouteImport } from './routes/$realmId/
 import { Route as RealmIdManageClientAppsRouteImport } from './routes/$realmId/manage/client-apps'
 import { Route as RealmIdManageBillingRouteImport } from './routes/$realmId/manage/billing'
 import { Route as RealmIdManageApiKeysRouteImport } from './routes/$realmId/manage/api-keys'
+import { Route as RealmIdLegalAgreementTypeRouteImport } from './routes/$realmId/legal/$agreementType'
 import { Route as RealmIdDeviceUserCodeRouteImport } from './routes/$realmId/device.$userCode'
 import { Route as RealmIdAuthVerifyEmailRouteImport } from './routes/$realmId/auth/verify-email'
 import { Route as RealmIdAuthRegisterRouteImport } from './routes/$realmId/auth/register'
@@ -91,6 +93,11 @@ const RealmIdUserRouteRoute = RealmIdUserRouteRouteImport.update({
 const RealmIdManageRouteRoute = RealmIdManageRouteRouteImport.update({
   id: '/manage',
   path: '/manage',
+  getParentRoute: () => RealmIdRouteRoute,
+} as any)
+const RealmIdLegalRouteRoute = RealmIdLegalRouteRouteImport.update({
+  id: '/legal',
+  path: '/legal',
   getParentRoute: () => RealmIdRouteRoute,
 } as any)
 const RealmIdAuthRouteRoute = RealmIdAuthRouteRouteImport.update({
@@ -204,6 +211,12 @@ const RealmIdManageApiKeysRoute = RealmIdManageApiKeysRouteImport.update({
   path: '/api-keys',
   getParentRoute: () => RealmIdManageRouteRoute,
 } as any)
+const RealmIdLegalAgreementTypeRoute =
+  RealmIdLegalAgreementTypeRouteImport.update({
+    id: '/$agreementType',
+    path: '/$agreementType',
+    getParentRoute: () => RealmIdLegalRouteRoute,
+  } as any)
 const RealmIdDeviceUserCodeRoute = RealmIdDeviceUserCodeRouteImport.update({
   id: '/$userCode',
   path: '/$userCode',
@@ -394,6 +407,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$realmId': typeof RealmIdRouteRouteWithChildren
   '/$realmId/auth': typeof RealmIdAuthRouteRouteWithChildren
+  '/$realmId/legal': typeof RealmIdLegalRouteRouteWithChildren
   '/$realmId/manage': typeof RealmIdManageRouteRouteWithChildren
   '/$realmId/user': typeof RealmIdUserRouteRouteWithChildren
   '/$realmId/device': typeof RealmIdDeviceRouteWithChildren
@@ -401,6 +415,7 @@ export interface FileRoutesByFullPath {
   '/$realmId/auth/register': typeof RealmIdAuthRegisterRoute
   '/$realmId/auth/verify-email': typeof RealmIdAuthVerifyEmailRoute
   '/$realmId/device/$userCode': typeof RealmIdDeviceUserCodeRoute
+  '/$realmId/legal/$agreementType': typeof RealmIdLegalAgreementTypeRoute
   '/$realmId/manage/api-keys': typeof RealmIdManageApiKeysRouteWithChildren
   '/$realmId/manage/billing': typeof RealmIdManageBillingRouteWithChildren
   '/$realmId/manage/client-apps': typeof RealmIdManageClientAppsRouteWithChildren
@@ -454,11 +469,13 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$realmId': typeof RealmIdRouteRouteWithChildren
   '/$realmId/auth': typeof RealmIdAuthRouteRouteWithChildren
+  '/$realmId/legal': typeof RealmIdLegalRouteRouteWithChildren
   '/$realmId/user': typeof RealmIdUserRouteRouteWithChildren
   '/$realmId/auth/login': typeof RealmIdAuthLoginRoute
   '/$realmId/auth/register': typeof RealmIdAuthRegisterRoute
   '/$realmId/auth/verify-email': typeof RealmIdAuthVerifyEmailRoute
   '/$realmId/device/$userCode': typeof RealmIdDeviceUserCodeRoute
+  '/$realmId/legal/$agreementType': typeof RealmIdLegalAgreementTypeRoute
   '/$realmId/manage/billing': typeof RealmIdManageBillingRouteWithChildren
   '/$realmId/manage/permissions': typeof RealmIdManagePermissionsRoute
   '/$realmId/manage/points': typeof RealmIdManagePointsRouteWithChildren
@@ -506,6 +523,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/$realmId': typeof RealmIdRouteRouteWithChildren
   '/$realmId/auth': typeof RealmIdAuthRouteRouteWithChildren
+  '/$realmId/legal': typeof RealmIdLegalRouteRouteWithChildren
   '/$realmId/manage': typeof RealmIdManageRouteRouteWithChildren
   '/$realmId/user': typeof RealmIdUserRouteRouteWithChildren
   '/$realmId/device': typeof RealmIdDeviceRouteWithChildren
@@ -513,6 +531,7 @@ export interface FileRoutesById {
   '/$realmId/auth/register': typeof RealmIdAuthRegisterRoute
   '/$realmId/auth/verify-email': typeof RealmIdAuthVerifyEmailRoute
   '/$realmId/device/$userCode': typeof RealmIdDeviceUserCodeRoute
+  '/$realmId/legal/$agreementType': typeof RealmIdLegalAgreementTypeRoute
   '/$realmId/manage/api-keys': typeof RealmIdManageApiKeysRouteWithChildren
   '/$realmId/manage/billing': typeof RealmIdManageBillingRouteWithChildren
   '/$realmId/manage/client-apps': typeof RealmIdManageClientAppsRouteWithChildren
@@ -568,6 +587,7 @@ export interface FileRouteTypes {
     | '/'
     | '/$realmId'
     | '/$realmId/auth'
+    | '/$realmId/legal'
     | '/$realmId/manage'
     | '/$realmId/user'
     | '/$realmId/device'
@@ -575,6 +595,7 @@ export interface FileRouteTypes {
     | '/$realmId/auth/register'
     | '/$realmId/auth/verify-email'
     | '/$realmId/device/$userCode'
+    | '/$realmId/legal/$agreementType'
     | '/$realmId/manage/api-keys'
     | '/$realmId/manage/billing'
     | '/$realmId/manage/client-apps'
@@ -628,11 +649,13 @@ export interface FileRouteTypes {
     | '/'
     | '/$realmId'
     | '/$realmId/auth'
+    | '/$realmId/legal'
     | '/$realmId/user'
     | '/$realmId/auth/login'
     | '/$realmId/auth/register'
     | '/$realmId/auth/verify-email'
     | '/$realmId/device/$userCode'
+    | '/$realmId/legal/$agreementType'
     | '/$realmId/manage/billing'
     | '/$realmId/manage/permissions'
     | '/$realmId/manage/points'
@@ -679,6 +702,7 @@ export interface FileRouteTypes {
     | '/'
     | '/$realmId'
     | '/$realmId/auth'
+    | '/$realmId/legal'
     | '/$realmId/manage'
     | '/$realmId/user'
     | '/$realmId/device'
@@ -686,6 +710,7 @@ export interface FileRouteTypes {
     | '/$realmId/auth/register'
     | '/$realmId/auth/verify-email'
     | '/$realmId/device/$userCode'
+    | '/$realmId/legal/$agreementType'
     | '/$realmId/manage/api-keys'
     | '/$realmId/manage/billing'
     | '/$realmId/manage/client-apps'
@@ -776,6 +801,13 @@ declare module '@tanstack/react-router' {
       path: '/manage'
       fullPath: '/$realmId/manage'
       preLoaderRoute: typeof RealmIdManageRouteRouteImport
+      parentRoute: typeof RealmIdRouteRoute
+    }
+    '/$realmId/legal': {
+      id: '/$realmId/legal'
+      path: '/legal'
+      fullPath: '/$realmId/legal'
+      preLoaderRoute: typeof RealmIdLegalRouteRouteImport
       parentRoute: typeof RealmIdRouteRoute
     }
     '/$realmId/auth': {
@@ -924,6 +956,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/$realmId/manage/api-keys'
       preLoaderRoute: typeof RealmIdManageApiKeysRouteImport
       parentRoute: typeof RealmIdManageRouteRoute
+    }
+    '/$realmId/legal/$agreementType': {
+      id: '/$realmId/legal/$agreementType'
+      path: '/$agreementType'
+      fullPath: '/$realmId/legal/$agreementType'
+      preLoaderRoute: typeof RealmIdLegalAgreementTypeRouteImport
+      parentRoute: typeof RealmIdLegalRouteRoute
     }
     '/$realmId/device/$userCode': {
       id: '/$realmId/device/$userCode'
@@ -1167,6 +1206,17 @@ const RealmIdAuthRouteRouteChildren: RealmIdAuthRouteRouteChildren = {
 const RealmIdAuthRouteRouteWithChildren =
   RealmIdAuthRouteRoute._addFileChildren(RealmIdAuthRouteRouteChildren)
 
+interface RealmIdLegalRouteRouteChildren {
+  RealmIdLegalAgreementTypeRoute: typeof RealmIdLegalAgreementTypeRoute
+}
+
+const RealmIdLegalRouteRouteChildren: RealmIdLegalRouteRouteChildren = {
+  RealmIdLegalAgreementTypeRoute: RealmIdLegalAgreementTypeRoute,
+}
+
+const RealmIdLegalRouteRouteWithChildren =
+  RealmIdLegalRouteRoute._addFileChildren(RealmIdLegalRouteRouteChildren)
+
 interface RealmIdManageApiKeysRouteChildren {
   RealmIdManageApiKeysNewRoute: typeof RealmIdManageApiKeysNewRoute
   RealmIdManageApiKeysRevealRoute: typeof RealmIdManageApiKeysRevealRoute
@@ -1397,6 +1447,7 @@ const RealmIdDeviceRouteWithChildren = RealmIdDeviceRoute._addFileChildren(
 
 interface RealmIdRouteRouteChildren {
   RealmIdAuthRouteRoute: typeof RealmIdAuthRouteRouteWithChildren
+  RealmIdLegalRouteRoute: typeof RealmIdLegalRouteRouteWithChildren
   RealmIdManageRouteRoute: typeof RealmIdManageRouteRouteWithChildren
   RealmIdUserRouteRoute: typeof RealmIdUserRouteRouteWithChildren
   RealmIdDeviceRoute: typeof RealmIdDeviceRouteWithChildren
@@ -1406,6 +1457,7 @@ interface RealmIdRouteRouteChildren {
 
 const RealmIdRouteRouteChildren: RealmIdRouteRouteChildren = {
   RealmIdAuthRouteRoute: RealmIdAuthRouteRouteWithChildren,
+  RealmIdLegalRouteRoute: RealmIdLegalRouteRouteWithChildren,
   RealmIdManageRouteRoute: RealmIdManageRouteRouteWithChildren,
   RealmIdUserRouteRoute: RealmIdUserRouteRouteWithChildren,
   RealmIdDeviceRoute: RealmIdDeviceRouteWithChildren,

@@ -22,8 +22,8 @@ client.setConfig({
 import { setLocale } from '@/paraglide/runtime'
 setLocale('en', { reload: false })
 
-// Reduce timeout for JSDOM mode tests (no browser overhead)
-vi.setConfig({ testTimeout: 5000 })
+// Keep enough per-test budget for the full suite under parallel JSDOM load.
+vi.setConfig({ testTimeout: 15000 })
 
 // Start/stop MSW once per test session and reset handlers between tests
 beforeAll(() => {

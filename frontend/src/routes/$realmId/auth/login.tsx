@@ -1,7 +1,12 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useForm } from '@tanstack/react-form'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import type { LoginRequestPayload, VerifyTotpResponse } from '@/lib/api-generated'
+import type {
+  LoginRequestPayload,
+  VerifyTotpResponse,
+  LegalAgreementSummary,
+  AuthConsentAgreement,
+} from '@/lib/api-generated'
 import { loginSchema } from '@/lib/schemas/common'
 import { loginSearchSchema, type LoginSearchParams } from '@/lib/schemas/search-params'
 import { getErrorMessage, getFieldErrorMessage } from '@/lib/error-utils'
@@ -11,7 +16,6 @@ import {
   getSafeRedirect,
   checkAdminPermission,
   validateOAuthParams,
-  type LoginFlowResult,
 } from '@/lib/auth-utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,18 +23,35 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AuthPageWrapper } from '@/components/auth/auth-page-wrapper'
 import { TotpVerificationForm } from '@/components/auth/totp-verification-form'
-import { publicConfigQueryOptions } from '@/data/query-options'
+import { publicConfigQueryOptions, toAuthConsentAgreements } from '@/data/query-options'
 import { Link } from '@tanstack/react-router'
 import { useOAuthLogin } from '@/hooks/use-oauth-login'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { m } from '@/paraglide/messages'
+import { AgreementLinks } from '@/components/legal/AgreementLinks'
+import { formatDate } from '@/lib/date-utils'
 
 interface TotpStep {
   tempToken: string
 }
 
+interface ConsentStep {
+  agreements: LegalAgreementSummary[]
+  originalPayload: LoginRequestPayload
+}
+
 const DEFAULT_CLIENT_ID = 'admin-web-console'
+
+function isConsentRequired(response: {
+  consentRequired?: boolean | null
+  consent_required?: boolean | null
+}): boolean {
+  return (
+    !!response.consentRequired ||
+    !!(response as { consent_required?: boolean | null }).consent_required
+  )
+}
 
 export const Route = createFileRoute('/$realmId/auth/login')({
   component: LoginPage,
@@ -39,13 +60,14 @@ export const Route = createFileRoute('/$realmId/auth/login')({
   // This allows us to use cached auth data and avoid redundant API calls
 })
 
-function LoginPage() {
+export function LoginPage() {
   const router = useRouter()
   const { realmId } = Route.useParams()
   const search = Route.useSearch() as LoginSearchParams
   const { initiateOAuthLogin } = useOAuthLogin()
 
   const [totpStep, setTotpStep] = useState<TotpStep | null>(null)
+  const [consentStep, setConsentStep] = useState<ConsentStep | null>(null)
   const [globalError, setGlobalError] = useState<string | null>(null)
 
   const { data: publicConfig, isLoading } = useQuery(publicConfigQueryOptions(realmId))
@@ -56,7 +78,11 @@ function LoginPage() {
   const { oauthParams, hasPartialOAuth } = validateOAuthParams(search)
 
   const loginMutation = useMutation({
-    mutationFn: async (values: { username: string; password: string }) => {
+    mutationFn: async (values: {
+      username: string
+      password: string
+      agreements?: AuthConsentAgreement[]
+    }) => {
       const isEmail = values.username.includes('@')
       const clientId = search.clientId || DEFAULT_CLIENT_ID
 
@@ -65,42 +91,58 @@ function LoginPage() {
         email: isEmail ? values.username : undefined,
         username: isEmail ? undefined : values.username,
         password: values.password,
+        ...(values.agreements ? { agreements: values.agreements } : {}),
         ...(oauthParams ?? {}),
       }
 
-      return await loginFlow(realmId, loginData)
+      const result = await loginFlow(realmId, loginData)
+      return { result, payload: loginData }
     },
-    onSuccess: async (data: LoginFlowResult) => {
+    onSuccess: async (data) => {
       setGlobalError(null)
+      setConsentStep(null)
+      const { response } = data.result
 
-      if (data.response.requiresTotp && data.response.tempToken) {
-        setTotpStep({ tempToken: data.response.tempToken })
-      } else if (data.response.redirectTo) {
-        window.location.href = data.response.redirectTo
+      if (response.requiresTotp && response.tempToken) {
+        setTotpStep({ tempToken: response.tempToken })
+        setConsentStep(null)
         return
-      } else {
-        toast.success(m['auth.login.login_successful']())
+      }
 
-        const userRealmId = data.response.realmId || realmId
-        let redirectPath = search.redirect || data.redirectPath
-
-        // Prevent open redirect attacks
-        redirectPath = getSafeRedirect(redirectPath)
-
-        if (redirectPath === '/') {
-          redirectPath = checkAdminPermission() ? '/manage' : '/user/profile'
-        }
-
-        if (redirectPath.startsWith('http://') || redirectPath.startsWith('https://')) {
-          window.location.href = redirectPath
+      if (isConsentRequired(response)) {
+        const agreements = response.agreements ?? []
+        if (agreements.length > 0) {
+          setConsentStep({ agreements, originalPayload: data.payload })
           return
         }
-
-        await router.navigate({
-          to: `/${userRealmId}${redirectPath}`,
-          params: { realmId: userRealmId },
-        })
       }
+
+      if (response.redirectTo) {
+        window.location.href = response.redirectTo
+        return
+      }
+
+      toast.success(m['auth.login.login_successful']())
+
+      const userRealmId = response.realmId || realmId
+      let redirectPath = search.redirect || data.result.redirectPath
+
+      // Prevent open redirect attacks
+      redirectPath = getSafeRedirect(redirectPath)
+
+      if (redirectPath === '/') {
+        redirectPath = checkAdminPermission() ? '/manage' : '/user/profile'
+      }
+
+      if (redirectPath.startsWith('http://') || redirectPath.startsWith('https://')) {
+        window.location.href = redirectPath
+        return
+      }
+
+      await router.navigate({
+        to: `/${userRealmId}${redirectPath}`,
+        params: { realmId: userRealmId },
+      })
     },
   })
 
@@ -118,6 +160,31 @@ function LoginPage() {
       })
     },
   })
+
+  async function handleConsentAgree() {
+    if (!consentStep) return
+    setGlobalError(null)
+
+    const agreements = toAuthConsentAgreements(consentStep.agreements)
+    const username = form.getFieldValue('username')
+    const password = form.getFieldValue('password')
+
+    loginMutation.mutate(
+      { username, password, agreements },
+      {
+        onError: (error: unknown) => {
+          const message = getErrorMessage(error)
+          toast.error(message)
+          setGlobalError(message)
+        },
+      }
+    )
+  }
+
+  function handleConsentDecline() {
+    setConsentStep(null)
+    setGlobalError(null)
+  }
 
   async function handleTotpSuccess(verifyResponse: VerifyTotpResponse): Promise<void> {
     toast.success(m['auth.login.login_successful']())
@@ -145,6 +212,68 @@ function LoginPage() {
       to: `/${realmId}${safeRedirectPath}`,
       params: { realmId },
     })
+  }
+
+  if (consentStep) {
+    return (
+      <AuthPageWrapper>
+        <Card className="w-full max-w-md" data-testid="login-reconsent-view">
+          <CardHeader className="text-center">
+            <CardTitle data-testid="login-reconsent-title">
+              {m['auth.login.reconsent_title']()}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {m['auth.login.reconsent_description']()}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {consentStep.agreements.map((agreement) => (
+              <div
+                key={agreement.version_id}
+                className="rounded border p-3"
+                data-testid={`login-reconsent-agreement-${agreement.agreement_type}`}
+              >
+                <div className="font-medium">
+                  <AgreementLinks
+                    realmId={realmId}
+                    agreementType={
+                      agreement.agreement_type as 'terms_of_service' | 'privacy_policy'
+                    }
+                  />
+                </div>
+                <div
+                  className="text-sm text-muted-foreground"
+                  data-testid={`login-reconsent-agreement-${agreement.agreement_type}-version`}
+                >
+                  {m['legal.version_label']()}: {agreement.version_no} •{' '}
+                  {m['legal.effective_date_label']()}: {formatDate(agreement.effective_at)}
+                </div>
+              </div>
+            ))}
+            <Button
+              type="button"
+              disabled={loginMutation.isPending}
+              className="w-full"
+              data-testid="login-agree-and-continue-button"
+              onClick={handleConsentAgree}
+            >
+              {loginMutation.isPending
+                ? m['auth.login.logging_in']()
+                : m['auth.login.agree_and_continue']()}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              data-testid="login-decline-back-button"
+              onClick={handleConsentDecline}
+            >
+              {m['auth.login.decline_back_to_login']()}
+            </Button>
+          </CardContent>
+        </Card>
+      </AuthPageWrapper>
+    )
   }
 
   if (totpStep) {
@@ -250,6 +379,18 @@ function LoginPage() {
             >
               {loginMutation.isPending ? m['auth.login.logging_in']() : m['auth.login.submit']()}
             </Button>
+
+            <div
+              className="text-center text-sm text-muted-foreground pt-1"
+              data-testid="login-consent-statement"
+            >
+              {m['auth.login.consent_statement']()}
+              <AgreementLinks
+                realmId={realmId}
+                beforeText=" "
+                linkClassName="text-primary hover:text-primary/80 underline underline-offset-2"
+              />
+            </div>
           </form>
 
           {!isLoading && oauthProviders.length > 0 && (

@@ -2,11 +2,14 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { ChangePasswordForm } from '@/components/profile/change-password-form'
 import { TotpStatusCard } from '@/components/profile/totp/totp-status-card'
+import { DeleteAccountDialog } from '@/components/security/DeleteAccountDialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TotpDisableForm } from '@/components/profile/totp/totp-disable-form'
 import { TotpRegenerateForm } from '@/components/profile/totp/totp-regenerate-form'
 import { PageHeader } from '@/components/shared'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { m } from '@/paraglide/messages'
 
 export const Route = createFileRoute('/$realmId/user/security/')({
@@ -15,10 +18,11 @@ export const Route = createFileRoute('/$realmId/user/security/')({
 
 type TotpDialogType = 'disable' | 'regenerate' | null
 
-function ProfileSecurity() {
+export function ProfileSecurity() {
   const navigate = useNavigate()
   const { realmId } = Route.useParams()
   const [totpDialog, setTotpDialog] = useState<TotpDialogType>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   const handleDialogClose = () => setTotpDialog(null)
 
@@ -73,6 +77,28 @@ function ProfileSecurity() {
           <TotpRegenerateForm onSuccess={handleDialogClose} onCancel={handleDialogClose} />
         </DialogContent>
       </Dialog>
+
+      <Card data-testid="danger-operations-section">
+        <CardHeader>
+          <CardTitle>{m['security.delete_account.section_title']()}</CardTitle>
+          <CardDescription>{m['security.delete_account.section_description']()}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            variant="destructive"
+            onClick={() => setDeleteDialogOpen(true)}
+            data-testid="delete-account-open-button"
+          >
+            {m['security.delete_account.button']()}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <DeleteAccountDialog
+        realmId={realmId}
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+      />
     </div>
   )
 }

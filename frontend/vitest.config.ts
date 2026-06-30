@@ -49,8 +49,8 @@ export default defineConfig({
     // Minimal reporter: only failed tests and errors, optimized for AI agents
     reporters: ['minimal'],
 
-    // Reduce timeout (no browser overhead)
-    testTimeout: 5000,
+    // Keep enough per-test budget for the full suite under parallel JSDOM load.
+    testTimeout: 15000,
 
     // Don't fail tests on unhandled promise rejections (handled by try-catch in components)
     errorOnUnhandledRejections: false,

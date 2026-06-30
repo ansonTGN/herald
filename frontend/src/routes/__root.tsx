@@ -1,7 +1,21 @@
-import { createRootRouteWithContext, Outlet, redirect, isRedirect } from '@tanstack/react-router'
+import {
+  createRootRouteWithContext,
+  Outlet,
+  redirect,
+  isRedirect,
+  useRouter,
+} from '@tanstack/react-router'
 import { Toaster } from '@/components/ui/sonner'
-import type { QueryClient } from '@tanstack/react-query'
-import { initializeAuth, checkAdminPermission } from '@/lib/auth-utils'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { initializeAuth, checkAdminPermission, logoutFlow } from '@/lib/auth-utils'
+import { useIsAuthenticated } from '@/stores/auth-store'
+import { ReconsentDialog } from '@/components/legal/ReconsentDialog'
+import {
+  consentStatusQueryOptions,
+  recordConsentMutation,
+  toRecordConsentRequestFromStatus,
+  queryKeys,
+} from '@/data/query-options'
 import { lazy, Suspense } from 'react'
 
 const Devtools = import.meta.env.DEV
@@ -26,6 +40,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     const isRootPath = pathname === '/'
     const isRealmRootPath = pathname.match(/^\/[^/]+\/?$/) // /admin, /admin/, /user, /user/, etc. (realm root with optional trailing slash)
     const isAuthRoute = pathname.match(/^\/[^/]+\/auth\//) // /admin/auth/, /user/auth/, etc.
+    const isLegalRoute = pathname.match(/^\/[^/]+\/legal\//) // /admin/legal/, /user/legal/, etc.
     const isManageRoute = pathname.match(/^\/[^/]+\/manage/)
 
     try {
@@ -72,7 +87,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         })
       }
 
-      // Auth route: redirect authenticated users to appropriate page
+      // Public routes (auth + legal): redirect authenticated users away from auth pages,
+      // but allow them to stay on legal agreement pages.
       if (isAuthRoute && authenticated) {
         const targetPath = checkAdminPermission() ? '/$realmId/manage' : '/$realmId/user/profile'
         throw redirect({
@@ -81,8 +97,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         })
       }
 
-      // Protected routes: require authentication
-      if (!isAuthRoute && !authenticated) {
+      // Protected routes: require authentication (auth and legal are public)
+      if (!isAuthRoute && !isLegalRoute && !authenticated) {
         console.log('[__root loader] Protected route without authentication, redirecting to login')
         // Extract the relative path (without realm prefix)
         const relativePath = pathname.replace(new RegExp(`^/${realmId}`), '') || '/'
@@ -113,8 +129,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         throw error
       }
 
-      // Other errors: redirect to login (unless it's an auth route)
-      if (!isAuthRoute) {
+      // Other errors: redirect to login (unless it's a public route)
+      if (!isAuthRoute && !isLegalRoute) {
         console.log('[__root loader] Error occurred, redirecting to login')
         const relativePath = pathname.replace(new RegExp(`^/${realmId}`), '') || '/'
         throw redirect({
@@ -133,6 +149,39 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 })
 
 function RootComponent() {
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const isAuthenticated = useIsAuthenticated()
+  const pathname = router.state.location.pathname
+
+  const pathSegments = pathname.split('/').filter(Boolean)
+  const realmId = pathSegments[0] || 'admin'
+
+  const isRootPath = pathname === '/'
+  const isRealmRootPath = /^\/[^/]+\/?$/.test(pathname)
+  const isAuthRoute = /^\/[^/]+\/auth\//.test(pathname)
+  const isLegalRoute = /^\/[^/]+\/legal\//.test(pathname)
+
+  const isCoreRoute =
+    isAuthenticated && !isAuthRoute && !isLegalRoute && !isRootPath && !isRealmRootPath
+
+  const { data: consentStatus } = useQuery({
+    ...consentStatusQueryOptions(realmId),
+    enabled: isCoreRoute,
+  })
+
+  const pendingItems = consentStatus?.items?.filter((item) => item.needs_reconsent) ?? []
+  const needsReconsent = isCoreRoute && pendingItems.length > 0
+
+  const consentMutation = useMutation({
+    mutationFn: async () => {
+      await recordConsentMutation(realmId, toRecordConsentRequestFromStatus(pendingItems))
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.consentStatus(realmId) })
+    },
+  })
+
   return (
     <>
       <div className="min-h-screen bg-background font-sans">
@@ -142,6 +191,16 @@ function RootComponent() {
       <Suspense>
         <Devtools />
       </Suspense>
+      {needsReconsent && (
+        <ReconsentDialog
+          realmId={realmId}
+          open={true}
+          items={pendingItems}
+          isPending={consentMutation.isPending}
+          onAgree={() => consentMutation.mutate()}
+          onLogout={() => logoutFlow(realmId)}
+        />
+      )}
     </>
   )
 }

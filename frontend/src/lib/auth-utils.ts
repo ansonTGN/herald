@@ -110,6 +110,13 @@ export async function loginFlow(
       return { response: loginResponse, redirectPath: DEFAULT_USER_REDIRECT }
     }
 
+    if (
+      loginResponse.consentRequired ||
+      (loginResponse as { consent_required?: boolean | null }).consent_required
+    ) {
+      return { response: loginResponse, redirectPath: DEFAULT_USER_REDIRECT }
+    }
+
     // Session is created on the token endpoint, not in the browser
     if (loginResponse.redirectTo) {
       return { response: loginResponse, redirectPath: DEFAULT_USER_REDIRECT }
@@ -216,6 +223,13 @@ export async function completeLoginAfterTotp(
   // OAuth flow: when redirectTo is present, return it without updating store
   if (verifyResponse.redirectTo) {
     return { redirectTo: verifyResponse.redirectTo }
+  }
+
+  if (
+    verifyResponse.consentRequired ||
+    (verifyResponse as { consent_required?: boolean | null }).consent_required
+  ) {
+    return {}
   }
 
   const store = useAuthStore.getState()

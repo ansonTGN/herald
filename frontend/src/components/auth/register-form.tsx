@@ -5,7 +5,9 @@ import type { RegisterRequest } from '@/lib/api-generated'
 import { useFormMutation } from '@/hooks/use-form-mutation'
 import { PasswordStrengthMeter } from './password-strength-meter'
 import { TurnstileWidget } from './turnstile-widget'
+import { AgreementLinks } from '@/components/legal/AgreementLinks'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { getFieldErrorMessage } from '@/lib/form-utils'
@@ -17,13 +19,13 @@ import { m } from '@/paraglide/messages'
 const PASSWORD_MIN_LENGTH = 8
 const NICKNAME_MAX_LENGTH = 50
 
-// Local form data type that includes confirmPassword and nickname
 type RegisterFormData = {
   email: string
   password: string
   confirmPassword: string
   nickname?: string
   turnstileToken?: string
+  consent: boolean
 }
 
 const registerSchema = z
@@ -33,10 +35,15 @@ const registerSchema = z
     confirmPassword: z.string().min(1, m['auth.confirm_password_required']()),
     nickname: z.string().max(NICKNAME_MAX_LENGTH, m['auth.nickname_max_length']()).optional(),
     turnstileToken: z.string().optional(),
+    consent: z.boolean(),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: m['auth.passwords_dont_match'](),
     path: ['confirmPassword'],
+  })
+  .refine((data) => data.consent, {
+    message: m['auth.register.consent_required'](),
+    path: ['consent'],
   })
 
 interface RegisterFormProps {
@@ -92,6 +99,7 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
       confirmPassword: '',
       nickname: undefined,
       turnstileToken: undefined,
+      consent: false,
     },
     onSubmit: async ({ value }) => {
       await mutate(value)
@@ -176,6 +184,36 @@ export function RegisterForm({ realmId, onSuccess }: RegisterFormProps) {
             )}
           </form.Field>
         )}
+
+        <form.Field name="consent">
+          {(field) => (
+            <div className="space-y-2">
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="consent"
+                  checked={field.state.value}
+                  onCheckedChange={(checked) => field.handleChange(checked === true)}
+                  disabled={isSubmitting}
+                  data-testid="register-consent-checkbox"
+                />
+                <Label htmlFor="consent" className="text-sm font-normal leading-relaxed">
+                  {m['auth.register.consent_label_prefix']()}
+                  <AgreementLinks
+                    realmId={realmId}
+                    beforeText=" "
+                    linkClassName="text-primary hover:text-primary/80 underline underline-offset-2"
+                  />
+                </Label>
+              </div>
+              {(field.state.meta.isTouched || form.state.isSubmitted) &&
+                field.state.meta.errors.length > 0 && (
+                  <p className="text-sm text-red-500" data-testid="register-consent-error">
+                    {getFieldErrorMessage(field.state.meta)}
+                  </p>
+                )}
+            </div>
+          )}
+        </form.Field>
 
         <Button
           type="submit"

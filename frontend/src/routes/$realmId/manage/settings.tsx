@@ -7,6 +7,7 @@ import { RegistrationConfigForm as RegistrationConfigFormComponent } from '@/com
 import { EmailConfigForm as EmailConfigFormComponent } from '@/components/realm-config/email-config-form'
 import { TurnstileConfigForm as TurnstileConfigFormComponent } from '@/components/realm-config/turnstile-config-form'
 import { ProviderConfigPage } from '@/components/oauth-config/provider-config-page'
+import { LegalAgreementTab } from '@/components/settings/LegalAgreementTab'
 import { useAuth } from '@/hooks/use-auth'
 import { PERMISSION } from '@/lib/constants/auth-constants'
 import { toast } from 'sonner'
@@ -294,6 +295,9 @@ function SettingsPage() {
           <TabsTrigger value="providers" data-testid="providers-tab">
             {m['settings.tab_providers']()}
           </TabsTrigger>
+          <TabsTrigger value="legal" data-testid="legal-tab">
+            {m['settings.legal.tab_legal']()}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="general">
@@ -347,6 +351,10 @@ function SettingsPage() {
 
         <TabsContent value="providers">
           <ProviderConfigPage realmId={realmId} />
+        </TabsContent>
+
+        <TabsContent value="legal">
+          <LegalAgreementTab realmId={realmId} canManage={canUpdateConfig} />
         </TabsContent>
       </Tabs>
     </div>

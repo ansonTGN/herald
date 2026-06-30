@@ -14,7 +14,7 @@
  * - Converged testid contract: `.ai/task/points-grant-redesign/frontend/accept/FE-A07-report.md`
  */
 
-import { expect } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 
 import { test, cleanupTestData } from '../fixtures/demo-page.fixtures'
 import { SELECTORS } from '../selectors'
@@ -49,7 +49,7 @@ const ORIGINAL_WINDOWS: typeof DEMO_FREE_QUOTA_WINDOWS = []
 // Helpers
 // ============================================================================
 
-async function loginAsAdmin(page: ReturnType<typeof test>['page']): Promise<void> {
+async function loginAsAdmin(page: Page): Promise<void> {
   await loginWithCredentials(page, {
     realmId: TEST_REALM,
     email: ADMIN_EMAIL,
@@ -57,9 +57,7 @@ async function loginAsAdmin(page: ReturnType<typeof test>['page']): Promise<void
   })
 }
 
-async function openRealmDefaultEditor(
-  page: ReturnType<typeof test>['page'],
-): Promise<void> {
+async function openRealmDefaultEditor(page: Page): Promise<void> {
   await page.goto(`/${TEST_REALM}/manage/points/default-config`)
   await expect(
     page.locator('[data-testid="points-default-config-form"]'),

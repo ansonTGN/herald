@@ -13,7 +13,7 @@
  * - Converged testid contract: `.ai/task/points-grant-redesign/frontend/accept/FE-A07-report.md`
  */
 
-import { expect } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 
 import { test, cleanupTestData } from '../fixtures/demo-page.fixtures'
 import { SELECTORS } from '../selectors'
@@ -53,7 +53,7 @@ const SINGLE_WINDOW = [{ windowSeconds: 604_800, limit: 500, key: 'week' }]
 // Helpers
 // ============================================================================
 
-async function loginAsAdmin(page: ReturnType<typeof test>['page']): Promise<void> {
+async function loginAsAdmin(page: Page): Promise<void> {
   await loginWithCredentials(page, {
     realmId: TEST_REALM,
     email: ADMIN_EMAIL,
@@ -61,7 +61,7 @@ async function loginAsAdmin(page: ReturnType<typeof test>['page']): Promise<void
   })
 }
 
-async function openQuotaEditor(page: ReturnType<typeof test>['page']): Promise<void> {
+async function openQuotaEditor(page: Page): Promise<void> {
   const mappingsPage = new EntitlementMappingsPage(page)
   await mappingsPage.goto(TEST_REALM)
   await mappingsPage.selectProduct(QUOTA_DEMO_PRODUCT_ID)

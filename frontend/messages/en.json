@@ -66,6 +66,25 @@
     "access_denied": "Access denied: You do not have permission to view this page",
     "error_prefix": "Error: {message}"
   },
+  "legal": {
+    "terms_of_service": "Terms of Service",
+    "privacy_policy": "Privacy Policy",
+    "and_separator": " and ",
+    "version_label": "Version",
+    "effective_date_label": "Effective Date",
+    "empty_body": "No agreement content is available.",
+    "invalid_type_title": "Invalid Agreement Type",
+    "invalid_type_description": "The requested agreement type is not supported.",
+    "error_title": "Failed to Load Agreement",
+    "not_found_title": "Agreement Not Found",
+    "not_found_description": "No effective agreement is deployed for this realm."
+  },
+  "reconsent": {
+    "title": "Updated Agreements",
+    "description": "Please review and agree to the updated agreements to continue.",
+    "agree_button": "Agree and Continue",
+    "logout_button": "Log out"
+  },
   "pagination": {
     "showing": "Showing {from} to {to} of {total} results"
   },
@@ -105,7 +124,12 @@
       "no_account": "Don't have an account?",
       "register_link": "Register",
       "or_continue_with": "Or continue with",
-      "login_to_account": "Login to your account"
+      "login_to_account": "Login to your account",
+      "consent_statement": "By logging in, you agree to",
+      "reconsent_title": "Updated Agreements",
+      "reconsent_description": "Please review and agree to the updated agreements to continue.",
+      "agree_and_continue": "Agree and Continue",
+      "decline_back_to_login": "Decline and return to login"
     },
     "register": {
       "title": "Create an Account",
@@ -118,7 +142,9 @@
       "disabled_description": "Registration is not enabled for this realm. Please contact an administrator.",
       "return_to_login": "Return to Login",
       "error_loading": "Error loading registration configuration",
-      "nickname_label": "Nickname (Optional)"
+      "nickname_label": "Nickname (Optional)",
+      "consent_required": "Please read and agree to the Terms of Service and Privacy Policy.",
+      "consent_label_prefix": "I have read and agree to "
     },
     "verify_email": {
       "title": "Verify Your Email",
@@ -354,6 +380,29 @@
     "backup_codes_copied": "Copied",
     "backup_codes_copy_all": "Copy All",
     "verification_code_label": "Verification Code"
+  },
+  "security": {
+    "delete_account": {
+      "section_title": "Danger Zone",
+      "section_description": "Irreversible actions that affect your account.",
+      "button": "Delete Account",
+      "dialog_title": "Delete Account",
+      "dialog_description": "This action cannot be undone. Please enter your password to confirm.",
+      "password_label": "Current Password",
+      "password_required": "Password is required",
+      "consequences_title": "By continuing, you acknowledge that:",
+      "consequence_anonymization": "Your account will be anonymized and you will not be able to log in again.",
+      "consequence_subscriptions": "Any active subscriptions will be cancelled immediately.",
+      "consequence_sessions": "All active sessions will be invalidated.",
+      "consequence_no_refund": "One-time purchases will not be refunded.",
+      "consequence_no_recovery": "There is no self-service recovery or grace period.",
+      "confirm_button": "Permanently Delete Account",
+      "deleting": "Deleting...",
+      "success_message": "Your account has been deleted.",
+      "error_401": "The password you entered is incorrect. Please try again.",
+      "error_409": "This account cannot be deleted. It may have already been deleted.",
+      "error_generic": "Account deletion failed. Please try again later."
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -663,7 +712,40 @@
     "config_error_loading": "Error loading configuration",
     "config_failed_to_load": "Failed to load configuration: {message}",
     "config_loading": "Loading...",
-    "realm_updated_success": "Realm updated successfully"
+    "realm_updated_success": "Realm updated successfully",
+    "legal": {
+      "tab_legal": "Legal",
+      "title": "Legal Agreements",
+      "source_default": "Platform default",
+      "source_custom": "Realm custom",
+      "version_label_label": "Version label",
+      "version_label_placeholder": "e.g. Summer 2026 update",
+      "version_label_max_length": "Version label must be at most 100 characters",
+      "version_no_label": "Version",
+      "effective_date_label": "Effective date",
+      "history_title": "Version history",
+      "history_empty": "No previous versions.",
+      "history_version": "Version",
+      "history_source": "Source",
+      "history_effective_date": "Effective date",
+      "content_en_label": "English content",
+      "content_zh_label": "Chinese (Simplified) content",
+      "content_required": "At least one locale content is required",
+      "publish_button": "Publish custom version",
+      "publishing_button": "Publishing...",
+      "publish_success": "Custom version published",
+      "revert_button": "Revert to platform default",
+      "reverting_button": "Reverting...",
+      "revert_success": "Reverted to platform default",
+      "revert_dialog_title": "Revert to platform default?",
+      "revert_dialog_description": "This will publish a new snapshot based on the current platform default template and require all users to consent again. Version history is preserved.",
+      "view_only_title": "View only",
+      "view_only_notice": "You only have permission to view legal agreements.",
+      "loading": "Loading legal agreements...",
+      "empty": "No legal agreements found for this realm.",
+      "error": "Failed to load legal agreements",
+      "error_retry": "Retry"
+    }
   },
   "realm_config": {
     "totp_title": "TOTP Configuration",

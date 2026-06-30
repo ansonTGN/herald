@@ -44,6 +44,14 @@ import {
   listCreditBucketsHandler,
   getCreditBucketHandler,
   getBucketOverviewHandler,
+  listAgreements,
+  getAgreement,
+  getConsentStatus,
+  recordConsent,
+  deleteAccount,
+  adminListAgreements,
+  adminPublishCustom,
+  adminRevertToDefault,
 } from '@/lib/api-generated'
 import { handleApiResponse } from '@/lib/api-utils'
 import type {
@@ -61,6 +69,12 @@ import type {
   BucketOverviewResponse,
   ListWalletsByBucketResponse,
   UpdateRealmConfigRequest,
+  LegalAgreementSummary,
+  ConsentStatusItem,
+  RecordConsentRequest,
+  DeleteAccountRequest,
+  PublishCustomRequest,
+  PublishVersionResponse,
 } from '@/lib/api-generated'
 import type {
   HistoryFilters,
@@ -238,6 +252,11 @@ export const queryKeys = {
     [QUERY_KEYS.CREDIT_BUCKETS, realmId, bucketId] as const,
   creditBucketOverview: (realmId: string) => [QUERY_KEYS.CREDIT_BUCKET_OVERVIEW, realmId] as const,
   walletsByBucket: (realmId: string) => [QUERY_KEYS.WALLETS_BY_BUCKET, realmId] as const,
+  legalAgreements: (realmId: string) => [QUERY_KEYS.LEGAL_AGREEMENTS, realmId] as const,
+  legalAgreement: (realmId: string, agreementType: string, locale?: string) =>
+    [QUERY_KEYS.LEGAL_AGREEMENT, realmId, agreementType, locale] as const,
+  consentStatus: (realmId: string) => [QUERY_KEYS.CONSENT_STATUS, realmId] as const,
+  legalAdminAgreements: (realmId: string) => [QUERY_KEYS.LEGAL_ADMIN_AGREEMENTS, realmId] as const,
 }
 
 // ==================== Public Config ====================
@@ -1153,3 +1172,121 @@ export const walletsByBucketQueryOptions = (realmId: string) =>
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_2_MIN,
   })
+
+// ==================== Legal / Consent / Account Deletion ====================
+
+/**
+ * Convert agreement summaries (snake_case wire shape) into the camelCase
+ * `{ agreementType, versionId }` pairs expected by login/TOTP retry requests.
+ */
+export function toAuthConsentAgreements(
+  agreements: LegalAgreementSummary[]
+): Array<{ agreementType: string; versionId: string }> {
+  return agreements.map((agreement) => ({
+    agreementType: agreement.agreement_type,
+    versionId: agreement.version_id,
+  }))
+}
+
+/**
+ * Convert agreement summaries into the snake_case `RecordConsentRequest` body
+ * used by `POST /api/legal/{realmId}/consent`.
+ */
+export function toRecordConsentRequest(agreements: LegalAgreementSummary[]): RecordConsentRequest {
+  return {
+    agreements: agreements.map((agreement) => ({
+      agreement_type: agreement.agreement_type,
+      version_id: agreement.version_id,
+    })),
+  }
+}
+
+/**
+ * Build a `RecordConsentRequest` from the current `ConsentStatusItem` rows.
+ * Posts the realm's current effective version ids for every pending item.
+ */
+export function toRecordConsentRequestFromStatus(items: ConsentStatusItem[]): RecordConsentRequest {
+  return {
+    agreements: items.map((item) => ({
+      agreement_type: item.agreement_type,
+      version_id: item.current_version_id,
+    })),
+  }
+}
+
+export const legalAgreementsQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.legalAgreements(realmId),
+    queryFn: async () => handleApiResponse(await listAgreements({ path: { realmId } })),
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+
+export const legalAgreementQueryOptions = (
+  realmId: string,
+  agreementType: string,
+  locale?: string
+) =>
+  queryOptions({
+    queryKey: queryKeys.legalAgreement(realmId, agreementType, locale),
+    queryFn: async () => {
+      const request = locale
+        ? { path: { realmId, agreementType }, query: { locale } }
+        : { path: { realmId, agreementType } }
+      return handleApiResponse(await getAgreement(request))
+    },
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+
+export const consentStatusQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.consentStatus(realmId),
+    queryFn: async () => handleApiResponse(await getConsentStatus({ path: { realmId } })),
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+    gcTime: GC_TIME_5_MIN,
+  })
+
+export const legalAdminAgreementsQueryOptions = (realmId: string) =>
+  queryOptions({
+    queryKey: queryKeys.legalAdminAgreements(realmId),
+    queryFn: async () => handleApiResponse(await adminListAgreements({ path: { realmId } })),
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_2_MIN,
+  })
+
+export const recordConsentMutation = async (
+  realmId: string,
+  data: RecordConsentRequest
+): Promise<void> => {
+  const response = await recordConsent({ path: { realmId }, body: data })
+  if (response.error) throw response.error
+}
+
+export const deleteAccountMutation = async (data: DeleteAccountRequest): Promise<void> => {
+  const response = await deleteAccount({ body: data })
+  if (response.error) throw response.error
+}
+
+export const publishCustomAgreementMutation = async (
+  realmId: string,
+  agreementType: string,
+  data: PublishCustomRequest
+): Promise<PublishVersionResponse> => {
+  const response = await adminPublishCustom({
+    path: { realmId, agreementType },
+    body: data,
+  })
+  if (response.error) throw response.error
+  return response.data as PublishVersionResponse
+}
+
+export const revertToDefaultAgreementMutation = async (
+  realmId: string,
+  agreementType: string
+): Promise<PublishVersionResponse> => {
+  const response = await adminRevertToDefault({ path: { realmId, agreementType } })
+  if (response.error) throw response.error
+  return response.data as PublishVersionResponse
+}

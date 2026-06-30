@@ -66,6 +66,25 @@
     "access_denied": "访问被拒绝：您没有权限查看此页面",
     "error_prefix": "错误：{message}"
   },
+  "legal": {
+    "terms_of_service": "用户协议",
+    "privacy_policy": "隐私政策",
+    "and_separator": "和",
+    "version_label": "版本",
+    "effective_date_label": "生效日期",
+    "empty_body": "暂无协议内容。",
+    "invalid_type_title": "协议类型无效",
+    "invalid_type_description": "请求的协议类型不受支持。",
+    "error_title": "加载协议失败",
+    "not_found_title": "协议未找到",
+    "not_found_description": "此域未部署有效协议。"
+  },
+  "reconsent": {
+    "title": "协议已更新",
+    "description": "请查看并同意更新后的协议以继续。",
+    "agree_button": "同意并继续",
+    "logout_button": "退出登录"
+  },
   "pagination": {
     "showing": "显示第 {from} 到 {to} 条，共 {total} 条结果"
   },
@@ -105,7 +124,12 @@
       "no_account": "没有账户？",
       "register_link": "注册",
       "or_continue_with": "或继续使用",
-      "login_to_account": "登录您的账户"
+      "login_to_account": "登录您的账户",
+      "consent_statement": "登录即表示同意",
+      "reconsent_title": "协议已更新",
+      "reconsent_description": "请查看并同意更新后的协议以继续。",
+      "agree_and_continue": "同意并继续",
+      "decline_back_to_login": "拒绝并返回登录"
     },
     "register": {
       "title": "创建账户",
@@ -118,7 +142,9 @@
       "disabled_description": "此域未启用注册功能。请联系管理员。",
       "return_to_login": "返回登录",
       "error_loading": "加载注册配置时出错",
-      "nickname_label": "昵称（可选）"
+      "nickname_label": "昵称（可选）",
+      "consent_required": "请阅读并同意用户协议与隐私政策。",
+      "consent_label_prefix": "我已阅读并同意"
     },
     "verify_email": {
       "title": "验证您的邮箱",
@@ -354,6 +380,29 @@
     "backup_codes_copied": "已复制",
     "backup_codes_copy_all": "全部复制",
     "verification_code_label": "验证码"
+  },
+  "security": {
+    "delete_account": {
+      "section_title": "危险操作",
+      "section_description": "这些操作会影响您的账户且不可撤销。",
+      "button": "注销账户",
+      "dialog_title": "注销账户",
+      "dialog_description": "此操作无法撤销。请输入密码以确认。",
+      "password_label": "当前密码",
+      "password_required": "密码为必填项",
+      "consequences_title": "继续操作即表示您确认：",
+      "consequence_anonymization": "您的账户将被匿名化，之后无法再登录。",
+      "consequence_subscriptions": "生效中的订阅将立即被取消。",
+      "consequence_sessions": "所有活跃会话将被吊销。",
+      "consequence_no_refund": "一次性购买不予退款。",
+      "consequence_no_recovery": "没有自助恢复入口，也没有宽限期。",
+      "confirm_button": "确认注销账户",
+      "deleting": "注销中...",
+      "success_message": "您的账户已注销。",
+      "error_401": "密码不正确，请重试。",
+      "error_409": "该账户无法注销，可能已被注销。",
+      "error_generic": "账户注销失败，请稍后重试。"
+    }
   },
   "dashboard": {
     "title": "仪表盘",
@@ -663,7 +712,40 @@
     "config_error_loading": "加载配置出错",
     "config_failed_to_load": "加载配置失败：{message}",
     "config_loading": "加载中...",
-    "realm_updated_success": "域更新成功"
+    "realm_updated_success": "域更新成功",
+    "legal": {
+      "tab_legal": "协议",
+      "title": "协议管理",
+      "source_default": "平台默认模板",
+      "source_custom": "本域自定义",
+      "version_label_label": "版本标签",
+      "version_label_placeholder": "例如：2026 夏季更新",
+      "version_label_max_length": "版本标签不能超过100个字符",
+      "version_no_label": "版本号",
+      "effective_date_label": "生效日期",
+      "history_title": "版本历史",
+      "history_empty": "暂无历史版本。",
+      "history_version": "版本",
+      "history_source": "来源",
+      "history_effective_date": "生效日期",
+      "content_en_label": "英文内容",
+      "content_zh_label": "简体中文内容",
+      "content_required": "至少填写一种语言的内容",
+      "publish_button": "发布自定义版本",
+      "publishing_button": "发布中...",
+      "publish_success": "自定义版本已发布",
+      "revert_button": "回退为平台默认模板",
+      "reverting_button": "回退中...",
+      "revert_success": "已回退为平台默认模板",
+      "revert_dialog_title": "回退为平台默认模板？",
+      "revert_dialog_description": "这将基于当前平台默认模板发布一个新快照，并要求所有用户重新同意。历史版本会被保留。",
+      "view_only_title": "仅查看",
+      "view_only_notice": "您只有查看协议的权限。",
+      "loading": "正在加载协议...",
+      "empty": "未找到本域的协议。",
+      "error": "加载协议失败",
+      "error_retry": "重试"
+    }
   },
   "realm_config": {
     "totp_title": "TOTP 配置",

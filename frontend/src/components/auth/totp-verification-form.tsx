@@ -10,7 +10,15 @@ import { useAppForm, AppForm } from '@/components/ui/tanstack-form'
 import { getFieldErrorMessage } from '@/lib/form-utils'
 import { withTimeout } from '@/lib/totp-utils'
 import { z } from 'zod'
-import type { VerifyTotpResponse } from '@/lib/api-generated'
+import type {
+  VerifyTotpResponse,
+  LegalAgreementSummary,
+  AuthConsentAgreement,
+} from '@/lib/api-generated'
+import { AgreementLinks } from '@/components/legal/AgreementLinks'
+import { toAuthConsentAgreements } from '@/data/query-options'
+import { formatDate } from '@/lib/date-utils'
+import { m } from '@/paraglide/messages'
 
 const totpCodeSchema = z.object({
   code: z.string().length(6, 'Code must be 6 digits'),
@@ -34,6 +42,16 @@ const TOTP_CODE_LENGTH = 6
 const BACKUP_CODE_LENGTH = 8
 const LOCKED_MESSAGE = 'Too many failed attempts. Please try again in 15 minutes.'
 
+function isConsentRequired(response: {
+  consentRequired?: boolean | null
+  consent_required?: boolean | null
+}): boolean {
+  return (
+    !!response.consentRequired ||
+    !!(response as { consent_required?: boolean | null }).consent_required
+  )
+}
+
 export function TotpVerificationForm({
   realmId,
   tempToken,
@@ -43,6 +61,11 @@ export function TotpVerificationForm({
   const [codeType, setCodeType] = useState<CodeType>('totp')
   const [attempts, setAttempts] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [pendingConsent, setPendingConsent] = useState<LegalAgreementSummary[] | null>(null)
+  const [lastSubmitted, setLastSubmitted] = useState<{
+    code: string
+    backupCode: string | null
+  } | null>(null)
 
   const totpForm = useAppForm({
     schema: totpCodeSchema,
@@ -50,6 +73,7 @@ export function TotpVerificationForm({
     onSubmit: async ({ value }) => {
       if (attempts >= MAX_ATTEMPTS) return
       setError(null)
+      setLastSubmitted({ code: value.code, backupCode: null })
       verifyMutation.mutate({
         code: value.code,
         backupCode: null,
@@ -63,6 +87,7 @@ export function TotpVerificationForm({
     onSubmit: async ({ value }) => {
       if (attempts >= MAX_ATTEMPTS) return
       setError(null)
+      setLastSubmitted({ code: '', backupCode: value.code.toUpperCase() })
       verifyMutation.mutate({
         code: '',
         backupCode: value.code.toUpperCase(),
@@ -71,7 +96,11 @@ export function TotpVerificationForm({
   })
 
   const verifyMutation = useMutation({
-    mutationFn: async (data: { code: string; backupCode: string | null }) => {
+    mutationFn: async (data: {
+      code: string
+      backupCode: string | null
+      agreements?: AuthConsentAgreement[]
+    }) => {
       const response = await withTimeout(
         handleVerifyTotp({
           path: { realmId },
@@ -79,12 +108,18 @@ export function TotpVerificationForm({
             code: data.backupCode ? undefined : data.code,
             backupCode: data.backupCode,
             tempToken,
+            ...(data.agreements ? { agreements: data.agreements } : {}),
           },
         })
       )
       return response.data as VerifyTotpResponse
     },
     onSuccess: (data) => {
+      if (isConsentRequired(data)) {
+        setPendingConsent(data.agreements ?? [])
+        return
+      }
+      setPendingConsent(null)
       onSuccess(data)
     },
     onError: (err: unknown) => {
@@ -156,6 +191,23 @@ export function TotpVerificationForm({
     return `${remainingAttempts} attempt${remainingAttempts > 1 ? 's' : ''} remaining`
   }, [isLocked, remainingAttempts])
 
+  async function handleConsentAgree() {
+    if (!pendingConsent || !lastSubmitted) return
+    setError(null)
+    verifyMutation.mutate({
+      code: lastSubmitted.backupCode ? '' : lastSubmitted.code,
+      backupCode: lastSubmitted.backupCode,
+      agreements: toAuthConsentAgreements(pendingConsent),
+    })
+  }
+
+  function handleConsentDecline() {
+    setPendingConsent(null)
+    if (onBack) {
+      onBack()
+    }
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center">
       <Card className="w-full max-w-md" data-testid="totp-verification-form">
@@ -179,45 +231,101 @@ export function TotpVerificationForm({
             </div>
           )}
 
-          <AppForm>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                currentForm.handleSubmit()
-              }}
-              className="space-y-4"
-            >
-              <currentForm.Field name="code">
-                {(field) => (
-                  <div className="space-y-2">
-                    <Label htmlFor="code">{getLabelText()}</Label>
-                    <Input
-                      id="code"
-                      type={getInputType()}
-                      inputMode={getInputType()}
-                      pattern={getInputPattern()}
-                      maxLength={codeLength}
-                      value={field.state.value ?? ''}
-                      onChange={(e) => handleCodeChange(e.target.value)}
-                      disabled={isLocked || verifyMutation.isPending}
-                      data-testid="totp-verification-code-input"
-                      placeholder={getPlaceholder()}
-                      autoFocus
+          {pendingConsent && (
+            <div className="space-y-4" data-testid="totp-reconsent-view">
+              <h3 className="font-semibold">{m['auth.login.reconsent_title']()}</h3>
+              <p className="text-sm text-muted-foreground">
+                {m['auth.login.reconsent_description']()}
+              </p>
+              {pendingConsent.map((agreement) => (
+                <div
+                  key={agreement.version_id}
+                  className="rounded border p-3"
+                  data-testid={`totp-reconsent-agreement-${agreement.agreement_type}`}
+                >
+                  <div className="font-medium">
+                    <AgreementLinks
+                      realmId={realmId}
+                      agreementType={
+                        agreement.agreement_type as 'terms_of_service' | 'privacy_policy'
+                      }
                     />
-                    {(field.state.meta.isTouched || currentForm.state.isSubmitted) &&
-                      field.state.meta.errors.length > 0 && (
-                        <p className="text-sm text-red-500">
-                          {getFieldErrorMessage(field.state.meta)}
-                        </p>
-                      )}
                   </div>
-                )}
-              </currentForm.Field>
-            </form>
-          </AppForm>
+                  <div
+                    className="text-sm text-muted-foreground"
+                    data-testid={`totp-reconsent-agreement-${agreement.agreement_type}-version`}
+                  >
+                    {m['legal.version_label']()}: {agreement.version_no} •{' '}
+                    {m['legal.effective_date_label']()}: {formatDate(agreement.effective_at)}
+                  </div>
+                </div>
+              ))}
+              <Button
+                type="button"
+                disabled={verifyMutation.isPending}
+                className="w-full"
+                data-testid="totp-agree-and-continue-button"
+                onClick={handleConsentAgree}
+              >
+                {verifyMutation.isPending
+                  ? m['common.loading']()
+                  : m['auth.login.agree_and_continue']()}
+              </Button>
+              {onBack && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  data-testid="totp-decline-back-button"
+                  onClick={handleConsentDecline}
+                >
+                  {m['auth.login.decline_back_to_login']()}
+                </Button>
+              )}
+            </div>
+          )}
 
-          {codeType === 'totp' && !isLocked && (
+          {!pendingConsent && (
+            <AppForm>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  currentForm.handleSubmit()
+                }}
+                className="space-y-4"
+              >
+                <currentForm.Field name="code">
+                  {(field) => (
+                    <div className="space-y-2">
+                      <Label htmlFor="code">{getLabelText()}</Label>
+                      <Input
+                        id="code"
+                        type={getInputType()}
+                        inputMode={getInputType()}
+                        pattern={getInputPattern()}
+                        maxLength={codeLength}
+                        value={field.state.value ?? ''}
+                        onChange={(e) => handleCodeChange(e.target.value)}
+                        disabled={isLocked || verifyMutation.isPending}
+                        data-testid="totp-verification-code-input"
+                        placeholder={getPlaceholder()}
+                        autoFocus
+                      />
+                      {(field.state.meta.isTouched || currentForm.state.isSubmitted) &&
+                        field.state.meta.errors.length > 0 && (
+                          <p className="text-sm text-red-500">
+                            {getFieldErrorMessage(field.state.meta)}
+                          </p>
+                        )}
+                    </div>
+                  )}
+                </currentForm.Field>
+              </form>
+            </AppForm>
+          )}
+
+          {!pendingConsent && codeType === 'totp' && !isLocked && (
             <button
               type="button"
               onClick={switchToBackupCode}
@@ -228,7 +336,7 @@ export function TotpVerificationForm({
             </button>
           )}
 
-          {codeType === 'backup' && !isLocked && (
+          {!pendingConsent && codeType === 'backup' && !isLocked && (
             <button
               type="button"
               onClick={switchToTotpCode}
@@ -239,13 +347,13 @@ export function TotpVerificationForm({
             </button>
           )}
 
-          {getAttemptsText() && (
+          {!pendingConsent && getAttemptsText() && (
             <div className="text-sm text-muted-foreground" data-testid="totp-remaining-attempts">
               {getAttemptsText()}
             </div>
           )}
 
-          {onBack && (
+          {!pendingConsent && onBack && (
             <Button
               type="button"
               variant="ghost"
