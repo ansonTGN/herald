@@ -29,7 +29,9 @@ use herald_core::domain::security_constants::{
 };
 use herald_core::domain::user::ports::UserService;
 use herald_core::domain::user::value_objects::LoginRequest as DomainLoginRequest;
+use herald_core::domain::user_passkey::UserPasskeyRepository;
 use herald_core::domain::user_totp::UserTotpRepository;
+use herald_core::infrastructure::user_passkey::PostgresUserPasskeyRepository;
 use herald_core::infrastructure::user_totp::PostgresUserTotpRepository;
 
 use crate::consent_gate::AuthConsentAgreement;
@@ -64,6 +66,9 @@ pub struct LoginResponse {
     pub realm_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requires_totp: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(required = false)]
+    pub second_factors: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temp_token: Option<String>,
     pub expires_in_seconds: i64,
@@ -286,14 +291,27 @@ pub async fn login(
     // Check if user has TOTP enabled
     let totp_repo = PostgresUserTotpRepository::new(state.db.clone());
     let totp_config = totp_repo.get_config_by_user_id(user.id).await?;
+    let has_totp = totp_config.as_ref().map(|config| config.enabled).unwrap_or(false);
 
-    // If TOTP is enabled, create temp session and require TOTP verification
-    if let Some(config) = totp_config
-        && config.enabled
-    {
+    // Check if user has passkeys registered for second-factor login
+    let passkey_repo = PostgresUserPasskeyRepository::new(state.db.clone());
+    let passkey_credentials = passkey_repo.list_by_user(&user.realm_id, user.id).await?;
+    let has_passkey = !passkey_credentials.is_empty();
+
+    let mut second_factors = Vec::new();
+    if has_totp {
+        second_factors.push("totp");
+    }
+    if has_passkey {
+        second_factors.push("passkey");
+    }
+
+    // If a second factor is available, create temp session and require verification
+    if !second_factors.is_empty() {
         tracing::debug!(
             user_id = %user.id,
-            "User has TOTP enabled, requiring verification"
+            second_factors = ?second_factors,
+            "User has second factor enabled, requiring verification"
         );
 
         // Generate temp token
@@ -342,7 +360,11 @@ pub async fn login(
                 target_id: user.id.to_string(),
                 target_name: Some(user.email.clone()),
                 result: AuditResult::Success,
-                details: Some(serde_json::json!({"method": "password", "totp_required": true})),
+                details: Some(serde_json::json!({
+                    "method": "password",
+                    "totp_required": has_totp,
+                    "passkey_required": has_passkey,
+                })),
                 ip_address: Some(ip.clone()),
                 user_agent: user_agent.clone(),
                 trace_id: None,
@@ -358,7 +380,13 @@ pub async fn login(
             message: "ok".to_string(),
             user_id: user.id,
             realm_id: realm_id.clone(),
-            requires_totp: Some(true),
+            requires_totp: Some(has_totp),
+            second_factors: Some(
+                second_factors
+                    .iter()
+                    .map(|factor| factor.to_string())
+                    .collect(),
+            ),
             temp_token: Some(temp_token),
             expires_in_seconds: 300,
             redirect_to: None,
@@ -405,6 +433,7 @@ pub async fn login(
                 user_id: user.id,
                 realm_id: realm_id.clone(),
                 requires_totp: Some(false),
+                second_factors: None,
                 temp_token: None,
                 expires_in_seconds: 0,
                 redirect_to: None,
@@ -542,6 +571,7 @@ pub async fn login(
             user_id: user.id,
             realm_id: realm_id.clone(),
             requires_totp: Some(false),
+            second_factors: None,
             temp_token: None,
             expires_in_seconds: DEFAULT_OAUTH_SESSION_TTL_SECONDS as i64,
             redirect_to: Some(redirect_to),
@@ -620,6 +650,7 @@ pub async fn login(
             user_id: user.id,
             realm_id: realm_id.clone(),
             requires_totp: Some(false),
+            second_factors: None,
             temp_token: None,
             expires_in_seconds: ttl,
             redirect_to: None,

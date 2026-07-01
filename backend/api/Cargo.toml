@@ -94,3 +94,4 @@ hex = { workspace = true }
 urlencoding = { workspace = true }
 url = { workspace = true }
 rand = { workspace = true }
+webauthn-authenticator-rs = { workspace = true, features = ["softtoken"] }

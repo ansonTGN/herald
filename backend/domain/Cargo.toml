@@ -19,6 +19,7 @@ tracing = { workspace = true }
 rand = { workspace = true }
 bcrypt = { workspace = true }
 totp-lite = { workspace = true }
+webauthn-rs = { workspace = true }
 aes-gcm = { workspace = true }
 sha2 = { workspace = true }
 url = { workspace = true }
@@ -43,3 +44,4 @@ opentelemetry = { workspace = true }
 # Tests capture span fields via a JSON fmt layer (same pattern as the
 # request_id span tests in `herald-api::observability::metrics_extractor`).
 tracing-subscriber = { workspace = true }
+webauthn-authenticator-rs = { workspace = true }
