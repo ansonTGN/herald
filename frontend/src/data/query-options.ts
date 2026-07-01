@@ -9,6 +9,7 @@ import {
   listRoles,
   getRole,
   getRolePermissions,
+  getCurrentUserPermissions,
   getUserRoles,
   adminGetUserRoles,
   listRealmsPaginated,
@@ -398,6 +399,8 @@ export const usersQueryOptions = (
     staleTime: STALE_TIME_5_MIN,
   })
 
+export const adminUsersQueryOptions = usersQueryOptions
+
 export const userQueryOptions = (realmId: string, userId: string) =>
   queryOptions({
     queryKey: queryKeys.user(realmId, userId),
@@ -424,6 +427,8 @@ export const permissionsQueryOptions = (realmId: string) =>
     staleTime: STALE_TIME_5_MIN,
   })
 
+export const adminPermissionsQueryOptions = permissionsQueryOptions
+
 export const permissionQueryOptions = (realmId: string, permissionId: string) =>
   queryOptions({
     queryKey: queryKeys.permission(realmId, permissionId),
@@ -444,6 +449,8 @@ export const rolesQueryOptions = (realmId: string) =>
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_5_MIN,
   })
+
+export const adminRolesQueryOptions = rolesQueryOptions
 
 export const roleQueryOptions = (realmId: string, roleId: string) =>
   queryOptions({
@@ -467,6 +474,16 @@ export const userRolesQueryOptions = () =>
   queryOptions({
     queryKey: queryKeys.userRoles(),
     queryFn: async () => handleApiResponse(await getUserRoles()),
+    retry: RETRY_COUNT,
+    staleTime: STALE_TIME_5_MIN,
+  })
+
+export const currentUserRolesQueryOptions = userRolesQueryOptions
+
+export const currentUserPermissionsQueryOptions = () =>
+  queryOptions({
+    queryKey: [QUERY_KEYS.PERMISSIONS, 'current-user'] as const,
+    queryFn: async () => handleApiResponse(await getCurrentUserPermissions()),
     retry: RETRY_COUNT,
     staleTime: STALE_TIME_5_MIN,
   })
@@ -557,6 +574,8 @@ export const profileQueryOptions = queryOptions({
   staleTime: STALE_TIME_5_MIN,
   gcTime: GC_TIME_10_MIN,
 })
+
+export const currentUserProfileQueryOptions = profileQueryOptions
 
 export const turnstileStatusQueryOptions = (realmId: string) =>
   queryOptions({

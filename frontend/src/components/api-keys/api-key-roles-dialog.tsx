@@ -7,7 +7,7 @@ import {
   adminApiKeyRolesQueryOptions,
   updateApiKeyRolesMutation,
   queryKeys,
-  rolesQueryOptions,
+  adminRolesQueryOptions,
 } from '@/data/query-options'
 import {
   Dialog,
@@ -40,7 +40,7 @@ export function ApiKeyRolesDialog({
   const [isSaving, setIsSaving] = useState(false)
 
   // Fetch available roles
-  const { data: rolesData, isLoading: isLoadingRoles } = useQuery(rolesQueryOptions(realmId))
+  const { data: rolesData, isLoading: isLoadingRoles } = useQuery(adminRolesQueryOptions(realmId))
 
   // Fetch API key's current roles
   const { data: apiKeyRolesResponse, isLoading: isLoadingApiKeyRoles } = useQuery({

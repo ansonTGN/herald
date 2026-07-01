@@ -20,6 +20,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::common::validation;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
@@ -79,9 +80,6 @@ pub async fn get_role_policies(
     Extension(identity): Extension<Identity>,
     Path(role_uuid): Path<Uuid>,
 ) -> Result<ApiResult<RolePoliciesResponse>, ApiError> {
-    // Extract user_id from identity
-    let current_user_id = identity.user_id();
-
     // First, get the role to determine realm_id
     let role = herald_core::entity::roles::Entity::find()
         .filter(herald_core::entity::roles::Column::Id.eq(role_uuid))
@@ -95,29 +93,8 @@ pub async fn get_role_policies(
 
     let realm_id = role.realm_id;
 
-    // Check realm boundary
-    let identity_realm_id = identity.realm_id();
-    if identity_realm_id != realm_id {
-        return Err(ApiError::forbidden(
-            "Access denied: cannot view policies from a different realm",
-        ));
-    }
-
-    // Check policies.view permission
-    let allowed = state
-        .permission_checker
-        .check_permission(&realm_id, &current_user_id, "policies", "view")
-        .await
-        .map_err(|e| {
-            tracing::error!("Permission check error: {e}");
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !allowed {
-        return Err(ApiError::forbidden(
-            "Insufficient permissions to view role policies",
-        ));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "role policies")?;
+    admin.require_permission(&state, "policies", "view").await?;
     // Query role_policies
     let policies = role_policies::Entity::find()
         .filter(role_policies::Column::RoleId.eq(role_uuid))
@@ -167,9 +144,6 @@ pub async fn add_policy_to_role(
     Path(role_id): Path<Uuid>,
     axum::Json(request): axum::Json<AddPolicyRequest>,
 ) -> Result<ApiResult<PolicyResponse>, ApiError> {
-    // Extract user_id from identity
-    let current_user_id = identity.user_id();
-
     // Validate request
     if let Err(errors) = request.validate() {
         return Err(ApiError::bad_request(format!(
@@ -191,29 +165,10 @@ pub async fn add_policy_to_role(
 
     let realm_id = role.realm_id;
 
-    // Check realm boundary
-    let identity_realm_id = identity.realm_id();
-    if identity_realm_id != realm_id {
-        return Err(ApiError::forbidden(
-            "Access denied: cannot manage policies from a different realm",
-        ));
-    }
-
-    // Check policies.manage permission
-    let allowed = state
-        .permission_checker
-        .check_permission(&realm_id, &current_user_id, "policies", "manage")
-        .await
-        .map_err(|e| {
-            tracing::error!("Permission check error: {e}");
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !allowed {
-        return Err(ApiError::forbidden(
-            "Insufficient permissions to add policy to role",
-        ));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "role policies")?;
+    admin
+        .require_permission(&state, "policies", "manage")
+        .await?;
 
     // Create new policy
     let policy = role_policies::ActiveModel {
@@ -283,9 +238,6 @@ pub async fn remove_policy_from_role(
     Extension(identity): Extension<Identity>,
     Path((role_id, policy_id)): Path<(Uuid, Uuid)>,
 ) -> Result<ApiResult<()>, ApiError> {
-    // Extract user_id from identity
-    let current_user_id = identity.user_id();
-
     let policy = role_policies::Entity::find()
         .filter(role_policies::Column::Id.eq(policy_id))
         .one(state.db.as_ref())
@@ -304,29 +256,10 @@ pub async fn remove_policy_from_role(
         .ok_or_else(|| ApiError::not_found("Policy not found"))?
         .realm_id;
 
-    // Check realm boundary
-    let identity_realm_id = identity.realm_id();
-    if identity_realm_id != realm_id {
-        return Err(ApiError::forbidden(
-            "Access denied: cannot manage policies from a different realm",
-        ));
-    }
-
-    // Check policies.manage permission
-    let allowed = state
-        .permission_checker
-        .check_permission(&realm_id, &current_user_id, "policies", "manage")
-        .await
-        .map_err(|e| {
-            tracing::error!("Permission check error: {e}");
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !allowed {
-        return Err(ApiError::forbidden(
-            "Insufficient permissions to remove policy from role",
-        ));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "role policies")?;
+    admin
+        .require_permission(&state, "policies", "manage")
+        .await?;
 
     let result = role_policies::Entity::delete_many()
         .filter(role_policies::Column::Id.eq(policy_id))

@@ -39,7 +39,7 @@ const mockRolesQueryKey = ['roles', 'realm-1']
 const mockApiKeyRolesQueryKey = ['api-key-roles', 'realm-1', 'key-1']
 
 vi.mock('@/data/query-options', () => ({
-  rolesQueryOptions: () => ({ queryKey: mockRolesQueryKey }),
+  adminRolesQueryOptions: () => ({ queryKey: mockRolesQueryKey }),
   adminApiKeyRolesQueryOptions: () => ({ queryKey: mockApiKeyRolesQueryKey }),
   updateApiKeyRolesMutation: (...args: any[]) => mockUpdateApiKeyRoles(...args),
   queryKeys: {

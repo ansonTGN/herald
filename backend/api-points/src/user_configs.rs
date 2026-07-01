@@ -7,8 +7,7 @@ use axum::{
 use uuid::Uuid;
 
 use crate::types::UserPointsConfigResponse;
-use herald_api_base::application::http::auth::util::require_permission;
-use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -56,17 +55,8 @@ pub async fn get_user_points_config(
     Extension(identity): Extension<Identity>,
     Path((realm_id, user_id)): Path<(String, String)>,
 ) -> Result<Json<UserPointsConfigResponse>, ApiError> {
-    let _caller_id =
-        require_authenticated_user_in_realm(&identity, &realm_id, "user points config")?;
-    require_permission(
-        &state,
-        &realm_id,
-        &_caller_id.to_string(),
-        "points",
-        "view",
-        "points.view",
-    )
-    .await?;
+    let admin = AdminIdentity::require(identity, &realm_id, "user points config")?;
+    admin.require_permission(&state, "points", "view").await?;
 
     let user_uuid = user_id
         .parse::<Uuid>()
@@ -74,7 +64,7 @@ pub async fn get_user_points_config(
 
     match state
         .realm_config_service
-        .get_user_points_config(identity, &realm_id, user_uuid)
+        .get_user_points_config(admin.identity().clone(), &realm_id, user_uuid)
         .await
     {
         Ok(config) => Ok(Json(user_config_to_response(config))),

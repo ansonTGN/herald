@@ -4,7 +4,7 @@ use axum::{
 };
 use axum_valid::Valid;
 use chrono::Utc;
-use herald_api_base::application::http::auth::util::require_permission;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -41,16 +41,10 @@ pub async fn create_api_key(
     Path(realm_id): Path<String>,
     Valid(Json(payload)): Valid<Json<CreateApiKeyRequest>>,
 ) -> Result<ApiResult<CreateApiKeyResponse>, ApiError> {
-    let user_id = identity.user_id();
-    require_permission(
-        &state,
-        &realm_id,
-        &user_id,
-        "api_keys",
-        "manage",
-        "api_keys.manage",
-    )
-    .await?;
+    let admin = AdminIdentity::require(identity, &realm_id, "api keys")?;
+    admin
+        .require_permission(&state, "api_keys", "manage")
+        .await?;
 
     // Generate plaintext key and hash
     let plaintext_key = ClientApiKeyService::generate_api_key();
@@ -94,7 +88,7 @@ pub async fn create_api_key(
     if let Some(role_ids) = payload.role_ids {
         state
             .role_assignment_service
-            .assign_api_key_roles(identity, &realm_id, &saved.id, role_ids)
+            .assign_api_key_roles(admin.identity().clone(), &realm_id, &saved.id, role_ids)
             .await
             .map_err(|e| match e {
                 UserAdminError::PermissionDenied(msg) => ApiError::forbidden(msg),

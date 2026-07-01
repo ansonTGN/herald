@@ -64,7 +64,7 @@ vi.mock('@tanstack/react-query', () => ({
 }))
 
 vi.mock('@/data/query-options', () => ({
-  permissionsQueryOptions: vi.fn(() => ({ queryKey: ['permissions'] })),
+  adminPermissionsQueryOptions: vi.fn(() => ({ queryKey: ['permissions'] })),
   rolePermissionsQueryOptions: vi.fn(() => ({ queryKey: ['role-permissions'] })),
 }))
 

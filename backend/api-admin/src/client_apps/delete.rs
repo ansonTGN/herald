@@ -5,6 +5,7 @@ use axum::{
 use herald_core::domain::authentication::Identity;
 use uuid::Uuid;
 
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::client::ports::ClientService;
@@ -31,23 +32,24 @@ use herald_core::domain::client::ports::ClientService;
 pub async fn delete_client_app(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-    Path((_realm_id, id)): Path<(String, Uuid)>,
+    Path((realm_id, id)): Path<(String, Uuid)>,
     _headers: HeaderMap,
 ) -> Result<ApiResult<()>, ApiError> {
-    // Extract identity from request extension (injected by inject_identity middleware)
-    let identity_realm_id = identity.realm_id();
-    let current_user_id = identity.user_id();
+    let admin = AdminIdentity::require(identity, &realm_id, "client applications")?;
+    admin
+        .require_permission(&state, "clients", "manage")
+        .await?;
 
     tracing::debug!(
-        realm_id = %identity_realm_id,
-        user_id = %current_user_id,
+        realm_id = %realm_id,
+        user_id = %admin.user_id_string(),
         "Deleting client app"
     );
 
     // Call service layer
     let client_service = state.service.client_service();
     client_service
-        .delete_client_app(identity, id)
+        .delete_client_app(admin.identity().clone(), id)
         .await
         .map_err(|e| match e {
             herald_core::domain::common::entities::app_errors::CoreError::NotFound => {

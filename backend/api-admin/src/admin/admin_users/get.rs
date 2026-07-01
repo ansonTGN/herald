@@ -4,10 +4,10 @@ use axum::{
     extract::{Path, State},
     http::HeaderMap,
 };
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::permission_service::PermissionService;
 use uuid::Uuid;
 
 /// Get user by ID
@@ -40,55 +40,15 @@ pub async fn get_user(
 ) -> Result<ApiResult<UserDetailResponse>, ApiError> {
     use herald_core::domain::common::entities::app_errors::CoreError;
 
-    // Extract identity from request extension (injected by inject_identity middleware)
-    let current_user_id = identity.user_id();
-    let identity_realm_id = identity.realm_id();
-
-    // MANUAL POLICY CHECK
-    // Check specific permission for getting user details
-    {
-        let permission_checker = &state.permission_checker;
-
-        let allowed = permission_checker
-            .check_permission(&realm_id, &current_user_id, "users", "view")
-            .await
-            .map_err(|e| {
-                tracing::error!("Permission check error: {e}");
-                ApiError::internal("Internal server error")
-            })?;
-
-        tracing::info!(
-            realm_id = %realm_id,
-            user_id = %current_user_id,
-            resource = "users",
-            action = "view",
-            allowed,
-            "Policy check result"
-        );
-
-        if !allowed {
-            return Err(ApiError::forbidden("Insufficient permissions to get user"));
-        }
-    }
-
-    // REALM BOUNDARY CHECK
-    if identity_realm_id != realm_id {
-        tracing::warn!(
-            user_realm = %identity_realm_id,
-            target_realm = %realm_id,
-            "Realm boundary check failed: user cannot access different realm"
-        );
-        return Err(ApiError::forbidden(
-            "Access denied: cannot get user from a different realm",
-        ));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "user management")?;
+    admin.require_permission(&state, "users", "view").await?;
 
     // Call UserService - Realm boundary check is enforced in Service layer
     use herald_core::domain::user::UserService;
 
     let user = UserService::get_user(
         &*state.service.user_service(),
-        identity.clone(),
+        admin.identity().clone(),
         target_user_id,
     )
     .await

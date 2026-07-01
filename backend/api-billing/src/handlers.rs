@@ -20,12 +20,13 @@ use crate::types::{
     SubscriptionListResponse,
 };
 
-use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
+use herald_api_base::application::http::common::auth_utils::{
+    AdminIdentity, require_authenticated_user_in_realm,
+};
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 // Import the trait and types from herald_core
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::PermissionService;
 use herald_core::domain::billing::{BillingRepository, EntitlementMapping, Subscription};
 use herald_core::domain::common::entities::app_errors::CoreError;
 use herald_core::domain::realm_config::RealmConfigRepository;
@@ -164,41 +165,8 @@ pub async fn require_billing_permission(
     realm_id: &str,
     action: &str,
 ) -> Result<(), ApiError> {
-    let user_id = identity.user_id();
-    let identity_realm_id = identity.realm_id();
-
-    // 1. Realm boundary check
-    if identity_realm_id != realm_id {
-        return Err(ApiError::forbidden(format!(
-            "Access denied: identity realm '{}' does not match requested realm '{}'",
-            identity_realm_id, realm_id
-        )));
-    }
-
-    // 2. Business permission check
-    let has_permission = state
-        .permission_checker
-        .check_permission(realm_id, &user_id, "billing", action)
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                user_id = %user_id,
-                realm_id = %realm_id,
-                error = %e,
-                "Failed to check billing.{} permission",
-                action
-            );
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !has_permission {
-        return Err(ApiError::forbidden(format!(
-            "Insufficient permissions: billing.{} required",
-            action
-        )));
-    }
-
-    Ok(())
+    let admin = AdminIdentity::require(identity.clone(), realm_id, "billing")?;
+    admin.require_permission(state, "billing", action).await
 }
 
 // ============================================================================

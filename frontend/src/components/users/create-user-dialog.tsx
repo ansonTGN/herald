@@ -24,7 +24,7 @@ import { getFieldErrorMessage } from '@/lib/form-utils'
 import { getUserStatusOptions, USER_STATUS } from '@/lib/constants/user'
 import { useQuery } from '@tanstack/react-query'
 import { useRealmId } from '@/stores/auth-store'
-import { queryKeys, rolesQueryOptions } from '@/data/query-options'
+import { adminRolesQueryOptions, queryKeys } from '@/data/query-options'
 import { TextField } from '@/components/shared/form-fields'
 import { m } from '@/paraglide/messages'
 
@@ -49,7 +49,7 @@ export function CreateUserDialog({
   const realmId = realmIdProp ?? storeRealmId
   // Fetch roles to get the correct role UUIDs
   const { data: rolesData } = useQuery({
-    ...rolesQueryOptions(realmId),
+    ...adminRolesQueryOptions(realmId),
     enabled: open,
     select: (data) => data ?? [],
   })

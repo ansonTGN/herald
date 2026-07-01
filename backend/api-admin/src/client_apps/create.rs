@@ -6,6 +6,7 @@ use axum_valid::Valid;
 use herald_core::domain::authentication::Identity;
 
 use crate::client_apps::types::{ClientAppCreateRequest, ClientAppItem};
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::client::ports::ClientService;
@@ -34,13 +35,14 @@ pub async fn create_client_app(
     Path(realm_id): Path<String>,
     Valid(Json(payload)): Valid<Json<ClientAppCreateRequest>>,
 ) -> Result<ApiResult<ClientAppItem>, ApiError> {
-    // Extract identity from request extension (injected by inject_identity middleware)
-    let identity_realm_id = identity.realm_id();
-    let current_user_id = identity.user_id();
+    let admin = AdminIdentity::require(identity, &realm_id, "client applications")?;
+    admin
+        .require_permission(&state, "clients", "manage")
+        .await?;
 
     tracing::debug!(
-        realm_id = %identity_realm_id,
-        user_id = %current_user_id,
+        realm_id = %realm_id,
+        user_id = %admin.user_id_string(),
         "Creating client app"
     );
 
@@ -61,7 +63,7 @@ pub async fn create_client_app(
     // Call service layer
     let client_service = state.service.client_service();
     let client_app = client_service
-        .create_client_app(identity, service_request)
+        .create_client_app(admin.identity().clone(), service_request)
         .await
         .map_err(|e| match e {
             herald_core::domain::common::entities::app_errors::CoreError::Conflict(msg) => {

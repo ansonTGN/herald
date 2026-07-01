@@ -4,9 +4,9 @@ use herald_core::domain::audit::{
     AuditAction, AuditCategory, AuditEventFilters, AuditEventRepository,
 };
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::PermissionService;
 
 use super::types::{AuditEventListResponse, AuditEventQueryParams, AuditEventResponse};
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 
@@ -34,27 +34,13 @@ use herald_api_base::application::http::state::AppState;
     security(("bearer_auth" = []))
 )]
 pub async fn list_audit_events(
-    Path(_realm_id): Path<String>,
+    Path(realm_id): Path<String>,
     Query(params): Query<AuditEventQueryParams>,
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
 ) -> Result<ApiResult<AuditEventListResponse>, ApiError> {
-    let realm_id = identity.realm_id();
-
-    let allowed = state
-        .permission_checker
-        .check_permission(&realm_id, &identity.user_id(), "audit", "view")
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to check audit access permission: {e}");
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !allowed {
-        return Err(ApiError::forbidden(
-            "Insufficient permissions to view audit logs",
-        ));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "audit logs")?;
+    admin.require_permission(&state, "audit", "view").await?;
 
     let category: Option<AuditCategory> = params
         .category

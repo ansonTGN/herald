@@ -9,6 +9,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use herald_api_base::application::http::auth::util::load_session_with_ip_validation;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -111,13 +112,18 @@ pub struct PermissionCheckResponse {
 pub async fn create_permission(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Path(realm_id): Path<String>,
     Valid(Json(payload)): Valid<Json<PermissionCreateRequest>>,
 ) -> Result<ApiResult<()>, ApiError> {
+    let admin = AdminIdentity::require(identity, &realm_id, "permissions")?;
+    admin
+        .require_permission(&state, "policies", "manage")
+        .await?;
+
     // 1. 获取 permission_management_service
     let permission_management_service = &state.permission_management_service;
 
     // 2. 验证策略合法性（Realm Admin 只能创建自己 realm 的策略）
-    let realm_id = identity.realm_id();
     super::middleware::validate_policy_for_realm_admin(&payload.permission, &realm_id)?;
 
     // 3. 提取参数
@@ -137,7 +143,14 @@ pub async fn create_permission(
     // 4. 调用 service 层
     permission_management_service
         .create_permission(
-            identity, &realm_id, &client_id, role_id, user_id, role, resource, action,
+            admin.into_identity(),
+            &realm_id,
+            &client_id,
+            role_id,
+            user_id,
+            role,
+            resource,
+            action,
         )
         .await
         .map_err(|e| match e {
@@ -182,33 +195,8 @@ pub async fn list_permission(
     _headers: HeaderMap,
     Path((realm_id, client_id)): Path<(String, String)>,
 ) -> Result<ApiResult<Vec<PermissionData>>, ApiError> {
-    let current_user_id = identity.user_id();
-
-    if identity.realm_id() != realm_id {
-        return Err(ApiError::forbidden(
-            "Access denied: cannot view policies in a different realm",
-        ));
-    }
-
-    let has_permission = state
-        .permission_checker
-        .check_permission(&realm_id, &current_user_id, "policies", "view")
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                current_user_id = %current_user_id,
-                realm_id = %realm_id,
-                error = %e,
-                "Failed to check policies.view permission"
-            );
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !has_permission {
-        return Err(ApiError::forbidden(
-            "Insufficient permissions: requires policies.view",
-        ));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "permissions")?;
+    admin.require_permission(&state, "policies", "view").await?;
 
     // 获取 permission_management_service
     let permission_management_service = &state.permission_management_service;
@@ -276,13 +264,18 @@ pub async fn list_permission(
 pub async fn delete_permission(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    Path(realm_id): Path<String>,
     Valid(Json(payload)): Valid<Json<PermissionCreateRequest>>,
 ) -> Result<ApiResult<()>, ApiError> {
+    let admin = AdminIdentity::require(identity, &realm_id, "permissions")?;
+    admin
+        .require_permission(&state, "policies", "manage")
+        .await?;
+
     // 获取 permission_management_service
     let permission_management_service = &state.permission_management_service;
 
     // 提取 realm_id 和参数
-    let realm_id = identity.realm_id();
     let client_id = payload.client_id.to_string();
     let (role_id, user_id, role, resource, action) = match &payload.permission {
         PermissionData::PoliceWrap(Police {
@@ -299,7 +292,14 @@ pub async fn delete_permission(
     // 调用 service 层
     permission_management_service
         .delete_permission(
-            identity, &realm_id, &client_id, role_id, user_id, role, resource, action,
+            admin.into_identity(),
+            &realm_id,
+            &client_id,
+            role_id,
+            user_id,
+            role,
+            resource,
+            action,
         )
         .await
         .map_err(|e| match e {

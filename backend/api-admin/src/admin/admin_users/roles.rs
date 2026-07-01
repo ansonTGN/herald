@@ -7,6 +7,7 @@ use axum::{
     http::HeaderMap,
 };
 use axum_valid::Valid;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ApiResult};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -39,10 +40,13 @@ pub async fn get_user_roles(
     Path((realm_id, user_id)): Path<(String, Uuid)>,
     _headers: HeaderMap,
 ) -> Result<ApiResult<UserRolesResponse>, ApiError> {
+    let admin = AdminIdentity::require(identity, &realm_id, "user role management")?;
+    admin.require_permission(&state, "users", "view").await?;
+
     let role_assignment_service = &state.role_assignment_service;
 
     let roles = role_assignment_service
-        .get_user_roles(identity, &realm_id, user_id)
+        .get_user_roles(admin.identity().clone(), &realm_id, user_id)
         .await
         .map_err(|e| match e {
             UserAdminError::PermissionDenied(msg) => ApiError::forbidden(msg),
@@ -101,10 +105,18 @@ pub async fn update_user_roles(
     _headers: HeaderMap,
     Valid(Json(payload)): Valid<Json<UpdateUserRolesRequest>>,
 ) -> Result<ApiResult<()>, ApiError> {
+    let admin = AdminIdentity::require(identity, &realm_id, "user role management")?;
+    admin.require_permission(&state, "roles", "manage").await?;
+
     let role_assignment_service = &state.role_assignment_service;
 
     role_assignment_service
-        .assign_user_roles(identity, &realm_id, target_user_id, payload.role_ids)
+        .assign_user_roles(
+            admin.identity().clone(),
+            &realm_id,
+            target_user_id,
+            payload.role_ids,
+        )
         .await
         .map_err(|e| match e {
             UserAdminError::PermissionDenied(msg) => ApiError::forbidden(msg),

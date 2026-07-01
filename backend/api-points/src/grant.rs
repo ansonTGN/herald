@@ -8,8 +8,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::types::{GrantPointsRequest, GrantPointsResponse};
-use herald_api_base::application::http::auth::util::require_permission;
-use herald_api_base::application::http::common::auth_utils::require_authenticated_user_in_realm;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::{ApiError, ErrorResponse};
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
@@ -63,16 +62,8 @@ pub async fn grant_points(
     Path(realm_id): Path<String>,
     Json(request): Json<GrantPointsRequest>,
 ) -> Result<Json<GrantPointsResponse>, ApiError> {
-    let user_id = require_authenticated_user_in_realm(&identity, &realm_id, "points grant")?;
-    require_permission(
-        &state,
-        &realm_id,
-        &user_id.to_string(),
-        "points",
-        "manage",
-        "points.manage",
-    )
-    .await?;
+    let admin = AdminIdentity::require(identity, &realm_id, "points grant")?;
+    admin.require_permission(&state, "points", "manage").await?;
 
     // Parse user_id as UUID
     let user_id = request
@@ -116,7 +107,7 @@ pub async fn grant_points(
         reason: request.reason,
         validity_days: request.validity_days,
         source_type: CreditSourceType::AdminGrant,
-        source_id: identity.user_id(),
+        source_id: admin.user_id_string(),
     };
 
     // Echo the resolved target bucket back to the caller.
@@ -126,7 +117,7 @@ pub async fn grant_points(
 
     match state
         .points_service
-        .grant_points(identity, &realm_id, input)
+        .grant_points(admin.identity().clone(), &realm_id, input)
         .await
     {
         Ok(output) => Ok(Json(GrantPointsResponse {

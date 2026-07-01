@@ -14,10 +14,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_api_base::application::http::server::api_entities::ApiError;
 use herald_api_base::application::http::state::AppState;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::PermissionService;
 use herald_core::domain::billing::{
     BucketByCreditType, CreateCreditBucketInput, CreditBucket, CreditBucketDetail,
     CreditBucketError, CreditBucketListItem, CreditBucketOverviewRow, UpdateCreditBucketInput,
@@ -146,37 +146,8 @@ pub(crate) async fn require_points_manage_permission(
     identity: &Identity,
     realm_id: &str,
 ) -> Result<(), ApiError> {
-    let user_id = identity.user_id();
-    let identity_realm_id = identity.realm_id();
-
-    if identity_realm_id != realm_id {
-        return Err(ApiError::forbidden(format!(
-            "Access denied: identity realm '{}' does not match requested realm '{}'",
-            identity_realm_id, realm_id
-        )));
-    }
-
-    let has_permission = state
-        .permission_checker
-        .check_permission(realm_id, &user_id, "points", "manage")
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                user_id = %user_id,
-                realm_id = %realm_id,
-                error = %e,
-                "Failed to check points.manage permission"
-            );
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !has_permission {
-        return Err(ApiError::forbidden(
-            "Insufficient permissions: points.manage required".to_string(),
-        ));
-    }
-
-    Ok(())
+    let admin = AdminIdentity::require(identity.clone(), realm_id, "credit bucket management")?;
+    admin.require_permission(state, "points", "manage").await
 }
 
 // ===== Response DTOs =====

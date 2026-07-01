@@ -1,19 +1,15 @@
-use axum::extract::{Request, State};
+use axum::extract::{Extension, State};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::application::http::auth::util::require_session;
 pub use crate::application::http::server::api_entities::ErrorResponse;
 use crate::application::http::server::api_entities::{ApiError, ApiResult};
 use crate::application::http::state::AppState;
-use herald_core::admin::user::BUILTIN_ROLE_REALM_ADMIN;
-use herald_core::domain::authorization::{
-    PermissionRepository, RoleRepository, permission_service::PermissionService,
-};
-use herald_core::infrastructure::authorization::{
-    PostgresPermissionRepository, PostgresRoleRepository,
-};
+use herald_api_base::application::http::common::auth_utils::SelfIdentity;
+use herald_core::domain::authentication::Identity;
+use herald_core::domain::authorization::{RoleRepository, permission_service::PermissionService};
+use herald_core::infrastructure::authorization::PostgresRoleRepository;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct UserProfileRolesResponse {
@@ -24,7 +20,7 @@ pub struct UserProfileRolesResponse {
 /// 获取当前用户角色信息和权限
 ///
 /// 返回当前登录用户的所有角色（role names）和权限（permission names）。
-/// 同时检查用户是否具有内置角色（realm-admin）。
+/// 返回当前用户实际拥有的角色和权限，不展开 realm 全量权限定义。
 #[utoipa::path(
     get,
     path = "/api/user/roles",
@@ -37,33 +33,24 @@ pub struct UserProfileRolesResponse {
 )]
 pub async fn get_user_roles(
     State(state): State<AppState>,
-    req: Request,
+    Extension(identity): Extension<Identity>,
 ) -> Result<ApiResult<UserProfileRolesResponse>, ApiError> {
-    let headers = req.headers().clone();
-    let (_token, sess) = require_session(&state, &headers).await?;
+    let self_identity = SelfIdentity::require(identity)?;
+    let realm_id = self_identity.realm_id();
+    let user_id = self_identity.user_id_string();
 
     let permission_checker = &state.permission_checker;
     let role_repo = PostgresRoleRepository::new(state.db.clone());
-    let permission_repo = PostgresPermissionRepository::new(state.db.clone());
-
-    // Find realm-admin role
-    let realm_admin_role_id = match role_repo
-        .find_by_name(BUILTIN_ROLE_REALM_ADMIN, &sess.realm_id, &sess.client_id)
-        .await
-    {
-        Ok(role) => Some(role.id.to_string()),
-        Err(_) => None,
-    };
 
     // Get user's roles
     let role_ids = permission_checker
-        .get_user_roles(&sess.realm_id, &sess.user_id)
+        .get_user_roles(&realm_id, &user_id)
         .await
         .map_err(|e| {
             tracing::error!(
                 error = %e,
-                user_id = %sess.user_id,
-                sess.realm_id = %sess.realm_id,
+                user_id = %user_id,
+                realm_id = %realm_id,
                 "Failed to fetch user roles"
             );
             ApiError::internal("Internal server error")
@@ -73,12 +60,6 @@ pub async fn get_user_roles(
         role_ids = ?role_ids,
         "Found roles for user"
     );
-
-    let has_realm_admin_role = if let Some(ref role_id) = realm_admin_role_id {
-        role_ids.contains(role_id)
-    } else {
-        false
-    };
 
     // Get role names
     let role_names = if !role_ids.is_empty() {
@@ -102,39 +83,18 @@ pub async fn get_user_roles(
         Vec::new()
     };
 
-    // Get permissions
-    let permissions = if has_realm_admin_role {
-        // realm-admin: return all permissions
-        permission_repo
-            .list_permissions(&sess.realm_id)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    error = %e,
-                    user_id = %sess.user_id,
-                    sess.realm_id = %sess.realm_id,
-                    "Failed to fetch all permissions for realm-admin"
-                );
-                ApiError::internal("Failed to fetch permissions")
-            })?
-            .into_iter()
-            .map(|p| p.name)
-            .collect()
-    } else {
-        // Regular user: use permission_checker
-        permission_checker
-            .get_user_permissions(&sess.realm_id, &sess.user_id)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    error = %e,
-                    user_id = %sess.user_id,
-                    sess.realm_id = %sess.realm_id,
-                    "Failed to fetch user permissions"
-                );
-                ApiError::internal("Failed to fetch user permissions")
-            })?
-    };
+    let permissions = permission_checker
+        .get_user_permissions(&realm_id, &user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error = %e,
+                user_id = %user_id,
+                realm_id = %realm_id,
+                "Failed to fetch user permissions"
+            );
+            ApiError::internal("Failed to fetch user permissions")
+        })?;
 
     Ok(ApiResult::ok(UserProfileRolesResponse {
         roles: role_names,

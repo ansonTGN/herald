@@ -1,4 +1,5 @@
 use axum::{Extension, extract::Path, extract::State};
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_core::domain::authentication::Identity;
 use herald_core::domain::authorization::PermissionService;
 use uuid::Uuid;
@@ -32,33 +33,10 @@ pub async fn delete_permission(
     Path((realm_id, id)): Path<(String, Uuid)>,
     Extension(identity): Extension<Identity>,
 ) -> Result<ApiResult<()>, ApiError> {
-    if identity.realm_id() != realm_id {
-        return Err(ApiError::forbidden(
-            "Cannot delete permissions in a different realm",
-        ));
-    }
-
-    // Check permission: requires permissions.manage
-    let current_user_id = identity.user_id();
-    let has_permission = state
-        .permission_checker
-        .check_permission(&realm_id, &current_user_id, "permissions", "manage")
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                current_user_id = %current_user_id,
-                realm_id = %realm_id,
-                error = %e,
-                "Failed to check permissions.manage permission"
-            );
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !has_permission {
-        return Err(ApiError::forbidden(
-            "Insufficient permissions: requires permissions.manage",
-        ));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "permission definitions")?;
+    admin
+        .require_permission(&state, "permissions", "manage")
+        .await?;
 
     // 3. Check if permission is built-in
     let permission: Option<(bool, String, String)> = sqlx::query_as(
@@ -77,7 +55,7 @@ pub async fn delete_permission(
         Some((is_builtin, permission_name, realm_id)) => {
             if is_builtin {
                 tracing::warn!(
-                    user_id = %identity.user_id(),
+                    user_id = %admin.user_id_string(),
                     permission_id = %id,
                     permission_name = %permission_name,
                     "Attempted to delete built-in permission"

@@ -11,8 +11,8 @@ use validator::Validate;
 
 use crate::application::http::server::api_entities::{ApiError, ApiResult};
 use crate::application::http::state::AppState;
+use herald_api_base::application::http::common::auth_utils::AdminIdentity;
 use herald_core::domain::authentication::Identity;
-use herald_core::domain::authorization::PermissionService;
 use herald_core::domain::realm_config::{ConfigType, RealmConfigService, UpsertRealmConfigRequest};
 use herald_core::domain::user_totp::{RealmTotpConfigRepository, RealmTotpStatistics};
 use herald_core::infrastructure::user_totp::PostgresRealmTotpConfigRepository;
@@ -67,39 +67,10 @@ pub async fn handle_update_realm_totp_config(
     Extension(identity): Extension<Identity>,
     Valid(Json(req)): Valid<Json<UpdateRealmTotpConfigRequest>>,
 ) -> Result<ApiResult<UpdateRealmTotpConfigResponse>, ApiError> {
-    // Check user permission for realm configuration
-    // TOTP configuration requires 'settings.manage' permission
-    let has_permission = state
-        .permission_checker
-        .check_permission(
-            &identity.realm_id(),
-            &identity.user_id(),
-            "settings",
-            "manage",
-        )
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to check permission: {}", e);
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !has_permission {
-        tracing::warn!(
-            realm_id = %realm_id,
-            user_id = %identity.user_id(),
-            "Permission denied: settings.manage required for TOTP configuration"
-        );
-        return Err(ApiError::forbidden(
-            "Insufficient permissions to update TOTP configuration. Requires 'settings.manage' permission.",
-        ));
-    }
-
-    // CRITICAL: Realm boundary check - prevent cross-realm TOTP config access
-    if !identity.has_access_to_realm(&realm_id) {
-        return Err(ApiError::forbidden(
-            "Access denied: cannot modify TOTP config in a different realm",
-        ));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "realm TOTP configuration")?;
+    admin
+        .require_permission(&state, "settings", "manage")
+        .await?;
 
     // Use RealmConfigService to store TOTP configuration
     let service = state.service.realm_config_service();
@@ -120,7 +91,7 @@ pub async fn handle_update_realm_totp_config(
     };
 
     let config = service
-        .upsert_config(identity.clone(), realm_id.clone(), config_request)
+        .upsert_config(admin.identity().clone(), realm_id.clone(), config_request)
         .await
         .map_err(|e| {
             tracing::error!(
@@ -203,46 +174,15 @@ pub async fn handle_get_realm_totp_config(
     Path(realm_id): Path<String>,
     Extension(identity): Extension<Identity>,
 ) -> Result<ApiResult<GetRealmTotpConfigResponse>, ApiError> {
-    // Check user permission for viewing realm configuration
-    // TOTP configuration requires 'settings.view' permission
-    let has_permission = state
-        .permission_checker
-        .check_permission(
-            &identity.realm_id(),
-            &identity.user_id(),
-            "settings",
-            "view",
-        )
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to check permission: {}", e);
-            ApiError::internal("Failed to check permission")
-        })?;
-
-    if !has_permission {
-        tracing::warn!(
-            realm_id = %realm_id,
-            user_id = %identity.user_id(),
-            "Permission denied: settings.view required for TOTP configuration"
-        );
-        return Err(ApiError::forbidden(
-            "Insufficient permissions to view TOTP configuration. Requires 'settings.view' permission.",
-        ));
-    }
-
-    // CRITICAL: Realm boundary check - prevent cross-realm TOTP config access
-    if !identity.has_access_to_realm(&realm_id) {
-        return Err(ApiError::forbidden(
-            "Access denied: cannot view TOTP config from a different realm",
-        ));
-    }
+    let admin = AdminIdentity::require(identity, &realm_id, "realm TOTP configuration")?;
+    admin.require_permission(&state, "settings", "view").await?;
 
     // Use RealmConfigService to get TOTP configuration
     let service = state.service.realm_config_service();
 
     let config_entry = service
         .get_config(
-            identity.clone(),
+            admin.identity().clone(),
             realm_id.clone(),
             ConfigType::Totp.as_ref().to_string(),
             "settings".to_string(),
