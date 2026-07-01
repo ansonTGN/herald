@@ -716,11 +716,14 @@ export const SELECTORS = {
    * Route: /{realmId}/auth/register
    */
   registration: {
+    card: '[data-testid="register-card"]',
+    title: '[data-testid="register-title"]',
     emailInput: '[data-testid="register-email-input"]',
     passwordInput: '[data-testid="register-password-input"]',
     confirmPasswordInput: '[data-testid="register-confirm-password-input"]',
     nicknameInput: '[data-testid="register-nickname-input"]',
     registerButton: '[data-testid="register-submit-button"]',
+    turnstileContainer: '.turnstile-widget-container',
   },
 
   /**
@@ -1101,6 +1104,75 @@ export const SELECTORS = {
     filterToDate: '[data-testid="filter-to-date"]',
     resetFiltersButton: '[data-testid="reset-filters-button"]',
     applyFiltersButton: '[data-testid="apply-filters-button"]',
+  },
+
+  /**
+   * Legal Consent & Account Deletion Selectors
+   *
+   * Covers registration consent, login re-consent, post-login reconsent dialog,
+   * public agreement pages, admin legal agreement management, and self-delete.
+   */
+  legalConsent: {
+    // Registration
+    registerConsentCheckbox: '[data-testid="register-consent-checkbox"]',
+    registerConsentError: '[data-testid="register-consent-error"]',
+    termsOfServiceLink: '[data-testid="terms-of-service-link"]',
+    privacyPolicyLink: '[data-testid="privacy-policy-link"]',
+
+    // Public agreement page
+    agreementCard: '[data-testid="agreement-card"]',
+    agreementTitle: '[data-testid="agreement-title"]',
+    agreementVersion: '[data-testid="agreement-version"]',
+    agreementEffectiveDate: '[data-testid="agreement-effective-date"]',
+    agreementBody: '[data-testid="agreement-body"]',
+
+    // Login re-consent view
+    loginReconsentView: '[data-testid="login-reconsent-view"]',
+    loginReconsentAgreement: (type: string) =>
+      `[data-testid="login-reconsent-agreement-${type}"]`,
+    loginReconsentAgreementVersion: (type: string) =>
+      `[data-testid="login-reconsent-agreement-${type}-version"]`,
+    loginAgreeAndContinueButton: '[data-testid="login-agree-and-continue-button"]',
+    loginDeclineBackButton: '[data-testid="login-decline-back-button"]',
+    loginConsentStatement: '[data-testid="login-consent-statement"]',
+
+    // Post-login reconsent dialog
+    reconsentDialogTitle: '[data-testid="reconsent-dialog-title"]',
+    reconsentDialogDescription: '[data-testid="reconsent-dialog-description"]',
+    reconsentAgreement: (type: string) => `[data-testid="reconsent-agreement-${type}"]`,
+    reconsentAgreeButton: '[data-testid="reconsent-agree-button"]',
+    reconsentLogoutButton: '[data-testid="reconsent-logout-button"]',
+
+    // Admin Legal tab
+    legalTab: '[data-testid="legal-tab"]',
+    legalAgreementsTab: '[data-testid="legal-agreements-tab"]',
+    legalAgreementCard: (type: string) => `[data-testid="legal-agreement-card-${type}"]`,
+    legalAgreementTitle: (type: string) => `[data-testid="legal-agreement-title-${type}"]`,
+    legalAgreementMeta: (type: string) => `[data-testid="legal-agreement-meta-${type}"]`,
+    sourceBadge: (source: 'default' | 'custom') => `[data-testid="source-badge-${source}"]`,
+    legalVersionLabelInput: (type: string) =>
+      `[data-testid="legal-version-label-input-${type}"]`,
+    legalContentEnInput: (type: string) =>
+      `[data-testid="legal-content-en-input-${type}"]`,
+    legalContentZhInput: (type: string) =>
+      `[data-testid="legal-content-zh-input-${type}"]`,
+    legalPublishButton: (type: string) => `[data-testid="legal-publish-button-${type}"]`,
+    legalRevertButton: (type: string) => `[data-testid="legal-revert-button-${type}"]`,
+    legalRevertConfirmButton: (type: string) =>
+      `[data-testid="legal-revert-confirm-${type}"]`,
+    legalHistoryTable: (type: string) => `[data-testid="legal-history-table-${type}"]`,
+    legalHistoryRow: (type: string, versionId: string) =>
+      `[data-testid="legal-history-row-${type}-${versionId}"]`,
+
+    // Delete account
+    deleteAccountOpenButton: '[data-testid="delete-account-open-button"]',
+    deleteAccountDialog: '[data-testid="delete-account-dialog"]',
+    deleteAccountDialogTitle: '[data-testid="delete-account-dialog-title"]',
+    deleteAccountPasswordInput: '[data-testid="delete-account-password-input"]',
+    deleteAccountSubmitButton: '[data-testid="delete-account-submit-button"]',
+    deleteAccountCancelButton: '[data-testid="delete-account-cancel-button"]',
+    deleteAccountErrorAlert: '[data-testid="delete-account-error-alert"]',
+    deleteAccountErrorMessage: '[data-testid="delete-account-error-message"]',
   },
 };
 

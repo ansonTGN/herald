@@ -17,6 +17,11 @@
 import { test as base, type Page } from '@playwright/test'
 import { UnifiedLogger } from '../helpers/unified-logger'
 import { verifyTestEnvironment, cleanupDemoTestData } from '../helpers/environment-setup'
+import {
+  AdminLegalHelper,
+  LegalConsentHelper,
+  DeleteAccountHelper,
+} from '../helpers/legal-consent'
 import { LoginPage } from '../pages/login-page'
 import { UsersPage } from '../pages/users-page'
 import { RolesPage } from '../pages/roles-page'
@@ -64,6 +69,9 @@ export const test = base.extend<{
   apiKeyPage: ApiKeysPage
   entitlementMappingsPage: EntitlementMappingsPage
   adminSubscriptionListPage: AdminSubscriptionListPage
+  adminLegalHelper: AdminLegalHelper
+  legalConsentHelper: LegalConsentHelper
+  deleteAccountHelper: DeleteAccountHelper
   testStartTime: number
   page: Page
 }>({
@@ -428,6 +436,38 @@ export const test = base.extend<{
     await adminSubscriptionListPage.goto('admin')
 
     await use(adminSubscriptionListPage)
+  },
+
+  /**
+   * Fixture: Admin Legal Helper
+   *
+   * Provides a consent-aware AdminLegalHelper instance.
+   * The helper logs itself in when navigating to Settings > Legal.
+   */
+  adminLegalHelper: async ({ page, demoLogger }, use) => {
+    const helper = new AdminLegalHelper(page, demoLogger)
+    await use(helper)
+  },
+
+  /**
+   * Fixture: Legal Consent Helper
+   *
+   * Provides a LegalConsentHelper for public agreement pages and the post-login
+   * re-consent dialog.
+   */
+  legalConsentHelper: async ({ page, demoLogger }, use) => {
+    const helper = new LegalConsentHelper(page, demoLogger)
+    await use(helper)
+  },
+
+  /**
+   * Fixture: Delete Account Helper
+   *
+   * Provides a DeleteAccountHelper for the self-service account deletion flow.
+   */
+  deleteAccountHelper: async ({ page, demoLogger }, use) => {
+    const helper = new DeleteAccountHelper(page, demoLogger)
+    await use(helper)
   },
 })
 

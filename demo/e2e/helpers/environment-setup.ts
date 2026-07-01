@@ -13,8 +13,9 @@
  */
 
 import { Page, expect } from '@playwright/test'
-import { loginAsAdmin } from './auth'
 import { validateBackendHealth, formatValidationErrors, type ValidationResult } from './api-validator'
+import { UsersPage } from '../pages/users-page'
+import { loginAsAdminWithConsent } from './legal-consent/consent-aware-login'
 
 export const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
@@ -84,6 +85,7 @@ export interface CleanupDataOptions {
   timestamp?: number
   verbose?: boolean
   aggressive?: boolean
+  testUserEmails?: string[]
 }
 
 // ============================================================================
@@ -360,6 +362,59 @@ export async function verifyRequiredRoles(
 // ============================================================================
 
 /**
+ * 清理测试创建的用户
+ *
+ * 通过 consent-aware admin 登录后进入用户列表，按 email 删除测试用户。
+ * 被 keepUsers 保护的用户会被跳过；不存在的用户会被静默忽略，避免破坏
+ * 现有测试。
+ */
+async function cleanupTestUsers(
+  page: Page,
+  realmId: string,
+  options: CleanupDataOptions = {}
+): Promise<void> {
+  const { verbose = true, testUserEmails = [], keepUsers = [] } = options
+
+  if (testUserEmails.length === 0) {
+    return
+  }
+
+  console.log(`[EnvironmentSetup] 开始清理测试用户 (realm: ${realmId})...`)
+
+  // 使用 consent-aware admin 登录，防止协议版本变更后登录页出现重新同意视图
+  await loginAsAdminWithConsent(page, realmId)
+
+  const usersPage = new UsersPage(page)
+  await usersPage.goto(realmId)
+
+  for (const email of testUserEmails) {
+    if (keepUsers.includes(email)) {
+      if (verbose) {
+        console.log(`[EnvironmentSetup] 跳过受保护用户: ${email}`)
+      }
+      continue
+    }
+
+    try {
+      const exists = await usersPage.userExists(email)
+      if (exists) {
+        await usersPage.deleteUser(email, realmId)
+        if (verbose) {
+          console.log(`[EnvironmentSetup] 已删除测试用户: ${email}`)
+        }
+      } else if (verbose) {
+        console.log(`[EnvironmentSetup] 测试用户不存在，跳过: ${email}`)
+      }
+    } catch (error) {
+      // 删除失败不应阻塞整个清理流程；记录后继续
+      console.warn(`[EnvironmentSetup] 删除测试用户 ${email} 失败:`, error)
+    }
+  }
+
+  console.log(`[EnvironmentSetup] 测试用户清理完成 (realm: ${realmId})`)
+}
+
+/**
  * 清理演示测试数据
  *
  * @param page Playwright Page 对象
@@ -375,6 +430,9 @@ export async function cleanupDemoTestData(
 
   // 清理测试创建的订阅套餐（通过 API）
   await cleanupSubscriptionPlans(page, realmId, options)
+
+  // 清理通过 UI 创建的测试用户（使用 consent-aware admin 登录）
+  await cleanupTestUsers(page, realmId, options)
 }
 
 /**
